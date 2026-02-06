@@ -1097,11 +1097,62 @@ const LogPage = () => {
 };
 
 // ================================================================
-// Data Privacy Page
+// Data Privacy Page + Backup
 // ================================================================
 
 const DataPage = () => {
-    const { lang } = useApp();
+    const { lang, showToast, refreshData, devices, domains } = useApp();
+    const [dataCollections, setDataCollections] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const fileInputRef = useRef(null);
+
+    useEffect(() => {
+        api.get('data-collections?limit=100').then(data => {
+            setDataCollections(data || []);
+            setLoading(false);
+        });
+    }, []);
+
+    const handleExport = async () => {
+        const backup = await api.get('backup/export');
+        if (backup) {
+            const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `mindhome-backup-${new Date().toISOString().slice(0,10)}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+            showToast(lang === 'de' ? 'Backup exportiert' : 'Backup exported', 'success');
+        }
+    };
+
+    const handleImport = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        try {
+            const text = await file.text();
+            const data = JSON.parse(text);
+            const result = await api.post('backup/import', data);
+            if (result?.success) {
+                showToast(lang === 'de'
+                    ? `Backup geladen: ${result.imported.rooms} Räume, ${result.imported.devices} Geräte, ${result.imported.users} Personen`
+                    : `Backup loaded: ${result.imported.rooms} rooms, ${result.imported.devices} devices, ${result.imported.users} users`,
+                    'success');
+                refreshData();
+            } else {
+                showToast(result?.error || 'Import failed', 'error');
+            }
+        } catch (err) {
+            showToast(lang === 'de' ? 'Ungültige Datei' : 'Invalid file', 'error');
+        }
+        e.target.value = '';
+    };
+
+    const getDeviceName = (deviceId) => {
+        const d = devices.find(d => d.id === deviceId);
+        return d?.name || `#${deviceId}`;
+    };
 
     return (
         <div>
@@ -1114,24 +1165,85 @@ const DataPage = () => {
                         </div>
                         <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
                             {lang === 'de'
-                                ? 'Alle Daten werden ausschließlich auf deinem Gerät gespeichert. Nichts wird in die Cloud gesendet.'
-                                : 'All data is stored exclusively on your device. Nothing is sent to the cloud.'}
+                                ? 'Alle Daten werden ausschließlich auf deinem Gerät gespeichert.'
+                                : 'All data is stored exclusively on your device.'}
                         </div>
                     </div>
                 </div>
             </div>
 
+            {/* Backup / Restore */}
+            <div className="card" style={{ marginBottom: 16 }}>
+                <div className="card-title" style={{ marginBottom: 16 }}>
+                    {lang === 'de' ? 'Backup & Wiederherstellung' : 'Backup & Restore'}
+                </div>
+                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                    <button className="btn btn-primary" onClick={handleExport}>
+                        <span className="mdi mdi-download" />
+                        {lang === 'de' ? 'Backup exportieren' : 'Export Backup'}
+                    </button>
+                    <button className="btn btn-secondary" onClick={() => fileInputRef.current?.click()}>
+                        <span className="mdi mdi-upload" />
+                        {lang === 'de' ? 'Backup laden' : 'Import Backup'}
+                    </button>
+                    <input ref={fileInputRef} type="file" accept=".json" onChange={handleImport}
+                           style={{ display: 'none' }} />
+                </div>
+                <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 12 }}>
+                    {lang === 'de'
+                        ? 'Das Backup enthält: Räume, Geräte, Personen, Domains, Einstellungen, Zuordnungen und Logs.'
+                        : 'Backup includes: rooms, devices, users, domains, settings, assignments and logs.'}
+                </p>
+            </div>
+
+            {/* Collected Data */}
             <div className="card">
                 <div className="card-title" style={{ marginBottom: 16 }}>
                     {lang === 'de' ? 'Gesammelte Daten' : 'Collected Data'}
+                    <span style={{ fontWeight: 400, fontSize: 13, color: 'var(--text-muted)', marginLeft: 8 }}>
+                        ({dataCollections.length})
+                    </span>
                 </div>
-                <div className="empty-state" style={{ padding: 32 }}>
-                    <span className="mdi mdi-database-outline" />
-                    <h3>{lang === 'de' ? 'Noch keine Daten' : 'No Data Yet'}</h3>
-                    <p>{lang === 'de'
-                        ? 'Sobald MindHome Daten sammelt, siehst du hier eine Übersicht.'
-                        : 'Once MindHome collects data, you will see an overview here.'}</p>
-                </div>
+                {loading ? (
+                    <div className="empty-state"><div className="loading-spinner" /></div>
+                ) : dataCollections.length > 0 ? (
+                    <div style={{ maxHeight: 400, overflow: 'auto' }}>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>{lang === 'de' ? 'Zeit' : 'Time'}</th>
+                                    <th>{lang === 'de' ? 'Gerät' : 'Device'}</th>
+                                    <th>{lang === 'de' ? 'Typ' : 'Type'}</th>
+                                    <th>{lang === 'de' ? 'Wert' : 'Value'}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {dataCollections.slice(0, 50).map((dc, i) => (
+                                    <tr key={i}>
+                                        <td style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
+                                            {new Date(dc.collected_at).toLocaleString(lang === 'de' ? 'de-DE' : 'en-US')}
+                                        </td>
+                                        <td style={{ fontSize: 12 }}>{getDeviceName(dc.device_id)}</td>
+                                        <td><span className="badge badge-info" style={{ fontSize: 10 }}>{dc.data_type}</span></td>
+                                        <td style={{ fontSize: 11, fontFamily: 'var(--font-mono)', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                            {typeof dc.data_value === 'object'
+                                                ? `${dc.data_value.old_state} → ${dc.data_value.new_state}`
+                                                : String(dc.data_value)}
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                ) : (
+                    <div className="empty-state" style={{ padding: 32 }}>
+                        <span className="mdi mdi-database-outline" />
+                        <h3>{lang === 'de' ? 'Noch keine Daten' : 'No Data Yet'}</h3>
+                        <p>{lang === 'de'
+                            ? 'Daten werden gesammelt sobald überwachte Geräte ihren Status ändern.'
+                            : 'Data will be collected when tracked devices change state.'}</p>
+                    </div>
+                )}
             </div>
         </div>
     );
@@ -1147,6 +1259,25 @@ const OnboardingWizard = ({ onComplete }) => {
     const [adminName, setAdminName] = useState('');
     const [discovered, setDiscovered] = useState(null);
     const [discovering, setDiscovering] = useState(false);
+    const [restoring, setRestoring] = useState(false);
+    const restoreInputRef = useRef(null);
+
+    const handleRestore = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        setRestoring(true);
+        try {
+            const text = await file.text();
+            const data = JSON.parse(text);
+            const result = await api.post('backup/import', data);
+            if (result?.success) {
+                onComplete();
+                return;
+            }
+        } catch (err) {}
+        setRestoring(false);
+        e.target.value = '';
+    };
 
     const steps = [
         { id: 'welcome', icon: 'mdi-brain' },
@@ -1255,6 +1386,20 @@ const OnboardingWizard = ({ onComplete }) => {
                             </div>
                             <div className="onboarding-title">{l.welcome_title}</div>
                             <div className="onboarding-subtitle">{l.welcome_sub}</div>
+                            <div style={{ marginTop: 24, padding: '16px', border: '1px dashed var(--border)', borderRadius: 12 }}>
+                                <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 12 }}>
+                                    {lang === 'de'
+                                        ? 'Du hast bereits ein Backup? Stelle es hier wieder her:'
+                                        : 'Already have a backup? Restore it here:'}
+                                </p>
+                                <button className="btn btn-secondary" onClick={() => restoreInputRef.current?.click()} disabled={restoring}>
+                                    <span className="mdi mdi-upload" />
+                                    {restoring
+                                        ? (lang === 'de' ? 'Wird geladen...' : 'Loading...')
+                                        : (lang === 'de' ? 'Backup wiederherstellen' : 'Restore Backup')}
+                                </button>
+                                <input ref={restoreInputRef} type="file" accept=".json" onChange={handleRestore} style={{ display: 'none' }} />
+                            </div>
                         </div>
                     )}
 
@@ -1442,6 +1587,16 @@ const App = () => {
         document.documentElement.setAttribute('data-theme', theme);
         api.put('system/settings/theme', { value: theme });
     }, [theme]);
+
+    // Save viewMode
+    useEffect(() => {
+        api.put('system/settings/view_mode', { value: viewMode });
+    }, [viewMode]);
+
+    // Save language
+    useEffect(() => {
+        api.put('system/settings/language', { value: lang });
+    }, [lang]);
 
     const toggleDomain = async (domainId) => {
         const result = await api.post(`domains/${domainId}/toggle`);
