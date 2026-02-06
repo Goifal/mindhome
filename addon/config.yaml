@@ -17,6 +17,7 @@ ingress_entry: "/"
 panel_icon: "mdi:brain"
 panel_title: "MindHome"
 homeassistant_api: true
+admin_only: false
 options:
   language: "de"
   log_level: "info"
