@@ -61,19 +61,18 @@ def on_state_changed(event):
     # Route to domain plugins
     domain_manager.on_state_change(event)
 
-    event_data = event.get("data", {})
+    event_data = event.get("data", {}) if event else {}
     entity_id = event_data.get("entity_id", "")
-    new_state = event_data.get("new_state", {})
-    old_state = event_data.get("old_state", {})
-    logger.debug(f"State changed: {entity_id} -> {new_state.get('state')}")
+    new_state = event_data.get("new_state") or {}
+    old_state = event_data.get("old_state") or {}
+    logger.debug(f"State changed: {entity_id} -> {new_state.get('state', '?')}")
 
     # Log tracked device state changes to DB
     try:
-        log_state_change(
-            entity_id,
-            new_state.get("state", "unknown"),
-            old_state.get("state", "unknown") if old_state else "unknown"
-        )
+        new_val = new_state.get("state", "unknown") if isinstance(new_state, dict) else "unknown"
+        old_val = old_state.get("state", "unknown") if isinstance(old_state, dict) else "unknown"
+        if entity_id and new_val != old_val:
+            log_state_change(entity_id, new_val, old_val)
     except Exception as e:
         logger.debug(f"State log error: {e}")
 
@@ -918,11 +917,9 @@ def api_backup_export():
             backup["settings"].append({"key": s.key, "value": s.value})
         for log in session.query(ActionLog).order_by(ActionLog.created_at.desc()).limit(200).all():
             backup["action_log"].append({"action_type": log.action_type, "domain_id": log.domain_id,
-                "room_id": log.room_id, "action_data": log.action_data, "reason": log.reason,
+                "room_id": log.room_id, "device_id": log.device_id,
+                "action_data": log.action_data, "reason": log.reason,
                 "was_undone": log.was_undone, "created_at": log.created_at.isoformat()})
-        for dc in session.query(DataCollection).order_by(DataCollection.collected_at.desc()).limit(500).all():
-            backup["data_collections"].append({"domain_id": dc.domain_id, "device_id": dc.device_id,
-                "data_type": dc.data_type, "data_value": dc.data_value, "collected_at": dc.collected_at.isoformat()})
         for up in session.query(UserPreference).all():
             backup["user_preferences"].append({"user_id": up.user_id, "room_id": up.room_id,
                 "preference_key": up.preference_key, "preference_value": up.preference_value})
@@ -999,40 +996,48 @@ def api_backup_import():
 
 @app.route("/api/data-collections", methods=["GET"])
 def api_get_data_collections():
-    """Get recent data collections for the privacy page."""
+    """Get recent tracked data (observations from ActionLog)."""
     session = get_db()
     try:
         limit = request.args.get("limit", 100, type=int)
-        collections = session.query(DataCollection).order_by(
-            DataCollection.collected_at.desc()).limit(limit).all()
-        return jsonify([{"id": dc.id, "domain_id": dc.domain_id, "device_id": dc.device_id,
-            "data_type": dc.data_type, "data_value": dc.data_value,
-            "collected_at": dc.collected_at.isoformat()} for dc in collections])
+        logs = session.query(ActionLog).filter_by(
+            action_type="observation"
+        ).order_by(ActionLog.created_at.desc()).limit(limit).all()
+        return jsonify([{
+            "id": log.id,
+            "domain_id": log.domain_id,
+            "device_id": log.device_id,
+            "data_type": "state_change",
+            "data_value": log.action_data or {},
+            "collected_at": log.created_at.isoformat()
+        } for log in logs])
     finally:
         session.close()
 
 
 def log_state_change(entity_id, new_state, old_state):
-    """Log state changes to data_collections and action_log."""
+    """Log state changes to action_log for tracked devices."""
     session = get_db()
     try:
         device = session.query(Device).filter_by(ha_entity_id=entity_id).first()
         if not device or not device.is_tracked:
             return
-        dc = DataCollection(domain_id=device.domain_id, device_id=device.id,
-            data_type="state_change",
-            data_value={"entity_id": entity_id, "old_state": old_state, "new_state": new_state,
-                "timestamp": datetime.now(timezone.utc).isoformat()})
-        session.add(dc)
-        action_log = ActionLog(action_type="observation", domain_id=device.domain_id,
+        action_log = ActionLog(
+            action_type="observation",
+            domain_id=device.domain_id,
             room_id=device.room_id,
-            action_data={"entity_id": entity_id, "old_state": old_state, "new_state": new_state},
+            device_id=device.id,
+            action_data={"entity_id": entity_id, "old_state": old_state, "new_state": new_state,
+                "timestamp": datetime.now(timezone.utc).isoformat()},
             reason=f"{device.name}: {old_state} → {new_state}")
         session.add(action_log)
         session.commit()
     except Exception as e:
         logger.debug(f"Data collection error: {e}")
-        session.rollback()
+        try:
+            session.rollback()
+        except:
+            pass
     finally:
         session.close()
 
