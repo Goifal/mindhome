@@ -1,22 +1,19 @@
 ARG BUILD_FROM
 FROM ${BUILD_FROM}
 
-# Install system dependencies
+# Install minimal system dependencies
 RUN apk add --no-cache \
-    python3 \
     py3-pip \
-    py3-numpy \
-    py3-scipy \
-    nodejs \
-    npm \
     gcc \
     musl-dev \
-    python3-dev \
-    linux-headers
+    python3-dev
 
 # Copy and install Python requirements
 COPY rootfs/opt/mindhome/requirements.txt /tmp/
 RUN pip3 install --no-cache-dir --break-system-packages -r /tmp/requirements.txt
+
+# Remove build dependencies to save space
+RUN apk del gcc musl-dev python3-dev
 
 # Copy application files
 COPY rootfs /
