@@ -362,22 +362,24 @@ const DomainsPage = () => {
 // Devices Page
 // ================================================================
 
+
+// ================================================================
+// Devices Page - with selection, delete, room assignment, domain assignment
+// ================================================================
+
 const DevicesPage = () => {
     const { devices, rooms, domains, lang, showToast, refreshData } = useApp();
     const [discovering, setDiscovering] = useState(false);
     const [discovered, setDiscovered] = useState(null);
     const [selected, setSelected] = useState({});
+    const [editDevice, setEditDevice] = useState(null);
 
     const handleDiscover = async () => {
         setDiscovering(true);
         const result = await api.get('discover');
         setDiscovered(result);
-        // Pre-select all entities
-        const sel = {};
-        Object.entries(result?.domains || {}).forEach(([domain, data]) => {
-            (data.entities || []).forEach(e => { sel[e.entity_id] = true; });
-        });
-        setSelected(sel);
+        // Nothing pre-selected - user chooses manually
+        setSelected({});
         setDiscovering(false);
     };
 
@@ -385,7 +387,7 @@ const DevicesPage = () => {
         setSelected(prev => ({ ...prev, [entityId]: !prev[entityId] }));
     };
 
-    const toggleDomain = (domainName) => {
+    const toggleDiscoverDomain = (domainName) => {
         const entities = discovered?.domains?.[domainName]?.entities || [];
         const allSelected = entities.every(e => selected[e.entity_id]);
         const newSel = { ...selected };
@@ -415,8 +417,35 @@ const DevicesPage = () => {
         }
     };
 
+    const handleDeleteDevice = async (deviceId) => {
+        const result = await api.delete(`devices/${deviceId}`);
+        if (result?.success) {
+            showToast(lang === 'de' ? 'Gerät entfernt' : 'Device removed', 'success');
+            refreshData();
+        }
+    };
+
+    const handleUpdateDevice = async () => {
+        if (!editDevice) return;
+        const result = await api.put(`devices/${editDevice.id}`, {
+            room_id: editDevice.room_id || null,
+            domain_id: editDevice.domain_id || null,
+            name: editDevice.name,
+            is_tracked: editDevice.is_tracked,
+            is_controllable: editDevice.is_controllable
+        });
+        if (result?.id) {
+            showToast(lang === 'de' ? 'Gerät aktualisiert' : 'Device updated', 'success');
+            setEditDevice(null);
+            refreshData();
+        }
+    };
+
     const selectedCount = Object.values(selected).filter(Boolean).length;
     const totalCount = discovered ? Object.values(discovered.domains || {}).reduce((sum, d) => sum + (d.entities?.length || d.count || 0), 0) : 0;
+
+    // Filter out already-imported entities from discovery list
+    const importedEntityIds = new Set(devices.map(d => d.ha_entity_id));
 
     const getDomainName = (domainId) => {
         const d = domains.find(d => d.id === domainId);
@@ -442,16 +471,18 @@ const DevicesPage = () => {
                 </button>
             </div>
 
-            {/* Discovery Results with Checkboxes */}
+            {/* Discovery Results with Checkboxes - excludes already imported */}
             {discovered && (
                 <div className="card" style={{ marginBottom: 20, borderColor: 'var(--accent-primary)', borderWidth: 2 }}>
                     <div className="card-header">
                         <div>
                             <div className="card-title">
-                                {lang === 'de' ? 'Gefundene Geräte' : 'Discovered Devices'}
+                                {lang === 'de' ? 'Verfügbare Geräte' : 'Available Devices'}
                             </div>
                             <div className="card-subtitle">
-                                {selectedCount} / {totalCount} {lang === 'de' ? 'ausgewählt' : 'selected'}
+                                {selectedCount} {lang === 'de' ? 'ausgewählt' : 'selected'}
+                                {' · '}
+                                {lang === 'de' ? 'Bereits importierte sind ausgeblendet' : 'Already imported are hidden'}
                             </div>
                         </div>
                         <div style={{ display: 'flex', gap: 8 }}>
@@ -465,15 +496,17 @@ const DevicesPage = () => {
                         </div>
                     </div>
 
+                    <div style={{ maxHeight: 400, overflow: 'auto' }}>
                     {Object.entries(discovered.domains || {}).map(([domainName, data]) => {
-                        const entities = data.entities || [];
+                        const entities = (data.entities || []).filter(e => !importedEntityIds.has(e.entity_id));
+                        if (entities.length === 0) return null;
                         const allSel = entities.every(e => selected[e.entity_id]);
                         return (
                             <div key={domainName} style={{ marginBottom: 12 }}>
                                 <div style={{
                                     display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0',
                                     borderBottom: '1px solid var(--border-color)', cursor: 'pointer'
-                                }} onClick={() => toggleDomain(domainName)}>
+                                }} onClick={() => toggleDiscoverDomain(domainName)}>
                                     <input type="checkbox" checked={allSel} readOnly
                                         style={{ width: 18, height: 18, accentColor: 'var(--accent-primary)' }} />
                                     <strong>{domainName}</strong>
@@ -487,10 +520,10 @@ const DevicesPage = () => {
                                         }} onClick={() => toggleEntity(entity.entity_id)}>
                                             <input type="checkbox" checked={!!selected[entity.entity_id]} readOnly
                                                 style={{ width: 16, height: 16, accentColor: 'var(--accent-primary)' }} />
-                                            <span style={{ color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', fontSize: 11 }}>
+                                            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-muted)', minWidth: 200 }}>
                                                 {entity.entity_id}
                                             </span>
-                                            <span>{entity.friendly_name}</span>
+                                            <span style={{ flex: 1 }}>{entity.friendly_name}</span>
                                             <span className="badge badge-info" style={{ fontSize: 10 }}>{entity.state}</span>
                                         </div>
                                     ))}
@@ -498,6 +531,7 @@ const DevicesPage = () => {
                             </div>
                         );
                     })}
+                    </div>
                 </div>
             )}
 
@@ -511,8 +545,7 @@ const DevicesPage = () => {
                                 <th>{lang === 'de' ? 'Name' : 'Name'}</th>
                                 <th>Domain</th>
                                 <th>{lang === 'de' ? 'Raum' : 'Room'}</th>
-                                <th>{lang === 'de' ? 'Überwacht' : 'Tracked'}</th>
-                                <th>{lang === 'de' ? 'Steuerbar' : 'Controllable'}</th>
+                                <th>{lang === 'de' ? 'Aktionen' : 'Actions'}</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -525,16 +558,16 @@ const DevicesPage = () => {
                                     <td>{getDomainName(device.domain_id)}</td>
                                     <td>{getRoomName(device.room_id)}</td>
                                     <td>
-                                        <span className={`badge badge-${device.is_tracked ? 'success' : 'warning'}`}>
-                                            <span className="badge-dot" />
-                                            {device.is_tracked ? (lang === 'de' ? 'Ja' : 'Yes') : (lang === 'de' ? 'Nein' : 'No')}
-                                        </span>
-                                    </td>
-                                    <td>
-                                        <span className={`badge badge-${device.is_controllable ? 'success' : 'warning'}`}>
-                                            <span className="badge-dot" />
-                                            {device.is_controllable ? (lang === 'de' ? 'Ja' : 'Yes') : (lang === 'de' ? 'Nein' : 'No')}
-                                        </span>
+                                        <div style={{ display: 'flex', gap: 4 }}>
+                                            <button className="btn btn-ghost btn-icon" onClick={() => setEditDevice({...device})}
+                                                title={lang === 'de' ? 'Bearbeiten' : 'Edit'}>
+                                                <span className="mdi mdi-pencil" style={{ fontSize: 16, color: 'var(--accent-primary)' }} />
+                                            </button>
+                                            <button className="btn btn-ghost btn-icon" onClick={() => handleDeleteDevice(device.id)}
+                                                title={lang === 'de' ? 'Entfernen' : 'Remove'}>
+                                                <span className="mdi mdi-delete-outline" style={{ fontSize: 16, color: 'var(--danger)' }} />
+                                            </button>
+                                        </div>
                                     </td>
                                 </tr>
                             ))}
@@ -550,18 +583,80 @@ const DevicesPage = () => {
                         : 'Click "Discover Devices" to import your HA devices.'}</p>
                 </div>
             )}
+
+            {/* Edit Device Modal */}
+            {editDevice && (
+                <Modal
+                    title={lang === 'de' ? 'Gerät bearbeiten' : 'Edit Device'}
+                    onClose={() => setEditDevice(null)}
+                    actions={
+                        <>
+                            <button className="btn btn-secondary" onClick={() => setEditDevice(null)}>
+                                {lang === 'de' ? 'Abbrechen' : 'Cancel'}
+                            </button>
+                            <button className="btn btn-primary" onClick={handleUpdateDevice}>
+                                {lang === 'de' ? 'Speichern' : 'Save'}
+                            </button>
+                        </>
+                    }
+                >
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginBottom: 16 }}>
+                        {editDevice.ha_entity_id}
+                    </div>
+                    <div className="input-group" style={{ marginBottom: 16 }}>
+                        <label className="input-label">{lang === 'de' ? 'Name' : 'Name'}</label>
+                        <input className="input" value={editDevice.name}
+                               onChange={e => setEditDevice({ ...editDevice, name: e.target.value })} />
+                    </div>
+                    <div className="input-group" style={{ marginBottom: 16 }}>
+                        <label className="input-label">{lang === 'de' ? 'Raum' : 'Room'}</label>
+                        <select className="input" value={editDevice.room_id || ''}
+                                onChange={e => setEditDevice({ ...editDevice, room_id: e.target.value ? parseInt(e.target.value) : null })}>
+                            <option value="">{lang === 'de' ? '— Kein Raum —' : '— No Room —'}</option>
+                            {rooms.map(r => (
+                                <option key={r.id} value={r.id}>{r.name}</option>
+                            ))}
+                        </select>
+                    </div>
+                    <div className="input-group" style={{ marginBottom: 16 }}>
+                        <label className="input-label">Domain</label>
+                        <select className="input" value={editDevice.domain_id || ''}
+                                onChange={e => setEditDevice({ ...editDevice, domain_id: e.target.value ? parseInt(e.target.value) : null })}>
+                            <option value="">{lang === 'de' ? '— Keine —' : '— None —'}</option>
+                            {domains.map(d => (
+                                <option key={d.id} value={d.id}>{d.display_name}</option>
+                            ))}
+                        </select>
+                    </div>
+                    <div style={{ display: 'flex', gap: 24 }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 14 }}>
+                            <input type="checkbox" checked={editDevice.is_tracked}
+                                   onChange={e => setEditDevice({ ...editDevice, is_tracked: e.target.checked })}
+                                   style={{ width: 18, height: 18, accentColor: 'var(--accent-primary)' }} />
+                            {lang === 'de' ? 'Überwacht' : 'Tracked'}
+                        </label>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 14 }}>
+                            <input type="checkbox" checked={editDevice.is_controllable}
+                                   onChange={e => setEditDevice({ ...editDevice, is_controllable: e.target.checked })}
+                                   style={{ width: 18, height: 18, accentColor: 'var(--accent-primary)' }} />
+                            {lang === 'de' ? 'Steuerbar' : 'Controllable'}
+                        </label>
+                    </div>
+                </Modal>
+            )}
         </div>
     );
 };
 
 // ================================================================
-// Rooms Page
+// Rooms Page - with edit name
 // ================================================================
 
 const RoomsPage = () => {
     const { rooms, lang, showToast, refreshData } = useApp();
     const [showAdd, setShowAdd] = useState(false);
     const [newRoom, setNewRoom] = useState({ name: '', icon: 'mdi:door' });
+    const [editRoom, setEditRoom] = useState(null);
 
     const phaseLabels = {
         observing: { de: 'Beobachten', en: 'Observing', color: 'info' },
@@ -576,6 +671,16 @@ const RoomsPage = () => {
             showToast(lang === 'de' ? 'Raum erstellt' : 'Room created', 'success');
             setShowAdd(false);
             setNewRoom({ name: '', icon: 'mdi:door' });
+            refreshData();
+        }
+    };
+
+    const handleUpdate = async () => {
+        if (!editRoom || !editRoom.name.trim()) return;
+        const result = await api.put(`rooms/${editRoom.id}`, { name: editRoom.name, icon: editRoom.icon });
+        if (result?.id) {
+            showToast(lang === 'de' ? 'Raum aktualisiert' : 'Room updated', 'success');
+            setEditRoom(null);
             refreshData();
         }
     };
@@ -616,12 +721,17 @@ const RoomsPage = () => {
                                         </div>
                                     </div>
                                 </div>
-                                <button className="btn btn-ghost btn-icon" onClick={() => handleDelete(room.id)}>
-                                    <span className="mdi mdi-delete-outline" style={{ fontSize: 18, color: 'var(--text-muted)' }} />
-                                </button>
+                                <div style={{ display: 'flex', gap: 4 }}>
+                                    <button className="btn btn-ghost btn-icon" onClick={() => setEditRoom({...room})}
+                                        title={lang === 'de' ? 'Bearbeiten' : 'Edit'}>
+                                        <span className="mdi mdi-pencil" style={{ fontSize: 16, color: 'var(--accent-primary)' }} />
+                                    </button>
+                                    <button className="btn btn-ghost btn-icon" onClick={() => handleDelete(room.id)}>
+                                        <span className="mdi mdi-delete-outline" style={{ fontSize: 16, color: 'var(--text-muted)' }} />
+                                    </button>
+                                </div>
                             </div>
 
-                            {/* Learning Phases */}
                             {room.domain_states?.length > 0 && (
                                 <div style={{ marginTop: 16 }}>
                                     <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8 }}>
@@ -637,16 +747,6 @@ const RoomsPage = () => {
                                             );
                                         })}
                                     </div>
-                                </div>
-                            )}
-
-                            {/* Privacy */}
-                            {Object.keys(room.privacy_mode || {}).length > 0 && (
-                                <div style={{ marginTop: 12 }}>
-                                    <span className="mdi mdi-shield-lock-outline" style={{ fontSize: 14, color: 'var(--text-muted)' }} />
-                                    <span style={{ fontSize: 12, color: 'var(--text-muted)', marginLeft: 4 }}>
-                                        {lang === 'de' ? 'Datenschutz aktiv' : 'Privacy active'}
-                                    </span>
                                 </div>
                             )}
                         </div>
@@ -687,12 +787,43 @@ const RoomsPage = () => {
                     </div>
                 </Modal>
             )}
+
+            {/* Edit Room Modal */}
+            {editRoom && (
+                <Modal
+                    title={lang === 'de' ? 'Raum bearbeiten' : 'Edit Room'}
+                    onClose={() => setEditRoom(null)}
+                    actions={
+                        <>
+                            <button className="btn btn-secondary" onClick={() => setEditRoom(null)}>
+                                {lang === 'de' ? 'Abbrechen' : 'Cancel'}
+                            </button>
+                            <button className="btn btn-primary" onClick={handleUpdate}>
+                                {lang === 'de' ? 'Speichern' : 'Save'}
+                            </button>
+                        </>
+                    }
+                >
+                    <div className="input-group" style={{ marginBottom: 16 }}>
+                        <label className="input-label">{lang === 'de' ? 'Name' : 'Name'}</label>
+                        <input className="input" value={editRoom.name}
+                               onChange={e => setEditRoom({ ...editRoom, name: e.target.value })}
+                               autoFocus />
+                    </div>
+                    <div className="input-group">
+                        <label className="input-label">Icon</label>
+                        <input className="input" value={editRoom.icon || ''}
+                               onChange={e => setEditRoom({ ...editRoom, icon: e.target.value })}
+                               placeholder="mdi:door" />
+                    </div>
+                </Modal>
+            )}
         </div>
     );
 };
 
 // ================================================================
-// Users Page
+// Users Page - with HA person assignment
 // ================================================================
 
 const UsersPage = () => {
@@ -761,9 +892,7 @@ const UsersPage = () => {
                                     <div>
                                         <div className="card-title">{user.name}</div>
                                         <div className="card-subtitle">
-                                            {user.role === 'admin'
-                                                ? (lang === 'de' ? 'Administrator' : 'Administrator')
-                                                : (lang === 'de' ? 'Benutzer' : 'User')}
+                                            {user.role === 'admin' ? 'Administrator' : (lang === 'de' ? 'Benutzer' : 'User')}
                                         </div>
                                         <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
                                             {user.ha_person_entity
@@ -789,93 +918,54 @@ const UsersPage = () => {
                 <div className="empty-state">
                     <span className="mdi mdi-account-group" />
                     <h3>{lang === 'de' ? 'Keine Personen' : 'No People'}</h3>
-                    <p>{lang === 'de'
-                        ? 'Füge Personen hinzu die MindHome nutzen.'
-                        : 'Add people who use MindHome.'}</p>
+                    <p>{lang === 'de' ? 'Füge Personen hinzu die MindHome nutzen.' : 'Add people who use MindHome.'}</p>
                 </div>
             )}
 
             {showAdd && (
-                <Modal
-                    title={lang === 'de' ? 'Person hinzufügen' : 'Add Person'}
-                    onClose={() => setShowAdd(false)}
-                    actions={
-                        <>
-                            <button className="btn btn-secondary" onClick={() => setShowAdd(false)}>
-                                {lang === 'de' ? 'Abbrechen' : 'Cancel'}
-                            </button>
-                            <button className="btn btn-primary" onClick={handleAdd}>
-                                {lang === 'de' ? 'Erstellen' : 'Create'}
-                            </button>
-                        </>
-                    }
-                >
+                <Modal title={lang === 'de' ? 'Person hinzufügen' : 'Add Person'} onClose={() => setShowAdd(false)}
+                    actions={<><button className="btn btn-secondary" onClick={() => setShowAdd(false)}>{lang === 'de' ? 'Abbrechen' : 'Cancel'}</button>
+                        <button className="btn btn-primary" onClick={handleAdd}>{lang === 'de' ? 'Erstellen' : 'Create'}</button></>}>
                     <div className="input-group" style={{ marginBottom: 16 }}>
                         <label className="input-label">{lang === 'de' ? 'Name' : 'Name'}</label>
-                        <input className="input" value={newUser.name}
-                               onChange={e => setNewUser({ ...newUser, name: e.target.value })}
-                               autoFocus />
+                        <input className="input" value={newUser.name} onChange={e => setNewUser({ ...newUser, name: e.target.value })} autoFocus />
                     </div>
                     <div className="input-group" style={{ marginBottom: 16 }}>
                         <label className="input-label">{lang === 'de' ? 'Rolle' : 'Role'}</label>
-                        <select className="input" value={newUser.role}
-                                onChange={e => setNewUser({ ...newUser, role: e.target.value })}>
+                        <select className="input" value={newUser.role} onChange={e => setNewUser({ ...newUser, role: e.target.value })}>
                             <option value="user">{lang === 'de' ? 'Benutzer' : 'User'}</option>
-                            <option value="admin">{lang === 'de' ? 'Administrator' : 'Administrator'}</option>
+                            <option value="admin">Administrator</option>
                         </select>
                     </div>
                     <div className="input-group">
-                        <label className="input-label">{lang === 'de' ? 'HA-Person verknüpfen' : 'Link HA Person'}</label>
-                        <select className="input" value={newUser.ha_person_entity}
-                                onChange={e => setNewUser({ ...newUser, ha_person_entity: e.target.value })}>
+                        <label className="input-label">{lang === 'de' ? 'HA-Person' : 'HA Person'}</label>
+                        <select className="input" value={newUser.ha_person_entity} onChange={e => setNewUser({ ...newUser, ha_person_entity: e.target.value })}>
                             <option value="">{lang === 'de' ? '— Keine —' : '— None —'}</option>
-                            {haPersons.map(p => (
-                                <option key={p.entity_id} value={p.entity_id}>
-                                    {p.name} ({p.entity_id})
-                                </option>
-                            ))}
+                            {haPersons.map(p => <option key={p.entity_id} value={p.entity_id}>{p.name} ({p.entity_id})</option>)}
                         </select>
                     </div>
                 </Modal>
             )}
 
             {editingUser && (
-                <Modal
-                    title={lang === 'de' ? `HA-Person: ${editingUser.name}` : `HA Person: ${editingUser.name}`}
-                    onClose={() => setEditingUser(null)}
-                    actions={
-                        <button className="btn btn-secondary" onClick={() => setEditingUser(null)}>
-                            {lang === 'de' ? 'Schließen' : 'Close'}
-                        </button>
-                    }
-                >
-                    <p style={{ marginBottom: 16, color: 'var(--text-secondary)', fontSize: 13 }}>
-                        {lang === 'de'
-                            ? 'Wähle eine HA-Person für Anwesenheits-Tracking:'
-                            : 'Select an HA person for presence tracking:'}
-                    </p>
+                <Modal title={lang === 'de' ? `HA-Person: ${editingUser.name}` : `HA Person: ${editingUser.name}`} onClose={() => setEditingUser(null)}
+                    actions={<button className="btn btn-secondary" onClick={() => setEditingUser(null)}>{lang === 'de' ? 'Schließen' : 'Close'}</button>}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                        <div style={{
-                            padding: '10px 14px', borderRadius: 8, cursor: 'pointer',
+                        <div style={{ padding: '10px 14px', borderRadius: 8, cursor: 'pointer',
                             border: !editingUser.ha_person_entity ? '2px solid var(--accent-primary)' : '1px solid var(--border-color)',
                             background: !editingUser.ha_person_entity ? 'var(--accent-primary-dim)' : 'transparent'
                         }} onClick={() => handleAssignPerson(editingUser.id, '')}>
                             {lang === 'de' ? '— Keine Person —' : '— No Person —'}
                         </div>
                         {haPersons.map(p => (
-                            <div key={p.entity_id} style={{
-                                padding: '10px 14px', borderRadius: 8, cursor: 'pointer',
+                            <div key={p.entity_id} style={{ padding: '10px 14px', borderRadius: 8, cursor: 'pointer',
                                 border: editingUser.ha_person_entity === p.entity_id ? '2px solid var(--accent-primary)' : '1px solid var(--border-color)',
                                 background: editingUser.ha_person_entity === p.entity_id ? 'var(--accent-primary-dim)' : 'transparent',
                                 display: 'flex', justifyContent: 'space-between', alignItems: 'center'
                             }} onClick={() => handleAssignPerson(editingUser.id, p.entity_id)}>
-                                <div>
-                                    <strong>{p.name}</strong>
-                                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{p.entity_id}</div>
-                                </div>
+                                <div><strong>{p.name}</strong><div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{p.entity_id}</div></div>
                                 <span className={`badge badge-${p.state === 'home' ? 'success' : 'warning'}`}>
-                                    <span className="badge-dot" />
-                                    {p.state === 'home' ? (lang === 'de' ? 'Zuhause' : 'Home') : (lang === 'de' ? 'Weg' : 'Away')}
+                                    <span className="badge-dot" />{p.state === 'home' ? (lang === 'de' ? 'Zuhause' : 'Home') : (lang === 'de' ? 'Weg' : 'Away')}
                                 </span>
                             </div>
                         ))}
@@ -885,6 +975,9 @@ const UsersPage = () => {
         </div>
     );
 };
+// ================================================================
+// Settings Page
+// ================================================================
 
 const SettingsPage = () => {
     const { lang, setLang, theme, setTheme, viewMode, setViewMode, showToast } = useApp();
@@ -1077,10 +1170,7 @@ const OnboardingWizard = ({ onComplete }) => {
             await api.post('users', { name: adminName, role: 'admin' });
         }
 
-        // Import discovered devices
-        if (discovered?.domains) {
-            await api.post('discover/import', { domains: discovered.domains });
-        }
+        // Devices are imported manually from the Devices page
 
         // Set language
         await api.put('system/settings/language', { value: lang });
