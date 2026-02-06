@@ -1,0 +1,1386 @@
+// ================================================================
+// MindHome - React Frontend Application
+// ================================================================
+
+const { useState, useEffect, useCallback, createContext, useContext, useRef } = React;
+
+// ================================================================
+// API Helper
+// ================================================================
+
+const getBasePath = () => {
+    const path = window.location.pathname;
+    const ingressMatch = path.match(/\/api\/hassio_ingress\/[^/]+/);
+    if (ingressMatch) return ingressMatch[0];
+    return '';
+};
+
+const API_BASE = getBasePath();
+
+const api = {
+    async get(endpoint) {
+        try {
+            const res = await fetch(`${API_BASE}/api/${endpoint}`);
+            if (!res.ok) throw new Error(`API Error: ${res.status}`);
+            return await res.json();
+        } catch (e) {
+            console.error(`GET ${endpoint} failed:`, e);
+            return null;
+        }
+    },
+    async post(endpoint, data = {}) {
+        try {
+            const res = await fetch(`${API_BASE}/api/${endpoint}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+            if (!res.ok) throw new Error(`API Error: ${res.status}`);
+            return await res.json();
+        } catch (e) {
+            console.error(`POST ${endpoint} failed:`, e);
+            return null;
+        }
+    },
+    async put(endpoint, data = {}) {
+        try {
+            const res = await fetch(`${API_BASE}/api/${endpoint}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+            if (!res.ok) throw new Error(`API Error: ${res.status}`);
+            return await res.json();
+        } catch (e) {
+            console.error(`PUT ${endpoint} failed:`, e);
+            return null;
+        }
+    },
+    async delete(endpoint) {
+        try {
+            const res = await fetch(`${API_BASE}/api/${endpoint}`, { method: 'DELETE' });
+            if (!res.ok) throw new Error(`API Error: ${res.status}`);
+            return await res.json();
+        } catch (e) {
+            console.error(`DELETE ${endpoint} failed:`, e);
+            return null;
+        }
+    }
+};
+
+// ================================================================
+// Translations Context
+// ================================================================
+
+const translations = { de: null, en: null };
+
+const loadTranslations = async (lang) => {
+    if (translations[lang]) return translations[lang];
+    try {
+        const res = await fetch(`${API_BASE}/api/system/translations/${lang}`);
+        if (res.ok) {
+            translations[lang] = await res.json();
+            return translations[lang];
+        }
+    } catch (e) {}
+    // Fallback inline translations
+    return null;
+};
+
+const t = (translations, path) => {
+    if (!translations) return path;
+    const keys = path.split('.');
+    let val = translations;
+    for (const key of keys) {
+        val = val?.[key];
+        if (val === undefined) return path;
+    }
+    return val;
+};
+
+// ================================================================
+// App Context
+// ================================================================
+
+const AppContext = createContext();
+
+const useApp = () => useContext(AppContext);
+
+// ================================================================
+// Toast Notifications
+// ================================================================
+
+const Toast = ({ message, type, onClose }) => {
+    useEffect(() => {
+        const timer = setTimeout(onClose, 4000);
+        return () => clearTimeout(timer);
+    }, []);
+
+    const icons = {
+        success: 'mdi-check-circle',
+        error: 'mdi-alert-circle',
+        info: 'mdi-information',
+        warning: 'mdi-alert'
+    };
+
+    return (
+        <div style={{
+            position: 'fixed', bottom: 24, right: 24, zIndex: 3000,
+            display: 'flex', alignItems: 'center', gap: 10,
+            padding: '12px 20px',
+            background: 'var(--bg-secondary)', border: '1px solid var(--border)',
+            borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-lg)',
+            animation: 'slideUp 0.3s ease',
+            borderLeft: `3px solid var(--${type === 'error' ? 'danger' : type})`
+        }}>
+            <span className={`mdi ${icons[type] || icons.info}`}
+                  style={{ color: `var(--${type === 'error' ? 'danger' : type})`, fontSize: 20 }} />
+            <span style={{ fontSize: 14 }}>{message}</span>
+            <button onClick={onClose} className="btn-ghost btn-icon btn"
+                    style={{ marginLeft: 8, padding: 0, minWidth: 24 }}>
+                <span className="mdi mdi-close" style={{ fontSize: 16 }} />
+            </button>
+        </div>
+    );
+};
+
+// ================================================================
+// Modal Component
+// ================================================================
+
+const Modal = ({ title, children, onClose, actions }) => (
+    <div className="modal-overlay" onClick={onClose}>
+        <div className="modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-title">{title}</div>
+            {children}
+            {actions && <div className="modal-actions">{actions}</div>}
+        </div>
+    </div>
+);
+
+// ================================================================
+// Dashboard Page
+// ================================================================
+
+const DashboardPage = () => {
+    const { status, domains, devices, rooms, lang, tr } = useApp();
+    const activeDomains = domains.filter(d => d.is_enabled).length;
+    const trackedDevices = devices.length;
+
+    const modeLabels = {
+        normal: { de: 'Normal', en: 'Normal', color: 'success' },
+        away: { de: 'Abwesend', en: 'Away', color: 'info' },
+        guest: { de: 'Gäste-Modus', en: 'Guest Mode', color: 'info' },
+        vacation: { de: 'Urlaubsmodus', en: 'Vacation', color: 'warning' },
+        emergency_stop: { de: 'NOT-AUS', en: 'EMERGENCY STOP', color: 'danger' }
+    };
+
+    const mode = modeLabels[status?.system_mode] || modeLabels.normal;
+
+    return (
+        <div>
+            {/* Status Bar */}
+            <div className="stat-grid">
+                <div className="stat-card animate-in">
+                    <div className="stat-icon" style={{ background: 'var(--success-dim)', color: 'var(--success)' }}>
+                        <span className="mdi mdi-home-assistant" />
+                    </div>
+                    <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span className={`connection-dot ${status?.ha_connected ? 'connected' : 'disconnected'}`} />
+                            <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+                                {status?.ha_connected
+                                    ? (lang === 'de' ? 'Verbunden' : 'Connected')
+                                    : (lang === 'de' ? 'Getrennt' : 'Disconnected')}
+                            </span>
+                        </div>
+                        <div className="stat-label">Home Assistant</div>
+                    </div>
+                </div>
+
+                <div className="stat-card animate-in animate-in-delay-1">
+                    <div className="stat-icon" style={{ background: `var(--${mode.color}-dim)`, color: `var(--${mode.color})` }}>
+                        <span className="mdi mdi-shield-check" />
+                    </div>
+                    <div>
+                        <div className={`badge badge-${mode.color}`}>
+                            <span className="badge-dot" />{mode[lang]}
+                        </div>
+                        <div className="stat-label">{lang === 'de' ? 'Systemmodus' : 'System Mode'}</div>
+                    </div>
+                </div>
+
+                <div className="stat-card animate-in animate-in-delay-2">
+                    <div className="stat-icon" style={{ background: 'var(--accent-primary-dim)', color: 'var(--accent-primary)' }}>
+                        <span className="mdi mdi-puzzle" />
+                    </div>
+                    <div>
+                        <div className="stat-value">{activeDomains}</div>
+                        <div className="stat-label">{lang === 'de' ? 'Aktive Domains' : 'Active Domains'}</div>
+                    </div>
+                </div>
+
+                <div className="stat-card animate-in animate-in-delay-3">
+                    <div className="stat-icon" style={{ background: 'var(--accent-secondary-dim)', color: 'var(--accent-secondary)' }}>
+                        <span className="mdi mdi-devices" />
+                    </div>
+                    <div>
+                        <div className="stat-value">{trackedDevices}</div>
+                        <div className="stat-label">{lang === 'de' ? 'Geräte' : 'Devices'}</div>
+                    </div>
+                </div>
+            </div>
+
+            {/* Quick Actions */}
+            <div className="card animate-in animate-in-delay-2" style={{ marginBottom: 24 }}>
+                <div className="card-header">
+                    <div>
+                        <div className="card-title">Quick Actions</div>
+                        <div className="card-subtitle">
+                            {lang === 'de' ? 'Schnellzugriff' : 'Quick access'}
+                        </div>
+                    </div>
+                </div>
+                <QuickActionsGrid />
+            </div>
+
+            {/* Rooms Overview */}
+            <div className="card animate-in animate-in-delay-3">
+                <div className="card-header">
+                    <div>
+                        <div className="card-title">{lang === 'de' ? 'Räume' : 'Rooms'}</div>
+                        <div className="card-subtitle">
+                            {rooms.length} {lang === 'de' ? 'konfiguriert' : 'configured'}
+                        </div>
+                    </div>
+                </div>
+                {rooms.length === 0 ? (
+                    <div className="empty-state">
+                        <span className="mdi mdi-door-open" />
+                        <h3>{lang === 'de' ? 'Keine Räume' : 'No Rooms'}</h3>
+                        <p>{lang === 'de'
+                            ? 'Starte den Einrichtungsassistenten um Räume hinzuzufügen.'
+                            : 'Start the setup wizard to add rooms.'}</p>
+                    </div>
+                ) : (
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 12 }}>
+                        {rooms.map(room => (
+                            <div key={room.id} className="card" style={{ padding: 14 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+                                    <span className={`mdi ${room.icon || 'mdi-door'}`}
+                                          style={{ fontSize: 22, color: 'var(--accent-primary)' }} />
+                                    <div>
+                                        <div style={{ fontWeight: 600, fontSize: 14 }}>{room.name}</div>
+                                        <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                                            {room.device_count} {lang === 'de' ? 'Geräte' : 'devices'}
+                                        </div>
+                                    </div>
+                                </div>
+                                {room.domain_states?.length > 0 && (
+                                    <div className="phase-bar">
+                                        {room.domain_states.map((ds, i) => (
+                                            <div key={i} className={`phase-segment ${
+                                                ds.learning_phase === 'autonomous' ? 'completed' :
+                                                ds.learning_phase === 'suggesting' ? 'active' : ''
+                                            }`} />
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+};
+
+// ================================================================
+// Quick Actions Component
+// ================================================================
+
+const QuickActionsGrid = () => {
+    const { quickActions, executeQuickAction, lang } = useApp();
+
+    return (
+        <div className="quick-actions-grid">
+            {quickActions.map(action => (
+                <button
+                    key={action.id}
+                    className={`quick-action-btn ${action.action_data?.type === 'emergency_stop' ? 'danger' : ''}`}
+                    onClick={() => executeQuickAction(action.id)}
+                >
+                    <span className={`mdi ${action.icon}`} />
+                    {action.name}
+                </button>
+            ))}
+        </div>
+    );
+};
+
+// ================================================================
+// Domains Page
+// ================================================================
+
+const DomainsPage = () => {
+    const { domains, toggleDomain, lang } = useApp();
+
+    return (
+        <div>
+            <div style={{ marginBottom: 20 }}>
+                <p style={{ color: 'var(--text-secondary)', fontSize: 14 }}>
+                    {lang === 'de'
+                        ? 'Aktiviere die Bereiche die MindHome überwachen und steuern soll.'
+                        : 'Activate the areas MindHome should monitor and control.'}
+                </p>
+            </div>
+            <div className="domain-grid">
+                {domains.map(domain => (
+                    <div
+                        key={domain.id}
+                        className={`domain-card ${domain.is_enabled ? 'enabled' : ''}`}
+                        onClick={() => toggleDomain(domain.id)}
+                    >
+                        <span className={`mdi ${domain.icon}`} />
+                        <div className="domain-card-info">
+                            <div className="domain-card-name">{domain.display_name}</div>
+                            <div className="domain-card-desc">{domain.description}</div>
+                        </div>
+                        <label className="toggle" onClick={e => e.stopPropagation()}>
+                            <input type="checkbox" checked={domain.is_enabled}
+                                   onChange={() => toggleDomain(domain.id)} />
+                            <div className="toggle-slider" />
+                        </label>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+};
+
+// ================================================================
+// Devices Page
+// ================================================================
+
+const DevicesPage = () => {
+    const { devices, rooms, domains, lang, showToast } = useApp();
+    const [discovering, setDiscovering] = useState(false);
+    const [discovered, setDiscovered] = useState(null);
+
+    const handleDiscover = async () => {
+        setDiscovering(true);
+        const result = await api.get('discover');
+        setDiscovered(result);
+        setDiscovering(false);
+    };
+
+    const handleImport = async () => {
+        if (!discovered) return;
+        const result = await api.post('discover/import', { domains: discovered.domains });
+        if (result?.success) {
+            showToast(
+                lang === 'de' ? `${result.imported} Geräte importiert` : `${result.imported} devices imported`,
+                'success'
+            );
+            setDiscovered(null);
+        }
+    };
+
+    const getDomainName = (domainId) => {
+        const d = domains.find(d => d.id === domainId);
+        return d?.display_name || '—';
+    };
+
+    const getRoomName = (roomId) => {
+        const r = rooms.find(r => r.id === roomId);
+        return r?.name || '—';
+    };
+
+    return (
+        <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+                <p style={{ color: 'var(--text-secondary)', fontSize: 14 }}>
+                    {devices.length} {lang === 'de' ? 'Geräte konfiguriert' : 'devices configured'}
+                </p>
+                <button className="btn btn-primary" onClick={handleDiscover} disabled={discovering}>
+                    <span className="mdi mdi-magnify" />
+                    {discovering
+                        ? (lang === 'de' ? 'Suche...' : 'Searching...')
+                        : (lang === 'de' ? 'Geräte erkennen' : 'Discover Devices')}
+                </button>
+            </div>
+
+            {/* Discovery Results */}
+            {discovered && (
+                <div className="card" style={{ marginBottom: 20, borderColor: 'var(--accent-primary)', borderWidth: 2 }}>
+                    <div className="card-header">
+                        <div>
+                            <div className="card-title">
+                                {lang === 'de' ? 'Gefundene Geräte' : 'Discovered Devices'}
+                            </div>
+                            <div className="card-subtitle">
+                                {discovered.total_entities} {lang === 'de' ? 'Entities in HA gefunden' : 'entities found in HA'}
+                            </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: 8 }}>
+                            <button className="btn btn-secondary" onClick={() => setDiscovered(null)}>
+                                {lang === 'de' ? 'Abbrechen' : 'Cancel'}
+                            </button>
+                            <button className="btn btn-primary" onClick={handleImport}>
+                                <span className="mdi mdi-import" />
+                                {lang === 'de' ? 'Alle importieren' : 'Import All'}
+                            </button>
+                        </div>
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                        {Object.entries(discovered.domains || {}).map(([domain, data]) => (
+                            <div key={domain} className="badge badge-info">
+                                {domain}: {data.count}
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {/* Device Table */}
+            {devices.length > 0 ? (
+                <div className="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Entity ID</th>
+                                <th>{lang === 'de' ? 'Name' : 'Name'}</th>
+                                <th>Domain</th>
+                                <th>{lang === 'de' ? 'Raum' : 'Room'}</th>
+                                <th>{lang === 'de' ? 'Überwacht' : 'Tracked'}</th>
+                                <th>{lang === 'de' ? 'Steuerbar' : 'Controllable'}</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {devices.map(device => (
+                                <tr key={device.id}>
+                                    <td style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>
+                                        {device.ha_entity_id}
+                                    </td>
+                                    <td>{device.name}</td>
+                                    <td>{getDomainName(device.domain_id)}</td>
+                                    <td>{getRoomName(device.room_id)}</td>
+                                    <td>
+                                        <span className={`badge badge-${device.is_tracked ? 'success' : 'warning'}`}>
+                                            <span className="badge-dot" />
+                                            {device.is_tracked ? (lang === 'de' ? 'Ja' : 'Yes') : (lang === 'de' ? 'Nein' : 'No')}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <span className={`badge badge-${device.is_controllable ? 'success' : 'warning'}`}>
+                                            <span className="badge-dot" />
+                                            {device.is_controllable ? (lang === 'de' ? 'Ja' : 'Yes') : (lang === 'de' ? 'Nein' : 'No')}
+                                        </span>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            ) : (
+                <div className="empty-state">
+                    <span className="mdi mdi-devices" />
+                    <h3>{lang === 'de' ? 'Keine Geräte' : 'No Devices'}</h3>
+                    <p>{lang === 'de'
+                        ? 'Klicke auf "Geräte erkennen" um deine HA-Geräte zu importieren.'
+                        : 'Click "Discover Devices" to import your HA devices.'}</p>
+                </div>
+            )}
+        </div>
+    );
+};
+
+// ================================================================
+// Rooms Page
+// ================================================================
+
+const RoomsPage = () => {
+    const { rooms, lang, showToast, refreshData } = useApp();
+    const [showAdd, setShowAdd] = useState(false);
+    const [newRoom, setNewRoom] = useState({ name: '', icon: 'mdi:door' });
+
+    const phaseLabels = {
+        observing: { de: 'Beobachten', en: 'Observing', color: 'info' },
+        suggesting: { de: 'Vorschlagen', en: 'Suggesting', color: 'warning' },
+        autonomous: { de: 'Autonom', en: 'Autonomous', color: 'success' }
+    };
+
+    const handleAdd = async () => {
+        if (!newRoom.name.trim()) return;
+        const result = await api.post('rooms', newRoom);
+        if (result?.id) {
+            showToast(lang === 'de' ? 'Raum erstellt' : 'Room created', 'success');
+            setShowAdd(false);
+            setNewRoom({ name: '', icon: 'mdi:door' });
+            refreshData();
+        }
+    };
+
+    const handleDelete = async (id) => {
+        const result = await api.delete(`rooms/${id}`);
+        if (result?.success) {
+            showToast(lang === 'de' ? 'Raum gelöscht' : 'Room deleted', 'success');
+            refreshData();
+        }
+    };
+
+    return (
+        <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 20 }}>
+                <p style={{ color: 'var(--text-secondary)', fontSize: 14 }}>
+                    {rooms.length} {lang === 'de' ? 'Räume' : 'Rooms'}
+                </p>
+                <button className="btn btn-primary" onClick={() => setShowAdd(true)}>
+                    <span className="mdi mdi-plus" />
+                    {lang === 'de' ? 'Raum hinzufügen' : 'Add Room'}
+                </button>
+            </div>
+
+            {rooms.length > 0 ? (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 16 }}>
+                    {rooms.map(room => (
+                        <div key={room.id} className="card">
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                                    <div className="card-icon" style={{ background: 'var(--accent-primary-dim)', color: 'var(--accent-primary)' }}>
+                                        <span className={`mdi ${room.icon?.replace('mdi:', 'mdi-') || 'mdi-door'}`} />
+                                    </div>
+                                    <div>
+                                        <div className="card-title">{room.name}</div>
+                                        <div className="card-subtitle">
+                                            {room.device_count} {lang === 'de' ? 'Geräte' : 'devices'}
+                                        </div>
+                                    </div>
+                                </div>
+                                <button className="btn btn-ghost btn-icon" onClick={() => handleDelete(room.id)}>
+                                    <span className="mdi mdi-delete-outline" style={{ fontSize: 18, color: 'var(--text-muted)' }} />
+                                </button>
+                            </div>
+
+                            {/* Learning Phases */}
+                            {room.domain_states?.length > 0 && (
+                                <div style={{ marginTop: 16 }}>
+                                    <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8 }}>
+                                        {lang === 'de' ? 'Lernphasen' : 'Learning Phases'}
+                                    </div>
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                                        {room.domain_states.map((ds, i) => {
+                                            const phase = phaseLabels[ds.learning_phase] || phaseLabels.observing;
+                                            return (
+                                                <span key={i} className={`badge badge-${phase.color}`} style={{ fontSize: 11 }}>
+                                                    <span className="badge-dot" />{phase[lang]}
+                                                </span>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Privacy */}
+                            {Object.keys(room.privacy_mode || {}).length > 0 && (
+                                <div style={{ marginTop: 12 }}>
+                                    <span className="mdi mdi-shield-lock-outline" style={{ fontSize: 14, color: 'var(--text-muted)' }} />
+                                    <span style={{ fontSize: 12, color: 'var(--text-muted)', marginLeft: 4 }}>
+                                        {lang === 'de' ? 'Datenschutz aktiv' : 'Privacy active'}
+                                    </span>
+                                </div>
+                            )}
+                        </div>
+                    ))}
+                </div>
+            ) : (
+                <div className="empty-state">
+                    <span className="mdi mdi-door-open" />
+                    <h3>{lang === 'de' ? 'Keine Räume' : 'No Rooms'}</h3>
+                    <p>{lang === 'de'
+                        ? 'Füge Räume hinzu um MindHome zu konfigurieren.'
+                        : 'Add rooms to configure MindHome.'}</p>
+                </div>
+            )}
+
+            {/* Add Room Modal */}
+            {showAdd && (
+                <Modal
+                    title={lang === 'de' ? 'Raum hinzufügen' : 'Add Room'}
+                    onClose={() => setShowAdd(false)}
+                    actions={
+                        <>
+                            <button className="btn btn-secondary" onClick={() => setShowAdd(false)}>
+                                {lang === 'de' ? 'Abbrechen' : 'Cancel'}
+                            </button>
+                            <button className="btn btn-primary" onClick={handleAdd}>
+                                {lang === 'de' ? 'Erstellen' : 'Create'}
+                            </button>
+                        </>
+                    }
+                >
+                    <div className="input-group" style={{ marginBottom: 16 }}>
+                        <label className="input-label">{lang === 'de' ? 'Name' : 'Name'}</label>
+                        <input className="input" value={newRoom.name}
+                               onChange={e => setNewRoom({ ...newRoom, name: e.target.value })}
+                               placeholder={lang === 'de' ? 'z.B. Wohnzimmer' : 'e.g. Living Room'}
+                               autoFocus />
+                    </div>
+                </Modal>
+            )}
+        </div>
+    );
+};
+
+// ================================================================
+// Users Page
+// ================================================================
+
+const UsersPage = () => {
+    const { users, lang, showToast, refreshData } = useApp();
+    const [showAdd, setShowAdd] = useState(false);
+    const [newUser, setNewUser] = useState({ name: '', role: 'user' });
+
+    const handleAdd = async () => {
+        if (!newUser.name.trim()) return;
+        const result = await api.post('users', newUser);
+        if (result?.id) {
+            showToast(lang === 'de' ? 'Person erstellt' : 'Person created', 'success');
+            setShowAdd(false);
+            setNewUser({ name: '', role: 'user' });
+            refreshData();
+        }
+    };
+
+    const handleDelete = async (id) => {
+        const result = await api.delete(`users/${id}`);
+        if (result?.success) {
+            showToast(lang === 'de' ? 'Person entfernt' : 'Person removed', 'success');
+            refreshData();
+        }
+    };
+
+    return (
+        <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 20 }}>
+                <p style={{ color: 'var(--text-secondary)', fontSize: 14 }}>
+                    {users.length} {lang === 'de' ? 'Personen' : 'People'}
+                </p>
+                <button className="btn btn-primary" onClick={() => setShowAdd(true)}>
+                    <span className="mdi mdi-account-plus" />
+                    {lang === 'de' ? 'Person hinzufügen' : 'Add Person'}
+                </button>
+            </div>
+
+            {users.length > 0 ? (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 16 }}>
+                    {users.map(user => (
+                        <div key={user.id} className="card">
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                                    <div className="card-icon" style={{
+                                        background: user.role === 'admin' ? 'var(--accent-primary-dim)' : 'var(--accent-secondary-dim)',
+                                        color: user.role === 'admin' ? 'var(--accent-primary)' : 'var(--accent-secondary)'
+                                    }}>
+                                        <span className={`mdi ${user.role === 'admin' ? 'mdi-shield-crown' : 'mdi-account'}`} />
+                                    </div>
+                                    <div>
+                                        <div className="card-title">{user.name}</div>
+                                        <div className="card-subtitle">
+                                            {user.role === 'admin'
+                                                ? (lang === 'de' ? 'Administrator' : 'Administrator')
+                                                : (lang === 'de' ? 'Benutzer' : 'User')}
+                                        </div>
+                                    </div>
+                                </div>
+                                <button className="btn btn-ghost btn-icon" onClick={() => handleDelete(user.id)}>
+                                    <span className="mdi mdi-delete-outline" style={{ fontSize: 18, color: 'var(--text-muted)' }} />
+                                </button>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            ) : (
+                <div className="empty-state">
+                    <span className="mdi mdi-account-group" />
+                    <h3>{lang === 'de' ? 'Keine Personen' : 'No People'}</h3>
+                    <p>{lang === 'de'
+                        ? 'Füge Personen hinzu die MindHome nutzen.'
+                        : 'Add people who use MindHome.'}</p>
+                </div>
+            )}
+
+            {showAdd && (
+                <Modal
+                    title={lang === 'de' ? 'Person hinzufügen' : 'Add Person'}
+                    onClose={() => setShowAdd(false)}
+                    actions={
+                        <>
+                            <button className="btn btn-secondary" onClick={() => setShowAdd(false)}>
+                                {lang === 'de' ? 'Abbrechen' : 'Cancel'}
+                            </button>
+                            <button className="btn btn-primary" onClick={handleAdd}>
+                                {lang === 'de' ? 'Erstellen' : 'Create'}
+                            </button>
+                        </>
+                    }
+                >
+                    <div className="input-group" style={{ marginBottom: 16 }}>
+                        <label className="input-label">{lang === 'de' ? 'Name' : 'Name'}</label>
+                        <input className="input" value={newUser.name}
+                               onChange={e => setNewUser({ ...newUser, name: e.target.value })}
+                               autoFocus />
+                    </div>
+                    <div className="input-group">
+                        <label className="input-label">{lang === 'de' ? 'Rolle' : 'Role'}</label>
+                        <select className="input" value={newUser.role}
+                                onChange={e => setNewUser({ ...newUser, role: e.target.value })}>
+                            <option value="user">{lang === 'de' ? 'Benutzer' : 'User'}</option>
+                            <option value="admin">{lang === 'de' ? 'Administrator' : 'Administrator'}</option>
+                        </select>
+                    </div>
+                </Modal>
+            )}
+        </div>
+    );
+};
+
+// ================================================================
+// Settings Page
+// ================================================================
+
+const SettingsPage = () => {
+    const { lang, setLang, theme, setTheme, viewMode, setViewMode, showToast } = useApp();
+
+    return (
+        <div style={{ maxWidth: 600 }}>
+            {/* Appearance */}
+            <div className="card" style={{ marginBottom: 16 }}>
+                <div className="card-title" style={{ marginBottom: 16 }}>
+                    {lang === 'de' ? 'Darstellung' : 'Appearance'}
+                </div>
+
+                <div className="input-group" style={{ marginBottom: 16 }}>
+                    <label className="input-label">{lang === 'de' ? 'Sprache' : 'Language'}</label>
+                    <select className="input" value={lang} onChange={e => setLang(e.target.value)}>
+                        <option value="de">Deutsch</option>
+                        <option value="en">English</option>
+                    </select>
+                </div>
+
+                <div className="input-group" style={{ marginBottom: 16 }}>
+                    <label className="input-label">Theme</label>
+                    <select className="input" value={theme} onChange={e => setTheme(e.target.value)}>
+                        <option value="dark">{lang === 'de' ? 'Dunkel' : 'Dark'}</option>
+                        <option value="light">{lang === 'de' ? 'Hell' : 'Light'}</option>
+                    </select>
+                </div>
+
+                <div className="input-group">
+                    <label className="input-label">{lang === 'de' ? 'Ansicht' : 'View Mode'}</label>
+                    <select className="input" value={viewMode} onChange={e => setViewMode(e.target.value)}>
+                        <option value="simple">{lang === 'de' ? 'Einfach' : 'Simple'}</option>
+                        <option value="advanced">{lang === 'de' ? 'Ausführlich' : 'Advanced'}</option>
+                    </select>
+                </div>
+            </div>
+
+            {/* System Info */}
+            <div className="card">
+                <div className="card-title" style={{ marginBottom: 16 }}>
+                    {lang === 'de' ? 'System' : 'System'}
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14 }}>
+                        <span style={{ color: 'var(--text-secondary)' }}>Version</span>
+                        <span style={{ fontFamily: 'var(--font-mono)' }}>0.1.0</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14 }}>
+                        <span style={{ color: 'var(--text-secondary)' }}>Phase</span>
+                        <span>1 – {lang === 'de' ? 'Fundament' : 'Foundation'}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// ================================================================
+// AI Log Page
+// ================================================================
+
+const LogPage = () => {
+    const { lang } = useApp();
+    const [logs, setLogs] = useState([]);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        api.get('action-log?limit=50').then(data => {
+            setLogs(data || []);
+            setLoading(false);
+        });
+    }, []);
+
+    const typeIcons = {
+        quick_action: 'mdi-lightning-bolt',
+        automation: 'mdi-robot',
+        suggestion: 'mdi-lightbulb-on',
+        anomaly: 'mdi-alert',
+        first_time: 'mdi-star-circle'
+    };
+
+    return (
+        <div>
+            {loading ? (
+                <div className="empty-state"><div className="loading-spinner" /></div>
+            ) : logs.length > 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {logs.map(log => (
+                        <div key={log.id} className="card" style={{ padding: 14, display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                            <span className={`mdi ${typeIcons[log.action_type] || 'mdi-circle-small'}`}
+                                  style={{ fontSize: 22, color: 'var(--accent-primary)', marginTop: 2 }} />
+                            <div style={{ flex: 1 }}>
+                                <div style={{ fontSize: 14, fontWeight: 500 }}>
+                                    {log.reason || log.action_type}
+                                </div>
+                                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
+                                    {new Date(log.created_at).toLocaleString(lang === 'de' ? 'de-DE' : 'en-US')}
+                                </div>
+                            </div>
+                            {log.was_undone && (
+                                <span className="badge badge-warning">{lang === 'de' ? 'Rückgängig' : 'Undone'}</span>
+                            )}
+                        </div>
+                    ))}
+                </div>
+            ) : (
+                <div className="empty-state">
+                    <span className="mdi mdi-text-box-outline" />
+                    <h3>{lang === 'de' ? 'Noch keine Einträge' : 'No Entries Yet'}</h3>
+                    <p>{lang === 'de'
+                        ? 'Hier werden alle Aktionen von MindHome protokolliert.'
+                        : 'All MindHome actions will be logged here.'}</p>
+                </div>
+            )}
+        </div>
+    );
+};
+
+// ================================================================
+// Data Privacy Page
+// ================================================================
+
+const DataPage = () => {
+    const { lang } = useApp();
+
+    return (
+        <div>
+            <div className="card" style={{ marginBottom: 16, borderColor: 'var(--success)', borderWidth: 1 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <span className="mdi mdi-shield-check" style={{ fontSize: 28, color: 'var(--success)' }} />
+                    <div>
+                        <div style={{ fontWeight: 600, fontSize: 15 }}>
+                            {lang === 'de' ? '100% Lokal' : '100% Local'}
+                        </div>
+                        <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+                            {lang === 'de'
+                                ? 'Alle Daten werden ausschließlich auf deinem Gerät gespeichert. Nichts wird in die Cloud gesendet.'
+                                : 'All data is stored exclusively on your device. Nothing is sent to the cloud.'}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div className="card">
+                <div className="card-title" style={{ marginBottom: 16 }}>
+                    {lang === 'de' ? 'Gesammelte Daten' : 'Collected Data'}
+                </div>
+                <div className="empty-state" style={{ padding: 32 }}>
+                    <span className="mdi mdi-database-outline" />
+                    <h3>{lang === 'de' ? 'Noch keine Daten' : 'No Data Yet'}</h3>
+                    <p>{lang === 'de'
+                        ? 'Sobald MindHome Daten sammelt, siehst du hier eine Übersicht.'
+                        : 'Once MindHome collects data, you will see an overview here.'}</p>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// ================================================================
+// Onboarding Wizard
+// ================================================================
+
+const OnboardingWizard = ({ onComplete }) => {
+    const [step, setStep] = useState(0);
+    const [lang, setLangLocal] = useState('de');
+    const [adminName, setAdminName] = useState('');
+    const [discovered, setDiscovered] = useState(null);
+    const [discovering, setDiscovering] = useState(false);
+
+    const steps = [
+        { id: 'welcome', icon: 'mdi-brain' },
+        { id: 'language', icon: 'mdi-translate' },
+        { id: 'admin', icon: 'mdi-shield-crown' },
+        { id: 'discover', icon: 'mdi-magnify' },
+        { id: 'privacy', icon: 'mdi-shield-lock' },
+        { id: 'done', icon: 'mdi-check-circle' },
+    ];
+
+    const handleDiscover = async () => {
+        setDiscovering(true);
+        const result = await api.get('discover');
+        setDiscovered(result);
+        setDiscovering(false);
+    };
+
+    const handleComplete = async () => {
+        // Create admin user
+        if (adminName.trim()) {
+            await api.post('users', { name: adminName, role: 'admin' });
+        }
+
+        // Import discovered devices
+        if (discovered?.domains) {
+            await api.post('discover/import', { domains: discovered.domains });
+        }
+
+        // Set language
+        await api.put('system/settings/language', { value: lang });
+
+        // Mark onboarding complete
+        await api.post('onboarding/complete');
+
+        onComplete();
+    };
+
+    const labels = {
+        de: {
+            welcome_title: 'Willkommen bei MindHome!',
+            welcome_sub: 'Dein Zuhause wird intelligent. Lass uns gemeinsam alles einrichten.',
+            lang_title: 'Sprache wählen',
+            lang_sub: 'In welcher Sprache soll MindHome kommunizieren?',
+            admin_title: 'Dein Profil',
+            admin_sub: 'Erstelle das Admin-Konto für MindHome.',
+            admin_name: 'Dein Name',
+            discover_title: 'Geräte erkennen',
+            discover_sub: 'MindHome sucht jetzt nach allen Geräten in deinem Home Assistant.',
+            discover_btn: 'Geräte suchen',
+            discover_searching: 'Suche läuft...',
+            discover_found: 'Geräte gefunden in',
+            discover_domains: 'Bereichen',
+            privacy_title: 'Datenschutz',
+            privacy_sub: 'Alle deine Daten bleiben lokal auf deinem Gerät. Nichts wird an externe Server gesendet. Du hast volle Kontrolle.',
+            privacy_note: 'Du kannst später pro Raum einstellen welche Daten erfasst werden.',
+            done_title: 'Alles bereit!',
+            done_sub: 'MindHome beginnt jetzt mit der Lernphase. Die ersten Tage beobachtet MindHome nur und sammelt Daten.',
+            start: 'Los geht\'s',
+            next: 'Weiter',
+            back: 'Zurück',
+            finish: 'MindHome starten'
+        },
+        en: {
+            welcome_title: 'Welcome to MindHome!',
+            welcome_sub: 'Your home is getting smart. Let\'s set everything up together.',
+            lang_title: 'Choose Language',
+            lang_sub: 'Which language should MindHome use?',
+            admin_title: 'Your Profile',
+            admin_sub: 'Create the admin account for MindHome.',
+            admin_name: 'Your Name',
+            discover_title: 'Discover Devices',
+            discover_sub: 'MindHome will now search for all devices in your Home Assistant.',
+            discover_btn: 'Search Devices',
+            discover_searching: 'Searching...',
+            discover_found: 'devices found in',
+            discover_domains: 'domains',
+            privacy_title: 'Privacy',
+            privacy_sub: 'All your data stays local on your device. Nothing is sent to external servers. You have full control.',
+            privacy_note: 'You can later configure per room which data is collected.',
+            done_title: 'All set!',
+            done_sub: 'MindHome now begins the learning phase. For the first days, MindHome will only observe and collect data.',
+            start: 'Let\'s go',
+            next: 'Next',
+            back: 'Back',
+            finish: 'Start MindHome'
+        }
+    };
+
+    const l = labels[lang];
+
+    return (
+        <div className="onboarding-overlay">
+            <div className="onboarding-container">
+                {/* Progress */}
+                <div className="onboarding-progress">
+                    {steps.map((s, i) => (
+                        <div key={s.id} className={`onboarding-progress-step ${
+                            i < step ? 'completed' : i === step ? 'active' : ''
+                        }`} />
+                    ))}
+                </div>
+
+                {/* Step Content */}
+                <div className="onboarding-content" key={step}>
+                    {step === 0 && (
+                        <div style={{ textAlign: 'center' }}>
+                            <div className="sidebar-logo" style={{ width: 72, height: 72, fontSize: 36, margin: '0 auto 24px', boxShadow: 'var(--shadow-glow)' }}>
+                                <span className="mdi mdi-brain" />
+                            </div>
+                            <div className="onboarding-title">{l.welcome_title}</div>
+                            <div className="onboarding-subtitle">{l.welcome_sub}</div>
+                        </div>
+                    )}
+
+                    {step === 1 && (
+                        <div>
+                            <div className="onboarding-title">{l.lang_title}</div>
+                            <div className="onboarding-subtitle">{l.lang_sub}</div>
+                            <div style={{ display: 'flex', gap: 12 }}>
+                                {[{ code: 'de', label: 'Deutsch', flag: '🇩🇪' }, { code: 'en', label: 'English', flag: '🇬🇧' }].map(opt => (
+                                    <button key={opt.code}
+                                        className={`card ${lang === opt.code ? '' : ''}`}
+                                        onClick={() => setLangLocal(opt.code)}
+                                        style={{
+                                            flex: 1, cursor: 'pointer', textAlign: 'center', padding: 20,
+                                            border: lang === opt.code ? '2px solid var(--accent-primary)' : '1px solid var(--border)',
+                                            background: lang === opt.code ? 'var(--accent-primary-dim)' : 'var(--bg-card)'
+                                        }}>
+                                        <div style={{ fontSize: 32 }}>{opt.flag}</div>
+                                        <div style={{ fontWeight: 600, marginTop: 8 }}>{opt.label}</div>
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {step === 2 && (
+                        <div>
+                            <div className="onboarding-title">{l.admin_title}</div>
+                            <div className="onboarding-subtitle">{l.admin_sub}</div>
+                            <div className="input-group">
+                                <label className="input-label">{l.admin_name}</label>
+                                <input className="input" style={{ fontSize: 16, padding: 14 }}
+                                       value={adminName}
+                                       onChange={e => setAdminName(e.target.value)}
+                                       autoFocus />
+                            </div>
+                        </div>
+                    )}
+
+                    {step === 3 && (
+                        <div>
+                            <div className="onboarding-title">{l.discover_title}</div>
+                            <div className="onboarding-subtitle">{l.discover_sub}</div>
+                            {!discovered ? (
+                                <div style={{ textAlign: 'center', padding: 24 }}>
+                                    <button className="btn btn-primary btn-lg" onClick={handleDiscover} disabled={discovering}>
+                                        {discovering ? (
+                                            <><div className="loading-spinner" style={{ width: 20, height: 20, borderWidth: 2 }} /> {l.discover_searching}</>
+                                        ) : (
+                                            <><span className="mdi mdi-magnify" /> {l.discover_btn}</>
+                                        )}
+                                    </button>
+                                </div>
+                            ) : (
+                                <div className="card" style={{ borderColor: 'var(--success)' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+                                        <span className="mdi mdi-check-circle" style={{ fontSize: 28, color: 'var(--success)' }} />
+                                        <div>
+                                            <div style={{ fontWeight: 600 }}>
+                                                {discovered.total_entities} {l.discover_found} {Object.keys(discovered.domains || {}).length} {l.discover_domains}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                                        {Object.entries(discovered.domains || {}).map(([domain, data]) => (
+                                            <span key={domain} className="badge badge-info">{domain}: {data.count}</span>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {step === 4 && (
+                        <div>
+                            <div className="onboarding-title">{l.privacy_title}</div>
+                            <div className="onboarding-subtitle">{l.privacy_sub}</div>
+                            <div className="card" style={{ borderColor: 'var(--success)' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                                    <span className="mdi mdi-shield-check" style={{ fontSize: 32, color: 'var(--success)' }} />
+                                    <div style={{ fontSize: 14, lineHeight: 1.6 }}>
+                                        {l.privacy_note}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {step === 5 && (
+                        <div style={{ textAlign: 'center' }}>
+                            <span className="mdi mdi-check-circle" style={{ fontSize: 64, color: 'var(--success)', display: 'block', marginBottom: 16 }} />
+                            <div className="onboarding-title">{l.done_title}</div>
+                            <div className="onboarding-subtitle">{l.done_sub}</div>
+                        </div>
+                    )}
+                </div>
+
+                {/* Navigation */}
+                <div className="onboarding-actions">
+                    {step > 0 ? (
+                        <button className="btn btn-secondary" onClick={() => setStep(s => s - 1)}>
+                            <span className="mdi mdi-arrow-left" /> {l.back}
+                        </button>
+                    ) : <div />}
+
+                    {step < steps.length - 1 ? (
+                        <button className="btn btn-primary" onClick={() => setStep(s => s + 1)}>
+                            {step === 0 ? l.start : l.next} <span className="mdi mdi-arrow-right" />
+                        </button>
+                    ) : (
+                        <button className="btn btn-primary btn-lg" onClick={handleComplete}>
+                            <span className="mdi mdi-rocket-launch" /> {l.finish}
+                        </button>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// ================================================================
+// Main App
+// ================================================================
+
+const App = () => {
+    const [page, setPage] = useState('dashboard');
+    const [sidebarOpen, setSidebarOpen] = useState(false);
+    const [lang, setLang] = useState('de');
+    const [theme, setTheme] = useState('dark');
+    const [viewMode, setViewMode] = useState('simple');
+    const [toast, setToast] = useState(null);
+
+    const [status, setStatus] = useState(null);
+    const [domains, setDomains] = useState([]);
+    const [devices, setDevices] = useState([]);
+    const [rooms, setRooms] = useState([]);
+    const [users, setUsers] = useState([]);
+    const [quickActions, setQuickActions] = useState([]);
+    const [onboardingDone, setOnboardingDone] = useState(null);
+    const [loading, setLoading] = useState(true);
+
+    const showToast = (message, type = 'info') => setToast({ message, type });
+
+    const refreshData = useCallback(async () => {
+        const [s, d, dev, r, u, qa] = await Promise.all([
+            api.get('system/status'),
+            api.get('domains'),
+            api.get('devices'),
+            api.get('rooms'),
+            api.get('users'),
+            api.get('quick-actions')
+        ]);
+        if (s) setStatus(s);
+        if (d) setDomains(d);
+        if (dev) setDevices(dev);
+        if (r) setRooms(r);
+        if (u) setUsers(u);
+        if (qa) setQuickActions(qa);
+    }, []);
+
+    useEffect(() => {
+        const init = async () => {
+            const s = await api.get('system/status');
+            if (s) {
+                setStatus(s);
+                setLang(s.language || 'de');
+                setTheme(s.theme || 'dark');
+                setViewMode(s.view_mode || 'simple');
+                setOnboardingDone(s.onboarding_completed);
+            } else {
+                setOnboardingDone(false);
+            }
+            await refreshData();
+            setLoading(false);
+        };
+        init();
+
+        // Refresh every 30 seconds
+        const interval = setInterval(refreshData, 30000);
+        return () => clearInterval(interval);
+    }, []);
+
+    // Apply theme
+    useEffect(() => {
+        document.documentElement.setAttribute('data-theme', theme);
+        api.put('system/settings/theme', { value: theme });
+    }, [theme]);
+
+    const toggleDomain = async (domainId) => {
+        const result = await api.post(`domains/${domainId}/toggle`);
+        if (result) {
+            setDomains(prev => prev.map(d =>
+                d.id === domainId ? { ...d, is_enabled: result.is_enabled } : d
+            ));
+        }
+    };
+
+    const executeQuickAction = async (actionId) => {
+        const result = await api.post(`quick-actions/execute/${actionId}`);
+        if (result?.success) {
+            showToast(lang === 'de' ? 'Aktion ausgeführt' : 'Action executed', 'success');
+            refreshData();
+        }
+    };
+
+    const contextValue = {
+        status, domains, devices, rooms, users, quickActions,
+        lang, setLang, theme, setTheme, viewMode, setViewMode,
+        showToast, refreshData, toggleDomain, executeQuickAction
+    };
+
+    if (loading) {
+        return (
+            <div className="loading-screen">
+                <div className="sidebar-logo" style={{ width: 56, height: 56, fontSize: 28 }}>
+                    <span className="mdi mdi-brain" />
+                </div>
+                <div style={{ fontSize: 22, fontWeight: 700 }}>MindHome</div>
+                <div className="loading-spinner" />
+            </div>
+        );
+    }
+
+    if (onboardingDone === false) {
+        return (
+            <AppContext.Provider value={contextValue}>
+                <OnboardingWizard onComplete={() => {
+                    setOnboardingDone(true);
+                    refreshData();
+                }} />
+            </AppContext.Provider>
+        );
+    }
+
+    const navItems = [
+        { section: lang === 'de' ? 'Übersicht' : 'Overview' },
+        { id: 'dashboard', icon: 'mdi-view-dashboard', label: 'Dashboard' },
+        { section: lang === 'de' ? 'Konfiguration' : 'Configuration' },
+        { id: 'domains', icon: 'mdi-puzzle', label: 'Domains' },
+        { id: 'rooms', icon: 'mdi-door', label: lang === 'de' ? 'Räume' : 'Rooms' },
+        { id: 'devices', icon: 'mdi-devices', label: lang === 'de' ? 'Geräte' : 'Devices' },
+        { id: 'users', icon: 'mdi-account-group', label: lang === 'de' ? 'Personen' : 'People' },
+        { section: 'System' },
+        { id: 'log', icon: 'mdi-text-box-outline', label: 'KI-Log' },
+        { id: 'data', icon: 'mdi-shield-lock', label: lang === 'de' ? 'Datenschutz' : 'Privacy' },
+        { id: 'settings', icon: 'mdi-cog', label: lang === 'de' ? 'Einstellungen' : 'Settings' },
+    ];
+
+    const pages = {
+        dashboard: DashboardPage,
+        domains: DomainsPage,
+        devices: DevicesPage,
+        rooms: RoomsPage,
+        users: UsersPage,
+        log: LogPage,
+        data: DataPage,
+        settings: SettingsPage,
+    };
+
+    const PageComponent = pages[page] || DashboardPage;
+    const currentNav = navItems.find(n => n.id === page);
+    const pageTitle = currentNav?.label || 'Dashboard';
+
+    return (
+        <AppContext.Provider value={contextValue}>
+            <div className="app-layout">
+                {/* Sidebar */}
+                <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
+                    <div className="sidebar-header">
+                        <div className="sidebar-brand" onClick={() => { setPage('dashboard'); setSidebarOpen(false); }}>
+                            <div className="sidebar-logo">
+                                <span className="mdi mdi-brain" />
+                            </div>
+                            <div>
+                                <div className="sidebar-title">MindHome</div>
+                                <div className="sidebar-tagline">
+                                    {lang === 'de' ? 'Dein Zuhause denkt mit' : 'Your home thinks ahead'}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <nav className="sidebar-nav">
+                        {navItems.map((item, i) => {
+                            if (item.section) {
+                                return <div key={i} className="nav-section-title">{item.section}</div>;
+                            }
+                            return (
+                                <div
+                                    key={item.id}
+                                    className={`nav-item ${page === item.id ? 'active' : ''}`}
+                                    onClick={() => { setPage(item.id); setSidebarOpen(false); }}
+                                >
+                                    <span className={`mdi ${item.icon}`} />
+                                    {item.label}
+                                </div>
+                            );
+                        })}
+                    </nav>
+
+                    <div className="sidebar-footer">
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--text-muted)' }}>
+                            <span className={`connection-dot ${status?.ha_connected ? 'connected' : 'disconnected'}`} />
+                            {status?.ha_connected ? 'HA Connected' : 'HA Disconnected'}
+                        </div>
+                    </div>
+                </aside>
+
+                {/* Mobile overlay */}
+                {sidebarOpen && (
+                    <div style={{
+                        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
+                        zIndex: 99
+                    }} onClick={() => setSidebarOpen(false)} />
+                )}
+
+                {/* Main */}
+                <main className="main-content">
+                    <header className="main-header">
+                        <div className="main-header-left">
+                            <button className="menu-toggle" onClick={() => setSidebarOpen(true)}>
+                                <span className="mdi mdi-menu" />
+                            </button>
+                            <h1 className="page-title">{pageTitle}</h1>
+                        </div>
+                        <div className="main-header-right">
+                            <button className="btn btn-ghost btn-icon"
+                                    onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')}
+                                    title={theme === 'dark' ? 'Light Mode' : 'Dark Mode'}>
+                                <span className={`mdi ${theme === 'dark' ? 'mdi-weather-sunny' : 'mdi-weather-night'}`} style={{ fontSize: 20 }} />
+                            </button>
+                            <button className="btn btn-ghost btn-icon"
+                                    onClick={() => setViewMode(v => v === 'simple' ? 'advanced' : 'simple')}
+                                    title={viewMode === 'simple' ? 'Advanced' : 'Simple'}>
+                                <span className={`mdi ${viewMode === 'simple' ? 'mdi-tune' : 'mdi-tune-variant'}`} style={{ fontSize: 20 }} />
+                            </button>
+                        </div>
+                    </header>
+
+                    <div className="main-body">
+                        <PageComponent />
+                    </div>
+                </main>
+            </div>
+
+            {/* Toast */}
+            {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+        </AppContext.Provider>
+    );
+};
+
+// ================================================================
+// Mount App
+// ================================================================
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
