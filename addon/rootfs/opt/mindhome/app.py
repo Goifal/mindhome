@@ -408,9 +408,26 @@ def api_update_device(device_id):
             device.is_controllable = data["is_controllable"]
         if "name" in data:
             device.name = data["name"]
+        if "domain_id" in data:
+            device.domain_id = data["domain_id"]
 
         session.commit()
         return jsonify({"id": device.id, "name": device.name})
+    finally:
+        session.close()
+
+
+@app.route("/api/devices/<int:device_id>", methods=["DELETE"])
+def api_delete_device(device_id):
+    """Delete a device."""
+    session = get_db()
+    try:
+        device = session.query(Device).get(device_id)
+        if not device:
+            return jsonify({"error": "Device not found"}), 404
+        session.delete(device)
+        session.commit()
+        return jsonify({"success": True})
     finally:
         session.close()
 
