@@ -363,28 +363,60 @@ const DomainsPage = () => {
 // ================================================================
 
 const DevicesPage = () => {
-    const { devices, rooms, domains, lang, showToast } = useApp();
+    const { devices, rooms, domains, lang, showToast, refreshData } = useApp();
     const [discovering, setDiscovering] = useState(false);
     const [discovered, setDiscovered] = useState(null);
+    const [selected, setSelected] = useState({});
 
     const handleDiscover = async () => {
         setDiscovering(true);
         const result = await api.get('discover');
         setDiscovered(result);
+        // Pre-select all entities
+        const sel = {};
+        Object.entries(result?.domains || {}).forEach(([domain, data]) => {
+            (data.entities || []).forEach(e => { sel[e.entity_id] = true; });
+        });
+        setSelected(sel);
         setDiscovering(false);
+    };
+
+    const toggleEntity = (entityId) => {
+        setSelected(prev => ({ ...prev, [entityId]: !prev[entityId] }));
+    };
+
+    const toggleDomain = (domainName) => {
+        const entities = discovered?.domains?.[domainName]?.entities || [];
+        const allSelected = entities.every(e => selected[e.entity_id]);
+        const newSel = { ...selected };
+        entities.forEach(e => { newSel[e.entity_id] = !allSelected; });
+        setSelected(newSel);
     };
 
     const handleImport = async () => {
         if (!discovered) return;
-        const result = await api.post('discover/import', { domains: discovered.domains });
+        const selectedIds = Object.keys(selected).filter(k => selected[k]);
+        if (selectedIds.length === 0) {
+            showToast(lang === 'de' ? 'Keine Geräte ausgewählt' : 'No devices selected', 'error');
+            return;
+        }
+        const result = await api.post('discover/import', {
+            domains: discovered.domains,
+            selected_entities: selectedIds
+        });
         if (result?.success) {
             showToast(
                 lang === 'de' ? `${result.imported} Geräte importiert` : `${result.imported} devices imported`,
                 'success'
             );
             setDiscovered(null);
+            setSelected({});
+            refreshData();
         }
     };
+
+    const selectedCount = Object.values(selected).filter(Boolean).length;
+    const totalCount = discovered ? Object.values(discovered.domains || {}).reduce((sum, d) => sum + (d.entities?.length || d.count || 0), 0) : 0;
 
     const getDomainName = (domainId) => {
         const d = domains.find(d => d.id === domainId);
@@ -410,7 +442,7 @@ const DevicesPage = () => {
                 </button>
             </div>
 
-            {/* Discovery Results */}
+            {/* Discovery Results with Checkboxes */}
             {discovered && (
                 <div className="card" style={{ marginBottom: 20, borderColor: 'var(--accent-primary)', borderWidth: 2 }}>
                     <div className="card-header">
@@ -419,26 +451,53 @@ const DevicesPage = () => {
                                 {lang === 'de' ? 'Gefundene Geräte' : 'Discovered Devices'}
                             </div>
                             <div className="card-subtitle">
-                                {discovered.total_entities} {lang === 'de' ? 'Entities in HA gefunden' : 'entities found in HA'}
+                                {selectedCount} / {totalCount} {lang === 'de' ? 'ausgewählt' : 'selected'}
                             </div>
                         </div>
                         <div style={{ display: 'flex', gap: 8 }}>
-                            <button className="btn btn-secondary" onClick={() => setDiscovered(null)}>
+                            <button className="btn btn-secondary" onClick={() => { setDiscovered(null); setSelected({}); }}>
                                 {lang === 'de' ? 'Abbrechen' : 'Cancel'}
                             </button>
-                            <button className="btn btn-primary" onClick={handleImport}>
+                            <button className="btn btn-primary" onClick={handleImport} disabled={selectedCount === 0}>
                                 <span className="mdi mdi-import" />
-                                {lang === 'de' ? 'Alle importieren' : 'Import All'}
+                                {lang === 'de' ? `${selectedCount} importieren` : `Import ${selectedCount}`}
                             </button>
                         </div>
                     </div>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                        {Object.entries(discovered.domains || {}).map(([domain, data]) => (
-                            <div key={domain} className="badge badge-info">
-                                {domain}: {data.count}
+
+                    {Object.entries(discovered.domains || {}).map(([domainName, data]) => {
+                        const entities = data.entities || [];
+                        const allSel = entities.every(e => selected[e.entity_id]);
+                        return (
+                            <div key={domainName} style={{ marginBottom: 12 }}>
+                                <div style={{
+                                    display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0',
+                                    borderBottom: '1px solid var(--border-color)', cursor: 'pointer'
+                                }} onClick={() => toggleDomain(domainName)}>
+                                    <input type="checkbox" checked={allSel} readOnly
+                                        style={{ width: 18, height: 18, accentColor: 'var(--accent-primary)' }} />
+                                    <strong>{domainName}</strong>
+                                    <span className="badge badge-info">{entities.length}</span>
+                                </div>
+                                <div style={{ paddingLeft: 26 }}>
+                                    {entities.map(entity => (
+                                        <div key={entity.entity_id} style={{
+                                            display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0',
+                                            fontSize: 13, cursor: 'pointer'
+                                        }} onClick={() => toggleEntity(entity.entity_id)}>
+                                            <input type="checkbox" checked={!!selected[entity.entity_id]} readOnly
+                                                style={{ width: 16, height: 16, accentColor: 'var(--accent-primary)' }} />
+                                            <span style={{ color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', fontSize: 11 }}>
+                                                {entity.entity_id}
+                                            </span>
+                                            <span>{entity.friendly_name}</span>
+                                            <span className="badge badge-info" style={{ fontSize: 10 }}>{entity.state}</span>
+                                        </div>
+                                    ))}
+                                </div>
                             </div>
-                        ))}
-                    </div>
+                        );
+                    })}
                 </div>
             )}
 
@@ -639,7 +698,13 @@ const RoomsPage = () => {
 const UsersPage = () => {
     const { users, lang, showToast, refreshData } = useApp();
     const [showAdd, setShowAdd] = useState(false);
-    const [newUser, setNewUser] = useState({ name: '', role: 'user' });
+    const [newUser, setNewUser] = useState({ name: '', role: 'user', ha_person_entity: '' });
+    const [haPersons, setHaPersons] = useState([]);
+    const [editingUser, setEditingUser] = useState(null);
+
+    useEffect(() => {
+        api.get('ha/persons').then(r => setHaPersons(r?.persons || []));
+    }, []);
 
     const handleAdd = async () => {
         if (!newUser.name.trim()) return;
@@ -647,7 +712,7 @@ const UsersPage = () => {
         if (result?.id) {
             showToast(lang === 'de' ? 'Person erstellt' : 'Person created', 'success');
             setShowAdd(false);
-            setNewUser({ name: '', role: 'user' });
+            setNewUser({ name: '', role: 'user', ha_person_entity: '' });
             refreshData();
         }
     };
@@ -657,6 +722,15 @@ const UsersPage = () => {
         if (result?.success) {
             showToast(lang === 'de' ? 'Person entfernt' : 'Person removed', 'success');
             refreshData();
+        }
+    };
+
+    const handleAssignPerson = async (userId, haEntity) => {
+        const result = await api.put(`users/${userId}`, { ha_person_entity: haEntity || null });
+        if (result?.id) {
+            showToast(lang === 'de' ? 'HA-Person zugewiesen' : 'HA person assigned', 'success');
+            refreshData();
+            setEditingUser(null);
         }
     };
 
@@ -673,7 +747,7 @@ const UsersPage = () => {
             </div>
 
             {users.length > 0 ? (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 16 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16 }}>
                     {users.map(user => (
                         <div key={user.id} className="card">
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -691,11 +765,22 @@ const UsersPage = () => {
                                                 ? (lang === 'de' ? 'Administrator' : 'Administrator')
                                                 : (lang === 'de' ? 'Benutzer' : 'User')}
                                         </div>
+                                        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                                            {user.ha_person_entity
+                                                ? `🔗 ${user.ha_person_entity}`
+                                                : (lang === 'de' ? '⚠️ Keine HA-Person' : '⚠️ No HA person')}
+                                        </div>
                                     </div>
                                 </div>
-                                <button className="btn btn-ghost btn-icon" onClick={() => handleDelete(user.id)}>
-                                    <span className="mdi mdi-delete-outline" style={{ fontSize: 18, color: 'var(--text-muted)' }} />
-                                </button>
+                                <div style={{ display: 'flex', gap: 4 }}>
+                                    <button className="btn btn-ghost btn-icon" onClick={() => setEditingUser(user)}
+                                        title={lang === 'de' ? 'HA-Person zuweisen' : 'Assign HA person'}>
+                                        <span className="mdi mdi-link-variant" style={{ fontSize: 18, color: 'var(--accent-primary)' }} />
+                                    </button>
+                                    <button className="btn btn-ghost btn-icon" onClick={() => handleDelete(user.id)}>
+                                        <span className="mdi mdi-delete-outline" style={{ fontSize: 18, color: 'var(--text-muted)' }} />
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     ))}
@@ -731,7 +816,7 @@ const UsersPage = () => {
                                onChange={e => setNewUser({ ...newUser, name: e.target.value })}
                                autoFocus />
                     </div>
-                    <div className="input-group">
+                    <div className="input-group" style={{ marginBottom: 16 }}>
                         <label className="input-label">{lang === 'de' ? 'Rolle' : 'Role'}</label>
                         <select className="input" value={newUser.role}
                                 onChange={e => setNewUser({ ...newUser, role: e.target.value })}>
@@ -739,15 +824,67 @@ const UsersPage = () => {
                             <option value="admin">{lang === 'de' ? 'Administrator' : 'Administrator'}</option>
                         </select>
                     </div>
+                    <div className="input-group">
+                        <label className="input-label">{lang === 'de' ? 'HA-Person verknüpfen' : 'Link HA Person'}</label>
+                        <select className="input" value={newUser.ha_person_entity}
+                                onChange={e => setNewUser({ ...newUser, ha_person_entity: e.target.value })}>
+                            <option value="">{lang === 'de' ? '— Keine —' : '— None —'}</option>
+                            {haPersons.map(p => (
+                                <option key={p.entity_id} value={p.entity_id}>
+                                    {p.name} ({p.entity_id})
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+                </Modal>
+            )}
+
+            {editingUser && (
+                <Modal
+                    title={lang === 'de' ? `HA-Person: ${editingUser.name}` : `HA Person: ${editingUser.name}`}
+                    onClose={() => setEditingUser(null)}
+                    actions={
+                        <button className="btn btn-secondary" onClick={() => setEditingUser(null)}>
+                            {lang === 'de' ? 'Schließen' : 'Close'}
+                        </button>
+                    }
+                >
+                    <p style={{ marginBottom: 16, color: 'var(--text-secondary)', fontSize: 13 }}>
+                        {lang === 'de'
+                            ? 'Wähle eine HA-Person für Anwesenheits-Tracking:'
+                            : 'Select an HA person for presence tracking:'}
+                    </p>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        <div style={{
+                            padding: '10px 14px', borderRadius: 8, cursor: 'pointer',
+                            border: !editingUser.ha_person_entity ? '2px solid var(--accent-primary)' : '1px solid var(--border-color)',
+                            background: !editingUser.ha_person_entity ? 'var(--accent-primary-dim)' : 'transparent'
+                        }} onClick={() => handleAssignPerson(editingUser.id, '')}>
+                            {lang === 'de' ? '— Keine Person —' : '— No Person —'}
+                        </div>
+                        {haPersons.map(p => (
+                            <div key={p.entity_id} style={{
+                                padding: '10px 14px', borderRadius: 8, cursor: 'pointer',
+                                border: editingUser.ha_person_entity === p.entity_id ? '2px solid var(--accent-primary)' : '1px solid var(--border-color)',
+                                background: editingUser.ha_person_entity === p.entity_id ? 'var(--accent-primary-dim)' : 'transparent',
+                                display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+                            }} onClick={() => handleAssignPerson(editingUser.id, p.entity_id)}>
+                                <div>
+                                    <strong>{p.name}</strong>
+                                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{p.entity_id}</div>
+                                </div>
+                                <span className={`badge badge-${p.state === 'home' ? 'success' : 'warning'}`}>
+                                    <span className="badge-dot" />
+                                    {p.state === 'home' ? (lang === 'de' ? 'Zuhause' : 'Home') : (lang === 'de' ? 'Weg' : 'Away')}
+                                </span>
+                            </div>
+                        ))}
+                    </div>
                 </Modal>
             )}
         </div>
     );
 };
-
-// ================================================================
-// Settings Page
-// ================================================================
 
 const SettingsPage = () => {
     const { lang, setLang, theme, setTheme, viewMode, setViewMode, showToast } = useApp();
