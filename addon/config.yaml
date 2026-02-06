@@ -1,0 +1,29 @@
+name: "MindHome"
+version: "0.1.0"
+slug: "mindhome"
+description: "KI-basierte Automatisierung – lernt deine Gewohnheiten und steuert dein Zuhause intelligent."
+url: "https://github.com/goifal/mindhome"
+arch:
+  - amd64
+  - aarch64
+  - armv7
+  - i386
+startup: "application"
+boot: "auto"
+ingress: true
+ingress_port: 5000
+ingress_entry: "/frontend"
+panel_icon: "mdi:brain"
+panel_title: "MindHome"
+homeassistant_api: true
+options:
+  language: "de"
+  log_level: "info"
+schema:
+  language: "list(de|en)"
+  log_level: "list(debug|info|warning|error)"
+map:
+  - config:rw
+  - share:rw
+  - media:ro
+image: "ghcr.io/{build_from}/mindhome-{arch}"
