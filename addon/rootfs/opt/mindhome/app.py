@@ -802,20 +802,15 @@ def api_undo_action(log_id):
 # Frontend Serving
 # ==============================================================================
 
+@app.route("/")
 @app.route("/frontend")
 @app.route("/frontend/")
 @app.route("/frontend/<path:path>")
-def serve_frontend(path="index.html"):
+def serve_frontend(path=None):
     """Serve the React frontend."""
     if path and os.path.exists(os.path.join(app.static_folder, "frontend", path)):
         return send_from_directory(os.path.join(app.static_folder, "frontend"), path)
     return send_from_directory(os.path.join(app.static_folder, "frontend"), "index.html")
-
-
-@app.route("/")
-def root_redirect():
-    """Redirect root to frontend."""
-    return redirect("/frontend/")
 
 
 # ==============================================================================
