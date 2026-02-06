@@ -33,9 +33,9 @@ bashio::log.info "Database: ${MINDHOME_DB_PATH}"
 # Initialize database if first run
 if [ ! -f "${MINDHOME_DB_PATH}" ]; then
     bashio::log.info "First run detected - initializing database..."
-    python3 /opt/mindhome/init_db.py
+    cd /opt/mindhome && python3 init_db.py
 fi
 
 # Start the MindHome application
 bashio::log.info "MindHome is ready!"
-exec python3 /opt/mindhome/app.py
+cd /opt/mindhome && exec python3 app.py
