@@ -441,37 +441,62 @@ def api_discover_devices():
 
 @app.route("/api/discover/import", methods=["POST"])
 def api_import_discovered():
-    """Import discovered devices into MindHome."""
+    """Import selected discovered devices into MindHome."""
     data = request.json
     session = get_db()
     try:
         imported_count = 0
+        selected_ids = data.get("selected_entities", [])
 
-        for domain_name, entities in data.get("domains", {}).items():
-            # Get MindHome domain
+        for domain_name, domain_data in data.get("domains", {}).items():
             domain = session.query(Domain).filter_by(name=domain_name).first()
             if not domain:
                 continue
 
-            # Enable domain
-            domain.is_enabled = True
+            # Handle both formats: list of entities or dict with count/entities
+            if isinstance(domain_data, dict):
+                entities = domain_data.get("entities", [])
+            elif isinstance(domain_data, list):
+                entities = domain_data
+            else:
+                continue
 
+            has_imported = False
             for entity_info in entities:
-                # Check if already exists
-                existing = session.query(Device).filter_by(
-                    ha_entity_id=entity_info["entity_id"]
-                ).first()
+                # Handle entity_info as string (just entity_id) or dict
+                if isinstance(entity_info, str):
+                    entity_id = entity_info
+                    friendly_name = entity_info
+                    attributes = {}
+                elif isinstance(entity_info, dict):
+                    entity_id = entity_info.get("entity_id", "")
+                    friendly_name = entity_info.get("friendly_name", entity_id)
+                    attributes = entity_info.get("attributes", {})
+                else:
+                    continue
 
-                if not existing:
-                    device = Device(
-                        ha_entity_id=entity_info["entity_id"],
-                        name=entity_info.get("friendly_name", entity_info["entity_id"]),
-                        domain_id=domain.id,
-                        room_id=entity_info.get("room_id"),
-                        device_meta=entity_info.get("attributes", {})
-                    )
-                    session.add(device)
-                    imported_count += 1
+                # Skip if not in selected list (when selection is provided)
+                if selected_ids and entity_id not in selected_ids:
+                    continue
+
+                # Skip if already exists
+                existing = session.query(Device).filter_by(ha_entity_id=entity_id).first()
+                if existing:
+                    continue
+
+                device = Device(
+                    ha_entity_id=entity_id,
+                    name=friendly_name,
+                    domain_id=domain.id,
+                    device_meta=attributes
+                )
+                session.add(device)
+                imported_count += 1
+                has_imported = True
+
+            # Enable domain if devices were imported
+            if has_imported:
+                domain.is_enabled = True
 
         session.commit()
         return jsonify({"success": True, "imported": imported_count})
@@ -484,6 +509,22 @@ def api_discover_areas():
     """Get areas (rooms) from HA."""
     areas = ha.get_areas()
     return jsonify({"areas": areas or []})
+
+
+@app.route("/api/ha/persons", methods=["GET"])
+def api_ha_persons():
+    """Get all person entities from HA for user assignment."""
+    states = ha.get_states() or []
+    persons = []
+    for s in states:
+        eid = s.get("entity_id", "")
+        if eid.startswith("person."):
+            persons.append({
+                "entity_id": eid,
+                "name": s.get("attributes", {}).get("friendly_name", eid),
+                "state": s.get("state", "unknown")
+            })
+    return jsonify({"persons": persons})
 
 
 # ==============================================================================
