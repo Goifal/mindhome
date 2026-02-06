@@ -936,59 +936,126 @@ def api_backup_import():
         return jsonify({"error": "Invalid backup file"}), 400
     session = get_db()
     try:
+        # Restore domains (update existing by name)
         for d_data in data.get("domains", []):
-            domain = session.query(Domain).filter_by(name=d_data["name"]).first()
-            if domain:
-                domain.is_enabled = d_data.get("is_enabled", False)
+            try:
+                domain = session.query(Domain).filter_by(name=d_data.get("name")).first()
+                if domain:
+                    domain.is_enabled = d_data.get("is_enabled", False)
+            except Exception as e:
+                logger.warning(f"Domain import error: {e}")
+
+        session.flush()
+
+        # Restore rooms
         room_id_map = {}
         for r_data in data.get("rooms", []):
-            existing = session.query(Room).filter_by(name=r_data["name"]).first()
-            if existing:
-                existing.icon = r_data.get("icon", "mdi:door")
-                existing.privacy_mode = r_data.get("privacy_mode", {})
-                room_id_map[r_data["id"]] = existing.id
-            else:
-                room = Room(name=r_data["name"], ha_area_id=r_data.get("ha_area_id"),
-                    icon=r_data.get("icon", "mdi:door"), privacy_mode=r_data.get("privacy_mode", {}),
-                    is_active=r_data.get("is_active", True))
-                session.add(room)
-                session.flush()
-                room_id_map[r_data["id"]] = room.id
+            try:
+                existing = session.query(Room).filter_by(name=r_data.get("name")).first()
+                if existing:
+                    existing.icon = r_data.get("icon", "mdi:door")
+                    existing.privacy_mode = r_data.get("privacy_mode") or {}
+                    room_id_map[r_data.get("id", 0)] = existing.id
+                else:
+                    room = Room(
+                        name=r_data.get("name", "Room"),
+                        ha_area_id=r_data.get("ha_area_id"),
+                        icon=r_data.get("icon", "mdi:door"),
+                        privacy_mode=r_data.get("privacy_mode") or {},
+                        is_active=r_data.get("is_active", True)
+                    )
+                    session.add(room)
+                    session.flush()
+                    room_id_map[r_data.get("id", 0)] = room.id
+            except Exception as e:
+                logger.warning(f"Room import error: {e}")
+
+        session.flush()
+
+        # Restore devices
         for dev_data in data.get("devices", []):
-            existing = session.query(Device).filter_by(ha_entity_id=dev_data["ha_entity_id"]).first()
-            new_room_id = room_id_map.get(dev_data.get("room_id"))
-            if existing:
-                existing.name = dev_data.get("name", existing.name)
-                existing.room_id = new_room_id
-                existing.domain_id = dev_data.get("domain_id", existing.domain_id)
-                existing.is_tracked = dev_data.get("is_tracked", True)
-                existing.is_controllable = dev_data.get("is_controllable", True)
-            else:
-                device = Device(ha_entity_id=dev_data["ha_entity_id"],
-                    name=dev_data.get("name", dev_data["ha_entity_id"]),
-                    domain_id=dev_data.get("domain_id", 1), room_id=new_room_id,
-                    is_tracked=dev_data.get("is_tracked", True),
-                    is_controllable=dev_data.get("is_controllable", True),
-                    device_meta=dev_data.get("device_meta", {}))
-                session.add(device)
+            try:
+                entity_id = dev_data.get("ha_entity_id")
+                if not entity_id:
+                    continue
+                existing = session.query(Device).filter_by(ha_entity_id=entity_id).first()
+                new_room_id = room_id_map.get(dev_data.get("room_id"))
+                if existing:
+                    existing.name = dev_data.get("name", existing.name)
+                    existing.room_id = new_room_id
+                    if dev_data.get("domain_id"):
+                        existing.domain_id = dev_data["domain_id"]
+                    existing.is_tracked = dev_data.get("is_tracked", True)
+                    existing.is_controllable = dev_data.get("is_controllable", True)
+                else:
+                    device = Device(
+                        ha_entity_id=entity_id,
+                        name=dev_data.get("name", entity_id),
+                        domain_id=dev_data.get("domain_id") or 1,
+                        room_id=new_room_id,
+                        is_tracked=dev_data.get("is_tracked", True),
+                        is_controllable=dev_data.get("is_controllable", True),
+                        device_meta=dev_data.get("device_meta") or {}
+                    )
+                    session.add(device)
+            except Exception as e:
+                logger.warning(f"Device import error for {dev_data.get('ha_entity_id')}: {e}")
+
+        session.flush()
+
+        # Restore users
         for u_data in data.get("users", []):
-            existing = session.query(User).filter_by(name=u_data["name"]).first()
-            if existing:
-                existing.ha_person_entity = u_data.get("ha_person_entity")
-                existing.role = u_data.get("role", "user")
-            else:
-                user = User(name=u_data["name"], ha_person_entity=u_data.get("ha_person_entity"),
-                    role=u_data.get("role", "user"), language=u_data.get("language", "de"))
-                session.add(user)
-        for s_data in data.get("settings", []):
-            set_setting(s_data["key"], s_data["value"])
+            try:
+                uname = u_data.get("name")
+                if not uname:
+                    continue
+                existing = session.query(User).filter_by(name=uname).first()
+                # Convert role string to enum
+                role_str = u_data.get("role", "user")
+                try:
+                    role_enum = UserRole(role_str) if isinstance(role_str, str) else role_str
+                except (ValueError, KeyError):
+                    role_enum = UserRole.USER
+
+                if existing:
+                    existing.ha_person_entity = u_data.get("ha_person_entity")
+                    existing.role = role_enum
+                else:
+                    user = User(
+                        name=uname,
+                        ha_person_entity=u_data.get("ha_person_entity"),
+                        role=role_enum,
+                        language=u_data.get("language", "de")
+                    )
+                    session.add(user)
+            except Exception as e:
+                logger.warning(f"User import error for {u_data.get('name')}: {e}")
+
         session.commit()
+
+        # Restore settings (each uses own session via set_setting)
+        for s_data in data.get("settings", []):
+            try:
+                if s_data.get("key"):
+                    set_setting(s_data["key"], s_data.get("value", ""))
+            except Exception as e:
+                logger.warning(f"Setting import error: {e}")
+
+        # Mark onboarding complete
         set_setting("onboarding_completed", "true")
+
+        logger.info(f"Backup imported: {len(data.get('rooms',[]))} rooms, {len(data.get('devices',[]))} devices, {len(data.get('users',[]))} users")
         return jsonify({"success": True, "imported": {
-            "rooms": len(data.get("rooms", [])), "devices": len(data.get("devices", [])),
-            "users": len(data.get("users", []))}})
+            "rooms": len(data.get("rooms", [])),
+            "devices": len(data.get("devices", [])),
+            "users": len(data.get("users", []))
+        }})
     except Exception as e:
-        session.rollback()
+        try:
+            session.rollback()
+        except:
+            pass
+        logger.error(f"Backup import failed: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
     finally:
         session.close()
