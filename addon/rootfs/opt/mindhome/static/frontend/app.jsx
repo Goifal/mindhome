@@ -373,6 +373,7 @@ const DevicesPage = () => {
     const [discovered, setDiscovered] = useState(null);
     const [selected, setSelected] = useState({});
     const [editDevice, setEditDevice] = useState(null);
+    const [search, setSearch] = useState('');
 
     const handleDiscover = async () => {
         setDiscovering(true);
@@ -537,7 +538,13 @@ const DevicesPage = () => {
 
             {/* Device Table */}
             {devices.length > 0 ? (
-                <div className="table-wrap">
+                <div>
+                    <div style={{ marginBottom: 12 }}>
+                        <input className="input" placeholder={lang === 'de' ? '🔍 Geräte suchen...' : '🔍 Search devices...'}
+                            value={search} onChange={e => setSearch(e.target.value)}
+                            style={{ maxWidth: 400 }} />
+                    </div>
+                    <div className="table-wrap">
                     <table>
                         <thead>
                             <tr>
@@ -549,7 +556,14 @@ const DevicesPage = () => {
                             </tr>
                         </thead>
                         <tbody>
-                            {devices.map(device => (
+                            {devices.filter(d => {
+                                if (!search) return true;
+                                const s = search.toLowerCase();
+                                return d.ha_entity_id?.toLowerCase().includes(s)
+                                    || d.name?.toLowerCase().includes(s)
+                                    || getDomainName(d.domain_id)?.toLowerCase().includes(s)
+                                    || getRoomName(d.room_id)?.toLowerCase().includes(s);
+                            }).map(device => (
                                 <tr key={device.id}>
                                     <td style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>
                                         {device.ha_entity_id}
@@ -573,6 +587,7 @@ const DevicesPage = () => {
                             ))}
                         </tbody>
                     </table>
+                    </div>
                 </div>
             ) : (
                 <div className="empty-state">
@@ -1540,6 +1555,7 @@ const App = () => {
     const [quickActions, setQuickActions] = useState([]);
     const [onboardingDone, setOnboardingDone] = useState(null);
     const [loading, setLoading] = useState(true);
+    const [settingsLoaded, setSettingsLoaded] = useState(false);
 
     const showToast = (message, type = 'info') => setToast({ message, type });
 
@@ -1574,6 +1590,8 @@ const App = () => {
             }
             await refreshData();
             setLoading(false);
+            // Mark settings as loaded so useEffects don't overwrite on first render
+            setTimeout(() => setSettingsLoaded(true), 500);
         };
         init();
 
@@ -1585,18 +1603,18 @@ const App = () => {
     // Apply theme
     useEffect(() => {
         document.documentElement.setAttribute('data-theme', theme);
-        api.put('system/settings/theme', { value: theme });
-    }, [theme]);
+        if (settingsLoaded) api.put('system/settings/theme', { value: theme });
+    }, [theme, settingsLoaded]);
 
     // Save viewMode
     useEffect(() => {
-        api.put('system/settings/view_mode', { value: viewMode });
-    }, [viewMode]);
+        if (settingsLoaded) api.put('system/settings/view_mode', { value: viewMode });
+    }, [viewMode, settingsLoaded]);
 
     // Save language
     useEffect(() => {
-        api.put('system/settings/language', { value: lang });
-    }, [lang]);
+        if (settingsLoaded) api.put('system/settings/language', { value: lang });
+    }, [lang, settingsLoaded]);
 
     const toggleDomain = async (domainId) => {
         const result = await api.post(`domains/${domainId}/toggle`);
