@@ -7,7 +7,7 @@ import os
 import sys
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from functools import wraps
 
 from flask import Flask, request, jsonify, send_from_directory, redirect
@@ -64,7 +64,18 @@ def on_state_changed(event):
     event_data = event.get("data", {})
     entity_id = event_data.get("entity_id", "")
     new_state = event_data.get("new_state", {})
+    old_state = event_data.get("old_state", {})
     logger.debug(f"State changed: {entity_id} -> {new_state.get('state')}")
+
+    # Log tracked device state changes to DB
+    try:
+        log_state_change(
+            entity_id,
+            new_state.get("state", "unknown"),
+            old_state.get("state", "unknown") if old_state else "unknown"
+        )
+    except Exception as e:
+        logger.debug(f"State log error: {e}")
 
 
 # ==============================================================================
@@ -874,6 +885,157 @@ def serve_frontend(path=None):
 # ==============================================================================
 # Startup
 # ==============================================================================
+
+@app.route("/api/backup/export", methods=["GET"])
+def api_backup_export():
+    """Export all MindHome configuration as JSON."""
+    session = get_db()
+    try:
+        backup = {
+            "version": "0.1.0",
+            "exported_at": datetime.now(timezone.utc).isoformat(),
+            "rooms": [], "devices": [], "users": [], "domains": [],
+            "room_domain_states": [], "settings": [], "quick_actions": [],
+            "action_log": [], "data_collections": [], "user_preferences": []
+        }
+        for r in session.query(Room).all():
+            backup["rooms"].append({"id": r.id, "name": r.name, "ha_area_id": r.ha_area_id,
+                "icon": r.icon, "privacy_mode": r.privacy_mode, "is_active": r.is_active})
+        for d in session.query(Device).all():
+            backup["devices"].append({"id": d.id, "ha_entity_id": d.ha_entity_id, "name": d.name,
+                "domain_id": d.domain_id, "room_id": d.room_id,
+                "is_tracked": d.is_tracked, "is_controllable": d.is_controllable, "device_meta": d.device_meta})
+        for u in session.query(User).all():
+            backup["users"].append({"id": u.id, "name": u.name, "ha_person_entity": u.ha_person_entity,
+                "role": u.role.value if u.role else "user", "language": u.language})
+        for d in session.query(Domain).all():
+            backup["domains"].append({"id": d.id, "name": d.name, "is_enabled": d.is_enabled})
+        for rds in session.query(RoomDomainState).all():
+            backup["room_domain_states"].append({"room_id": rds.room_id, "domain_id": rds.domain_id,
+                "learning_phase": rds.learning_phase.value if rds.learning_phase else "observing",
+                "confidence_score": rds.confidence_score, "is_paused": rds.is_paused})
+        for s in session.query(SystemSetting).all():
+            backup["settings"].append({"key": s.key, "value": s.value})
+        for log in session.query(ActionLog).order_by(ActionLog.created_at.desc()).limit(200).all():
+            backup["action_log"].append({"action_type": log.action_type, "domain_id": log.domain_id,
+                "room_id": log.room_id, "action_data": log.action_data, "reason": log.reason,
+                "was_undone": log.was_undone, "created_at": log.created_at.isoformat()})
+        for dc in session.query(DataCollection).order_by(DataCollection.collected_at.desc()).limit(500).all():
+            backup["data_collections"].append({"domain_id": dc.domain_id, "device_id": dc.device_id,
+                "data_type": dc.data_type, "data_value": dc.data_value, "collected_at": dc.collected_at.isoformat()})
+        for up in session.query(UserPreference).all():
+            backup["user_preferences"].append({"user_id": up.user_id, "room_id": up.room_id,
+                "preference_key": up.preference_key, "preference_value": up.preference_value})
+        return jsonify(backup)
+    finally:
+        session.close()
+
+
+@app.route("/api/backup/import", methods=["POST"])
+def api_backup_import():
+    """Import MindHome configuration from JSON backup."""
+    data = request.json
+    if not data or "version" not in data:
+        return jsonify({"error": "Invalid backup file"}), 400
+    session = get_db()
+    try:
+        for d_data in data.get("domains", []):
+            domain = session.query(Domain).filter_by(name=d_data["name"]).first()
+            if domain:
+                domain.is_enabled = d_data.get("is_enabled", False)
+        room_id_map = {}
+        for r_data in data.get("rooms", []):
+            existing = session.query(Room).filter_by(name=r_data["name"]).first()
+            if existing:
+                existing.icon = r_data.get("icon", "mdi:door")
+                existing.privacy_mode = r_data.get("privacy_mode", {})
+                room_id_map[r_data["id"]] = existing.id
+            else:
+                room = Room(name=r_data["name"], ha_area_id=r_data.get("ha_area_id"),
+                    icon=r_data.get("icon", "mdi:door"), privacy_mode=r_data.get("privacy_mode", {}),
+                    is_active=r_data.get("is_active", True))
+                session.add(room)
+                session.flush()
+                room_id_map[r_data["id"]] = room.id
+        for dev_data in data.get("devices", []):
+            existing = session.query(Device).filter_by(ha_entity_id=dev_data["ha_entity_id"]).first()
+            new_room_id = room_id_map.get(dev_data.get("room_id"))
+            if existing:
+                existing.name = dev_data.get("name", existing.name)
+                existing.room_id = new_room_id
+                existing.domain_id = dev_data.get("domain_id", existing.domain_id)
+                existing.is_tracked = dev_data.get("is_tracked", True)
+                existing.is_controllable = dev_data.get("is_controllable", True)
+            else:
+                device = Device(ha_entity_id=dev_data["ha_entity_id"],
+                    name=dev_data.get("name", dev_data["ha_entity_id"]),
+                    domain_id=dev_data.get("domain_id", 1), room_id=new_room_id,
+                    is_tracked=dev_data.get("is_tracked", True),
+                    is_controllable=dev_data.get("is_controllable", True),
+                    device_meta=dev_data.get("device_meta", {}))
+                session.add(device)
+        for u_data in data.get("users", []):
+            existing = session.query(User).filter_by(name=u_data["name"]).first()
+            if existing:
+                existing.ha_person_entity = u_data.get("ha_person_entity")
+                existing.role = u_data.get("role", "user")
+            else:
+                user = User(name=u_data["name"], ha_person_entity=u_data.get("ha_person_entity"),
+                    role=u_data.get("role", "user"), language=u_data.get("language", "de"))
+                session.add(user)
+        for s_data in data.get("settings", []):
+            set_setting(s_data["key"], s_data["value"])
+        session.commit()
+        set_setting("onboarding_completed", "true")
+        return jsonify({"success": True, "imported": {
+            "rooms": len(data.get("rooms", [])), "devices": len(data.get("devices", [])),
+            "users": len(data.get("users", []))}})
+    except Exception as e:
+        session.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        session.close()
+
+
+@app.route("/api/data-collections", methods=["GET"])
+def api_get_data_collections():
+    """Get recent data collections for the privacy page."""
+    session = get_db()
+    try:
+        limit = request.args.get("limit", 100, type=int)
+        collections = session.query(DataCollection).order_by(
+            DataCollection.collected_at.desc()).limit(limit).all()
+        return jsonify([{"id": dc.id, "domain_id": dc.domain_id, "device_id": dc.device_id,
+            "data_type": dc.data_type, "data_value": dc.data_value,
+            "collected_at": dc.collected_at.isoformat()} for dc in collections])
+    finally:
+        session.close()
+
+
+def log_state_change(entity_id, new_state, old_state):
+    """Log state changes to data_collections and action_log."""
+    session = get_db()
+    try:
+        device = session.query(Device).filter_by(ha_entity_id=entity_id).first()
+        if not device or not device.is_tracked:
+            return
+        dc = DataCollection(domain_id=device.domain_id, device_id=device.id,
+            data_type="state_change",
+            data_value={"entity_id": entity_id, "old_state": old_state, "new_state": new_state,
+                "timestamp": datetime.now(timezone.utc).isoformat()})
+        session.add(dc)
+        action_log = ActionLog(action_type="observation", domain_id=device.domain_id,
+            room_id=device.room_id,
+            action_data={"entity_id": entity_id, "old_state": old_state, "new_state": new_state},
+            reason=f"{device.name}: {old_state} → {new_state}")
+        session.add(action_log)
+        session.commit()
+    except Exception as e:
+        logger.debug(f"Data collection error: {e}")
+        session.rollback()
+    finally:
+        session.close()
+
 
 def start_app():
     """Initialize and start MindHome."""
