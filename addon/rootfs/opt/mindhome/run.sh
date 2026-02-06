@@ -25,6 +25,15 @@ export MINDHOME_MODELS_PATH="/data/mindhome/models"
 export MINDHOME_LOGS_PATH="/data/mindhome/logs"
 export MINDHOME_BACKUPS_PATH="/data/mindhome/backups"
 
+# ============================================================
+# CREATE DATA DIRECTORIES (critical - /data is a mounted volume)
+# These do NOT exist after a fresh install!
+# ============================================================
+mkdir -p /data/mindhome/db
+mkdir -p /data/mindhome/models
+mkdir -p /data/mindhome/logs
+mkdir -p /data/mindhome/backups
+
 bashio::log.info "Language: ${MINDHOME_LANGUAGE}"
 bashio::log.info "Log Level: ${MINDHOME_LOG_LEVEL}"
 bashio::log.info "Ingress Path: ${INGRESS_PATH}"
@@ -34,6 +43,11 @@ bashio::log.info "Database: ${MINDHOME_DB_PATH}"
 if [ ! -f "${MINDHOME_DB_PATH}" ]; then
     bashio::log.info "First run detected - initializing database..."
     cd /opt/mindhome && python3 init_db.py
+    if [ $? -ne 0 ]; then
+        bashio::log.error "Database initialization failed!"
+        exit 1
+    fi
+    bashio::log.info "Database initialized successfully."
 fi
 
 # Start the MindHome application
