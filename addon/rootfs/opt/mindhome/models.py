@@ -335,6 +335,12 @@ def get_engine(db_path=None):
     """Create database engine."""
     if db_path is None:
         db_path = os.environ.get("MINDHOME_DB_PATH", "/data/mindhome/db/mindhome.db")
+
+    # Ensure the directory exists (critical for first run on mounted volumes)
+    db_dir = os.path.dirname(db_path)
+    if db_dir:
+        os.makedirs(db_dir, exist_ok=True)
+
     return create_engine(f"sqlite:///{db_path}", echo=False)
 
 
