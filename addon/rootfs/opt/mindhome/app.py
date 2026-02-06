@@ -1,1138 +1,1844 @@
-"""
-MindHome - Main Application
-Flask backend serving the API and frontend.
-"""
-
-import os
-import sys
-import json
-import logging
-from datetime import datetime, timezone
-from functools import wraps
-
-from flask import Flask, request, jsonify, send_from_directory, redirect
-from flask_cors import CORS
-
-from models import (
-    get_engine, get_session, init_database,
-    User, UserRole, Room, Domain, Device, RoomDomainState,
-    LearningPhase, QuickAction, SystemSetting, UserPreference,
-    NotificationSetting, NotificationType, ActionLog,
-    DataCollection, OfflineActionQueue
-)
-from ha_connection import HAConnection
-from domains import DomainManager
-
-# ==============================================================================
-# App Configuration
-# ==============================================================================
-
-app = Flask(__name__, static_folder="static", template_folder="templates")
-CORS(app)
-
-# Logging
-log_level = os.environ.get("MINDHOME_LOG_LEVEL", "info").upper()
-logging.basicConfig(
-    level=getattr(logging, log_level, logging.INFO),
-    format="%(asctime)s [%(name)s] %(levelname)s: %(message)s"
-)
-logger = logging.getLogger("mindhome")
-
-# Ingress path
-INGRESS_PATH = os.environ.get("INGRESS_PATH", "")
-
-# Database
-engine = get_engine()
-init_database(engine)
-
-# Home Assistant connection
-ha = HAConnection()
-
-# Domain Manager
-domain_manager = DomainManager(ha, lambda: get_session(engine))
-
-
-# ==============================================================================
-# Event Handlers
-# ==============================================================================
-
-def on_state_changed(event):
-    """Handle real-time state change events from HA."""
-    # Route to domain plugins
-    domain_manager.on_state_change(event)
-
-    event_data = event.get("data", {}) if event else {}
-    entity_id = event_data.get("entity_id", "")
-    new_state = event_data.get("new_state") or {}
-    old_state = event_data.get("old_state") or {}
-    logger.debug(f"State changed: {entity_id} -> {new_state.get('state', '?')}")
-
-    # Log tracked device state changes to DB
-    try:
-        new_val = new_state.get("state", "unknown") if isinstance(new_state, dict) else "unknown"
-        old_val = old_state.get("state", "unknown") if isinstance(old_state, dict) else "unknown"
-        if entity_id and new_val != old_val:
-            log_state_change(entity_id, new_val, old_val)
-    except Exception as e:
-        logger.debug(f"State log error: {e}")
-
-
-# ==============================================================================
-# Helpers
-# ==============================================================================
-
-def get_db():
-    """Get a new database session."""
-    return get_session(engine)
-
-
-def get_setting(key, default=None):
-    """Get a system setting value."""
-    session = get_db()
-    try:
-        setting = session.query(SystemSetting).filter_by(key=key).first()
-        return setting.value if setting else default
-    finally:
-        session.close()
-
-
-def set_setting(key, value):
-    """Set a system setting value."""
-    session = get_db()
-    try:
-        setting = session.query(SystemSetting).filter_by(key=key).first()
-        if setting:
-            setting.value = str(value)
-        else:
-            setting = SystemSetting(key=key, value=str(value))
-            session.add(setting)
-        session.commit()
-    finally:
-        session.close()
-
-
-def get_language():
-    """Get current language setting."""
-    return os.environ.get("MINDHOME_LANGUAGE", "de")
-
-
-def localize(de_text, en_text):
-    """Return text in current language."""
-    return de_text if get_language() == "de" else en_text
-
-
-# ==============================================================================
-# API Routes - System
-# ==============================================================================
-
-@app.route("/api/system/status", methods=["GET"])
-def api_system_status():
-    """Get system status overview."""
-    session = get_db()
-    try:
-        return jsonify({
-            "status": "running",
-            "ha_connected": ha.is_connected(),
-            "offline_queue_size": ha.get_offline_queue_size(),
-            "system_mode": get_setting("system_mode", "normal"),
-            "onboarding_completed": get_setting("onboarding_completed", "false") == "true",
-            "language": get_language(),
-            "theme": get_setting("theme", "dark"),
-            "view_mode": get_setting("view_mode", "simple"),
-            "version": "0.1.0",
-            "timestamp": datetime.utcnow().isoformat()
-        })
-    finally:
-        session.close()
-
-
-@app.route("/api/system/settings", methods=["GET"])
-def api_get_settings():
-    """Get all system settings."""
-    session = get_db()
-    try:
-        settings = session.query(SystemSetting).all()
-        return jsonify([{
-            "key": s.key,
-            "value": s.value,
-            "description": s.description_de if get_language() == "de" else s.description_en
-        } for s in settings])
-    finally:
-        session.close()
-
-
-@app.route("/api/system/settings/<key>", methods=["PUT"])
-def api_update_setting(key):
-    """Update a system setting."""
-    data = request.json
-    set_setting(key, data.get("value"))
-    return jsonify({"success": True, "key": key, "value": data.get("value")})
-
-
-@app.route("/api/system/emergency-stop", methods=["POST"])
-def api_emergency_stop():
-    """Activate emergency stop - pause all automations."""
-    set_setting("system_mode", "emergency_stop")
-
-    session = get_db()
-    try:
-        # Pause all room domain states
-        states = session.query(RoomDomainState).all()
-        for state in states:
-            state.is_paused = True
-        session.commit()
-
-        logger.warning("EMERGENCY STOP ACTIVATED - All automations paused")
-        return jsonify({"success": True, "mode": "emergency_stop"})
-    finally:
-        session.close()
-
-
-@app.route("/api/system/resume", methods=["POST"])
-def api_resume():
-    """Resume from emergency stop."""
-    set_setting("system_mode", "normal")
-
-    session = get_db()
-    try:
-        states = session.query(RoomDomainState).all()
-        for state in states:
-            state.is_paused = False
-        session.commit()
-
-        logger.info("System resumed from emergency stop")
-        return jsonify({"success": True, "mode": "normal"})
-    finally:
-        session.close()
-
-
-# ==============================================================================
-# API Routes - Domains
-# ==============================================================================
-
-@app.route("/api/domains", methods=["GET"])
-def api_get_domains():
-    """Get all available domains."""
-    session = get_db()
-    try:
-        domains = session.query(Domain).all()
-        lang = get_language()
-        return jsonify([{
-            "id": d.id,
-            "name": d.name,
-            "display_name": d.display_name_de if lang == "de" else d.display_name_en,
-            "icon": d.icon,
-            "is_enabled": d.is_enabled,
-            "description": d.description_de if lang == "de" else d.description_en
-        } for d in domains])
-    finally:
-        session.close()
-
-
-@app.route("/api/domains/<int:domain_id>/toggle", methods=["POST"])
-def api_toggle_domain(domain_id):
-    """Enable or disable a domain."""
-    session = get_db()
-    try:
-        domain = session.query(Domain).get(domain_id)
-        if not domain:
-            return jsonify({"error": "Domain not found"}), 404
-        domain.is_enabled = not domain.is_enabled
-        session.commit()
-
-        # Start/stop the domain plugin
-        if domain.is_enabled:
-            domain_manager.start_domain(domain.name)
-        else:
-            domain_manager.stop_domain(domain.name)
-
-        return jsonify({"id": domain.id, "is_enabled": domain.is_enabled})
-    finally:
-        session.close()
-
-
-@app.route("/api/domains/status", methods=["GET"])
-def api_domain_status():
-    """Get live status from all active domain plugins."""
-    return jsonify(domain_manager.get_all_status())
-
-
-@app.route("/api/domains/<domain_name>/features", methods=["GET"])
-def api_domain_features(domain_name):
-    """Get trackable features for a domain (for privacy settings)."""
-    features = domain_manager.get_trackable_features(domain_name)
-    return jsonify({"domain": domain_name, "features": features})
-
-
-# ==============================================================================
-# API Routes - Rooms
-# ==============================================================================
-
-@app.route("/api/rooms", methods=["GET"])
-def api_get_rooms():
-    """Get all rooms."""
-    session = get_db()
-    try:
-        rooms = session.query(Room).filter_by(is_active=True).all()
-        return jsonify([{
-            "id": r.id,
-            "name": r.name,
-            "ha_area_id": r.ha_area_id,
-            "icon": r.icon,
-            "privacy_mode": r.privacy_mode,
-            "device_count": len(r.devices),
-            "domain_states": [{
-                "domain_id": ds.domain_id,
-                "learning_phase": ds.learning_phase.value,
-                "confidence_score": ds.confidence_score,
-                "is_paused": ds.is_paused
-            } for ds in r.domain_states]
-        } for r in rooms])
-    finally:
-        session.close()
-
-
-@app.route("/api/rooms", methods=["POST"])
-def api_create_room():
-    """Create a new room."""
-    data = request.json
-    session = get_db()
-    try:
-        room = Room(
-            name=data["name"],
-            ha_area_id=data.get("ha_area_id"),
-            icon=data.get("icon", "mdi:door"),
-            privacy_mode=data.get("privacy_mode", {})
-        )
-        session.add(room)
-        session.commit()
-
-        # Create domain states for all enabled domains
-        enabled_domains = session.query(Domain).filter_by(is_enabled=True).all()
-        for domain in enabled_domains:
-            state = RoomDomainState(
-                room_id=room.id,
-                domain_id=domain.id,
-                learning_phase=LearningPhase.OBSERVING
-            )
-            session.add(state)
-        session.commit()
-
-        return jsonify({"id": room.id, "name": room.name}), 201
-    finally:
-        session.close()
-
-
-@app.route("/api/rooms/<int:room_id>", methods=["PUT"])
-def api_update_room(room_id):
-    """Update a room."""
-    data = request.json
-    session = get_db()
-    try:
-        room = session.query(Room).get(room_id)
-        if not room:
-            return jsonify({"error": "Room not found"}), 404
-
-        if "name" in data:
-            room.name = data["name"]
-        if "icon" in data:
-            room.icon = data["icon"]
-        if "privacy_mode" in data:
-            room.privacy_mode = data["privacy_mode"]
-
-        session.commit()
-        return jsonify({"id": room.id, "name": room.name})
-    finally:
-        session.close()
-
-
-@app.route("/api/rooms/<int:room_id>", methods=["DELETE"])
-def api_delete_room(room_id):
-    """Delete a room."""
-    session = get_db()
-    try:
-        room = session.query(Room).get(room_id)
-        if not room:
-            return jsonify({"error": "Room not found"}), 404
-        room.is_active = False  # Soft delete
-        session.commit()
-        return jsonify({"success": True})
-    finally:
-        session.close()
-
-
-@app.route("/api/rooms/<int:room_id>/privacy", methods=["PUT"])
-def api_update_room_privacy(room_id):
-    """Update privacy mode for a room."""
-    data = request.json
-    session = get_db()
-    try:
-        room = session.query(Room).get(room_id)
-        if not room:
-            return jsonify({"error": "Room not found"}), 404
-        room.privacy_mode = data.get("privacy_mode", {})
-        session.commit()
-        return jsonify({"id": room.id, "privacy_mode": room.privacy_mode})
-    finally:
-        session.close()
-
-
-# ==============================================================================
-# API Routes - Devices
-# ==============================================================================
-
-@app.route("/api/devices", methods=["GET"])
-def api_get_devices():
-    """Get all tracked devices."""
-    session = get_db()
-    try:
-        devices = session.query(Device).all()
-        return jsonify([{
-            "id": d.id,
-            "ha_entity_id": d.ha_entity_id,
-            "name": d.name,
-            "domain_id": d.domain_id,
-            "room_id": d.room_id,
-            "is_tracked": d.is_tracked,
-            "is_controllable": d.is_controllable
-        } for d in devices])
-    finally:
-        session.close()
-
-
-@app.route("/api/devices/<int:device_id>", methods=["PUT"])
-def api_update_device(device_id):
-    """Update device settings."""
-    data = request.json
-    session = get_db()
-    try:
-        device = session.query(Device).get(device_id)
-        if not device:
-            return jsonify({"error": "Device not found"}), 404
-
-        if "room_id" in data:
-            device.room_id = data["room_id"]
-        if "is_tracked" in data:
-            device.is_tracked = data["is_tracked"]
-        if "is_controllable" in data:
-            device.is_controllable = data["is_controllable"]
-        if "name" in data:
-            device.name = data["name"]
-        if "domain_id" in data:
-            device.domain_id = data["domain_id"]
-
-        session.commit()
-        return jsonify({"id": device.id, "name": device.name})
-    finally:
-        session.close()
-
-
-@app.route("/api/devices/<int:device_id>", methods=["DELETE"])
-def api_delete_device(device_id):
-    """Delete a device."""
-    session = get_db()
-    try:
-        device = session.query(Device).get(device_id)
-        if not device:
-            return jsonify({"error": "Device not found"}), 404
-        session.delete(device)
-        session.commit()
-        return jsonify({"success": True})
-    finally:
-        session.close()
-
-
-# ==============================================================================
-# API Routes - Discovery (Onboarding)
-# ==============================================================================
-
-@app.route("/api/discover", methods=["GET"])
-def api_discover_devices():
-    """Discover all HA devices grouped by MindHome domain."""
-    discovered = ha.discover_devices()
-
-    # Count per domain
-    summary = {}
-    for domain_name, entities in discovered.items():
-        summary[domain_name] = {
-            "count": len(entities),
-            "entities": entities
+// ================================================================
+// MindHome - React Frontend Application
+// ================================================================
+
+const { useState, useEffect, useCallback, createContext, useContext, useRef } = React;
+
+// ================================================================
+// API Helper
+// ================================================================
+
+const getBasePath = () => {
+    const path = window.location.pathname;
+    const ingressMatch = path.match(/\/api\/hassio_ingress\/[^/]+/);
+    if (ingressMatch) return ingressMatch[0];
+    return '';
+};
+
+const API_BASE = getBasePath();
+
+const api = {
+    async get(endpoint) {
+        try {
+            const res = await fetch(`${API_BASE}/api/${endpoint}`);
+            if (!res.ok) throw new Error(`API Error: ${res.status}`);
+            return await res.json();
+        } catch (e) {
+            console.error(`GET ${endpoint} failed:`, e);
+            return null;
+        }
+    },
+    async post(endpoint, data = {}) {
+        try {
+            const res = await fetch(`${API_BASE}/api/${endpoint}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+            if (!res.ok) throw new Error(`API Error: ${res.status}`);
+            return await res.json();
+        } catch (e) {
+            console.error(`POST ${endpoint} failed:`, e);
+            return null;
+        }
+    },
+    async put(endpoint, data = {}) {
+        try {
+            const res = await fetch(`${API_BASE}/api/${endpoint}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+            if (!res.ok) throw new Error(`API Error: ${res.status}`);
+            return await res.json();
+        } catch (e) {
+            console.error(`PUT ${endpoint} failed:`, e);
+            return null;
+        }
+    },
+    async delete(endpoint) {
+        try {
+            const res = await fetch(`${API_BASE}/api/${endpoint}`, { method: 'DELETE' });
+            if (!res.ok) throw new Error(`API Error: ${res.status}`);
+            return await res.json();
+        } catch (e) {
+            console.error(`DELETE ${endpoint} failed:`, e);
+            return null;
+        }
+    }
+};
+
+// ================================================================
+// Translations Context
+// ================================================================
+
+const translations = { de: null, en: null };
+
+const loadTranslations = async (lang) => {
+    if (translations[lang]) return translations[lang];
+    try {
+        const res = await fetch(`${API_BASE}/api/system/translations/${lang}`);
+        if (res.ok) {
+            translations[lang] = await res.json();
+            return translations[lang];
+        }
+    } catch (e) {}
+    // Fallback inline translations
+    return null;
+};
+
+const t = (translations, path) => {
+    if (!translations) return path;
+    const keys = path.split('.');
+    let val = translations;
+    for (const key of keys) {
+        val = val?.[key];
+        if (val === undefined) return path;
+    }
+    return val;
+};
+
+// ================================================================
+// App Context
+// ================================================================
+
+const AppContext = createContext();
+
+const useApp = () => useContext(AppContext);
+
+// ================================================================
+// Toast Notifications
+// ================================================================
+
+const Toast = ({ message, type, onClose }) => {
+    useEffect(() => {
+        const timer = setTimeout(onClose, 4000);
+        return () => clearTimeout(timer);
+    }, []);
+
+    const icons = {
+        success: 'mdi-check-circle',
+        error: 'mdi-alert-circle',
+        info: 'mdi-information',
+        warning: 'mdi-alert'
+    };
+
+    return (
+        <div style={{
+            position: 'fixed', bottom: 24, right: 24, zIndex: 3000,
+            display: 'flex', alignItems: 'center', gap: 10,
+            padding: '12px 20px',
+            background: 'var(--bg-secondary)', border: '1px solid var(--border)',
+            borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-lg)',
+            animation: 'slideUp 0.3s ease',
+            borderLeft: `3px solid var(--${type === 'error' ? 'danger' : type})`
+        }}>
+            <span className={`mdi ${icons[type] || icons.info}`}
+                  style={{ color: `var(--${type === 'error' ? 'danger' : type})`, fontSize: 20 }} />
+            <span style={{ fontSize: 14 }}>{message}</span>
+            <button onClick={onClose} className="btn-ghost btn-icon btn"
+                    style={{ marginLeft: 8, padding: 0, minWidth: 24 }}>
+                <span className="mdi mdi-close" style={{ fontSize: 16 }} />
+            </button>
+        </div>
+    );
+};
+
+// ================================================================
+// Modal Component
+// ================================================================
+
+const Modal = ({ title, children, onClose, actions }) => (
+    <div className="modal-overlay" onClick={onClose}>
+        <div className="modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-title">{title}</div>
+            {children}
+            {actions && <div className="modal-actions">{actions}</div>}
+        </div>
+    </div>
+);
+
+// ================================================================
+// Dashboard Page
+// ================================================================
+
+const DashboardPage = () => {
+    const { status, domains, devices, rooms, lang, tr } = useApp();
+    const activeDomains = domains.filter(d => d.is_enabled).length;
+    const trackedDevices = devices.length;
+
+    const modeLabels = {
+        normal: { de: 'Normal', en: 'Normal', color: 'success' },
+        away: { de: 'Abwesend', en: 'Away', color: 'info' },
+        guest: { de: 'Gäste-Modus', en: 'Guest Mode', color: 'info' },
+        vacation: { de: 'Urlaubsmodus', en: 'Vacation', color: 'warning' },
+        emergency_stop: { de: 'NOT-AUS', en: 'EMERGENCY STOP', color: 'danger' }
+    };
+
+    const mode = modeLabels[status?.system_mode] || modeLabels.normal;
+
+    return (
+        <div>
+            {/* Status Bar */}
+            <div className="stat-grid">
+                <div className="stat-card animate-in">
+                    <div className="stat-icon" style={{ background: 'var(--success-dim)', color: 'var(--success)' }}>
+                        <span className="mdi mdi-home-assistant" />
+                    </div>
+                    <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span className={`connection-dot ${status?.ha_connected ? 'connected' : 'disconnected'}`} />
+                            <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+                                {status?.ha_connected
+                                    ? (lang === 'de' ? 'Verbunden' : 'Connected')
+                                    : (lang === 'de' ? 'Getrennt' : 'Disconnected')}
+                            </span>
+                        </div>
+                        <div className="stat-label">Home Assistant</div>
+                    </div>
+                </div>
+
+                <div className="stat-card animate-in animate-in-delay-1">
+                    <div className="stat-icon" style={{ background: `var(--${mode.color}-dim)`, color: `var(--${mode.color})` }}>
+                        <span className="mdi mdi-shield-check" />
+                    </div>
+                    <div>
+                        <div className={`badge badge-${mode.color}`}>
+                            <span className="badge-dot" />{mode[lang]}
+                        </div>
+                        <div className="stat-label">{lang === 'de' ? 'Systemmodus' : 'System Mode'}</div>
+                    </div>
+                </div>
+
+                <div className="stat-card animate-in animate-in-delay-2">
+                    <div className="stat-icon" style={{ background: 'var(--accent-primary-dim)', color: 'var(--accent-primary)' }}>
+                        <span className="mdi mdi-puzzle" />
+                    </div>
+                    <div>
+                        <div className="stat-value">{activeDomains}</div>
+                        <div className="stat-label">{lang === 'de' ? 'Aktive Domains' : 'Active Domains'}</div>
+                    </div>
+                </div>
+
+                <div className="stat-card animate-in animate-in-delay-3">
+                    <div className="stat-icon" style={{ background: 'var(--accent-secondary-dim)', color: 'var(--accent-secondary)' }}>
+                        <span className="mdi mdi-devices" />
+                    </div>
+                    <div>
+                        <div className="stat-value">{trackedDevices}</div>
+                        <div className="stat-label">{lang === 'de' ? 'Geräte' : 'Devices'}</div>
+                    </div>
+                </div>
+            </div>
+
+            {/* Quick Actions */}
+            <div className="card animate-in animate-in-delay-2" style={{ marginBottom: 24 }}>
+                <div className="card-header">
+                    <div>
+                        <div className="card-title">Quick Actions</div>
+                        <div className="card-subtitle">
+                            {lang === 'de' ? 'Schnellzugriff' : 'Quick access'}
+                        </div>
+                    </div>
+                </div>
+                <QuickActionsGrid />
+            </div>
+
+            {/* Rooms Overview */}
+            <div className="card animate-in animate-in-delay-3">
+                <div className="card-header">
+                    <div>
+                        <div className="card-title">{lang === 'de' ? 'Räume' : 'Rooms'}</div>
+                        <div className="card-subtitle">
+                            {rooms.length} {lang === 'de' ? 'konfiguriert' : 'configured'}
+                        </div>
+                    </div>
+                </div>
+                {rooms.length === 0 ? (
+                    <div className="empty-state">
+                        <span className="mdi mdi-door-open" />
+                        <h3>{lang === 'de' ? 'Keine Räume' : 'No Rooms'}</h3>
+                        <p>{lang === 'de'
+                            ? 'Starte den Einrichtungsassistenten um Räume hinzuzufügen.'
+                            : 'Start the setup wizard to add rooms.'}</p>
+                    </div>
+                ) : (
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 12 }}>
+                        {rooms.map(room => (
+                            <div key={room.id} className="card" style={{ padding: 14 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+                                    <span className={`mdi ${room.icon || 'mdi-door'}`}
+                                          style={{ fontSize: 22, color: 'var(--accent-primary)' }} />
+                                    <div>
+                                        <div style={{ fontWeight: 600, fontSize: 14 }}>{room.name}</div>
+                                        <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                                            {room.device_count} {lang === 'de' ? 'Geräte' : 'devices'}
+                                        </div>
+                                    </div>
+                                </div>
+                                {room.domain_states?.length > 0 && (
+                                    <div className="phase-bar">
+                                        {room.domain_states.map((ds, i) => (
+                                            <div key={i} className={`phase-segment ${
+                                                ds.learning_phase === 'autonomous' ? 'completed' :
+                                                ds.learning_phase === 'suggesting' ? 'active' : ''
+                                            }`} />
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+};
+
+// ================================================================
+// Quick Actions Component
+// ================================================================
+
+const QuickActionsGrid = () => {
+    const { quickActions, executeQuickAction, lang } = useApp();
+
+    return (
+        <div className="quick-actions-grid">
+            {quickActions.map(action => (
+                <button
+                    key={action.id}
+                    className={`quick-action-btn ${action.action_data?.type === 'emergency_stop' ? 'danger' : ''}`}
+                    onClick={() => executeQuickAction(action.id)}
+                >
+                    <span className={`mdi ${action.icon}`} />
+                    {action.name}
+                </button>
+            ))}
+        </div>
+    );
+};
+
+// ================================================================
+// Domains Page
+// ================================================================
+
+const DomainsPage = () => {
+    const { domains, toggleDomain, lang } = useApp();
+
+    return (
+        <div>
+            <div style={{ marginBottom: 20 }}>
+                <p style={{ color: 'var(--text-secondary)', fontSize: 14 }}>
+                    {lang === 'de'
+                        ? 'Aktiviere die Bereiche die MindHome überwachen und steuern soll.'
+                        : 'Activate the areas MindHome should monitor and control.'}
+                </p>
+            </div>
+            <div className="domain-grid">
+                {domains.map(domain => (
+                    <div
+                        key={domain.id}
+                        className={`domain-card ${domain.is_enabled ? 'enabled' : ''}`}
+                        onClick={() => toggleDomain(domain.id)}
+                    >
+                        <span className={`mdi ${domain.icon}`} />
+                        <div className="domain-card-info">
+                            <div className="domain-card-name">{domain.display_name}</div>
+                            <div className="domain-card-desc">{domain.description}</div>
+                        </div>
+                        <label className="toggle" onClick={e => e.stopPropagation()}>
+                            <input type="checkbox" checked={domain.is_enabled}
+                                   onChange={() => toggleDomain(domain.id)} />
+                            <div className="toggle-slider" />
+                        </label>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+};
+
+// ================================================================
+// Devices Page
+// ================================================================
+
+
+// ================================================================
+// Devices Page - with selection, delete, room assignment, domain assignment
+// ================================================================
+
+const DevicesPage = () => {
+    const { devices, rooms, domains, lang, showToast, refreshData } = useApp();
+    const [discovering, setDiscovering] = useState(false);
+    const [discovered, setDiscovered] = useState(null);
+    const [selected, setSelected] = useState({});
+    const [editDevice, setEditDevice] = useState(null);
+    const [search, setSearch] = useState('');
+
+    const handleDiscover = async () => {
+        setDiscovering(true);
+        const result = await api.get('discover');
+        setDiscovered(result);
+        // Nothing pre-selected - user chooses manually
+        setSelected({});
+        setDiscovering(false);
+    };
+
+    const toggleEntity = (entityId) => {
+        setSelected(prev => ({ ...prev, [entityId]: !prev[entityId] }));
+    };
+
+    const toggleDiscoverDomain = (domainName) => {
+        const entities = discovered?.domains?.[domainName]?.entities || [];
+        const allSelected = entities.every(e => selected[e.entity_id]);
+        const newSel = { ...selected };
+        entities.forEach(e => { newSel[e.entity_id] = !allSelected; });
+        setSelected(newSel);
+    };
+
+    const handleImport = async () => {
+        if (!discovered) return;
+        const selectedIds = Object.keys(selected).filter(k => selected[k]);
+        if (selectedIds.length === 0) {
+            showToast(lang === 'de' ? 'Keine Geräte ausgewählt' : 'No devices selected', 'error');
+            return;
+        }
+        const result = await api.post('discover/import', {
+            domains: discovered.domains,
+            selected_entities: selectedIds
+        });
+        if (result?.success) {
+            showToast(
+                lang === 'de' ? `${result.imported} Geräte importiert` : `${result.imported} devices imported`,
+                'success'
+            );
+            setDiscovered(null);
+            setSelected({});
+            refreshData();
+        }
+    };
+
+    const handleDeleteDevice = async (deviceId) => {
+        const result = await api.delete(`devices/${deviceId}`);
+        if (result?.success) {
+            showToast(lang === 'de' ? 'Gerät entfernt' : 'Device removed', 'success');
+            refreshData();
+        }
+    };
+
+    const handleUpdateDevice = async () => {
+        if (!editDevice) return;
+        const result = await api.put(`devices/${editDevice.id}`, {
+            room_id: editDevice.room_id || null,
+            domain_id: editDevice.domain_id || null,
+            name: editDevice.name,
+            is_tracked: editDevice.is_tracked,
+            is_controllable: editDevice.is_controllable
+        });
+        if (result?.id) {
+            showToast(lang === 'de' ? 'Gerät aktualisiert' : 'Device updated', 'success');
+            setEditDevice(null);
+            refreshData();
+        }
+    };
+
+    const selectedCount = Object.values(selected).filter(Boolean).length;
+    const totalCount = discovered ? Object.values(discovered.domains || {}).reduce((sum, d) => sum + (d.entities?.length || d.count || 0), 0) : 0;
+
+    // Filter out already-imported entities from discovery list
+    const importedEntityIds = new Set(devices.map(d => d.ha_entity_id));
+
+    const getDomainName = (domainId) => {
+        const d = domains.find(d => d.id === domainId);
+        return d?.display_name || '—';
+    };
+
+    const getRoomName = (roomId) => {
+        const r = rooms.find(r => r.id === roomId);
+        return r?.name || '—';
+    };
+
+    return (
+        <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+                <p style={{ color: 'var(--text-secondary)', fontSize: 14 }}>
+                    {devices.length} {lang === 'de' ? 'Geräte konfiguriert' : 'devices configured'}
+                </p>
+                <button className="btn btn-primary" onClick={handleDiscover} disabled={discovering}>
+                    <span className="mdi mdi-magnify" />
+                    {discovering
+                        ? (lang === 'de' ? 'Suche...' : 'Searching...')
+                        : (lang === 'de' ? 'Geräte erkennen' : 'Discover Devices')}
+                </button>
+            </div>
+
+            {/* Discovery Results with Checkboxes - excludes already imported */}
+            {discovered && (
+                <div className="card" style={{ marginBottom: 20, borderColor: 'var(--accent-primary)', borderWidth: 2 }}>
+                    <div className="card-header">
+                        <div>
+                            <div className="card-title">
+                                {lang === 'de' ? 'Verfügbare Geräte' : 'Available Devices'}
+                            </div>
+                            <div className="card-subtitle">
+                                {selectedCount} {lang === 'de' ? 'ausgewählt' : 'selected'}
+                                {' · '}
+                                {lang === 'de' ? 'Bereits importierte sind ausgeblendet' : 'Already imported are hidden'}
+                            </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: 8 }}>
+                            <button className="btn btn-secondary" onClick={() => { setDiscovered(null); setSelected({}); }}>
+                                {lang === 'de' ? 'Abbrechen' : 'Cancel'}
+                            </button>
+                            <button className="btn btn-primary" onClick={handleImport} disabled={selectedCount === 0}>
+                                <span className="mdi mdi-import" />
+                                {lang === 'de' ? `${selectedCount} importieren` : `Import ${selectedCount}`}
+                            </button>
+                        </div>
+                    </div>
+
+                    <div style={{ maxHeight: 400, overflow: 'auto' }}>
+                    {Object.entries(discovered.domains || {}).map(([domainName, data]) => {
+                        const entities = (data.entities || []).filter(e => !importedEntityIds.has(e.entity_id));
+                        if (entities.length === 0) return null;
+                        const allSel = entities.every(e => selected[e.entity_id]);
+                        return (
+                            <div key={domainName} style={{ marginBottom: 12 }}>
+                                <div style={{
+                                    display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0',
+                                    borderBottom: '1px solid var(--border-color)', cursor: 'pointer'
+                                }} onClick={() => toggleDiscoverDomain(domainName)}>
+                                    <input type="checkbox" checked={allSel} readOnly
+                                        style={{ width: 18, height: 18, accentColor: 'var(--accent-primary)' }} />
+                                    <strong>{domainName}</strong>
+                                    <span className="badge badge-info">{entities.length}</span>
+                                </div>
+                                <div style={{ paddingLeft: 26 }}>
+                                    {entities.map(entity => (
+                                        <div key={entity.entity_id} style={{
+                                            display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0',
+                                            fontSize: 13, cursor: 'pointer'
+                                        }} onClick={() => toggleEntity(entity.entity_id)}>
+                                            <input type="checkbox" checked={!!selected[entity.entity_id]} readOnly
+                                                style={{ width: 16, height: 16, accentColor: 'var(--accent-primary)' }} />
+                                            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-muted)', minWidth: 200 }}>
+                                                {entity.entity_id}
+                                            </span>
+                                            <span style={{ flex: 1 }}>{entity.friendly_name}</span>
+                                            <span className="badge badge-info" style={{ fontSize: 10 }}>{entity.state}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        );
+                    })}
+                    </div>
+                </div>
+            )}
+
+            {/* Device Table */}
+            {devices.length > 0 ? (
+                <div>
+                    <div style={{ marginBottom: 12 }}>
+                        <input className="input" placeholder={lang === 'de' ? '🔍 Geräte suchen...' : '🔍 Search devices...'}
+                            value={search} onChange={e => setSearch(e.target.value)}
+                            style={{ maxWidth: 400 }} />
+                    </div>
+                    <div className="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Entity ID</th>
+                                <th>{lang === 'de' ? 'Name' : 'Name'}</th>
+                                <th>Domain</th>
+                                <th>{lang === 'de' ? 'Raum' : 'Room'}</th>
+                                <th>{lang === 'de' ? 'Aktionen' : 'Actions'}</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {devices.filter(d => {
+                                if (!search) return true;
+                                const s = search.toLowerCase();
+                                return d.ha_entity_id?.toLowerCase().includes(s)
+                                    || d.name?.toLowerCase().includes(s)
+                                    || getDomainName(d.domain_id)?.toLowerCase().includes(s)
+                                    || getRoomName(d.room_id)?.toLowerCase().includes(s);
+                            }).map(device => (
+                                <tr key={device.id}>
+                                    <td style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>
+                                        {device.ha_entity_id}
+                                    </td>
+                                    <td>{device.name}</td>
+                                    <td>{getDomainName(device.domain_id)}</td>
+                                    <td>{getRoomName(device.room_id)}</td>
+                                    <td>
+                                        <div style={{ display: 'flex', gap: 4 }}>
+                                            <button className="btn btn-ghost btn-icon" onClick={() => setEditDevice({...device})}
+                                                title={lang === 'de' ? 'Bearbeiten' : 'Edit'}>
+                                                <span className="mdi mdi-pencil" style={{ fontSize: 16, color: 'var(--accent-primary)' }} />
+                                            </button>
+                                            <button className="btn btn-ghost btn-icon" onClick={() => handleDeleteDevice(device.id)}
+                                                title={lang === 'de' ? 'Entfernen' : 'Remove'}>
+                                                <span className="mdi mdi-delete-outline" style={{ fontSize: 16, color: 'var(--danger)' }} />
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                    </div>
+                </div>
+            ) : (
+                <div className="empty-state">
+                    <span className="mdi mdi-devices" />
+                    <h3>{lang === 'de' ? 'Keine Geräte' : 'No Devices'}</h3>
+                    <p>{lang === 'de'
+                        ? 'Klicke auf "Geräte erkennen" um deine HA-Geräte zu importieren.'
+                        : 'Click "Discover Devices" to import your HA devices.'}</p>
+                </div>
+            )}
+
+            {/* Edit Device Modal */}
+            {editDevice && (
+                <Modal
+                    title={lang === 'de' ? 'Gerät bearbeiten' : 'Edit Device'}
+                    onClose={() => setEditDevice(null)}
+                    actions={
+                        <>
+                            <button className="btn btn-secondary" onClick={() => setEditDevice(null)}>
+                                {lang === 'de' ? 'Abbrechen' : 'Cancel'}
+                            </button>
+                            <button className="btn btn-primary" onClick={handleUpdateDevice}>
+                                {lang === 'de' ? 'Speichern' : 'Save'}
+                            </button>
+                        </>
+                    }
+                >
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginBottom: 16 }}>
+                        {editDevice.ha_entity_id}
+                    </div>
+                    <div className="input-group" style={{ marginBottom: 16 }}>
+                        <label className="input-label">{lang === 'de' ? 'Name' : 'Name'}</label>
+                        <input className="input" value={editDevice.name}
+                               onChange={e => setEditDevice({ ...editDevice, name: e.target.value })} />
+                    </div>
+                    <div className="input-group" style={{ marginBottom: 16 }}>
+                        <label className="input-label">{lang === 'de' ? 'Raum' : 'Room'}</label>
+                        <select className="input" value={editDevice.room_id || ''}
+                                onChange={e => setEditDevice({ ...editDevice, room_id: e.target.value ? parseInt(e.target.value) : null })}>
+                            <option value="">{lang === 'de' ? '— Kein Raum —' : '— No Room —'}</option>
+                            {rooms.map(r => (
+                                <option key={r.id} value={r.id}>{r.name}</option>
+                            ))}
+                        </select>
+                    </div>
+                    <div className="input-group" style={{ marginBottom: 16 }}>
+                        <label className="input-label">Domain</label>
+                        <select className="input" value={editDevice.domain_id || ''}
+                                onChange={e => setEditDevice({ ...editDevice, domain_id: e.target.value ? parseInt(e.target.value) : null })}>
+                            <option value="">{lang === 'de' ? '— Keine —' : '— None —'}</option>
+                            {domains.map(d => (
+                                <option key={d.id} value={d.id}>{d.display_name}</option>
+                            ))}
+                        </select>
+                    </div>
+                    <div style={{ display: 'flex', gap: 24 }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 14 }}>
+                            <input type="checkbox" checked={editDevice.is_tracked}
+                                   onChange={e => setEditDevice({ ...editDevice, is_tracked: e.target.checked })}
+                                   style={{ width: 18, height: 18, accentColor: 'var(--accent-primary)' }} />
+                            {lang === 'de' ? 'Überwacht' : 'Tracked'}
+                        </label>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 14 }}>
+                            <input type="checkbox" checked={editDevice.is_controllable}
+                                   onChange={e => setEditDevice({ ...editDevice, is_controllable: e.target.checked })}
+                                   style={{ width: 18, height: 18, accentColor: 'var(--accent-primary)' }} />
+                            {lang === 'de' ? 'Steuerbar' : 'Controllable'}
+                        </label>
+                    </div>
+                </Modal>
+            )}
+        </div>
+    );
+};
+
+// ================================================================
+// Rooms Page - with edit name
+// ================================================================
+
+const RoomsPage = () => {
+    const { rooms, lang, showToast, refreshData } = useApp();
+    const [showAdd, setShowAdd] = useState(false);
+    const [newRoom, setNewRoom] = useState({ name: '', icon: 'mdi:door' });
+    const [editRoom, setEditRoom] = useState(null);
+
+    const phaseLabels = {
+        observing: { de: 'Beobachten', en: 'Observing', color: 'info' },
+        suggesting: { de: 'Vorschlagen', en: 'Suggesting', color: 'warning' },
+        autonomous: { de: 'Autonom', en: 'Autonomous', color: 'success' }
+    };
+
+    const handleAdd = async () => {
+        if (!newRoom.name.trim()) return;
+        const result = await api.post('rooms', newRoom);
+        if (result?.id) {
+            showToast(lang === 'de' ? 'Raum erstellt' : 'Room created', 'success');
+            setShowAdd(false);
+            setNewRoom({ name: '', icon: 'mdi:door' });
+            refreshData();
+        }
+    };
+
+    const handleUpdate = async () => {
+        if (!editRoom || !editRoom.name.trim()) return;
+        const result = await api.put(`rooms/${editRoom.id}`, { name: editRoom.name, icon: editRoom.icon });
+        if (result?.id) {
+            showToast(lang === 'de' ? 'Raum aktualisiert' : 'Room updated', 'success');
+            setEditRoom(null);
+            refreshData();
+        }
+    };
+
+    const handleDelete = async (id) => {
+        const result = await api.delete(`rooms/${id}`);
+        if (result?.success) {
+            showToast(lang === 'de' ? 'Raum gelöscht' : 'Room deleted', 'success');
+            refreshData();
+        }
+    };
+
+    return (
+        <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 20 }}>
+                <p style={{ color: 'var(--text-secondary)', fontSize: 14 }}>
+                    {rooms.length} {lang === 'de' ? 'Räume' : 'Rooms'}
+                </p>
+                <button className="btn btn-primary" onClick={() => setShowAdd(true)}>
+                    <span className="mdi mdi-plus" />
+                    {lang === 'de' ? 'Raum hinzufügen' : 'Add Room'}
+                </button>
+            </div>
+
+            {rooms.length > 0 ? (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 16 }}>
+                    {rooms.map(room => (
+                        <div key={room.id} className="card">
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                                    <div className="card-icon" style={{ background: 'var(--accent-primary-dim)', color: 'var(--accent-primary)' }}>
+                                        <span className={`mdi ${room.icon?.replace('mdi:', 'mdi-') || 'mdi-door'}`} />
+                                    </div>
+                                    <div>
+                                        <div className="card-title">{room.name}</div>
+                                        <div className="card-subtitle">
+                                            {room.device_count} {lang === 'de' ? 'Geräte' : 'devices'}
+                                        </div>
+                                    </div>
+                                </div>
+                                <div style={{ display: 'flex', gap: 4 }}>
+                                    <button className="btn btn-ghost btn-icon" onClick={() => setEditRoom({...room})}
+                                        title={lang === 'de' ? 'Bearbeiten' : 'Edit'}>
+                                        <span className="mdi mdi-pencil" style={{ fontSize: 16, color: 'var(--accent-primary)' }} />
+                                    </button>
+                                    <button className="btn btn-ghost btn-icon" onClick={() => handleDelete(room.id)}>
+                                        <span className="mdi mdi-delete-outline" style={{ fontSize: 16, color: 'var(--text-muted)' }} />
+                                    </button>
+                                </div>
+                            </div>
+
+                            {room.domain_states?.length > 0 && (
+                                <div style={{ marginTop: 16 }}>
+                                    <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8 }}>
+                                        {lang === 'de' ? 'Lernphasen' : 'Learning Phases'}
+                                    </div>
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                                        {room.domain_states.map((ds, i) => {
+                                            const phase = phaseLabels[ds.learning_phase] || phaseLabels.observing;
+                                            return (
+                                                <span key={i} className={`badge badge-${phase.color}`} style={{ fontSize: 11 }}>
+                                                    <span className="badge-dot" />{phase[lang]}
+                                                </span>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    ))}
+                </div>
+            ) : (
+                <div className="empty-state">
+                    <span className="mdi mdi-door-open" />
+                    <h3>{lang === 'de' ? 'Keine Räume' : 'No Rooms'}</h3>
+                    <p>{lang === 'de'
+                        ? 'Füge Räume hinzu um MindHome zu konfigurieren.'
+                        : 'Add rooms to configure MindHome.'}</p>
+                </div>
+            )}
+
+            {/* Add Room Modal */}
+            {showAdd && (
+                <Modal
+                    title={lang === 'de' ? 'Raum hinzufügen' : 'Add Room'}
+                    onClose={() => setShowAdd(false)}
+                    actions={
+                        <>
+                            <button className="btn btn-secondary" onClick={() => setShowAdd(false)}>
+                                {lang === 'de' ? 'Abbrechen' : 'Cancel'}
+                            </button>
+                            <button className="btn btn-primary" onClick={handleAdd}>
+                                {lang === 'de' ? 'Erstellen' : 'Create'}
+                            </button>
+                        </>
+                    }
+                >
+                    <div className="input-group" style={{ marginBottom: 16 }}>
+                        <label className="input-label">{lang === 'de' ? 'Name' : 'Name'}</label>
+                        <input className="input" value={newRoom.name}
+                               onChange={e => setNewRoom({ ...newRoom, name: e.target.value })}
+                               placeholder={lang === 'de' ? 'z.B. Wohnzimmer' : 'e.g. Living Room'}
+                               autoFocus />
+                    </div>
+                </Modal>
+            )}
+
+            {/* Edit Room Modal */}
+            {editRoom && (
+                <Modal
+                    title={lang === 'de' ? 'Raum bearbeiten' : 'Edit Room'}
+                    onClose={() => setEditRoom(null)}
+                    actions={
+                        <>
+                            <button className="btn btn-secondary" onClick={() => setEditRoom(null)}>
+                                {lang === 'de' ? 'Abbrechen' : 'Cancel'}
+                            </button>
+                            <button className="btn btn-primary" onClick={handleUpdate}>
+                                {lang === 'de' ? 'Speichern' : 'Save'}
+                            </button>
+                        </>
+                    }
+                >
+                    <div className="input-group" style={{ marginBottom: 16 }}>
+                        <label className="input-label">{lang === 'de' ? 'Name' : 'Name'}</label>
+                        <input className="input" value={editRoom.name}
+                               onChange={e => setEditRoom({ ...editRoom, name: e.target.value })}
+                               autoFocus />
+                    </div>
+                    <div className="input-group">
+                        <label className="input-label">Icon</label>
+                        <input className="input" value={editRoom.icon || ''}
+                               onChange={e => setEditRoom({ ...editRoom, icon: e.target.value })}
+                               placeholder="mdi:door" />
+                    </div>
+                </Modal>
+            )}
+        </div>
+    );
+};
+
+// ================================================================
+// Users Page - with HA person assignment
+// ================================================================
+
+const UsersPage = () => {
+    const { users, lang, showToast, refreshData } = useApp();
+    const [showAdd, setShowAdd] = useState(false);
+    const [newUser, setNewUser] = useState({ name: '', role: 'user', ha_person_entity: '' });
+    const [haPersons, setHaPersons] = useState([]);
+    const [editingUser, setEditingUser] = useState(null);
+
+    useEffect(() => {
+        api.get('ha/persons').then(r => setHaPersons(r?.persons || []));
+    }, []);
+
+    const handleAdd = async () => {
+        if (!newUser.name.trim()) return;
+        const result = await api.post('users', newUser);
+        if (result?.id) {
+            showToast(lang === 'de' ? 'Person erstellt' : 'Person created', 'success');
+            setShowAdd(false);
+            setNewUser({ name: '', role: 'user', ha_person_entity: '' });
+            refreshData();
+        }
+    };
+
+    const handleDelete = async (id) => {
+        const result = await api.delete(`users/${id}`);
+        if (result?.success) {
+            showToast(lang === 'de' ? 'Person entfernt' : 'Person removed', 'success');
+            refreshData();
+        }
+    };
+
+    const handleAssignPerson = async (userId, haEntity) => {
+        const result = await api.put(`users/${userId}`, { ha_person_entity: haEntity || null });
+        if (result?.id) {
+            showToast(lang === 'de' ? 'HA-Person zugewiesen' : 'HA person assigned', 'success');
+            refreshData();
+            setEditingUser(null);
+        }
+    };
+
+    return (
+        <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 20 }}>
+                <p style={{ color: 'var(--text-secondary)', fontSize: 14 }}>
+                    {users.length} {lang === 'de' ? 'Personen' : 'People'}
+                </p>
+                <button className="btn btn-primary" onClick={() => setShowAdd(true)}>
+                    <span className="mdi mdi-account-plus" />
+                    {lang === 'de' ? 'Person hinzufügen' : 'Add Person'}
+                </button>
+            </div>
+
+            {users.length > 0 ? (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16 }}>
+                    {users.map(user => (
+                        <div key={user.id} className="card">
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                                    <div className="card-icon" style={{
+                                        background: user.role === 'admin' ? 'var(--accent-primary-dim)' : 'var(--accent-secondary-dim)',
+                                        color: user.role === 'admin' ? 'var(--accent-primary)' : 'var(--accent-secondary)'
+                                    }}>
+                                        <span className={`mdi ${user.role === 'admin' ? 'mdi-shield-crown' : 'mdi-account'}`} />
+                                    </div>
+                                    <div>
+                                        <div className="card-title">{user.name}</div>
+                                        <div className="card-subtitle">
+                                            {user.role === 'admin' ? 'Administrator' : (lang === 'de' ? 'Benutzer' : 'User')}
+                                        </div>
+                                        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                                            {user.ha_person_entity
+                                                ? `🔗 ${user.ha_person_entity}`
+                                                : (lang === 'de' ? '⚠️ Keine HA-Person' : '⚠️ No HA person')}
+                                        </div>
+                                    </div>
+                                </div>
+                                <div style={{ display: 'flex', gap: 4 }}>
+                                    <button className="btn btn-ghost btn-icon" onClick={() => setEditingUser(user)}
+                                        title={lang === 'de' ? 'HA-Person zuweisen' : 'Assign HA person'}>
+                                        <span className="mdi mdi-link-variant" style={{ fontSize: 18, color: 'var(--accent-primary)' }} />
+                                    </button>
+                                    <button className="btn btn-ghost btn-icon" onClick={() => handleDelete(user.id)}>
+                                        <span className="mdi mdi-delete-outline" style={{ fontSize: 18, color: 'var(--text-muted)' }} />
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            ) : (
+                <div className="empty-state">
+                    <span className="mdi mdi-account-group" />
+                    <h3>{lang === 'de' ? 'Keine Personen' : 'No People'}</h3>
+                    <p>{lang === 'de' ? 'Füge Personen hinzu die MindHome nutzen.' : 'Add people who use MindHome.'}</p>
+                </div>
+            )}
+
+            {showAdd && (
+                <Modal title={lang === 'de' ? 'Person hinzufügen' : 'Add Person'} onClose={() => setShowAdd(false)}
+                    actions={<><button className="btn btn-secondary" onClick={() => setShowAdd(false)}>{lang === 'de' ? 'Abbrechen' : 'Cancel'}</button>
+                        <button className="btn btn-primary" onClick={handleAdd}>{lang === 'de' ? 'Erstellen' : 'Create'}</button></>}>
+                    <div className="input-group" style={{ marginBottom: 16 }}>
+                        <label className="input-label">{lang === 'de' ? 'Name' : 'Name'}</label>
+                        <input className="input" value={newUser.name} onChange={e => setNewUser({ ...newUser, name: e.target.value })} autoFocus />
+                    </div>
+                    <div className="input-group" style={{ marginBottom: 16 }}>
+                        <label className="input-label">{lang === 'de' ? 'Rolle' : 'Role'}</label>
+                        <select className="input" value={newUser.role} onChange={e => setNewUser({ ...newUser, role: e.target.value })}>
+                            <option value="user">{lang === 'de' ? 'Benutzer' : 'User'}</option>
+                            <option value="admin">Administrator</option>
+                        </select>
+                    </div>
+                    <div className="input-group">
+                        <label className="input-label">{lang === 'de' ? 'HA-Person' : 'HA Person'}</label>
+                        <select className="input" value={newUser.ha_person_entity} onChange={e => setNewUser({ ...newUser, ha_person_entity: e.target.value })}>
+                            <option value="">{lang === 'de' ? '— Keine —' : '— None —'}</option>
+                            {haPersons.map(p => <option key={p.entity_id} value={p.entity_id}>{p.name} ({p.entity_id})</option>)}
+                        </select>
+                    </div>
+                </Modal>
+            )}
+
+            {editingUser && (
+                <Modal title={lang === 'de' ? `HA-Person: ${editingUser.name}` : `HA Person: ${editingUser.name}`} onClose={() => setEditingUser(null)}
+                    actions={<button className="btn btn-secondary" onClick={() => setEditingUser(null)}>{lang === 'de' ? 'Schließen' : 'Close'}</button>}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        <div style={{ padding: '10px 14px', borderRadius: 8, cursor: 'pointer',
+                            border: !editingUser.ha_person_entity ? '2px solid var(--accent-primary)' : '1px solid var(--border-color)',
+                            background: !editingUser.ha_person_entity ? 'var(--accent-primary-dim)' : 'transparent'
+                        }} onClick={() => handleAssignPerson(editingUser.id, '')}>
+                            {lang === 'de' ? '— Keine Person —' : '— No Person —'}
+                        </div>
+                        {haPersons.map(p => (
+                            <div key={p.entity_id} style={{ padding: '10px 14px', borderRadius: 8, cursor: 'pointer',
+                                border: editingUser.ha_person_entity === p.entity_id ? '2px solid var(--accent-primary)' : '1px solid var(--border-color)',
+                                background: editingUser.ha_person_entity === p.entity_id ? 'var(--accent-primary-dim)' : 'transparent',
+                                display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+                            }} onClick={() => handleAssignPerson(editingUser.id, p.entity_id)}>
+                                <div><strong>{p.name}</strong><div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{p.entity_id}</div></div>
+                                <span className={`badge badge-${p.state === 'home' ? 'success' : 'warning'}`}>
+                                    <span className="badge-dot" />{p.state === 'home' ? (lang === 'de' ? 'Zuhause' : 'Home') : (lang === 'de' ? 'Weg' : 'Away')}
+                                </span>
+                            </div>
+                        ))}
+                    </div>
+                </Modal>
+            )}
+        </div>
+    );
+};
+// ================================================================
+// Settings Page
+// ================================================================
+
+const SettingsPage = () => {
+    const { lang, setLang, theme, setTheme, viewMode, setViewMode, showToast } = useApp();
+
+    return (
+        <div style={{ maxWidth: 600 }}>
+            {/* Appearance */}
+            <div className="card" style={{ marginBottom: 16 }}>
+                <div className="card-title" style={{ marginBottom: 16 }}>
+                    {lang === 'de' ? 'Darstellung' : 'Appearance'}
+                </div>
+
+                <div className="input-group" style={{ marginBottom: 16 }}>
+                    <label className="input-label">{lang === 'de' ? 'Sprache' : 'Language'}</label>
+                    <select className="input" value={lang} onChange={e => setLang(e.target.value)}>
+                        <option value="de">Deutsch</option>
+                        <option value="en">English</option>
+                    </select>
+                </div>
+
+                <div className="input-group" style={{ marginBottom: 16 }}>
+                    <label className="input-label">Theme</label>
+                    <select className="input" value={theme} onChange={e => setTheme(e.target.value)}>
+                        <option value="dark">{lang === 'de' ? 'Dunkel' : 'Dark'}</option>
+                        <option value="light">{lang === 'de' ? 'Hell' : 'Light'}</option>
+                    </select>
+                </div>
+
+                <div className="input-group">
+                    <label className="input-label">{lang === 'de' ? 'Ansicht' : 'View Mode'}</label>
+                    <select className="input" value={viewMode} onChange={e => setViewMode(e.target.value)}>
+                        <option value="simple">{lang === 'de' ? 'Einfach' : 'Simple'}</option>
+                        <option value="advanced">{lang === 'de' ? 'Ausführlich' : 'Advanced'}</option>
+                    </select>
+                </div>
+            </div>
+
+            {/* System Info */}
+            <div className="card">
+                <div className="card-title" style={{ marginBottom: 16 }}>
+                    {lang === 'de' ? 'System' : 'System'}
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14 }}>
+                        <span style={{ color: 'var(--text-secondary)' }}>Version</span>
+                        <span style={{ fontFamily: 'var(--font-mono)' }}>0.1.0</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14 }}>
+                        <span style={{ color: 'var(--text-secondary)' }}>Phase</span>
+                        <span>1 – {lang === 'de' ? 'Fundament' : 'Foundation'}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// ================================================================
+// AI Log Page
+// ================================================================
+
+const LogPage = () => {
+    const { lang } = useApp();
+    const [logs, setLogs] = useState([]);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        api.get('action-log?limit=50').then(data => {
+            setLogs(data || []);
+            setLoading(false);
+        });
+    }, []);
+
+    const typeIcons = {
+        quick_action: 'mdi-lightning-bolt',
+        automation: 'mdi-robot',
+        suggestion: 'mdi-lightbulb-on',
+        anomaly: 'mdi-alert',
+        first_time: 'mdi-star-circle'
+    };
+
+    return (
+        <div>
+            {loading ? (
+                <div className="empty-state"><div className="loading-spinner" /></div>
+            ) : logs.length > 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {logs.map(log => (
+                        <div key={log.id} className="card" style={{ padding: 14, display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                            <span className={`mdi ${typeIcons[log.action_type] || 'mdi-circle-small'}`}
+                                  style={{ fontSize: 22, color: 'var(--accent-primary)', marginTop: 2 }} />
+                            <div style={{ flex: 1 }}>
+                                <div style={{ fontSize: 14, fontWeight: 500 }}>
+                                    {log.reason || log.action_type}
+                                </div>
+                                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
+                                    {new Date(log.created_at).toLocaleString(lang === 'de' ? 'de-DE' : 'en-US')}
+                                </div>
+                            </div>
+                            {log.was_undone && (
+                                <span className="badge badge-warning">{lang === 'de' ? 'Rückgängig' : 'Undone'}</span>
+                            )}
+                        </div>
+                    ))}
+                </div>
+            ) : (
+                <div className="empty-state">
+                    <span className="mdi mdi-text-box-outline" />
+                    <h3>{lang === 'de' ? 'Noch keine Einträge' : 'No Entries Yet'}</h3>
+                    <p>{lang === 'de'
+                        ? 'Hier werden alle Aktionen von MindHome protokolliert.'
+                        : 'All MindHome actions will be logged here.'}</p>
+                </div>
+            )}
+        </div>
+    );
+};
+
+// ================================================================
+// Data Privacy Page + Backup
+// ================================================================
+
+const DataPage = () => {
+    const { lang, showToast, refreshData, devices, domains } = useApp();
+    const [dataCollections, setDataCollections] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const fileInputRef = useRef(null);
+
+    useEffect(() => {
+        api.get('data-collections?limit=100').then(data => {
+            setDataCollections(data || []);
+            setLoading(false);
+        });
+    }, []);
+
+    const handleExport = async () => {
+        const backup = await api.get('backup/export');
+        if (backup) {
+            const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `mindhome-backup-${new Date().toISOString().slice(0,10)}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+            showToast(lang === 'de' ? 'Backup exportiert' : 'Backup exported', 'success');
+        }
+    };
+
+    const handleImport = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        try {
+            const text = await file.text();
+            const data = JSON.parse(text);
+            const result = await api.post('backup/import', data);
+            if (result?.success) {
+                showToast(lang === 'de'
+                    ? `Backup geladen: ${result.imported.rooms} Räume, ${result.imported.devices} Geräte, ${result.imported.users} Personen`
+                    : `Backup loaded: ${result.imported.rooms} rooms, ${result.imported.devices} devices, ${result.imported.users} users`,
+                    'success');
+                refreshData();
+            } else {
+                showToast(result?.error || 'Import failed', 'error');
+            }
+        } catch (err) {
+            showToast(lang === 'de' ? 'Ungültige Datei' : 'Invalid file', 'error');
+        }
+        e.target.value = '';
+    };
+
+    const getDeviceName = (deviceId) => {
+        const d = devices.find(d => d.id === deviceId);
+        return d?.name || `#${deviceId}`;
+    };
+
+    return (
+        <div>
+            <div className="card" style={{ marginBottom: 16, borderColor: 'var(--success)', borderWidth: 1 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <span className="mdi mdi-shield-check" style={{ fontSize: 28, color: 'var(--success)' }} />
+                    <div>
+                        <div style={{ fontWeight: 600, fontSize: 15 }}>
+                            {lang === 'de' ? '100% Lokal' : '100% Local'}
+                        </div>
+                        <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+                            {lang === 'de'
+                                ? 'Alle Daten werden ausschließlich auf deinem Gerät gespeichert.'
+                                : 'All data is stored exclusively on your device.'}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {/* Backup / Restore */}
+            <div className="card" style={{ marginBottom: 16 }}>
+                <div className="card-title" style={{ marginBottom: 16 }}>
+                    {lang === 'de' ? 'Backup & Wiederherstellung' : 'Backup & Restore'}
+                </div>
+                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                    <button className="btn btn-primary" onClick={handleExport}>
+                        <span className="mdi mdi-download" />
+                        {lang === 'de' ? 'Backup exportieren' : 'Export Backup'}
+                    </button>
+                    <button className="btn btn-secondary" onClick={() => fileInputRef.current?.click()}>
+                        <span className="mdi mdi-upload" />
+                        {lang === 'de' ? 'Backup laden' : 'Import Backup'}
+                    </button>
+                    <input ref={fileInputRef} type="file" accept=".json" onChange={handleImport}
+                           style={{ display: 'none' }} />
+                </div>
+                <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 12 }}>
+                    {lang === 'de'
+                        ? 'Das Backup enthält: Räume, Geräte, Personen, Domains, Einstellungen, Zuordnungen und Logs.'
+                        : 'Backup includes: rooms, devices, users, domains, settings, assignments and logs.'}
+                </p>
+            </div>
+
+            {/* Collected Data */}
+            <div className="card">
+                <div className="card-title" style={{ marginBottom: 16 }}>
+                    {lang === 'de' ? 'Gesammelte Daten' : 'Collected Data'}
+                    <span style={{ fontWeight: 400, fontSize: 13, color: 'var(--text-muted)', marginLeft: 8 }}>
+                        ({dataCollections.length})
+                    </span>
+                </div>
+                {loading ? (
+                    <div className="empty-state"><div className="loading-spinner" /></div>
+                ) : dataCollections.length > 0 ? (
+                    <div style={{ maxHeight: 400, overflow: 'auto' }}>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>{lang === 'de' ? 'Zeit' : 'Time'}</th>
+                                    <th>{lang === 'de' ? 'Gerät' : 'Device'}</th>
+                                    <th>{lang === 'de' ? 'Typ' : 'Type'}</th>
+                                    <th>{lang === 'de' ? 'Wert' : 'Value'}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {dataCollections.slice(0, 50).map((dc, i) => (
+                                    <tr key={i}>
+                                        <td style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
+                                            {new Date(dc.collected_at).toLocaleString(lang === 'de' ? 'de-DE' : 'en-US')}
+                                        </td>
+                                        <td style={{ fontSize: 12 }}>{getDeviceName(dc.device_id)}</td>
+                                        <td><span className="badge badge-info" style={{ fontSize: 10 }}>{dc.data_type}</span></td>
+                                        <td style={{ fontSize: 11, fontFamily: 'var(--font-mono)', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                            {typeof dc.data_value === 'object'
+                                                ? `${dc.data_value.old_state} → ${dc.data_value.new_state}`
+                                                : String(dc.data_value)}
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                ) : (
+                    <div className="empty-state" style={{ padding: 32 }}>
+                        <span className="mdi mdi-database-outline" />
+                        <h3>{lang === 'de' ? 'Noch keine Daten' : 'No Data Yet'}</h3>
+                        <p>{lang === 'de'
+                            ? 'Daten werden gesammelt sobald überwachte Geräte ihren Status ändern.'
+                            : 'Data will be collected when tracked devices change state.'}</p>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+};
+
+// ================================================================
+// Onboarding Wizard
+// ================================================================
+
+const OnboardingWizard = ({ onComplete }) => {
+    const [step, setStep] = useState(0);
+    const [lang, setLangLocal] = useState('de');
+    const [adminName, setAdminName] = useState('');
+    const [discovered, setDiscovered] = useState(null);
+    const [discovering, setDiscovering] = useState(false);
+    const [restoring, setRestoring] = useState(false);
+    const [backupData, setBackupData] = useState(null);
+    const [backupError, setBackupError] = useState('');
+    const restoreInputRef = useRef(null);
+
+    const handleFileSelect = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        setBackupError('');
+        try {
+            const text = await file.text();
+            const data = JSON.parse(text);
+            if (!data.version) {
+                setBackupError(lang === 'de' ? 'Ungültige Backup-Datei' : 'Invalid backup file');
+                return;
+            }
+            setBackupData(data);
+        } catch (err) {
+            setBackupError(lang === 'de' ? 'Datei konnte nicht gelesen werden' : 'Could not read file');
+        }
+        e.target.value = '';
+    };
+
+    const handleConfirmRestore = async () => {
+        if (!backupData) return;
+        setRestoring(true);
+        setBackupError('');
+        try {
+            const result = await api.post('backup/import', backupData);
+            if (result?.success) {
+                onComplete();
+                return;
+            } else {
+                setBackupError(result?.error || (lang === 'de' ? 'Import fehlgeschlagen' : 'Import failed'));
+            }
+        } catch (err) {
+            setBackupError(lang === 'de' ? 'Import fehlgeschlagen' : 'Import failed');
+        }
+        setRestoring(false);
+    };
+
+    const steps = [
+        { id: 'welcome', icon: 'mdi-brain' },
+        { id: 'language', icon: 'mdi-translate' },
+        { id: 'admin', icon: 'mdi-shield-crown' },
+        { id: 'discover', icon: 'mdi-magnify' },
+        { id: 'privacy', icon: 'mdi-shield-lock' },
+        { id: 'done', icon: 'mdi-check-circle' },
+    ];
+
+    const handleDiscover = async () => {
+        setDiscovering(true);
+        const result = await api.get('discover');
+        setDiscovered(result);
+        setDiscovering(false);
+    };
+
+    const handleComplete = async () => {
+        // Create admin user
+        if (adminName.trim()) {
+            await api.post('users', { name: adminName, role: 'admin' });
         }
 
-    return jsonify({
-        "domains": summary,
-        "total_entities": sum(len(e) for e in discovered.values()),
-        "ha_connected": ha.is_connected()
-    })
-
-
-@app.route("/api/discover/import", methods=["POST"])
-def api_import_discovered():
-    """Import selected discovered devices into MindHome."""
-    data = request.json
-    session = get_db()
-    try:
-        imported_count = 0
-        selected_ids = data.get("selected_entities", [])
-
-        for domain_name, domain_data in data.get("domains", {}).items():
-            domain = session.query(Domain).filter_by(name=domain_name).first()
-            if not domain:
-                continue
-
-            # Handle both formats: list of entities or dict with count/entities
-            if isinstance(domain_data, dict):
-                entities = domain_data.get("entities", [])
-            elif isinstance(domain_data, list):
-                entities = domain_data
-            else:
-                continue
-
-            has_imported = False
-            for entity_info in entities:
-                # Handle entity_info as string (just entity_id) or dict
-                if isinstance(entity_info, str):
-                    entity_id = entity_info
-                    friendly_name = entity_info
-                    attributes = {}
-                elif isinstance(entity_info, dict):
-                    entity_id = entity_info.get("entity_id", "")
-                    friendly_name = entity_info.get("friendly_name", entity_id)
-                    attributes = entity_info.get("attributes", {})
-                else:
-                    continue
-
-                # Skip if not in selected list (when selection is provided)
-                if selected_ids and entity_id not in selected_ids:
-                    continue
-
-                # Skip if already exists
-                existing = session.query(Device).filter_by(ha_entity_id=entity_id).first()
-                if existing:
-                    continue
-
-                device = Device(
-                    ha_entity_id=entity_id,
-                    name=friendly_name,
-                    domain_id=domain.id,
-                    device_meta=attributes
-                )
-                session.add(device)
-                imported_count += 1
-                has_imported = True
-
-            # Enable domain if devices were imported
-            if has_imported:
-                domain.is_enabled = True
-
-        session.commit()
-        return jsonify({"success": True, "imported": imported_count})
-    finally:
-        session.close()
-
-
-@app.route("/api/discover/areas", methods=["GET"])
-def api_discover_areas():
-    """Get areas (rooms) from HA."""
-    areas = ha.get_areas()
-    return jsonify({"areas": areas or []})
-
-
-@app.route("/api/ha/persons", methods=["GET"])
-def api_ha_persons():
-    """Get all person entities from HA for user assignment."""
-    states = ha.get_states() or []
-    persons = []
-    for s in states:
-        eid = s.get("entity_id", "")
-        if eid.startswith("person."):
-            persons.append({
-                "entity_id": eid,
-                "name": s.get("attributes", {}).get("friendly_name", eid),
-                "state": s.get("state", "unknown")
-            })
-    return jsonify({"persons": persons})
-
-
-# ==============================================================================
-# API Routes - Users
-# ==============================================================================
-
-@app.route("/api/users", methods=["GET"])
-def api_get_users():
-    """Get all users."""
-    session = get_db()
-    try:
-        users = session.query(User).filter_by(is_active=True).all()
-        return jsonify([{
-            "id": u.id,
-            "name": u.name,
-            "role": u.role.value,
-            "ha_person_entity": u.ha_person_entity,
-            "language": u.language,
-            "created_at": u.created_at.isoformat()
-        } for u in users])
-    finally:
-        session.close()
-
-
-@app.route("/api/users", methods=["POST"])
-def api_create_user():
-    """Create a new user."""
-    data = request.json
-    session = get_db()
-    try:
-        user = User(
-            name=data["name"],
-            role=UserRole(data.get("role", "user")),
-            ha_person_entity=data.get("ha_person_entity"),
-            language=data.get("language", get_language())
-        )
-        session.add(user)
-        session.commit()
-
-        # Create default notification settings
-        for ntype in NotificationType:
-            ns = NotificationSetting(
-                user_id=user.id,
-                notification_type=ntype,
-                is_enabled=True,
-                quiet_hours_start="22:00",
-                quiet_hours_end="07:00",
-                quiet_hours_allow_critical=True
-            )
-            session.add(ns)
-        session.commit()
-
-        return jsonify({"id": user.id, "name": user.name}), 201
-    finally:
-        session.close()
-
-
-@app.route("/api/users/<int:user_id>", methods=["PUT"])
-def api_update_user(user_id):
-    """Update a user."""
-    data = request.json
-    session = get_db()
-    try:
-        user = session.query(User).get(user_id)
-        if not user:
-            return jsonify({"error": "User not found"}), 404
-
-        if "name" in data:
-            user.name = data["name"]
-        if "role" in data:
-            user.role = UserRole(data["role"])
-        if "ha_person_entity" in data:
-            user.ha_person_entity = data["ha_person_entity"]
-        if "language" in data:
-            user.language = data["language"]
-
-        session.commit()
-        return jsonify({"id": user.id, "name": user.name})
-    finally:
-        session.close()
-
-
-@app.route("/api/users/<int:user_id>", methods=["DELETE"])
-def api_delete_user(user_id):
-    """Delete a user (soft delete)."""
-    session = get_db()
-    try:
-        user = session.query(User).get(user_id)
-        if not user:
-            return jsonify({"error": "User not found"}), 404
-        user.is_active = False
-        session.commit()
-        return jsonify({"success": True})
-    finally:
-        session.close()
-
-
-# ==============================================================================
-# API Routes - Quick Actions
-# ==============================================================================
-
-@app.route("/api/quick-actions", methods=["GET"])
-def api_get_quick_actions():
-    """Get all quick actions."""
-    session = get_db()
-    try:
-        actions = session.query(QuickAction).filter_by(is_active=True).order_by(
-            QuickAction.sort_order
-        ).all()
-        lang = get_language()
-        return jsonify([{
-            "id": a.id,
-            "name": a.name_de if lang == "de" else a.name_en,
-            "icon": a.icon,
-            "action_data": a.action_data,
-            "is_system": a.is_system
-        } for a in actions])
-    finally:
-        session.close()
-
-
-@app.route("/api/quick-actions/execute/<int:action_id>", methods=["POST"])
-def api_execute_quick_action(action_id):
-    """Execute a quick action."""
-    session = get_db()
-    try:
-        action = session.query(QuickAction).get(action_id)
-        if not action:
-            return jsonify({"error": "Quick action not found"}), 404
-
-        action_type = action.action_data.get("type")
-
-        if action_type == "all_off":
-            # Turn off all lights, switches, media
-            for entity in ha.get_entities_by_domain("light"):
-                ha.call_service("light", "turn_off", entity_id=entity["entity_id"])
-            for entity in ha.get_entities_by_domain("switch"):
-                ha.call_service("switch", "turn_off", entity_id=entity["entity_id"])
-            for entity in ha.get_entities_by_domain("media_player"):
-                ha.call_service("media_player", "turn_off", entity_id=entity["entity_id"])
-
-        elif action_type == "leaving_home":
-            set_setting("system_mode", "away")
-            # Turn off lights, lower heating, activate security
-            for entity in ha.get_entities_by_domain("light"):
-                ha.call_service("light", "turn_off", entity_id=entity["entity_id"])
-            for entity in ha.get_entities_by_domain("climate"):
-                ha.call_service("climate", "set_temperature",
-                              {"temperature": 18}, entity_id=entity["entity_id"])
-
-        elif action_type == "arriving_home":
-            set_setting("system_mode", "normal")
-            # Will be enhanced in Phase 2 with learned preferences
-
-        elif action_type == "guest_mode_on":
-            set_setting("system_mode", "guest")
-
-        elif action_type == "emergency_stop":
-            set_setting("system_mode", "emergency_stop")
-            states = session.query(RoomDomainState).all()
-            for state in states:
-                state.is_paused = True
-            session.commit()
-
-        # Log action
-        log = ActionLog(
-            action_type="quick_action",
-            action_data={"quick_action_id": action_id, "type": action_type},
-            reason=f"Quick Action: {action.name_de}"
-        )
-        session.add(log)
-        session.commit()
-
-        return jsonify({"success": True, "action_type": action_type})
-    finally:
-        session.close()
-
-
-# ==============================================================================
-# API Routes - Data Dashboard (Privacy/Transparency)
-# ==============================================================================
-
-@app.route("/api/data-dashboard", methods=["GET"])
-def api_data_dashboard():
-    """Get overview of all collected data for transparency."""
-    session = get_db()
-    try:
-        collections = session.query(DataCollection).all()
-        return jsonify([{
-            "room_id": dc.room_id,
-            "domain_id": dc.domain_id,
-            "data_type": dc.data_type,
-            "record_count": dc.record_count,
-            "first_record": dc.first_record_at.isoformat() if dc.first_record_at else None,
-            "last_record": dc.last_record_at.isoformat() if dc.last_record_at else None,
-            "storage_size_bytes": dc.storage_size_bytes
-        } for dc in collections])
-    finally:
-        session.close()
-
-
-@app.route("/api/data-dashboard/delete/<int:collection_id>", methods=["DELETE"])
-def api_delete_collected_data(collection_id):
-    """Delete specific collected data."""
-    session = get_db()
-    try:
-        dc = session.query(DataCollection).get(collection_id)
-        if not dc:
-            return jsonify({"error": "Not found"}), 404
-        session.delete(dc)
-        session.commit()
-        return jsonify({"success": True})
-    finally:
-        session.close()
-
-
-# ==============================================================================
-# API Routes - Translations
-# ==============================================================================
-
-@app.route("/api/system/translations/<lang_code>", methods=["GET"])
-def api_get_translations(lang_code):
-    """Get translations for a language."""
-    import json as json_lib
-    lang_file = os.path.join(os.path.dirname(__file__), "translations", f"{lang_code}.json")
-    try:
-        with open(lang_file, "r", encoding="utf-8") as f:
-            return jsonify(json_lib.load(f))
-    except FileNotFoundError:
-        return jsonify({"error": "Language not found"}), 404
-
-
-# ==============================================================================
-# API Routes - Onboarding
-# ==============================================================================
-
-@app.route("/api/onboarding/status", methods=["GET"])
-def api_onboarding_status():
-    """Get onboarding status."""
-    return jsonify({
-        "completed": get_setting("onboarding_completed", "false") == "true"
-    })
-
-
-@app.route("/api/onboarding/complete", methods=["POST"])
-def api_onboarding_complete():
-    """Mark onboarding as complete."""
-    set_setting("onboarding_completed", "true")
-    return jsonify({"success": True})
-
-
-# ==============================================================================
-# API Routes - Action Log
-# ==============================================================================
-
-@app.route("/api/action-log", methods=["GET"])
-def api_get_action_log():
-    """Get action log with optional filters."""
-    session = get_db()
-    try:
-        limit = request.args.get("limit", 50, type=int)
-        action_type = request.args.get("type")
-
-        query = session.query(ActionLog).order_by(ActionLog.created_at.desc())
-
-        if action_type:
-            query = query.filter_by(action_type=action_type)
-
-        logs = query.limit(limit).all()
-
-        return jsonify([{
-            "id": log.id,
-            "action_type": log.action_type,
-            "domain_id": log.domain_id,
-            "room_id": log.room_id,
-            "action_data": log.action_data,
-            "reason": log.reason,
-            "was_undone": log.was_undone,
-            "created_at": log.created_at.isoformat()
-        } for log in logs])
-    finally:
-        session.close()
-
-
-@app.route("/api/action-log/<int:log_id>/undo", methods=["POST"])
-def api_undo_action(log_id):
-    """Undo a specific action."""
-    session = get_db()
-    try:
-        log = session.query(ActionLog).get(log_id)
-        if not log:
-            return jsonify({"error": "Action not found"}), 404
-        if log.was_undone:
-            return jsonify({"error": "Action already undone"}), 400
-        if not log.previous_state:
-            return jsonify({"error": "No previous state available"}), 400
-
-        # Restore previous state
-        prev = log.previous_state
-        if "entity_id" in prev and "state" in prev:
-            domain = prev["entity_id"].split(".")[0]
-            if prev["state"] == "on":
-                ha.call_service(domain, "turn_on", entity_id=prev["entity_id"])
-            elif prev["state"] == "off":
-                ha.call_service(domain, "turn_off", entity_id=prev["entity_id"])
-
-        log.was_undone = True
-        session.commit()
-
-        return jsonify({"success": True})
-    finally:
-        session.close()
-
-
-# ==============================================================================
-# Frontend Serving
-# ==============================================================================
-
-@app.route("/")
-@app.route("/frontend")
-@app.route("/frontend/")
-@app.route("/frontend/<path:path>")
-def serve_frontend(path=None):
-    """Serve the React frontend."""
-    if path and os.path.exists(os.path.join(app.static_folder, "frontend", path)):
-        return send_from_directory(os.path.join(app.static_folder, "frontend"), path)
-    return send_from_directory(os.path.join(app.static_folder, "frontend"), "index.html")
-
-
-# ==============================================================================
-# Startup
-# ==============================================================================
-
-@app.route("/api/backup/export", methods=["GET"])
-def api_backup_export():
-    """Export all MindHome configuration as JSON."""
-    session = get_db()
-    try:
-        backup = {
-            "version": "0.1.0",
-            "exported_at": datetime.now(timezone.utc).isoformat(),
-            "rooms": [], "devices": [], "users": [], "domains": [],
-            "room_domain_states": [], "settings": [], "quick_actions": [],
-            "action_log": [], "data_collections": [], "user_preferences": []
+        // Devices are imported manually from the Devices page
+
+        // Set language
+        await api.put('system/settings/language', { value: lang });
+
+        // Mark onboarding complete
+        await api.post('onboarding/complete');
+
+        onComplete();
+    };
+
+    const labels = {
+        de: {
+            welcome_title: 'Willkommen bei MindHome!',
+            welcome_sub: 'Dein Zuhause wird intelligent. Lass uns gemeinsam alles einrichten.',
+            lang_title: 'Sprache wählen',
+            lang_sub: 'In welcher Sprache soll MindHome kommunizieren?',
+            admin_title: 'Dein Profil',
+            admin_sub: 'Erstelle das Admin-Konto für MindHome.',
+            admin_name: 'Dein Name',
+            discover_title: 'Geräte erkennen',
+            discover_sub: 'MindHome sucht jetzt nach allen Geräten in deinem Home Assistant.',
+            discover_btn: 'Geräte suchen',
+            discover_searching: 'Suche läuft...',
+            discover_found: 'Geräte gefunden in',
+            discover_domains: 'Bereichen',
+            privacy_title: 'Datenschutz',
+            privacy_sub: 'Alle deine Daten bleiben lokal auf deinem Gerät. Nichts wird an externe Server gesendet. Du hast volle Kontrolle.',
+            privacy_note: 'Du kannst später pro Raum einstellen welche Daten erfasst werden.',
+            done_title: 'Alles bereit!',
+            done_sub: 'MindHome beginnt jetzt mit der Lernphase. Die ersten Tage beobachtet MindHome nur und sammelt Daten.',
+            start: 'Los geht\'s',
+            next: 'Weiter',
+            back: 'Zurück',
+            finish: 'MindHome starten'
+        },
+        en: {
+            welcome_title: 'Welcome to MindHome!',
+            welcome_sub: 'Your home is getting smart. Let\'s set everything up together.',
+            lang_title: 'Choose Language',
+            lang_sub: 'Which language should MindHome use?',
+            admin_title: 'Your Profile',
+            admin_sub: 'Create the admin account for MindHome.',
+            admin_name: 'Your Name',
+            discover_title: 'Discover Devices',
+            discover_sub: 'MindHome will now search for all devices in your Home Assistant.',
+            discover_btn: 'Search Devices',
+            discover_searching: 'Searching...',
+            discover_found: 'devices found in',
+            discover_domains: 'domains',
+            privacy_title: 'Privacy',
+            privacy_sub: 'All your data stays local on your device. Nothing is sent to external servers. You have full control.',
+            privacy_note: 'You can later configure per room which data is collected.',
+            done_title: 'All set!',
+            done_sub: 'MindHome now begins the learning phase. For the first days, MindHome will only observe and collect data.',
+            start: 'Let\'s go',
+            next: 'Next',
+            back: 'Back',
+            finish: 'Start MindHome'
         }
-        for r in session.query(Room).all():
-            backup["rooms"].append({"id": r.id, "name": r.name, "ha_area_id": r.ha_area_id,
-                "icon": r.icon, "privacy_mode": r.privacy_mode, "is_active": r.is_active})
-        for d in session.query(Device).all():
-            backup["devices"].append({"id": d.id, "ha_entity_id": d.ha_entity_id, "name": d.name,
-                "domain_id": d.domain_id, "room_id": d.room_id,
-                "is_tracked": d.is_tracked, "is_controllable": d.is_controllable, "device_meta": d.device_meta})
-        for u in session.query(User).all():
-            backup["users"].append({"id": u.id, "name": u.name, "ha_person_entity": u.ha_person_entity,
-                "role": u.role.value if u.role else "user", "language": u.language})
-        for d in session.query(Domain).all():
-            backup["domains"].append({"id": d.id, "name": d.name, "is_enabled": d.is_enabled})
-        for rds in session.query(RoomDomainState).all():
-            backup["room_domain_states"].append({"room_id": rds.room_id, "domain_id": rds.domain_id,
-                "learning_phase": rds.learning_phase.value if rds.learning_phase else "observing",
-                "confidence_score": rds.confidence_score, "is_paused": rds.is_paused})
-        for s in session.query(SystemSetting).all():
-            backup["settings"].append({"key": s.key, "value": s.value})
-        for log in session.query(ActionLog).order_by(ActionLog.created_at.desc()).limit(200).all():
-            backup["action_log"].append({"action_type": log.action_type, "domain_id": log.domain_id,
-                "room_id": log.room_id, "device_id": log.device_id,
-                "action_data": log.action_data, "reason": log.reason,
-                "was_undone": log.was_undone, "created_at": log.created_at.isoformat()})
-        for up in session.query(UserPreference).all():
-            backup["user_preferences"].append({"user_id": up.user_id, "room_id": up.room_id,
-                "preference_key": up.preference_key, "preference_value": up.preference_value})
-        return jsonify(backup)
-    finally:
-        session.close()
+    };
 
+    const l = labels[lang];
 
-@app.route("/api/backup/import", methods=["POST"])
-def api_backup_import():
-    """Import MindHome configuration from JSON backup."""
-    data = request.json
-    if not data or "version" not in data:
-        return jsonify({"error": "Invalid backup file"}), 400
-    session = get_db()
-    try:
-        # Restore domains (update existing by name)
-        for d_data in data.get("domains", []):
-            try:
-                domain = session.query(Domain).filter_by(name=d_data.get("name")).first()
-                if domain:
-                    domain.is_enabled = d_data.get("is_enabled", False)
-            except Exception as e:
-                logger.warning(f"Domain import error: {e}")
+    return (
+        <div className="onboarding-overlay">
+            <div className="onboarding-container">
+                {/* Progress */}
+                <div className="onboarding-progress">
+                    {steps.map((s, i) => (
+                        <div key={s.id} className={`onboarding-progress-step ${
+                            i < step ? 'completed' : i === step ? 'active' : ''
+                        }`} />
+                    ))}
+                </div>
 
-        session.flush()
+                {/* Step Content */}
+                <div className="onboarding-content" key={step}>
+                    {step === 0 && (
+                        <div style={{ textAlign: 'center' }}>
+                            <div className="sidebar-logo" style={{ width: 72, height: 72, fontSize: 36, margin: '0 auto 24px', boxShadow: 'var(--shadow-glow)' }}>
+                                <span className="mdi mdi-brain" />
+                            </div>
+                            <div className="onboarding-title">{l.welcome_title}</div>
+                            <div className="onboarding-subtitle">{l.welcome_sub}</div>
 
-        # Restore rooms
-        room_id_map = {}
-        for r_data in data.get("rooms", []):
-            try:
-                existing = session.query(Room).filter_by(name=r_data.get("name")).first()
-                if existing:
-                    existing.icon = r_data.get("icon", "mdi:door")
-                    existing.privacy_mode = r_data.get("privacy_mode") or {}
-                    room_id_map[r_data.get("id", 0)] = existing.id
-                else:
-                    room = Room(
-                        name=r_data.get("name", "Room"),
-                        ha_area_id=r_data.get("ha_area_id"),
-                        icon=r_data.get("icon", "mdi:door"),
-                        privacy_mode=r_data.get("privacy_mode") or {},
-                        is_active=r_data.get("is_active", True)
-                    )
-                    session.add(room)
-                    session.flush()
-                    room_id_map[r_data.get("id", 0)] = room.id
-            except Exception as e:
-                logger.warning(f"Room import error: {e}")
+                            {/* Backup Restore Section */}
+                            {!backupData ? (
+                                <div style={{ marginTop: 24, padding: 16, border: '1px dashed var(--border)', borderRadius: 12 }}>
+                                    <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 12 }}>
+                                        {lang === 'de'
+                                            ? 'Du hast bereits ein Backup? Stelle es hier wieder her:'
+                                            : 'Already have a backup? Restore it here:'}
+                                    </p>
+                                    <button className="btn btn-secondary" onClick={() => restoreInputRef.current?.click()}>
+                                        <span className="mdi mdi-upload" />
+                                        {lang === 'de' ? 'Backup-Datei wählen' : 'Choose Backup File'}
+                                    </button>
+                                    <input ref={restoreInputRef} type="file" accept=".json" onChange={handleFileSelect} style={{ display: 'none' }} />
+                                    {backupError && (
+                                        <p style={{ color: 'var(--danger)', fontSize: 13, marginTop: 8 }}>{backupError}</p>
+                                    )}
+                                </div>
+                            ) : (
+                                <div style={{ marginTop: 24, padding: 20, border: '2px solid var(--success)', borderRadius: 12, background: 'var(--bg-secondary)' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, justifyContent: 'center', marginBottom: 16 }}>
+                                        <span className="mdi mdi-check-circle" style={{ fontSize: 28, color: 'var(--success)' }} />
+                                        <strong style={{ fontSize: 16 }}>
+                                            {lang === 'de' ? 'Backup erkannt!' : 'Backup Found!'}
+                                        </strong>
+                                    </div>
+                                    <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 16, lineHeight: 1.6 }}>
+                                        <div>{lang === 'de' ? 'Erstellt am' : 'Created'}: {new Date(backupData.exported_at).toLocaleString(lang === 'de' ? 'de-DE' : 'en-US')}</div>
+                                        <div>{backupData.rooms?.length || 0} {lang === 'de' ? 'Räume' : 'Rooms'} · {backupData.devices?.length || 0} {lang === 'de' ? 'Geräte' : 'Devices'} · {backupData.users?.length || 0} {lang === 'de' ? 'Personen' : 'Users'}</div>
+                                    </div>
+                                    <p style={{ fontSize: 14, fontWeight: 600, marginBottom: 16 }}>
+                                        {lang === 'de'
+                                            ? 'Möchtest du dieses Backup in MindHome laden?'
+                                            : 'Do you want to load this backup into MindHome?'}
+                                    </p>
+                                    <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
+                                        <button className="btn btn-secondary" onClick={() => { setBackupData(null); setBackupError(''); }}>
+                                            {lang === 'de' ? 'Abbrechen' : 'Cancel'}
+                                        </button>
+                                        <button className="btn btn-primary" onClick={handleConfirmRestore} disabled={restoring}>
+                                            <span className="mdi mdi-restore" />
+                                            {restoring
+                                                ? (lang === 'de' ? 'Wird geladen...' : 'Loading...')
+                                                : (lang === 'de' ? 'Backup wiederherstellen' : 'Restore Backup')}
+                                        </button>
+                                    </div>
+                                    {backupError && (
+                                        <p style={{ color: 'var(--danger)', fontSize: 13, marginTop: 12 }}>{backupError}</p>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    )}
 
-        session.flush()
+                    {step === 1 && (
+                        <div>
+                            <div className="onboarding-title">{l.lang_title}</div>
+                            <div className="onboarding-subtitle">{l.lang_sub}</div>
+                            <div style={{ display: 'flex', gap: 12 }}>
+                                {[{ code: 'de', label: 'Deutsch', flag: '🇩🇪' }, { code: 'en', label: 'English', flag: '🇬🇧' }].map(opt => (
+                                    <button key={opt.code}
+                                        className={`card ${lang === opt.code ? '' : ''}`}
+                                        onClick={() => setLangLocal(opt.code)}
+                                        style={{
+                                            flex: 1, cursor: 'pointer', textAlign: 'center', padding: 20,
+                                            border: lang === opt.code ? '2px solid var(--accent-primary)' : '1px solid var(--border)',
+                                            background: lang === opt.code ? 'var(--accent-primary-dim)' : 'var(--bg-card)'
+                                        }}>
+                                        <div style={{ fontSize: 32 }}>{opt.flag}</div>
+                                        <div style={{ fontWeight: 600, marginTop: 8 }}>{opt.label}</div>
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    )}
 
-        # Restore devices
-        for dev_data in data.get("devices", []):
-            try:
-                entity_id = dev_data.get("ha_entity_id")
-                if not entity_id:
-                    continue
-                existing = session.query(Device).filter_by(ha_entity_id=entity_id).first()
-                new_room_id = room_id_map.get(dev_data.get("room_id"))
-                if existing:
-                    existing.name = dev_data.get("name", existing.name)
-                    existing.room_id = new_room_id
-                    if dev_data.get("domain_id"):
-                        existing.domain_id = dev_data["domain_id"]
-                    existing.is_tracked = dev_data.get("is_tracked", True)
-                    existing.is_controllable = dev_data.get("is_controllable", True)
-                else:
-                    device = Device(
-                        ha_entity_id=entity_id,
-                        name=dev_data.get("name", entity_id),
-                        domain_id=dev_data.get("domain_id") or 1,
-                        room_id=new_room_id,
-                        is_tracked=dev_data.get("is_tracked", True),
-                        is_controllable=dev_data.get("is_controllable", True),
-                        device_meta=dev_data.get("device_meta") or {}
-                    )
-                    session.add(device)
-            except Exception as e:
-                logger.warning(f"Device import error for {dev_data.get('ha_entity_id')}: {e}")
+                    {step === 2 && (
+                        <div>
+                            <div className="onboarding-title">{l.admin_title}</div>
+                            <div className="onboarding-subtitle">{l.admin_sub}</div>
+                            <div className="input-group">
+                                <label className="input-label">{l.admin_name}</label>
+                                <input className="input" style={{ fontSize: 16, padding: 14 }}
+                                       value={adminName}
+                                       onChange={e => setAdminName(e.target.value)}
+                                       autoFocus />
+                            </div>
+                        </div>
+                    )}
 
-        session.flush()
+                    {step === 3 && (
+                        <div>
+                            <div className="onboarding-title">{l.discover_title}</div>
+                            <div className="onboarding-subtitle">{l.discover_sub}</div>
+                            {!discovered ? (
+                                <div style={{ textAlign: 'center', padding: 24 }}>
+                                    <button className="btn btn-primary btn-lg" onClick={handleDiscover} disabled={discovering}>
+                                        {discovering ? (
+                                            <><div className="loading-spinner" style={{ width: 20, height: 20, borderWidth: 2 }} /> {l.discover_searching}</>
+                                        ) : (
+                                            <><span className="mdi mdi-magnify" /> {l.discover_btn}</>
+                                        )}
+                                    </button>
+                                </div>
+                            ) : (
+                                <div className="card" style={{ borderColor: 'var(--success)' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+                                        <span className="mdi mdi-check-circle" style={{ fontSize: 28, color: 'var(--success)' }} />
+                                        <div>
+                                            <div style={{ fontWeight: 600 }}>
+                                                {discovered.total_entities} {l.discover_found} {Object.keys(discovered.domains || {}).length} {l.discover_domains}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                                        {Object.entries(discovered.domains || {}).map(([domain, data]) => (
+                                            <span key={domain} className="badge badge-info">{domain}: {data.count}</span>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
 
-        # Restore users
-        for u_data in data.get("users", []):
-            try:
-                uname = u_data.get("name")
-                if not uname:
-                    continue
-                existing = session.query(User).filter_by(name=uname).first()
-                # Convert role string to enum
-                role_str = u_data.get("role", "user")
-                try:
-                    role_enum = UserRole(role_str) if isinstance(role_str, str) else role_str
-                except (ValueError, KeyError):
-                    role_enum = UserRole.USER
+                    {step === 4 && (
+                        <div>
+                            <div className="onboarding-title">{l.privacy_title}</div>
+                            <div className="onboarding-subtitle">{l.privacy_sub}</div>
+                            <div className="card" style={{ borderColor: 'var(--success)' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                                    <span className="mdi mdi-shield-check" style={{ fontSize: 32, color: 'var(--success)' }} />
+                                    <div style={{ fontSize: 14, lineHeight: 1.6 }}>
+                                        {l.privacy_note}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
-                if existing:
-                    existing.ha_person_entity = u_data.get("ha_person_entity")
-                    existing.role = role_enum
-                else:
-                    user = User(
-                        name=uname,
-                        ha_person_entity=u_data.get("ha_person_entity"),
-                        role=role_enum,
-                        language=u_data.get("language", "de")
-                    )
-                    session.add(user)
-            except Exception as e:
-                logger.warning(f"User import error for {u_data.get('name')}: {e}")
+                    {step === 5 && (
+                        <div style={{ textAlign: 'center' }}>
+                            <span className="mdi mdi-check-circle" style={{ fontSize: 64, color: 'var(--success)', display: 'block', marginBottom: 16 }} />
+                            <div className="onboarding-title">{l.done_title}</div>
+                            <div className="onboarding-subtitle">{l.done_sub}</div>
+                        </div>
+                    )}
+                </div>
 
-        session.commit()
+                {/* Navigation */}
+                <div className="onboarding-actions">
+                    {step > 0 ? (
+                        <button className="btn btn-secondary" onClick={() => setStep(s => s - 1)}>
+                            <span className="mdi mdi-arrow-left" /> {l.back}
+                        </button>
+                    ) : <div />}
 
-        # Restore settings (each uses own session via set_setting)
-        for s_data in data.get("settings", []):
-            try:
-                if s_data.get("key"):
-                    set_setting(s_data["key"], s_data.get("value", ""))
-            except Exception as e:
-                logger.warning(f"Setting import error: {e}")
+                    {step < steps.length - 1 ? (
+                        <button className="btn btn-primary" onClick={() => setStep(s => s + 1)}>
+                            {step === 0 ? l.start : l.next} <span className="mdi mdi-arrow-right" />
+                        </button>
+                    ) : (
+                        <button className="btn btn-primary btn-lg" onClick={handleComplete}>
+                            <span className="mdi mdi-rocket-launch" /> {l.finish}
+                        </button>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+};
 
-        # Mark onboarding complete
-        set_setting("onboarding_completed", "true")
+// ================================================================
+// Main App
+// ================================================================
 
-        logger.info(f"Backup imported: {len(data.get('rooms',[]))} rooms, {len(data.get('devices',[]))} devices, {len(data.get('users',[]))} users")
-        return jsonify({"success": True, "imported": {
-            "rooms": len(data.get("rooms", [])),
-            "devices": len(data.get("devices", [])),
-            "users": len(data.get("users", []))
-        }})
-    except Exception as e:
-        try:
-            session.rollback()
-        except:
-            pass
-        logger.error(f"Backup import failed: {e}", exc_info=True)
-        return jsonify({"error": str(e)}), 500
-    finally:
-        session.close()
+const App = () => {
+    const [page, setPage] = useState('dashboard');
+    const [sidebarOpen, setSidebarOpen] = useState(false);
+    const [lang, setLang] = useState('de');
+    const [theme, setTheme] = useState('dark');
+    const [viewMode, setViewMode] = useState('simple');
+    const [toast, setToast] = useState(null);
 
+    const [status, setStatus] = useState(null);
+    const [domains, setDomains] = useState([]);
+    const [devices, setDevices] = useState([]);
+    const [rooms, setRooms] = useState([]);
+    const [users, setUsers] = useState([]);
+    const [quickActions, setQuickActions] = useState([]);
+    const [onboardingDone, setOnboardingDone] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [settingsLoaded, setSettingsLoaded] = useState(false);
 
-@app.route("/api/data-collections", methods=["GET"])
-def api_get_data_collections():
-    """Get recent tracked data (observations from ActionLog)."""
-    session = get_db()
-    try:
-        limit = request.args.get("limit", 100, type=int)
-        logs = session.query(ActionLog).filter_by(
-            action_type="observation"
-        ).order_by(ActionLog.created_at.desc()).limit(limit).all()
-        return jsonify([{
-            "id": log.id,
-            "domain_id": log.domain_id,
-            "device_id": log.device_id,
-            "data_type": "state_change",
-            "data_value": log.action_data or {},
-            "collected_at": log.created_at.isoformat()
-        } for log in logs])
-    finally:
-        session.close()
+    const showToast = (message, type = 'info') => setToast({ message, type });
 
+    const refreshData = useCallback(async () => {
+        const [s, d, dev, r, u, qa] = await Promise.all([
+            api.get('system/status'),
+            api.get('domains'),
+            api.get('devices'),
+            api.get('rooms'),
+            api.get('users'),
+            api.get('quick-actions')
+        ]);
+        if (s) setStatus(s);
+        if (d) setDomains(d);
+        if (dev) setDevices(dev);
+        if (r) setRooms(r);
+        if (u) setUsers(u);
+        if (qa) setQuickActions(qa);
+    }, []);
 
-def log_state_change(entity_id, new_state, old_state):
-    """Log state changes to action_log for tracked devices."""
-    session = get_db()
-    try:
-        device = session.query(Device).filter_by(ha_entity_id=entity_id).first()
-        if not device or not device.is_tracked:
-            return
-        action_log = ActionLog(
-            action_type="observation",
-            domain_id=device.domain_id,
-            room_id=device.room_id,
-            device_id=device.id,
-            action_data={"entity_id": entity_id, "old_state": old_state, "new_state": new_state,
-                "timestamp": datetime.now(timezone.utc).isoformat()},
-            reason=f"{device.name}: {old_state} → {new_state}")
-        session.add(action_log)
-        session.commit()
-    except Exception as e:
-        logger.debug(f"Data collection error: {e}")
-        try:
-            session.rollback()
-        except:
-            pass
-    finally:
-        session.close()
+    useEffect(() => {
+        const init = async () => {
+            const s = await api.get('system/status');
+            if (s) {
+                setStatus(s);
+                setLang(s.language || 'de');
+                setTheme(s.theme || 'dark');
+                setViewMode(s.view_mode || 'simple');
+                setOnboardingDone(s.onboarding_completed);
+            } else {
+                setOnboardingDone(false);
+            }
+            await refreshData();
+            setLoading(false);
+            // Mark settings as loaded so useEffects don't overwrite on first render
+            setTimeout(() => setSettingsLoaded(true), 500);
+        };
+        init();
 
+        // Refresh every 30 seconds
+        const interval = setInterval(refreshData, 30000);
+        return () => clearInterval(interval);
+    }, []);
 
-def start_app():
-    """Initialize and start MindHome."""
-    logger.info("=" * 60)
-    logger.info("MindHome - Smart Home AI")
-    logger.info(f"Version: 0.1.0")
-    logger.info(f"Language: {get_language()}")
-    logger.info(f"Log Level: {log_level}")
-    logger.info(f"Ingress Path: {INGRESS_PATH}")
-    logger.info("=" * 60)
+    // Apply theme
+    useEffect(() => {
+        document.documentElement.setAttribute('data-theme', theme);
+        if (settingsLoaded) api.put('system/settings/theme', { value: theme });
+    }, [theme, settingsLoaded]);
 
-    # Connect to Home Assistant
-    ha.connect()
+    // Save viewMode
+    useEffect(() => {
+        if (settingsLoaded) api.put('system/settings/view_mode', { value: viewMode });
+    }, [viewMode, settingsLoaded]);
 
-    # Subscribe to state changes (real-time via WebSocket)
-    ha.subscribe_events(on_state_changed, "state_changed")
+    // Save language
+    useEffect(() => {
+        if (settingsLoaded) api.put('system/settings/language', { value: lang });
+    }, [lang, settingsLoaded]);
 
-    # Start enabled domain plugins
-    domain_manager.start_enabled_domains()
+    const toggleDomain = async (domainId) => {
+        const result = await api.post(`domains/${domainId}/toggle`);
+        if (result) {
+            setDomains(prev => prev.map(d =>
+                d.id === domainId ? { ...d, is_enabled: result.is_enabled } : d
+            ));
+        }
+    };
 
-    logger.info("MindHome started successfully!")
+    const executeQuickAction = async (actionId) => {
+        const result = await api.post(`quick-actions/execute/${actionId}`);
+        if (result?.success) {
+            showToast(lang === 'de' ? 'Aktion ausgeführt' : 'Action executed', 'success');
+            refreshData();
+        }
+    };
 
-    # Start Flask
-    app.run(host="0.0.0.0", port=5000, debug=False)
+    const contextValue = {
+        status, domains, devices, rooms, users, quickActions,
+        lang, setLang, theme, setTheme, viewMode, setViewMode,
+        showToast, refreshData, toggleDomain, executeQuickAction
+    };
 
+    if (loading) {
+        return (
+            <div className="loading-screen">
+                <div className="sidebar-logo" style={{ width: 56, height: 56, fontSize: 28 }}>
+                    <span className="mdi mdi-brain" />
+                </div>
+                <div style={{ fontSize: 22, fontWeight: 700 }}>MindHome</div>
+                <div className="loading-spinner" />
+            </div>
+        );
+    }
 
-if __name__ == "__main__":
-    start_app()
+    if (onboardingDone === false) {
+        return (
+            <AppContext.Provider value={contextValue}>
+                <OnboardingWizard onComplete={() => {
+                    setOnboardingDone(true);
+                    refreshData();
+                }} />
+            </AppContext.Provider>
+        );
+    }
+
+    const navItems = [
+        { section: lang === 'de' ? 'Übersicht' : 'Overview' },
+        { id: 'dashboard', icon: 'mdi-view-dashboard', label: 'Dashboard' },
+        { section: lang === 'de' ? 'Konfiguration' : 'Configuration' },
+        { id: 'domains', icon: 'mdi-puzzle', label: 'Domains' },
+        { id: 'rooms', icon: 'mdi-door', label: lang === 'de' ? 'Räume' : 'Rooms' },
+        { id: 'devices', icon: 'mdi-devices', label: lang === 'de' ? 'Geräte' : 'Devices' },
+        { id: 'users', icon: 'mdi-account-group', label: lang === 'de' ? 'Personen' : 'People' },
+        { section: 'System' },
+        { id: 'log', icon: 'mdi-text-box-outline', label: 'KI-Log' },
+        { id: 'data', icon: 'mdi-shield-lock', label: lang === 'de' ? 'Datenschutz' : 'Privacy' },
+        { id: 'settings', icon: 'mdi-cog', label: lang === 'de' ? 'Einstellungen' : 'Settings' },
+    ];
+
+    const pages = {
+        dashboard: DashboardPage,
+        domains: DomainsPage,
+        devices: DevicesPage,
+        rooms: RoomsPage,
+        users: UsersPage,
+        log: LogPage,
+        data: DataPage,
+        settings: SettingsPage,
+    };
+
+    const PageComponent = pages[page] || DashboardPage;
+    const currentNav = navItems.find(n => n.id === page);
+    const pageTitle = currentNav?.label || 'Dashboard';
+
+    return (
+        <AppContext.Provider value={contextValue}>
+            <div className="app-layout">
+                {/* Sidebar */}
+                <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
+                    <div className="sidebar-header">
+                        <div className="sidebar-brand" onClick={() => { setPage('dashboard'); setSidebarOpen(false); }}>
+                            <div className="sidebar-logo">
+                                <span className="mdi mdi-brain" />
+                            </div>
+                            <div>
+                                <div className="sidebar-title">MindHome</div>
+                                <div className="sidebar-tagline">
+                                    {lang === 'de' ? 'Dein Zuhause denkt mit' : 'Your home thinks ahead'}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <nav className="sidebar-nav">
+                        {navItems.map((item, i) => {
+                            if (item.section) {
+                                return <div key={i} className="nav-section-title">{item.section}</div>;
+                            }
+                            return (
+                                <div
+                                    key={item.id}
+                                    className={`nav-item ${page === item.id ? 'active' : ''}`}
+                                    onClick={() => { setPage(item.id); setSidebarOpen(false); }}
+                                >
+                                    <span className={`mdi ${item.icon}`} />
+                                    {item.label}
+                                </div>
+                            );
+                        })}
+                    </nav>
+
+                    <div className="sidebar-footer">
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--text-muted)' }}>
+                            <span className={`connection-dot ${status?.ha_connected ? 'connected' : 'disconnected'}`} />
+                            {status?.ha_connected ? 'HA Connected' : 'HA Disconnected'}
+                        </div>
+                    </div>
+                </aside>
+
+                {/* Mobile overlay */}
+                {sidebarOpen && (
+                    <div style={{
+                        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
+                        zIndex: 99
+                    }} onClick={() => setSidebarOpen(false)} />
+                )}
+
+                {/* Main */}
+                <main className="main-content">
+                    <header className="main-header">
+                        <div className="main-header-left">
+                            <button className="menu-toggle" onClick={() => setSidebarOpen(true)}>
+                                <span className="mdi mdi-menu" />
+                            </button>
+                            <h1 className="page-title">{pageTitle}</h1>
+                        </div>
+                        <div className="main-header-right">
+                            <button className="btn btn-ghost btn-icon"
+                                    onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')}
+                                    title={theme === 'dark' ? 'Light Mode' : 'Dark Mode'}>
+                                <span className={`mdi ${theme === 'dark' ? 'mdi-weather-sunny' : 'mdi-weather-night'}`} style={{ fontSize: 20 }} />
+                            </button>
+                            <button className="btn btn-ghost btn-icon"
+                                    onClick={() => setViewMode(v => v === 'simple' ? 'advanced' : 'simple')}
+                                    title={viewMode === 'simple' ? 'Advanced' : 'Simple'}>
+                                <span className={`mdi ${viewMode === 'simple' ? 'mdi-tune' : 'mdi-tune-variant'}`} style={{ fontSize: 20 }} />
+                            </button>
+                        </div>
+                    </header>
+
+                    <div className="main-body">
+                        <PageComponent />
+                    </div>
+                </main>
+            </div>
+
+            {/* Toast */}
+            {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+        </AppContext.Provider>
+    );
+};
+
+// ================================================================
+// Mount App
+// ================================================================
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
