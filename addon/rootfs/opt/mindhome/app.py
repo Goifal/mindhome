@@ -1514,6 +1514,9 @@ def serve_frontend(path):
     # Skip API routes
     if path.startswith("api/"):
         return jsonify({"error": "not found"}), 404
+    # Strip frontend/ prefix if present (to avoid double-nesting)
+    if path.startswith("frontend/"):
+        path = path[len("frontend/"):]
     if path and os.path.exists(os.path.join(app.static_folder, "frontend", path)):
         return send_from_directory(os.path.join(app.static_folder, "frontend"), path)
     return send_from_directory(os.path.join(app.static_folder, "frontend"), "index.html")
