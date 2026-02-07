@@ -35,12 +35,11 @@ const api = {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(data)
             });
-            const json = await res.json();
-            if (!res.ok) return { _error: true, status: res.status, ...(json || {}) };
-            return json;
+            if (!res.ok) throw new Error(`API Error: ${res.status}`);
+            return await res.json();
         } catch (e) {
             console.error(`POST ${endpoint} failed:`, e);
-            return { _error: true, message: e.message };
+            return null;
         }
     },
     async put(endpoint, data = {}) {
@@ -50,25 +49,21 @@ const api = {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(data)
             });
-            const json = await res.json();
-            if (!res.ok) return { _error: true, status: res.status, ...(json || {}) };
-            return json;
+            if (!res.ok) throw new Error(`API Error: ${res.status}`);
+            return await res.json();
         } catch (e) {
             console.error(`PUT ${endpoint} failed:`, e);
-            return { _error: true, message: e.message };
+            return null;
         }
     },
-    async delete(endpoint, data = null) {
+    async delete(endpoint) {
         try {
-            const opts = { method: 'DELETE' };
-            if (data) { opts.headers = { 'Content-Type': 'application/json' }; opts.body = JSON.stringify(data); }
-            const res = await fetch(`${API_BASE}/api/${endpoint}`, opts);
-            const json = await res.json();
-            if (!res.ok) return { _error: true, status: res.status, ...(json || {}) };
-            return json;
+            const res = await fetch(`${API_BASE}/api/${endpoint}`, { method: 'DELETE' });
+            if (!res.ok) throw new Error(`API Error: ${res.status}`);
+            return await res.json();
         } catch (e) {
             console.error(`DELETE ${endpoint} failed:`, e);
-            return { _error: true, message: e.message };
+            return null;
         }
     }
 };
@@ -153,139 +148,15 @@ const Toast = ({ message, type, onClose }) => {
 // Modal Component
 // ================================================================
 
-const Modal = ({ title, children, onClose, actions, wide }) => (
+const Modal = ({ title, children, onClose, actions }) => (
     <div className="modal-overlay" onClick={onClose}>
-        <div className="modal" onClick={e => e.stopPropagation()} style={wide ? { maxWidth: 700, width: '90%' } : {}}>
+        <div className="modal" onClick={e => e.stopPropagation()}>
             <div className="modal-title">{title}</div>
             {children}
             {actions && <div className="modal-actions">{actions}</div>}
         </div>
     </div>
 );
-
-// ================================================================
-// Fix 11: Splash Screen
-// ================================================================
-
-const SplashScreen = () => (
-    <div style={{
-        position: 'fixed', inset: 0, display: 'flex', flexDirection: 'column',
-        alignItems: 'center', justifyContent: 'center', gap: 20,
-        background: 'linear-gradient(135deg, #0D1117 0%, #161B22 50%, #1A1F2B 100%)', zIndex: 9999
-    }}>
-        <div style={{
-            width: 72, height: 72, borderRadius: 18,
-            background: 'linear-gradient(135deg, #F5A623, #E8912D)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            boxShadow: '0 0 40px rgba(245,166,35,0.3)', animation: 'pulse 2s ease-in-out infinite'
-        }}>
-            <span className="mdi mdi-brain" style={{ fontSize: 36, color: '#fff' }} />
-        </div>
-        <div style={{ fontSize: 26, fontWeight: 700, color: '#F0F6FC', letterSpacing: 1 }}>MindHome</div>
-        <div style={{ fontSize: 13, color: '#8B949E' }}>Dein Zuhause denkt mit</div>
-        <div className="loading-spinner" style={{ marginTop: 8 }} />
-    </div>
-);
-
-// ================================================================
-// Fix 23: Confirm Dialog
-// ================================================================
-
-const ConfirmDialog = ({ title, message, onConfirm, onCancel, danger }) => (
-    <div className="modal-overlay" onClick={onCancel}>
-        <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 400 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
-                <span className={`mdi ${danger ? 'mdi-alert-circle' : 'mdi-help-circle'}`}
-                      style={{ fontSize: 28, color: danger ? 'var(--danger)' : 'var(--accent-primary)' }} />
-                <div className="modal-title" style={{ marginBottom: 0 }}>{title}</div>
-            </div>
-            <p style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.5, marginBottom: 20 }}>{message}</p>
-            <div className="modal-actions">
-                <button className="btn btn-secondary" onClick={onCancel}>Abbrechen</button>
-                <button className={`btn ${danger ? 'btn-danger' : 'btn-primary'}`} onClick={onConfirm}>
-                    {danger ? 'Löschen' : 'Bestätigen'}
-                </button>
-            </div>
-        </div>
-    </div>
-);
-
-// ================================================================
-// Fix 8: Custom Dropdown Component
-// ================================================================
-
-const Dropdown = ({ value, onChange, options, placeholder, label }) => {
-    const [open, setOpen] = useState(false);
-    const ref = useRef(null);
-    useEffect(() => {
-        const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
-        document.addEventListener('mousedown', handler);
-        return () => document.removeEventListener('mousedown', handler);
-    }, []);
-    const selected = options.find(o => String(o.value) === String(value));
-    return (
-        <div ref={ref} style={{ position: 'relative' }}>
-            {label && <label className="input-label">{label}</label>}
-            <div className="input" onClick={() => setOpen(!open)} style={{
-                cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', userSelect: 'none'
-            }}>
-                <span style={{ color: selected ? 'var(--text-primary)' : 'var(--text-muted)' }}>{selected?.label || placeholder || '— Auswählen —'}</span>
-                <span className={`mdi mdi-chevron-${open ? 'up' : 'down'}`} style={{ fontSize: 18, color: 'var(--text-muted)' }} />
-            </div>
-            {open && (
-                <div style={{
-                    position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 4,
-                    background: 'var(--bg-card)', border: '1px solid var(--border)',
-                    borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-lg)',
-                    zIndex: 1000, maxHeight: 240, overflow: 'auto'
-                }}>
-                    {options.map(opt => (
-                        <div key={opt.value} onClick={() => { onChange(opt.value); setOpen(false); }}
-                             style={{ padding: '10px 14px', cursor: 'pointer', fontSize: 14,
-                                 background: String(opt.value) === String(value) ? 'var(--accent-primary-dim)' : 'transparent',
-                                 borderLeft: String(opt.value) === String(value) ? '3px solid var(--accent-primary)' : '3px solid transparent'
-                             }}>
-                            {opt.label}
-                        </div>
-                    ))}
-                </div>
-            )}
-        </div>
-    );
-};
-
-// ================================================================
-// Fix 2: Time Period Filter
-// ================================================================
-
-const PeriodFilter = ({ value, onChange, lang }) => {
-    const periods = [
-        { id: 'today', de: 'Heute', en: 'Today' },
-        { id: 'week', de: 'Woche', en: 'Week' },
-        { id: 'month', de: 'Monat', en: 'Month' },
-        { id: 'all', de: 'Alles', en: 'All' },
-    ];
-    return (
-        <div style={{ display: 'flex', gap: 4 }}>
-            {periods.map(p => (
-                <button key={p.id} className={`btn ${value === p.id ? 'btn-primary' : 'btn-secondary'}`}
-                    style={{ padding: '6px 14px', fontSize: 13 }} onClick={() => onChange(p.id)}>
-                    {p[lang]}
-                </button>
-            ))}
-        </div>
-    );
-};
-
-// Fix 13: Relative time helper
-const relativeTime = (isoStr, lang) => {
-    if (!isoStr) return lang === 'de' ? 'Keine Aktivität' : 'No activity';
-    const diff = (Date.now() - new Date(isoStr).getTime()) / 1000;
-    if (diff < 60) return lang === 'de' ? 'Gerade eben' : 'Just now';
-    if (diff < 3600) return `${Math.floor(diff / 60)} Min`;
-    if (diff < 86400) return `${Math.floor(diff / 3600)} Std`;
-    return `${Math.floor(diff / 86400)} ${lang === 'de' ? 'Tage' : 'days'}`;
-};
 
 // ================================================================
 // Dashboard Page
@@ -404,11 +275,6 @@ const DashboardPage = () => {
                                             {room.device_count} {lang === 'de' ? 'Geräte' : 'devices'}
                                         </div>
                                     </div>
-                                </div>
-                                {/* Fix 13: Last activity */}
-                                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8 }}>
-                                    <span className="mdi mdi-clock-outline" style={{ marginRight: 4 }} />
-                                    {relativeTime(room.last_activity, lang)}
                                 </div>
                                 {room.domain_states?.length > 0 && (
                                     <div className="phase-bar">
@@ -802,12 +668,10 @@ const DevicesPage = () => {
 // ================================================================
 
 const RoomsPage = () => {
-    const { rooms, domains, lang, showToast, refreshData } = useApp();
+    const { rooms, lang, showToast, refreshData } = useApp();
     const [showAdd, setShowAdd] = useState(false);
     const [newRoom, setNewRoom] = useState({ name: '', icon: 'mdi:door' });
     const [editRoom, setEditRoom] = useState(null);
-    const [confirm, setConfirm] = useState(null);
-    const [importing, setImporting] = useState(false);
 
     const phaseLabels = {
         observing: { de: 'Beobachten', en: 'Observing', color: 'info' },
@@ -836,44 +700,24 @@ const RoomsPage = () => {
         }
     };
 
-    const handleDelete = async (room) => {
-        setConfirm({ id: room.id, name: room.name, count: room.device_count });
-    };
-
-    const confirmDelete = async () => {
-        const result = await api.delete(`rooms/${confirm.id}`);
-        if (result?.success) { showToast(lang === 'de' ? 'Raum gelöscht' : 'Room deleted', 'success'); refreshData(); }
-        setConfirm(null);
-    };
-
-    // Fix 9: Import rooms from HA
-    const handleImportFromHA = async () => {
-        setImporting(true);
-        const result = await api.post('rooms/import-from-ha');
+    const handleDelete = async (id) => {
+        const result = await api.delete(`rooms/${id}`);
         if (result?.success) {
-            showToast(lang === 'de' ? `${result.imported} importiert, ${result.skipped} übersprungen` : `${result.imported} imported, ${result.skipped} skipped`,
-                result.imported > 0 ? 'success' : 'info');
+            showToast(lang === 'de' ? 'Raum gelöscht' : 'Room deleted', 'success');
             refreshData();
-        } else { showToast(result?.error || 'Import failed', 'error'); }
-        setImporting(false);
+        }
     };
 
     return (
         <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 20, flexWrap: 'wrap', gap: 8 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 20 }}>
                 <p style={{ color: 'var(--text-secondary)', fontSize: 14 }}>
                     {rooms.length} {lang === 'de' ? 'Räume' : 'Rooms'}
                 </p>
-                <div style={{ display: 'flex', gap: 8 }}>
-                    <button className="btn btn-secondary" onClick={handleImportFromHA} disabled={importing}>
-                        <span className="mdi mdi-home-import-outline" />
-                        {importing ? '...' : (lang === 'de' ? 'Aus HA importieren' : 'Import from HA')}
-                    </button>
-                    <button className="btn btn-primary" onClick={() => setShowAdd(true)}>
-                        <span className="mdi mdi-plus" />
-                        {lang === 'de' ? 'Raum hinzufügen' : 'Add Room'}
-                    </button>
-                </div>
+                <button className="btn btn-primary" onClick={() => setShowAdd(true)}>
+                    <span className="mdi mdi-plus" />
+                    {lang === 'de' ? 'Raum hinzufügen' : 'Add Room'}
+                </button>
             </div>
 
             {rooms.length > 0 ? (
@@ -897,7 +741,7 @@ const RoomsPage = () => {
                                         title={lang === 'de' ? 'Bearbeiten' : 'Edit'}>
                                         <span className="mdi mdi-pencil" style={{ fontSize: 16, color: 'var(--accent-primary)' }} />
                                     </button>
-                                    <button className="btn btn-ghost btn-icon" onClick={() => handleDelete(room)}>
+                                    <button className="btn btn-ghost btn-icon" onClick={() => handleDelete(room.id)}>
                                         <span className="mdi mdi-delete-outline" style={{ fontSize: 16, color: 'var(--text-muted)' }} />
                                     </button>
                                 </div>
@@ -911,14 +755,9 @@ const RoomsPage = () => {
                                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                                         {room.domain_states.map((ds, i) => {
                                             const phase = phaseLabels[ds.learning_phase] || phaseLabels.observing;
-                                            const dom = domains.find(d => d.id === ds.domain_id);
-                                            const domName = dom?.display_name || '?';
-                                            const domIcon = dom?.icon?.replace('mdi:', 'mdi-') || 'mdi-puzzle';
                                             return (
-                                                <span key={i} className={`badge badge-${phase.color}`} style={{ fontSize: 11 }}
-                                                    title={`${domName}: ${phase[lang]}`}>
-                                                    <span className={`mdi ${domIcon}`} style={{ marginRight: 4, fontSize: 12 }} />
-                                                    {domName}
+                                                <span key={i} className={`badge badge-${phase.color}`} style={{ fontSize: 11 }}>
+                                                    <span className="badge-dot" />{phase[lang]}
                                                 </span>
                                             );
                                         })}
@@ -993,14 +832,6 @@ const RoomsPage = () => {
                                placeholder="mdi:door" />
                     </div>
                 </Modal>
-            )}
-            {confirm && (
-                <ConfirmDialog
-                    title={lang === 'de' ? 'Raum löschen?' : 'Delete room?'}
-                    message={lang === 'de'
-                        ? `"${confirm.name}" mit ${confirm.count} Geräten wird gelöscht.`
-                        : `"${confirm.name}" with ${confirm.count} devices will be deleted.`}
-                    danger onConfirm={confirmDelete} onCancel={() => setConfirm(null)} />
             )}
         </div>
     );
@@ -1227,19 +1058,15 @@ const LogPage = () => {
     const { lang } = useApp();
     const [logs, setLogs] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [period, setPeriod] = useState('all');
 
-    const loadLogs = async (p) => {
-        setLoading(true);
-        const data = await api.get(`action-log?limit=200&period=${p}`);
-        setLogs(data || []);
-        setLoading(false);
-    };
-
-    useEffect(() => { loadLogs(period); }, [period]);
+    useEffect(() => {
+        api.get('action-log?limit=50').then(data => {
+            setLogs(data || []);
+            setLoading(false);
+        });
+    }, []);
 
     const typeIcons = {
-        observation: 'mdi-eye',
         quick_action: 'mdi-lightning-bolt',
         automation: 'mdi-robot',
         suggestion: 'mdi-lightbulb-on',
@@ -1249,25 +1076,11 @@ const LogPage = () => {
 
     return (
         <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 8 }}>
-                <p style={{ color: 'var(--text-secondary)', fontSize: 14 }}>
-                    {logs.length} {lang === 'de' ? 'Einträge' : 'entries'}
-                </p>
-                <PeriodFilter value={period} onChange={setPeriod} lang={lang} />
-            </div>
-
             {loading ? (
                 <div className="empty-state"><div className="loading-spinner" /></div>
             ) : logs.length > 0 ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    {logs.map(log => {
-                        const attrs = log.action_data?.new_attributes || {};
-                        const attrParts = [];
-                        if (attrs.brightness_pct !== undefined) attrParts.push(`💡 ${attrs.brightness_pct}%`);
-                        if (attrs.position_pct !== undefined) attrParts.push(`↕ ${attrs.position_pct}%`);
-                        if (attrs.target_temp !== undefined) attrParts.push(`🌡 ${attrs.target_temp}°C`);
-                        if (attrs.current_temp !== undefined) attrParts.push(`Ist: ${attrs.current_temp}°C`);
-                        return (
+                    {logs.map(log => (
                         <div key={log.id} className="card" style={{ padding: 14, display: 'flex', alignItems: 'flex-start', gap: 12 }}>
                             <span className={`mdi ${typeIcons[log.action_type] || 'mdi-circle-small'}`}
                                   style={{ fontSize: 22, color: 'var(--accent-primary)', marginTop: 2 }} />
@@ -1275,9 +1088,6 @@ const LogPage = () => {
                                 <div style={{ fontSize: 14, fontWeight: 500 }}>
                                     {log.reason || log.action_type}
                                 </div>
-                                {attrParts.length > 0 && (
-                                    <div style={{ fontSize: 12, color: 'var(--accent-secondary)', marginTop: 2 }}>{attrParts.join(' · ')}</div>
-                                )}
                                 <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
                                     {new Date(log.created_at).toLocaleString(lang === 'de' ? 'de-DE' : 'en-US')}
                                 </div>
@@ -1286,8 +1096,7 @@ const LogPage = () => {
                                 <span className="badge badge-warning">{lang === 'de' ? 'Rückgängig' : 'Undone'}</span>
                             )}
                         </div>
-                        );
-                    })}
+                    ))}
                 </div>
             ) : (
                 <div className="empty-state">
@@ -1310,17 +1119,14 @@ const DataPage = () => {
     const { lang, showToast, refreshData, devices, domains } = useApp();
     const [dataCollections, setDataCollections] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [period, setPeriod] = useState('all');
     const fileInputRef = useRef(null);
 
-    const loadData = async (p) => {
-        setLoading(true);
-        const data = await api.get(`data-collections?limit=200&period=${p}`);
-        setDataCollections(data || []);
-        setLoading(false);
-    };
-
-    useEffect(() => { loadData(period); }, [period]);
+    useEffect(() => {
+        api.get('data-collections?limit=100').then(data => {
+            setDataCollections(data || []);
+            setLoading(false);
+        });
+    }, []);
 
     const handleExport = async () => {
         const backup = await api.get('backup/export');
@@ -1407,14 +1213,11 @@ const DataPage = () => {
 
             {/* Collected Data */}
             <div className="card">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
-                    <div className="card-title" style={{ marginBottom: 0 }}>
-                        {lang === 'de' ? 'Gesammelte Daten' : 'Collected Data'}
-                        <span style={{ fontWeight: 400, fontSize: 13, color: 'var(--text-muted)', marginLeft: 8 }}>
-                            ({dataCollections.length})
-                        </span>
-                    </div>
-                    <PeriodFilter value={period} onChange={setPeriod} lang={lang} />
+                <div className="card-title" style={{ marginBottom: 16 }}>
+                    {lang === 'de' ? 'Gesammelte Daten' : 'Collected Data'}
+                    <span style={{ fontWeight: 400, fontSize: 13, color: 'var(--text-muted)', marginLeft: 8 }}>
+                        ({dataCollections.length})
+                    </span>
                 </div>
                 {loading ? (
                     <div className="empty-state"><div className="loading-spinner" /></div>
@@ -1438,17 +1241,9 @@ const DataPage = () => {
                                         <td style={{ fontSize: 12 }}>{getDeviceName(dc.device_id)}</td>
                                         <td><span className="badge badge-info" style={{ fontSize: 10 }}>{dc.data_type}</span></td>
                                         <td style={{ fontSize: 11, fontFamily: 'var(--font-mono)', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                            {(() => {
-                                                const dv = dc.data_value || {};
-                                                let text = `${dv.old_state || '?'} → ${dv.new_state || '?'}`;
-                                                const attrs = dv.new_attributes || {};
-                                                const parts = [];
-                                                if (attrs.brightness_pct !== undefined) parts.push(`${attrs.brightness_pct}%`);
-                                                if (attrs.position_pct !== undefined) parts.push(`Pos ${attrs.position_pct}%`);
-                                                if (attrs.target_temp !== undefined) parts.push(`${attrs.target_temp}°C`);
-                                                if (parts.length) text += ` (${parts.join(', ')})`;
-                                                return text;
-                                            })()}
+                                            {typeof dc.data_value === 'object'
+                                                ? `${dc.data_value.old_state} → ${dc.data_value.new_state}`
+                                                : String(dc.data_value)}
                                         </td>
                                     </tr>
                                 ))}
@@ -1903,7 +1698,15 @@ const App = () => {
     };
 
     if (loading) {
-        return <SplashScreen />;
+        return (
+            <div className="loading-screen">
+                <div className="sidebar-logo" style={{ width: 56, height: 56, fontSize: 28 }}>
+                    <span className="mdi mdi-brain" />
+                </div>
+                <div style={{ fontSize: 22, fontWeight: 700 }}>MindHome</div>
+                <div className="loading-spinner" />
+            </div>
+        );
     }
 
     if (onboardingDone === false) {
