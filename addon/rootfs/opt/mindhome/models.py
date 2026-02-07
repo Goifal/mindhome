@@ -164,13 +164,23 @@ class LearnedPattern(Base):
     domain_id = Column(Integer, ForeignKey("domains.id"), nullable=False)
     room_id = Column(Integer, ForeignKey("rooms.id"), nullable=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
-    pattern_type = Column(String(50), nullable=False)
-    pattern_data = Column(JSON, nullable=False)
+    pattern_type = Column(String(50), nullable=False)  # "time_based", "event_chain", "correlation"
+    pattern_data = Column(JSON, nullable=False)  # The pattern definition
     confidence = Column(Float, default=0.0)
     times_confirmed = Column(Integer, default=0)
     times_rejected = Column(Integer, default=0)
     is_active = Column(Boolean, default=True)
     description_template = Column(Text, nullable=True)
+
+    # Phase 2a extensions
+    description_de = Column(Text, nullable=True)  # Human-readable German
+    description_en = Column(Text, nullable=True)  # Human-readable English
+    trigger_conditions = Column(JSON, nullable=True)  # When does this pattern fire
+    action_definition = Column(JSON, nullable=True)  # What should happen
+    last_matched_at = Column(DateTime, nullable=True)
+    match_count = Column(Integer, default=0)
+    status = Column(String(30), default="observed")  # observed, suggested, active, disabled
+
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -321,6 +331,56 @@ class DataCollection(Base):
 
 
 # ==============================================================================
+# Phase 2a: State History (raw event data for pattern learning)
+# ==============================================================================
+
+class StateHistory(Base):
+    """Every significant state change from HA, with context for learning."""
+    __tablename__ = "state_history"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    device_id = Column(Integer, ForeignKey("devices.id"), nullable=True)
+    entity_id = Column(String(255), nullable=False, index=True)
+    old_state = Column(String(100), nullable=True)
+    new_state = Column(String(100), nullable=False)
+    old_attributes = Column(JSON, nullable=True)
+    new_attributes = Column(JSON, nullable=True)
+
+    # Context at the time of the event
+    context = Column(JSON, nullable=True)
+    # Structure: {
+    #   "time_slot": "morning|midday|afternoon|evening|night",
+    #   "weekday": 0-6 (Mon-Sun),
+    #   "is_weekend": true/false,
+    #   "persons_home": ["person.john", ...],
+    #   "sun_elevation": 45.2,
+    #   "sun_phase": "above_horizon|below_horizon",
+    #   "outdoor_temp": 21.5,
+    #   "hour": 14, "minute": 30
+    # }
+
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+    device = relationship("Device")
+
+
+class PatternMatchLog(Base):
+    """Logs every time a pattern fires/matches to track accuracy."""
+    __tablename__ = "pattern_match_log"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    pattern_id = Column(Integer, ForeignKey("learned_patterns.id"), nullable=False)
+    matched_at = Column(DateTime, default=datetime.utcnow)
+    context = Column(JSON, nullable=True)
+    trigger_event_id = Column(Integer, ForeignKey("state_history.id"), nullable=True)
+    was_executed = Column(Boolean, default=False)
+    was_correct = Column(Boolean, nullable=True)
+
+    pattern = relationship("LearnedPattern")
+    trigger_event = relationship("StateHistory")
+
+
+# ==============================================================================
 # Database Initialization
 # ==============================================================================
 
@@ -364,12 +424,48 @@ MIGRATIONS = [
             "ALTER TABLE domains ADD COLUMN is_custom BOOLEAN DEFAULT 0",
         ]
     },
-    # Future migrations go here:
-    # {
-    #     "version": 2,
-    #     "description": "Add new_field to some_table",
-    #     "sql": ["ALTER TABLE some_table ADD COLUMN new_field TEXT"]
-    # },
+    {
+        "version": 2,
+        "description": "Phase 2a - State history, pattern extensions, pattern match log",
+        "sql": [
+            # StateHistory table
+            """CREATE TABLE IF NOT EXISTS state_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                device_id INTEGER REFERENCES devices(id),
+                entity_id VARCHAR(255) NOT NULL,
+                old_state VARCHAR(100),
+                new_state VARCHAR(100) NOT NULL,
+                old_attributes JSON,
+                new_attributes JSON,
+                context JSON,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_state_history_entity ON state_history(entity_id)",
+            "CREATE INDEX IF NOT EXISTS idx_state_history_created ON state_history(created_at)",
+            "CREATE INDEX IF NOT EXISTS idx_state_history_device ON state_history(device_id, created_at)",
+
+            # PatternMatchLog table
+            """CREATE TABLE IF NOT EXISTS pattern_match_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                pattern_id INTEGER NOT NULL REFERENCES learned_patterns(id),
+                matched_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                context JSON,
+                trigger_event_id INTEGER REFERENCES state_history(id),
+                was_executed BOOLEAN DEFAULT 0,
+                was_correct BOOLEAN
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_pattern_match_pattern ON pattern_match_log(pattern_id)",
+
+            # LearnedPattern extensions
+            "ALTER TABLE learned_patterns ADD COLUMN description_de TEXT",
+            "ALTER TABLE learned_patterns ADD COLUMN description_en TEXT",
+            "ALTER TABLE learned_patterns ADD COLUMN trigger_conditions JSON",
+            "ALTER TABLE learned_patterns ADD COLUMN action_definition JSON",
+            "ALTER TABLE learned_patterns ADD COLUMN last_matched_at DATETIME",
+            "ALTER TABLE learned_patterns ADD COLUMN match_count INTEGER DEFAULT 0",
+            "ALTER TABLE learned_patterns ADD COLUMN status VARCHAR(30) DEFAULT 'observed'",
+        ]
+    },
 ]
 
 
