@@ -877,11 +877,19 @@ const DevicesPage = () => {
                             {getFilteredDevices().map(device => {
                                 const st = stateDisplay(device.live_state);
                                 const attrs = device.live_attributes || {};
+                                const unit = attrs.unit || '';
                                 const attrParts = [];
                                 if (attrs.brightness_pct != null) attrParts.push(`☀ ${attrs.brightness_pct}%`);
                                 if (attrs.position_pct != null) attrParts.push(`↕ ${attrs.position_pct}%`);
-                                if (attrs.current_temp != null) attrParts.push(`🌡 ${attrs.current_temp}°`);
-                                if (attrs.target_temp != null) attrParts.push(`→ ${attrs.target_temp}°`);
+                                if (attrs.current_temp != null) attrParts.push(`🌡 ${attrs.current_temp}${unit || '°C'}`);
+                                if (attrs.target_temp != null) attrParts.push(`→ ${attrs.target_temp}${unit || '°C'}`);
+                                if (attrs.humidity != null) attrParts.push(`💧 ${attrs.humidity}%`);
+                                if (attrs.power != null || attrs.current_power_w != null) attrParts.push(`⚡ ${attrs.power || attrs.current_power_w} W`);
+                                if (attrs.voltage != null) attrParts.push(`🔌 ${attrs.voltage} V`);
+                                // For sensors: show state + unit directly
+                                if (attrParts.length === 0 && device.live_state && device.live_state !== 'on' && device.live_state !== 'off' && device.live_state !== 'unavailable' && device.live_state !== 'unknown') {
+                                    attrParts.push(`${device.live_state}${unit ? ' ' + unit : ''}`);
+                                }
                                 return (
                                 <tr key={device.id}>
                                     <td>
@@ -1408,7 +1416,88 @@ const UsersPage = () => {
 // ================================================================
 
 const SettingsPage = () => {
-    const { lang, setLang, theme, setTheme, viewMode, setViewMode, showToast } = useApp();
+    const { lang, setLang, theme, setTheme, viewMode, setViewMode, showToast, refreshData } = useApp();
+    const [sysInfo, setSysInfo] = useState(null);
+    const [retention, setRetention] = useState(90);
+    const [retentionInput, setRetentionInput] = useState('90');
+    const [cleaning, setCleaning] = useState(false);
+    const fileInputRef = useRef(null);
+
+    useEffect(() => {
+        (async () => {
+            const info = await api.get('system/info');
+            if (info) setSysInfo(info);
+            const ret = await api.get('system/retention');
+            if (ret) {
+                setRetention(ret.retention_days || 90);
+                setRetentionInput(String(ret.retention_days || 90));
+            }
+        })();
+    }, []);
+
+    const saveRetention = async () => {
+        const days = parseInt(retentionInput);
+        if (isNaN(days) || days < 1) return;
+        const result = await api.put('system/retention', { days });
+        if (result?.success) {
+            setRetention(days);
+            showToast(lang === 'de' ? `Aufbewahrung auf ${days} Tage gesetzt` : `Retention set to ${days} days`, 'success');
+        }
+    };
+
+    const handleCleanup = async () => {
+        setCleaning(true);
+        const result = await api.post('system/cleanup');
+        if (result?.success) {
+            showToast(lang === 'de' ? `${result.deleted || 0} Einträge gelöscht` : `${result.deleted || 0} entries deleted`, 'success');
+            const info = await api.get('system/info');
+            if (info) setSysInfo(info);
+        }
+        setCleaning(false);
+    };
+
+    const handleExport = async () => {
+        const backup = await api.get('backup/export');
+        if (backup) {
+            const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `mindhome-backup-${new Date().toISOString().slice(0,10)}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+            showToast(lang === 'de' ? 'Backup exportiert' : 'Backup exported', 'success');
+        }
+    };
+
+    const handleImport = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        try {
+            const text = await file.text();
+            const data = JSON.parse(text);
+            const result = await api.post('backup/import', data);
+            if (result?.success) {
+                showToast(lang === 'de'
+                    ? `Backup geladen: ${result.imported.rooms} Räume, ${result.imported.devices} Geräte, ${result.imported.users} Personen`
+                    : `Backup loaded: ${result.imported.rooms} rooms, ${result.imported.devices} devices, ${result.imported.users} users`,
+                    'success');
+                refreshData();
+            } else {
+                showToast(result?.error || 'Import failed', 'error');
+            }
+        } catch (err) {
+            showToast(lang === 'de' ? 'Ungültige Datei' : 'Invalid file', 'error');
+        }
+        e.target.value = '';
+    };
+
+    const InfoRow = ({ label, value }) => (
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14 }}>
+            <span style={{ color: 'var(--text-secondary)' }}>{label}</span>
+            <span style={{ fontFamily: 'var(--font-mono)' }}>{value}</span>
+        </div>
+    );
 
     return (
         <div style={{ maxWidth: 600 }}>
@@ -1444,20 +1533,77 @@ const SettingsPage = () => {
             </div>
 
             {/* System Info */}
-            <div className="card">
+            <div className="card" style={{ marginBottom: 16 }}>
                 <div className="card-title" style={{ marginBottom: 16 }}>
                     {lang === 'de' ? 'System' : 'System'}
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14 }}>
-                        <span style={{ color: 'var(--text-secondary)' }}>Version</span>
-                        <span style={{ fontFamily: 'var(--font-mono)' }}>0.1.0</span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14 }}>
-                        <span style={{ color: 'var(--text-secondary)' }}>Phase</span>
-                        <span>1 – {lang === 'de' ? 'Fundament' : 'Foundation'}</span>
-                    </div>
+                    <InfoRow label="Version" value={sysInfo?.version || '0.1.1'} />
+                    <InfoRow label="Phase" value={`1 – ${lang === 'de' ? 'Fundament' : 'Foundation'}`} />
+                    <InfoRow label="Home Assistant"
+                        value={sysInfo?.ha_connected ? (lang === 'de' ? '✅ Verbunden' : '✅ Connected') : (lang === 'de' ? '❌ Getrennt' : '❌ Disconnected')} />
+                    <InfoRow label={lang === 'de' ? 'HA Entities' : 'HA Entities'}
+                        value={sysInfo?.ha_entity_count || '—'} />
+                    <InfoRow label={lang === 'de' ? 'Datenbankgröße' : 'Database Size'}
+                        value={sysInfo?.db_size_bytes ? formatBytes(sysInfo.db_size_bytes) : '—'} />
+                    <InfoRow label="Uptime"
+                        value={sysInfo?.uptime_seconds ? `${Math.floor(sysInfo.uptime_seconds / 3600)} h` : '—'} />
                 </div>
+            </div>
+
+            {/* Data Retention - only in advanced mode */}
+            {viewMode === 'advanced' && (
+                <div className="card" style={{ marginBottom: 16 }}>
+                    <div className="card-title" style={{ marginBottom: 16 }}>
+                        {lang === 'de' ? 'Daten-Aufbewahrung' : 'Data Retention'}
+                    </div>
+                    <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 16 }}>
+                        {lang === 'de'
+                            ? `Daten älter als ${retention} Tage werden automatisch gelöscht (FIFO).`
+                            : `Data older than ${retention} days is automatically deleted (FIFO).`}
+                    </p>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', marginBottom: 16 }}>
+                        <div className="input-group" style={{ flex: 1 }}>
+                            <label className="input-label">{lang === 'de' ? 'Aufbewahren für (Tage)' : 'Keep for (days)'}</label>
+                            <input className="input" type="number" min="1" max="3650"
+                                value={retentionInput} onChange={e => setRetentionInput(e.target.value)} />
+                        </div>
+                        <button className="btn btn-primary" onClick={saveRetention}
+                            disabled={parseInt(retentionInput) === retention}>
+                            {lang === 'de' ? 'Speichern' : 'Save'}
+                        </button>
+                    </div>
+                    <button className="btn btn-secondary" onClick={handleCleanup} disabled={cleaning}>
+                        <span className="mdi mdi-broom" />
+                        {cleaning
+                            ? (lang === 'de' ? 'Aufräumen...' : 'Cleaning...')
+                            : (lang === 'de' ? 'Jetzt aufräumen' : 'Clean Up Now')}
+                    </button>
+                </div>
+            )}
+
+            {/* Backup & Restore */}
+            <div className="card">
+                <div className="card-title" style={{ marginBottom: 16 }}>
+                    {lang === 'de' ? 'Backup & Wiederherstellung' : 'Backup & Restore'}
+                </div>
+                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                    <button className="btn btn-primary" onClick={handleExport}>
+                        <span className="mdi mdi-download" />
+                        {lang === 'de' ? 'Backup exportieren' : 'Export Backup'}
+                    </button>
+                    <button className="btn btn-secondary" onClick={() => fileInputRef.current?.click()}>
+                        <span className="mdi mdi-upload" />
+                        {lang === 'de' ? 'Backup laden' : 'Import Backup'}
+                    </button>
+                    <input ref={fileInputRef} type="file" accept=".json" onChange={handleImport}
+                           style={{ display: 'none' }} />
+                </div>
+                <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 12 }}>
+                    {lang === 'de'
+                        ? 'Enthält: Räume, Geräte, Personen, Domains, Einstellungen, Logs und Datenbank.'
+                        : 'Includes: rooms, devices, users, domains, settings, logs and database.'}
+                </p>
             </div>
         </div>
     );
@@ -1555,7 +1701,6 @@ const DataPage = () => {
     const [dataCollections, setDataCollections] = useState([]);
     const [loading, setLoading] = useState(true);
     const [period, setPeriod] = useState('all');
-    const fileInputRef = useRef(null);
 
     const loadData = async (p) => {
         setLoading(true);
@@ -1565,42 +1710,6 @@ const DataPage = () => {
     };
 
     useEffect(() => { loadData(period); }, [period]);
-
-    const handleExport = async () => {
-        const backup = await api.get('backup/export');
-        if (backup) {
-            const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `mindhome-backup-${new Date().toISOString().slice(0,10)}.json`;
-            a.click();
-            URL.revokeObjectURL(url);
-            showToast(lang === 'de' ? 'Backup exportiert' : 'Backup exported', 'success');
-        }
-    };
-
-    const handleImport = async (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-        try {
-            const text = await file.text();
-            const data = JSON.parse(text);
-            const result = await api.post('backup/import', data);
-            if (result?.success) {
-                showToast(lang === 'de'
-                    ? `Backup geladen: ${result.imported.rooms} Räume, ${result.imported.devices} Geräte, ${result.imported.users} Personen`
-                    : `Backup loaded: ${result.imported.rooms} rooms, ${result.imported.devices} devices, ${result.imported.users} users`,
-                    'success');
-                refreshData();
-            } else {
-                showToast(result?.error || 'Import failed', 'error');
-            }
-        } catch (err) {
-            showToast(lang === 'de' ? 'Ungültige Datei' : 'Invalid file', 'error');
-        }
-        e.target.value = '';
-    };
 
     const getDeviceName = (deviceId) => {
         const d = devices.find(d => d.id === deviceId);
@@ -1618,35 +1727,11 @@ const DataPage = () => {
                         </div>
                         <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
                             {lang === 'de'
-                                ? 'Alle Daten werden ausschließlich auf deinem Gerät gespeichert.'
-                                : 'All data is stored exclusively on your device.'}
+                                ? 'Alle Daten werden ausschließlich auf deinem Gerät gespeichert. Backup & Wiederherstellung findest du unter Einstellungen.'
+                                : 'All data is stored exclusively on your device. Backup & restore can be found in Settings.'}
                         </div>
                     </div>
                 </div>
-            </div>
-
-            {/* Backup / Restore */}
-            <div className="card" style={{ marginBottom: 16 }}>
-                <div className="card-title" style={{ marginBottom: 16 }}>
-                    {lang === 'de' ? 'Backup & Wiederherstellung' : 'Backup & Restore'}
-                </div>
-                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-                    <button className="btn btn-primary" onClick={handleExport}>
-                        <span className="mdi mdi-download" />
-                        {lang === 'de' ? 'Backup exportieren' : 'Export Backup'}
-                    </button>
-                    <button className="btn btn-secondary" onClick={() => fileInputRef.current?.click()}>
-                        <span className="mdi mdi-upload" />
-                        {lang === 'de' ? 'Backup laden' : 'Import Backup'}
-                    </button>
-                    <input ref={fileInputRef} type="file" accept=".json" onChange={handleImport}
-                           style={{ display: 'none' }} />
-                </div>
-                <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 12 }}>
-                    {lang === 'de'
-                        ? 'Das Backup enthält: Räume, Geräte, Personen, Domains, Einstellungen, Zuordnungen und Logs.'
-                        : 'Backup includes: rooms, devices, users, domains, settings, assignments and logs.'}
-                </p>
             </div>
 
             {/* Collected Data */}
