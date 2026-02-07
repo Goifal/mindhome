@@ -8,7 +8,7 @@ import json
 import logging
 import threading
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from collections import defaultdict
 from sqlalchemy import func, text, and_
 from sqlalchemy.orm import sessionmaker
@@ -85,13 +85,13 @@ class SuggestionGenerator:
 
                     # Promote to suggested
                     pattern.status = "suggested"
-                    pattern.updated_at = datetime.utcnow()
+                    pattern.updated_at = datetime.now(timezone.utc)
 
                     # Create prediction (suggestion entry)
                     prediction = Prediction(
                         pattern_id=pattern.id,
                         predicted_action=pattern.action_definition or {},
-                        predicted_for=datetime.utcnow(),
+                        predicted_for=datetime.now(timezone.utc),
                         confidence=pattern.confidence,
                         status="pending",
                         description_de=pattern.description_de,
@@ -161,21 +161,21 @@ class FeedbackProcessor:
         """User confirmed a suggestion."""
         session = self.Session()
         try:
-            pred = session.query(Prediction).get(prediction_id)
+            pred = session.get(Prediction, prediction_id)
             if not pred:
                 return {"error": "Prediction not found"}
 
             pred.status = "confirmed"
             pred.user_response = "confirmed"
-            pred.responded_at = datetime.utcnow()
+            pred.responded_at = datetime.now(timezone.utc)
 
             # Update pattern confidence
-            pattern = session.query(LearnedPattern).get(pred.pattern_id)
+            pattern = session.get(LearnedPattern, pred.pattern_id)
             if pattern:
                 pattern.confidence = min(pattern.confidence + 0.15, 1.0)
                 pattern.times_confirmed += 1
                 pattern.status = "active"
-                pattern.updated_at = datetime.utcnow()
+                pattern.updated_at = datetime.now(timezone.utc)
 
             session.commit()
             logger.info(f"Prediction {prediction_id} confirmed → pattern {pred.pattern_id} activated")
@@ -192,16 +192,16 @@ class FeedbackProcessor:
         """User rejected a suggestion."""
         session = self.Session()
         try:
-            pred = session.query(Prediction).get(prediction_id)
+            pred = session.get(Prediction, prediction_id)
             if not pred:
                 return {"error": "Prediction not found"}
 
             pred.status = "rejected"
             pred.user_response = "rejected"
-            pred.responded_at = datetime.utcnow()
+            pred.responded_at = datetime.now(timezone.utc)
 
             # Decrease pattern confidence
-            pattern = session.query(LearnedPattern).get(pred.pattern_id)
+            pattern = session.get(LearnedPattern, pred.pattern_id)
             if pattern:
                 pattern.confidence = max(pattern.confidence - 0.2, 0.0)
                 pattern.times_rejected += 1
@@ -214,7 +214,7 @@ class FeedbackProcessor:
                 else:
                     pattern.status = "observed"  # Back to observing
 
-                pattern.updated_at = datetime.utcnow()
+                pattern.updated_at = datetime.now(timezone.utc)
 
             session.commit()
             logger.info(f"Prediction {prediction_id} rejected → confidence decreased")
@@ -231,13 +231,13 @@ class FeedbackProcessor:
         """User chose 'later' / ignored."""
         session = self.Session()
         try:
-            pred = session.query(Prediction).get(prediction_id)
+            pred = session.get(Prediction, prediction_id)
             if not pred:
                 return {"error": "Prediction not found"}
 
             pred.status = "ignored"
             pred.user_response = "ignored"
-            pred.responded_at = datetime.utcnow()
+            pred.responded_at = datetime.now(timezone.utc)
             session.commit()
             return {"success": True, "status": "ignored"}
         except Exception as e:
@@ -407,12 +407,12 @@ class AutomationExecutor:
             prediction = Prediction(
                 pattern_id=pattern.id,
                 predicted_action=action,
-                predicted_for=datetime.utcnow(),
+                predicted_for=datetime.now(timezone.utc),
                 confidence=pattern.confidence,
                 status="executed",
                 was_executed=True,
                 previous_state={"entity_id": entity_id, "state": previous_state},
-                executed_at=datetime.utcnow(),
+                executed_at=datetime.now(timezone.utc),
                 description_de=pattern.description_de,
                 description_en=pattern.description_en,
             )
@@ -445,7 +445,7 @@ class AutomationExecutor:
         """D3: Undo an executed automation."""
         session = self.Session()
         try:
-            pred = session.query(Prediction).get(prediction_id)
+            pred = session.get(Prediction, prediction_id)
             if not pred:
                 return {"error": "Prediction not found"}
 
@@ -454,7 +454,7 @@ class AutomationExecutor:
 
             # Check undo window
             if pred.executed_at:
-                elapsed = (datetime.utcnow() - pred.executed_at).total_seconds() / 60
+                elapsed = (datetime.now(timezone.utc) - pred.executed_at).total_seconds() / 60
                 if elapsed > UNDO_WINDOW_MINUTES:
                     return {"error": f"Undo window expired ({UNDO_WINDOW_MINUTES} min)"}
 
@@ -476,13 +476,13 @@ class AutomationExecutor:
                 self.ha.call_service(ha_domain, service, {"entity_id": entity_id})
 
             pred.status = "undone"
-            pred.undone_at = datetime.utcnow()
+            pred.undone_at = datetime.now(timezone.utc)
 
             # Decrease pattern confidence slightly
-            pattern = session.query(LearnedPattern).get(pred.pattern_id)
+            pattern = session.get(LearnedPattern, pred.pattern_id)
             if pattern:
                 pattern.confidence = max(pattern.confidence - 0.1, 0.0)
-                pattern.updated_at = datetime.utcnow()
+                pattern.updated_at = datetime.now(timezone.utc)
 
             session.commit()
             logger.info(f"Undone prediction {prediction_id}: {entity_id} → {restore_state}")
@@ -610,7 +610,7 @@ class PhaseManager:
                 if new_phase and new_phase != current:
                     old_name = current.value if current else "none"
                     rds.learning_phase = new_phase
-                    rds.phase_started_at = datetime.utcnow()
+                    rds.phase_started_at = datetime.now(timezone.utc)
                     transitions += 1
 
                     room = session.get(Room, rds.room_id)
@@ -648,7 +648,7 @@ class PhaseManager:
 
         # Days since phase started
         if rds.phase_started_at:
-            days = (datetime.utcnow() - rds.phase_started_at).days
+            days = (datetime.now(timezone.utc) - rds.phase_started_at).days
             if days < t["min_days"]:
                 return None
 
@@ -693,7 +693,7 @@ class PhaseManager:
         t = self.SUGGEST_TO_AUTONOMOUS
 
         if rds.phase_started_at:
-            days = (datetime.utcnow() - rds.phase_started_at).days
+            days = (datetime.now(timezone.utc) - rds.phase_started_at).days
             if days < t["min_days"]:
                 return None
 
@@ -739,7 +739,7 @@ class PhaseManager:
                 return {"error": "Room/domain state not found"}
 
             rds.learning_phase = phase
-            rds.phase_started_at = datetime.utcnow()
+            rds.phase_started_at = datetime.now(timezone.utc)
             session.commit()
 
             return {"success": True, "phase": phase.value}
@@ -774,53 +774,50 @@ class PhaseManager:
 # ==============================================================================
 
 class AnomalyDetector:
-    """Detects unusual events based on deviation from patterns."""
+    """Detects unusual events using statistical baselines and heuristics."""
+
+    # Entities we've already reported (avoid spam)
+    _reported = set()
 
     def __init__(self, engine):
         self.engine = engine
         self.Session = sessionmaker(bind=engine)
 
     def check_recent_anomalies(self, minutes=30):
-        """Check recent events for anomalies."""
+        """Check recent events for anomalies using multiple detection methods."""
         session = self.Session()
         anomalies = []
         try:
-            cutoff = datetime.utcnow() - timedelta(minutes=minutes)
+            cutoff = datetime.now(timezone.utc) - timedelta(minutes=minutes)
             recent = session.query(StateHistory).filter(
-                StateHistory.created_at >= cutoff
+                StateHistory.created_at >= cutoff,
+                StateHistory.device_id.isnot(None)
             ).all()
 
             for event in recent:
-                ctx = event.context or {}
-                hour = ctx.get("hour", 12)
-                time_slot = ctx.get("time_slot", "")
+                # Skip already reported (reset every hour)
+                report_key = f"{event.entity_id}:{event.new_state}:{event.created_at.hour if event.created_at else 0}"
+                if report_key in self._reported:
+                    continue
 
-                # Check: activity during unusual hours (night = 23-5)
-                if time_slot == "night" and event.new_state == "on":
-                    ha_domain = event.entity_id.split(".")[0]
-                    if ha_domain in ("light", "switch"):
-                        # Is this normal? Check if any pattern exists for this
-                        pattern_exists = session.query(LearnedPattern).filter(
-                            LearnedPattern.is_active == True,
-                            LearnedPattern.pattern_data.contains(event.entity_id) if hasattr(LearnedPattern.pattern_data, 'contains') else True
-                        ).first()
+                anomaly = None
 
-                        # Simple heuristic: no pattern + night activity = anomaly
-                        if not pattern_exists:
-                            device = session.query(Device).filter_by(
-                                ha_entity_id=event.entity_id
-                            ).first()
-                            device_name = device.name if device else event.entity_id
+                # Method 1: Unusual time of day (statistical)
+                anomaly = anomaly or self._check_unusual_time(session, event)
 
-                            anomalies.append({
-                                "entity_id": event.entity_id,
-                                "device_name": device_name,
-                                "event": f"{event.old_state} → {event.new_state}",
-                                "time": event.created_at.isoformat() if event.created_at else None,
-                                "reason_de": f"{device_name} wurde nachts um {hour}:00 eingeschaltet",
-                                "reason_en": f"{device_name} turned on at {hour}:00 during night",
-                                "severity": "warning",
-                            })
+                # Method 2: Unusual frequency (too many changes)
+                anomaly = anomaly or self._check_unusual_frequency(session, event)
+
+                if anomaly:
+                    self._reported.add(report_key)
+                    anomalies.append(anomaly)
+
+            # Method 3: Stuck devices (no change for unusually long time)
+            anomalies.extend(self._check_stuck_devices(session))
+
+            # Cleanup reported cache (keep max 200)
+            if len(self._reported) > 200:
+                self._reported.clear()
 
             return anomalies
 
@@ -829,6 +826,132 @@ class AnomalyDetector:
             return []
         finally:
             session.close()
+
+    def _check_unusual_time(self, session, event):
+        """Detect activity at unusual hours based on entity history."""
+        ctx = event.context or {}
+        hour = ctx.get("hour", 12)
+        time_slot = ctx.get("time_slot", "")
+        ha_domain = event.entity_id.split(".")[0]
+
+        # Only check binary state devices
+        if ha_domain not in ("light", "switch", "cover", "lock") or event.new_state not in ("on", "off", "open", "unlocked"):
+            return None
+
+        # Get historical hours for this entity+state
+        history = session.query(StateHistory.context).filter(
+            StateHistory.entity_id == event.entity_id,
+            StateHistory.new_state == event.new_state,
+            StateHistory.created_at >= datetime.now(timezone.utc) - timedelta(days=14),
+        ).all()
+
+        if len(history) < 5:
+            # Not enough data for a baseline, use simple night check
+            if time_slot == "night" and event.new_state in ("on", "unlocked", "open"):
+                return self._build_anomaly(session, event, hour,
+                    f"wurde nachts um {hour}:00 aktiviert (keine Basisdaten)",
+                    f"activated at {hour}:00 during night (no baseline)")
+            return None
+
+        # Calculate statistical baseline
+        historical_hours = []
+        for h in history:
+            if h[0] and isinstance(h[0], dict):
+                historical_hours.append(h[0].get("hour", 12))
+
+        if not historical_hours:
+            return None
+
+        # Calculate mean and standard deviation
+        mean_hour = sum(historical_hours) / len(historical_hours)
+        variance = sum((h - mean_hour) ** 2 for h in historical_hours) / len(historical_hours)
+        std_dev = max(variance ** 0.5, 1.0)  # min 1 hour std
+
+        # Circular distance (23:00 and 01:00 are 2 hours apart, not 22)
+        diff = min(abs(hour - mean_hour), 24 - abs(hour - mean_hour))
+
+        # More than 2.5 standard deviations = anomaly
+        if diff > std_dev * 2.5 and diff > 3:
+            return self._build_anomaly(session, event, hour,
+                f"um {hour}:00 Uhr aktiviert (normalerweise ~{int(mean_hour)}:00 ±{int(std_dev)}h)",
+                f"activated at {hour}:00 (usually ~{int(mean_hour)}:00 ±{int(std_dev)}h)")
+
+        return None
+
+    def _check_unusual_frequency(self, session, event):
+        """Detect devices toggling too frequently (possible fault or tampering)."""
+        # Count changes in last 10 minutes
+        recent_cutoff = datetime.now(timezone.utc) - timedelta(minutes=10)
+        change_count = session.query(func.count(StateHistory.id)).filter(
+            StateHistory.entity_id == event.entity_id,
+            StateHistory.created_at >= recent_cutoff
+        ).scalar() or 0
+
+        if change_count >= 10:
+            return self._build_anomaly(session, event, None,
+                f"hat sich {change_count}x in 10 Minuten geändert (mögliche Störung)",
+                f"changed {change_count} times in 10 minutes (possible fault)",
+                severity="critical")
+
+        return None
+
+    def _check_stuck_devices(self, session):
+        """Detect devices that haven't changed state for unusually long."""
+        anomalies = []
+        # Check lights that have been ON for >12 hours
+        threshold = datetime.now(timezone.utc) - timedelta(hours=12)
+
+        stuck_lights = session.query(StateHistory).filter(
+            StateHistory.entity_id.like("light.%"),
+            StateHistory.new_state == "on",
+            StateHistory.created_at <= threshold,
+        ).order_by(StateHistory.created_at.desc()).all()
+
+        seen_entities = set()
+        for event in stuck_lights:
+            if event.entity_id in seen_entities:
+                continue
+            seen_entities.add(event.entity_id)
+
+            # Check if there was a newer event (turned off since)
+            newer = session.query(StateHistory).filter(
+                StateHistory.entity_id == event.entity_id,
+                StateHistory.created_at > event.created_at
+            ).first()
+
+            if not newer:
+                report_key = f"stuck:{event.entity_id}"
+                if report_key not in self._reported:
+                    hours = int((datetime.now(timezone.utc) - event.created_at).total_seconds() / 3600) if event.created_at else 0
+                    device = session.query(Device).filter_by(ha_entity_id=event.entity_id).first()
+                    device_name = device.name if device else event.entity_id
+
+                    anomalies.append({
+                        "entity_id": event.entity_id,
+                        "device_name": device_name,
+                        "event": f"on seit {hours}h",
+                        "time": event.created_at.isoformat() if event.created_at else None,
+                        "reason_de": f"{device_name} ist seit {hours} Stunden eingeschaltet",
+                        "reason_en": f"{device_name} has been on for {hours} hours",
+                        "severity": "info",
+                    })
+                    self._reported.add(report_key)
+
+        return anomalies
+
+    def _build_anomaly(self, session, event, hour, reason_de, reason_en, severity="warning"):
+        """Build an anomaly dict."""
+        device = session.query(Device).filter_by(ha_entity_id=event.entity_id).first()
+        device_name = device.name if device else event.entity_id
+        return {
+            "entity_id": event.entity_id,
+            "device_name": device_name,
+            "event": f"{event.old_state} → {event.new_state}",
+            "time": event.created_at.isoformat() if event.created_at else None,
+            "reason_de": f"{device_name} {reason_de}",
+            "reason_en": f"{device_name} {reason_en}",
+            "severity": severity,
+        }
 
 
 # ==============================================================================
@@ -847,7 +970,7 @@ class NotificationManager:
         """Send notification about a new suggestion."""
         session = self.Session()
         try:
-            pred = session.query(Prediction).get(prediction_id)
+            pred = session.get(Prediction, prediction_id)
             if not pred:
                 return
 
@@ -936,7 +1059,7 @@ class NotificationManager:
         """Mark a notification as read."""
         session = self.Session()
         try:
-            n = session.query(NotificationLog).get(notification_id)
+            n = session.get(NotificationLog, notification_id)
             if n:
                 n.was_read = True
                 session.commit()
