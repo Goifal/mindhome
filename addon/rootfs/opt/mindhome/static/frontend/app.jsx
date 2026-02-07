@@ -308,13 +308,19 @@ const formatBytes = (bytes) => {
 // ================================================================
 
 const DashboardPage = () => {
-    const { status, domains, devices, rooms, lang, tr } = useApp();
+    const { status, domains, devices, rooms, lang, tr, showToast } = useApp();
     const [learningStats, setLearningStats] = useState(null);
+    const [predictions, setPredictions] = useState([]);
+    const [anomalies, setAnomalies] = useState([]);
+    const [unreadCount, setUnreadCount] = useState(0);
     const activeDomains = domains.filter(d => d.is_enabled).length;
     const trackedDevices = devices.length;
 
     useEffect(() => {
         api.get('stats/learning').then(setLearningStats).catch(() => {});
+        api.get('predictions?status=pending&limit=5').then(setPredictions).catch(() => {});
+        api.get('automation/anomalies').then(setAnomalies).catch(() => {});
+        api.get('notifications/unread-count').then(d => setUnreadCount(d.unread_count || 0)).catch(() => {});
     }, []);
 
     const modeLabels = {
@@ -452,6 +458,78 @@ const DashboardPage = () => {
                             ))}
                         </div>
                     )}
+                </div>
+            )}
+
+            {/* Phase 2b: Pending Suggestions */}
+            {predictions.length > 0 && (
+                <div className="card animate-in" style={{ marginBottom: 24, borderLeft: '3px solid var(--warning)' }}>
+                    <div className="card-header">
+                        <div>
+                            <div className="card-title">
+                                <span className="mdi mdi-lightbulb-on" style={{ marginRight: 8, color: 'var(--warning)' }} />
+                                {lang === 'de' ? 'Vorschläge' : 'Suggestions'}
+                                <span className="badge badge-warning" style={{ marginLeft: 8 }}>{predictions.length}</span>
+                            </div>
+                            <div className="card-subtitle">
+                                {lang === 'de' ? 'MindHome hat neue Muster erkannt' : 'MindHome found new patterns'}
+                            </div>
+                        </div>
+                    </div>
+                    {predictions.map(pred => (
+                        <div key={pred.id} style={{
+                            padding: '12px 16px', borderBottom: '1px solid var(--border-color)',
+                            display: 'flex', alignItems: 'center', gap: 12
+                        }}>
+                            <span className="mdi mdi-robot" style={{ fontSize: 20, color: 'var(--accent-primary)' }} />
+                            <div style={{ flex: 1 }}>
+                                <div style={{ fontSize: 14 }}>{pred.description || 'New pattern'}</div>
+                                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                                    Confidence: {Math.round(pred.confidence * 100)}%
+                                </div>
+                            </div>
+                            <div style={{ display: 'flex', gap: 6 }}>
+                                <button className="btn btn-sm btn-success" onClick={async () => {
+                                    await api.post(`predictions/${pred.id}/confirm`);
+                                    setPredictions(p => p.filter(x => x.id !== pred.id));
+                                    showToast(lang === 'de' ? 'Aktiviert!' : 'Activated!', 'success');
+                                }}>
+                                    <span className="mdi mdi-check" />
+                                </button>
+                                <button className="btn btn-sm btn-ghost" onClick={async () => {
+                                    await api.post(`predictions/${pred.id}/reject`);
+                                    setPredictions(p => p.filter(x => x.id !== pred.id));
+                                    showToast(lang === 'de' ? 'Abgelehnt' : 'Rejected', 'info');
+                                }}>
+                                    <span className="mdi mdi-close" />
+                                </button>
+                                <button className="btn btn-sm btn-ghost" onClick={async () => {
+                                    await api.post(`predictions/${pred.id}/ignore`);
+                                    setPredictions(p => p.filter(x => x.id !== pred.id));
+                                }} title={lang === 'de' ? 'Später' : 'Later'}>
+                                    <span className="mdi mdi-clock-outline" />
+                                </button>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            {/* Phase 2b: Anomaly Alerts */}
+            {anomalies.length > 0 && (
+                <div className="card animate-in" style={{ marginBottom: 24, borderLeft: '3px solid var(--danger)' }}>
+                    <div className="card-header">
+                        <div className="card-title">
+                            <span className="mdi mdi-alert-circle" style={{ marginRight: 8, color: 'var(--danger)' }} />
+                            {lang === 'de' ? 'Ungewöhnliche Aktivität' : 'Unusual Activity'}
+                        </div>
+                    </div>
+                    {anomalies.slice(0, 3).map((a, i) => (
+                        <div key={i} style={{ padding: '10px 16px', fontSize: 13, borderBottom: '1px solid var(--border-color)' }}>
+                            <span className="mdi mdi-alert" style={{ marginRight: 6, color: 'var(--warning)' }} />
+                            {lang === 'de' ? a.reason_de : a.reason_en}
+                        </div>
+                    ))}
                 </div>
             )}
 
@@ -1604,8 +1682,8 @@ const SettingsPage = () => {
                     {lang === 'de' ? 'System' : 'System'}
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                    <InfoRow label="Version" value={sysInfo?.version || '0.2.0'} />
-                    <InfoRow label="Phase" value={`2a – ${lang === 'de' ? 'Datenerfassung & Muster' : 'Data & Patterns'}`} />
+                    <InfoRow label="Version" value={sysInfo?.version || '0.3.0'} />
+                    <InfoRow label="Phase" value={`2b – ${lang === 'de' ? 'Vorschläge & Automationen' : 'Suggestions & Automations'}`} />
                     <InfoRow label="Home Assistant"
                         value={sysInfo?.ha_connected ? (lang === 'de' ? '✅ Verbunden' : '✅ Connected') : (lang === 'de' ? '❌ Getrennt' : '❌ Disconnected')} />
                     <InfoRow label={lang === 'de' ? 'HA Entities' : 'HA Entities'}
@@ -2228,6 +2306,206 @@ const PatternsPage = () => {
 };
 
 // ================================================================
+// Phase 2b: Notifications Page
+// ================================================================
+
+const NotificationsPage = () => {
+    const { lang, showToast } = useApp();
+    const [notifications, setNotifications] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [predictions, setPredictions] = useState([]);
+    const [predFilter, setPredFilter] = useState('all');
+
+    const load = async () => {
+        try {
+            const [notifs, preds] = await Promise.all([
+                api.get('notifications?limit=100'),
+                api.get('predictions?limit=50'),
+            ]);
+            setNotifications(notifs);
+            setPredictions(preds);
+        } catch (e) { console.error(e); }
+        setLoading(false);
+    };
+
+    useEffect(() => { load(); }, []);
+
+    const markRead = async (id) => {
+        await api.post(`notifications/${id}/read`);
+        setNotifications(n => n.map(x => x.id === id ? { ...x, was_read: true } : x));
+    };
+
+    const markAllRead = async () => {
+        await api.post('notifications/mark-all-read');
+        setNotifications(n => n.map(x => ({ ...x, was_read: true })));
+        showToast(lang === 'de' ? 'Alle gelesen' : 'All read', 'success');
+    };
+
+    const confirmPred = async (id) => {
+        await api.post(`predictions/${id}/confirm`);
+        showToast(lang === 'de' ? 'Aktiviert!' : 'Activated!', 'success');
+        load();
+    };
+
+    const rejectPred = async (id) => {
+        await api.post(`predictions/${id}/reject`);
+        showToast(lang === 'de' ? 'Abgelehnt' : 'Rejected', 'info');
+        load();
+    };
+
+    const undoPred = async (id) => {
+        const result = await api.post(`predictions/${id}/undo`);
+        if (result.error) {
+            showToast(result.error, 'error');
+        } else {
+            showToast(lang === 'de' ? 'Rückgängig gemacht' : 'Undone', 'success');
+            load();
+        }
+    };
+
+    const filteredPreds = predictions.filter(p => {
+        if (predFilter === 'all') return true;
+        return p.status === predFilter;
+    });
+
+    const typeIcons = {
+        suggestion: 'mdi-lightbulb-on',
+        anomaly: 'mdi-alert-circle',
+        critical: 'mdi-alert-octagon',
+        info: 'mdi-information',
+    };
+
+    const statusColors = {
+        pending: 'warning', confirmed: 'success', rejected: 'danger',
+        executed: 'info', undone: 'warning', ignored: 'secondary',
+    };
+
+    if (loading) return <div style={{ padding: 40, textAlign: 'center' }}><span className="mdi mdi-loading mdi-spin" style={{ fontSize: 32 }} /></div>;
+
+    return (
+        <div>
+            {/* Suggestions / Predictions */}
+            <div className="card animate-in" style={{ marginBottom: 24 }}>
+                <div className="card-header">
+                    <div>
+                        <div className="card-title">
+                            <span className="mdi mdi-lightbulb-on" style={{ marginRight: 8, color: 'var(--warning)' }} />
+                            {lang === 'de' ? 'Vorschläge & Automationen' : 'Suggestions & Automations'}
+                        </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                        {['all', 'pending', 'executed', 'confirmed', 'rejected', 'undone'].map(f => (
+                            <button key={f} className={`btn btn-sm ${predFilter === f ? 'btn-primary' : 'btn-ghost'}`}
+                                    onClick={() => setPredFilter(f)} style={{ fontSize: 12 }}>
+                                {f === 'all' ? (lang === 'de' ? 'Alle' : 'All') :
+                                 f === 'pending' ? (lang === 'de' ? 'Offen' : 'Pending') :
+                                 f === 'executed' ? (lang === 'de' ? 'Ausgeführt' : 'Executed') :
+                                 f === 'confirmed' ? (lang === 'de' ? 'Bestätigt' : 'Confirmed') :
+                                 f === 'rejected' ? (lang === 'de' ? 'Abgelehnt' : 'Rejected') :
+                                 f === 'undone' ? (lang === 'de' ? 'Rückgängig' : 'Undone') : f}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+                {filteredPreds.length === 0 ? (
+                    <div className="empty-state">
+                        <span className="mdi mdi-lightbulb-outline" />
+                        <h3>{lang === 'de' ? 'Keine Vorschläge' : 'No suggestions'}</h3>
+                        <p>{lang === 'de' ? 'Vorschläge erscheinen sobald Muster erkannt werden.' : 'Suggestions will appear once patterns are detected.'}</p>
+                    </div>
+                ) : (
+                    filteredPreds.map(pred => (
+                        <div key={pred.id} style={{
+                            padding: '12px 16px', borderBottom: '1px solid var(--border-color)',
+                            display: 'flex', alignItems: 'center', gap: 12,
+                            opacity: ['rejected', 'undone'].includes(pred.status) ? 0.6 : 1,
+                        }}>
+                            <span className="mdi mdi-robot" style={{ fontSize: 20, color: 'var(--accent-primary)', flexShrink: 0 }} />
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ fontSize: 14 }}>{pred.description || 'Pattern'}</div>
+                                <div style={{ display: 'flex', gap: 8, fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+                                    <span className={`badge badge-${statusColors[pred.status] || 'info'}`} style={{ fontSize: 11 }}>
+                                        {pred.status}
+                                    </span>
+                                    <span>{Math.round(pred.confidence * 100)}%</span>
+                                    {pred.executed_at && <span>{new Date(pred.executed_at).toLocaleString()}</span>}
+                                </div>
+                            </div>
+                            <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+                                {pred.status === 'pending' && (
+                                    <>
+                                        <button className="btn btn-sm btn-success" onClick={() => confirmPred(pred.id)} title={lang === 'de' ? 'Aktivieren' : 'Activate'}>
+                                            <span className="mdi mdi-check" />
+                                        </button>
+                                        <button className="btn btn-sm btn-ghost" onClick={() => rejectPred(pred.id)} title={lang === 'de' ? 'Ablehnen' : 'Reject'}>
+                                            <span className="mdi mdi-close" />
+                                        </button>
+                                    </>
+                                )}
+                                {pred.status === 'executed' && (
+                                    <button className="btn btn-sm btn-warning" onClick={() => undoPred(pred.id)} title={lang === 'de' ? 'Rückgängig' : 'Undo'}>
+                                        <span className="mdi mdi-undo" />
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                    ))
+                )}
+            </div>
+
+            {/* Notification Log */}
+            <div className="card animate-in">
+                <div className="card-header">
+                    <div>
+                        <div className="card-title">
+                            <span className="mdi mdi-bell" style={{ marginRight: 8 }} />
+                            {lang === 'de' ? 'Benachrichtigungen' : 'Notifications'}
+                            {notifications.filter(n => !n.was_read).length > 0 && (
+                                <span className="badge badge-danger" style={{ marginLeft: 8 }}>
+                                    {notifications.filter(n => !n.was_read).length}
+                                </span>
+                            )}
+                        </div>
+                    </div>
+                    {notifications.some(n => !n.was_read) && (
+                        <button className="btn btn-sm btn-ghost" onClick={markAllRead}>
+                            <span className="mdi mdi-check-all" style={{ marginRight: 4 }} />
+                            {lang === 'de' ? 'Alle gelesen' : 'Mark all read'}
+                        </button>
+                    )}
+                </div>
+                {notifications.length === 0 ? (
+                    <div className="empty-state">
+                        <span className="mdi mdi-bell-outline" />
+                        <h3>{lang === 'de' ? 'Keine Benachrichtigungen' : 'No notifications'}</h3>
+                    </div>
+                ) : (
+                    notifications.map(n => (
+                        <div key={n.id} style={{
+                            padding: '10px 16px', borderBottom: '1px solid var(--border-color)',
+                            display: 'flex', alignItems: 'center', gap: 12,
+                            background: n.was_read ? 'transparent' : 'var(--bg-tertiary)',
+                            cursor: 'pointer',
+                        }} onClick={() => !n.was_read && markRead(n.id)}>
+                            <span className={`mdi ${typeIcons[n.type] || 'mdi-bell'}`}
+                                  style={{ fontSize: 18, color: n.type === 'anomaly' ? 'var(--danger)' : 'var(--accent-primary)', flexShrink: 0 }} />
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ fontWeight: n.was_read ? 400 : 600, fontSize: 13 }}>{n.title}</div>
+                                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{n.message}</div>
+                            </div>
+                            <div style={{ fontSize: 11, color: 'var(--text-muted)', flexShrink: 0, whiteSpace: 'nowrap' }}>
+                                {n.created_at ? new Date(n.created_at).toLocaleString() : ''}
+                            </div>
+                            {!n.was_read && <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--accent-primary)', flexShrink: 0 }} />}
+                        </div>
+                    ))
+                )}
+            </div>
+        </div>
+    );
+};
+
+// ================================================================
 // Onboarding Wizard
 // ================================================================
 
@@ -2577,8 +2855,18 @@ const App = () => {
     const [onboardingDone, setOnboardingDone] = useState(null);
     const [loading, setLoading] = useState(true);
     const [settingsLoaded, setSettingsLoaded] = useState(false);
+    const [unreadNotifs, setUnreadNotifs] = useState(0);
 
     const showToast = (message, type = 'info') => setToast({ message, type });
+
+    // Phase 2b: Poll notification count
+    useEffect(() => {
+        const fetchUnread = () => api.get('notifications/unread-count')
+            .then(d => setUnreadNotifs(d?.unread_count || 0)).catch(() => {});
+        fetchUnread();
+        const interval = setInterval(fetchUnread, 60000);
+        return () => clearInterval(interval);
+    }, []);
 
     const refreshData = useCallback(async () => {
         const [s, d, dev, r, u, qa] = await Promise.all([
@@ -2686,6 +2974,7 @@ const App = () => {
         { section: 'System' },
         { id: 'log', icon: 'mdi-text-box-outline', label: 'KI-Log' },
         { id: 'patterns', icon: 'mdi-brain', label: lang === 'de' ? 'Muster' : 'Patterns' },
+        { id: 'notifications', icon: 'mdi-bell', label: lang === 'de' ? 'Benachrichtigungen' : 'Notifications' },
         { id: 'data', icon: 'mdi-shield-lock', label: lang === 'de' ? 'Datenschutz' : 'Privacy' },
         { id: 'settings', icon: 'mdi-cog', label: lang === 'de' ? 'Einstellungen' : 'Settings' },
     ];
@@ -2698,6 +2987,7 @@ const App = () => {
         users: UsersPage,
         log: LogPage,
         patterns: PatternsPage,
+        notifications: NotificationsPage,
         data: DataPage,
         settings: SettingsPage,
     };
@@ -2769,6 +3059,19 @@ const App = () => {
                             <h1 className="page-title">{pageTitle}</h1>
                         </div>
                         <div className="main-header-right">
+                            <button className="btn btn-ghost btn-icon" style={{ position: 'relative' }}
+                                    onClick={() => setPage('notifications')}
+                                    title={lang === 'de' ? 'Benachrichtigungen' : 'Notifications'}>
+                                <span className="mdi mdi-bell-outline" style={{ fontSize: 20 }} />
+                                {unreadNotifs > 0 && (
+                                    <span style={{
+                                        position: 'absolute', top: 2, right: 2, width: 16, height: 16,
+                                        borderRadius: '50%', background: 'var(--danger)', color: '#fff',
+                                        fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                        fontWeight: 700
+                                    }}>{unreadNotifs > 9 ? '9+' : unreadNotifs}</span>
+                                )}
+                            </button>
                             <button className="btn btn-ghost btn-icon"
                                     onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')}
                                     title={theme === 'dark' ? 'Light Mode' : 'Dark Mode'}>
