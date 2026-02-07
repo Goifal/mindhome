@@ -202,6 +202,17 @@ class Prediction(Base):
     execution_result = Column(JSON, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
+    # Phase 2b extensions
+    status = Column(String(30), default="pending")  # pending, confirmed, rejected, ignored, executed, undone
+    user_response = Column(String(30), nullable=True)  # confirmed, rejected, ignored
+    responded_at = Column(DateTime, nullable=True)
+    notification_sent = Column(Boolean, default=False)
+    previous_state = Column(JSON, nullable=True)  # For undo: state before automation
+    executed_at = Column(DateTime, nullable=True)
+    undone_at = Column(DateTime, nullable=True)
+    description_de = Column(Text, nullable=True)
+    description_en = Column(Text, nullable=True)
+
     pattern = relationship("LearnedPattern")
 
 
@@ -464,6 +475,21 @@ MIGRATIONS = [
             "ALTER TABLE learned_patterns ADD COLUMN last_matched_at DATETIME",
             "ALTER TABLE learned_patterns ADD COLUMN match_count INTEGER DEFAULT 0",
             "ALTER TABLE learned_patterns ADD COLUMN status VARCHAR(30) DEFAULT 'observed'",
+        ]
+    },
+    {
+        "version": 3,
+        "description": "Phase 2b - Prediction extensions for suggestions & automation",
+        "sql": [
+            "ALTER TABLE predictions ADD COLUMN status VARCHAR(30) DEFAULT 'pending'",
+            "ALTER TABLE predictions ADD COLUMN user_response VARCHAR(30)",
+            "ALTER TABLE predictions ADD COLUMN responded_at DATETIME",
+            "ALTER TABLE predictions ADD COLUMN notification_sent BOOLEAN DEFAULT 0",
+            "ALTER TABLE predictions ADD COLUMN previous_state JSON",
+            "ALTER TABLE predictions ADD COLUMN executed_at DATETIME",
+            "ALTER TABLE predictions ADD COLUMN undone_at DATETIME",
+            "ALTER TABLE predictions ADD COLUMN description_de TEXT",
+            "ALTER TABLE predictions ADD COLUMN description_en TEXT",
         ]
     },
 ]
