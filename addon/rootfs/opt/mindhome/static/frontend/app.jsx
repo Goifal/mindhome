@@ -173,14 +173,10 @@ const SplashScreen = () => (
         alignItems: 'center', justifyContent: 'center', gap: 20,
         background: 'linear-gradient(135deg, #0D1117 0%, #161B22 50%, #1A1F2B 100%)', zIndex: 9999
     }}>
-        <div style={{
-            width: 72, height: 72, borderRadius: 18,
-            background: 'linear-gradient(135deg, #F5A623, #E8912D)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
+        <img src={`${API_BASE}/icon.png`} alt="MindHome" style={{
+            width: 80, height: 80, borderRadius: 18,
             boxShadow: '0 0 40px rgba(245,166,35,0.3)', animation: 'pulse 2s ease-in-out infinite'
-        }}>
-            <span className="mdi mdi-lightbulb-on" style={{ fontSize: 36, color: '#fff' }} />
-        </div>
+        }} />
         <div style={{ fontSize: 26, fontWeight: 700, color: '#F0F6FC', letterSpacing: 1 }}>MindHome</div>
         <div style={{ fontSize: 13, color: '#8B949E' }}>Dein Zuhause denkt mit</div>
         <div className="loading-spinner" style={{ marginTop: 8 }} />
@@ -2848,9 +2844,7 @@ const OnboardingWizard = ({ onComplete }) => {
                 <div className="onboarding-content" key={step}>
                     {step === 0 && (
                         <div style={{ textAlign: 'center' }}>
-                            <div className="sidebar-logo" style={{ width: 72, height: 72, fontSize: 36, margin: '0 auto 24px', boxShadow: 'var(--shadow-glow)' }}>
-                                <span className="mdi mdi-lightbulb-on" />
-                            </div>
+                            <img src={`${API_BASE}/icon.png`} alt="MindHome" style={{ width: 72, height: 72, borderRadius: 18, margin: '0 auto 24px', display: 'block', boxShadow: 'var(--shadow-glow)' }} />
                             <div className="onboarding-title">{l.welcome_title}</div>
                             <div className="onboarding-subtitle">{l.welcome_sub}</div>
 
@@ -3195,9 +3189,7 @@ const App = () => {
                 <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
                     <div className="sidebar-header">
                         <div className="sidebar-brand" onClick={() => { setPage('dashboard'); setSidebarOpen(false); }}>
-                            <div className="sidebar-logo">
-                                <span className="mdi mdi-lightbulb-on" />
-                            </div>
+                            <img src={`${API_BASE}/icon.png`} alt="MindHome" style={{ width: 36, height: 36, borderRadius: 8 }} />
                             <div>
                                 <div className="sidebar-title">MindHome</div>
                                 <div className="sidebar-tagline">
@@ -3249,9 +3241,7 @@ const App = () => {
                                 <span className="mdi mdi-menu" />
                             </button>
                             {page === 'dashboard' && (
-                                <div className="sidebar-logo" style={{ width: 28, height: 28, fontSize: 14, marginRight: 8, flexShrink: 0 }}>
-                                    <span className="mdi mdi-lightbulb-on" />
-                                </div>
+                                <img src={`${API_BASE}/icon.png`} alt="MindHome" style={{ width: 28, height: 28, borderRadius: 6, marginRight: 8, flexShrink: 0 }} />
                             )}
                             <h1 className="page-title">{pageTitle}</h1>
                         </div>
