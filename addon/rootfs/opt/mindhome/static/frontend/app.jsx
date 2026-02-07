@@ -154,7 +154,7 @@ const Toast = ({ message, type, onClose }) => {
 // ================================================================
 
 const Modal = ({ title, children, onClose, actions, wide }) => (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
         <div className="modal" onClick={e => e.stopPropagation()} style={wide ? { maxWidth: 700, width: '90%' } : {}}>
             <div className="modal-title">{title}</div>
             {children}
@@ -216,6 +216,7 @@ const ConfirmDialog = ({ title, message, onConfirm, onCancel, danger }) => (
 
 const Dropdown = ({ value, onChange, options, placeholder, label }) => {
     const [open, setOpen] = useState(false);
+    const [hovered, setHovered] = useState(null);
     const ref = useRef(null);
     useEffect(() => {
         const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
@@ -227,27 +228,42 @@ const Dropdown = ({ value, onChange, options, placeholder, label }) => {
         <div ref={ref} style={{ position: 'relative' }}>
             {label && <label className="input-label">{label}</label>}
             <div className="input" onClick={() => setOpen(!open)} style={{
-                cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', userSelect: 'none'
+                cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', userSelect: 'none',
+                borderColor: open ? 'var(--accent-primary)' : undefined,
+                boxShadow: open ? '0 0 0 2px rgba(245,166,35,0.15)' : undefined,
+                transition: 'border-color 0.2s, box-shadow 0.2s'
             }}>
                 <span style={{ color: selected ? 'var(--text-primary)' : 'var(--text-muted)' }}>{selected?.label || placeholder || '— Auswählen —'}</span>
-                <span className={`mdi mdi-chevron-${open ? 'up' : 'down'}`} style={{ fontSize: 18, color: 'var(--text-muted)' }} />
+                <span className={`mdi mdi-chevron-${open ? 'up' : 'down'}`} style={{ fontSize: 18, color: 'var(--text-muted)', transition: 'transform 0.2s' }} />
             </div>
             {open && (
                 <div style={{
                     position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 4,
                     background: 'var(--bg-card)', border: '1px solid var(--border)',
                     borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-lg)',
-                    zIndex: 1000, maxHeight: 240, overflow: 'auto'
+                    zIndex: 1000, maxHeight: 240, overflow: 'auto',
+                    animation: 'fadeIn 0.15s ease-out'
                 }}>
-                    {options.map(opt => (
-                        <div key={opt.value} onClick={() => { onChange(opt.value); setOpen(false); }}
-                             style={{ padding: '10px 14px', cursor: 'pointer', fontSize: 14,
-                                 background: String(opt.value) === String(value) ? 'var(--accent-primary-dim)' : 'transparent',
-                                 borderLeft: String(opt.value) === String(value) ? '3px solid var(--accent-primary)' : '3px solid transparent'
+                    {options.map(opt => {
+                        const isSelected = String(opt.value) === String(value);
+                        const isHover = hovered === opt.value;
+                        return (
+                        <div key={opt.value}
+                             onClick={() => { onChange(opt.value); setOpen(false); }}
+                             onMouseEnter={() => setHovered(opt.value)}
+                             onMouseLeave={() => setHovered(null)}
+                             style={{
+                                 padding: '10px 14px', cursor: 'pointer', fontSize: 14,
+                                 display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                 background: isSelected ? 'var(--accent-primary-dim)' : isHover ? 'var(--bg-tertiary)' : 'transparent',
+                                 borderLeft: isSelected ? '3px solid var(--accent-primary)' : '3px solid transparent',
+                                 transition: 'background 0.15s',
                              }}>
-                            {opt.label}
+                            <span>{opt.label}</span>
+                            {isSelected && <span className="mdi mdi-check" style={{ color: 'var(--accent-primary)', fontSize: 16 }} />}
                         </div>
-                    ))}
+                        );
+                    })}
                 </div>
             )}
         </div>
@@ -313,6 +329,7 @@ const DashboardPage = () => {
     const [predictions, setPredictions] = useState([]);
     const [anomalies, setAnomalies] = useState([]);
     const [unreadCount, setUnreadCount] = useState(0);
+    const [sysHealth, setSysHealth] = useState(null);
     const activeDomains = domains.filter(d => d.is_enabled).length;
     const trackedDevices = devices.length;
 
@@ -321,6 +338,7 @@ const DashboardPage = () => {
         api.get('predictions?status=pending&limit=5').then(setPredictions).catch(() => {});
         api.get('automation/anomalies').then(setAnomalies).catch(() => {});
         api.get('notifications/unread-count').then(d => setUnreadCount(d.unread_count || 0)).catch(() => {});
+        api.get('health').then(setSysHealth).catch(() => {});
     }, []);
 
     const modeLabels = {
@@ -335,26 +353,91 @@ const DashboardPage = () => {
 
     return (
         <div>
-            {/* Status Bar */}
-            <div className="stat-grid">
-                <div className="stat-card animate-in">
-                    <div className="stat-icon" style={{ background: 'var(--success-dim)', color: 'var(--success)' }}>
-                        <span className="mdi mdi-home-assistant" />
-                    </div>
-                    <div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <span className={`connection-dot ${status?.ha_connected ? 'connected' : 'disconnected'}`} />
-                            <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
-                                {status?.ha_connected
-                                    ? (lang === 'de' ? 'Verbunden' : 'Connected')
-                                    : (lang === 'de' ? 'Getrennt' : 'Disconnected')}
-                            </span>
-                        </div>
-                        <div className="stat-label">Home Assistant</div>
+            {/* System Status Panel */}
+            <div className="card animate-in" style={{ marginBottom: 24, padding: 0, overflow: 'hidden' }}>
+                <div style={{ padding: '16px 20px 12px', borderBottom: '1px solid var(--border-color)' }}>
+                    <div className="card-title" style={{ marginBottom: 0 }}>
+                        <span className="mdi mdi-server-network" style={{ marginRight: 8, color: 'var(--accent-primary)' }} />
+                        {lang === 'de' ? 'Systemstatus' : 'System Status'}
                     </div>
                 </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 0 }}>
+                    {/* HA WebSocket */}
+                    {(() => {
+                        const wsOk = sysHealth?.checks?.ha_websocket?.status === 'ok';
+                        return (
+                        <div style={{ padding: '14px 20px', borderRight: '1px solid var(--border-color)', borderBottom: '1px solid var(--border-color)' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                                <span style={{ width: 8, height: 8, borderRadius: '50%', background: wsOk ? 'var(--success)' : 'var(--danger)', boxShadow: wsOk ? '0 0 6px var(--success)' : '0 0 6px var(--danger)', flexShrink: 0 }} />
+                                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>HA WebSocket</span>
+                            </div>
+                            <div style={{ fontSize: 12, color: 'var(--text-muted)', paddingLeft: 16 }}>
+                                {wsOk ? (lang === 'de' ? 'Verbunden' : 'Connected') : (lang === 'de' ? 'Getrennt' : 'Disconnected')}
+                                {sysHealth?.checks?.ha_websocket?.reconnect_attempts > 0 && (
+                                    <span style={{ color: 'var(--warning)' }}> · {sysHealth.checks.ha_websocket.reconnect_attempts} Reconnects</span>
+                                )}
+                            </div>
+                        </div>
+                        );
+                    })()}
 
-                <div className="stat-card animate-in animate-in-delay-1">
+                    {/* HA REST API */}
+                    {(() => {
+                        const restOk = sysHealth?.checks?.ha_rest_api?.status === 'ok';
+                        return (
+                        <div style={{ padding: '14px 20px', borderRight: '1px solid var(--border-color)', borderBottom: '1px solid var(--border-color)' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                                <span style={{ width: 8, height: 8, borderRadius: '50%', background: restOk ? 'var(--success)' : 'var(--danger)', boxShadow: restOk ? '0 0 6px var(--success)' : '0 0 6px var(--danger)', flexShrink: 0 }} />
+                                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>HA REST API</span>
+                            </div>
+                            <div style={{ fontSize: 12, color: 'var(--text-muted)', paddingLeft: 16 }}>
+                                {restOk ? (lang === 'de' ? 'Erreichbar' : 'Reachable') : (lang === 'de' ? 'Offline' : 'Offline')}
+                            </div>
+                        </div>
+                        );
+                    })()}
+
+                    {/* Database */}
+                    {(() => {
+                        const dbOk = sysHealth?.checks?.database?.status === 'ok';
+                        return (
+                        <div style={{ padding: '14px 20px', borderRight: '1px solid var(--border-color)', borderBottom: '1px solid var(--border-color)' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                                <span style={{ width: 8, height: 8, borderRadius: '50%', background: dbOk ? 'var(--success)' : 'var(--danger)', boxShadow: dbOk ? '0 0 6px var(--success)' : '0 0 6px var(--danger)', flexShrink: 0 }} />
+                                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{lang === 'de' ? 'Datenbank' : 'Database'}</span>
+                            </div>
+                            <div style={{ fontSize: 12, color: 'var(--text-muted)', paddingLeft: 16 }}>
+                                {dbOk ? 'SQLite OK' : (sysHealth?.checks?.database?.message || 'Error')}
+                            </div>
+                        </div>
+                        );
+                    })()}
+
+                    {/* MindHome Engine */}
+                    {(() => {
+                        const ok = status?.status === 'running';
+                        const uptime = sysHealth?.uptime_seconds || 0;
+                        const hours = Math.floor(uptime / 3600);
+                        const days = Math.floor(hours / 24);
+                        const uptimeStr = days > 0 ? `${days}d ${hours % 24}h` : hours > 0 ? `${hours}h ${Math.floor((uptime % 3600) / 60)}m` : `${Math.floor(uptime / 60)}m`;
+                        return (
+                        <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--border-color)' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                                <span style={{ width: 8, height: 8, borderRadius: '50%', background: ok ? 'var(--success)' : 'var(--danger)', boxShadow: ok ? '0 0 6px var(--success)' : '0 0 6px var(--danger)', flexShrink: 0 }} />
+                                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>MindHome Engine</span>
+                            </div>
+                            <div style={{ fontSize: 12, color: 'var(--text-muted)', paddingLeft: 16 }}>
+                                v{sysHealth?.version || '0.3.0'} · Uptime {uptimeStr}
+                            </div>
+                        </div>
+                        );
+                    })()}
+                </div>
+            </div>
+
+            {/* Stats Overview */}
+            <div className="stat-grid">
+                <div className="stat-card animate-in">
                     <div className="stat-icon" style={{ background: `var(--${mode.color}-dim)`, color: `var(--${mode.color})` }}>
                         <span className="mdi mdi-shield-check" />
                     </div>
@@ -366,7 +449,7 @@ const DashboardPage = () => {
                     </div>
                 </div>
 
-                <div className="stat-card animate-in animate-in-delay-2">
+                <div className="stat-card animate-in animate-in-delay-1">
                     <div className="stat-icon" style={{ background: 'var(--accent-primary-dim)', color: 'var(--accent-primary)' }}>
                         <span className="mdi mdi-puzzle" />
                     </div>
@@ -376,13 +459,23 @@ const DashboardPage = () => {
                     </div>
                 </div>
 
-                <div className="stat-card animate-in animate-in-delay-3">
+                <div className="stat-card animate-in animate-in-delay-2">
                     <div className="stat-icon" style={{ background: 'var(--accent-secondary-dim)', color: 'var(--accent-secondary)' }}>
                         <span className="mdi mdi-devices" />
                     </div>
                     <div>
                         <div className="stat-value">{trackedDevices}</div>
                         <div className="stat-label">{lang === 'de' ? 'Geräte' : 'Devices'}</div>
+                    </div>
+                </div>
+
+                <div className="stat-card animate-in animate-in-delay-3">
+                    <div className="stat-icon" style={{ background: 'var(--info-dim)', color: 'var(--info)' }}>
+                        <span className="mdi mdi-door-open" />
+                    </div>
+                    <div>
+                        <div className="stat-value">{rooms.length}</div>
+                        <div className="stat-label">{lang === 'de' ? 'Räume' : 'Rooms'}</div>
                     </div>
                 </div>
             </div>
@@ -1663,27 +1756,39 @@ const SettingsPage = () => {
                 </div>
 
                 <div className="input-group" style={{ marginBottom: 16 }}>
-                    <label className="input-label">{lang === 'de' ? 'Sprache' : 'Language'}</label>
-                    <select className="input" value={lang} onChange={e => setLang(e.target.value)}>
-                        <option value="de">Deutsch</option>
-                        <option value="en">English</option>
-                    </select>
+                    <Dropdown
+                        label={lang === 'de' ? 'Sprache' : 'Language'}
+                        value={lang}
+                        onChange={v => setLang(v)}
+                        options={[
+                            { value: 'de', label: '🇩🇪 Deutsch' },
+                            { value: 'en', label: '🇬🇧 English' },
+                        ]}
+                    />
                 </div>
 
                 <div className="input-group" style={{ marginBottom: 16 }}>
-                    <label className="input-label">Theme</label>
-                    <select className="input" value={theme} onChange={e => setTheme(e.target.value)}>
-                        <option value="dark">{lang === 'de' ? 'Dunkel' : 'Dark'}</option>
-                        <option value="light">{lang === 'de' ? 'Hell' : 'Light'}</option>
-                    </select>
+                    <Dropdown
+                        label="Theme"
+                        value={theme}
+                        onChange={v => setTheme(v)}
+                        options={[
+                            { value: 'dark', label: lang === 'de' ? '🌙 Dunkel' : '🌙 Dark' },
+                            { value: 'light', label: lang === 'de' ? '☀️ Hell' : '☀️ Light' },
+                        ]}
+                    />
                 </div>
 
                 <div className="input-group">
-                    <label className="input-label">{lang === 'de' ? 'Ansicht' : 'View Mode'}</label>
-                    <select className="input" value={viewMode} onChange={e => setViewMode(e.target.value)}>
-                        <option value="simple">{lang === 'de' ? 'Einfach' : 'Simple'}</option>
-                        <option value="advanced">{lang === 'de' ? 'Ausführlich' : 'Advanced'}</option>
-                    </select>
+                    <Dropdown
+                        label={lang === 'de' ? 'Ansicht' : 'View Mode'}
+                        value={viewMode}
+                        onChange={v => setViewMode(v)}
+                        options={[
+                            { value: 'simple', label: lang === 'de' ? '📋 Einfach' : '📋 Simple' },
+                            { value: 'advanced', label: lang === 'de' ? '📊 Ausführlich' : '📊 Advanced' },
+                        ]}
+                    />
                 </div>
             </div>
 
@@ -3029,11 +3134,11 @@ const App = () => {
         }
     };
 
-    const contextValue = {
+    const contextValue = React.useMemo(() => ({
         status, domains, devices, rooms, users, quickActions,
         lang, setLang, theme, setTheme, viewMode, setViewMode,
         showToast, refreshData, toggleDomain, executeQuickAction
-    };
+    }), [status, domains, devices, rooms, users, quickActions, lang, theme, viewMode]);
 
     if (loading) {
         return <SplashScreen />;
