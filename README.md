@@ -1,5 +1,5 @@
 [README.md](https://github.com/user-attachments/files/25131273/README.md)
-# MindHome – Dein Zuhause denkt mit 🧠🏠
+# MindHome – Dein Zuhause denkt mit!
 
 [English version below](#english)
 
