@@ -179,7 +179,7 @@ const SplashScreen = () => (
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             boxShadow: '0 0 40px rgba(245,166,35,0.3)', animation: 'pulse 2s ease-in-out infinite'
         }}>
-            <span className="mdi mdi-brain" style={{ fontSize: 36, color: '#fff' }} />
+            <span className="mdi mdi-lightbulb-on" style={{ fontSize: 36, color: '#fff' }} />
         </div>
         <div style={{ fontSize: 26, fontWeight: 700, color: '#F0F6FC', letterSpacing: 1 }}>MindHome</div>
         <div style={{ fontSize: 13, color: '#8B949E' }}>Dein Zuhause denkt mit</div>
@@ -406,7 +406,7 @@ const DashboardPage = () => {
                     <div className="card-header">
                         <div>
                             <div className="card-title">
-                                <span className="mdi mdi-brain" style={{ marginRight: 8, color: 'var(--accent-primary)' }} />
+                                <span className="mdi mdi-lightbulb-on" style={{ marginRight: 8, color: 'var(--accent-primary)' }} />
                                 {lang === 'de' ? 'Lernfortschritt' : 'Learning Progress'}
                             </div>
                             <div className="card-subtitle">
@@ -430,7 +430,7 @@ const DashboardPage = () => {
                                 {learningStats.avg_confidence ? `${Math.round(learningStats.avg_confidence * 100)}%` : '—'}
                             </div>
                             <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-                                {lang === 'de' ? 'Ø Confidence' : 'Avg Confidence'}
+                                {lang === 'de' ? 'Ø Vertrauen' : 'Avg Confidence'}
                             </div>
                         </div>
                         <div style={{ padding: 12, background: 'var(--bg-tertiary)', borderRadius: 8, textAlign: 'center' }}>
@@ -485,7 +485,7 @@ const DashboardPage = () => {
                             <div style={{ flex: 1 }}>
                                 <div style={{ fontSize: 14 }}>{pred.description || 'New pattern'}</div>
                                 <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                                    Confidence: {Math.round(pred.confidence * 100)}%
+                                    {lang === 'de' ? 'Vertrauen' : 'Confidence'}: {Math.round(pred.confidence * 100)}%
                                 </div>
                             </div>
                             <div style={{ display: 'flex', gap: 6 }}>
@@ -1030,8 +1030,9 @@ const DevicesPage = () => {
                                 if (attrs.humidity != null) attrParts.push(`💧 ${attrs.humidity}%`);
                                 if (attrs.power != null || attrs.current_power_w != null) attrParts.push(`⚡ ${attrs.power || attrs.current_power_w} W`);
                                 if (attrs.voltage != null) attrParts.push(`🔌 ${attrs.voltage} V`);
-                                // For sensors: show state + unit directly
-                                if (attrParts.length === 0 && device.live_state && device.live_state !== 'on' && device.live_state !== 'off' && device.live_state !== 'unavailable' && device.live_state !== 'unknown') {
+                                // For sensors: show state + unit directly (replaces generic state label)
+                                const isSensorValue = (attrParts.length === 0 && device.live_state && device.live_state !== 'on' && device.live_state !== 'off' && device.live_state !== 'unavailable' && device.live_state !== 'unknown');
+                                if (isSensorValue) {
                                     attrParts.push(`${device.live_state}${unit ? ' ' + unit : ''}`);
                                 }
                                 return (
@@ -1046,9 +1047,11 @@ const DevicesPage = () => {
                                     <td>{getDomainName(device.domain_id)}</td>
                                     <td>{getRoomName(device.room_id)}</td>
                                     <td>
-                                        <span style={{ color: st.color, fontWeight: 600, fontSize: 12 }}>{st.label}</span>
+                                        {!isSensorValue && (
+                                            <span style={{ color: st.color, fontWeight: 600, fontSize: 12 }}>{st.label}</span>
+                                        )}
                                         {attrParts.length > 0 && (
-                                            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{attrParts.join(' · ')}</div>
+                                            <div style={{ fontSize: isSensorValue ? 12 : 11, color: isSensorValue ? 'var(--info)' : 'var(--text-muted)', marginTop: isSensorValue ? 0 : 2, fontWeight: isSensorValue ? 600 : 400 }}>{attrParts.join(' · ')}</div>
                                         )}
                                     </td>
                                     <td>
@@ -1310,11 +1313,19 @@ const RoomsPage = () => {
                                             const dom = domains.find(d => d.id === ds.domain_id);
                                             const domName = dom?.display_name || '?';
                                             const domIcon = dom?.icon?.replace('mdi:', 'mdi-') || 'mdi-puzzle';
+                                            const nextPhase = ds.learning_phase === 'observing' ? 'suggesting' : ds.learning_phase === 'suggesting' ? 'autonomous' : 'observing';
+                                            const nextLabel = phaseLabels[nextPhase]?.[lang] || nextPhase;
                                             return (
-                                                <span key={i} className={`badge badge-${phase.color}`} style={{ fontSize: 11 }}
-                                                    title={`${domName}: ${phase[lang]}`}>
+                                                <span key={i} className={`badge badge-${phase.color}`}
+                                                    style={{ fontSize: 11, cursor: 'pointer' }}
+                                                    title={`${domName}: ${phase[lang]} → ${lang === 'de' ? 'Klick' : 'Click'}: ${nextLabel}`}
+                                                    onClick={async () => {
+                                                        await api.put(`phases/${room.id}/${ds.domain_id}`, { phase: nextPhase });
+                                                        showToast(`${domName}: ${nextLabel}`, 'success');
+                                                        refreshData();
+                                                    }}>
                                                     <span className={`mdi ${domIcon}`} style={{ marginRight: 4, fontSize: 12 }} />
-                                                    {domName}
+                                                    {domName}: {phase[lang]}
                                                 </span>
                                             );
                                         })}
@@ -1808,11 +1819,22 @@ const LogPage = () => {
                         return (
                         <div key={log.id} className="card" style={{ padding: 14, display: 'flex', alignItems: 'flex-start', gap: 12 }}>
                             <span className={`mdi ${typeIcons[log.action_type] || 'mdi-circle-small'}`}
-                                  style={{ fontSize: 22, color: 'var(--accent-primary)', marginTop: 2 }} />
+                                  style={{ fontSize: 22, color: log.action_type === 'automation' ? 'var(--warning)' : 'var(--accent-primary)', marginTop: 2 }} />
                             <div style={{ flex: 1 }}>
-                                <div style={{ fontSize: 14, fontWeight: 500 }}>
+                                <div style={{ fontSize: 14, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 6 }}>
                                     {log.reason || log.action_type}
+                                    {log.action_type === 'automation' && (
+                                        <span className="badge badge-warning" style={{ fontSize: 10 }}>
+                                            <span className="mdi mdi-robot" style={{ marginRight: 2 }} />MindHome
+                                        </span>
+                                    )}
                                 </div>
+                                {log.action_data?.confidence && (
+                                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>
+                                        {lang === 'de' ? 'Vertrauen' : 'Confidence'}: {Math.round(log.action_data.confidence * 100)}%
+                                        {log.action_data.pattern_id && ` · Pattern #${log.action_data.pattern_id}`}
+                                    </div>
+                                )}
                                 {attrParts.length > 0 && (
                                     <div style={{ fontSize: 12, color: 'var(--accent-secondary)', marginTop: 2 }}>{attrParts.join(' · ')}</div>
                                 )}
@@ -1962,6 +1984,7 @@ const PatternsPage = () => {
     const [historyEntity, setHistoryEntity] = useState('');
     const [analyzing, setAnalyzing] = useState(false);
     const [confirmDel, setConfirmDel] = useState(null);
+    const [expandedId, setExpandedId] = useState(null);
 
     const load = async () => {
         try {
@@ -2066,7 +2089,7 @@ const PatternsPage = () => {
                     </div>
                     <div className="stat-card animate-in animate-in-delay-1">
                         <div className="stat-icon" style={{ background: 'var(--success-dim)', color: 'var(--success)' }}>
-                            <span className="mdi mdi-brain" />
+                            <span className="mdi mdi-lightbulb-on" />
                         </div>
                         <div>
                             <div className="stat-value">{stats.total_patterns || 0}</div>
@@ -2088,7 +2111,7 @@ const PatternsPage = () => {
                         </div>
                         <div>
                             <div className="stat-value">{stats.avg_confidence ? `${Math.round(stats.avg_confidence * 100)}%` : '—'}</div>
-                            <div className="stat-label">{lang === 'de' ? 'Ø Confidence' : 'Avg Confidence'}</div>
+                            <div className="stat-label">{lang === 'de' ? 'Ø Vertrauen' : 'Avg Confidence'}</div>
                         </div>
                     </div>
                 </div>
@@ -2213,7 +2236,7 @@ const PatternsPage = () => {
                 </div>
                 {filtered.length === 0 ? (
                     <div className="empty-state">
-                        <span className="mdi mdi-brain" />
+                        <span className="mdi mdi-lightbulb-on" />
                         <h3>{lang === 'de' ? 'Noch keine Muster' : 'No patterns yet'}</h3>
                         <p>{lang === 'de'
                             ? 'MindHome sammelt Daten und analysiert regelmäßig. Muster erscheinen nach einigen Tagen.'
@@ -2226,12 +2249,16 @@ const PatternsPage = () => {
                 ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
                         {filtered.map(p => (
-                            <div key={p.id} style={{
+                            <div key={p.id}>
+                            <div style={{
                                 padding: '14px 16px',
-                                borderBottom: '1px solid var(--border-color)',
+                                borderBottom: expandedId === p.id ? 'none' : '1px solid var(--border-color)',
                                 display: 'flex', alignItems: 'center', gap: 12,
                                 opacity: p.status === 'disabled' ? 0.5 : 1,
-                            }}>
+                                cursor: 'pointer', transition: 'background 0.15s',
+                            }} onClick={() => setExpandedId(expandedId === p.id ? null : p.id)}
+                               onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-tertiary)'}
+                               onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
                                 {/* Type icon */}
                                 <span className={`mdi ${typeIcons[p.pattern_type]}`}
                                       style={{ fontSize: 22, color: 'var(--accent-primary)', flexShrink: 0 }} />
@@ -2254,7 +2281,7 @@ const PatternsPage = () => {
                                     </div>
                                 </div>
 
-                                {/* Confidence bar */}
+                                {/* Vertrauen/Confidence bar */}
                                 <div style={{ width: 80, flexShrink: 0 }}>
                                     <div style={{ fontSize: 12, textAlign: 'center', marginBottom: 4, fontWeight: 600 }}>
                                         {Math.round(p.confidence * 100)}%
@@ -2286,6 +2313,45 @@ const PatternsPage = () => {
                                         <span className="mdi mdi-delete" />
                                     </button>
                                 </div>
+                            </div>
+
+                            {/* Detail panel (expanded) */}
+                            {expandedId === p.id && (
+                                <div style={{
+                                    padding: '12px 16px 16px 50px', borderBottom: '1px solid var(--border-color)',
+                                    background: 'var(--bg-tertiary)', fontSize: 13,
+                                }}>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 24px', marginBottom: 12 }}>
+                                        <div><span style={{ color: 'var(--text-muted)' }}>Entity:</span> <code style={{ fontSize: 12 }}>{p.pattern_data?.entity_id || p.pattern_data?.action_entity || '–'}</code></div>
+                                        <div><span style={{ color: 'var(--text-muted)' }}>{lang === 'de' ? 'Zielzustand' : 'Target'}:</span> <strong>{p.pattern_data?.target_state || p.action_definition?.target_state || '–'}</strong></div>
+                                        {p.pattern_data?.avg_hour !== undefined && (
+                                            <div><span style={{ color: 'var(--text-muted)' }}>{lang === 'de' ? 'Uhrzeit' : 'Time'}:</span> <strong>{String(p.pattern_data.avg_hour).padStart(2,'0')}:{String(p.pattern_data.avg_minute||0).padStart(2,'0')}</strong> ±{p.pattern_data.time_window_min || 15}min</div>
+                                        )}
+                                        {p.pattern_data?.weekday_filter && (
+                                            <div><span style={{ color: 'var(--text-muted)' }}>{lang === 'de' ? 'Tage' : 'Days'}:</span> {p.pattern_data.weekday_filter === 'weekdays' ? (lang === 'de' ? 'Mo–Fr' : 'Mon–Fri') : p.pattern_data.weekday_filter === 'weekends' ? (lang === 'de' ? 'Sa–So' : 'Sat–Sun') : (lang === 'de' ? 'Alle' : 'All')}</div>
+                                        )}
+                                        {p.pattern_data?.sun_relative_elevation != null && (
+                                            <div><span style={{ color: 'var(--text-muted)' }}>{lang === 'de' ? 'Sonnenstand' : 'Sun elevation'}:</span> {p.pattern_data.sun_relative_elevation}°</div>
+                                        )}
+                                        {p.pattern_data?.trigger_entity && (
+                                            <div><span style={{ color: 'var(--text-muted)' }}>Trigger:</span> <code style={{ fontSize: 12 }}>{p.pattern_data.trigger_entity}</code> → {p.pattern_data.trigger_state}</div>
+                                        )}
+                                        {p.pattern_data?.avg_delay_sec && (
+                                            <div><span style={{ color: 'var(--text-muted)' }}>{lang === 'de' ? 'Verzögerung' : 'Delay'}:</span> {p.pattern_data.avg_delay_sec < 60 ? `${Math.round(p.pattern_data.avg_delay_sec)}s` : `${Math.round(p.pattern_data.avg_delay_sec/60)} min`}</div>
+                                        )}
+                                        <div><span style={{ color: 'var(--text-muted)' }}>{lang === 'de' ? 'Beobachtet' : 'Observed'}:</span> {p.pattern_data?.days_observed || 0} {lang === 'de' ? 'Tage' : 'days'}, {p.pattern_data?.occurrence_count || p.match_count || 0}× {lang === 'de' ? 'Treffer' : 'matches'}</div>
+                                        <div><span style={{ color: 'var(--text-muted)' }}>{lang === 'de' ? 'Erstellt' : 'Created'}:</span> {p.created_at ? new Date(p.created_at).toLocaleDateString() : '–'}</div>
+                                    </div>
+                                    {p.trigger_conditions && (
+                                        <details style={{ marginTop: 4 }}>
+                                            <summary style={{ cursor: 'pointer', color: 'var(--text-muted)', fontSize: 12 }}>
+                                                {lang === 'de' ? 'Technische Details (JSON)' : 'Technical details (JSON)'}
+                                            </summary>
+                                            <pre style={{ fontSize: 11, marginTop: 4, padding: 8, background: 'var(--bg-primary)', borderRadius: 4, overflow: 'auto', maxHeight: 120 }}>{JSON.stringify({ trigger: p.trigger_conditions, action: p.action_definition }, null, 2)}</pre>
+                                        </details>
+                                    )}
+                                </div>
+                            )}
                             </div>
                         ))}
                     </div>
@@ -2414,7 +2480,20 @@ const NotificationsPage = () => {
                         <p>{lang === 'de' ? 'Vorschläge erscheinen sobald Muster erkannt werden.' : 'Suggestions will appear once patterns are detected.'}</p>
                     </div>
                 ) : (
-                    filteredPreds.map(pred => (
+                    (() => {
+                        // Group by day for timeline
+                        const grouped = {};
+                        filteredPreds.forEach(pred => {
+                            const day = pred.created_at ? new Date(pred.created_at).toLocaleDateString(lang === 'de' ? 'de-DE' : 'en-US', { weekday: 'long', day: 'numeric', month: 'long' }) : (lang === 'de' ? 'Unbekannt' : 'Unknown');
+                            if (!grouped[day]) grouped[day] = [];
+                            grouped[day].push(pred);
+                        });
+                        return Object.entries(grouped).map(([day, preds]) => (
+                            <div key={day}>
+                                <div style={{ padding: '8px 16px', fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', background: 'var(--bg-tertiary)', borderBottom: '1px solid var(--border-color)' }}>
+                                    {day}
+                                </div>
+                                {preds.map(pred => (
                         <div key={pred.id} style={{
                             padding: '12px 16px', borderBottom: '1px solid var(--border-color)',
                             display: 'flex', alignItems: 'center', gap: 12,
@@ -2449,7 +2528,10 @@ const NotificationsPage = () => {
                                 )}
                             </div>
                         </div>
+                    ))}
+                        </div>
                     ))
+                    })()
                 )}
             </div>
 
@@ -2557,7 +2639,7 @@ const OnboardingWizard = ({ onComplete }) => {
     };
 
     const steps = [
-        { id: 'welcome', icon: 'mdi-brain' },
+        { id: 'welcome', icon: 'mdi-lightbulb-on' },
         { id: 'language', icon: 'mdi-translate' },
         { id: 'admin', icon: 'mdi-shield-crown' },
         { id: 'discover', icon: 'mdi-magnify' },
@@ -2659,7 +2741,7 @@ const OnboardingWizard = ({ onComplete }) => {
                     {step === 0 && (
                         <div style={{ textAlign: 'center' }}>
                             <div className="sidebar-logo" style={{ width: 72, height: 72, fontSize: 36, margin: '0 auto 24px', boxShadow: 'var(--shadow-glow)' }}>
-                                <span className="mdi mdi-brain" />
+                                <span className="mdi mdi-lightbulb-on" />
                             </div>
                             <div className="onboarding-title">{l.welcome_title}</div>
                             <div className="onboarding-subtitle">{l.welcome_sub}</div>
@@ -2904,8 +2986,10 @@ const App = () => {
         };
         init();
 
-        // Refresh every 30 seconds
-        const interval = setInterval(refreshData, 30000);
+        // Refresh data: full load only on page change, lightweight poll every 60s
+        const interval = setInterval(() => {
+            api.get('system/status').then(s => { if (s) setStatus(s); });
+        }, 60000);
         return () => clearInterval(interval);
     }, []);
 
@@ -2973,7 +3057,7 @@ const App = () => {
         { id: 'users', icon: 'mdi-account-group', label: lang === 'de' ? 'Personen' : 'People' },
         { section: 'System' },
         { id: 'log', icon: 'mdi-text-box-outline', label: 'KI-Log' },
-        { id: 'patterns', icon: 'mdi-brain', label: lang === 'de' ? 'Muster' : 'Patterns' },
+        { id: 'patterns', icon: 'mdi-lightbulb-on', label: lang === 'de' ? 'Muster' : 'Patterns' },
         { id: 'notifications', icon: 'mdi-bell', label: lang === 'de' ? 'Benachrichtigungen' : 'Notifications' },
         { id: 'data', icon: 'mdi-shield-lock', label: lang === 'de' ? 'Datenschutz' : 'Privacy' },
         { id: 'settings', icon: 'mdi-cog', label: lang === 'de' ? 'Einstellungen' : 'Settings' },
@@ -3004,7 +3088,7 @@ const App = () => {
                     <div className="sidebar-header">
                         <div className="sidebar-brand" onClick={() => { setPage('dashboard'); setSidebarOpen(false); }}>
                             <div className="sidebar-logo">
-                                <span className="mdi mdi-brain" />
+                                <span className="mdi mdi-lightbulb-on" />
                             </div>
                             <div>
                                 <div className="sidebar-title">MindHome</div>
@@ -3056,6 +3140,11 @@ const App = () => {
                             <button className="menu-toggle" onClick={() => setSidebarOpen(true)}>
                                 <span className="mdi mdi-menu" />
                             </button>
+                            {page === 'dashboard' && (
+                                <div className="sidebar-logo" style={{ width: 28, height: 28, fontSize: 14, marginRight: 8, flexShrink: 0 }}>
+                                    <span className="mdi mdi-lightbulb-on" />
+                                </div>
+                            )}
                             <h1 className="page-title">{pageTitle}</h1>
                         </div>
                         <div className="main-header-right">
