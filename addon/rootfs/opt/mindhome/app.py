@@ -1,20 +1,24 @@
 """
 MindHome - Main Application
 Flask backend serving the API and frontend.
+Phase 1 Final - Teil A Backend
 """
 
 import os
 import sys
 import json
+import signal
 import logging
-from datetime import datetime, timezone
+import threading
+import time
+from datetime import datetime, timezone, timedelta
 from functools import wraps
 
 from flask import Flask, request, jsonify, send_from_directory, redirect
 from flask_cors import CORS
 
 from models import (
-    get_engine, get_session, init_database,
+    get_engine, get_session, init_database, run_migrations,
     User, UserRole, Room, Domain, Device, RoomDomainState,
     LearningPhase, QuickAction, SystemSetting, UserPreference,
     NotificationSetting, NotificationType, ActionLog,
@@ -44,12 +48,16 @@ INGRESS_PATH = os.environ.get("INGRESS_PATH", "")
 # Database
 engine = get_engine()
 init_database(engine)
+run_migrations(engine)  # Fix 29: DB migration system
 
 # Home Assistant connection
 ha = HAConnection()
 
 # Domain Manager
 domain_manager = DomainManager(ha, lambda: get_session(engine))
+
+# Cleanup timer
+_cleanup_timer = None
 
 
 # ==============================================================================
@@ -71,8 +79,13 @@ def on_state_changed(event):
     try:
         new_val = new_state.get("state", "unknown") if isinstance(new_state, dict) else "unknown"
         old_val = old_state.get("state", "unknown") if isinstance(old_state, dict) else "unknown"
+
+        # Fix 1: Extract attributes (brightness, position, temperature etc.)
+        new_attrs = new_state.get("attributes", {}) if isinstance(new_state, dict) else {}
+        old_attrs = old_state.get("attributes", {}) if isinstance(old_state, dict) else {}
+
         if entity_id and new_val != old_val:
-            log_state_change(entity_id, new_val, old_val)
+            log_state_change(entity_id, new_val, old_val, new_attrs, old_attrs)
     except Exception as e:
         logger.debug(f"State log error: {e}")
 
@@ -121,6 +134,73 @@ def localize(de_text, en_text):
     return de_text if get_language() == "de" else en_text
 
 
+def extract_display_attributes(entity_id, attrs):
+    """Fix 1: Extract human-readable attributes from HA state attributes."""
+    result = {}
+    ha_domain = entity_id.split(".")[0] if entity_id else ""
+
+    # Brightness (lights) - HA sends 0-255, convert to %
+    if "brightness" in attrs and attrs["brightness"] is not None:
+        try:
+            result["brightness_pct"] = round(int(attrs["brightness"]) / 255 * 100)
+        except (ValueError, TypeError):
+            pass
+
+    # Color temperature
+    if "color_temp_kelvin" in attrs:
+        result["color_temp_kelvin"] = attrs["color_temp_kelvin"]
+    elif "color_temp" in attrs:
+        result["color_temp"] = attrs["color_temp"]
+
+    # Cover/Roller position (0-100%)
+    if "current_position" in attrs:
+        result["position_pct"] = attrs["current_position"]
+
+    # Climate
+    if "temperature" in attrs:
+        result["target_temp"] = attrs["temperature"]
+    if "current_temperature" in attrs:
+        result["current_temp"] = attrs["current_temperature"]
+    if "hvac_mode" in attrs or "hvac_action" in attrs:
+        result["hvac_mode"] = attrs.get("hvac_mode")
+        result["hvac_action"] = attrs.get("hvac_action")
+    if "humidity" in attrs:
+        result["humidity"] = attrs["humidity"]
+
+    # Power/Energy (smart plugs)
+    for key in ["current_power_w", "power", "current", "voltage",
+                "total_energy_kwh", "energy", "total_increasing"]:
+        if key in attrs and attrs[key] is not None:
+            result[key] = attrs[key]
+
+    # Air quality
+    for key in ["co2", "voc", "pm25", "pm10", "aqi"]:
+        if key in attrs and attrs[key] is not None:
+            result[key] = attrs[key]
+
+    return result
+
+
+def build_state_reason(device_name, old_val, new_val, new_display_attrs):
+    """Build a human-readable reason string including attributes."""
+    reason = f"{device_name}: {old_val} → {new_val}"
+
+    details = []
+    if "brightness_pct" in new_display_attrs:
+        details.append(f"{new_display_attrs['brightness_pct']}%")
+    if "position_pct" in new_display_attrs:
+        details.append(f"Position {new_display_attrs['position_pct']}%")
+    if "target_temp" in new_display_attrs:
+        details.append(f"{new_display_attrs['target_temp']}°C")
+    if "current_temp" in new_display_attrs:
+        details.append(f"Ist: {new_display_attrs['current_temp']}°C")
+
+    if details:
+        reason += f" ({', '.join(details)})"
+
+    return reason
+
+
 # ==============================================================================
 # API Routes - System
 # ==============================================================================
@@ -141,6 +221,83 @@ def api_system_status():
             "view_mode": get_setting("view_mode", "simple"),
             "version": "0.1.0",
             "timestamp": datetime.utcnow().isoformat()
+        })
+    finally:
+        session.close()
+
+
+# Fix 16: Health-Check Endpoint
+@app.route("/api/health", methods=["GET"])
+def api_health_check():
+    """Health check endpoint for monitoring."""
+    health = {
+        "status": "healthy",
+        "checks": {}
+    }
+
+    # Check DB
+    try:
+        session = get_db()
+        session.execute("SELECT 1")
+        session.close()
+        health["checks"]["database"] = {"status": "ok"}
+    except Exception as e:
+        health["checks"]["database"] = {"status": "error", "message": str(e)}
+        health["status"] = "unhealthy"
+
+    # Check HA connection
+    health["checks"]["ha_websocket"] = {
+        "status": "ok" if ha._ws_connected else "disconnected",
+        "reconnect_attempts": getattr(ha, '_reconnect_count', 0)
+    }
+    health["checks"]["ha_rest_api"] = {
+        "status": "ok" if ha._is_online else "offline"
+    }
+
+    # Uptime
+    health["uptime_seconds"] = int(time.time() - _start_time) if '_start_time' in dir() else 0
+    health["version"] = "0.1.0"
+
+    status_code = 200 if health["status"] == "healthy" else 503
+    return jsonify(health), status_code
+
+
+# Fix 25: System Info
+@app.route("/api/system/info", methods=["GET"])
+def api_system_info():
+    """Get detailed system information."""
+    session = get_db()
+    try:
+        device_count = session.query(Device).count()
+        room_count = session.query(Room).filter_by(is_active=True).count()
+        user_count = session.query(User).filter_by(is_active=True).count()
+        domain_count = session.query(Domain).filter_by(is_enabled=True).count()
+        log_count = session.query(ActionLog).count()
+        observation_count = session.query(ActionLog).filter_by(action_type="observation").count()
+
+        # DB size
+        db_path = os.environ.get("MINDHOME_DB_PATH", "/data/mindhome/db/mindhome.db")
+        db_size_bytes = os.path.getsize(db_path) if os.path.exists(db_path) else 0
+
+        # Retention setting
+        retention_days = int(get_setting("data_retention_days", "90"))
+
+        return jsonify({
+            "version": "0.1.0",
+            "ha_connected": ha.is_connected(),
+            "ws_connected": ha._ws_connected,
+            "uptime_seconds": int(time.time() - _start_time) if _start_time else 0,
+            "device_count": device_count,
+            "room_count": room_count,
+            "user_count": user_count,
+            "active_domains": domain_count,
+            "total_log_entries": log_count,
+            "total_observations": observation_count,
+            "db_size_bytes": db_size_bytes,
+            "db_size_mb": round(db_size_bytes / 1024 / 1024, 2),
+            "data_retention_days": retention_days,
+            "python_version": sys.version.split()[0],
+            "ingress_path": INGRESS_PATH
         })
     finally:
         session.close()
@@ -176,7 +333,6 @@ def api_emergency_stop():
 
     session = get_db()
     try:
-        # Pause all room domain states
         states = session.query(RoomDomainState).all()
         for state in states:
             state.is_paused = True
@@ -223,8 +379,99 @@ def api_get_domains():
             "display_name": d.display_name_de if lang == "de" else d.display_name_en,
             "icon": d.icon,
             "is_enabled": d.is_enabled,
+            "is_custom": d.is_custom if hasattr(d, 'is_custom') else False,
             "description": d.description_de if lang == "de" else d.description_en
         } for d in domains])
+    finally:
+        session.close()
+
+
+# Fix 7: Custom Domains - Create
+@app.route("/api/domains", methods=["POST"])
+def api_create_domain():
+    """Create a custom domain."""
+    data = request.json
+    session = get_db()
+    try:
+        name = data.get("name", "").strip().lower().replace(" ", "_")
+        if not name:
+            return jsonify({"error": "Name is required"}), 400
+
+        existing = session.query(Domain).filter_by(name=name).first()
+        if existing:
+            return jsonify({"error": "Domain already exists"}), 400
+
+        domain = Domain(
+            name=name,
+            display_name_de=data.get("display_name_de", data.get("name", name)),
+            display_name_en=data.get("display_name_en", data.get("name", name)),
+            icon=data.get("icon", "mdi:puzzle"),
+            is_enabled=True,
+            is_custom=True,
+            description_de=data.get("description_de", ""),
+            description_en=data.get("description_en", "")
+        )
+        session.add(domain)
+        session.commit()
+        return jsonify({"id": domain.id, "name": domain.name}), 201
+    finally:
+        session.close()
+
+
+# Fix 7: Custom Domains - Update
+@app.route("/api/domains/<int:domain_id>", methods=["PUT"])
+def api_update_domain(domain_id):
+    """Update a custom domain."""
+    data = request.json
+    session = get_db()
+    try:
+        domain = session.query(Domain).get(domain_id)
+        if not domain:
+            return jsonify({"error": "Domain not found"}), 404
+        if not getattr(domain, 'is_custom', False):
+            return jsonify({"error": "Cannot edit system domains"}), 400
+
+        if "display_name_de" in data:
+            domain.display_name_de = data["display_name_de"]
+        if "display_name_en" in data:
+            domain.display_name_en = data["display_name_en"]
+        if "icon" in data:
+            domain.icon = data["icon"]
+        if "description_de" in data:
+            domain.description_de = data["description_de"]
+        if "description_en" in data:
+            domain.description_en = data["description_en"]
+
+        session.commit()
+        return jsonify({"id": domain.id, "name": domain.name})
+    finally:
+        session.close()
+
+
+# Fix 7: Custom Domains - Delete
+@app.route("/api/domains/<int:domain_id>", methods=["DELETE"])
+def api_delete_domain(domain_id):
+    """Delete a custom domain."""
+    session = get_db()
+    try:
+        domain = session.query(Domain).get(domain_id)
+        if not domain:
+            return jsonify({"error": "Domain not found"}), 404
+        if not getattr(domain, 'is_custom', False):
+            return jsonify({"error": "Cannot delete system domains"}), 400
+
+        # Move devices to unassigned
+        devices = session.query(Device).filter_by(domain_id=domain_id).all()
+        default_domain = session.query(Domain).filter_by(name="switch").first()
+        for d in devices:
+            d.domain_id = default_domain.id if default_domain else 1
+
+        # Remove room domain states
+        session.query(RoomDomainState).filter_by(domain_id=domain_id).delete()
+
+        session.delete(domain)
+        session.commit()
+        return jsonify({"success": True})
     finally:
         session.close()
 
@@ -240,7 +487,6 @@ def api_toggle_domain(domain_id):
         domain.is_enabled = not domain.is_enabled
         session.commit()
 
-        # Start/stop the domain plugin
         if domain.is_enabled:
             domain_manager.start_domain(domain.name)
         else:
@@ -270,24 +516,37 @@ def api_domain_features(domain_name):
 
 @app.route("/api/rooms", methods=["GET"])
 def api_get_rooms():
-    """Get all rooms."""
+    """Get all rooms with last activity info."""
     session = get_db()
     try:
         rooms = session.query(Room).filter_by(is_active=True).all()
-        return jsonify([{
-            "id": r.id,
-            "name": r.name,
-            "ha_area_id": r.ha_area_id,
-            "icon": r.icon,
-            "privacy_mode": r.privacy_mode,
-            "device_count": len(r.devices),
-            "domain_states": [{
-                "domain_id": ds.domain_id,
-                "learning_phase": ds.learning_phase.value,
-                "confidence_score": ds.confidence_score,
-                "is_paused": ds.is_paused
-            } for ds in r.domain_states]
-        } for r in rooms])
+        result = []
+        for r in rooms:
+            # Fix 13: Get last activity for this room
+            last_log = session.query(ActionLog).filter(
+                ActionLog.room_id == r.id,
+                ActionLog.action_type == "observation"
+            ).order_by(ActionLog.created_at.desc()).first()
+
+            # Fix 6: Only include domain_states for domains that have devices in this room
+            device_domain_ids = set(d.domain_id for d in r.devices)
+
+            result.append({
+                "id": r.id,
+                "name": r.name,
+                "ha_area_id": r.ha_area_id,
+                "icon": r.icon,
+                "privacy_mode": r.privacy_mode,
+                "device_count": len(r.devices),
+                "last_activity": last_log.created_at.isoformat() if last_log else None,
+                "domain_states": [{
+                    "domain_id": ds.domain_id,
+                    "learning_phase": ds.learning_phase.value,
+                    "confidence_score": ds.confidence_score,
+                    "is_paused": ds.is_paused
+                } for ds in r.domain_states if ds.domain_id in device_domain_ids]
+            })
+        return jsonify(result)
     finally:
         session.close()
 
@@ -319,6 +578,64 @@ def api_create_room():
         session.commit()
 
         return jsonify({"id": room.id, "name": room.name}), 201
+    finally:
+        session.close()
+
+
+# Fix 9: Import rooms from HA Areas
+@app.route("/api/rooms/import-from-ha", methods=["POST"])
+def api_import_rooms_from_ha():
+    """Import rooms from HA Areas."""
+    session = get_db()
+    try:
+        areas = ha.get_areas() or []
+        if not areas:
+            return jsonify({"error": "No areas found in HA", "imported": 0}), 200
+
+        imported = 0
+        skipped = 0
+
+        for area in areas:
+            area_id = area.get("area_id", "")
+            area_name = area.get("name", "")
+            if not area_name:
+                continue
+
+            # Check if room already exists (by ha_area_id or name)
+            existing = session.query(Room).filter(
+                (Room.ha_area_id == area_id) | (Room.name == area_name)
+            ).first()
+
+            if existing:
+                # Update ha_area_id if missing
+                if not existing.ha_area_id:
+                    existing.ha_area_id = area_id
+                skipped += 1
+                continue
+
+            room = Room(
+                name=area_name,
+                ha_area_id=area_id,
+                icon=area.get("icon") or "mdi:door",
+                privacy_mode={}
+            )
+            session.add(room)
+            session.flush()
+
+            # Create domain states
+            enabled_domains = session.query(Domain).filter_by(is_enabled=True).all()
+            for domain in enabled_domains:
+                state = RoomDomainState(
+                    room_id=room.id,
+                    domain_id=domain.id,
+                    learning_phase=LearningPhase.OBSERVING
+                )
+                session.add(state)
+
+            imported += 1
+
+        session.commit()
+        return jsonify({"success": True, "imported": imported, "skipped": skipped})
     finally:
         session.close()
 
@@ -383,19 +700,40 @@ def api_update_room_privacy(room_id):
 
 @app.route("/api/devices", methods=["GET"])
 def api_get_devices():
-    """Get all tracked devices."""
+    """Get all tracked devices with live status."""
     session = get_db()
     try:
         devices = session.query(Device).all()
-        return jsonify([{
-            "id": d.id,
-            "ha_entity_id": d.ha_entity_id,
-            "name": d.name,
-            "domain_id": d.domain_id,
-            "room_id": d.room_id,
-            "is_tracked": d.is_tracked,
-            "is_controllable": d.is_controllable
-        } for d in devices])
+        result = []
+        for d in devices:
+            dev_data = {
+                "id": d.id,
+                "ha_entity_id": d.ha_entity_id,
+                "name": d.name,
+                "domain_id": d.domain_id,
+                "room_id": d.room_id,
+                "is_tracked": d.is_tracked,
+                "is_controllable": d.is_controllable
+            }
+
+            # Fix 14: Include live state from HA
+            try:
+                state = ha.get_state(d.ha_entity_id)
+                if state:
+                    dev_data["live_state"] = state.get("state", "unknown")
+                    attrs = state.get("attributes", {})
+                    dev_data["live_attributes"] = extract_display_attributes(
+                        d.ha_entity_id, attrs
+                    )
+                else:
+                    dev_data["live_state"] = "unavailable"
+                    dev_data["live_attributes"] = {}
+            except Exception:
+                dev_data["live_state"] = "unknown"
+                dev_data["live_attributes"] = {}
+
+            result.append(dev_data)
+        return jsonify(result)
     finally:
         session.close()
 
@@ -427,6 +765,64 @@ def api_update_device(device_id):
         session.close()
 
 
+# Fix 24: Bulk actions for devices
+@app.route("/api/devices/bulk", methods=["PUT"])
+def api_bulk_update_devices():
+    """Bulk update multiple devices at once."""
+    data = request.json
+    session = get_db()
+    try:
+        device_ids = data.get("device_ids", [])
+        updates = data.get("updates", {})
+
+        if not device_ids:
+            return jsonify({"error": "No devices selected"}), 400
+
+        updated = 0
+        for did in device_ids:
+            device = session.query(Device).get(did)
+            if not device:
+                continue
+            if "room_id" in updates:
+                device.room_id = updates["room_id"]
+            if "domain_id" in updates:
+                device.domain_id = updates["domain_id"]
+            if "is_tracked" in updates:
+                device.is_tracked = updates["is_tracked"]
+            if "is_controllable" in updates:
+                device.is_controllable = updates["is_controllable"]
+            updated += 1
+
+        session.commit()
+        return jsonify({"success": True, "updated": updated})
+    finally:
+        session.close()
+
+
+# Fix 24: Bulk delete devices
+@app.route("/api/devices/bulk", methods=["DELETE"])
+def api_bulk_delete_devices():
+    """Bulk delete multiple devices."""
+    data = request.json
+    session = get_db()
+    try:
+        device_ids = data.get("device_ids", [])
+        if not device_ids:
+            return jsonify({"error": "No devices selected"}), 400
+
+        deleted = 0
+        for did in device_ids:
+            device = session.query(Device).get(did)
+            if device:
+                session.delete(device)
+                deleted += 1
+
+        session.commit()
+        return jsonify({"success": True, "deleted": deleted})
+    finally:
+        session.close()
+
+
 @app.route("/api/devices/<int:device_id>", methods=["DELETE"])
 def api_delete_device(device_id):
     """Delete a device."""
@@ -451,7 +847,18 @@ def api_discover_devices():
     """Discover all HA devices grouped by MindHome domain."""
     discovered = ha.discover_devices()
 
-    # Count per domain
+    # Fix 20: Filter out invalid entities
+    for domain_name in list(discovered.keys()):
+        entities = discovered[domain_name]
+        filtered = []
+        for entity in entities:
+            state_val = entity.get("state", "")
+            # Skip permanently unavailable/unknown entities
+            if state_val in ("unavailable", "unknown", None, ""):
+                continue
+            filtered.append(entity)
+        discovered[domain_name] = filtered
+
     summary = {}
     for domain_name, entities in discovered.items():
         summary[domain_name] = {
@@ -473,14 +880,42 @@ def api_import_discovered():
     session = get_db()
     try:
         imported_count = 0
+        skipped_count = 0
         selected_ids = data.get("selected_entities", [])
+
+        # Fix 21: Get HA entity registry for area assignments
+        entity_registry = ha.get_entity_registry() or []
+        device_registry = ha.get_device_registry() or []
+
+        # Build lookup: entity_id -> area_id
+        # First: device_id -> area_id from device registry
+        device_area_map = {}
+        for dev in device_registry:
+            dev_id = dev.get("id", "")
+            area_id = dev.get("area_id", "")
+            if dev_id and area_id:
+                device_area_map[dev_id] = area_id
+
+        # Then: entity_id -> area_id (entity area takes priority, else device area)
+        entity_area_map = {}
+        for ent in entity_registry:
+            eid = ent.get("entity_id", "")
+            area = ent.get("area_id") or device_area_map.get(ent.get("device_id", ""))
+            if eid and area:
+                entity_area_map[eid] = area
+
+        # Build area_id -> room_id lookup
+        area_room_map = {}
+        rooms = session.query(Room).filter(Room.ha_area_id.isnot(None)).all()
+        for room in rooms:
+            if room.ha_area_id:
+                area_room_map[room.ha_area_id] = room.id
 
         for domain_name, domain_data in data.get("domains", {}).items():
             domain = session.query(Domain).filter_by(name=domain_name).first()
             if not domain:
                 continue
 
-            # Handle both formats: list of entities or dict with count/entities
             if isinstance(domain_data, dict):
                 entities = domain_data.get("entities", [])
             elif isinstance(domain_data, list):
@@ -490,7 +925,6 @@ def api_import_discovered():
 
             has_imported = False
             for entity_info in entities:
-                # Handle entity_info as string (just entity_id) or dict
                 if isinstance(entity_info, str):
                     entity_id = entity_info
                     friendly_name = entity_info
@@ -502,31 +936,132 @@ def api_import_discovered():
                 else:
                     continue
 
-                # Skip if not in selected list (when selection is provided)
                 if selected_ids and entity_id not in selected_ids:
                     continue
 
-                # Skip if already exists
+                # Fix 19: Duplicate protection
                 existing = session.query(Device).filter_by(ha_entity_id=entity_id).first()
                 if existing:
+                    skipped_count += 1
                     continue
+
+                # Fix 21: Auto-assign room via HA Area
+                room_id = None
+                area_id = entity_area_map.get(entity_id)
+                if area_id:
+                    room_id = area_room_map.get(area_id)
 
                 device = Device(
                     ha_entity_id=entity_id,
                     name=friendly_name,
                     domain_id=domain.id,
+                    room_id=room_id,
                     device_meta=attributes
                 )
                 session.add(device)
                 imported_count += 1
                 has_imported = True
 
-            # Enable domain if devices were imported
             if has_imported:
                 domain.is_enabled = True
 
         session.commit()
-        return jsonify({"success": True, "imported": imported_count})
+        return jsonify({
+            "success": True,
+            "imported": imported_count,
+            "skipped": skipped_count,
+            "message": f"{imported_count} importiert, {skipped_count} übersprungen (bereits vorhanden)"
+        })
+    finally:
+        session.close()
+
+
+# Fix 5: Manual device search - get ALL HA entities
+@app.route("/api/discover/all-entities", methods=["GET"])
+def api_get_all_ha_entities():
+    """Get all HA entities for manual device search."""
+    states = ha.get_states() or []
+    session = get_db()
+    try:
+        # Get already imported entity IDs
+        imported_ids = set(
+            d.ha_entity_id for d in session.query(Device.ha_entity_id).all()
+        )
+
+        entities = []
+        for s in states:
+            eid = s.get("entity_id", "")
+            state_val = s.get("state", "")
+            attrs = s.get("attributes", {})
+
+            # Fix 20: Mark invalid entities
+            is_valid = state_val not in ("unavailable", "unknown", None, "")
+
+            entities.append({
+                "entity_id": eid,
+                "friendly_name": attrs.get("friendly_name", eid),
+                "state": state_val,
+                "domain": eid.split(".")[0],
+                "device_class": attrs.get("device_class", ""),
+                "is_imported": eid in imported_ids,
+                "is_valid": is_valid
+            })
+
+        return jsonify({"entities": entities, "total": len(entities)})
+    finally:
+        session.close()
+
+
+# Fix 5: Manual device add
+@app.route("/api/devices/manual-add", methods=["POST"])
+def api_manual_add_device():
+    """Manually add a device by entity ID."""
+    data = request.json
+    session = get_db()
+    try:
+        entity_id = data.get("entity_id", "").strip()
+        if not entity_id:
+            return jsonify({"error": "Entity ID is required"}), 400
+
+        # Fix 19: Duplicate protection
+        existing = session.query(Device).filter_by(ha_entity_id=entity_id).first()
+        if existing:
+            return jsonify({"error": "Device already exists", "device_id": existing.id}), 409
+
+        # Get current state from HA
+        state = ha.get_state(entity_id)
+        if not state:
+            return jsonify({"error": "Entity not found in Home Assistant"}), 404
+
+        attrs = state.get("attributes", {})
+        friendly_name = data.get("name") or attrs.get("friendly_name", entity_id)
+        domain_id = data.get("domain_id")
+        room_id = data.get("room_id")
+
+        # Auto-detect domain if not provided
+        if not domain_id:
+            ha_domain = entity_id.split(".")[0]
+            domain_mapping = {
+                "light": "light", "climate": "climate", "cover": "cover",
+                "person": "presence", "device_tracker": "presence",
+                "media_player": "media", "lock": "lock", "switch": "switch",
+                "fan": "ventilation", "weather": "weather"
+            }
+            mapped_name = domain_mapping.get(ha_domain, "switch")
+            domain = session.query(Domain).filter_by(name=mapped_name).first()
+            domain_id = domain.id if domain else 1
+
+        device = Device(
+            ha_entity_id=entity_id,
+            name=friendly_name,
+            domain_id=domain_id,
+            room_id=room_id,
+            device_meta=attrs
+        )
+        session.add(device)
+        session.commit()
+
+        return jsonify({"success": True, "id": device.id, "name": device.name}), 201
     finally:
         session.close()
 
@@ -591,7 +1126,6 @@ def api_create_user():
         session.add(user)
         session.commit()
 
-        # Create default notification settings
         for ntype in NotificationType:
             ns = NotificationSetting(
                 user_id=user.id,
@@ -685,7 +1219,6 @@ def api_execute_quick_action(action_id):
         action_type = action.action_data.get("type")
 
         if action_type == "all_off":
-            # Turn off all lights, switches, media
             for entity in ha.get_entities_by_domain("light"):
                 ha.call_service("light", "turn_off", entity_id=entity["entity_id"])
             for entity in ha.get_entities_by_domain("switch"):
@@ -695,7 +1228,6 @@ def api_execute_quick_action(action_id):
 
         elif action_type == "leaving_home":
             set_setting("system_mode", "away")
-            # Turn off lights, lower heating, activate security
             for entity in ha.get_entities_by_domain("light"):
                 ha.call_service("light", "turn_off", entity_id=entity["entity_id"])
             for entity in ha.get_entities_by_domain("climate"):
@@ -704,7 +1236,6 @@ def api_execute_quick_action(action_id):
 
         elif action_type == "arriving_home":
             set_setting("system_mode", "normal")
-            # Will be enhanced in Phase 2 with learned preferences
 
         elif action_type == "guest_mode_on":
             set_setting("system_mode", "guest")
@@ -716,7 +1247,6 @@ def api_execute_quick_action(action_id):
                 state.is_paused = True
             session.commit()
 
-        # Log action
         log = ActionLog(
             action_type="quick_action",
             action_data={"quick_action_id": action_id, "type": action_type},
@@ -804,21 +1334,36 @@ def api_onboarding_complete():
 
 
 # ==============================================================================
-# API Routes - Action Log
+# API Routes - Action Log (with time filters)
 # ==============================================================================
 
 @app.route("/api/action-log", methods=["GET"])
 def api_get_action_log():
-    """Get action log with optional filters."""
+    """Get action log with time filters."""
     session = get_db()
     try:
-        limit = request.args.get("limit", 50, type=int)
+        limit = request.args.get("limit", 200, type=int)
         action_type = request.args.get("type")
+
+        # Fix 2: Time period filter
+        period = request.args.get("period", "all")
+        now = datetime.now(timezone.utc)
 
         query = session.query(ActionLog).order_by(ActionLog.created_at.desc())
 
         if action_type:
             query = query.filter_by(action_type=action_type)
+
+        if period == "today":
+            start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            query = query.filter(ActionLog.created_at >= start)
+        elif period == "week":
+            start = now - timedelta(days=7)
+            query = query.filter(ActionLog.created_at >= start)
+        elif period == "month":
+            start = now - timedelta(days=30)
+            query = query.filter(ActionLog.created_at >= start)
+        # "all" = no date filter
 
         logs = query.limit(limit).all()
 
@@ -827,6 +1372,7 @@ def api_get_action_log():
             "action_type": log.action_type,
             "domain_id": log.domain_id,
             "room_id": log.room_id,
+            "device_id": log.device_id,
             "action_data": log.action_data,
             "reason": log.reason,
             "was_undone": log.was_undone,
@@ -849,7 +1395,6 @@ def api_undo_action(log_id):
         if not log.previous_state:
             return jsonify({"error": "No previous state available"}), 400
 
-        # Restore previous state
         prev = log.previous_state
         if "entity_id" in prev and "state" in prev:
             domain = prev["entity_id"].split(".")[0]
@@ -867,14 +1412,100 @@ def api_undo_action(log_id):
 
 
 # ==============================================================================
+# API Routes - Data Collections (with time filters)
+# ==============================================================================
+
+@app.route("/api/data-collections", methods=["GET"])
+def api_get_data_collections():
+    """Get recent tracked data (observations from ActionLog) with time filter."""
+    session = get_db()
+    try:
+        limit = request.args.get("limit", 200, type=int)
+
+        # Fix 2: Time period filter
+        period = request.args.get("period", "all")
+        now = datetime.now(timezone.utc)
+
+        query = session.query(ActionLog).filter_by(
+            action_type="observation"
+        ).order_by(ActionLog.created_at.desc())
+
+        if period == "today":
+            start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            query = query.filter(ActionLog.created_at >= start)
+        elif period == "week":
+            start = now - timedelta(days=7)
+            query = query.filter(ActionLog.created_at >= start)
+        elif period == "month":
+            start = now - timedelta(days=30)
+            query = query.filter(ActionLog.created_at >= start)
+
+        logs = query.limit(limit).all()
+        return jsonify([{
+            "id": log.id,
+            "domain_id": log.domain_id,
+            "device_id": log.device_id,
+            "data_type": "state_change",
+            "data_value": log.action_data or {},
+            "collected_at": log.created_at.isoformat()
+        } for log in logs])
+    finally:
+        session.close()
+
+
+# ==============================================================================
+# API Routes - Data Retention / Cleanup
+# ==============================================================================
+
+# Fix 3: Auto-Cleanup settings
+@app.route("/api/system/retention", methods=["GET"])
+def api_get_retention():
+    """Get data retention settings."""
+    days = int(get_setting("data_retention_days", "90"))
+    session = get_db()
+    try:
+        total = session.query(ActionLog).count()
+        observations = session.query(ActionLog).filter_by(action_type="observation").count()
+        db_path = os.environ.get("MINDHOME_DB_PATH", "/data/mindhome/db/mindhome.db")
+        db_size = os.path.getsize(db_path) if os.path.exists(db_path) else 0
+        return jsonify({
+            "retention_days": days,
+            "total_entries": total,
+            "observation_entries": observations,
+            "db_size_bytes": db_size,
+            "db_size_mb": round(db_size / 1024 / 1024, 2)
+        })
+    finally:
+        session.close()
+
+
+@app.route("/api/system/retention", methods=["PUT"])
+def api_set_retention():
+    """Update data retention settings."""
+    data = request.json
+    days = data.get("retention_days", 90)
+    if days < 7:
+        days = 7  # Minimum 7 days
+    if days > 365:
+        days = 365
+    set_setting("data_retention_days", str(days))
+    return jsonify({"success": True, "retention_days": days})
+
+
+@app.route("/api/system/cleanup", methods=["POST"])
+def api_manual_cleanup():
+    """Manually trigger data cleanup."""
+    deleted = run_cleanup()
+    return jsonify({"success": True, "deleted_entries": deleted})
+
+
+# ==============================================================================
 # Frontend Serving
 # ==============================================================================
 
-@app.route("/")
-@app.route("/frontend")
-@app.route("/frontend/")
-@app.route("/frontend/<path:path>")
-def serve_frontend(path=None):
+@app.route(f"{INGRESS_PATH}/", defaults={"path": ""})
+@app.route(f"{INGRESS_PATH}/<path:path>")
+def serve_frontend(path):
     """Serve the React frontend."""
     if path and os.path.exists(os.path.join(app.static_folder, "frontend", path)):
         return send_from_directory(os.path.join(app.static_folder, "frontend"), path)
@@ -882,7 +1513,7 @@ def serve_frontend(path=None):
 
 
 # ==============================================================================
-# Startup
+# Backup / Restore
 # ==============================================================================
 
 @app.route("/api/backup/export", methods=["GET"])
@@ -895,7 +1526,7 @@ def api_backup_export():
             "exported_at": datetime.now(timezone.utc).isoformat(),
             "rooms": [], "devices": [], "users": [], "domains": [],
             "room_domain_states": [], "settings": [], "quick_actions": [],
-            "action_log": [], "data_collections": [], "user_preferences": []
+            "action_log": [], "user_preferences": []
         }
         for r in session.query(Room).all():
             backup["rooms"].append({"id": r.id, "name": r.name, "ha_area_id": r.ha_area_id,
@@ -908,14 +1539,17 @@ def api_backup_export():
             backup["users"].append({"id": u.id, "name": u.name, "ha_person_entity": u.ha_person_entity,
                 "role": u.role.value if u.role else "user", "language": u.language})
         for d in session.query(Domain).all():
-            backup["domains"].append({"id": d.id, "name": d.name, "is_enabled": d.is_enabled})
+            backup["domains"].append({"id": d.id, "name": d.name, "is_enabled": d.is_enabled,
+                "is_custom": getattr(d, 'is_custom', False),
+                "display_name_de": d.display_name_de, "display_name_en": d.display_name_en,
+                "icon": d.icon, "description_de": d.description_de, "description_en": d.description_en})
         for rds in session.query(RoomDomainState).all():
             backup["room_domain_states"].append({"room_id": rds.room_id, "domain_id": rds.domain_id,
                 "learning_phase": rds.learning_phase.value if rds.learning_phase else "observing",
                 "confidence_score": rds.confidence_score, "is_paused": rds.is_paused})
         for s in session.query(SystemSetting).all():
             backup["settings"].append({"key": s.key, "value": s.value})
-        for log in session.query(ActionLog).order_by(ActionLog.created_at.desc()).limit(200).all():
+        for log in session.query(ActionLog).order_by(ActionLog.created_at.desc()).limit(500).all():
             backup["action_log"].append({"action_type": log.action_type, "domain_id": log.domain_id,
                 "room_id": log.room_id, "device_id": log.device_id,
                 "action_data": log.action_data, "reason": log.reason,
@@ -936,12 +1570,24 @@ def api_backup_import():
         return jsonify({"error": "Invalid backup file"}), 400
     session = get_db()
     try:
-        # Restore domains (update existing by name)
+        # Restore domains
         for d_data in data.get("domains", []):
             try:
                 domain = session.query(Domain).filter_by(name=d_data.get("name")).first()
                 if domain:
                     domain.is_enabled = d_data.get("is_enabled", False)
+                elif d_data.get("is_custom"):
+                    domain = Domain(
+                        name=d_data["name"],
+                        display_name_de=d_data.get("display_name_de", d_data["name"]),
+                        display_name_en=d_data.get("display_name_en", d_data["name"]),
+                        icon=d_data.get("icon", "mdi:puzzle"),
+                        is_enabled=d_data.get("is_enabled", True),
+                        is_custom=True,
+                        description_de=d_data.get("description_de", ""),
+                        description_en=d_data.get("description_en", "")
+                    )
+                    session.add(domain)
             except Exception as e:
                 logger.warning(f"Domain import error: {e}")
 
@@ -999,7 +1645,7 @@ def api_backup_import():
                     )
                     session.add(device)
             except Exception as e:
-                logger.warning(f"Device import error for {dev_data.get('ha_entity_id')}: {e}")
+                logger.warning(f"Device import error: {e}")
 
         session.flush()
 
@@ -1010,7 +1656,6 @@ def api_backup_import():
                 if not uname:
                     continue
                 existing = session.query(User).filter_by(name=uname).first()
-                # Convert role string to enum
                 role_str = u_data.get("role", "user")
                 try:
                     role_enum = UserRole(role_str) if isinstance(role_str, str) else role_str
@@ -1029,11 +1674,10 @@ def api_backup_import():
                     )
                     session.add(user)
             except Exception as e:
-                logger.warning(f"User import error for {u_data.get('name')}: {e}")
+                logger.warning(f"User import error: {e}")
 
         session.commit()
 
-        # Restore settings (each uses own session via set_setting)
         for s_data in data.get("settings", []):
             try:
                 if s_data.get("key"):
@@ -1041,10 +1685,9 @@ def api_backup_import():
             except Exception as e:
                 logger.warning(f"Setting import error: {e}")
 
-        # Mark onboarding complete
         set_setting("onboarding_completed", "true")
 
-        logger.info(f"Backup imported: {len(data.get('rooms',[]))} rooms, {len(data.get('devices',[]))} devices, {len(data.get('users',[]))} users")
+        logger.info(f"Backup imported: {len(data.get('rooms',[]))} rooms, {len(data.get('devices',[]))} devices")
         return jsonify({"success": True, "imported": {
             "rooms": len(data.get("rooms", [])),
             "devices": len(data.get("devices", [])),
@@ -1061,42 +1704,58 @@ def api_backup_import():
         session.close()
 
 
-@app.route("/api/data-collections", methods=["GET"])
-def api_get_data_collections():
-    """Get recent tracked data (observations from ActionLog)."""
-    session = get_db()
-    try:
-        limit = request.args.get("limit", 100, type=int)
-        logs = session.query(ActionLog).filter_by(
-            action_type="observation"
-        ).order_by(ActionLog.created_at.desc()).limit(limit).all()
-        return jsonify([{
-            "id": log.id,
-            "domain_id": log.domain_id,
-            "device_id": log.device_id,
-            "data_type": "state_change",
-            "data_value": log.action_data or {},
-            "collected_at": log.created_at.isoformat()
-        } for log in logs])
-    finally:
-        session.close()
+# ==============================================================================
+# State Change Logging
+# ==============================================================================
 
-
-def log_state_change(entity_id, new_state, old_state):
-    """Log state changes to action_log for tracked devices."""
+def log_state_change(entity_id, new_state, old_state, new_attrs=None, old_attrs=None):
+    """Log state changes to action_log for tracked devices. Fix 1 + Fix 18."""
     session = get_db()
     try:
         device = session.query(Device).filter_by(ha_entity_id=entity_id).first()
         if not device or not device.is_tracked:
             return
+
+        # Fix 18: Enforce privacy mode
+        if device.room_id:
+            room = session.query(Room).get(device.room_id)
+            if room and room.privacy_mode:
+                # Get domain name
+                domain = session.query(Domain).get(device.domain_id)
+                domain_name = domain.name if domain else ""
+
+                # Check if this domain is blocked in privacy mode
+                if room.privacy_mode.get(domain_name) is False:
+                    logger.debug(f"Privacy: Skipping {entity_id} in {room.name} (domain {domain_name} blocked)")
+                    return
+
+                # Check specific features
+                device_class = (new_attrs or {}).get("device_class", "")
+                if room.privacy_mode.get(device_class) is False:
+                    logger.debug(f"Privacy: Skipping {entity_id} in {room.name} (feature {device_class} blocked)")
+                    return
+
+        # Fix 1: Extract display attributes
+        new_display = extract_display_attributes(entity_id, new_attrs or {})
+        old_display = extract_display_attributes(entity_id, old_attrs or {})
+
+        reason = build_state_reason(device.name, old_state, new_state, new_display)
+
         action_log = ActionLog(
             action_type="observation",
             domain_id=device.domain_id,
             room_id=device.room_id,
             device_id=device.id,
-            action_data={"entity_id": entity_id, "old_state": old_state, "new_state": new_state,
-                "timestamp": datetime.now(timezone.utc).isoformat()},
-            reason=f"{device.name}: {old_state} → {new_state}")
+            action_data={
+                "entity_id": entity_id,
+                "old_state": old_state,
+                "new_state": new_state,
+                "new_attributes": new_display,
+                "old_attributes": old_display,
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            },
+            reason=reason
+        )
         session.add(action_log)
         session.commit()
     except Exception as e:
@@ -1109,8 +1768,96 @@ def log_state_change(entity_id, new_state, old_state):
         session.close()
 
 
+# ==============================================================================
+# Fix 3: Auto-Cleanup System
+# ==============================================================================
+
+def run_cleanup():
+    """Delete old action log entries based on retention setting."""
+    retention_days = int(get_setting("data_retention_days", "90"))
+    cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
+
+    session = get_db()
+    try:
+        deleted = session.query(ActionLog).filter(
+            ActionLog.created_at < cutoff,
+            ActionLog.action_type == "observation"
+        ).delete(synchronize_session=False)
+        session.commit()
+        if deleted > 0:
+            logger.info(f"Cleanup: Deleted {deleted} observation entries older than {retention_days} days")
+        return deleted
+    except Exception as e:
+        logger.error(f"Cleanup error: {e}")
+        try:
+            session.rollback()
+        except:
+            pass
+        return 0
+    finally:
+        session.close()
+
+
+def schedule_cleanup():
+    """Schedule daily cleanup at 3:00 AM."""
+    global _cleanup_timer
+
+    def _cleanup_loop():
+        while True:
+            now = datetime.now()
+            # Next 3:00 AM
+            target = now.replace(hour=3, minute=0, second=0, microsecond=0)
+            if target <= now:
+                target += timedelta(days=1)
+            wait_seconds = (target - now).total_seconds()
+            logger.info(f"Next cleanup scheduled in {wait_seconds/3600:.1f} hours")
+            time.sleep(wait_seconds)
+            try:
+                run_cleanup()
+            except Exception as e:
+                logger.error(f"Scheduled cleanup failed: {e}")
+
+    _cleanup_timer = threading.Thread(target=_cleanup_loop, daemon=True)
+    _cleanup_timer.start()
+
+
+# ==============================================================================
+# Fix 28: Graceful Shutdown
+# ==============================================================================
+
+_start_time = None
+
+def graceful_shutdown(signum, frame):
+    """Handle shutdown signals gracefully."""
+    logger.info("Shutdown signal received - cleaning up...")
+
+    # Disconnect HA
+    try:
+        ha.disconnect()
+        logger.info("HA connection closed")
+    except Exception as e:
+        logger.error(f"Error disconnecting HA: {e}")
+
+    # Close DB connections
+    try:
+        engine.dispose()
+        logger.info("Database connections closed")
+    except Exception as e:
+        logger.error(f"Error closing DB: {e}")
+
+    logger.info("MindHome shutdown complete")
+    sys.exit(0)
+
+
+# ==============================================================================
+# Startup
+# ==============================================================================
+
 def start_app():
     """Initialize and start MindHome."""
+    global _start_time
+    _start_time = time.time()
+
     logger.info("=" * 60)
     logger.info("MindHome - Smart Home AI")
     logger.info(f"Version: 0.1.0")
@@ -1118,6 +1865,14 @@ def start_app():
     logger.info(f"Log Level: {log_level}")
     logger.info(f"Ingress Path: {INGRESS_PATH}")
     logger.info("=" * 60)
+
+    # Fix 28: Register shutdown handlers
+    signal.signal(signal.SIGTERM, graceful_shutdown)
+    signal.signal(signal.SIGINT, graceful_shutdown)
+
+    # Set default retention if not set
+    if not get_setting("data_retention_days"):
+        set_setting("data_retention_days", "90")
 
     # Connect to Home Assistant
     ha.connect()
@@ -1127,6 +1882,15 @@ def start_app():
 
     # Start enabled domain plugins
     domain_manager.start_enabled_domains()
+
+    # Fix 3: Start cleanup scheduler
+    schedule_cleanup()
+
+    # Run cleanup once on startup
+    try:
+        run_cleanup()
+    except Exception:
+        pass
 
     logger.info("MindHome started successfully!")
 
