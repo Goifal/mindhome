@@ -1857,7 +1857,7 @@ def api_undo_prediction(pred_id):
 # ==============================================================================
 
 @app.route("/api/automation/emergency-stop", methods=["POST"])
-def api_emergency_stop():
+def api_automation_emergency_stop():
     """Activate/deactivate emergency stop for all automations."""
     data = request.json or {}
     active = data.get("active", True)
