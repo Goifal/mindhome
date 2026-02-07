@@ -1179,8 +1179,11 @@ class AutomationScheduler:
         while self._should_run:
             try:
                 anomalies = self.anomaly_det.check_recent_anomalies(minutes=15)
-                for a in anomalies:
+                # Limit to max 5 notifications per cycle to avoid spam
+                for a in anomalies[:5]:
                     self.notification_mgr.notify_anomaly(a)
+                if len(anomalies) > 5:
+                    logger.info(f"Anomaly check: {len(anomalies)} found, notified first 5")
             except Exception as e:
                 logger.error(f"Anomaly task error: {e}")
 
