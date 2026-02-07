@@ -287,6 +287,22 @@ const relativeTime = (isoStr, lang) => {
     return `${Math.floor(diff / 86400)} ${lang === 'de' ? 'Tage' : 'days'}`;
 };
 
+const stateDisplay = (state) => {
+    if (!state || state === 'unknown') return { label: '?', color: 'var(--text-muted)' };
+    if (state === 'on') return { label: 'on', color: 'var(--success)' };
+    if (state === 'off') return { label: 'off', color: 'var(--text-muted)' };
+    if (state === 'unavailable') return { label: '✕', color: 'var(--danger)' };
+    return { label: state, color: 'var(--info)' };
+};
+
+const formatBytes = (bytes) => {
+    if (!bytes || bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+};
+
 // ================================================================
 // Dashboard Page
 // ================================================================
@@ -457,16 +473,53 @@ const QuickActionsGrid = () => {
 // ================================================================
 
 const DomainsPage = () => {
-    const { domains, toggleDomain, lang } = useApp();
+    const { domains, toggleDomain, lang, showToast, refreshData } = useApp();
+    const [showCreate, setShowCreate] = useState(false);
+    const [newDomain, setNewDomain] = useState({ name_de: '', name_en: '', icon: 'mdi:puzzle', description: '' });
+    const [confirmDel, setConfirmDel] = useState(null);
+
+    const handleCreate = async () => {
+        if (!newDomain.name_de.trim()) return;
+        const result = await api.post('domains', {
+            name: newDomain.name_de.toLowerCase().replace(/\s+/g, '_'),
+            display_name_de: newDomain.name_de,
+            display_name_en: newDomain.name_en || newDomain.name_de,
+            icon: newDomain.icon || 'mdi:puzzle',
+            description_de: newDomain.description,
+            description_en: newDomain.description
+        });
+        if (result?.id) {
+            showToast(lang === 'de' ? 'Domain erstellt' : 'Domain created', 'success');
+            setShowCreate(false);
+            setNewDomain({ name_de: '', name_en: '', icon: 'mdi:puzzle', description: '' });
+            refreshData();
+        }
+    };
+
+    const handleDeleteDomain = async () => {
+        if (!confirmDel) return;
+        const result = await api.delete(`domains/${confirmDel.id}`);
+        if (result?.success) {
+            showToast(lang === 'de' ? 'Domain gelöscht' : 'Domain deleted', 'success');
+            setConfirmDel(null);
+            refreshData();
+        } else {
+            showToast(result?.error || 'Error', 'error');
+        }
+    };
 
     return (
         <div>
-            <div style={{ marginBottom: 20 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
                 <p style={{ color: 'var(--text-secondary)', fontSize: 14 }}>
                     {lang === 'de'
                         ? 'Aktiviere die Bereiche die MindHome überwachen und steuern soll.'
                         : 'Activate the areas MindHome should monitor and control.'}
                 </p>
+                <button className="btn btn-primary" onClick={() => setShowCreate(true)}>
+                    <span className="mdi mdi-plus" />
+                    {lang === 'de' ? 'Custom Domain' : 'Custom Domain'}
+                </button>
             </div>
             <div className="domain-grid">
                 {domains.map(domain => (
@@ -480,25 +533,77 @@ const DomainsPage = () => {
                             <div className="domain-card-name">{domain.display_name}</div>
                             <div className="domain-card-desc">{domain.description}</div>
                         </div>
-                        <label className="toggle" onClick={e => e.stopPropagation()}>
-                            <input type="checkbox" checked={domain.is_enabled}
-                                   onChange={() => toggleDomain(domain.id)} />
-                            <div className="toggle-slider" />
-                        </label>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            {domain.is_custom && (
+                                <button className="btn btn-ghost btn-icon"
+                                    onClick={e => { e.stopPropagation(); setConfirmDel(domain); }}
+                                    title={lang === 'de' ? 'Löschen' : 'Delete'}>
+                                    <span className="mdi mdi-delete-outline" style={{ fontSize: 16, color: 'var(--danger)' }} />
+                                </button>
+                            )}
+                            <label className="toggle" onClick={e => e.stopPropagation()}>
+                                <input type="checkbox" checked={domain.is_enabled}
+                                       onChange={() => toggleDomain(domain.id)} />
+                                <div className="toggle-slider" />
+                            </label>
+                        </div>
                     </div>
                 ))}
             </div>
+
+            {showCreate && (
+                <Modal title={lang === 'de' ? 'Custom Domain erstellen' : 'Create Custom Domain'}
+                    onClose={() => setShowCreate(false)}
+                    actions={
+                        <>
+                            <button className="btn btn-secondary" onClick={() => setShowCreate(false)}>
+                                {lang === 'de' ? 'Abbrechen' : 'Cancel'}
+                            </button>
+                            <button className="btn btn-primary" onClick={handleCreate} disabled={!newDomain.name_de.trim()}>
+                                {lang === 'de' ? 'Erstellen' : 'Create'}
+                            </button>
+                        </>
+                    }>
+                    <div className="input-group" style={{ marginBottom: 16 }}>
+                        <label className="input-label">{lang === 'de' ? 'Name (Deutsch)' : 'Name (German)'}</label>
+                        <input className="input" value={newDomain.name_de}
+                            onChange={e => setNewDomain({ ...newDomain, name_de: e.target.value })}
+                            placeholder={lang === 'de' ? 'z.B. Bewässerung' : 'e.g. Irrigation'} />
+                    </div>
+                    <div className="input-group" style={{ marginBottom: 16 }}>
+                        <label className="input-label">{lang === 'de' ? 'Name (Englisch)' : 'Name (English)'}</label>
+                        <input className="input" value={newDomain.name_en}
+                            onChange={e => setNewDomain({ ...newDomain, name_en: e.target.value })}
+                            placeholder={lang === 'de' ? 'z.B. Irrigation' : 'e.g. Irrigation'} />
+                    </div>
+                    <div className="input-group" style={{ marginBottom: 16 }}>
+                        <label className="input-label">Icon (MDI)</label>
+                        <input className="input" value={newDomain.icon}
+                            onChange={e => setNewDomain({ ...newDomain, icon: e.target.value })}
+                            placeholder="mdi:puzzle" />
+                    </div>
+                    <div className="input-group">
+                        <label className="input-label">{lang === 'de' ? 'Beschreibung' : 'Description'}</label>
+                        <input className="input" value={newDomain.description}
+                            onChange={e => setNewDomain({ ...newDomain, description: e.target.value })} />
+                    </div>
+                </Modal>
+            )}
+
+            {confirmDel && (
+                <ConfirmDialog
+                    title={lang === 'de' ? 'Domain löschen' : 'Delete Domain'}
+                    message={lang === 'de' ? `"${confirmDel.display_name}" wirklich löschen?` : `Delete "${confirmDel.display_name}"?`}
+                    danger onConfirm={handleDeleteDomain} onCancel={() => setConfirmDel(null)} />
+            )}
         </div>
     );
 };
 
 // ================================================================
-// Devices Page
-// ================================================================
-
 
 // ================================================================
-// Devices Page - with selection, delete, room assignment, domain assignment
+// Devices Page - with manual search, bulk actions, live state, confirm dialog
 // ================================================================
 
 const DevicesPage = () => {
@@ -508,12 +613,21 @@ const DevicesPage = () => {
     const [selected, setSelected] = useState({});
     const [editDevice, setEditDevice] = useState(null);
     const [search, setSearch] = useState('');
+    const [showManual, setShowManual] = useState(false);
+    const [manualEntities, setManualEntities] = useState([]);
+    const [manualSearch, setManualSearch] = useState('');
+    const [manualLoading, setManualLoading] = useState(false);
+    const [bulkSelected, setBulkSelected] = useState({});
+    const [showBulkEdit, setShowBulkEdit] = useState(false);
+    const [bulkRoom, setBulkRoom] = useState('');
+    const [bulkDomain, setBulkDomain] = useState('');
+    const [confirmDel, setConfirmDel] = useState(null);
+    const [confirmBulkDel, setConfirmBulkDel] = useState(false);
 
     const handleDiscover = async () => {
         setDiscovering(true);
         const result = await api.get('discover');
         setDiscovered(result);
-        // Nothing pre-selected - user chooses manually
         setSelected({});
         setDiscovering(false);
     };
@@ -542,20 +656,41 @@ const DevicesPage = () => {
             selected_entities: selectedIds
         });
         if (result?.success) {
-            showToast(
-                lang === 'de' ? `${result.imported} Geräte importiert` : `${result.imported} devices imported`,
-                'success'
-            );
+            showToast(lang === 'de' ? `${result.imported} Geräte importiert` : `${result.imported} devices imported`, 'success');
             setDiscovered(null);
             setSelected({});
             refreshData();
         }
     };
 
-    const handleDeleteDevice = async (deviceId) => {
-        const result = await api.delete(`devices/${deviceId}`);
+    // Manual search
+    const handleOpenManual = async () => {
+        setManualLoading(true);
+        setShowManual(true);
+        const result = await api.get('discover/all-entities');
+        setManualEntities(result?.entities || []);
+        setManualLoading(false);
+    };
+
+    const handleManualAdd = async (entityId) => {
+        const result = await api.post('devices/manual-add', { entity_id: entityId });
+        if (result?.success || result?.id) {
+            showToast(lang === 'de' ? 'Gerät hinzugefügt' : 'Device added', 'success');
+            refreshData();
+            const updated = await api.get('discover/all-entities');
+            setManualEntities(updated?.entities || []);
+        } else {
+            showToast(result?.error || 'Error', 'error');
+        }
+    };
+
+    // Single delete with confirm
+    const handleDeleteDevice = async () => {
+        if (!confirmDel) return;
+        const result = await api.delete(`devices/${confirmDel.id}`);
         if (result?.success) {
             showToast(lang === 'de' ? 'Gerät entfernt' : 'Device removed', 'success');
+            setConfirmDel(null);
             refreshData();
         }
     };
@@ -576,61 +711,112 @@ const DevicesPage = () => {
         }
     };
 
-    const selectedCount = Object.values(selected).filter(Boolean).length;
-    const totalCount = discovered ? Object.values(discovered.domains || {}).reduce((sum, d) => sum + (d.entities?.length || d.count || 0), 0) : 0;
-
-    // Filter out already-imported entities from discovery list
-    const importedEntityIds = new Set(devices.map(d => d.ha_entity_id));
-
-    const getDomainName = (domainId) => {
-        const d = domains.find(d => d.id === domainId);
-        return d?.display_name || '—';
+    // Bulk actions
+    const bulkCount = Object.values(bulkSelected).filter(Boolean).length;
+    const toggleBulk = (id) => setBulkSelected(prev => ({ ...prev, [id]: !prev[id] }));
+    const toggleBulkAll = () => {
+        const filtered = getFilteredDevices();
+        const allChecked = filtered.every(d => bulkSelected[d.id]);
+        const newSel = { ...bulkSelected };
+        filtered.forEach(d => { newSel[d.id] = !allChecked; });
+        setBulkSelected(newSel);
     };
 
-    const getRoomName = (roomId) => {
-        const r = rooms.find(r => r.id === roomId);
-        return r?.name || '—';
+    const handleBulkEdit = async () => {
+        const ids = Object.keys(bulkSelected).filter(k => bulkSelected[k]).map(Number);
+        const data = {};
+        if (bulkRoom) data.room_id = parseInt(bulkRoom);
+        if (bulkDomain) data.domain_id = parseInt(bulkDomain);
+        const result = await api.put('devices/bulk', { device_ids: ids, ...data });
+        if (result?.success) {
+            showToast(lang === 'de' ? `${result.updated} aktualisiert` : `${result.updated} updated`, 'success');
+            setShowBulkEdit(false);
+            setBulkSelected({});
+            refreshData();
+        }
+    };
+
+    const handleBulkDelete = async () => {
+        const ids = Object.keys(bulkSelected).filter(k => bulkSelected[k]).map(Number);
+        const result = await api.delete('devices/bulk', { device_ids: ids });
+        if (result?.success) {
+            showToast(lang === 'de' ? `${result.deleted} gelöscht` : `${result.deleted} deleted`, 'success');
+            setConfirmBulkDel(false);
+            setBulkSelected({});
+            refreshData();
+        }
+    };
+
+    const selectedCount = Object.values(selected).filter(Boolean).length;
+    const importedEntityIds = new Set(devices.map(d => d.ha_entity_id));
+
+    const getDomainName = (domainId) => domains.find(d => d.id === domainId)?.display_name || '—';
+    const getRoomName = (roomId) => rooms.find(r => r.id === roomId)?.name || '—';
+
+    const getFilteredDevices = () => {
+        if (!search) return devices;
+        const s = search.toLowerCase();
+        return devices.filter(d =>
+            d.ha_entity_id?.toLowerCase().includes(s) || d.name?.toLowerCase().includes(s)
+            || getDomainName(d.domain_id)?.toLowerCase().includes(s)
+            || getRoomName(d.room_id)?.toLowerCase().includes(s)
+        );
     };
 
     return (
         <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 8 }}>
                 <p style={{ color: 'var(--text-secondary)', fontSize: 14 }}>
                     {devices.length} {lang === 'de' ? 'Geräte konfiguriert' : 'devices configured'}
                 </p>
-                <button className="btn btn-primary" onClick={handleDiscover} disabled={discovering}>
-                    <span className="mdi mdi-magnify" />
-                    {discovering
-                        ? (lang === 'de' ? 'Suche...' : 'Searching...')
-                        : (lang === 'de' ? 'Geräte erkennen' : 'Discover Devices')}
-                </button>
+                <div style={{ display: 'flex', gap: 8 }}>
+                    <button className="btn btn-secondary" onClick={handleOpenManual}>
+                        <span className="mdi mdi-magnify-plus-outline" />
+                        {lang === 'de' ? 'Manuell' : 'Manual'}
+                    </button>
+                    <button className="btn btn-primary" onClick={handleDiscover} disabled={discovering}>
+                        <span className="mdi mdi-magnify" />
+                        {discovering ? (lang === 'de' ? 'Suche...' : 'Searching...') : (lang === 'de' ? 'Geräte erkennen' : 'Discover')}
+                    </button>
+                </div>
             </div>
 
-            {/* Discovery Results with Checkboxes - excludes already imported */}
+            {/* Bulk Actions Bar */}
+            {bulkCount > 0 && (
+                <div className="card" style={{ marginBottom: 16, padding: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    borderColor: 'var(--accent-primary)', background: 'var(--accent-primary-dim)' }}>
+                    <span style={{ fontWeight: 600, fontSize: 14 }}>
+                        {bulkCount} {lang === 'de' ? 'ausgewählt' : 'selected'}
+                    </span>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                        <button className="btn btn-secondary" onClick={() => setBulkSelected({})}>{lang === 'de' ? 'Aufheben' : 'Deselect'}</button>
+                        <button className="btn btn-primary" onClick={() => setShowBulkEdit(true)}>
+                            <span className="mdi mdi-pencil" /> {lang === 'de' ? 'Bearbeiten' : 'Edit'}
+                        </button>
+                        <button className="btn btn-danger" onClick={() => setConfirmBulkDel(true)}>
+                            <span className="mdi mdi-delete" /> {lang === 'de' ? 'Löschen' : 'Delete'}
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {/* Discovery Results */}
             {discovered && (
                 <div className="card" style={{ marginBottom: 20, borderColor: 'var(--accent-primary)', borderWidth: 2 }}>
                     <div className="card-header">
                         <div>
-                            <div className="card-title">
-                                {lang === 'de' ? 'Verfügbare Geräte' : 'Available Devices'}
-                            </div>
-                            <div className="card-subtitle">
-                                {selectedCount} {lang === 'de' ? 'ausgewählt' : 'selected'}
-                                {' · '}
-                                {lang === 'de' ? 'Bereits importierte sind ausgeblendet' : 'Already imported are hidden'}
-                            </div>
+                            <div className="card-title">{lang === 'de' ? 'Verfügbare Geräte' : 'Available Devices'}</div>
+                            <div className="card-subtitle">{selectedCount} {lang === 'de' ? 'ausgewählt' : 'selected'}</div>
                         </div>
                         <div style={{ display: 'flex', gap: 8 }}>
                             <button className="btn btn-secondary" onClick={() => { setDiscovered(null); setSelected({}); }}>
                                 {lang === 'de' ? 'Abbrechen' : 'Cancel'}
                             </button>
                             <button className="btn btn-primary" onClick={handleImport} disabled={selectedCount === 0}>
-                                <span className="mdi mdi-import" />
-                                {lang === 'de' ? `${selectedCount} importieren` : `Import ${selectedCount}`}
+                                <span className="mdi mdi-import" /> {lang === 'de' ? `${selectedCount} importieren` : `Import ${selectedCount}`}
                             </button>
                         </div>
                     </div>
-
                     <div style={{ maxHeight: 400, overflow: 'auto' }}>
                     {Object.entries(discovered.domains || {}).map(([domainName, data]) => {
                         const entities = (data.entities || []).filter(e => !importedEntityIds.has(e.entity_id));
@@ -638,26 +824,19 @@ const DevicesPage = () => {
                         const allSel = entities.every(e => selected[e.entity_id]);
                         return (
                             <div key={domainName} style={{ marginBottom: 12 }}>
-                                <div style={{
-                                    display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0',
-                                    borderBottom: '1px solid var(--border-color)', cursor: 'pointer'
-                                }} onClick={() => toggleDiscoverDomain(domainName)}>
-                                    <input type="checkbox" checked={allSel} readOnly
-                                        style={{ width: 18, height: 18, accentColor: 'var(--accent-primary)' }} />
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0',
+                                    borderBottom: '1px solid var(--border)', cursor: 'pointer' }}
+                                    onClick={() => toggleDiscoverDomain(domainName)}>
+                                    <input type="checkbox" checked={allSel} readOnly style={{ width: 18, height: 18, accentColor: 'var(--accent-primary)' }} />
                                     <strong>{domainName}</strong>
                                     <span className="badge badge-info">{entities.length}</span>
                                 </div>
                                 <div style={{ paddingLeft: 26 }}>
                                     {entities.map(entity => (
-                                        <div key={entity.entity_id} style={{
-                                            display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0',
-                                            fontSize: 13, cursor: 'pointer'
-                                        }} onClick={() => toggleEntity(entity.entity_id)}>
-                                            <input type="checkbox" checked={!!selected[entity.entity_id]} readOnly
-                                                style={{ width: 16, height: 16, accentColor: 'var(--accent-primary)' }} />
-                                            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-muted)', minWidth: 200 }}>
-                                                {entity.entity_id}
-                                            </span>
+                                        <div key={entity.entity_id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', fontSize: 13, cursor: 'pointer' }}
+                                            onClick={() => toggleEntity(entity.entity_id)}>
+                                            <input type="checkbox" checked={!!selected[entity.entity_id]} readOnly style={{ width: 16, height: 16, accentColor: 'var(--accent-primary)' }} />
+                                            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-muted)', minWidth: 200 }}>{entity.entity_id}</span>
                                             <span style={{ flex: 1 }}>{entity.friendly_name}</span>
                                             <span className="badge badge-info" style={{ fontSize: 10 }}>{entity.state}</span>
                                         </div>
@@ -675,127 +854,192 @@ const DevicesPage = () => {
                 <div>
                     <div style={{ marginBottom: 12 }}>
                         <input className="input" placeholder={lang === 'de' ? '🔍 Geräte suchen...' : '🔍 Search devices...'}
-                            value={search} onChange={e => setSearch(e.target.value)}
-                            style={{ maxWidth: 400 }} />
+                            value={search} onChange={e => setSearch(e.target.value)} style={{ maxWidth: 400 }} />
                     </div>
                     <div className="table-wrap">
                     <table>
                         <thead>
                             <tr>
+                                <th style={{ width: 40 }}>
+                                    <input type="checkbox"
+                                        checked={getFilteredDevices().length > 0 && getFilteredDevices().every(d => bulkSelected[d.id])}
+                                        onChange={toggleBulkAll} style={{ width: 16, height: 16, accentColor: 'var(--accent-primary)' }} />
+                                </th>
                                 <th>Entity ID</th>
                                 <th>{lang === 'de' ? 'Name' : 'Name'}</th>
                                 <th>Domain</th>
                                 <th>{lang === 'de' ? 'Raum' : 'Room'}</th>
-                                <th>{lang === 'de' ? 'Aktionen' : 'Actions'}</th>
+                                <th>Status</th>
+                                <th style={{ width: 90 }}>{lang === 'de' ? 'Aktionen' : 'Actions'}</th>
                             </tr>
                         </thead>
                         <tbody>
-                            {devices.filter(d => {
-                                if (!search) return true;
-                                const s = search.toLowerCase();
-                                return d.ha_entity_id?.toLowerCase().includes(s)
-                                    || d.name?.toLowerCase().includes(s)
-                                    || getDomainName(d.domain_id)?.toLowerCase().includes(s)
-                                    || getRoomName(d.room_id)?.toLowerCase().includes(s);
-                            }).map(device => (
+                            {getFilteredDevices().map(device => {
+                                const st = stateDisplay(device.live_state);
+                                const attrs = device.live_attributes || {};
+                                const attrParts = [];
+                                if (attrs.brightness_pct != null) attrParts.push(`☀ ${attrs.brightness_pct}%`);
+                                if (attrs.position_pct != null) attrParts.push(`↕ ${attrs.position_pct}%`);
+                                if (attrs.current_temp != null) attrParts.push(`🌡 ${attrs.current_temp}°`);
+                                if (attrs.target_temp != null) attrParts.push(`→ ${attrs.target_temp}°`);
+                                return (
                                 <tr key={device.id}>
-                                    <td style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>
-                                        {device.ha_entity_id}
+                                    <td>
+                                        <input type="checkbox" checked={!!bulkSelected[device.id]}
+                                            onChange={() => toggleBulk(device.id)}
+                                            style={{ width: 16, height: 16, accentColor: 'var(--accent-primary)' }} />
                                     </td>
+                                    <td style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>{device.ha_entity_id}</td>
                                     <td>{device.name}</td>
                                     <td>{getDomainName(device.domain_id)}</td>
                                     <td>{getRoomName(device.room_id)}</td>
                                     <td>
+                                        <span style={{ color: st.color, fontWeight: 600, fontSize: 12 }}>{st.label}</span>
+                                        {attrParts.length > 0 && (
+                                            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{attrParts.join(' · ')}</div>
+                                        )}
+                                    </td>
+                                    <td>
                                         <div style={{ display: 'flex', gap: 4 }}>
-                                            <button className="btn btn-ghost btn-icon" onClick={() => setEditDevice({...device})}
-                                                title={lang === 'de' ? 'Bearbeiten' : 'Edit'}>
+                                            <button className="btn btn-ghost btn-icon" onClick={() => setEditDevice({...device})}>
                                                 <span className="mdi mdi-pencil" style={{ fontSize: 16, color: 'var(--accent-primary)' }} />
                                             </button>
-                                            <button className="btn btn-ghost btn-icon" onClick={() => handleDeleteDevice(device.id)}
-                                                title={lang === 'de' ? 'Entfernen' : 'Remove'}>
+                                            <button className="btn btn-ghost btn-icon" onClick={() => setConfirmDel(device)}>
                                                 <span className="mdi mdi-delete-outline" style={{ fontSize: 16, color: 'var(--danger)' }} />
                                             </button>
                                         </div>
                                     </td>
                                 </tr>
-                            ))}
+                                );
+                            })}
                         </tbody>
                     </table>
                     </div>
                 </div>
-            ) : (
+            ) : !discovered && (
                 <div className="empty-state">
                     <span className="mdi mdi-devices" />
                     <h3>{lang === 'de' ? 'Keine Geräte' : 'No Devices'}</h3>
-                    <p>{lang === 'de'
-                        ? 'Klicke auf "Geräte erkennen" um deine HA-Geräte zu importieren.'
-                        : 'Click "Discover Devices" to import your HA devices.'}</p>
+                    <p>{lang === 'de' ? 'Klicke auf "Geräte erkennen" um deine HA-Geräte zu importieren.' : 'Click "Discover" to import your HA devices.'}</p>
                 </div>
+            )}
+
+            {/* Manual Search Modal */}
+            {showManual && (
+                <Modal title={lang === 'de' ? 'Manuelle Gerätesuche' : 'Manual Device Search'} onClose={() => setShowManual(false)} wide>
+                    <div className="input-group" style={{ marginBottom: 16 }}>
+                        <input className="input" value={manualSearch} onChange={e => setManualSearch(e.target.value)}
+                            placeholder={lang === 'de' ? 'Entity-ID oder Name suchen...' : 'Search entity ID or name...'} />
+                    </div>
+                    {manualLoading ? (
+                        <div style={{ textAlign: 'center', padding: 24 }}><div className="loading-spinner" style={{ margin: '0 auto' }} /></div>
+                    ) : (
+                        <div style={{ maxHeight: 400, overflow: 'auto' }}>
+                            {manualEntities
+                                .filter(e => !manualSearch || e.entity_id?.toLowerCase().includes(manualSearch.toLowerCase()) || e.friendly_name?.toLowerCase().includes(manualSearch.toLowerCase()))
+                                .slice(0, 100)
+                                .map(entity => {
+                                    const isImported = importedEntityIds.has(entity.entity_id);
+                                    return (
+                                        <div key={entity.entity_id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', borderBottom: '1px solid var(--border)', fontSize: 13 }}>
+                                            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-muted)', minWidth: 220 }}>{entity.entity_id}</span>
+                                            <span style={{ flex: 1 }}>{entity.friendly_name}</span>
+                                            <span className="badge badge-info" style={{ fontSize: 10 }}>{entity.state}</span>
+                                            {isImported ? (
+                                                <span className="badge badge-success" style={{ fontSize: 10 }}>{lang === 'de' ? 'Importiert' : 'Imported'}</span>
+                                            ) : (
+                                                <button className="btn btn-primary" style={{ padding: '4px 10px', fontSize: 11 }} onClick={() => handleManualAdd(entity.entity_id)}>
+                                                    <span className="mdi mdi-plus" style={{ fontSize: 14 }} />
+                                                </button>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                        </div>
+                    )}
+                </Modal>
             )}
 
             {/* Edit Device Modal */}
             {editDevice && (
-                <Modal
-                    title={lang === 'de' ? 'Gerät bearbeiten' : 'Edit Device'}
-                    onClose={() => setEditDevice(null)}
-                    actions={
-                        <>
-                            <button className="btn btn-secondary" onClick={() => setEditDevice(null)}>
-                                {lang === 'de' ? 'Abbrechen' : 'Cancel'}
-                            </button>
-                            <button className="btn btn-primary" onClick={handleUpdateDevice}>
-                                {lang === 'de' ? 'Speichern' : 'Save'}
-                            </button>
-                        </>
-                    }
-                >
-                    <div style={{ fontSize: 12, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginBottom: 16 }}>
-                        {editDevice.ha_entity_id}
-                    </div>
+                <Modal title={lang === 'de' ? 'Gerät bearbeiten' : 'Edit Device'} onClose={() => setEditDevice(null)}
+                    actions={<>
+                        <button className="btn btn-secondary" onClick={() => setEditDevice(null)}>{lang === 'de' ? 'Abbrechen' : 'Cancel'}</button>
+                        <button className="btn btn-primary" onClick={handleUpdateDevice}>{lang === 'de' ? 'Speichern' : 'Save'}</button>
+                    </>}>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginBottom: 16 }}>{editDevice.ha_entity_id}</div>
                     <div className="input-group" style={{ marginBottom: 16 }}>
-                        <label className="input-label">{lang === 'de' ? 'Name' : 'Name'}</label>
-                        <input className="input" value={editDevice.name}
-                               onChange={e => setEditDevice({ ...editDevice, name: e.target.value })} />
+                        <label className="input-label">Name</label>
+                        <input className="input" value={editDevice.name} onChange={e => setEditDevice({ ...editDevice, name: e.target.value })} />
                     </div>
                     <div className="input-group" style={{ marginBottom: 16 }}>
                         <label className="input-label">{lang === 'de' ? 'Raum' : 'Room'}</label>
-                        <select className="input" value={editDevice.room_id || ''}
-                                onChange={e => setEditDevice({ ...editDevice, room_id: e.target.value ? parseInt(e.target.value) : null })}>
+                        <select className="input" value={editDevice.room_id || ''} onChange={e => setEditDevice({ ...editDevice, room_id: e.target.value ? parseInt(e.target.value) : null })}>
                             <option value="">{lang === 'de' ? '— Kein Raum —' : '— No Room —'}</option>
-                            {rooms.map(r => (
-                                <option key={r.id} value={r.id}>{r.name}</option>
-                            ))}
+                            {rooms.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
                         </select>
                     </div>
                     <div className="input-group" style={{ marginBottom: 16 }}>
                         <label className="input-label">Domain</label>
-                        <select className="input" value={editDevice.domain_id || ''}
-                                onChange={e => setEditDevice({ ...editDevice, domain_id: e.target.value ? parseInt(e.target.value) : null })}>
+                        <select className="input" value={editDevice.domain_id || ''} onChange={e => setEditDevice({ ...editDevice, domain_id: e.target.value ? parseInt(e.target.value) : null })}>
                             <option value="">{lang === 'de' ? '— Keine —' : '— None —'}</option>
-                            {domains.map(d => (
-                                <option key={d.id} value={d.id}>{d.display_name}</option>
-                            ))}
+                            {domains.map(d => <option key={d.id} value={d.id}>{d.display_name}</option>)}
                         </select>
                     </div>
                     <div style={{ display: 'flex', gap: 24 }}>
                         <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 14 }}>
-                            <input type="checkbox" checked={editDevice.is_tracked}
-                                   onChange={e => setEditDevice({ ...editDevice, is_tracked: e.target.checked })}
-                                   style={{ width: 18, height: 18, accentColor: 'var(--accent-primary)' }} />
+                            <input type="checkbox" checked={editDevice.is_tracked} onChange={e => setEditDevice({ ...editDevice, is_tracked: e.target.checked })}
+                                style={{ width: 18, height: 18, accentColor: 'var(--accent-primary)' }} />
                             {lang === 'de' ? 'Überwacht' : 'Tracked'}
                         </label>
                         <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 14 }}>
-                            <input type="checkbox" checked={editDevice.is_controllable}
-                                   onChange={e => setEditDevice({ ...editDevice, is_controllable: e.target.checked })}
-                                   style={{ width: 18, height: 18, accentColor: 'var(--accent-primary)' }} />
+                            <input type="checkbox" checked={editDevice.is_controllable} onChange={e => setEditDevice({ ...editDevice, is_controllable: e.target.checked })}
+                                style={{ width: 18, height: 18, accentColor: 'var(--accent-primary)' }} />
                             {lang === 'de' ? 'Steuerbar' : 'Controllable'}
                         </label>
                     </div>
                 </Modal>
             )}
+
+            {/* Bulk Edit Modal */}
+            {showBulkEdit && (
+                <Modal title={lang === 'de' ? `${bulkCount} Geräte bearbeiten` : `Edit ${bulkCount} Devices`} onClose={() => setShowBulkEdit(false)}
+                    actions={<>
+                        <button className="btn btn-secondary" onClick={() => setShowBulkEdit(false)}>{lang === 'de' ? 'Abbrechen' : 'Cancel'}</button>
+                        <button className="btn btn-primary" onClick={handleBulkEdit}>{lang === 'de' ? 'Anwenden' : 'Apply'}</button>
+                    </>}>
+                    <div className="input-group" style={{ marginBottom: 16 }}>
+                        <label className="input-label">{lang === 'de' ? 'Raum zuweisen' : 'Assign Room'}</label>
+                        <select className="input" value={bulkRoom} onChange={e => setBulkRoom(e.target.value)}>
+                            <option value="">{lang === 'de' ? '— Nicht ändern —' : '— No change —'}</option>
+                            {rooms.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                        </select>
+                    </div>
+                    <div className="input-group">
+                        <label className="input-label">{lang === 'de' ? 'Domain zuweisen' : 'Assign Domain'}</label>
+                        <select className="input" value={bulkDomain} onChange={e => setBulkDomain(e.target.value)}>
+                            <option value="">{lang === 'de' ? '— Nicht ändern —' : '— No change —'}</option>
+                            {domains.map(d => <option key={d.id} value={d.id}>{d.display_name}</option>)}
+                        </select>
+                    </div>
+                </Modal>
+            )}
+
+            {/* Confirm Delete */}
+            {confirmDel && (
+                <ConfirmDialog title={lang === 'de' ? 'Gerät entfernen' : 'Remove Device'}
+                    message={lang === 'de' ? `"${confirmDel.name}" wirklich entfernen?` : `Remove "${confirmDel.name}"?`}
+                    danger onConfirm={handleDeleteDevice} onCancel={() => setConfirmDel(null)} />
+            )}
+            {confirmBulkDel && (
+                <ConfirmDialog title={lang === 'de' ? `${bulkCount} Geräte löschen` : `Delete ${bulkCount} Devices`}
+                    message={lang === 'de' ? 'Dies kann nicht rückgängig gemacht werden.' : 'This cannot be undone.'}
+                    danger onConfirm={handleBulkDelete} onCancel={() => setConfirmBulkDel(false)} />
+            )}
         </div>
     );
 };
+
 
 // ================================================================
 // Rooms Page - with edit name
