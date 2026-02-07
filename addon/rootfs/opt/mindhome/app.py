@@ -22,10 +22,12 @@ from models import (
     User, UserRole, Room, Domain, Device, RoomDomainState,
     LearningPhase, QuickAction, SystemSetting, UserPreference,
     NotificationSetting, NotificationType, ActionLog,
-    DataCollection, OfflineActionQueue
+    DataCollection, OfflineActionQueue,
+    StateHistory, LearnedPattern, PatternMatchLog
 )
 from ha_connection import HAConnection
 from domains import DomainManager
+from ml.pattern_engine import EventBus, StateLogger, PatternScheduler, PatternDetector
 
 # ==============================================================================
 # App Configuration
@@ -56,6 +58,11 @@ ha = HAConnection()
 # Domain Manager
 domain_manager = DomainManager(ha, lambda: get_session(engine))
 
+# Phase 2a: Pattern Engine
+event_bus = EventBus()
+state_logger = StateLogger(engine, ha)
+pattern_scheduler = PatternScheduler(engine, ha)
+
 # Cleanup timer
 _cleanup_timer = None
 
@@ -74,6 +81,15 @@ def on_state_changed(event):
     new_state = event_data.get("new_state") or {}
     old_state = event_data.get("old_state") or {}
     logger.debug(f"State changed: {entity_id} -> {new_state.get('state', '?')}")
+
+    # Phase 2a: Log to state_history via pattern engine
+    try:
+        state_logger.log_state_change(event_data)
+    except Exception as e:
+        logger.debug(f"Pattern state log error: {e}")
+
+    # Phase 2a: Publish to event bus for other subscribers
+    event_bus.publish("state_changed", event_data)
 
     # Log tracked device state changes to DB
     try:
@@ -223,7 +239,7 @@ def api_system_status():
             "language": get_language(),
             "theme": get_setting("theme", "dark"),
             "view_mode": get_setting("view_mode", "simple"),
-            "version": "0.1.0",
+            "version": "0.2.0",
             "timestamp": datetime.utcnow().isoformat()
         })
     finally:
@@ -260,7 +276,7 @@ def api_health_check():
 
     # Uptime
     health["uptime_seconds"] = int(time.time() - _start_time) if '_start_time' in dir() else 0
-    health["version"] = "0.1.0"
+    health["version"] = "0.2.0"
 
     status_code = 200 if health["status"] == "healthy" else 503
     return jsonify(health), status_code
@@ -287,9 +303,11 @@ def api_system_info():
         retention_days = int(get_setting("data_retention_days", "90"))
 
         return jsonify({
-            "version": "0.1.0",
+            "version": "0.2.0",
+            "phase": "2a",
             "ha_connected": ha.is_connected(),
             "ws_connected": ha._ws_connected,
+            "ha_entity_count": len(ha.get_states() or []),
             "uptime_seconds": int(time.time() - _start_time) if _start_time else 0,
             "device_count": device_count,
             "room_count": room_count,
@@ -301,7 +319,11 @@ def api_system_info():
             "db_size_mb": round(db_size_bytes / 1024 / 1024, 2),
             "data_retention_days": retention_days,
             "python_version": sys.version.split()[0],
-            "ingress_path": INGRESS_PATH
+            "ingress_path": INGRESS_PATH,
+            # Phase 2a additions
+            "state_history_count": session.query(StateHistory).count(),
+            "pattern_count": session.query(LearnedPattern).filter_by(is_active=True).count(),
+            "event_bus_subscribers": event_bus.subscriber_count("state_changed"),
         })
     finally:
         session.close()
@@ -1504,6 +1526,258 @@ def api_manual_cleanup():
 
 
 # ==============================================================================
+# Phase 2a: Pattern API Endpoints
+# ==============================================================================
+
+@app.route(f"{INGRESS_PATH}/api/patterns", methods=["GET"])
+def api_get_patterns():
+    """Get all learned patterns with optional filters."""
+    session = get_db()
+    try:
+        lang = get_language()
+        status_filter = request.args.get("status")
+        pattern_type = request.args.get("type")
+        room_id = request.args.get("room_id", type=int)
+        domain_id = request.args.get("domain_id", type=int)
+
+        query = session.query(LearnedPattern).order_by(LearnedPattern.confidence.desc())
+
+        if status_filter:
+            query = query.filter_by(status=status_filter)
+        if pattern_type:
+            query = query.filter_by(pattern_type=pattern_type)
+        if room_id:
+            query = query.filter_by(room_id=room_id)
+        if domain_id:
+            query = query.filter_by(domain_id=domain_id)
+
+        # Default: only active
+        if not status_filter:
+            query = query.filter_by(is_active=True)
+
+        patterns = query.limit(200).all()
+
+        return jsonify([{
+            "id": p.id,
+            "pattern_type": p.pattern_type,
+            "description": p.description_de if lang == "de" else (p.description_en or p.description_de),
+            "description_de": p.description_de,
+            "description_en": p.description_en,
+            "confidence": round(p.confidence, 3),
+            "status": p.status or "observed",
+            "is_active": p.is_active,
+            "match_count": p.match_count or 0,
+            "times_confirmed": p.times_confirmed,
+            "times_rejected": p.times_rejected,
+            "domain_id": p.domain_id,
+            "room_id": p.room_id,
+            "user_id": p.user_id,
+            "trigger_conditions": p.trigger_conditions,
+            "action_definition": p.action_definition,
+            "pattern_data": p.pattern_data,
+            "last_matched_at": p.last_matched_at.isoformat() if p.last_matched_at else None,
+            "created_at": p.created_at.isoformat() if p.created_at else None,
+            "updated_at": p.updated_at.isoformat() if p.updated_at else None,
+        } for p in patterns])
+    finally:
+        session.close()
+
+
+@app.route(f"{INGRESS_PATH}/api/patterns/<int:pattern_id>", methods=["PUT"])
+def api_update_pattern(pattern_id):
+    """Update pattern status (activate/deactivate/disable)."""
+    data = request.json
+    session = get_db()
+    try:
+        pattern = session.query(LearnedPattern).get(pattern_id)
+        if not pattern:
+            return jsonify({"error": "Pattern not found"}), 404
+
+        if "is_active" in data:
+            pattern.is_active = data["is_active"]
+        if "status" in data and data["status"] in ("observed", "suggested", "active", "disabled"):
+            pattern.status = data["status"]
+            if data["status"] == "disabled":
+                pattern.is_active = False
+            elif data["status"] in ("observed", "suggested", "active"):
+                pattern.is_active = True
+
+        pattern.updated_at = datetime.utcnow()
+        session.commit()
+        return jsonify({"success": True, "id": pattern.id, "status": pattern.status})
+    finally:
+        session.close()
+
+
+@app.route(f"{INGRESS_PATH}/api/patterns/<int:pattern_id>", methods=["DELETE"])
+def api_delete_pattern(pattern_id):
+    """Delete a pattern permanently."""
+    session = get_db()
+    try:
+        pattern = session.query(LearnedPattern).get(pattern_id)
+        if not pattern:
+            return jsonify({"error": "Pattern not found"}), 404
+
+        # Delete match logs first
+        session.query(PatternMatchLog).filter_by(pattern_id=pattern_id).delete()
+        session.delete(pattern)
+        session.commit()
+        return jsonify({"success": True})
+    finally:
+        session.close()
+
+
+@app.route(f"{INGRESS_PATH}/api/patterns/analyze", methods=["POST"])
+def api_trigger_analysis():
+    """Manually trigger pattern analysis."""
+    pattern_scheduler.trigger_analysis_now()
+    return jsonify({"success": True, "message": "Analysis started in background"})
+
+
+# ==============================================================================
+# Phase 2a: State History API
+# ==============================================================================
+
+@app.route(f"{INGRESS_PATH}/api/state-history", methods=["GET"])
+def api_get_state_history():
+    """Get state history events with filters."""
+    session = get_db()
+    try:
+        entity_id = request.args.get("entity_id")
+        device_id = request.args.get("device_id", type=int)
+        hours = request.args.get("hours", 24, type=int)
+        limit = request.args.get("limit", 200, type=int)
+
+        cutoff = datetime.utcnow() - timedelta(hours=hours)
+        query = session.query(StateHistory).filter(
+            StateHistory.created_at >= cutoff
+        ).order_by(StateHistory.created_at.desc())
+
+        if entity_id:
+            query = query.filter_by(entity_id=entity_id)
+        if device_id:
+            query = query.filter_by(device_id=device_id)
+
+        events = query.limit(min(limit, 1000)).all()
+
+        return jsonify([{
+            "id": e.id,
+            "entity_id": e.entity_id,
+            "device_id": e.device_id,
+            "old_state": e.old_state,
+            "new_state": e.new_state,
+            "new_attributes": e.new_attributes,
+            "context": e.context,
+            "created_at": e.created_at.isoformat() if e.created_at else None,
+        } for e in events])
+    finally:
+        session.close()
+
+
+@app.route(f"{INGRESS_PATH}/api/state-history/count", methods=["GET"])
+def api_state_history_count():
+    """Get total event count and date range."""
+    session = get_db()
+    try:
+        from sqlalchemy import func as sa_func
+        total = session.query(sa_func.count(StateHistory.id)).scalar() or 0
+        oldest = session.query(sa_func.min(StateHistory.created_at)).scalar()
+        newest = session.query(sa_func.max(StateHistory.created_at)).scalar()
+
+        return jsonify({
+            "total_events": total,
+            "oldest_event": oldest.isoformat() if oldest else None,
+            "newest_event": newest.isoformat() if newest else None,
+        })
+    finally:
+        session.close()
+
+
+# ==============================================================================
+# Phase 2a: Learning Stats API
+# ==============================================================================
+
+@app.route(f"{INGRESS_PATH}/api/stats/learning", methods=["GET"])
+def api_learning_stats():
+    """Get learning progress statistics for dashboard."""
+    session = get_db()
+    try:
+        from sqlalchemy import func as sa_func
+
+        # Event counts
+        total_events = session.query(sa_func.count(StateHistory.id)).scalar() or 0
+        today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        events_today = session.query(sa_func.count(StateHistory.id)).filter(
+            StateHistory.created_at >= today_start
+        ).scalar() or 0
+
+        # Pattern counts
+        total_patterns = session.query(sa_func.count(LearnedPattern.id)).filter_by(is_active=True).scalar() or 0
+        patterns_by_type = {}
+        for ptype in ["time_based", "event_chain", "correlation"]:
+            patterns_by_type[ptype] = session.query(sa_func.count(LearnedPattern.id)).filter_by(
+                pattern_type=ptype, is_active=True
+            ).scalar() or 0
+
+        patterns_by_status = {}
+        for status in ["observed", "suggested", "active", "disabled"]:
+            patterns_by_status[status] = session.query(sa_func.count(LearnedPattern.id)).filter_by(
+                status=status
+            ).scalar() or 0
+
+        # Average confidence
+        avg_confidence = session.query(sa_func.avg(LearnedPattern.confidence)).filter_by(
+            is_active=True
+        ).scalar() or 0.0
+
+        # Top patterns (highest confidence)
+        lang = get_language()
+        top_patterns = session.query(LearnedPattern).filter_by(
+            is_active=True
+        ).order_by(LearnedPattern.confidence.desc()).limit(5).all()
+
+        # Room/Domain learning phases
+        room_domain_states = session.query(RoomDomainState).all()
+        phases = {"observing": 0, "suggesting": 0, "autonomous": 0}
+        for rds in room_domain_states:
+            phase_val = rds.learning_phase.value if rds.learning_phase else "observing"
+            phases[phase_val] = phases.get(phase_val, 0) + 1
+
+        # Events per domain (from DataCollection)
+        data_collections = session.query(DataCollection).filter_by(data_type="state_changes").all()
+        events_by_domain = {}
+        for dc in data_collections:
+            domain = session.query(Domain).get(dc.domain_id)
+            dname = domain.name if domain else str(dc.domain_id)
+            events_by_domain[dname] = events_by_domain.get(dname, 0) + dc.record_count
+
+        # Days of data collected
+        oldest = session.query(sa_func.min(StateHistory.created_at)).scalar()
+        days_collecting = (datetime.utcnow() - oldest).days if oldest else 0
+
+        return jsonify({
+            "total_events": total_events,
+            "events_today": events_today,
+            "days_collecting": days_collecting,
+            "total_patterns": total_patterns,
+            "patterns_by_type": patterns_by_type,
+            "patterns_by_status": patterns_by_status,
+            "avg_confidence": round(avg_confidence, 3),
+            "learning_phases": phases,
+            "events_by_domain": events_by_domain,
+            "top_patterns": [{
+                "id": p.id,
+                "description": p.description_de if lang == "de" else (p.description_en or p.description_de),
+                "confidence": round(p.confidence, 3),
+                "pattern_type": p.pattern_type,
+                "match_count": p.match_count or 0,
+            } for p in top_patterns],
+        })
+    finally:
+        session.close()
+
+
+# ==============================================================================
 # Frontend Serving
 # ==============================================================================
 
@@ -1536,7 +1810,7 @@ def api_backup_export():
     session = get_db()
     try:
         backup = {
-            "version": "0.1.0",
+            "version": "0.2.0",
             "exported_at": datetime.now(timezone.utc).isoformat(),
             "rooms": [], "devices": [], "users": [], "domains": [],
             "room_domain_states": [], "settings": [], "quick_actions": [],
@@ -1787,20 +2061,38 @@ def log_state_change(entity_id, new_state, old_state, new_attrs=None, old_attrs=
 # ==============================================================================
 
 def run_cleanup():
-    """Delete old action log entries based on retention setting."""
+    """Delete old entries based on retention setting."""
     retention_days = int(get_setting("data_retention_days", "90"))
     cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
 
     session = get_db()
     try:
-        deleted = session.query(ActionLog).filter(
+        # Clean action log observations
+        deleted_obs = session.query(ActionLog).filter(
             ActionLog.created_at < cutoff,
             ActionLog.action_type == "observation"
         ).delete(synchronize_session=False)
+
+        # Phase 2a: Clean state_history
+        deleted_hist = session.query(StateHistory).filter(
+            StateHistory.created_at < cutoff
+        ).delete(synchronize_session=False)
+
+        # Phase 2a: Clean pattern_match_log
+        deleted_matches = session.query(PatternMatchLog).filter(
+            PatternMatchLog.matched_at < cutoff
+        ).delete(synchronize_session=False)
+
         session.commit()
-        if deleted > 0:
-            logger.info(f"Cleanup: Deleted {deleted} observation entries older than {retention_days} days")
-        return deleted
+        total = deleted_obs + deleted_hist + deleted_matches
+        if total > 0:
+            logger.info(
+                f"Cleanup: Deleted {deleted_obs} observations, "
+                f"{deleted_hist} state history, "
+                f"{deleted_matches} pattern matches "
+                f"(older than {retention_days} days)"
+            )
+        return total
     except Exception as e:
         logger.error(f"Cleanup error: {e}")
         try:
@@ -1845,6 +2137,13 @@ def graceful_shutdown(signum, frame):
     """Handle shutdown signals gracefully."""
     logger.info("Shutdown signal received - cleaning up...")
 
+    # Phase 2a: Stop pattern scheduler
+    try:
+        pattern_scheduler.stop()
+        logger.info("Pattern scheduler stopped")
+    except Exception as e:
+        logger.error(f"Error stopping pattern scheduler: {e}")
+
     # Disconnect HA
     try:
         ha.disconnect()
@@ -1874,7 +2173,7 @@ def start_app():
 
     logger.info("=" * 60)
     logger.info("MindHome - Smart Home AI")
-    logger.info(f"Version: 0.1.0")
+    logger.info(f"Version: 0.2.0 (Phase 2a)")
     logger.info(f"Language: {get_language()}")
     logger.info(f"Log Level: {log_level}")
     logger.info(f"Ingress Path: {INGRESS_PATH}")
@@ -1896,6 +2195,10 @@ def start_app():
 
     # Start enabled domain plugins
     domain_manager.start_enabled_domains()
+
+    # Phase 2a: Start pattern scheduler (analysis, decay, storage tracking)
+    pattern_scheduler.start()
+    logger.info("Pattern Engine started (analysis every 6h)")
 
     # Fix 3: Start cleanup scheduler
     schedule_cleanup()
