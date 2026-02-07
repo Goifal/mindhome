@@ -23,7 +23,8 @@ from models import (
     LearningPhase, QuickAction, SystemSetting, UserPreference,
     NotificationSetting, NotificationType, ActionLog,
     DataCollection, OfflineActionQueue,
-    StateHistory, LearnedPattern, PatternMatchLog
+    StateHistory, LearnedPattern, PatternMatchLog,
+    Prediction, NotificationLog
 )
 from ha_connection import HAConnection
 from domains import DomainManager
