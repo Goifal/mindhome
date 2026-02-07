@@ -212,9 +212,13 @@ class StateLogger:
 
         session = self.Session()
         try:
-            # Find device_id in our DB
+            # Find device_id in our DB - ONLY log devices assigned in MindHome
             device = session.query(Device).filter_by(ha_entity_id=entity_id).first()
-            device_id = device.id if device else None
+            if not device:
+                session.close()
+                return  # Skip: device not imported into MindHome
+
+            device_id = device.id
 
             # Build context
             ctx = self.context_builder.build()
@@ -311,10 +315,11 @@ class PatternDetector:
         logger.info("Starting pattern analysis...")
         session = self.Session()
         try:
-            # Only analyze last 14 days of data
+            # Only analyze last 14 days of data, only MindHome-assigned devices
             cutoff = datetime.utcnow() - timedelta(days=14)
             events = session.query(StateHistory).filter(
-                StateHistory.created_at >= cutoff
+                StateHistory.created_at >= cutoff,
+                StateHistory.device_id.isnot(None)
             ).order_by(StateHistory.created_at.asc()).all()
 
             if len(events) < 20:
