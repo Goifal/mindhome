@@ -4,7 +4,12 @@ All persistent data structures for MindHome.
 Phase 1 Final - with migration system
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
+
+
+def _utcnow():
+    """Timezone-aware UTC now for SQLAlchemy defaults."""
+    return datetime.now(timezone.utc)
 from sqlalchemy import (
     create_engine, Column, Integer, String, Float, Boolean,
     DateTime, Text, ForeignKey, Enum, JSON, inspect, text
@@ -61,8 +66,8 @@ class User(Base):
     is_active = Column(Boolean, default=True)
     pin_hash = Column(String(255), nullable=True)
     language = Column(String(5), default="de")
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
 
     preferences = relationship("UserPreference", back_populates="user", cascade="all, delete-orphan")
     notifications_settings = relationship("NotificationSetting", back_populates="user", cascade="all, delete-orphan")
@@ -76,8 +81,8 @@ class UserPreference(Base):
     room_id = Column(Integer, ForeignKey("rooms.id"), nullable=True)
     preference_key = Column(String(100), nullable=False)
     preference_value = Column(String(255), nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
 
     user = relationship("User", back_populates="preferences")
     room = relationship("Room")
@@ -96,7 +101,7 @@ class Room(Base):
     icon = Column(String(50), default="mdi:door")
     privacy_mode = Column(JSON, default=dict)
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)
 
     devices = relationship("Device", back_populates="room", cascade="all, delete-orphan")
     domain_states = relationship("RoomDomainState", back_populates="room", cascade="all, delete-orphan")
@@ -118,7 +123,7 @@ class Domain(Base):
     is_custom = Column(Boolean, default=False)  # Fix 7: Custom domains
     description_de = Column(Text, nullable=True)
     description_en = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)
 
 
 class RoomDomainState(Base):
@@ -128,7 +133,7 @@ class RoomDomainState(Base):
     room_id = Column(Integer, ForeignKey("rooms.id"), nullable=False)
     domain_id = Column(Integer, ForeignKey("domains.id"), nullable=False)
     learning_phase = Column(Enum(LearningPhase), default=LearningPhase.OBSERVING)
-    phase_started_at = Column(DateTime, default=datetime.utcnow)
+    phase_started_at = Column(DateTime, default=_utcnow)
     confidence_score = Column(Float, default=0.0)
     is_paused = Column(Boolean, default=False)
 
@@ -147,7 +152,7 @@ class Device(Base):
     is_tracked = Column(Boolean, default=True)
     is_controllable = Column(Boolean, default=True)
     device_meta = Column(JSON, default=dict)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)
 
     room = relationship("Room", back_populates="devices")
     domain = relationship("Domain")
@@ -181,8 +186,8 @@ class LearnedPattern(Base):
     match_count = Column(Integer, default=0)
     status = Column(String(30), default="observed")  # observed, suggested, active, disabled
 
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
 
     domain = relationship("Domain")
     room = relationship("Room")
@@ -200,7 +205,7 @@ class Prediction(Base):
     was_executed = Column(Boolean, default=False)
     was_correct = Column(Boolean, nullable=True)
     execution_result = Column(JSON, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)
 
     # Phase 2b extensions
     status = Column(String(30), default="pending")  # pending, confirmed, rejected, ignored, executed, undone
@@ -233,7 +238,7 @@ class ActionLog(Base):
     reason = Column(Text, nullable=True)
     was_undone = Column(Boolean, default=False)
     previous_state = Column(JSON, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)
 
     domain = relationship("Domain")
     room = relationship("Room")
@@ -255,7 +260,7 @@ class NotificationSetting(Base):
     quiet_hours_start = Column(String(5), nullable=True)
     quiet_hours_end = Column(String(5), nullable=True)
     quiet_hours_allow_critical = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)
 
     user = relationship("User", back_populates="notifications_settings")
 
@@ -270,7 +275,7 @@ class NotificationLog(Base):
     message = Column(Text, nullable=False)
     was_sent = Column(Boolean, default=False)
     was_read = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)
 
 
 # ==============================================================================
@@ -288,7 +293,7 @@ class QuickAction(Base):
     sort_order = Column(Integer, default=0)
     is_system = Column(Boolean, default=False)
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)
 
 
 # ==============================================================================
@@ -303,7 +308,7 @@ class SystemSetting(Base):
     value = Column(Text, nullable=False)
     description_de = Column(Text, nullable=True)
     description_en = Column(Text, nullable=True)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
 
 
 # ==============================================================================
@@ -316,7 +321,7 @@ class OfflineActionQueue(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     action_data = Column(JSON, nullable=False)
     priority = Column(Integer, default=0)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)
     executed_at = Column(DateTime, nullable=True)
     was_executed = Column(Boolean, default=False)
 
@@ -370,7 +375,7 @@ class StateHistory(Base):
     #   "hour": 14, "minute": 30
     # }
 
-    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    created_at = Column(DateTime, default=_utcnow, index=True)
 
     device = relationship("Device")
 
@@ -381,7 +386,7 @@ class PatternMatchLog(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     pattern_id = Column(Integer, ForeignKey("learned_patterns.id"), nullable=False)
-    matched_at = Column(DateTime, default=datetime.utcnow)
+    matched_at = Column(DateTime, default=_utcnow)
     context = Column(JSON, nullable=True)
     trigger_event_id = Column(Integer, ForeignKey("state_history.id"), nullable=True)
     was_executed = Column(Boolean, default=False)
@@ -404,7 +409,24 @@ def get_engine(db_path=None):
     if db_dir:
         os.makedirs(db_dir, exist_ok=True)
 
-    return create_engine(f"sqlite:///{db_path}", echo=False)
+    engine = create_engine(
+        f"sqlite:///{db_path}",
+        echo=False,
+        connect_args={"timeout": 30},  # 30s busy timeout for concurrent threads
+    )
+
+    # Enable WAL mode for better concurrent read/write performance
+    from sqlalchemy import event as sa_event
+
+    @sa_event.listens_for(engine, "connect")
+    def set_sqlite_pragma(dbapi_connection, connection_record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA busy_timeout=30000")
+        cursor.execute("PRAGMA synchronous=NORMAL")
+        cursor.close()
+
+    return engine
 
 
 def get_session(engine=None):
