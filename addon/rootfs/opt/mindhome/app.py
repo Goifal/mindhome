@@ -1503,10 +1503,15 @@ def api_manual_cleanup():
 # Frontend Serving
 # ==============================================================================
 
+@app.route("/", defaults={"path": ""})
+@app.route("/<path:path>")
 @app.route(f"{INGRESS_PATH}/", defaults={"path": ""})
 @app.route(f"{INGRESS_PATH}/<path:path>")
 def serve_frontend(path):
     """Serve the React frontend."""
+    # Skip API routes
+    if path.startswith("api/"):
+        return jsonify({"error": "not found"}), 404
     if path and os.path.exists(os.path.join(app.static_folder, "frontend", path)):
         return send_from_directory(os.path.join(app.static_folder, "frontend"), path)
     return send_from_directory(os.path.join(app.static_folder, "frontend"), "index.html")
