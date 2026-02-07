@@ -309,8 +309,13 @@ const formatBytes = (bytes) => {
 
 const DashboardPage = () => {
     const { status, domains, devices, rooms, lang, tr } = useApp();
+    const [learningStats, setLearningStats] = useState(null);
     const activeDomains = domains.filter(d => d.is_enabled).length;
     const trackedDevices = devices.length;
+
+    useEffect(() => {
+        api.get('stats/learning').then(setLearningStats).catch(() => {});
+    }, []);
 
     const modeLabels = {
         normal: { de: 'Normal', en: 'Normal', color: 'success' },
@@ -388,6 +393,67 @@ const DashboardPage = () => {
                 </div>
                 <QuickActionsGrid />
             </div>
+
+            {/* Phase 2a: Learning Progress */}
+            {learningStats && (learningStats.total_events > 0 || learningStats.total_patterns > 0) && (
+                <div className="card animate-in animate-in-delay-2" style={{ marginBottom: 24 }}>
+                    <div className="card-header">
+                        <div>
+                            <div className="card-title">
+                                <span className="mdi mdi-brain" style={{ marginRight: 8, color: 'var(--accent-primary)' }} />
+                                {lang === 'de' ? 'Lernfortschritt' : 'Learning Progress'}
+                            </div>
+                            <div className="card-subtitle">
+                                {lang === 'de'
+                                    ? `${learningStats.days_collecting} Tage Daten, ${learningStats.total_events} Events`
+                                    : `${learningStats.days_collecting} days of data, ${learningStats.total_events} events`}
+                            </div>
+                        </div>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12, padding: '0 16px 16px' }}>
+                        <div style={{ padding: 12, background: 'var(--bg-tertiary)', borderRadius: 8, textAlign: 'center' }}>
+                            <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--accent-primary)' }}>
+                                {learningStats.total_patterns}
+                            </div>
+                            <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                                {lang === 'de' ? 'Muster erkannt' : 'Patterns found'}
+                            </div>
+                        </div>
+                        <div style={{ padding: 12, background: 'var(--bg-tertiary)', borderRadius: 8, textAlign: 'center' }}>
+                            <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--success)' }}>
+                                {learningStats.avg_confidence ? `${Math.round(learningStats.avg_confidence * 100)}%` : '—'}
+                            </div>
+                            <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                                {lang === 'de' ? 'Ø Confidence' : 'Avg Confidence'}
+                            </div>
+                        </div>
+                        <div style={{ padding: 12, background: 'var(--bg-tertiary)', borderRadius: 8, textAlign: 'center' }}>
+                            <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--warning)' }}>
+                                {learningStats.events_today}
+                            </div>
+                            <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                                {lang === 'de' ? 'Events heute' : 'Events today'}
+                            </div>
+                        </div>
+                    </div>
+                    {/* Top patterns preview */}
+                    {learningStats.top_patterns?.length > 0 && (
+                        <div style={{ padding: '0 16px 16px' }}>
+                            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 8 }}>
+                                {lang === 'de' ? 'Top Muster:' : 'Top patterns:'}
+                            </div>
+                            {learningStats.top_patterns.slice(0, 3).map(p => (
+                                <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', fontSize: 13 }}>
+                                    <span className={`mdi ${p.pattern_type === 'time_based' ? 'mdi-clock-outline' : p.pattern_type === 'event_chain' ? 'mdi-link-variant' : 'mdi-chart-scatter-plot'}`}
+                                          style={{ color: 'var(--accent-primary)', fontSize: 16 }} />
+                                    <span style={{ flex: 1 }}>{p.description}</span>
+                                    <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{Math.round(p.confidence * 100)}%</span>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            )}
 
             {/* Rooms Overview */}
             <div className="card animate-in animate-in-delay-3">
@@ -1538,8 +1604,8 @@ const SettingsPage = () => {
                     {lang === 'de' ? 'System' : 'System'}
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                    <InfoRow label="Version" value={sysInfo?.version || '0.1.1'} />
-                    <InfoRow label="Phase" value={`1 – ${lang === 'de' ? 'Fundament' : 'Foundation'}`} />
+                    <InfoRow label="Version" value={sysInfo?.version || '0.2.0'} />
+                    <InfoRow label="Phase" value={`2a – ${lang === 'de' ? 'Datenerfassung & Muster' : 'Data & Patterns'}`} />
                     <InfoRow label="Home Assistant"
                         value={sysInfo?.ha_connected ? (lang === 'de' ? '✅ Verbunden' : '✅ Connected') : (lang === 'de' ? '❌ Getrennt' : '❌ Disconnected')} />
                     <InfoRow label={lang === 'de' ? 'HA Entities' : 'HA Entities'}
@@ -1548,6 +1614,10 @@ const SettingsPage = () => {
                         value={sysInfo?.db_size_bytes ? formatBytes(sysInfo.db_size_bytes) : '—'} />
                     <InfoRow label="Uptime"
                         value={sysInfo?.uptime_seconds ? `${Math.floor(sysInfo.uptime_seconds / 3600)} h` : '—'} />
+                    <InfoRow label={lang === 'de' ? 'Gesammelte Events' : 'Collected Events'}
+                        value={sysInfo?.state_history_count?.toLocaleString() || '0'} />
+                    <InfoRow label={lang === 'de' ? 'Erkannte Muster' : 'Detected Patterns'}
+                        value={sysInfo?.pattern_count || '0'} />
                 </div>
             </div>
 
@@ -1794,6 +1864,365 @@ const DataPage = () => {
                     </div>
                 )}
             </div>
+        </div>
+    );
+};
+
+// ================================================================
+// Phase 2a: Patterns Page (Muster-Explorer)
+// ================================================================
+
+const PatternsPage = () => {
+    const { lang, viewMode, showToast } = useApp();
+    const [patterns, setPatterns] = useState([]);
+    const [stats, setStats] = useState(null);
+    const [stateHistory, setStateHistory] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [filter, setFilter] = useState('all'); // all, time_based, event_chain, correlation
+    const [statusFilter, setStatusFilter] = useState(''); // observed, suggested, active, disabled
+    const [showHistory, setShowHistory] = useState(false);
+    const [historyEntity, setHistoryEntity] = useState('');
+    const [analyzing, setAnalyzing] = useState(false);
+    const [confirmDel, setConfirmDel] = useState(null);
+
+    const load = async () => {
+        try {
+            const [pats, st] = await Promise.all([
+                api.get('patterns'),
+                api.get('stats/learning'),
+            ]);
+            setPatterns(pats);
+            setStats(st);
+        } catch (e) {
+            console.error(e);
+        }
+        setLoading(false);
+    };
+
+    useEffect(() => { load(); }, []);
+
+    const loadHistory = async (entity) => {
+        try {
+            const h = await api.get(`state-history?hours=48&limit=100${entity ? `&entity_id=${entity}` : ''}`);
+            setStateHistory(h);
+        } catch (e) { console.error(e); }
+    };
+
+    const triggerAnalysis = async () => {
+        setAnalyzing(true);
+        try {
+            await api.post('patterns/analyze');
+            showToast(lang === 'de' ? 'Analyse gestartet...' : 'Analysis started...', 'success');
+            // Reload after a delay
+            setTimeout(() => { load(); setAnalyzing(false); }, 8000);
+        } catch (e) {
+            showToast('Error', 'error');
+            setAnalyzing(false);
+        }
+    };
+
+    const togglePattern = async (id, newStatus) => {
+        try {
+            await api.put(`patterns/${id}`, { status: newStatus });
+            showToast(lang === 'de' ? 'Muster aktualisiert' : 'Pattern updated', 'success');
+            load();
+        } catch (e) { showToast('Error', 'error'); }
+    };
+
+    const deletePattern = async (id) => {
+        try {
+            await api.delete(`patterns/${id}`);
+            showToast(lang === 'de' ? 'Muster gelöscht' : 'Pattern deleted', 'success');
+            setConfirmDel(null);
+            load();
+        } catch (e) { showToast('Error', 'error'); }
+    };
+
+    const filtered = patterns.filter(p => {
+        if (filter !== 'all' && p.pattern_type !== filter) return false;
+        if (statusFilter && p.status !== statusFilter) return false;
+        return true;
+    });
+
+    const typeIcons = {
+        time_based: 'mdi-clock-outline',
+        event_chain: 'mdi-link-variant',
+        correlation: 'mdi-chart-scatter-plot',
+    };
+
+    const typeLabels = {
+        time_based: lang === 'de' ? 'Zeitbasiert' : 'Time-based',
+        event_chain: lang === 'de' ? 'Sequenz' : 'Sequence',
+        correlation: lang === 'de' ? 'Korrelation' : 'Correlation',
+    };
+
+    const statusColors = {
+        observed: 'info',
+        suggested: 'warning',
+        active: 'success',
+        disabled: 'danger',
+    };
+
+    const statusLabels = {
+        observed: lang === 'de' ? 'Beobachtet' : 'Observed',
+        suggested: lang === 'de' ? 'Vorgeschlagen' : 'Suggested',
+        active: lang === 'de' ? 'Aktiv' : 'Active',
+        disabled: lang === 'de' ? 'Deaktiviert' : 'Disabled',
+    };
+
+    if (loading) return <div style={{ padding: 40, textAlign: 'center' }}><span className="mdi mdi-loading mdi-spin" style={{ fontSize: 32 }} /></div>;
+
+    return (
+        <div>
+            {/* Learning Stats Overview */}
+            {stats && (
+                <div className="stat-grid" style={{ marginBottom: 24 }}>
+                    <div className="stat-card animate-in">
+                        <div className="stat-icon" style={{ background: 'var(--accent-primary-dim)', color: 'var(--accent-primary)' }}>
+                            <span className="mdi mdi-database-outline" />
+                        </div>
+                        <div>
+                            <div className="stat-value">{stats.total_events?.toLocaleString() || 0}</div>
+                            <div className="stat-label">{lang === 'de' ? 'Events gesammelt' : 'Events collected'}</div>
+                        </div>
+                    </div>
+                    <div className="stat-card animate-in animate-in-delay-1">
+                        <div className="stat-icon" style={{ background: 'var(--success-dim)', color: 'var(--success)' }}>
+                            <span className="mdi mdi-brain" />
+                        </div>
+                        <div>
+                            <div className="stat-value">{stats.total_patterns || 0}</div>
+                            <div className="stat-label">{lang === 'de' ? 'Muster erkannt' : 'Patterns found'}</div>
+                        </div>
+                    </div>
+                    <div className="stat-card animate-in animate-in-delay-2">
+                        <div className="stat-icon" style={{ background: 'var(--warning-dim)', color: 'var(--warning)' }}>
+                            <span className="mdi mdi-calendar-range" />
+                        </div>
+                        <div>
+                            <div className="stat-value">{stats.days_collecting || 0}</div>
+                            <div className="stat-label">{lang === 'de' ? 'Tage Daten' : 'Days of data'}</div>
+                        </div>
+                    </div>
+                    <div className="stat-card animate-in animate-in-delay-3">
+                        <div className="stat-icon" style={{ background: 'var(--info-dim)', color: 'var(--info)' }}>
+                            <span className="mdi mdi-speedometer" />
+                        </div>
+                        <div>
+                            <div className="stat-value">{stats.avg_confidence ? `${Math.round(stats.avg_confidence * 100)}%` : '—'}</div>
+                            <div className="stat-label">{lang === 'de' ? 'Ø Confidence' : 'Avg Confidence'}</div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Pattern Type Distribution */}
+            {stats && stats.patterns_by_type && (
+                <div className="card animate-in" style={{ marginBottom: 24, padding: 16 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                        <div className="card-title">{lang === 'de' ? 'Muster-Verteilung' : 'Pattern Distribution'}</div>
+                        <button className="btn btn-sm btn-primary" onClick={triggerAnalysis} disabled={analyzing}>
+                            <span className={`mdi ${analyzing ? 'mdi-loading mdi-spin' : 'mdi-magnify'}`} style={{ marginRight: 6 }} />
+                            {analyzing ? (lang === 'de' ? 'Analysiere...' : 'Analyzing...') : (lang === 'de' ? 'Jetzt analysieren' : 'Analyze now')}
+                        </button>
+                    </div>
+                    <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+                        {Object.entries(stats.patterns_by_type).map(([type, count]) => (
+                            <div key={type} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', background: 'var(--bg-tertiary)', borderRadius: 8 }}>
+                                <span className={`mdi ${typeIcons[type]}`} style={{ fontSize: 18, color: 'var(--accent-primary)' }} />
+                                <span style={{ fontWeight: 600 }}>{count}</span>
+                                <span style={{ color: 'var(--text-secondary)', fontSize: 13 }}>{typeLabels[type]}</span>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {/* Filter Bar */}
+            <div className="card" style={{ padding: 12, marginBottom: 16 }}>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                    <span style={{ fontSize: 13, color: 'var(--text-secondary)', marginRight: 4 }}>
+                        {lang === 'de' ? 'Typ:' : 'Type:'}
+                    </span>
+                    {['all', 'time_based', 'event_chain', 'correlation'].map(f => (
+                        <button key={f} className={`btn btn-sm ${filter === f ? 'btn-primary' : 'btn-ghost'}`}
+                                onClick={() => setFilter(f)}>
+                            {f === 'all' ? (lang === 'de' ? 'Alle' : 'All') : typeLabels[f]}
+                        </button>
+                    ))}
+                    <span style={{ borderLeft: '1px solid var(--border-color)', height: 20, margin: '0 8px' }} />
+                    <span style={{ fontSize: 13, color: 'var(--text-secondary)', marginRight: 4 }}>Status:</span>
+                    {['', 'observed', 'suggested', 'active', 'disabled'].map(s => (
+                        <button key={s} className={`btn btn-sm ${statusFilter === s ? 'btn-primary' : 'btn-ghost'}`}
+                                onClick={() => setStatusFilter(s)}>
+                            {s === '' ? (lang === 'de' ? 'Alle' : 'All') : statusLabels[s]}
+                        </button>
+                    ))}
+
+                    {viewMode === 'advanced' && (
+                        <>
+                            <span style={{ borderLeft: '1px solid var(--border-color)', height: 20, margin: '0 8px' }} />
+                            <button className={`btn btn-sm ${showHistory ? 'btn-primary' : 'btn-ghost'}`}
+                                    onClick={() => { setShowHistory(!showHistory); if (!showHistory) loadHistory(historyEntity); }}>
+                                <span className="mdi mdi-history" style={{ marginRight: 4 }} />
+                                {lang === 'de' ? 'Event-Verlauf' : 'Event History'}
+                            </button>
+                        </>
+                    )}
+                </div>
+            </div>
+
+            {/* State History Viewer (Advanced only) */}
+            {showHistory && viewMode === 'advanced' && (
+                <div className="card animate-in" style={{ marginBottom: 16 }}>
+                    <div className="card-header">
+                        <div className="card-title">
+                            <span className="mdi mdi-history" style={{ marginRight: 8 }} />
+                            {lang === 'de' ? 'Event-Verlauf (48h)' : 'Event History (48h)'}
+                        </div>
+                        <input type="text" placeholder={lang === 'de' ? 'Entity filtern...' : 'Filter entity...'}
+                               value={historyEntity}
+                               onChange={e => { setHistoryEntity(e.target.value); loadHistory(e.target.value); }}
+                               style={{ width: 220, padding: '6px 10px', background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', borderRadius: 6, color: 'var(--text-primary)', fontSize: 13 }} />
+                    </div>
+                    <div style={{ maxHeight: 300, overflowY: 'auto' }}>
+                        <table className="data-table" style={{ fontSize: 12 }}>
+                            <thead>
+                                <tr>
+                                    <th>{lang === 'de' ? 'Zeit' : 'Time'}</th>
+                                    <th>Entity</th>
+                                    <th>{lang === 'de' ? 'Alt → Neu' : 'Old → New'}</th>
+                                    <th>{lang === 'de' ? 'Kontext' : 'Context'}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {stateHistory.map(ev => (
+                                    <tr key={ev.id}>
+                                        <td style={{ whiteSpace: 'nowrap' }}>{ev.created_at ? new Date(ev.created_at).toLocaleTimeString() : '—'}</td>
+                                        <td style={{ fontFamily: 'monospace', fontSize: 11 }}>{ev.entity_id}</td>
+                                        <td>
+                                            <span style={{ color: 'var(--text-muted)' }}>{ev.old_state || '?'}</span>
+                                            <span style={{ margin: '0 4px' }}>→</span>
+                                            <span style={{ fontWeight: 600, color: ev.new_state === 'on' ? 'var(--success)' : ev.new_state === 'off' ? 'var(--text-muted)' : 'var(--text-primary)' }}>
+                                                {ev.new_state}
+                                            </span>
+                                        </td>
+                                        <td style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                                            {ev.context?.time_slot} {ev.context?.persons_home?.length > 0 ? `👤${ev.context.persons_home.length}` : ''}
+                                        </td>
+                                    </tr>
+                                ))}
+                                {stateHistory.length === 0 && (
+                                    <tr><td colSpan={4} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 20 }}>
+                                        {lang === 'de' ? 'Noch keine Events gesammelt' : 'No events collected yet'}
+                                    </td></tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            )}
+
+            {/* Pattern List */}
+            <div className="card animate-in">
+                <div className="card-header">
+                    <div>
+                        <div className="card-title">
+                            {lang === 'de' ? 'Erkannte Muster' : 'Detected Patterns'}
+                            <span className="badge badge-info" style={{ marginLeft: 8 }}>{filtered.length}</span>
+                        </div>
+                    </div>
+                </div>
+                {filtered.length === 0 ? (
+                    <div className="empty-state">
+                        <span className="mdi mdi-brain" />
+                        <h3>{lang === 'de' ? 'Noch keine Muster' : 'No patterns yet'}</h3>
+                        <p>{lang === 'de'
+                            ? 'MindHome sammelt Daten und analysiert regelmäßig. Muster erscheinen nach einigen Tagen.'
+                            : 'MindHome collects data and analyzes regularly. Patterns will appear after a few days.'}</p>
+                        <button className="btn btn-primary" onClick={triggerAnalysis} disabled={analyzing}>
+                            <span className="mdi mdi-magnify" style={{ marginRight: 6 }} />
+                            {lang === 'de' ? 'Jetzt analysieren' : 'Analyze now'}
+                        </button>
+                    </div>
+                ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                        {filtered.map(p => (
+                            <div key={p.id} style={{
+                                padding: '14px 16px',
+                                borderBottom: '1px solid var(--border-color)',
+                                display: 'flex', alignItems: 'center', gap: 12,
+                                opacity: p.status === 'disabled' ? 0.5 : 1,
+                            }}>
+                                {/* Type icon */}
+                                <span className={`mdi ${typeIcons[p.pattern_type]}`}
+                                      style={{ fontSize: 22, color: 'var(--accent-primary)', flexShrink: 0 }} />
+
+                                {/* Description */}
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                    <div style={{ fontWeight: 500, fontSize: 14, marginBottom: 4 }}>
+                                        {p.description || p.pattern_type}
+                                    </div>
+                                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', fontSize: 12 }}>
+                                        <span className={`badge badge-${statusColors[p.status]}`} style={{ fontSize: 11 }}>
+                                            {statusLabels[p.status]}
+                                        </span>
+                                        <span style={{ color: 'var(--text-muted)' }}>
+                                            {typeLabels[p.pattern_type]}
+                                        </span>
+                                        <span style={{ color: 'var(--text-muted)' }}>
+                                            {p.match_count}× {lang === 'de' ? 'erkannt' : 'matched'}
+                                        </span>
+                                    </div>
+                                </div>
+
+                                {/* Confidence bar */}
+                                <div style={{ width: 80, flexShrink: 0 }}>
+                                    <div style={{ fontSize: 12, textAlign: 'center', marginBottom: 4, fontWeight: 600 }}>
+                                        {Math.round(p.confidence * 100)}%
+                                    </div>
+                                    <div style={{ height: 4, background: 'var(--bg-tertiary)', borderRadius: 2, overflow: 'hidden' }}>
+                                        <div style={{
+                                            height: '100%', borderRadius: 2, width: `${Math.round(p.confidence * 100)}%`,
+                                            background: p.confidence > 0.7 ? 'var(--success)' : p.confidence > 0.4 ? 'var(--warning)' : 'var(--danger)',
+                                        }} />
+                                    </div>
+                                </div>
+
+                                {/* Actions */}
+                                <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+                                    {p.status === 'disabled' ? (
+                                        <button className="btn btn-sm btn-ghost" onClick={() => togglePattern(p.id, 'observed')}
+                                                title={lang === 'de' ? 'Reaktivieren' : 'Reactivate'}>
+                                            <span className="mdi mdi-refresh" />
+                                        </button>
+                                    ) : (
+                                        <button className="btn btn-sm btn-ghost" onClick={() => togglePattern(p.id, 'disabled')}
+                                                title={lang === 'de' ? 'Deaktivieren' : 'Disable'}>
+                                            <span className="mdi mdi-pause" />
+                                        </button>
+                                    )}
+                                    <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }}
+                                            onClick={() => setConfirmDel(p.id)}
+                                            title={lang === 'de' ? 'Löschen' : 'Delete'}>
+                                        <span className="mdi mdi-delete" />
+                                    </button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
+
+            {/* Confirm delete */}
+            {confirmDel && (
+                <ConfirmDialog
+                    title={lang === 'de' ? 'Muster löschen?' : 'Delete pattern?'}
+                    message={lang === 'de' ? 'Das Muster wird unwiderruflich gelöscht.' : 'The pattern will be permanently deleted.'}
+                    onConfirm={() => deletePattern(confirmDel)}
+                    onCancel={() => setConfirmDel(null)}
+                />
+            )}
         </div>
     );
 };
@@ -2256,6 +2685,7 @@ const App = () => {
         { id: 'users', icon: 'mdi-account-group', label: lang === 'de' ? 'Personen' : 'People' },
         { section: 'System' },
         { id: 'log', icon: 'mdi-text-box-outline', label: 'KI-Log' },
+        { id: 'patterns', icon: 'mdi-brain', label: lang === 'de' ? 'Muster' : 'Patterns' },
         { id: 'data', icon: 'mdi-shield-lock', label: lang === 'de' ? 'Datenschutz' : 'Privacy' },
         { id: 'settings', icon: 'mdi-cog', label: lang === 'de' ? 'Einstellungen' : 'Settings' },
     ];
@@ -2267,6 +2697,7 @@ const App = () => {
         rooms: RoomsPage,
         users: UsersPage,
         log: LogPage,
+        patterns: PatternsPage,
         data: DataPage,
         settings: SettingsPage,
     };
