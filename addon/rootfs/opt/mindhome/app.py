@@ -248,7 +248,7 @@ def api_system_status():
             "theme": get_setting("theme", "dark"),
             "view_mode": get_setting("view_mode", "simple"),
             "version": "0.3.0",
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         })
     finally:
         session.close()
@@ -459,7 +459,7 @@ def api_update_domain(domain_id):
     data = request.json
     session = get_db()
     try:
-        domain = session.query(Domain).get(domain_id)
+        domain = session.get(Domain, domain_id)
         if not domain:
             return jsonify({"error": "Domain not found"}), 404
         if not getattr(domain, 'is_custom', False):
@@ -488,7 +488,7 @@ def api_delete_domain(domain_id):
     """Delete a custom domain."""
     session = get_db()
     try:
-        domain = session.query(Domain).get(domain_id)
+        domain = session.get(Domain, domain_id)
         if not domain:
             return jsonify({"error": "Domain not found"}), 404
         if not getattr(domain, 'is_custom', False):
@@ -515,7 +515,7 @@ def api_toggle_domain(domain_id):
     """Enable or disable a domain."""
     session = get_db()
     try:
-        domain = session.query(Domain).get(domain_id)
+        domain = session.get(Domain, domain_id)
         if not domain:
             return jsonify({"error": "Domain not found"}), 404
         domain.is_enabled = not domain.is_enabled
@@ -680,7 +680,7 @@ def api_update_room(room_id):
     data = request.json
     session = get_db()
     try:
-        room = session.query(Room).get(room_id)
+        room = session.get(Room, room_id)
         if not room:
             return jsonify({"error": "Room not found"}), 404
 
@@ -702,7 +702,7 @@ def api_delete_room(room_id):
     """Delete a room."""
     session = get_db()
     try:
-        room = session.query(Room).get(room_id)
+        room = session.get(Room, room_id)
         if not room:
             return jsonify({"error": "Room not found"}), 404
         room.is_active = False  # Soft delete
@@ -718,7 +718,7 @@ def api_update_room_privacy(room_id):
     data = request.json
     session = get_db()
     try:
-        room = session.query(Room).get(room_id)
+        room = session.get(Room, room_id)
         if not room:
             return jsonify({"error": "Room not found"}), 404
         room.privacy_mode = data.get("privacy_mode", {})
@@ -778,7 +778,7 @@ def api_update_device(device_id):
     data = request.json
     session = get_db()
     try:
-        device = session.query(Device).get(device_id)
+        device = session.get(Device, device_id)
         if not device:
             return jsonify({"error": "Device not found"}), 404
 
@@ -807,14 +807,17 @@ def api_bulk_update_devices():
     session = get_db()
     try:
         device_ids = data.get("device_ids", [])
+        # Support both flat and nested format
         updates = data.get("updates", {})
+        if not updates:
+            updates = {k: v for k, v in data.items() if k != "device_ids"}
 
         if not device_ids:
             return jsonify({"error": "No devices selected"}), 400
 
         updated = 0
         for did in device_ids:
-            device = session.query(Device).get(did)
+            device = session.get(Device, did)
             if not device:
                 continue
             if "room_id" in updates:
@@ -846,7 +849,7 @@ def api_bulk_delete_devices():
 
         deleted = 0
         for did in device_ids:
-            device = session.query(Device).get(did)
+            device = session.get(Device, did)
             if device:
                 session.delete(device)
                 deleted += 1
@@ -862,7 +865,7 @@ def api_delete_device(device_id):
     """Delete a device."""
     session = get_db()
     try:
-        device = session.query(Device).get(device_id)
+        device = session.get(Device, device_id)
         if not device:
             return jsonify({"error": "Device not found"}), 404
         session.delete(device)
@@ -1183,7 +1186,7 @@ def api_update_user(user_id):
     data = request.json
     session = get_db()
     try:
-        user = session.query(User).get(user_id)
+        user = session.get(User, user_id)
         if not user:
             return jsonify({"error": "User not found"}), 404
 
@@ -1207,7 +1210,7 @@ def api_delete_user(user_id):
     """Delete a user (soft delete)."""
     session = get_db()
     try:
-        user = session.query(User).get(user_id)
+        user = session.get(User, user_id)
         if not user:
             return jsonify({"error": "User not found"}), 404
         user.is_active = False
@@ -1246,7 +1249,7 @@ def api_execute_quick_action(action_id):
     """Execute a quick action."""
     session = get_db()
     try:
-        action = session.query(QuickAction).get(action_id)
+        action = session.get(QuickAction, action_id)
         if not action:
             return jsonify({"error": "Quick action not found"}), 404
 
@@ -1322,7 +1325,7 @@ def api_delete_collected_data(collection_id):
     """Delete specific collected data."""
     session = get_db()
     try:
-        dc = session.query(DataCollection).get(collection_id)
+        dc = session.get(DataCollection, collection_id)
         if not dc:
             return jsonify({"error": "Not found"}), 404
         session.delete(dc)
@@ -1421,7 +1424,7 @@ def api_undo_action(log_id):
     """Undo a specific action."""
     session = get_db()
     try:
-        log = session.query(ActionLog).get(log_id)
+        log = session.get(ActionLog, log_id)
         if not log:
             return jsonify({"error": "Action not found"}), 404
         if log.was_undone:
@@ -1597,7 +1600,7 @@ def api_update_pattern(pattern_id):
     data = request.json
     session = get_db()
     try:
-        pattern = session.query(LearnedPattern).get(pattern_id)
+        pattern = session.get(LearnedPattern, pattern_id)
         if not pattern:
             return jsonify({"error": "Pattern not found"}), 404
 
@@ -1610,7 +1613,7 @@ def api_update_pattern(pattern_id):
             elif data["status"] in ("observed", "suggested", "active"):
                 pattern.is_active = True
 
-        pattern.updated_at = datetime.utcnow()
+        pattern.updated_at = datetime.now(timezone.utc)
         session.commit()
         return jsonify({"success": True, "id": pattern.id, "status": pattern.status})
     finally:
@@ -1622,7 +1625,7 @@ def api_delete_pattern(pattern_id):
     """Delete a pattern permanently."""
     session = get_db()
     try:
-        pattern = session.query(LearnedPattern).get(pattern_id)
+        pattern = session.get(LearnedPattern, pattern_id)
         if not pattern:
             return jsonify({"error": "Pattern not found"}), 404
 
@@ -1656,7 +1659,7 @@ def api_get_state_history():
         hours = request.args.get("hours", 24, type=int)
         limit = request.args.get("limit", 200, type=int)
 
-        cutoff = datetime.utcnow() - timedelta(hours=hours)
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
         query = session.query(StateHistory).filter(
             StateHistory.created_at >= cutoff
         ).order_by(StateHistory.created_at.desc())
@@ -1714,7 +1717,7 @@ def api_learning_stats():
 
         # Event counts
         total_events = session.query(sa_func.count(StateHistory.id)).scalar() or 0
-        today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
         events_today = session.query(sa_func.count(StateHistory.id)).filter(
             StateHistory.created_at >= today_start
         ).scalar() or 0
@@ -1755,13 +1758,13 @@ def api_learning_stats():
         data_collections = session.query(DataCollection).filter_by(data_type="state_changes").all()
         events_by_domain = {}
         for dc in data_collections:
-            domain = session.query(Domain).get(dc.domain_id)
+            domain = session.get(Domain, dc.domain_id)
             dname = domain.name if domain else str(dc.domain_id)
             events_by_domain[dname] = events_by_domain.get(dname, 0) + dc.record_count
 
         # Days of data collected
         oldest = session.query(sa_func.min(StateHistory.created_at)).scalar()
-        days_collecting = (datetime.utcnow() - oldest).days if oldest else 0
+        days_collecting = (datetime.now(timezone.utc) - oldest).days if oldest else 0
 
         return jsonify({
             "total_events": total_events,
@@ -2207,10 +2210,10 @@ def log_state_change(entity_id, new_state, old_state, new_attrs=None, old_attrs=
 
         # Fix 18: Enforce privacy mode
         if device.room_id:
-            room = session.query(Room).get(device.room_id)
+            room = session.get(Room, device.room_id)
             if room and room.privacy_mode:
                 # Get domain name
-                domain = session.query(Domain).get(device.domain_id)
+                domain = session.get(Domain, device.domain_id)
                 domain_name = domain.name if domain else ""
 
                 # Check if this domain is blocked in privacy mode
