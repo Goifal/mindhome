@@ -9,7 +9,7 @@ import json
 import logging
 import threading
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from collections import defaultdict, Counter
 from sqlalchemy import func, text, and_, or_
 from sqlalchemy.orm import sessionmaker
@@ -137,6 +137,9 @@ class ContextBuilder:
 class StateLogger:
     """Logs significant state changes to state_history with context."""
 
+    # Max events per minute (prevent DB flood from chatty devices)
+    MAX_EVENTS_PER_MINUTE = 120
+
     def __init__(self, engine, ha_connection):
         self.engine = engine
         self.Session = sessionmaker(bind=engine)
@@ -146,6 +149,10 @@ class StateLogger:
         # Motion sensor debounce tracking
         self._motion_last_on = {}  # entity_id -> datetime
         self._last_sensor_values = {}  # entity_id -> last_logged_value
+
+        # Rate limiter: sliding window
+        self._event_timestamps = []  # list of timestamps
+        self._rate_limit_warned = False
 
     def should_log(self, entity_id, old_state, new_state, attributes):
         """A4: Intelligent sampling - decide if this state change is worth logging."""
@@ -202,6 +209,17 @@ class StateLogger:
         if not new_state_obj or not entity_id:
             return
 
+        # Rate limit check
+        now = datetime.now(timezone.utc)
+        cutoff = now - timedelta(seconds=60)
+        self._event_timestamps = [t for t in self._event_timestamps if t > cutoff]
+        if len(self._event_timestamps) >= self.MAX_EVENTS_PER_MINUTE:
+            if not self._rate_limit_warned:
+                logger.warning(f"Rate limit reached ({self.MAX_EVENTS_PER_MINUTE}/min), dropping events")
+                self._rate_limit_warned = True
+            return
+        self._rate_limit_warned = False
+
         old_state = old_state_obj.get("state") if old_state_obj else None
         new_state = new_state_obj.get("state", "")
         new_attrs = new_state_obj.get("attributes", {})
@@ -244,6 +262,7 @@ class StateLogger:
                 self._update_data_collection(session, device)
 
             session.commit()
+            self._event_timestamps.append(now)
             logger.debug(f"Logged: {entity_id} {old_state} → {new_state}")
 
         except Exception as e:
@@ -280,7 +299,7 @@ class StateLogger:
                 data_type="state_changes"
             ).first()
 
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             if dc:
                 dc.record_count += 1
                 dc.last_record_at = now
@@ -316,7 +335,7 @@ class PatternDetector:
         session = self.Session()
         try:
             # Only analyze last 14 days of data, only MindHome-assigned devices
-            cutoff = datetime.utcnow() - timedelta(days=14)
+            cutoff = datetime.now(timezone.utc) - timedelta(days=14)
             events = session.query(StateHistory).filter(
                 StateHistory.created_at >= cutoff,
                 StateHistory.device_id.isnot(None)
@@ -688,7 +707,7 @@ class PatternDetector:
         DEACTIVATE_THRESHOLD = 0.1
 
         patterns = session.query(LearnedPattern).filter_by(is_active=True).all()
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         for p in patterns:
             if p.last_matched_at:
@@ -772,9 +791,9 @@ class PatternDetector:
                     ep.action_definition = action_def
                     ep.description_de = desc_de
                     ep.description_en = desc_en
-                    ep.last_matched_at = datetime.utcnow()
+                    ep.last_matched_at = datetime.now(timezone.utc)
                     ep.match_count += 1
-                    ep.updated_at = datetime.utcnow()
+                    ep.updated_at = datetime.now(timezone.utc)
                     return ep
 
         elif pattern_type == "event_chain":
@@ -792,9 +811,9 @@ class PatternDetector:
                     ep.action_definition = action_def
                     ep.description_de = desc_de
                     ep.description_en = desc_en
-                    ep.last_matched_at = datetime.utcnow()
+                    ep.last_matched_at = datetime.now(timezone.utc)
                     ep.match_count += 1
-                    ep.updated_at = datetime.utcnow()
+                    ep.updated_at = datetime.now(timezone.utc)
                     return ep
 
         elif pattern_type == "correlation":
@@ -812,9 +831,9 @@ class PatternDetector:
                     ep.action_definition = action_def
                     ep.description_de = desc_de
                     ep.description_en = desc_en
-                    ep.last_matched_at = datetime.utcnow()
+                    ep.last_matched_at = datetime.now(timezone.utc)
                     ep.match_count += 1
-                    ep.updated_at = datetime.utcnow()
+                    ep.updated_at = datetime.now(timezone.utc)
                     return ep
 
         # Create new pattern
@@ -836,7 +855,7 @@ class PatternDetector:
             description_en=desc_en,
             status="observed",
             is_active=True,
-            last_matched_at=datetime.utcnow(),
+            last_matched_at=datetime.now(timezone.utc),
             match_count=1,
         )
         session.add(pattern)
@@ -931,7 +950,7 @@ class PatternScheduler:
             for row in counts:
                 if not row.device_id:
                     continue
-                device = session.query(Device).get(row.device_id)
+                device = session.get(Device, row.device_id)
                 if not device or not device.room_id:
                     continue
 
