@@ -920,7 +920,6 @@ const RoomsPage = () => {
                                                     <span className={`mdi ${domIcon}`} style={{ marginRight: 4, fontSize: 12 }} />
                                                     {domName}
                                                 </span>
-                                                </span>
                                             );
                                         })}
                                     </div>
