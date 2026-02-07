@@ -1765,6 +1765,8 @@ def api_learning_stats():
 
         # Days of data collected
         oldest = session.query(sa_func.min(StateHistory.created_at)).scalar()
+        if oldest and oldest.tzinfo is None:
+            oldest = oldest.replace(tzinfo=timezone.utc)
         days_collecting = (datetime.now(timezone.utc) - oldest).days if oldest else 0
 
         return jsonify({
@@ -2177,6 +2179,87 @@ def api_backup_import():
                     set_setting(s_data["key"], s_data.get("value", ""))
             except Exception as e:
                 logger.warning(f"Setting import error: {e}")
+
+        # Restore room_domain_states (learning phases)
+        session2 = get_db()
+        try:
+            for rds_data in data.get("room_domain_states", []):
+                try:
+                    old_room_id = rds_data.get("room_id")
+                    new_room_id = room_id_map.get(old_room_id, old_room_id)
+                    domain_id = rds_data.get("domain_id")
+                    if not new_room_id or not domain_id:
+                        continue
+                    existing = session2.query(RoomDomainState).filter_by(
+                        room_id=new_room_id, domain_id=domain_id
+                    ).first()
+                    phase_str = rds_data.get("learning_phase", "observing")
+                    try:
+                        phase_enum = LearningPhase(phase_str)
+                    except (ValueError, KeyError):
+                        phase_enum = LearningPhase.OBSERVING
+                    if existing:
+                        existing.learning_phase = phase_enum
+                        existing.confidence_score = rds_data.get("confidence_score", 0.0)
+                        existing.is_paused = rds_data.get("is_paused", False)
+                    else:
+                        rds = RoomDomainState(
+                            room_id=new_room_id,
+                            domain_id=domain_id,
+                            learning_phase=phase_enum,
+                            confidence_score=rds_data.get("confidence_score", 0.0),
+                            is_paused=rds_data.get("is_paused", False)
+                        )
+                        session2.add(rds)
+                except Exception as e:
+                    logger.warning(f"RoomDomainState import error: {e}")
+
+            # Restore quick_actions
+            for qa_data in data.get("quick_actions", []):
+                try:
+                    existing = session2.query(QuickAction).filter_by(
+                        name=qa_data.get("name")
+                    ).first()
+                    if not existing and qa_data.get("name"):
+                        qa = QuickAction(
+                            name=qa_data["name"],
+                            icon=qa_data.get("icon", "mdi:flash"),
+                            action_type=qa_data.get("action_type", "toggle"),
+                            action_data=qa_data.get("action_data") or {},
+                            sort_order=qa_data.get("sort_order", 0),
+                            is_active=qa_data.get("is_active", True)
+                        )
+                        session2.add(qa)
+                except Exception as e:
+                    logger.warning(f"QuickAction import error: {e}")
+
+            # Restore user_preferences
+            for up_data in data.get("user_preferences", []):
+                try:
+                    existing = session2.query(UserPreference).filter_by(
+                        user_id=up_data.get("user_id", 1),
+                        room_id=up_data.get("room_id"),
+                        preference_key=up_data.get("preference_key")
+                    ).first()
+                    if existing:
+                        existing.preference_value = up_data.get("preference_value")
+                    elif up_data.get("preference_key"):
+                        pref = UserPreference(
+                            user_id=up_data.get("user_id", 1),
+                            room_id=up_data.get("room_id"),
+                            preference_key=up_data["preference_key"],
+                            preference_value=up_data.get("preference_value")
+                        )
+                        session2.add(pref)
+                except Exception as e:
+                    logger.warning(f"UserPreference import error: {e}")
+
+            session2.commit()
+        except Exception as e:
+            session2.rollback()
+            logger.warning(f"Phase 2 import error: {e}")
+        finally:
+            session2.close()
 
         set_setting("onboarding_completed", "true")
 
