@@ -1529,7 +1529,7 @@ def api_manual_cleanup():
 # Phase 2a: Pattern API Endpoints
 # ==============================================================================
 
-@app.route(f"{INGRESS_PATH}/api/patterns", methods=["GET"])
+@app.route("/api/patterns", methods=["GET"])
 def api_get_patterns():
     """Get all learned patterns with optional filters."""
     session = get_db()
@@ -1583,7 +1583,7 @@ def api_get_patterns():
         session.close()
 
 
-@app.route(f"{INGRESS_PATH}/api/patterns/<int:pattern_id>", methods=["PUT"])
+@app.route("/api/patterns/<int:pattern_id>", methods=["PUT"])
 def api_update_pattern(pattern_id):
     """Update pattern status (activate/deactivate/disable)."""
     data = request.json
@@ -1609,7 +1609,7 @@ def api_update_pattern(pattern_id):
         session.close()
 
 
-@app.route(f"{INGRESS_PATH}/api/patterns/<int:pattern_id>", methods=["DELETE"])
+@app.route("/api/patterns/<int:pattern_id>", methods=["DELETE"])
 def api_delete_pattern(pattern_id):
     """Delete a pattern permanently."""
     session = get_db()
@@ -1627,7 +1627,7 @@ def api_delete_pattern(pattern_id):
         session.close()
 
 
-@app.route(f"{INGRESS_PATH}/api/patterns/analyze", methods=["POST"])
+@app.route("/api/patterns/analyze", methods=["POST"])
 def api_trigger_analysis():
     """Manually trigger pattern analysis."""
     pattern_scheduler.trigger_analysis_now()
@@ -1638,7 +1638,7 @@ def api_trigger_analysis():
 # Phase 2a: State History API
 # ==============================================================================
 
-@app.route(f"{INGRESS_PATH}/api/state-history", methods=["GET"])
+@app.route("/api/state-history", methods=["GET"])
 def api_get_state_history():
     """Get state history events with filters."""
     session = get_db()
@@ -1674,7 +1674,7 @@ def api_get_state_history():
         session.close()
 
 
-@app.route(f"{INGRESS_PATH}/api/state-history/count", methods=["GET"])
+@app.route("/api/state-history/count", methods=["GET"])
 def api_state_history_count():
     """Get total event count and date range."""
     session = get_db()
@@ -1697,7 +1697,7 @@ def api_state_history_count():
 # Phase 2a: Learning Stats API
 # ==============================================================================
 
-@app.route(f"{INGRESS_PATH}/api/stats/learning", methods=["GET"])
+@app.route("/api/stats/learning", methods=["GET"])
 def api_learning_stats():
     """Get learning progress statistics for dashboard."""
     session = get_db()
