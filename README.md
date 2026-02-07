@@ -58,7 +58,7 @@ Alle Daten werden **ausschließlich lokal** gespeichert. MindHome sendet keine D
 
 <a name="english"></a>
 
-# MindHome – Your Home Thinks Ahead 🧠🏠
+# MindHome – Your Home Thinks Ahead!
 
 ## What is MindHome?
 
