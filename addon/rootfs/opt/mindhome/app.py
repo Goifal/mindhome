@@ -205,7 +205,7 @@ def build_state_reason(device_name, old_val, new_val, new_display_attrs):
 # API Routes - System
 # ==============================================================================
 
-@app.route("/api/system/status", methods=["GET"])
+@app.route(f"{INGRESS_PATH}/api/system/status", methods=["GET"])
 def api_system_status():
     """Get system status overview."""
     session = get_db()
@@ -227,7 +227,7 @@ def api_system_status():
 
 
 # Fix 16: Health-Check Endpoint
-@app.route("/api/health", methods=["GET"])
+@app.route(f"{INGRESS_PATH}/api/health", methods=["GET"])
 def api_health_check():
     """Health check endpoint for monitoring."""
     health = {
@@ -263,7 +263,7 @@ def api_health_check():
 
 
 # Fix 25: System Info
-@app.route("/api/system/info", methods=["GET"])
+@app.route(f"{INGRESS_PATH}/api/system/info", methods=["GET"])
 def api_system_info():
     """Get detailed system information."""
     session = get_db()
@@ -303,7 +303,7 @@ def api_system_info():
         session.close()
 
 
-@app.route("/api/system/settings", methods=["GET"])
+@app.route(f"{INGRESS_PATH}/api/system/settings", methods=["GET"])
 def api_get_settings():
     """Get all system settings."""
     session = get_db()
@@ -318,7 +318,7 @@ def api_get_settings():
         session.close()
 
 
-@app.route("/api/system/settings/<key>", methods=["PUT"])
+@app.route(f"{INGRESS_PATH}/api/system/settings/<key>", methods=["PUT"])
 def api_update_setting(key):
     """Update a system setting."""
     data = request.json
@@ -326,7 +326,7 @@ def api_update_setting(key):
     return jsonify({"success": True, "key": key, "value": data.get("value")})
 
 
-@app.route("/api/system/emergency-stop", methods=["POST"])
+@app.route(f"{INGRESS_PATH}/api/system/emergency-stop", methods=["POST"])
 def api_emergency_stop():
     """Activate emergency stop - pause all automations."""
     set_setting("system_mode", "emergency_stop")
@@ -344,7 +344,7 @@ def api_emergency_stop():
         session.close()
 
 
-@app.route("/api/system/resume", methods=["POST"])
+@app.route(f"{INGRESS_PATH}/api/system/resume", methods=["POST"])
 def api_resume():
     """Resume from emergency stop."""
     set_setting("system_mode", "normal")
@@ -366,7 +366,7 @@ def api_resume():
 # API Routes - Domains
 # ==============================================================================
 
-@app.route("/api/domains", methods=["GET"])
+@app.route(f"{INGRESS_PATH}/api/domains", methods=["GET"])
 def api_get_domains():
     """Get all available domains."""
     session = get_db()
@@ -387,7 +387,7 @@ def api_get_domains():
 
 
 # Fix 7: Custom Domains - Create
-@app.route("/api/domains", methods=["POST"])
+@app.route(f"{INGRESS_PATH}/api/domains", methods=["POST"])
 def api_create_domain():
     """Create a custom domain."""
     data = request.json
@@ -419,7 +419,7 @@ def api_create_domain():
 
 
 # Fix 7: Custom Domains - Update
-@app.route("/api/domains/<int:domain_id>", methods=["PUT"])
+@app.route(f"{INGRESS_PATH}/api/domains/<int:domain_id>", methods=["PUT"])
 def api_update_domain(domain_id):
     """Update a custom domain."""
     data = request.json
@@ -449,7 +449,7 @@ def api_update_domain(domain_id):
 
 
 # Fix 7: Custom Domains - Delete
-@app.route("/api/domains/<int:domain_id>", methods=["DELETE"])
+@app.route(f"{INGRESS_PATH}/api/domains/<int:domain_id>", methods=["DELETE"])
 def api_delete_domain(domain_id):
     """Delete a custom domain."""
     session = get_db()
@@ -476,7 +476,7 @@ def api_delete_domain(domain_id):
         session.close()
 
 
-@app.route("/api/domains/<int:domain_id>/toggle", methods=["POST"])
+@app.route(f"{INGRESS_PATH}/api/domains/<int:domain_id>/toggle", methods=["POST"])
 def api_toggle_domain(domain_id):
     """Enable or disable a domain."""
     session = get_db()
@@ -497,13 +497,13 @@ def api_toggle_domain(domain_id):
         session.close()
 
 
-@app.route("/api/domains/status", methods=["GET"])
+@app.route(f"{INGRESS_PATH}/api/domains/status", methods=["GET"])
 def api_domain_status():
     """Get live status from all active domain plugins."""
     return jsonify(domain_manager.get_all_status())
 
 
-@app.route("/api/domains/<domain_name>/features", methods=["GET"])
+@app.route(f"{INGRESS_PATH}/api/domains/<domain_name>/features", methods=["GET"])
 def api_domain_features(domain_name):
     """Get trackable features for a domain (for privacy settings)."""
     features = domain_manager.get_trackable_features(domain_name)
@@ -514,7 +514,7 @@ def api_domain_features(domain_name):
 # API Routes - Rooms
 # ==============================================================================
 
-@app.route("/api/rooms", methods=["GET"])
+@app.route(f"{INGRESS_PATH}/api/rooms", methods=["GET"])
 def api_get_rooms():
     """Get all rooms with last activity info."""
     session = get_db()
@@ -551,7 +551,7 @@ def api_get_rooms():
         session.close()
 
 
-@app.route("/api/rooms", methods=["POST"])
+@app.route(f"{INGRESS_PATH}/api/rooms", methods=["POST"])
 def api_create_room():
     """Create a new room."""
     data = request.json
@@ -583,7 +583,7 @@ def api_create_room():
 
 
 # Fix 9: Import rooms from HA Areas
-@app.route("/api/rooms/import-from-ha", methods=["POST"])
+@app.route(f"{INGRESS_PATH}/api/rooms/import-from-ha", methods=["POST"])
 def api_import_rooms_from_ha():
     """Import rooms from HA Areas."""
     session = get_db()
@@ -640,7 +640,7 @@ def api_import_rooms_from_ha():
         session.close()
 
 
-@app.route("/api/rooms/<int:room_id>", methods=["PUT"])
+@app.route(f"{INGRESS_PATH}/api/rooms/<int:room_id>", methods=["PUT"])
 def api_update_room(room_id):
     """Update a room."""
     data = request.json
@@ -663,7 +663,7 @@ def api_update_room(room_id):
         session.close()
 
 
-@app.route("/api/rooms/<int:room_id>", methods=["DELETE"])
+@app.route(f"{INGRESS_PATH}/api/rooms/<int:room_id>", methods=["DELETE"])
 def api_delete_room(room_id):
     """Delete a room."""
     session = get_db()
@@ -678,7 +678,7 @@ def api_delete_room(room_id):
         session.close()
 
 
-@app.route("/api/rooms/<int:room_id>/privacy", methods=["PUT"])
+@app.route(f"{INGRESS_PATH}/api/rooms/<int:room_id>/privacy", methods=["PUT"])
 def api_update_room_privacy(room_id):
     """Update privacy mode for a room."""
     data = request.json
@@ -698,7 +698,7 @@ def api_update_room_privacy(room_id):
 # API Routes - Devices
 # ==============================================================================
 
-@app.route("/api/devices", methods=["GET"])
+@app.route(f"{INGRESS_PATH}/api/devices", methods=["GET"])
 def api_get_devices():
     """Get all tracked devices with live status."""
     session = get_db()
@@ -738,7 +738,7 @@ def api_get_devices():
         session.close()
 
 
-@app.route("/api/devices/<int:device_id>", methods=["PUT"])
+@app.route(f"{INGRESS_PATH}/api/devices/<int:device_id>", methods=["PUT"])
 def api_update_device(device_id):
     """Update device settings."""
     data = request.json
@@ -766,7 +766,7 @@ def api_update_device(device_id):
 
 
 # Fix 24: Bulk actions for devices
-@app.route("/api/devices/bulk", methods=["PUT"])
+@app.route(f"{INGRESS_PATH}/api/devices/bulk", methods=["PUT"])
 def api_bulk_update_devices():
     """Bulk update multiple devices at once."""
     data = request.json
@@ -800,7 +800,7 @@ def api_bulk_update_devices():
 
 
 # Fix 24: Bulk delete devices
-@app.route("/api/devices/bulk", methods=["DELETE"])
+@app.route(f"{INGRESS_PATH}/api/devices/bulk", methods=["DELETE"])
 def api_bulk_delete_devices():
     """Bulk delete multiple devices."""
     data = request.json
@@ -823,7 +823,7 @@ def api_bulk_delete_devices():
         session.close()
 
 
-@app.route("/api/devices/<int:device_id>", methods=["DELETE"])
+@app.route(f"{INGRESS_PATH}/api/devices/<int:device_id>", methods=["DELETE"])
 def api_delete_device(device_id):
     """Delete a device."""
     session = get_db()
@@ -842,7 +842,7 @@ def api_delete_device(device_id):
 # API Routes - Discovery (Onboarding)
 # ==============================================================================
 
-@app.route("/api/discover", methods=["GET"])
+@app.route(f"{INGRESS_PATH}/api/discover", methods=["GET"])
 def api_discover_devices():
     """Discover all HA devices grouped by MindHome domain."""
     discovered = ha.discover_devices()
@@ -873,7 +873,7 @@ def api_discover_devices():
     })
 
 
-@app.route("/api/discover/import", methods=["POST"])
+@app.route(f"{INGRESS_PATH}/api/discover/import", methods=["POST"])
 def api_import_discovered():
     """Import selected discovered devices into MindHome."""
     data = request.json
@@ -977,7 +977,7 @@ def api_import_discovered():
 
 
 # Fix 5: Manual device search - get ALL HA entities
-@app.route("/api/discover/all-entities", methods=["GET"])
+@app.route(f"{INGRESS_PATH}/api/discover/all-entities", methods=["GET"])
 def api_get_all_ha_entities():
     """Get all HA entities for manual device search."""
     states = ha.get_states() or []
@@ -1013,7 +1013,7 @@ def api_get_all_ha_entities():
 
 
 # Fix 5: Manual device add
-@app.route("/api/devices/manual-add", methods=["POST"])
+@app.route(f"{INGRESS_PATH}/api/devices/manual-add", methods=["POST"])
 def api_manual_add_device():
     """Manually add a device by entity ID."""
     data = request.json
@@ -1066,14 +1066,14 @@ def api_manual_add_device():
         session.close()
 
 
-@app.route("/api/discover/areas", methods=["GET"])
+@app.route(f"{INGRESS_PATH}/api/discover/areas", methods=["GET"])
 def api_discover_areas():
     """Get areas (rooms) from HA."""
     areas = ha.get_areas()
     return jsonify({"areas": areas or []})
 
 
-@app.route("/api/ha/persons", methods=["GET"])
+@app.route(f"{INGRESS_PATH}/api/ha/persons", methods=["GET"])
 def api_ha_persons():
     """Get all person entities from HA for user assignment."""
     states = ha.get_states() or []
@@ -1093,7 +1093,7 @@ def api_ha_persons():
 # API Routes - Users
 # ==============================================================================
 
-@app.route("/api/users", methods=["GET"])
+@app.route(f"{INGRESS_PATH}/api/users", methods=["GET"])
 def api_get_users():
     """Get all users."""
     session = get_db()
@@ -1111,7 +1111,7 @@ def api_get_users():
         session.close()
 
 
-@app.route("/api/users", methods=["POST"])
+@app.route(f"{INGRESS_PATH}/api/users", methods=["POST"])
 def api_create_user():
     """Create a new user."""
     data = request.json
@@ -1143,7 +1143,7 @@ def api_create_user():
         session.close()
 
 
-@app.route("/api/users/<int:user_id>", methods=["PUT"])
+@app.route(f"{INGRESS_PATH}/api/users/<int:user_id>", methods=["PUT"])
 def api_update_user(user_id):
     """Update a user."""
     data = request.json
@@ -1168,7 +1168,7 @@ def api_update_user(user_id):
         session.close()
 
 
-@app.route("/api/users/<int:user_id>", methods=["DELETE"])
+@app.route(f"{INGRESS_PATH}/api/users/<int:user_id>", methods=["DELETE"])
 def api_delete_user(user_id):
     """Delete a user (soft delete)."""
     session = get_db()
@@ -1187,7 +1187,7 @@ def api_delete_user(user_id):
 # API Routes - Quick Actions
 # ==============================================================================
 
-@app.route("/api/quick-actions", methods=["GET"])
+@app.route(f"{INGRESS_PATH}/api/quick-actions", methods=["GET"])
 def api_get_quick_actions():
     """Get all quick actions."""
     session = get_db()
@@ -1207,7 +1207,7 @@ def api_get_quick_actions():
         session.close()
 
 
-@app.route("/api/quick-actions/execute/<int:action_id>", methods=["POST"])
+@app.route(f"{INGRESS_PATH}/api/quick-actions/execute/<int:action_id>", methods=["POST"])
 def api_execute_quick_action(action_id):
     """Execute a quick action."""
     session = get_db()
@@ -1264,7 +1264,7 @@ def api_execute_quick_action(action_id):
 # API Routes - Data Dashboard (Privacy/Transparency)
 # ==============================================================================
 
-@app.route("/api/data-dashboard", methods=["GET"])
+@app.route(f"{INGRESS_PATH}/api/data-dashboard", methods=["GET"])
 def api_data_dashboard():
     """Get overview of all collected data for transparency."""
     session = get_db()
@@ -1283,7 +1283,7 @@ def api_data_dashboard():
         session.close()
 
 
-@app.route("/api/data-dashboard/delete/<int:collection_id>", methods=["DELETE"])
+@app.route(f"{INGRESS_PATH}/api/data-dashboard/delete/<int:collection_id>", methods=["DELETE"])
 def api_delete_collected_data(collection_id):
     """Delete specific collected data."""
     session = get_db()
@@ -1302,7 +1302,7 @@ def api_delete_collected_data(collection_id):
 # API Routes - Translations
 # ==============================================================================
 
-@app.route("/api/system/translations/<lang_code>", methods=["GET"])
+@app.route(f"{INGRESS_PATH}/api/system/translations/<lang_code>", methods=["GET"])
 def api_get_translations(lang_code):
     """Get translations for a language."""
     import json as json_lib
@@ -1318,7 +1318,7 @@ def api_get_translations(lang_code):
 # API Routes - Onboarding
 # ==============================================================================
 
-@app.route("/api/onboarding/status", methods=["GET"])
+@app.route(f"{INGRESS_PATH}/api/onboarding/status", methods=["GET"])
 def api_onboarding_status():
     """Get onboarding status."""
     return jsonify({
@@ -1326,7 +1326,7 @@ def api_onboarding_status():
     })
 
 
-@app.route("/api/onboarding/complete", methods=["POST"])
+@app.route(f"{INGRESS_PATH}/api/onboarding/complete", methods=["POST"])
 def api_onboarding_complete():
     """Mark onboarding as complete."""
     set_setting("onboarding_completed", "true")
@@ -1337,7 +1337,7 @@ def api_onboarding_complete():
 # API Routes - Action Log (with time filters)
 # ==============================================================================
 
-@app.route("/api/action-log", methods=["GET"])
+@app.route(f"{INGRESS_PATH}/api/action-log", methods=["GET"])
 def api_get_action_log():
     """Get action log with time filters."""
     session = get_db()
@@ -1382,7 +1382,7 @@ def api_get_action_log():
         session.close()
 
 
-@app.route("/api/action-log/<int:log_id>/undo", methods=["POST"])
+@app.route(f"{INGRESS_PATH}/api/action-log/<int:log_id>/undo", methods=["POST"])
 def api_undo_action(log_id):
     """Undo a specific action."""
     session = get_db()
@@ -1415,7 +1415,7 @@ def api_undo_action(log_id):
 # API Routes - Data Collections (with time filters)
 # ==============================================================================
 
-@app.route("/api/data-collections", methods=["GET"])
+@app.route(f"{INGRESS_PATH}/api/data-collections", methods=["GET"])
 def api_get_data_collections():
     """Get recent tracked data (observations from ActionLog) with time filter."""
     session = get_db()
@@ -1458,7 +1458,7 @@ def api_get_data_collections():
 # ==============================================================================
 
 # Fix 3: Auto-Cleanup settings
-@app.route("/api/system/retention", methods=["GET"])
+@app.route(f"{INGRESS_PATH}/api/system/retention", methods=["GET"])
 def api_get_retention():
     """Get data retention settings."""
     days = int(get_setting("data_retention_days", "90"))
@@ -1479,7 +1479,7 @@ def api_get_retention():
         session.close()
 
 
-@app.route("/api/system/retention", methods=["PUT"])
+@app.route(f"{INGRESS_PATH}/api/system/retention", methods=["PUT"])
 def api_set_retention():
     """Update data retention settings."""
     data = request.json
@@ -1492,7 +1492,7 @@ def api_set_retention():
     return jsonify({"success": True, "retention_days": days})
 
 
-@app.route("/api/system/cleanup", methods=["POST"])
+@app.route(f"{INGRESS_PATH}/api/system/cleanup", methods=["POST"])
 def api_manual_cleanup():
     """Manually trigger data cleanup."""
     deleted = run_cleanup()
@@ -1504,11 +1504,13 @@ def api_manual_cleanup():
 # ==============================================================================
 
 @app.route("/")
+@app.route(f"{INGRESS_PATH}/")
 def serve_index():
     """Serve index.html for root path."""
     return send_from_directory(os.path.join(app.static_folder, "frontend"), "index.html")
 
 @app.route("/<path:path>")
+@app.route(f"{INGRESS_PATH}/<path:path>")
 def serve_frontend(path):
     """Serve the React frontend files."""
     # Skip API routes
@@ -1523,7 +1525,7 @@ def serve_frontend(path):
 # Backup / Restore
 # ==============================================================================
 
-@app.route("/api/backup/export", methods=["GET"])
+@app.route(f"{INGRESS_PATH}/api/backup/export", methods=["GET"])
 def api_backup_export():
     """Export all MindHome configuration as JSON."""
     session = get_db()
@@ -1569,7 +1571,7 @@ def api_backup_export():
         session.close()
 
 
-@app.route("/api/backup/import", methods=["POST"])
+@app.route(f"{INGRESS_PATH}/api/backup/import", methods=["POST"])
 def api_backup_import():
     """Import MindHome configuration from JSON backup."""
     data = request.json
