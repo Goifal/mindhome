@@ -28,6 +28,10 @@ from models import (
 from ha_connection import HAConnection
 from domains import DomainManager
 from ml.pattern_engine import EventBus, StateLogger, PatternScheduler, PatternDetector
+from ml.automation_engine import (
+    AutomationScheduler, FeedbackProcessor, AutomationExecutor,
+    PhaseManager, NotificationManager, AnomalyDetector, ConflictDetector
+)
 
 # ==============================================================================
 # App Configuration
@@ -62,6 +66,9 @@ domain_manager = DomainManager(ha, lambda: get_session(engine))
 event_bus = EventBus()
 state_logger = StateLogger(engine, ha)
 pattern_scheduler = PatternScheduler(engine, ha)
+
+# Phase 2b: Automation Engine
+automation_scheduler = AutomationScheduler(engine, ha)
 
 # Cleanup timer
 _cleanup_timer = None
@@ -239,7 +246,7 @@ def api_system_status():
             "language": get_language(),
             "theme": get_setting("theme", "dark"),
             "view_mode": get_setting("view_mode", "simple"),
-            "version": "0.2.0",
+            "version": "0.3.0",
             "timestamp": datetime.utcnow().isoformat()
         })
     finally:
@@ -276,7 +283,7 @@ def api_health_check():
 
     # Uptime
     health["uptime_seconds"] = int(time.time() - _start_time) if '_start_time' in dir() else 0
-    health["version"] = "0.2.0"
+    health["version"] = "0.3.0"
 
     status_code = 200 if health["status"] == "healthy" else 503
     return jsonify(health), status_code
@@ -303,7 +310,7 @@ def api_system_info():
         retention_days = int(get_setting("data_retention_days", "90"))
 
         return jsonify({
-            "version": "0.2.0",
+            "version": "0.3.0",
             "phase": "2a",
             "ha_connected": ha.is_connected(),
             "ws_connected": ha._ws_connected,
@@ -1778,6 +1785,199 @@ def api_learning_stats():
 
 
 # ==============================================================================
+# Phase 2b: Predictions / Suggestions API
+# ==============================================================================
+
+@app.route("/api/predictions", methods=["GET"])
+def api_get_predictions():
+    """Get suggestions/predictions with filters."""
+    session = get_db()
+    try:
+        lang = get_language()
+        status = request.args.get("status")
+        limit = request.args.get("limit", 50, type=int)
+
+        query = session.query(Prediction).order_by(Prediction.created_at.desc())
+
+        if status:
+            query = query.filter_by(status=status)
+
+        preds = query.limit(min(limit, 200)).all()
+
+        return jsonify([{
+            "id": p.id,
+            "pattern_id": p.pattern_id,
+            "description": p.description_de if lang == "de" else (p.description_en or p.description_de),
+            "description_de": p.description_de,
+            "description_en": p.description_en,
+            "predicted_action": p.predicted_action,
+            "confidence": round(p.confidence, 3),
+            "status": p.status or "pending",
+            "user_response": p.user_response,
+            "was_executed": p.was_executed,
+            "previous_state": p.previous_state,
+            "executed_at": p.executed_at.isoformat() if p.executed_at else None,
+            "responded_at": p.responded_at.isoformat() if p.responded_at else None,
+            "created_at": p.created_at.isoformat() if p.created_at else None,
+        } for p in preds])
+    finally:
+        session.close()
+
+
+@app.route("/api/predictions/<int:pred_id>/confirm", methods=["POST"])
+def api_confirm_prediction(pred_id):
+    """Confirm a suggestion."""
+    result = automation_scheduler.feedback.confirm_prediction(pred_id)
+    return jsonify(result)
+
+
+@app.route("/api/predictions/<int:pred_id>/reject", methods=["POST"])
+def api_reject_prediction(pred_id):
+    """Reject a suggestion."""
+    result = automation_scheduler.feedback.reject_prediction(pred_id)
+    return jsonify(result)
+
+
+@app.route("/api/predictions/<int:pred_id>/ignore", methods=["POST"])
+def api_ignore_prediction(pred_id):
+    """Ignore / postpone a suggestion."""
+    result = automation_scheduler.feedback.ignore_prediction(pred_id)
+    return jsonify(result)
+
+
+@app.route("/api/predictions/<int:pred_id>/undo", methods=["POST"])
+def api_undo_prediction(pred_id):
+    """Undo an executed automation."""
+    result = automation_scheduler.executor.undo_prediction(pred_id)
+    return jsonify(result)
+
+
+# ==============================================================================
+# Phase 2b: Automation API
+# ==============================================================================
+
+@app.route("/api/automation/emergency-stop", methods=["POST"])
+def api_emergency_stop():
+    """Activate/deactivate emergency stop for all automations."""
+    data = request.json or {}
+    active = data.get("active", True)
+    automation_scheduler.executor.set_emergency_stop(active)
+
+    # Also update system mode
+    set_setting("system_mode", "emergency_stop" if active else "normal")
+
+    return jsonify({"success": True, "emergency_stop": active})
+
+
+@app.route("/api/automation/conflicts", methods=["GET"])
+def api_get_conflicts():
+    """Get detected pattern conflicts."""
+    conflicts = automation_scheduler.conflict_det.check_conflicts()
+    return jsonify(conflicts)
+
+
+@app.route("/api/automation/generate-suggestions", methods=["POST"])
+def api_generate_suggestions():
+    """Manually trigger suggestion generation."""
+    count = automation_scheduler.suggestion_gen.generate_suggestions()
+    return jsonify({"success": True, "new_suggestions": count})
+
+
+# ==============================================================================
+# Phase 2b: Phase Management API
+# ==============================================================================
+
+@app.route("/api/phases", methods=["GET"])
+def api_get_phases():
+    """Get learning phases for all room/domain combinations."""
+    session = get_db()
+    try:
+        states = session.query(RoomDomainState).all()
+        result = []
+        for rds in states:
+            room = session.get(Room, rds.room_id) if rds.room_id else None
+            domain = session.get(Domain, rds.domain_id) if rds.domain_id else None
+            result.append({
+                "id": rds.id,
+                "room_id": rds.room_id,
+                "room_name": room.name if room else None,
+                "domain_id": rds.domain_id,
+                "domain_name": domain.name if domain else None,
+                "learning_phase": rds.learning_phase.value if rds.learning_phase else "observing",
+                "confidence_score": round(rds.confidence_score or 0, 3),
+                "is_paused": rds.is_paused,
+                "phase_started_at": rds.phase_started_at.isoformat() if rds.phase_started_at else None,
+            })
+        return jsonify(result)
+    finally:
+        session.close()
+
+
+@app.route("/api/phases/<int:room_id>/<int:domain_id>", methods=["PUT"])
+def api_set_phase(room_id, domain_id):
+    """Manually set learning phase for a room/domain."""
+    data = request.json or {}
+    if "phase" in data:
+        result = automation_scheduler.phase_mgr.set_phase_manual(room_id, domain_id, data["phase"])
+        return jsonify(result)
+    if "is_paused" in data:
+        result = automation_scheduler.phase_mgr.set_paused(room_id, domain_id, data["is_paused"])
+        return jsonify(result)
+    return jsonify({"error": "Provide 'phase' or 'is_paused'"}), 400
+
+
+# ==============================================================================
+# Phase 2b: Notifications API
+# ==============================================================================
+
+@app.route("/api/notifications", methods=["GET"])
+def api_get_notifications():
+    """Get notifications."""
+    lang = get_language()
+    unread = request.args.get("unread", "false").lower() == "true"
+    limit = request.args.get("limit", 50, type=int)
+
+    notifs = automation_scheduler.notification_mgr.get_notifications(limit, unread)
+    return jsonify([{
+        "id": n.id,
+        "type": n.notification_type.value if n.notification_type else "info",
+        "title": n.title,
+        "message": n.message,
+        "was_sent": n.was_sent,
+        "was_read": n.was_read,
+        "created_at": n.created_at.isoformat() if n.created_at else None,
+    } for n in notifs])
+
+
+@app.route("/api/notifications/unread-count", methods=["GET"])
+def api_notifications_unread_count():
+    """Get unread notification count."""
+    count = automation_scheduler.notification_mgr.get_unread_count()
+    return jsonify({"unread_count": count})
+
+
+@app.route("/api/notifications/<int:notif_id>/read", methods=["POST"])
+def api_mark_notification_read(notif_id):
+    """Mark notification as read."""
+    success = automation_scheduler.notification_mgr.mark_read(notif_id)
+    return jsonify({"success": success})
+
+
+@app.route("/api/notifications/mark-all-read", methods=["POST"])
+def api_mark_all_read():
+    """Mark all notifications as read."""
+    success = automation_scheduler.notification_mgr.mark_all_read()
+    return jsonify({"success": success})
+
+
+@app.route("/api/automation/anomalies", methods=["GET"])
+def api_get_anomalies():
+    """Get recent anomalies."""
+    anomalies = automation_scheduler.anomaly_det.check_recent_anomalies(minutes=60)
+    return jsonify(anomalies)
+
+
+# ==============================================================================
 # Frontend Serving
 # ==============================================================================
 
@@ -1810,7 +2010,7 @@ def api_backup_export():
     session = get_db()
     try:
         backup = {
-            "version": "0.2.0",
+            "version": "0.3.0",
             "exported_at": datetime.now(timezone.utc).isoformat(),
             "rooms": [], "devices": [], "users": [], "domains": [],
             "room_domain_states": [], "settings": [], "quick_actions": [],
@@ -2144,6 +2344,13 @@ def graceful_shutdown(signum, frame):
     except Exception as e:
         logger.error(f"Error stopping pattern scheduler: {e}")
 
+    # Phase 2b: Stop automation scheduler
+    try:
+        automation_scheduler.stop()
+        logger.info("Automation scheduler stopped")
+    except Exception as e:
+        logger.error(f"Error stopping automation scheduler: {e}")
+
     # Disconnect HA
     try:
         ha.disconnect()
@@ -2173,7 +2380,7 @@ def start_app():
 
     logger.info("=" * 60)
     logger.info("MindHome - Smart Home AI")
-    logger.info(f"Version: 0.2.0 (Phase 2a)")
+    logger.info(f"Version: 0.3.0 (Phase 2b)")
     logger.info(f"Language: {get_language()}")
     logger.info(f"Log Level: {log_level}")
     logger.info(f"Ingress Path: {INGRESS_PATH}")
@@ -2199,6 +2406,10 @@ def start_app():
     # Phase 2a: Start pattern scheduler (analysis, decay, storage tracking)
     pattern_scheduler.start()
     logger.info("Pattern Engine started (analysis every 6h)")
+
+    # Phase 2b: Start automation scheduler (suggestions, execution, phases, anomalies)
+    automation_scheduler.start()
+    logger.info("Automation Engine started (exec:1min, suggest:4h, phase:12h)")
 
     # Fix 3: Start cleanup scheduler
     schedule_cleanup()
