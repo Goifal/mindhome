@@ -1,33 +1,27 @@
+# MindHome - Home Assistant Add-on Configuration
 name: "MindHome"
 version: "0.1.0"
 slug: "mindhome"
 description: "KI-basierte Automatisierung – lernt deine Gewohnheiten und steuert dein Zuhause intelligent."
 url: "https://github.com/Goifal/mindhome"
 arch:
-  - amd64
   - aarch64
+  - amd64
+  - armhf
   - armv7
   - i386
-init: false
-startup: "application"
-boot: "auto"
+homeassistant_api: true
 ingress: true
 ingress_port: 5000
-ingress_entry: "/"
-panel_icon: "mdi:brain"
+panel_icon: "mdi:home-lightbulb-outline"
 panel_title: "MindHome"
-homeassistant_api: true
-admin_only: false
-options:
-  language: "de"
-  log_level: "info"
-schema:
-  language: "list(de|en)"
-  log_level: "list(debug|info|warning|error)"
+init: false
+options: {}
+schema: {}
+environment:
+  MINDHOME_DB_PATH: "/data/mindhome/db/mindhome.db"
+  MINDHOME_LOG_LEVEL: "info"
+  MINDHOME_LANGUAGE: "de"
 map:
-  - type: config
+  - type: data
     read_only: false
-  - type: share
-    read_only: false
-  - type: media
-    read_only: true
