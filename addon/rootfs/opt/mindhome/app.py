@@ -178,6 +178,10 @@ def extract_display_attributes(entity_id, attrs):
         if key in attrs and attrs[key] is not None:
             result[key] = attrs[key]
 
+    # Unit of measurement (for sensors etc.)
+    if "unit_of_measurement" in attrs and attrs["unit_of_measurement"]:
+        result["unit"] = attrs["unit_of_measurement"]
+
     return result
 
 
