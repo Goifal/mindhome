@@ -266,7 +266,8 @@ def api_health_check():
     # Check DB
     try:
         session = get_db()
-        session.execute("SELECT 1")
+        from sqlalchemy import text as sa_text
+        session.execute(sa_text("SELECT 1"))
         session.close()
         health["checks"]["database"] = {"status": "ok"}
     except Exception as e:
@@ -283,7 +284,7 @@ def api_health_check():
     }
 
     # Uptime
-    health["uptime_seconds"] = int(time.time() - _start_time) if '_start_time' in dir() else 0
+    health["uptime_seconds"] = int(time.time() - _start_time) if _start_time else 0
     health["version"] = "0.3.0"
 
     status_code = 200 if health["status"] == "healthy" else 503
