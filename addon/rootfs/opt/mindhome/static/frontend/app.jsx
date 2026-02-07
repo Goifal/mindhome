@@ -2076,14 +2076,16 @@ const PatternsPage = () => {
     return (
         <div>
             {/* Learning Stats Overview */}
-            {stats && (
+            {(() => {
+                const s = stats || {};
+                return (
                 <div className="stat-grid" style={{ marginBottom: 24 }}>
                     <div className="stat-card animate-in">
                         <div className="stat-icon" style={{ background: 'var(--accent-primary-dim)', color: 'var(--accent-primary)' }}>
                             <span className="mdi mdi-database-outline" />
                         </div>
                         <div>
-                            <div className="stat-value">{stats.total_events?.toLocaleString() || 0}</div>
+                            <div className="stat-value">{s.total_events?.toLocaleString() || 0}</div>
                             <div className="stat-label">{lang === 'de' ? 'Events gesammelt' : 'Events collected'}</div>
                         </div>
                     </div>
@@ -2092,7 +2094,7 @@ const PatternsPage = () => {
                             <span className="mdi mdi-lightbulb-on" />
                         </div>
                         <div>
-                            <div className="stat-value">{stats.total_patterns || 0}</div>
+                            <div className="stat-value">{s.total_patterns || 0}</div>
                             <div className="stat-label">{lang === 'de' ? 'Muster erkannt' : 'Patterns found'}</div>
                         </div>
                     </div>
@@ -2110,12 +2112,13 @@ const PatternsPage = () => {
                             <span className="mdi mdi-speedometer" />
                         </div>
                         <div>
-                            <div className="stat-value">{stats.avg_confidence ? `${Math.round(stats.avg_confidence * 100)}%` : '—'}</div>
+                            <div className="stat-value">{s.avg_confidence ? `${Math.round(s.avg_confidence * 100)}%` : '—'}</div>
                             <div className="stat-label">{lang === 'de' ? 'Ø Vertrauen' : 'Avg Confidence'}</div>
                         </div>
                     </div>
                 </div>
-            )}
+                );
+            })()}
 
             {/* Pattern Type Distribution */}
             {stats && stats.patterns_by_type && (
