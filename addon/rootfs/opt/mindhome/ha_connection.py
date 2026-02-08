@@ -1,5 +1,5 @@
 """
-MindHome - Home Assistant Connection v0.5.0
+MindHome - Home Assistant Connection v0.5.2 - BUILD:20260209-0040
 Handles real-time WebSocket connection and REST API calls to HA.
 Features: Retry with backoff, reconnect limiter, batch events, calendar integration,
           climate validation, timezone caching, ingress token forwarding.
