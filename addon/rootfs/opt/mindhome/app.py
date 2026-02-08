@@ -2415,6 +2415,8 @@ def serve_index():
         with open(jsx_path, "r", encoding="utf-8") as f:
             jsx_code = f.read()
 
+        logger.info(f"Serving frontend: app.jsx has {len(jsx_code.splitlines())} lines, first line: {jsx_code.splitlines()[0][:60] if jsx_code else 'EMPTY'}")
+
         # Inject app.jsx as a hidden text/plain script that our manual Babel code reads
         jsx_block = '<script type="text/plain" id="app-jsx-source">\n' + jsx_code + '\n</script>'
 
@@ -2434,6 +2436,25 @@ def serve_index():
     except FileNotFoundError as e:
         logger.error(f"Frontend file not found: {e}")
         return f"<h1>Frontend Error</h1><p>File not found: {e}</p>", 500
+
+@app.route("/api/system/hot-update", methods=["POST"])
+def hot_update_frontend():
+    """Hot-update frontend file (app.jsx) without rebuild."""
+    data = request.json
+    if not data or "content" not in data or "filename" not in data:
+        return jsonify({"error": "need content and filename"}), 400
+    filename = data["filename"]
+    if filename not in ("app.jsx", "index.html"):
+        return jsonify({"error": "only app.jsx and index.html allowed"}), 400
+    filepath = os.path.join(app.static_folder, "frontend", filename)
+    try:
+        with open(filepath, "w", encoding="utf-8") as f:
+            f.write(data["content"])
+        logger.info(f"Hot-updated {filename} ({len(data['content'])} chars)")
+        return jsonify({"success": True, "size": len(data["content"])})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 
 @app.route("/<path:path>")
 def serve_frontend(path):
