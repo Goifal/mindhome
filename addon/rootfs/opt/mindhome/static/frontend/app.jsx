@@ -333,7 +333,7 @@ const Dropdown = ({ value, onChange, options, placeholder, label }) => {
                 boxShadow: open ? '0 0 0 2px rgba(245,166,35,0.15)' : undefined,
                 transition: 'border-color 0.2s, box-shadow 0.2s'
             }}>
-                <span style={{ color: selected ? 'var(--text-primary)' : 'var(--text-muted)' }}>{selected?.label || placeholder || 'â€" Auswählen â€"'}</span>
+                <span style={{ color: selected ? 'var(--text-primary)' : 'var(--text-muted)' }}>{selected?.label || placeholder || '– Auswählen –'}</span>
                 <span className={`mdi mdi-chevron-${open ? 'up' : 'down'}`} style={{ fontSize: 18, color: 'var(--text-muted)', transition: 'transform 0.2s' }} />
             </div>
             {open && (
@@ -763,7 +763,7 @@ const DashboardPage = () => {
                         </div>
                         <div style={{ padding: 12, background: 'var(--bg-tertiary)', borderRadius: 8, textAlign: 'center' }}>
                             <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--success)' }}>
-                                {learningStats.avg_confidence ? `${Math.round(learningStats.avg_confidence * 100)}%` : 'â€"'}
+                                {learningStats.avg_confidence ? `${Math.round(learningStats.avg_confidence * 100)}%` : '–'}
                             </div>
                             <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
                                 {lang === 'de' ? 'Ø Vertrauen' : 'Avg Confidence'}
@@ -1215,7 +1215,7 @@ const DomainsPage = () => {
                                 color_temp: lang === 'de' ? 'Farbtemperatur' : 'Color Temp',
                                 set_temperature: lang === 'de' ? 'Temperatur' : 'Temperature',
                                 set_hvac_mode: lang === 'de' ? 'Modus' : 'HVAC Mode',
-                                open: lang === 'de' ? 'Ã-ffnen' : 'Open', close: lang === 'de' ? 'Schließen' : 'Close',
+                                open: lang === 'de' ? 'Öffnen' : 'Open', close: lang === 'de' ? 'Schließen' : 'Close',
                                 set_position: lang === 'de' ? 'Position' : 'Position',
                                 volume: lang === 'de' ? 'Lautstärke' : 'Volume', source: 'Quelle',
                                 lock: lang === 'de' ? 'Sperren' : 'Lock', unlock: lang === 'de' ? 'Entsperren' : 'Unlock',
@@ -1510,8 +1510,8 @@ const DevicesPage = () => {
     const selectedCount = Object.values(selected).filter(Boolean).length;
     const importedEntityIds = new Set(devices.map(d => d.ha_entity_id));
 
-    const getDomainName = (domainId) => domains.find(d => d.id === domainId)?.display_name || 'â€"';
-    const getRoomName = (roomId) => rooms.find(r => r.id === roomId)?.name || 'â€"';
+    const getDomainName = (domainId) => domains.find(d => d.id === domainId)?.display_name || '–';
+    const getRoomName = (roomId) => rooms.find(r => r.id === roomId)?.name || '–';
 
     const getFilteredDevices = () => {
         if (!search) return devices;
@@ -1639,10 +1639,10 @@ const DevicesPage = () => {
                                 const attrs = device.live_attributes || {};
                                 const unit = attrs.unit || '';
                                 const attrParts = [];
-                                if (attrs.brightness_pct != null) attrParts.push(`â˜€ ${attrs.brightness_pct}%`);
-                                if (attrs.position_pct != null) attrParts.push(`â†• ${attrs.position_pct}%`);
-                                if (attrs.current_temp != null) attrParts.push(`¡ ${attrs.current_temp}${unit || 'Â°C'}`);
-                                if (attrs.target_temp != null) attrParts.push(`â†' ${attrs.target_temp}${unit || 'Â°C'}`);
+                                if (attrs.brightness_pct != null) attrParts.push(`☀ ${attrs.brightness_pct}%`);
+                                if (attrs.position_pct != null) attrParts.push(`↕ ${attrs.position_pct}%`);
+                                if (attrs.current_temp != null) attrParts.push(`¡ ${attrs.current_temp}${unit || '°C'}`);
+                                if (attrs.target_temp != null) attrParts.push(`→ ${attrs.target_temp}${unit || '°C'}`);
                                 if (attrs.humidity != null) attrParts.push(`'§ ${attrs.humidity}%`);
                                 if (attrs.power != null || attrs.current_power_w != null) attrParts.push(` ${attrs.power || attrs.current_power_w} W`);
                                 if (attrs.voltage != null) attrParts.push(`Œ ${attrs.voltage} V`);
@@ -1759,7 +1759,7 @@ const DevicesPage = () => {
                             value={editDevice.room_id || ''}
                             onChange={v => setEditDevice({ ...editDevice, room_id: v ? parseInt(v) : null })}
                             options={[
-                                { value: '', label: lang === 'de' ? 'â€" Kein Raum â€"' : 'â€" No Room â€"' },
+                                { value: '', label: lang === 'de' ? '– Kein Raum –' : '– No Room –' },
                                 ...rooms.map(r => ({ value: r.id, label: r.name }))
                             ]}
                         />
@@ -1770,7 +1770,7 @@ const DevicesPage = () => {
                             value={editDevice.domain_id || ''}
                             onChange={v => setEditDevice({ ...editDevice, domain_id: v ? parseInt(v) : null })}
                             options={[
-                                { value: '', label: lang === 'de' ? 'â€" Keine â€"' : 'â€" None â€"' },
+                                { value: '', label: lang === 'de' ? '– Keine –' : '– None –' },
                                 ...domains.map(d => ({ value: d.id, label: d.display_name }))
                             ]}
                         />
@@ -1779,7 +1779,7 @@ const DevicesPage = () => {
                         <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 14 }}>
                             <input type="checkbox" checked={editDevice.is_tracked} onChange={e => setEditDevice({ ...editDevice, is_tracked: e.target.checked })}
                                 style={{ width: 18, height: 18, accentColor: 'var(--accent-primary)' }} />
-                            {lang === 'de' ? 'Ãœberwacht' : 'Tracked'}
+                            {lang === 'de' ? 'Überwacht' : 'Tracked'}
                         </label>
                         <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 14 }}>
                             <input type="checkbox" checked={editDevice.is_controllable} onChange={e => setEditDevice({ ...editDevice, is_controllable: e.target.checked })}
@@ -1803,7 +1803,7 @@ const DevicesPage = () => {
                             value={bulkRoom}
                             onChange={v => setBulkRoom(v)}
                             options={[
-                                { value: '', label: lang === 'de' ? 'â€" Nicht ändern â€"' : 'â€" No change â€"' },
+                                { value: '', label: lang === 'de' ? '– Nicht ändern –' : '– No change –' },
                                 ...rooms.map(r => ({ value: String(r.id), label: r.name }))
                             ]}
                         />
@@ -1814,7 +1814,7 @@ const DevicesPage = () => {
                             value={bulkDomain}
                             onChange={v => setBulkDomain(v)}
                             options={[
-                                { value: '', label: lang === 'de' ? 'â€" Nicht ändern â€"' : 'â€" No change â€"' },
+                                { value: '', label: lang === 'de' ? '– Nicht ändern –' : '– No change –' },
                                 ...domains.map(d => ({ value: String(d.id), label: d.display_name }))
                             ]}
                         />
@@ -1924,7 +1924,7 @@ const DeviceGroupsSection = () => {
                                     </span>
                                 </div>
                                 <button className="btn btn-sm btn-ghost" onClick={() => createGroup(s.suggested_name, s.devices.map(d => d.id), s.room_id)}>
-                                    <span className="mdi mdi-plus-circle" style={{ color: 'var(--success)' }} /> {lang === 'de' ? 'Ãœbernehmen' : 'Accept'}
+                                    <span className="mdi mdi-plus-circle" style={{ color: 'var(--success)' }} /> {lang === 'de' ? 'Übernehmen' : 'Accept'}
                                 </button>
                             </div>
                         </div>
@@ -2100,7 +2100,7 @@ const RoomsPage = () => {
                                                         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 2 }}>
                                                             <span>{domName}</span>
                                                             <span className={`badge badge-${phase.color}`} style={{ fontSize: 9, padding: '1px 6px', cursor: 'pointer' }}
-                                                                title={`â†' ${nextLabel}`}
+                                                                title={`→ ${nextLabel}`}
                                                                 onClick={async () => {
                                                                     await api.put(`phases/${room.id}/${ds.domain_id}`, { phase: nextPhase });
                                                                     showToast(`${domName}: ${nextLabel}`, 'success');
@@ -2323,7 +2323,7 @@ const UsersPage = () => {
                                         <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
                                             {user.ha_person_entity
                                                 ? `- ${user.ha_person_entity}`
-                                                : (lang === 'de' ? 'âš ï¸ Keine HA-Person' : 'âš ï¸ No HA person')}
+                                                : (lang === 'de' ? '⚠ï¸ Keine HA-Person' : '⚠ï¸ No HA person')}
                                         </div>
                                     </div>
                                 </div>
@@ -2373,7 +2373,7 @@ const UsersPage = () => {
                             value={newUser.ha_person_entity}
                             onChange={v => setNewUser({ ...newUser, ha_person_entity: v })}
                             options={[
-                                { value: '', label: lang === 'de' ? 'â€" Keine â€"' : 'â€" None â€"' },
+                                { value: '', label: lang === 'de' ? '– Keine –' : '– None –' },
                                 ...haPersons.map(p => ({ value: p.entity_id, label: `${p.name} (${p.entity_id})` }))
                             ]}
                         />
@@ -2389,7 +2389,7 @@ const UsersPage = () => {
                             border: !editingUser.ha_person_entity ? '2px solid var(--accent-primary)' : '1px solid var(--border-color)',
                             background: !editingUser.ha_person_entity ? 'var(--accent-primary-dim)' : 'transparent'
                         }} onClick={() => handleAssignPerson(editingUser.id, '')}>
-                            {lang === 'de' ? 'â€" Keine Person â€"' : 'â€" No Person â€"'}
+                            {lang === 'de' ? '– Keine Person –' : '– No Person –'}
                         </div>
                         {haPersons.map(p => (
                             <div key={p.entity_id} style={{ padding: '10px 14px', borderRadius: 8, cursor: 'pointer',
@@ -2585,7 +2585,7 @@ const SettingsPage = () => {
                         onChange={v => setTheme(v)}
                         options={[
                             { value: 'dark', label: lang === 'de' ? ' Dunkel' : ' Dark' },
-                            { value: 'light', label: lang === 'de' ? 'â˜€ï¸ Hell' : 'â˜€ï¸ Light' },
+                            { value: 'light', label: lang === 'de' ? '☀ï¸ Hell' : '☀ï¸ Light' },
                         ]}
                     />
                 </div>
@@ -2613,12 +2613,12 @@ const SettingsPage = () => {
                 </div>
                 <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 12 }}>
                     {lang === 'de'
-                        ? '100% lokal â€" alle Daten bleiben auf deinem Gerät. Keine Cloud, keine Tracking.'
-                        : '100% local â€" all data stays on your device. No cloud, no tracking.'}
+                        ? '100% lokal – alle Daten bleiben auf deinem Gerät. Keine Cloud, keine Tracking.'
+                        : '100% local – all data stays on your device. No cloud, no tracking.'}
                 </p>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                     <InfoRow label={lang === 'de' ? 'Datenbankgröße' : 'Database Size'}
-                        value={sysInfo?.db_size_bytes ? formatBytes(sysInfo.db_size_bytes) : 'â€"'} />
+                        value={sysInfo?.db_size_bytes ? formatBytes(sysInfo.db_size_bytes) : '–'} />
                     <InfoRow label={lang === 'de' ? 'Gesammelte Events' : 'Collected Events'}
                         value={sysInfo?.state_history_count?.toLocaleString() || '0'} />
                     <InfoRow label={lang === 'de' ? 'Aufbewahrung' : 'Retention'}
@@ -2633,17 +2633,17 @@ const SettingsPage = () => {
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                     <InfoRow label="Version" value={sysInfo?.version || '0.5.0'} />
-                    <InfoRow label="Phase" value={`2 â€" ${lang === 'de' ? 'Vollständig' : 'Complete'}`} />
+                    <InfoRow label="Phase" value={`2 – ${lang === 'de' ? 'Vollständig' : 'Complete'}`} />
                     <InfoRow label="Home Assistant"
-                        value={sysInfo?.ha_connected ? (lang === 'de' ? 'âœ… Verbunden' : 'âœ… Connected') : (lang === 'de' ? 'âŒ Getrennt' : 'âŒ Disconnected')} />
+                        value={sysInfo?.ha_connected ? (lang === 'de' ? '✅ Verbunden' : '✅ Connected') : (lang === 'de' ? '❌ Getrennt' : '❌ Disconnected')} />
                     <InfoRow label={lang === 'de' ? 'Zeitzone' : 'Timezone'}
-                        value={sysInfo?.timezone || 'â€"'} />
+                        value={sysInfo?.timezone || '–'} />
                     <InfoRow label={lang === 'de' ? 'HA Entities' : 'HA Entities'}
-                        value={sysInfo?.ha_entity_count || 'â€"'} />
+                        value={sysInfo?.ha_entity_count || '–'} />
                     <InfoRow label={lang === 'de' ? 'Datenbankgröße' : 'Database Size'}
-                        value={sysInfo?.db_size_bytes ? formatBytes(sysInfo.db_size_bytes) : 'â€"'} />
+                        value={sysInfo?.db_size_bytes ? formatBytes(sysInfo.db_size_bytes) : '–'} />
                     <InfoRow label="Uptime"
-                        value={sysInfo?.uptime_seconds ? `${Math.floor(sysInfo.uptime_seconds / 3600)} h` : 'â€"'} />
+                        value={sysInfo?.uptime_seconds ? `${Math.floor(sysInfo.uptime_seconds / 3600)} h` : '–'} />
                     <InfoRow label={lang === 'de' ? 'Gesammelte Events' : 'Collected Events'}
                         value={sysInfo?.state_history_count?.toLocaleString() || '0'} />
                     <InfoRow label={lang === 'de' ? 'Erkannte Muster' : 'Detected Patterns'}
@@ -2660,14 +2660,14 @@ const SettingsPage = () => {
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                     <button className="btn btn-sm btn-secondary" onClick={async () => {
                         const r = await api.get('system/watchdog');
-                        if (r) showToast(r.healthy ? (lang === 'de' ? 'âœ… System gesund' : 'âœ… System healthy') : `âš ï¸ ${r.issues?.join(', ')}`, r.healthy ? 'success' : 'warning');
+                        if (r) showToast(r.healthy ? (lang === 'de' ? '✅ System gesund' : '✅ System healthy') : `⚠ï¸ ${r.issues?.join(', ')}`, r.healthy ? 'success' : 'warning');
                     }}>
                         <span className="mdi mdi-heart-pulse" style={{ marginRight: 4 }} />
                         {lang === 'de' ? 'Health-Check' : 'Health Check'}
                     </button>
                     <button className="btn btn-sm btn-secondary" onClick={async () => {
                         const r = await api.get('system/self-test');
-                        if (r) showToast(r.passed ? (lang === 'de' ? 'âœ… Selbsttest bestanden' : 'âœ… Self-test passed') : `âš ï¸ ${r.tests?.filter(t => t.status !== 'ok').map(t => t.test).join(', ')}`, r.passed ? 'success' : 'warning');
+                        if (r) showToast(r.passed ? (lang === 'de' ? '✅ Selbsttest bestanden' : '✅ Self-test passed') : `⚠ï¸ ${r.tests?.filter(t => t.status !== 'ok').map(t => t.test).join(', ')}`, r.passed ? 'success' : 'warning');
                     }}>
                         <span className="mdi mdi-flask-outline" style={{ marginRight: 4 }} />
                         {lang === 'de' ? 'Selbsttest' : 'Self-Test'}
@@ -2690,7 +2690,7 @@ const SettingsPage = () => {
                     </button>
                     <button className="btn btn-sm btn-secondary" onClick={async () => {
                         const r = await api.get('system/check-update');
-                        if (r) showToast(r.update_available ? `Update: ${r.latest_version}` : (lang === 'de' ? `v${r.current_version} â€" Aktuell` : `v${r.current_version} â€" Up to date`), r.update_available ? 'info' : 'success');
+                        if (r) showToast(r.update_available ? `Update: ${r.latest_version}` : (lang === 'de' ? `v${r.current_version} – Aktuell` : `v${r.current_version} – Up to date`), r.update_available ? 'info' : 'success');
                     }}>
                         <span className="mdi mdi-update" style={{ marginRight: 4 }} />
                         {lang === 'de' ? 'Update prüfen' : 'Check Update'}
@@ -2964,7 +2964,7 @@ const CalendarTriggersConfig = ({ lang, showToast }) => {
                 <div key={t.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                     padding: '8px 0', borderBottom: '1px solid var(--border)', fontSize: 12 }}>
                     <div>
-                        <div style={{ fontWeight: 500 }}>{t.keyword} â†' {actionLabels[t.action] || t.action}</div>
+                        <div style={{ fontWeight: 500 }}>{t.keyword} → {actionLabels[t.action] || t.action}</div>
                         <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
                             {t.calendar}{t.lead_minutes ? ` · ${t.lead_minutes} min ${lang === 'de' ? 'vorher' : 'before'}` : ''}
                         </div>
@@ -3086,8 +3086,8 @@ const DeviceAnomalyConfig = ({ lang }) => {
 
                         {/* Thresholds */}
                         <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6, marginBottom: 2 }}>{lang === 'de' ? 'Schwellwerte' : 'Thresholds'}</div>
-                        {[{key:'temp_min',l:lang==='de'?'Temp. min Â°C':'Temp min Â°C',ph:'5'},
-                          {key:'temp_max',l:lang==='de'?'Temp. max Â°C':'Temp max Â°C',ph:'30'},
+                        {[{key:'temp_min',l:lang==='de'?'Temp. min °C':'Temp min °C',ph:'5'},
+                          {key:'temp_max',l:lang==='de'?'Temp. max °C':'Temp max °C',ph:'30'},
                           {key:'power_max',l:lang==='de'?'Strom max W':'Power max W',ph:'3000'},
                           {key:'battery_min',l:lang==='de'?'Batterie min %':'Battery min %',ph:'20'}].map(t => (
                             <div key={t.key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '2px 0' }}>
@@ -3251,14 +3251,14 @@ const AnomalyAdvancedPanel = ({ lang, showToast }) => {
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 6, marginBottom: 8 }}>
                         {Object.entries(stats.by_type || {}).map(([type, count]) => (
                             <div key={type} style={{ padding: '6px 8px', background: 'var(--bg-main)', borderRadius: 6, fontSize: 11 }}>
-                                <div style={{ fontWeight: 600 }}>{count}Ã-</div>
+                                <div style={{ fontWeight: 600 }}>{count}×</div>
                                 <div style={{ color: 'var(--text-muted)' }}>{type}</div>
                             </div>
                         ))}
                     </div>
                     {stats.top_devices?.length > 0 && (
                         <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                            {lang === 'de' ? 'Top-Geräte' : 'Top devices'}: {stats.top_devices.slice(0, 3).map(d => `${d.name} (${d.count}Ã-)`).join(', ')}
+                            {lang === 'de' ? 'Top-Geräte' : 'Top devices'}: {stats.top_devices.slice(0, 3).map(d => `${d.name} (${d.count}×)`).join(', ')}
                         </div>
                     )}
                 </CollapsibleCard>
@@ -3773,9 +3773,9 @@ const ActivitiesPage = () => {
                         const attrs = log.action_data?.new_attributes || {};
                         const attrParts = [];
                         if (attrs.brightness_pct !== undefined) attrParts.push(` ${attrs.brightness_pct}%`);
-                        if (attrs.position_pct !== undefined) attrParts.push(`â†• ${attrs.position_pct}%`);
-                        if (attrs.target_temp !== undefined) attrParts.push(`¡ ${attrs.target_temp}Â°C`);
-                        if (attrs.current_temp !== undefined) attrParts.push(`Ist: ${attrs.current_temp}Â°C`);
+                        if (attrs.position_pct !== undefined) attrParts.push(`↕ ${attrs.position_pct}%`);
+                        if (attrs.target_temp !== undefined) attrParts.push(`¡ ${attrs.target_temp}°C`);
+                        if (attrs.current_temp !== undefined) attrParts.push(`Ist: ${attrs.current_temp}°C`);
                         const roomName = getRoomName(log.room_id);
                         return (
                         <div key={log.id} className="card" style={{ padding: '12px 14px', display: 'flex', alignItems: 'flex-start', gap: 12 }}>
@@ -3835,7 +3835,7 @@ const ActivitiesPage = () => {
                                 <div key={a.id} style={{ padding: '8px 0', borderBottom: '1px solid var(--border-color)', fontSize: 13 }}>
                                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                                         <strong>{a.action}</strong>
-                                        <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{a.created_at ? relativeTime(a.created_at, lang) : 'â€"'}</span>
+                                        <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{a.created_at ? relativeTime(a.created_at, lang) : '–'}</span>
                                     </div>
                                     {a.target && <div style={{ color: 'var(--text-secondary)', fontSize: 12 }}>{a.target}</div>}
                                     {a.details && <div style={{ color: 'var(--text-muted)', fontSize: 11, marginTop: 2 }}>{typeof a.details === 'string' ? a.details : JSON.stringify(a.details)}</div>}
@@ -3905,7 +3905,7 @@ const PatternsPage = () => {
     };
 
     useEffect(() => {
-        // Auto-reclassify existing sensorâ†'sensor patterns as insights
+        // Auto-reclassify existing sensor→sensor patterns as insights
         api.post('patterns/reclassify-insights').then(() => load());
     }, []);
 
@@ -4185,7 +4185,7 @@ const PatternsPage = () => {
                                     </div>
                                     <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
                                         {lang === 'de' ? 'Wenn' : 'If'} <strong>{r.trigger_entity}</strong> = {r.trigger_state}
-                                        â†' <strong>{r.action_entity}</strong> {r.action_service}
+                                        → <strong>{r.action_entity}</strong> {r.action_service}
                                         {r.delay_seconds > 0 && ` (${r.delay_seconds}s ${lang === 'de' ? 'Verzögerung' : 'delay'})`}
                                     </div>
                                     {r.execution_count > 0 && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
@@ -4284,7 +4284,7 @@ const PatternsPage = () => {
                             <span className="mdi mdi-speedometer" />
                         </div>
                         <div>
-                            <div className="stat-value">{s.avg_confidence ? `${Math.round(s.avg_confidence * 100)}%` : 'â€"'}</div>
+                            <div className="stat-value">{s.avg_confidence ? `${Math.round(s.avg_confidence * 100)}%` : '–'}</div>
                             <div className="stat-label">{lang === 'de' ? 'Ø Vertrauen' : 'Avg Confidence'}</div>
                         </div>
                     </div>
@@ -4300,7 +4300,7 @@ const PatternsPage = () => {
                 </div>
                 <div style={{ display: 'flex', gap: 4 }}>
                     {[{ id: 'conservative', label: lang === 'de' ? 'Vorsichtig' : 'Conservative', icon: '' },
-                      { id: 'normal', label: 'Normal', icon: 'âš-ï¸' },
+                      { id: 'normal', label: 'Normal', icon: '⚠ï¸' },
                       { id: 'aggressive', label: lang === 'de' ? 'Aggressiv' : 'Aggressive', icon: '' }].map(s => (
                         <button key={s.id} className={`btn btn-sm ${(stats?.learning_speed || 'normal') === s.id ? 'btn-primary' : 'btn-ghost'}`}
                             onClick={async () => {
@@ -4393,18 +4393,18 @@ const PatternsPage = () => {
                                 <tr>
                                     <th>{lang === 'de' ? 'Zeit' : 'Time'}</th>
                                     <th>Entity</th>
-                                    <th>{lang === 'de' ? 'Alt â†' Neu' : 'Old â†' New'}</th>
+                                    <th>{lang === 'de' ? 'Alt → Neu' : 'Old → New'}</th>
                                     <th>{lang === 'de' ? 'Kontext' : 'Context'}</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {stateHistory.map(ev => (
                                     <tr key={ev.id}>
-                                        <td style={{ whiteSpace: 'nowrap' }}>{ev.created_at ? new Date(ev.created_at).toLocaleTimeString() : 'â€"'}</td>
+                                        <td style={{ whiteSpace: 'nowrap' }}>{ev.created_at ? new Date(ev.created_at).toLocaleTimeString() : '–'}</td>
                                         <td style={{ fontFamily: 'monospace', fontSize: 11 }}>{ev.entity_id}</td>
                                         <td>
                                             <span style={{ color: 'var(--text-muted)' }}>{ev.old_state || '?'}</span>
-                                            <span style={{ margin: '0 4px' }}>â†'</span>
+                                            <span style={{ margin: '0 4px' }}>→</span>
                                             <span style={{ fontWeight: 600, color: ev.new_state === 'on' ? 'var(--success)' : ev.new_state === 'off' ? 'var(--text-muted)' : 'var(--text-primary)' }}>
                                                 {ev.new_state}
                                             </span>
@@ -4435,7 +4435,7 @@ const PatternsPage = () => {
                     </div>
                     {conflicts.slice(0, 3).map((c, i) => (
                         <div key={i} style={{ fontSize: 12, color: 'var(--text-secondary)', padding: '4px 0' }}>
-                            {c.message_de || c.message_en || c.description || `${c.pattern_a?.desc || c.pattern_a?.id || '?'} â†" ${c.pattern_b?.desc || c.pattern_b?.id || '?'}`}
+                            {c.message_de || c.message_en || c.description || `${c.pattern_a?.desc || c.pattern_a?.id || '?'} ↔ ${c.pattern_b?.desc || c.pattern_b?.id || '?'}`}
                         </div>
                     ))}
                 </div>
@@ -4549,7 +4549,7 @@ const PatternsPage = () => {
                                             {typeLabels[p.pattern_type]}
                                         </span>
                                         <span style={{ color: 'var(--text-muted)' }}>
-                                            {p.match_count}Ã- {lang === 'de' ? 'erkannt' : 'matched'}
+                                            {p.match_count}× {lang === 'de' ? 'erkannt' : 'matched'}
                                         </span>
                                     </div>
                                 </div>
@@ -4595,25 +4595,25 @@ const PatternsPage = () => {
                                     background: 'var(--bg-tertiary)', fontSize: 13,
                                 }}>
                                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 24px', marginBottom: 12 }}>
-                                        <div><span style={{ color: 'var(--text-muted)' }}>Entity:</span> <code style={{ fontSize: 12 }}>{p.pattern_data?.entity_id || p.pattern_data?.action_entity || 'â€"'}</code></div>
-                                        <div><span style={{ color: 'var(--text-muted)' }}>{lang === 'de' ? 'Zielzustand' : 'Target'}:</span> <strong>{p.pattern_data?.target_state || p.action_definition?.target_state || 'â€"'}</strong></div>
+                                        <div><span style={{ color: 'var(--text-muted)' }}>Entity:</span> <code style={{ fontSize: 12 }}>{p.pattern_data?.entity_id || p.pattern_data?.action_entity || '–'}</code></div>
+                                        <div><span style={{ color: 'var(--text-muted)' }}>{lang === 'de' ? 'Zielzustand' : 'Target'}:</span> <strong>{p.pattern_data?.target_state || p.action_definition?.target_state || '–'}</strong></div>
                                         {p.pattern_data?.avg_hour !== undefined && (
-                                            <div><span style={{ color: 'var(--text-muted)' }}>{lang === 'de' ? 'Uhrzeit' : 'Time'}:</span> <strong>{String(p.pattern_data.avg_hour).padStart(2,'0')}:{String(p.pattern_data.avg_minute||0).padStart(2,'0')}</strong> Â±{p.pattern_data.time_window_min || 15}min</div>
+                                            <div><span style={{ color: 'var(--text-muted)' }}>{lang === 'de' ? 'Uhrzeit' : 'Time'}:</span> <strong>{String(p.pattern_data.avg_hour).padStart(2,'0')}:{String(p.pattern_data.avg_minute||0).padStart(2,'0')}</strong> ±{p.pattern_data.time_window_min || 15}min</div>
                                         )}
                                         {p.pattern_data?.weekday_filter && (
-                                            <div><span style={{ color: 'var(--text-muted)' }}>{lang === 'de' ? 'Tage' : 'Days'}:</span> {p.pattern_data.weekday_filter === 'weekdays' ? (lang === 'de' ? 'Moâ€"Fr' : 'Monâ€"Fri') : p.pattern_data.weekday_filter === 'weekends' ? (lang === 'de' ? 'Saâ€"So' : 'Satâ€"Sun') : (lang === 'de' ? 'Alle' : 'All')}</div>
+                                            <div><span style={{ color: 'var(--text-muted)' }}>{lang === 'de' ? 'Tage' : 'Days'}:</span> {p.pattern_data.weekday_filter === 'weekdays' ? (lang === 'de' ? 'Mo–Fr' : 'Mon–Fri') : p.pattern_data.weekday_filter === 'weekends' ? (lang === 'de' ? 'Sa–So' : 'Sat–Sun') : (lang === 'de' ? 'Alle' : 'All')}</div>
                                         )}
                                         {p.pattern_data?.sun_relative_elevation != null && (
-                                            <div><span style={{ color: 'var(--text-muted)' }}>{lang === 'de' ? 'Sonnenstand' : 'Sun elevation'}:</span> {p.pattern_data.sun_relative_elevation}Â°</div>
+                                            <div><span style={{ color: 'var(--text-muted)' }}>{lang === 'de' ? 'Sonnenstand' : 'Sun elevation'}:</span> {p.pattern_data.sun_relative_elevation}°</div>
                                         )}
                                         {p.pattern_data?.trigger_entity && (
-                                            <div><span style={{ color: 'var(--text-muted)' }}>Trigger:</span> <code style={{ fontSize: 12 }}>{p.pattern_data.trigger_entity}</code> â†' {p.pattern_data.trigger_state}</div>
+                                            <div><span style={{ color: 'var(--text-muted)' }}>Trigger:</span> <code style={{ fontSize: 12 }}>{p.pattern_data.trigger_entity}</code> → {p.pattern_data.trigger_state}</div>
                                         )}
                                         {p.pattern_data?.avg_delay_sec && (
                                             <div><span style={{ color: 'var(--text-muted)' }}>{lang === 'de' ? 'Verzögerung' : 'Delay'}:</span> {p.pattern_data.avg_delay_sec < 60 ? `${Math.round(p.pattern_data.avg_delay_sec)}s` : `${Math.round(p.pattern_data.avg_delay_sec/60)} min`}</div>
                                         )}
-                                        <div><span style={{ color: 'var(--text-muted)' }}>{lang === 'de' ? 'Beobachtet' : 'Observed'}:</span> {p.pattern_data?.days_observed || 0} {lang === 'de' ? 'Tage' : 'days'}, {p.pattern_data?.occurrence_count || p.match_count || 0}Ã- {lang === 'de' ? 'Treffer' : 'matches'}</div>
-                                        <div><span style={{ color: 'var(--text-muted)' }}>{lang === 'de' ? 'Erstellt' : 'Created'}:</span> {p.created_at ? new Date(p.created_at).toLocaleDateString() : 'â€"'}</div>
+                                        <div><span style={{ color: 'var(--text-muted)' }}>{lang === 'de' ? 'Beobachtet' : 'Observed'}:</span> {p.pattern_data?.days_observed || 0} {lang === 'de' ? 'Tage' : 'days'}, {p.pattern_data?.occurrence_count || p.match_count || 0}× {lang === 'de' ? 'Treffer' : 'matches'}</div>
+                                        <div><span style={{ color: 'var(--text-muted)' }}>{lang === 'de' ? 'Erstellt' : 'Created'}:</span> {p.created_at ? new Date(p.created_at).toLocaleDateString() : '–'}</div>
                                         {/* #51 Confidence Explanation */}
                                         <div style={{ marginTop: 6, padding: '6px 10px', background: 'var(--bg-primary)', borderRadius: 6, fontSize: 11 }}>
                                             <span className="mdi mdi-information" style={{ marginRight: 4, color: 'var(--info)' }} />
@@ -4872,7 +4872,7 @@ const NotificationsPage = () => {
                                 <div style={{ fontSize: 12 }}>{lang === 'de' ? 'Werktag' : 'Weekday'}:</div>
                                 <input type="time" className="input" value={extSettings?.quiet_hours?.start || '22:00'} style={{ width: 90, padding: '4px 8px', fontSize: 12 }}
                                     onChange={async (e) => { const qh = { ...extSettings?.quiet_hours, start: e.target.value }; setExtSettings(prev => ({ ...prev, quiet_hours: qh })); await api.put('notification-settings/extended', { quiet_hours: qh }); }} />
-                                <span>â€"</span>
+                                <span>–</span>
                                 <input type="time" className="input" value={extSettings?.quiet_hours?.end || '07:00'} style={{ width: 90, padding: '4px 8px', fontSize: 12 }}
                                     onChange={async (e) => { const qh = { ...extSettings?.quiet_hours, end: e.target.value }; setExtSettings(prev => ({ ...prev, quiet_hours: qh })); await api.put('notification-settings/extended', { quiet_hours: qh }); }} />
                             </div>
@@ -4880,7 +4880,7 @@ const NotificationsPage = () => {
                                 <div style={{ fontSize: 12 }}>{lang === 'de' ? 'Wochenende' : 'Weekend'}:</div>
                                 <input type="time" className="input" value={extSettings?.quiet_hours?.weekend_start || '23:00'} style={{ width: 90, padding: '4px 8px', fontSize: 12 }}
                                     onChange={async (e) => { const qh = { ...extSettings?.quiet_hours, weekend_start: e.target.value }; setExtSettings(prev => ({ ...prev, quiet_hours: qh })); await api.put('notification-settings/extended', { quiet_hours: qh }); }} />
-                                <span>â€"</span>
+                                <span>–</span>
                                 <input type="time" className="input" value={extSettings?.quiet_hours?.weekend_end || '09:00'} style={{ width: 90, padding: '4px 8px', fontSize: 12 }}
                                     onChange={async (e) => { const qh = { ...extSettings?.quiet_hours, weekend_end: e.target.value }; setExtSettings(prev => ({ ...prev, quiet_hours: qh })); await api.put('notification-settings/extended', { quiet_hours: qh }); }} />
                             </div>
@@ -4893,7 +4893,7 @@ const NotificationsPage = () => {
                                 {lang === 'de' ? 'Erweiterte Einstellungen' : 'Extended Settings'}
                             </div>
                             {[
-                                { key: 'escalation', icon: 'mdi-arrow-up-bold', de: 'Eskalation (Push â†' TTS)', en: 'Escalation (Push â†' TTS)' },
+                                { key: 'escalation', icon: 'mdi-arrow-up-bold', de: 'Eskalation (Push → TTS)', en: 'Escalation (Push → TTS)' },
                                 { key: 'repeat_rules', icon: 'mdi-repeat', de: 'Wiederholung bei Nichtlesen', en: 'Repeat if unread' },
                                 { key: 'confirmation_required', icon: 'mdi-check-decagram', de: 'Bestätigungspflicht (Kritisch)', en: 'Confirmation required (Critical)' },
                                 { key: 'critical_override', icon: 'mdi-alert-octagon', de: 'Kritisch durchbricht alles', en: 'Critical overrides everything' },
@@ -4931,7 +4931,7 @@ const NotificationsPage = () => {
                                     {[5, 10, 20, 0].map(r => (
                                         <button key={r} className={`btn btn-sm ${(extSettings?.rate_limits?.anomaly || 10) === r ? 'btn-primary' : 'btn-ghost'}`}
                                             onClick={async () => { const rl = { anomaly: r, suggestion: r, critical: 0, info: r }; setExtSettings(prev => ({ ...prev, rate_limits: rl })); await api.put('notification-settings/extended', { rate_limits: rl }); }}
-                                            style={{ fontSize: 10, padding: '2px 6px' }}>{r === 0 ? 'âˆž' : r}</button>
+                                            style={{ fontSize: 10, padding: '2px 6px' }}>{r === 0 ? '∞' : r}</button>
                                     ))}
                                 </div>
                             </div>
@@ -5113,7 +5113,7 @@ const NotificationsPage = () => {
                             onClick={async () => { const newVal = !notifSettings?.dnd_enabled; setNotifSettings(s => ({ ...s, dnd_enabled: newVal })); await api.put('notification-settings/dnd', { enabled: newVal }); }}
                             style={{ fontSize: 13, padding: '10px 16px' }}>
                             <span className={`mdi ${notifSettings?.dnd_enabled ? 'mdi-bell-off' : 'mdi-bell-ring'}`} style={{ marginRight: 8 }} />
-                            {notifSettings?.dnd_enabled ? (lang === 'de' ? 'DND aktiv â€" Benachrichtigungen stumm' : 'DND active') : (lang === 'de' ? 'Nicht stören aktivieren' : 'Enable Do Not Disturb')}
+                            {notifSettings?.dnd_enabled ? (lang === 'de' ? 'DND aktiv – Benachrichtigungen stumm' : 'DND active') : (lang === 'de' ? 'Nicht stören aktivieren' : 'Enable Do Not Disturb')}
                         </button>
                     </div>
                 </div>
@@ -5742,7 +5742,7 @@ const App = () => {
         }
     };
 
-    // Role: first user is always admin, or if only 1 user exists â†' admin
+    // Role: first user is always admin, or if only 1 user exists → admin
     const isAdmin = users.length <= 1 || (users[0]?.role === 'admin');
 
     const contextValue = React.useMemo(() => ({
@@ -5767,7 +5767,7 @@ const App = () => {
     }
 
     const navItems = [
-        { section: lang === 'de' ? 'Ãœbersicht' : 'Overview' },
+        { section: lang === 'de' ? 'Übersicht' : 'Overview' },
         { id: 'dashboard', icon: 'mdi-view-dashboard', label: 'Dashboard' },
         { section: lang === 'de' ? 'Konfiguration' : 'Configuration', adminOnly: true },
         { id: 'domains', icon: 'mdi-puzzle', label: 'Domains', adminOnly: true },
