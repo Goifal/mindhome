@@ -5096,8 +5096,8 @@ const OnboardingWizard = ({ onComplete }) => {
                         </button>
                     )}
                 </div>
-                </div>
             </div>
+        </div>
         </div>
     );
 };
