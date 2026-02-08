@@ -77,6 +77,22 @@ engine = get_engine()
 init_database(engine)
 run_migrations(engine)  # Fix 29: DB migration system
 
+# Fix: Auto-set is_controllable=False for sensor-type entities
+try:
+    _mig_session = get_session(engine)()
+    NON_CONTROLLABLE = ("sensor.", "binary_sensor.", "zone.", "sun.", "weather.", "person.", "device_tracker.", "calendar.", "proximity.")
+    _updated = 0
+    for dev in _mig_session.query(Device).filter_by(is_controllable=True).all():
+        if dev.ha_entity_id and any(dev.ha_entity_id.startswith(p) for p in NON_CONTROLLABLE):
+            dev.is_controllable = False
+            _updated += 1
+    if _updated:
+        _mig_session.commit()
+        logger.info(f"Auto-fixed is_controllable for {_updated} sensor-type devices")
+    _mig_session.close()
+except Exception as _e:
+    logger.warning(f"Controllable migration: {_e}")
+
 # Home Assistant connection
 ha = HAConnection()
 
@@ -3199,9 +3215,10 @@ def api_backup_export():
             # State History (limited by days)
             backup["state_history"] = []
             for sh in session.query(StateHistory).filter(StateHistory.created_at >= cutoff).order_by(StateHistory.created_at.desc()).all():
-                backup["state_history"].append({"device_id": sh.device_id,
+                backup["state_history"].append({"device_id": sh.device_id, "entity_id": sh.entity_id,
                     "old_state": sh.old_state, "new_state": sh.new_state,
-                    "attributes": sh.attributes, "created_at": utc_iso(sh.created_at)})
+                    "old_attributes": sh.old_attributes, "new_attributes": sh.new_attributes,
+                    "context": sh.context, "created_at": utc_iso(sh.created_at)})
 
             # Predictions
             backup["predictions"] = []
@@ -4212,6 +4229,39 @@ def api_delete_calendar_trigger(trigger_id):
     triggers = [t for t in triggers if t.get("id") != trigger_id]
     set_setting("calendar_triggers", json.dumps(triggers))
     return jsonify({"success": True})
+
+
+# Alias endpoints with hyphen
+@app.route("/api/calendar-triggers", methods=["GET"])
+def api_get_calendar_triggers_alias():
+    return api_get_calendar_triggers()
+
+
+@app.route("/api/calendar-triggers", methods=["PUT"])
+def api_update_calendar_triggers_alias():
+    """Bulk update calendar triggers."""
+    data = request.json
+    set_setting("calendar_triggers", json.dumps(data.get("triggers", [])))
+    return jsonify({"success": True})
+
+
+# Also need an entities endpoint filtered by domain
+@app.route("/api/ha/entities", methods=["GET"])
+def api_get_ha_entities():
+    """Get HA entities filtered by domain."""
+    domain_filter = request.args.get("domain")
+    all_states = ha.get_states() or []
+    entities = []
+    for s in all_states:
+        eid = s.get("entity_id", "")
+        if domain_filter and not eid.startswith(domain_filter + "."):
+            continue
+        entities.append({
+            "entity_id": eid,
+            "name": s.get("attributes", {}).get("friendly_name", eid),
+            "state": s.get("state")
+        })
+    return jsonify({"entities": entities})
 
 
 # ==============================================================================
