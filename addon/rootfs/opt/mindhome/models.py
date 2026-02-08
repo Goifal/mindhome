@@ -517,6 +517,57 @@ class StateHistory(Base):
     device = relationship("Device")
 
 
+class PersonSchedule(Base):
+    """Person time profiles: work schedules, shift plans."""
+    __tablename__ = "person_schedules"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    schedule_type = Column(String(30), nullable=False)  # "weekday", "weekend", "shift", "homeoffice", "custom"
+    name = Column(String(100), nullable=True)  # e.g. "Frueh+Abenddienst"
+    time_wake = Column(String(5), nullable=True)  # "06:00"
+    time_leave = Column(String(5), nullable=True)  # "07:00"
+    time_home = Column(String(5), nullable=True)  # "17:00"
+    time_sleep = Column(String(5), nullable=True)  # "22:00"
+    weekdays = Column(JSON, nullable=True)  # [0,1,2,3,4] for Mon-Fri
+    valid_from = Column(DateTime, nullable=True)
+    valid_until = Column(DateTime, nullable=True)
+    shift_data = Column(JSON, nullable=True)  # For shift plans: [{date, shift_type, blocks: [{start, end}]}]
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+    user = relationship("User")
+
+
+class ShiftTemplate(Base):
+    """Shift type templates for PDF import mapping."""
+    __tablename__ = "shift_templates"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(100), nullable=False)  # "Fruehdienst", "Tagdienst"
+    short_code = Column(String(20), nullable=True)  # "F", "T", "FA"
+    blocks = Column(JSON, nullable=False)  # [{"start": "06:00", "end": "14:00"}]
+    color = Column(String(7), nullable=True)  # "#FF9800"
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=_utcnow)
+
+
+class Holiday(Base):
+    """Holidays and special days."""
+    __tablename__ = "holidays"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(200), nullable=False)
+    date = Column(String(10), nullable=False)  # "2026-01-01" or "01-01" for recurring
+    is_recurring = Column(Boolean, default=False)  # True = every year (e.g. Christmas)
+    region = Column(String(50), nullable=True)  # "AT", "AT-3" (NOE), etc.
+    source = Column(String(30), default="builtin")  # "builtin", "calendar", "manual"
+    calendar_entity = Column(String(255), nullable=True)  # HA calendar entity
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=_utcnow)
+
+
 class PatternMatchLog(Base):
     """Logs every time a pattern fires/matches to track accuracy."""
     __tablename__ = "pattern_match_log"
@@ -772,6 +823,49 @@ MIGRATIONS = [
             )""",
         ]
     },
+    {
+        "version": 6,
+        "description": "Phase 3B - Person schedules, shift templates, holidays",
+        "sql": [
+            """CREATE TABLE IF NOT EXISTS person_schedules (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL REFERENCES users(id),
+                schedule_type VARCHAR(30) NOT NULL,
+                name VARCHAR(100),
+                time_wake VARCHAR(5),
+                time_leave VARCHAR(5),
+                time_home VARCHAR(5),
+                time_sleep VARCHAR(5),
+                weekdays JSON,
+                valid_from DATETIME,
+                valid_until DATETIME,
+                shift_data JSON,
+                is_active BOOLEAN DEFAULT 1,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )""",
+            """CREATE TABLE IF NOT EXISTS shift_templates (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name VARCHAR(100) NOT NULL,
+                short_code VARCHAR(20),
+                blocks JSON NOT NULL,
+                color VARCHAR(7),
+                is_active BOOLEAN DEFAULT 1,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )""",
+            """CREATE TABLE IF NOT EXISTS holidays (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name VARCHAR(200) NOT NULL,
+                date VARCHAR(10) NOT NULL,
+                is_recurring BOOLEAN DEFAULT 0,
+                region VARCHAR(50),
+                source VARCHAR(30) DEFAULT 'builtin',
+                calendar_entity VARCHAR(255),
+                is_active BOOLEAN DEFAULT 1,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )""",
+        ]
+    },
 ]
 
 
@@ -799,7 +893,7 @@ def run_migrations(engine):
 
             logger.info(f"Running migration v{migration['version']}: {migration['description']}")
 
-            # #15 – Create savepoint for rollback safety
+            # #15 â€“ Create savepoint for rollback safety
             migration_ok = True
             for sql in migration["sql"]:
                 try:
