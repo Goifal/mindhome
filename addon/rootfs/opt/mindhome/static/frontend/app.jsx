@@ -1,4 +1,4 @@
-// MindHome Frontend v0.5.1-blockA (2026-02-08T19:30) - app.jsx - DIES IST DIE FRONTEND DATEI
+// MindHome Frontend v0.5.1-blockA2 (2026-02-08T20:10) - app.jsx - DIES IST DIE FRONTEND DATEI
 // ================================================================
 // MindHome - React Frontend Application v0.5.0
 // ================================================================
@@ -2804,6 +2804,7 @@ const SettingsPage = () => {
             <CalendarTriggersConfig lang={lang} showToast={showToast} />
 
         </div>
+        </>
     );
 };
 
@@ -3181,8 +3182,6 @@ const AnomalyAdvancedPanel = ({ lang, showToast }) => {
                 </CollapsibleCard>
             )}
         </div>
-        </div>
-        </>
     );
 };
 
