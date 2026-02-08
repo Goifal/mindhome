@@ -1,4 +1,4 @@
-# MindHome Backend v0.5.0-fix9 (2026-02-08T18:05) - app.py - DIES IST DIE BACKEND DATEI
+# MindHome Backend v0.5.1-blockA (2026-02-08T19:30) - app.py - DIES IST DIE BACKEND DATEI
 """
 MindHome - Main Application
 Flask backend serving the API and frontend.
@@ -1977,9 +1977,9 @@ def api_get_patterns():
         if domain_id:
             query = query.filter_by(domain_id=domain_id)
 
-        # Default: only active
+        # Default: only active, exclude insights unless explicitly requested
         if not status_filter:
-            query = query.filter_by(is_active=True)
+            query = query.filter_by(is_active=True).filter(LearnedPattern.status != 'insight')
 
         patterns = query.limit(200).all()
 
@@ -2058,6 +2058,44 @@ def api_trigger_analysis():
     """Manually trigger pattern analysis."""
     pattern_scheduler.trigger_analysis_now()
     return jsonify({"success": True, "message": "Analysis started in background"})
+
+
+@app.route("/api/patterns/reclassify-insights", methods=["POST"])
+def api_reclassify_insights():
+    """Reclassify existing sensor→sensor patterns as 'insight'."""
+    session = get_db()
+    try:
+        NON_ACTIONABLE = ("sensor.", "binary_sensor.", "sun.", "weather.", "zone.", "person.", "device_tracker.", "calendar.", "proximity.")
+        patterns = session.query(LearnedPattern).filter(
+            LearnedPattern.status == "observed",
+            LearnedPattern.is_active == True
+        ).all()
+        reclassified = 0
+        for p in patterns:
+            pd = p.pattern_data or {}
+            is_sensor_pair = False
+            if p.pattern_type == "event_chain":
+                t_eid = pd.get("trigger_entity", "")
+                a_eid = pd.get("action_entity", "")
+                if (any(t_eid.startswith(x) for x in NON_ACTIONABLE) and
+                    any(a_eid.startswith(x) for x in NON_ACTIONABLE)):
+                    is_sensor_pair = True
+            elif p.pattern_type == "correlation":
+                c_eid = pd.get("condition_entity", "")
+                r_eid = pd.get("correlated_entity", "")
+                if (any(c_eid.startswith(x) for x in NON_ACTIONABLE) and
+                    any(r_eid.startswith(x) for x in NON_ACTIONABLE)):
+                    is_sensor_pair = True
+            if is_sensor_pair:
+                p.status = "insight"
+                reclassified += 1
+        session.commit()
+        return jsonify({"success": True, "reclassified": reclassified})
+    except Exception as e:
+        session.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        session.close()
 
 
 # ==============================================================================
@@ -3472,14 +3510,15 @@ def api_backup_import():
             # Restore quick_actions
             for qa_data in data.get("quick_actions", []):
                 try:
+                    qa_name = qa_data.get("name_de") or qa_data.get("name", "")
                     existing = session2.query(QuickAction).filter_by(
-                        name=qa_data.get("name")
-                    ).first()
-                    if not existing and qa_data.get("name"):
+                        name_de=qa_name
+                    ).first() if qa_name else None
+                    if not existing and qa_name:
                         qa = QuickAction(
-                            name=qa_data["name"],
+                            name_de=qa_data.get("name_de", qa_name),
+                            name_en=qa_data.get("name_en", qa_name),
                             icon=qa_data.get("icon", "mdi:flash"),
-                            action_type=qa_data.get("action_type", "toggle"),
                             action_data=qa_data.get("action_data") or {},
                             sort_order=qa_data.get("sort_order", 0),
                             is_active=qa_data.get("is_active", True)
@@ -4745,6 +4784,18 @@ def start_app():
     # Start domain plugins (if available)
     if domain_manager:
         try:
+            # Auto-enable all domains if none are enabled yet
+            _dm_session = get_session(engine)
+            try:
+                enabled_count = _dm_session.query(Domain).filter_by(is_enabled=True).count()
+                if enabled_count == 0:
+                    all_domains = _dm_session.query(Domain).all()
+                    for d in all_domains:
+                        d.is_enabled = True
+                    _dm_session.commit()
+                    logger.info(f"Auto-enabled {len(all_domains)} domains (first start)")
+            finally:
+                _dm_session.close()
             domain_manager.start_enabled_domains()
         except Exception as e:
             logger.warning(f"Domain manager start error: {e}")
