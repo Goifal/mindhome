@@ -685,7 +685,7 @@ class PhaseManager:
 
         # Days since phase started
         if rds.phase_started_at:
-            days = (datetime.now(timezone.utc) - rds.phase_started_at).days
+            days = (datetime.utcnow().replace(tzinfo=None) - rds.phase_started_at.replace(tzinfo=None)).days
             if days < t["min_days"]:
                 return None
 
@@ -730,7 +730,7 @@ class PhaseManager:
         t = self.SUGGEST_TO_AUTONOMOUS
 
         if rds.phase_started_at:
-            days = (datetime.now(timezone.utc) - rds.phase_started_at).days
+            days = (datetime.utcnow().replace(tzinfo=None) - rds.phase_started_at.replace(tzinfo=None)).days
             if days < t["min_days"]:
                 return None
 
