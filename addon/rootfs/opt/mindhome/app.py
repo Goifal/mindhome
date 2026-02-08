@@ -763,12 +763,22 @@ def api_update_domain(domain_id):
             domain.display_name_de = data["display_name_de"]
         if "display_name_en" in data:
             domain.display_name_en = data["display_name_en"]
+        if "name_de" in data:
+            domain.display_name_de = data["name_de"]
+            if not domain.display_name_en:
+                domain.display_name_en = data["name_de"]
         if "icon" in data:
             domain.icon = data["icon"]
         if "description_de" in data:
             domain.description_de = data["description_de"]
         if "description_en" in data:
             domain.description_en = data["description_en"]
+        if "description" in data:
+            domain.description_de = data["description"]
+            if not domain.description_en:
+                domain.description_en = data["description"]
+        if "keywords" in data:
+            domain.keywords = data["keywords"]
 
         session.commit()
         return jsonify({"id": domain.id, "name": domain.name})
@@ -1288,12 +1298,17 @@ def api_import_discovered():
                 if area_id:
                     room_id = area_room_map.get(area_id)
 
+                # Auto-detect controllability
+                ha_domain = entity_id.split(".")[0]
+                non_controllable = {"sensor", "binary_sensor", "zone", "sun", "weather", "person", "device_tracker", "calendar", "proximity"}
+
                 device = Device(
                     ha_entity_id=entity_id,
                     name=friendly_name,
                     domain_id=domain.id,
                     room_id=room_id,
-                    device_meta=attributes
+                    device_meta=attributes,
+                    is_controllable=ha_domain not in non_controllable
                 )
                 session.add(device)
                 imported_count += 1
@@ -1388,12 +1403,18 @@ def api_manual_add_device():
             domain = session.query(Domain).filter_by(name=mapped_name).first()
             domain_id = domain.id if domain else 1
 
+        # Auto-detect controllability from entity type
+        ha_domain = entity_id.split(".")[0]
+        non_controllable = {"sensor", "binary_sensor", "zone", "sun", "weather", "person", "device_tracker", "calendar", "proximity"}
+        is_controllable = ha_domain not in non_controllable
+
         device = Device(
             ha_entity_id=entity_id,
             name=friendly_name,
             domain_id=domain_id,
             room_id=room_id,
-            device_meta=attrs
+            device_meta=attrs,
+            is_controllable=is_controllable
         )
         session.add(device)
         session.commit()
@@ -3167,8 +3188,8 @@ def api_backup_export():
         # Quick actions
         backup["quick_actions"] = []
         for qa in session.query(QuickAction).all():
-            backup["quick_actions"].append({"id": qa.id, "name": qa.name, "icon": qa.icon,
-                "action_type": qa.action_type, "action_data": qa.action_data,
+            backup["quick_actions"].append({"id": qa.id, "name_de": qa.name_de, "name_en": qa.name_en, "icon": qa.icon,
+                "action_data": qa.action_data,
                 "sort_order": qa.sort_order, "is_active": qa.is_active})
 
         # Full/Custom mode: include historical data
