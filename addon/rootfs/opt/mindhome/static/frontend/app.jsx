@@ -1,4 +1,4 @@
-// MindHome Frontend v0.5.1-blockA3 (2026-02-08T21:00) - app.jsx - DIES IST DIE FRONTEND DATEI
+// MindHome Frontend v0.5.2-phase3B (2026-02-08) - app.jsx - DIES IST DIE FRONTEND DATEI
 // ================================================================
 // MindHome - React Frontend Application v0.5.0
 // ================================================================
@@ -333,7 +333,7 @@ const Dropdown = ({ value, onChange, options, placeholder, label }) => {
                 boxShadow: open ? '0 0 0 2px rgba(245,166,35,0.15)' : undefined,
                 transition: 'border-color 0.2s, box-shadow 0.2s'
             }}>
-                <span style={{ color: selected ? 'var(--text-primary)' : 'var(--text-muted)' }}>{selected?.label || placeholder || '— Auswählen —'}</span>
+                <span style={{ color: selected ? 'var(--text-primary)' : 'var(--text-muted)' }}>{selected?.label || placeholder || 'â€" Auswählen â€"'}</span>
                 <span className={`mdi mdi-chevron-${open ? 'up' : 'down'}`} style={{ fontSize: 18, color: 'var(--text-muted)', transition: 'transform 0.2s' }} />
             </div>
             {open && (
@@ -410,7 +410,7 @@ const EntitySearchDropdown = ({ value, onChange, entities, label, placeholder })
                 boxShadow: open ? '0 0 0 2px rgba(245,166,35,0.15)' : undefined,
             }}>
                 <span style={{ color: displayValue ? 'var(--text-primary)' : 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, fontSize: 13 }}>
-                    {displayValue || placeholder || '— Entity wählen —'}
+                    {displayValue || placeholder || '- Entity w\u00e4hlen -'}
                 </span>
                 <span className={`mdi mdi-chevron-${open ? 'up' : 'down'}`} style={{ fontSize: 18, color: 'var(--text-muted)' }} />
             </div>
@@ -423,7 +423,7 @@ const EntitySearchDropdown = ({ value, onChange, entities, label, placeholder })
                 }}>
                     <div style={{ padding: '8px 8px 4px' }}>
                         <input ref={inputRef} className="input" value={search} onChange={e => setSearch(e.target.value)}
-                            placeholder="🔍 Suchen..." style={{ fontSize: 12, padding: '6px 10px' }} />
+                            placeholder=" Suchen..." style={{ fontSize: 12, padding: '6px 10px' }} />
                     </div>
                     <div style={{ maxHeight: 200, overflowY: 'auto' }}>
                         {filtered.length === 0 ? (
@@ -499,7 +499,7 @@ const stateDisplay = (state) => {
     if (!state || state === 'unknown') return { label: '?', color: 'var(--text-muted)' };
     if (state === 'on') return { label: 'on', color: 'var(--success)' };
     if (state === 'off') return { label: 'off', color: 'var(--text-muted)' };
-    if (state === 'unavailable') return { label: '✕', color: 'var(--danger)' };
+    if (state === 'unavailable') return { label: '\u2716', color: 'var(--danger)' };
     return { label: state, color: 'var(--info)' };
 };
 
@@ -763,7 +763,7 @@ const DashboardPage = () => {
                         </div>
                         <div style={{ padding: 12, background: 'var(--bg-tertiary)', borderRadius: 8, textAlign: 'center' }}>
                             <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--success)' }}>
-                                {learningStats.avg_confidence ? `${Math.round(learningStats.avg_confidence * 100)}%` : '—'}
+                                {learningStats.avg_confidence ? `${Math.round(learningStats.avg_confidence * 100)}%` : 'â€"'}
                             </div>
                             <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
                                 {lang === 'de' ? 'Ø Vertrauen' : 'Avg Confidence'}
@@ -952,13 +952,54 @@ const QuickActionsGrid = () => {
     const [editAction, setEditAction] = useState(null);
     const [newAction, setNewAction] = useState({ name: '', icon: 'mdi:flash', action_data: { type: 'custom', entities: [] } });
 
-    const iconOptions = [
-        { value: 'mdi:flash', label: '⚡ Flash' }, { value: 'mdi:lightbulb', label: '💡 Licht' },
-        { value: 'mdi:home', label: '🏠 Home' }, { value: 'mdi:exit-run', label: '🚪 Gehen' },
-        { value: 'mdi:weather-night', label: '🌙 Nacht' }, { value: 'mdi:shield', label: '🛡️ Schutz' },
-        { value: 'mdi:movie-open', label: '🎬 Kino' }, { value: 'mdi:broom', label: '🧹 Aufräumen' },
-        { value: 'mdi:party-popper', label: '🎉 Party' }, { value: 'mdi:coffee', label: '☕ Kaffee' },
+    const [iconSearch, setIconSearch] = useState('');
+    const MDI_ICONS = [
+        'mdi:flash', 'mdi:lightbulb', 'mdi:lightbulb-group', 'mdi:home', 'mdi:home-account',
+        'mdi:exit-run', 'mdi:weather-night', 'mdi:weather-sunny', 'mdi:weather-sunset-up',
+        'mdi:shield', 'mdi:shield-lock', 'mdi:movie-open', 'mdi:broom', 'mdi:party-popper',
+        'mdi:coffee', 'mdi:power-off', 'mdi:power-plug', 'mdi:fan', 'mdi:thermostat',
+        'mdi:thermometer', 'mdi:water', 'mdi:fire', 'mdi:snowflake', 'mdi:air-conditioner',
+        'mdi:blinds', 'mdi:curtains', 'mdi:door', 'mdi:door-open', 'mdi:garage',
+        'mdi:window-open', 'mdi:window-closed', 'mdi:lock', 'mdi:lock-open',
+        'mdi:bell', 'mdi:bell-ring', 'mdi:alarm', 'mdi:camera', 'mdi:cctv',
+        'mdi:motion-sensor', 'mdi:human-greeting', 'mdi:run', 'mdi:walk',
+        'mdi:car', 'mdi:bicycle', 'mdi:train', 'mdi:airplane',
+        'mdi:music', 'mdi:speaker', 'mdi:television', 'mdi:gamepad-variant',
+        'mdi:desk-lamp', 'mdi:floor-lamp', 'mdi:ceiling-light', 'mdi:led-strip',
+        'mdi:solar-power', 'mdi:battery', 'mdi:battery-charging', 'mdi:ev-station',
+        'mdi:washing-machine', 'mdi:dishwasher', 'mdi:fridge', 'mdi:stove',
+        'mdi:robot-vacuum', 'mdi:sprinkler', 'mdi:flower', 'mdi:tree',
+        'mdi:bed', 'mdi:sofa', 'mdi:baby-carriage', 'mdi:dog', 'mdi:cat',
+        'mdi:heart', 'mdi:heart-pulse', 'mdi:medical-bag', 'mdi:pill',
+        'mdi:food', 'mdi:silverware-fork-knife', 'mdi:glass-cocktail',
+        'mdi:briefcase', 'mdi:school', 'mdi:book-open', 'mdi:printer',
+        'mdi:wifi', 'mdi:bluetooth', 'mdi:cellphone', 'mdi:laptop',
+        'mdi:timer', 'mdi:clock', 'mdi:calendar', 'mdi:chart-line',
+        'mdi:cog', 'mdi:wrench', 'mdi:tools', 'mdi:alert', 'mdi:alert-circle',
+        'mdi:check-circle', 'mdi:close-circle', 'mdi:information', 'mdi:help-circle',
+        'mdi:star', 'mdi:flag', 'mdi:bookmark', 'mdi:tag', 'mdi:pin',
+        'mdi:play', 'mdi:pause', 'mdi:stop', 'mdi:skip-next', 'mdi:volume-high',
+        'mdi:eye', 'mdi:eye-off', 'mdi:magnify', 'mdi:refresh', 'mdi:sync',
+        'mdi:upload', 'mdi:download', 'mdi:cloud', 'mdi:database',
+        'mdi:account', 'mdi:account-group', 'mdi:account-child',
+        'mdi:emoticon-happy', 'mdi:emoticon-sad', 'mdi:sleep',
+        'mdi:spa', 'mdi:yoga', 'mdi:dumbbell', 'mdi:swim',
+        'mdi:umbrella', 'mdi:palette', 'mdi:candle', 'mdi:gift',
+        'mdi:smoking-off', 'mdi:recycle', 'mdi:leaf', 'mdi:earth',
+        'mdi:map-marker', 'mdi:compass', 'mdi:binoculars',
+        'mdi:lightning-bolt', 'mdi:flash-alert', 'mdi:spotlight-beam',
+        'mdi:radiator', 'mdi:heat-wave', 'mdi:coolant-temperature',
+        'mdi:gauge', 'mdi:speedometer', 'mdi:scale-bathroom',
+        'mdi:smoke-detector', 'mdi:fire-extinguisher', 'mdi:security',
+        'mdi:home-assistant', 'mdi:chip', 'mdi:raspberry-pi', 'mdi:server',
     ];
+    const filteredIcons = iconSearch
+        ? MDI_ICONS.filter(ic => ic.toLowerCase().includes(iconSearch.toLowerCase()))
+        : MDI_ICONS;
+
+    const iconOptions = MDI_ICONS.slice(0, 10).map(ic => ({
+        value: ic, label: ic.replace('mdi:', '')
+    }));
 
     const handleCreate = async () => {
         if (!newAction.name.trim()) return;
@@ -1043,9 +1084,24 @@ const QuickActionsGrid = () => {
                             placeholder={lang === 'de' ? 'z.B. Gute Nacht' : 'e.g. Good Night'} autoFocus />
                     </div>
                     <div className="input-group" style={{ marginBottom: 16 }}>
-                        <Dropdown label="Icon" value={newAction.icon}
-                            onChange={v => setNewAction({ ...newAction, icon: v })}
-                            options={iconOptions} />
+                        <label style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Icon</label>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                            <span className={`mdi ${newAction.icon.replace('mdi:', 'mdi-')}`} style={{ fontSize: 24 }} />
+                            <input type="text" placeholder="Icon suchen..." value={iconSearch}
+                                onChange={e => setIconSearch(e.target.value)}
+                                style={{ flex: 1, fontSize: 12, padding: '4px 8px' }} />
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(8, 1fr)', gap: 4, maxHeight: 160, overflowY: 'auto' }}>
+                            {filteredIcons.slice(0, 80).map(ic => (
+                                <button key={ic} type="button"
+                                    className={`btn btn-sm ${newAction.icon === ic ? 'btn-primary' : 'btn-ghost'}`}
+                                    onClick={() => { setNewAction({ ...newAction, icon: ic }); setIconSearch(''); }}
+                                    style={{ padding: 4, fontSize: 18, lineHeight: 1 }}
+                                    title={ic.replace('mdi:', '')}>
+                                    <span className={`mdi ${ic.replace('mdi:', 'mdi-')}`} />
+                                </button>
+                            ))}
+                        </div>
                     </div>
                 </Modal>
             )}
@@ -1159,7 +1215,7 @@ const DomainsPage = () => {
                                 color_temp: lang === 'de' ? 'Farbtemperatur' : 'Color Temp',
                                 set_temperature: lang === 'de' ? 'Temperatur' : 'Temperature',
                                 set_hvac_mode: lang === 'de' ? 'Modus' : 'HVAC Mode',
-                                open: lang === 'de' ? 'Öffnen' : 'Open', close: lang === 'de' ? 'Schließen' : 'Close',
+                                open: lang === 'de' ? 'Ã-ffnen' : 'Open', close: lang === 'de' ? 'Schließen' : 'Close',
                                 set_position: lang === 'de' ? 'Position' : 'Position',
                                 volume: lang === 'de' ? 'Lautstärke' : 'Volume', source: 'Quelle',
                                 lock: lang === 'de' ? 'Sperren' : 'Lock', unlock: lang === 'de' ? 'Entsperren' : 'Unlock',
@@ -1454,8 +1510,8 @@ const DevicesPage = () => {
     const selectedCount = Object.values(selected).filter(Boolean).length;
     const importedEntityIds = new Set(devices.map(d => d.ha_entity_id));
 
-    const getDomainName = (domainId) => domains.find(d => d.id === domainId)?.display_name || '—';
-    const getRoomName = (roomId) => rooms.find(r => r.id === roomId)?.name || '—';
+    const getDomainName = (domainId) => domains.find(d => d.id === domainId)?.display_name || 'â€"';
+    const getRoomName = (roomId) => rooms.find(r => r.id === roomId)?.name || 'â€"';
 
     const getFilteredDevices = () => {
         if (!search) return devices;
@@ -1557,7 +1613,7 @@ const DevicesPage = () => {
             {devices.length > 0 ? (
                 <div>
                     <div style={{ marginBottom: 12 }}>
-                        <input className="input" placeholder={lang === 'de' ? '🔍 Geräte suchen...' : '🔍 Search devices...'}
+                        <input className="input" placeholder={lang === 'de' ? ' Geräte suchen...' : ' Search devices...'}
                             value={search} onChange={e => setSearch(e.target.value)} style={{ maxWidth: 400 }} />
                     </div>
                     <div className="table-wrap">
@@ -1583,13 +1639,13 @@ const DevicesPage = () => {
                                 const attrs = device.live_attributes || {};
                                 const unit = attrs.unit || '';
                                 const attrParts = [];
-                                if (attrs.brightness_pct != null) attrParts.push(`☀ ${attrs.brightness_pct}%`);
-                                if (attrs.position_pct != null) attrParts.push(`↕ ${attrs.position_pct}%`);
-                                if (attrs.current_temp != null) attrParts.push(`🌡 ${attrs.current_temp}${unit || '°C'}`);
-                                if (attrs.target_temp != null) attrParts.push(`→ ${attrs.target_temp}${unit || '°C'}`);
-                                if (attrs.humidity != null) attrParts.push(`💧 ${attrs.humidity}%`);
-                                if (attrs.power != null || attrs.current_power_w != null) attrParts.push(`⚡ ${attrs.power || attrs.current_power_w} W`);
-                                if (attrs.voltage != null) attrParts.push(`🔌 ${attrs.voltage} V`);
+                                if (attrs.brightness_pct != null) attrParts.push(`â˜€ ${attrs.brightness_pct}%`);
+                                if (attrs.position_pct != null) attrParts.push(`â†• ${attrs.position_pct}%`);
+                                if (attrs.current_temp != null) attrParts.push(`¡ ${attrs.current_temp}${unit || 'Â°C'}`);
+                                if (attrs.target_temp != null) attrParts.push(`â†' ${attrs.target_temp}${unit || 'Â°C'}`);
+                                if (attrs.humidity != null) attrParts.push(`'§ ${attrs.humidity}%`);
+                                if (attrs.power != null || attrs.current_power_w != null) attrParts.push(` ${attrs.power || attrs.current_power_w} W`);
+                                if (attrs.voltage != null) attrParts.push(`Œ ${attrs.voltage} V`);
                                 // For sensors: show state + unit directly (replaces generic state label)
                                 const isSensorValue = (attrParts.length === 0 && device.live_state && device.live_state !== 'on' && device.live_state !== 'off' && device.live_state !== 'unavailable' && device.live_state !== 'unknown');
                                 if (isSensorValue) {
@@ -1703,7 +1759,7 @@ const DevicesPage = () => {
                             value={editDevice.room_id || ''}
                             onChange={v => setEditDevice({ ...editDevice, room_id: v ? parseInt(v) : null })}
                             options={[
-                                { value: '', label: lang === 'de' ? '— Kein Raum —' : '— No Room —' },
+                                { value: '', label: lang === 'de' ? 'â€" Kein Raum â€"' : 'â€" No Room â€"' },
                                 ...rooms.map(r => ({ value: r.id, label: r.name }))
                             ]}
                         />
@@ -1714,7 +1770,7 @@ const DevicesPage = () => {
                             value={editDevice.domain_id || ''}
                             onChange={v => setEditDevice({ ...editDevice, domain_id: v ? parseInt(v) : null })}
                             options={[
-                                { value: '', label: lang === 'de' ? '— Keine —' : '— None —' },
+                                { value: '', label: lang === 'de' ? 'â€" Keine â€"' : 'â€" None â€"' },
                                 ...domains.map(d => ({ value: d.id, label: d.display_name }))
                             ]}
                         />
@@ -1723,7 +1779,7 @@ const DevicesPage = () => {
                         <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 14 }}>
                             <input type="checkbox" checked={editDevice.is_tracked} onChange={e => setEditDevice({ ...editDevice, is_tracked: e.target.checked })}
                                 style={{ width: 18, height: 18, accentColor: 'var(--accent-primary)' }} />
-                            {lang === 'de' ? 'Überwacht' : 'Tracked'}
+                            {lang === 'de' ? 'Ãœberwacht' : 'Tracked'}
                         </label>
                         <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 14 }}>
                             <input type="checkbox" checked={editDevice.is_controllable} onChange={e => setEditDevice({ ...editDevice, is_controllable: e.target.checked })}
@@ -1747,7 +1803,7 @@ const DevicesPage = () => {
                             value={bulkRoom}
                             onChange={v => setBulkRoom(v)}
                             options={[
-                                { value: '', label: lang === 'de' ? '— Nicht ändern —' : '— No change —' },
+                                { value: '', label: lang === 'de' ? 'â€" Nicht ändern â€"' : 'â€" No change â€"' },
                                 ...rooms.map(r => ({ value: String(r.id), label: r.name }))
                             ]}
                         />
@@ -1758,7 +1814,7 @@ const DevicesPage = () => {
                             value={bulkDomain}
                             onChange={v => setBulkDomain(v)}
                             options={[
-                                { value: '', label: lang === 'de' ? '— Nicht ändern —' : '— No change —' },
+                                { value: '', label: lang === 'de' ? 'â€" Nicht ändern â€"' : 'â€" No change â€"' },
                                 ...domains.map(d => ({ value: String(d.id), label: d.display_name }))
                             ]}
                         />
@@ -1868,7 +1924,7 @@ const DeviceGroupsSection = () => {
                                     </span>
                                 </div>
                                 <button className="btn btn-sm btn-ghost" onClick={() => createGroup(s.suggested_name, s.devices.map(d => d.id), s.room_id)}>
-                                    <span className="mdi mdi-plus-circle" style={{ color: 'var(--success)' }} /> {lang === 'de' ? 'Übernehmen' : 'Accept'}
+                                    <span className="mdi mdi-plus-circle" style={{ color: 'var(--success)' }} /> {lang === 'de' ? 'Ãœbernehmen' : 'Accept'}
                                 </button>
                             </div>
                         </div>
@@ -2044,7 +2100,7 @@ const RoomsPage = () => {
                                                         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 2 }}>
                                                             <span>{domName}</span>
                                                             <span className={`badge badge-${phase.color}`} style={{ fontSize: 9, padding: '1px 6px', cursor: 'pointer' }}
-                                                                title={`→ ${nextLabel}`}
+                                                                title={`â†' ${nextLabel}`}
                                                                 onClick={async () => {
                                                                     await api.put(`phases/${room.id}/${ds.domain_id}`, { phase: nextPhase });
                                                                     showToast(`${domName}: ${nextLabel}`, 'success');
@@ -2266,8 +2322,8 @@ const UsersPage = () => {
                                         </div>
                                         <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
                                             {user.ha_person_entity
-                                                ? `🔗 ${user.ha_person_entity}`
-                                                : (lang === 'de' ? '⚠️ Keine HA-Person' : '⚠️ No HA person')}
+                                                ? `- ${user.ha_person_entity}`
+                                                : (lang === 'de' ? 'âš ï¸ Keine HA-Person' : 'âš ï¸ No HA person')}
                                         </div>
                                     </div>
                                 </div>
@@ -2317,7 +2373,7 @@ const UsersPage = () => {
                             value={newUser.ha_person_entity}
                             onChange={v => setNewUser({ ...newUser, ha_person_entity: v })}
                             options={[
-                                { value: '', label: lang === 'de' ? '— Keine —' : '— None —' },
+                                { value: '', label: lang === 'de' ? 'â€" Keine â€"' : 'â€" None â€"' },
                                 ...haPersons.map(p => ({ value: p.entity_id, label: `${p.name} (${p.entity_id})` }))
                             ]}
                         />
@@ -2333,7 +2389,7 @@ const UsersPage = () => {
                             border: !editingUser.ha_person_entity ? '2px solid var(--accent-primary)' : '1px solid var(--border-color)',
                             background: !editingUser.ha_person_entity ? 'var(--accent-primary-dim)' : 'transparent'
                         }} onClick={() => handleAssignPerson(editingUser.id, '')}>
-                            {lang === 'de' ? '— Keine Person —' : '— No Person —'}
+                            {lang === 'de' ? 'â€" Keine Person â€"' : 'â€" No Person â€"'}
                         </div>
                         {haPersons.map(p => (
                             <div key={p.entity_id} style={{ padding: '10px 14px', borderRadius: 8, cursor: 'pointer',
@@ -2367,9 +2423,8 @@ const SettingsPage = () => {
     const [retentionInput, setRetentionInput] = useState('90');
     const [cleaning, setCleaning] = useState(false);
     const [anomalySensitivity, setAnomalySensitivity] = useState('medium');
-    const [vacationMode, setVacationMode] = useState(false);
-    const [debugMode, setDebugMode] = useState(false);
     const fileInputRef = useRef(null);
+    const [backupHistoryDays, setBackupHistoryDays] = useState(30);
 
     useEffect(() => {
         (async () => {
@@ -2385,10 +2440,6 @@ const SettingsPage = () => {
                 const global = anomSettings.find(s => !s.room_id && !s.domain_id && !s.device_id);
                 if (global) setAnomalySensitivity(global.sensitivity || 'medium');
             }
-            const vacRes = await api.get('system/vacation-mode');
-            if (vacRes) setVacationMode(!!vacRes.enabled);
-            const dbgRes = await api.get('system/debug');
-            if (dbgRes) setDebugMode(!!dbgRes.debug_mode);
         })();
     }, []);
 
@@ -2415,19 +2466,19 @@ const SettingsPage = () => {
 
     const handleExport = async (mode = 'standard') => {
         showToast(lang === 'de' ? 'Backup wird erstellt...' : 'Creating backup...', 'info');
-        const backup = await api.get(`backup/export?mode=${mode}`);
+        const backup = await api.get(`backup/export?mode=${mode}&history_days=${backupHistoryDays}`);
         if (backup) {
             const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `mindhome-${mode}-backup-${new Date().toISOString().slice(0,10)}.json`;
+            a.download = `mindhome-backup-${new Date().toISOString().slice(0,10)}.json`;
             a.click();
             URL.revokeObjectURL(url);
             const s = backup._summary || {};
             showToast(lang === 'de'
-                ? `Backup: ${s.rooms || 0} Räume, ${s.devices || 0} Geräte, ${s.patterns || 0} Muster`
-                : `Backup: ${s.rooms || 0} rooms, ${s.devices || 0} devices, ${s.patterns || 0} patterns`, 'success');
+                ? `Backup: ${s.rooms || 0} R\u00e4ume, ${s.devices || 0} Ger\u00e4te, ${s.patterns || 0} Muster, ${s.state_history || 0} Events`
+                : `Backup: ${s.rooms || 0} rooms, ${s.devices || 0} devices, ${s.patterns || 0} patterns, ${s.state_history || 0} events`, 'success');
         }
     };
 
@@ -2521,8 +2572,8 @@ const SettingsPage = () => {
                         value={lang}
                         onChange={v => setLang(v)}
                         options={[
-                            { value: 'de', label: '🇩🇪 Deutsch' },
-                            { value: 'en', label: '🇬🇧 English' },
+                            { value: 'de', label: 'ª Deutsch' },
+                            { value: 'en', label: '§ English' },
                         ]}
                     />
                 </div>
@@ -2533,8 +2584,8 @@ const SettingsPage = () => {
                         value={theme}
                         onChange={v => setTheme(v)}
                         options={[
-                            { value: 'dark', label: lang === 'de' ? '🌙 Dunkel' : '🌙 Dark' },
-                            { value: 'light', label: lang === 'de' ? '☀️ Hell' : '☀️ Light' },
+                            { value: 'dark', label: lang === 'de' ? ' Dunkel' : ' Dark' },
+                            { value: 'light', label: lang === 'de' ? 'â˜€ï¸ Hell' : 'â˜€ï¸ Light' },
                         ]}
                     />
                 </div>
@@ -2545,8 +2596,8 @@ const SettingsPage = () => {
                         value={viewMode}
                         onChange={v => setViewMode(v)}
                         options={[
-                            { value: 'simple', label: lang === 'de' ? '📋 Einfach' : '📋 Simple' },
-                            { value: 'advanced', label: lang === 'de' ? '📊 Ausführlich' : '📊 Advanced' },
+                            { value: 'simple', label: lang === 'de' ? '‹ Einfach' : '‹ Simple' },
+                            { value: 'advanced', label: lang === 'de' ? 'Š Ausführlich' : 'Š Advanced' },
                         ]}
                     />
                 </div>
@@ -2562,12 +2613,12 @@ const SettingsPage = () => {
                 </div>
                 <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 12 }}>
                     {lang === 'de'
-                        ? '100% lokal – alle Daten bleiben auf deinem Gerät. Keine Cloud, keine Tracking.'
-                        : '100% local – all data stays on your device. No cloud, no tracking.'}
+                        ? '100% lokal â€" alle Daten bleiben auf deinem Gerät. Keine Cloud, keine Tracking.'
+                        : '100% local â€" all data stays on your device. No cloud, no tracking.'}
                 </p>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                     <InfoRow label={lang === 'de' ? 'Datenbankgröße' : 'Database Size'}
-                        value={sysInfo?.db_size_bytes ? formatBytes(sysInfo.db_size_bytes) : '—'} />
+                        value={sysInfo?.db_size_bytes ? formatBytes(sysInfo.db_size_bytes) : 'â€"'} />
                     <InfoRow label={lang === 'de' ? 'Gesammelte Events' : 'Collected Events'}
                         value={sysInfo?.state_history_count?.toLocaleString() || '0'} />
                     <InfoRow label={lang === 'de' ? 'Aufbewahrung' : 'Retention'}
@@ -2582,17 +2633,17 @@ const SettingsPage = () => {
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                     <InfoRow label="Version" value={sysInfo?.version || '0.5.0'} />
-                    <InfoRow label="Phase" value={`2 – ${lang === 'de' ? 'Vollständig' : 'Complete'}`} />
+                    <InfoRow label="Phase" value={`2 â€" ${lang === 'de' ? 'Vollständig' : 'Complete'}`} />
                     <InfoRow label="Home Assistant"
-                        value={sysInfo?.ha_connected ? (lang === 'de' ? '… Verbunden' : '… Connected') : (lang === 'de' ? '❌ Getrennt' : '❌ Disconnected')} />
+                        value={sysInfo?.ha_connected ? (lang === 'de' ? 'âœ… Verbunden' : 'âœ… Connected') : (lang === 'de' ? 'âŒ Getrennt' : 'âŒ Disconnected')} />
                     <InfoRow label={lang === 'de' ? 'Zeitzone' : 'Timezone'}
-                        value={sysInfo?.timezone || '—'} />
+                        value={sysInfo?.timezone || 'â€"'} />
                     <InfoRow label={lang === 'de' ? 'HA Entities' : 'HA Entities'}
-                        value={sysInfo?.ha_entity_count || '—'} />
+                        value={sysInfo?.ha_entity_count || 'â€"'} />
                     <InfoRow label={lang === 'de' ? 'Datenbankgröße' : 'Database Size'}
-                        value={sysInfo?.db_size_bytes ? formatBytes(sysInfo.db_size_bytes) : '—'} />
+                        value={sysInfo?.db_size_bytes ? formatBytes(sysInfo.db_size_bytes) : 'â€"'} />
                     <InfoRow label="Uptime"
-                        value={sysInfo?.uptime_seconds ? `${Math.floor(sysInfo.uptime_seconds / 3600)} h` : '—'} />
+                        value={sysInfo?.uptime_seconds ? `${Math.floor(sysInfo.uptime_seconds / 3600)} h` : 'â€"'} />
                     <InfoRow label={lang === 'de' ? 'Gesammelte Events' : 'Collected Events'}
                         value={sysInfo?.state_history_count?.toLocaleString() || '0'} />
                     <InfoRow label={lang === 'de' ? 'Erkannte Muster' : 'Detected Patterns'}
@@ -2609,14 +2660,14 @@ const SettingsPage = () => {
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                     <button className="btn btn-sm btn-secondary" onClick={async () => {
                         const r = await api.get('system/watchdog');
-                        if (r) showToast(r.healthy ? (lang === 'de' ? '… System gesund' : '… System healthy') : `⚠️ ${r.issues?.join(', ')}`, r.healthy ? 'success' : 'warning');
+                        if (r) showToast(r.healthy ? (lang === 'de' ? 'âœ… System gesund' : 'âœ… System healthy') : `âš ï¸ ${r.issues?.join(', ')}`, r.healthy ? 'success' : 'warning');
                     }}>
                         <span className="mdi mdi-heart-pulse" style={{ marginRight: 4 }} />
                         {lang === 'de' ? 'Health-Check' : 'Health Check'}
                     </button>
                     <button className="btn btn-sm btn-secondary" onClick={async () => {
                         const r = await api.get('system/self-test');
-                        if (r) showToast(r.passed ? (lang === 'de' ? '… Selbsttest bestanden' : '… Self-test passed') : `⚠️ ${r.tests?.filter(t => t.status !== 'ok').map(t => t.test).join(', ')}`, r.passed ? 'success' : 'warning');
+                        if (r) showToast(r.passed ? (lang === 'de' ? 'âœ… Selbsttest bestanden' : 'âœ… Self-test passed') : `âš ï¸ ${r.tests?.filter(t => t.status !== 'ok').map(t => t.test).join(', ')}`, r.passed ? 'success' : 'warning');
                     }}>
                         <span className="mdi mdi-flask-outline" style={{ marginRight: 4 }} />
                         {lang === 'de' ? 'Selbsttest' : 'Self-Test'}
@@ -2639,7 +2690,7 @@ const SettingsPage = () => {
                     </button>
                     <button className="btn btn-sm btn-secondary" onClick={async () => {
                         const r = await api.get('system/check-update');
-                        if (r) showToast(r.update_available ? `Update: ${r.latest_version}` : (lang === 'de' ? `v${r.current_version} – Aktuell` : `v${r.current_version} – Up to date`), r.update_available ? 'info' : 'success');
+                        if (r) showToast(r.update_available ? `Update: ${r.latest_version}` : (lang === 'de' ? `v${r.current_version} â€" Aktuell` : `v${r.current_version} â€" Up to date`), r.update_available ? 'info' : 'success');
                     }}>
                         <span className="mdi mdi-update" style={{ marginRight: 4 }} />
                         {lang === 'de' ? 'Update prüfen' : 'Check Update'}
@@ -2687,14 +2738,24 @@ const SettingsPage = () => {
                 <div className="card-title" style={{ marginBottom: 16 }}>
                     {lang === 'de' ? 'Backup & Wiederherstellung' : 'Backup & Restore'}
                 </div>
+                <div style={{ marginBottom: 12 }}>
+                    <label style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>
+                        {lang === 'de' ? 'State History Tage:' : 'State History Days:'}
+                    </label>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <input type="range" min="0" max="365" step="1"
+                            value={backupHistoryDays || 30}
+                            onChange={e => setBackupHistoryDays(parseInt(e.target.value))}
+                            style={{ flex: 1 }} />
+                        <span style={{ fontSize: 13, minWidth: 60, textAlign: 'right' }}>
+                            {(backupHistoryDays || 30) === 0 ? (lang === 'de' ? 'Keine' : 'None') : `${backupHistoryDays || 30} ${lang === 'de' ? 'Tage' : 'days'}`}
+                        </span>
+                    </div>
+                </div>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
                     <button className="btn btn-primary" onClick={() => handleExport('standard')}>
                         <span className="mdi mdi-download" style={{ marginRight: 4 }} />
-                        {lang === 'de' ? 'Standard' : 'Standard'}
-                    </button>
-                    <button className="btn btn-secondary" onClick={() => handleExport('full')}>
-                        <span className="mdi mdi-download-multiple" style={{ marginRight: 4 }} />
-                        {lang === 'de' ? 'Vollständig' : 'Full'}
+                        {lang === 'de' ? 'Backup erstellen' : 'Create Backup'}
                     </button>
                     <button className="btn btn-secondary" onClick={() => fileInputRef.current?.click()}>
                         <span className="mdi mdi-upload" style={{ marginRight: 4 }} />
@@ -2705,8 +2766,8 @@ const SettingsPage = () => {
                 </div>
                 <p style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 0 }}>
                     {lang === 'de'
-                        ? 'Standard: Konfiguration. Vollständig: inkl. State History, Logs (90 Tage).'
-                        : 'Standard: config only. Full: incl. state history, logs (90 days).'}
+                        ? 'Backup enthält alle Einstellungen, Räume, Geräte, Muster und State History.'
+                        : 'Backup includes all settings, rooms, devices, patterns and state history.'}
                 </p>
             </div>
 
@@ -2748,15 +2809,14 @@ const SettingsPage = () => {
                     {lang === 'de' ? 'Erweitert' : 'Advanced'}
                 </div>
 
+            </div>
                 {/* #23 Vacation Mode */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
                     <span style={{ fontSize: 13 }}><span className="mdi mdi-airplane" style={{ marginRight: 6, color: 'var(--accent-primary)' }} />{lang === 'de' ? 'Urlaubsmodus' : 'Vacation Mode'}</span>
                     <label className="toggle" style={{ transform: 'scale(0.85)' }}>
-                        <input type="checkbox" checked={vacationMode} onChange={async () => {
-                            const newVal = !vacationMode;
-                            const r = await api.put('system/vacation-mode', { enabled: newVal });
-                            if (r) setVacationMode(!!r.enabled);
-                            showToast(newVal ? (lang === 'de' ? 'Urlaub aktiv' : 'Vacation ON') : (lang === 'de' ? 'Urlaub beendet' : 'Vacation OFF'), 'info');
+                        <input type="checkbox" onChange={async () => {
+                            const r = await api.put('system/vacation-mode', { enabled: true });
+                            showToast(r?.enabled ? (lang === 'de' ? 'Urlaub aktiv' : 'Vacation ON') : (lang === 'de' ? 'Urlaub beendet' : 'Vacation OFF'), 'info');
                         }} />
                         <span className="toggle-slider" />
                     </label>
@@ -2766,11 +2826,7 @@ const SettingsPage = () => {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
                     <span style={{ fontSize: 13 }}><span className="mdi mdi-bug" style={{ marginRight: 6 }} />{lang === 'de' ? 'Debug-Modus' : 'Debug Mode'}</span>
                     <label className="toggle" style={{ transform: 'scale(0.85)' }}>
-                        <input type="checkbox" checked={debugMode} onChange={async () => {
-                            const r = await api.put('system/debug');
-                            if (r) setDebugMode(!!r.debug_mode);
-                            showToast(r?.debug_mode ? 'Debug ON' : 'Debug OFF', 'info');
-                        }} />
+                        <input type="checkbox" onChange={async () => { const r = await api.put('system/debug'); showToast(r?.debug_mode ? 'Debug ON' : 'Debug OFF', 'info'); }} />
                         <span className="toggle-slider" />
                     </label>
                 </div>
@@ -2813,8 +2869,6 @@ const SettingsPage = () => {
 
             {/* Calendar Trigger Configuration */}
             <CalendarTriggersConfig lang={lang} showToast={showToast} />
-
-            </div>
 
         </div>
         </>
@@ -2910,7 +2964,7 @@ const CalendarTriggersConfig = ({ lang, showToast }) => {
                 <div key={t.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                     padding: '8px 0', borderBottom: '1px solid var(--border)', fontSize: 12 }}>
                     <div>
-                        <div style={{ fontWeight: 500 }}>{t.keyword} → {actionLabels[t.action] || t.action}</div>
+                        <div style={{ fontWeight: 500 }}>{t.keyword} â†' {actionLabels[t.action] || t.action}</div>
                         <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
                             {t.calendar}{t.lead_minutes ? ` · ${t.lead_minutes} min ${lang === 'de' ? 'vorher' : 'before'}` : ''}
                         </div>
@@ -3032,8 +3086,8 @@ const DeviceAnomalyConfig = ({ lang }) => {
 
                         {/* Thresholds */}
                         <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6, marginBottom: 2 }}>{lang === 'de' ? 'Schwellwerte' : 'Thresholds'}</div>
-                        {[{key:'temp_min',l:lang==='de'?'Temp. min °C':'Temp min °C',ph:'5'},
-                          {key:'temp_max',l:lang==='de'?'Temp. max °C':'Temp max °C',ph:'30'},
+                        {[{key:'temp_min',l:lang==='de'?'Temp. min Â°C':'Temp min Â°C',ph:'5'},
+                          {key:'temp_max',l:lang==='de'?'Temp. max Â°C':'Temp max Â°C',ph:'30'},
                           {key:'power_max',l:lang==='de'?'Strom max W':'Power max W',ph:'3000'},
                           {key:'battery_min',l:lang==='de'?'Batterie min %':'Battery min %',ph:'20'}].map(t => (
                             <div key={t.key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '2px 0' }}>
@@ -3176,20 +3230,35 @@ const AnomalyAdvancedPanel = ({ lang, showToast }) => {
                 <DeviceAnomalyConfig lang={lang} />
             </CollapsibleCard>
 
+            {/* Phase 3B: Personen-Zeitprofile */}
+            <CollapsibleCard title={lang === 'de' ? 'Personen-Zeitprofile' : 'Person Time Profiles'} icon="mdi-clock-account" defaultOpen={false}>
+                <PersonTimeProfiles lang={lang} />
+            </CollapsibleCard>
+
+            {/* Phase 3B: Schichtplan Import */}
+            <CollapsibleCard title={lang === 'de' ? 'Schichtplan Import' : 'Shift Plan Import'} icon="mdi-file-pdf-box" defaultOpen={false}>
+                <ShiftPlanImport lang={lang} />
+            </CollapsibleCard>
+
+            {/* Phase 3B: Feiertage */}
+            <CollapsibleCard title={lang === 'de' ? 'Feiertage' : 'Holidays'} icon="mdi-calendar-star" defaultOpen={false}>
+                <HolidayManager lang={lang} />
+            </CollapsibleCard>
+
             {/* Statistics */}
             {stats && stats.total_30d > 0 && (
                 <CollapsibleCard title={`${lang === 'de' ? 'Statistik' : 'Statistics'} · ${stats.total_30d}`} icon="mdi-chart-bar" defaultOpen={false}>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 6, marginBottom: 8 }}>
                         {Object.entries(stats.by_type || {}).map(([type, count]) => (
                             <div key={type} style={{ padding: '6px 8px', background: 'var(--bg-main)', borderRadius: 6, fontSize: 11 }}>
-                                <div style={{ fontWeight: 600 }}>{count}×</div>
+                                <div style={{ fontWeight: 600 }}>{count}Ã-</div>
                                 <div style={{ color: 'var(--text-muted)' }}>{type}</div>
                             </div>
                         ))}
                     </div>
                     {stats.top_devices?.length > 0 && (
                         <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                            {lang === 'de' ? 'Top-Geräte' : 'Top devices'}: {stats.top_devices.slice(0, 3).map(d => `${d.name} (${d.count}×)`).join(', ')}
+                            {lang === 'de' ? 'Top-Geräte' : 'Top devices'}: {stats.top_devices.slice(0, 3).map(d => `${d.name} (${d.count}Ã-)`).join(', ')}
                         </div>
                     )}
                 </CollapsibleCard>
@@ -3201,6 +3270,346 @@ const AnomalyAdvancedPanel = ({ lang, showToast }) => {
 // ================================================================
 // Phase 2a: Patterns Page (Muster-Explorer)
 // ================================================================
+
+
+// ================================================================
+// Phase 3B: Personen-Zeitprofile Component
+// ================================================================
+
+const PersonTimeProfiles = ({ lang }) => {
+    const { users, showToast } = useApp();
+    const [schedules, setSchedules] = useState([]);
+    const [editing, setEditing] = useState(null);
+    const [loading, setLoading] = useState(true);
+
+    const SCHEDULE_TYPES = [
+        { id: 'weekday', label: lang === 'de' ? 'Feste Arbeitszeit' : 'Fixed Work' },
+        { id: 'homeoffice', label: 'Homeoffice' },
+        { id: 'weekend', label: lang === 'de' ? 'Wochenende' : 'Weekend' },
+        { id: 'shift', label: lang === 'de' ? 'Schichtdienst' : 'Shift Work' },
+        { id: 'child', label: lang === 'de' ? 'Kind/Schule' : 'Child/School' },
+        { id: 'free', label: lang === 'de' ? 'Nicht berufst\u00e4tig' : 'Not employed' },
+    ];
+
+    const WEEKDAYS = [
+        { id: 'Mo', label: 'Mo' }, { id: 'Di', label: 'Di' }, { id: 'Mi', label: 'Mi' },
+        { id: 'Do', label: 'Do' }, { id: 'Fr', label: 'Fr' }, { id: 'Sa', label: 'Sa' }, { id: 'So', label: 'So' },
+    ];
+
+    const load = async () => {
+        const data = await api.get('person-schedules');
+        if (data) setSchedules(data);
+        setLoading(false);
+    };
+    useEffect(() => { load(); }, []);
+
+    const save = async (sched) => {
+        if (sched.id) {
+            await api.put(`person-schedules/${sched.id}`, sched);
+        } else {
+            await api.post('person-schedules', sched);
+        }
+        setEditing(null);
+        await load();
+        showToast(lang === 'de' ? 'Zeitprofil gespeichert' : 'Profile saved', 'success');
+    };
+
+    const remove = async (id) => {
+        await api.delete(`person-schedules/${id}`);
+        await load();
+    };
+
+    const newProfile = (userId) => ({
+        user_id: userId, schedule_type: 'weekday', name: '',
+        time_wake: '06:30', time_leave: '07:30', time_home: '17:00', time_sleep: '22:30',
+        weekdays: 'Mo,Di,Mi,Do,Fr',
+    });
+
+    if (loading) return <div style={{ padding: 16, color: 'var(--text-muted)' }}>Laden...</div>;
+
+    return (
+        <div>
+            {(users || []).map(u => {
+                const userSchedules = schedules.filter(s => s.user_id === u.id);
+                return (
+                    <div key={u.id} style={{ marginBottom: 16, padding: 12, background: 'var(--bg-secondary)', borderRadius: 8 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                            <span style={{ fontSize: 14, fontWeight: 600 }}>{u.name}</span>
+                            <button className="btn btn-sm btn-primary" onClick={() => setEditing(newProfile(u.id))}>
+                                <span className="mdi mdi-plus" style={{ marginRight: 2 }} />Profil
+                            </button>
+                        </div>
+                        {userSchedules.length === 0 && <div style={{ fontSize: 12, color: 'var(--text-muted)', fontStyle: 'italic' }}>Kein Zeitprofil konfiguriert</div>}
+                        {userSchedules.map(s => (
+                            <div key={s.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--border)' }}>
+                                <div>
+                                    <div style={{ fontSize: 12, fontWeight: 500 }}>{SCHEDULE_TYPES.find(t => t.id === s.schedule_type)?.label || s.schedule_type}{s.name ? ` - ${s.name}` : ''}</div>
+                                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                                        {s.schedule_type !== 'shift' && s.time_wake && <span>{s.time_wake} \u2192 {s.time_leave || '-'} | {s.time_home || '-'} \u2192 {s.time_sleep}</span>}
+                                        {s.weekdays && <span style={{ marginLeft: 8 }}>[{s.weekdays}]</span>}
+                                    </div>
+                                </div>
+                                <div style={{ display: 'flex', gap: 4 }}>
+                                    <button className="btn btn-sm btn-ghost" onClick={() => setEditing(s)}><span className="mdi mdi-pencil" /></button>
+                                    <button className="btn btn-sm btn-ghost" onClick={() => remove(s.id)} style={{ color: 'var(--danger)' }}><span className="mdi mdi-delete" /></button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                );
+            })}
+            {editing && (
+                <Modal title={lang === 'de' ? 'Zeitprofil bearbeiten' : 'Edit Time Profile'} onClose={() => setEditing(null)} onConfirm={() => save(editing)}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                        <div>
+                            <label style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Typ</label>
+                            <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 4 }}>
+                                {SCHEDULE_TYPES.map(t => (
+                                    <button key={t.id} className={`btn btn-sm ${editing.schedule_type === t.id ? 'btn-primary' : 'btn-ghost'}`}
+                                        onClick={() => setEditing({ ...editing, schedule_type: t.id })} style={{ fontSize: 11 }}>{t.label}</button>
+                                ))}
+                            </div>
+                        </div>
+                        <input type="text" placeholder="Name (optional)" value={editing.name || ''} onChange={e => setEditing({ ...editing, name: e.target.value })} style={{ fontSize: 12, padding: '6px 8px' }} />
+                        {editing.schedule_type !== 'shift' && (
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                                {[['time_wake','Aufstehen'],['time_leave','Haus verlassen'],['time_home','Heimkommen'],['time_sleep','Schlafen']].map(([key,lbl]) => (
+                                    <div key={key}>
+                                        <label style={{ fontSize: 11, color: 'var(--text-muted)' }}>{lbl}</label>
+                                        <input type="time" value={editing[key] || ''} onChange={e => setEditing({ ...editing, [key]: e.target.value })} style={{ fontSize: 12, width: '100%' }} />
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                        <div>
+                            <label style={{ fontSize: 11, color: 'var(--text-muted)' }}>Wochentage</label>
+                            <div style={{ display: 'flex', gap: 4, marginTop: 4 }}>
+                                {WEEKDAYS.map(d => {
+                                    const active = (editing.weekdays || '').includes(d.id);
+                                    return <button key={d.id} className={`btn btn-sm ${active ? 'btn-primary' : 'btn-ghost'}`}
+                                        onClick={() => { const days = (editing.weekdays || '').split(',').filter(Boolean); setEditing({ ...editing, weekdays: (active ? days.filter(x => x !== d.id) : [...days, d.id]).join(',') }); }}
+                                        style={{ fontSize: 11, padding: '2px 6px', minWidth: 30 }}>{d.label}</button>;
+                                })}
+                            </div>
+                        </div>
+                    </div>
+                </Modal>
+            )}
+        </div>
+    );
+};
+
+// ================================================================
+// Phase 3B: Schichtplan PDF Import Component
+// ================================================================
+
+const ShiftPlanImport = ({ lang }) => {
+    const { users, showToast } = useApp();
+    const [parsed, setParsed] = useState(null);
+    const [uploading, setUploading] = useState(false);
+    const [applying, setApplying] = useState(false);
+    const [selectedUser, setSelectedUser] = useState(null);
+    const [calendars, setCalendars] = useState([]);
+    const [selectedCalendar, setSelectedCalendar] = useState('');
+    const fileRef = useRef(null);
+
+    useEffect(() => { (async () => { const c = await api.get('ha/calendars'); if (c) setCalendars(c); })(); }, []);
+
+    const handleUpload = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        setUploading(true);
+        try {
+            const formData = new FormData();
+            formData.append('file', file);
+            const resp = await fetch('/api/shift-plan/import', { method: 'POST', body: formData });
+            const data = await resp.json();
+            if (data.success) {
+                setParsed(data.parsed);
+                if (data.parsed.person_name) {
+                    const match = (users || []).find(u => data.parsed.person_name.toLowerCase().includes(u.name.toLowerCase().split(' ')[0]));
+                    if (match) setSelectedUser(match.id);
+                }
+                showToast(`${data.parsed.parsed_count} Eintr\u00e4ge erkannt`, 'success');
+            } else { showToast(data.error || 'Fehler', 'error'); }
+        } catch (err) { showToast('Upload fehlgeschlagen', 'error'); }
+        setUploading(false);
+        if (fileRef.current) fileRef.current.value = '';
+    };
+
+    const handleApply = async () => {
+        if (!selectedUser || !parsed) return;
+        setApplying(true);
+        const result = await api.post('shift-plan/apply', {
+            user_id: selectedUser, entries: parsed.entries,
+            person_name: parsed.person_name, month_year: parsed.month_year,
+            calendar_entity: selectedCalendar || undefined,
+        });
+        if (result?.success) {
+            showToast(`Schichtplan gespeichert. ${result.calendar_events_created || 0} Kalender-Events.`, 'success');
+            setParsed(null);
+        } else { showToast(result?.error || 'Fehler', 'error'); }
+        setApplying(false);
+    };
+
+    const typeColors = { frueh_abend: '#4a90d9', frueh_mittag: '#7b68ee', tagdienst: '#50c878', frueh: '#87ceeb', dienstfrei: '#999', urlaub: '#f0ad4e', zeitausgleich: '#d4a', krank: '#e74c3c' };
+
+    return (
+        <div>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 12 }}>
+                <button className="btn btn-primary" onClick={() => fileRef.current?.click()} disabled={uploading}>
+                    <span className="mdi mdi-file-pdf-box" style={{ marginRight: 4 }} />
+                    {uploading ? 'Wird geladen...' : 'PDF hochladen'}
+                </button>
+                <input ref={fileRef} type="file" accept=".pdf" onChange={handleUpload} style={{ display: 'none' }} />
+            </div>
+            {parsed && (
+                <div>
+                    <div style={{ padding: 10, background: 'var(--bg-secondary)', borderRadius: 8, marginBottom: 12 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>{parsed.person_name || 'Unbekannt'} - {parsed.month_year || ''}</div>
+                        <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{parsed.parsed_count} Tage | {parsed.work_days} Arbeit | {parsed.off_days} Frei</div>
+                    </div>
+                    <div style={{ maxHeight: 300, overflowY: 'auto', marginBottom: 12 }}>
+                        {parsed.entries.map((e, i) => (
+                            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', borderBottom: '1px solid var(--border)', fontSize: 12 }}>
+                                <span style={{ minWidth: 80, fontFamily: 'monospace' }}>{e.date}</span>
+                                <span style={{ width: 10, height: 10, borderRadius: '50%', background: typeColors[e.shift_type] || '#666', flexShrink: 0 }} />
+                                <span style={{ flex: 1 }}>{e.shift_label}</span>
+                                {e.fehlzeit && <span style={{ fontSize: 10, padding: '1px 4px', background: typeColors[e.shift_type] || '#999', color: '#fff', borderRadius: 4 }}>{e.fehlzeit}</span>}
+                                <span style={{ color: 'var(--text-muted)', fontSize: 11, minWidth: 120, textAlign: 'right' }}>{e.blocks?.map(b => `${b.start}-${b.end}`).join(' + ') || '-'}</span>
+                            </div>
+                        ))}
+                    </div>
+                    <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'end', marginBottom: 8 }}>
+                        <div>
+                            <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 2 }}>Person:</label>
+                            <div style={{ display: 'flex', gap: 4 }}>
+                                {(users || []).map(u => (
+                                    <button key={u.id} className={`btn btn-sm ${selectedUser === u.id ? 'btn-primary' : 'btn-ghost'}`}
+                                        onClick={() => setSelectedUser(u.id)} style={{ fontSize: 11 }}>{u.name}</button>
+                                ))}
+                            </div>
+                        </div>
+                        <div>
+                            <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 2 }}>Kalender:</label>
+                            <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                                <button className={`btn btn-sm ${!selectedCalendar ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setSelectedCalendar('')} style={{ fontSize: 10 }}>Keiner</button>
+                                {calendars.map(c => (
+                                    <button key={c.entity_id} className={`btn btn-sm ${selectedCalendar === c.entity_id ? 'btn-primary' : 'btn-ghost'}`}
+                                        onClick={() => setSelectedCalendar(c.entity_id)} style={{ fontSize: 10 }}>{c.name}</button>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                    <button className="btn btn-primary" onClick={handleApply} disabled={!selectedUser || applying}>
+                        <span className="mdi mdi-check-circle" style={{ marginRight: 4 }} />{applying ? '...' : 'Schichtplan \u00fcbernehmen'}
+                    </button>
+                </div>
+            )}
+        </div>
+    );
+};
+
+// ================================================================
+// Phase 3B: Feiertage Component
+// ================================================================
+
+const HolidayManager = ({ lang }) => {
+    const { showToast } = useApp();
+    const [holidays, setHolidays] = useState({ builtin: [], custom: [], ha_holidays: [] });
+    const [year, setYear] = useState(new Date().getFullYear());
+    const [calendars, setCalendars] = useState([]);
+    const [holidayCalendar, setHolidayCalendar] = useState('');
+    const [newHoliday, setNewHoliday] = useState({ name: '', date: '' });
+    const [loading, setLoading] = useState(true);
+
+    const load = async () => {
+        const calParam = holidayCalendar ? `&calendar_entity=${holidayCalendar}` : '';
+        const data = await api.get(`holidays?year=${year}${calParam}`);
+        if (data) setHolidays(data);
+        setLoading(false);
+    };
+
+    useEffect(() => {
+        (async () => {
+            const cals = await api.get('ha/holiday-calendars');
+            if (cals) {
+                setCalendars(cals);
+                const hc = cals.find(c => c.entity_id.includes('austria') || c.entity_id.includes('sterreich') || c.name.toLowerCase().includes('ster'));
+                if (hc) setHolidayCalendar(hc.entity_id);
+            }
+        })();
+    }, []);
+
+    useEffect(() => { load(); }, [year, holidayCalendar]);
+
+    const addCustom = async () => {
+        if (!newHoliday.name || !newHoliday.date) return;
+        await api.post('holidays', newHoliday);
+        setNewHoliday({ name: '', date: '' });
+        await load();
+        showToast('Feiertag hinzugef\u00fcgt', 'success');
+    };
+
+    const removeCustom = async (id) => { await api.delete(`holidays/${id}`); await load(); };
+
+    const allHolidays = [
+        ...(holidays.ha_holidays || []).map(h => ({ ...h, source: 'ha' })),
+        ...(holidays.ha_holidays?.length ? [] : (holidays.builtin || []).map(h => ({ ...h, source: 'builtin' }))),
+        ...(holidays.custom || []).map(h => ({ ...h, source: 'custom' })),
+    ].sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+
+    const srcLabel = { ha: 'HA Integration', builtin: 'Fallback', custom: 'Manuell' };
+    const srcColor = { ha: 'var(--primary)', builtin: 'var(--text-muted)', custom: 'var(--warning)' };
+
+    return (
+        <div>
+            <div style={{ display: 'flex', gap: 12, alignItems: 'end', marginBottom: 12, flexWrap: 'wrap' }}>
+                <div>
+                    <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 2 }}>HA Feiertags-Kalender:</label>
+                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                        <button className={`btn btn-sm ${!holidayCalendar ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setHolidayCalendar('')} style={{ fontSize: 10 }}>Fallback</button>
+                        {calendars.map(c => (
+                            <button key={c.entity_id} className={`btn btn-sm ${holidayCalendar === c.entity_id ? 'btn-primary' : 'btn-ghost'}`}
+                                onClick={() => setHolidayCalendar(c.entity_id)} style={{ fontSize: 10 }}>{c.name}</button>
+                        ))}
+                    </div>
+                </div>
+                <div>
+                    <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 2 }}>Jahr:</label>
+                    <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                        <button className="btn btn-sm btn-ghost" onClick={() => setYear(y => y - 1)}>&lt;</button>
+                        <span style={{ fontSize: 13, fontWeight: 600 }}>{year}</span>
+                        <button className="btn btn-sm btn-ghost" onClick={() => setYear(y => y + 1)}>&gt;</button>
+                    </div>
+                </div>
+            </div>
+            {loading ? <div style={{ color: 'var(--text-muted)', fontSize: 12 }}>Laden...</div> : (
+                <div style={{ maxHeight: 300, overflowY: 'auto', marginBottom: 12 }}>
+                    {allHolidays.map((h, i) => (
+                        <div key={`${h.date}-${i}`} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', borderBottom: '1px solid var(--border)', fontSize: 12 }}>
+                            <span style={{ minWidth: 80, fontFamily: 'monospace' }}>{h.date}</span>
+                            <span style={{ flex: 1 }}>{h.name}</span>
+                            <span style={{ fontSize: 10, color: srcColor[h.source], padding: '1px 4px', background: 'var(--bg-secondary)', borderRadius: 4 }}>{srcLabel[h.source]}</span>
+                            {h.source === 'custom' && h.id && (
+                                <button className="btn btn-sm btn-ghost" onClick={() => removeCustom(h.id)} style={{ color: 'var(--danger)', padding: 2 }}><span className="mdi mdi-close" /></button>
+                            )}
+                        </div>
+                    ))}
+                    {allHolidays.length === 0 && <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: 8, textAlign: 'center' }}>Keine Feiertage gefunden</div>}
+                </div>
+            )}
+            <div style={{ display: 'flex', gap: 8, alignItems: 'end' }}>
+                <div style={{ flex: 1 }}>
+                    <label style={{ fontSize: 11, color: 'var(--text-muted)' }}>Eigener Feiertag:</label>
+                    <input type="text" placeholder="z.B. Betriebsurlaub" value={newHoliday.name} onChange={e => setNewHoliday({ ...newHoliday, name: e.target.value })} style={{ fontSize: 12, padding: '4px 8px', width: '100%' }} />
+                </div>
+                <input type="date" value={newHoliday.date} onChange={e => setNewHoliday({ ...newHoliday, date: e.target.value })} style={{ fontSize: 12, padding: '4px 8px' }} />
+                <button className="btn btn-sm btn-primary" onClick={addCustom} disabled={!newHoliday.name || !newHoliday.date}><span className="mdi mdi-plus" /></button>
+            </div>
+        </div>
+    );
+};
 
 const ActivitiesPage = () => {
     const { lang, devices, rooms, domains } = useApp();
@@ -3363,10 +3772,10 @@ const ActivitiesPage = () => {
                     {filtered.map(log => {
                         const attrs = log.action_data?.new_attributes || {};
                         const attrParts = [];
-                        if (attrs.brightness_pct !== undefined) attrParts.push(`💡 ${attrs.brightness_pct}%`);
-                        if (attrs.position_pct !== undefined) attrParts.push(`↕ ${attrs.position_pct}%`);
-                        if (attrs.target_temp !== undefined) attrParts.push(`🌡 ${attrs.target_temp}°C`);
-                        if (attrs.current_temp !== undefined) attrParts.push(`Ist: ${attrs.current_temp}°C`);
+                        if (attrs.brightness_pct !== undefined) attrParts.push(` ${attrs.brightness_pct}%`);
+                        if (attrs.position_pct !== undefined) attrParts.push(`â†• ${attrs.position_pct}%`);
+                        if (attrs.target_temp !== undefined) attrParts.push(`¡ ${attrs.target_temp}Â°C`);
+                        if (attrs.current_temp !== undefined) attrParts.push(`Ist: ${attrs.current_temp}Â°C`);
                         const roomName = getRoomName(log.room_id);
                         return (
                         <div key={log.id} className="card" style={{ padding: '12px 14px', display: 'flex', alignItems: 'flex-start', gap: 12 }}>
@@ -3426,7 +3835,7 @@ const ActivitiesPage = () => {
                                 <div key={a.id} style={{ padding: '8px 0', borderBottom: '1px solid var(--border-color)', fontSize: 13 }}>
                                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                                         <strong>{a.action}</strong>
-                                        <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{a.created_at ? relativeTime(a.created_at, lang) : '–'}</span>
+                                        <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{a.created_at ? relativeTime(a.created_at, lang) : 'â€"'}</span>
                                     </div>
                                     {a.target && <div style={{ color: 'var(--text-secondary)', fontSize: 12 }}>{a.target}</div>}
                                     {a.details && <div style={{ color: 'var(--text-muted)', fontSize: 11, marginTop: 2 }}>{typeof a.details === 'string' ? a.details : JSON.stringify(a.details)}</div>}
@@ -3496,7 +3905,7 @@ const PatternsPage = () => {
     };
 
     useEffect(() => {
-        // Auto-reclassify existing sensor→sensor patterns as insights
+        // Auto-reclassify existing sensorâ†'sensor patterns as insights
         api.post('patterns/reclassify-insights').then(() => load());
     }, []);
 
@@ -3776,7 +4185,7 @@ const PatternsPage = () => {
                                     </div>
                                     <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
                                         {lang === 'de' ? 'Wenn' : 'If'} <strong>{r.trigger_entity}</strong> = {r.trigger_state}
-                                        → <strong>{r.action_entity}</strong> {r.action_service}
+                                        â†' <strong>{r.action_entity}</strong> {r.action_service}
                                         {r.delay_seconds > 0 && ` (${r.delay_seconds}s ${lang === 'de' ? 'Verzögerung' : 'delay'})`}
                                     </div>
                                     {r.execution_count > 0 && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
@@ -3875,7 +4284,7 @@ const PatternsPage = () => {
                             <span className="mdi mdi-speedometer" />
                         </div>
                         <div>
-                            <div className="stat-value">{s.avg_confidence ? `${Math.round(s.avg_confidence * 100)}%` : '—'}</div>
+                            <div className="stat-value">{s.avg_confidence ? `${Math.round(s.avg_confidence * 100)}%` : 'â€"'}</div>
                             <div className="stat-label">{lang === 'de' ? 'Ø Vertrauen' : 'Avg Confidence'}</div>
                         </div>
                     </div>
@@ -3890,9 +4299,9 @@ const PatternsPage = () => {
                     <span style={{ fontSize: 14, fontWeight: 500 }}>{lang === 'de' ? 'Lerngeschwindigkeit' : 'Learning Speed'}</span>
                 </div>
                 <div style={{ display: 'flex', gap: 4 }}>
-                    {[{ id: 'conservative', label: lang === 'de' ? 'Vorsichtig' : 'Conservative', icon: '🐢' },
-                      { id: 'normal', label: 'Normal', icon: '⚖️' },
-                      { id: 'aggressive', label: lang === 'de' ? 'Aggressiv' : 'Aggressive', icon: '🚀' }].map(s => (
+                    {[{ id: 'conservative', label: lang === 'de' ? 'Vorsichtig' : 'Conservative', icon: '' },
+                      { id: 'normal', label: 'Normal', icon: 'âš-ï¸' },
+                      { id: 'aggressive', label: lang === 'de' ? 'Aggressiv' : 'Aggressive', icon: '' }].map(s => (
                         <button key={s.id} className={`btn btn-sm ${(stats?.learning_speed || 'normal') === s.id ? 'btn-primary' : 'btn-ghost'}`}
                             onClick={async () => {
                                 try {
@@ -3984,24 +4393,24 @@ const PatternsPage = () => {
                                 <tr>
                                     <th>{lang === 'de' ? 'Zeit' : 'Time'}</th>
                                     <th>Entity</th>
-                                    <th>{lang === 'de' ? 'Alt → Neu' : 'Old → New'}</th>
+                                    <th>{lang === 'de' ? 'Alt â†' Neu' : 'Old â†' New'}</th>
                                     <th>{lang === 'de' ? 'Kontext' : 'Context'}</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {stateHistory.map(ev => (
                                     <tr key={ev.id}>
-                                        <td style={{ whiteSpace: 'nowrap' }}>{ev.created_at ? new Date(ev.created_at).toLocaleTimeString() : '—'}</td>
+                                        <td style={{ whiteSpace: 'nowrap' }}>{ev.created_at ? new Date(ev.created_at).toLocaleTimeString() : 'â€"'}</td>
                                         <td style={{ fontFamily: 'monospace', fontSize: 11 }}>{ev.entity_id}</td>
                                         <td>
                                             <span style={{ color: 'var(--text-muted)' }}>{ev.old_state || '?'}</span>
-                                            <span style={{ margin: '0 4px' }}>→</span>
+                                            <span style={{ margin: '0 4px' }}>â†'</span>
                                             <span style={{ fontWeight: 600, color: ev.new_state === 'on' ? 'var(--success)' : ev.new_state === 'off' ? 'var(--text-muted)' : 'var(--text-primary)' }}>
                                                 {ev.new_state}
                                             </span>
                                         </td>
                                         <td style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                                            {ev.context?.time_slot} {ev.context?.persons_home?.length > 0 ? `👤${ev.context.persons_home.length}` : ''}
+                                            {ev.context?.time_slot} {ev.context?.persons_home?.length > 0 ? `'¤${ev.context.persons_home.length}` : ''}
                                         </td>
                                     </tr>
                                 ))}
@@ -4026,7 +4435,7 @@ const PatternsPage = () => {
                     </div>
                     {conflicts.slice(0, 3).map((c, i) => (
                         <div key={i} style={{ fontSize: 12, color: 'var(--text-secondary)', padding: '4px 0' }}>
-                            {c.message_de || c.message_en || c.description || `${c.pattern_a?.desc || c.pattern_a?.id || '?'} ↔ ${c.pattern_b?.desc || c.pattern_b?.id || '?'}`}
+                            {c.message_de || c.message_en || c.description || `${c.pattern_a?.desc || c.pattern_a?.id || '?'} â†" ${c.pattern_b?.desc || c.pattern_b?.id || '?'}`}
                         </div>
                     ))}
                 </div>
@@ -4140,7 +4549,7 @@ const PatternsPage = () => {
                                             {typeLabels[p.pattern_type]}
                                         </span>
                                         <span style={{ color: 'var(--text-muted)' }}>
-                                            {p.match_count}× {lang === 'de' ? 'erkannt' : 'matched'}
+                                            {p.match_count}Ã- {lang === 'de' ? 'erkannt' : 'matched'}
                                         </span>
                                     </div>
                                 </div>
@@ -4186,25 +4595,25 @@ const PatternsPage = () => {
                                     background: 'var(--bg-tertiary)', fontSize: 13,
                                 }}>
                                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 24px', marginBottom: 12 }}>
-                                        <div><span style={{ color: 'var(--text-muted)' }}>Entity:</span> <code style={{ fontSize: 12 }}>{p.pattern_data?.entity_id || p.pattern_data?.action_entity || '–'}</code></div>
-                                        <div><span style={{ color: 'var(--text-muted)' }}>{lang === 'de' ? 'Zielzustand' : 'Target'}:</span> <strong>{p.pattern_data?.target_state || p.action_definition?.target_state || '–'}</strong></div>
+                                        <div><span style={{ color: 'var(--text-muted)' }}>Entity:</span> <code style={{ fontSize: 12 }}>{p.pattern_data?.entity_id || p.pattern_data?.action_entity || 'â€"'}</code></div>
+                                        <div><span style={{ color: 'var(--text-muted)' }}>{lang === 'de' ? 'Zielzustand' : 'Target'}:</span> <strong>{p.pattern_data?.target_state || p.action_definition?.target_state || 'â€"'}</strong></div>
                                         {p.pattern_data?.avg_hour !== undefined && (
-                                            <div><span style={{ color: 'var(--text-muted)' }}>{lang === 'de' ? 'Uhrzeit' : 'Time'}:</span> <strong>{String(p.pattern_data.avg_hour).padStart(2,'0')}:{String(p.pattern_data.avg_minute||0).padStart(2,'0')}</strong> ±{p.pattern_data.time_window_min || 15}min</div>
+                                            <div><span style={{ color: 'var(--text-muted)' }}>{lang === 'de' ? 'Uhrzeit' : 'Time'}:</span> <strong>{String(p.pattern_data.avg_hour).padStart(2,'0')}:{String(p.pattern_data.avg_minute||0).padStart(2,'0')}</strong> Â±{p.pattern_data.time_window_min || 15}min</div>
                                         )}
                                         {p.pattern_data?.weekday_filter && (
-                                            <div><span style={{ color: 'var(--text-muted)' }}>{lang === 'de' ? 'Tage' : 'Days'}:</span> {p.pattern_data.weekday_filter === 'weekdays' ? (lang === 'de' ? 'Mo–Fr' : 'Mon–Fri') : p.pattern_data.weekday_filter === 'weekends' ? (lang === 'de' ? 'Sa–So' : 'Sat–Sun') : (lang === 'de' ? 'Alle' : 'All')}</div>
+                                            <div><span style={{ color: 'var(--text-muted)' }}>{lang === 'de' ? 'Tage' : 'Days'}:</span> {p.pattern_data.weekday_filter === 'weekdays' ? (lang === 'de' ? 'Moâ€"Fr' : 'Monâ€"Fri') : p.pattern_data.weekday_filter === 'weekends' ? (lang === 'de' ? 'Saâ€"So' : 'Satâ€"Sun') : (lang === 'de' ? 'Alle' : 'All')}</div>
                                         )}
                                         {p.pattern_data?.sun_relative_elevation != null && (
-                                            <div><span style={{ color: 'var(--text-muted)' }}>{lang === 'de' ? 'Sonnenstand' : 'Sun elevation'}:</span> {p.pattern_data.sun_relative_elevation}°</div>
+                                            <div><span style={{ color: 'var(--text-muted)' }}>{lang === 'de' ? 'Sonnenstand' : 'Sun elevation'}:</span> {p.pattern_data.sun_relative_elevation}Â°</div>
                                         )}
                                         {p.pattern_data?.trigger_entity && (
-                                            <div><span style={{ color: 'var(--text-muted)' }}>Trigger:</span> <code style={{ fontSize: 12 }}>{p.pattern_data.trigger_entity}</code> → {p.pattern_data.trigger_state}</div>
+                                            <div><span style={{ color: 'var(--text-muted)' }}>Trigger:</span> <code style={{ fontSize: 12 }}>{p.pattern_data.trigger_entity}</code> â†' {p.pattern_data.trigger_state}</div>
                                         )}
                                         {p.pattern_data?.avg_delay_sec && (
                                             <div><span style={{ color: 'var(--text-muted)' }}>{lang === 'de' ? 'Verzögerung' : 'Delay'}:</span> {p.pattern_data.avg_delay_sec < 60 ? `${Math.round(p.pattern_data.avg_delay_sec)}s` : `${Math.round(p.pattern_data.avg_delay_sec/60)} min`}</div>
                                         )}
-                                        <div><span style={{ color: 'var(--text-muted)' }}>{lang === 'de' ? 'Beobachtet' : 'Observed'}:</span> {p.pattern_data?.days_observed || 0} {lang === 'de' ? 'Tage' : 'days'}, {p.pattern_data?.occurrence_count || p.match_count || 0}× {lang === 'de' ? 'Treffer' : 'matches'}</div>
-                                        <div><span style={{ color: 'var(--text-muted)' }}>{lang === 'de' ? 'Erstellt' : 'Created'}:</span> {p.created_at ? new Date(p.created_at).toLocaleDateString() : '–'}</div>
+                                        <div><span style={{ color: 'var(--text-muted)' }}>{lang === 'de' ? 'Beobachtet' : 'Observed'}:</span> {p.pattern_data?.days_observed || 0} {lang === 'de' ? 'Tage' : 'days'}, {p.pattern_data?.occurrence_count || p.match_count || 0}Ã- {lang === 'de' ? 'Treffer' : 'matches'}</div>
+                                        <div><span style={{ color: 'var(--text-muted)' }}>{lang === 'de' ? 'Erstellt' : 'Created'}:</span> {p.created_at ? new Date(p.created_at).toLocaleDateString() : 'â€"'}</div>
                                         {/* #51 Confidence Explanation */}
                                         <div style={{ marginTop: 6, padding: '6px 10px', background: 'var(--bg-primary)', borderRadius: 6, fontSize: 11 }}>
                                             <span className="mdi mdi-information" style={{ marginRight: 4, color: 'var(--info)' }} />
@@ -4239,7 +4648,7 @@ const PatternsPage = () => {
                                                 {lang === 'de' ? 'Ablehnen' : 'Reject'}
                                             </button>
                                         )}
-                                        {p.season && <span className="badge badge-info" style={{ fontSize: 10 }}>🌿 {p.season}</span>}
+                                        {p.season && <span className="badge badge-info" style={{ fontSize: 10 }}>¿ {p.season}</span>}
                                         {p.category && <span className="badge badge-secondary" style={{ fontSize: 10 }}>{p.category}</span>}
                                     </div>
                                 </div>
@@ -4287,7 +4696,7 @@ const PatternsPage = () => {
 // ================================================================
 
 const NotificationsPage = () => {
-    const { lang, showToast, devices, users } = useApp();
+    const { lang, showToast, devices, users, refreshData } = useApp();
     const [notifications, setNotifications] = useState([]);
     const [loading, setLoading] = useState(true);
     const [predictions, setPredictions] = useState([]);
@@ -4297,16 +4706,20 @@ const NotificationsPage = () => {
     const [stats, setStats] = useState(null);
     const [extSettings, setExtSettings] = useState(null);
     const [ttsDevices, setTtsDevices] = useState([]);
+    const [haPersons, setHaPersons] = useState([]);
+    const [ttsServices, setTtsServices] = useState([]);
 
     const load = async () => {
         try {
-            const [notifs, preds, ns, st, ext, tts] = await Promise.all([
+            const [notifs, preds, ns, st, ext, tts, persons, ttsSvc] = await Promise.all([
                 api.get('notifications?limit=100'),
                 api.get('predictions?limit=50'),
                 api.get('notification-settings'),
                 api.get('notification-stats'),
                 api.get('notification-settings/extended'),
                 api.get('tts/devices'),
+                api.get('ha/persons'),
+                api.get('tts/services'),
             ]);
             setNotifications(notifs);
             setPredictions(preds);
@@ -4314,6 +4727,8 @@ const NotificationsPage = () => {
             setStats(st);
             if (ext) setExtSettings(ext);
             if (tts) setTtsDevices(tts);
+            if (persons?.persons) setHaPersons(persons.persons);
+            if (ttsSvc) setTtsServices(ttsSvc.services || []);
         } catch (e) { console.error(e); }
         setLoading(false);
     };
@@ -4457,7 +4872,7 @@ const NotificationsPage = () => {
                                 <div style={{ fontSize: 12 }}>{lang === 'de' ? 'Werktag' : 'Weekday'}:</div>
                                 <input type="time" className="input" value={extSettings?.quiet_hours?.start || '22:00'} style={{ width: 90, padding: '4px 8px', fontSize: 12 }}
                                     onChange={async (e) => { const qh = { ...extSettings?.quiet_hours, start: e.target.value }; setExtSettings(prev => ({ ...prev, quiet_hours: qh })); await api.put('notification-settings/extended', { quiet_hours: qh }); }} />
-                                <span>–</span>
+                                <span>â€"</span>
                                 <input type="time" className="input" value={extSettings?.quiet_hours?.end || '07:00'} style={{ width: 90, padding: '4px 8px', fontSize: 12 }}
                                     onChange={async (e) => { const qh = { ...extSettings?.quiet_hours, end: e.target.value }; setExtSettings(prev => ({ ...prev, quiet_hours: qh })); await api.put('notification-settings/extended', { quiet_hours: qh }); }} />
                             </div>
@@ -4465,7 +4880,7 @@ const NotificationsPage = () => {
                                 <div style={{ fontSize: 12 }}>{lang === 'de' ? 'Wochenende' : 'Weekend'}:</div>
                                 <input type="time" className="input" value={extSettings?.quiet_hours?.weekend_start || '23:00'} style={{ width: 90, padding: '4px 8px', fontSize: 12 }}
                                     onChange={async (e) => { const qh = { ...extSettings?.quiet_hours, weekend_start: e.target.value }; setExtSettings(prev => ({ ...prev, quiet_hours: qh })); await api.put('notification-settings/extended', { quiet_hours: qh }); }} />
-                                <span>–</span>
+                                <span>â€"</span>
                                 <input type="time" className="input" value={extSettings?.quiet_hours?.weekend_end || '09:00'} style={{ width: 90, padding: '4px 8px', fontSize: 12 }}
                                     onChange={async (e) => { const qh = { ...extSettings?.quiet_hours, weekend_end: e.target.value }; setExtSettings(prev => ({ ...prev, quiet_hours: qh })); await api.put('notification-settings/extended', { quiet_hours: qh }); }} />
                             </div>
@@ -4478,7 +4893,7 @@ const NotificationsPage = () => {
                                 {lang === 'de' ? 'Erweiterte Einstellungen' : 'Extended Settings'}
                             </div>
                             {[
-                                { key: 'escalation', icon: 'mdi-arrow-up-bold', de: 'Eskalation (Push → TTS)', en: 'Escalation (Push → TTS)' },
+                                { key: 'escalation', icon: 'mdi-arrow-up-bold', de: 'Eskalation (Push â†' TTS)', en: 'Escalation (Push â†' TTS)' },
                                 { key: 'repeat_rules', icon: 'mdi-repeat', de: 'Wiederholung bei Nichtlesen', en: 'Repeat if unread' },
                                 { key: 'confirmation_required', icon: 'mdi-check-decagram', de: 'Bestätigungspflicht (Kritisch)', en: 'Confirmation required (Critical)' },
                                 { key: 'critical_override', icon: 'mdi-alert-octagon', de: 'Kritisch durchbricht alles', en: 'Critical overrides everything' },
@@ -4516,7 +4931,7 @@ const NotificationsPage = () => {
                                     {[5, 10, 20, 0].map(r => (
                                         <button key={r} className={`btn btn-sm ${(extSettings?.rate_limits?.anomaly || 10) === r ? 'btn-primary' : 'btn-ghost'}`}
                                             onClick={async () => { const rl = { anomaly: r, suggestion: r, critical: 0, info: r }; setExtSettings(prev => ({ ...prev, rate_limits: rl })); await api.put('notification-settings/extended', { rate_limits: rl }); }}
-                                            style={{ fontSize: 10, padding: '2px 6px' }}>{r === 0 ? '∞' : r}</button>
+                                            style={{ fontSize: 10, padding: '2px 6px' }}>{r === 0 ? 'âˆž' : r}</button>
                                     ))}
                                 </div>
                             </div>
@@ -4572,7 +4987,7 @@ const NotificationsPage = () => {
                         {/* Push Channels - Collapsible */}
                         <CollapsibleCard title={`${lang === 'de' ? 'Push-Kanäle' : 'Push Channels'} · ${notifSettings?.channels?.length || 0}`} icon="mdi-send" defaultOpen={false}>
                             <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
-                                <button className="btn btn-sm btn-secondary" onClick={async () => { await api.post('notification-settings/scan-channels'); await load(); }}>
+                                <button className="btn btn-sm btn-secondary" onClick={async () => { await api.post('notification-settings/discover-channels'); await load(); }}>
                                     <span className="mdi mdi-refresh" style={{ marginRight: 4 }} />{lang === 'de' ? 'Suchen' : 'Scan'}
                                 </button>
                             </div>
@@ -4593,23 +5008,52 @@ const NotificationsPage = () => {
                             </div>
                         </CollapsibleCard>
 
-                        {/* Person Channel Assignment - Collapsible */}
+                        {/* Person Channel Assignment + HA Person - Collapsible */}
                         <CollapsibleCard title={lang === 'de' ? 'Personen-Zuordnung' : 'Person Assignment'} icon="mdi-account-group" defaultOpen={false}>
                             {(users || []).map(u => (
-                                <div key={u.id} style={{ padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
-                                    <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 4 }}>{u.name}</div>
-                                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                                        {(notifSettings?.channels || []).filter(c => c.is_active).map(ch => {
-                                            const assigned = extSettings?.person_channels?.[u.id]?.includes(ch.id);
-                                            return <button key={ch.id} className={`btn btn-sm ${assigned ? 'btn-primary' : 'btn-ghost'}`}
-                                                onClick={async () => {
-                                                    const pc = { ...(extSettings?.person_channels || {}) };
-                                                    const current = pc[u.id] || [];
-                                                    pc[u.id] = assigned ? current.filter(id => id !== ch.id) : [...current, ch.id];
-                                                    setExtSettings(prev => ({ ...prev, person_channels: pc }));
-                                                    await api.put('notification-settings/extended', { person_channels: pc });
-                                                }} style={{ fontSize: 10, padding: '2px 6px' }}>{ch.name}</button>;
-                                        })}
+                                <div key={u.id} style={{ padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                                        <div style={{ fontSize: 13, fontWeight: 500 }}>{u.name}</div>
+                                        <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{u.role || 'user'}</span>
+                                    </div>
+                                    {/* HA Person Entity Assignment */}
+                                    <div style={{ marginBottom: 8 }}>
+                                        <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 2 }}>
+                                            HA Person Entity:
+                                        </label>
+                                        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                                            <button className={`btn btn-sm ${!u.ha_person_entity ? 'btn-primary' : 'btn-ghost'}`}
+                                                onClick={async () => { await api.put(`users/${u.id}`, { ha_person_entity: null }); await refreshData(); }}
+                                                style={{ fontSize: 10, padding: '2px 6px' }}>
+                                                {lang === 'de' ? 'Keine' : 'None'}
+                                            </button>
+                                            {(haPersons || []).map(p => (
+                                                <button key={p.entity_id} className={`btn btn-sm ${u.ha_person_entity === p.entity_id ? 'btn-primary' : 'btn-ghost'}`}
+                                                    onClick={async () => { await api.put(`users/${u.id}`, { ha_person_entity: p.entity_id }); await refreshData(); }}
+                                                    style={{ fontSize: 10, padding: '2px 6px' }}>
+                                                    {p.name || p.entity_id}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                    {/* Notification Channels */}
+                                    <div>
+                                        <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 2 }}>
+                                            {lang === 'de' ? 'Benachrichtigungs-Kan\u00e4le:' : 'Notification Channels:'}
+                                        </label>
+                                        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                                            {(notifSettings?.channels || []).filter(c => c.is_active).map(ch => {
+                                                const assigned = extSettings?.person_channels?.[u.id]?.includes(ch.id);
+                                                return <button key={ch.id} className={`btn btn-sm ${assigned ? 'btn-primary' : 'btn-ghost'}`}
+                                                    onClick={async () => {
+                                                        const pc = { ...(extSettings?.person_channels || {}) };
+                                                        const current = pc[u.id] || [];
+                                                        pc[u.id] = assigned ? current.filter(id => id !== ch.id) : [...current, ch.id];
+                                                        setExtSettings(prev => ({ ...prev, person_channels: pc }));
+                                                        await api.put('notification-settings/extended', { person_channels: pc });
+                                                    }} style={{ fontSize: 10, padding: '2px 6px' }}>{ch.name}</button>;
+                                            })}
+                                        </div>
                                     </div>
                                 </div>
                             ))}
@@ -4617,7 +5061,28 @@ const NotificationsPage = () => {
 
                         {/* TTS - Collapsible */}
                         {ttsDevices.length > 0 && (
-                            <CollapsibleCard title={`${lang === 'de' ? 'Sprachausgabe (TTS)' : 'Text-to-Speech'} · ${ttsDevices.length}`} icon="mdi-bullhorn" defaultOpen={false}>
+                            <CollapsibleCard title={`${lang === 'de' ? 'Sprachausgabe (TTS)' : 'Text-to-Speech'} \u00b7 ${ttsDevices.length}`} icon="mdi-bullhorn" defaultOpen={false}>
+                                {ttsServices.length > 0 && (
+                                    <div style={{ marginBottom: 12, padding: '8px', background: 'var(--bg-secondary)', borderRadius: 8 }}>
+                                        <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>
+                                            TTS Service:
+                                        </label>
+                                        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                                            {ttsServices.map(svc => (
+                                                <button key={svc.service}
+                                                    className={`btn btn-sm ${extSettings?.tts_service === svc.service ? 'btn-primary' : 'btn-ghost'}`}
+                                                    onClick={async () => {
+                                                        await api.put('tts/service', { service: svc.service });
+                                                        setExtSettings(prev => ({ ...prev, tts_service: svc.service }));
+                                                        showToast(`TTS: ${svc.name}`, 'success');
+                                                    }}
+                                                    style={{ fontSize: 10, padding: '2px 6px' }}>
+                                                    {svc.name}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
                                 {ttsDevices.map(d => (
                                     <div key={d.entity_id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--border)' }}>
                                         <span style={{ fontSize: 13 }}>{d.name}</span>
@@ -4648,7 +5113,7 @@ const NotificationsPage = () => {
                             onClick={async () => { const newVal = !notifSettings?.dnd_enabled; setNotifSettings(s => ({ ...s, dnd_enabled: newVal })); await api.put('notification-settings/dnd', { enabled: newVal }); }}
                             style={{ fontSize: 13, padding: '10px 16px' }}>
                             <span className={`mdi ${notifSettings?.dnd_enabled ? 'mdi-bell-off' : 'mdi-bell-ring'}`} style={{ marginRight: 8 }} />
-                            {notifSettings?.dnd_enabled ? (lang === 'de' ? 'DND aktiv – Benachrichtigungen stumm' : 'DND active') : (lang === 'de' ? 'Nicht stören aktivieren' : 'Enable Do Not Disturb')}
+                            {notifSettings?.dnd_enabled ? (lang === 'de' ? 'DND aktiv â€" Benachrichtigungen stumm' : 'DND active') : (lang === 'de' ? 'Nicht stören aktivieren' : 'Enable Do Not Disturb')}
                         </button>
                     </div>
                 </div>
@@ -4834,7 +5299,12 @@ const OnboardingWizard = ({ onComplete }) => {
         try {
             const result = await api.post('backup/import', backupData);
             if (result?.success) {
-                onComplete();
+                // Bug 6: Wait for data refresh before completing wizard
+                if (typeof onComplete === 'function') {
+                    await onComplete();
+                    // Additional delay to ensure state propagation
+                    await new Promise(r => setTimeout(r, 500));
+                }
                 return;
             } else {
                 setBackupError(result?.error || (lang === 'de' ? 'Import fehlgeschlagen' : 'Import failed'));
@@ -5009,7 +5479,7 @@ const OnboardingWizard = ({ onComplete }) => {
                             <div className="onboarding-title">{l.lang_title}</div>
                             <div className="onboarding-subtitle">{l.lang_sub}</div>
                             <div style={{ display: 'flex', gap: 12 }}>
-                                {[{ code: 'de', label: 'Deutsch', flag: '🇩🇪' }, { code: 'en', label: 'English', flag: '🇬🇧' }].map(opt => (
+                                {[{ code: 'de', label: 'Deutsch', flag: 'ª' }, { code: 'en', label: 'English', flag: '§' }].map(opt => (
                                     <button key={opt.code}
                                         className={`card ${lang === opt.code ? '' : ''}`}
                                         onClick={() => setLangLocal(opt.code)}
@@ -5272,7 +5742,7 @@ const App = () => {
         }
     };
 
-    // Role: first user is always admin, or if only 1 user exists → admin
+    // Role: first user is always admin, or if only 1 user exists â†' admin
     const isAdmin = users.length <= 1 || (users[0]?.role === 'admin');
 
     const contextValue = React.useMemo(() => ({
@@ -5297,7 +5767,7 @@ const App = () => {
     }
 
     const navItems = [
-        { section: lang === 'de' ? 'Übersicht' : 'Overview' },
+        { section: lang === 'de' ? 'Ãœbersicht' : 'Overview' },
         { id: 'dashboard', icon: 'mdi-view-dashboard', label: 'Dashboard' },
         { section: lang === 'de' ? 'Konfiguration' : 'Configuration', adminOnly: true },
         { id: 'domains', icon: 'mdi-puzzle', label: 'Domains', adminOnly: true },
