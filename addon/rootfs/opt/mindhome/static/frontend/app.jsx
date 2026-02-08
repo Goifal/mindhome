@@ -1,4784 +1,5494 @@
-"""
-MindHome - Main Application
-Flask backend serving the API and frontend.
-Version 0.5.0 - Phase 1+2 Complete + 68 Improvements
-"""
+// MindHome Frontend v0.5.0-fix9 (2026-02-08T18:05) - app.jsx - DIES IST DIE FRONTEND DATEI
+// ================================================================
+// MindHome - React Frontend Application v0.5.0
+// ================================================================
 
-import os
-import sys
-import json
-import signal
-import logging
-import threading
-import time
-import csv
-import io
-import re
-import hashlib
-import zipfile
-import shutil
-from datetime import datetime, timezone, timedelta
-from functools import wraps
-from collections import defaultdict
+const { useState, useEffect, useCallback, createContext, useContext, useRef, useMemo, useReducer } = React;
 
-from flask import Flask, request, jsonify, send_from_directory, redirect, Response, make_response
-from flask_cors import CORS
-from sqlalchemy import func as sa_func, text
+// ================================================================
+// #32 API Response Cache
+// ================================================================
+const _apiCache = {};
+const CACHE_TTL = 30000; // 30s
 
-from models import (
-    get_engine, get_session, init_database, run_migrations,
-    User, UserRole, Room, Domain, Device, RoomDomainState,
-    LearningPhase, QuickAction, SystemSetting, UserPreference,
-    NotificationSetting, NotificationType, NotificationPriority,
-    NotificationChannel, DeviceMute, ActionLog,
-    DataCollection, OfflineActionQueue,
-    StateHistory, LearnedPattern, PatternMatchLog,
-    Prediction, NotificationLog,
-    PatternExclusion, ManualRule, AnomalySetting,
-    DeviceGroup, AuditTrail
-)
-from ha_connection import HAConnection
-try:
-    from domains import DomainManager
-except ImportError:
-    DomainManager = None
-    logging.getLogger("mindhome").warning("Domain plugins not found, running without domain manager")
-from ml.pattern_engine import EventBus, StateLogger, PatternScheduler, PatternDetector
-from ml.automation_engine import (
-    AutomationScheduler, FeedbackProcessor, AutomationExecutor,
-    PhaseManager, NotificationManager, AnomalyDetector, ConflictDetector
-)
+// ================================================================
+// API Helper
+// ================================================================
 
-# ==============================================================================
-# App Configuration
-# ==============================================================================
+const getBasePath = () => {
+    const path = window.location.pathname;
+    const ingressMatch = path.match(/\/api\/hassio_ingress\/[^/]+/);
+    if (ingressMatch) return ingressMatch[0];
+    return '';
+};
 
-app = Flask(__name__, static_folder="static", template_folder="templates")
-CORS(app)
+// ================================================================
+// Phase 2a: Patterns Page (Muster-Explorer)
 
-# Register MIME types for frontend files
-import mimetypes
-mimetypes.add_type("text/javascript", ".jsx")
-mimetypes.add_type("text/javascript", ".mjs")
+const API_BASE = getBasePath();
 
-# Logging
-log_level = os.environ.get("MINDHOME_LOG_LEVEL", "info").upper()
-logging.basicConfig(
-    level=getattr(logging, log_level, logging.INFO),
-    format="%(asctime)s [%(name)s] %(levelname)s: %(message)s"
-)
-logger = logging.getLogger("mindhome")
-
-# Ingress path
-INGRESS_PATH = os.environ.get("INGRESS_PATH", "")
-
-# Database
-engine = get_engine()
-init_database(engine)
-run_migrations(engine)  # Fix 29: DB migration system
-
-# Fix: Auto-set is_controllable=False for sensor-type entities
-try:
-    _mig_session = get_session(engine)
-    NON_CONTROLLABLE = ("sensor.", "binary_sensor.", "zone.", "sun.", "weather.", "person.", "device_tracker.", "calendar.", "proximity.")
-    _updated = 0
-    for dev in _mig_session.query(Device).filter_by(is_controllable=True).all():
-        if dev.ha_entity_id and any(dev.ha_entity_id.startswith(p) for p in NON_CONTROLLABLE):
-            dev.is_controllable = False
-            _updated += 1
-    if _updated:
-        _mig_session.commit()
-        logger.info(f"Auto-fixed is_controllable for {_updated} sensor-type devices")
-    _mig_session.close()
-except Exception as _e:
-    logger.warning(f"Controllable migration: {_e}")
-
-# Home Assistant connection
-ha = HAConnection()
-
-# Timezone: sync from HA
-import zoneinfo
-_ha_tz = None
-
-def get_ha_timezone():
-    """Get HA timezone as zoneinfo object, cached."""
-    global _ha_tz
-    if _ha_tz:
-        return _ha_tz
-    try:
-        tz_name = ha.get_timezone()
-        _ha_tz = zoneinfo.ZoneInfo(tz_name)
-        logger.info(f"Using HA timezone: {tz_name}")
-    except Exception as e:
-        logger.warning(f"Could not get HA timezone: {e}, falling back to UTC")
-        _ha_tz = timezone.utc
-    return _ha_tz
-
-def local_now():
-    """Get current time in HA's timezone."""
-    tz = get_ha_timezone()
-    return datetime.now(tz)
-
-
-def utc_iso(dt):
-    """Convert datetime to ISO string with Z suffix for UTC. Handles None."""
-    if dt is None:
-        return None
-    s = dt.isoformat()
-    if not dt.tzinfo and not s.endswith('Z'):
-        s += 'Z'
-    return s
-
-
-# ==============================================================================
-# #3 Rate Limiting
-# ==============================================================================
-_rate_limit_data = defaultdict(list)
-_RATE_LIMIT_WINDOW = 60
-_RATE_LIMIT_MAX = 120
-
-def rate_limit_check():
-    """Check if current request exceeds rate limit."""
-    ip = request.remote_addr or "unknown"
-    now = time.time()
-    _rate_limit_data[ip] = [t for t in _rate_limit_data[ip] if now - t < _RATE_LIMIT_WINDOW]
-    if len(_rate_limit_data[ip]) >= _RATE_LIMIT_MAX:
-        return False
-    _rate_limit_data[ip].append(now)
-    return True
-
-
-# ==============================================================================
-# #14 Input Sanitization
-# ==============================================================================
-_SANITIZE_RE = re.compile(r'[<>]')
-
-def sanitize_input(value, max_length=500):
-    """Sanitize user input - strip angle brackets, limit length."""
-    if not isinstance(value, str):
-        return value
-    return _SANITIZE_RE.sub('', value.strip()[:max_length])
-
-def sanitize_dict(data, keys=None):
-    """Sanitize string values in a dict."""
-    if not isinstance(data, dict):
-        return data
-    return {k: (sanitize_input(v) if isinstance(v, str) and (not keys or k in keys) else v) for k, v in data.items()}
-
-
-# ==============================================================================
-# #60 Audit Log helper
-# ==============================================================================
-def audit_log(action, details=None, user_id=None):
-    """Log an audit trail entry."""
-    try:
-        session = get_db()
-        entry = ActionLog(
-            action_type="audit", device_name="system",
-            old_value=action,
-            new_value=json.dumps(details)[:500] if details else None,
-            reason=f"user:{user_id}" if user_id else "system",
-        )
-        session.add(entry)
-        session.commit()
-        session.close()
-    except Exception:
-        pass
-
-
-# ==============================================================================
-# #42 Debug Mode
-# ==============================================================================
-_debug_mode = False
-
-def is_debug_mode():
-    global _debug_mode
-    return _debug_mode
-
-
-# Domain Manager (optional - depends on domain plugins package)
-domain_manager = DomainManager(ha, lambda: get_session(engine)) if DomainManager else None
-
-# Domain Plugin Configuration - defines capabilities per domain
-DOMAIN_PLUGINS = {
-    "light": {
-        "ha_domain": "light",
-        "attributes": ["brightness", "color_temp", "rgb_color", "effect"],
-        "controls": ["toggle", "brightness", "color_temp"],
-        "pattern_features": ["time_of_day", "brightness_level", "duration"],
-        "icon": "mdi:lightbulb",
+const api = {
+    async get(endpoint) {
+        try {
+            // #32 Cache check
+            const cached = _apiCache[endpoint];
+            if (cached && Date.now() - cached.time < CACHE_TTL) return cached.data;
+            const res = await fetch(`${API_BASE}/api/${endpoint}`);
+            if (!res.ok) throw new Error(`API Error: ${res.status}`);
+            const data = await res.json();
+            _apiCache[endpoint] = { data, time: Date.now() };
+            return data;
+        } catch (e) {
+            console.error(`GET ${endpoint} failed:`, e);
+            return null;
+        }
     },
-    "climate": {
-        "ha_domain": "climate",
-        "attributes": ["current_temperature", "temperature", "hvac_action", "humidity"],
-        "controls": ["set_temperature", "set_hvac_mode"],
-        "pattern_features": ["target_temp", "schedule", "comfort_profile"],
-        "icon": "mdi:thermostat",
+    invalidate(endpoint) { delete _apiCache[endpoint]; },
+    async post(endpoint, data = {}) {
+        api.invalidate(endpoint); // bust cache on mutations
+        try {
+            const res = await fetch(`${API_BASE}/api/${endpoint}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+            const json = await res.json();
+            if (!res.ok) return { _error: true, status: res.status, ...(json || {}) };
+            return json;
+        } catch (e) {
+            console.error(`POST ${endpoint} failed:`, e);
+            return { _error: true, message: e.message };
+        }
     },
-    "cover": {
-        "ha_domain": "cover",
-        "attributes": ["current_position", "current_tilt_position"],
-        "controls": ["open", "close", "set_position"],
-        "pattern_features": ["position", "time_of_day", "sun_based"],
-        "icon": "mdi:window-shutter",
+    async put(endpoint, data = {}) {
+        try {
+            const res = await fetch(`${API_BASE}/api/${endpoint}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+            const json = await res.json();
+            if (!res.ok) return { _error: true, status: res.status, ...(json || {}) };
+            return json;
+        } catch (e) {
+            console.error(`PUT ${endpoint} failed:`, e);
+            return { _error: true, message: e.message };
+        }
     },
-    "switch": {
-        "ha_domain": "switch",
-        "attributes": ["current_power_w", "today_energy_kwh"],
-        "controls": ["toggle"],
-        "pattern_features": ["time_of_day", "duration"],
-        "icon": "mdi:toggle-switch",
-    },
-    "sensor": {
-        "ha_domain": "sensor",
-        "attributes": ["unit_of_measurement", "device_class"],
-        "controls": [],
-        "pattern_features": ["threshold", "trend"],
-        "icon": "mdi:eye",
-    },
-    "binary_sensor": {
-        "ha_domain": "binary_sensor",
-        "attributes": ["device_class"],
-        "controls": [],
-        "pattern_features": ["trigger", "duration", "frequency"],
-        "icon": "mdi:checkbox-blank-circle-outline",
-    },
-    "media_player": {
-        "ha_domain": "media_player",
-        "attributes": ["media_title", "volume_level", "source"],
-        "controls": ["toggle", "volume", "source"],
-        "pattern_features": ["time_of_day", "source_preference"],
-        "icon": "mdi:speaker",
-    },
-    "lock": {
-        "ha_domain": "lock",
-        "attributes": [],
-        "controls": ["lock", "unlock"],
-        "pattern_features": ["time_of_day", "presence"],
-        "icon": "mdi:lock",
-    },
-    "vacuum": {
-        "ha_domain": "vacuum",
-        "attributes": ["battery_level", "status"],
-        "controls": ["start", "stop", "return_to_base"],
-        "pattern_features": ["schedule", "presence"],
-        "icon": "mdi:robot-vacuum",
-    },
-    "fan": {
-        "ha_domain": "fan",
-        "attributes": ["percentage", "preset_mode"],
-        "controls": ["toggle", "set_percentage"],
-        "pattern_features": ["temperature_based", "time_of_day"],
-        "icon": "mdi:fan",
-    },
-    "motion": {
-        "ha_domain": "binary_sensor",
-        "device_class": "motion",
-        "attributes": ["device_class"],
-        "controls": [],
-        "pattern_features": ["time_of_day", "frequency", "duration", "room_correlation"],
-        "icon": "mdi:motion-sensor",
-    },
-    "presence": {
-        "ha_domain": "person",
-        "attributes": ["source", "gps_accuracy"],
-        "controls": [],
-        "pattern_features": ["arrival_time", "departure_time", "routine"],
-        "icon": "mdi:account-multiple",
-    },
-    "door_window": {
-        "ha_domain": "binary_sensor",
-        "device_class": "door",
-        "attributes": ["device_class"],
-        "controls": [],
-        "pattern_features": ["open_duration", "frequency", "time_of_day"],
-        "icon": "mdi:door",
-    },
-    "energy": {
-        "ha_domain": "sensor",
-        "device_class": "energy",
-        "attributes": ["unit_of_measurement", "state_class"],
-        "controls": [],
-        "pattern_features": ["daily_usage", "peak_hours", "baseline"],
-        "icon": "mdi:flash",
-    },
-    "weather": {
-        "ha_domain": "weather",
-        "attributes": ["temperature", "humidity", "forecast"],
-        "controls": [],
-        "pattern_features": ["condition_correlation"],
-        "icon": "mdi:weather-cloudy",
-    },
+    async delete(endpoint, data = null) {
+        try {
+            const opts = { method: 'DELETE' };
+            if (data) { opts.headers = { 'Content-Type': 'application/json' }; opts.body = JSON.stringify(data); }
+            const res = await fetch(`${API_BASE}/api/${endpoint}`, opts);
+            const json = await res.json();
+            if (!res.ok) return { _error: true, status: res.status, ...(json || {}) };
+            return json;
+        } catch (e) {
+            console.error(`DELETE ${endpoint} failed:`, e);
+            return { _error: true, message: e.message };
+        }
+    }
+};
+
+// ================================================================
+// Phase 2a: Patterns Page (Muster-Explorer)
+
+// ================================================================
+// Translations Context
+// ================================================================
+
+const translations = { de: null, en: null };
+
+const loadTranslations = async (lang) => {
+    if (translations[lang]) return translations[lang];
+    try {
+        const res = await fetch(`${API_BASE}/api/system/translations/${lang}`);
+        if (res.ok) {
+            translations[lang] = await res.json();
+            return translations[lang];
+        }
+    } catch (e) {}
+    // Fallback inline translations
+    return null;
+};
+
+// ================================================================
+// Phase 2a: Patterns Page (Muster-Explorer)
+
+const t = (translations, path) => {
+    if (!translations) return path;
+    const keys = path.split('.');
+    let val = translations;
+    for (const key of keys) {
+        val = val?.[key];
+        if (val === undefined) return path;
+    }
+    return val;
+};
+
+// ================================================================
+// Phase 2a: Patterns Page (Muster-Explorer)
+
+// ================================================================
+// App Context
+// ================================================================
+
+const AppContext = createContext();
+
+const useApp = () => useContext(AppContext);
+
+// ================================================================
+// #4 Error Boundary
+// ================================================================
+class ErrorBoundary extends React.Component {
+    constructor(props) {
+        super(props);
+        this.state = { hasError: false, error: null };
+    }
+    static getDerivedStateFromError(error) {
+        return { hasError: true, error };
+    }
+    componentDidCatch(error, info) {
+        console.error('MindHome Error:', error, info);
+        // #38 Frontend error reporting
+        try { api.post('system/frontend-error', { error: error.toString(), stack: info.componentStack?.slice(0, 500) }); } catch(e) {}
+    }
+    render() {
+        if (this.state.hasError) {
+            return React.createElement('div', {
+                style: { padding: 40, textAlign: 'center', color: 'var(--text-primary)' }
+            },
+                React.createElement('span', { className: 'mdi mdi-alert-circle', style: { fontSize: 48, color: 'var(--danger)', display: 'block', marginBottom: 16 } }),
+                React.createElement('h2', null, 'Etwas ist schiefgelaufen'),
+                React.createElement('p', { style: { color: 'var(--text-muted)', marginBottom: 16 } }, this.state.error?.toString()),
+                React.createElement('button', {
+                    className: 'btn btn-primary',
+                    onClick: () => { this.setState({ hasError: false }); window.location.reload(); }
+                }, 'Seite neu laden')
+            );
+        }
+        return this.props.children;
+    }
 }
 
-# Phase 2a: Pattern Engine
-event_bus = EventBus()
-state_logger = StateLogger(engine, ha)
-pattern_scheduler = PatternScheduler(engine, ha)
-
-# Phase 2b: Automation Engine
-automation_scheduler = AutomationScheduler(engine, ha)
-
-# Cleanup timer
-_cleanup_timer = None
-
-
-# ==============================================================================
-# Event Handlers
-# ==============================================================================
-
-def on_state_changed(event):
-    """Handle real-time state change events from HA."""
-    # Route to domain plugins (if available)
-    if domain_manager:
-        domain_manager.on_state_change(event)
-
-    event_data = event.get("data", {}) if event else {}
-    entity_id = event_data.get("entity_id", "")
-    new_state = event_data.get("new_state") or {}
-    old_state = event_data.get("old_state") or {}
-    logger.debug(f"State changed: {entity_id} -> {new_state.get('state', '?')}")
-
-    # Phase 2a: Log to state_history via pattern engine
-    try:
-        state_logger.log_state_change(event_data)
-    except Exception as e:
-        logger.debug(f"Pattern state log error: {e}")
-
-    # Phase 2a: Publish to event bus for other subscribers
-    event_bus.publish("state_changed", event_data)
-
-    # Log tracked device state changes to DB
-    try:
-        new_val = new_state.get("state", "unknown") if isinstance(new_state, dict) else "unknown"
-        old_val = old_state.get("state", "unknown") if isinstance(old_state, dict) else "unknown"
-
-        # Fix 1: Extract attributes (brightness, position, temperature etc.)
-        new_attrs = new_state.get("attributes", {}) if isinstance(new_state, dict) else {}
-        old_attrs = old_state.get("attributes", {}) if isinstance(old_state, dict) else {}
-
-        if entity_id and new_val != old_val:
-            log_state_change(entity_id, new_val, old_val, new_attrs, old_attrs)
-    except Exception as e:
-        logger.debug(f"State log error: {e}")
-
-
-# ==============================================================================
-# Helpers
-# ==============================================================================
-
-def get_db():
-    """Get a new database session."""
-    return get_session(engine)
-
-
-def get_setting(key, default=None):
-    """Get a system setting value."""
-    session = get_db()
-    try:
-        setting = session.query(SystemSetting).filter_by(key=key).first()
-        return setting.value if setting else default
-    finally:
-        session.close()
-
-
-def set_setting(key, value):
-    """Set a system setting value."""
-    session = get_db()
-    try:
-        setting = session.query(SystemSetting).filter_by(key=key).first()
-        if setting:
-            setting.value = str(value)
-        else:
-            setting = SystemSetting(key=key, value=str(value))
-            session.add(setting)
-        session.commit()
-    finally:
-        session.close()
-
-
-def get_language():
-    """Get current language setting."""
-    return os.environ.get("MINDHOME_LANGUAGE", "de")
-
-
-def localize(de_text, en_text):
-    """Return text in current language."""
-    return de_text if get_language() == "de" else en_text
-
-
-def extract_display_attributes(entity_id, attrs):
-    """Fix 1: Extract human-readable attributes from HA state attributes."""
-    result = {}
-    ha_domain = entity_id.split(".")[0] if entity_id else ""
-
-    # Brightness (lights) - HA sends 0-255, convert to %
-    if "brightness" in attrs and attrs["brightness"] is not None:
-        try:
-            result["brightness_pct"] = round(int(attrs["brightness"]) / 255 * 100)
-        except (ValueError, TypeError):
-            pass
-
-    # Color temperature
-    if "color_temp_kelvin" in attrs:
-        result["color_temp_kelvin"] = attrs["color_temp_kelvin"]
-    elif "color_temp" in attrs:
-        result["color_temp"] = attrs["color_temp"]
-
-    # Cover/Roller position (0-100%)
-    if "current_position" in attrs:
-        result["position_pct"] = attrs["current_position"]
-
-    # Climate
-    if "temperature" in attrs:
-        result["target_temp"] = attrs["temperature"]
-    if "current_temperature" in attrs:
-        result["current_temp"] = attrs["current_temperature"]
-    if "hvac_mode" in attrs or "hvac_action" in attrs:
-        result["hvac_mode"] = attrs.get("hvac_mode")
-        result["hvac_action"] = attrs.get("hvac_action")
-    if "humidity" in attrs:
-        result["humidity"] = attrs["humidity"]
-
-    # Power/Energy (smart plugs)
-    for key in ["current_power_w", "power", "current", "voltage",
-                "total_energy_kwh", "energy", "total_increasing"]:
-        if key in attrs and attrs[key] is not None:
-            result[key] = attrs[key]
-
-    # Air quality
-    for key in ["co2", "voc", "pm25", "pm10", "aqi"]:
-        if key in attrs and attrs[key] is not None:
-            result[key] = attrs[key]
-
-    # Unit of measurement (for sensors etc.)
-    if "unit_of_measurement" in attrs and attrs["unit_of_measurement"]:
-        result["unit"] = attrs["unit_of_measurement"]
-
-    return result
-
-
-def build_state_reason(device_name, old_val, new_val, new_display_attrs):
-    """Build a human-readable reason string including attributes."""
-    reason = f"{device_name}: {old_val} → {new_val}"
-
-    details = []
-    if "brightness_pct" in new_display_attrs:
-        details.append(f"{new_display_attrs['brightness_pct']}%")
-    if "position_pct" in new_display_attrs:
-        details.append(f"Position {new_display_attrs['position_pct']}%")
-    if "target_temp" in new_display_attrs:
-        details.append(f"{new_display_attrs['target_temp']}°C")
-    if "current_temp" in new_display_attrs:
-        details.append(f"Ist: {new_display_attrs['current_temp']}°C")
-
-    if details:
-        reason += f" ({', '.join(details)})"
-
-    return reason
-
-
-# ==============================================================================
-# Middleware (#3 Rate Limiting, #13 CSRF Token)
-# ==============================================================================
-
-@app.before_request
-def before_request_middleware():
-    """Rate limiting + ingress token check."""
-    if request.path.startswith("/static") or request.path == "/":
-        return None
-    if request.path.startswith("/api/") and not rate_limit_check():
-        return jsonify({"error": "Rate limit exceeded"}), 429
-    return None
-
-
-# Global error handlers - catch ALL unhandled exceptions
-@app.errorhandler(500)
-def handle_500(error):
-    """Catch unhandled server errors and return JSON."""
-    logger.error(f"Unhandled 500 error: {error}")
-    return jsonify({"error": "Internal server error", "message": str(error)[:200]}), 500
-
-@app.errorhandler(404)
-def handle_404(error):
-    """Handle 404 errors."""
-    if request.path.startswith("/api/"):
-        return jsonify({"error": "Not found"}), 404
-    return redirect("/")
-
-@app.errorhandler(Exception)
-def handle_exception(error):
-    """Catch-all for any unhandled exception in API routes."""
-    logger.error(f"Unhandled exception: {type(error).__name__}: {error}")
-    if request.path.startswith("/api/"):
-        return jsonify({"error": type(error).__name__, "message": str(error)[:200]}), 500
-    return redirect("/")
-
-
-# ==============================================================================
-# API Routes - System
-# ==============================================================================
-
-@app.route("/api/system/status", methods=["GET"])
-def api_system_status():
-    """Get system status overview."""
-    session = get_db()
-    try:
-        tz = get_ha_timezone()
-        tz_name = str(tz) if tz != timezone.utc else "UTC"
-        return jsonify({
-            "status": "running",
-            "ha_connected": ha.is_connected(),
-            "offline_queue_size": ha.get_offline_queue_size(),
-            "system_mode": get_setting("system_mode", "normal"),
-            "onboarding_completed": get_setting("onboarding_completed", "false") == "true",
-            "language": get_language(),
-            "theme": get_setting("theme", "dark"),
-            "view_mode": get_setting("view_mode", "simple"),
-            "version": "0.5.0",
-            "timezone": tz_name,
-            "local_time": local_now().isoformat(),
-            "timestamp": datetime.now(timezone.utc).isoformat()
-        })
-    finally:
-        session.close()
-
-
-# #1 Healthcheck for HA Add-on
-@app.route("/api/health", methods=["GET"])
-def api_health_check():
-    """Health check endpoint - HA Add-on compatible."""
-    health = {"status": "healthy", "checks": {}}
-
-    # DB check
-    try:
-        session = get_db()
-        session.execute(text("SELECT 1"))
-        session.close()
-        health["checks"]["database"] = {"status": "ok"}
-    except Exception as e:
-        health["checks"]["database"] = {"status": "error", "message": str(e)[:100]}
-        health["status"] = "unhealthy"
-
-    # HA connection
-    health["checks"]["ha_websocket"] = {
-        "status": "ok" if ha._ws_connected else "disconnected",
-        "reconnect_attempts": ha._reconnect_attempts,
-    }
-    health["checks"]["ha_rest_api"] = {
-        "status": "ok" if ha._is_online else "offline"
-    }
-
-    # #41 Connection stats
-    health["checks"]["connection_stats"] = ha.get_connection_stats()
-
-    # #24 Device health summary
-    try:
-        device_issues = ha.check_device_health()
-        health["checks"]["devices"] = {
-            "status": "warning" if device_issues else "ok",
-            "issues_count": len(device_issues),
+// ================================================================
+// #17 Skeleton Loading
+// ================================================================
+const Skeleton = ({ width, height, borderRadius, style }) => (
+    React.createElement('div', {
+        className: 'skeleton-pulse',
+        style: {
+            width: width || '100%',
+            height: height || 16,
+            borderRadius: borderRadius || 4,
+            background: 'var(--bg-tertiary)',
+            animation: 'pulse 1.5s ease-in-out infinite',
+            ...style
         }
-    except Exception:
-        health["checks"]["devices"] = {"status": "unknown"}
-
-    # Memory usage
-    try:
-        import resource
-        mem = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-        health["memory_kb"] = mem
-    except Exception:
-        pass
-
-    health["uptime_seconds"] = int(time.time() - _start_time) if _start_time else 0
-    health["version"] = "0.5.0"
-    health["debug_mode"] = is_debug_mode()
-
-    status_code = 200 if health["status"] == "healthy" else 503
-    return jsonify(health), status_code
-
-
-# Fix 25: System Info
-@app.route("/api/system/info", methods=["GET"])
-def api_system_info():
-    """Get detailed system information."""
-    session = get_db()
-    try:
-        device_count = session.query(Device).count()
-        room_count = session.query(Room).filter_by(is_active=True).count()
-        user_count = session.query(User).filter_by(is_active=True).count()
-        domain_count = session.query(Domain).filter_by(is_enabled=True).count()
-        log_count = session.query(ActionLog).count()
-        observation_count = session.query(ActionLog).filter_by(action_type="observation").count()
-
-        # DB size
-        db_path = os.environ.get("MINDHOME_DB_PATH", "/data/mindhome/db/mindhome.db")
-        db_size_bytes = os.path.getsize(db_path) if os.path.exists(db_path) else 0
-
-        # Retention setting
-        retention_days = int(get_setting("data_retention_days", "90"))
-
-        return jsonify({
-            "version": "0.5.0",
-            "phase": "2 (complete)",
-            "ha_connected": ha.is_connected(),
-            "ws_connected": ha._ws_connected,
-            "ha_entity_count": len(ha.get_states() or []),
-            "timezone": str(get_ha_timezone()),
-            "local_time": local_now().isoformat(),
-            "uptime_seconds": int(time.time() - _start_time) if _start_time else 0,
-            "device_count": device_count,
-            "room_count": room_count,
-            "user_count": user_count,
-            "active_domains": domain_count,
-            "total_log_entries": log_count,
-            "total_observations": observation_count,
-            "db_size_bytes": db_size_bytes,
-            "db_size_mb": round(db_size_bytes / 1024 / 1024, 2),
-            "data_retention_days": retention_days,
-            "python_version": sys.version.split()[0],
-            "ingress_path": INGRESS_PATH,
-            # Phase 2a additions
-            "state_history_count": session.query(StateHistory).count(),
-            "pattern_count": session.query(LearnedPattern).filter_by(is_active=True).count(),
-            "event_bus_subscribers": event_bus.subscriber_count("state_changed"),
-        })
-    finally:
-        session.close()
-
-
-@app.route("/api/system/settings", methods=["GET"])
-def api_get_settings():
-    """Get all system settings."""
-    session = get_db()
-    try:
-        settings = session.query(SystemSetting).all()
-        return jsonify([{
-            "key": s.key,
-            "value": s.value,
-            "description": s.description_de if get_language() == "de" else s.description_en
-        } for s in settings])
-    finally:
-        session.close()
-
-
-@app.route("/api/system/settings/<key>", methods=["PUT"])
-def api_update_setting(key):
-    """Update a system setting."""
-    data = request.json
-    set_setting(key, data.get("value"))
-    return jsonify({"success": True, "key": key, "value": data.get("value")})
-
-
-@app.route("/api/system/emergency-stop", methods=["POST"])
-def api_emergency_stop():
-    """Activate emergency stop - pause all automations."""
-    set_setting("system_mode", "emergency_stop")
-
-    session = get_db()
-    try:
-        states = session.query(RoomDomainState).all()
-        for state in states:
-            state.is_paused = True
-        session.commit()
-
-        logger.warning("EMERGENCY STOP ACTIVATED - All automations paused")
-        return jsonify({"success": True, "mode": "emergency_stop"})
-    finally:
-        session.close()
-
-
-@app.route("/api/system/resume", methods=["POST"])
-def api_resume():
-    """Resume from emergency stop."""
-    set_setting("system_mode", "normal")
-
-    session = get_db()
-    try:
-        states = session.query(RoomDomainState).all()
-        for state in states:
-            state.is_paused = False
-        session.commit()
-
-        logger.info("System resumed from emergency stop")
-        return jsonify({"success": True, "mode": "normal"})
-    finally:
-        session.close()
-
-
-# ==============================================================================
-# API Routes - Domains
-# ==============================================================================
-
-@app.route("/api/domains", methods=["GET"])
-def api_get_domains():
-    """Get all available domains."""
-    session = get_db()
-    try:
-        domains = session.query(Domain).all()
-        lang = get_language()
-        return jsonify([{
-            "id": d.id,
-            "name": d.name,
-            "display_name": d.display_name_de if lang == "de" else d.display_name_en,
-            "icon": d.icon,
-            "is_enabled": d.is_enabled,
-            "is_custom": d.is_custom if hasattr(d, 'is_custom') else False,
-            "description": d.description_de if lang == "de" else d.description_en
-        } for d in domains])
-    finally:
-        session.close()
-
-
-# Fix 7: Custom Domains - Create
-@app.route("/api/domains", methods=["POST"])
-def api_create_domain():
-    """Create a custom domain."""
-    data = request.json
-    session = get_db()
-    try:
-        name = data.get("name", "").strip().lower().replace(" ", "_")
-        if not name:
-            return jsonify({"error": "Name is required"}), 400
-
-        existing = session.query(Domain).filter_by(name=name).first()
-        if existing:
-            return jsonify({"error": "Domain already exists"}), 400
-
-        domain = Domain(
-            name=name,
-            display_name_de=data.get("display_name_de", data.get("name", name)),
-            display_name_en=data.get("display_name_en", data.get("name", name)),
-            icon=data.get("icon", "mdi:puzzle"),
-            is_enabled=True,
-            is_custom=True,
-            description_de=data.get("description_de", ""),
-            description_en=data.get("description_en", "")
-        )
-        session.add(domain)
-        session.commit()
-        return jsonify({"id": domain.id, "name": domain.name}), 201
-    finally:
-        session.close()
-
-
-# Fix 7: Custom Domains - Update
-@app.route("/api/domains/<int:domain_id>", methods=["PUT"])
-def api_update_domain(domain_id):
-    """Update a custom domain."""
-    data = request.json
-    session = get_db()
-    try:
-        domain = session.get(Domain, domain_id)
-        if not domain:
-            return jsonify({"error": "Domain not found"}), 404
-        if not getattr(domain, 'is_custom', False):
-            return jsonify({"error": "Cannot edit system domains"}), 400
-
-        if "display_name_de" in data:
-            domain.display_name_de = data["display_name_de"]
-        if "display_name_en" in data:
-            domain.display_name_en = data["display_name_en"]
-        if "name_de" in data:
-            domain.display_name_de = data["name_de"]
-            if not domain.display_name_en:
-                domain.display_name_en = data["name_de"]
-        if "icon" in data:
-            domain.icon = data["icon"]
-        if "description_de" in data:
-            domain.description_de = data["description_de"]
-        if "description_en" in data:
-            domain.description_en = data["description_en"]
-        if "description" in data:
-            domain.description_de = data["description"]
-            if not domain.description_en:
-                domain.description_en = data["description"]
-        if "keywords" in data:
-            domain.keywords = data["keywords"]
-
-        session.commit()
-        return jsonify({"id": domain.id, "name": domain.name})
-    finally:
-        session.close()
-
-
-# Fix 7: Custom Domains - Delete
-@app.route("/api/domains/<int:domain_id>", methods=["DELETE"])
-def api_delete_domain(domain_id):
-    """Delete a custom domain."""
-    session = get_db()
-    try:
-        domain = session.get(Domain, domain_id)
-        if not domain:
-            return jsonify({"error": "Domain not found"}), 404
-        if not getattr(domain, 'is_custom', False):
-            return jsonify({"error": "Cannot delete system domains"}), 400
-
-        # Move devices to unassigned
-        devices = session.query(Device).filter_by(domain_id=domain_id).all()
-        default_domain = session.query(Domain).filter_by(name="switch").first()
-        for d in devices:
-            d.domain_id = default_domain.id if default_domain else 1
-
-        # Remove room domain states
-        session.query(RoomDomainState).filter_by(domain_id=domain_id).delete()
-
-        session.delete(domain)
-        session.commit()
-        return jsonify({"success": True})
-    finally:
-        session.close()
-
-
-@app.route("/api/domains/<int:domain_id>/toggle", methods=["POST"])
-def api_toggle_domain(domain_id):
-    """Enable or disable a domain."""
-    session = get_db()
-    try:
-        domain = session.get(Domain, domain_id)
-        if not domain:
-            return jsonify({"error": "Domain not found"}), 404
-        domain.is_enabled = not domain.is_enabled
-        session.commit()
-
-        if domain.is_enabled:
-            if domain_manager: domain_manager.start_domain(domain.name)
-        else:
-            if domain_manager: domain_manager.stop_domain(domain.name)
-
-        return jsonify({"id": domain.id, "is_enabled": domain.is_enabled})
-    finally:
-        session.close()
-
-
-@app.route("/api/domains/status", methods=["GET"])
-def api_domain_status():
-    """Get live status from all active domain plugins."""
-    return jsonify(domain_manager.get_all_status())
-
-
-@app.route("/api/domains/capabilities", methods=["GET"])
-def api_domain_capabilities():
-    """Get per-domain capabilities for frontend display."""
-    return jsonify(DOMAIN_PLUGINS)
-
-
-@app.route("/api/domains/<domain_name>/features", methods=["GET"])
-def api_domain_features(domain_name):
-    """Get trackable features for a domain (for privacy settings)."""
-    features = domain_manager.get_trackable_features(domain_name)
-    return jsonify({"domain": domain_name, "features": features})
-
-
-# ==============================================================================
-# API Routes - Rooms
-# ==============================================================================
-
-@app.route("/api/rooms", methods=["GET"])
-def api_get_rooms():
-    """Get all rooms with last activity info."""
-    session = get_db()
-    try:
-        rooms = session.query(Room).filter_by(is_active=True).all()
-        result = []
-        for r in rooms:
-            # Fix 13: Get last activity for this room
-            last_log = session.query(ActionLog).filter(
-                ActionLog.room_id == r.id,
-                ActionLog.action_type == "observation"
-            ).order_by(ActionLog.created_at.desc()).first()
-
-            # Fix 6: Only include domain_states for domains that have devices in this room
-            device_domain_ids = set(d.domain_id for d in r.devices)
-
-            result.append({
-                "id": r.id,
-                "name": r.name,
-                "ha_area_id": r.ha_area_id,
-                "icon": r.icon,
-                "privacy_mode": r.privacy_mode,
-                "device_count": len(r.devices),
-                "last_activity": utc_iso(last_log.created_at) if last_log else None,
-                "domain_states": [{
-                    "domain_id": ds.domain_id,
-                    "learning_phase": ds.learning_phase.value,
-                    "confidence_score": ds.confidence_score,
-                    "is_paused": ds.is_paused
-                } for ds in r.domain_states if ds.domain_id in device_domain_ids]
-            })
-        return jsonify(result)
-    finally:
-        session.close()
-
-
-@app.route("/api/rooms", methods=["POST"])
-def api_create_room():
-    """Create a new room."""
-    data = request.json
-    session = get_db()
-    try:
-        room = Room(
-            name=data["name"],
-            ha_area_id=data.get("ha_area_id"),
-            icon=data.get("icon", "mdi:door"),
-            privacy_mode=data.get("privacy_mode", {})
-        )
-        session.add(room)
-        session.commit()
-
-        # Create domain states for all enabled domains
-        enabled_domains = session.query(Domain).filter_by(is_enabled=True).all()
-        for domain in enabled_domains:
-            state = RoomDomainState(
-                room_id=room.id,
-                domain_id=domain.id,
-                learning_phase=LearningPhase.OBSERVING
-            )
-            session.add(state)
-        session.commit()
-
-        return jsonify({"id": room.id, "name": room.name}), 201
-    finally:
-        session.close()
-
-
-# Fix 9: Import rooms from HA Areas
-@app.route("/api/rooms/import-from-ha", methods=["POST"])
-def api_import_rooms_from_ha():
-    """Import rooms from HA Areas."""
-    session = get_db()
-    try:
-        areas = ha.get_areas() or []
-        if not areas:
-            return jsonify({"error": "No areas found in HA", "imported": 0}), 200
-
-        imported = 0
-        skipped = 0
-
-        for area in areas:
-            area_id = area.get("area_id", "")
-            area_name = area.get("name", "")
-            if not area_name:
-                continue
-
-            # Check if room already exists (by ha_area_id or name)
-            existing = session.query(Room).filter(
-                (Room.ha_area_id == area_id) | (Room.name == area_name)
-            ).first()
-
-            if existing:
-                # Update ha_area_id if missing
-                if not existing.ha_area_id:
-                    existing.ha_area_id = area_id
-                skipped += 1
-                continue
-
-            room = Room(
-                name=area_name,
-                ha_area_id=area_id,
-                icon=area.get("icon") or "mdi:door",
-                privacy_mode={}
-            )
-            session.add(room)
-            session.flush()
-
-            # Create domain states
-            enabled_domains = session.query(Domain).filter_by(is_enabled=True).all()
-            for domain in enabled_domains:
-                state = RoomDomainState(
-                    room_id=room.id,
-                    domain_id=domain.id,
-                    learning_phase=LearningPhase.OBSERVING
-                )
-                session.add(state)
-
-            imported += 1
-
-        session.commit()
-        return jsonify({"success": True, "imported": imported, "skipped": skipped})
-    finally:
-        session.close()
-
-
-@app.route("/api/rooms/<int:room_id>", methods=["PUT"])
-def api_update_room(room_id):
-    """Update a room."""
-    data = request.json
-    session = get_db()
-    try:
-        room = session.get(Room, room_id)
-        if not room:
-            return jsonify({"error": "Room not found"}), 404
-
-        if "name" in data:
-            room.name = data["name"]
-        if "icon" in data:
-            room.icon = data["icon"]
-        if "privacy_mode" in data:
-            room.privacy_mode = data["privacy_mode"]
-
-        session.commit()
-        return jsonify({"id": room.id, "name": room.name})
-    finally:
-        session.close()
-
-
-@app.route("/api/rooms/<int:room_id>", methods=["DELETE"])
-def api_delete_room(room_id):
-    """Delete a room."""
-    session = get_db()
-    try:
-        room = session.get(Room, room_id)
-        if not room:
-            return jsonify({"error": "Room not found"}), 404
-        room.is_active = False  # Soft delete
-        session.commit()
-        return jsonify({"success": True})
-    finally:
-        session.close()
-
-
-@app.route("/api/rooms/<int:room_id>/privacy", methods=["PUT"])
-def api_update_room_privacy(room_id):
-    """Update privacy mode for a room."""
-    data = request.json
-    session = get_db()
-    try:
-        room = session.get(Room, room_id)
-        if not room:
-            return jsonify({"error": "Room not found"}), 404
-        room.privacy_mode = data.get("privacy_mode", {})
-        session.commit()
-        return jsonify({"id": room.id, "privacy_mode": room.privacy_mode})
-    finally:
-        session.close()
-
-
-# ==============================================================================
-# API Routes - Devices
-# ==============================================================================
-
-@app.route("/api/devices", methods=["GET"])
-def api_get_devices():
-    """Get all tracked devices with live status."""
-    session = get_db()
-    try:
-        devices = session.query(Device).all()
-        result = []
-        for d in devices:
-            dev_data = {
-                "id": d.id,
-                "ha_entity_id": d.ha_entity_id,
-                "name": d.name,
-                "domain_id": d.domain_id,
-                "room_id": d.room_id,
-                "is_tracked": d.is_tracked,
-                "is_controllable": d.is_controllable
+    })
+);
+
+const SkeletonCard = () => (
+    React.createElement('div', { className: 'card', style: { padding: 16, marginBottom: 12 } },
+        React.createElement(Skeleton, { height: 20, width: '60%', style: { marginBottom: 12 } }),
+        React.createElement(Skeleton, { height: 14, width: '80%', style: { marginBottom: 8 } }),
+        React.createElement(Skeleton, { height: 14, width: '40%' })
+    )
+);
+
+// ================================================================
+// #8 Toast Stacking
+// ================================================================
+
+const Toast = ({ message, type, onClose }) => {
+    useEffect(() => {
+        const timer = setTimeout(onClose, 4000);
+        return () => clearTimeout(timer);
+    }, []);
+
+    const icons = {
+        success: 'mdi-check-circle',
+        error: 'mdi-alert-circle',
+        info: 'mdi-information',
+        warning: 'mdi-alert'
+    };
+
+    return (
+        <div style={{
+            position: 'fixed', bottom: 24, right: 24, zIndex: 3000,
+            display: 'flex', alignItems: 'center', gap: 10,
+            padding: '12px 20px',
+            background: 'var(--bg-secondary)', border: '1px solid var(--border)',
+            borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-lg)',
+            animation: 'slideUp 0.3s ease',
+            borderLeft: `3px solid var(--${type === 'error' ? 'danger' : type})`
+        }}>
+            <span className={`mdi ${icons[type] || icons.info}`}
+                  style={{ color: `var(--${type === 'error' ? 'danger' : type})`, fontSize: 20 }} />
+            <span style={{ fontSize: 14 }}>{message}</span>
+            <button onClick={onClose} className="btn-ghost btn-icon btn"
+                    style={{ marginLeft: 8, padding: 0, minWidth: 24 }}>
+                <span className="mdi mdi-close" style={{ fontSize: 16 }} />
+            </button>
+        </div>
+    );
+};
+
+// ================================================================
+// Phase 2a: Patterns Page (Muster-Explorer)
+
+// ================================================================
+// Modal Component
+// ================================================================
+
+const Modal = ({ title, children, onClose, actions, wide }) => (
+    <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+        <div className="modal" onClick={e => e.stopPropagation()} style={wide ? { maxWidth: 700, width: '90%' } : {}}>
+            <div className="modal-title">{title}</div>
+            {children}
+            {actions && <div className="modal-actions">{actions}</div>}
+        </div>
+    </div>
+);
+
+const CollapsibleCard = ({ title, icon, children, defaultOpen = true }) => {
+    const [open, setOpen] = useState(defaultOpen);
+    return (
+        <div className="card">
+            <div onClick={() => setOpen(!open)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', userSelect: 'none' }}>
+                <div className="card-title" style={{ marginBottom: 0 }}>
+                    {icon && <span className={`mdi ${icon}`} style={{ marginRight: 8, color: 'var(--accent-primary)' }} />}
+                    {title}
+                </div>
+                <span className={`mdi ${open ? 'mdi-chevron-up' : 'mdi-chevron-down'}`} style={{ fontSize: 18, color: 'var(--text-muted)' }} />
+            </div>
+            {open && <div style={{ marginTop: 12 }}>{children}</div>}
+        </div>
+    );
+};
+
+// ================================================================
+// Fix 11: Splash Screen
+// ================================================================
+
+const SplashScreen = () => (
+    <div style={{
+        position: 'fixed', inset: 0, display: 'flex', flexDirection: 'column',
+        alignItems: 'center', justifyContent: 'center', gap: 20,
+        background: 'linear-gradient(135deg, #0D1117 0%, #161B22 50%, #1A1F2B 100%)', zIndex: 9999
+    }}>
+        <img src={`${API_BASE}/icon.png`} alt="MindHome" style={{
+            width: 80, height: 80, borderRadius: 18,
+            boxShadow: '0 0 40px rgba(245,166,35,0.3)', animation: 'pulse 2s ease-in-out infinite'
+        }} />
+        <div style={{ fontSize: 26, fontWeight: 700, color: '#F0F6FC', letterSpacing: 1 }}>MindHome</div>
+        <div style={{ fontSize: 13, color: '#8B949E' }}>Dein Zuhause denkt mit</div>
+        <div className="loading-spinner" style={{ marginTop: 8 }} />
+    </div>
+);
+
+// ================================================================
+// Fix 23: Confirm Dialog
+// ================================================================
+
+const ConfirmDialog = ({ title, message, onConfirm, onCancel, danger }) => (
+    <div className="modal-overlay" onClick={onCancel}>
+        <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 400 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+                <span className={`mdi ${danger ? 'mdi-alert-circle' : 'mdi-help-circle'}`}
+                      style={{ fontSize: 28, color: danger ? 'var(--danger)' : 'var(--accent-primary)' }} />
+                <div className="modal-title" style={{ marginBottom: 0 }}>{title}</div>
+            </div>
+            <p style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.5, marginBottom: 20 }}>{message}</p>
+            <div className="modal-actions">
+                <button className="btn btn-secondary" onClick={onCancel}>Abbrechen</button>
+                <button className={`btn ${danger ? 'btn-danger' : 'btn-primary'}`} onClick={onConfirm}>
+                    {danger ? 'Löschen' : 'Bestätigen'}
+                </button>
+            </div>
+        </div>
+    </div>
+);
+
+// ================================================================
+// Fix 8: Custom Dropdown Component
+// ================================================================
+
+const Dropdown = ({ value, onChange, options, placeholder, label }) => {
+    const [open, setOpen] = useState(false);
+    const [hovered, setHovered] = useState(null);
+    const ref = useRef(null);
+    useEffect(() => {
+        const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+        document.addEventListener('mousedown', handler);
+        return () => document.removeEventListener('mousedown', handler);
+    }, []);
+    const selected = options.find(o => String(o.value) === String(value));
+    return (
+        <div ref={ref} style={{ position: 'relative' }}>
+            {label && <label className="input-label">{label}</label>}
+            <div className="input" onClick={() => setOpen(!open)} style={{
+                cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', userSelect: 'none',
+                borderColor: open ? 'var(--accent-primary)' : undefined,
+                boxShadow: open ? '0 0 0 2px rgba(245,166,35,0.15)' : undefined,
+                transition: 'border-color 0.2s, box-shadow 0.2s'
+            }}>
+                <span style={{ color: selected ? 'var(--text-primary)' : 'var(--text-muted)' }}>{selected?.label || placeholder || '— Auswählen —'}</span>
+                <span className={`mdi mdi-chevron-${open ? 'up' : 'down'}`} style={{ fontSize: 18, color: 'var(--text-muted)', transition: 'transform 0.2s' }} />
+            </div>
+            {open && (
+                <div style={{
+                    position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 4,
+                    background: 'var(--bg-card)', border: '1px solid var(--border)',
+                    borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-lg)',
+                    zIndex: 1000, maxHeight: 240, overflow: 'auto',
+                    animation: 'fadeIn 0.15s ease-out'
+                }}>
+                    {options.map(opt => {
+                        const isSelected = String(opt.value) === String(value);
+                        const isHover = hovered === opt.value;
+                        return (
+                        <div key={opt.value}
+                             onClick={() => { onChange(opt.value); setOpen(false); }}
+                             onMouseEnter={() => setHovered(opt.value)}
+                             onMouseLeave={() => setHovered(null)}
+                             style={{
+                                 padding: '10px 14px', cursor: 'pointer', fontSize: 14,
+                                 display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                 background: isSelected ? 'var(--accent-primary-dim)' : isHover ? 'var(--bg-tertiary)' : 'transparent',
+                                 borderLeft: isSelected ? '3px solid var(--accent-primary)' : '3px solid transparent',
+                                 transition: 'background 0.15s',
+                             }}>
+                            <span>{opt.label}</span>
+                            {isSelected && <span className="mdi mdi-check" style={{ color: 'var(--accent-primary)', fontSize: 16 }} />}
+                        </div>
+                        );
+                    })}
+                </div>
+            )}
+        </div>
+    );
+};
+
+// ================================================================
+// Phase 2a: Patterns Page (Muster-Explorer)
+
+// ================================================================
+// Searchable Entity Dropdown (matches system design)
+// ================================================================
+const EntitySearchDropdown = ({ value, onChange, entities, label, placeholder }) => {
+    const [open, setOpen] = useState(false);
+    const [search, setSearch] = useState('');
+    const ref = useRef(null);
+    const inputRef = useRef(null);
+
+    useEffect(() => {
+        const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+        document.addEventListener('mousedown', handler);
+        return () => document.removeEventListener('mousedown', handler);
+    }, []);
+
+    useEffect(() => {
+        if (open && inputRef.current) inputRef.current.focus();
+    }, [open]);
+
+    const filtered = (entities || []).filter(e => {
+        if (!search) return true;
+        const s = search.toLowerCase();
+        return (e.ha_entity_id || '').toLowerCase().includes(s) || (e.name || '').toLowerCase().includes(s);
+    }).slice(0, 50);
+
+    const selectedEntity = entities?.find(e => e.ha_entity_id === value);
+    const displayValue = selectedEntity ? `${selectedEntity.name} (${selectedEntity.ha_entity_id})` : value || '';
+
+    return (
+        <div ref={ref} style={{ position: 'relative' }}>
+            {label && <label className="input-label">{label}</label>}
+            <div className="input" onClick={() => setOpen(!open)} style={{
+                cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', userSelect: 'none',
+                borderColor: open ? 'var(--accent-primary)' : undefined,
+                boxShadow: open ? '0 0 0 2px rgba(245,166,35,0.15)' : undefined,
+            }}>
+                <span style={{ color: displayValue ? 'var(--text-primary)' : 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, fontSize: 13 }}>
+                    {displayValue || placeholder || '— Entity wählen —'}
+                </span>
+                <span className={`mdi mdi-chevron-${open ? 'up' : 'down'}`} style={{ fontSize: 18, color: 'var(--text-muted)' }} />
+            </div>
+            {open && (
+                <div style={{
+                    position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 4,
+                    background: 'var(--bg-card)', border: '1px solid var(--border)',
+                    borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-lg)',
+                    zIndex: 1001, animation: 'fadeIn 0.15s ease-out',
+                }}>
+                    <div style={{ padding: '8px 8px 4px' }}>
+                        <input ref={inputRef} className="input" value={search} onChange={e => setSearch(e.target.value)}
+                            placeholder="🔍 Suchen..." style={{ fontSize: 12, padding: '6px 10px' }} />
+                    </div>
+                    <div style={{ maxHeight: 200, overflowY: 'auto' }}>
+                        {filtered.length === 0 ? (
+                            <div style={{ padding: '12px 14px', fontSize: 12, color: 'var(--text-muted)' }}>Keine Ergebnisse</div>
+                        ) : filtered.map(e => {
+                            const isSelected = e.ha_entity_id === value;
+                            return (
+                                <div key={e.id || e.ha_entity_id}
+                                    onClick={() => { onChange(e.ha_entity_id); setOpen(false); setSearch(''); }}
+                                    style={{
+                                        padding: '8px 14px', cursor: 'pointer', fontSize: 13,
+                                        background: isSelected ? 'var(--accent-primary-dim)' : 'transparent',
+                                        borderLeft: isSelected ? '3px solid var(--accent-primary)' : '3px solid transparent',
+                                        transition: 'background 0.15s',
+                                    }}
+                                    onMouseEnter={ev => ev.currentTarget.style.background = isSelected ? 'var(--accent-primary-dim)' : 'var(--bg-tertiary)'}
+                                    onMouseLeave={ev => ev.currentTarget.style.background = isSelected ? 'var(--accent-primary-dim)' : 'transparent'}>
+                                    <div style={{ fontWeight: isSelected ? 600 : 400 }}>{e.name || e.ha_entity_id}</div>
+                                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>{e.ha_entity_id}</div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
+// ================================================================
+// Phase 2a: Patterns Page (Muster-Explorer)
+
+// ================================================================
+// Fix 2: Time Period Filter
+// ================================================================
+
+const PeriodFilter = ({ value, onChange, lang }) => {
+    const periods = [
+        { id: 'today', de: 'Heute', en: 'Today' },
+        { id: 'week', de: 'Woche', en: 'Week' },
+        { id: 'month', de: 'Monat', en: 'Month' },
+        { id: 'all', de: 'Alles', en: 'All' },
+    ];
+    return (
+        <div style={{ display: 'flex', gap: 4 }}>
+            {periods.map(p => (
+                <button key={p.id} className={`btn ${value === p.id ? 'btn-primary' : 'btn-secondary'}`}
+                    style={{ padding: '6px 14px', fontSize: 13 }} onClick={() => onChange(p.id)}>
+                    {p[lang]}
+                </button>
+            ))}
+        </div>
+    );
+};
+
+// ================================================================
+// Phase 2a: Patterns Page (Muster-Explorer)
+
+// Fix 13: Relative time helper
+const relativeTime = (isoStr, lang) => {
+    if (!isoStr) return lang === 'de' ? 'Keine Aktivität' : 'No activity';
+    const diff = (Date.now() - new Date(isoStr).getTime()) / 1000;
+    if (diff < 60) return lang === 'de' ? 'Gerade eben' : 'Just now';
+    if (diff < 3600) return `${Math.floor(diff / 60)} Min`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)} Std`;
+    return `${Math.floor(diff / 86400)} ${lang === 'de' ? 'Tage' : 'days'}`;
+};
+
+// ================================================================
+// Phase 2a: Patterns Page (Muster-Explorer)
+
+const stateDisplay = (state) => {
+    if (!state || state === 'unknown') return { label: '?', color: 'var(--text-muted)' };
+    if (state === 'on') return { label: 'on', color: 'var(--success)' };
+    if (state === 'off') return { label: 'off', color: 'var(--text-muted)' };
+    if (state === 'unavailable') return { label: '✕', color: 'var(--danger)' };
+    return { label: state, color: 'var(--info)' };
+};
+
+// ================================================================
+// Phase 2a: Patterns Page (Muster-Explorer)
+
+const formatBytes = (bytes) => {
+    if (!bytes || bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+};
+
+// ================================================================
+// Phase 2a: Patterns Page (Muster-Explorer)
+
+// ================================================================
+// Dashboard Page
+// ================================================================
+
+const DashboardPage = () => {
+    const { status, domains, devices, rooms, lang, tr, showToast } = useApp();
+    const [learningStats, setLearningStats] = useState(null);
+    const [predictions, setPredictions] = useState([]);
+    const [anomalies, setAnomalies] = useState([]);
+    const [unreadCount, setUnreadCount] = useState(0);
+    const [sysHealth, setSysHealth] = useState(null);
+    const [weeklyReport, setWeeklyReport] = useState(null);
+    const [configIssues, setConfigIssues] = useState(null);
+    const [deviceHealth, setDeviceHealth] = useState(null);      // #24
+    const [showChangelog, setShowChangelog] = useState(false);     // #21
+    const activeDomains = domains.filter(d => d.is_enabled).length;
+    const trackedDevices = devices.length;
+
+    // #43 Onboarding checklist
+    const checklist = useMemo(() => {
+        const items = [
+            { key: 'rooms', label: lang === 'de' ? 'Räume erstellt' : 'Rooms created', done: rooms.length > 0 },
+            { key: 'devices', label: lang === 'de' ? 'Geräte zugeordnet' : 'Devices assigned', done: devices.some(d => d.room_id) },
+            { key: 'domains', label: lang === 'de' ? 'Domains aktiv' : 'Domains active', done: domains.some(d => d.is_enabled) },
+            { key: 'patterns', label: lang === 'de' ? 'Erste Muster' : 'First patterns', done: learningStats?.total_patterns > 0 },
+        ];
+        return items;
+    }, [rooms, devices, domains, learningStats, lang]);
+    const checklistProgress = checklist.filter(c => c.done).length;
+
+    useEffect(() => {
+        api.get('stats/learning').then(setLearningStats).catch(() => {});
+        api.get('predictions?status=pending&limit=5').then(setPredictions).catch(() => {});
+        api.get('automation/anomalies').then(setAnomalies).catch(() => {});
+        api.get('notifications/unread-count').then(d => setUnreadCount(d.unread_count || 0)).catch(() => {});
+        api.get('device-health').then(setDeviceHealth).catch(() => {});  // #24
+        api.get('health').then(setSysHealth).catch(() => {});
+        api.get('report/weekly').then(setWeeklyReport).catch(() => {});
+        api.get('validate-config').then(setConfigIssues).catch(() => {});
+    }, []);
+
+    const modeLabels = {
+        normal: { de: 'Normal', en: 'Normal', color: 'success' },
+        away: { de: 'Abwesend', en: 'Away', color: 'info' },
+        guest: { de: 'Gäste-Modus', en: 'Guest Mode', color: 'info' },
+        vacation: { de: 'Urlaubsmodus', en: 'Vacation', color: 'warning' },
+        emergency_stop: { de: 'NOT-AUS', en: 'EMERGENCY STOP', color: 'danger' }
+    };
+
+    const mode = modeLabels[status?.system_mode] || modeLabels.normal;
+
+    return (
+        <div>
+            {/* System Status Panel */}
+            <div className="card animate-in" style={{ marginBottom: 24, padding: 0, overflow: 'hidden' }}>
+                <div style={{ padding: '16px 20px 12px', borderBottom: '1px solid var(--border-color)' }}>
+                    <div className="card-title" style={{ marginBottom: 0 }}>
+                        <span className="mdi mdi-server-network" style={{ marginRight: 8, color: 'var(--accent-primary)' }} />
+                        {lang === 'de' ? 'Systemstatus' : 'System Status'}
+                    </div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 0 }}>
+                    {/* HA WebSocket */}
+                    {(() => {
+                        const wsOk = sysHealth?.checks?.ha_websocket?.status === 'ok';
+                        return (
+                        <div style={{ padding: '14px 20px', borderRight: '1px solid var(--border-color)', borderBottom: '1px solid var(--border-color)' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                                <span style={{ width: 8, height: 8, borderRadius: '50%', background: wsOk ? 'var(--success)' : 'var(--danger)', boxShadow: wsOk ? '0 0 6px var(--success)' : '0 0 6px var(--danger)', flexShrink: 0 }} />
+                                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>HA WebSocket</span>
+                            </div>
+                            <div style={{ fontSize: 12, color: 'var(--text-muted)', paddingLeft: 16 }}>
+                                {wsOk ? (lang === 'de' ? 'Verbunden' : 'Connected') : (lang === 'de' ? 'Getrennt' : 'Disconnected')}
+                                {sysHealth?.checks?.ha_websocket?.reconnect_attempts > 0 && (
+                                    <span style={{ color: 'var(--warning)' }}> · {sysHealth.checks.ha_websocket.reconnect_attempts} Reconnects</span>
+                                )}
+                            </div>
+                        </div>
+                        );
+                    })()}
+
+                    {/* HA REST API */}
+                    {(() => {
+                        const restOk = sysHealth?.checks?.ha_rest_api?.status === 'ok';
+                        return (
+                        <div style={{ padding: '14px 20px', borderRight: '1px solid var(--border-color)', borderBottom: '1px solid var(--border-color)' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                                <span style={{ width: 8, height: 8, borderRadius: '50%', background: restOk ? 'var(--success)' : 'var(--danger)', boxShadow: restOk ? '0 0 6px var(--success)' : '0 0 6px var(--danger)', flexShrink: 0 }} />
+                                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>HA REST API</span>
+                            </div>
+                            <div style={{ fontSize: 12, color: 'var(--text-muted)', paddingLeft: 16 }}>
+                                {restOk ? (lang === 'de' ? 'Erreichbar' : 'Reachable') : (lang === 'de' ? 'Offline' : 'Offline')}
+                            </div>
+                        </div>
+                        );
+                    })()}
+
+                    {/* Database */}
+                    {(() => {
+                        const dbOk = sysHealth?.checks?.database?.status === 'ok';
+                        return (
+                        <div style={{ padding: '14px 20px', borderRight: '1px solid var(--border-color)', borderBottom: '1px solid var(--border-color)' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                                <span style={{ width: 8, height: 8, borderRadius: '50%', background: dbOk ? 'var(--success)' : 'var(--danger)', boxShadow: dbOk ? '0 0 6px var(--success)' : '0 0 6px var(--danger)', flexShrink: 0 }} />
+                                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{lang === 'de' ? 'Datenbank' : 'Database'}</span>
+                            </div>
+                            <div style={{ fontSize: 12, color: 'var(--text-muted)', paddingLeft: 16 }}>
+                                {dbOk ? 'SQLite OK' : (sysHealth?.checks?.database?.message || 'Error')}
+                            </div>
+                        </div>
+                        );
+                    })()}
+
+                    {/* MindHome Engine */}
+                    {(() => {
+                        const ok = status?.status === 'running';
+                        const uptime = sysHealth?.uptime_seconds || 0;
+                        const hours = Math.floor(uptime / 3600);
+                        const days = Math.floor(hours / 24);
+                        const uptimeStr = days > 0 ? `${days}d ${hours % 24}h` : hours > 0 ? `${hours}h ${Math.floor((uptime % 3600) / 60)}m` : `${Math.floor(uptime / 60)}m`;
+                        return (
+                        <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--border-color)' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                                <span style={{ width: 8, height: 8, borderRadius: '50%', background: ok ? 'var(--success)' : 'var(--danger)', boxShadow: ok ? '0 0 6px var(--success)' : '0 0 6px var(--danger)', flexShrink: 0 }} />
+                                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>MindHome Engine</span>
+                            </div>
+                            <div style={{ fontSize: 12, color: 'var(--text-muted)', paddingLeft: 16 }}>
+                                v{sysHealth?.version || '0.5.0'} · Uptime {uptimeStr}
+                            </div>
+                        </div>
+                        );
+                    })()}
+                </div>
+            </div>
+
+            {/* Stats Overview */}
+            <div className="stat-grid">
+                <div className="stat-card animate-in">
+                    <div className="stat-icon" style={{ background: `var(--${mode.color}-dim)`, color: `var(--${mode.color})` }}>
+                        <span className="mdi mdi-shield-check" />
+                    </div>
+                    <div>
+                        <div className={`badge badge-${mode.color}`}>
+                            <span className="badge-dot" />{mode[lang]}
+                        </div>
+                        <div className="stat-label">{lang === 'de' ? 'Systemmodus' : 'System Mode'}</div>
+                    </div>
+                </div>
+
+                <div className="stat-card animate-in animate-in-delay-1">
+                    <div className="stat-icon" style={{ background: 'var(--accent-primary-dim)', color: 'var(--accent-primary)' }}>
+                        <span className="mdi mdi-puzzle" />
+                    </div>
+                    <div>
+                        <div className="stat-value">{activeDomains}</div>
+                        <div className="stat-label">{lang === 'de' ? 'Aktive Domains' : 'Active Domains'}</div>
+                    </div>
+                </div>
+
+                <div className="stat-card animate-in animate-in-delay-2">
+                    <div className="stat-icon" style={{ background: 'var(--accent-secondary-dim)', color: 'var(--accent-secondary)' }}>
+                        <span className="mdi mdi-devices" />
+                    </div>
+                    <div>
+                        <div className="stat-value">{trackedDevices}</div>
+                        <div className="stat-label">{lang === 'de' ? 'Geräte' : 'Devices'}</div>
+                    </div>
+                </div>
+
+                <div className="stat-card animate-in animate-in-delay-3">
+                    <div className="stat-icon" style={{ background: 'var(--info-dim)', color: 'var(--info)' }}>
+                        <span className="mdi mdi-door-open" />
+                    </div>
+                    <div>
+                        <div className="stat-value">{rooms.length}</div>
+                        <div className="stat-label">{lang === 'de' ? 'Räume' : 'Rooms'}</div>
+                    </div>
+                </div>
+            </div>
+
+            {/* #43 Onboarding Checklist */}
+            {checklistProgress < checklist.length && (
+                <div className="card animate-in" style={{ marginBottom: 16, padding: 16, borderLeft: '3px solid var(--accent-primary)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                        <div className="card-title" style={{ fontSize: 14 }}>
+                            <span className="mdi mdi-checkbox-marked-circle-outline" style={{ marginRight: 8, color: 'var(--accent-primary)' }} />
+                            {lang === 'de' ? 'Einrichtung' : 'Setup'} ({checklistProgress}/{checklist.length})
+                        </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                        {checklist.map(c => (
+                            <span key={c.key} style={{
+                                fontSize: 12, padding: '4px 10px', borderRadius: 12,
+                                background: c.done ? 'var(--success-dim)' : 'var(--bg-tertiary)',
+                                color: c.done ? 'var(--success)' : 'var(--text-muted)',
+                                textDecoration: c.done ? 'line-through' : 'none',
+                            }}>
+                                <span className={`mdi ${c.done ? 'mdi-check' : 'mdi-circle-outline'}`} style={{ marginRight: 4 }} />
+                                {c.label}
+                            </span>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {/* #24 Device Health Warnings */}
+            {/* Quick Actions */}
+            <div className="card animate-in animate-in-delay-2" style={{ marginBottom: 24 }}>
+                <div className="card-header">
+                    <div>
+                        <div className="card-title">Quick Actions</div>
+                        <div className="card-subtitle">
+                            {lang === 'de' ? 'Schnellzugriff' : 'Quick access'}
+                        </div>
+                    </div>
+                </div>
+                <QuickActionsGrid />
+            </div>
+
+            {/* Phase 2a: Learning Progress */}
+            {learningStats && (learningStats.total_events > 0 || learningStats.total_patterns > 0) && (
+                <div className="card animate-in animate-in-delay-2" style={{ marginBottom: 24 }}>
+                    <div className="card-header">
+                        <div>
+                            <div className="card-title">
+                                <span className="mdi mdi-lightbulb-on" style={{ marginRight: 8, color: 'var(--accent-primary)' }} />
+                                {lang === 'de' ? 'Lernfortschritt' : 'Learning Progress'}
+                            </div>
+                            <div className="card-subtitle">
+                                {lang === 'de'
+                                    ? `${learningStats.days_collecting} Tage Daten, ${learningStats.total_events} Events`
+                                    : `${learningStats.days_collecting} days of data, ${learningStats.total_events} events`}
+                            </div>
+                        </div>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12, padding: '0 16px 16px' }}>
+                        <div style={{ padding: 12, background: 'var(--bg-tertiary)', borderRadius: 8, textAlign: 'center' }}>
+                            <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--accent-primary)' }}>
+                                {learningStats.total_patterns}
+                            </div>
+                            <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                                {lang === 'de' ? 'Muster erkannt' : 'Patterns found'}
+                            </div>
+                        </div>
+                        <div style={{ padding: 12, background: 'var(--bg-tertiary)', borderRadius: 8, textAlign: 'center' }}>
+                            <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--success)' }}>
+                                {learningStats.avg_confidence ? `${Math.round(learningStats.avg_confidence * 100)}%` : '—'}
+                            </div>
+                            <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                                {lang === 'de' ? 'Ø Vertrauen' : 'Avg Confidence'}
+                            </div>
+                        </div>
+                        <div style={{ padding: 12, background: 'var(--bg-tertiary)', borderRadius: 8, textAlign: 'center' }}>
+                            <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--warning)' }}>
+                                {learningStats.events_today}
+                            </div>
+                            <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                                {lang === 'de' ? 'Events heute' : 'Events today'}
+                            </div>
+                        </div>
+                    </div>
+                    {/* Top patterns preview */}
+                    {learningStats.top_patterns?.length > 0 && (
+                        <div style={{ padding: '0 16px 16px' }}>
+                            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 8 }}>
+                                {lang === 'de' ? 'Top Muster:' : 'Top patterns:'}
+                            </div>
+                            {learningStats.top_patterns.slice(0, 3).map(p => (
+                                <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', fontSize: 13 }}>
+                                    <span className={`mdi ${p.pattern_type === 'time_based' ? 'mdi-clock-outline' : p.pattern_type === 'event_chain' ? 'mdi-link-variant' : 'mdi-chart-scatter-plot'}`}
+                                          style={{ color: 'var(--accent-primary)', fontSize: 16 }} />
+                                    <span style={{ flex: 1 }}>{p.description}</span>
+                                    <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{Math.round(p.confidence * 100)}%</span>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* Phase 2b: Pending Suggestions */}
+            {predictions.length > 0 && (
+                <div className="card animate-in" style={{ marginBottom: 24, borderLeft: '3px solid var(--warning)' }}>
+                    <div className="card-header">
+                        <div>
+                            <div className="card-title">
+                                <span className="mdi mdi-lightbulb-on" style={{ marginRight: 8, color: 'var(--warning)' }} />
+                                {lang === 'de' ? 'Vorschläge' : 'Suggestions'}
+                                <span className="badge badge-warning" style={{ marginLeft: 8 }}>{predictions.length}</span>
+                            </div>
+                            <div className="card-subtitle">
+                                {lang === 'de' ? 'MindHome hat neue Muster erkannt' : 'MindHome found new patterns'}
+                            </div>
+                        </div>
+                        {predictions.length > 1 && (
+                            <div style={{ display: 'flex', gap: 6 }}>
+                                <button className="btn btn-sm btn-success" onClick={async () => {
+                                    for (const p of predictions) await api.post(`predictions/${p.id}/confirm`);
+                                    setPredictions([]);
+                                    showToast(lang === 'de' ? `${predictions.length} aktiviert` : `${predictions.length} activated`, 'success');
+                                }}>
+                                    <span className="mdi mdi-check-all" style={{ marginRight: 4 }} />
+                                    {lang === 'de' ? 'Alle' : 'All'}
+                                </button>
+                                <button className="btn btn-sm btn-ghost" onClick={async () => {
+                                    for (const p of predictions) await api.post(`predictions/${p.id}/reject`);
+                                    setPredictions([]);
+                                    showToast(lang === 'de' ? 'Alle abgelehnt' : 'All rejected', 'info');
+                                }}>
+                                    <span className="mdi mdi-close-circle-outline" style={{ marginRight: 4 }} />
+                                    {lang === 'de' ? 'Alle' : 'All'}
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                    {predictions.map(pred => (
+                        <div key={pred.id} style={{
+                            padding: '12px 16px', borderBottom: '1px solid var(--border-color)',
+                            display: 'flex', alignItems: 'center', gap: 12
+                        }}>
+                            <span className="mdi mdi-robot" style={{ fontSize: 20, color: 'var(--accent-primary)' }} />
+                            <div style={{ flex: 1 }}>
+                                <div style={{ fontSize: 14 }}>{pred.description || 'New pattern'}</div>
+                                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                                    {lang === 'de' ? 'Vertrauen' : 'Confidence'}: {Math.round(pred.confidence * 100)}%
+                                </div>
+                            </div>
+                            <div style={{ display: 'flex', gap: 6 }}>
+                                <button className="btn btn-sm btn-success" onClick={async () => {
+                                    await api.post(`predictions/${pred.id}/confirm`);
+                                    setPredictions(p => p.filter(x => x.id !== pred.id));
+                                    showToast(lang === 'de' ? 'Aktiviert!' : 'Activated!', 'success');
+                                }}>
+                                    <span className="mdi mdi-check" />
+                                </button>
+                                <button className="btn btn-sm btn-ghost" onClick={async () => {
+                                    await api.post(`predictions/${pred.id}/reject`);
+                                    setPredictions(p => p.filter(x => x.id !== pred.id));
+                                    showToast(lang === 'de' ? 'Abgelehnt' : 'Rejected', 'info');
+                                }}>
+                                    <span className="mdi mdi-close" />
+                                </button>
+                                <button className="btn btn-sm btn-ghost" onClick={async () => {
+                                    await api.post(`predictions/${pred.id}/ignore`);
+                                    setPredictions(p => p.filter(x => x.id !== pred.id));
+                                }} title={lang === 'de' ? 'Später' : 'Later'}>
+                                    <span className="mdi mdi-clock-outline" />
+                                </button>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            {/* Phase 2b: Anomaly Alerts */}
+            {/* Weekly Report - improved (#11) */}
+            {weeklyReport && (
+                <div className="card animate-in animate-in-delay-2" style={{ marginBottom: 16 }}>
+                    <div className="card-title" style={{ marginBottom: 14, display: 'flex', alignItems: 'center' }}>
+                        <span className="mdi mdi-chart-timeline-variant" style={{ marginRight: 8, color: 'var(--accent-primary)', fontSize: 20 }} />
+                        {lang === 'de' ? 'Wochenbericht' : 'Weekly Report'}
+                        <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--text-muted)', fontWeight: 400 }}>
+                            {lang === 'de' ? 'Letzte 7 Tage' : 'Last 7 days'}
+                        </span>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
+                        <div style={{ textAlign: 'center', padding: '14px 10px', background: 'var(--bg-main)', borderRadius: 10, border: '1px solid rgba(99,102,241,0.15)' }}>
+                            <span className="mdi mdi-pulse" style={{ fontSize: 20, color: 'var(--accent-primary)', display: 'block', marginBottom: 4 }} />
+                            <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--accent-primary)' }}>{weeklyReport.events_collected?.toLocaleString()}</div>
+                            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{lang === 'de' ? 'Events' : 'Events'}</div>
+                        </div>
+                        <div style={{ textAlign: 'center', padding: '14px 10px', background: 'var(--bg-main)', borderRadius: 10, border: '1px solid rgba(52,211,153,0.15)' }}>
+                            <span className="mdi mdi-lightbulb-on" style={{ fontSize: 20, color: 'var(--success)', display: 'block', marginBottom: 4 }} />
+                            <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--success)' }}>{weeklyReport.new_patterns}</div>
+                            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{lang === 'de' ? 'Neue Muster' : 'New Patterns'}</div>
+                        </div>
+                        <div style={{ textAlign: 'center', padding: '14px 10px', background: 'var(--bg-main)', borderRadius: 10, border: '1px solid rgba(251,191,36,0.15)' }}>
+                            <span className="mdi mdi-robot" style={{ fontSize: 20, color: 'var(--warning)', display: 'block', marginBottom: 4 }} />
+                            <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--warning)' }}>{weeklyReport.automations_executed}</div>
+                            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{lang === 'de' ? 'Automationen' : 'Automations'}</div>
+                        </div>
+                        <div style={{ textAlign: 'center', padding: '14px 10px', background: 'var(--bg-main)', borderRadius: 10, border: '1px solid rgba(96,165,250,0.15)' }}>
+                            <span className="mdi mdi-check-decagram" style={{ fontSize: 20, color: 'var(--info)', display: 'block', marginBottom: 4 }} />
+                            <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--info)' }}>{weeklyReport.success_rate}%</div>
+                            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{lang === 'de' ? 'Erfolgsrate' : 'Success Rate'}</div>
+                        </div>
+                        {weeklyReport.energy_saved_kwh > 0 && (
+                            <div style={{ textAlign: 'center', padding: '14px 10px', background: 'var(--bg-main)', borderRadius: 10, border: '1px solid rgba(52,211,153,0.15)' }}>
+                                <span className="mdi mdi-lightning-bolt" style={{ fontSize: 20, color: 'var(--success)', display: 'block', marginBottom: 4 }} />
+                                <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--success)' }}>~{weeklyReport.energy_saved_kwh}</div>
+                                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>kWh {lang === 'de' ? 'gespart' : 'saved'}</div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {/* Config Issues - removed per user request (#10) */}
+
+            {/* Anomaly card - moved below weekly report */}
+            {anomalies.length > 0 && (
+                <div className="card animate-in" style={{ marginBottom: 24, borderLeft: '3px solid var(--danger)' }}>
+                    <div className="card-header">
+                        <div className="card-title">
+                            <span className="mdi mdi-alert-circle" style={{ marginRight: 8, color: 'var(--danger)' }} />
+                            {lang === 'de' ? 'Ungewöhnliche Aktivität' : 'Unusual Activity'}
+                        </div>
+                    </div>
+                    {anomalies.slice(0, 3).map((a, i) => (
+                        <div key={i} style={{ padding: '10px 16px', fontSize: 13, borderBottom: '1px solid var(--border-color)' }}>
+                            <span className="mdi mdi-alert" style={{ marginRight: 6, color: 'var(--warning)' }} />
+                            {lang === 'de' ? a.reason_de : a.reason_en}
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            {/* Rooms Overview - removed per user request (#12), use Räume page instead */}
+        </div>
+    );
+};
+
+// ================================================================
+// Phase 2a: Patterns Page (Muster-Explorer)
+
+// ================================================================
+// Quick Actions Component
+// ================================================================
+
+const QuickActionsGrid = () => {
+    const { quickActions, executeQuickAction, lang, showToast, refreshData, isAdmin } = useApp();
+    const [showAdd, setShowAdd] = useState(false);
+    const [editAction, setEditAction] = useState(null);
+    const [newAction, setNewAction] = useState({ name: '', icon: 'mdi:flash', action_data: { type: 'custom', entities: [] } });
+
+    const iconOptions = [
+        { value: 'mdi:flash', label: '⚡ Flash' }, { value: 'mdi:lightbulb', label: '💡 Licht' },
+        { value: 'mdi:home', label: '🏠 Home' }, { value: 'mdi:exit-run', label: '🚪 Gehen' },
+        { value: 'mdi:weather-night', label: '🌙 Nacht' }, { value: 'mdi:shield', label: '🛡️ Schutz' },
+        { value: 'mdi:movie-open', label: '🎬 Kino' }, { value: 'mdi:broom', label: '🧹 Aufräumen' },
+        { value: 'mdi:party-popper', label: '🎉 Party' }, { value: 'mdi:coffee', label: '☕ Kaffee' },
+    ];
+
+    const handleCreate = async () => {
+        if (!newAction.name.trim()) return;
+        await api.post('quick-actions', newAction);
+        setShowAdd(false);
+        setNewAction({ name: '', icon: 'mdi:flash', action_data: { type: 'custom', entities: [] } });
+        await refreshData();
+        showToast(lang === 'de' ? 'Quick Action erstellt' : 'Quick Action created', 'success');
+    };
+
+    const handleDelete = async (id) => {
+        await api.delete(`quick-actions/${id}`);
+        await refreshData();
+        showToast(lang === 'de' ? 'Quick Action gelöscht' : 'Quick Action deleted', 'success');
+    };
+
+    return (
+        <div>
+            <div className="quick-actions-grid">
+                {quickActions.map(action => {
+                    // #9: Smart icon fallback based on action name/type
+                    const getSmartIcon = (a) => {
+                        const normalizeIcon = (icon) => icon ? icon.replace('mdi:', 'mdi-') : '';
+                        const icon = normalizeIcon(a.icon);
+                        if (icon && icon !== 'mdi-flash' && icon !== '') return `mdi ${icon}`;
+                        const name = (a.name || '').toLowerCase();
+                        const type = (a.action_data?.type || '').toLowerCase();
+                        if (type === 'emergency_stop' || name.includes('not')) return 'mdi mdi-alert-octagon';
+                        if (type === 'all_off' || name.includes('alles aus')) return 'mdi mdi-power-off';
+                        if (name.includes('gehe') || name.includes('leaving') || name.includes('weg')) return 'mdi mdi-exit-run';
+                        if (name.includes('zurück') || name.includes('back') || name.includes('home')) return 'mdi mdi-home-account';
+                        if (name.includes('gäste') || name.includes('guest') || name.includes('party')) return 'mdi mdi-account-group';
+                        if (name.includes('nacht') || name.includes('night') || name.includes('schlaf')) return 'mdi mdi-weather-night';
+                        if (name.includes('morgen') || name.includes('morning')) return 'mdi mdi-weather-sunset-up';
+                        if (name.includes('kino') || name.includes('movie') || name.includes('film')) return 'mdi mdi-movie-open';
+                        if (name.includes('essen') || name.includes('dinner')) return 'mdi mdi-silverware-fork-knife';
+                        return `mdi ${icon || 'mdi-lightning-bolt'}`;
+                    };
+                    return (
+                    <div key={action.id} style={{ position: 'relative' }}>
+                        <button
+                            className={`quick-action-btn ${action.action_data?.type === 'emergency_stop' ? 'danger' : ''}`}
+                            onClick={() => executeQuickAction(action.id)}
+                        >
+                            <span className={getSmartIcon(action)} />
+                            {action.name}
+                        </button>
+                        {isAdmin && !action.is_system && (
+                            <button onClick={() => handleDelete(action.id)}
+                                style={{ position: 'absolute', top: -6, right: -6, width: 20, height: 20, borderRadius: '50%',
+                                    background: 'var(--danger)', border: 'none', color: '#fff', fontSize: 12,
+                                    cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    opacity: 0.8, transition: 'opacity 0.2s' }}
+                                onMouseEnter={e => e.target.style.opacity = 1}
+                                onMouseLeave={e => e.target.style.opacity = 0.8}>
+                                <span className="mdi mdi-close" />
+                            </button>
+                        )}
+                    </div>
+                    );
+                })}
+                {isAdmin && (
+                    <button className="quick-action-btn" onClick={() => setShowAdd(true)}
+                        style={{ borderStyle: 'dashed', opacity: 0.6 }}>
+                        <span className="mdi mdi-plus" />
+                        {lang === 'de' ? 'Neu' : 'New'}
+                    </button>
+                )}
+            </div>
+
+            {showAdd && (
+                <Modal title={lang === 'de' ? 'Quick Action erstellen' : 'Create Quick Action'}
+                    onClose={() => setShowAdd(false)}
+                    actions={<>
+                        <button className="btn btn-secondary" onClick={() => setShowAdd(false)}>{lang === 'de' ? 'Abbrechen' : 'Cancel'}</button>
+                        <button className="btn btn-primary" onClick={handleCreate} disabled={!newAction.name.trim()}>{lang === 'de' ? 'Erstellen' : 'Create'}</button>
+                    </>}>
+                    <div className="input-group" style={{ marginBottom: 16 }}>
+                        <label className="input-label">{lang === 'de' ? 'Name' : 'Name'}</label>
+                        <input className="input" value={newAction.name}
+                            onChange={e => setNewAction({ ...newAction, name: e.target.value })}
+                            placeholder={lang === 'de' ? 'z.B. Gute Nacht' : 'e.g. Good Night'} autoFocus />
+                    </div>
+                    <div className="input-group" style={{ marginBottom: 16 }}>
+                        <Dropdown label="Icon" value={newAction.icon}
+                            onChange={v => setNewAction({ ...newAction, icon: v })}
+                            options={iconOptions} />
+                    </div>
+                </Modal>
+            )}
+        </div>
+    );
+};
+
+// ================================================================
+// Phase 2a: Patterns Page (Muster-Explorer)
+
+// ================================================================
+// Domains Page
+// ================================================================
+
+const DomainsPage = () => {
+    const { domains, toggleDomain, lang, showToast, refreshData } = useApp();
+    const [showCreate, setShowCreate] = useState(false);
+    const [newDomain, setNewDomain] = useState({ name_de: '', name_en: '', icon: 'mdi:puzzle', description: '' });
+    const [confirmDel, setConfirmDel] = useState(null);
+    const [editDomain, setEditDomain] = useState(null);
+    const [capabilities, setCapabilities] = useState({});
+    const [expandedDomain, setExpandedDomain] = useState(null);
+
+    useEffect(() => {
+        api.get('domains/capabilities').then(c => c && setCapabilities(c));
+    }, []);
+
+    const handleCreate = async () => {
+        if (!newDomain.name_de.trim()) return;
+        const result = await api.post('domains', {
+            name: newDomain.name_de.toLowerCase().replace(/\s+/g, '_'),
+            display_name_de: newDomain.name_de,
+            display_name_en: newDomain.name_en || newDomain.name_de,
+            icon: newDomain.icon || 'mdi:puzzle',
+            description_de: newDomain.description,
+            description_en: newDomain.description
+        });
+        if (result?.id) {
+            showToast(lang === 'de' ? 'Domain erstellt' : 'Domain created', 'success');
+            setShowCreate(false);
+            setNewDomain({ name_de: '', name_en: '', icon: 'mdi:puzzle', description: '' });
+            await refreshData();
+        }
+    };
+
+    const handleDeleteDomain = async () => {
+        if (!confirmDel) return;
+        const result = await api.delete(`domains/${confirmDel.id}`);
+        if (result?.success) {
+            showToast(lang === 'de' ? 'Domain gelöscht' : 'Domain deleted', 'success');
+            setConfirmDel(null);
+            await refreshData();
+        } else {
+            showToast(result?.error || 'Error', 'error');
+        }
+    };
+
+    return (
+        <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+                <p style={{ color: 'var(--text-secondary)', fontSize: 14 }}>
+                    {lang === 'de'
+                        ? 'Aktiviere die Bereiche die MindHome überwachen und steuern soll.'
+                        : 'Activate the areas MindHome should monitor and control.'}
+                </p>
+                <button className="btn btn-primary" onClick={() => setShowCreate(true)}>
+                    <span className="mdi mdi-plus" />
+                    {lang === 'de' ? 'Custom Domain' : 'Custom Domain'}
+                </button>
+            </div>
+            <div className="domain-grid">
+                {domains.map(domain => (
+                    <div
+                        key={domain.id}
+                        className={`domain-card ${domain.is_enabled ? 'enabled' : ''}`}
+                    >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, cursor: 'pointer' }}
+                            onClick={() => setExpandedDomain(expandedDomain === domain.id ? null : domain.id)}>
+                            <span className={`mdi ${domain.icon}`} />
+                            <div className="domain-card-info">
+                                <div className="domain-card-name">{domain.display_name}</div>
+                                <div className="domain-card-desc">{domain.description}</div>
+                            </div>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, marginLeft: 8 }}>
+                            {domain.is_custom && (
+                                <button className="btn btn-ghost btn-icon"
+                                    onClick={e => { e.stopPropagation(); setEditDomain({ ...domain }); }}
+                                    title={lang === 'de' ? 'Bearbeiten' : 'Edit'}>
+                                    <span className="mdi mdi-pencil-outline" style={{ fontSize: 16, color: 'var(--accent-primary)' }} />
+                                </button>
+                            )}
+                            {domain.is_custom && (
+                                <button className="btn btn-ghost btn-icon"
+                                    onClick={e => { e.stopPropagation(); setConfirmDel(domain); }}
+                                    title={lang === 'de' ? 'Löschen' : 'Delete'}>
+                                    <span className="mdi mdi-delete-outline" style={{ fontSize: 16, color: 'var(--danger)' }} />
+                                </button>
+                            )}
+                            <label className="toggle" onClick={e => e.stopPropagation()}>
+                                <input type="checkbox" checked={domain.is_enabled}
+                                       onChange={() => toggleDomain(domain.id)} />
+                                <div className="toggle-slider" />
+                            </label>
+                        </div>
+                        {expandedDomain === domain.id && (() => {
+                            const cap = capabilities[domain.name] || {};
+                            const controlLabels = {
+                                toggle: lang === 'de' ? 'Ein/Aus' : 'Toggle',
+                                brightness: lang === 'de' ? 'Helligkeit' : 'Brightness',
+                                color_temp: lang === 'de' ? 'Farbtemperatur' : 'Color Temp',
+                                set_temperature: lang === 'de' ? 'Temperatur' : 'Temperature',
+                                set_hvac_mode: lang === 'de' ? 'Modus' : 'HVAC Mode',
+                                open: lang === 'de' ? 'Öffnen' : 'Open', close: lang === 'de' ? 'Schließen' : 'Close',
+                                set_position: lang === 'de' ? 'Position' : 'Position',
+                                volume: lang === 'de' ? 'Lautstärke' : 'Volume', source: 'Quelle',
+                                lock: lang === 'de' ? 'Sperren' : 'Lock', unlock: lang === 'de' ? 'Entsperren' : 'Unlock',
+                                start: 'Start', stop: 'Stop', return_to_base: lang === 'de' ? 'Zurück' : 'Return',
+                                set_percentage: '%',
+                            };
+                            const featureLabels = {
+                                time_of_day: lang === 'de' ? 'Tageszeit' : 'Time of Day',
+                                brightness_level: lang === 'de' ? 'Helligkeitsstufe' : 'Brightness Level',
+                                duration: lang === 'de' ? 'Dauer' : 'Duration',
+                                target_temp: lang === 'de' ? 'Zieltemperatur' : 'Target Temp',
+                                schedule: lang === 'de' ? 'Zeitplan' : 'Schedule',
+                                comfort_profile: lang === 'de' ? 'Komfortprofil' : 'Comfort Profile',
+                                position: 'Position', sun_based: lang === 'de' ? 'Sonnenstand' : 'Sun Position',
+                                threshold: lang === 'de' ? 'Schwellwert' : 'Threshold',
+                                trend: 'Trend', trigger: 'Trigger', frequency: lang === 'de' ? 'Häufigkeit' : 'Frequency',
+                                source_preference: lang === 'de' ? 'Quellen-Präferenz' : 'Source Pref.',
+                                presence: lang === 'de' ? 'Anwesenheit' : 'Presence',
+                                temperature_based: lang === 'de' ? 'Temperaturbasiert' : 'Temp Based',
+                            };
+                            return cap.controls || cap.pattern_features ? (
+                                <div style={{ width: '100%', padding: '12px 0 4px', borderTop: '1px solid var(--border)', marginTop: 8 }}
+                                    onClick={e => e.stopPropagation()}>
+                                    {cap.controls?.length > 0 && (
+                                        <div style={{ marginBottom: 8 }}>
+                                            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>
+                                                {lang === 'de' ? 'Steuerung:' : 'Controls:'}
+                                            </div>
+                                            <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                                                {cap.controls.map(c => (
+                                                    <span key={c} className="badge badge-info" style={{ fontSize: 10 }}>
+                                                        {controlLabels[c] || c}
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+                                    {cap.pattern_features?.length > 0 && (
+                                        <div>
+                                            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>
+                                                {lang === 'de' ? 'Muster-Erkennung:' : 'Pattern Detection:'}
+                                            </div>
+                                            <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                                                {cap.pattern_features.map(f => (
+                                                    <span key={f} className="badge badge-success" style={{ fontSize: 10 }}>
+                                                        {featureLabels[f] || f}
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            ) : null;
+                        })()}
+                    </div>
+                ))}
+            </div>
+
+            {showCreate && (
+                <Modal title={lang === 'de' ? 'Custom Domain erstellen' : 'Create Custom Domain'}
+                    onClose={() => setShowCreate(false)}
+                    actions={
+                        <>
+                            <button className="btn btn-secondary" onClick={() => setShowCreate(false)}>
+                                {lang === 'de' ? 'Abbrechen' : 'Cancel'}
+                            </button>
+                            <button className="btn btn-primary" onClick={handleCreate} disabled={!newDomain.name_de.trim()}>
+                                {lang === 'de' ? 'Erstellen' : 'Create'}
+                            </button>
+                        </>
+                    }>
+                    <div className="input-group" style={{ marginBottom: 16 }}>
+                        <label className="input-label">{lang === 'de' ? 'Name (Deutsch)' : 'Name (German)'}</label>
+                        <input className="input" value={newDomain.name_de}
+                            onChange={e => setNewDomain({ ...newDomain, name_de: e.target.value })}
+                            placeholder={lang === 'de' ? 'z.B. Bewässerung' : 'e.g. Irrigation'} />
+                    </div>
+                    <div className="input-group" style={{ marginBottom: 16 }}>
+                        <label className="input-label">{lang === 'de' ? 'Name (Englisch)' : 'Name (English)'}</label>
+                        <input className="input" value={newDomain.name_en}
+                            onChange={e => setNewDomain({ ...newDomain, name_en: e.target.value })}
+                            placeholder={lang === 'de' ? 'z.B. Irrigation' : 'e.g. Irrigation'} />
+                    </div>
+                    <div className="input-group" style={{ marginBottom: 16 }}>
+                        <label className="input-label">Icon (MDI)</label>
+                        <input className="input" value={newDomain.icon}
+                            onChange={e => setNewDomain({ ...newDomain, icon: e.target.value })}
+                            placeholder="mdi:puzzle" />
+                    </div>
+                    <div className="input-group">
+                        <label className="input-label">{lang === 'de' ? 'Beschreibung' : 'Description'}</label>
+                        <input className="input" value={newDomain.description}
+                            onChange={e => setNewDomain({ ...newDomain, description: e.target.value })} />
+                    </div>
+                </Modal>
+            )}
+
+            {confirmDel && (
+                <ConfirmDialog
+                    title={lang === 'de' ? 'Domain löschen' : 'Delete Domain'}
+                    message={lang === 'de' ? `"${confirmDel.display_name}" wirklich löschen?` : `Delete "${confirmDel.display_name}"?`}
+                    danger onConfirm={handleDeleteDomain} onCancel={() => setConfirmDel(null)} />
+            )}
+
+            {editDomain && (
+                <Modal title={lang === 'de' ? 'Domain bearbeiten' : 'Edit Domain'} onClose={() => setEditDomain(null)}
+                    actions={<><button className="btn btn-secondary" onClick={() => setEditDomain(null)}>{lang === 'de' ? 'Abbrechen' : 'Cancel'}</button>
+                        <button className="btn btn-primary" onClick={async () => {
+                            await api.put(`domains/${editDomain.id}`, {
+                                name_de: editDomain.display_name,
+                                description: editDomain.description,
+                                icon: editDomain.icon,
+                                keywords: editDomain.keywords
+                            });
+                            setEditDomain(null);
+                            await refreshData();
+                            showToast(lang === 'de' ? 'Domain aktualisiert' : 'Domain updated', 'success');
+                        }}>{lang === 'de' ? 'Speichern' : 'Save'}</button></>}>
+                    <div className="input-group" style={{ marginBottom: 12 }}>
+                        <label className="input-label">{lang === 'de' ? 'Name' : 'Name'}</label>
+                        <input className="input" value={editDomain.display_name || ''} onChange={e => setEditDomain({ ...editDomain, display_name: e.target.value })} />
+                    </div>
+                    <div className="input-group" style={{ marginBottom: 12 }}>
+                        <label className="input-label">{lang === 'de' ? 'Beschreibung' : 'Description'}</label>
+                        <input className="input" value={editDomain.description || ''} onChange={e => setEditDomain({ ...editDomain, description: e.target.value })} />
+                    </div>
+                    <div className="input-group" style={{ marginBottom: 12 }}>
+                        <label className="input-label">Icon (mdi:icon-name)</label>
+                        <input className="input" value={editDomain.icon || ''} onChange={e => setEditDomain({ ...editDomain, icon: e.target.value })} />
+                    </div>
+                    <div className="input-group">
+                        <label className="input-label">Keywords</label>
+                        <input className="input" value={editDomain.keywords || ''} onChange={e => setEditDomain({ ...editDomain, keywords: e.target.value })}
+                            placeholder={lang === 'de' ? 'Komma-getrennt' : 'Comma-separated'} />
+                    </div>
+                </Modal>
+            )}
+        </div>
+    );
+};
+
+// ================================================================
+// Phase 2a: Patterns Page (Muster-Explorer)
+
+// ================================================================
+
+// ================================================================
+// Devices Page - with manual search, bulk actions, live state, confirm dialog
+// ================================================================
+
+const DevicesPage = () => {
+    const { devices, rooms, domains, lang, showToast, refreshData } = useApp();
+    const [discovering, setDiscovering] = useState(false);
+    const [discovered, setDiscovered] = useState(null);
+    const [selected, setSelected] = useState({});
+    const [editDevice, setEditDevice] = useState(null);
+    const [search, setSearch] = useState('');
+    const [showManual, setShowManual] = useState(false);
+    const [manualEntities, setManualEntities] = useState([]);
+    const [manualSearch, setManualSearch] = useState('');
+    const [manualLoading, setManualLoading] = useState(false);
+    const [bulkSelected, setBulkSelected] = useState({});
+    const [showBulkEdit, setShowBulkEdit] = useState(false);
+    const [bulkRoom, setBulkRoom] = useState('');
+    const [bulkDomain, setBulkDomain] = useState('');
+    const [confirmDel, setConfirmDel] = useState(null);
+    const [confirmBulkDel, setConfirmBulkDel] = useState(false);
+
+    const handleDiscover = async () => {
+        setDiscovering(true);
+        const result = await api.get('discover');
+        setDiscovered(result);
+        setSelected({});
+        setDiscovering(false);
+    };
+
+    const toggleEntity = (entityId) => {
+        setSelected(prev => ({ ...prev, [entityId]: !prev[entityId] }));
+    };
+
+    const toggleDiscoverDomain = (domainName) => {
+        const entities = discovered?.domains?.[domainName]?.entities || [];
+        const allSelected = entities.every(e => selected[e.entity_id]);
+        const newSel = { ...selected };
+        entities.forEach(e => { newSel[e.entity_id] = !allSelected; });
+        setSelected(newSel);
+    };
+
+    const handleImport = async () => {
+        if (!discovered) return;
+        const selectedIds = Object.keys(selected).filter(k => selected[k]);
+        if (selectedIds.length === 0) {
+            showToast(lang === 'de' ? 'Keine Geräte ausgewählt' : 'No devices selected', 'error');
+            return;
+        }
+        const result = await api.post('discover/import', {
+            domains: discovered.domains,
+            selected_entities: selectedIds
+        });
+        if (result?.success) {
+            showToast(lang === 'de' ? `${result.imported} Geräte importiert` : `${result.imported} devices imported`, 'success');
+            setDiscovered(null);
+            setSelected({});
+            await refreshData();
+        }
+    };
+
+    // Manual search
+    const handleOpenManual = async () => {
+        setManualLoading(true);
+        setShowManual(true);
+        const result = await api.get('discover/all-entities');
+        setManualEntities(result?.entities || []);
+        setManualLoading(false);
+    };
+
+    const handleManualAdd = async (entityId) => {
+        const result = await api.post('devices/manual-add', { entity_id: entityId });
+        if (result?.success || result?.id) {
+            showToast(lang === 'de' ? 'Gerät hinzugefügt' : 'Device added', 'success');
+            await refreshData();
+            const updated = await api.get('discover/all-entities');
+            setManualEntities(updated?.entities || []);
+        } else {
+            showToast(result?.error || 'Error', 'error');
+        }
+    };
+
+    // Single delete with confirm
+    const handleDeleteDevice = async () => {
+        if (!confirmDel) return;
+        const result = await api.delete(`devices/${confirmDel.id}`);
+        if (result?.success) {
+            showToast(lang === 'de' ? 'Gerät entfernt' : 'Device removed', 'success');
+            setConfirmDel(null);
+            await refreshData();
+        }
+    };
+
+    const handleUpdateDevice = async () => {
+        if (!editDevice) return;
+        const result = await api.put(`devices/${editDevice.id}`, {
+            room_id: editDevice.room_id || null,
+            domain_id: editDevice.domain_id || null,
+            name: editDevice.name,
+            is_tracked: editDevice.is_tracked,
+            is_controllable: editDevice.is_controllable
+        });
+        if (result?.id) {
+            showToast(lang === 'de' ? 'Gerät aktualisiert' : 'Device updated', 'success');
+            setEditDevice(null);
+            await refreshData();
+        }
+    };
+
+    // Bulk actions
+    const bulkCount = Object.values(bulkSelected).filter(Boolean).length;
+    const toggleBulk = (id) => setBulkSelected(prev => ({ ...prev, [id]: !prev[id] }));
+    const toggleBulkAll = () => {
+        const filtered = getFilteredDevices();
+        const allChecked = filtered.every(d => bulkSelected[d.id]);
+        const newSel = { ...bulkSelected };
+        filtered.forEach(d => { newSel[d.id] = !allChecked; });
+        setBulkSelected(newSel);
+    };
+
+    const handleBulkEdit = async () => {
+        const ids = Object.keys(bulkSelected).filter(k => bulkSelected[k]).map(Number);
+        const data = {};
+        if (bulkRoom) data.room_id = parseInt(bulkRoom);
+        if (bulkDomain) data.domain_id = parseInt(bulkDomain);
+        const result = await api.put('devices/bulk', { device_ids: ids, ...data });
+        if (result?.success) {
+            showToast(lang === 'de' ? `${result.updated} aktualisiert` : `${result.updated} updated`, 'success');
+            setShowBulkEdit(false);
+            setBulkSelected({});
+            await refreshData();
+        }
+    };
+
+    const handleBulkDelete = async () => {
+        const ids = Object.keys(bulkSelected).filter(k => bulkSelected[k]).map(Number);
+        const result = await api.delete('devices/bulk', { device_ids: ids });
+        if (result?.success) {
+            showToast(lang === 'de' ? `${result.deleted} gelöscht` : `${result.deleted} deleted`, 'success');
+            setConfirmBulkDel(false);
+            setBulkSelected({});
+            await refreshData();
+        }
+    };
+
+    const selectedCount = Object.values(selected).filter(Boolean).length;
+    const importedEntityIds = new Set(devices.map(d => d.ha_entity_id));
+
+    const getDomainName = (domainId) => domains.find(d => d.id === domainId)?.display_name || '—';
+    const getRoomName = (roomId) => rooms.find(r => r.id === roomId)?.name || '—';
+
+    const getFilteredDevices = () => {
+        if (!search) return devices;
+        const s = search.toLowerCase();
+        return devices.filter(d =>
+            d.ha_entity_id?.toLowerCase().includes(s) || d.name?.toLowerCase().includes(s)
+            || getDomainName(d.domain_id)?.toLowerCase().includes(s)
+            || getRoomName(d.room_id)?.toLowerCase().includes(s)
+        );
+    };
+
+    return (
+        <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 8 }}>
+                <p style={{ color: 'var(--text-secondary)', fontSize: 14 }}>
+                    {devices.length} {lang === 'de' ? 'Geräte konfiguriert' : 'devices configured'}
+                </p>
+                <div style={{ display: 'flex', gap: 8 }}>
+                    <button className="btn btn-secondary" onClick={handleOpenManual}>
+                        <span className="mdi mdi-magnify-plus-outline" />
+                        {lang === 'de' ? 'Manuell' : 'Manual'}
+                    </button>
+                    <button className="btn btn-primary" onClick={handleDiscover} disabled={discovering}>
+                        <span className="mdi mdi-magnify" />
+                        {discovering ? (lang === 'de' ? 'Suche...' : 'Searching...') : (lang === 'de' ? 'Geräte erkennen' : 'Discover')}
+                    </button>
+                </div>
+            </div>
+
+            {/* Bulk Actions Bar */}
+            {bulkCount > 0 && (
+                <div className="card" style={{ marginBottom: 16, padding: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    borderColor: 'var(--accent-primary)', background: 'var(--accent-primary-dim)' }}>
+                    <span style={{ fontWeight: 600, fontSize: 14 }}>
+                        {bulkCount} {lang === 'de' ? 'ausgewählt' : 'selected'}
+                    </span>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                        <button className="btn btn-secondary" onClick={() => setBulkSelected({})}>{lang === 'de' ? 'Aufheben' : 'Deselect'}</button>
+                        <button className="btn btn-primary" onClick={() => setShowBulkEdit(true)}>
+                            <span className="mdi mdi-pencil" /> {lang === 'de' ? 'Bearbeiten' : 'Edit'}
+                        </button>
+                        <button className="btn btn-danger" onClick={() => setConfirmBulkDel(true)}>
+                            <span className="mdi mdi-delete" /> {lang === 'de' ? 'Löschen' : 'Delete'}
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {/* Discovery Results */}
+            {discovered && (
+                <div className="card" style={{ marginBottom: 20, borderColor: 'var(--accent-primary)', borderWidth: 2 }}>
+                    <div className="card-header">
+                        <div>
+                            <div className="card-title">{lang === 'de' ? 'Verfügbare Geräte' : 'Available Devices'}</div>
+                            <div className="card-subtitle">{selectedCount} {lang === 'de' ? 'ausgewählt' : 'selected'}</div>
+                        </div>
+                        <div style={{ display: 'flex', gap: 8 }}>
+                            <button className="btn btn-secondary" onClick={() => { setDiscovered(null); setSelected({}); }}>
+                                {lang === 'de' ? 'Abbrechen' : 'Cancel'}
+                            </button>
+                            <button className="btn btn-primary" onClick={handleImport} disabled={selectedCount === 0}>
+                                <span className="mdi mdi-import" /> {lang === 'de' ? `${selectedCount} importieren` : `Import ${selectedCount}`}
+                            </button>
+                        </div>
+                    </div>
+                    <div style={{ maxHeight: 400, overflow: 'auto' }}>
+                    {Object.entries(discovered.domains || {}).map(([domainName, data]) => {
+                        const entities = (data.entities || []).filter(e => !importedEntityIds.has(e.entity_id));
+                        if (entities.length === 0) return null;
+                        const allSel = entities.every(e => selected[e.entity_id]);
+                        return (
+                            <div key={domainName} style={{ marginBottom: 12 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0',
+                                    borderBottom: '1px solid var(--border)', cursor: 'pointer' }}
+                                    onClick={() => toggleDiscoverDomain(domainName)}>
+                                    <input type="checkbox" checked={allSel} readOnly style={{ width: 18, height: 18, accentColor: 'var(--accent-primary)' }} />
+                                    <strong>{domainName}</strong>
+                                    <span className="badge badge-info">{entities.length}</span>
+                                </div>
+                                <div style={{ paddingLeft: 26 }}>
+                                    {entities.map(entity => (
+                                        <div key={entity.entity_id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', fontSize: 13, cursor: 'pointer' }}
+                                            onClick={() => toggleEntity(entity.entity_id)}>
+                                            <input type="checkbox" checked={!!selected[entity.entity_id]} readOnly style={{ width: 16, height: 16, accentColor: 'var(--accent-primary)' }} />
+                                            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-muted)', minWidth: 200 }}>{entity.entity_id}</span>
+                                            <span style={{ flex: 1 }}>{entity.friendly_name}</span>
+                                            <span className="badge badge-info" style={{ fontSize: 10 }}>{entity.state}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        );
+                    })}
+                    </div>
+                </div>
+            )}
+
+            {/* Device Table */}
+            {devices.length > 0 ? (
+                <div>
+                    <div style={{ marginBottom: 12 }}>
+                        <input className="input" placeholder={lang === 'de' ? '🔍 Geräte suchen...' : '🔍 Search devices...'}
+                            value={search} onChange={e => setSearch(e.target.value)} style={{ maxWidth: 400 }} />
+                    </div>
+                    <div className="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th style={{ width: 40 }}>
+                                    <input type="checkbox"
+                                        checked={getFilteredDevices().length > 0 && getFilteredDevices().every(d => bulkSelected[d.id])}
+                                        onChange={toggleBulkAll} style={{ width: 16, height: 16, accentColor: 'var(--accent-primary)' }} />
+                                </th>
+                                <th>Entity ID</th>
+                                <th>{lang === 'de' ? 'Name' : 'Name'}</th>
+                                <th>Domain</th>
+                                <th>{lang === 'de' ? 'Raum' : 'Room'}</th>
+                                <th>Status</th>
+                                <th style={{ width: 90 }}>{lang === 'de' ? 'Aktionen' : 'Actions'}</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {getFilteredDevices().map(device => {
+                                const st = stateDisplay(device.live_state);
+                                const attrs = device.live_attributes || {};
+                                const unit = attrs.unit || '';
+                                const attrParts = [];
+                                if (attrs.brightness_pct != null) attrParts.push(`☀ ${attrs.brightness_pct}%`);
+                                if (attrs.position_pct != null) attrParts.push(`↕ ${attrs.position_pct}%`);
+                                if (attrs.current_temp != null) attrParts.push(`🌡 ${attrs.current_temp}${unit || '°C'}`);
+                                if (attrs.target_temp != null) attrParts.push(`→ ${attrs.target_temp}${unit || '°C'}`);
+                                if (attrs.humidity != null) attrParts.push(`💧 ${attrs.humidity}%`);
+                                if (attrs.power != null || attrs.current_power_w != null) attrParts.push(`⚡ ${attrs.power || attrs.current_power_w} W`);
+                                if (attrs.voltage != null) attrParts.push(`🔌 ${attrs.voltage} V`);
+                                // For sensors: show state + unit directly (replaces generic state label)
+                                const isSensorValue = (attrParts.length === 0 && device.live_state && device.live_state !== 'on' && device.live_state !== 'off' && device.live_state !== 'unavailable' && device.live_state !== 'unknown');
+                                if (isSensorValue) {
+                                    attrParts.push(`${device.live_state}${unit ? ' ' + unit : ''}`);
+                                }
+                                return (
+                                <tr key={device.id}>
+                                    <td>
+                                        <input type="checkbox" checked={!!bulkSelected[device.id]}
+                                            onChange={() => toggleBulk(device.id)}
+                                            style={{ width: 16, height: 16, accentColor: 'var(--accent-primary)' }} />
+                                    </td>
+                                    <td style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>{device.ha_entity_id}</td>
+                                    <td>{device.name}</td>
+                                    <td>{getDomainName(device.domain_id)}</td>
+                                    <td>{getRoomName(device.room_id)}</td>
+                                    <td>
+                                        {!isSensorValue && (
+                                            <span style={{ color: st.color, fontWeight: 600, fontSize: 12 }}>{st.label}</span>
+                                        )}
+                                        {attrParts.length > 0 && (
+                                            <div style={{ fontSize: isSensorValue ? 12 : 11, color: isSensorValue ? 'var(--info)' : 'var(--text-muted)', marginTop: isSensorValue ? 0 : 2, fontWeight: isSensorValue ? 600 : 400 }}>{attrParts.join(' · ')}</div>
+                                        )}
+                                    </td>
+                                    <td>
+                                        <div style={{ display: 'flex', gap: 4 }}>
+                                            <button className="btn btn-ghost btn-icon" onClick={() => setEditDevice({...device})}
+                                                title={lang === 'de' ? 'Bearbeiten' : 'Edit'}>
+                                                <span className="mdi mdi-pencil" style={{ fontSize: 16, color: 'var(--accent-primary)' }} />
+                                            </button>
+                                            <button className="btn btn-ghost btn-icon"
+                                                title={lang === 'de' ? 'Benachrichtigungen stumm' : 'Mute notifications'}
+                                                onClick={async () => {
+                                                    await api.post('notification-settings/mute-device', { device_id: device.id });
+                                                    showToast(lang === 'de' ? 'Gerät stummgeschaltet' : 'Device muted', 'success');
+                                                }}>
+                                                <span className="mdi mdi-bell-off-outline" style={{ fontSize: 16, color: 'var(--text-muted)' }} />
+                                            </button>
+                                            <button className="btn btn-ghost btn-icon" onClick={() => setConfirmDel(device)}
+                                                title={lang === 'de' ? 'Löschen' : 'Delete'}>
+                                                <span className="mdi mdi-delete-outline" style={{ fontSize: 16, color: 'var(--danger)' }} />
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                                );
+                            })}
+                        </tbody>
+                    </table>
+                    </div>
+                </div>
+            ) : !discovered && (
+                <div className="empty-state">
+                    <span className="mdi mdi-devices" />
+                    <h3>{lang === 'de' ? 'Keine Geräte' : 'No Devices'}</h3>
+                    <p>{lang === 'de' ? 'Klicke auf "Geräte erkennen" um deine HA-Geräte zu importieren.' : 'Click "Discover" to import your HA devices.'}</p>
+                </div>
+            )}
+
+            {/* Manual Search Modal */}
+            {showManual && (
+                <Modal title={lang === 'de' ? 'Manuelle Gerätesuche' : 'Manual Device Search'} onClose={() => setShowManual(false)} wide>
+                    <div className="input-group" style={{ marginBottom: 16 }}>
+                        <input className="input" value={manualSearch} onChange={e => setManualSearch(e.target.value)}
+                            placeholder={lang === 'de' ? 'Entity-ID oder Name suchen...' : 'Search entity ID or name...'} />
+                    </div>
+                    {manualLoading ? (
+                        <div style={{ textAlign: 'center', padding: 24 }}><div className="loading-spinner" style={{ margin: '0 auto' }} /></div>
+                    ) : (
+                        <div style={{ maxHeight: 400, overflow: 'auto' }}>
+                            {manualEntities
+                                .filter(e => !manualSearch || e.entity_id?.toLowerCase().includes(manualSearch.toLowerCase()) || e.friendly_name?.toLowerCase().includes(manualSearch.toLowerCase()))
+                                .slice(0, 100)
+                                .map(entity => {
+                                    const isImported = importedEntityIds.has(entity.entity_id);
+                                    return (
+                                        <div key={entity.entity_id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', borderBottom: '1px solid var(--border)', fontSize: 13 }}>
+                                            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-muted)', minWidth: 220 }}>{entity.entity_id}</span>
+                                            <span style={{ flex: 1 }}>{entity.friendly_name}</span>
+                                            <span className="badge badge-info" style={{ fontSize: 10 }}>{entity.state}</span>
+                                            {isImported ? (
+                                                <span className="badge badge-success" style={{ fontSize: 10 }}>{lang === 'de' ? 'Importiert' : 'Imported'}</span>
+                                            ) : (
+                                                <button className="btn btn-primary" style={{ padding: '4px 10px', fontSize: 11 }} onClick={() => handleManualAdd(entity.entity_id)}>
+                                                    <span className="mdi mdi-plus" style={{ fontSize: 14 }} />
+                                                </button>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                        </div>
+                    )}
+                </Modal>
+            )}
+
+            {/* Edit Device Modal */}
+            {editDevice && (
+                <Modal title={lang === 'de' ? 'Gerät bearbeiten' : 'Edit Device'} onClose={() => setEditDevice(null)}
+                    actions={<>
+                        <button className="btn btn-secondary" onClick={() => setEditDevice(null)}>{lang === 'de' ? 'Abbrechen' : 'Cancel'}</button>
+                        <button className="btn btn-primary" onClick={handleUpdateDevice}>{lang === 'de' ? 'Speichern' : 'Save'}</button>
+                    </>}>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginBottom: 16 }}>{editDevice.ha_entity_id}</div>
+                    <div className="input-group" style={{ marginBottom: 16 }}>
+                        <label className="input-label">Name</label>
+                        <input className="input" value={editDevice.name} onChange={e => setEditDevice({ ...editDevice, name: e.target.value })} />
+                    </div>
+                    <div className="input-group" style={{ marginBottom: 16 }}>
+                        <Dropdown
+                            label={lang === 'de' ? 'Raum' : 'Room'}
+                            value={editDevice.room_id || ''}
+                            onChange={v => setEditDevice({ ...editDevice, room_id: v ? parseInt(v) : null })}
+                            options={[
+                                { value: '', label: lang === 'de' ? '— Kein Raum —' : '— No Room —' },
+                                ...rooms.map(r => ({ value: r.id, label: r.name }))
+                            ]}
+                        />
+                    </div>
+                    <div className="input-group" style={{ marginBottom: 16 }}>
+                        <Dropdown
+                            label="Domain"
+                            value={editDevice.domain_id || ''}
+                            onChange={v => setEditDevice({ ...editDevice, domain_id: v ? parseInt(v) : null })}
+                            options={[
+                                { value: '', label: lang === 'de' ? '— Keine —' : '— None —' },
+                                ...domains.map(d => ({ value: d.id, label: d.display_name }))
+                            ]}
+                        />
+                    </div>
+                    <div style={{ display: 'flex', gap: 24 }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 14 }}>
+                            <input type="checkbox" checked={editDevice.is_tracked} onChange={e => setEditDevice({ ...editDevice, is_tracked: e.target.checked })}
+                                style={{ width: 18, height: 18, accentColor: 'var(--accent-primary)' }} />
+                            {lang === 'de' ? 'Überwacht' : 'Tracked'}
+                        </label>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 14 }}>
+                            <input type="checkbox" checked={editDevice.is_controllable} onChange={e => setEditDevice({ ...editDevice, is_controllable: e.target.checked })}
+                                style={{ width: 18, height: 18, accentColor: 'var(--accent-primary)' }} />
+                            {lang === 'de' ? 'Steuerbar' : 'Controllable'}
+                        </label>
+                    </div>
+                </Modal>
+            )}
+
+            {/* Bulk Edit Modal */}
+            {showBulkEdit && (
+                <Modal title={lang === 'de' ? `${bulkCount} Geräte bearbeiten` : `Edit ${bulkCount} Devices`} onClose={() => setShowBulkEdit(false)}
+                    actions={<>
+                        <button className="btn btn-secondary" onClick={() => setShowBulkEdit(false)}>{lang === 'de' ? 'Abbrechen' : 'Cancel'}</button>
+                        <button className="btn btn-primary" onClick={handleBulkEdit}>{lang === 'de' ? 'Anwenden' : 'Apply'}</button>
+                    </>}>
+                    <div className="input-group" style={{ marginBottom: 16 }}>
+                        <Dropdown
+                            label={lang === 'de' ? 'Raum zuweisen' : 'Assign Room'}
+                            value={bulkRoom}
+                            onChange={v => setBulkRoom(v)}
+                            options={[
+                                { value: '', label: lang === 'de' ? '— Nicht ändern —' : '— No change —' },
+                                ...rooms.map(r => ({ value: String(r.id), label: r.name }))
+                            ]}
+                        />
+                    </div>
+                    <div className="input-group">
+                        <Dropdown
+                            label={lang === 'de' ? 'Domain zuweisen' : 'Assign Domain'}
+                            value={bulkDomain}
+                            onChange={v => setBulkDomain(v)}
+                            options={[
+                                { value: '', label: lang === 'de' ? '— Nicht ändern —' : '— No change —' },
+                                ...domains.map(d => ({ value: String(d.id), label: d.display_name }))
+                            ]}
+                        />
+                    </div>
+                </Modal>
+            )}
+
+            {/* Confirm Delete */}
+            {confirmDel && (
+                <ConfirmDialog title={lang === 'de' ? 'Gerät entfernen' : 'Remove Device'}
+                    message={lang === 'de' ? `"${confirmDel.name}" wirklich entfernen?` : `Remove "${confirmDel.name}"?`}
+                    danger onConfirm={handleDeleteDevice} onCancel={() => setConfirmDel(null)} />
+            )}
+            {confirmBulkDel && (
+                <ConfirmDialog title={lang === 'de' ? `${bulkCount} Geräte löschen` : `Delete ${bulkCount} Devices`}
+                    message={lang === 'de' ? 'Dies kann nicht rückgängig gemacht werden.' : 'This cannot be undone.'}
+                    danger onConfirm={handleBulkDelete} onCancel={() => setConfirmBulkDel(false)} />
+            )}
+
+            {/* Device Groups Section (#44) */}
+            <DeviceGroupsSection />
+        </div>
+    );
+};
+
+// ================================================================
+// Phase 2a: Patterns Page (Muster-Explorer)
+
+const DeviceGroupsSection = () => {
+    const { lang, showToast, devices } = useApp();
+    const [groups, setGroups] = useState([]);
+    const [suggestions, setSuggestions] = useState([]);
+    const [showCreate, setShowCreate] = useState(false);
+    const [newGroup, setNewGroup] = useState({ name: '', device_ids: [] });
+
+    const load = async () => {
+        const data = await api.get('device-groups');
+        if (data) { setGroups(data.groups || []); setSuggestions(data.suggestions || []); }
+    };
+    useEffect(() => { load(); }, []);
+
+    const createGroup = async (name, deviceIds, roomId) => {
+        await api.post('device-groups', { name, device_ids: deviceIds, room_id: roomId });
+        showToast(lang === 'de' ? 'Gruppe erstellt' : 'Group created', 'success');
+        setShowCreate(false); setNewGroup({ name: '', device_ids: [] }); await load();
+    };
+
+    const deleteGroup = async (id) => {
+        await api.delete(`device-groups/${id}`);
+        showToast(lang === 'de' ? 'Gruppe gelöscht' : 'Group deleted', 'success'); await load();
+    };
+
+    const executeGroup = async (id, service) => {
+        const result = await api.post(`device-groups/${id}/execute`, { service });
+        showToast(result?.success ? (lang === 'de' ? 'Aktion ausgeführt' : 'Action executed') : 'Error', result?.success ? 'success' : 'error');
+    };
+
+    return (
+        <div style={{ marginTop: 32 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                <h3 style={{ fontSize: 16, fontWeight: 600 }}>
+                    <span className="mdi mdi-group" style={{ marginRight: 8, color: 'var(--accent-primary)' }} />
+                    {lang === 'de' ? 'Gerätegruppen' : 'Device Groups'}
+                </h3>
+                <button className="btn btn-secondary" onClick={() => setShowCreate(true)} style={{ fontSize: 12 }}>
+                    <span className="mdi mdi-plus" /> {lang === 'de' ? 'Neue Gruppe' : 'New Group'}
+                </button>
+            </div>
+
+            {groups.map(g => (
+                <div key={g.id} className="card" style={{ marginBottom: 8, padding: '12px 16px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div>
+                            <strong>{g.name}</strong>
+                            <span style={{ fontSize: 12, color: 'var(--text-muted)', marginLeft: 8 }}>
+                                {g.device_ids?.length || 0} {lang === 'de' ? 'Geräte' : 'devices'}
+                                {g.room_name && ` · ${g.room_name}`}
+                            </span>
+                        </div>
+                        <div style={{ display: 'flex', gap: 4 }}>
+                            <button className="btn btn-sm btn-ghost" onClick={() => executeGroup(g.id, 'turn_on')} title="On">
+                                <span className="mdi mdi-power" style={{ color: 'var(--success)' }} />
+                            </button>
+                            <button className="btn btn-sm btn-ghost" onClick={() => executeGroup(g.id, 'turn_off')} title="Off">
+                                <span className="mdi mdi-power-off" style={{ color: 'var(--danger)' }} />
+                            </button>
+                            <button className="btn btn-sm btn-ghost" onClick={() => deleteGroup(g.id)}>
+                                <span className="mdi mdi-delete" style={{ color: 'var(--danger)' }} />
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            ))}
+
+            {suggestions.length > 0 && (
+                <div style={{ marginTop: 16 }}>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8 }}>
+                        {lang === 'de' ? 'Vorgeschlagene Gruppen' : 'Suggested Groups'}
+                    </div>
+                    {suggestions.map((s, i) => (
+                        <div key={i} className="card" style={{ marginBottom: 6, padding: '10px 16px', borderStyle: 'dashed' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div>
+                                    <span style={{ fontSize: 13 }}>{s.suggested_name}</span>
+                                    <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 8 }}>
+                                        {s.devices.length} {lang === 'de' ? 'Geräte' : 'devices'}
+                                    </span>
+                                </div>
+                                <button className="btn btn-sm btn-ghost" onClick={() => createGroup(s.suggested_name, s.devices.map(d => d.id), s.room_id)}>
+                                    <span className="mdi mdi-plus-circle" style={{ color: 'var(--success)' }} /> {lang === 'de' ? 'Übernehmen' : 'Accept'}
+                                </button>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            {showCreate && (
+                <Modal title={lang === 'de' ? 'Neue Gerätegruppe' : 'New Device Group'} onClose={() => setShowCreate(false)}
+                    actions={<><button className="btn btn-secondary" onClick={() => setShowCreate(false)}>{lang === 'de' ? 'Abbrechen' : 'Cancel'}</button>
+                        <button className="btn btn-primary" onClick={() => createGroup(newGroup.name, newGroup.device_ids)}
+                            disabled={!newGroup.name || newGroup.device_ids.length < 2}>{lang === 'de' ? 'Erstellen' : 'Create'}</button></>}>
+                    <div className="input-group" style={{ marginBottom: 12 }}>
+                        <label className="input-label">{lang === 'de' ? 'Name' : 'Name'}</label>
+                        <input className="input" value={newGroup.name} onChange={e => setNewGroup({ ...newGroup, name: e.target.value })} autoFocus />
+                    </div>
+                    <div className="input-group">
+                        <label className="input-label">{lang === 'de' ? 'Geräte auswählen' : 'Select Devices'}</label>
+                        <div style={{ maxHeight: 200, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 8, padding: 8 }}>
+                            {devices.filter(d => d.ha_entity_id).map(d => (
+                                <label key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', cursor: 'pointer', fontSize: 13 }}>
+                                    <input type="checkbox" checked={newGroup.device_ids.includes(d.id)}
+                                        onChange={() => setNewGroup(prev => ({
+                                            ...prev, device_ids: prev.device_ids.includes(d.id)
+                                                ? prev.device_ids.filter(id => id !== d.id)
+                                                : [...prev.device_ids, d.id]
+                                        }))} />
+                                    {d.name} <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>({d.ha_entity_id})</span>
+                                </label>
+                            ))}
+                        </div>
+                    </div>
+                </Modal>
+            )}
+        </div>
+    );
+};
+
+// ================================================================
+// Phase 2a: Patterns Page (Muster-Explorer)
+
+
+// ================================================================
+// Rooms Page - with edit name
+// ================================================================
+
+const RoomsPage = () => {
+    const { rooms, domains, lang, showToast, refreshData } = useApp();
+    const [showAdd, setShowAdd] = useState(false);
+    const [newRoom, setNewRoom] = useState({ name: '', icon: 'mdi:door' });
+    const [editRoom, setEditRoom] = useState(null);
+    const [confirm, setConfirm] = useState(null);
+    const [importing, setImporting] = useState(false);
+
+    const phaseLabels = {
+        observing: { de: 'Beobachten', en: 'Observing', color: 'info' },
+        suggesting: { de: 'Vorschlagen', en: 'Suggesting', color: 'warning' },
+        autonomous: { de: 'Autonom', en: 'Autonomous', color: 'success' }
+    };
+
+    const handleAdd = async () => {
+        if (!newRoom.name.trim()) return;
+        const result = await api.post('rooms', newRoom);
+        if (result?.id) {
+            showToast(lang === 'de' ? 'Raum erstellt' : 'Room created', 'success');
+            setShowAdd(false);
+            setNewRoom({ name: '', icon: 'mdi:door' });
+            await refreshData();
+        }
+    };
+
+    const handleUpdate = async () => {
+        if (!editRoom || !editRoom.name.trim()) return;
+        const result = await api.put(`rooms/${editRoom.id}`, { name: editRoom.name, icon: editRoom.icon });
+        if (result?.id) {
+            showToast(lang === 'de' ? 'Raum aktualisiert' : 'Room updated', 'success');
+            setEditRoom(null);
+            await refreshData();
+        }
+    };
+
+    const handleDelete = async (room) => {
+        setConfirm({ id: room.id, name: room.name, count: room.device_count });
+    };
+
+    const confirmDelete = async () => {
+        const result = await api.delete(`rooms/${confirm.id}`);
+        if (result?.success) { showToast(lang === 'de' ? 'Raum gelöscht' : 'Room deleted', 'success'); await refreshData(); }
+        setConfirm(null);
+    };
+
+    // Fix 9: Import rooms from HA
+    const handleImportFromHA = async () => {
+        setImporting(true);
+        const result = await api.post('rooms/import-from-ha');
+        if (result?.success) {
+            showToast(lang === 'de' ? `${result.imported} importiert, ${result.skipped} übersprungen` : `${result.imported} imported, ${result.skipped} skipped`,
+                result.imported > 0 ? 'success' : 'info');
+            await refreshData();
+        } else { showToast(result?.error || 'Import failed', 'error'); }
+        setImporting(false);
+    };
+
+    return (
+        <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 20, flexWrap: 'wrap', gap: 8 }}>
+                <p style={{ color: 'var(--text-secondary)', fontSize: 14 }}>
+                    {rooms.length} {lang === 'de' ? 'Räume' : 'Rooms'}
+                </p>
+                <div style={{ display: 'flex', gap: 8 }}>
+                    <button className="btn btn-secondary" onClick={handleImportFromHA} disabled={importing}>
+                        <span className="mdi mdi-home-import-outline" />
+                        {importing ? '...' : (lang === 'de' ? 'Aus HA importieren' : 'Import from HA')}
+                    </button>
+                    <button className="btn btn-primary" onClick={() => setShowAdd(true)}>
+                        <span className="mdi mdi-plus" />
+                        {lang === 'de' ? 'Raum hinzufügen' : 'Add Room'}
+                    </button>
+                </div>
+            </div>
+
+            {rooms.length > 0 ? (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 16 }}>
+                    {rooms.map(room => (
+                        <div key={room.id} className="card">
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                                    <div className="card-icon" style={{ background: 'var(--accent-primary-dim)', color: 'var(--accent-primary)' }}>
+                                        <span className={`mdi ${room.icon?.replace('mdi:', 'mdi-') || 'mdi-door'}`} />
+                                    </div>
+                                    <div>
+                                        <div className="card-title">{room.name}</div>
+                                        <div className="card-subtitle">
+                                            {room.device_count} {lang === 'de' ? 'Geräte' : 'devices'}
+                                            {room.last_activity && (
+                                                <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--text-muted)' }}>
+                                                    · <span className="mdi mdi-clock-outline" style={{ fontSize: 11, marginRight: 2 }} />
+                                                    {relativeTime(room.last_activity, lang)}
+                                                </span>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                                <div style={{ display: 'flex', gap: 4 }}>
+                                    <button className="btn btn-ghost btn-icon" onClick={() => setEditRoom({...room})}
+                                        title={lang === 'de' ? 'Bearbeiten' : 'Edit'}>
+                                        <span className="mdi mdi-pencil" style={{ fontSize: 16, color: 'var(--accent-primary)' }} />
+                                    </button>
+                                    <button className="btn btn-ghost btn-icon" onClick={() => handleDelete(room)}>
+                                        <span className="mdi mdi-delete-outline" style={{ fontSize: 16, color: 'var(--text-muted)' }} />
+                                    </button>
+                                </div>
+                            </div>
+
+                            {room.domain_states?.length > 0 && (
+                                <div style={{ marginTop: 16 }}>
+                                    <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8 }}>
+                                        {lang === 'de' ? 'Lernphasen' : 'Learning Phases'}
+                                    </div>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                        {room.domain_states.map((ds, i) => {
+                                            const phase = phaseLabels[ds.learning_phase] || phaseLabels.observing;
+                                            const dom = domains.find(d => d.id === ds.domain_id);
+                                            const domName = dom?.display_name || '?';
+                                            const domIcon = dom?.icon?.replace('mdi:', 'mdi-') || 'mdi-puzzle';
+                                            const nextPhase = ds.learning_phase === 'observing' ? 'suggesting' : ds.learning_phase === 'suggesting' ? 'autonomous' : 'observing';
+                                            const nextLabel = phaseLabels[nextPhase]?.[lang] || nextPhase;
+                                            const progress = ds.learning_phase === 'autonomous' ? 100 : ds.learning_phase === 'suggesting' ? 66 : ds.confidence_score ? Math.min(33, Math.round(ds.confidence_score * 33)) : 10;
+                                            return (
+                                                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                                    <span className={`mdi ${domIcon}`} style={{ fontSize: 14, color: 'var(--text-muted)', width: 18 }} />
+                                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 2 }}>
+                                                            <span>{domName}</span>
+                                                            <span className={`badge badge-${phase.color}`} style={{ fontSize: 9, padding: '1px 6px', cursor: 'pointer' }}
+                                                                title={`→ ${nextLabel}`}
+                                                                onClick={async () => {
+                                                                    await api.put(`phases/${room.id}/${ds.domain_id}`, { phase: nextPhase });
+                                                                    showToast(`${domName}: ${nextLabel}`, 'success');
+                                                                    await refreshData();
+                                                                }}>
+                                                                {phase[lang]}
+                                                            </span>
+                                                        </div>
+                                                        <div style={{ height: 4, borderRadius: 2, background: 'var(--bg-main)', overflow: 'hidden' }}>
+                                                            <div style={{ height: '100%', borderRadius: 2, width: `${progress}%`,
+                                                                background: ds.learning_phase === 'autonomous' ? 'var(--success)' : ds.learning_phase === 'suggesting' ? 'var(--warning)' : 'var(--accent-primary)',
+                                                                transition: 'width 0.3s' }} />
+                                                        </div>
+                                                    </div>
+                                                    {isAdmin && (
+                                                        <button className="btn btn-ghost" style={{ padding: 2, fontSize: 12 }}
+                                                            title={lang === 'de' ? 'Lernphase zurücksetzen' : 'Reset learning phase'}
+                                                            onClick={async (e) => {
+                                                                e.stopPropagation();
+                                                                if (confirm(lang === 'de' ? `${domName} zurücksetzen? Alle Muster werden gelöscht.` : `Reset ${domName}? All patterns will be deleted.`)) {
+                                                                    await api.post(`phases/${room.id}/${ds.domain_id}/reset`);
+                                                                    showToast(lang === 'de' ? 'Zurückgesetzt' : 'Reset', 'success');
+                                                                    await refreshData();
+                                                                }
+                                                            }}>
+                                                            <span className="mdi mdi-restart" style={{ color: 'var(--text-muted)' }} />
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Privacy Mode */}
+                            <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                        <span className="mdi mdi-shield-lock" style={{ fontSize: 14, color: room.privacy_mode?.enabled ? 'var(--warning)' : 'var(--text-muted)' }} />
+                                        <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                                            {lang === 'de' ? 'Privatsphäre-Modus' : 'Privacy Mode'}
+                                        </span>
+                                    </div>
+                                    <label className="toggle" style={{ transform: 'scale(0.8)' }}>
+                                        <input type="checkbox" checked={!!room.privacy_mode?.enabled}
+                                            onChange={async () => {
+                                                const newMode = { ...room.privacy_mode, enabled: !room.privacy_mode?.enabled };
+                                                await api.put(`rooms/${room.id}`, { privacy_mode: newMode });
+                                                await refreshData();
+                                            }} />
+                                        <div className="toggle-slider" />
+                                    </label>
+                                </div>
+                                {room.privacy_mode?.enabled && (
+                                    <div style={{ marginTop: 6, padding: '6px 8px', background: 'var(--bg-main)', borderRadius: 6, fontSize: 11, color: 'var(--warning)' }}>
+                                        <span className="mdi mdi-information" style={{ marginRight: 4 }} />
+                                        {lang === 'de'
+                                            ? 'Keine Datenerfassung, keine Muster, keine Automationen in diesem Raum.'
+                                            : 'No data collection, no patterns, no automations in this room.'}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            ) : (
+                <div className="empty-state">
+                    <span className="mdi mdi-door-open" />
+                    <h3>{lang === 'de' ? 'Keine Räume' : 'No Rooms'}</h3>
+                    <p>{lang === 'de'
+                        ? 'Füge Räume hinzu um MindHome zu konfigurieren.'
+                        : 'Add rooms to configure MindHome.'}</p>
+                </div>
+            )}
+
+            {/* Add Room Modal */}
+            {showAdd && (
+                <Modal
+                    title={lang === 'de' ? 'Raum hinzufügen' : 'Add Room'}
+                    onClose={() => setShowAdd(false)}
+                    actions={
+                        <>
+                            <button className="btn btn-secondary" onClick={() => setShowAdd(false)}>
+                                {lang === 'de' ? 'Abbrechen' : 'Cancel'}
+                            </button>
+                            <button className="btn btn-primary" onClick={handleAdd}>
+                                {lang === 'de' ? 'Erstellen' : 'Create'}
+                            </button>
+                        </>
+                    }
+                >
+                    <div className="input-group" style={{ marginBottom: 16 }}>
+                        <label className="input-label">{lang === 'de' ? 'Name' : 'Name'}</label>
+                        <input className="input" value={newRoom.name}
+                               onChange={e => setNewRoom({ ...newRoom, name: e.target.value })}
+                               placeholder={lang === 'de' ? 'z.B. Wohnzimmer' : 'e.g. Living Room'}
+                               autoFocus />
+                    </div>
+                </Modal>
+            )}
+
+            {/* Edit Room Modal */}
+            {editRoom && (
+                <Modal
+                    title={lang === 'de' ? 'Raum bearbeiten' : 'Edit Room'}
+                    onClose={() => setEditRoom(null)}
+                    actions={
+                        <>
+                            <button className="btn btn-secondary" onClick={() => setEditRoom(null)}>
+                                {lang === 'de' ? 'Abbrechen' : 'Cancel'}
+                            </button>
+                            <button className="btn btn-primary" onClick={handleUpdate}>
+                                {lang === 'de' ? 'Speichern' : 'Save'}
+                            </button>
+                        </>
+                    }
+                >
+                    <div className="input-group" style={{ marginBottom: 16 }}>
+                        <label className="input-label">{lang === 'de' ? 'Name' : 'Name'}</label>
+                        <input className="input" value={editRoom.name}
+                               onChange={e => setEditRoom({ ...editRoom, name: e.target.value })}
+                               autoFocus />
+                    </div>
+                    <div className="input-group">
+                        <label className="input-label">Icon</label>
+                        <input className="input" value={editRoom.icon || ''}
+                               onChange={e => setEditRoom({ ...editRoom, icon: e.target.value })}
+                               placeholder="mdi:door" />
+                    </div>
+                </Modal>
+            )}
+            {confirm && (
+                <ConfirmDialog
+                    title={lang === 'de' ? 'Raum löschen?' : 'Delete room?'}
+                    message={lang === 'de'
+                        ? `"${confirm.name}" mit ${confirm.count} Geräten wird gelöscht.`
+                        : `"${confirm.name}" with ${confirm.count} devices will be deleted.`}
+                    danger onConfirm={confirmDelete} onCancel={() => setConfirm(null)} />
+            )}
+        </div>
+    );
+};
+
+// ================================================================
+// Phase 2a: Patterns Page (Muster-Explorer)
+
+// ================================================================
+// Users Page - with HA person assignment
+// ================================================================
+
+const UsersPage = () => {
+    const { users, lang, showToast, refreshData } = useApp();
+    const [showAdd, setShowAdd] = useState(false);
+    const [newUser, setNewUser] = useState({ name: '', role: 'user', ha_person_entity: '' });
+    const [haPersons, setHaPersons] = useState([]);
+    const [editingUser, setEditingUser] = useState(null);
+
+    useEffect(() => {
+        api.get('ha/persons').then(r => setHaPersons(r?.persons || []));
+    }, []);
+
+    const handleAdd = async () => {
+        if (!newUser.name.trim()) return;
+        const result = await api.post('users', newUser);
+        if (result?.id) {
+            showToast(lang === 'de' ? 'Person erstellt' : 'Person created', 'success');
+            setShowAdd(false);
+            setNewUser({ name: '', role: 'user', ha_person_entity: '' });
+            await refreshData();
+        }
+    };
+
+    const handleDelete = async (id) => {
+        const result = await api.delete(`users/${id}`);
+        if (result?.success) {
+            showToast(lang === 'de' ? 'Person entfernt' : 'Person removed', 'success');
+            await refreshData();
+        }
+    };
+
+    const handleAssignPerson = async (userId, haEntity) => {
+        const result = await api.put(`users/${userId}`, { ha_person_entity: haEntity || null });
+        if (result?.id) {
+            showToast(lang === 'de' ? 'HA-Person zugewiesen' : 'HA person assigned', 'success');
+            await refreshData();
+            setEditingUser(null);
+        }
+    };
+
+    return (
+        <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 20 }}>
+                <p style={{ color: 'var(--text-secondary)', fontSize: 14 }}>
+                    {users.length} {lang === 'de' ? 'Personen' : 'People'}
+                </p>
+                <button className="btn btn-primary" onClick={() => setShowAdd(true)}>
+                    <span className="mdi mdi-account-plus" />
+                    {lang === 'de' ? 'Person hinzufügen' : 'Add Person'}
+                </button>
+            </div>
+
+            {users.length > 0 ? (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16 }}>
+                    {users.map(user => (
+                        <div key={user.id} className="card">
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                                    <div className="card-icon" style={{
+                                        background: user.role === 'admin' ? 'var(--accent-primary-dim)' : 'var(--accent-secondary-dim)',
+                                        color: user.role === 'admin' ? 'var(--accent-primary)' : 'var(--accent-secondary)'
+                                    }}>
+                                        <span className={`mdi ${user.role === 'admin' ? 'mdi-shield-crown' : 'mdi-account'}`} />
+                                    </div>
+                                    <div>
+                                        <div className="card-title">{user.name}</div>
+                                        <div className="card-subtitle">
+                                            {user.role === 'admin' ? 'Administrator' : (lang === 'de' ? 'Benutzer' : 'User')}
+                                        </div>
+                                        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                                            {user.ha_person_entity
+                                                ? `🔗 ${user.ha_person_entity}`
+                                                : (lang === 'de' ? '⚠️ Keine HA-Person' : '⚠️ No HA person')}
+                                        </div>
+                                    </div>
+                                </div>
+                                <div style={{ display: 'flex', gap: 4 }}>
+                                    <button className="btn btn-ghost btn-icon" onClick={() => setEditingUser(user)}
+                                        title={lang === 'de' ? 'HA-Person zuweisen' : 'Assign HA person'}>
+                                        <span className="mdi mdi-link-variant" style={{ fontSize: 18, color: 'var(--accent-primary)' }} />
+                                    </button>
+                                    <button className="btn btn-ghost btn-icon" onClick={() => handleDelete(user.id)}>
+                                        <span className="mdi mdi-delete-outline" style={{ fontSize: 18, color: 'var(--text-muted)' }} />
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            ) : (
+                <div className="empty-state">
+                    <span className="mdi mdi-account-group" />
+                    <h3>{lang === 'de' ? 'Keine Personen' : 'No People'}</h3>
+                    <p>{lang === 'de' ? 'Füge Personen hinzu die MindHome nutzen.' : 'Add people who use MindHome.'}</p>
+                </div>
+            )}
+
+            {showAdd && (
+                <Modal title={lang === 'de' ? 'Person hinzufügen' : 'Add Person'} onClose={() => setShowAdd(false)}
+                    actions={<><button className="btn btn-secondary" onClick={() => setShowAdd(false)}>{lang === 'de' ? 'Abbrechen' : 'Cancel'}</button>
+                        <button className="btn btn-primary" onClick={handleAdd}>{lang === 'de' ? 'Erstellen' : 'Create'}</button></>}>
+                    <div className="input-group" style={{ marginBottom: 16 }}>
+                        <label className="input-label">{lang === 'de' ? 'Name' : 'Name'}</label>
+                        <input className="input" value={newUser.name} onChange={e => setNewUser({ ...newUser, name: e.target.value })} autoFocus />
+                    </div>
+                    <div className="input-group" style={{ marginBottom: 16 }}>
+                        <Dropdown
+                            label={lang === 'de' ? 'Rolle' : 'Role'}
+                            value={newUser.role}
+                            onChange={v => setNewUser({ ...newUser, role: v })}
+                            options={[
+                                { value: 'user', label: lang === 'de' ? 'Benutzer' : 'User' },
+                                { value: 'admin', label: 'Administrator' },
+                            ]}
+                        />
+                    </div>
+                    <div className="input-group">
+                        <Dropdown
+                            label={lang === 'de' ? 'HA-Person' : 'HA Person'}
+                            value={newUser.ha_person_entity}
+                            onChange={v => setNewUser({ ...newUser, ha_person_entity: v })}
+                            options={[
+                                { value: '', label: lang === 'de' ? '— Keine —' : '— None —' },
+                                ...haPersons.map(p => ({ value: p.entity_id, label: `${p.name} (${p.entity_id})` }))
+                            ]}
+                        />
+                    </div>
+                </Modal>
+            )}
+
+            {editingUser && (
+                <Modal title={lang === 'de' ? `HA-Person: ${editingUser.name}` : `HA Person: ${editingUser.name}`} onClose={() => setEditingUser(null)}
+                    actions={<button className="btn btn-secondary" onClick={() => setEditingUser(null)}>{lang === 'de' ? 'Schließen' : 'Close'}</button>}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        <div style={{ padding: '10px 14px', borderRadius: 8, cursor: 'pointer',
+                            border: !editingUser.ha_person_entity ? '2px solid var(--accent-primary)' : '1px solid var(--border-color)',
+                            background: !editingUser.ha_person_entity ? 'var(--accent-primary-dim)' : 'transparent'
+                        }} onClick={() => handleAssignPerson(editingUser.id, '')}>
+                            {lang === 'de' ? '— Keine Person —' : '— No Person —'}
+                        </div>
+                        {haPersons.map(p => (
+                            <div key={p.entity_id} style={{ padding: '10px 14px', borderRadius: 8, cursor: 'pointer',
+                                border: editingUser.ha_person_entity === p.entity_id ? '2px solid var(--accent-primary)' : '1px solid var(--border-color)',
+                                background: editingUser.ha_person_entity === p.entity_id ? 'var(--accent-primary-dim)' : 'transparent',
+                                display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+                            }} onClick={() => handleAssignPerson(editingUser.id, p.entity_id)}>
+                                <div><strong>{p.name}</strong><div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{p.entity_id}</div></div>
+                                <span className={`badge badge-${p.state === 'home' ? 'success' : 'warning'}`}>
+                                    <span className="badge-dot" />{p.state === 'home' ? (lang === 'de' ? 'Zuhause' : 'Home') : (lang === 'de' ? 'Weg' : 'Away')}
+                                </span>
+                            </div>
+                        ))}
+                    </div>
+                </Modal>
+            )}
+        </div>
+    );
+};
+
+// ================================================================
+// Phase 2a: Patterns Page (Muster-Explorer)
+// ================================================================
+// Settings Page
+// ================================================================
+
+const SettingsPage = () => {
+    const { lang, setLang, theme, setTheme, viewMode, setViewMode, showToast, refreshData } = useApp();
+    const [sysInfo, setSysInfo] = useState(null);
+    const [retention, setRetention] = useState(90);
+    const [retentionInput, setRetentionInput] = useState('90');
+    const [cleaning, setCleaning] = useState(false);
+    const [anomalySensitivity, setAnomalySensitivity] = useState('medium');
+    const fileInputRef = useRef(null);
+
+    useEffect(() => {
+        (async () => {
+            const info = await api.get('system/info');
+            if (info) setSysInfo(info);
+            const ret = await api.get('system/retention');
+            if (ret) {
+                setRetention(ret.retention_days || 90);
+                setRetentionInput(String(ret.retention_days || 90));
             }
-
-            # Fix 14: Include live state from HA
-            try:
-                state = ha.get_state(d.ha_entity_id)
-                if state:
-                    dev_data["live_state"] = state.get("state", "unknown")
-                    attrs = state.get("attributes", {})
-                    dev_data["live_attributes"] = extract_display_attributes(
-                        d.ha_entity_id, attrs
-                    )
-                else:
-                    dev_data["live_state"] = "unavailable"
-                    dev_data["live_attributes"] = {}
-            except Exception:
-                dev_data["live_state"] = "unknown"
-                dev_data["live_attributes"] = {}
-
-            result.append(dev_data)
-        return jsonify(result)
-    finally:
-        session.close()
-
-
-@app.route("/api/devices/<int:device_id>", methods=["PUT"])
-def api_update_device(device_id):
-    """Update device settings."""
-    data = request.json
-    session = get_db()
-    try:
-        device = session.get(Device, device_id)
-        if not device:
-            return jsonify({"error": "Device not found"}), 404
-
-        if "room_id" in data:
-            device.room_id = data["room_id"]
-        if "is_tracked" in data:
-            device.is_tracked = data["is_tracked"]
-        if "is_controllable" in data:
-            device.is_controllable = data["is_controllable"]
-        if "name" in data:
-            device.name = data["name"]
-        if "domain_id" in data:
-            device.domain_id = data["domain_id"]
-
-        session.commit()
-        return jsonify({"id": device.id, "name": device.name})
-    finally:
-        session.close()
-
-
-# Fix 24: Bulk actions for devices
-@app.route("/api/devices/bulk", methods=["PUT"])
-def api_bulk_update_devices():
-    """Bulk update multiple devices at once."""
-    data = request.json
-    session = get_db()
-    try:
-        device_ids = data.get("device_ids", [])
-        # Support both flat and nested format
-        updates = data.get("updates", {})
-        if not updates:
-            updates = {k: v for k, v in data.items() if k != "device_ids"}
-
-        if not device_ids:
-            return jsonify({"error": "No devices selected"}), 400
-
-        updated = 0
-        for did in device_ids:
-            device = session.get(Device, did)
-            if not device:
-                continue
-            if "room_id" in updates:
-                device.room_id = updates["room_id"]
-            if "domain_id" in updates:
-                device.domain_id = updates["domain_id"]
-            if "is_tracked" in updates:
-                device.is_tracked = updates["is_tracked"]
-            if "is_controllable" in updates:
-                device.is_controllable = updates["is_controllable"]
-            updated += 1
-
-        session.commit()
-        return jsonify({"success": True, "updated": updated})
-    finally:
-        session.close()
-
-
-# Fix 24: Bulk delete devices
-@app.route("/api/devices/bulk", methods=["DELETE"])
-def api_bulk_delete_devices():
-    """Bulk delete multiple devices."""
-    data = request.json
-    session = get_db()
-    try:
-        device_ids = data.get("device_ids", [])
-        if not device_ids:
-            return jsonify({"error": "No devices selected"}), 400
-
-        deleted = 0
-        for did in device_ids:
-            device = session.get(Device, did)
-            if device:
-                session.delete(device)
-                deleted += 1
-
-        session.commit()
-        return jsonify({"success": True, "deleted": deleted})
-    finally:
-        session.close()
-
-
-@app.route("/api/devices/<int:device_id>", methods=["DELETE"])
-def api_delete_device(device_id):
-    """Delete a device."""
-    session = get_db()
-    try:
-        device = session.get(Device, device_id)
-        if not device:
-            return jsonify({"error": "Device not found"}), 404
-        session.delete(device)
-        session.commit()
-        return jsonify({"success": True})
-    finally:
-        session.close()
-
-
-# ==============================================================================
-# API Routes - Discovery (Onboarding)
-# ==============================================================================
-
-@app.route("/api/discover", methods=["GET"])
-def api_discover_devices():
-    """Discover all HA devices grouped by MindHome domain."""
-    discovered = ha.discover_devices()
-
-    # Fix 20: Filter out invalid entities
-    for domain_name in list(discovered.keys()):
-        entities = discovered[domain_name]
-        filtered = []
-        for entity in entities:
-            state_val = entity.get("state", "")
-            # Skip permanently unavailable/unknown entities
-            if state_val in ("unavailable", "unknown", None, ""):
-                continue
-            filtered.append(entity)
-        discovered[domain_name] = filtered
-
-    summary = {}
-    for domain_name, entities in discovered.items():
-        summary[domain_name] = {
-            "count": len(entities),
-            "entities": entities
-        }
-
-    return jsonify({
-        "domains": summary,
-        "total_entities": sum(len(e) for e in discovered.values()),
-        "ha_connected": ha.is_connected()
-    })
-
-
-@app.route("/api/discover/import", methods=["POST"])
-def api_import_discovered():
-    """Import selected discovered devices into MindHome."""
-    data = request.json
-    session = get_db()
-    try:
-        imported_count = 0
-        skipped_count = 0
-        selected_ids = data.get("selected_entities", [])
-
-        # Fix 21: Get HA entity registry for area assignments
-        entity_registry = ha.get_entity_registry() or []
-        device_registry = ha.get_device_registry() or []
-
-        # Build lookup: entity_id -> area_id
-        # First: device_id -> area_id from device registry
-        device_area_map = {}
-        for dev in device_registry:
-            dev_id = dev.get("id", "")
-            area_id = dev.get("area_id", "")
-            if dev_id and area_id:
-                device_area_map[dev_id] = area_id
-
-        # Then: entity_id -> area_id (entity area takes priority, else device area)
-        entity_area_map = {}
-        for ent in entity_registry:
-            eid = ent.get("entity_id", "")
-            area = ent.get("area_id") or device_area_map.get(ent.get("device_id", ""))
-            if eid and area:
-                entity_area_map[eid] = area
-
-        # Build area_id -> room_id lookup
-        area_room_map = {}
-        rooms = session.query(Room).filter(Room.ha_area_id.isnot(None)).all()
-        for room in rooms:
-            if room.ha_area_id:
-                area_room_map[room.ha_area_id] = room.id
-
-        for domain_name, domain_data in data.get("domains", {}).items():
-            domain = session.query(Domain).filter_by(name=domain_name).first()
-            if not domain:
-                continue
-
-            if isinstance(domain_data, dict):
-                entities = domain_data.get("entities", [])
-            elif isinstance(domain_data, list):
-                entities = domain_data
-            else:
-                continue
-
-            has_imported = False
-            for entity_info in entities:
-                if isinstance(entity_info, str):
-                    entity_id = entity_info
-                    friendly_name = entity_info
-                    attributes = {}
-                elif isinstance(entity_info, dict):
-                    entity_id = entity_info.get("entity_id", "")
-                    friendly_name = entity_info.get("friendly_name", entity_id)
-                    attributes = entity_info.get("attributes", {})
-                else:
-                    continue
-
-                if selected_ids and entity_id not in selected_ids:
-                    continue
-
-                # Fix 19: Duplicate protection
-                existing = session.query(Device).filter_by(ha_entity_id=entity_id).first()
-                if existing:
-                    skipped_count += 1
-                    continue
-
-                # Fix 21: Auto-assign room via HA Area
-                room_id = None
-                area_id = entity_area_map.get(entity_id)
-                if area_id:
-                    room_id = area_room_map.get(area_id)
-
-                # Auto-detect controllability
-                ha_domain = entity_id.split(".")[0]
-                non_controllable = {"sensor", "binary_sensor", "zone", "sun", "weather", "person", "device_tracker", "calendar", "proximity"}
-
-                device = Device(
-                    ha_entity_id=entity_id,
-                    name=friendly_name,
-                    domain_id=domain.id,
-                    room_id=room_id,
-                    device_meta=attributes,
-                    is_controllable=ha_domain not in non_controllable
-                )
-                session.add(device)
-                imported_count += 1
-                has_imported = True
-
-            if has_imported:
-                domain.is_enabled = True
-
-        session.commit()
-        return jsonify({
-            "success": True,
-            "imported": imported_count,
-            "skipped": skipped_count,
-            "message": f"{imported_count} importiert, {skipped_count} übersprungen (bereits vorhanden)"
-        })
-    finally:
-        session.close()
-
-
-# Fix 5: Manual device search - get ALL HA entities
-@app.route("/api/discover/all-entities", methods=["GET"])
-def api_get_all_ha_entities():
-    """Get all HA entities for manual device search."""
-    states = ha.get_states() or []
-    session = get_db()
-    try:
-        # Get already imported entity IDs
-        imported_ids = set(
-            d.ha_entity_id for d in session.query(Device.ha_entity_id).all()
-        )
-
-        entities = []
-        for s in states:
-            eid = s.get("entity_id", "")
-            state_val = s.get("state", "")
-            attrs = s.get("attributes", {})
-
-            # Fix 20: Mark invalid entities
-            is_valid = state_val not in ("unavailable", "unknown", None, "")
-
-            entities.append({
-                "entity_id": eid,
-                "friendly_name": attrs.get("friendly_name", eid),
-                "state": state_val,
-                "domain": eid.split(".")[0],
-                "device_class": attrs.get("device_class", ""),
-                "is_imported": eid in imported_ids,
-                "is_valid": is_valid
-            })
-
-        return jsonify({"entities": entities, "total": len(entities)})
-    finally:
-        session.close()
-
-
-# Fix 5: Manual device add
-@app.route("/api/devices/manual-add", methods=["POST"])
-def api_manual_add_device():
-    """Manually add a device by entity ID."""
-    data = request.json
-    session = get_db()
-    try:
-        entity_id = data.get("entity_id", "").strip()
-        if not entity_id:
-            return jsonify({"error": "Entity ID is required"}), 400
-
-        # Fix 19: Duplicate protection
-        existing = session.query(Device).filter_by(ha_entity_id=entity_id).first()
-        if existing:
-            return jsonify({"error": "Device already exists", "device_id": existing.id}), 409
-
-        # Get current state from HA
-        state = ha.get_state(entity_id)
-        if not state:
-            return jsonify({"error": "Entity not found in Home Assistant"}), 404
-
-        attrs = state.get("attributes", {})
-        friendly_name = data.get("name") or attrs.get("friendly_name", entity_id)
-        domain_id = data.get("domain_id")
-        room_id = data.get("room_id")
-
-        # Auto-detect domain if not provided
-        if not domain_id:
-            ha_domain = entity_id.split(".")[0]
-            domain_mapping = {
-                "light": "light", "climate": "climate", "cover": "cover",
-                "person": "presence", "device_tracker": "presence",
-                "media_player": "media", "lock": "lock", "switch": "switch",
-                "fan": "ventilation", "weather": "weather"
+            const anomSettings = await api.get('anomaly-settings');
+            if (anomSettings?.length > 0) {
+                const global = anomSettings.find(s => !s.room_id && !s.domain_id && !s.device_id);
+                if (global) setAnomalySensitivity(global.sensitivity || 'medium');
             }
-            mapped_name = domain_mapping.get(ha_domain, "switch")
-            domain = session.query(Domain).filter_by(name=mapped_name).first()
-            domain_id = domain.id if domain else 1
-
-        # Auto-detect controllability from entity type
-        ha_domain = entity_id.split(".")[0]
-        non_controllable = {"sensor", "binary_sensor", "zone", "sun", "weather", "person", "device_tracker", "calendar", "proximity"}
-        is_controllable = ha_domain not in non_controllable
-
-        device = Device(
-            ha_entity_id=entity_id,
-            name=friendly_name,
-            domain_id=domain_id,
-            room_id=room_id,
-            device_meta=attrs,
-            is_controllable=is_controllable
-        )
-        session.add(device)
-        session.commit()
-
-        return jsonify({"success": True, "id": device.id, "name": device.name}), 201
-    finally:
-        session.close()
-
-
-@app.route("/api/discover/areas", methods=["GET"])
-def api_discover_areas():
-    """Get areas (rooms) from HA."""
-    areas = ha.get_areas()
-    return jsonify({"areas": areas or []})
-
-
-@app.route("/api/ha/persons", methods=["GET"])
-def api_ha_persons():
-    """Get all person entities from HA for user assignment."""
-    states = ha.get_states() or []
-    persons = []
-    for s in states:
-        eid = s.get("entity_id", "")
-        if eid.startswith("person."):
-            persons.append({
-                "entity_id": eid,
-                "name": s.get("attributes", {}).get("friendly_name", eid),
-                "state": s.get("state", "unknown")
-            })
-    return jsonify({"persons": persons})
-
-
-# ==============================================================================
-# API Routes - Users
-# ==============================================================================
-
-@app.route("/api/users", methods=["GET"])
-def api_get_users():
-    """Get all users."""
-    session = get_db()
-    try:
-        users = session.query(User).filter_by(is_active=True).all()
-        return jsonify([{
-            "id": u.id,
-            "name": u.name,
-            "role": u.role.value,
-            "ha_person_entity": u.ha_person_entity,
-            "language": u.language,
-            "created_at": u.created_at.isoformat()
-        } for u in users])
-    finally:
-        session.close()
-
-
-@app.route("/api/users", methods=["POST"])
-def api_create_user():
-    """Create a new user."""
-    data = request.json
-    session = get_db()
-    try:
-        user = User(
-            name=data["name"],
-            role=UserRole(data.get("role", "user")),
-            ha_person_entity=data.get("ha_person_entity"),
-            language=data.get("language", get_language())
-        )
-        session.add(user)
-        session.commit()
-
-        for ntype in NotificationType:
-            ns = NotificationSetting(
-                user_id=user.id,
-                notification_type=ntype,
-                is_enabled=True,
-                quiet_hours_start="22:00",
-                quiet_hours_end="07:00",
-                quiet_hours_allow_critical=True
-            )
-            session.add(ns)
-        session.commit()
-
-        return jsonify({"id": user.id, "name": user.name}), 201
-    finally:
-        session.close()
-
-
-@app.route("/api/users/<int:user_id>", methods=["PUT"])
-def api_update_user(user_id):
-    """Update a user."""
-    data = request.json
-    session = get_db()
-    try:
-        user = session.get(User, user_id)
-        if not user:
-            return jsonify({"error": "User not found"}), 404
-
-        if "name" in data:
-            user.name = data["name"]
-        if "role" in data:
-            user.role = UserRole(data["role"])
-        if "ha_person_entity" in data:
-            user.ha_person_entity = data["ha_person_entity"]
-        if "language" in data:
-            user.language = data["language"]
-
-        session.commit()
-        return jsonify({"id": user.id, "name": user.name})
-    finally:
-        session.close()
-
-
-@app.route("/api/users/<int:user_id>", methods=["DELETE"])
-def api_delete_user(user_id):
-    """Delete a user (soft delete)."""
-    session = get_db()
-    try:
-        user = session.get(User, user_id)
-        if not user:
-            return jsonify({"error": "User not found"}), 404
-        user.is_active = False
-        session.commit()
-        return jsonify({"success": True})
-    finally:
-        session.close()
-
-
-# ==============================================================================
-# API Routes - Quick Actions
-# ==============================================================================
-
-@app.route("/api/quick-actions", methods=["GET"])
-def api_get_quick_actions():
-    """Get all quick actions."""
-    session = get_db()
-    try:
-        actions = session.query(QuickAction).filter_by(is_active=True).order_by(
-            QuickAction.sort_order
-        ).all()
-        lang = get_language()
-        return jsonify([{
-            "id": a.id,
-            "name": a.name_de if lang == "de" else a.name_en,
-            "icon": a.icon,
-            "action_data": a.action_data,
-            "is_system": a.is_system
-        } for a in actions])
-    finally:
-        session.close()
-
-
-@app.route("/api/quick-actions/execute/<int:action_id>", methods=["POST"])
-def api_execute_quick_action(action_id):
-    """Execute a quick action."""
-    session = get_db()
-    try:
-        action = session.get(QuickAction, action_id)
-        if not action:
-            return jsonify({"error": "Quick action not found"}), 404
-
-        action_type = action.action_data.get("type")
-
-        if action_type == "all_off":
-            for entity in ha.get_entities_by_domain("light"):
-                ha.call_service("light", "turn_off", entity_id=entity["entity_id"])
-            for entity in ha.get_entities_by_domain("switch"):
-                ha.call_service("switch", "turn_off", entity_id=entity["entity_id"])
-            for entity in ha.get_entities_by_domain("media_player"):
-                ha.call_service("media_player", "turn_off", entity_id=entity["entity_id"])
-
-        elif action_type == "leaving_home":
-            set_setting("system_mode", "away")
-            for entity in ha.get_entities_by_domain("light"):
-                ha.call_service("light", "turn_off", entity_id=entity["entity_id"])
-            for entity in ha.get_entities_by_domain("climate"):
-                ha.call_service("climate", "set_temperature",
-                              {"temperature": 18}, entity_id=entity["entity_id"])
-
-        elif action_type == "arriving_home":
-            set_setting("system_mode", "normal")
-
-        elif action_type == "guest_mode_on":
-            set_setting("system_mode", "guest")
-
-        elif action_type == "emergency_stop":
-            set_setting("system_mode", "emergency_stop")
-            states = session.query(RoomDomainState).all()
-            for state in states:
-                state.is_paused = True
-            session.commit()
-
-        log = ActionLog(
-            action_type="quick_action",
-            action_data={"quick_action_id": action_id, "type": action_type},
-            reason=f"Quick Action: {action.name_de}"
-        )
-        session.add(log)
-        session.commit()
-
-        return jsonify({"success": True, "action_type": action_type})
-    finally:
-        session.close()
-
-
-@app.route("/api/quick-actions", methods=["POST"])
-def api_create_quick_action():
-    """Create a new custom quick action."""
-    data = request.json
-    session = get_db()
-    try:
-        max_order = session.query(sa_func.max(QuickAction.sort_order)).scalar() or 0
-        qa = QuickAction(
-            name_de=data.get("name", ""),
-            name_en=data.get("name_en", data.get("name", "")),
-            icon=data.get("icon", "mdi:flash"),
-            action_data=data.get("action_data") or {"type": "custom", "entities": []},
-            sort_order=max_order + 1,
-            is_active=True,
-            is_system=False
-        )
-        session.add(qa)
-        session.commit()
-        return jsonify({"success": True, "id": qa.id}), 201
-    except Exception as e:
-        session.rollback()
-        return jsonify({"error": str(e)}), 500
-    finally:
-        session.close()
-
-
-@app.route("/api/quick-actions/<int:action_id>", methods=["PUT"])
-def api_update_quick_action(action_id):
-    """Update a quick action."""
-    data = request.json
-    session = get_db()
-    try:
-        qa = session.get(QuickAction, action_id)
-        if not qa:
-            return jsonify({"error": "Not found"}), 404
-        if data.get("name"):
-            qa.name_de = data["name"]
-        if data.get("name_en"):
-            qa.name_en = data["name_en"]
-        else:
-            if data.get("name"):
-                qa.name_en = data["name"]
-        if data.get("icon"):
-            qa.icon = data["icon"]
-        if data.get("action_data"):
-            qa.action_data = data["action_data"]
-        if "is_active" in data:
-            qa.is_active = data["is_active"]
-        session.commit()
-        return jsonify({"success": True})
-    except Exception as e:
-        session.rollback()
-        return jsonify({"error": str(e)}), 500
-    finally:
-        session.close()
-
-
-@app.route("/api/quick-actions/<int:action_id>", methods=["DELETE"])
-def api_delete_quick_action(action_id):
-    """Delete a quick action (only non-system)."""
-    session = get_db()
-    try:
-        qa = session.get(QuickAction, action_id)
-        if not qa:
-            return jsonify({"error": "Not found"}), 404
-        if qa.is_system:
-            return jsonify({"error": "Cannot delete system actions"}), 403
-        session.delete(qa)
-        session.commit()
-        return jsonify({"success": True})
-    except Exception as e:
-        session.rollback()
-        return jsonify({"error": str(e)}), 500
-    finally:
-        session.close()
-
-
-# ==============================================================================
-# API Routes - Data Dashboard (Privacy/Transparency)
-# ==============================================================================
-
-@app.route("/api/data-dashboard", methods=["GET"])
-def api_data_dashboard():
-    """Get overview of all collected data for transparency."""
-    session = get_db()
-    try:
-        collections = session.query(DataCollection).all()
-        return jsonify([{
-            "room_id": dc.room_id,
-            "domain_id": dc.domain_id,
-            "data_type": dc.data_type,
-            "record_count": dc.record_count,
-            "first_record": dc.first_record_at.isoformat() if dc.first_record_at else None,
-            "last_record": dc.last_record_at.isoformat() if dc.last_record_at else None,
-            "storage_size_bytes": dc.storage_size_bytes
-        } for dc in collections])
-    finally:
-        session.close()
-
-
-@app.route("/api/data-dashboard/delete/<int:collection_id>", methods=["DELETE"])
-def api_delete_collected_data(collection_id):
-    """Delete specific collected data."""
-    session = get_db()
-    try:
-        dc = session.get(DataCollection, collection_id)
-        if not dc:
-            return jsonify({"error": "Not found"}), 404
-        session.delete(dc)
-        session.commit()
-        return jsonify({"success": True})
-    finally:
-        session.close()
-
-
-# ==============================================================================
-# API Routes - Translations
-# ==============================================================================
-
-@app.route("/api/system/translations/<lang_code>", methods=["GET"])
-def api_get_translations(lang_code):
-    """Get translations for a language."""
-    import json as json_lib
-    lang_file = os.path.join(os.path.dirname(__file__), "translations", f"{lang_code}.json")
-    try:
-        with open(lang_file, "r", encoding="utf-8") as f:
-            return jsonify(json_lib.load(f))
-    except FileNotFoundError:
-        return jsonify({"error": "Language not found"}), 404
-
-
-# ==============================================================================
-# API Routes - Onboarding
-# ==============================================================================
-
-@app.route("/api/onboarding/status", methods=["GET"])
-def api_onboarding_status():
-    """Get onboarding status."""
-    return jsonify({
-        "completed": get_setting("onboarding_completed", "false") == "true"
-    })
-
-
-@app.route("/api/onboarding/complete", methods=["POST"])
-def api_onboarding_complete():
-    """Mark onboarding as complete."""
-    set_setting("onboarding_completed", "true")
-    return jsonify({"success": True})
-
-
-# ==============================================================================
-# API Routes - Action Log (with time filters)
-# ==============================================================================
-
-@app.route("/api/action-log", methods=["GET"])
-def api_get_action_log():
-    """Get action log with time filters."""
-    session = get_db()
-    try:
-        limit = request.args.get("limit", 200, type=int)
-        action_type = request.args.get("type")
-
-        # Fix 2: Time period filter
-        period = request.args.get("period", "all")
-        now = datetime.now(timezone.utc)
-
-        query = session.query(ActionLog).order_by(ActionLog.created_at.desc())
-
-        if action_type:
-            query = query.filter_by(action_type=action_type)
-
-        if period == "today":
-            start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-            query = query.filter(ActionLog.created_at >= start)
-        elif period == "week":
-            start = now - timedelta(days=7)
-            query = query.filter(ActionLog.created_at >= start)
-        elif period == "month":
-            start = now - timedelta(days=30)
-            query = query.filter(ActionLog.created_at >= start)
-        # "all" = no date filter
-
-        logs = query.limit(limit).all()
-
-        return jsonify([{
-            "id": log.id,
-            "action_type": log.action_type,
-            "domain_id": log.domain_id,
-            "room_id": log.room_id,
-            "device_id": log.device_id,
-            "action_data": log.action_data,
-            "reason": log.reason,
-            "was_undone": log.was_undone,
-            "created_at": utc_iso(log.created_at)
-        } for log in logs])
-    finally:
-        session.close()
-
-
-@app.route("/api/action-log/<int:log_id>/undo", methods=["POST"])
-def api_undo_action(log_id):
-    """Undo a specific action."""
-    session = get_db()
-    try:
-        log = session.get(ActionLog, log_id)
-        if not log:
-            return jsonify({"error": "Action not found"}), 404
-        if log.was_undone:
-            return jsonify({"error": "Action already undone"}), 400
-        if not log.previous_state:
-            return jsonify({"error": "No previous state available"}), 400
-
-        prev = log.previous_state
-        if "entity_id" in prev and "state" in prev:
-            domain = prev["entity_id"].split(".")[0]
-            if prev["state"] == "on":
-                ha.call_service(domain, "turn_on", entity_id=prev["entity_id"])
-            elif prev["state"] == "off":
-                ha.call_service(domain, "turn_off", entity_id=prev["entity_id"])
-
-        log.was_undone = True
-        session.commit()
-
-        return jsonify({"success": True})
-    finally:
-        session.close()
-
-
-# ==============================================================================
-# API Routes - Data Collections (with time filters)
-# ==============================================================================
-
-@app.route("/api/data-collections", methods=["GET"])
-def api_get_data_collections():
-    """Get recent tracked data (observations from ActionLog) with time filter."""
-    session = get_db()
-    try:
-        limit = request.args.get("limit", 200, type=int)
-
-        # Fix 2: Time period filter
-        period = request.args.get("period", "all")
-        now = datetime.now(timezone.utc)
-
-        query = session.query(ActionLog).filter_by(
-            action_type="observation"
-        ).order_by(ActionLog.created_at.desc())
-
-        if period == "today":
-            start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-            query = query.filter(ActionLog.created_at >= start)
-        elif period == "week":
-            start = now - timedelta(days=7)
-            query = query.filter(ActionLog.created_at >= start)
-        elif period == "month":
-            start = now - timedelta(days=30)
-            query = query.filter(ActionLog.created_at >= start)
-
-        logs = query.limit(limit).all()
-        return jsonify([{
-            "id": log.id,
-            "domain_id": log.domain_id,
-            "device_id": log.device_id,
-            "data_type": "state_change",
-            "data_value": log.action_data or {},
-            "collected_at": utc_iso(log.created_at)
-        } for log in logs])
-    finally:
-        session.close()
-
-
-# ==============================================================================
-# API Routes - Data Retention / Cleanup
-# ==============================================================================
-
-# Fix 3: Auto-Cleanup settings
-@app.route("/api/system/retention", methods=["GET"])
-def api_get_retention():
-    """Get data retention settings."""
-    days = int(get_setting("data_retention_days", "90"))
-    session = get_db()
-    try:
-        total = session.query(ActionLog).count()
-        observations = session.query(ActionLog).filter_by(action_type="observation").count()
-        db_path = os.environ.get("MINDHOME_DB_PATH", "/data/mindhome/db/mindhome.db")
-        db_size = os.path.getsize(db_path) if os.path.exists(db_path) else 0
-        return jsonify({
-            "retention_days": days,
-            "total_entries": total,
-            "observation_entries": observations,
-            "db_size_bytes": db_size,
-            "db_size_mb": round(db_size / 1024 / 1024, 2)
-        })
-    finally:
-        session.close()
-
-
-@app.route("/api/system/retention", methods=["PUT"])
-def api_set_retention():
-    """Update data retention settings."""
-    data = request.json
-    days = data.get("retention_days", 90)
-    if days < 7:
-        days = 7  # Minimum 7 days
-    if days > 365:
-        days = 365
-    set_setting("data_retention_days", str(days))
-    return jsonify({"success": True, "retention_days": days})
-
-
-@app.route("/api/system/cleanup", methods=["POST"])
-def api_manual_cleanup():
-    """Manually trigger data cleanup."""
-    deleted = run_cleanup()
-    return jsonify({"success": True, "deleted_entries": deleted})
-
-
-# ==============================================================================
-# Phase 2a: Pattern API Endpoints
-# ==============================================================================
-
-@app.route("/api/patterns", methods=["GET"])
-def api_get_patterns():
-    """Get all learned patterns with optional filters."""
-    session = get_db()
-    try:
-        lang = get_language()
-        status_filter = request.args.get("status")
-        pattern_type = request.args.get("type")
-        room_id = request.args.get("room_id", type=int)
-        domain_id = request.args.get("domain_id", type=int)
-
-        query = session.query(LearnedPattern).order_by(LearnedPattern.confidence.desc())
-
-        if status_filter:
-            query = query.filter_by(status=status_filter)
-        if pattern_type:
-            query = query.filter_by(pattern_type=pattern_type)
-        if room_id:
-            query = query.filter_by(room_id=room_id)
-        if domain_id:
-            query = query.filter_by(domain_id=domain_id)
-
-        # Default: only active
-        if not status_filter:
-            query = query.filter_by(is_active=True)
-
-        patterns = query.limit(200).all()
-
-        return jsonify([{
-            "id": p.id,
-            "pattern_type": p.pattern_type,
-            "description": p.description_de if lang == "de" else (p.description_en or p.description_de),
-            "description_de": p.description_de,
-            "description_en": p.description_en,
-            "confidence": round(p.confidence, 3),
-            "status": p.status or "observed",
-            "is_active": p.is_active,
-            "match_count": p.match_count or 0,
-            "times_confirmed": p.times_confirmed,
-            "times_rejected": p.times_rejected,
-            "domain_id": p.domain_id,
-            "room_id": p.room_id,
-            "user_id": p.user_id,
-            "trigger_conditions": p.trigger_conditions,
-            "action_definition": p.action_definition,
-            "pattern_data": p.pattern_data,
-            "last_matched_at": utc_iso(p.last_matched_at),
-            "created_at": utc_iso(p.created_at),
-            "updated_at": utc_iso(p.updated_at),
-        } for p in patterns])
-    finally:
-        session.close()
-
-
-@app.route("/api/patterns/<int:pattern_id>", methods=["PUT"])
-def api_update_pattern(pattern_id):
-    """Update pattern status (activate/deactivate/disable)."""
-    data = request.json
-    session = get_db()
-    try:
-        pattern = session.get(LearnedPattern, pattern_id)
-        if not pattern:
-            return jsonify({"error": "Pattern not found"}), 404
-
-        if "is_active" in data:
-            pattern.is_active = data["is_active"]
-        if "status" in data and data["status"] in ("observed", "suggested", "active", "disabled"):
-            pattern.status = data["status"]
-            if data["status"] == "disabled":
-                pattern.is_active = False
-            elif data["status"] in ("observed", "suggested", "active"):
-                pattern.is_active = True
-
-        pattern.updated_at = datetime.now(timezone.utc)
-        session.commit()
-        return jsonify({"success": True, "id": pattern.id, "status": pattern.status})
-    finally:
-        session.close()
-
-
-@app.route("/api/patterns/<int:pattern_id>", methods=["DELETE"])
-def api_delete_pattern(pattern_id):
-    """Delete a pattern permanently."""
-    session = get_db()
-    try:
-        pattern = session.get(LearnedPattern, pattern_id)
-        if not pattern:
-            return jsonify({"error": "Pattern not found"}), 404
-
-        # Delete match logs first
-        session.query(PatternMatchLog).filter_by(pattern_id=pattern_id).delete()
-        session.delete(pattern)
-        session.commit()
-        return jsonify({"success": True})
-    finally:
-        session.close()
-
-
-@app.route("/api/patterns/analyze", methods=["POST"])
-def api_trigger_analysis():
-    """Manually trigger pattern analysis."""
-    pattern_scheduler.trigger_analysis_now()
-    return jsonify({"success": True, "message": "Analysis started in background"})
-
-
-# ==============================================================================
-# Phase 2a: State History API
-# ==============================================================================
-
-@app.route("/api/state-history", methods=["GET"])
-def api_get_state_history():
-    """Get state history events with filters."""
-    session = get_db()
-    try:
-        entity_id = request.args.get("entity_id")
-        device_id = request.args.get("device_id", type=int)
-        hours = request.args.get("hours", 24, type=int)
-        limit = request.args.get("limit", 200, type=int)
-
-        cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
-        query = session.query(StateHistory).filter(
-            StateHistory.created_at >= cutoff
-        ).order_by(StateHistory.created_at.desc())
-
-        if entity_id:
-            query = query.filter_by(entity_id=entity_id)
-        if device_id:
-            query = query.filter_by(device_id=device_id)
-
-        events = query.limit(min(limit, 1000)).all()
-
-        return jsonify([{
-            "id": e.id,
-            "entity_id": e.entity_id,
-            "device_id": e.device_id,
-            "old_state": e.old_state,
-            "new_state": e.new_state,
-            "new_attributes": e.new_attributes,
-            "context": e.context,
-            "created_at": e.created_at.isoformat() if e.created_at else None,
-        } for e in events])
-    finally:
-        session.close()
-
-
-@app.route("/api/state-history/count", methods=["GET"])
-def api_state_history_count():
-    """Get total event count and date range."""
-    session = get_db()
-    try:
-
-        total = session.query(sa_func.count(StateHistory.id)).scalar() or 0
-        oldest = session.query(sa_func.min(StateHistory.created_at)).scalar()
-        newest = session.query(sa_func.max(StateHistory.created_at)).scalar()
-
-        return jsonify({
-            "total_events": total,
-            "oldest_event": oldest.isoformat() if oldest else None,
-            "newest_event": newest.isoformat() if newest else None,
-        })
-    finally:
-        session.close()
-
-
-# ==============================================================================
-# Phase 2a: Learning Stats API
-# ==============================================================================
-
-@app.route("/api/stats/learning", methods=["GET"])
-def api_learning_stats():
-    """Get learning progress statistics for dashboard."""
-    session = get_db()
-    try:
-
-
-        # Event counts
-        total_events = session.query(sa_func.count(StateHistory.id)).scalar() or 0
-        today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
-        events_today = session.query(sa_func.count(StateHistory.id)).filter(
-            StateHistory.created_at >= today_start
-        ).scalar() or 0
-
-        # Pattern counts
-        total_patterns = session.query(sa_func.count(LearnedPattern.id)).filter_by(is_active=True).scalar() or 0
-        patterns_by_type = {}
-        for ptype in ["time_based", "event_chain", "correlation"]:
-            patterns_by_type[ptype] = session.query(sa_func.count(LearnedPattern.id)).filter_by(
-                pattern_type=ptype, is_active=True
-            ).scalar() or 0
-
-        patterns_by_status = {}
-        for status in ["observed", "suggested", "active", "disabled"]:
-            patterns_by_status[status] = session.query(sa_func.count(LearnedPattern.id)).filter_by(
-                status=status
-            ).scalar() or 0
-
-        # Average confidence
-        avg_confidence = session.query(sa_func.avg(LearnedPattern.confidence)).filter_by(
-            is_active=True
-        ).scalar() or 0.0
-
-        # Top patterns (highest confidence)
-        lang = get_language()
-        top_patterns = session.query(LearnedPattern).filter_by(
-            is_active=True
-        ).order_by(LearnedPattern.confidence.desc()).limit(5).all()
-
-        # Room/Domain learning phases
-        room_domain_states = session.query(RoomDomainState).all()
-        phases = {"observing": 0, "suggesting": 0, "autonomous": 0}
-        for rds in room_domain_states:
-            phase_val = rds.learning_phase.value if rds.learning_phase else "observing"
-            phases[phase_val] = phases.get(phase_val, 0) + 1
-
-        # Events per domain (from DataCollection)
-        data_collections = session.query(DataCollection).filter_by(data_type="state_changes").all()
-        events_by_domain = {}
-        for dc in data_collections:
-            domain = session.get(Domain, dc.domain_id)
-            dname = domain.name if domain else str(dc.domain_id)
-            events_by_domain[dname] = events_by_domain.get(dname, 0) + dc.record_count
-
-        # Days of data collected
-        oldest = session.query(sa_func.min(StateHistory.created_at)).scalar()
-        if oldest and oldest.tzinfo is None:
-            oldest = oldest.replace(tzinfo=timezone.utc)
-        days_collecting = (datetime.now(timezone.utc) - oldest).days if oldest else 0
-
-        return jsonify({
-            "total_events": total_events,
-            "events_today": events_today,
-            "days_collecting": days_collecting,
-            "total_patterns": total_patterns,
-            "patterns_by_type": patterns_by_type,
-            "patterns_by_status": patterns_by_status,
-            "avg_confidence": round(avg_confidence, 3),
-            "learning_phases": phases,
-            "events_by_domain": events_by_domain,
-            "top_patterns": [{
-                "id": p.id,
-                "description": p.description_de if lang == "de" else (p.description_en or p.description_de),
-                "confidence": round(p.confidence, 3),
-                "pattern_type": p.pattern_type,
-                "match_count": p.match_count or 0,
-            } for p in top_patterns],
-            "learning_speed": get_setting("learning_speed") or "normal",
-        })
-    finally:
-        session.close()
-
-
-# ==============================================================================
-# Phase 2b: Predictions / Suggestions API
-# ==============================================================================
-
-@app.route("/api/predictions", methods=["GET"])
-def api_get_predictions():
-    """Get suggestions/predictions with filters."""
-    session = get_db()
-    try:
-        lang = get_language()
-        status = request.args.get("status")
-        limit = request.args.get("limit", 50, type=int)
-
-        query = session.query(Prediction).order_by(Prediction.created_at.desc())
-
-        if status:
-            query = query.filter_by(status=status)
-
-        preds = query.limit(min(limit, 200)).all()
-
-        return jsonify([{
-            "id": p.id,
-            "pattern_id": p.pattern_id,
-            "description": p.description_de if lang == "de" else (p.description_en or p.description_de),
-            "description_de": p.description_de,
-            "description_en": p.description_en,
-            "predicted_action": p.predicted_action,
-            "confidence": round(p.confidence, 3),
-            "status": p.status or "pending",
-            "user_response": p.user_response,
-            "was_executed": p.was_executed,
-            "previous_state": p.previous_state,
-            "executed_at": p.executed_at.isoformat() if p.executed_at else None,
-            "responded_at": p.responded_at.isoformat() if p.responded_at else None,
-            "created_at": p.created_at.isoformat() if p.created_at else None,
-        } for p in preds])
-    finally:
-        session.close()
-
-
-@app.route("/api/predictions/<int:pred_id>/confirm", methods=["POST"])
-def api_confirm_prediction(pred_id):
-    """Confirm a suggestion."""
-    result = automation_scheduler.feedback.confirm_prediction(pred_id)
-    return jsonify(result)
-
-
-@app.route("/api/predictions/<int:pred_id>/reject", methods=["POST"])
-def api_reject_prediction(pred_id):
-    """Reject a suggestion."""
-    result = automation_scheduler.feedback.reject_prediction(pred_id)
-    return jsonify(result)
-
-
-@app.route("/api/predictions/<int:pred_id>/ignore", methods=["POST"])
-def api_ignore_prediction(pred_id):
-    """Ignore / postpone a suggestion."""
-    result = automation_scheduler.feedback.ignore_prediction(pred_id)
-    return jsonify(result)
-
-
-@app.route("/api/predictions/<int:pred_id>/undo", methods=["POST"])
-def api_undo_prediction(pred_id):
-    """Undo an executed automation."""
-    result = automation_scheduler.executor.undo_prediction(pred_id)
-    return jsonify(result)
-
-
-# ==============================================================================
-# Phase 2b: Automation API
-# ==============================================================================
-
-@app.route("/api/automation/emergency-stop", methods=["POST"])
-def api_automation_emergency_stop():
-    """Activate/deactivate emergency stop for all automations."""
-    data = request.json or {}
-    active = data.get("active", True)
-    automation_scheduler.executor.set_emergency_stop(active)
-
-    # Also update system mode
-    set_setting("system_mode", "emergency_stop" if active else "normal")
-
-    return jsonify({"success": True, "emergency_stop": active})
-
-
-@app.route("/api/automation/conflicts", methods=["GET"])
-def api_get_conflicts():
-    """Get detected pattern conflicts."""
-    conflicts = automation_scheduler.conflict_det.check_conflicts()
-    return jsonify(conflicts)
-
-
-@app.route("/api/automation/generate-suggestions", methods=["POST"])
-def api_generate_suggestions():
-    """Manually trigger suggestion generation."""
-    count = automation_scheduler.suggestion_gen.generate_suggestions()
-    return jsonify({"success": True, "new_suggestions": count})
-
-
-# ==============================================================================
-# Phase 2b: Phase Management API
-# ==============================================================================
-
-@app.route("/api/phases", methods=["GET"])
-def api_get_phases():
-    """Get learning phases for all room/domain combinations."""
-    session = get_db()
-    try:
-        states = session.query(RoomDomainState).all()
-        result = []
-        for rds in states:
-            room = session.get(Room, rds.room_id) if rds.room_id else None
-            domain = session.get(Domain, rds.domain_id) if rds.domain_id else None
-            result.append({
-                "id": rds.id,
-                "room_id": rds.room_id,
-                "room_name": room.name if room else None,
-                "domain_id": rds.domain_id,
-                "domain_name": domain.name if domain else None,
-                "learning_phase": rds.learning_phase.value if rds.learning_phase else "observing",
-                "confidence_score": round(rds.confidence_score or 0, 3),
-                "is_paused": rds.is_paused,
-                "phase_started_at": rds.phase_started_at.isoformat() if rds.phase_started_at else None,
-            })
-        return jsonify(result)
-    finally:
-        session.close()
-
-
-@app.route("/api/phases/<int:room_id>/<int:domain_id>", methods=["PUT"])
-def api_set_phase(room_id, domain_id):
-    """Manually set learning phase for a room/domain."""
-    data = request.json or {}
-    if "phase" in data:
-        result = automation_scheduler.phase_mgr.set_phase_manual(room_id, domain_id, data["phase"])
-        return jsonify(result)
-    if "is_paused" in data:
-        result = automation_scheduler.phase_mgr.set_paused(room_id, domain_id, data["is_paused"])
-        return jsonify(result)
-    return jsonify({"error": "Provide 'phase' or 'is_paused'"}), 400
-
-
-# ==============================================================================
-# Phase 2b: Notifications API
-# ==============================================================================
-
-@app.route("/api/notifications", methods=["GET"])
-def api_get_notifications():
-    """Get notifications."""
-    lang = get_language()
-    unread = request.args.get("unread", "false").lower() == "true"
-    limit = request.args.get("limit", 50, type=int)
-
-    notifs = automation_scheduler.notification_mgr.get_notifications(limit, unread)
-    return jsonify([{
-        "id": n.id,
-        "type": n.notification_type.value if n.notification_type else "info",
-        "title": n.title,
-        "message": n.message,
-        "was_sent": n.was_sent,
-        "was_read": n.was_read,
-        "created_at": utc_iso(n.created_at),
-    } for n in notifs])
-
-
-@app.route("/api/notifications/unread-count", methods=["GET"])
-def api_notifications_unread_count():
-    """Get unread notification count."""
-    count = automation_scheduler.notification_mgr.get_unread_count()
-    return jsonify({"unread_count": count})
-
-
-@app.route("/api/notifications/<int:notif_id>/read", methods=["POST"])
-def api_mark_notification_read(notif_id):
-    """Mark notification as read."""
-    success = automation_scheduler.notification_mgr.mark_read(notif_id)
-    return jsonify({"success": success})
-
-
-@app.route("/api/notifications/mark-all-read", methods=["POST"])
-def api_mark_all_read():
-    """Mark all notifications as read."""
-    success = automation_scheduler.notification_mgr.mark_all_read()
-    return jsonify({"success": success})
-
-
-@app.route("/api/automation/anomalies", methods=["GET"])
-def api_get_anomalies():
-    """Get recent anomalies."""
-    anomalies = automation_scheduler.anomaly_det.check_recent_anomalies(minutes=60)
-    return jsonify(anomalies)
-
-
-# ==============================================================================
-# Frontend Serving
-# ==============================================================================
-
-@app.route("/")
-def serve_index():
-    """Serve index.html with app.jsx inlined to avoid Ingress XHR issues."""
-    frontend_dir = os.path.join(app.static_folder, "frontend")
-    index_path = os.path.join(frontend_dir, "index.html")
-    jsx_path = os.path.join(frontend_dir, "app.jsx")
-
-    try:
-        with open(index_path, "r", encoding="utf-8") as f:
-            html = f.read()
-        with open(jsx_path, "r", encoding="utf-8") as f:
-            jsx_code = f.read()
-
-        logger.info(f"Serving frontend: app.jsx has {len(jsx_code.splitlines())} lines, first line: {jsx_code.splitlines()[0][:60] if jsx_code else 'EMPTY'}")
-
-        # Inject app.jsx as a hidden text/plain script that our manual Babel code reads
-        jsx_block = '<script type="text/plain" id="app-jsx-source">\n' + jsx_code + '\n</script>'
-
-        # Must insert BEFORE the script that calls Babel.transform
-        # Replace the opening <script> + marker with: jsx_block + new <script> + marker
-        open_marker = "<script>\n        logStep('App wird kompiliert...');"
-        if open_marker in html:
-            html = html.replace(
-                open_marker,
-                jsx_block + "\n    <script>\n        logStep('App wird kompiliert...');"
-            )
-        else:
-            # Fallback: insert before </body>
-            html = html.replace('</body>', jsx_block + '\n</body>')
-
-        return html, 200, {"Content-Type": "text/html; charset=utf-8"}
-    except FileNotFoundError as e:
-        logger.error(f"Frontend file not found: {e}")
-        return f"<h1>Frontend Error</h1><p>File not found: {e}</p>", 500
-
-@app.route("/api/system/hot-update", methods=["POST"])
-def hot_update_frontend():
-    """Hot-update frontend file (app.jsx) without rebuild."""
-    data = request.json
-    if not data or "content" not in data or "filename" not in data:
-        return jsonify({"error": "need content and filename"}), 400
-    filename = data["filename"]
-    if filename not in ("app.jsx", "index.html"):
-        return jsonify({"error": "only app.jsx and index.html allowed"}), 400
-    filepath = os.path.join(app.static_folder, "frontend", filename)
-    try:
-        with open(filepath, "w", encoding="utf-8") as f:
-            f.write(data["content"])
-        logger.info(f"Hot-updated {filename} ({len(data['content'])} chars)")
-        return jsonify({"success": True, "size": len(data["content"])})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-@app.route("/<path:path>")
-def serve_frontend(path):
-    """Serve the React frontend files."""
-    # Skip API routes
-    if path.startswith("api/"):
-        return jsonify({"error": "not found"}), 404
-    # Strip frontend/ prefix if present (to avoid double-nesting)
-    if path.startswith("frontend/"):
-        path = path[len("frontend/"):]
-    if path and os.path.exists(os.path.join(app.static_folder, "frontend", path)):
-        response = send_from_directory(os.path.join(app.static_folder, "frontend"), path)
-        # Fix MIME type for .jsx files (Babel XHR needs text/javascript)
-        if path.endswith(".jsx"):
-            response.headers["Content-Type"] = "text/javascript; charset=utf-8"
-            response.headers["Access-Control-Allow-Origin"] = "*"
-        return response
-    return send_from_directory(os.path.join(app.static_folder, "frontend"), "index.html")
-
-
-# ==============================================================================
-# ==============================================================================
-# Block B: Notification Settings (complete)
-# ==============================================================================
-
-@app.route("/api/notification-settings", methods=["GET"])
-def api_get_notification_settings():
-    """Get all notification settings for current user."""
-    session = get_db()
-    try:
-        settings = session.query(NotificationSetting).filter_by(user_id=1).all()
-        channels = session.query(NotificationChannel).all()
-        mutes = session.query(DeviceMute).filter_by(user_id=1).all()
-        dnd = get_setting("dnd_enabled") == "true"
-        return jsonify({
-            "settings": [{
-                "id": s.id, "type": s.notification_type.value,
-                "is_enabled": s.is_enabled,
-                "priority": s.priority.value if s.priority else "medium",
-                "quiet_hours_start": s.quiet_hours_start,
-                "quiet_hours_end": s.quiet_hours_end,
-                "push_channel": s.push_channel,
-                "escalation_enabled": s.escalation_enabled,
-                "escalation_minutes": s.escalation_minutes,
-                "geofencing_only_away": s.geofencing_only_away,
-            } for s in settings],
-            "channels": [{
-                "id": c.id, "service_name": c.service_name,
-                "display_name": c.display_name, "channel_type": c.channel_type,
-                "is_enabled": c.is_enabled,
-            } for c in channels],
-            "muted_devices": [{
-                "id": m.id, "device_id": m.device_id, "reason": m.reason,
-                "muted_until": m.muted_until.isoformat() if m.muted_until else None,
-            } for m in mutes],
-            "dnd_enabled": dnd,
-        })
-    finally:
-        session.close()
-
-
-@app.route("/api/notification-settings", methods=["PUT"])
-def api_update_notification_settings():
-    """Update notification settings."""
-    data = request.json
-    session = get_db()
-    try:
-        ntype = data.get("type")
-        existing = session.query(NotificationSetting).filter_by(
-            user_id=1, notification_type=NotificationType(ntype)
-        ).first()
-        if not existing:
-            existing = NotificationSetting(user_id=1, notification_type=NotificationType(ntype))
-            session.add(existing)
-        for key in ["is_enabled", "quiet_hours_start", "quiet_hours_end",
-                     "push_channel", "escalation_enabled", "escalation_minutes",
-                     "geofencing_only_away"]:
-            if key in data:
-                setattr(existing, key, data[key])
-        if "priority" in data:
-            existing.priority = NotificationPriority(data["priority"])
-        session.commit()
-        return jsonify({"success": True})
-    except Exception as e:
-        session.rollback()
-        return jsonify({"error": str(e)}), 500
-    finally:
-        session.close()
-
-
-@app.route("/api/notification-settings/dnd", methods=["PUT"])
-def api_toggle_dnd():
-    """Toggle Do-Not-Disturb mode."""
-    data = request.json
-    set_setting("dnd_enabled", "true" if data.get("enabled") else "false")
-    return jsonify({"success": True, "dnd_enabled": data.get("enabled", False)})
-
-
-@app.route("/api/notification-settings/mute-device", methods=["POST"])
-def api_mute_device():
-    """Mute notifications for a specific device."""
-    data = request.json
-    session = get_db()
-    try:
-        mute = DeviceMute(
-            device_id=data["device_id"], user_id=1,
-            reason=data.get("reason"), muted_until=None
-        )
-        session.add(mute)
-        session.commit()
-        return jsonify({"success": True, "id": mute.id})
-    except Exception as e:
-        session.rollback()
-        return jsonify({"error": str(e)}), 500
-    finally:
-        session.close()
-
-
-@app.route("/api/notification-settings/unmute-device/<int:mute_id>", methods=["DELETE"])
-def api_unmute_device(mute_id):
-    """Unmute a device."""
-    session = get_db()
-    try:
-        mute = session.get(DeviceMute, mute_id)
-        if mute:
-            session.delete(mute)
-            session.commit()
-        return jsonify({"success": True})
-    finally:
-        session.close()
-
-
-@app.route("/api/notification-settings/discover-channels", methods=["POST"])
-def api_discover_notification_channels():
-    """Discover available HA notification services."""
-    session = get_db()
-    try:
-        services = ha.get_services()
-        found = 0
-        for svc in services:
-            if svc.get("domain") == "notify":
-                for name in svc.get("services", {}).keys():
-                    svc_name = f"notify.{name}"
-                    existing = session.query(NotificationChannel).filter_by(service_name=svc_name).first()
-                    if not existing:
-                        ch_type = "push" if "mobile" in name else "persistent" if "persistent" in name else "other"
-                        channel = NotificationChannel(
-                            service_name=svc_name,
-                            display_name=name.replace("_", " ").title(),
-                            channel_type=ch_type
-                        )
-                        session.add(channel)
-                        found += 1
-        session.commit()
-        return jsonify({"success": True, "found": found})
-    except Exception as e:
-        session.rollback()
-        return jsonify({"error": str(e)}), 500
-    finally:
-        session.close()
-
-
-@app.route("/api/notification-stats", methods=["GET"])
-def api_notification_stats():
-    """Get notification statistics for current month."""
-    session = get_db()
-    try:
-        cutoff = datetime.now(timezone.utc) - timedelta(days=30)
-        total = session.query(sa_func.count(NotificationLog.id)).filter(
-            NotificationLog.created_at >= cutoff
-        ).scalar() or 0
-        read = session.query(sa_func.count(NotificationLog.id)).filter(
-            NotificationLog.created_at >= cutoff, NotificationLog.was_read == True
-        ).scalar() or 0
-        sent = session.query(sa_func.count(NotificationLog.id)).filter(
-            NotificationLog.created_at >= cutoff, NotificationLog.was_sent == True
-        ).scalar() or 0
-        return jsonify({"total": total, "read": read, "unread": total - read, "sent": sent, "pushed": sent, "period_days": 30})
-    finally:
-        session.close()
-
-
-@app.route("/api/test-notification", methods=["POST"])
-def api_test_notification():
-    """Send a test push notification to a specific channel."""
-    data = request.get_json() or {}
-    target = data.get("target", "notify")
-    message = data.get("message", "MindHome Test Notification")
-    title = data.get("title", "MindHome Test")
-    result = ha.send_notification(message, title=title, target=target)
-    audit_log("test_notification", {"target": target})
-    return jsonify({"success": result is not None, "target": target})
-
-
-# ==============================================================================
-# Block B: Pattern Management (exclusions, rejections, manual rules)
-# ==============================================================================
-
-@app.route("/api/patterns/reject/<int:pattern_id>", methods=["PUT"])
-def api_reject_pattern(pattern_id):
-    """Reject a pattern and archive it with reason."""
-    data = request.json
-    session = get_db()
-    try:
-        pattern = session.get(LearnedPattern, pattern_id)
-        if not pattern:
-            return jsonify({"error": "Not found"}), 404
-        pattern.status = "rejected"
-        pattern.is_active = False
-        pattern.rejection_reason = data.get("reason", "unwanted")
-        pattern.rejected_at = datetime.now(timezone.utc)
-        pattern.times_rejected = (pattern.times_rejected or 0) + 1
-        session.commit()
-        return jsonify({"success": True})
-    except Exception as e:
-        session.rollback()
-        return jsonify({"error": str(e)}), 500
-    finally:
-        session.close()
-
-
-@app.route("/api/patterns/reactivate/<int:pattern_id>", methods=["PUT"])
-def api_reactivate_pattern(pattern_id):
-    """Reactivate a rejected pattern."""
-    session = get_db()
-    try:
-        pattern = session.get(LearnedPattern, pattern_id)
-        if not pattern:
-            return jsonify({"error": "Not found"}), 404
-        pattern.status = "suggested"
-        pattern.is_active = True
-        pattern.rejection_reason = None
-        pattern.rejected_at = None
-        session.commit()
-        return jsonify({"success": True})
-    except Exception as e:
-        session.rollback()
-        return jsonify({"error": str(e)}), 500
-    finally:
-        session.close()
-
-
-@app.route("/api/patterns/rejected", methods=["GET"])
-def api_get_rejected_patterns():
-    """Get all rejected patterns."""
-    session = get_db()
-    try:
-        patterns = session.query(LearnedPattern).filter_by(status="rejected").order_by(
-            LearnedPattern.rejected_at.desc()
-        ).all()
-        lang = get_language()
-        return jsonify([{
-            "id": p.id, "pattern_type": p.pattern_type,
-            "description": p.description_de if lang == "de" else p.description_en,
-            "confidence": p.confidence, "rejection_reason": p.rejection_reason,
-            "rejected_at": p.rejected_at.isoformat() if p.rejected_at else None,
-            "category": p.category,
-        } for p in patterns])
-    finally:
-        session.close()
-
-
-@app.route("/api/patterns/test-mode/<int:pattern_id>", methods=["PUT"])
-def api_pattern_test_mode(pattern_id):
-    """Toggle test/simulation mode for a pattern."""
-    data = request.json
-    session = get_db()
-    try:
-        pattern = session.get(LearnedPattern, pattern_id)
-        if not pattern:
-            return jsonify({"error": "Not found"}), 404
-        pattern.test_mode = data.get("enabled", True)
-        if pattern.test_mode:
-            pattern.test_results = []
-        session.commit()
-        return jsonify({"success": True, "test_mode": pattern.test_mode})
-    finally:
-        session.close()
-
-
-@app.route("/api/pattern-exclusions", methods=["GET"])
-def api_get_exclusions():
-    """Get all pattern exclusions."""
-    session = get_db()
-    try:
-        exclusions = session.query(PatternExclusion).all()
-        return jsonify([{
-            "id": e.id, "type": e.exclusion_type,
-            "entity_a": e.entity_a, "entity_b": e.entity_b,
-            "reason": e.reason,
-        } for e in exclusions])
-    finally:
-        session.close()
-
-
-@app.route("/api/pattern-exclusions", methods=["POST"])
-def api_create_exclusion():
-    """Create a pattern exclusion rule."""
-    data = request.json
-    session = get_db()
-    try:
-        excl = PatternExclusion(
-            exclusion_type=data.get("type", "device_pair"),
-            entity_a=data["entity_a"], entity_b=data["entity_b"],
-            reason=data.get("reason"), created_by=1
-        )
-        session.add(excl)
-        session.commit()
-        return jsonify({"success": True, "id": excl.id}), 201
-    except Exception as e:
-        session.rollback()
-        return jsonify({"error": str(e)}), 500
-    finally:
-        session.close()
-
-
-@app.route("/api/pattern-exclusions/<int:excl_id>", methods=["DELETE"])
-def api_delete_exclusion(excl_id):
-    """Delete a pattern exclusion."""
-    session = get_db()
-    try:
-        excl = session.get(PatternExclusion, excl_id)
-        if excl:
-            session.delete(excl)
-            session.commit()
-        return jsonify({"success": True})
-    finally:
-        session.close()
-
-
-@app.route("/api/manual-rules", methods=["GET"])
-def api_get_manual_rules():
-    """Get all manual rules."""
-    session = get_db()
-    try:
-        rules = session.query(ManualRule).order_by(ManualRule.created_at.desc()).all()
-        return jsonify([{
-            "id": r.id, "name": r.name,
-            "trigger_entity": r.trigger_entity, "trigger_state": r.trigger_state,
-            "action_entity": r.action_entity, "action_service": r.action_service,
-            "action_data": r.action_data, "conditions": r.conditions,
-            "delay_seconds": r.delay_seconds, "is_active": r.is_active,
-            "execution_count": r.execution_count,
-            "last_executed_at": r.last_executed_at.isoformat() if r.last_executed_at else None,
-        } for r in rules])
-    finally:
-        session.close()
-
-
-@app.route("/api/manual-rules", methods=["POST"])
-def api_create_manual_rule():
-    """Create a manual rule."""
-    data = request.json
-    session = get_db()
-    try:
-        rule = ManualRule(
-            name=data.get("name", "Rule"),
-            trigger_entity=data["trigger_entity"],
-            trigger_state=data["trigger_state"],
-            action_entity=data["action_entity"],
-            action_service=data.get("action_service", "turn_on"),
-            action_data=data.get("action_data"),
-            conditions=data.get("conditions"),
-            delay_seconds=data.get("delay_seconds", 0),
-            is_active=True, created_by=1
-        )
-        session.add(rule)
-        session.commit()
-        return jsonify({"success": True, "id": rule.id}), 201
-    except Exception as e:
-        session.rollback()
-        return jsonify({"error": str(e)}), 500
-    finally:
-        session.close()
-
-
-@app.route("/api/manual-rules/<int:rule_id>", methods=["PUT"])
-def api_update_manual_rule(rule_id):
-    """Update a manual rule."""
-    data = request.json
-    session = get_db()
-    try:
-        rule = session.get(ManualRule, rule_id)
-        if not rule:
-            return jsonify({"error": "Not found"}), 404
-        for key in ["name", "trigger_entity", "trigger_state", "action_entity",
-                     "action_service", "action_data", "conditions", "delay_seconds", "is_active"]:
-            if key in data:
-                setattr(rule, key, data[key])
-        session.commit()
-        return jsonify({"success": True})
-    except Exception as e:
-        session.rollback()
-        return jsonify({"error": str(e)}), 500
-    finally:
-        session.close()
-
-
-@app.route("/api/manual-rules/<int:rule_id>", methods=["DELETE"])
-def api_delete_manual_rule(rule_id):
-    """Delete a manual rule."""
-    session = get_db()
-    try:
-        rule = session.get(ManualRule, rule_id)
-        if rule:
-            session.delete(rule)
-            session.commit()
-        return jsonify({"success": True})
-    finally:
-        session.close()
-
-
-# ==============================================================================
-# Block B: Anomaly Settings
-# ==============================================================================
-
-@app.route("/api/anomaly-settings", methods=["GET"])
-def api_get_anomaly_settings():
-    """Get anomaly detection settings."""
-    session = get_db()
-    try:
-        settings = session.query(AnomalySetting).all()
-        return jsonify([{
-            "id": s.id, "room_id": s.room_id, "domain_id": s.domain_id,
-            "device_id": s.device_id, "sensitivity": s.sensitivity,
-            "stuck_detection": s.stuck_detection, "time_anomaly": s.time_anomaly,
-            "frequency_anomaly": s.frequency_anomaly,
-            "whitelisted_hours": s.whitelisted_hours,
-            "auto_action": s.auto_action,
-        } for s in settings])
-    finally:
-        session.close()
-
-
-@app.route("/api/anomaly-settings", methods=["POST"])
-def api_create_anomaly_setting():
-    """Create or update anomaly setting."""
-    data = request.json
-    session = get_db()
-    try:
-        setting = AnomalySetting(
-            room_id=data.get("room_id"), domain_id=data.get("domain_id"),
-            device_id=data.get("device_id"),
-            sensitivity=data.get("sensitivity", "medium"),
-            stuck_detection=data.get("stuck_detection", True),
-            time_anomaly=data.get("time_anomaly", True),
-            frequency_anomaly=data.get("frequency_anomaly", True),
-            whitelisted_hours=data.get("whitelisted_hours"),
-            auto_action=data.get("auto_action"),
-        )
-        session.add(setting)
-        session.commit()
-        return jsonify({"success": True, "id": setting.id}), 201
-    except Exception as e:
-        session.rollback()
-        return jsonify({"error": str(e)}), 500
-    finally:
-        session.close()
-
-
-# ==============================================================================
-# Block B: Validation & Learning Phase extensions
-# ==============================================================================
-
-@app.route("/api/validate-config", methods=["GET"])
-def api_validate_config():
-    """Validate MindHome configuration - find issues."""
-    session = get_db()
-    try:
-        issues = []
-        # Devices without room
-        orphan_devices = session.query(Device).filter(Device.room_id == None, Device.is_tracked == True).count()
-        if orphan_devices > 0:
-            issues.append({"type": "warning", "key": "orphan_devices",
-                "message_de": f"{orphan_devices} überwachte Geräte ohne Raum-Zuweisung",
-                "message_en": f"{orphan_devices} tracked devices without room assignment"})
-
-        # Rooms without devices
-        for room in session.query(Room).filter_by(is_active=True).all():
-            dev_count = session.query(Device).filter_by(room_id=room.id).count()
-            if dev_count == 0:
-                issues.append({"type": "info", "key": "empty_room",
-                    "message_de": f"Raum '{room.name}' hat keine Geräte",
-                    "message_en": f"Room '{room.name}' has no devices"})
-
-        # Domains enabled but no devices
-        for domain in session.query(Domain).filter_by(is_enabled=True).all():
-            dev_count = session.query(Device).filter_by(domain_id=domain.id, is_tracked=True).count()
-            if dev_count == 0:
-                issues.append({"type": "info", "key": "empty_domain",
-                    "message_de": f"Domain '{domain.display_name_de}' aktiv aber keine Geräte zugewiesen",
-                    "message_en": f"Domain '{domain.display_name_en}' active but no devices assigned"})
-
-        # HA connection
-        if not ha.connected:
-            issues.append({"type": "error", "key": "ha_disconnected",
-                "message_de": "Home Assistant nicht verbunden",
-                "message_en": "Home Assistant not connected"})
-
-        return jsonify({"valid": len([i for i in issues if i["type"] == "error"]) == 0, "issues": issues})
-    finally:
-        session.close()
-
-
-@app.route("/api/phases/<int:room_id>/<int:domain_id>/progress", methods=["GET"])
-def api_phase_progress(room_id, domain_id):
-    """Get learning phase progress details."""
-    session = get_db()
-    try:
-        rds = session.query(RoomDomainState).filter_by(room_id=room_id, domain_id=domain_id).first()
-        if not rds:
-            return jsonify({"error": "Not found"}), 404
-
-        # Count events and patterns for this room+domain
-        event_count = session.query(sa_func.count(StateHistory.id)).join(Device).filter(
-            Device.room_id == room_id, Device.domain_id == domain_id
-        ).scalar() or 0
-
-        pattern_count = session.query(sa_func.count(LearnedPattern.id)).filter_by(
-            room_id=room_id, domain_id=domain_id
-        ).scalar() or 0
-
-        active_patterns = session.query(sa_func.count(LearnedPattern.id)).filter_by(
-            room_id=room_id, domain_id=domain_id, status="active"
-        ).scalar() or 0
-
-        # Progress calculation
-        phase = rds.learning_phase.value if rds.learning_phase else "observing"
-        if phase == "observing":
-            needed = 100  # events needed
-            progress = min(100, int(event_count / needed * 100))
-            next_phase = "suggesting"
-        elif phase == "suggesting":
-            needed = 5  # confirmed patterns needed
-            progress = min(100, int(active_patterns / needed * 100))
-            next_phase = "autonomous"
-        else:
-            progress = 100
-            next_phase = None
-
-        speed = get_setting("learning_speed") or "normal"
-
-        return jsonify({
-            "phase": phase, "confidence": rds.confidence_score,
-            "is_paused": rds.is_paused, "progress_percent": progress,
-            "events_collected": event_count, "patterns_found": pattern_count,
-            "patterns_active": active_patterns, "next_phase": next_phase,
-            "learning_speed": speed,
-        })
-    finally:
-        session.close()
-
-
-@app.route("/api/phases/speed", methods=["PUT"])
-def api_set_learning_speed():
-    """Set global learning speed."""
-    data = request.json
-    speed = data.get("speed", "normal")  # "conservative", "normal", "aggressive"
-    set_setting("learning_speed", speed)
-    return jsonify({"success": True, "speed": speed})
-
-
-@app.route("/api/phases/<int:room_id>/<int:domain_id>/reset", methods=["POST"])
-def api_reset_phase(room_id, domain_id):
-    """Reset learning for a room+domain - delete patterns and restart."""
-    session = get_db()
-    try:
-        # Reset phase
-        rds = session.query(RoomDomainState).filter_by(room_id=room_id, domain_id=domain_id).first()
-        if rds:
-            rds.learning_phase = LearningPhase.OBSERVING
-            rds.confidence_score = 0.0
-
-        # Delete patterns for this room+domain
-        session.query(LearnedPattern).filter_by(room_id=room_id, domain_id=domain_id).delete()
-        session.commit()
-
-        lang = get_language()
-        return jsonify({"success": True,
-            "message": "Lernphase zurückgesetzt" if lang == "de" else "Learning phase reset"})
-    except Exception as e:
-        session.rollback()
-        return jsonify({"error": str(e)}), 500
-    finally:
-        session.close()
-
-
-# ==============================================================================
-# Block B.9: Weekly Report & Energy Estimate
-# ==============================================================================
-
-@app.route("/api/report/weekly", methods=["GET"])
-def api_weekly_report():
-    """Generate a weekly summary report."""
-    session = get_db()
-    try:
-        now = datetime.now(timezone.utc)
-        week_ago = now - timedelta(days=7)
-
-        # Events this week
-        events_count = session.query(sa_func.count(StateHistory.id)).filter(
-            StateHistory.created_at >= week_ago
-        ).scalar() or 0
-
-        # New patterns
-        new_patterns = session.query(sa_func.count(LearnedPattern.id)).filter(
-            LearnedPattern.created_at >= week_ago
-        ).scalar() or 0
-
-        # Active patterns
-        active_patterns = session.query(sa_func.count(LearnedPattern.id)).filter(
-            LearnedPattern.status == "active", LearnedPattern.is_active == True
-        ).scalar() or 0
-
-        # Automations executed
-        automations = session.query(sa_func.count(ActionLog.id)).filter(
-            ActionLog.action_type == "automation",
-            ActionLog.created_at >= week_ago
-        ).scalar() or 0
-
-        # Automations undone
-        undone = session.query(sa_func.count(ActionLog.id)).filter(
-            ActionLog.action_type == "automation",
-            ActionLog.was_undone == True,
-            ActionLog.created_at >= week_ago
-        ).scalar() or 0
-
-        # Anomalies
-        anomalies = session.query(sa_func.count(NotificationLog.id)).filter(
-            NotificationLog.notification_type == NotificationType.ANOMALY,
-            NotificationLog.created_at >= week_ago
-        ).scalar() or 0
-
-        # Success rate
-        success_rate = round((1 - undone / max(automations, 1)) * 100, 1)
-
-        # Energy estimate: each automation that turns off a light saves ~0.06 kWh
-        # This is a rough estimate
-        off_automations = session.query(sa_func.count(ActionLog.id)).filter(
-            ActionLog.action_type == "automation",
-            ActionLog.created_at >= week_ago,
-            ActionLog.action_data.contains('"new_state": "off"')
-        ).scalar() or 0
-        energy_saved_kwh = round(off_automations * 0.06, 2)
-
-        # Learning progress per room
-        room_progress = []
-        rooms = session.query(Room).filter_by(is_active=True).all()
-        for room in rooms:
-            states = session.query(RoomDomainState).filter_by(room_id=room.id).all()
-            phases = [s.learning_phase.value if s.learning_phase else "observing" for s in states]
-            most_advanced = "autonomous" if "autonomous" in phases else "suggesting" if "suggesting" in phases else "observing"
-            room_progress.append({"room": room.name, "phase": most_advanced})
-
-        lang = get_language()
-        return jsonify({
-            "period": {"from": week_ago.isoformat(), "to": now.isoformat()},
-            "events_collected": events_count,
-            "new_patterns": new_patterns,
-            "active_patterns": active_patterns,
-            "automations_executed": automations,
-            "automations_undone": undone,
-            "success_rate": success_rate,
-            "anomalies_detected": anomalies,
-            "energy_saved_kwh": energy_saved_kwh,
-            "room_progress": room_progress,
-        })
-    finally:
-        session.close()
-
-
-# ==============================================================================
-# Backup / Restore
-# ==============================================================================
-
-@app.route("/api/backup/export", methods=["GET"])
-def api_backup_export():
-    """Export MindHome data as JSON. mode=standard|full|custom"""
-    mode = request.args.get("mode", "standard")
-    history_days = request.args.get("history_days", 90, type=int)
-    session = get_db()
-    try:
-        backup = {
-            "version": "0.5.0",
-            "export_mode": mode,
-            "exported_at": datetime.now(timezone.utc).isoformat(),
-            "rooms": [], "devices": [], "users": [], "domains": [],
-            "room_domain_states": [], "settings": [], "quick_actions": [],
-            "action_log": [], "user_preferences": [],
-            "patterns": [], "pattern_exclusions": [], "manual_rules": [],
-            "anomaly_settings": [], "notification_settings": [],
-            "notification_channels": [], "device_mutes": [],
-            "device_groups": [], "calendar_triggers": [],
+        })();
+    }, []);
+
+    const saveRetention = async () => {
+        const days = parseInt(retentionInput);
+        if (isNaN(days) || days < 1) return;
+        const result = await api.put('system/retention', { days });
+        if (result?.success) {
+            setRetention(days);
+            showToast(lang === 'de' ? `Aufbewahrung auf ${days} Tage gesetzt` : `Retention set to ${days} days`, 'success');
         }
-        for r in session.query(Room).all():
-            backup["rooms"].append({"id": r.id, "name": r.name, "ha_area_id": r.ha_area_id,
-                "icon": r.icon, "privacy_mode": r.privacy_mode, "is_active": r.is_active})
-        for d in session.query(Device).all():
-            backup["devices"].append({"id": d.id, "ha_entity_id": d.ha_entity_id, "name": d.name,
-                "domain_id": d.domain_id, "room_id": d.room_id,
-                "is_tracked": d.is_tracked, "is_controllable": d.is_controllable, "device_meta": d.device_meta})
-        for u in session.query(User).all():
-            backup["users"].append({"id": u.id, "name": u.name, "ha_person_entity": u.ha_person_entity,
-                "role": u.role.value if u.role else "user", "language": u.language})
-        for d in session.query(Domain).all():
-            backup["domains"].append({"id": d.id, "name": d.name, "is_enabled": d.is_enabled,
-                "is_custom": getattr(d, 'is_custom', False),
-                "display_name_de": d.display_name_de, "display_name_en": d.display_name_en,
-                "icon": d.icon, "description_de": d.description_de, "description_en": d.description_en})
-        for rds in session.query(RoomDomainState).all():
-            backup["room_domain_states"].append({"room_id": rds.room_id, "domain_id": rds.domain_id,
-                "learning_phase": rds.learning_phase.value if rds.learning_phase else "observing",
-                "confidence_score": rds.confidence_score, "is_paused": rds.is_paused})
-        for s in session.query(SystemSetting).all():
-            backup["settings"].append({"key": s.key, "value": s.value})
-        for log in session.query(ActionLog).order_by(ActionLog.created_at.desc()).limit(500).all():
-            backup["action_log"].append({"action_type": log.action_type, "domain_id": log.domain_id,
-                "room_id": log.room_id, "device_id": log.device_id,
-                "action_data": log.action_data, "reason": log.reason,
-                "was_undone": log.was_undone, "created_at": log.created_at.isoformat()})
-        for up in session.query(UserPreference).all():
-            backup["user_preferences"].append({"user_id": up.user_id, "room_id": up.room_id,
-                "preference_key": up.preference_key, "preference_value": up.preference_value})
-        # Patterns
-        for p in session.query(LearnedPattern).all():
-            backup["patterns"].append({"id": p.id, "pattern_type": p.pattern_type,
-                "description_de": p.description_de, "description_en": p.description_en,
-                "confidence": p.confidence, "status": p.status, "is_active": p.is_active,
-                "room_id": p.room_id, "domain_id": p.domain_id,
-                "trigger_conditions": p.trigger_conditions, "action_definition": p.action_definition,
-                "pattern_data": p.pattern_data, "match_count": p.match_count,
-                "test_mode": p.test_mode, "created_at": utc_iso(p.created_at)})
-        # Pattern exclusions
-        for pe in session.query(PatternExclusion).all():
-            backup["pattern_exclusions"].append({"id": pe.id, "exclusion_type": pe.exclusion_type,
-                "entity_a": pe.entity_a, "entity_b": pe.entity_b, "reason": pe.reason})
-        # Manual rules
-        for mr in session.query(ManualRule).all():
-            backup["manual_rules"].append({"id": mr.id, "name": mr.name,
-                "trigger_entity": mr.trigger_entity, "trigger_state": mr.trigger_state,
-                "action_entity": mr.action_entity, "action_service": mr.action_service,
-                "is_active": mr.is_active})
-        # Anomaly settings
-        for asetting in session.query(AnomalySetting).all():
-            backup["anomaly_settings"].append({"id": asetting.id, "room_id": asetting.room_id,
-                "domain_id": asetting.domain_id, "device_id": asetting.device_id,
-                "sensitivity": asetting.sensitivity, "stuck_detection": asetting.stuck_detection,
-                "time_anomaly": asetting.time_anomaly, "frequency_anomaly": asetting.frequency_anomaly,
-                "whitelisted_hours": asetting.whitelisted_hours, "auto_action": asetting.auto_action})
-        # Notification settings
-        for ns in session.query(NotificationSetting).all():
-            backup["notification_settings"].append({"notification_type": ns.notification_type,
-                "is_enabled": ns.is_enabled, "priority": ns.priority, "sound": ns.sound,
-                "channel": ns.channel})
-        # Notification channels
-        for nc in session.query(NotificationChannel).all():
-            backup["notification_channels"].append({"id": nc.id, "name": nc.name,
-                "ha_service": nc.ha_service, "is_active": nc.is_active})
-        # Device mutes
-        for dm in session.query(DeviceMute).all():
-            backup["device_mutes"].append({"id": dm.id, "device_id": dm.device_id,
-                "mute_until": utc_iso(dm.mute_until) if dm.mute_until else None,
-                "reason": dm.reason})
-        # Device groups
-        for g in session.query(DeviceGroup).all():
-            backup["device_groups"].append({"id": g.id, "name": g.name,
-                "room_id": g.room_id, "device_ids": g.device_ids, "is_active": g.is_active})
-        # Quick actions
-        backup["quick_actions"] = []
-        for qa in session.query(QuickAction).all():
-            backup["quick_actions"].append({"id": qa.id, "name_de": qa.name_de, "name_en": qa.name_en, "icon": qa.icon,
-                "action_data": qa.action_data,
-                "sort_order": qa.sort_order, "is_active": qa.is_active})
+    };
 
-        # Full/Custom mode: include historical data
-        if mode in ("full", "custom"):
-            cutoff = datetime.now(timezone.utc) - timedelta(days=history_days)
+    const handleCleanup = async () => {
+        setCleaning(true);
+        const result = await api.post('system/cleanup');
+        if (result?.success) {
+            showToast(lang === 'de' ? `${result.deleted || 0} Einträge gelöscht` : `${result.deleted || 0} entries deleted`, 'success');
+            const info = await api.get('system/info');
+            if (info) setSysInfo(info);
+        }
+        setCleaning(false);
+    };
 
-            # State History (limited by days)
-            backup["state_history"] = []
-            for sh in session.query(StateHistory).filter(StateHistory.created_at >= cutoff).order_by(StateHistory.created_at.desc()).all():
-                backup["state_history"].append({"device_id": sh.device_id, "entity_id": sh.entity_id,
-                    "old_state": sh.old_state, "new_state": sh.new_state,
-                    "old_attributes": sh.old_attributes, "new_attributes": sh.new_attributes,
-                    "context": sh.context, "created_at": utc_iso(sh.created_at)})
+    const handleExport = async (mode = 'standard') => {
+        showToast(lang === 'de' ? 'Backup wird erstellt...' : 'Creating backup...', 'info');
+        const backup = await api.get(`backup/export?mode=${mode}`);
+        if (backup) {
+            const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `mindhome-${mode}-backup-${new Date().toISOString().slice(0,10)}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+            const s = backup._summary || {};
+            showToast(lang === 'de'
+                ? `Backup: ${s.rooms || 0} Räume, ${s.devices || 0} Geräte, ${s.patterns || 0} Muster`
+                : `Backup: ${s.rooms || 0} rooms, ${s.devices || 0} devices, ${s.patterns || 0} patterns`, 'success');
+        }
+    };
 
-            # Predictions
-            backup["predictions"] = []
-            for p in session.query(Prediction).all():
-                backup["predictions"].append({"id": p.id, "pattern_id": p.pattern_id,
-                    "predicted_action": p.predicted_action, "confidence": p.confidence,
-                    "status": p.status, "user_response": p.user_response,
-                    "description_de": p.description_de, "description_en": p.description_en,
-                    "created_at": utc_iso(p.created_at)})
+    const [importPreview, setImportPreview] = useState(null);
 
-            # Notification Log
-            backup["notification_log"] = []
-            for nl in session.query(NotificationLog).filter(NotificationLog.created_at >= cutoff).all():
-                backup["notification_log"].append({"id": nl.id,
-                    "notification_type": nl.notification_type, "title": nl.title,
-                    "message": nl.message, "was_read": nl.was_read,
-                    "created_at": utc_iso(nl.created_at)})
+    const handleImport = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        try {
+            const text = await file.text();
+            const data = JSON.parse(text);
+            // Show preview first
+            if (data._summary) {
+                setImportPreview({ data, summary: data._summary, filename: file.name });
+            } else {
+                // Old format without summary - import directly
+                const result = await api.post('backup/import', data);
+                if (result?.success) {
+                    showToast(lang === 'de'
+                        ? `Backup geladen: ${result.imported.rooms} Räume, ${result.imported.devices} Geräte`
+                        : `Backup loaded: ${result.imported.rooms} rooms, ${result.imported.devices} devices`, 'success');
+                    await refreshData();
+                }
+            }
+        } catch (err) {
+            showToast(lang === 'de' ? 'Ungültige Datei' : 'Invalid file', 'error');
+        }
+        e.target.value = '';
+    };
 
-            # Audit Trail
-            backup["audit_trail"] = []
-            for at in session.query(AuditTrail).filter(AuditTrail.created_at >= cutoff).all():
-                backup["audit_trail"].append({"action": at.action, "target": at.target,
-                    "details": at.details, "created_at": utc_iso(at.created_at)})
+    const confirmImport = async () => {
+        if (!importPreview) return;
+        try {
+            const result = await api.post('backup/import', importPreview.data);
+            if (result?.success) {
+                showToast(lang === 'de'
+                    ? `Backup geladen: ${result.imported.rooms} Räume, ${result.imported.devices} Geräte`
+                    : `Backup loaded: ${result.imported.rooms} rooms, ${result.imported.devices} devices`, 'success');
+                await refreshData();
+            } else {
+                showToast(result?.error || 'Import failed', 'error');
+            }
+        } catch (err) {
+            showToast('Import error', 'error');
+        }
+        setImportPreview(null);
+    };
 
-            # Action Log (all, not just 500)
-            backup["action_log"] = []
-            for log in session.query(ActionLog).filter(ActionLog.created_at >= cutoff).order_by(ActionLog.created_at.desc()).all():
-                backup["action_log"].append({"action_type": log.action_type, "domain_id": log.domain_id,
-                    "room_id": log.room_id, "device_id": log.device_id,
-                    "action_data": log.action_data, "reason": log.reason,
-                    "was_undone": log.was_undone, "created_at": log.created_at.isoformat()})
+    const InfoRow = ({ label, value }) => (
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14 }}>
+            <span style={{ color: 'var(--text-secondary)' }}>{label}</span>
+            <span style={{ fontFamily: 'var(--font-mono)' }}>{value}</span>
+        </div>
+    );
 
-            # Pattern Match Log
-            backup["pattern_match_log"] = []
-            for pm in session.query(PatternMatchLog).filter(PatternMatchLog.matched_at >= cutoff).all():
-                backup["pattern_match_log"].append({"pattern_id": pm.pattern_id,
-                    "matched_at": utc_iso(pm.matched_at), "context": pm.context})
+    return (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16, alignItems: 'start' }}>
+            {/* Import Preview Modal */}
+            {importPreview && (
+                <Modal title={lang === 'de' ? 'Backup-Vorschau' : 'Backup Preview'} onClose={() => setImportPreview(null)} actions={<>
+                    <button className="btn btn-secondary" onClick={() => setImportPreview(null)}>{lang === 'de' ? 'Abbrechen' : 'Cancel'}</button>
+                    <button className="btn btn-primary" onClick={confirmImport}>{lang === 'de' ? 'Importieren' : 'Import'}</button>
+                </>}>
+                    <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 12 }}>{importPreview.filename}</p>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
+                        {Object.entries(importPreview.summary).map(([key, val]) => (
+                            <div key={key} style={{ padding: '8px 10px', background: 'var(--bg-main)', borderRadius: 8 }}>
+                                <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--accent-primary)' }}>{val}</div>
+                                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{key.replace(/_/g, ' ')}</div>
+                            </div>
+                        ))}
+                    </div>
+                    {importPreview.data.export_mode && (
+                        <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 8 }}>
+                            Modus: {importPreview.data.export_mode} · {importPreview.data.exported_at?.slice(0, 10)}
+                        </p>
+                    )}
+                </Modal>
+            )}
+            {/* LEFT COLUMN */}
+            <div>
+            <div className="card" style={{ marginBottom: 16 }}>
+                <div className="card-title" style={{ marginBottom: 16 }}>
+                    {lang === 'de' ? 'Darstellung' : 'Appearance'}
+                </div>
 
-            # Data Collection
-            backup["data_collection"] = []
-            for dc in session.query(DataCollection).filter(DataCollection.created_at >= cutoff).all():
-                backup["data_collection"].append({"domain_id": dc.domain_id,
-                    "data_type": dc.data_type, "storage_size_bytes": dc.storage_size_bytes,
-                    "created_at": utc_iso(dc.created_at)})
+                <div className="input-group" style={{ marginBottom: 16 }}>
+                    <Dropdown
+                        label={lang === 'de' ? 'Sprache' : 'Language'}
+                        value={lang}
+                        onChange={v => setLang(v)}
+                        options={[
+                            { value: 'de', label: '🇩🇪 Deutsch' },
+                            { value: 'en', label: '🇬🇧 English' },
+                        ]}
+                    />
+                </div>
 
-            # Offline Action Queue
-            backup["offline_queue"] = []
-            for oq in session.query(OfflineActionQueue).all():
-                backup["offline_queue"].append({"action_type": oq.action_type,
-                    "action_data": oq.action_data, "status": oq.status,
-                    "created_at": utc_iso(oq.created_at)})
+                <div className="input-group" style={{ marginBottom: 16 }}>
+                    <Dropdown
+                        label="Theme"
+                        value={theme}
+                        onChange={v => setTheme(v)}
+                        options={[
+                            { value: 'dark', label: lang === 'de' ? '🌙 Dunkel' : '🌙 Dark' },
+                            { value: 'light', label: lang === 'de' ? '☀️ Hell' : '☀️ Light' },
+                        ]}
+                    />
+                </div>
 
-        # Calendar Triggers (always, they're config)
-        backup["calendar_triggers"] = json.loads(get_setting("calendar_triggers") or "[]")
+                <div className="input-group">
+                    <Dropdown
+                        label={lang === 'de' ? 'Ansicht' : 'View Mode'}
+                        value={viewMode}
+                        onChange={v => setViewMode(v)}
+                        options={[
+                            { value: 'simple', label: lang === 'de' ? '📋 Einfach' : '📋 Simple' },
+                            { value: 'advanced', label: lang === 'de' ? '📊 Ausführlich' : '📊 Advanced' },
+                        ]}
+                    />
+                </div>
+            </div>
 
-        # Summary for import preview
-        backup["_summary"] = {
-            "rooms": len(backup.get("rooms", [])),
-            "devices": len(backup.get("devices", [])),
-            "users": len(backup.get("users", [])),
-            "patterns": len(backup.get("patterns", [])),
-            "settings": len(backup.get("settings", [])),
-            "state_history": len(backup.get("state_history", [])),
-            "action_log": len(backup.get("action_log", [])),
+            {/* Privacy & Storage */}
+            <div className="card" style={{ marginBottom: 16, borderColor: 'var(--success)', borderWidth: 1 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+                    <span className="mdi mdi-shield-check" style={{ fontSize: 24, color: 'var(--success)' }} />
+                    <div className="card-title" style={{ marginBottom: 0 }}>
+                        {lang === 'de' ? 'Datenschutz & Speicher' : 'Privacy & Storage'}
+                    </div>
+                </div>
+                <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 12 }}>
+                    {lang === 'de'
+                        ? '100% lokal – alle Daten bleiben auf deinem Gerät. Keine Cloud, keine Tracking.'
+                        : '100% local – all data stays on your device. No cloud, no tracking.'}
+                </p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <InfoRow label={lang === 'de' ? 'Datenbankgröße' : 'Database Size'}
+                        value={sysInfo?.db_size_bytes ? formatBytes(sysInfo.db_size_bytes) : '—'} />
+                    <InfoRow label={lang === 'de' ? 'Gesammelte Events' : 'Collected Events'}
+                        value={sysInfo?.state_history_count?.toLocaleString() || '0'} />
+                    <InfoRow label={lang === 'de' ? 'Aufbewahrung' : 'Retention'}
+                        value={`${retention} ${lang === 'de' ? 'Tage' : 'days'}`} />
+                </div>
+            </div>
+
+            {/* System Info */}
+            <div className="card" style={{ marginBottom: 16 }}>
+                <div className="card-title" style={{ marginBottom: 16 }}>
+                    {lang === 'de' ? 'System' : 'System'}
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    <InfoRow label="Version" value={sysInfo?.version || '0.5.0'} />
+                    <InfoRow label="Phase" value={`2 – ${lang === 'de' ? 'Vollständig' : 'Complete'}`} />
+                    <InfoRow label="Home Assistant"
+                        value={sysInfo?.ha_connected ? (lang === 'de' ? '✅ Verbunden' : '✅ Connected') : (lang === 'de' ? '❌ Getrennt' : '❌ Disconnected')} />
+                    <InfoRow label={lang === 'de' ? 'Zeitzone' : 'Timezone'}
+                        value={sysInfo?.timezone || '—'} />
+                    <InfoRow label={lang === 'de' ? 'HA Entities' : 'HA Entities'}
+                        value={sysInfo?.ha_entity_count || '—'} />
+                    <InfoRow label={lang === 'de' ? 'Datenbankgröße' : 'Database Size'}
+                        value={sysInfo?.db_size_bytes ? formatBytes(sysInfo.db_size_bytes) : '—'} />
+                    <InfoRow label="Uptime"
+                        value={sysInfo?.uptime_seconds ? `${Math.floor(sysInfo.uptime_seconds / 3600)} h` : '—'} />
+                    <InfoRow label={lang === 'de' ? 'Gesammelte Events' : 'Collected Events'}
+                        value={sysInfo?.state_history_count?.toLocaleString() || '0'} />
+                    <InfoRow label={lang === 'de' ? 'Erkannte Muster' : 'Detected Patterns'}
+                        value={sysInfo?.pattern_count || '0'} />
+                </div>
+            </div>
+
+            {/* System Status (#40 Watchdog + #10 Self-Test + #64 Diagnose + #62 Update) */}
+            <div className="card" style={{ marginBottom: 16 }}>
+                <div className="card-title" style={{ marginBottom: 16 }}>
+                    <span className="mdi mdi-monitor-dashboard" style={{ marginRight: 8, color: 'var(--accent-primary)' }} />
+                    {lang === 'de' ? 'Systemstatus' : 'System Status'}
+                </div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <button className="btn btn-sm btn-secondary" onClick={async () => {
+                        const r = await api.get('system/watchdog');
+                        if (r) showToast(r.healthy ? (lang === 'de' ? '✅ System gesund' : '✅ System healthy') : `⚠️ ${r.issues?.join(', ')}`, r.healthy ? 'success' : 'warning');
+                    }}>
+                        <span className="mdi mdi-heart-pulse" style={{ marginRight: 4 }} />
+                        {lang === 'de' ? 'Health-Check' : 'Health Check'}
+                    </button>
+                    <button className="btn btn-sm btn-secondary" onClick={async () => {
+                        const r = await api.get('system/self-test');
+                        if (r) showToast(r.passed ? (lang === 'de' ? '✅ Selbsttest bestanden' : '✅ Self-test passed') : `⚠️ ${r.tests?.filter(t => t.status !== 'ok').map(t => t.test).join(', ')}`, r.passed ? 'success' : 'warning');
+                    }}>
+                        <span className="mdi mdi-flask-outline" style={{ marginRight: 4 }} />
+                        {lang === 'de' ? 'Selbsttest' : 'Self-Test'}
+                    </button>
+                    <button className="btn btn-sm btn-secondary" onClick={async () => {
+                        showToast(lang === 'de' ? 'Diagnose wird erstellt...' : 'Creating diagnostics...', 'info');
+                        try {
+                            const resp = await fetch(`${API_BASE}/api/system/diagnose`, { credentials: 'include' });
+                            if (resp.ok) {
+                                const blob = await resp.blob();
+                                const url = URL.createObjectURL(blob);
+                                const a = document.createElement('a'); a.href = url;
+                                a.download = `mindhome-diagnose-${new Date().toISOString().slice(0,10)}.zip`;
+                                a.click(); URL.revokeObjectURL(url);
+                            } else { showToast('Download failed', 'error'); }
+                        } catch(e) { showToast('Error: ' + e.message, 'error'); }
+                    }}>
+                        <span className="mdi mdi-bug-outline" style={{ marginRight: 4 }} />
+                        {lang === 'de' ? 'Diagnose-Paket' : 'Diagnostic Package'}
+                    </button>
+                    <button className="btn btn-sm btn-secondary" onClick={async () => {
+                        const r = await api.get('system/check-update');
+                        if (r) showToast(r.update_available ? `Update: ${r.latest_version}` : (lang === 'de' ? `v${r.current_version} – Aktuell` : `v${r.current_version} – Up to date`), r.update_available ? 'info' : 'success');
+                    }}>
+                        <span className="mdi mdi-update" style={{ marginRight: 4 }} />
+                        {lang === 'de' ? 'Update prüfen' : 'Check Update'}
+                    </button>
+                </div>
+            </div>
+
+            </div>
+            {/* RIGHT COLUMN */}
+            <div>
+
+            {/* Data Retention - only in advanced mode */}
+            {viewMode === 'advanced' && (
+                <div className="card" style={{ marginBottom: 16 }}>
+                    <div className="card-title" style={{ marginBottom: 16 }}>
+                        {lang === 'de' ? 'Daten-Aufbewahrung' : 'Data Retention'}
+                    </div>
+                    <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 16 }}>
+                        {lang === 'de'
+                            ? `Daten älter als ${retention} Tage werden automatisch gelöscht (FIFO).`
+                            : `Data older than ${retention} days is automatically deleted (FIFO).`}
+                    </p>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', marginBottom: 16 }}>
+                        <div className="input-group" style={{ flex: 1 }}>
+                            <label className="input-label">{lang === 'de' ? 'Aufbewahren für (Tage)' : 'Keep for (days)'}</label>
+                            <input className="input" type="number" min="1" max="3650"
+                                value={retentionInput} onChange={e => setRetentionInput(e.target.value)} />
+                        </div>
+                        <button className="btn btn-primary" onClick={saveRetention}
+                            disabled={parseInt(retentionInput) === retention}>
+                            {lang === 'de' ? 'Speichern' : 'Save'}
+                        </button>
+                    </div>
+                    <button className="btn btn-secondary" onClick={handleCleanup} disabled={cleaning}>
+                        <span className="mdi mdi-broom" />
+                        {cleaning
+                            ? (lang === 'de' ? 'Aufräumen...' : 'Cleaning...')
+                            : (lang === 'de' ? 'Jetzt aufräumen' : 'Clean Up Now')}
+                    </button>
+                </div>
+            )}
+
+            {/* Backup & Restore + Auto Backup (merged) */}
+            <div className="card" style={{ marginBottom: 16 }}>
+                <div className="card-title" style={{ marginBottom: 16 }}>
+                    {lang === 'de' ? 'Backup & Wiederherstellung' : 'Backup & Restore'}
+                </div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+                    <button className="btn btn-primary" onClick={() => handleExport('standard')}>
+                        <span className="mdi mdi-download" style={{ marginRight: 4 }} />
+                        {lang === 'de' ? 'Standard' : 'Standard'}
+                    </button>
+                    <button className="btn btn-secondary" onClick={() => handleExport('full')}>
+                        <span className="mdi mdi-download-multiple" style={{ marginRight: 4 }} />
+                        {lang === 'de' ? 'Vollständig' : 'Full'}
+                    </button>
+                    <button className="btn btn-secondary" onClick={() => fileInputRef.current?.click()}>
+                        <span className="mdi mdi-upload" style={{ marginRight: 4 }} />
+                        {lang === 'de' ? 'Backup laden' : 'Import'}
+                    </button>
+                    <input ref={fileInputRef} type="file" accept=".json" onChange={handleImport}
+                           style={{ display: 'none' }} />
+                </div>
+                <p style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 0 }}>
+                    {lang === 'de'
+                        ? 'Standard: Konfiguration. Vollständig: inkl. State History, Logs (90 Tage).'
+                        : 'Standard: config only. Full: incl. state history, logs (90 days).'}
+                </p>
+            </div>
+
+            {/* Anomaly Detection Settings */}
+            <div className="card" style={{ marginBottom: 16 }}>
+                <div className="card-title" style={{ marginBottom: 16 }}>
+                    <span className="mdi mdi-alert-circle" style={{ marginRight: 8, color: 'var(--warning)' }} />
+                    {lang === 'de' ? 'Anomalie-Erkennung' : 'Anomaly Detection'}
+                </div>
+                <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 16 }}>
+                    {lang === 'de'
+                        ? 'Steuere wie empfindlich MindHome auf ungewöhnliche Gerätezustände reagiert.'
+                        : 'Control how sensitively MindHome reacts to unusual device states.'}
+                </p>
+                <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+                    {[{ id: 'low', label: lang === 'de' ? 'Niedrig' : 'Low', desc: lang === 'de' ? 'Nur extreme Anomalien' : 'Only extreme anomalies' },
+                      { id: 'medium', label: 'Medium', desc: lang === 'de' ? 'Ausgewogen' : 'Balanced' },
+                      { id: 'high', label: lang === 'de' ? 'Hoch' : 'High', desc: lang === 'de' ? 'Auch kleine Abweichungen' : 'Small deviations too' }].map(s => (
+                        <button key={s.id} className={`btn ${anomalySensitivity === s.id ? 'btn-primary' : 'btn-secondary'}`} style={{ flex: 1, textAlign: 'center', padding: '10px 8px' }}
+                            onClick={async () => {
+                                setAnomalySensitivity(s.id);
+                                await api.post('anomaly-settings', { sensitivity: s.id });
+                                showToast(`${s.label}`, 'success');
+                            }}>
+                            <div style={{ fontWeight: 600, fontSize: 14 }}>{s.label}</div>
+                            <div style={{ fontSize: 11, color: anomalySensitivity === s.id ? 'rgba(255,255,255,0.7)' : 'var(--text-muted)', marginTop: 2 }}>{s.desc}</div>
+                        </button>
+                    ))}
+                </div>
+
+                {/* Advanced Anomaly Settings - only in advanced mode */}
+                {viewMode === 'advanced' && <AnomalyAdvancedPanel lang={lang} showToast={showToast} />}
+            </div>
+
+            {/* #23 Vacation Mode + #42 Debug Mode + #49 Auto Theme + #63 Export + #68 Accessibility */}
+            <div className="card" style={{ marginBottom: 16 }}>
+                <div className="card-title" style={{ marginBottom: 16 }}>
+                    <span className="mdi mdi-cog-outline" style={{ marginRight: 8, color: 'var(--accent-primary)' }} />
+                    {lang === 'de' ? 'Erweitert' : 'Advanced'}
+                </div>
+
+            </div>
+                {/* #23 Vacation Mode */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
+                    <span style={{ fontSize: 13 }}><span className="mdi mdi-airplane" style={{ marginRight: 6, color: 'var(--accent-primary)' }} />{lang === 'de' ? 'Urlaubsmodus' : 'Vacation Mode'}</span>
+                    <label className="toggle" style={{ transform: 'scale(0.85)' }}>
+                        <input type="checkbox" onChange={async () => {
+                            const r = await api.put('system/vacation-mode', { enabled: true });
+                            showToast(r?.enabled ? (lang === 'de' ? 'Urlaub aktiv' : 'Vacation ON') : (lang === 'de' ? 'Urlaub beendet' : 'Vacation OFF'), 'info');
+                        }} />
+                        <span className="toggle-slider" />
+                    </label>
+                </div>
+
+                {/* #42 Debug Mode */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
+                    <span style={{ fontSize: 13 }}><span className="mdi mdi-bug" style={{ marginRight: 6 }} />{lang === 'de' ? 'Debug-Modus' : 'Debug Mode'}</span>
+                    <label className="toggle" style={{ transform: 'scale(0.85)' }}>
+                        <input type="checkbox" onChange={async () => { const r = await api.put('system/debug'); showToast(r?.debug_mode ? 'Debug ON' : 'Debug OFF', 'info'); }} />
+                        <span className="toggle-slider" />
+                    </label>
+                </div>
+
+                {/* #49 Auto Theme */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
+                    <span style={{ fontSize: 13 }}><span className="mdi mdi-theme-light-dark" style={{ marginRight: 6 }} />{lang === 'de' ? 'Auto-Theme' : 'Auto Theme'}</span>
+                    <label className="toggle" style={{ transform: 'scale(0.85)' }}>
+                        <input type="checkbox" defaultChecked={false} onChange={(e) => {
+                            localStorage.setItem('mindhome_auto_theme', e.target.checked ? 'true' : 'false');
+                            showToast(e.target.checked ? 'Auto' : 'Manual', 'info');
+                        }} />
+                        <span className="toggle-slider" />
+                    </label>
+                </div>
+
+                {/* #68 Font Size */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
+                    <span style={{ fontSize: 13 }}><span className="mdi mdi-format-size" style={{ marginRight: 6 }} />{lang === 'de' ? 'Schriftgröße' : 'Font Size'}</span>
+                    <div style={{ display: 'flex', gap: 4 }}>
+                        {[{ s: '13px', l: 'S' }, { s: '15px', l: 'M' }, { s: '17px', l: 'L' }].map(f => (
+                            <button key={f.l} className="btn btn-sm btn-ghost" onClick={() => { document.documentElement.style.fontSize = f.s; }}
+                                style={{ width: 28, fontSize: 11 }}>{f.l}</button>
+                        ))}
+                    </div>
+                </div>
+
+                {/* #63 Data Export */}
+                <div style={{ padding: '10px 0 4px' }}>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 6 }}>{lang === 'de' ? 'Daten exportieren' : 'Export Data'}</div>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                        {['patterns', 'history', 'automations'].map(dt => (
+                            <button key={dt} className="btn btn-sm btn-secondary"
+                                onClick={() => window.open(`${API_BASE}/api/export/${dt}?format=csv`, '_blank')}
+                                style={{ fontSize: 11, textTransform: 'capitalize' }}>{dt}</button>
+                        ))}
+                    </div>
+                </div>
+            </div>
+
+            {/* Calendar Trigger Configuration */}
+            <CalendarTriggersConfig lang={lang} showToast={showToast} />
+
+        </div>
+    );
+};
+
+const CalendarTriggersConfig = ({ lang, showToast }) => {
+    const [triggers, setTriggers] = useState([]);
+    const [calendars, setCalendars] = useState([]);
+    const [showAdd, setShowAdd] = useState(false);
+    const [newTrigger, setNewTrigger] = useState({ calendar: '', keyword: '', action: 'vacation_on', lead_minutes: 0 });
+
+    useEffect(() => {
+        (async () => {
+            const t = await api.get('calendar-triggers');
+            if (t) setTriggers(t);
+            const c = await api.get('ha/entities?domain=calendar');
+            if (c?.entities) setCalendars(c.entities);
+        })();
+    }, []);
+
+    const save = async (updated) => {
+        setTriggers(updated);
+        await api.put('calendar-triggers', { triggers: updated });
+    };
+
+    const addTrigger = () => {
+        if (!newTrigger.calendar || !newTrigger.keyword) return;
+        save([...triggers, { ...newTrigger, id: Date.now() }]);
+        setNewTrigger({ calendar: '', keyword: '', action: 'vacation_on', lead_minutes: 0 });
+        setShowAdd(false);
+        showToast(lang === 'de' ? 'Trigger erstellt' : 'Trigger created', 'success');
+    };
+
+    const removeTrigger = (id) => save(triggers.filter(t => t.id !== id));
+
+    const actionLabels = {
+        vacation_on: lang === 'de' ? 'Urlaubsmodus AN' : 'Vacation ON',
+        vacation_off: lang === 'de' ? 'Urlaubsmodus AUS' : 'Vacation OFF',
+        all_off: lang === 'de' ? 'Alles aus' : 'All off',
+        notify: lang === 'de' ? 'Benachrichtigung' : 'Notification',
+    };
+
+    return (
+        <div className="card" style={{ marginBottom: 16 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <div className="card-title" style={{ marginBottom: 0 }}>
+                    <span className="mdi mdi-calendar-clock" style={{ marginRight: 8, color: 'var(--accent-primary)' }} />
+                    {lang === 'de' ? 'Kalender-Trigger' : 'Calendar Triggers'}
+                </div>
+                <button className="btn btn-sm btn-primary" onClick={() => setShowAdd(!showAdd)}>
+                    <span className="mdi mdi-plus" />
+                </button>
+            </div>
+
+            {showAdd && (
+                <div style={{ padding: 12, background: 'var(--bg-main)', borderRadius: 8, marginBottom: 12 }}>
+                    <div className="input-group" style={{ marginBottom: 8 }}>
+                        <label className="input-label">{lang === 'de' ? 'Kalender' : 'Calendar'}</label>
+                        <select className="input" value={newTrigger.calendar} onChange={e => setNewTrigger({ ...newTrigger, calendar: e.target.value })}>
+                            <option value="">-- {lang === 'de' ? 'Auswählen' : 'Select'} --</option>
+                            {calendars.map(c => <option key={c.entity_id} value={c.entity_id}>{c.name || c.entity_id}</option>)}
+                        </select>
+                    </div>
+                    <div className="input-group" style={{ marginBottom: 8 }}>
+                        <label className="input-label">{lang === 'de' ? 'Stichwort im Event' : 'Keyword in event'}</label>
+                        <input className="input" value={newTrigger.keyword} onChange={e => setNewTrigger({ ...newTrigger, keyword: e.target.value })}
+                            placeholder={lang === 'de' ? 'z.B. Urlaub, Meeting' : 'e.g. Vacation, Meeting'} />
+                    </div>
+                    <div className="input-group" style={{ marginBottom: 8 }}>
+                        <label className="input-label">{lang === 'de' ? 'Aktion' : 'Action'}</label>
+                        <select className="input" value={newTrigger.action} onChange={e => setNewTrigger({ ...newTrigger, action: e.target.value })}>
+                            {Object.entries(actionLabels).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                        </select>
+                    </div>
+                    <div className="input-group" style={{ marginBottom: 8 }}>
+                        <label className="input-label">{lang === 'de' ? 'Vorlaufzeit (Min)' : 'Lead time (min)'}</label>
+                        <input className="input" type="number" value={newTrigger.lead_minutes}
+                            onChange={e => setNewTrigger({ ...newTrigger, lead_minutes: parseInt(e.target.value) || 0 })} />
+                    </div>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                        <button className="btn btn-sm btn-primary" onClick={addTrigger}>{lang === 'de' ? 'Erstellen' : 'Create'}</button>
+                        <button className="btn btn-sm btn-secondary" onClick={() => setShowAdd(false)}>{lang === 'de' ? 'Abbrechen' : 'Cancel'}</button>
+                    </div>
+                </div>
+            )}
+
+            {triggers.length === 0 && !showAdd ? (
+                <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                    {lang === 'de' ? 'Keine Kalender-Trigger konfiguriert.' : 'No calendar triggers configured.'}
+                </p>
+            ) : triggers.map(t => (
+                <div key={t.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                    padding: '8px 0', borderBottom: '1px solid var(--border)', fontSize: 12 }}>
+                    <div>
+                        <div style={{ fontWeight: 500 }}>{t.keyword} → {actionLabels[t.action] || t.action}</div>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                            {t.calendar}{t.lead_minutes ? ` · ${t.lead_minutes} min ${lang === 'de' ? 'vorher' : 'before'}` : ''}
+                        </div>
+                    </div>
+                    <button className="btn btn-ghost btn-icon" onClick={() => removeTrigger(t.id)}>
+                        <span className="mdi mdi-delete-outline" style={{ fontSize: 16, color: 'var(--danger)' }} />
+                    </button>
+                </div>
+            ))}
+        </div>
+    );
+};
+
+const DeviceAnomalyConfig = ({ lang }) => {
+    const { devices, rooms } = useApp();
+    const [search, setSearch] = useState('');
+    const [selected, setSelected] = useState(null);
+    const [deviceConfig, setDeviceConfig] = useState(null);
+    const [allConfigs, setAllConfigs] = useState({});
+
+    useEffect(() => {
+        (async () => { const c = await api.get('anomaly-settings/devices'); if (c) setAllConfigs(c); })();
+    }, []);
+
+    const loadDevice = async (deviceId) => {
+        setSelected(deviceId);
+        const c = await api.get(`anomaly-settings/device/${deviceId}`);
+        if (c) setDeviceConfig(c);
+    };
+
+    const updateDevice = async (key, value) => {
+        const updated = { ...deviceConfig, [key]: value };
+        setDeviceConfig(updated);
+        await api.put(`anomaly-settings/device/${selected}`, { [key]: value });
+        setAllConfigs(prev => ({ ...prev, [selected]: updated }));
+    };
+
+    const filtered = (devices || []).filter(d =>
+        !search || d.name?.toLowerCase().includes(search.toLowerCase()) ||
+        d.entity_id?.toLowerCase().includes(search.toLowerCase())
+    );
+
+    return (
+        <div>
+            <input className="input" placeholder={lang === 'de' ? 'Gerät suchen...' : 'Search device...'}
+                value={search} onChange={e => setSearch(e.target.value)}
+                style={{ width: '100%', marginBottom: 8, padding: '6px 10px', fontSize: 12 }} />
+            <div style={{ maxHeight: 200, overflowY: 'auto', marginBottom: selected ? 12 : 0 }}>
+                {filtered.slice(0, 30).map(d => {
+                    const hasConfig = allConfigs[d.id];
+                    const isWhitelisted = hasConfig?.whitelisted;
+                    const room = rooms?.find(r => r.id === d.room_id);
+                    return (
+                        <div key={d.id} onClick={() => loadDevice(d.id)}
+                            style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                                padding: '5px 6px', cursor: 'pointer', fontSize: 12, borderRadius: 4,
+                                background: selected === d.id ? 'var(--accent-primary-alpha)' : 'transparent',
+                                borderBottom: '1px solid var(--border)' }}>
+                            <div>
+                                <span style={{ fontWeight: selected === d.id ? 600 : 400 }}>{d.name}</span>
+                                {room && <span style={{ fontSize: 10, color: 'var(--text-muted)', marginLeft: 6 }}>{room.name}</span>}
+                            </div>
+                            <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                                {isWhitelisted && <span className="mdi mdi-shield-off" style={{ fontSize: 12, color: 'var(--text-muted)' }} title="Whitelisted" />}
+                                {hasConfig && !isWhitelisted && <span className="mdi mdi-cog" style={{ fontSize: 12, color: 'var(--accent-primary)' }} title="Custom config" />}
+                            </div>
+                        </div>
+                    );
+                })}
+            </div>
+
+            {/* Selected device config */}
+            {selected && deviceConfig && (
+                <div style={{ padding: 10, background: 'var(--bg-main)', borderRadius: 8, marginTop: 8 }}>
+                    <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8 }}>
+                        {devices?.find(d => d.id === selected)?.name}
+                    </div>
+
+                    {/* Enabled / Whitelisted */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 0' }}>
+                        <span style={{ fontSize: 11 }}>{lang === 'de' ? 'Ausgeschlossen (Whitelist)' : 'Excluded (Whitelist)'}</span>
+                        <label className="toggle" style={{ transform: 'scale(0.7)' }}><input type="checkbox" checked={deviceConfig.whitelisted || false}
+                            onChange={() => updateDevice('whitelisted', !deviceConfig.whitelisted)} /><div className="toggle-slider" /></label>
+                    </div>
+
+                    {!deviceConfig.whitelisted && (<>
+                        {/* Sensitivity */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 0' }}>
+                            <span style={{ fontSize: 11 }}>{lang === 'de' ? 'Empfindlichkeit' : 'Sensitivity'}</span>
+                            <div style={{ display: 'flex', gap: 3 }}>
+                                {[{id:'inherit',l:lang==='de'?'Vererbt':'Inherit'},{id:'low',l:lang==='de'?'Niedrig':'Low'},{id:'medium',l:'Medium'},{id:'high',l:lang==='de'?'Hoch':'High'},{id:'off',l:'Aus'}].map(s => (
+                                    <button key={s.id} className={`btn btn-sm ${(deviceConfig.sensitivity || 'inherit') === s.id ? 'btn-primary' : 'btn-ghost'}`}
+                                        onClick={() => updateDevice('sensitivity', s.id)} style={{ fontSize: 9, padding: '2px 5px' }}>{s.l}</button>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Detection Types */}
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6, marginBottom: 2 }}>{lang === 'de' ? 'Erkennungs-Typen' : 'Detection Types'}</div>
+                        {['offline', 'stuck', 'value', 'frequency'].map(t => (
+                            <div key={t} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '2px 0' }}>
+                                <span style={{ fontSize: 11 }}>{t.charAt(0).toUpperCase() + t.slice(1)}</span>
+                                <label className="toggle" style={{ transform: 'scale(0.65)' }}><input type="checkbox"
+                                    checked={deviceConfig.detection_types?.[t] !== false}
+                                    onChange={() => updateDevice('detection_types', { ...(deviceConfig.detection_types || {}), [t]: !deviceConfig.detection_types?.[t] })} /><div className="toggle-slider" /></label>
+                            </div>
+                        ))}
+
+                        {/* Reaction */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 0', marginTop: 4 }}>
+                            <span style={{ fontSize: 11 }}>{lang === 'de' ? 'Reaktion' : 'Reaction'}</span>
+                            <div style={{ display: 'flex', gap: 3 }}>
+                                {[{id:'inherit',l:lang==='de'?'Vererbt':'Inherit'},{id:'log',l:'Log'},{id:'push',l:'Push'},{id:'push_tts',l:'TTS'}].map(r => (
+                                    <button key={r.id} className={`btn btn-sm ${(deviceConfig.reaction || 'inherit') === r.id ? 'btn-primary' : 'btn-ghost'}`}
+                                        onClick={() => updateDevice('reaction', r.id)} style={{ fontSize: 9, padding: '2px 5px' }}>{r.l}</button>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Thresholds */}
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6, marginBottom: 2 }}>{lang === 'de' ? 'Schwellwerte' : 'Thresholds'}</div>
+                        {[{key:'temp_min',l:lang==='de'?'Temp. min °C':'Temp min °C',ph:'5'},
+                          {key:'temp_max',l:lang==='de'?'Temp. max °C':'Temp max °C',ph:'30'},
+                          {key:'power_max',l:lang==='de'?'Strom max W':'Power max W',ph:'3000'},
+                          {key:'battery_min',l:lang==='de'?'Batterie min %':'Battery min %',ph:'20'}].map(t => (
+                            <div key={t.key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '2px 0' }}>
+                                <span style={{ fontSize: 11 }}>{t.l}</span>
+                                <input className="input" type="number" placeholder={t.ph}
+                                    value={deviceConfig.thresholds?.[t.key] || ''} style={{ width: 60, padding: '2px 6px', fontSize: 11, textAlign: 'right' }}
+                                    onChange={e => updateDevice('thresholds', { ...(deviceConfig.thresholds || {}), [t.key]: e.target.value ? Number(e.target.value) : null })} />
+                            </div>
+                        ))}
+                    </>)}
+                </div>
+            )}
+        </div>
+    );
+};
+
+const AnomalyAdvancedPanel = ({ lang, showToast }) => {
+    const [config, setConfig] = useState(null);
+    const [stats, setStats] = useState(null);
+    const { domains, devices } = useApp();
+
+    useEffect(() => {
+        (async () => {
+            const [c, s] = await Promise.all([api.get('anomaly-settings/extended'), api.get('anomaly-settings/stats')]);
+            if (c) setConfig(c);
+            if (s) setStats(s);
+        })();
+    }, []);
+
+    if (!config) return null;
+    const update = async (key, value) => {
+        setConfig(prev => ({ ...prev, [key]: value }));
+        await api.put('anomaly-settings/extended', { [key]: value });
+    };
+
+    return (
+        <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 12 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>
+                <span className="mdi mdi-tune" style={{ marginRight: 6, color: 'var(--accent-primary)' }} />
+                {lang === 'de' ? 'Erweiterte Anomalie-Einstellungen' : 'Advanced Anomaly Settings'}
+            </div>
+
+            {/* Detection Types */}
+            <CollapsibleCard title={lang === 'de' ? 'Erkennungs-Typen' : 'Detection Types'} icon="mdi-radar" defaultOpen={false}>
+                {[{key:'frequency',de:'Häufigkeit',en:'Frequency'},{key:'time',de:'Zeitabweichung',en:'Time'},{key:'value',de:'Wertabweichung',en:'Value'},
+                  {key:'offline',de:'Offline',en:'Offline'},{key:'stuck',de:'Stuck',en:'Stuck'},{key:'pattern_deviation',de:'Muster-Abweichung',en:'Pattern'}].map(t => (
+                    <div key={t.key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 0' }}>
+                        <span style={{ fontSize: 12 }}>{lang === 'de' ? t.de : t.en}</span>
+                        <label className="toggle" style={{ transform: 'scale(0.75)' }}><input type="checkbox" checked={config.detection_types?.[t.key] !== false}
+                            onChange={() => update('detection_types', { ...config.detection_types, [t.key]: !config.detection_types?.[t.key] })} /><div className="toggle-slider" /></label>
+                    </div>
+                ))}
+            </CollapsibleCard>
+
+            {/* Thresholds */}
+            <CollapsibleCard title={lang === 'de' ? 'Schwellwerte' : 'Thresholds'} icon="mdi-speedometer" defaultOpen={false}>
+                {[{key:'offline_timeout_min',de:'Offline nach (Min)',en:'Offline after (min)',vals:[15,30,60,120],unit:''},
+                  {key:'stuck_timeout_hours',de:'Stuck nach (Std)',en:'Stuck after (hrs)',vals:[4,8,12,24],unit:''},
+                  {key:'value_deviation_pct',de:'Wert-Abweichung',en:'Value deviation',vals:[10,20,30,50],unit:'%'},
+                  {key:'battery_threshold',de:'Batterie-Warnung',en:'Battery warning',vals:[10,20,30],unit:'%'}].map(t => (
+                    <div key={t.key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 0' }}>
+                        <span style={{ fontSize: 12 }}>{lang === 'de' ? t.de : t.en}</span>
+                        <div style={{ display: 'flex', gap: 3 }}>
+                            {t.vals.map(v => (
+                                <button key={v} className={`btn btn-sm ${config[t.key] === v ? 'btn-primary' : 'btn-ghost'}`}
+                                    onClick={() => update(t.key, v)} style={{ fontSize: 10, padding: '2px 6px' }}>{v}{t.unit}</button>
+                            ))}
+                        </div>
+                    </div>
+                ))}
+            </CollapsibleCard>
+
+            {/* Reactions per severity */}
+            <CollapsibleCard title={lang === 'de' ? 'Reaktionen' : 'Reactions'} icon="mdi-bell-cog" defaultOpen={false}>
+                {['low','medium','high','critical'].map(sev => {
+                    const labels = {low: lang==='de'?'Niedrig':'Low', medium:'Medium', high: lang==='de'?'Hoch':'High', critical: lang==='de'?'Kritisch':'Critical'};
+                    return (
+                        <div key={sev} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 0' }}>
+                            <span style={{ fontSize: 12 }}>{labels[sev]}</span>
+                            <div style={{ display: 'flex', gap: 3 }}>
+                                {[{id:'log',l:'Log'},{id:'push',l:'Push'},{id:'push_tts',l:'Push+TTS'},{id:'push_tts_action',l:'Auto'}].map(o => (
+                                    <button key={o.id} className={`btn btn-sm ${config.reactions?.[sev] === o.id ? 'btn-primary' : 'btn-ghost'}`}
+                                        onClick={() => update('reactions', { ...config.reactions, [sev]: o.id })}
+                                        style={{ fontSize: 9, padding: '2px 5px' }}>{o.l}</button>
+                                ))}
+                            </div>
+                        </div>
+                    );
+                })}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 0', marginTop: 4 }}>
+                    <span style={{ fontSize: 12 }}>{lang === 'de' ? 'Verzögerung (Min)' : 'Delay (min)'}</span>
+                    <div style={{ display: 'flex', gap: 3 }}>
+                        {[0,1,5,10].map(m => (
+                            <button key={m} className={`btn btn-sm ${config.reaction_delay_min === m ? 'btn-primary' : 'btn-ghost'}`}
+                                onClick={() => update('reaction_delay_min', m)} style={{ fontSize: 10, padding: '2px 6px' }}>{m}</button>
+                        ))}
+                    </div>
+                </div>
+            </CollapsibleCard>
+
+            {/* Exceptions & Learning */}
+            <CollapsibleCard title={lang === 'de' ? 'Ausnahmen & Lernen' : 'Exceptions & Learning'} icon="mdi-shield-off" defaultOpen={false}>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
+                    <button className="btn btn-sm btn-secondary" onClick={async () => {
+                        await api.post('anomaly-settings/pause', { hours: 1 });
+                        showToast(lang === 'de' ? 'Pausiert für 1h' : 'Paused 1h', 'info'); }}>
+                        <span className="mdi mdi-pause" style={{ marginRight: 4 }} />1h
+                    </button>
+                    <button className="btn btn-sm btn-secondary" onClick={async () => {
+                        await api.post('anomaly-settings/pause', { hours: 4 });
+                        showToast(lang === 'de' ? 'Pausiert für 4h' : 'Paused 4h', 'info'); }}>
+                        <span className="mdi mdi-pause" style={{ marginRight: 4 }} />4h
+                    </button>
+                    <button className="btn btn-sm btn-secondary" onClick={async () => {
+                        await api.post('anomaly-settings/pause', { hours: 24 });
+                        showToast(lang === 'de' ? 'Pausiert für 24h' : 'Paused 24h', 'info'); }}>
+                        <span className="mdi mdi-pause" style={{ marginRight: 4 }} />24h
+                    </button>
+                    <button className="btn btn-sm btn-warning" onClick={async () => {
+                        await api.post('anomaly-settings/reset-baseline');
+                        showToast(lang === 'de' ? 'Baseline wird neu gelernt (7 Tage)' : 'Baseline reset (7 days)', 'info'); }}>
+                        <span className="mdi mdi-restart" style={{ marginRight: 4 }} />{lang === 'de' ? 'Baseline reset' : 'Reset baseline'}
+                    </button>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 0' }}>
+                    <span style={{ fontSize: 12 }}>{lang === 'de' ? 'Saisonale Anpassung' : 'Seasonal adjustment'}</span>
+                    <label className="toggle" style={{ transform: 'scale(0.75)' }}><input type="checkbox" checked={config.seasonal_adjustment?.enabled !== false}
+                        onChange={() => update('seasonal_adjustment', { enabled: !config.seasonal_adjustment?.enabled })} /><div className="toggle-slider" /></label>
+                </div>
+                {config.paused_until && new Date(config.paused_until) > new Date() && (
+                    <div style={{ fontSize: 11, color: 'var(--warning)', marginTop: 4 }}>
+                        <span className="mdi mdi-pause-circle" style={{ marginRight: 4 }} />
+                        {lang === 'de' ? 'Pausiert bis' : 'Paused until'} {new Date(config.paused_until).toLocaleTimeString()}
+                    </div>
+                )}
+            </CollapsibleCard>
+
+            {/* Per-Device Configuration */}
+            <CollapsibleCard title={lang === 'de' ? 'Geräte-Konfiguration' : 'Device Configuration'} icon="mdi-devices" defaultOpen={false}>
+                <DeviceAnomalyConfig lang={lang} />
+            </CollapsibleCard>
+
+            {/* Statistics */}
+            {stats && stats.total_30d > 0 && (
+                <CollapsibleCard title={`${lang === 'de' ? 'Statistik' : 'Statistics'} · ${stats.total_30d}`} icon="mdi-chart-bar" defaultOpen={false}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 6, marginBottom: 8 }}>
+                        {Object.entries(stats.by_type || {}).map(([type, count]) => (
+                            <div key={type} style={{ padding: '6px 8px', background: 'var(--bg-main)', borderRadius: 6, fontSize: 11 }}>
+                                <div style={{ fontWeight: 600 }}>{count}×</div>
+                                <div style={{ color: 'var(--text-muted)' }}>{type}</div>
+                            </div>
+                        ))}
+                    </div>
+                    {stats.top_devices?.length > 0 && (
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                            {lang === 'de' ? 'Top-Geräte' : 'Top devices'}: {stats.top_devices.slice(0, 3).map(d => `${d.name} (${d.count}×)`).join(', ')}
+                        </div>
+                    )}
+                </CollapsibleCard>
+            )}
+        </div>
+    );
+};
+
+// ================================================================
+// Phase 2a: Patterns Page (Muster-Explorer)
+// ================================================================
+
+const ActivitiesPage = () => {
+    const { lang, devices, rooms, domains } = useApp();
+    const [logs, setLogs] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [period, setPeriod] = useState('7d');
+    const [tab, setTab] = useState('all');
+    const [search, setSearch] = useState('');
+    const [roomFilter, setRoomFilter] = useState('');
+    const [deviceFilter, setDeviceFilter] = useState('');
+    const [liveMode, setLiveMode] = useState(false);
+    const [auditTab, setAuditTab] = useState(false);
+    const [auditLogs, setAuditLogs] = useState([]);
+
+    const loadLogs = async (p) => {
+        setLoading(true);
+        const data = await api.get(`action-log?limit=500&period=${p}`);
+        setLogs(data || []);
+        setLoading(false);
+    };
+
+    useEffect(() => { loadLogs(period); }, [period]);
+
+    const loadAudit = async () => { const data = await api.get('audit-trail?limit=200'); setAuditLogs(data || []); };
+    useEffect(() => { if (auditTab) loadAudit(); }, [auditTab]);
+
+    // Live mode: poll every 10s
+    useEffect(() => {
+        if (!liveMode) return;
+        const iv = setInterval(() => loadLogs(period), 10000);
+        return () => clearInterval(iv);
+    }, [liveMode, period]);
+
+    const typeIcons = {
+        observation: 'mdi-eye', quick_action: 'mdi-lightning-bolt', automation: 'mdi-robot',
+        suggestion: 'mdi-lightbulb-on', anomaly: 'mdi-alert', system: 'mdi-cog', first_time: 'mdi-star-circle'
+    };
+    const typeColors = {
+        observation: 'var(--text-muted)', quick_action: 'var(--info)', automation: 'var(--warning)',
+        suggestion: 'var(--accent-primary)', anomaly: 'var(--danger)', system: 'var(--text-secondary)'
+    };
+
+    const tabTypes = {
+        all: null,
+        devices: ['observation'],
+        automations: ['automation', 'suggestion', 'quick_action'],
+        system: ['anomaly', 'system', 'first_time']
+    };
+
+    const getDeviceName = (id) => devices.find(d => d.id === id)?.name || '';
+    const getRoomName = (id) => rooms.find(r => r.id === id)?.name || '';
+
+    const filtered = logs.filter(log => {
+        if (tab !== 'all' && tabTypes[tab] && !tabTypes[tab].includes(log.action_type)) return false;
+        if (roomFilter && log.room_id !== parseInt(roomFilter)) return false;
+        if (deviceFilter && log.device_id !== parseInt(deviceFilter)) return false;
+        if (search) {
+            const s = search.toLowerCase();
+            const reason = (log.reason || '').toLowerCase();
+            const entity = (log.action_data?.entity_id || '').toLowerCase();
+            const devName = getDeviceName(log.device_id).toLowerCase();
+            const roomName = getRoomName(log.room_id).toLowerCase();
+            if (!reason.includes(s) && !entity.includes(s) && !devName.includes(s) && !roomName.includes(s)) return false;
+        }
+        return true;
+    });
+
+    const exportCSV = () => {
+        const headers = ['Datum', 'Typ', 'Beschreibung', 'Gerät', 'Raum'];
+        const rows = filtered.map(l => [
+            new Date(l.created_at).toLocaleString('de-DE'),
+            l.action_type,
+            (l.reason || '').replace(/,/g, ';'),
+            getDeviceName(l.device_id),
+            getRoomName(l.room_id)
+        ]);
+        const csv = [headers, ...rows].map(r => r.join(',')).join('\n');
+        const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
+        const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+        a.download = `mindhome-activities-${new Date().toISOString().slice(0, 10)}.csv`;
+        a.click();
+    };
+
+    const tabs = [
+        { id: 'all', label: lang === 'de' ? 'Alle' : 'All', icon: 'mdi-format-list-bulleted' },
+        { id: 'devices', label: lang === 'de' ? 'Geräte' : 'Devices', icon: 'mdi-devices' },
+        { id: 'automations', label: lang === 'de' ? 'Automationen' : 'Automations', icon: 'mdi-robot' },
+        { id: 'system', label: 'System', icon: 'mdi-alert-circle' },
+    ];
+
+    return (
+        <div>
+            {/* Tabs */}
+            <div style={{ display: 'flex', gap: 4, marginBottom: 16, overflowX: 'auto', paddingBottom: 4 }}>
+                {tabs.map(t => (
+                    <button key={t.id} className={`btn ${tab === t.id ? 'btn-primary' : 'btn-ghost'}`}
+                        style={{ fontSize: 13, whiteSpace: 'nowrap', padding: '6px 14px' }}
+                        onClick={() => setTab(t.id)}>
+                        <span className={`mdi ${t.icon}`} style={{ marginRight: 6 }} />
+                        {t.label}
+                        {t.id !== 'all' && (() => {
+                            const count = logs.filter(l => tabTypes[t.id]?.includes(l.action_type)).length;
+                            return count > 0 ? <span style={{ marginLeft: 6, opacity: 0.7 }}>({count})</span> : null;
+                        })()}
+                    </button>
+                ))}
+            </div>
+
+            {/* Search & Filters */}
+            <div className="card" style={{ marginBottom: 16, padding: 14 }}>
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                    <div style={{ flex: '1 1 200px' }}>
+                        <div style={{ position: 'relative' }}>
+                            <span className="mdi mdi-magnify" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', fontSize: 18 }} />
+                            <input className="input" placeholder={lang === 'de' ? 'Suchen...' : 'Search...'}
+                                value={search} onChange={e => setSearch(e.target.value)}
+                                style={{ paddingLeft: 34 }} />
+                        </div>
+                    </div>
+                    <div style={{ flex: '0 1 160px' }}>
+                        <Dropdown value={roomFilter} onChange={v => setRoomFilter(v)}
+                            placeholder={lang === 'de' ? 'Alle Räume' : 'All Rooms'}
+                            options={[{ value: '', label: lang === 'de' ? 'Alle Räume' : 'All Rooms' }, ...rooms.map(r => ({ value: String(r.id), label: r.name }))]} />
+                    </div>
+                    <div style={{ flex: '0 1 160px' }}>
+                        <Dropdown value={deviceFilter} onChange={v => setDeviceFilter(v)}
+                            placeholder={lang === 'de' ? 'Alle Geräte' : 'All Devices'}
+                            options={[{ value: '', label: lang === 'de' ? 'Alle Geräte' : 'All Devices' }, ...devices.map(d => ({ value: String(d.id), label: d.name }))]} />
+                    </div>
+                    <PeriodFilter value={period} onChange={setPeriod} lang={lang} />
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 }}>
+                    <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                        {filtered.length} {lang === 'de' ? 'Einträge' : 'entries'}
+                        {search && ` (${lang === 'de' ? 'gefiltert' : 'filtered'})`}
+                    </span>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                        <button className={`btn ${auditTab ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setAuditTab(!auditTab)}
+                            style={{ fontSize: 12, padding: '4px 10px' }}>
+                            <span className="mdi mdi-shield-check" style={{ marginRight: 4 }} />
+                            {lang === 'de' ? 'Audit-Log' : 'Audit Log'}
+                        </button>
+                        <button className={`btn btn-ghost`} onClick={() => setLiveMode(!liveMode)}
+                            style={{ fontSize: 12, padding: '4px 10px', color: liveMode ? 'var(--success)' : undefined }}>
+                            <span className={`mdi ${liveMode ? 'mdi-access-point' : 'mdi-access-point-off'}`} style={{ marginRight: 4 }} />
+                            Live
+                        </button>
+                        <button className="btn btn-ghost" onClick={exportCSV} style={{ fontSize: 12, padding: '4px 10px' }}>
+                            <span className="mdi mdi-download" style={{ marginRight: 4 }} />CSV
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            {/* Log Entries */}
+            {loading ? (
+                <div className="empty-state"><div className="loading-spinner" /></div>
+            ) : filtered.length > 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {filtered.map(log => {
+                        const attrs = log.action_data?.new_attributes || {};
+                        const attrParts = [];
+                        if (attrs.brightness_pct !== undefined) attrParts.push(`💡 ${attrs.brightness_pct}%`);
+                        if (attrs.position_pct !== undefined) attrParts.push(`↕ ${attrs.position_pct}%`);
+                        if (attrs.target_temp !== undefined) attrParts.push(`🌡 ${attrs.target_temp}°C`);
+                        if (attrs.current_temp !== undefined) attrParts.push(`Ist: ${attrs.current_temp}°C`);
+                        const roomName = getRoomName(log.room_id);
+                        return (
+                        <div key={log.id} className="card" style={{ padding: '12px 14px', display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                            <span className={`mdi ${typeIcons[log.action_type] || 'mdi-circle-small'}`}
+                                  style={{ fontSize: 20, color: typeColors[log.action_type] || 'var(--accent-primary)', marginTop: 2, flexShrink: 0 }} />
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ fontSize: 14, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{log.reason || log.action_type}</span>
+                                    {log.action_type === 'automation' && (
+                                        <span className="badge badge-warning" style={{ fontSize: 10 }}>
+                                            <span className="mdi mdi-robot" style={{ marginRight: 2 }} />MindHome
+                                        </span>
+                                    )}
+                                </div>
+                                {log.action_data?.confidence && (
+                                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>
+                                        {lang === 'de' ? 'Vertrauen' : 'Confidence'}: {Math.round(log.action_data.confidence * 100)}%
+                                    </div>
+                                )}
+                                {attrParts.length > 0 && (
+                                    <div style={{ fontSize: 12, color: 'var(--accent-secondary)', marginTop: 2 }}>{attrParts.join(' · ')}</div>
+                                )}
+                                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 3, display: 'flex', gap: 8 }}>
+                                    <span>{new Date(log.created_at).toLocaleString(lang === 'de' ? 'de-DE' : 'en-US')}</span>
+                                    {roomName && <span>· {roomName}</span>}
+                                </div>
+                            </div>
+                            {log.was_undone && (
+                                <span className="badge badge-warning" style={{ flexShrink: 0 }}>{lang === 'de' ? 'Rückgängig' : 'Undone'}</span>
+                            )}
+                        </div>
+                        );
+                    })}
+                </div>
+            ) : (
+                <div className="empty-state">
+                    <span className="mdi mdi-text-box-search-outline" />
+                    <h3>{lang === 'de' ? 'Keine Einträge gefunden' : 'No Entries Found'}</h3>
+                    <p>{search || roomFilter || deviceFilter
+                        ? (lang === 'de' ? 'Versuche andere Filter.' : 'Try different filters.')
+                        : (lang === 'de' ? 'Hier werden alle Aktivitäten protokolliert.' : 'All activities will be logged here.')}</p>
+                </div>
+            )}
+
+            {/* Audit Trail (#60) */}
+            {auditTab && (
+                <div className="card" style={{ marginTop: 16 }}>
+                    <div className="card-title" style={{ marginBottom: 12 }}>
+                        <span className="mdi mdi-shield-check" style={{ marginRight: 8, color: 'var(--accent-primary)' }} />
+                        {lang === 'de' ? 'Audit-Log (Wer hat was geändert)' : 'Audit Log (Who changed what)'}
+                    </div>
+                    {auditLogs.length === 0 ? (
+                        <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>{lang === 'de' ? 'Noch keine Audit-Einträge.' : 'No audit entries yet.'}</p>
+                    ) : (
+                        <div style={{ maxHeight: 400, overflowY: 'auto' }}>
+                            {auditLogs.map(a => (
+                                <div key={a.id} style={{ padding: '8px 0', borderBottom: '1px solid var(--border-color)', fontSize: 13 }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                        <strong>{a.action}</strong>
+                                        <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{a.created_at ? relativeTime(a.created_at, lang) : '–'}</span>
+                                    </div>
+                                    {a.target && <div style={{ color: 'var(--text-secondary)', fontSize: 12 }}>{a.target}</div>}
+                                    {a.details && <div style={{ color: 'var(--text-muted)', fontSize: 11, marginTop: 2 }}>{typeof a.details === 'string' ? a.details : JSON.stringify(a.details)}</div>}
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+};
+
+// ================================================================
+// Phase 2a: Patterns Page (Muster-Explorer)
+// ================================================================
+
+const PatternsPage = () => {
+    const { lang, viewMode, showToast, devices, rooms, domains } = useApp();
+    const [patterns, setPatterns] = useState([]);
+    const [stats, setStats] = useState(null);
+    const [stateHistory, setStateHistory] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [filter, setFilter] = useState('all');
+    const [statusFilter, setStatusFilter] = useState('');
+    const [showHistory, setShowHistory] = useState(false);
+    const [historyEntity, setHistoryEntity] = useState('');
+    const [analyzing, setAnalyzing] = useState(false);
+    const [confirmDel, setConfirmDel] = useState(null);
+    const [expandedId, setExpandedId] = useState(null);
+    const [ptab, setPtab] = useState('patterns');
+    const [rejected, setRejected] = useState([]);
+    const [exclusions, setExclusions] = useState([]);
+    const [manualRules, setManualRules] = useState([]);
+    const [showAddExcl, setShowAddExcl] = useState(false);
+    const [showAddRule, setShowAddRule] = useState(false);
+    const [newExcl, setNewExcl] = useState({ type: 'device_pair', entity_a: '', entity_b: '', reason: '' });
+    const [newRule, setNewRule] = useState({ name: '', trigger_entity: '', trigger_state: '', action_entity: '', action_service: 'turn_on' });
+    const [rejectReason, setRejectReason] = useState(null);
+    const [conflicts, setConflicts] = useState([]);    // #26
+    const [scenes, setScenes] = useState([]);           // #29
+    const [bulkSelected, setBulkSelected] = useState({});  // #16 Bulk actions
+    const [bulkMode, setBulkMode] = useState(false);       // #16
+
+    const load = async () => {
+        try {
+            const [pats, st, rej, excl, rules, conf, sc] = await Promise.all([
+                api.get('patterns'),
+                api.get('stats/learning'),
+                api.get('patterns/rejected'),
+                api.get('pattern-exclusions'),
+                api.get('manual-rules'),
+                api.get('patterns/conflicts'),   // #26
+                api.get('patterns/scenes'),       // #29
+            ]);
+            setPatterns(pats);
+            setStats(st);
+            setRejected(rej || []);
+            setExclusions(excl || []);
+            setManualRules(rules || []);
+            setConflicts(conf?.conflicts || []);
+            setScenes(sc?.scenes || []);
+        } catch (e) {
+            console.error(e);
+        }
+        setLoading(false);
+    };
+
+    useEffect(() => { load(); }, []);
+
+    const loadHistory = async (entity) => {
+        try {
+            const h = await api.get(`state-history?hours=48&limit=100${entity ? `&entity_id=${entity}` : ''}`);
+            setStateHistory(h);
+        } catch (e) { console.error(e); }
+    };
+
+    const triggerAnalysis = async () => {
+        setAnalyzing(true);
+        try {
+            await api.post('patterns/analyze');
+            showToast(lang === 'de' ? 'Analyse gestartet...' : 'Analysis started...', 'success');
+            // Reload after a delay
+            setTimeout(() => { load(); setAnalyzing(false); }, 8000);
+        } catch (e) {
+            showToast('Error', 'error');
+            setAnalyzing(false);
+        }
+    };
+
+    const togglePattern = async (id, newStatus) => {
+        try {
+            await api.put(`patterns/${id}`, { status: newStatus });
+            showToast(lang === 'de' ? 'Muster aktualisiert' : 'Pattern updated', 'success');
+            await load();
+        } catch (e) { showToast('Error', 'error'); }
+    };
+
+    const deletePattern = async (id) => {
+        try {
+            await api.delete(`patterns/${id}`);
+            showToast(lang === 'de' ? 'Muster gelöscht' : 'Pattern deleted', 'success');
+            setConfirmDel(null);
+            await load();
+        } catch (e) { showToast('Error', 'error'); }
+    };
+
+    const filtered = patterns.filter(p => {
+        if (filter !== 'all' && p.pattern_type !== filter) return false;
+        if (statusFilter && p.status !== statusFilter) return false;
+        return true;
+    });
+
+    const typeIcons = {
+        time_based: 'mdi-clock-outline',
+        event_chain: 'mdi-link-variant',
+        correlation: 'mdi-chart-scatter-plot',
+    };
+
+    const typeLabels = {
+        time_based: lang === 'de' ? 'Zeitbasiert' : 'Time-based',
+        event_chain: lang === 'de' ? 'Sequenz' : 'Sequence',
+        correlation: lang === 'de' ? 'Korrelation' : 'Correlation',
+    };
+
+    const statusColors = {
+        observed: 'info',
+        suggested: 'warning',
+        active: 'success',
+        disabled: 'danger',
+    };
+
+    const statusLabels = {
+        observed: lang === 'de' ? 'Beobachtet' : 'Observed',
+        suggested: lang === 'de' ? 'Vorgeschlagen' : 'Suggested',
+        active: lang === 'de' ? 'Aktiv' : 'Active',
+        disabled: lang === 'de' ? 'Deaktiviert' : 'Disabled',
+    };
+
+    const rejectPattern = async (id, reason) => {
+        // Optimistic UI update - immediately move from patterns to rejected
+        const pattern = patterns.find(p => p.id === id);
+        setPatterns(prev => prev.filter(p => p.id !== id));
+        if (pattern) setRejected(prev => [{ ...pattern, status: 'rejected', rejected_at: new Date().toISOString() }, ...prev]);
+        await api.put(`patterns/reject/${id}`, { reason });
+        showToast(lang === 'de' ? 'Muster abgelehnt' : 'Pattern rejected', 'success');
+        setRejectReason(null);
+        await load();
+    };
+
+    const reactivatePattern = async (id) => {
+        // Optimistic UI update
+        const pattern = rejected.find(p => p.id === id);
+        setRejected(prev => prev.filter(p => p.id !== id));
+        if (pattern) setPatterns(prev => [{ ...pattern, status: 'observed' }, ...prev]);
+        await api.put(`patterns/reactivate/${id}`, {});
+        showToast(lang === 'de' ? 'Muster reaktiviert' : 'Pattern reactivated', 'success');
+        await load();
+    };
+
+    const createExclusion = async () => {
+        if (!newExcl.entity_a || !newExcl.entity_b) return;
+        await api.post('pattern-exclusions', newExcl);
+        setShowAddExcl(false);
+        setNewExcl({ type: 'device_pair', entity_a: '', entity_b: '', reason: '' });
+        await load();
+        showToast(lang === 'de' ? 'Ausschluss erstellt' : 'Exclusion created', 'success');
+    };
+
+    const createRule = async () => {
+        if (!newRule.name || !newRule.trigger_entity || !newRule.action_entity) return;
+        await api.post('manual-rules', newRule);
+        setShowAddRule(false);
+        setNewRule({ name: '', trigger_entity: '', trigger_state: '', action_entity: '', action_service: 'turn_on' });
+        await load();
+        showToast(lang === 'de' ? 'Regel erstellt' : 'Rule created', 'success');
+    };
+
+    if (loading) return <div style={{ padding: 40, textAlign: 'center' }}><span className="mdi mdi-loading mdi-spin" style={{ fontSize: 32 }} /></div>;
+
+    const ptabs = [
+        { id: 'patterns', label: lang === 'de' ? 'Muster' : 'Patterns', icon: 'mdi-lightbulb-on', count: patterns.length },
+        { id: 'rejected', label: lang === 'de' ? 'Abgelehnt' : 'Rejected', icon: 'mdi-close-circle', count: rejected.length },
+        { id: 'exclusions', label: lang === 'de' ? 'Ausschlüsse' : 'Exclusions', icon: 'mdi-link-off', count: exclusions.length },
+        { id: 'rules', label: lang === 'de' ? 'Eigene Regeln' : 'Manual Rules', icon: 'mdi-pencil-ruler', count: manualRules.length },
+    ];
+
+    return (
+        <div>
+            {/* #26 Pattern Conflicts Warning */}
+            {conflicts.length > 0 && (
+                <div className="card" style={{ marginBottom: 16, padding: '12px 16px', borderLeft: '3px solid var(--danger)' }}>
+                    <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 6 }}>
+                        <span className="mdi mdi-alert" style={{ color: 'var(--danger)', marginRight: 6 }} />
+                        {lang === 'de' ? `${conflicts.length} Muster-Konflikte` : `${conflicts.length} Pattern Conflicts`}
+                    </div>
+                    {conflicts.slice(0, 3).map((c, i) => (
+                        <div key={i} style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 2 }}>
+                            {lang === 'de' ? c.message_de : c.message_en}
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            {/* #29 Scene Suggestions */}
+            {scenes.length > 0 && (
+                <div className="card" style={{ marginBottom: 16, padding: '12px 16px', borderLeft: '3px solid var(--accent-primary)' }}>
+                    <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 6 }}>
+                        <span className="mdi mdi-group" style={{ color: 'var(--accent-primary)', marginRight: 6 }} />
+                        {lang === 'de' ? 'Szenen-Vorschläge' : 'Scene Suggestions'}
+                    </div>
+                    {scenes.slice(0, 3).map((s, i) => (
+                        <div key={i} style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 2 }}>
+                            {lang === 'de' ? s.message_de : s.message_en}
+                            <span style={{ opacity: 0.6, marginLeft: 4 }}>({s.entities.length} {lang === 'de' ? 'Geräte' : 'devices'})</span>
+                        </div>
+                    ))}
+                </div>
+            )}
+            {/* Tabs */}
+            <div style={{ display: 'flex', gap: 4, marginBottom: 16, overflowX: 'auto', paddingBottom: 4 }}>
+                {ptabs.map(t => (
+                    <button key={t.id} className={`btn ${ptab === t.id ? 'btn-primary' : 'btn-ghost'}`}
+                        style={{ fontSize: 13, whiteSpace: 'nowrap', padding: '6px 14px' }} onClick={() => setPtab(t.id)}>
+                        <span className={`mdi ${t.icon}`} style={{ marginRight: 6 }} />
+                        {t.label}{t.count > 0 ? ` (${t.count})` : ''}
+                    </button>
+                ))}
+            </div>
+
+            {ptab === 'rejected' ? (
+                <div>
+                    {rejected.length > 0 ? rejected.map(p => (
+                        <div key={p.id} className="card" style={{ marginBottom: 8, padding: 14 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                <div>
+                                    <div style={{ fontSize: 14, fontWeight: 500 }}>{p.description || `Pattern #${p.id}`}</div>
+                                    <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+                                        {p.rejection_reason && <span className="badge badge-danger" style={{ fontSize: 10, marginRight: 6 }}>{p.rejection_reason}</span>}
+                                        {p.rejected_at && new Date(p.rejected_at).toLocaleDateString()}
+                                    </div>
+                                </div>
+                                <button className="btn btn-secondary" style={{ fontSize: 12 }}
+                                    onClick={() => reactivatePattern(p.id)}>
+                                    <span className="mdi mdi-refresh" style={{ marginRight: 4 }} />
+                                    {lang === 'de' ? 'Reaktivieren' : 'Reactivate'}
+                                </button>
+                            </div>
+                        </div>
+                    )) : <div className="empty-state"><span className="mdi mdi-check-circle" />
+                        <h3>{lang === 'de' ? 'Keine abgelehnten Muster' : 'No Rejected Patterns'}</h3></div>}
+                </div>
+
+            ) : ptab === 'exclusions' ? (
+                <div>
+                    <button className="btn btn-primary" style={{ marginBottom: 16 }} onClick={() => setShowAddExcl(true)}>
+                        <span className="mdi mdi-plus" style={{ marginRight: 4 }} />
+                        {lang === 'de' ? 'Ausschluss hinzufügen' : 'Add Exclusion'}
+                    </button>
+                    {exclusions.length > 0 ? exclusions.map(e => (
+                        <div key={e.id} className="card" style={{ marginBottom: 8, padding: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div>
+                                <div style={{ fontSize: 13 }}>
+                                    <span style={{ fontWeight: 500 }}>{e.entity_a}</span>
+                                    <span className="mdi mdi-link-off" style={{ margin: '0 8px', color: 'var(--danger)' }} />
+                                    <span style={{ fontWeight: 500 }}>{e.entity_b}</span>
+                                </div>
+                                {e.reason && <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{e.reason}</div>}
+                            </div>
+                            <button className="btn btn-ghost" onClick={async () => { await api.delete(`pattern-exclusions/${e.id}`); await load(); }}>
+                                <span className="mdi mdi-delete" style={{ color: 'var(--danger)' }} />
+                            </button>
+                        </div>
+                    )) : <div className="empty-state"><span className="mdi mdi-link-variant" />
+                        <h3>{lang === 'de' ? 'Keine Ausschlüsse' : 'No Exclusions'}</h3>
+                        <p>{lang === 'de' ? 'Bestimme welche Geräte/Räume nie verknüpft werden sollen.' : 'Define which devices/rooms should never be linked.'}</p></div>}
+
+                    {showAddExcl && (
+                        <Modal title={lang === 'de' ? 'Ausschluss erstellen' : 'Create Exclusion'} onClose={() => setShowAddExcl(false)}
+                            actions={<><button className="btn btn-secondary" onClick={() => setShowAddExcl(false)}>{lang === 'de' ? 'Abbrechen' : 'Cancel'}</button>
+                                <button className="btn btn-primary" onClick={createExclusion}>{lang === 'de' ? 'Erstellen' : 'Create'}</button></>}>
+                            <div className="input-group" style={{ marginBottom: 12 }}>
+                                <Dropdown label={lang === 'de' ? 'Typ' : 'Type'} value={newExcl.type} onChange={v => setNewExcl({ ...newExcl, type: v, entity_a: '', entity_b: '' })}
+                                    options={[{ value: 'device_pair', label: lang === 'de' ? 'Geräte-Paar' : 'Device Pair' }, { value: 'room_pair', label: lang === 'de' ? 'Raum-Paar' : 'Room Pair' }, { value: 'domain_pair', label: lang === 'de' ? 'Domain-Paar' : 'Domain Pair' }]} />
+                            </div>
+                            {newExcl.type === 'device_pair' ? (<>
+                                <div className="input-group" style={{ marginBottom: 12 }}>
+                                    <EntitySearchDropdown label={lang === 'de' ? 'Gerät A' : 'Device A'} value={newExcl.entity_a}
+                                        onChange={v => setNewExcl({ ...newExcl, entity_a: v })}
+                                        entities={devices.filter(d => d.ha_entity_id)} placeholder="light.living_room" />
+                                </div>
+                                <div className="input-group" style={{ marginBottom: 12 }}>
+                                    <EntitySearchDropdown label={lang === 'de' ? 'Gerät B' : 'Device B'} value={newExcl.entity_b}
+                                        onChange={v => setNewExcl({ ...newExcl, entity_b: v })}
+                                        entities={devices.filter(d => d.ha_entity_id && d.ha_entity_id !== newExcl.entity_a)} />
+                                </div>
+                            </>) : newExcl.type === 'room_pair' ? (<>
+                                <div className="input-group" style={{ marginBottom: 12 }}>
+                                    <Dropdown label={lang === 'de' ? 'Raum A' : 'Room A'} value={newExcl.entity_a}
+                                        onChange={v => setNewExcl({ ...newExcl, entity_a: v })}
+                                        options={rooms.map(r => ({ value: String(r.id), label: r.name }))} />
+                                </div>
+                                <div className="input-group" style={{ marginBottom: 12 }}>
+                                    <Dropdown label={lang === 'de' ? 'Raum B' : 'Room B'} value={newExcl.entity_b}
+                                        onChange={v => setNewExcl({ ...newExcl, entity_b: v })}
+                                        options={rooms.filter(r => String(r.id) !== newExcl.entity_a).map(r => ({ value: String(r.id), label: r.name }))} />
+                                </div>
+                            </>) : (<>
+                                <div className="input-group" style={{ marginBottom: 12 }}>
+                                    <Dropdown label="Domain A" value={newExcl.entity_a}
+                                        onChange={v => setNewExcl({ ...newExcl, entity_a: v })}
+                                        options={domains.map(d => ({ value: String(d.id), label: d.name }))} />
+                                </div>
+                                <div className="input-group" style={{ marginBottom: 12 }}>
+                                    <Dropdown label="Domain B" value={newExcl.entity_b}
+                                        onChange={v => setNewExcl({ ...newExcl, entity_b: v })}
+                                        options={domains.filter(d => String(d.id) !== newExcl.entity_a).map(d => ({ value: String(d.id), label: d.name }))} />
+                                </div>
+                            </>)}
+                            <div className="input-group">
+                                <label className="input-label">{lang === 'de' ? 'Grund (optional)' : 'Reason (optional)'}</label>
+                                <input className="input" value={newExcl.reason} onChange={e => setNewExcl({ ...newExcl, reason: e.target.value })} />
+                            </div>
+                        </Modal>
+                    )}
+                </div>
+
+            ) : ptab === 'rules' ? (
+                <div>
+                    <button className="btn btn-primary" style={{ marginBottom: 16 }} onClick={() => setShowAddRule(true)}>
+                        <span className="mdi mdi-plus" style={{ marginRight: 4 }} />
+                        {lang === 'de' ? 'Regel erstellen' : 'Create Rule'}
+                    </button>
+                    {manualRules.length > 0 ? manualRules.map(r => (
+                        <div key={r.id} className="card" style={{ marginBottom: 8, padding: 14 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                <div>
+                                    <div style={{ fontSize: 14, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 6 }}>
+                                        {r.name}
+                                        <span className={`badge badge-${r.is_active ? 'success' : 'secondary'}`} style={{ fontSize: 10 }}>
+                                            {r.is_active ? (lang === 'de' ? 'Aktiv' : 'Active') : (lang === 'de' ? 'Pausiert' : 'Paused')}
+                                        </span>
+                                    </div>
+                                    <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
+                                        {lang === 'de' ? 'Wenn' : 'If'} <strong>{r.trigger_entity}</strong> = {r.trigger_state}
+                                        → <strong>{r.action_entity}</strong> {r.action_service}
+                                        {r.delay_seconds > 0 && ` (${r.delay_seconds}s ${lang === 'de' ? 'Verzögerung' : 'delay'})`}
+                                    </div>
+                                    {r.execution_count > 0 && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                                        {r.execution_count}x {lang === 'de' ? 'ausgeführt' : 'executed'}
+                                    </div>}
+                                </div>
+                                <div style={{ display: 'flex', gap: 4 }}>
+                                    <button className="btn btn-ghost" onClick={async () => {
+                                        await api.put(`manual-rules/${r.id}`, { is_active: !r.is_active }); await load();
+                                    }}><span className={`mdi ${r.is_active ? 'mdi-pause' : 'mdi-play'}`} style={{ fontSize: 16 }} /></button>
+                                    <button className="btn btn-ghost" onClick={async () => {
+                                        await api.delete(`manual-rules/${r.id}`); await load();
+                                    }}><span className="mdi mdi-delete" style={{ fontSize: 16, color: 'var(--danger)' }} /></button>
+                                </div>
+                            </div>
+                        </div>
+                    )) : <div className="empty-state"><span className="mdi mdi-pencil-ruler" />
+                        <h3>{lang === 'de' ? 'Keine eigenen Regeln' : 'No Manual Rules'}</h3>
+                        <p>{lang === 'de' ? 'Erstelle eigene Wenn-Dann Regeln.' : 'Create your own If-Then rules.'}</p></div>}
+
+                    {showAddRule && (
+                        <Modal title={lang === 'de' ? 'Regel erstellen' : 'Create Rule'} onClose={() => setShowAddRule(false)}
+                            actions={<><button className="btn btn-secondary" onClick={() => setShowAddRule(false)}>{lang === 'de' ? 'Abbrechen' : 'Cancel'}</button>
+                                <button className="btn btn-primary" onClick={createRule}>{lang === 'de' ? 'Erstellen' : 'Create'}</button></>}>
+                            <div className="input-group" style={{ marginBottom: 12 }}>
+                                <label className="input-label">{lang === 'de' ? 'Name' : 'Name'}</label>
+                                <input className="input" value={newRule.name} onChange={e => setNewRule({ ...newRule, name: e.target.value })}
+                                    placeholder={lang === 'de' ? 'z.B. Flurlicht bei Haustür' : 'e.g. Hall light on door open'} autoFocus />
+                            </div>
+                            <div className="input-group" style={{ marginBottom: 12 }}>
+                                <EntitySearchDropdown
+                                    label={lang === 'de' ? 'Wenn (Entity)' : 'When (Entity)'}
+                                    value={newRule.trigger_entity}
+                                    onChange={v => setNewRule({ ...newRule, trigger_entity: v })}
+                                    entities={devices.filter(d => d.ha_entity_id)}
+                                    placeholder="binary_sensor.front_door" />
+                            </div>
+                            <div className="input-group" style={{ marginBottom: 12 }}>
+                                <label className="input-label">{lang === 'de' ? 'Status wird' : 'State becomes'}</label>
+                                <input className="input" value={newRule.trigger_state} onChange={e => setNewRule({ ...newRule, trigger_state: e.target.value })}
+                                    placeholder="on" />
+                            </div>
+                            <div className="input-group" style={{ marginBottom: 12 }}>
+                                <EntitySearchDropdown
+                                    label={lang === 'de' ? 'Dann (Entity)' : 'Then (Entity)'}
+                                    value={newRule.action_entity}
+                                    onChange={v => setNewRule({ ...newRule, action_entity: v })}
+                                    entities={devices.filter(d => d.ha_entity_id)}
+                                    placeholder="light.hallway" />
+                            </div>
+                            <div className="input-group">
+                                <Dropdown label={lang === 'de' ? 'Aktion' : 'Action'} value={newRule.action_service}
+                                    onChange={v => setNewRule({ ...newRule, action_service: v })}
+                                    options={[{ value: 'turn_on', label: lang === 'de' ? 'Einschalten' : 'Turn On' },
+                                        { value: 'turn_off', label: lang === 'de' ? 'Ausschalten' : 'Turn Off' },
+                                        { value: 'toggle', label: 'Toggle' }]} />
+                            </div>
+                        </Modal>
+                    )}
+                </div>
+            ) : (<div>
+            {/* Learning Stats Overview */}
+            {(() => {
+                const s = stats || {};
+                return (
+                <div className="stat-grid" style={{ marginBottom: 24 }}>
+                    <div className="stat-card animate-in">
+                        <div className="stat-icon" style={{ background: 'var(--accent-primary-dim)', color: 'var(--accent-primary)' }}>
+                            <span className="mdi mdi-database-outline" />
+                        </div>
+                        <div>
+                            <div className="stat-value">{s.total_events?.toLocaleString() || 0}</div>
+                            <div className="stat-label">{lang === 'de' ? 'Events gesammelt' : 'Events collected'}</div>
+                        </div>
+                    </div>
+                    <div className="stat-card animate-in animate-in-delay-1">
+                        <div className="stat-icon" style={{ background: 'var(--success-dim)', color: 'var(--success)' }}>
+                            <span className="mdi mdi-lightbulb-on" />
+                        </div>
+                        <div>
+                            <div className="stat-value">{s.total_patterns || 0}</div>
+                            <div className="stat-label">{lang === 'de' ? 'Muster erkannt' : 'Patterns found'}</div>
+                        </div>
+                    </div>
+                    <div className="stat-card animate-in animate-in-delay-2">
+                        <div className="stat-icon" style={{ background: 'var(--warning-dim)', color: 'var(--warning)' }}>
+                            <span className="mdi mdi-calendar-range" />
+                        </div>
+                        <div>
+                            <div className="stat-value">{stats.days_collecting || 0}</div>
+                            <div className="stat-label">{lang === 'de' ? 'Tage Daten' : 'Days of data'}</div>
+                        </div>
+                    </div>
+                    <div className="stat-card animate-in animate-in-delay-3">
+                        <div className="stat-icon" style={{ background: 'var(--info-dim)', color: 'var(--info)' }}>
+                            <span className="mdi mdi-speedometer" />
+                        </div>
+                        <div>
+                            <div className="stat-value">{s.avg_confidence ? `${Math.round(s.avg_confidence * 100)}%` : '—'}</div>
+                            <div className="stat-label">{lang === 'de' ? 'Ø Vertrauen' : 'Avg Confidence'}</div>
+                        </div>
+                    </div>
+                </div>
+                );
+            })()}
+
+            {/* Learning Speed Control */}
+            <div className="card animate-in" style={{ marginBottom: 16, padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+                <div>
+                    <span className="mdi mdi-speedometer" style={{ marginRight: 8, color: 'var(--accent-primary)' }} />
+                    <span style={{ fontSize: 14, fontWeight: 500 }}>{lang === 'de' ? 'Lerngeschwindigkeit' : 'Learning Speed'}</span>
+                </div>
+                <div style={{ display: 'flex', gap: 4 }}>
+                    {[{ id: 'conservative', label: lang === 'de' ? 'Vorsichtig' : 'Conservative', icon: '🐢' },
+                      { id: 'normal', label: 'Normal', icon: '⚖️' },
+                      { id: 'aggressive', label: lang === 'de' ? 'Aggressiv' : 'Aggressive', icon: '🚀' }].map(s => (
+                        <button key={s.id} className={`btn btn-sm ${(stats?.learning_speed || 'normal') === s.id ? 'btn-primary' : 'btn-ghost'}`}
+                            onClick={async () => {
+                                try {
+                                    await api.put('phases/speed', { speed: s.id });
+                                    showToast(`${s.icon} ${s.label}`, 'success');
+                                    // Force immediate UI update
+                                    setStats(prev => prev ? { ...prev, learning_speed: s.id } : prev);
+                                    await load();
+                                } catch(e) { showToast('Fehler', 'error'); }
+                            }} style={{ fontSize: 12 }}>
+                            {s.icon} {s.label}
+                        </button>
+                    ))}
+                </div>
+            </div>
+
+            {/* Pattern Type Distribution */}
+            {stats && stats.patterns_by_type && (
+                <div className="card animate-in" style={{ marginBottom: 24, padding: 16 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                        <div className="card-title">{lang === 'de' ? 'Muster-Verteilung' : 'Pattern Distribution'}</div>
+                        <button className="btn btn-sm btn-primary" onClick={triggerAnalysis} disabled={analyzing}>
+                            <span className={`mdi ${analyzing ? 'mdi-loading mdi-spin' : 'mdi-magnify'}`} style={{ marginRight: 6 }} />
+                            {analyzing ? (lang === 'de' ? 'Analysiere...' : 'Analyzing...') : (lang === 'de' ? 'Jetzt analysieren' : 'Analyze now')}
+                        </button>
+                    </div>
+                    <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+                        {Object.entries(stats.patterns_by_type).map(([type, count]) => (
+                            <div key={type} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', background: 'var(--bg-tertiary)', borderRadius: 8 }}>
+                                <span className={`mdi ${typeIcons[type]}`} style={{ fontSize: 18, color: 'var(--accent-primary)' }} />
+                                <span style={{ fontWeight: 600 }}>{count}</span>
+                                <span style={{ color: 'var(--text-secondary)', fontSize: 13 }}>{typeLabels[type]}</span>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {/* Filter Bar */}
+            <div className="card" style={{ padding: 12, marginBottom: 16 }}>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                    <span style={{ fontSize: 13, color: 'var(--text-secondary)', marginRight: 4 }}>
+                        {lang === 'de' ? 'Typ:' : 'Type:'}
+                    </span>
+                    {['all', 'time_based', 'event_chain', 'correlation'].map(f => (
+                        <button key={f} className={`btn btn-sm ${filter === f ? 'btn-primary' : 'btn-ghost'}`}
+                                onClick={() => setFilter(f)}>
+                            {f === 'all' ? (lang === 'de' ? 'Alle' : 'All') : typeLabels[f]}
+                        </button>
+                    ))}
+                    <span style={{ borderLeft: '1px solid var(--border-color)', height: 20, margin: '0 8px' }} />
+                    <span style={{ fontSize: 13, color: 'var(--text-secondary)', marginRight: 4 }}>Status:</span>
+                    {['', 'observed', 'suggested', 'active', 'disabled'].map(s => (
+                        <button key={s} className={`btn btn-sm ${statusFilter === s ? 'btn-primary' : 'btn-ghost'}`}
+                                onClick={() => setStatusFilter(s)}>
+                            {s === '' ? (lang === 'de' ? 'Alle' : 'All') : statusLabels[s]}
+                        </button>
+                    ))}
+
+                    {viewMode === 'advanced' && (
+                        <>
+                            <span style={{ borderLeft: '1px solid var(--border-color)', height: 20, margin: '0 8px' }} />
+                            <button className={`btn btn-sm ${showHistory ? 'btn-primary' : 'btn-ghost'}`}
+                                    onClick={() => { setShowHistory(!showHistory); if (!showHistory) loadHistory(historyEntity); }}>
+                                <span className="mdi mdi-history" style={{ marginRight: 4 }} />
+                                {lang === 'de' ? 'Event-Verlauf' : 'Event History'}
+                            </button>
+                        </>
+                    )}
+                </div>
+            </div>
+
+            {/* State History Viewer (Advanced only) */}
+            {showHistory && viewMode === 'advanced' && (
+                <div className="card animate-in" style={{ marginBottom: 16 }}>
+                    <div className="card-header">
+                        <div className="card-title">
+                            <span className="mdi mdi-history" style={{ marginRight: 8 }} />
+                            {lang === 'de' ? 'Event-Verlauf (48h)' : 'Event History (48h)'}
+                        </div>
+                        <input type="text" placeholder={lang === 'de' ? 'Entity filtern...' : 'Filter entity...'}
+                               value={historyEntity}
+                               onChange={e => { setHistoryEntity(e.target.value); loadHistory(e.target.value); }}
+                               style={{ width: 220, padding: '6px 10px', background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', borderRadius: 6, color: 'var(--text-primary)', fontSize: 13 }} />
+                    </div>
+                    <div style={{ maxHeight: 300, overflowY: 'auto' }}>
+                        <table className="data-table" style={{ fontSize: 12 }}>
+                            <thead>
+                                <tr>
+                                    <th>{lang === 'de' ? 'Zeit' : 'Time'}</th>
+                                    <th>Entity</th>
+                                    <th>{lang === 'de' ? 'Alt → Neu' : 'Old → New'}</th>
+                                    <th>{lang === 'de' ? 'Kontext' : 'Context'}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {stateHistory.map(ev => (
+                                    <tr key={ev.id}>
+                                        <td style={{ whiteSpace: 'nowrap' }}>{ev.created_at ? new Date(ev.created_at).toLocaleTimeString() : '—'}</td>
+                                        <td style={{ fontFamily: 'monospace', fontSize: 11 }}>{ev.entity_id}</td>
+                                        <td>
+                                            <span style={{ color: 'var(--text-muted)' }}>{ev.old_state || '?'}</span>
+                                            <span style={{ margin: '0 4px' }}>→</span>
+                                            <span style={{ fontWeight: 600, color: ev.new_state === 'on' ? 'var(--success)' : ev.new_state === 'off' ? 'var(--text-muted)' : 'var(--text-primary)' }}>
+                                                {ev.new_state}
+                                            </span>
+                                        </td>
+                                        <td style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                                            {ev.context?.time_slot} {ev.context?.persons_home?.length > 0 ? `👤${ev.context.persons_home.length}` : ''}
+                                        </td>
+                                    </tr>
+                                ))}
+                                {stateHistory.length === 0 && (
+                                    <tr><td colSpan={4} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 20 }}>
+                                        {lang === 'de' ? 'Noch keine Events gesammelt' : 'No events collected yet'}
+                                    </td></tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            )}
+
+            {/* Pattern List */}
+            {/* #26 Pattern Conflict Warning */}
+            {conflicts.length > 0 && (
+                <div className="card animate-in" style={{ marginBottom: 16, borderLeft: '3px solid var(--warning)', padding: '12px 16px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                        <span className="mdi mdi-alert" style={{ color: 'var(--warning)', fontSize: 18 }} />
+                        <strong style={{ fontSize: 14 }}>{lang === 'de' ? `${conflicts.length} Muster-Konflikte` : `${conflicts.length} Pattern Conflicts`}</strong>
+                    </div>
+                    {conflicts.slice(0, 3).map((c, i) => (
+                        <div key={i} style={{ fontSize: 12, color: 'var(--text-secondary)', padding: '4px 0' }}>
+                            {c.description || `${c.pattern_a} ↔ ${c.pattern_b}`}
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            <div className="card animate-in">
+                <div className="card-header">
+                    <div>
+                        <div className="card-title">
+                            {lang === 'de' ? 'Erkannte Muster' : 'Detected Patterns'}
+                            <span className="badge badge-info" style={{ marginLeft: 8 }}>{filtered.length}</span>
+                        </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                        <button className={`btn btn-sm ${bulkMode ? 'btn-primary' : 'btn-ghost'}`}
+                            onClick={() => { setBulkMode(!bulkMode); setBulkSelected({}); }}>
+                            <span className="mdi mdi-checkbox-multiple-marked-outline" style={{ marginRight: 4 }} />
+                            {lang === 'de' ? 'Mehrfachauswahl' : 'Multi-select'}
+                        </button>
+                    </div>
+                </div>
+
+                {/* Bulk Action Bar */}
+                {bulkMode && Object.values(bulkSelected).some(v => v) && (() => {
+                    const selectedIds = Object.entries(bulkSelected).filter(([_, v]) => v).map(([k]) => parseInt(k));
+                    const count = selectedIds.length;
+                    return (
+                        <div style={{ padding: '10px 16px', background: 'var(--accent-primary-dim)', borderBottom: '1px solid var(--border)',
+                            display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                            <span style={{ fontSize: 13, fontWeight: 500, marginRight: 8 }}>
+                                {count} {lang === 'de' ? 'ausgewählt' : 'selected'}
+                            </span>
+                            <button className="btn btn-sm btn-ghost" onClick={async () => {
+                                setPatterns(prev => prev.filter(p => !selectedIds.includes(p.id)));
+                                for (const id of selectedIds) { await api.put(`patterns/reject/${id}`, { reason: 'bulk' }); }
+                                setBulkSelected({}); setBulkMode(false); await load();
+                                showToast(`${count} ${lang === 'de' ? 'Muster abgelehnt' : 'patterns rejected'}`, 'success');
+                            }}>
+                                <span className="mdi mdi-close-circle" style={{ marginRight: 4, color: 'var(--warning)' }} />
+                                {lang === 'de' ? 'Alle ablehnen' : 'Reject all'}
+                            </button>
+                            <button className="btn btn-sm btn-ghost" onClick={async () => {
+                                setPatterns(prev => prev.filter(p => !selectedIds.includes(p.id)));
+                                for (const id of selectedIds) { await api.delete(`patterns/${id}`); }
+                                setBulkSelected({}); setBulkMode(false); await load();
+                                showToast(`${count} ${lang === 'de' ? 'Muster gelöscht' : 'patterns deleted'}`, 'success');
+                            }}>
+                                <span className="mdi mdi-delete" style={{ marginRight: 4, color: 'var(--danger)' }} />
+                                {lang === 'de' ? 'Alle löschen' : 'Delete all'}
+                            </button>
+                            <button className="btn btn-sm btn-ghost" onClick={() => {
+                                const all = {};
+                                filtered.forEach(p => all[p.id] = true);
+                                setBulkSelected(all);
+                            }}>
+                                {lang === 'de' ? 'Alle auswählen' : 'Select all'}
+                            </button>
+                            <button className="btn btn-sm btn-ghost" onClick={() => setBulkSelected({})}>
+                                {lang === 'de' ? 'Auswahl aufheben' : 'Deselect'}
+                            </button>
+                        </div>
+                    );
+                })()}
+
+                {filtered.length === 0 ? (
+                    <div className="empty-state">
+                        <span className="mdi mdi-lightbulb-on" />
+                        <h3>{lang === 'de' ? 'Noch keine Muster' : 'No patterns yet'}</h3>
+                        <p>{lang === 'de'
+                            ? 'MindHome sammelt Daten und analysiert regelmäßig. Muster erscheinen nach einigen Tagen.'
+                            : 'MindHome collects data and analyzes regularly. Patterns will appear after a few days.'}</p>
+                        <button className="btn btn-primary" onClick={triggerAnalysis} disabled={analyzing}>
+                            <span className="mdi mdi-magnify" style={{ marginRight: 6 }} />
+                            {lang === 'de' ? 'Jetzt analysieren' : 'Analyze now'}
+                        </button>
+                    </div>
+                ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                        {filtered.map(p => (
+                            <div key={p.id}>
+                            <div style={{
+                                padding: '14px 16px',
+                                borderBottom: expandedId === p.id ? 'none' : '1px solid var(--border-color)',
+                                display: 'flex', alignItems: 'center', gap: 12,
+                                opacity: p.status === 'disabled' ? 0.5 : 1,
+                                cursor: 'pointer', transition: 'background 0.15s',
+                            }} onClick={() => setExpandedId(expandedId === p.id ? null : p.id)}
+                               onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-tertiary)'}
+                               onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                                {/* #16 Bulk checkbox */}
+                                {bulkMode && (
+                                    <input type="checkbox" checked={!!bulkSelected[p.id]}
+                                        onClick={e => e.stopPropagation()}
+                                        onChange={e => setBulkSelected(prev => ({ ...prev, [p.id]: e.target.checked }))}
+                                        style={{ width: 16, height: 16, accentColor: 'var(--accent-primary)', flexShrink: 0 }} />
+                                )}
+                                {/* Type icon */}
+                                <span className={`mdi ${typeIcons[p.pattern_type]}`}
+                                      style={{ fontSize: 22, color: 'var(--accent-primary)', flexShrink: 0 }} />
+
+                                {/* Description */}
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                    <div style={{ fontWeight: 500, fontSize: 14, marginBottom: 4 }}>
+                                        {p.description || p.pattern_type}
+                                    </div>
+                                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', fontSize: 12 }}>
+                                        <span className={`badge badge-${statusColors[p.status]}`} style={{ fontSize: 11 }}>
+                                            {statusLabels[p.status]}
+                                        </span>
+                                        <span style={{ color: 'var(--text-muted)' }}>
+                                            {typeLabels[p.pattern_type]}
+                                        </span>
+                                        <span style={{ color: 'var(--text-muted)' }}>
+                                            {p.match_count}× {lang === 'de' ? 'erkannt' : 'matched'}
+                                        </span>
+                                    </div>
+                                </div>
+
+                                {/* Vertrauen/Confidence bar */}
+                                <div style={{ width: 80, flexShrink: 0 }}>
+                                    <div style={{ fontSize: 12, textAlign: 'center', marginBottom: 4, fontWeight: 600 }}>
+                                        {Math.round(p.confidence * 100)}%
+                                    </div>
+                                    <div style={{ height: 4, background: 'var(--bg-tertiary)', borderRadius: 2, overflow: 'hidden' }}>
+                                        <div style={{
+                                            height: '100%', borderRadius: 2, width: `${Math.round(p.confidence * 100)}%`,
+                                            background: p.confidence > 0.7 ? 'var(--success)' : p.confidence > 0.4 ? 'var(--warning)' : 'var(--danger)',
+                                        }} />
+                                    </div>
+                                </div>
+
+                                {/* Actions */}
+                                <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+                                    {p.status === 'disabled' ? (
+                                        <button className="btn btn-sm btn-ghost" onClick={() => togglePattern(p.id, 'observed')}
+                                                title={lang === 'de' ? 'Reaktivieren' : 'Reactivate'}>
+                                            <span className="mdi mdi-refresh" />
+                                        </button>
+                                    ) : (
+                                        <button className="btn btn-sm btn-ghost" onClick={() => togglePattern(p.id, 'disabled')}
+                                                title={lang === 'de' ? 'Deaktivieren' : 'Disable'}>
+                                            <span className="mdi mdi-pause" />
+                                        </button>
+                                    )}
+                                    <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }}
+                                            onClick={() => setConfirmDel(p.id)}
+                                            title={lang === 'de' ? 'Löschen' : 'Delete'}>
+                                        <span className="mdi mdi-delete" />
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Detail panel (expanded) */}
+                            {expandedId === p.id && (
+                                <div style={{
+                                    padding: '12px 16px 16px 50px', borderBottom: '1px solid var(--border-color)',
+                                    background: 'var(--bg-tertiary)', fontSize: 13,
+                                }}>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 24px', marginBottom: 12 }}>
+                                        <div><span style={{ color: 'var(--text-muted)' }}>Entity:</span> <code style={{ fontSize: 12 }}>{p.pattern_data?.entity_id || p.pattern_data?.action_entity || '–'}</code></div>
+                                        <div><span style={{ color: 'var(--text-muted)' }}>{lang === 'de' ? 'Zielzustand' : 'Target'}:</span> <strong>{p.pattern_data?.target_state || p.action_definition?.target_state || '–'}</strong></div>
+                                        {p.pattern_data?.avg_hour !== undefined && (
+                                            <div><span style={{ color: 'var(--text-muted)' }}>{lang === 'de' ? 'Uhrzeit' : 'Time'}:</span> <strong>{String(p.pattern_data.avg_hour).padStart(2,'0')}:{String(p.pattern_data.avg_minute||0).padStart(2,'0')}</strong> ±{p.pattern_data.time_window_min || 15}min</div>
+                                        )}
+                                        {p.pattern_data?.weekday_filter && (
+                                            <div><span style={{ color: 'var(--text-muted)' }}>{lang === 'de' ? 'Tage' : 'Days'}:</span> {p.pattern_data.weekday_filter === 'weekdays' ? (lang === 'de' ? 'Mo–Fr' : 'Mon–Fri') : p.pattern_data.weekday_filter === 'weekends' ? (lang === 'de' ? 'Sa–So' : 'Sat–Sun') : (lang === 'de' ? 'Alle' : 'All')}</div>
+                                        )}
+                                        {p.pattern_data?.sun_relative_elevation != null && (
+                                            <div><span style={{ color: 'var(--text-muted)' }}>{lang === 'de' ? 'Sonnenstand' : 'Sun elevation'}:</span> {p.pattern_data.sun_relative_elevation}°</div>
+                                        )}
+                                        {p.pattern_data?.trigger_entity && (
+                                            <div><span style={{ color: 'var(--text-muted)' }}>Trigger:</span> <code style={{ fontSize: 12 }}>{p.pattern_data.trigger_entity}</code> → {p.pattern_data.trigger_state}</div>
+                                        )}
+                                        {p.pattern_data?.avg_delay_sec && (
+                                            <div><span style={{ color: 'var(--text-muted)' }}>{lang === 'de' ? 'Verzögerung' : 'Delay'}:</span> {p.pattern_data.avg_delay_sec < 60 ? `${Math.round(p.pattern_data.avg_delay_sec)}s` : `${Math.round(p.pattern_data.avg_delay_sec/60)} min`}</div>
+                                        )}
+                                        <div><span style={{ color: 'var(--text-muted)' }}>{lang === 'de' ? 'Beobachtet' : 'Observed'}:</span> {p.pattern_data?.days_observed || 0} {lang === 'de' ? 'Tage' : 'days'}, {p.pattern_data?.occurrence_count || p.match_count || 0}× {lang === 'de' ? 'Treffer' : 'matches'}</div>
+                                        <div><span style={{ color: 'var(--text-muted)' }}>{lang === 'de' ? 'Erstellt' : 'Created'}:</span> {p.created_at ? new Date(p.created_at).toLocaleDateString() : '–'}</div>
+                                        {/* #51 Confidence Explanation */}
+                                        <div style={{ marginTop: 6, padding: '6px 10px', background: 'var(--bg-primary)', borderRadius: 6, fontSize: 11 }}>
+                                            <span className="mdi mdi-information" style={{ marginRight: 4, color: 'var(--info)' }} />
+                                            {p.confidence >= 0.8 ? (lang === 'de' ? 'Hohe Konfidenz: Muster wurde häufig und konsistent beobachtet.' : 'High confidence: Pattern observed frequently and consistently.')
+                                            : p.confidence >= 0.5 ? (lang === 'de' ? 'Mittlere Konfidenz: Muster zeigt sich regelmäßig, aber mit Abweichungen.' : 'Medium confidence: Pattern appears regularly but with variations.')
+                                            : (lang === 'de' ? 'Niedrige Konfidenz: Noch zu wenige Daten für eine sichere Aussage.' : 'Low confidence: Not enough data for reliable prediction.')}
+                                            {p.match_count > 0 && ` (${p.match_count} ${lang === 'de' ? 'Treffer' : 'matches'})`}
+                                        </div>
+                                    </div>
+                                    {p.trigger_conditions && (
+                                        <details style={{ marginTop: 4 }}>
+                                            <summary style={{ cursor: 'pointer', color: 'var(--text-muted)', fontSize: 12 }}>
+                                                {lang === 'de' ? 'Technische Details (JSON)' : 'Technical details (JSON)'}
+                                            </summary>
+                                            <pre style={{ fontSize: 11, marginTop: 4, padding: 8, background: 'var(--bg-primary)', borderRadius: 4, overflow: 'auto', maxHeight: 120 }}>{JSON.stringify({ trigger: p.trigger_conditions, action: p.action_definition }, null, 2)}</pre>
+                                        </details>
+                                    )}
+                                    {/* Test mode + Reject */}
+                                    <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
+                                        <button className={`btn btn-sm ${p.test_mode ? 'btn-warning' : 'btn-ghost'}`}
+                                            onClick={async (e) => { e.stopPropagation();
+                                                await api.put(`patterns/test-mode/${p.id}`, { enabled: !p.test_mode });
+                                                showToast(p.test_mode ? (lang === 'de' ? 'Testmodus deaktiviert' : 'Test mode off') : (lang === 'de' ? 'Testmodus aktiviert' : 'Test mode on'), 'success');
+                                                await load(); }} style={{ fontSize: 11 }}>
+                                            <span className="mdi mdi-flask" style={{ marginRight: 4 }} />
+                                            {p.test_mode ? (lang === 'de' ? 'Test läuft' : 'Testing') : (lang === 'de' ? 'Testlauf' : 'Test Run')}
+                                        </button>
+                                        {p.status !== 'rejected' && (
+                                            <button className="btn btn-sm btn-ghost" onClick={(e) => { e.stopPropagation(); setRejectReason(p.id); }}
+                                                style={{ fontSize: 11, color: 'var(--danger)' }}>
+                                                <span className="mdi mdi-close-circle" style={{ marginRight: 4 }} />
+                                                {lang === 'de' ? 'Ablehnen' : 'Reject'}
+                                            </button>
+                                        )}
+                                        {p.season && <span className="badge badge-info" style={{ fontSize: 10 }}>🌿 {p.season}</span>}
+                                        {p.category && <span className="badge badge-secondary" style={{ fontSize: 10 }}>{p.category}</span>}
+                                    </div>
+                                </div>
+                            )}
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
+            </div>)}
+
+            {/* Confirm delete */}
+            {confirmDel && (
+                <ConfirmDialog
+                    title={lang === 'de' ? 'Muster löschen?' : 'Delete pattern?'}
+                    message={lang === 'de' ? 'Das Muster wird unwiderruflich gelöscht.' : 'The pattern will be permanently deleted.'}
+                    onConfirm={() => deletePattern(confirmDel)}
+                    onCancel={() => setConfirmDel(null)}
+                />
+            )}
+
+            {/* Reject reason modal */}
+            {rejectReason && (
+                <Modal title={lang === 'de' ? 'Ablehnungsgrund' : 'Rejection Reason'} onClose={() => setRejectReason(null)}
+                    actions={<button className="btn btn-secondary" onClick={() => setRejectReason(null)}>{lang === 'de' ? 'Abbrechen' : 'Cancel'}</button>}>
+                    {[{ id: 'coincidence', label: lang === 'de' ? 'Zufall' : 'Coincidence' },
+                      { id: 'unwanted', label: lang === 'de' ? 'Will ich nicht' : 'Unwanted' },
+                      { id: 'wrong', label: lang === 'de' ? 'Falsch erkannt' : 'Wrong detection' }].map(r => (
+                        <button key={r.id} className="btn btn-secondary" style={{ display: 'block', width: '100%', marginBottom: 8, textAlign: 'left' }}
+                            onClick={() => rejectPattern(rejectReason, r.id)}>
+                            {r.label}
+                        </button>
+                    ))}
+                </Modal>
+            )}
+        </div>
+    );
+};
+
+// ================================================================
+// Phase 2a: Patterns Page (Muster-Explorer)
+
+// ================================================================
+// Phase 2b: Notifications Page
+// ================================================================
+
+const NotificationsPage = () => {
+    const { lang, showToast, devices, users } = useApp();
+    const [notifications, setNotifications] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [predictions, setPredictions] = useState([]);
+    const [predFilter, setPredFilter] = useState('all');
+    const [tab, setTab] = useState('inbox');
+    const [notifSettings, setNotifSettings] = useState(null);
+    const [stats, setStats] = useState(null);
+    const [extSettings, setExtSettings] = useState(null);
+    const [ttsDevices, setTtsDevices] = useState([]);
+
+    const load = async () => {
+        try {
+            const [notifs, preds, ns, st, ext, tts] = await Promise.all([
+                api.get('notifications?limit=100'),
+                api.get('predictions?limit=50'),
+                api.get('notification-settings'),
+                api.get('notification-stats'),
+                api.get('notification-settings/extended'),
+                api.get('tts/devices'),
+            ]);
+            setNotifications(notifs);
+            setPredictions(preds);
+            setNotifSettings(ns);
+            setStats(st);
+            if (ext) setExtSettings(ext);
+            if (tts) setTtsDevices(tts);
+        } catch (e) { console.error(e); }
+        setLoading(false);
+    };
+
+    useEffect(() => { load(); }, []);
+
+    const markRead = async (id) => {
+        await api.post(`notifications/${id}/read`);
+        setNotifications(n => n.map(x => x.id === id ? { ...x, was_read: true } : x));
+    };
+
+    const markAllRead = async () => {
+        await api.post('notifications/mark-all-read');
+        setNotifications(n => n.map(x => ({ ...x, was_read: true })));
+        showToast(lang === 'de' ? 'Alle gelesen' : 'All read', 'success');
+    };
+
+    const confirmPred = async (id) => {
+        await api.post(`predictions/${id}/confirm`);
+        showToast(lang === 'de' ? 'Aktiviert!' : 'Activated!', 'success');
+        await load();
+    };
+
+    const rejectPred = async (id) => {
+        await api.post(`predictions/${id}/reject`);
+        showToast(lang === 'de' ? 'Abgelehnt' : 'Rejected', 'info');
+        await load();
+    };
+
+    const undoPred = async (id) => {
+        const result = await api.post(`predictions/${id}/undo`);
+        if (result.error) {
+            showToast(result.error, 'error');
+        } else {
+            showToast(lang === 'de' ? 'Rückgängig gemacht' : 'Undone', 'success');
+            await load();
+        }
+    };
+
+    const filteredPreds = predictions.filter(p => {
+        if (predFilter === 'all') return true;
+        return p.status === predFilter;
+    });
+
+    const typeIcons = {
+        suggestion: 'mdi-lightbulb-on',
+        anomaly: 'mdi-alert-circle',
+        critical: 'mdi-alert-octagon',
+        info: 'mdi-information',
+    };
+
+    const statusColors = {
+        pending: 'warning', confirmed: 'success', rejected: 'danger',
+        executed: 'info', undone: 'warning', ignored: 'secondary',
+    };
+
+    if (loading) return <div style={{ padding: 40, textAlign: 'center' }}><span className="mdi mdi-loading mdi-spin" style={{ fontSize: 32 }} /></div>;
+
+    const toggleDND = async () => {
+        const newVal = !notifSettings?.dnd_enabled;
+        await api.put('notification-settings/dnd', { enabled: newVal });
+        setNotifSettings(s => ({ ...s, dnd_enabled: newVal }));
+        showToast(newVal ? (lang === 'de' ? 'Nicht stören aktiviert' : 'DND enabled') : (lang === 'de' ? 'Nicht stören deaktiviert' : 'DND disabled'), 'success');
+    };
+
+    const updateNS = async (type, field, value) => {
+        await api.put('notification-settings', { type, [field]: value });
+        await load();
+    };
+
+    const discoverChannels = async () => {
+        const result = await api.post('notification-settings/discover-channels');
+        showToast(result?.found > 0 ? `${result.found} ${lang === 'de' ? 'Kanäle gefunden' : 'channels found'}` : (lang === 'de' ? 'Keine neuen Kanäle' : 'No new channels'), result?.found > 0 ? 'success' : 'info');
+        await load();
+    };
+
+    return (
+        <div>
+            {/* Tab bar + DND */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
+                <div style={{ display: 'flex', gap: 4 }}>
+                    {[{ id: 'inbox', label: lang === 'de' ? 'Posteingang' : 'Inbox', icon: 'mdi-bell' },
+                      { id: 'settings', label: lang === 'de' ? 'Einstellungen' : 'Settings', icon: 'mdi-cog' }].map(t => (
+                        <button key={t.id} className={`btn ${tab === t.id ? 'btn-primary' : 'btn-ghost'}`}
+                            style={{ fontSize: 13, padding: '6px 14px' }} onClick={() => setTab(t.id)}>
+                            <span className={`mdi ${t.icon}`} style={{ marginRight: 6 }} />{t.label}
+                        </button>
+                    ))}
+                </div>
+                <button className={`btn ${notifSettings?.dnd_enabled ? 'btn-warning' : 'btn-ghost'}`}
+                    onClick={toggleDND} style={{ fontSize: 12, padding: '6px 12px' }}>
+                    <span className="mdi mdi-bell-off" style={{ marginRight: 4 }} />DND
+                </button>
+            </div>
+
+            {stats && <div style={{ display: 'flex', gap: 12, marginBottom: 16, fontSize: 12, color: 'var(--text-muted)' }}>
+                <span>30d:</span><span>{stats.total} {lang === 'de' ? 'gesamt' : 'total'}</span>
+                <span>· {stats.read} {lang === 'de' ? 'gelesen' : 'read'}</span>
+                <span>· {stats.sent} push</span>
+            </div>}
+
+            {tab === 'settings' ? (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16 }}>
+                    {/* LEFT COLUMN */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                        {/* Types with channel + sound */}
+                        <div className="card">
+                            <div className="card-title" style={{ marginBottom: 12 }}>{lang === 'de' ? 'Typen' : 'Types'}</div>
+                            {['anomaly', 'suggestion', 'critical', 'info'].map(type => {
+                                const s = notifSettings?.settings?.find(x => x.type === type);
+                                const labels = { anomaly: lang === 'de' ? 'Anomalien' : 'Anomalies', suggestion: lang === 'de' ? 'Vorschläge' : 'Suggestions', critical: lang === 'de' ? 'Kritisch' : 'Critical', info: 'Info' };
+                                const typeSound = extSettings?.type_sounds?.[type];
+                                return (<div key={type} style={{ padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                        <span style={{ fontSize: 13 }}>{labels[type]}</span>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                            <button className={`btn btn-sm ${typeSound !== false ? 'btn-ghost' : 'btn-ghost'}`}
+                                                onClick={async () => {
+                                                    const sounds = { ...(extSettings?.type_sounds || {}), [type]: !typeSound };
+                                                    setExtSettings(prev => ({ ...prev, type_sounds: sounds }));
+                                                    await api.put('notification-settings/extended', { type_sounds: sounds });
+                                                }} title={lang === 'de' ? 'Ton' : 'Sound'} style={{ padding: '2px 4px' }}>
+                                                <span className={`mdi ${typeSound !== false ? 'mdi-volume-high' : 'mdi-volume-off'}`} style={{ color: typeSound !== false ? 'var(--accent-primary)' : 'var(--text-muted)', fontSize: 14 }} />
+                                            </button>
+                                            <label className="toggle"><input type="checkbox" checked={s?.enabled !== false}
+                                                onChange={async () => { await api.put(`notification-settings/${type}`, { enabled: !s?.enabled }); await load(); }} /><div className="toggle-slider" /></label>
+                                        </div>
+                                    </div>
+                                </div>);
+                            })}
+                        </div>
+
+                        {/* Quiet Hours Extended */}
+                        <div className="card">
+                            <div className="card-title" style={{ marginBottom: 12 }}>
+                                <span className="mdi mdi-moon-waning-crescent" style={{ marginRight: 8, color: 'var(--accent-primary)' }} />
+                                {lang === 'de' ? 'Ruhezeiten' : 'Quiet Hours'}
+                            </div>
+                            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8 }}>{lang === 'de' ? 'Kein Push in diesem Zeitraum (außer Kritisch)' : 'No push during this period (except Critical)'}</div>
+                            <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+                                <div style={{ fontSize: 12 }}>{lang === 'de' ? 'Werktag' : 'Weekday'}:</div>
+                                <input type="time" className="input" value={extSettings?.quiet_hours?.start || '22:00'} style={{ width: 90, padding: '4px 8px', fontSize: 12 }}
+                                    onChange={async (e) => { const qh = { ...extSettings?.quiet_hours, start: e.target.value }; setExtSettings(prev => ({ ...prev, quiet_hours: qh })); await api.put('notification-settings/extended', { quiet_hours: qh }); }} />
+                                <span>–</span>
+                                <input type="time" className="input" value={extSettings?.quiet_hours?.end || '07:00'} style={{ width: 90, padding: '4px 8px', fontSize: 12 }}
+                                    onChange={async (e) => { const qh = { ...extSettings?.quiet_hours, end: e.target.value }; setExtSettings(prev => ({ ...prev, quiet_hours: qh })); await api.put('notification-settings/extended', { quiet_hours: qh }); }} />
+                            </div>
+                            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                                <div style={{ fontSize: 12 }}>{lang === 'de' ? 'Wochenende' : 'Weekend'}:</div>
+                                <input type="time" className="input" value={extSettings?.quiet_hours?.weekend_start || '23:00'} style={{ width: 90, padding: '4px 8px', fontSize: 12 }}
+                                    onChange={async (e) => { const qh = { ...extSettings?.quiet_hours, weekend_start: e.target.value }; setExtSettings(prev => ({ ...prev, quiet_hours: qh })); await api.put('notification-settings/extended', { quiet_hours: qh }); }} />
+                                <span>–</span>
+                                <input type="time" className="input" value={extSettings?.quiet_hours?.weekend_end || '09:00'} style={{ width: 90, padding: '4px 8px', fontSize: 12 }}
+                                    onChange={async (e) => { const qh = { ...extSettings?.quiet_hours, weekend_end: e.target.value }; setExtSettings(prev => ({ ...prev, quiet_hours: qh })); await api.put('notification-settings/extended', { quiet_hours: qh }); }} />
+                            </div>
+                        </div>
+
+                        {/* Extended Settings */}
+                        <div className="card">
+                            <div className="card-title" style={{ marginBottom: 12 }}>
+                                <span className="mdi mdi-tune" style={{ marginRight: 8, color: 'var(--accent-primary)' }} />
+                                {lang === 'de' ? 'Erweiterte Einstellungen' : 'Extended Settings'}
+                            </div>
+                            {[
+                                { key: 'escalation', icon: 'mdi-arrow-up-bold', de: 'Eskalation (Push → TTS)', en: 'Escalation (Push → TTS)' },
+                                { key: 'repeat_rules', icon: 'mdi-repeat', de: 'Wiederholung bei Nichtlesen', en: 'Repeat if unread' },
+                                { key: 'confirmation_required', icon: 'mdi-check-decagram', de: 'Bestätigungspflicht (Kritisch)', en: 'Confirmation required (Critical)' },
+                                { key: 'critical_override', icon: 'mdi-alert-octagon', de: 'Kritisch durchbricht alles', en: 'Critical overrides everything' },
+                                { key: 'fallback_channels', icon: 'mdi-swap-horizontal', de: 'Kanal-Fallback bei Fehler', en: 'Channel fallback on error' },
+                                { key: 'vacation_coupling', icon: 'mdi-palm-tree', de: 'Urlaub: nur Kritisch', en: 'Vacation: critical only' },
+                                { key: 'test_mode', icon: 'mdi-flask', de: 'Testmodus (nur loggen)', en: 'Test mode (log only)' },
+                            ].map(item => (
+                                <div key={item.key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 0', borderBottom: '1px solid var(--border)' }}>
+                                    <span style={{ fontSize: 13 }}><span className={`mdi ${item.icon}`} style={{ marginRight: 6, fontSize: 14 }} />{lang === 'de' ? item.de : item.en}</span>
+                                    <label className="toggle"><input type="checkbox" checked={extSettings?.[item.key]?.enabled || false}
+                                        onChange={async () => {
+                                            const val = { ...(extSettings?.[item.key] || {}), enabled: !extSettings?.[item.key]?.enabled };
+                                            setExtSettings(prev => ({ ...prev, [item.key]: val }));
+                                            await api.put('notification-settings/extended', { [item.key]: val });
+                                        }} /><div className="toggle-slider" /></label>
+                                </div>
+                            ))}
+
+                            {/* Grouping window */}
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 0', borderBottom: '1px solid var(--border)' }}>
+                                <span style={{ fontSize: 13 }}><span className="mdi mdi-group" style={{ marginRight: 6, fontSize: 14 }} />{lang === 'de' ? 'Gruppierung' : 'Grouping'}</span>
+                                <div style={{ display: 'flex', gap: 4 }}>
+                                    {[1, 5, 15, 30].map(m => (
+                                        <button key={m} className={`btn btn-sm ${(extSettings?.grouping?.window_min || 5) === m ? 'btn-primary' : 'btn-ghost'}`}
+                                            onClick={async () => { const g = { enabled: true, window_min: m }; setExtSettings(prev => ({ ...prev, grouping: g })); await api.put('notification-settings/extended', { grouping: g }); }}
+                                            style={{ fontSize: 10, padding: '2px 6px' }}>{m}m</button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Rate limits */}
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 0', borderBottom: '1px solid var(--border)' }}>
+                                <span style={{ fontSize: 13 }}><span className="mdi mdi-speedometer" style={{ marginRight: 6, fontSize: 14 }} />{lang === 'de' ? 'Max pro Stunde' : 'Rate limit /h'}</span>
+                                <div style={{ display: 'flex', gap: 4 }}>
+                                    {[5, 10, 20, 0].map(r => (
+                                        <button key={r} className={`btn btn-sm ${(extSettings?.rate_limits?.anomaly || 10) === r ? 'btn-primary' : 'btn-ghost'}`}
+                                            onClick={async () => { const rl = { anomaly: r, suggestion: r, critical: 0, info: r }; setExtSettings(prev => ({ ...prev, rate_limits: rl })); await api.put('notification-settings/extended', { rate_limits: rl }); }}
+                                            style={{ fontSize: 10, padding: '2px 6px' }}>{r === 0 ? '∞' : r}</button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Digest */}
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 0', borderBottom: '1px solid var(--border)' }}>
+                                <span style={{ fontSize: 13 }}><span className="mdi mdi-email-newsletter" style={{ marginRight: 6, fontSize: 14 }} />{lang === 'de' ? 'Zusammenfassung' : 'Digest'}</span>
+                                <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                                    <label className="toggle"><input type="checkbox" checked={extSettings?.digest?.enabled || false}
+                                        onChange={async () => { const d = { ...(extSettings?.digest || {}), enabled: !extSettings?.digest?.enabled }; setExtSettings(prev => ({ ...prev, digest: d })); await api.put('notification-settings/extended', { digest: d }); }} /><div className="toggle-slider" /></label>
+                                    {extSettings?.digest?.enabled && <input type="time" className="input" value={extSettings?.digest?.time || '08:00'} style={{ width: 80, padding: '2px 6px', fontSize: 11 }}
+                                        onChange={async (e) => { const d = { ...extSettings.digest, time: e.target.value }; setExtSettings(prev => ({ ...prev, digest: d })); await api.put('notification-settings/extended', { digest: d }); }} />}
+                                </div>
+                            </div>
+
+                            {/* Battery threshold */}
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 0' }}>
+                                <span style={{ fontSize: 13 }}><span className="mdi mdi-battery-alert" style={{ marginRight: 6, fontSize: 14 }} />{lang === 'de' ? 'Batterie-Warnung unter' : 'Battery warning below'}</span>
+                                <div style={{ display: 'flex', gap: 4 }}>
+                                    {[10, 20, 30].map(p => (
+                                        <button key={p} className={`btn btn-sm ${(extSettings?.battery_threshold || 20) === p ? 'btn-primary' : 'btn-ghost'}`}
+                                            onClick={async () => { setExtSettings(prev => ({ ...prev, battery_threshold: p })); await api.put('notification-settings/extended', { battery_threshold: p }); }}
+                                            style={{ fontSize: 10, padding: '2px 6px' }}>{p}%</button>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Stats */}
+                        {stats && (
+                            <div className="card">
+                                <div className="card-title" style={{ marginBottom: 12 }}>{lang === 'de' ? 'Statistiken (30 Tage)' : 'Statistics (30 days)'}</div>
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+                                    <div style={{ textAlign: 'center', padding: 10, background: 'var(--bg-main)', borderRadius: 8 }}>
+                                        <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--accent-primary)' }}>{stats.total || 0}</div>
+                                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Gesamt' : 'Total'}</div>
+                                    </div>
+                                    <div style={{ textAlign: 'center', padding: 10, background: 'var(--bg-main)', borderRadius: 8 }}>
+                                        <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--success)' }}>{stats.read || 0}</div>
+                                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Gelesen' : 'Read'}</div>
+                                    </div>
+                                    <div style={{ textAlign: 'center', padding: 10, background: 'var(--bg-main)', borderRadius: 8 }}>
+                                        <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--info)' }}>{stats.pushed || 0}</div>
+                                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Push</div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* RIGHT COLUMN */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                        {/* Push Channels - Collapsible */}
+                        <CollapsibleCard title={`${lang === 'de' ? 'Push-Kanäle' : 'Push Channels'} · ${notifSettings?.channels?.length || 0}`} icon="mdi-send" defaultOpen={false}>
+                            <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
+                                <button className="btn btn-sm btn-secondary" onClick={async () => { await api.post('notification-settings/scan-channels'); await load(); }}>
+                                    <span className="mdi mdi-refresh" style={{ marginRight: 4 }} />{lang === 'de' ? 'Suchen' : 'Scan'}
+                                </button>
+                            </div>
+                            <div style={{ maxHeight: 300, overflowY: 'auto' }}>
+                                {(notifSettings?.channels || []).map(ch => (
+                                    <div key={ch.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--border)' }}>
+                                        <div>
+                                            <div style={{ fontSize: 13, fontWeight: 500 }}>{ch.name}</div>
+                                            <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{ch.ha_service}</div>
+                                        </div>
+                                        <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                                            <button className="btn btn-sm btn-ghost" onClick={async () => { await api.post(`notification-settings/test-channel/${ch.id}`); showToast('Test sent', 'success'); }} style={{ fontSize: 10 }}>Test</button>
+                                            <label className="toggle" style={{ transform: 'scale(0.8)' }}><input type="checkbox" checked={ch.is_active}
+                                                onChange={async () => { await api.put(`notification-settings/channel/${ch.id}`, { is_active: !ch.is_active }); await load(); }} /><div className="toggle-slider" /></label>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </CollapsibleCard>
+
+                        {/* Person Channel Assignment - Collapsible */}
+                        <CollapsibleCard title={lang === 'de' ? 'Personen-Zuordnung' : 'Person Assignment'} icon="mdi-account-group" defaultOpen={false}>
+                            {(users || []).map(u => (
+                                <div key={u.id} style={{ padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
+                                    <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 4 }}>{u.name}</div>
+                                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                                        {(notifSettings?.channels || []).filter(c => c.is_active).map(ch => {
+                                            const assigned = extSettings?.person_channels?.[u.id]?.includes(ch.id);
+                                            return <button key={ch.id} className={`btn btn-sm ${assigned ? 'btn-primary' : 'btn-ghost'}`}
+                                                onClick={async () => {
+                                                    const pc = { ...(extSettings?.person_channels || {}) };
+                                                    const current = pc[u.id] || [];
+                                                    pc[u.id] = assigned ? current.filter(id => id !== ch.id) : [...current, ch.id];
+                                                    setExtSettings(prev => ({ ...prev, person_channels: pc }));
+                                                    await api.put('notification-settings/extended', { person_channels: pc });
+                                                }} style={{ fontSize: 10, padding: '2px 6px' }}>{ch.name}</button>;
+                                        })}
+                                    </div>
+                                </div>
+                            ))}
+                        </CollapsibleCard>
+
+                        {/* TTS - Collapsible */}
+                        {ttsDevices.length > 0 && (
+                            <CollapsibleCard title={`${lang === 'de' ? 'Sprachausgabe (TTS)' : 'Text-to-Speech'} · ${ttsDevices.length}`} icon="mdi-bullhorn" defaultOpen={false}>
+                                {ttsDevices.map(d => (
+                                    <div key={d.entity_id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--border)' }}>
+                                        <span style={{ fontSize: 13 }}>{d.name}</span>
+                                        <button className="btn btn-sm btn-secondary" onClick={async () => {
+                                            await api.post('tts/announce', { message: lang === 'de' ? 'Dies ist ein Test von MindHome.' : 'This is a test from MindHome.', entity_id: d.entity_id });
+                                            showToast(lang === 'de' ? 'TTS gesendet' : 'TTS sent', 'success');
+                                        }} style={{ fontSize: 11 }}><span className="mdi mdi-play" style={{ marginRight: 2 }} />Test</button>
+                                    </div>
+                                ))}
+                            </CollapsibleCard>
+                        )}
+
+                        {/* Muted Devices - Collapsible */}
+                        <CollapsibleCard title={`${lang === 'de' ? 'Stummgeschaltete Geräte' : 'Muted Devices'} · ${notifSettings?.muted_devices?.length || 0}`} icon="mdi-volume-off" defaultOpen={false}>
+                            {notifSettings?.muted_devices?.length > 0 ? notifSettings.muted_devices.map(m => (
+                                <div key={m.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0' }}>
+                                    <span style={{ fontSize: 13 }}>{devices.find(d => d.id === m.device_id)?.name || `#${m.device_id}`}</span>
+                                    <button className="btn btn-ghost" style={{ fontSize: 11, color: 'var(--danger)' }}
+                                        onClick={async () => { await api.delete(`notification-settings/unmute-device/${m.id}`); await load(); }}>
+                                        <span className="mdi mdi-volume-high" style={{ marginRight: 2 }} />{lang === 'de' ? 'Entstummen' : 'Unmute'}
+                                    </button>
+                                </div>
+                            )) : <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Keine stummgeschalteten Geräte.' : 'No muted devices.'}</p>}
+                        </CollapsibleCard>
+
+                        {/* DND Button */}
+                        <button className={`btn ${notifSettings?.dnd_enabled ? 'btn-warning' : 'btn-secondary'}`}
+                            onClick={async () => { const newVal = !notifSettings?.dnd_enabled; setNotifSettings(s => ({ ...s, dnd_enabled: newVal })); await api.put('notification-settings/dnd', { enabled: newVal }); }}
+                            style={{ fontSize: 13, padding: '10px 16px' }}>
+                            <span className={`mdi ${notifSettings?.dnd_enabled ? 'mdi-bell-off' : 'mdi-bell-ring'}`} style={{ marginRight: 8 }} />
+                            {notifSettings?.dnd_enabled ? (lang === 'de' ? 'DND aktiv – Benachrichtigungen stumm' : 'DND active') : (lang === 'de' ? 'Nicht stören aktivieren' : 'Enable Do Not Disturb')}
+                        </button>
+                    </div>
+                </div>
+            ) : (<div>
+            {/* Suggestions / Predictions */}
+            <div className="card animate-in" style={{ marginBottom: 24 }}>
+                <div className="card-header">
+                    <div>
+                        <div className="card-title">
+                            <span className="mdi mdi-lightbulb-on" style={{ marginRight: 8, color: 'var(--warning)' }} />
+                            {lang === 'de' ? 'Vorschläge & Automationen' : 'Suggestions & Automations'}
+                        </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                        {['all', 'pending', 'executed', 'confirmed', 'rejected', 'undone'].map(f => (
+                            <button key={f} className={`btn btn-sm ${predFilter === f ? 'btn-primary' : 'btn-ghost'}`}
+                                    onClick={() => setPredFilter(f)} style={{ fontSize: 12 }}>
+                                {f === 'all' ? (lang === 'de' ? 'Alle' : 'All') :
+                                 f === 'pending' ? (lang === 'de' ? 'Offen' : 'Pending') :
+                                 f === 'executed' ? (lang === 'de' ? 'Ausgeführt' : 'Executed') :
+                                 f === 'confirmed' ? (lang === 'de' ? 'Bestätigt' : 'Confirmed') :
+                                 f === 'rejected' ? (lang === 'de' ? 'Abgelehnt' : 'Rejected') :
+                                 f === 'undone' ? (lang === 'de' ? 'Rückgängig' : 'Undone') : f}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+                {filteredPreds.length === 0 ? (
+                    <div className="empty-state">
+                        <span className="mdi mdi-lightbulb-outline" />
+                        <h3>{lang === 'de' ? 'Keine Vorschläge' : 'No suggestions'}</h3>
+                        <p>{lang === 'de' ? 'Vorschläge erscheinen sobald Muster erkannt werden.' : 'Suggestions will appear once patterns are detected.'}</p>
+                    </div>
+                ) : (
+                    (() => {
+                        // Group by day for timeline
+                        const grouped = {};
+                        filteredPreds.forEach(pred => {
+                            const day = pred.created_at ? new Date(pred.created_at).toLocaleDateString(lang === 'de' ? 'de-DE' : 'en-US', { weekday: 'long', day: 'numeric', month: 'long' }) : (lang === 'de' ? 'Unbekannt' : 'Unknown');
+                            if (!grouped[day]) grouped[day] = [];
+                            grouped[day].push(pred);
+                        });
+                        return Object.entries(grouped).map(([day, preds]) => (
+                            <div key={day}>
+                                <div style={{ padding: '8px 16px', fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', background: 'var(--bg-tertiary)', borderBottom: '1px solid var(--border-color)' }}>
+                                    {day}
+                                </div>
+                                {preds.map(pred => (
+                        <div key={pred.id} style={{
+                            padding: '12px 16px', borderBottom: '1px solid var(--border-color)',
+                            display: 'flex', alignItems: 'center', gap: 12,
+                            opacity: ['rejected', 'undone'].includes(pred.status) ? 0.6 : 1,
+                        }}>
+                            <span className="mdi mdi-robot" style={{ fontSize: 20, color: 'var(--accent-primary)', flexShrink: 0 }} />
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ fontSize: 14 }}>{pred.description || 'Pattern'}</div>
+                                <div style={{ display: 'flex', gap: 8, fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+                                    <span className={`badge badge-${statusColors[pred.status] || 'info'}`} style={{ fontSize: 11 }}>
+                                        {pred.status}
+                                    </span>
+                                    <span>{Math.round(pred.confidence * 100)}%</span>
+                                    {pred.executed_at && <span>{new Date(pred.executed_at).toLocaleString()}</span>}
+                                </div>
+                            </div>
+                            <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+                                {pred.status === 'pending' && (
+                                    <>
+                                        <button className="btn btn-sm btn-success" onClick={() => confirmPred(pred.id)} title={lang === 'de' ? 'Aktivieren' : 'Activate'}>
+                                            <span className="mdi mdi-check" />
+                                        </button>
+                                        <button className="btn btn-sm btn-ghost" onClick={() => rejectPred(pred.id)} title={lang === 'de' ? 'Ablehnen' : 'Reject'}>
+                                            <span className="mdi mdi-close" />
+                                        </button>
+                                    </>
+                                )}
+                                {pred.status === 'executed' && (
+                                    <button className="btn btn-sm btn-warning" onClick={() => undoPred(pred.id)} title={lang === 'de' ? 'Rückgängig' : 'Undo'}>
+                                        <span className="mdi mdi-undo" />
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                    ))}
+                        </div>
+                    ))
+                    })()
+                )}
+            </div>
+
+            {/* Notification Log */}
+            <div className="card animate-in">
+                <div className="card-header">
+                    <div>
+                        <div className="card-title">
+                            <span className="mdi mdi-bell" style={{ marginRight: 8 }} />
+                            {lang === 'de' ? 'Benachrichtigungen' : 'Notifications'}
+                            {notifications.filter(n => !n.was_read).length > 0 && (
+                                <span className="badge badge-danger" style={{ marginLeft: 8 }}>
+                                    {notifications.filter(n => !n.was_read).length}
+                                </span>
+                            )}
+                        </div>
+                    </div>
+                    {notifications.some(n => !n.was_read) && (
+                        <button className="btn btn-sm btn-ghost" onClick={markAllRead}>
+                            <span className="mdi mdi-check-all" style={{ marginRight: 4 }} />
+                            {lang === 'de' ? 'Alle gelesen' : 'Mark all read'}
+                        </button>
+                    )}
+                </div>
+                {notifications.length === 0 ? (
+                    <div className="empty-state">
+                        <span className="mdi mdi-bell-outline" />
+                        <h3>{lang === 'de' ? 'Keine Benachrichtigungen' : 'No notifications'}</h3>
+                    </div>
+                ) : (
+                    notifications.map(n => (
+                        <div key={n.id} style={{
+                            padding: '10px 16px', borderBottom: '1px solid var(--border-color)',
+                            display: 'flex', alignItems: 'center', gap: 12,
+                            background: n.was_read ? 'transparent' : 'var(--bg-tertiary)',
+                            cursor: 'pointer',
+                        }} onClick={() => !n.was_read && markRead(n.id)}>
+                            <span className={`mdi ${typeIcons[n.type] || 'mdi-bell'}`}
+                                  style={{ fontSize: 18, color: n.type === 'anomaly' ? 'var(--danger)' : 'var(--accent-primary)', flexShrink: 0 }} />
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ fontWeight: n.was_read ? 400 : 600, fontSize: 13 }}>{n.title}</div>
+                                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{n.message}</div>
+                            </div>
+                            <div style={{ fontSize: 11, color: 'var(--text-muted)', flexShrink: 0, whiteSpace: 'nowrap' }}>
+                                {n.created_at ? new Date(n.created_at).toLocaleString() : ''}
+                            </div>
+                            {!n.was_read && <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--accent-primary)', flexShrink: 0 }} />}
+                        </div>
+                    ))
+                )}
+            </div>
+        </div>)}
+    </div>
+    );
+};
+
+// ================================================================
+// Phase 2a: Patterns Page (Muster-Explorer)
+
+// ================================================================
+// Onboarding Wizard
+// ================================================================
+
+const OnboardingWizard = ({ onComplete }) => {
+    const [step, setStep] = useState(0);
+    const [lang, setLangLocal] = useState('de');
+    const [adminName, setAdminName] = useState('');
+    const [discovered, setDiscovered] = useState(null);
+    const [discovering, setDiscovering] = useState(false);
+    const [restoring, setRestoring] = useState(false);
+    const [backupData, setBackupData] = useState(null);
+    const [backupError, setBackupError] = useState('');
+    const restoreInputRef = useRef(null);
+
+    const handleFileSelect = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        setBackupError('');
+        try {
+            const text = await file.text();
+            const data = JSON.parse(text);
+            if (!data.version) {
+                setBackupError(lang === 'de' ? 'Ungültige Backup-Datei' : 'Invalid backup file');
+                return;
+            }
+            setBackupData(data);
+        } catch (err) {
+            setBackupError(lang === 'de' ? 'Datei konnte nicht gelesen werden' : 'Could not read file');
+        }
+        e.target.value = '';
+    };
+
+    const handleConfirmRestore = async () => {
+        if (!backupData) return;
+        setRestoring(true);
+        setBackupError('');
+        try {
+            const result = await api.post('backup/import', backupData);
+            if (result?.success) {
+                onComplete();
+                return;
+            } else {
+                setBackupError(result?.error || (lang === 'de' ? 'Import fehlgeschlagen' : 'Import failed'));
+            }
+        } catch (err) {
+            setBackupError(lang === 'de' ? 'Import fehlgeschlagen' : 'Import failed');
+        }
+        setRestoring(false);
+    };
+
+    const steps = [
+        { id: 'welcome', icon: 'mdi-lightbulb-on' },
+        { id: 'language', icon: 'mdi-translate' },
+        { id: 'admin', icon: 'mdi-shield-crown' },
+        { id: 'discover', icon: 'mdi-magnify' },
+        { id: 'privacy', icon: 'mdi-shield-lock' },
+        { id: 'done', icon: 'mdi-check-circle' },
+    ];
+
+    const handleDiscover = async () => {
+        setDiscovering(true);
+        const result = await api.get('discover');
+        setDiscovered(result);
+        setDiscovering(false);
+    };
+
+    const handleComplete = async () => {
+        // Create admin user
+        if (adminName.trim()) {
+            await api.post('users', { name: adminName, role: 'admin' });
         }
 
-        return jsonify(backup)
-    finally:
-        session.close()
+        // Devices are imported manually from the Devices page
 
+        // Set language
+        await api.put('system/settings/language', { value: lang });
 
-@app.route("/api/backup/import", methods=["POST"])
-def api_backup_import():
-    """Import MindHome configuration from JSON backup."""
-    data = request.json
-    if not data or "version" not in data:
-        return jsonify({"error": "Invalid backup file"}), 400
-    session = get_db()
-    try:
-        # Restore domains
-        for d_data in data.get("domains", []):
-            try:
-                domain = session.query(Domain).filter_by(name=d_data.get("name")).first()
-                if domain:
-                    domain.is_enabled = d_data.get("is_enabled", False)
-                elif d_data.get("is_custom"):
-                    domain = Domain(
-                        name=d_data["name"],
-                        display_name_de=d_data.get("display_name_de", d_data["name"]),
-                        display_name_en=d_data.get("display_name_en", d_data["name"]),
-                        icon=d_data.get("icon", "mdi:puzzle"),
-                        is_enabled=d_data.get("is_enabled", True),
-                        is_custom=True,
-                        description_de=d_data.get("description_de", ""),
-                        description_en=d_data.get("description_en", "")
-                    )
-                    session.add(domain)
-            except Exception as e:
-                logger.warning(f"Domain import error: {e}")
+        // Mark onboarding complete
+        await api.post('onboarding/complete');
 
-        session.flush()
+        onComplete();
+    };
 
-        # Restore rooms
-        room_id_map = {}
-        for r_data in data.get("rooms", []):
-            try:
-                existing = session.query(Room).filter_by(name=r_data.get("name")).first()
-                if existing:
-                    existing.icon = r_data.get("icon", "mdi:door")
-                    existing.privacy_mode = r_data.get("privacy_mode") or {}
-                    room_id_map[r_data.get("id", 0)] = existing.id
-                else:
-                    room = Room(
-                        name=r_data.get("name", "Room"),
-                        ha_area_id=r_data.get("ha_area_id"),
-                        icon=r_data.get("icon", "mdi:door"),
-                        privacy_mode=r_data.get("privacy_mode") or {},
-                        is_active=r_data.get("is_active", True)
-                    )
-                    session.add(room)
-                    session.flush()
-                    room_id_map[r_data.get("id", 0)] = room.id
-            except Exception as e:
-                logger.warning(f"Room import error: {e}")
-
-        session.flush()
-
-        # Restore devices
-        for dev_data in data.get("devices", []):
-            try:
-                entity_id = dev_data.get("ha_entity_id")
-                if not entity_id:
-                    continue
-                existing = session.query(Device).filter_by(ha_entity_id=entity_id).first()
-                new_room_id = room_id_map.get(dev_data.get("room_id"))
-                if existing:
-                    existing.name = dev_data.get("name", existing.name)
-                    existing.room_id = new_room_id
-                    if dev_data.get("domain_id"):
-                        existing.domain_id = dev_data["domain_id"]
-                    existing.is_tracked = dev_data.get("is_tracked", True)
-                    existing.is_controllable = dev_data.get("is_controllable", True)
-                else:
-                    device = Device(
-                        ha_entity_id=entity_id,
-                        name=dev_data.get("name", entity_id),
-                        domain_id=dev_data.get("domain_id") or 1,
-                        room_id=new_room_id,
-                        is_tracked=dev_data.get("is_tracked", True),
-                        is_controllable=dev_data.get("is_controllable", True),
-                        device_meta=dev_data.get("device_meta") or {}
-                    )
-                    session.add(device)
-            except Exception as e:
-                logger.warning(f"Device import error: {e}")
-
-        session.flush()
-
-        # Restore users
-        for u_data in data.get("users", []):
-            try:
-                uname = u_data.get("name")
-                if not uname:
-                    continue
-                existing = session.query(User).filter_by(name=uname).first()
-                role_str = u_data.get("role", "user")
-                try:
-                    role_enum = UserRole(role_str) if isinstance(role_str, str) else role_str
-                except (ValueError, KeyError):
-                    role_enum = UserRole.USER
-
-                if existing:
-                    existing.ha_person_entity = u_data.get("ha_person_entity")
-                    existing.role = role_enum
-                else:
-                    user = User(
-                        name=uname,
-                        ha_person_entity=u_data.get("ha_person_entity"),
-                        role=role_enum,
-                        language=u_data.get("language", "de")
-                    )
-                    session.add(user)
-            except Exception as e:
-                logger.warning(f"User import error: {e}")
-
-        session.commit()
-
-        for s_data in data.get("settings", []):
-            try:
-                if s_data.get("key"):
-                    set_setting(s_data["key"], s_data.get("value", ""))
-            except Exception as e:
-                logger.warning(f"Setting import error: {e}")
-
-        # Restore room_domain_states (learning phases)
-        session2 = get_db()
-        try:
-            for rds_data in data.get("room_domain_states", []):
-                try:
-                    old_room_id = rds_data.get("room_id")
-                    new_room_id = room_id_map.get(old_room_id, old_room_id)
-                    domain_id = rds_data.get("domain_id")
-                    if not new_room_id or not domain_id:
-                        continue
-                    existing = session2.query(RoomDomainState).filter_by(
-                        room_id=new_room_id, domain_id=domain_id
-                    ).first()
-                    phase_str = rds_data.get("learning_phase", "observing")
-                    try:
-                        phase_enum = LearningPhase(phase_str)
-                    except (ValueError, KeyError):
-                        phase_enum = LearningPhase.OBSERVING
-                    if existing:
-                        existing.learning_phase = phase_enum
-                        existing.confidence_score = rds_data.get("confidence_score", 0.0)
-                        existing.is_paused = rds_data.get("is_paused", False)
-                    else:
-                        rds = RoomDomainState(
-                            room_id=new_room_id,
-                            domain_id=domain_id,
-                            learning_phase=phase_enum,
-                            confidence_score=rds_data.get("confidence_score", 0.0),
-                            is_paused=rds_data.get("is_paused", False)
-                        )
-                        session2.add(rds)
-                except Exception as e:
-                    logger.warning(f"RoomDomainState import error: {e}")
-
-            # Restore quick_actions
-            for qa_data in data.get("quick_actions", []):
-                try:
-                    existing = session2.query(QuickAction).filter_by(
-                        name=qa_data.get("name")
-                    ).first()
-                    if not existing and qa_data.get("name"):
-                        qa = QuickAction(
-                            name=qa_data["name"],
-                            icon=qa_data.get("icon", "mdi:flash"),
-                            action_type=qa_data.get("action_type", "toggle"),
-                            action_data=qa_data.get("action_data") or {},
-                            sort_order=qa_data.get("sort_order", 0),
-                            is_active=qa_data.get("is_active", True)
-                        )
-                        session2.add(qa)
-                except Exception as e:
-                    logger.warning(f"QuickAction import error: {e}")
-
-            # Restore user_preferences
-            for up_data in data.get("user_preferences", []):
-                try:
-                    existing = session2.query(UserPreference).filter_by(
-                        user_id=up_data.get("user_id", 1),
-                        room_id=up_data.get("room_id"),
-                        preference_key=up_data.get("preference_key")
-                    ).first()
-                    if existing:
-                        existing.preference_value = up_data.get("preference_value")
-                    elif up_data.get("preference_key"):
-                        pref = UserPreference(
-                            user_id=up_data.get("user_id", 1),
-                            room_id=up_data.get("room_id"),
-                            preference_key=up_data["preference_key"],
-                            preference_value=up_data.get("preference_value")
-                        )
-                        session2.add(pref)
-                except Exception as e:
-                    logger.warning(f"UserPreference import error: {e}")
-
-            session2.commit()
-        except Exception as e:
-            session2.rollback()
-            logger.warning(f"Phase 2 import error: {e}")
-        finally:
-            session2.close()
-
-        set_setting("onboarding_completed", "true")
-
-        logger.info(f"Backup imported: {len(data.get('rooms',[]))} rooms, {len(data.get('devices',[]))} devices")
-        return jsonify({"success": True, "imported": {
-            "rooms": len(data.get("rooms", [])),
-            "devices": len(data.get("devices", [])),
-            "users": len(data.get("users", []))
-        }})
-    except Exception as e:
-        try:
-            session.rollback()
-        except:
-            pass
-        logger.error(f"Backup import failed: {e}", exc_info=True)
-        return jsonify({"error": str(e)}), 500
-    finally:
-        session.close()
-
-
-# ==============================================================================
-# New v0.5.0 API Endpoints
-# ==============================================================================
-
-# #24 Device Health Check
-@app.route("/api/device-health", methods=["GET"])
-def api_device_health():
-    """Check all devices for health issues (battery, unreachable)."""
-    try:
-        issues = ha.check_device_health()
-        return jsonify({"issues": issues, "total": len(issues)})
-    except Exception as e:
-        logger.error(f"Device health check error: {e}")
-        return jsonify({"issues": [], "total": 0, "error": str(e)})
-
-
-# #42 Debug Mode
-@app.route("/api/system/debug", methods=["GET"])
-def api_get_debug():
-    """Get debug mode status."""
-    try:
-        return jsonify({"debug_mode": is_debug_mode()})
-    except Exception as e:
-        return jsonify({"debug_mode": False, "error": str(e)})
-
-@app.route("/api/system/debug", methods=["PUT"])
-def api_toggle_debug():
-    """Toggle debug mode."""
-    try:
-        global _debug_mode
-        _debug_mode = not _debug_mode
-        level = logging.DEBUG if _debug_mode else logging.INFO
-        logging.getLogger("mindhome").setLevel(level)
-        audit_log("debug_mode_toggle", {"enabled": _debug_mode})
-        return jsonify({"debug_mode": _debug_mode})
-    except Exception as e:
-        return jsonify({"debug_mode": False, "error": str(e)}), 500
-
-
-# #38 Frontend Error Reporting
-@app.route("/api/system/frontend-error", methods=["POST"])
-def api_frontend_error():
-    """Log frontend errors for debugging."""
-    try:
-        data = request.get_json() or {}
-        logger.error(f"Frontend error: {data.get('error', 'unknown')} | {data.get('stack', '')[:200]}")
-        return jsonify({"logged": True})
-    except Exception:
-        return jsonify({"logged": False})
-
-
-# #23 Vacation Mode
-@app.route("/api/system/vacation-mode", methods=["GET"])
-def api_get_vacation_mode():
-    """Get vacation mode status."""
-    try:
-        return jsonify({
-            "enabled": get_setting("vacation_mode", "false") == "true",
-            "started_at": get_setting("vacation_started_at"),
-            "simulate_presence": get_setting("vacation_simulate", "true") == "true",
-        })
-    except Exception as e:
-        return jsonify({"enabled": False, "error": str(e)})
-
-@app.route("/api/system/vacation-mode", methods=["PUT"])
-def api_toggle_vacation_mode():
-    """Toggle vacation mode (#23 + #55)."""
-    try:
-        data = request.get_json() or {}
-        enabled = data.get("enabled", True)
-        set_setting("vacation_mode", "true" if enabled else "false")
-        if enabled:
-            set_setting("vacation_started_at", datetime.now(timezone.utc).isoformat())
-        else:
-            set_setting("vacation_started_at", "")
-        set_setting("vacation_simulate", "true" if data.get("simulate_presence", True) else "false")
-        audit_log("vacation_mode", {"enabled": enabled})
-        return jsonify({"enabled": enabled})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-# #28 Calendar Events
-@app.route("/api/calendar/upcoming", methods=["GET"])
-def api_upcoming_events():
-    """Get upcoming calendar events from HA."""
-    try:
-        hours = int(request.args.get("hours", 24))
-        events = ha.get_upcoming_events(hours=hours)
-        return jsonify({"events": events})
-    except Exception as e:
-        logger.warning(f"Calendar events error: {e}")
-        return jsonify({"events": [], "error": str(e)})
-
-
-# #26 Pattern Conflict Detection
-@app.route("/api/patterns/conflicts", methods=["GET"])
-def api_pattern_conflicts():
-    """Detect conflicting patterns."""
-    session = get_db()
-    try:
-        active = session.query(LearnedPattern).filter_by(is_active=True).all()
-        conflicts = []
-        for i, p1 in enumerate(active):
-            for p2 in active[i+1:]:
-                pd1 = p1.pattern_data or {}
-                pd2 = p2.pattern_data or {}
-                # Same entity, different target state, overlapping time
-                e1 = pd1.get("entity_id") or (p1.action_definition or {}).get("entity_id")
-                e2 = pd2.get("entity_id") or (p2.action_definition or {}).get("entity_id")
-                if e1 and e1 == e2:
-                    t1 = (p1.action_definition or {}).get("target_state")
-                    t2 = (p2.action_definition or {}).get("target_state")
-                    if t1 and t2 and t1 != t2:
-                        h1 = pd1.get("avg_hour")
-                        h2 = pd2.get("avg_hour")
-                        if h1 is not None and h2 is not None and abs(h1 - h2) < 1:
-                            conflicts.append({
-                                "pattern_a": {"id": p1.id, "desc": p1.description_de, "target": t1, "hour": h1},
-                                "pattern_b": {"id": p2.id, "desc": p2.description_de, "target": t2, "hour": h2},
-                                "entity": e1,
-                                "message_de": f"Konflikt: {e1} soll um ~{h1:.0f}h sowohl '{t1}' als auch '{t2}' sein",
-                                "message_en": f"Conflict: {e1} at ~{h1:.0f}h targets both '{t1}' and '{t2}'",
-                            })
-        return jsonify({"conflicts": conflicts, "total": len(conflicts)})
-    except Exception as e:
-        logger.error(f"Pattern conflict detection error: {e}")
-        return jsonify({"conflicts": [], "total": 0, "error": str(e)})
-    finally:
-        session.close()
-@app.route("/api/patterns/scenes", methods=["GET"])
-def api_detect_scenes():
-    """Detect groups of devices that are often switched together → suggest scenes."""
-    session = get_db()
-    try:
-        cutoff = datetime.now(timezone.utc) - timedelta(days=30)
-        history = session.query(StateHistory).filter(
-            StateHistory.created_at > cutoff
-        ).order_by(StateHistory.created_at).all()
-
-        # Group state changes by 30-second windows
-        windows = defaultdict(list)
-        for h in history:
-            window_key = int(h.created_at.timestamp() // 30)
-            windows[window_key].append(h.entity_id)
-
-        # Find entity groups that appear together >= 5 times
-        pair_counts = defaultdict(int)
-        for entities in windows.values():
-            unique = sorted(set(entities))
-            if 2 <= len(unique) <= 6:
-                key = tuple(unique)
-                pair_counts[key] += 1
-
-        scenes = []
-        for entities, count in sorted(pair_counts.items(), key=lambda x: -x[1]):
-            if count >= 5:
-                scenes.append({
-                    "entities": list(entities),
-                    "count": count,
-                    "message_de": f"{len(entities)} Geräte werden oft zusammen geschaltet ({count}×)",
-                    "message_en": f"{len(entities)} devices are often switched together ({count}×)",
-                })
-            if len(scenes) >= 10:
-                break
-
-        return jsonify({"scenes": scenes})
-    except Exception as e:
-        logger.error(f"Scene detection error: {e}")
-        return jsonify({"scenes": [], "error": str(e)})
-    finally:
-        session.close()
-@app.route("/api/energy/summary", methods=["GET"])
-def api_energy_summary():
-    """Get energy usage summary from tracked power sensors."""
-    session = get_db()
-    try:
-        days = int(request.args.get("days", 7))
-        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
-
-        # Find energy-related state history
-        energy_entities = session.query(StateHistory.entity_id).filter(
-            StateHistory.entity_id.like("sensor.%energy%") |
-            StateHistory.entity_id.like("sensor.%power%"),
-            StateHistory.created_at > cutoff
-        ).distinct().all()
-
-        entity_ids = [e[0] for e in energy_entities]
-        summary = {"entities": [], "total_entries": 0, "days": days}
-
-        for eid in entity_ids[:20]:
-            count = session.query(sa_func.count(StateHistory.id)).filter(
-                StateHistory.entity_id == eid,
-                StateHistory.created_at > cutoff
-            ).scalar()
-            summary["entities"].append({"entity_id": eid, "data_points": count})
-            summary["total_entries"] += count
-
-        # Automation energy savings estimate
-        auto_count = session.query(sa_func.count(ActionLog.id)).filter(
-            ActionLog.action_type == "automation_executed",
-            ActionLog.created_at > cutoff,
-            ActionLog.new_value.like("%off%")
-        ).scalar() or 0
-        summary["automations_off_count"] = auto_count
-        summary["estimated_kwh_saved"] = round(auto_count * 0.06, 2)
-
-        return jsonify(summary)
-    except Exception as e:
-        logger.error(f"Energy summary error: {e}")
-        return jsonify({"error": str(e), "entities": []})
-    finally:
-        session.close()
-@app.route("/api/export/<data_type>", methods=["GET"])
-def api_export_data(data_type):
-    """Export data as CSV or JSON."""
-    fmt = request.args.get("format", "json")
-    session = get_db()
-    try:
-        if data_type == "patterns":
-            items = session.query(LearnedPattern).filter_by(is_active=True).all()
-            data = [{"id": p.id, "type": p.pattern_type, "confidence": p.confidence,
-                      "status": p.status, "match_count": p.match_count,
-                      "description": p.description_de, "created": str(p.created_at)} for p in items]
-        elif data_type == "history":
-            limit = int(request.args.get("limit", 1000))
-            items = session.query(StateHistory).order_by(StateHistory.created_at.desc()).limit(limit).all()
-            data = [{"entity_id": h.entity_id, "old_state": h.old_state,
-                      "new_state": h.new_state, "created": str(h.created_at)} for h in items]
-        elif data_type == "automations":
-            items = session.query(ActionLog).filter(
-                ActionLog.action_type.in_(["automation_executed", "automation_undone"])
-            ).order_by(ActionLog.created_at.desc()).limit(500).all()
-            data = [{"type": a.action_type, "device": a.device_name,
-                      "old": a.old_value, "new": a.new_value,
-                      "reason": a.reason, "created": str(a.created_at)} for a in items]
-        else:
-            return jsonify({"error": "Unknown data type"}), 400
-
-        if fmt == "csv" and data:
-            output = io.StringIO()
-            writer = csv.DictWriter(output, fieldnames=data[0].keys())
-            writer.writeheader()
-            writer.writerows(data)
-            resp = make_response(output.getvalue())
-            resp.headers["Content-Type"] = "text/csv"
-            resp.headers["Content-Disposition"] = f"attachment; filename=mindhome_{data_type}.csv"
-            return resp
-
-        return jsonify({"data": data, "count": len(data)})
-    except Exception as e:
-        logger.error(f"Export error: {e}")
-        return jsonify({"error": str(e), "data": []})
-    finally:
-        session.close()
-@app.route("/api/system/diagnose", methods=["GET"])
-def api_diagnose():
-    """Generate diagnostic info (no passwords/tokens)."""
-    session = get_db()
-    try:
-        db_path = os.environ.get("MINDHOME_DB_PATH", "/data/mindhome/db/mindhome.db")
-        diag = {
-            "version": "0.5.0",
-            "python": sys.version.split()[0],
-            "uptime_seconds": int(time.time() - _start_time) if _start_time else 0,
-            "ha_connected": ha.is_connected(),
-            "connection_stats": ha.get_connection_stats(),
-            "db_size_bytes": os.path.getsize(db_path) if os.path.exists(db_path) else 0,
-            "table_counts": {
-                "devices": session.query(Device).count(),
-                "rooms": session.query(Room).count(),
-                "patterns": session.query(LearnedPattern).count(),
-                "state_history": session.query(StateHistory).count(),
-                "action_log": session.query(ActionLog).count(),
-                "notifications": session.query(NotificationLog).count(),
-            },
-            "timezone": str(get_ha_timezone()),
-            "ha_entities": len(ha.get_states() or []),
-            "debug_mode": is_debug_mode(),
-            "vacation_mode": get_setting("vacation_mode", "false"),
-            "device_health_issues": len(ha.check_device_health()),
-            "generated_at": datetime.now(timezone.utc).isoformat(),
+    const labels = {
+        de: {
+            welcome_title: 'Willkommen bei MindHome!',
+            welcome_sub: 'Dein Zuhause wird intelligent. Lass uns gemeinsam alles einrichten.',
+            lang_title: 'Sprache wählen',
+            lang_sub: 'In welcher Sprache soll MindHome kommunizieren?',
+            admin_title: 'Dein Profil',
+            admin_sub: 'Erstelle das Admin-Konto für MindHome.',
+            admin_name: 'Dein Name',
+            discover_title: 'Geräte erkennen',
+            discover_sub: 'MindHome sucht jetzt nach allen Geräten in deinem Home Assistant.',
+            discover_btn: 'Geräte suchen',
+            discover_searching: 'Suche läuft...',
+            discover_found: 'Geräte gefunden in',
+            discover_domains: 'Bereichen',
+            privacy_title: 'Datenschutz',
+            privacy_sub: 'Alle deine Daten bleiben lokal auf deinem Gerät. Nichts wird an externe Server gesendet. Du hast volle Kontrolle.',
+            privacy_note: 'Du kannst später pro Raum einstellen welche Daten erfasst werden.',
+            done_title: 'Alles bereit!',
+            done_sub: 'MindHome beginnt jetzt mit der Lernphase. Die ersten Tage beobachtet MindHome nur und sammelt Daten.',
+            start: 'Los geht\'s',
+            next: 'Weiter',
+            back: 'Zurück',
+            finish: 'MindHome starten'
+        },
+        en: {
+            welcome_title: 'Welcome to MindHome!',
+            welcome_sub: 'Your home is getting smart. Let\'s set everything up together.',
+            lang_title: 'Choose Language',
+            lang_sub: 'Which language should MindHome use?',
+            admin_title: 'Your Profile',
+            admin_sub: 'Create the admin account for MindHome.',
+            admin_name: 'Your Name',
+            discover_title: 'Discover Devices',
+            discover_sub: 'MindHome will now search for all devices in your Home Assistant.',
+            discover_btn: 'Search Devices',
+            discover_searching: 'Searching...',
+            discover_found: 'devices found in',
+            discover_domains: 'domains',
+            privacy_title: 'Privacy',
+            privacy_sub: 'All your data stays local on your device. Nothing is sent to external servers. You have full control.',
+            privacy_note: 'You can later configure per room which data is collected.',
+            done_title: 'All set!',
+            done_sub: 'MindHome now begins the learning phase. For the first days, MindHome will only observe and collect data.',
+            start: 'Let\'s go',
+            next: 'Next',
+            back: 'Back',
+            finish: 'Start MindHome'
         }
-        return jsonify(diag)
-    except Exception as e:
-        logger.error(f"Diagnose error: {e}")
-        return jsonify({"error": str(e), "version": "0.5.0"})
-    finally:
-        session.close()
-@app.route("/api/system/check-update", methods=["GET"])
-def api_check_update():
-    """Check if a newer version is available."""
-    try:
-        current = "0.5.0"
-        return jsonify({
-            "current_version": current,
-            "update_available": False,
-            "message": "Update check requires network access to GitHub.",
-        })
-    except Exception as e:
-        return jsonify({"current_version": "0.5.0", "error": str(e)})
+    };
 
+    const l = labels[lang];
 
-# #44 Device Groups - FULL CRUD
-@app.route("/api/device-groups", methods=["GET"])
-def api_get_device_groups():
-    """Get all device groups (saved + suggested)."""
-    session = get_db()
-    try:
-        # Saved groups
-        saved = session.query(DeviceGroup).all()
-        saved_groups = [{
-            "id": g.id, "name": g.name, "room_id": g.room_id,
-            "device_ids": json.loads(g.device_ids or "[]"),
-            "is_active": g.is_active,
-            "room_name": g.room.name if g.room else None,
-            "created_at": utc_iso(g.created_at),
-        } for g in saved]
+    return (
+        <div className="onboarding-overlay">
+            <div className="onboarding-container">
+                {/* Progress */}
+                <div className="onboarding-progress">
+                    {steps.map((s, i) => (
+                        <div key={s.id} className={`onboarding-progress-step ${
+                            i < step ? 'completed' : i === step ? 'active' : ''
+                        }`} />
+                    ))}
+                </div>
 
-        # Auto-suggested groups
-        rooms = session.query(Room).filter_by(is_active=True).all()
-        suggestions = []
-        saved_device_sets = {frozenset(json.loads(g.device_ids or "[]")) for g in saved}
-        for room in rooms:
-            devices = session.query(Device).filter_by(room_id=room.id, is_tracked=True).all()
-            by_domain = defaultdict(list)
-            for d in devices:
-                domain = session.get(Domain, d.domain_id) if d.domain_id else None
-                dname = domain.name if domain else "other"
-                by_domain[dname].append({"id": d.id, "name": d.name, "entity_id": d.ha_entity_id})
-            for domain_name, devs in by_domain.items():
-                if len(devs) >= 2:
-                    dev_ids = frozenset(d["id"] for d in devs)
-                    if dev_ids not in saved_device_sets:
-                        suggestions.append({
-                            "room": room.name, "room_id": room.id,
-                            "domain": domain_name, "devices": devs,
-                            "suggested_name": f"{room.name} {domain_name.title()}",
-                        })
-        return jsonify({"groups": saved_groups, "suggestions": suggestions})
-    except Exception as e:
-        logger.error(f"Device groups error: {e}")
-        return jsonify({"groups": [], "suggestions": [], "error": str(e)})
-    finally:
-        session.close()
+                {/* Step Content */}
+                <div className="onboarding-content" key={step}>
+                    {step === 0 && (
+                        <div style={{ textAlign: 'center' }}>
+                            <img src={`${API_BASE}/icon.png`} alt="MindHome" style={{ width: 72, height: 72, borderRadius: 18, margin: '0 auto 24px', display: 'block', boxShadow: 'var(--shadow-glow)' }} />
+                            <div className="onboarding-title">{l.welcome_title}</div>
+                            <div className="onboarding-subtitle">{l.welcome_sub}</div>
 
+                            {/* Backup Restore Section */}
+                            {!backupData ? (
+                                <div style={{ marginTop: 24, padding: 16, border: '1px dashed var(--border)', borderRadius: 12 }}>
+                                    <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 12 }}>
+                                        {lang === 'de'
+                                            ? 'Du hast bereits ein Backup? Stelle es hier wieder her:'
+                                            : 'Already have a backup? Restore it here:'}
+                                    </p>
+                                    <button className="btn btn-secondary" onClick={() => restoreInputRef.current?.click()}>
+                                        <span className="mdi mdi-upload" />
+                                        {lang === 'de' ? 'Backup-Datei wählen' : 'Choose Backup File'}
+                                    </button>
+                                    <input ref={restoreInputRef} type="file" accept=".json" onChange={handleFileSelect} style={{ display: 'none' }} />
+                                    {backupError && (
+                                        <p style={{ color: 'var(--danger)', fontSize: 13, marginTop: 8 }}>{backupError}</p>
+                                    )}
+                                </div>
+                            ) : (
+                                <div style={{ marginTop: 24, padding: 20, border: '2px solid var(--success)', borderRadius: 12, background: 'var(--bg-secondary)' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, justifyContent: 'center', marginBottom: 16 }}>
+                                        <span className="mdi mdi-check-circle" style={{ fontSize: 28, color: 'var(--success)' }} />
+                                        <strong style={{ fontSize: 16 }}>
+                                            {lang === 'de' ? 'Backup erkannt!' : 'Backup Found!'}
+                                        </strong>
+                                    </div>
+                                    <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 16, lineHeight: 1.6 }}>
+                                        <div>{lang === 'de' ? 'Erstellt am' : 'Created'}: {new Date(backupData.exported_at).toLocaleString(lang === 'de' ? 'de-DE' : 'en-US')}</div>
+                                        <div>{backupData.rooms?.length || 0} {lang === 'de' ? 'Räume' : 'Rooms'} · {backupData.devices?.length || 0} {lang === 'de' ? 'Geräte' : 'Devices'} · {backupData.users?.length || 0} {lang === 'de' ? 'Personen' : 'Users'}</div>
+                                    </div>
+                                    <p style={{ fontSize: 14, fontWeight: 600, marginBottom: 16 }}>
+                                        {lang === 'de'
+                                            ? 'Möchtest du dieses Backup in MindHome laden?'
+                                            : 'Do you want to load this backup into MindHome?'}
+                                    </p>
+                                    <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
+                                        <button className="btn btn-secondary" onClick={() => { setBackupData(null); setBackupError(''); }}>
+                                            {lang === 'de' ? 'Abbrechen' : 'Cancel'}
+                                        </button>
+                                        <button className="btn btn-primary" onClick={handleConfirmRestore} disabled={restoring}>
+                                            <span className="mdi mdi-restore" />
+                                            {restoring
+                                                ? (lang === 'de' ? 'Wird geladen...' : 'Loading...')
+                                                : (lang === 'de' ? 'Backup wiederherstellen' : 'Restore Backup')}
+                                        </button>
+                                    </div>
+                                    {backupError && (
+                                        <p style={{ color: 'var(--danger)', fontSize: 13, marginTop: 12 }}>{backupError}</p>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    )}
 
-@app.route("/api/device-groups", methods=["POST"])
-def api_create_device_group():
-    """Create a new device group."""
-    data = request.json
-    session = get_db()
-    try:
-        group = DeviceGroup(
-            name=data.get("name", "New Group"),
-            room_id=data.get("room_id"),
-            device_ids=json.dumps(data.get("device_ids", [])),
-            is_active=True,
-        )
-        session.add(group)
-        session.commit()
-        audit_log("device_group_create", {"name": group.name, "id": group.id})
-        return jsonify({"success": True, "id": group.id})
-    except Exception as e:
-        session.rollback()
-        return jsonify({"error": str(e)}), 400
-    finally:
-        session.close()
+                    {step === 1 && (
+                        <div>
+                            <div className="onboarding-title">{l.lang_title}</div>
+                            <div className="onboarding-subtitle">{l.lang_sub}</div>
+                            <div style={{ display: 'flex', gap: 12 }}>
+                                {[{ code: 'de', label: 'Deutsch', flag: '🇩🇪' }, { code: 'en', label: 'English', flag: '🇬🇧' }].map(opt => (
+                                    <button key={opt.code}
+                                        className={`card ${lang === opt.code ? '' : ''}`}
+                                        onClick={() => setLangLocal(opt.code)}
+                                        style={{
+                                            flex: 1, cursor: 'pointer', textAlign: 'center', padding: 20,
+                                            border: lang === opt.code ? '2px solid var(--accent-primary)' : '1px solid var(--border)',
+                                            background: lang === opt.code ? 'var(--accent-primary-dim)' : 'var(--bg-card)'
+                                        }}>
+                                        <div style={{ fontSize: 32 }}>{opt.flag}</div>
+                                        <div style={{ fontWeight: 600, marginTop: 8 }}>{opt.label}</div>
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    )}
 
+                    {step === 2 && (
+                        <div>
+                            <div className="onboarding-title">{l.admin_title}</div>
+                            <div className="onboarding-subtitle">{l.admin_sub}</div>
+                            <div className="input-group">
+                                <label className="input-label">{l.admin_name}</label>
+                                <input className="input" style={{ fontSize: 16, padding: 14 }}
+                                       value={adminName}
+                                       onChange={e => setAdminName(e.target.value)}
+                                       autoFocus />
+                            </div>
+                        </div>
+                    )}
 
-@app.route("/api/device-groups/<int:group_id>", methods=["PUT"])
-def api_update_device_group(group_id):
-    """Update a device group."""
-    data = request.json
-    session = get_db()
-    try:
-        group = session.get(DeviceGroup, group_id)
-        if not group:
-            return jsonify({"error": "Not found"}), 404
-        if "name" in data:
-            group.name = data["name"]
-        if "device_ids" in data:
-            group.device_ids = json.dumps(data["device_ids"])
-        if "is_active" in data:
-            group.is_active = data["is_active"]
-        session.commit()
-        audit_log("device_group_update", {"id": group_id})
-        return jsonify({"success": True})
-    except Exception as e:
-        session.rollback()
-        return jsonify({"error": str(e)}), 400
-    finally:
-        session.close()
+                    {step === 3 && (
+                        <div>
+                            <div className="onboarding-title">{l.discover_title}</div>
+                            <div className="onboarding-subtitle">{l.discover_sub}</div>
+                            {!discovered ? (
+                                <div style={{ textAlign: 'center', padding: 24 }}>
+                                    <button className="btn btn-primary btn-lg" onClick={handleDiscover} disabled={discovering}>
+                                        {discovering ? (
+                                            <><div className="loading-spinner" style={{ width: 20, height: 20, borderWidth: 2 }} /> {l.discover_searching}</>
+                                        ) : (
+                                            <><span className="mdi mdi-magnify" /> {l.discover_btn}</>
+                                        )}
+                                    </button>
+                                </div>
+                            ) : (
+                                <div className="card" style={{ borderColor: 'var(--success)' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+                                        <span className="mdi mdi-check-circle" style={{ fontSize: 28, color: 'var(--success)' }} />
+                                        <div>
+                                            <div style={{ fontWeight: 600 }}>
+                                                {discovered.total_entities} {l.discover_found} {Object.keys(discovered.domains || {}).length} {l.discover_domains}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                                        {Object.entries(discovered.domains || {}).map(([domain, data]) => (
+                                            <span key={domain} className="badge badge-info">{domain}: {data.count}</span>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
 
+                    {step === 4 && (
+                        <div>
+                            <div className="onboarding-title">{l.privacy_title}</div>
+                            <div className="onboarding-subtitle">{l.privacy_sub}</div>
+                            <div className="card" style={{ borderColor: 'var(--success)' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                                    <span className="mdi mdi-shield-check" style={{ fontSize: 32, color: 'var(--success)' }} />
+                                    <div style={{ fontSize: 14, lineHeight: 1.6 }}>
+                                        {l.privacy_note}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
-@app.route("/api/device-groups/<int:group_id>", methods=["DELETE"])
-def api_delete_device_group(group_id):
-    """Delete a device group."""
-    session = get_db()
-    try:
-        group = session.get(DeviceGroup, group_id)
-        if group:
-            session.delete(group)
-            session.commit()
-            audit_log("device_group_delete", {"id": group_id})
-        return jsonify({"success": True})
-    finally:
-        session.close()
+                    {step === 5 && (
+                        <div style={{ textAlign: 'center' }}>
+                            <span className="mdi mdi-check-circle" style={{ fontSize: 64, color: 'var(--success)', display: 'block', marginBottom: 16 }} />
+                            <div className="onboarding-title">{l.done_title}</div>
+                            <div className="onboarding-subtitle">{l.done_sub}</div>
+                        </div>
+                    )}
+                </div>
 
+                {/* Navigation */}
+                <div className="onboarding-actions">
+                    {step > 0 ? (
+                        <button className="btn btn-secondary" onClick={() => setStep(s => s - 1)}>
+                            <span className="mdi mdi-arrow-left" /> {l.back}
+                        </button>
+                    ) : <div />}
 
-@app.route("/api/device-groups/<int:group_id>/execute", methods=["POST"])
-def api_execute_device_group(group_id):
-    """Execute an action on all devices in a group."""
-    data = request.json
-    service = data.get("service", "toggle")
-    session = get_db()
-    try:
-        group = session.get(DeviceGroup, group_id)
-        if not group:
-            return jsonify({"error": "Not found"}), 404
-        device_ids = json.loads(group.device_ids or "[]")
-        results = []
-        for did in device_ids:
-            device = session.get(Device, did)
-            if device and device.ha_entity_id:
-                domain_part = device.ha_entity_id.split(".")[0]
-                result = ha.call_service(domain_part, service, {"entity_id": device.ha_entity_id})
-                results.append({"entity_id": device.ha_entity_id, "success": result is not None})
-        audit_log("device_group_execute", {"group_id": group_id, "service": service, "count": len(results)})
-        return jsonify({"success": True, "results": results})
-    finally:
-        session.close()
+                    {step < steps.length - 1 ? (
+                        <button className="btn btn-primary" onClick={() => setStep(s => s + 1)}>
+                            {step === 0 ? l.start : l.next} <span className="mdi mdi-arrow-right" />
+                        </button>
+                    ) : (
+                        <button className="btn btn-primary btn-lg" onClick={handleComplete}>
+                            <span className="mdi mdi-rocket-launch" /> {l.finish}
+                        </button>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+};
 
+// ================================================================
+// Main App
+// ================================================================
 
-# ==============================================================================
-# #60 Audit Trail - FULL API
-# ==============================================================================
+const App = () => {
+    const [page, setPage] = useState('dashboard');
+    const [sidebarOpen, setSidebarOpen] = useState(false);
+    const [lang, setLang] = useState('de');
+    const [theme, setTheme] = useState('dark');
+    const [viewMode, setViewMode] = useState('simple');
+    const [toasts, setToasts] = useState([]);
 
-@app.route("/api/audit-trail", methods=["GET"])
-def api_get_audit_trail():
-    """Get audit trail entries."""
-    session = get_db()
-    try:
-        limit = request.args.get("limit", 100, type=int)
-        entries = session.query(AuditTrail).order_by(AuditTrail.created_at.desc()).limit(limit).all()
-        return jsonify([{
-            "id": e.id, "user_id": e.user_id, "action": e.action,
-            "target": e.target, "details": e.details,
-            "ip_address": e.ip_address, "created_at": utc_iso(e.created_at),
-        } for e in entries])
-    finally:
-        session.close()
+    const [status, setStatus] = useState(null);
+    const [domains, setDomains] = useState([]);
+    const [devices, setDevices] = useState([]);
+    const [rooms, setRooms] = useState([]);
+    const [users, setUsers] = useState([]);
+    const [quickActions, setQuickActions] = useState([]);
+    const [onboardingDone, setOnboardingDone] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [settingsLoaded, setSettingsLoaded] = useState(false);
+    const [unreadNotifs, setUnreadNotifs] = useState(0);
 
+    // #8 Toast stacking
+    const showToast = useCallback((message, type = 'info') => {
+        const id = Date.now();
+        setToasts(prev => [...prev.slice(-4), { id, message, type }]);
+        setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 4000);
+    }, []);
 
-def write_audit(action, target=None, details=None):
-    """Write an audit trail entry."""
-    session = get_db()
-    try:
-        entry = AuditTrail(
-            action=action, target=target,
-            details=json.dumps(details) if isinstance(details, dict) else details,
-            ip_address=request.remote_addr if request else None,
-        )
-        session.add(entry)
-        session.commit()
-    except Exception as e:
-        session.rollback()
-        logger.error(f"Audit write error: {e}")
-    finally:
-        session.close()
+    // Backwards compat
+    const toast = toasts.length > 0 ? toasts[toasts.length - 1] : null;
 
+    // #16 Keyboard Shortcuts
+    useEffect(() => {
+        const handler = (e) => {
+            // Ignore if typing in input/textarea
+            if (['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return;
+            if (e.key === 'Escape') {
+                setSidebarOpen(false);
+                // Close any open modals by dispatching custom event
+                document.dispatchEvent(new CustomEvent('mindhome-escape'));
+            }
+            if (e.key === 'n' && !e.ctrlKey && !e.metaKey) {
+                setPage('notifications');
+            }
+            if (e.key === 'd' && !e.ctrlKey && !e.metaKey) {
+                setPage('dashboard');
+            }
+        };
+        window.addEventListener('keydown', handler);
+        return () => window.removeEventListener('keydown', handler);
+    }, []);
 
-# ==============================================================================
-# #40 Watchdog Timer
-# ==============================================================================
-
-_watchdog_status = {"last_check": None, "ha_alive": False, "db_alive": False, "issues": []}
-
-
-def _watchdog_loop():
-    """Periodic system health check every 60 seconds."""
-    global _watchdog_status
-    while True:
-        issues = []
-        # Check HA connection
-        ha_alive = ha.is_connected() if ha else False
-        if not ha_alive:
-            issues.append("HA WebSocket disconnected")
-        # Check DB
-        db_alive = False
-        try:
-            session = get_db()
-            session.execute(text("SELECT 1"))
-            db_alive = True
-            session.close()
-        except Exception:
-            issues.append("Database unreachable")
-        # Check disk space
-        try:
-            stat = os.statvfs("/data" if os.path.exists("/data") else "/")
-            free_gb = (stat.f_bavail * stat.f_frsize) / (1024**3)
-            if free_gb < 0.5:
-                issues.append(f"Low disk space: {free_gb:.1f} GB")
-        except Exception:
-            pass
-        # Check memory
-        try:
-            import resource
-            mem_mb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
-            if mem_mb > 500:
-                issues.append(f"High memory usage: {mem_mb:.0f} MB")
-        except Exception:
-            pass
-
-        _watchdog_status = {
-            "last_check": datetime.now(timezone.utc).isoformat(),
-            "ha_alive": ha_alive, "db_alive": db_alive,
-            "issues": issues, "healthy": len(issues) == 0,
+    // #49 Auto Theme (follow system preference)
+    useEffect(() => {
+        const autoTheme = localStorage.getItem('mindhome_auto_theme');
+        if (autoTheme === 'true') {
+            const mq = window.matchMedia('(prefers-color-scheme: dark)');
+            const handler = (e) => setTheme(e.matches ? 'dark' : 'light');
+            handler(mq);
+            mq.addEventListener('change', handler);
+            return () => mq.removeEventListener('change', handler);
         }
-        time.sleep(60)
+    }, []);
 
+    // Phase 2b: Poll notification count
+    useEffect(() => {
+        const fetchUnread = () => api.get('notifications/unread-count')
+            .then(d => setUnreadNotifs(d?.unread_count || 0)).catch(() => {});
+        fetchUnread();
+        const interval = setInterval(fetchUnread, 60000);
+        return () => clearInterval(interval);
+    }, []);
 
-@app.route("/api/system/watchdog", methods=["GET"])
-def api_watchdog():
-    """Get watchdog status."""
-    return jsonify(_watchdog_status)
+    const refreshData = useCallback(async () => {
+        const [s, d, dev, r, u, qa] = await Promise.all([
+            api.get('system/status'),
+            api.get('domains'),
+            api.get('devices'),
+            api.get('rooms'),
+            api.get('users'),
+            api.get('quick-actions')
+        ]);
+        if (s) setStatus(s);
+        if (d) setDomains(d);
+        if (dev) setDevices(dev);
+        if (r) setRooms(r);
+        if (u) setUsers(u);
+        if (qa) setQuickActions(qa);
+    }, []);
 
+    useEffect(() => {
+        const init = async () => {
+            const s = await api.get('system/status');
+            if (s) {
+                setStatus(s);
+                setLang(s.language || 'de');
+                setTheme(s.theme || 'dark');
+                setViewMode(s.view_mode || 'simple');
+                setOnboardingDone(s.onboarding_completed);
+            } else {
+                setOnboardingDone(false);
+            }
+            await refreshData();
+            setLoading(false);
+            // Mark settings as loaded so useEffects don't overwrite on first render
+            setTimeout(() => setSettingsLoaded(true), 500);
+        };
+        init();
 
-# ==============================================================================
-# #10 Startup Self-Test
-# ==============================================================================
+        // Refresh data: full load only on page change, lightweight poll every 60s
+        const interval = setInterval(() => {
+            api.get('system/status').then(s => { if (s) setStatus(s); });
+        }, 60000);
+        return () => clearInterval(interval);
+    }, []);
 
-def run_startup_self_test():
-    """Run startup checks and return results."""
-    results = []
-    # Test DB
-    try:
-        session = get_db()
-        session.execute(text("SELECT 1"))
-        session.close()
-        results.append({"test": "database", "status": "ok"})
-    except Exception as e:
-        results.append({"test": "database", "status": "fail", "error": str(e)})
-    # Test HA
-    try:
-        connected = ha.is_connected() if ha else False
-        results.append({"test": "ha_connection", "status": "ok" if connected else "warn", "connected": connected})
-    except Exception as e:
-        results.append({"test": "ha_connection", "status": "fail", "error": str(e)})
-    # Test tables exist
-    try:
-        session = get_db()
-        for table in ["devices", "rooms", "domains", "users", "learned_patterns", "state_history"]:
-            session.execute(text(f"SELECT COUNT(*) FROM {table}"))
-        session.close()
-        results.append({"test": "tables", "status": "ok"})
-    except Exception as e:
-        results.append({"test": "tables", "status": "fail", "error": str(e)})
-    # Test write
-    try:
-        session = get_db()
-        session.execute(text("INSERT INTO system_settings (key, value) VALUES ('_selftest', 'ok') ON CONFLICT(key) DO UPDATE SET value='ok'"))
-        session.commit()
-        session.execute(text("DELETE FROM system_settings WHERE key='_selftest'"))
-        session.commit()
-        session.close()
-        results.append({"test": "db_write", "status": "ok"})
-    except Exception as e:
-        results.append({"test": "db_write", "status": "fail", "error": str(e)})
+    // Apply theme
+    useEffect(() => {
+        document.documentElement.setAttribute('data-theme', theme);
+        if (settingsLoaded) api.put('system/settings/theme', { value: theme });
+    }, [theme, settingsLoaded]);
 
-    all_ok = all(r["status"] == "ok" for r in results)
-    logger.info(f"Self-test: {'PASSED' if all_ok else 'ISSUES FOUND'} - {results}")
-    return {"passed": all_ok, "tests": results}
+    // Save viewMode
+    useEffect(() => {
+        if (settingsLoaded) api.put('system/settings/view_mode', { value: viewMode });
+    }, [viewMode, settingsLoaded]);
 
+    // Save language
+    useEffect(() => {
+        if (settingsLoaded) api.put('system/settings/language', { value: lang });
+    }, [lang, settingsLoaded]);
 
-@app.route("/api/system/self-test", methods=["GET"])
-def api_self_test():
-    """Run self-test and return results."""
-    return jsonify(run_startup_self_test())
+    const toggleDomain = async (domainId) => {
+        const result = await api.post(`domains/${domainId}/toggle`);
+        if (result) {
+            setDomains(prev => prev.map(d =>
+                d.id === domainId ? { ...d, is_enabled: result.is_enabled } : d
+            ));
+        }
+    };
 
+    const executeQuickAction = async (actionId) => {
+        const result = await api.post(`quick-actions/execute/${actionId}`);
+        if (result?.success) {
+            showToast(lang === 'de' ? 'Aktion ausgeführt' : 'Action executed', 'success');
+            await refreshData();
+        }
+    };
 
-# ==============================================================================
-# #15b Offline Action Queue
-# ==============================================================================
+    // Role: first user is always admin, or if only 1 user exists → admin
+    const isAdmin = users.length <= 1 || (users[0]?.role === 'admin');
 
-@app.route("/api/offline-queue", methods=["GET"])
-def api_get_offline_queue():
-    """Get pending offline actions."""
-    session = get_db()
-    try:
-        items = session.query(OfflineActionQueue).filter_by(was_executed=False).order_by(OfflineActionQueue.priority.desc()).all()
-        return jsonify([{
-            "id": i.id, "action_data": i.action_data, "priority": i.priority,
-            "created_at": utc_iso(i.created_at),
-        } for i in items])
-    finally:
-        session.close()
+    const contextValue = React.useMemo(() => ({
+        status, domains, devices, rooms, users, quickActions, isAdmin,
+        lang, setLang, theme, setTheme, viewMode, setViewMode,
+        showToast, refreshData, toggleDomain, executeQuickAction
+    }), [status, domains, devices, rooms, users, quickActions, isAdmin, lang, theme, viewMode]);
 
-
-@app.route("/api/offline-queue", methods=["POST"])
-def api_add_offline_action():
-    """Queue an action for when HA comes back online."""
-    data = request.json
-    session = get_db()
-    try:
-        item = OfflineActionQueue(
-            action_data=data.get("action_data", {}),
-            priority=data.get("priority", 0),
-        )
-        session.add(item)
-        session.commit()
-        return jsonify({"success": True, "id": item.id})
-    finally:
-        session.close()
-
-
-def process_offline_queue():
-    """Process queued actions when HA reconnects."""
-    if not ha or not ha.is_connected():
-        return 0
-    session = get_db()
-    try:
-        items = session.query(OfflineActionQueue).filter_by(was_executed=False).order_by(OfflineActionQueue.priority.desc()).all()
-        executed = 0
-        for item in items:
-            try:
-                ad = item.action_data or {}
-                domain = ad.get("domain", "homeassistant")
-                service = ad.get("service", "toggle")
-                entity_id = ad.get("entity_id")
-                if entity_id:
-                    ha.call_service(domain, service, {"entity_id": entity_id})
-                item.was_executed = True
-                item.executed_at = datetime.now(timezone.utc)
-                executed += 1
-            except Exception as e:
-                logger.error(f"Offline queue exec error: {e}")
-        session.commit()
-        if executed:
-            logger.info(f"Processed {executed} offline queued actions")
-        return executed
-    finally:
-        session.close()
-
-
-# ==============================================================================
-# #30 TTS Announcements
-# ==============================================================================
-
-@app.route("/api/tts/announce", methods=["POST"])
-def api_tts_announce():
-    """Send a TTS announcement via HA."""
-    data = request.json
-    message = data.get("message", "")
-    entity = data.get("entity_id")
-    if not message:
-        return jsonify({"error": "No message"}), 400
-    result = ha.announce_tts(message, media_player_entity=entity)
-    audit_log("tts_announce", {"message": message[:50], "entity": entity})
-    return jsonify({"success": result is not None})
-
-
-@app.route("/api/tts/devices", methods=["GET"])
-def api_tts_devices():
-    """Get available media players for TTS."""
-    states = ha.get_states() or []
-    players = [{"entity_id": s["entity_id"], "name": s.get("attributes", {}).get("friendly_name", s["entity_id"])}
-               for s in states if s["entity_id"].startswith("media_player.")]
-    return jsonify(players)
-
-
-# ==============================================================================
-# ==============================================================================
-# #28b Calendar Automation Triggers
-# ==============================================================================
-
-@app.route("/api/calendar/triggers", methods=["GET"])
-def api_get_calendar_triggers():
-    """Get calendar-based automation triggers."""
-    session = get_db()
-    try:
-        triggers = []
-        raw = get_setting("calendar_triggers")
-        if raw:
-            triggers = json.loads(raw)
-        return jsonify(triggers)
-    finally:
-        session.close()
-
-
-@app.route("/api/calendar/triggers", methods=["POST"])
-def api_create_calendar_trigger():
-    """Create a calendar-based automation trigger."""
-    data = request.json
-    triggers = json.loads(get_setting("calendar_triggers") or "[]")
-    trigger = {
-        "id": str(int(time.time() * 1000)),
-        "keyword": data.get("keyword", ""),
-        "action": data.get("action", ""),
-        "entity_id": data.get("entity_id"),
-        "service": data.get("service", "turn_on"),
-        "is_active": True,
+    if (loading) {
+        return <SplashScreen />;
     }
-    triggers.append(trigger)
-    set_setting("calendar_triggers", json.dumps(triggers))
-    audit_log("calendar_trigger_create", trigger)
-    return jsonify({"success": True, "trigger": trigger})
 
-
-@app.route("/api/calendar/triggers/<trigger_id>", methods=["DELETE"])
-def api_delete_calendar_trigger(trigger_id):
-    """Delete a calendar trigger."""
-    triggers = json.loads(get_setting("calendar_triggers") or "[]")
-    triggers = [t for t in triggers if t.get("id") != trigger_id]
-    set_setting("calendar_triggers", json.dumps(triggers))
-    return jsonify({"success": True})
-
-
-# Alias endpoints with hyphen
-@app.route("/api/calendar-triggers", methods=["GET"])
-def api_get_calendar_triggers_alias():
-    return api_get_calendar_triggers()
-
-
-@app.route("/api/calendar-triggers", methods=["PUT"])
-def api_update_calendar_triggers_alias():
-    """Bulk update calendar triggers."""
-    data = request.json
-    set_setting("calendar_triggers", json.dumps(data.get("triggers", [])))
-    return jsonify({"success": True})
-
-
-# Also need an entities endpoint filtered by domain
-@app.route("/api/ha/entities", methods=["GET"])
-def api_get_ha_entities():
-    """Get HA entities filtered by domain."""
-    domain_filter = request.args.get("domain")
-    all_states = ha.get_states() or []
-    entities = []
-    for s in all_states:
-        eid = s.get("entity_id", "")
-        if domain_filter and not eid.startswith(domain_filter + "."):
-            continue
-        entities.append({
-            "entity_id": eid,
-            "name": s.get("attributes", {}).get("friendly_name", eid),
-            "state": s.get("state")
-        })
-    return jsonify({"entities": entities})
-
-
-# ==============================================================================
-# #12b Extended Notification Settings
-# ==============================================================================
-
-@app.route("/api/notification-settings/extended", methods=["GET"])
-def api_get_extended_notification_settings():
-    """Get full extended notification configuration (18 features)."""
-    return jsonify({
-        # Zeitsteuerung
-        "quiet_hours": json.loads(get_setting("notif_quiet_hours") or '{"enabled": true, "start": "22:00", "end": "07:00", "weekday_only": false, "weekend_start": "23:00", "weekend_end": "09:00", "extra_windows": []}'),
-        "weekday_rules": json.loads(get_setting("notif_weekday_rules") or '{"enabled": false, "rules": {}}'),
-        "vacation_coupling": json.loads(get_setting("notif_vacation_coupling") or '{"enabled": false, "only_critical": true}'),
-        # Eskalation
-        "escalation": json.loads(get_setting("notif_escalation") or '{"enabled": false, "chain": [{"type": "push", "delay_min": 0}, {"type": "tts", "delay_min": 5}]}'),
-        "repeat_rules": json.loads(get_setting("notif_repeat_rules") or '{"enabled": false, "repeat_after_min": 10, "max_repeats": 3}'),
-        "confirmation_required": json.loads(get_setting("notif_confirmation") or '{"enabled": false, "types": ["critical"]}'),
-        "fallback_channels": json.loads(get_setting("notif_fallback") or '{"enabled": false, "chain": ["push", "tts", "persistent"]}'),
-        # Routing
-        "type_channels": json.loads(get_setting("notif_type_channels") or '{}'),
-        "person_channels": json.loads(get_setting("notif_person_channels") or '{}'),
-        # Darstellung
-        "type_sounds": json.loads(get_setting("notif_type_sounds") or '{"anomaly": true, "suggestion": false, "critical": true, "info": false}'),
-        "templates": json.loads(get_setting("notif_templates") or '{}'),
-        # Spam-Schutz
-        "grouping": json.loads(get_setting("notif_grouping") or '{"enabled": true, "window_min": 5}'),
-        "rate_limits": json.loads(get_setting("notif_rate_limits") or '{"anomaly": 10, "suggestion": 5, "critical": 0, "info": 20}'),
-        # Sicherheit
-        "critical_override": json.loads(get_setting("notif_critical_override") or '{"enabled": true}'),
-        # Debug
-        "test_mode": json.loads(get_setting("notif_test_mode") or '{"enabled": false, "until": null}'),
-        # Zusammenfassung
-        "digest": json.loads(get_setting("notif_digest") or '{"enabled": false, "frequency": "daily", "time": "08:00"}'),
-        # Spezial
-        "battery_threshold": int(get_setting("notif_battery_threshold") or "20"),
-        "device_thresholds": json.loads(get_setting("notif_device_thresholds") or '{}'),
-    })
-
-
-@app.route("/api/notification-settings/extended", methods=["PUT"])
-def api_update_extended_notification_settings():
-    """Update extended notification settings."""
-    data = request.json
-    setting_keys = [
-        "quiet_hours", "weekday_rules", "vacation_coupling",
-        "escalation", "repeat_rules", "confirmation_required", "fallback_channels",
-        "type_channels", "person_channels",
-        "type_sounds", "templates",
-        "grouping", "rate_limits",
-        "critical_override", "test_mode", "digest",
-        "device_thresholds",
-    ]
-    for key in setting_keys:
-        if key in data:
-            set_setting(f"notif_{key}", json.dumps(data[key]))
-    if "battery_threshold" in data:
-        set_setting("notif_battery_threshold", str(data["battery_threshold"]))
-    return jsonify({"success": True})
-
-
-# ==============================================================================
-# Anomaly Settings Extended (27 features - advanced mode only)
-# ==============================================================================
-
-@app.route("/api/anomaly-settings/extended", methods=["GET"])
-def api_get_extended_anomaly_settings():
-    """Get full anomaly detection configuration."""
-    return jsonify({
-        # Empfindlichkeit
-        "global_sensitivity": get_setting("anomaly_sensitivity") or "medium",
-        "domain_sensitivity": json.loads(get_setting("anomaly_domain_sensitivity") or '{}'),
-        "device_sensitivity": json.loads(get_setting("anomaly_device_sensitivity") or '{}'),
-        # Erkennungs-Typen
-        "detection_types": json.loads(get_setting("anomaly_detection_types") or '{"frequency": true, "time": true, "value": true, "offline": true, "stuck": true, "pattern_deviation": false}'),
-        "frequency_threshold": json.loads(get_setting("anomaly_freq_threshold") or '{"count": 20, "window_min": 5}'),
-        "value_deviation_pct": int(get_setting("anomaly_value_deviation") or "30"),
-        "offline_timeout_min": int(get_setting("anomaly_offline_timeout") or "60"),
-        "stuck_timeout_hours": int(get_setting("anomaly_stuck_timeout") or "12"),
-        # Ausnahmen
-        "device_whitelist": json.loads(get_setting("anomaly_device_whitelist") or '[]'),
-        "domain_exceptions": json.loads(get_setting("anomaly_domain_exceptions") or '[]'),
-        "time_exceptions": json.loads(get_setting("anomaly_time_exceptions") or '[]'),
-        "paused_until": get_setting("anomaly_paused_until"),
-        # Reaktionen
-        "reactions": json.loads(get_setting("anomaly_reactions") or '{"low": "log", "medium": "push", "high": "push_tts", "critical": "push_tts_action"}'),
-        "auto_actions": json.loads(get_setting("anomaly_auto_actions") or '{}'),
-        "reaction_delay_min": int(get_setting("anomaly_reaction_delay") or "0"),
-        # Lernphase
-        "learning_mode": json.loads(get_setting("anomaly_learning_mode") or '{"enabled": false, "days_remaining": 0}'),
-        "seasonal_adjustment": json.loads(get_setting("anomaly_seasonal") or '{"enabled": true}'),
-        # Schwellwerte
-        "battery_threshold": int(get_setting("anomaly_battery_threshold") or "20"),
-        "temperature_limits": json.loads(get_setting("anomaly_temp_limits") or '{}'),
-        "power_limits": json.loads(get_setting("anomaly_power_limits") or '{}'),
-        "humidity_limits": json.loads(get_setting("anomaly_humidity_limits") or '{}'),
-    })
-
-
-@app.route("/api/anomaly-settings/extended", methods=["PUT"])
-def api_update_extended_anomaly_settings():
-    """Update extended anomaly settings."""
-    data = request.json
-    string_settings = ["global_sensitivity", "paused_until"]
-    int_settings = ["value_deviation_pct", "offline_timeout_min", "stuck_timeout_hours", "reaction_delay_min", "battery_threshold"]
-    json_settings = [
-        "domain_sensitivity", "device_sensitivity", "detection_types",
-        "frequency_threshold", "device_whitelist", "domain_exceptions",
-        "time_exceptions", "reactions", "auto_actions", "learning_mode",
-        "seasonal_adjustment", "temperature_limits", "power_limits",
-        "humidity_limits",
-    ]
-    for key in string_settings:
-        if key in data:
-            set_setting(f"anomaly_{key}", str(data[key]) if data[key] else None)
-    for key in int_settings:
-        if key in data:
-            set_setting(f"anomaly_{key}", str(int(data[key])))
-    for key in json_settings:
-        if key in data:
-            set_setting(f"anomaly_{key}", json.dumps(data[key]))
-    return jsonify({"success": True})
-
-
-@app.route("/api/anomaly-settings/pause", methods=["POST"])
-def api_pause_anomaly():
-    """Temporarily pause anomaly detection."""
-    data = request.json
-    hours = data.get("hours", 1)
-    until = (datetime.now(timezone.utc) + timedelta(hours=hours)).isoformat()
-    set_setting("anomaly_paused_until", until)
-    return jsonify({"success": True, "paused_until": until})
-
-
-@app.route("/api/anomaly-settings/reset-baseline", methods=["POST"])
-def api_reset_anomaly_baseline():
-    """Reset anomaly baseline - system re-learns what's normal."""
-    set_setting("anomaly_learning_mode", json.dumps({"enabled": True, "days_remaining": 7, "started_at": datetime.now(timezone.utc).isoformat()}))
-    return jsonify({"success": True, "message": "Baseline reset, learning for 7 days"})
-
-
-@app.route("/api/anomaly-settings/stats", methods=["GET"])
-def api_anomaly_stats():
-    """Get anomaly statistics for dashboard."""
-    session = get_db()
-    try:
-        cutoff_30d = datetime.now(timezone.utc) - timedelta(days=30)
-        logs = session.query(ActionLog).filter(
-            ActionLog.action_type == "anomaly_detected",
-            ActionLog.created_at >= cutoff_30d
-        ).all()
-
-        total = len(logs)
-        by_device = {}
-        by_type = {}
-        by_week = {}
-        for log in logs:
-            ad = log.action_data or {}
-            dev_name = ad.get("device_name", "Unknown")
-            atype = ad.get("anomaly_type", "unknown")
-            week = log.created_at.strftime("%Y-W%W") if log.created_at else "?"
-            by_device[dev_name] = by_device.get(dev_name, 0) + 1
-            by_type[atype] = by_type.get(atype, 0) + 1
-            by_week[week] = by_week.get(week, 0) + 1
-
-        top_devices = sorted(by_device.items(), key=lambda x: x[1], reverse=True)[:10]
-        return jsonify({
-            "total_30d": total,
-            "by_type": by_type,
-            "top_devices": [{"name": d[0], "count": d[1]} for d in top_devices],
-            "trend": [{"week": w, "count": c} for w, c in sorted(by_week.items())],
-        })
-    finally:
-        session.close()
-
-
-@app.route("/api/anomaly-settings/device/<int:device_id>", methods=["GET"])
-def api_get_device_anomaly_config(device_id):
-    """Get anomaly config for a specific device."""
-    config = json.loads(get_setting(f"anomaly_device_{device_id}") or "null")
-    if not config:
-        config = {"sensitivity": "inherit", "enabled": True, "detection_types": {},
-                  "thresholds": {}, "reaction": "inherit", "whitelisted": False}
-    return jsonify(config)
-
-
-@app.route("/api/anomaly-settings/device/<int:device_id>", methods=["PUT"])
-def api_update_device_anomaly_config(device_id):
-    """Update anomaly config for a specific device."""
-    data = request.json
-    current = json.loads(get_setting(f"anomaly_device_{device_id}") or "{}")
-    current.update(data)
-    set_setting(f"anomaly_device_{device_id}", json.dumps(current))
-    return jsonify({"success": True})
-
-
-@app.route("/api/anomaly-settings/devices", methods=["GET"])
-def api_get_all_device_anomaly_configs():
-    """Get all device-specific anomaly configs."""
-    session = get_db()
-    try:
-        configs = {}
-        settings = session.query(SystemSetting).filter(
-            SystemSetting.key.like("anomaly_device_%")
-        ).all()
-        for s in settings:
-            device_id = s.key.replace("anomaly_device_", "")
-            try:
-                configs[device_id] = json.loads(s.value)
-            except:
-                pass
-        return jsonify(configs)
-    finally:
-        session.close()
-
-
-# State Change Logging
-# ==============================================================================
-
-def log_state_change(entity_id, new_state, old_state, new_attrs=None, old_attrs=None):
-    """Log state changes to action_log for tracked devices. Fix 1 + Fix 18."""
-    session = get_db()
-    try:
-        device = session.query(Device).filter_by(ha_entity_id=entity_id).first()
-        if not device or not device.is_tracked:
-            return
-
-        # Fix 18: Enforce privacy mode
-        if device.room_id:
-            room = session.get(Room, device.room_id)
-            if room and room.privacy_mode:
-                # Get domain name
-                domain = session.get(Domain, device.domain_id)
-                domain_name = domain.name if domain else ""
-
-                # Check if this domain is blocked in privacy mode
-                if room.privacy_mode.get(domain_name) is False:
-                    logger.debug(f"Privacy: Skipping {entity_id} in {room.name} (domain {domain_name} blocked)")
-                    return
-
-                # Check specific features
-                device_class = (new_attrs or {}).get("device_class", "")
-                if room.privacy_mode.get(device_class) is False:
-                    logger.debug(f"Privacy: Skipping {entity_id} in {room.name} (feature {device_class} blocked)")
-                    return
-
-        # Fix 1: Extract display attributes
-        new_display = extract_display_attributes(entity_id, new_attrs or {})
-        old_display = extract_display_attributes(entity_id, old_attrs or {})
-
-        reason = build_state_reason(device.name, old_state, new_state, new_display)
-
-        action_log = ActionLog(
-            action_type="observation",
-            domain_id=device.domain_id,
-            room_id=device.room_id,
-            device_id=device.id,
-            action_data={
-                "entity_id": entity_id,
-                "old_state": old_state,
-                "new_state": new_state,
-                "new_attributes": new_display,
-                "old_attributes": old_display,
-                "timestamp": datetime.now(timezone.utc).isoformat()
-            },
-            reason=reason
-        )
-        session.add(action_log)
-        session.commit()
-    except Exception as e:
-        logger.debug(f"Data collection error: {e}")
-        try:
-            session.rollback()
-        except:
-            pass
-    finally:
-        session.close()
-
-
-# ==============================================================================
-# Fix 3: Auto-Cleanup System
-# ==============================================================================
-
-def run_cleanup():
-    """Delete old entries based on retention setting."""
-    retention_days = int(get_setting("data_retention_days", "90"))
-    cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
-
-    session = get_db()
-    try:
-        # Clean action log observations
-        deleted_obs = session.query(ActionLog).filter(
-            ActionLog.created_at < cutoff,
-            ActionLog.action_type == "observation"
-        ).delete(synchronize_session=False)
-
-        # Phase 2a: Clean state_history
-        deleted_hist = session.query(StateHistory).filter(
-            StateHistory.created_at < cutoff
-        ).delete(synchronize_session=False)
-
-        # Phase 2a: Clean pattern_match_log
-        deleted_matches = session.query(PatternMatchLog).filter(
-            PatternMatchLog.matched_at < cutoff
-        ).delete(synchronize_session=False)
-
-        session.commit()
-        total = deleted_obs + deleted_hist + deleted_matches
-        if total > 0:
-            logger.info(
-                f"Cleanup: Deleted {deleted_obs} observations, "
-                f"{deleted_hist} state history, "
-                f"{deleted_matches} pattern matches "
-                f"(older than {retention_days} days)"
-            )
-
-        # #6 Auto-Vacuum SQLite
-        try:
-            session.execute(text("VACUUM"))
-            logger.info("SQLite VACUUM completed")
-        except Exception as e:
-            logger.debug(f"VACUUM skipped: {e}")
-
-        return total
-    except Exception as e:
-        logger.error(f"Cleanup error: {e}")
-        try:
-            session.rollback()
-        except:
-            pass
-        return 0
-    finally:
-        session.close()
-
-
-def schedule_cleanup():
-    """Schedule daily cleanup at 3:00 AM."""
-    global _cleanup_timer
-
-    def _cleanup_loop():
-        while True:
-            now = datetime.now()
-            # Next 3:00 AM
-            target = now.replace(hour=3, minute=0, second=0, microsecond=0)
-            if target <= now:
-                target += timedelta(days=1)
-            wait_seconds = (target - now).total_seconds()
-            logger.info(f"Next cleanup scheduled in {wait_seconds/3600:.1f} hours")
-            time.sleep(wait_seconds)
-            try:
-                run_cleanup()
-            except Exception as e:
-                logger.error(f"Scheduled cleanup failed: {e}")
-
-    _cleanup_timer = threading.Thread(target=_cleanup_loop, daemon=True)
-    _cleanup_timer.start()
-
-
-# ==============================================================================
-# Fix 28: Graceful Shutdown
-# ==============================================================================
-
-_start_time = None
-
-def graceful_shutdown(signum, frame):
-    """Handle shutdown signals gracefully. (#2)"""
-    logger.info("Shutdown signal received - cleaning up...")
-
-    # Stop schedulers
-    for name, sched in [("pattern_scheduler", pattern_scheduler), ("automation_scheduler", automation_scheduler)]:
-        try:
-            sched.stop()
-            logger.info(f"{name} stopped")
-        except Exception as e:
-            logger.error(f"Error stopping {name}: {e}")
-
-    # Stop domain manager
-    if domain_manager:
-        try:
-            domain_manager.stop_all()
-            logger.info("Domain manager stopped")
-        except Exception:
-            pass
-
-    # Disconnect HA (flushes event queue)
-    try:
-        ha.disconnect()
-        logger.info("HA connection closed")
-    except Exception as e:
-        logger.error(f"Error disconnecting HA: {e}")
-
-    # Final DB vacuum
-    try:
-        with engine.connect() as conn:
-            conn.execute(text("PRAGMA wal_checkpoint(TRUNCATE)"))
-        logger.info("WAL checkpoint completed")
-    except Exception:
-        pass
-
-    # Close DB connections
-    try:
-        engine.dispose()
-        logger.info("Database connections closed")
-    except Exception as e:
-        logger.error(f"Error closing DB: {e}")
-
-    logger.info("MindHome shutdown complete")
-    sys.exit(0)
-
-
-# ==============================================================================
-# Startup
-# ==============================================================================
-
-def start_app():
-    """Initialize and start MindHome. (#10 Self-Test)"""
-    global _start_time
-    _start_time = time.time()
-
-    logger.info("=" * 60)
-    logger.info("MindHome - Smart Home AI")
-    logger.info(f"Version: 0.5.0 (Phase 1+2 Complete + Improvements)")
-    logger.info(f"Language: {get_language()}")
-    logger.info(f"Log Level: {log_level}")
-    logger.info(f"Ingress Path: {INGRESS_PATH}")
-    logger.info("=" * 60)
-
-    # #10 Startup Self-Test
-    logger.info("Running startup self-test...")
-    try:
-        session = get_db()
-        session.execute(text("SELECT 1"))
-        session.close()
-        logger.info("  ✅ Database OK")
-    except Exception as e:
-        logger.error(f"  ❌ Database FAILED: {e}")
-
-    # Register shutdown handlers (#2)
-    signal.signal(signal.SIGTERM, graceful_shutdown)
-    signal.signal(signal.SIGINT, graceful_shutdown)
-
-    # Set defaults
-    if not get_setting("data_retention_days"):
-        set_setting("data_retention_days", "90")
-
-    # Connect to Home Assistant
-    ha.connect()
-
-    # Check timezone
-    try:
-        tz = get_ha_timezone()
-        logger.info(f"  ✅ Timezone: {tz}")
-    except Exception:
-        logger.warning("  ⚠️ Timezone fallback to UTC")
-
-    # Subscribe to state changes
-    ha.subscribe_events(on_state_changed, "state_changed")
-
-    # Start domain plugins (if available)
-    if domain_manager:
-        try:
-            domain_manager.start_enabled_domains()
-        except Exception as e:
-            logger.warning(f"Domain manager start error: {e}")
-
-    # Start ML engines
-    pattern_scheduler.start()
-    logger.info("  ✅ Pattern Engine started")
-
-    automation_scheduler.start()
-    logger.info("  ✅ Automation Engine started")
-
-    # Start cleanup scheduler
-    schedule_cleanup()
-
-    # Start watchdog thread (#40)
-    watchdog_thread = threading.Thread(target=_watchdog_loop, daemon=True)
-    watchdog_thread.start()
-    logger.info("  ✅ Watchdog started")
-
-    # Run startup self-test (#10)
-    test_results = run_startup_self_test()
-    if not test_results["passed"]:
-        logger.warning(f"Self-test issues: {test_results}")
-
-    # Run cleanup once on startup
-    try:
-        run_cleanup()
-    except Exception:
-        pass
-
-    logger.info("MindHome started successfully!")
-
-    # Start Flask
-    app.run(host="0.0.0.0", port=5000, debug=False)
-
-
-if __name__ == "__main__":
-    start_app()
+    if (onboardingDone === false) {
+        return (
+            <AppContext.Provider value={contextValue}>
+                <OnboardingWizard onComplete={async () => {
+                    setOnboardingDone(true);
+                    await refreshData();
+                }} />
+            </AppContext.Provider>
+        );
+    }
+
+    const navItems = [
+        { section: lang === 'de' ? 'Übersicht' : 'Overview' },
+        { id: 'dashboard', icon: 'mdi-view-dashboard', label: 'Dashboard' },
+        { section: lang === 'de' ? 'Konfiguration' : 'Configuration', adminOnly: true },
+        { id: 'domains', icon: 'mdi-puzzle', label: 'Domains', adminOnly: true },
+        { id: 'rooms', icon: 'mdi-door', label: lang === 'de' ? 'Räume' : 'Rooms' },
+        { id: 'devices', icon: 'mdi-devices', label: lang === 'de' ? 'Geräte' : 'Devices' },
+        { id: 'users', icon: 'mdi-account-group', label: lang === 'de' ? 'Personen' : 'People', adminOnly: true },
+        { section: 'System' },
+        { id: 'activities', icon: 'mdi-timeline-clock', label: lang === 'de' ? 'Aktivitäten' : 'Activities' },
+        { id: 'patterns', icon: 'mdi-lightbulb-on', label: lang === 'de' ? 'Muster' : 'Patterns' },
+        { id: 'notifications', icon: 'mdi-bell', label: lang === 'de' ? 'Benachrichtigungen' : 'Notifications' },
+        { id: 'settings', icon: 'mdi-cog', label: lang === 'de' ? 'Einstellungen' : 'Settings', adminOnly: true },
+    ].filter(item => !item.adminOnly || isAdmin);
+
+    const pages = {
+        dashboard: DashboardPage,
+        domains: DomainsPage,
+        devices: DevicesPage,
+        rooms: RoomsPage,
+        users: UsersPage,
+        activities: ActivitiesPage,
+        patterns: PatternsPage,
+        notifications: NotificationsPage,
+        settings: SettingsPage,
+    };
+
+    const PageComponent = pages[page] || DashboardPage;
+    const currentNav = navItems.find(n => n.id === page);
+    const pageTitle = currentNav?.label || 'Dashboard';
+
+    return (
+        <AppContext.Provider value={contextValue}>
+            <div className="app-layout">
+                {/* Sidebar */}
+                <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
+                    <div className="sidebar-header">
+                        <div className="sidebar-brand" onClick={() => { setPage('dashboard'); setSidebarOpen(false); }}>
+                            <img src={`${API_BASE}/icon.png`} alt="MindHome" style={{ width: 36, height: 36, borderRadius: 8 }} />
+                            <div>
+                                <div className="sidebar-title">MindHome</div>
+                                <div className="sidebar-tagline">
+                                    {lang === 'de' ? 'Dein Zuhause denkt mit' : 'Your home thinks ahead'}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <nav className="sidebar-nav" role="navigation" aria-label="Main navigation">
+                        {navItems.map((item, i) => {
+                            if (item.section) {
+                                return <div key={i} className="nav-section-title" role="separator">{item.section}</div>;
+                            }
+                            return (
+                                <div
+                                    key={item.id}
+                                    role="button"
+                                    tabIndex={0}
+                                    aria-label={item.label}
+                                    aria-current={page === item.id ? 'page' : undefined}
+                                    className={`nav-item ${page === item.id ? 'active' : ''}`}
+                                    onClick={() => { setPage(item.id); setSidebarOpen(false); }}
+                                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setPage(item.id); setSidebarOpen(false); }}}
+                                >
+                                    <span className={`mdi ${item.icon}`} aria-hidden="true" />
+                                    {item.label}
+                                </div>
+                            );
+                        })}
+                    </nav>
+
+                    <div className="sidebar-footer">
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--text-muted)' }}>
+                            <span className={`connection-dot ${status?.ha_connected ? 'connected' : 'disconnected'}`} />
+                            {status?.ha_connected ? 'HA Connected' : 'HA Disconnected'}
+                        </div>
+                    </div>
+                </aside>
+
+                {/* Mobile overlay */}
+                {sidebarOpen && (
+                    <div style={{
+                        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
+                        zIndex: 99
+                    }} onClick={() => setSidebarOpen(false)} />
+                )}
+
+                {/* Main */}
+                <main className="main-content">
+                    <header className="main-header">
+                        <div className="main-header-left">
+                            <button className="menu-toggle" onClick={() => setSidebarOpen(true)}>
+                                <span className="mdi mdi-menu" />
+                            </button>
+                            {page === 'dashboard' && (
+                                <img src={`${API_BASE}/icon.png`} alt="MindHome" style={{ width: 28, height: 28, borderRadius: 6, marginRight: 8, flexShrink: 0 }} />
+                            )}
+                            <h1 className="page-title">{pageTitle}</h1>
+                        </div>
+                        <div className="main-header-right">
+                            <button className="btn btn-ghost btn-icon" style={{ position: 'relative' }}
+                                    onClick={() => setPage('notifications')}
+                                    title={lang === 'de' ? 'Benachrichtigungen' : 'Notifications'}>
+                                <span className="mdi mdi-bell-outline" style={{ fontSize: 20 }} />
+                                {unreadNotifs > 0 && (
+                                    <span style={{
+                                        position: 'absolute', top: 2, right: 2, width: 16, height: 16,
+                                        borderRadius: '50%', background: 'var(--danger)', color: '#fff',
+                                        fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                        fontWeight: 700
+                                    }}>{unreadNotifs > 9 ? '9+' : unreadNotifs}</span>
+                                )}
+                            </button>
+                            <button className="btn btn-ghost btn-icon"
+                                    onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')}
+                                    title={theme === 'dark' ? 'Light Mode' : 'Dark Mode'}>
+                                <span className={`mdi ${theme === 'dark' ? 'mdi-weather-sunny' : 'mdi-weather-night'}`} style={{ fontSize: 20 }} />
+                            </button>
+                            <button className="btn btn-ghost btn-icon"
+                                    onClick={() => setViewMode(v => v === 'simple' ? 'advanced' : 'simple')}
+                                    title={viewMode === 'simple' ? 'Advanced' : 'Simple'}>
+                                <span className={`mdi ${viewMode === 'simple' ? 'mdi-tune' : 'mdi-tune-variant'}`} style={{ fontSize: 20 }} />
+                            </button>
+                        </div>
+                    </header>
+
+                    <div className="main-body" role="main" aria-label="Page content">
+                        <PageComponent />
+                    </div>
+                </main>
+            </div>
+
+            {/* Toast */}
+            {/* #8 Stacked Toasts */}
+            <div style={{ position: 'fixed', bottom: 20, right: 20, zIndex: 9999, display: 'flex', flexDirection: 'column-reverse', gap: 8 }}>
+                {toasts.map((t, i) => (
+                    <Toast key={t.id} message={t.message} type={t.type} onClose={() => setToasts(prev => prev.filter(x => x.id !== t.id))} />
+                ))}
+            </div>
+        </AppContext.Provider>
+    );
+};
+
+// ================================================================
+// Phase 2a: Patterns Page (Muster-Explorer)
+
+// ================================================================
+// Mount App
+// ================================================================
+
+// ================================================================
+// #9 Mobile Responsive + #50 Animations + #17 Skeleton + #67 High Contrast CSS
+// ================================================================
+(() => {
+    const style = document.createElement('style');
+    style.textContent = `
+        /* #17 Skeleton pulse */
+        @keyframes pulse {
+            0%, 100% { opacity: 0.4; }
+            50% { opacity: 0.8; }
+        }
+        .skeleton-pulse { animation: pulse 1.5s ease-in-out infinite; }
+
+        /* #50 Smooth transitions */
+        .card { transition: transform 0.15s, box-shadow 0.15s; }
+        .card:hover { transform: translateY(-1px); }
+        .nav-item { transition: background 0.15s, color 0.15s, transform 0.1s; }
+        .btn { transition: background 0.15s, transform 0.1s; }
+        .btn:active { transform: scale(0.97); }
+        .badge { transition: background 0.2s; }
+
+        /* #9 Mobile Responsive */
+        @media (max-width: 768px) {
+            .sidebar { position: fixed !important; z-index: 1000; transform: translateX(-100%); transition: transform 0.25s; }
+            .sidebar.open { transform: translateX(0); }
+            .main-content { margin-left: 0 !important; }
+            .stat-grid { grid-template-columns: 1fr 1fr !important; }
+            .mobile-header { display: flex !important; }
+            .table-container { overflow-x: auto; }
+            table { min-width: 500px; }
+        }
+        @media (max-width: 480px) {
+            .stat-grid { grid-template-columns: 1fr !important; }
+        }
+
+        /* #67 High Contrast Mode */
+        @media (prefers-contrast: high) {
+            :root, [data-theme="dark"] {
+                --border-color: #888 !important;
+                --text-primary: #fff !important;
+                --text-secondary: #ddd !important;
+            }
+            [data-theme="light"] {
+                --border-color: #333 !important;
+                --text-primary: #000 !important;
+                --text-secondary: #222 !important;
+            }
+            .btn { border: 1px solid currentColor !important; }
+            .card { border: 1px solid var(--border-color) !important; }
+        }
+
+        /* #66 Focus visible for keyboard nav */
+        :focus-visible { outline: 2px solid var(--accent-primary) !important; outline-offset: 2px; }
+        .nav-item:focus-visible { background: var(--bg-tertiary); }
+
+        /* Toast position fix for stacking */
+        .toast { position: relative !important; bottom: auto !important; right: auto !important; }
+    `;
+    document.head.appendChild(style);
+})();
+
+
+ReactDOM.createRoot(document.getElementById('root')).render(
+    React.createElement(ErrorBoundary, null, React.createElement(App))
+);
