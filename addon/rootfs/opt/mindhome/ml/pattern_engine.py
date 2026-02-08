@@ -17,7 +17,7 @@ from sqlalchemy.orm import sessionmaker
 from models import (
     get_engine, StateHistory, LearnedPattern, PatternMatchLog,
     Device, Domain, Room, RoomDomainState, DataCollection,
-    SystemSetting, User, LearningPhase
+    SystemSetting, User, LearningPhase, NotificationLog, NotificationType
 )
 
 logger = logging.getLogger("mindhome.pattern_engine")
@@ -61,15 +61,29 @@ MOTION_DEBOUNCE_SECONDS = 60
 class ContextBuilder:
     """Builds context dict for each state change event."""
 
-    def __init__(self, ha_connection):
+    def __init__(self, ha_connection, engine=None):
         self.ha = ha_connection
+        self.Session = None
+        if engine:
+            self.Session = sessionmaker(bind=engine)
+
+    def _get_season(self, month):
+        if month in (3, 4, 5): return "spring"
+        if month in (6, 7, 8): return "summer"
+        if month in (9, 10, 11): return "autumn"
+        return "winter"
 
     def build(self):
-        """Build current context snapshot."""
-        now = datetime.now()
+        """Build current context snapshot with multi-factor context."""
+        try:
+            import zoneinfo
+            tz_name = self.ha.get_timezone()
+            tz = zoneinfo.ZoneInfo(tz_name)
+            now = datetime.now(tz)
+        except Exception:
+            now = datetime.now()
         hour = now.hour
 
-        # Time slot
         if 5 <= hour < 9:
             time_slot = "morning"
         elif 9 <= hour < 12:
@@ -81,51 +95,109 @@ class ContextBuilder:
         else:
             time_slot = "night"
 
+        season = self._get_season(now.month)
+
         ctx = {
             "time_slot": time_slot,
-            "weekday": now.weekday(),  # 0=Mon, 6=Sun
+            "weekday": now.weekday(),
             "is_weekend": now.weekday() >= 5,
             "hour": hour,
             "minute": now.minute,
+            "season": season,
+            "month": now.month,
             "persons_home": [],
+            "anyone_home": False,
             "sun_phase": "unknown",
             "sun_elevation": None,
             "outdoor_temp": None,
+            "indoor_temp": None,
+            "humidity": None,
+            "weather_condition": None,
+            "wind_speed": None,
+            # #27 Seasonal weighting
+            "season_weight": {"spring": 0.9, "summer": 1.0, "autumn": 0.9, "winter": 0.8}.get(season, 0.9),
+            # #57 Weather-adaptive fields
+            "is_rainy": False,
+            "is_sunny": False,
+            "is_dark": False,
+            # #23 Vacation mode
+            "vacation_mode": False,
+            # #28 Calendar context
+            "has_upcoming_event": False,
+            "next_event_minutes": None,
         }
 
-        # Get person states (who is home?)
         try:
             states = self.ha.get_states() or []
             for s in states:
                 eid = s.get("entity_id", "")
                 state_val = s.get("state", "")
+                attrs = s.get("attributes", {})
 
-                # Person entities
                 if eid.startswith("person.") and state_val == "home":
                     ctx["persons_home"].append(eid)
 
-                # Sun entity
                 if eid == "sun.sun":
-                    attrs = s.get("attributes", {})
-                    ctx["sun_phase"] = state_val  # "above_horizon" / "below_horizon"
+                    ctx["sun_phase"] = state_val
                     ctx["sun_elevation"] = attrs.get("elevation")
+                    # #57 – dark detection
+                    elev = attrs.get("elevation")
+                    if elev is not None and elev < -6:
+                        ctx["is_dark"] = True
 
-                # Outdoor temperature (try common patterns)
-                if (eid.startswith("weather.") or
-                    "outdoor" in eid or "outside" in eid or "aussen" in eid or
-                    "aussentemperatur" in eid):
-                    attrs = s.get("attributes", {})
-                    temp = attrs.get("temperature")
-                    if temp is None:
-                        try:
-                            temp = float(state_val)
-                        except (ValueError, TypeError):
-                            pass
-                    if temp is not None and ctx["outdoor_temp"] is None:
-                        ctx["outdoor_temp"] = temp
+                if eid.startswith("weather."):
+                    ctx["weather_condition"] = state_val
+                    if attrs.get("temperature") is not None and ctx["outdoor_temp"] is None:
+                        ctx["outdoor_temp"] = attrs["temperature"]
+                    if attrs.get("humidity") is not None and ctx["humidity"] is None:
+                        ctx["humidity"] = attrs["humidity"]
+                    if attrs.get("wind_speed") is not None:
+                        ctx["wind_speed"] = attrs["wind_speed"]
+                    # #57 weather flags
+                    if state_val in ("rainy", "pouring", "lightning-rainy", "hail", "snowy"):
+                        ctx["is_rainy"] = True
+                    if state_val in ("sunny", "clear-night"):
+                        ctx["is_sunny"] = True
+
+                if ctx["outdoor_temp"] is None and (
+                    "outdoor" in eid or "outside" in eid or "aussen" in eid):
+                    try:
+                        ctx["outdoor_temp"] = float(state_val) if state_val else None
+                    except (ValueError, TypeError):
+                        pass
+
+                if eid.startswith("climate.") and ctx["indoor_temp"] is None:
+                    if attrs.get("current_temperature") is not None:
+                        ctx["indoor_temp"] = attrs["current_temperature"]
+
+            ctx["anyone_home"] = len(ctx["persons_home"]) > 0
 
         except Exception as e:
             logger.warning(f"Context build error: {e}")
+
+        # #28 Calendar events
+        try:
+            events = self.ha.get_upcoming_events(hours=2)
+            if events:
+                ctx["has_upcoming_event"] = True
+                first_start = events[0].get("start", {}).get("dateTime")
+                if first_start:
+                    evt_time = datetime.fromisoformat(first_start.replace("Z", "+00:00"))
+                    diff = (evt_time - datetime.now(timezone.utc)).total_seconds() / 60
+                    ctx["next_event_minutes"] = max(0, int(diff))
+        except Exception:
+            pass
+
+        # #23 Vacation mode check
+        if self.Session:
+            try:
+                session = self.Session()
+                vac = session.query(SystemSetting).filter_by(key="vacation_mode").first()
+                if vac and vac.value == "true":
+                    ctx["vacation_mode"] = True
+                session.close()
+            except Exception:
+                pass
 
         return ctx
 
@@ -138,13 +210,13 @@ class StateLogger:
     """Logs significant state changes to state_history with context."""
 
     # Max events per minute (prevent DB flood from chatty devices)
-    MAX_EVENTS_PER_MINUTE = 120
+    MAX_EVENTS_PER_MINUTE = 300
 
     def __init__(self, engine, ha_connection):
         self.engine = engine
         self.Session = sessionmaker(bind=engine)
         self.ha = ha_connection
-        self.context_builder = ContextBuilder(ha_connection)
+        self.context_builder = ContextBuilder(ha_connection, engine)
 
         # Motion sensor debounce tracking
         self._motion_last_on = {}  # entity_id -> datetime
@@ -153,6 +225,7 @@ class StateLogger:
         # Rate limiter: sliding window
         self._event_timestamps = []  # list of timestamps
         self._rate_limit_warned = False
+        self._rate_limit_warn_time = None
 
     def should_log(self, entity_id, old_state, new_state, attributes):
         """A4: Intelligent sampling - decide if this state change is worth logging."""
@@ -214,9 +287,10 @@ class StateLogger:
         cutoff = now - timedelta(seconds=60)
         self._event_timestamps = [t for t in self._event_timestamps if t > cutoff]
         if len(self._event_timestamps) >= self.MAX_EVENTS_PER_MINUTE:
-            if not self._rate_limit_warned:
+            if not self._rate_limit_warned or (self._rate_limit_warn_time and (now - self._rate_limit_warn_time).total_seconds() > 300):
                 logger.warning(f"Rate limit reached ({self.MAX_EVENTS_PER_MINUTE}/min), dropping events")
                 self._rate_limit_warned = True
+                self._rate_limit_warn_time = now
             return
         self._rate_limit_warned = False
 
@@ -264,6 +338,9 @@ class StateLogger:
             session.commit()
             self._event_timestamps.append(now)
             logger.debug(f"Logged: {entity_id} {old_state} → {new_state}")
+
+            # B.4: Check manual rules
+            self._check_manual_rules(session, entity_id, new_state, ctx)
 
         except Exception as e:
             session.rollback()
@@ -317,6 +394,82 @@ class StateLogger:
         except Exception as e:
             logger.warning(f"DataCollection update error: {e}")
 
+    def _check_manual_rules(self, session, entity_id, new_state, ctx):
+        """B.4: Check and execute manual rules matching this state change."""
+        try:
+            from models import ManualRule, ActionLog
+            rules = session.query(ManualRule).filter_by(
+                trigger_entity=entity_id, is_active=True
+            ).all()
+
+            for rule in rules:
+                # Check trigger state match
+                ts = rule.trigger_state
+                if ts and ts != new_state:
+                    # Support numeric comparisons like ">25"
+                    if ts.startswith(">") or ts.startswith("<"):
+                        try:
+                            val = float(new_state)
+                            threshold = float(ts[1:])
+                            if ts.startswith(">") and val <= threshold:
+                                continue
+                            if ts.startswith("<") and val >= threshold:
+                                continue
+                        except (ValueError, TypeError):
+                            continue
+                    else:
+                        continue
+
+                # Check conditions (weekday, time)
+                conds = rule.conditions or {}
+                if "weekdays" in conds and ctx.get("weekday") not in conds["weekdays"]:
+                    continue
+                if "time_after" in conds:
+                    h, m = map(int, conds["time_after"].split(":"))
+                    if ctx["hour"] < h or (ctx["hour"] == h and ctx["minute"] < m):
+                        continue
+                if "time_before" in conds:
+                    h, m = map(int, conds["time_before"].split(":"))
+                    if ctx["hour"] > h or (ctx["hour"] == h and ctx["minute"] > m):
+                        continue
+                if conds.get("only_home") and not ctx.get("anyone_home"):
+                    continue
+
+                # Execute with optional delay
+                delay = rule.delay_seconds or 0
+                if delay > 0:
+                    import threading
+                    def delayed_exec(r=rule):
+                        try:
+                            domain = r.action_entity.split(".")[0]
+                            self.ha.call_service(domain, r.action_service,
+                                r.action_data or {}, entity_id=r.action_entity)
+                        except Exception as ex:
+                            logger.error(f"Manual rule delayed exec error: {ex}")
+                    threading.Timer(delay, delayed_exec).start()
+                    logger.info(f"Manual rule '{rule.name}' scheduled in {delay}s")
+                else:
+                    domain = rule.action_entity.split(".")[0]
+                    self.ha.call_service(domain, rule.action_service,
+                        rule.action_data or {}, entity_id=rule.action_entity)
+                    logger.info(f"Manual rule '{rule.name}' executed")
+
+                # Update stats
+                rule.execution_count = (rule.execution_count or 0) + 1
+                rule.last_executed_at = datetime.now(timezone.utc)
+
+                # Log
+                log = ActionLog(
+                    action_type="quick_action",
+                    action_data={"rule_id": rule.id, "type": "manual_rule"},
+                    reason=f"Regel: {rule.name}"
+                )
+                session.add(log)
+
+            session.commit()
+        except Exception as e:
+            logger.warning(f"Manual rule check error: {e}")
+
 
 # ==============================================================================
 # Pattern Detector (B1-B3: Time, Sequence, Correlation patterns)
@@ -347,14 +500,52 @@ class PatternDetector:
 
             logger.info(f"Analyzing {len(events)} events from last 14 days")
 
+            # Load exclusions to filter patterns
+            from models import PatternExclusion
+            exclusions = session.query(PatternExclusion).all()
+            excluded_pairs = set()
+            for e in exclusions:
+                excluded_pairs.add((e.entity_a, e.entity_b))
+                excluded_pairs.add((e.entity_b, e.entity_a))
+
             # B1: Time-based patterns
             time_patterns = self._detect_time_patterns(session, events)
 
             # B2: Sequence patterns (event chains)
             sequence_patterns = self._detect_sequence_patterns(session, events)
 
-            # B3: Correlation patterns
+            # B3: Correlation patterns (filter by exclusions)
             correlation_patterns = self._detect_correlation_patterns(session, events)
+
+            # Filter out excluded pairs from correlation patterns
+            for p in correlation_patterns:
+                pd = p.pattern_data or {}
+                ea = pd.get("entity_a", "")
+                eb = pd.get("entity_b", "")
+                if (ea, eb) in excluded_pairs:
+                    p.is_active = False
+                    p.status = "disabled"
+                    logger.info(f"Pattern {p.id} disabled: excluded pair {ea} <-> {eb}")
+
+            # B7: Domain-specific confidence boost
+            self._apply_domain_scoring(session)
+
+            # B.9: Seasonal tagging
+            now = datetime.now()
+            month = now.month
+            season = "spring" if month in (3,4,5) else "summer" if month in (6,7,8) else "autumn" if month in (9,10,11) else "winter"
+            for p in session.query(LearnedPattern).filter(
+                LearnedPattern.season == None, LearnedPattern.is_active == True
+            ).all():
+                # Check if pattern only occurs in current season
+                matches = session.query(PatternMatchLog).filter_by(pattern_id=p.id).all()
+                if len(matches) >= 5:
+                    match_months = [m.matched_at.month for m in matches if m.matched_at]
+                    season_months = {"spring": [3,4,5], "summer": [6,7,8], "autumn": [9,10,11], "winter": [12,1,2]}
+                    for s_name, s_months in season_months.items():
+                        if all(m in s_months for m in match_months):
+                            p.season = s_name
+                            break
 
             # B5: Apply decay to existing patterns
             self._apply_decay(session)
@@ -374,10 +565,185 @@ class PatternDetector:
         finally:
             session.close()
 
+    def _apply_domain_scoring(self, session):
+        """B.7: Boost confidence based on domain-specific features."""
+        try:
+            patterns = session.query(LearnedPattern).filter_by(is_active=True).all()
+            for p in patterns:
+                pd = p.pattern_data or {}
+                entity = pd.get("entity_id", "")
+                ha_domain = entity.split(".")[0] if entity else ""
+
+                boost = 0.0
+                # Light: boost if brightness pattern at consistent times
+                if ha_domain == "light" and p.pattern_type == "time_based":
+                    if pd.get("attributes", {}).get("brightness"):
+                        boost += 0.05  # brightness-aware patterns more reliable
+                # Climate: boost if temp patterns correlate with season
+                elif ha_domain == "climate":
+                    if p.season:
+                        boost += 0.08  # seasonal climate patterns very reliable
+                # Cover: boost if correlated with sun
+                elif ha_domain == "cover":
+                    ctx = pd.get("typical_context", {})
+                    if ctx.get("sun_elevation") is not None:
+                        boost += 0.06  # sun-correlated cover patterns
+                # Binary sensor: boost for high-frequency patterns
+                elif ha_domain == "binary_sensor":
+                    if p.match_count and p.match_count > 20:
+                        boost += 0.04
+
+                if boost > 0:
+                    p.confidence = min(1.0, (p.confidence or 0) + boost)
+        except Exception as e:
+            logger.warning(f"Domain scoring error: {e}")
+
+    def _apply_domain_scoring(self, session):
+        """B.7: Boost confidence based on domain-specific features."""
+        try:
+            patterns = session.query(LearnedPattern).filter_by(is_active=True).all()
+            for p in patterns:
+                pd = p.pattern_data or {}
+                entity = pd.get("entity_id", "")
+                ha_domain = entity.split(".")[0] if entity else ""
+
+                boost = 0.0
+                if ha_domain == "light" and p.pattern_type == "time_based":
+                    if pd.get("attributes", {}).get("brightness"):
+                        boost += 0.05
+                elif ha_domain == "climate":
+                    if p.season:
+                        boost += 0.08
+                elif ha_domain == "cover":
+                    ctx = pd.get("typical_context", {})
+                    if ctx.get("sun_elevation") is not None:
+                        boost += 0.06
+                elif ha_domain == "binary_sensor":
+                    if p.match_count and p.match_count > 20:
+                        boost += 0.04
+
+                if boost > 0:
+                    p.confidence = min(1.0, (p.confidence or 0) + boost)
+        except Exception as e:
+            logger.warning(f"Domain scoring error: {e}")
+
+    def apply_confidence_decay(self, session):
+        """#22: Decay confidence of patterns not matched recently."""
+        try:
+            cutoff = datetime.now(timezone.utc) - timedelta(days=14)
+            stale = session.query(LearnedPattern).filter(
+                LearnedPattern.is_active == True,
+                LearnedPattern.last_matched_at < cutoff,
+                LearnedPattern.confidence > 0.1
+            ).all()
+
+            for p in stale:
+                days_stale = (datetime.now(timezone.utc) - p.last_matched_at).days
+                decay = 0.01 * (days_stale // 7)  # lose 1% per week of inactivity
+                old_conf = p.confidence
+                p.confidence = max(0.1, p.confidence - decay)
+                if decay > 0:
+                    logger.debug(f"Pattern {p.id} confidence decay: {old_conf:.2f} → {p.confidence:.2f} (stale {days_stale}d)")
+
+            session.commit()
+            if stale:
+                logger.info(f"Confidence decay applied to {len(stale)} stale patterns")
+        except Exception as e:
+            logger.warning(f"Confidence decay error: {e}")
+
+    @staticmethod
+    def explain_confidence(pattern):
+        """#51: Explain why a pattern has its confidence level."""
+        p = pattern
+        factors = []
+        conf = p.confidence or 0
+
+        # Match count factor
+        mc = p.match_count or 0
+        if mc >= 20:
+            factors.append({"factor": "high_matches", "detail": f"{mc} matches", "impact": "+high"})
+        elif mc >= 5:
+            factors.append({"factor": "moderate_matches", "detail": f"{mc} matches", "impact": "+medium"})
+        else:
+            factors.append({"factor": "few_matches", "detail": f"{mc} matches", "impact": "low"})
+
+        # Staleness
+        if p.last_matched_at:
+            days = (datetime.now(timezone.utc) - p.last_matched_at).days
+            if days > 14:
+                factors.append({"factor": "stale", "detail": f"last match {days}d ago", "impact": "-decay"})
+            else:
+                factors.append({"factor": "recent", "detail": f"matched {days}d ago", "impact": "+fresh"})
+
+        # Season
+        if p.season:
+            factors.append({"factor": "seasonal", "detail": f"season: {p.season}", "impact": "+specific"})
+
+        # Time consistency
+        pd = p.pattern_data or {}
+        tw = pd.get("time_window_min", 60)
+        if tw <= 15:
+            factors.append({"factor": "precise_time", "detail": f"±{tw}min window", "impact": "+precise"})
+
+        return {
+            "confidence": conf,
+            "confidence_pct": f"{conf:.0%}",
+            "factors": factors,
+            "summary_de": f"Vertrauen {conf:.0%}: {mc} Treffer" + (f", zuletzt vor {days}d" if p.last_matched_at else ""),
+            "summary_en": f"Confidence {conf:.0%}: {mc} matches" + (f", last {days}d ago" if p.last_matched_at else ""),
+        }
+
+    def detect_cross_room_correlations(self, session):
+        """#56: Detect patterns across rooms (e.g. kitchen→dining room)."""
+        try:
+            cutoff = datetime.now(timezone.utc) - timedelta(days=14)
+            history = session.query(StateHistory).filter(
+                StateHistory.created_at > cutoff
+            ).order_by(StateHistory.created_at).all()
+
+            # Group by 60-second windows
+            windows = {}
+            for h in history:
+                wk = int(h.created_at.timestamp() // 60)
+                if wk not in windows:
+                    windows[wk] = []
+                windows[wk].append(h)
+
+            # Find cross-room pairs
+            correlations = []
+            from collections import Counter
+            pair_counter = Counter()
+            for wk, events in windows.items():
+                rooms = set()
+                for e in events:
+                    device = session.query(Device).filter_by(ha_entity_id=e.entity_id).first()
+                    if device and device.room_id:
+                        rooms.add(device.room_id)
+                if len(rooms) >= 2:
+                    for r1 in rooms:
+                        for r2 in rooms:
+                            if r1 < r2:
+                                pair_counter[(r1, r2)] += 1
+
+            for (r1, r2), count in pair_counter.most_common(5):
+                if count >= 5:
+                    room1 = session.query(Room).get(r1)
+                    room2 = session.query(Room).get(r2)
+                    if room1 and room2:
+                        correlations.append({
+                            "room_a": {"id": r1, "name": room1.name},
+                            "room_b": {"id": r2, "name": room2.name},
+                            "co_occurrence_count": count,
+                        })
+
+            return correlations
+        except Exception as e:
+            logger.warning(f"Cross-room correlation error: {e}")
+            return []
+
     # --------------------------------------------------------------------------
     # B1: Time-based patterns
     # --------------------------------------------------------------------------
-
     def _detect_time_patterns(self, session, events):
         """Find recurring actions at similar times."""
         patterns_found = []
@@ -860,6 +1226,20 @@ class PatternDetector:
         )
         session.add(pattern)
         logger.info(f"New pattern: {pattern_type} - {desc_de[:80]}... (confidence: {confidence:.2f})")
+
+        # First-time detection notification
+        try:
+            notification = NotificationLog(
+                notification_type=NotificationType.INFO,
+                title_de=f"Neues Muster erkannt: {desc_de[:60]}",
+                title_en=f"New pattern detected: {desc_en[:60]}",
+                message_de=f"MindHome hat erstmals ein {pattern_type}-Muster erkannt. Confidence: {confidence:.0%}",
+                message_en=f"MindHome detected a {pattern_type} pattern for the first time. Confidence: {confidence:.0%}",
+            )
+            session.add(notification)
+        except Exception as e:
+            logger.debug(f"Could not create first-time notification: {e}")
+
         return pattern
 
 
@@ -896,7 +1276,14 @@ class PatternScheduler:
         t2.start()
         self._threads.append(t2)
 
-        logger.info("Pattern Scheduler started (analysis every 6h, storage update every 2h)")
+        # #22 Confidence decay: every 12 hours
+        t3 = threading.Thread(target=self._run_periodic,
+                              args=(self._run_confidence_decay, 12 * 3600, "confidence_decay"),
+                              daemon=True)
+        t3.start()
+        self._threads.append(t3)
+
+        logger.info("Pattern Scheduler started (analysis:6h, storage:2h, decay:12h)")
 
     def stop(self):
         """Stop all background tasks."""
@@ -924,6 +1311,16 @@ class PatternScheduler:
             while slept < interval_seconds and self._should_run:
                 time.sleep(10)
                 slept += 10
+
+    def _run_confidence_decay(self):
+        """#22: Run confidence decay on stale patterns."""
+        session = self.Session()
+        try:
+            self.detector.apply_confidence_decay(session)
+        except Exception as e:
+            logger.warning(f"Confidence decay error: {e}")
+        finally:
+            session.close()
 
     def _update_storage_sizes(self):
         """Update storage_size_bytes in DataCollection entries."""
