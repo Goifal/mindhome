@@ -241,12 +241,17 @@ const Toast = ({ message, type, onClose }) => {
 // Modal Component
 // ================================================================
 
-const Modal = ({ title, children, onClose, actions, wide }) => (
+const Modal = ({ title, children, onClose, onConfirm, actions, wide }) => (
     <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-        <div className="modal" onClick={e => e.stopPropagation()} style={wide ? { maxWidth: 700, width: '90%' } : {}}>
+        <div className="modal" onClick={e => e.stopPropagation()} style={wide ? { maxWidth: 700, width: '90%' } : { minWidth: 340, maxWidth: 480, width: '90%' }}>
             <div className="modal-title">{title}</div>
             {children}
-            {actions && <div className="modal-actions">{actions}</div>}
+            {actions ? <div className="modal-actions">{actions}</div> : onConfirm ? (
+                <div className="modal-actions" style={{ marginTop: 16, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                    <button className="btn btn-secondary" onClick={onClose}>{typeof window !== 'undefined' && document.documentElement.lang === 'en' ? 'Cancel' : 'Abbrechen'}</button>
+                    <button className="btn btn-primary" onClick={onConfirm}>{typeof window !== 'undefined' && document.documentElement.lang === 'en' ? 'Save' : 'Speichern'}</button>
+                </div>
+            ) : null}
         </div>
     </div>
 );
@@ -1639,11 +1644,11 @@ const DevicesPage = () => {
                                 const attrs = device.live_attributes || {};
                                 const unit = attrs.unit || '';
                                 const attrParts = [];
-                                if (attrs.brightness_pct != null) attrParts.push(`☀ ${attrs.brightness_pct}%`);
-                                if (attrs.position_pct != null) attrParts.push(`↕ ${attrs.position_pct}%`);
-                                if (attrs.current_temp != null) attrParts.push(`¡ ${attrs.current_temp}${unit || '°C'}`);
-                                if (attrs.target_temp != null) attrParts.push(`→ ${attrs.target_temp}${unit || '°C'}`);
-                                if (attrs.humidity != null) attrParts.push(`'§ ${attrs.humidity}%`);
+                                if (attrs.brightness_pct != null) attrParts.push(`Helligkeit: ${attrs.brightness_pct}%`);
+                                if (attrs.position_pct != null) attrParts.push(`Position: ${attrs.position_pct}%`);
+                                if (attrs.current_temp != null) attrParts.push(`Ist: ${attrs.current_temp}${unit || '°C'}`);
+                                if (attrs.target_temp != null) attrParts.push(`Soll: ${attrs.target_temp}${unit || '°C'}`);
+                                if (attrs.humidity != null) attrParts.push(`'Feuchte: ${attrs.humidity}%`);
                                 if (attrs.power != null || attrs.current_power_w != null) attrParts.push(` ${attrs.power || attrs.current_power_w} W`);
                                 if (attrs.voltage != null) attrParts.push(`Œ ${attrs.voltage} V`);
                                 // For sensors: show state + unit directly (replaces generic state label)
@@ -2323,7 +2328,7 @@ const UsersPage = () => {
                                         <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
                                             {user.ha_person_entity
                                                 ? `- ${user.ha_person_entity}`
-                                                : (lang === 'de' ? '⚠ï¸ Keine HA-Person' : '⚠ï¸ No HA person')}
+                                                : (lang === 'de' ? 'Keine HA-Person zugewiesen' : 'No HA person assigned')}
                                         </div>
                                     </div>
                                 </div>
@@ -2558,7 +2563,7 @@ const SettingsPage = () => {
                     )}
                 </Modal>
             )}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16, alignItems: 'start' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16, alignItems: 'start' }}>
             {/* LEFT COLUMN */}
             <div>
             <div className="card" style={{ marginBottom: 16 }}>
@@ -2572,8 +2577,8 @@ const SettingsPage = () => {
                         value={lang}
                         onChange={v => setLang(v)}
                         options={[
-                            { value: 'de', label: 'ª Deutsch' },
-                            { value: 'en', label: '§ English' },
+                            { value: 'de', label: 'Deutsch' },
+                            { value: 'en', label: 'English' },
                         ]}
                     />
                 </div>
@@ -2585,7 +2590,7 @@ const SettingsPage = () => {
                         onChange={v => setTheme(v)}
                         options={[
                             { value: 'dark', label: lang === 'de' ? ' Dunkel' : ' Dark' },
-                            { value: 'light', label: lang === 'de' ? '☀ï¸ Hell' : '☀ï¸ Light' },
+                            { value: 'light', label: lang === 'de' ? 'Hell' : 'Light' },
                         ]}
                     />
                 </div>
@@ -2635,7 +2640,7 @@ const SettingsPage = () => {
                     <InfoRow label="Version" value={sysInfo?.version || '0.5.0'} />
                     <InfoRow label="Phase" value={`2 – ${lang === 'de' ? 'Vollständig' : 'Complete'}`} />
                     <InfoRow label="Home Assistant"
-                        value={sysInfo?.ha_connected ? (lang === 'de' ? '✅ Verbunden' : '✅ Connected') : (lang === 'de' ? '❌ Getrennt' : '❌ Disconnected')} />
+                        value={sysInfo?.ha_connected ? (lang === 'de' ? 'Verbunden' : 'Connected') : (lang === 'de' ? 'Getrennt' : 'Disconnected')} />
                     <InfoRow label={lang === 'de' ? 'Zeitzone' : 'Timezone'}
                         value={sysInfo?.timezone || '–'} />
                     <InfoRow label={lang === 'de' ? 'HA Entities' : 'HA Entities'}
@@ -2660,14 +2665,14 @@ const SettingsPage = () => {
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                     <button className="btn btn-sm btn-secondary" onClick={async () => {
                         const r = await api.get('system/watchdog');
-                        if (r) showToast(r.healthy ? (lang === 'de' ? '✅ System gesund' : '✅ System healthy') : `⚠ï¸ ${r.issues?.join(', ')}`, r.healthy ? 'success' : 'warning');
+                        if (r) showToast(r.healthy ? (lang === 'de' ? 'System gesund' : 'System healthy') : `${r.issues?.join(', ')}`, r.healthy ? 'success' : 'warning');
                     }}>
                         <span className="mdi mdi-heart-pulse" style={{ marginRight: 4 }} />
                         {lang === 'de' ? 'Health-Check' : 'Health Check'}
                     </button>
                     <button className="btn btn-sm btn-secondary" onClick={async () => {
                         const r = await api.get('system/self-test');
-                        if (r) showToast(r.passed ? (lang === 'de' ? '✅ Selbsttest bestanden' : '✅ Self-test passed') : `⚠ï¸ ${r.tests?.filter(t => t.status !== 'ok').map(t => t.test).join(', ')}`, r.passed ? 'success' : 'warning');
+                        if (r) showToast(r.passed ? (lang === 'de' ? 'Selbsttest bestanden' : 'Self-test passed') : `${r.tests?.filter(t => t.status !== 'ok').map(t => t.test).join(', ')}`, r.passed ? 'success' : 'warning');
                     }}>
                         <span className="mdi mdi-flask-outline" style={{ marginRight: 4 }} />
                         {lang === 'de' ? 'Selbsttest' : 'Self-Test'}
@@ -2782,18 +2787,18 @@ const SettingsPage = () => {
                         ? 'Steuere wie empfindlich MindHome auf ungewöhnliche Gerätezustände reagiert.'
                         : 'Control how sensitively MindHome reacts to unusual device states.'}
                 </p>
-                <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+                <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
                     {[{ id: 'low', label: lang === 'de' ? 'Niedrig' : 'Low', desc: lang === 'de' ? 'Nur extreme Anomalien' : 'Only extreme anomalies' },
                       { id: 'medium', label: 'Medium', desc: lang === 'de' ? 'Ausgewogen' : 'Balanced' },
                       { id: 'high', label: lang === 'de' ? 'Hoch' : 'High', desc: lang === 'de' ? 'Auch kleine Abweichungen' : 'Small deviations too' }].map(s => (
-                        <button key={s.id} className={`btn ${anomalySensitivity === s.id ? 'btn-primary' : 'btn-secondary'}`} style={{ flex: 1, textAlign: 'center', padding: '10px 8px' }}
+                        <button key={s.id} className={`btn ${anomalySensitivity === s.id ? 'btn-primary' : 'btn-secondary'}`} style={{ flex: '1 1 90px', textAlign: 'center', padding: '8px 6px', minWidth: 0 }}
                             onClick={async () => {
                                 setAnomalySensitivity(s.id);
                                 await api.post('anomaly-settings', { sensitivity: s.id });
                                 showToast(`${s.label}`, 'success');
                             }}>
-                            <div style={{ fontWeight: 600, fontSize: 14 }}>{s.label}</div>
-                            <div style={{ fontSize: 11, color: anomalySensitivity === s.id ? 'rgba(255,255,255,0.7)' : 'var(--text-muted)', marginTop: 2 }}>{s.desc}</div>
+                            <div style={{ fontWeight: 600, fontSize: 13 }}>{s.label}</div>
+                            <div style={{ fontSize: 10, color: anomalySensitivity === s.id ? 'rgba(255,255,255,0.7)' : 'var(--text-muted)', marginTop: 2 }}>{s.desc}</div>
                         </button>
                     ))}
                 </div>
@@ -2809,7 +2814,6 @@ const SettingsPage = () => {
                     {lang === 'de' ? 'Erweitert' : 'Advanced'}
                 </div>
 
-            </div>
                 {/* #23 Vacation Mode */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
                     <span style={{ fontSize: 13 }}><span className="mdi mdi-airplane" style={{ marginRight: 6, color: 'var(--accent-primary)' }} />{lang === 'de' ? 'Urlaubsmodus' : 'Vacation Mode'}</span>
@@ -2857,10 +2861,20 @@ const SettingsPage = () => {
                 {/* #63 Data Export */}
                 <div style={{ padding: '10px 0 4px' }}>
                     <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 6 }}>{lang === 'de' ? 'Daten exportieren' : 'Export Data'}</div>
-                    <div style={{ display: 'flex', gap: 6 }}>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                         {['patterns', 'history', 'automations'].map(dt => (
                             <button key={dt} className="btn btn-sm btn-secondary"
-                                onClick={() => window.open(`${API_BASE}/api/export/${dt}?format=csv`, '_blank')}
+                                onClick={async () => {
+                                    try {
+                                        const resp = await fetch(`/api/export/${dt}?format=csv`);
+                                        if (!resp.ok) throw new Error(resp.statusText);
+                                        const blob = await resp.blob();
+                                        const url = URL.createObjectURL(blob);
+                                        const a = document.createElement('a');
+                                        a.href = url; a.download = `mindhome_${dt}.csv`; a.click();
+                                        URL.revokeObjectURL(url);
+                                    } catch (e) { showToast(`Export ${dt} fehlgeschlagen`, 'error'); }
+                                }}
                                 style={{ fontSize: 11, textTransform: 'capitalize' }}>{dt}</button>
                         ))}
                     </div>
@@ -3230,21 +3244,6 @@ const AnomalyAdvancedPanel = ({ lang, showToast }) => {
                 <DeviceAnomalyConfig lang={lang} />
             </CollapsibleCard>
 
-            {/* Phase 3B: Personen-Zeitprofile */}
-            <CollapsibleCard title={lang === 'de' ? 'Personen-Zeitprofile' : 'Person Time Profiles'} icon="mdi-clock-account" defaultOpen={false}>
-                <PersonTimeProfiles lang={lang} />
-            </CollapsibleCard>
-
-            {/* Phase 3B: Schichtplan Import */}
-            <CollapsibleCard title={lang === 'de' ? 'Schichtplan Import' : 'Shift Plan Import'} icon="mdi-file-pdf-box" defaultOpen={false}>
-                <ShiftPlanImport lang={lang} />
-            </CollapsibleCard>
-
-            {/* Phase 3B: Feiertage */}
-            <CollapsibleCard title={lang === 'de' ? 'Feiertage' : 'Holidays'} icon="mdi-calendar-star" defaultOpen={false}>
-                <HolidayManager lang={lang} />
-            </CollapsibleCard>
-
             {/* Statistics */}
             {stats && stats.total_30d > 0 && (
                 <CollapsibleCard title={`${lang === 'de' ? 'Statistik' : 'Statistics'} · ${stats.total_30d}`} icon="mdi-chart-bar" defaultOpen={false}>
@@ -3263,6 +3262,43 @@ const AnomalyAdvancedPanel = ({ lang, showToast }) => {
                     )}
                 </CollapsibleCard>
             )}
+            </div>
+
+            {/* THIRD COLUMN - Phase 3B */}
+            <div>
+            {/* Personen-Zeitprofile */}
+            <div className="card" style={{ marginBottom: 16 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                    <div className="card-title" style={{ marginBottom: 0 }}>
+                        <span className="mdi mdi-account-clock" style={{ marginRight: 8, color: 'var(--accent-primary)' }} />
+                        {lang === 'de' ? 'Personen-Zeitprofile' : 'Person Time Profiles'}
+                    </div>
+                </div>
+                <PersonTimeProfiles lang={lang} />
+            </div>
+
+            {/* Schichtplan Import */}
+            <div className="card" style={{ marginBottom: 16 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                    <div className="card-title" style={{ marginBottom: 0 }}>
+                        <span className="mdi mdi-file-pdf-box" style={{ marginRight: 8, color: 'var(--accent-primary)' }} />
+                        {lang === 'de' ? 'Schichtplan Import' : 'Shift Plan Import'}
+                    </div>
+                </div>
+                <ShiftPlanImport lang={lang} />
+            </div>
+
+            {/* Feiertage */}
+            <div className="card" style={{ marginBottom: 16 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                    <div className="card-title" style={{ marginBottom: 0 }}>
+                        <span className="mdi mdi-calendar-star" style={{ marginRight: 8, color: 'var(--accent-primary)' }} />
+                        {lang === 'de' ? 'Feiertage' : 'Holidays'}
+                    </div>
+                </div>
+                <HolidayManager lang={lang} />
+            </div>
+            </div>
         </div>
     );
 };
@@ -3522,22 +3558,28 @@ const HolidayManager = ({ lang }) => {
     const [holidayCalendar, setHolidayCalendar] = useState('');
     const [newHoliday, setNewHoliday] = useState({ name: '', date: '' });
     const [loading, setLoading] = useState(true);
+    const [calError, setCalError] = useState(false);
 
     const load = async () => {
-        const calParam = holidayCalendar ? `&calendar_entity=${holidayCalendar}` : '';
-        const data = await api.get(`holidays?year=${year}${calParam}`);
-        if (data) setHolidays(data);
+        setLoading(true);
+        try {
+            const calParam = holidayCalendar ? `&calendar_entity=${encodeURIComponent(holidayCalendar)}` : '';
+            const data = await api.get(`holidays?year=${year}${calParam}`);
+            if (data) setHolidays(data);
+        } catch (e) { /* fallback to empty */ }
         setLoading(false);
     };
 
     useEffect(() => {
         (async () => {
-            const cals = await api.get('ha/holiday-calendars');
-            if (cals) {
-                setCalendars(cals);
-                const hc = cals.find(c => c.entity_id.includes('austria') || c.entity_id.includes('sterreich') || c.name.toLowerCase().includes('ster'));
-                if (hc) setHolidayCalendar(hc.entity_id);
-            }
+            try {
+                const cals = await api.get('ha/holiday-calendars');
+                if (cals && Array.isArray(cals)) {
+                    setCalendars(cals);
+                    const hc = cals.find(c => c.entity_id.includes('austria') || c.entity_id.includes('sterreich') || c.name.toLowerCase().includes('ster'));
+                    if (hc) setHolidayCalendar(hc.entity_id);
+                }
+            } catch (e) { setCalError(true); }
         })();
     }, []);
 
@@ -3548,7 +3590,7 @@ const HolidayManager = ({ lang }) => {
         await api.post('holidays', newHoliday);
         setNewHoliday({ name: '', date: '' });
         await load();
-        showToast('Feiertag hinzugef\u00fcgt', 'success');
+        showToast('Feiertag hinzugefügt', 'success');
     };
 
     const removeCustom = async (id) => { await api.delete(`holidays/${id}`); await load(); };
@@ -3564,33 +3606,34 @@ const HolidayManager = ({ lang }) => {
 
     return (
         <div>
-            <div style={{ display: 'flex', gap: 12, alignItems: 'end', marginBottom: 12, flexWrap: 'wrap' }}>
-                <div>
-                    <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 2 }}>HA Feiertags-Kalender:</label>
-                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                        <button className={`btn btn-sm ${!holidayCalendar ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setHolidayCalendar('')} style={{ fontSize: 10 }}>Fallback</button>
-                        {calendars.map(c => (
-                            <button key={c.entity_id} className={`btn btn-sm ${holidayCalendar === c.entity_id ? 'btn-primary' : 'btn-ghost'}`}
-                                onClick={() => setHolidayCalendar(c.entity_id)} style={{ fontSize: 10 }}>{c.name}</button>
-                        ))}
-                    </div>
-                </div>
-                <div>
-                    <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 2 }}>Jahr:</label>
-                    <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-                        <button className="btn btn-sm btn-ghost" onClick={() => setYear(y => y - 1)}>&lt;</button>
-                        <span style={{ fontSize: 13, fontWeight: 600 }}>{year}</span>
-                        <button className="btn btn-sm btn-ghost" onClick={() => setYear(y => y + 1)}>&gt;</button>
-                    </div>
-                </div>
+            <div style={{ marginBottom: 12 }}>
+                <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>
+                    {lang === 'de' ? 'Feiertags-Quelle:' : 'Holiday Source:'}
+                </label>
+                <select value={holidayCalendar} onChange={e => setHolidayCalendar(e.target.value)}
+                    style={{ fontSize: 12, padding: '6px 8px', width: '100%', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-secondary)', color: 'var(--text-primary)' }}>
+                    <option value="">{lang === 'de' ? 'Eingebaut (AT/NÖ Fallback)' : 'Builtin (AT/NÖ Fallback)'}</option>
+                    {calendars.map(c => (
+                        <option key={c.entity_id} value={c.entity_id}>{c.name} ({c.entity_id})</option>
+                    ))}
+                </select>
+                {calError && <div style={{ fontSize: 10, color: 'var(--warning)', marginTop: 2 }}>HA Kalender nicht verfügbar – Fallback aktiv</div>}
             </div>
-            {loading ? <div style={{ color: 'var(--text-muted)', fontSize: 12 }}>Laden...</div> : (
+
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 12 }}>
+                <label style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Jahr:</label>
+                <button className="btn btn-sm btn-ghost" onClick={() => setYear(y => y - 1)}>&lt;</button>
+                <span style={{ fontSize: 13, fontWeight: 600 }}>{year}</span>
+                <button className="btn btn-sm btn-ghost" onClick={() => setYear(y => y + 1)}>&gt;</button>
+            </div>
+
+            {loading ? <div style={{ color: 'var(--text-muted)', fontSize: 12, padding: 8 }}>Laden...</div> : (
                 <div style={{ maxHeight: 300, overflowY: 'auto', marginBottom: 12 }}>
                     {allHolidays.map((h, i) => (
-                        <div key={`${h.date}-${i}`} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', borderBottom: '1px solid var(--border)', fontSize: 12 }}>
-                            <span style={{ minWidth: 80, fontFamily: 'monospace' }}>{h.date}</span>
+                        <div key={`${h.date}-${i}`} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 0', borderBottom: '1px solid var(--border)', fontSize: 12 }}>
+                            <span style={{ minWidth: 75, fontFamily: 'monospace', fontSize: 11 }}>{h.date}</span>
                             <span style={{ flex: 1 }}>{h.name}</span>
-                            <span style={{ fontSize: 10, color: srcColor[h.source], padding: '1px 4px', background: 'var(--bg-secondary)', borderRadius: 4 }}>{srcLabel[h.source]}</span>
+                            <span style={{ fontSize: 9, color: srcColor[h.source], padding: '1px 4px', background: 'var(--bg-secondary)', borderRadius: 4, whiteSpace: 'nowrap' }}>{srcLabel[h.source]}</span>
                             {h.source === 'custom' && h.id && (
                                 <button className="btn btn-sm btn-ghost" onClick={() => removeCustom(h.id)} style={{ color: 'var(--danger)', padding: 2 }}><span className="mdi mdi-close" /></button>
                             )}
@@ -3599,12 +3642,14 @@ const HolidayManager = ({ lang }) => {
                     {allHolidays.length === 0 && <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: 8, textAlign: 'center' }}>Keine Feiertage gefunden</div>}
                 </div>
             )}
-            <div style={{ display: 'flex', gap: 8, alignItems: 'end' }}>
-                <div style={{ flex: 1 }}>
-                    <label style={{ fontSize: 11, color: 'var(--text-muted)' }}>Eigener Feiertag:</label>
-                    <input type="text" placeholder="z.B. Betriebsurlaub" value={newHoliday.name} onChange={e => setNewHoliday({ ...newHoliday, name: e.target.value })} style={{ fontSize: 12, padding: '4px 8px', width: '100%' }} />
-                </div>
-                <input type="date" value={newHoliday.date} onChange={e => setNewHoliday({ ...newHoliday, date: e.target.value })} style={{ fontSize: 12, padding: '4px 8px' }} />
+            <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 4 }}>
+                {lang === 'de' ? 'Eigenen Feiertag hinzufügen:' : 'Add custom holiday:'}
+            </div>
+            <div style={{ display: 'flex', gap: 6, alignItems: 'end' }}>
+                <input type="text" placeholder="z.B. Betriebsurlaub" value={newHoliday.name} onChange={e => setNewHoliday({ ...newHoliday, name: e.target.value })}
+                    style={{ fontSize: 12, padding: '4px 8px', flex: 1 }} />
+                <input type="date" value={newHoliday.date} onChange={e => setNewHoliday({ ...newHoliday, date: e.target.value })}
+                    style={{ fontSize: 12, padding: '4px 8px', width: 130 }} />
                 <button className="btn btn-sm btn-primary" onClick={addCustom} disabled={!newHoliday.name || !newHoliday.date}><span className="mdi mdi-plus" /></button>
             </div>
         </div>
@@ -3773,8 +3818,8 @@ const ActivitiesPage = () => {
                         const attrs = log.action_data?.new_attributes || {};
                         const attrParts = [];
                         if (attrs.brightness_pct !== undefined) attrParts.push(` ${attrs.brightness_pct}%`);
-                        if (attrs.position_pct !== undefined) attrParts.push(`↕ ${attrs.position_pct}%`);
-                        if (attrs.target_temp !== undefined) attrParts.push(`¡ ${attrs.target_temp}°C`);
+                        if (attrs.position_pct !== undefined) attrParts.push(`Position: ${attrs.position_pct}%`);
+                        if (attrs.target_temp !== undefined) attrParts.push(`Soll: ${attrs.target_temp}°C`);
                         if (attrs.current_temp !== undefined) attrParts.push(`Ist: ${attrs.current_temp}°C`);
                         const roomName = getRoomName(log.room_id);
                         return (
@@ -4300,7 +4345,7 @@ const PatternsPage = () => {
                 </div>
                 <div style={{ display: 'flex', gap: 4 }}>
                     {[{ id: 'conservative', label: lang === 'de' ? 'Vorsichtig' : 'Conservative', icon: '' },
-                      { id: 'normal', label: 'Normal', icon: '⚠ï¸' },
+                      { id: 'normal', label: 'Normal', icon: 'mdi-alert' },
                       { id: 'aggressive', label: lang === 'de' ? 'Aggressiv' : 'Aggressive', icon: '' }].map(s => (
                         <button key={s.id} className={`btn btn-sm ${(stats?.learning_speed || 'normal') === s.id ? 'btn-primary' : 'btn-ghost'}`}
                             onClick={async () => {
@@ -4435,7 +4480,7 @@ const PatternsPage = () => {
                     </div>
                     {conflicts.slice(0, 3).map((c, i) => (
                         <div key={i} style={{ fontSize: 12, color: 'var(--text-secondary)', padding: '4px 0' }}>
-                            {c.message_de || c.message_en || c.description || `${c.pattern_a?.desc || c.pattern_a?.id || '?'} ↔ ${c.pattern_b?.desc || c.pattern_b?.id || '?'}`}
+                            {c.message_de || c.message_en || c.description || `${c.pattern_a?.desc || c.pattern_a?.id || '?'} / ${c.pattern_b?.desc || c.pattern_b?.id || '?'}`}
                         </div>
                     ))}
                 </div>
@@ -4995,13 +5040,13 @@ const NotificationsPage = () => {
                                 {(notifSettings?.channels || []).map(ch => (
                                     <div key={ch.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--border)' }}>
                                         <div>
-                                            <div style={{ fontSize: 13, fontWeight: 500 }}>{ch.name}</div>
-                                            <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{ch.ha_service}</div>
+                                            <div style={{ fontSize: 13, fontWeight: 500 }}>{ch.display_name || ch.service_name}</div>
+                                            <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{ch.service_name}</div>
                                         </div>
                                         <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
                                             <button className="btn btn-sm btn-ghost" onClick={async () => { await api.post(`notification-settings/test-channel/${ch.id}`); showToast('Test sent', 'success'); }} style={{ fontSize: 10 }}>Test</button>
-                                            <label className="toggle" style={{ transform: 'scale(0.8)' }}><input type="checkbox" checked={ch.is_active}
-                                                onChange={async () => { await api.put(`notification-settings/channel/${ch.id}`, { is_active: !ch.is_active }); await load(); }} /><div className="toggle-slider" /></label>
+                                            <label className="toggle" style={{ transform: 'scale(0.8)' }}><input type="checkbox" checked={ch.is_enabled}
+                                                onChange={async () => { await api.put(`notification-settings/channel/${ch.id}`, { is_enabled: !ch.is_enabled }); await load(); }} /><div className="toggle-slider" /></label>
                                         </div>
                                     </div>
                                 ))}
@@ -5042,7 +5087,7 @@ const NotificationsPage = () => {
                                             {lang === 'de' ? 'Benachrichtigungs-Kan\u00e4le:' : 'Notification Channels:'}
                                         </label>
                                         <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                                            {(notifSettings?.channels || []).filter(c => c.is_active).map(ch => {
+                                            {(notifSettings?.channels || []).filter(c => c.is_enabled).map(ch => {
                                                 const assigned = extSettings?.person_channels?.[u.id]?.includes(ch.id);
                                                 return <button key={ch.id} className={`btn btn-sm ${assigned ? 'btn-primary' : 'btn-ghost'}`}
                                                     onClick={async () => {
@@ -5051,7 +5096,7 @@ const NotificationsPage = () => {
                                                         pc[u.id] = assigned ? current.filter(id => id !== ch.id) : [...current, ch.id];
                                                         setExtSettings(prev => ({ ...prev, person_channels: pc }));
                                                         await api.put('notification-settings/extended', { person_channels: pc });
-                                                    }} style={{ fontSize: 10, padding: '2px 6px' }}>{ch.name}</button>;
+                                                    }} style={{ fontSize: 10, padding: '2px 6px' }}>{ch.display_name || ch.service_name}</button>;
                                             })}
                                         </div>
                                     </div>
@@ -5479,7 +5524,7 @@ const OnboardingWizard = ({ onComplete }) => {
                             <div className="onboarding-title">{l.lang_title}</div>
                             <div className="onboarding-subtitle">{l.lang_sub}</div>
                             <div style={{ display: 'flex', gap: 12 }}>
-                                {[{ code: 'de', label: 'Deutsch', flag: 'ª' }, { code: 'en', label: 'English', flag: '§' }].map(opt => (
+                                {[{ code: 'de', label: 'Deutsch', icon: 'mdi-alpha-d-box' }, { code: 'en', label: 'English', icon: 'mdi-alpha-e-box' }].map(opt => (
                                     <button key={opt.code}
                                         className={`card ${lang === opt.code ? '' : ''}`}
                                         onClick={() => setLangLocal(opt.code)}
@@ -5488,7 +5533,7 @@ const OnboardingWizard = ({ onComplete }) => {
                                             border: lang === opt.code ? '2px solid var(--accent-primary)' : '1px solid var(--border)',
                                             background: lang === opt.code ? 'var(--accent-primary-dim)' : 'var(--bg-card)'
                                         }}>
-                                        <div style={{ fontSize: 32 }}>{opt.flag}</div>
+                                        <span className={`mdi ${opt.icon}`} style={{ fontSize: 32, color: lang === opt.code ? 'var(--accent-primary)' : 'var(--text-secondary)' }} />
                                         <div style={{ fontWeight: 600, marginTop: 8 }}>{opt.label}</div>
                                     </button>
                                 ))}
