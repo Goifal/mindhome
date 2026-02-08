@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>MindHome</title>
 
     <!-- Fonts -->
@@ -62,8 +62,8 @@
             --radius-lg: 16px;
             --radius-xl: 24px;
 
-            --font-display: 'Outfit', sans-serif;
-            --font-mono: 'JetBrains Mono', monospace;
+            --font-display: 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            --font-mono: 'JetBrains Mono', 'SF Mono', 'Menlo', monospace;
 
             --sidebar-width: 260px;
             --header-height: 64px;
@@ -535,25 +535,10 @@
             font-weight: 500;
         }
 
-        .badge-success {
-            background: var(--success-dim);
-            color: var(--success);
-        }
-
-        .badge-warning {
-            background: var(--warning-dim);
-            color: var(--warning);
-        }
-
-        .badge-danger {
-            background: var(--danger-dim);
-            color: var(--danger);
-        }
-
-        .badge-info {
-            background: var(--info-dim);
-            color: var(--info);
-        }
+        .badge-success { background: var(--success-dim); color: var(--success); }
+        .badge-warning { background: var(--warning-dim); color: var(--warning); }
+        .badge-danger { background: var(--danger-dim); color: var(--danger); }
+        .badge-info { background: var(--info-dim); color: var(--info); }
 
         .badge-dot {
             width: 6px;
@@ -582,346 +567,81 @@
             user-select: none;
         }
 
-        .domain-card:hover {
-            border-color: var(--border-hover);
-        }
+        .domain-card:hover { border-color: var(--border-hover); }
+        .domain-card.enabled { border-color: var(--border-accent); background: var(--accent-primary-dim); }
+        .domain-card .mdi { font-size: 24px; color: var(--text-muted); }
+        .domain-card.enabled .mdi { color: var(--accent-primary); }
 
-        .domain-card.enabled {
-            border-color: var(--border-accent);
-            background: var(--accent-primary-dim);
-        }
-
-        .domain-card .mdi {
-            font-size: 24px;
-            color: var(--text-muted);
-        }
-
-        .domain-card.enabled .mdi {
-            color: var(--accent-primary);
-        }
-
-        .domain-card-info {
-            flex: 1;
-            min-width: 0;
-        }
-
-        .domain-card-name {
-            font-weight: 500;
-            font-size: 14px;
-        }
-
-        .domain-card-desc {
-            font-size: 12px;
-            color: var(--text-muted);
-            margin-top: 2px;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }
+        .domain-card-info { flex: 1; min-width: 0; }
+        .domain-card-name { font-weight: 500; font-size: 14px; }
+        .domain-card-desc { font-size: 12px; color: var(--text-muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
         /* Toggle Switch */
-        .toggle {
-            position: relative;
-            width: 44px;
-            height: 24px;
-            flex-shrink: 0;
-        }
-
-        .toggle input {
-            display: none;
-        }
-
-        .toggle-slider {
-            position: absolute;
-            inset: 0;
-            background: var(--bg-input);
-            border-radius: 12px;
-            border: 1px solid var(--border);
-            cursor: pointer;
-            transition: all var(--transition-fast);
-        }
-
-        .toggle-slider::after {
-            content: '';
-            position: absolute;
-            top: 3px;
-            left: 3px;
-            width: 16px;
-            height: 16px;
-            background: var(--text-muted);
-            border-radius: 50%;
-            transition: all var(--transition-fast);
-        }
-
-        .toggle input:checked + .toggle-slider {
-            background: var(--accent-primary);
-            border-color: var(--accent-primary);
-        }
-
-        .toggle input:checked + .toggle-slider::after {
-            transform: translateX(20px);
-            background: #fff;
-        }
+        .toggle { position: relative; width: 44px; height: 24px; flex-shrink: 0; }
+        .toggle input { display: none; }
+        .toggle-slider { position: absolute; inset: 0; background: var(--bg-input); border-radius: 12px; border: 1px solid var(--border); cursor: pointer; transition: all var(--transition-fast); }
+        .toggle-slider::after { content: ''; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; background: var(--text-muted); border-radius: 50%; transition: all var(--transition-fast); }
+        .toggle input:checked + .toggle-slider { background: var(--accent-primary); border-color: var(--accent-primary); }
+        .toggle input:checked + .toggle-slider::after { transform: translateX(20px); background: #fff; }
 
         /* Input */
-        .input-group {
-            display: flex;
-            flex-direction: column;
-            gap: 6px;
-        }
-
-        .input-label {
-            font-size: 13px;
-            font-weight: 500;
-            color: var(--text-secondary);
-        }
-
-        .input {
-            padding: 10px 14px;
-            background: var(--bg-input);
-            border: 1px solid var(--border);
-            border-radius: var(--radius-sm);
-            color: var(--text-primary);
-            font-family: var(--font-display);
-            font-size: 14px;
-            transition: all var(--transition-fast);
-            outline: none;
-        }
-
-        .input:focus {
-            border-color: var(--accent-primary);
-            box-shadow: 0 0 0 3px var(--accent-primary-dim);
-        }
-
-        .input::placeholder {
-            color: var(--text-muted);
-        }
-
-        select.input {
-            cursor: pointer;
-            appearance: none;
-            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%235a6478'%3E%3Cpath d='M7 10l5 5 5-5z'/%3E%3C/svg%3E");
-            background-repeat: no-repeat;
-            background-position: right 8px center;
-            background-size: 20px;
-            padding-right: 32px;
-        }
+        .input-group { display: flex; flex-direction: column; gap: 6px; }
+        .input-label { font-size: 13px; font-weight: 500; color: var(--text-secondary); }
+        .input { padding: 10px 14px; background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text-primary); font-family: var(--font-display); font-size: 14px; transition: all var(--transition-fast); outline: none; }
+        .input:focus { border-color: var(--accent-primary); box-shadow: 0 0 0 3px var(--accent-primary-dim); }
+        .input::placeholder { color: var(--text-muted); }
+        select.input { cursor: pointer; appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%235a6478'%3E%3Cpath d='M7 10l5 5 5-5z'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 8px center; background-size: 20px; padding-right: 32px; }
 
         /* Tables */
-        .table-wrap {
-            overflow-x: auto;
-            border: 1px solid var(--border);
-            border-radius: var(--radius-md);
-        }
-
-        table {
-            width: 100%;
-            border-collapse: collapse;
-        }
-
-        th {
-            text-align: left;
-            padding: 12px 16px;
-            font-size: 12px;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-            color: var(--text-muted);
-            background: var(--bg-card);
-            border-bottom: 1px solid var(--border);
-        }
-
-        td {
-            padding: 12px 16px;
-            font-size: 14px;
-            border-bottom: 1px solid var(--border);
-        }
-
-        tr:last-child td {
-            border-bottom: none;
-        }
-
-        tr:hover td {
-            background: var(--bg-card-hover);
-        }
+        .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius-md); }
+        table { width: 100%; border-collapse: collapse; }
+        th { text-align: left; padding: 12px 16px; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); background: var(--bg-card); border-bottom: 1px solid var(--border); }
+        td { padding: 12px 16px; font-size: 14px; border-bottom: 1px solid var(--border); }
+        tr:last-child td { border-bottom: none; }
+        tr:hover td { background: var(--bg-card-hover); }
 
         /* Modal */
-        .modal-overlay {
-            position: fixed;
-            inset: 0;
-            background: var(--bg-overlay);
-            backdrop-filter: blur(8px);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 1000;
-            animation: fadeIn 0.2s ease;
-        }
-
-        .modal {
-            background: var(--bg-secondary);
-            border: 1px solid var(--border);
-            border-radius: var(--radius-lg);
-            padding: 24px;
-            min-width: 400px;
-            max-width: 90vw;
-            max-height: 90vh;
-            overflow-y: auto;
-            box-shadow: var(--shadow-lg);
-            animation: slideUp 0.3s var(--transition-slow);
-        }
-
-        .modal-title {
-            font-size: 18px;
-            font-weight: 600;
-            margin-bottom: 16px;
-        }
-
-        .modal-actions {
-            display: flex;
-            justify-content: flex-end;
-            gap: 8px;
-            margin-top: 20px;
-        }
+        .modal-overlay { position: fixed; inset: 0; background: var(--bg-overlay); backdrop-filter: blur(8px); display: flex; align-items: center; justify-content: center; z-index: 1000; animation: fadeIn 0.2s ease; }
+        .modal { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 24px; min-width: 400px; max-width: 90vw; max-height: 90vh; overflow-y: auto; box-shadow: var(--shadow-lg); animation: slideUp 0.3s var(--transition-slow); }
+        .modal-title { font-size: 18px; font-weight: 600; margin-bottom: 16px; }
+        .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
 
         /* Empty State */
-        .empty-state {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            padding: 48px 24px;
-            text-align: center;
-        }
-
-        .empty-state .mdi {
-            font-size: 48px;
-            color: var(--text-muted);
-            margin-bottom: 16px;
-        }
-
-        .empty-state h3 {
-            font-size: 16px;
-            font-weight: 600;
-            margin-bottom: 8px;
-        }
-
-        .empty-state p {
-            font-size: 14px;
-            color: var(--text-secondary);
-            max-width: 400px;
-        }
+        .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 48px 24px; text-align: center; }
+        .empty-state .mdi { font-size: 48px; color: var(--text-muted); margin-bottom: 16px; }
+        .empty-state h3 { font-size: 16px; font-weight: 600; margin-bottom: 8px; }
+        .empty-state p { font-size: 14px; color: var(--text-secondary); max-width: 400px; }
 
         /* Learning Phase Indicator */
-        .phase-bar {
-            display: flex;
-            gap: 4px;
-            height: 6px;
-        }
-
-        .phase-segment {
-            flex: 1;
-            border-radius: 3px;
-            background: var(--bg-input);
-        }
-
-        .phase-segment.active {
-            background: var(--accent-primary);
-        }
-
-        .phase-segment.completed {
-            background: var(--success);
-        }
+        .phase-bar { display: flex; gap: 4px; height: 6px; }
+        .phase-segment { flex: 1; border-radius: 3px; background: var(--bg-input); }
+        .phase-segment.active { background: var(--accent-primary); }
+        .phase-segment.completed { background: var(--success); }
 
         /* ================================================================
            Onboarding Wizard
            ================================================================ */
 
-        .onboarding-overlay {
-            position: fixed;
-            inset: 0;
-            background: var(--bg-primary);
-            z-index: 2000;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .onboarding-container {
-            width: 100%;
-            max-width: 640px;
-            padding: 24px;
-        }
-
-        .onboarding-progress {
-            display: flex;
-            gap: 8px;
-            margin-bottom: 40px;
-        }
-
-        .onboarding-progress-step {
-            flex: 1;
-            height: 4px;
-            border-radius: 2px;
-            background: var(--bg-card);
-            transition: background var(--transition-normal);
-        }
-
-        .onboarding-progress-step.active {
-            background: var(--accent-primary);
-        }
-
-        .onboarding-progress-step.completed {
-            background: var(--success);
-        }
-
-        .onboarding-content {
-            animation: fadeIn 0.4s ease;
-        }
-
-        .onboarding-title {
-            font-size: 28px;
-            font-weight: 700;
-            letter-spacing: -0.02em;
-            margin-bottom: 8px;
-        }
-
-        .onboarding-subtitle {
-            font-size: 16px;
-            color: var(--text-secondary);
-            margin-bottom: 32px;
-            line-height: 1.5;
-        }
-
-        .onboarding-actions {
-            display: flex;
-            justify-content: space-between;
-            margin-top: 32px;
-        }
+        .onboarding-overlay { position: fixed; inset: 0; background: var(--bg-primary); z-index: 2000; display: flex; align-items: center; justify-content: center; }
+        .onboarding-container { width: 100%; max-width: 640px; padding: 24px; }
+        .onboarding-progress { display: flex; gap: 8px; margin-bottom: 40px; }
+        .onboarding-progress-step { flex: 1; height: 4px; border-radius: 2px; background: var(--bg-card); transition: background var(--transition-normal); }
+        .onboarding-progress-step.active { background: var(--accent-primary); }
+        .onboarding-progress-step.completed { background: var(--success); }
+        .onboarding-content { animation: fadeIn 0.4s ease; }
+        .onboarding-title { font-size: 28px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 8px; }
+        .onboarding-subtitle { font-size: 16px; color: var(--text-secondary); margin-bottom: 32px; line-height: 1.5; }
+        .onboarding-actions { display: flex; justify-content: space-between; margin-top: 32px; }
 
         /* ================================================================
            Animations
            ================================================================ */
 
-        @keyframes fadeIn {
-            from { opacity: 0; }
-            to { opacity: 1; }
-        }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes slideUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
 
-        @keyframes slideUp {
-            from { opacity: 0; transform: translateY(12px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
-        }
-
-        .animate-in {
-            animation: slideUp 0.4s var(--transition-slow) both;
-        }
-
+        .animate-in { animation: slideUp 0.4s var(--transition-slow) both; }
         .animate-in-delay-1 { animation-delay: 0.05s; }
         .animate-in-delay-2 { animation-delay: 0.1s; }
         .animate-in-delay-3 { animation-delay: 0.15s; }
@@ -931,64 +651,37 @@
            Connection Status
            ================================================================ */
 
-        .connection-dot {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            display: inline-block;
-        }
+        .connection-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+        .connection-dot.connected { background: var(--success); box-shadow: 0 0 8px var(--success); }
+        .connection-dot.disconnected { background: var(--danger); animation: pulse 2s infinite; }
 
-        .connection-dot.connected {
-            background: var(--success);
-            box-shadow: 0 0 8px var(--success);
-        }
+        /* ================================================================
+           Toast Notifications
+           ================================================================ */
 
-        .connection-dot.disconnected {
-            background: var(--danger);
-            animation: pulse 2s infinite;
-        }
+        .toast-container { position: fixed; top: 16px; right: 16px; z-index: 9999; display: flex; flex-direction: column; gap: 8px; }
+        .toast { padding: 12px 20px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 500; animation: slideUp 0.3s ease; box-shadow: var(--shadow-md); max-width: 360px; }
+        .toast-success { background: var(--success); color: #fff; }
+        .toast-error { background: var(--danger); color: #fff; }
+        .toast-info { background: var(--info); color: #fff; }
+        .toast-warning { background: var(--warning); color: var(--text-inverse); }
 
         /* ================================================================
            Responsive
            ================================================================ */
 
         @media (max-width: 768px) {
-            .sidebar {
-                position: fixed;
-                transform: translateX(-100%);
-            }
-
-            .sidebar.open {
-                transform: translateX(0);
-                box-shadow: var(--shadow-lg);
-            }
-
-            .menu-toggle {
-                display: block;
-            }
-
-            .main-body {
-                padding: 16px;
-            }
-
-            .stat-grid {
-                grid-template-columns: repeat(2, 1fr);
-            }
-
-            .quick-actions-grid {
-                grid-template-columns: repeat(2, 1fr);
-            }
-
-            .modal {
-                min-width: auto;
-                margin: 16px;
-            }
+            .sidebar { position: fixed; transform: translateX(-100%); }
+            .sidebar.open { transform: translateX(0); box-shadow: var(--shadow-lg); }
+            .menu-toggle { display: block; }
+            .main-body { padding: 16px; }
+            .stat-grid { grid-template-columns: repeat(2, 1fr); }
+            .quick-actions-grid { grid-template-columns: repeat(2, 1fr); }
+            .modal { min-width: auto; margin: 16px; }
         }
 
         @media (max-width: 480px) {
-            .stat-grid {
-                grid-template-columns: 1fr;
-            }
+            .stat-grid { grid-template-columns: 1fr; }
         }
 
         /* ================================================================
@@ -1023,24 +716,138 @@
             font-size: 28px;
             margin-bottom: 8px;
         }
+
+        /* Error display */
+        .error-screen {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            gap: 16px;
+            padding: 24px;
+            text-align: center;
+        }
+        .error-screen .error-icon {
+            font-size: 48px;
+            color: var(--danger);
+        }
+        .error-screen .error-title {
+            font-size: 20px;
+            font-weight: 600;
+        }
+        .error-screen .error-detail {
+            font-size: 13px;
+            color: var(--text-secondary);
+            max-width: 500px;
+            word-break: break-all;
+            background: var(--bg-card);
+            padding: 12px 16px;
+            border-radius: var(--radius-sm);
+            text-align: left;
+            font-family: var(--font-mono);
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        .error-screen .btn {
+            margin-top: 8px;
+        }
     </style>
 </head>
 <body>
     <div id="root">
-        <div class="loading-screen">
+        <div class="loading-screen" id="initial-loader">
             <div class="sidebar-logo">
                 <span class="mdi mdi-brain"></span>
             </div>
             <div style="font-size: 22px; font-weight: 700; letter-spacing: -0.02em;">MindHome</div>
             <div class="loading-spinner"></div>
+            <div id="load-status" style="font-size: 12px; color: #5a6478; margin-top: 8px;">Lade Bibliotheken...</div>
         </div>
     </div>
 
-    <!-- React -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.6/babel.min.js"></script>
+    <!-- Error handling: catch script load failures -->
+    <script>
+        window._loadErrors = [];
+        window._loadSteps = [];
 
-    <script type="text/babel" src="frontend/app.jsx"></script>
+        function logStep(step) {
+            window._loadSteps.push(step);
+            var el = document.getElementById('load-status');
+            if (el) el.textContent = step;
+        }
+
+        function showError(title, detail) {
+            var root = document.getElementById('root');
+            root.innerHTML = '<div class="error-screen">' +
+                '<div class="error-icon">⚠️</div>' +
+                '<div class="error-title">' + title + '</div>' +
+                '<div class="error-detail">' + detail + '</div>' +
+                '<div style="font-size:12px;color:#8892a8;margin-top:8px;">Lade-Schritte: ' + window._loadSteps.join(' → ') + '</div>' +
+                '<button class="btn btn-primary" onclick="location.reload()">Seite neu laden</button>' +
+                '</div>';
+        }
+
+        // Global error handler
+        window.onerror = function(msg, url, line, col, error) {
+            window._loadErrors.push(msg);
+            showError('JavaScript Fehler', msg + (url ? ' (' + url.split('/').pop() + ':' + line + ')' : ''));
+            // Also report to backend
+            try {
+                fetch((window._apiBase || '') + '/api/system/frontend-error', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({error: msg, url: url, line: line})
+                });
+            } catch(e) {}
+            return true;
+        };
+
+        // Timeout: if after 30s still loading, show error
+        setTimeout(function() {
+            var loader = document.getElementById('initial-loader');
+            if (loader) {
+                showError(
+                    'Laden fehlgeschlagen (Timeout)',
+                    'Die App konnte nicht innerhalb von 30 Sekunden geladen werden. ' +
+                    'Mögliche Ursachen: CDN nicht erreichbar, JavaScript-Fehler, oder Netzwerkproblem.\n\n' +
+                    'Geladene Schritte: ' + window._loadSteps.join(', ') + '\n' +
+                    'Fehler: ' + (window._loadErrors.length ? window._loadErrors.join(', ') : 'keine')
+                );
+            }
+        }, 30000);
+
+        // Detect API base path for Ingress
+        (function() {
+            var path = window.location.pathname;
+            var match = path.match(/\/api\/hassio_ingress\/[^/]+/);
+            window._apiBase = match ? match[0] : '';
+        })();
+    </script>
+
+    <!-- React -->
+    <script>logStep('React...');</script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"
+            onerror="showError('React konnte nicht geladen werden', 'CDN cdnjs.cloudflare.com ist nicht erreichbar. Prüfe die Internetverbindung des HA-Servers.')"></script>
+    <script>logStep('ReactDOM...');</script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"
+            onerror="showError('ReactDOM konnte nicht geladen werden', 'CDN cdnjs.cloudflare.com ist nicht erreichbar.')"></script>
+    <script>logStep('Babel...');</script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.6/babel.min.js"
+            onerror="showError('Babel konnte nicht geladen werden', 'CDN cdnjs.cloudflare.com ist nicht erreichbar.')"></script>
+
+    <script>
+        logStep('App wird kompiliert...');
+        // Verify libraries loaded
+        if (typeof React === 'undefined') {
+            showError('React nicht verfügbar', 'Die React-Bibliothek konnte nicht geladen werden. CDN blockiert?');
+        } else if (typeof ReactDOM === 'undefined') {
+            showError('ReactDOM nicht verfügbar', 'Die ReactDOM-Bibliothek konnte nicht geladen werden.');
+        } else if (typeof Babel === 'undefined') {
+            showError('Babel nicht verfügbar', 'Der JSX-Compiler konnte nicht geladen werden.');
+        }
+    </script>
+
+    <script type="text/babel" src="app.jsx" onerror="showError('app.jsx konnte nicht geladen werden', 'Die Frontend-Datei app.jsx konnte nicht vom Server geladen werden.')"></script>
 </body>
 </html>
