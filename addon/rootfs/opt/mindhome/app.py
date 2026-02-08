@@ -2161,6 +2161,7 @@ def api_learning_stats():
                 "pattern_type": p.pattern_type,
                 "match_count": p.match_count or 0,
             } for p in top_patterns],
+            "learning_speed": get_setting("learning_speed") or "normal",
         })
     finally:
         session.close()
