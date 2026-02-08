@@ -2369,9 +2369,10 @@ def serve_index():
         # Replace external script reference with inline code
         # Handles both src="app.jsx" and src="./app.jsx" patterns
         import re
+        inline_tag = '<script type="text/babel">\n' + jsx_code + '\n</script>'
         html = re.sub(
             r'<script\s+type=["\']text/babel["\']\s+src=["\'][^"\']*app\.jsx["\'][^>]*>\s*</script>',
-            '<script type="text/babel">\n' + jsx_code + '\n</script>',
+            lambda m: inline_tag,
             html
         )
         return html, 200, {"Content-Type": "text/html; charset=utf-8"}
