@@ -2678,6 +2678,39 @@ def api_notification_stats():
         session.close()
 
 
+@app.route("/api/notification-settings/channel/<int:cid>", methods=["PUT"])
+def api_update_notification_channel(cid):
+    """Update a notification channel (enable/disable)."""
+    data = request.get_json() or {}
+    session = Session()
+    try:
+        ch = session.query(NotificationChannel).get(cid)
+        if not ch:
+            return jsonify({"error": "Channel not found"}), 404
+        if "is_enabled" in data:
+            ch.is_enabled = data["is_enabled"]
+        if "display_name" in data:
+            ch.display_name = data["display_name"]
+        session.commit()
+        return jsonify({"success": True, "id": ch.id, "is_enabled": ch.is_enabled})
+    finally:
+        session.close()
+
+
+@app.route("/api/notification-settings/test-channel/<int:cid>", methods=["POST"])
+def api_test_notification_channel(cid):
+    """Send a test notification to a specific channel."""
+    session = Session()
+    try:
+        ch = session.query(NotificationChannel).get(cid)
+        if not ch:
+            return jsonify({"error": "Channel not found"}), 404
+        result = ha.send_notification("MindHome Test", title="Test", target=ch.service_name)
+        return jsonify({"success": result is not None})
+    finally:
+        session.close()
+
+
 @app.route("/api/test-notification", methods=["POST"])
 def api_test_notification():
     """Send a test push notification to a specific channel."""
