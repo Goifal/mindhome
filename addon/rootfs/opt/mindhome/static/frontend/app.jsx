@@ -2809,6 +2809,7 @@ const SettingsPage = () => {
                         ))}
                     </div>
                 </div>
+            </div>
 
             {/* Calendar Trigger Configuration */}
             <CalendarTriggersConfig lang={lang} showToast={showToast} />
