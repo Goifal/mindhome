@@ -103,6 +103,16 @@ def local_now():
     return datetime.now(tz)
 
 
+def utc_iso(dt):
+    """Convert datetime to ISO string with Z suffix for UTC. Handles None."""
+    if dt is None:
+        return None
+    s = dt.isoformat()
+    if not dt.tzinfo and not s.endswith('Z'):
+        s += 'Z'
+    return s
+
+
 # ==============================================================================
 # #3 Rate Limiting
 # ==============================================================================
@@ -861,7 +871,7 @@ def api_get_rooms():
                 "icon": r.icon,
                 "privacy_mode": r.privacy_mode,
                 "device_count": len(r.devices),
-                "last_activity": last_log.created_at.isoformat() if last_log else None,
+                "last_activity": utc_iso(last_log.created_at) if last_log else None,
                 "domain_states": [{
                     "domain_id": ds.domain_id,
                     "learning_phase": ds.learning_phase.value,
@@ -1779,7 +1789,7 @@ def api_get_action_log():
             "action_data": log.action_data,
             "reason": log.reason,
             "was_undone": log.was_undone,
-            "created_at": log.created_at.isoformat()
+            "created_at": utc_iso(log.created_at)
         } for log in logs])
     finally:
         session.close()
@@ -1850,7 +1860,7 @@ def api_get_data_collections():
             "device_id": log.device_id,
             "data_type": "state_change",
             "data_value": log.action_data or {},
-            "collected_at": log.created_at.isoformat()
+            "collected_at": utc_iso(log.created_at)
         } for log in logs])
     finally:
         session.close()
@@ -1952,9 +1962,9 @@ def api_get_patterns():
             "trigger_conditions": p.trigger_conditions,
             "action_definition": p.action_definition,
             "pattern_data": p.pattern_data,
-            "last_matched_at": p.last_matched_at.isoformat() if p.last_matched_at else None,
-            "created_at": p.created_at.isoformat() if p.created_at else None,
-            "updated_at": p.updated_at.isoformat() if p.updated_at else None,
+            "last_matched_at": utc_iso(p.last_matched_at),
+            "created_at": utc_iso(p.created_at),
+            "updated_at": utc_iso(p.updated_at),
         } for p in patterns])
     finally:
         session.close()
@@ -2317,7 +2327,7 @@ def api_get_notifications():
         "message": n.message,
         "was_sent": n.was_sent,
         "was_read": n.was_read,
-        "created_at": n.created_at.isoformat() if n.created_at else None,
+        "created_at": utc_iso(n.created_at),
     } for n in notifs])
 
 
@@ -2562,9 +2572,21 @@ def api_notification_stats():
         sent = session.query(sa_func.count(NotificationLog.id)).filter(
             NotificationLog.created_at >= cutoff, NotificationLog.was_sent == True
         ).scalar() or 0
-        return jsonify({"total": total, "read": read, "unread": total - read, "sent": sent, "period_days": 30})
+        return jsonify({"total": total, "read": read, "unread": total - read, "sent": sent, "pushed": sent, "period_days": 30})
     finally:
         session.close()
+
+
+@app.route("/api/test-notification", methods=["POST"])
+def api_test_notification():
+    """Send a test push notification to a specific channel."""
+    data = request.get_json() or {}
+    target = data.get("target", "notify")
+    message = data.get("message", "MindHome Test Notification")
+    title = data.get("title", "MindHome Test")
+    result = ha.send_notification(message, title=title, target=target)
+    audit_log("test_notification", {"target": target})
+    return jsonify({"success": result is not None, "target": target})
 
 
 # ==============================================================================
