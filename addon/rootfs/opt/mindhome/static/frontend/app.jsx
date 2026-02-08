@@ -2638,8 +2638,6 @@ const SettingsPage = () => {
                     </button>
                 </div>
             </div>
-            </div>
-        </div>
 
             </div>
             {/* RIGHT COLUMN */}
