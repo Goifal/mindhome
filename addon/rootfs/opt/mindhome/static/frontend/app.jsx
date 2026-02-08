@@ -2550,18 +2550,11 @@ const SettingsPage = () => {
                     <input ref={fileInputRef} type="file" accept=".json" onChange={handleImport}
                            style={{ display: 'none' }} />
                 </div>
-                <p style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 16 }}>
+                <p style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 0 }}>
                     {lang === 'de'
                         ? 'Standard: Konfiguration. Vollständig: inkl. State History, Logs (90 Tage).'
                         : 'Standard: config only. Full: incl. state history, logs (90 days).'}
                 </p>
-                <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12 }}>
-                    <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10 }}>
-                        <span className="mdi mdi-backup-restore" style={{ marginRight: 6, color: 'var(--accent-primary)' }} />
-                        {lang === 'de' ? 'Automatisches Backup' : 'Auto Backup'}
-                    </div>
-                    <AutoBackupSettings lang={lang} showToast={showToast} />
-                </div>
             </div>
 
             {/* Anomaly Detection Settings */}
@@ -2696,43 +2689,6 @@ const SettingsPage = () => {
         </div>
     );
 };
-
-const AutoBackupSettings = ({ lang, showToast }) => {
-    const [config, setConfig] = useState(null);
-    useEffect(() => { (async () => { const d = await api.get('system/auto-backup'); if (d) setConfig(d); })(); }, []);
-    if (!config) return null;
-    const update = async (field, value) => {
-        setConfig(prev => ({ ...prev, [field]: value }));
-        await api.put('system/auto-backup', { [field]: value });
-    };
-    return (
-        <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
-                <span style={{ fontSize: 13 }}><span className="mdi mdi-timer-outline" style={{ marginRight: 6 }} />{lang === 'de' ? 'Aktiviert' : 'Enabled'}</span>
-                <label className="toggle"><input type="checkbox" checked={config.enabled} onChange={() => update('enabled', !config.enabled)} /><div className="toggle-slider" /></label>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
-                <span style={{ fontSize: 13 }}><span className="mdi mdi-counter" style={{ marginRight: 6 }} />{lang === 'de' ? 'Backups behalten' : 'Keep Backups'}</span>
-                <div style={{ display: 'flex', gap: 4 }}>
-                    {[3, 7, 14, 30].map(n => (
-                        <button key={n} className={`btn btn-sm ${config.keep_count === n ? 'btn-primary' : 'btn-ghost'}`}
-                            onClick={() => update('keep_count', n)} style={{ fontSize: 11, padding: '2px 8px' }}>{n}</button>
-                    ))}
-                </div>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0' }}>
-                <span style={{ fontSize: 13 }}><span className="mdi mdi-folder" style={{ marginRight: 6 }} />{lang === 'de' ? 'Speicherort' : 'Path'}</span>
-                <span style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'monospace' }}>{config.path || '/backup'}</span>
-            </div>
-            {config.last_backup && (
-                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 8 }}>
-                    {lang === 'de' ? 'Letztes Backup' : 'Last backup'}: {config.last_backup}
-                </div>
-            )}
-        </div>
-    );
-};
-
 
 const AnomalyAdvancedPanel = ({ lang, showToast }) => {
     const [config, setConfig] = useState(null);
