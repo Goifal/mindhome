@@ -3219,6 +3219,23 @@ def api_backup_export():
                 backup["pattern_match_log"].append({"pattern_id": pm.pattern_id,
                     "matched_at": utc_iso(pm.matched_at), "context": pm.context})
 
+            # Data Collection
+            backup["data_collection"] = []
+            for dc in session.query(DataCollection).filter(DataCollection.created_at >= cutoff).all():
+                backup["data_collection"].append({"domain_id": dc.domain_id,
+                    "data_type": dc.data_type, "storage_size_bytes": dc.storage_size_bytes,
+                    "created_at": utc_iso(dc.created_at)})
+
+            # Offline Action Queue
+            backup["offline_queue"] = []
+            for oq in session.query(OfflineActionQueue).all():
+                backup["offline_queue"].append({"action_type": oq.action_type,
+                    "action_data": oq.action_data, "status": oq.status,
+                    "created_at": utc_iso(oq.created_at)})
+
+        # Calendar Triggers (always, they're config)
+        backup["calendar_triggers"] = json.loads(get_setting("calendar_triggers") or "[]")
+
         # Summary for import preview
         backup["_summary"] = {
             "rooms": len(backup.get("rooms", [])),
@@ -4346,6 +4363,46 @@ def api_anomaly_stats():
             "top_devices": [{"name": d[0], "count": d[1]} for d in top_devices],
             "trend": [{"week": w, "count": c} for w, c in sorted(by_week.items())],
         })
+    finally:
+        session.close()
+
+
+@app.route("/api/anomaly-settings/device/<int:device_id>", methods=["GET"])
+def api_get_device_anomaly_config(device_id):
+    """Get anomaly config for a specific device."""
+    config = json.loads(get_setting(f"anomaly_device_{device_id}") or "null")
+    if not config:
+        config = {"sensitivity": "inherit", "enabled": True, "detection_types": {},
+                  "thresholds": {}, "reaction": "inherit", "whitelisted": False}
+    return jsonify(config)
+
+
+@app.route("/api/anomaly-settings/device/<int:device_id>", methods=["PUT"])
+def api_update_device_anomaly_config(device_id):
+    """Update anomaly config for a specific device."""
+    data = request.json
+    current = json.loads(get_setting(f"anomaly_device_{device_id}") or "{}")
+    current.update(data)
+    set_setting(f"anomaly_device_{device_id}", json.dumps(current))
+    return jsonify({"success": True})
+
+
+@app.route("/api/anomaly-settings/devices", methods=["GET"])
+def api_get_all_device_anomaly_configs():
+    """Get all device-specific anomaly configs."""
+    session = get_db()
+    try:
+        configs = {}
+        settings = session.query(SystemSetting).filter(
+            SystemSetting.key.like("anomaly_device_%")
+        ).all()
+        for s in settings:
+            device_id = s.key.replace("anomaly_device_", "")
+            try:
+                configs[device_id] = json.loads(s.value)
+            except:
+                pass
+        return jsonify(configs)
     finally:
         session.close()
 
