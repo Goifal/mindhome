@@ -568,6 +568,8 @@
             overflow: hidden;
             min-height: 56px;
         }
+        .domain-card > div:first-child { flex: 1; min-width: 0; }
+        .domain-card > div:nth-child(2) { flex-shrink: 0; }
 
         .domain-card:hover { border-color: var(--border-hover); }
         .domain-card.enabled { border-color: var(--border-accent); background: var(--accent-primary-dim); }
