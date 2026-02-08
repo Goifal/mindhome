@@ -1,4 +1,4 @@
-// MindHome Frontend v0.5.2-phase3B-fix2 (2026-02-09 00:40) - app.jsx - BUILD:20260209-0040
+// MindHome Frontend v0.5.2-phase3B-fix3 (2026-02-09 01:00) - app.jsx - BUILD:20260209-0100
 // ================================================================
 // MindHome - React Frontend Application v0.5.0
 // ================================================================
@@ -2886,6 +2886,42 @@ const SettingsPage = () => {
 
             </div>
 
+            {/* THIRD COLUMN - Phase 3B */}
+            <div>
+            {/* Personen-Zeitprofile */}
+            <div className="card" style={{ marginBottom: 16 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                    <div className="card-title" style={{ marginBottom: 0 }}>
+                        <span className="mdi mdi-account-clock" style={{ marginRight: 8, color: 'var(--accent-primary)' }} />
+                        {lang === 'de' ? 'Personen-Zeitprofile' : 'Person Time Profiles'}
+                    </div>
+                </div>
+                <PersonTimeProfiles lang={lang} />
+            </div>
+
+            {/* Schichtplan Import */}
+            <div className="card" style={{ marginBottom: 16 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                    <div className="card-title" style={{ marginBottom: 0 }}>
+                        <span className="mdi mdi-file-pdf-box" style={{ marginRight: 8, color: 'var(--accent-primary)' }} />
+                        {lang === 'de' ? 'Schichtplan Import' : 'Shift Plan Import'}
+                    </div>
+                </div>
+                <ShiftPlanImport lang={lang} />
+            </div>
+
+            {/* Feiertage */}
+            <div className="card" style={{ marginBottom: 16 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                    <div className="card-title" style={{ marginBottom: 0 }}>
+                        <span className="mdi mdi-calendar-star" style={{ marginRight: 8, color: 'var(--accent-primary)' }} />
+                        {lang === 'de' ? 'Feiertage' : 'Holidays'}
+                    </div>
+                </div>
+                <HolidayManager lang={lang} />
+            </div>
+            </div>
+
         </div>
         </>
     );
@@ -3265,45 +3301,6 @@ const AnomalyAdvancedPanel = ({ lang, showToast }) => {
                 </CollapsibleCard>
             )}
             </div>
-
-            {/* THIRD COLUMN - Phase 3B */}
-            <div>
-            {/* Personen-Zeitprofile */}
-            <div className="card" style={{ marginBottom: 16 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                    <div className="card-title" style={{ marginBottom: 0 }}>
-                        <span className="mdi mdi-account-clock" style={{ marginRight: 8, color: 'var(--accent-primary)' }} />
-                        {lang === 'de' ? 'Personen-Zeitprofile' : 'Person Time Profiles'}
-                    </div>
-                </div>
-                <PersonTimeProfiles lang={lang} />
-            </div>
-
-            {/* Schichtplan Import */}
-            <div className="card" style={{ marginBottom: 16 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                    <div className="card-title" style={{ marginBottom: 0 }}>
-                        <span className="mdi mdi-file-pdf-box" style={{ marginRight: 8, color: 'var(--accent-primary)' }} />
-                        {lang === 'de' ? 'Schichtplan Import' : 'Shift Plan Import'}
-                    </div>
-                </div>
-                <ShiftPlanImport lang={lang} />
-            </div>
-
-            {/* Feiertage */}
-            <div className="card" style={{ marginBottom: 16 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                    <div className="card-title" style={{ marginBottom: 0 }}>
-                        <span className="mdi mdi-calendar-star" style={{ marginRight: 8, color: 'var(--accent-primary)' }} />
-                        {lang === 'de' ? 'Feiertage' : 'Holidays'}
-                    </div>
-                </div>
-                <HolidayManager lang={lang} />
-            </div>
-            </div>
-        </div>
-    );
-};
 
 // ================================================================
 // Phase 2a: Patterns Page (Muster-Explorer)
