@@ -1,4 +1,4 @@
-# MindHome Backend v0.5.1-blockA (2026-02-08T19:30) - app.py - DIES IST DIE BACKEND DATEI
+# MindHome Backend v0.5.2-phase3B (2026-02-08) - app.py - DIES IST DIE BACKEND DATEI
 """
 MindHome - Main Application
 Flask backend serving the API and frontend.
@@ -30,6 +30,7 @@ from models import (
     get_engine, get_session, init_database, run_migrations,
     User, UserRole, Room, Domain, Device, RoomDomainState,
     LearningPhase, QuickAction, SystemSetting, UserPreference,
+    PersonSchedule, ShiftTemplate, Holiday,
     NotificationSetting, NotificationType, NotificationPriority,
     NotificationChannel, DeviceMute, ActionLog,
     DataCollection, OfflineActionQueue,
@@ -461,7 +462,7 @@ def extract_display_attributes(entity_id, attrs):
 
 def build_state_reason(device_name, old_val, new_val, new_display_attrs):
     """Build a human-readable reason string including attributes."""
-    reason = f"{device_name}: {old_val} → {new_val}"
+    reason = f"{device_name}: {old_val} â†’ {new_val}"
 
     details = []
     if "brightness_pct" in new_display_attrs:
@@ -469,9 +470,9 @@ def build_state_reason(device_name, old_val, new_val, new_display_attrs):
     if "position_pct" in new_display_attrs:
         details.append(f"Position {new_display_attrs['position_pct']}%")
     if "target_temp" in new_display_attrs:
-        details.append(f"{new_display_attrs['target_temp']}°C")
+        details.append(f"{new_display_attrs['target_temp']}Â°C")
     if "current_temp" in new_display_attrs:
-        details.append(f"Ist: {new_display_attrs['current_temp']}°C")
+        details.append(f"Ist: {new_display_attrs['current_temp']}Â°C")
 
     if details:
         reason += f" ({', '.join(details)})"
@@ -1339,7 +1340,7 @@ def api_import_discovered():
             "success": True,
             "imported": imported_count,
             "skipped": skipped_count,
-            "message": f"{imported_count} importiert, {skipped_count} übersprungen (bereits vorhanden)"
+            "message": f"{imported_count} importiert, {skipped_count} Ã¼bersprungen (bereits vorhanden)"
         })
     finally:
         session.close()
@@ -2062,7 +2063,7 @@ def api_trigger_analysis():
 
 @app.route("/api/patterns/reclassify-insights", methods=["POST"])
 def api_reclassify_insights():
-    """Reclassify existing sensor→sensor patterns as 'insight'."""
+    """Reclassify existing sensorâ†’sensor patterns as 'insight'."""
     session = get_db()
     try:
         NON_ACTIONABLE = ("sensor.", "binary_sensor.", "sun.", "weather.", "zone.", "person.", "device_tracker.", "calendar.", "proximity.")
@@ -2627,6 +2628,7 @@ def api_unmute_device(mute_id):
 
 
 @app.route("/api/notification-settings/discover-channels", methods=["POST"])
+@app.route("/api/notification-settings/scan-channels", methods=["POST"])
 def api_discover_notification_channels():
     """Discover available HA notification services."""
     session = get_db()
@@ -2968,7 +2970,7 @@ def api_validate_config():
         orphan_devices = session.query(Device).filter(Device.room_id == None, Device.is_tracked == True).count()
         if orphan_devices > 0:
             issues.append({"type": "warning", "key": "orphan_devices",
-                "message_de": f"{orphan_devices} überwachte Geräte ohne Raum-Zuweisung",
+                "message_de": f"{orphan_devices} Ã¼berwachte GerÃ¤te ohne Raum-Zuweisung",
                 "message_en": f"{orphan_devices} tracked devices without room assignment"})
 
         # Rooms without devices
@@ -2976,7 +2978,7 @@ def api_validate_config():
             dev_count = session.query(Device).filter_by(room_id=room.id).count()
             if dev_count == 0:
                 issues.append({"type": "info", "key": "empty_room",
-                    "message_de": f"Raum '{room.name}' hat keine Geräte",
+                    "message_de": f"Raum '{room.name}' hat keine GerÃ¤te",
                     "message_en": f"Room '{room.name}' has no devices"})
 
         # Domains enabled but no devices
@@ -2984,7 +2986,7 @@ def api_validate_config():
             dev_count = session.query(Device).filter_by(domain_id=domain.id, is_tracked=True).count()
             if dev_count == 0:
                 issues.append({"type": "info", "key": "empty_domain",
-                    "message_de": f"Domain '{domain.display_name_de}' aktiv aber keine Geräte zugewiesen",
+                    "message_de": f"Domain '{domain.display_name_de}' aktiv aber keine GerÃ¤te zugewiesen",
                     "message_en": f"Domain '{domain.display_name_en}' active but no devices assigned"})
 
         # HA connection
@@ -3073,7 +3075,7 @@ def api_reset_phase(room_id, domain_id):
 
         lang = get_language()
         return jsonify({"success": True,
-            "message": "Lernphase zurückgesetzt" if lang == "de" else "Learning phase reset"})
+            "message": "Lernphase zurÃ¼ckgesetzt" if lang == "de" else "Learning phase reset"})
     except Exception as e:
         session.rollback()
         return jsonify({"error": str(e)}), 500
@@ -3245,17 +3247,26 @@ def api_backup_export():
                 "whitelisted_hours": asetting.whitelisted_hours, "auto_action": asetting.auto_action})
         # Notification settings
         for ns in session.query(NotificationSetting).all():
-            backup["notification_settings"].append({"notification_type": ns.notification_type,
-                "is_enabled": ns.is_enabled, "priority": ns.priority, "sound": ns.sound,
-                "channel": ns.channel})
+            backup["notification_settings"].append({
+                "user_id": ns.user_id,
+                "notification_type": ns.notification_type.value if hasattr(ns.notification_type, 'value') else str(ns.notification_type),
+                "is_enabled": ns.is_enabled,
+                "priority": ns.priority.value if hasattr(ns.priority, 'value') else str(ns.priority) if ns.priority else "medium",
+                "push_channel": getattr(ns, 'push_channel', None),
+                "quiet_hours_start": ns.quiet_hours_start,
+                "quiet_hours_end": ns.quiet_hours_end,
+                "escalation_enabled": getattr(ns, 'escalation_enabled', False),
+            })
         # Notification channels
         for nc in session.query(NotificationChannel).all():
-            backup["notification_channels"].append({"id": nc.id, "name": nc.name,
-                "ha_service": nc.ha_service, "is_active": nc.is_active})
+            backup["notification_channels"].append({"id": nc.id,
+                "service_name": nc.service_name, "display_name": nc.display_name,
+                "channel_type": nc.channel_type, "is_enabled": nc.is_enabled})
         # Device mutes
         for dm in session.query(DeviceMute).all():
             backup["device_mutes"].append({"id": dm.id, "device_id": dm.device_id,
-                "mute_until": utc_iso(dm.mute_until) if dm.mute_until else None,
+                "user_id": dm.user_id,
+                "muted_until": utc_iso(dm.muted_until) if dm.muted_until else None,
                 "reason": dm.reason})
         # Device groups
         for g in session.query(DeviceGroup).all():
@@ -3269,7 +3280,7 @@ def api_backup_export():
                 "sort_order": qa.sort_order, "is_active": qa.is_active})
 
         # Full/Custom mode: include historical data
-        if mode in ("full", "custom"):
+        if mode in ("full", "custom", "standard"):
             cutoff = datetime.now(timezone.utc) - timedelta(days=history_days)
 
             # State History (limited by days)
@@ -3319,16 +3330,19 @@ def api_backup_export():
 
             # Data Collection
             backup["data_collection"] = []
-            for dc in session.query(DataCollection).filter(DataCollection.created_at >= cutoff).all():
-                backup["data_collection"].append({"domain_id": dc.domain_id,
-                    "data_type": dc.data_type, "storage_size_bytes": dc.storage_size_bytes,
-                    "created_at": utc_iso(dc.created_at)})
+            for dc in session.query(DataCollection).all():
+                backup["data_collection"].append({"room_id": dc.room_id, "domain_id": dc.domain_id,
+                    "data_type": dc.data_type, "record_count": dc.record_count,
+                    "storage_size_bytes": dc.storage_size_bytes,
+                    "first_record_at": utc_iso(dc.first_record_at) if dc.first_record_at else None,
+                    "last_record_at": utc_iso(dc.last_record_at) if dc.last_record_at else None})
 
             # Offline Action Queue
             backup["offline_queue"] = []
             for oq in session.query(OfflineActionQueue).all():
-                backup["offline_queue"].append({"action_type": oq.action_type,
-                    "action_data": oq.action_data, "status": oq.status,
+                backup["offline_queue"].append({
+                    "action_data": oq.action_data, "priority": oq.priority,
+                    "was_executed": oq.was_executed,
                     "created_at": utc_iso(oq.created_at)})
 
         # Calendar Triggers (always, they're config)
@@ -3706,7 +3720,7 @@ def api_pattern_conflicts():
         session.close()
 @app.route("/api/patterns/scenes", methods=["GET"])
 def api_detect_scenes():
-    """Detect groups of devices that are often switched together → suggest scenes."""
+    """Detect groups of devices that are often switched together â†’ suggest scenes."""
     session = get_db()
     try:
         cutoff = datetime.now(timezone.utc) - timedelta(days=30)
@@ -3734,8 +3748,8 @@ def api_detect_scenes():
                 scenes.append({
                     "entities": list(entities),
                     "count": count,
-                    "message_de": f"{len(entities)} Geräte werden oft zusammen geschaltet ({count}×)",
-                    "message_en": f"{len(entities)} devices are often switched together ({count}×)",
+                    "message_de": f"{len(entities)} GerÃ¤te werden oft zusammen geschaltet ({count}Ã—)",
+                    "message_en": f"{len(entities)} devices are often switched together ({count}Ã—)",
                 })
             if len(scenes) >= 10:
                 break
@@ -4229,11 +4243,37 @@ def api_tts_announce():
     data = request.json
     message = data.get("message", "")
     entity = data.get("entity_id")
+    tts_service = data.get("tts_service") or get_setting("tts_service")
     if not message:
         return jsonify({"error": "No message"}), 400
-    result = ha.announce_tts(message, media_player_entity=entity)
-    audit_log("tts_announce", {"message": message[:50], "entity": entity})
+    result = ha.announce_tts(message, media_player_entity=entity, tts_service=tts_service)
+    audit_log("tts_announce", {"message": message[:50], "entity": entity, "tts_service": tts_service})
     return jsonify({"success": result is not None})
+
+
+@app.route("/api/tts/services", methods=["GET"])
+def api_tts_services():
+    """Get available TTS services from HA."""
+    try:
+        services = ha.get_services()
+        tts_services = []
+        for svc in services:
+            if svc.get("domain") == "tts":
+                for name in svc.get("services", {}).keys():
+                    tts_services.append({"service": f"tts.{name}", "name": name.replace("_", " ").title()})
+        current = get_setting("tts_service")
+        return jsonify({"services": tts_services, "current": current})
+    except Exception as e:
+        return jsonify({"services": [], "error": str(e)})
+
+
+@app.route("/api/tts/service", methods=["PUT"])
+def api_set_tts_service():
+    """Set preferred TTS service."""
+    data = request.get_json() or {}
+    service = data.get("service", "")
+    set_setting("tts_service", service)
+    return jsonify({"success": True, "service": service})
 
 
 @app.route("/api/tts/devices", methods=["GET"])
@@ -4543,12 +4583,27 @@ def api_get_all_device_anomaly_configs():
 # ==============================================================================
 
 def log_state_change(entity_id, new_state, old_state, new_attrs=None, old_attrs=None):
-    """Log state changes to action_log for tracked devices. Fix 1 + Fix 18."""
+    """Log state changes to action_log for tracked devices. Fix 1 + Fix 18 + Phase3B dedup."""
     session = get_db()
     try:
         device = session.query(Device).filter_by(ha_entity_id=entity_id).first()
         if not device or not device.is_tracked:
             return
+
+        # Phase 3B: Deduplicate - check if same entity+state was logged in last 3 seconds
+        from sqlalchemy import and_
+        recent_cutoff = datetime.now(timezone.utc) - timedelta(seconds=3)
+        existing = session.query(ActionLog).filter(
+            and_(
+                ActionLog.device_id == device.id,
+                ActionLog.created_at >= recent_cutoff,
+                ActionLog.action_type == "observation"
+            )
+        ).first()
+        if existing:
+            ex_data = existing.action_data or {}
+            if ex_data.get("new_state") == new_state and ex_data.get("old_state") == old_state:
+                return  # Skip duplicate
 
         # Fix 18: Enforce privacy mode
         if device.room_id:
@@ -4756,9 +4811,9 @@ def start_app():
         session = get_db()
         session.execute(text("SELECT 1"))
         session.close()
-        logger.info("  ✅ Database OK")
+        logger.info("  âœ… Database OK")
     except Exception as e:
-        logger.error(f"  ❌ Database FAILED: {e}")
+        logger.error(f"  âŒ Database FAILED: {e}")
 
     # Register shutdown handlers (#2)
     signal.signal(signal.SIGTERM, graceful_shutdown)
@@ -4774,9 +4829,9 @@ def start_app():
     # Check timezone
     try:
         tz = get_ha_timezone()
-        logger.info(f"  ✅ Timezone: {tz}")
+        logger.info(f"  âœ… Timezone: {tz}")
     except Exception:
-        logger.warning("  ⚠️ Timezone fallback to UTC")
+        logger.warning("  âš ï¸ Timezone fallback to UTC")
 
     # Subscribe to state changes
     ha.subscribe_events(on_state_changed, "state_changed")
@@ -4802,10 +4857,10 @@ def start_app():
 
     # Start ML engines
     pattern_scheduler.start()
-    logger.info("  ✅ Pattern Engine started")
+    logger.info("  âœ… Pattern Engine started")
 
     automation_scheduler.start()
-    logger.info("  ✅ Automation Engine started")
+    logger.info("  âœ… Automation Engine started")
 
     # Start cleanup scheduler
     schedule_cleanup()
@@ -4813,7 +4868,7 @@ def start_app():
     # Start watchdog thread (#40)
     watchdog_thread = threading.Thread(target=_watchdog_loop, daemon=True)
     watchdog_thread.start()
-    logger.info("  ✅ Watchdog started")
+    logger.info("  âœ… Watchdog started")
 
     # Run startup self-test (#10)
     test_results = run_startup_self_test()
@@ -4834,3 +4889,628 @@ def start_app():
 
 if __name__ == "__main__":
     start_app()
+
+
+# ==============================================================================
+# Phase 3B: Person Schedules / Time Profiles
+# ==============================================================================
+
+@app.route("/api/person-schedules", methods=["GET"])
+def api_get_person_schedules():
+    session = get_db()
+    try:
+        schedules = session.query(PersonSchedule).filter_by(is_active=True).all()
+        return jsonify([{
+            "id": s.id, "user_id": s.user_id, "schedule_type": s.schedule_type,
+            "name": s.name, "time_wake": s.time_wake, "time_leave": s.time_leave,
+            "time_home": s.time_home, "time_sleep": s.time_sleep,
+            "weekdays": s.weekdays, "shift_data": s.shift_data,
+            "valid_from": utc_iso(s.valid_from) if s.valid_from else None,
+            "valid_until": utc_iso(s.valid_until) if s.valid_until else None,
+        } for s in schedules])
+    finally:
+        session.close()
+
+@app.route("/api/person-schedules", methods=["POST"])
+def api_create_person_schedule():
+    data = request.json
+    session = get_db()
+    try:
+        schedule = PersonSchedule(
+            user_id=data["user_id"], schedule_type=data.get("schedule_type", "weekday"),
+            name=data.get("name"), time_wake=data.get("time_wake"),
+            time_leave=data.get("time_leave"), time_home=data.get("time_home"),
+            time_sleep=data.get("time_sleep"), weekdays=data.get("weekdays"),
+            shift_data=data.get("shift_data"),
+        )
+        if data.get("valid_from"):
+            schedule.valid_from = datetime.fromisoformat(data["valid_from"])
+        if data.get("valid_until"):
+            schedule.valid_until = datetime.fromisoformat(data["valid_until"])
+        session.add(schedule)
+        session.commit()
+        audit_log("create_schedule", {"user_id": data["user_id"], "type": data.get("schedule_type")})
+        return jsonify({"success": True, "id": schedule.id})
+    except Exception as e:
+        session.rollback()
+        return jsonify({"error": str(e)}), 400
+    finally:
+        session.close()
+
+@app.route("/api/person-schedules/<int:sid>", methods=["PUT"])
+def api_update_person_schedule(sid):
+    data = request.json
+    session = get_db()
+    try:
+        s = session.get(PersonSchedule, sid)
+        if not s:
+            return jsonify({"error": "Not found"}), 404
+        for f in ["schedule_type","name","time_wake","time_leave","time_home","time_sleep","weekdays","shift_data"]:
+            if f in data:
+                setattr(s, f, data[f])
+        session.commit()
+        return jsonify({"success": True})
+    finally:
+        session.close()
+
+@app.route("/api/person-schedules/<int:sid>", methods=["DELETE"])
+def api_delete_person_schedule(sid):
+    session = get_db()
+    try:
+        s = session.get(PersonSchedule, sid)
+        if s:
+            s.is_active = False
+            session.commit()
+        return jsonify({"success": True})
+    finally:
+        session.close()
+
+# ==============================================================================
+# Phase 3B: Shift Templates
+# ==============================================================================
+
+@app.route("/api/shift-templates", methods=["GET"])
+def api_get_shift_templates():
+    session = get_db()
+    try:
+        return jsonify([{"id": t.id, "name": t.name, "short_code": t.short_code,
+            "blocks": t.blocks, "color": t.color}
+            for t in session.query(ShiftTemplate).filter_by(is_active=True).all()])
+    finally:
+        session.close()
+
+@app.route("/api/shift-templates", methods=["POST"])
+def api_create_shift_template():
+    data = request.json
+    session = get_db()
+    try:
+        t = ShiftTemplate(name=data["name"], short_code=data.get("short_code"),
+            blocks=data.get("blocks", []), color=data.get("color"))
+        session.add(t)
+        session.commit()
+        return jsonify({"success": True, "id": t.id})
+    except Exception as e:
+        session.rollback()
+        return jsonify({"error": str(e)}), 400
+    finally:
+        session.close()
+
+@app.route("/api/shift-templates/<int:tid>", methods=["DELETE"])
+def api_delete_shift_template(tid):
+    session = get_db()
+    try:
+        t = session.get(ShiftTemplate, tid)
+        if t:
+            t.is_active = False
+            session.commit()
+        return jsonify({"success": True})
+    finally:
+        session.close()
+
+# ==============================================================================
+# Phase 3B: Shift Plan PDF Import
+# ==============================================================================
+
+@app.route("/api/shift-plan/import", methods=["POST"])
+def api_import_shift_plan():
+    """Import shift plan from PDF. Parses the confirmed schedule format."""
+    if "file" not in request.files:
+        return jsonify({"error": "No file"}), 400
+    file = request.files["file"]
+    try:
+        import tempfile as _tf
+        with _tf.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+            file.save(tmp.name)
+            tmp_path = tmp.name
+        text = ""
+        try:
+            import pdfplumber
+            with pdfplumber.open(tmp_path) as pdf:
+                for page in pdf.pages:
+                    text += (page.extract_text() or "") + "\n"
+        except ImportError:
+            try:
+                import PyPDF2
+                reader = PyPDF2.PdfReader(tmp_path)
+                for page in reader.pages:
+                    text += (page.extract_text() or "") + "\n"
+            except ImportError:
+                import os; os.unlink(tmp_path)
+                return jsonify({"error": "PDF-Bibliothek fehlt (pdfplumber oder PyPDF2)"}), 500
+        import os; os.unlink(tmp_path)
+        if not text.strip():
+            return jsonify({"error": "Kein Text im PDF gefunden"}), 400
+        parsed = _parse_shift_plan(text)
+        return jsonify({"success": True, "raw_text": text[:3000], "parsed": parsed})
+    except Exception as e:
+        logger.error(f"Shift plan import error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+def _parse_shift_plan(text):
+    """Parse confirmed shift plan PDF into structured entries.
+    
+    Tested against real PDFs. Handles multi-line records.
+    Fehlzeiten (Urlaub, Zeitausgleich, Krank) override Dienstplan column.
+    """
+    import re
+    raw_lines = text.strip().split("\n")
+    
+    person_name = None
+    pm = re.search(r"von\s+(\S+)\s+(\S+)\s+best", text)
+    if pm:
+        person_name = f"{pm.group(2)} {pm.group(1)}"
+    month_year = None
+    my = re.search(r"Dienstplan\s+f.{1,3}r\s+(\w+)\s+(\d{4})", text)
+    if my:
+        month_year = f"{my.group(1)} {my.group(2)}"
+
+    date_re = re.compile(r"(\d{2})\.(\d{2})\.(\d{4})")
+    time_re = re.compile(r"(\d{2}:\d{2})\s*-\s*(\d{2}:\d{2})")
+    
+    fehlzeiten_kw = {
+        "urlaub": ("urlaub", "Urlaub"),
+        "zeitausgleich": ("zeitausgleich", "Zeitausgleich"),
+        "krank": ("krank", "Krank"),
+    }
+    
+    clean = []
+    for line in raw_lines:
+        s = line.strip()
+        if not s or s.startswith("Datum ") or s.startswith("Seite") or "best\u00e4tigt" in s or "Dienstplan f" in s:
+            continue
+        clean.append(s)
+    
+    consumed = set()
+    entries = []
+    first_name = (person_name or "").split()[0] if person_name else ""
+    
+    i = 0
+    while i < len(clean):
+        if i in consumed:
+            i += 1
+            continue
+        
+        line = clean[i]
+        line_lower = line.lower()
+        has_date = bool(date_re.search(line))
+        shift_keywords = ["fr\u00fch", "abenddienst", "mittagsdienst", "tagdienst", "dienstfrei", "urlaub", "zeitausgleich", "krank"]
+        has_shift = any(kw in line_lower for kw in shift_keywords)
+        
+        if has_shift and not has_date:
+            record_lines = [line]
+            consumed.add(i)
+            j = i + 1
+            date_found = False
+            while j < len(clean) and j not in consumed:
+                if date_re.search(clean[j]):
+                    record_lines.append(clean[j])
+                    consumed.add(j)
+                    date_found = True
+                    j += 1
+                    break
+                j += 1
+            if date_found:
+                while j < len(clean) and j not in consumed:
+                    nxt = clean[j]
+                    nxt_lower = nxt.lower()
+                    if date_re.search(nxt):
+                        break
+                    if any(nxt_lower.startswith(kw) for kw in ["fr\u00fch", "tag", "dienst"]):
+                        break
+                    record_lines.append(nxt)
+                    consumed.add(j)
+                    j += 1
+                    break
+            merged = " ".join(record_lines)
+            i = j if date_found else i + 1
+            
+        elif has_date and has_shift:
+            merged = line
+            consumed.add(i)
+            i += 1
+        elif has_date and not has_shift:
+            consumed.add(i)
+            i += 1
+            continue
+        else:
+            consumed.add(i)
+            i += 1
+            continue
+        
+        dm = date_re.search(merged)
+        if not dm:
+            continue
+        day, month, year = dm.groups()
+        date_str = f"{year}-{month}-{day}"
+        ml = merged.lower()
+        
+        # Check Fehlzeiten FIRST (overrides Dienstplan)
+        fehlzeit_type = None
+        fehlzeit_label = None
+        for fkw, (ftype, flabel) in fehlzeiten_kw.items():
+            if fkw in ml:
+                fehlzeit_type = ftype
+                fehlzeit_label = flabel
+                break
+        
+        # Determine shift type from Dienstplan column
+        dienstplan_type = "unknown"; dienstplan_label = "Unbekannt"
+        if "dienstfrei" in ml:
+            dienstplan_type = "dienstfrei"; dienstplan_label = "Dienstfrei"
+        elif "fr\u00fch" in ml and "abenddienst" in ml:
+            dienstplan_type = "frueh_abend"; dienstplan_label = "Fr\u00fch- + Abenddienst"
+        elif "fr\u00fch" in ml and "mittagsdienst" in ml:
+            dienstplan_type = "frueh_mittag"; dienstplan_label = "Fr\u00fch- + Mittagsdienst"
+        elif "tagdienst" in ml:
+            dienstplan_type = "tagdienst"; dienstplan_label = "Tagdienst"
+        elif "fr\u00fch" in ml:
+            dienstplan_type = "frueh"; dienstplan_label = "Fr\u00fch"
+        
+        # Fehlzeiten override
+        if fehlzeit_type:
+            shift_type = fehlzeit_type
+            shift_label = fehlzeit_label
+        else:
+            shift_type = dienstplan_type
+            shift_label = dienstplan_label
+        
+        # Extract time blocks (only if no Fehlzeit)
+        all_times = time_re.findall(merged)
+        blocks = []
+        
+        if fehlzeit_type or shift_type == "dienstfrei":
+            pass
+        elif shift_type in ("frueh_abend", "frueh_mittag"):
+            if len(all_times) >= 4:
+                blocks = [
+                    {"start": all_times[1][0], "end": all_times[1][1]},
+                    {"start": all_times[3][0], "end": all_times[3][1]},
+                ]
+            elif len(all_times) == 2:
+                blocks = [
+                    {"start": all_times[0][0], "end": all_times[0][1]},
+                    {"start": all_times[1][0], "end": all_times[1][1]},
+                ]
+        else:
+            if len(all_times) >= 2:
+                blocks = [{"start": all_times[1][0], "end": all_times[1][1]}]
+            elif len(all_times) == 1:
+                blocks = [{"start": all_times[0][0], "end": all_times[0][1]}]
+        
+        # Build calendar events
+        calendar_events = []
+        if fehlzeit_type:
+            calendar_events = [{"label": f"{fehlzeit_label} - {first_name}", "all_day": True}]
+        elif shift_type == "frueh_abend" and len(blocks) == 2:
+            calendar_events = [
+                {"label": f"Fr\u00fchdienst - {first_name}", "start": blocks[0]["start"], "end": blocks[0]["end"]},
+                {"label": f"Abenddienst - {first_name}", "start": blocks[1]["start"], "end": blocks[1]["end"]},
+            ]
+        elif shift_type == "frueh_mittag" and len(blocks) == 2:
+            calendar_events = [
+                {"label": f"Fr\u00fchdienst - {first_name}", "start": blocks[0]["start"], "end": blocks[0]["end"]},
+                {"label": f"Mittagsdienst - {first_name}", "start": blocks[1]["start"], "end": blocks[1]["end"]},
+            ]
+        elif shift_type == "tagdienst" and blocks:
+            calendar_events = [{"label": f"Tagdienst - {first_name}", "start": blocks[0]["start"], "end": blocks[0]["end"]}]
+        elif shift_type == "frueh" and blocks:
+            calendar_events = [{"label": f"Fr\u00fchdienst - {first_name}", "start": blocks[0]["start"], "end": blocks[0]["end"]}]
+        elif shift_type == "dienstfrei":
+            calendar_events = [{"label": f"Dienstfrei - {first_name}", "all_day": True}]
+        
+        entries.append({
+            "date": date_str, "shift_type": shift_type, "shift_label": shift_label,
+            "blocks": blocks, "calendar_events": calendar_events,
+            "fehlzeit": fehlzeit_label,
+        })
+    
+    return {
+        "person_name": person_name, "month_year": month_year,
+        "entries": entries, "parsed_count": len(entries),
+        "work_days": len([e for e in entries if e["shift_type"] not in ("dienstfrei", "urlaub", "zeitausgleich", "krank")]),
+        "off_days": len([e for e in entries if e["shift_type"] in ("dienstfrei", "urlaub", "zeitausgleich", "krank")]),
+    }
+
+
+
+@app.route("/api/shift-plan/apply", methods=["POST"])
+def api_apply_shift_plan():
+    """Apply parsed shift plan: save schedule + create calendar events."""
+    data = request.json
+    user_id = data.get("user_id")
+    entries = data.get("entries", [])
+    calendar_entity = data.get("calendar_entity")
+    person_name = data.get("person_name", "")
+    session = get_db()
+    try:
+        # If no user_id given but person_name available, try to match
+        if not user_id and person_name:
+            # Try matching by name parts
+            parts = person_name.lower().split()
+            for u in session.query(User).all():
+                uname = u.name.lower()
+                if any(p in uname for p in parts):
+                    user_id = u.id
+                    break
+
+        if not user_id:
+            return jsonify({"error": "Kein Benutzer zugeordnet"}), 400
+
+        # Get person name for calendar labels
+        user = session.get(User, user_id)
+        label_name = person_name or (user.name if user else "")
+        # Use first name only for calendar labels
+        first_name = label_name.split()[0] if label_name else ""
+
+        # If no calendar_entity given, try to get from user settings
+        if not calendar_entity and user:
+            # Check if user has a calendar entity configured
+            pref = session.query(UserPreference).filter_by(
+                user_id=user_id, preference_key="calendar_entity"
+            ).first()
+            if pref:
+                calendar_entity = pref.preference_value
+
+        # Save schedule to DB
+        month_year = data.get("month_year", datetime.now().strftime("%m.%Y"))
+        schedule = PersonSchedule(
+            user_id=user_id,
+            schedule_type="shift",
+            name=f"Schichtplan {month_year} - {first_name}",
+            shift_data=entries,
+        )
+        dates = [e["date"] for e in entries if e.get("date")]
+        if dates:
+            schedule.valid_from = datetime.fromisoformat(min(dates))
+            schedule.valid_until = datetime.fromisoformat(max(dates))
+        session.add(schedule)
+        session.commit()
+
+        # Create calendar events
+        created = 0
+        errors = 0
+        if calendar_entity:
+            for entry in entries:
+                cal_events = entry.get("calendar_events", [])
+                for cev in cal_events:
+                    try:
+                        if cev.get("all_day"):
+                            # All-day event (Dienstfrei, Urlaub, ZA)
+                            ha.call_service("calendar", "create_event", {
+                                "entity_id": calendar_entity,
+                                "summary": f"{cev['label']} - {first_name}",
+                                "start_date": entry["date"],
+                                "end_date": entry["date"],
+                            })
+                        else:
+                            # Timed event
+                            ha.call_service("calendar", "create_event", {
+                                "entity_id": calendar_entity,
+                                "summary": f"{cev['label']} - {first_name}",
+                                "start_date_time": f"{entry['date']}T{cev['start']}:00",
+                                "end_date_time": f"{entry['date']}T{cev['end']}:00",
+                            })
+                        created += 1
+                    except Exception as e:
+                        logger.warning(f"Calendar event error for {entry['date']}: {e}")
+                        errors += 1
+
+        audit_log("import_shift_plan", {
+            "user_id": user_id, "person": first_name,
+            "entries": len(entries), "calendar_events": created, "errors": errors
+        })
+        return jsonify({
+            "success": True,
+            "schedule_id": schedule.id,
+            "calendar_events_created": created,
+            "calendar_errors": errors,
+            "matched_user": user.name if user else None,
+        })
+    except Exception as e:
+        session.rollback()
+        logger.error(f"Shift plan apply error: {e}")
+        return jsonify({"error": str(e)}), 500
+    finally:
+        session.close()
+
+
+@app.route("/api/users/<int:user_id>/calendar-entity", methods=["PUT"])
+def api_set_user_calendar_entity(user_id):
+    """Set the HA calendar entity for a user (for shift plan sync)."""
+    data = request.json
+    calendar_entity = data.get("calendar_entity", "")
+    session = get_db()
+    try:
+        pref = session.query(UserPreference).filter_by(
+            user_id=user_id, preference_key="calendar_entity"
+        ).first()
+        if pref:
+            pref.preference_value = calendar_entity
+        else:
+            pref = UserPreference(
+                user_id=user_id, preference_key="calendar_entity",
+                preference_value=calendar_entity
+            )
+            session.add(pref)
+        session.commit()
+        return jsonify({"success": True})
+    finally:
+        session.close()
+
+
+@app.route("/api/ha/calendars", methods=["GET"])
+def api_get_ha_calendars():
+    """Get available HA calendar entities."""
+    states = ha.get_states() or []
+    calendars = [{"entity_id": s["entity_id"],
+                  "name": s.get("attributes", {}).get("friendly_name", s["entity_id"])}
+                 for s in states if s["entity_id"].startswith("calendar.")]
+    return jsonify(calendars)
+
+# ==============================================================================
+# Phase 3B: Holidays
+# ==============================================================================
+
+BUILTIN_HOLIDAYS_AT = [
+    {"name": "Neujahr", "date": "01-01", "recurring": True, "region": "AT"},
+    {"name": "Hl. Drei K\u00f6nige", "date": "01-06", "recurring": True, "region": "AT"},
+    {"name": "Staatsfeiertag", "date": "05-01", "recurring": True, "region": "AT"},
+    {"name": "Mari\u00e4 Himmelfahrt", "date": "08-15", "recurring": True, "region": "AT"},
+    {"name": "Nationalfeiertag", "date": "10-26", "recurring": True, "region": "AT"},
+    {"name": "Allerheiligen", "date": "11-01", "recurring": True, "region": "AT"},
+    {"name": "Mari\u00e4 Empf\u00e4ngnis", "date": "12-08", "recurring": True, "region": "AT"},
+    {"name": "Christtag", "date": "12-25", "recurring": True, "region": "AT"},
+    {"name": "Stefanitag", "date": "12-26", "recurring": True, "region": "AT"},
+    {"name": "Hl. Leopold (N\u00d6)", "date": "11-15", "recurring": True, "region": "AT-3"},
+]
+
+def _compute_easter(year):
+    a = year % 19; b = year // 100; c = year % 100
+    d = b // 4; e = b % 4; f = (b + 8) // 25
+    g = (b - f + 1) // 3; h = (19*a + b - d - g + 15) % 30
+    i = c // 4; k = c % 4; l = (32 + 2*e + 2*i - h - k) % 7
+    m = (a + 11*h + 22*l) // 451
+    month = (h + l - 7*m + 114) // 31
+    day = ((h + l - 7*m + 114) % 31) + 1
+    from datetime import date as _date
+    return _date(year, month, day)
+
+def get_holidays_for_year(year):
+    from datetime import date as _date, timedelta as _td
+    holidays = []
+    for h in BUILTIN_HOLIDAYS_AT:
+        if h["recurring"] and h["date"]:
+            m, d = h["date"].split("-")
+            holidays.append({"name": h["name"], "date": f"{year}-{h['date']}", "region": h["region"]})
+    easter = _compute_easter(year)
+    holidays.append({"name": "Ostermontag", "date": str(easter + _td(days=1)), "region": "AT"})
+    holidays.append({"name": "Christi Himmelfahrt", "date": str(easter + _td(days=39)), "region": "AT"})
+    holidays.append({"name": "Pfingstmontag", "date": str(easter + _td(days=50)), "region": "AT"})
+    holidays.append({"name": "Fronleichnam", "date": str(easter + _td(days=60)), "region": "AT"})
+    return holidays
+
+@app.route("/api/holidays", methods=["GET"])
+def api_get_holidays():
+    year = request.args.get("year", datetime.now().year, type=int)
+    session = get_db()
+    try:
+        builtin = get_holidays_for_year(year)
+        custom = session.query(Holiday).filter_by(is_active=True).all()
+        custom_list = [{"id": h.id, "name": h.name, "date": h.date, "region": h.region,
+            "source": h.source, "is_recurring": h.is_recurring} for h in custom]
+        # HA holiday integration
+        ha_holidays = []
+        ha_cal = request.args.get("calendar_entity", "")
+        if ha_cal:
+            try:
+                events = ha.call_service("calendar", "get_events", {
+                    "entity_id": ha_cal,
+                    "start_date_time": f"{year}-01-01T00:00:00",
+                    "end_date_time": f"{year}-12-31T23:59:59",
+                }, return_response=True)
+                if events and ha_cal in events:
+                    for ev in events[ha_cal].get("events", []):
+                        ha_holidays.append({
+                            "name": ev.get("summary", ""),
+                            "date": ev.get("start", {}).get("date", ev.get("start", "")),
+                            "source": "ha_integration",
+                        })
+            except Exception as e:
+                logger.warning(f"HA holiday calendar error: {e}")
+        return jsonify({"builtin": builtin, "custom": custom_list, "ha_holidays": ha_holidays, "year": year})
+    finally:
+        session.close()
+
+@app.route("/api/holidays", methods=["POST"])
+def api_create_holiday():
+    data = request.json
+    session = get_db()
+    try:
+        h = Holiday(name=data["name"], date=data["date"],
+            is_recurring=data.get("is_recurring", False),
+            region=data.get("region"), source="manual")
+        session.add(h)
+        session.commit()
+        return jsonify({"success": True, "id": h.id})
+    except Exception as e:
+        session.rollback()
+        return jsonify({"error": str(e)}), 400
+    finally:
+        session.close()
+
+@app.route("/api/holidays/<int:hid>", methods=["DELETE"])
+def api_delete_holiday(hid):
+    session = get_db()
+    try:
+        h = session.get(Holiday, hid)
+        if h:
+            h.is_active = False
+            session.commit()
+        return jsonify({"success": True})
+    finally:
+        session.close()
+
+@app.route("/api/holidays/is-today", methods=["GET"])
+def api_is_today_holiday():
+    """Check if today is a holiday. Used by pattern engine for schedule decisions."""
+    now = datetime.now()
+    holidays = get_holidays_for_year(now.year)
+    today_str = now.strftime("%Y-%m-%d")
+    for h in holidays:
+        if h["date"] == today_str:
+            return jsonify({"is_holiday": True, "holiday": h})
+    return jsonify({"is_holiday": False})
+
+@app.route("/api/holidays/init-builtin", methods=["POST"])
+def api_init_builtin_holidays():
+    """Initialize builtin Austrian holidays in DB."""
+    session = get_db()
+    try:
+        added = 0
+        for h in BUILTIN_HOLIDAYS_AT:
+            existing = session.query(Holiday).filter_by(name=h["name"], source="builtin").first()
+            if not existing:
+                session.add(Holiday(name=h["name"], date=h["date"],
+                    is_recurring=h["recurring"], region=h["region"], source="builtin"))
+                added += 1
+        session.commit()
+        return jsonify({"success": True, "added": added})
+    finally:
+        session.close()
+
+
+@app.route("/api/ha/holiday-calendars", methods=["GET"])
+def api_get_ha_holiday_calendars():
+    """Get HA calendar entities from the holiday integration."""
+    states = ha.get_states() or []
+    # Holiday integration creates calendar.* entities with device_class or specific patterns
+    calendars = []
+    for s in states:
+        eid = s.get("entity_id", "")
+        attrs = s.get("attributes", {})
+        if eid.startswith("calendar."):
+            # Holiday integration calendars typically have country names
+            name = attrs.get("friendly_name", eid)
+            calendars.append({"entity_id": eid, "name": name})
+    return jsonify(calendars)
