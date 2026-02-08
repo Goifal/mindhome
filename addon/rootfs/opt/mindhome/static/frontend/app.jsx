@@ -1,4 +1,4 @@
-// MindHome Frontend v0.5.2-phase3B (2026-02-08) - app.jsx - DIES IST DIE FRONTEND DATEI
+// MindHome Frontend v0.5.2-phase3B-fix2 (2026-02-09 00:40) - app.jsx - BUILD:20260209-0040
 // ================================================================
 // MindHome - React Frontend Application v0.5.0
 // ================================================================
@@ -2883,6 +2883,8 @@ const SettingsPage = () => {
 
             {/* Calendar Trigger Configuration */}
             <CalendarTriggersConfig lang={lang} showToast={showToast} />
+
+            </div>
 
         </div>
         </>
