@@ -1,4 +1,4 @@
-// MindHome Frontend v0.5.0-fix9 (2026-02-08T18:05) - app.jsx - DIES IST DIE FRONTEND DATEI
+// MindHome Frontend v0.5.1-blockA (2026-02-08T19:30) - app.jsx - DIES IST DIE FRONTEND DATEI
 // ================================================================
 // MindHome - React Frontend Application v0.5.0
 // ================================================================
@@ -2478,8 +2478,8 @@ const SettingsPage = () => {
     );
 
     return (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16, alignItems: 'start' }}>
-            {/* Import Preview Modal */}
+        <>
+            {/* Import Preview Modal - outside grid to not affect layout */}
             {importPreview && (
                 <Modal title={lang === 'de' ? 'Backup-Vorschau' : 'Backup Preview'} onClose={() => setImportPreview(null)} actions={<>
                     <button className="btn btn-secondary" onClick={() => setImportPreview(null)}>{lang === 'de' ? 'Abbrechen' : 'Cancel'}</button>
@@ -2501,6 +2501,7 @@ const SettingsPage = () => {
                     )}
                 </Modal>
             )}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16, alignItems: 'start' }}>
             {/* LEFT COLUMN */}
             <div>
             <div className="card" style={{ marginBottom: 16 }}>
@@ -3180,6 +3181,8 @@ const AnomalyAdvancedPanel = ({ lang, showToast }) => {
                 </CollapsibleCard>
             )}
         </div>
+        </div>
+        </>
     );
 };
 
@@ -3480,7 +3483,10 @@ const PatternsPage = () => {
         setLoading(false);
     };
 
-    useEffect(() => { load(); }, []);
+    useEffect(() => {
+        // Auto-reclassify existing sensor→sensor patterns as insights
+        api.post('patterns/reclassify-insights').then(() => load());
+    }, []);
 
     const loadHistory = async (entity) => {
         try {
@@ -3549,6 +3555,7 @@ const PatternsPage = () => {
         suggested: lang === 'de' ? 'Vorgeschlagen' : 'Suggested',
         active: lang === 'de' ? 'Aktiv' : 'Active',
         disabled: lang === 'de' ? 'Deaktiviert' : 'Disabled',
+        insight: lang === 'de' ? 'Insights' : 'Insights',
     };
 
     const rejectPattern = async (id, reason) => {
@@ -4007,7 +4014,7 @@ const PatternsPage = () => {
                     </div>
                     {conflicts.slice(0, 3).map((c, i) => (
                         <div key={i} style={{ fontSize: 12, color: 'var(--text-secondary)', padding: '4px 0' }}>
-                            {c.description || `${c.pattern_a} ↔ ${c.pattern_b}`}
+                            {c.message_de || c.message_en || c.description || `${c.pattern_a?.desc || c.pattern_a?.id || '?'} ↔ ${c.pattern_b?.desc || c.pattern_b?.id || '?'}`}
                         </div>
                     ))}
                 </div>
