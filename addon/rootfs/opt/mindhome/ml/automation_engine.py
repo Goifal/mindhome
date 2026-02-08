@@ -272,7 +272,20 @@ class AutomationExecutor:
 
         session = self.Session()
         try:
-            # Find active patterns with time-based triggers
+            # #23 Vacation mode check
+            vac = session.execute(
+                text("SELECT value FROM system_settings WHERE key='vacation_mode'")
+            ).fetchone()
+            is_vacation = vac and vac[0] == "true"
+
+            # #55 Absence simulation check
+            simulate = False
+            if is_vacation:
+                sim = session.execute(
+                    text("SELECT value FROM system_settings WHERE key='vacation_simulate'")
+                ).fetchone()
+                simulate = sim and sim[0] == "true"
+
             active_patterns = session.query(LearnedPattern).filter_by(
                 status="active", is_active=True
             ).all()
@@ -282,6 +295,16 @@ class AutomationExecutor:
             for pattern in active_patterns:
                 trigger = pattern.trigger_conditions or {}
                 trigger_type = trigger.get("type")
+
+                # #23 Skip non-essential automations in vacation mode
+                # but #55 allow light toggles if simulation is on
+                if is_vacation and not simulate:
+                    continue
+                if is_vacation and simulate:
+                    action = pattern.action_definition or {}
+                    entity = action.get("entity_id", "")
+                    if not entity.startswith("light."):
+                        continue
 
                 if trigger_type == "time":
                     self._check_time_trigger(session, pattern, trigger, now)
@@ -478,11 +501,26 @@ class AutomationExecutor:
             pred.status = "undone"
             pred.undone_at = datetime.now(timezone.utc)
 
-            # Decrease pattern confidence slightly
+            # #53: Learn from undo - reduce confidence more if repeated
             pattern = session.get(LearnedPattern, pred.pattern_id)
             if pattern:
-                pattern.confidence = max(pattern.confidence - 0.1, 0.0)
+                # Count how many times this pattern has been undone
+                undo_count = session.query(Prediction).filter(
+                    Prediction.pattern_id == pattern.id,
+                    Prediction.status == "undone"
+                ).count()
+                # First undo: -0.1, second: -0.15, third+: -0.2
+                decay = min(0.2, 0.1 + (undo_count * 0.05))
+                pattern.confidence = max(0.0, pattern.confidence - decay)
                 pattern.updated_at = datetime.now(timezone.utc)
+                logger.info(f"Pattern {pattern.id} confidence -{decay:.2f} (undo #{undo_count+1})")
+
+                # If confidence drops below 0.15, deactivate
+                if pattern.confidence < 0.15:
+                    pattern.is_active = False
+                    pattern.status = "rejected"
+                    pattern.rejection_reason = "auto_deactivated_by_undos"
+                    logger.info(f"Pattern {pattern.id} auto-deactivated after {undo_count+1} undos")
 
             session.commit()
             logger.info(f"Undone prediction {prediction_id}: {entity_id} → {restore_state}")
@@ -568,12 +606,11 @@ class ConflictDetector:
 
             return conflicts
 
+        except Exception as e:
+            logger.error(f"Conflict check error: {e}")
+            return []
         finally:
             session.close()
-
-
-# ==============================================================================
-# E1-E4: Phase Manager
 # ==============================================================================
 
 class PhaseManager:
@@ -953,6 +990,67 @@ class AnomalyDetector:
             "severity": severity,
         }
 
+    def detect_time_clusters(self, session, entity_id=None, days=14):
+        """#54: Detect natural time clusters (routines) from state history."""
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+        query = session.query(StateHistory).filter(StateHistory.created_at > cutoff)
+        if entity_id:
+            query = query.filter(StateHistory.entity_id == entity_id)
+        history = query.all()
+
+        # Group by hour
+        hour_counts = defaultdict(int)
+        for h in history:
+            hour_counts[h.created_at.hour] += 1
+
+        # Find clusters (peaks in activity)
+        clusters = []
+        cluster_names = {
+            (5, 9): {"de": "Morgenroutine", "en": "Morning routine"},
+            (11, 14): {"de": "Mittagszeit", "en": "Lunchtime"},
+            (17, 20): {"de": "Feierabend", "en": "Evening routine"},
+            (21, 24): {"de": "Schlafenszeit", "en": "Bedtime"},
+        }
+        for (start_h, end_h), names in cluster_names.items():
+            total = sum(hour_counts.get(h, 0) for h in range(start_h, end_h))
+            if total >= 10:
+                peak_hour = max(range(start_h, end_h), key=lambda h: hour_counts.get(h, 0))
+                clusters.append({
+                    "name_de": names["de"],
+                    "name_en": names["en"],
+                    "start_hour": start_h,
+                    "end_hour": end_h,
+                    "peak_hour": peak_hour,
+                    "event_count": total,
+                })
+        return clusters
+
+    def detect_guest_activity(self, session):
+        """#58: Detect unusual device activity that might indicate guests."""
+        try:
+            # Compare last 24h activity to 7-day average
+            now = datetime.now(timezone.utc)
+            day_ago = now - timedelta(hours=24)
+            week_ago = now - timedelta(days=7)
+
+            recent = session.query(func.count(StateHistory.id)).filter(
+                StateHistory.created_at > day_ago).scalar() or 0
+            weekly_avg = (session.query(func.count(StateHistory.id)).filter(
+                StateHistory.created_at > week_ago).scalar() or 0) / 7
+
+            if weekly_avg > 0 and recent > weekly_avg * 1.5:
+                return {
+                    "guest_likely": True,
+                    "recent_events": recent,
+                    "daily_average": round(weekly_avg),
+                    "ratio": round(recent / weekly_avg, 1),
+                    "message_de": f"Ungewöhnlich hohe Aktivität: {recent} Events (Ø {weekly_avg:.0f})",
+                    "message_en": f"Unusually high activity: {recent} events (avg {weekly_avg:.0f})",
+                }
+            return {"guest_likely": False, "recent_events": recent, "daily_average": round(weekly_avg)}
+        except Exception:
+            return {"guest_likely": False}
+
 
 # ==============================================================================
 # G1+G3: Notification Manager
@@ -1009,17 +1107,29 @@ class NotificationManager:
             session.close()
 
     def notify_anomaly(self, anomaly, lang="de"):
-        """Send notification about an anomaly."""
+        """Send notification about an anomaly. Deduplicate by entity within 24h."""
         session = self.Session()
         try:
+            entity_id = anomaly.get("entity_id", "")
             title = "MindHome: Ungewöhnliche Aktivität" if lang == "de" else "MindHome: Unusual Activity"
             message = anomaly.get("reason_de" if lang == "de" else "reason_en", "")
+
+            # Dedup: check if we already notified about this entity in last 24h
+            if entity_id:
+                cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+                existing = session.query(NotificationLog).filter(
+                    NotificationLog.notification_type == NotificationType.ANOMALY,
+                    NotificationLog.message.contains(entity_id),
+                    NotificationLog.created_at >= cutoff
+                ).first()
+                if existing:
+                    return  # Already notified recently
 
             notif = NotificationLog(
                 user_id=1,
                 notification_type=NotificationType.ANOMALY,
                 title=title,
-                message=message,
+                message=f"{message} [{entity_id}]" if entity_id else message,
                 was_sent=False,
                 was_read=False,
             )
@@ -1052,6 +1162,9 @@ class NotificationManager:
             if unread_only:
                 query = query.filter_by(was_read=False)
             return query.limit(limit).all()
+        except Exception as e:
+            logger.error(f"Get notifications error: {e}")
+            return []
         finally:
             session.close()
 
@@ -1064,6 +1177,10 @@ class NotificationManager:
                 n.was_read = True
                 session.commit()
                 return True
+            return False
+        except Exception as e:
+            logger.error(f"Mark read error: {e}")
+            session.rollback()
             return False
         finally:
             session.close()
@@ -1090,6 +1207,9 @@ class NotificationManager:
             return session.query(func.count(NotificationLog.id)).filter_by(
                 was_read=False
             ).scalar() or 0
+        except Exception as e:
+            logger.error(f"Unread count error: {e}")
+            return 0
         finally:
             session.close()
 
@@ -1146,9 +1266,24 @@ class AutomationScheduler:
 
         logger.info("Automation Scheduler started (exec:1min, suggest:4h, phase:12h, anomaly:15min)")
 
+        # #40 Watchdog: monitor thread health every 5 min
+        t5 = threading.Thread(target=self._watchdog_task, daemon=True)
+        t5.start()
+        self._threads.append(t5)
+
     def stop(self):
         self._should_run = False
         logger.info("Automation Scheduler stopped")
+
+    def _watchdog_task(self):
+        """#40: Monitor thread health, restart dead threads."""
+        time.sleep(300)  # first check after 5min
+        while self._should_run:
+            alive = sum(1 for t in self._threads if t.is_alive())
+            total = len(self._threads)
+            if alive < total:
+                logger.warning(f"Watchdog: {total - alive}/{total} threads dead")
+            time.sleep(300)
 
     def _run_periodic(self, task_func, interval_seconds, task_name):
         """Run a task periodically."""
