@@ -980,7 +980,9 @@ const QuickActionsGrid = () => {
                 {quickActions.map(action => {
                     // #9: Smart icon fallback based on action name/type
                     const getSmartIcon = (a) => {
-                        if (a.icon && a.icon !== 'mdi:flash' && a.icon !== '') return `mdi ${a.icon}`;
+                        const normalizeIcon = (icon) => icon ? icon.replace('mdi:', 'mdi-') : '';
+                        const icon = normalizeIcon(a.icon);
+                        if (icon && icon !== 'mdi-flash' && icon !== '') return `mdi ${icon}`;
                         const name = (a.name || '').toLowerCase();
                         const type = (a.action_data?.type || '').toLowerCase();
                         if (type === 'emergency_stop' || name.includes('not')) return 'mdi mdi-alert-octagon';
@@ -992,7 +994,7 @@ const QuickActionsGrid = () => {
                         if (name.includes('morgen') || name.includes('morning')) return 'mdi mdi-weather-sunset-up';
                         if (name.includes('kino') || name.includes('movie') || name.includes('film')) return 'mdi mdi-movie-open';
                         if (name.includes('essen') || name.includes('dinner')) return 'mdi mdi-silverware-fork-knife';
-                        return `mdi ${a.icon || 'mdi-lightning-bolt'}`;
+                        return `mdi ${icon || 'mdi-lightning-bolt'}`;
                     };
                     return (
                     <div key={action.id} style={{ position: 'relative' }}>
@@ -1062,6 +1064,7 @@ const DomainsPage = () => {
     const [showCreate, setShowCreate] = useState(false);
     const [newDomain, setNewDomain] = useState({ name_de: '', name_en: '', icon: 'mdi:puzzle', description: '' });
     const [confirmDel, setConfirmDel] = useState(null);
+    const [editDomain, setEditDomain] = useState(null);
     const [capabilities, setCapabilities] = useState({});
     const [expandedDomain, setExpandedDomain] = useState(null);
 
@@ -1127,6 +1130,13 @@ const DomainsPage = () => {
                             </div>
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, marginLeft: 8 }}>
+                            {domain.is_custom && (
+                                <button className="btn btn-ghost btn-icon"
+                                    onClick={e => { e.stopPropagation(); setEditDomain({ ...domain }); }}
+                                    title={lang === 'de' ? 'Bearbeiten' : 'Edit'}>
+                                    <span className="mdi mdi-pencil-outline" style={{ fontSize: 16, color: 'var(--accent-primary)' }} />
+                                </button>
+                            )}
                             {domain.is_custom && (
                                 <button className="btn btn-ghost btn-icon"
                                     onClick={e => { e.stopPropagation(); setConfirmDel(domain); }}
@@ -1251,6 +1261,40 @@ const DomainsPage = () => {
                     title={lang === 'de' ? 'Domain löschen' : 'Delete Domain'}
                     message={lang === 'de' ? `"${confirmDel.display_name}" wirklich löschen?` : `Delete "${confirmDel.display_name}"?`}
                     danger onConfirm={handleDeleteDomain} onCancel={() => setConfirmDel(null)} />
+            )}
+
+            {editDomain && (
+                <Modal title={lang === 'de' ? 'Domain bearbeiten' : 'Edit Domain'} onClose={() => setEditDomain(null)}
+                    actions={<><button className="btn btn-secondary" onClick={() => setEditDomain(null)}>{lang === 'de' ? 'Abbrechen' : 'Cancel'}</button>
+                        <button className="btn btn-primary" onClick={async () => {
+                            await api.put(`domains/${editDomain.id}`, {
+                                name_de: editDomain.display_name,
+                                description: editDomain.description,
+                                icon: editDomain.icon,
+                                keywords: editDomain.keywords
+                            });
+                            setEditDomain(null);
+                            await refreshData();
+                            showToast(lang === 'de' ? 'Domain aktualisiert' : 'Domain updated', 'success');
+                        }}>{lang === 'de' ? 'Speichern' : 'Save'}</button></>}>
+                    <div className="input-group" style={{ marginBottom: 12 }}>
+                        <label className="input-label">{lang === 'de' ? 'Name' : 'Name'}</label>
+                        <input className="input" value={editDomain.display_name || ''} onChange={e => setEditDomain({ ...editDomain, display_name: e.target.value })} />
+                    </div>
+                    <div className="input-group" style={{ marginBottom: 12 }}>
+                        <label className="input-label">{lang === 'de' ? 'Beschreibung' : 'Description'}</label>
+                        <input className="input" value={editDomain.description || ''} onChange={e => setEditDomain({ ...editDomain, description: e.target.value })} />
+                    </div>
+                    <div className="input-group" style={{ marginBottom: 12 }}>
+                        <label className="input-label">Icon (mdi:icon-name)</label>
+                        <input className="input" value={editDomain.icon || ''} onChange={e => setEditDomain({ ...editDomain, icon: e.target.value })} />
+                    </div>
+                    <div className="input-group">
+                        <label className="input-label">Keywords</label>
+                        <input className="input" value={editDomain.keywords || ''} onChange={e => setEditDomain({ ...editDomain, keywords: e.target.value })}
+                            placeholder={lang === 'de' ? 'Komma-getrennt' : 'Comma-separated'} />
+                    </div>
+                </Modal>
             )}
         </div>
     );
@@ -2433,7 +2477,7 @@ const SettingsPage = () => {
     );
 
     return (
-        <div style={{ maxWidth: 600, margin: '0 auto' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16, alignItems: 'start' }}>
             {/* Import Preview Modal */}
             {importPreview && (
                 <Modal title={lang === 'de' ? 'Backup-Vorschau' : 'Backup Preview'} onClose={() => setImportPreview(null)} actions={<>
@@ -2457,6 +2501,7 @@ const SettingsPage = () => {
                 </Modal>
             )}
             <div className="card" style={{ marginBottom: 16 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
                 <div className="card-title" style={{ marginBottom: 16 }}>
                     {lang === 'de' ? 'Darstellung' : 'Appearance'}
                 </div>
@@ -2498,6 +2543,8 @@ const SettingsPage = () => {
                 </div>
             </div>
 
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
             {/* System Info */}
             <div className="card" style={{ marginBottom: 16 }}>
                 <div className="card-title" style={{ marginBottom: 16 }}>
@@ -2643,6 +2690,8 @@ const SettingsPage = () => {
                     {lang === 'de' ? 'Erweitert' : 'Advanced'}
                 </div>
 
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 0, gridColumn: '1 / -1' }}>
                 {/* #23 Vacation Mode */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
                     <span style={{ fontSize: 13 }}><span className="mdi mdi-airplane" style={{ marginRight: 6, color: 'var(--accent-primary)' }} />{lang === 'de' ? 'Urlaubsmodus' : 'Vacation Mode'}</span>
@@ -2733,6 +2782,7 @@ const SettingsPage = () => {
                         {lang === 'de' ? 'Update prüfen' : 'Check Update'}
                     </button>
                 </div>
+            </div>
             </div>
         </div>
     );
@@ -3523,24 +3573,43 @@ const PatternsPage = () => {
                             actions={<><button className="btn btn-secondary" onClick={() => setShowAddExcl(false)}>{lang === 'de' ? 'Abbrechen' : 'Cancel'}</button>
                                 <button className="btn btn-primary" onClick={createExclusion}>{lang === 'de' ? 'Erstellen' : 'Create'}</button></>}>
                             <div className="input-group" style={{ marginBottom: 12 }}>
-                                <Dropdown label={lang === 'de' ? 'Typ' : 'Type'} value={newExcl.type} onChange={v => setNewExcl({ ...newExcl, type: v })}
-                                    options={[{ value: 'device_pair', label: lang === 'de' ? 'Geräte-Paar' : 'Device Pair' }, { value: 'room_pair', label: lang === 'de' ? 'Raum-Paar' : 'Room Pair' }]} />
+                                <Dropdown label={lang === 'de' ? 'Typ' : 'Type'} value={newExcl.type} onChange={v => setNewExcl({ ...newExcl, type: v, entity_a: '', entity_b: '' })}
+                                    options={[{ value: 'device_pair', label: lang === 'de' ? 'Geräte-Paar' : 'Device Pair' }, { value: 'room_pair', label: lang === 'de' ? 'Raum-Paar' : 'Room Pair' }, { value: 'domain_pair', label: lang === 'de' ? 'Domain-Paar' : 'Domain Pair' }]} />
                             </div>
-                            <div className="input-group" style={{ marginBottom: 12 }}>
-                                <EntitySearchDropdown
-                                    label={newExcl.type === 'device_pair' ? (lang === 'de' ? 'Gerät A' : 'Device A') : (lang === 'de' ? 'Raum A' : 'Room A')}
-                                    value={newExcl.entity_a}
-                                    onChange={v => setNewExcl({ ...newExcl, entity_a: v })}
-                                    entities={devices.filter(d => d.ha_entity_id)}
-                                    placeholder={newExcl.type === 'device_pair' ? 'light.living_room' : 'Wohnzimmer'} />
-                            </div>
-                            <div className="input-group" style={{ marginBottom: 12 }}>
-                                <EntitySearchDropdown
-                                    label={newExcl.type === 'device_pair' ? (lang === 'de' ? 'Gerät B' : 'Device B') : (lang === 'de' ? 'Raum B' : 'Room B')}
-                                    value={newExcl.entity_b}
-                                    onChange={v => setNewExcl({ ...newExcl, entity_b: v })}
-                                    entities={devices.filter(d => d.ha_entity_id && d.ha_entity_id !== newExcl.entity_a)} />
-                            </div>
+                            {newExcl.type === 'device_pair' ? (<>
+                                <div className="input-group" style={{ marginBottom: 12 }}>
+                                    <EntitySearchDropdown label={lang === 'de' ? 'Gerät A' : 'Device A'} value={newExcl.entity_a}
+                                        onChange={v => setNewExcl({ ...newExcl, entity_a: v })}
+                                        entities={devices.filter(d => d.ha_entity_id)} placeholder="light.living_room" />
+                                </div>
+                                <div className="input-group" style={{ marginBottom: 12 }}>
+                                    <EntitySearchDropdown label={lang === 'de' ? 'Gerät B' : 'Device B'} value={newExcl.entity_b}
+                                        onChange={v => setNewExcl({ ...newExcl, entity_b: v })}
+                                        entities={devices.filter(d => d.ha_entity_id && d.ha_entity_id !== newExcl.entity_a)} />
+                                </div>
+                            </>) : newExcl.type === 'room_pair' ? (<>
+                                <div className="input-group" style={{ marginBottom: 12 }}>
+                                    <Dropdown label={lang === 'de' ? 'Raum A' : 'Room A'} value={newExcl.entity_a}
+                                        onChange={v => setNewExcl({ ...newExcl, entity_a: v })}
+                                        options={rooms.map(r => ({ value: String(r.id), label: r.name }))} />
+                                </div>
+                                <div className="input-group" style={{ marginBottom: 12 }}>
+                                    <Dropdown label={lang === 'de' ? 'Raum B' : 'Room B'} value={newExcl.entity_b}
+                                        onChange={v => setNewExcl({ ...newExcl, entity_b: v })}
+                                        options={rooms.filter(r => String(r.id) !== newExcl.entity_a).map(r => ({ value: String(r.id), label: r.name }))} />
+                                </div>
+                            </>) : (<>
+                                <div className="input-group" style={{ marginBottom: 12 }}>
+                                    <Dropdown label="Domain A" value={newExcl.entity_a}
+                                        onChange={v => setNewExcl({ ...newExcl, entity_a: v })}
+                                        options={domains.map(d => ({ value: String(d.id), label: d.name }))} />
+                                </div>
+                                <div className="input-group" style={{ marginBottom: 12 }}>
+                                    <Dropdown label="Domain B" value={newExcl.entity_b}
+                                        onChange={v => setNewExcl({ ...newExcl, entity_b: v })}
+                                        options={domains.filter(d => String(d.id) !== newExcl.entity_a).map(d => ({ value: String(d.id), label: d.name }))} />
+                                </div>
+                            </>)}
                             <div className="input-group">
                                 <label className="input-label">{lang === 'de' ? 'Grund (optional)' : 'Reason (optional)'}</label>
                                 <input className="input" value={newExcl.reason} onChange={e => setNewExcl({ ...newExcl, reason: e.target.value })} />
