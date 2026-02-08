@@ -2801,7 +2801,6 @@ const SettingsPage = () => {
             {/* Calendar Trigger Configuration */}
             <CalendarTriggersConfig lang={lang} showToast={showToast} />
 
-            </div>
         </div>
     );
 };
@@ -5097,7 +5096,6 @@ const OnboardingWizard = ({ onComplete }) => {
                         </button>
                     )}
                 </div>
-            </div>
         </div>
     );
 };
