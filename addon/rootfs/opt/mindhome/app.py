@@ -2366,20 +2366,21 @@ def serve_index():
         with open(jsx_path, "r", encoding="utf-8") as f:
             jsx_code = f.read()
 
-        # Replace external script reference with inline code in a hidden container
-        # Using text/plain so Babel doesn't auto-process it; we transform manually
-        import re
-        inline_tag = '<script type="text/plain" id="app-jsx-source">\n' + jsx_code + '\n</script>'
-        # Remove the old text/babel script tag if present
-        html = re.sub(
-            r'<script\s+type=["\']text/babel["\']\s+src=["\'][^"\']*app\.jsx["\'][^>]*>\s*</script>',
-            lambda m: inline_tag,
-            html
-        )
-        # Also handle case where index.html has no external src (already inline)
-        if 'app-jsx-source' not in html:
-            # Inject before closing </body>
-            html = html.replace('</body>', inline_tag + '\n</body>')
+        # Inject app.jsx as a hidden text/plain script that our manual Babel code reads
+        jsx_block = '<script type="text/plain" id="app-jsx-source">\n' + jsx_code + '\n</script>'
+
+        # Must insert BEFORE the script that calls Babel.transform
+        # Replace the opening <script> + marker with: jsx_block + new <script> + marker
+        open_marker = "<script>\n        logStep('App wird kompiliert...');"
+        if open_marker in html:
+            html = html.replace(
+                open_marker,
+                jsx_block + "\n    <script>\n        logStep('App wird kompiliert...');"
+            )
+        else:
+            # Fallback: insert before </body>
+            html = html.replace('</body>', jsx_block + '\n</body>')
+
         return html, 200, {"Content-Type": "text/html; charset=utf-8"}
     except FileNotFoundError as e:
         logger.error(f"Frontend file not found: {e}")
