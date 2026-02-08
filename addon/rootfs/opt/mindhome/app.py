@@ -3076,7 +3076,7 @@ def api_weekly_report():
 def api_backup_export():
     """Export MindHome data as JSON. mode=standard|full|custom"""
     mode = request.args.get("mode", "standard")
-    history_days = request.args.get("history_days", "90", type=int)
+    history_days = request.args.get("history_days", 90, type=int)
     session = get_db()
     try:
         backup = {
@@ -3196,7 +3196,7 @@ def api_backup_export():
             for nl in session.query(NotificationLog).filter(NotificationLog.created_at >= cutoff).all():
                 backup["notification_log"].append({"id": nl.id,
                     "notification_type": nl.notification_type, "title": nl.title,
-                    "message": nl.message, "is_read": nl.is_read,
+                    "message": nl.message, "was_read": nl.was_read,
                     "created_at": utc_iso(nl.created_at)})
 
             # Audit Trail
@@ -3215,9 +3215,9 @@ def api_backup_export():
 
             # Pattern Match Log
             backup["pattern_match_log"] = []
-            for pm in session.query(PatternMatchLog).filter(PatternMatchLog.created_at >= cutoff).all():
+            for pm in session.query(PatternMatchLog).filter(PatternMatchLog.matched_at >= cutoff).all():
                 backup["pattern_match_log"].append({"pattern_id": pm.pattern_id,
-                    "matched_at": utc_iso(pm.created_at), "match_data": pm.match_data})
+                    "matched_at": utc_iso(pm.matched_at), "context": pm.context})
 
         # Summary for import preview
         backup["_summary"] = {
@@ -4130,36 +4130,6 @@ def api_tts_devices():
 
 
 # ==============================================================================
-# #61b Auto-Backup Configuration
-# ==============================================================================
-
-@app.route("/api/system/auto-backup", methods=["GET"])
-def api_get_auto_backup_settings():
-    """Get auto-backup configuration."""
-    return jsonify({
-        "enabled": get_setting("auto_backup_enabled", "true") == "true",
-        "keep_count": int(get_setting("auto_backup_keep", "7")),
-        "time": get_setting("auto_backup_time", "03:00"),
-        "path": get_setting("auto_backup_path") or "/backup",
-        "last_backup": get_setting("auto_backup_last"),
-    })
-
-
-@app.route("/api/system/auto-backup", methods=["PUT"])
-def api_update_auto_backup_settings():
-    """Update auto-backup configuration."""
-    data = request.json
-    if "enabled" in data:
-        set_setting("auto_backup_enabled", "true" if data["enabled"] else "false")
-    if "keep_count" in data:
-        set_setting("auto_backup_keep", str(max(1, min(30, int(data["keep_count"])))))
-    if "time" in data:
-        set_setting("auto_backup_time", data["time"])
-    if "path" in data:
-        set_setting("auto_backup_path", data["path"])
-    return jsonify({"success": True})
-
-
 # ==============================================================================
 # #28b Calendar Automation Triggers
 # ==============================================================================
@@ -4487,12 +4457,6 @@ def run_cleanup():
         except Exception as e:
             logger.debug(f"VACUUM skipped: {e}")
 
-        # #61 Auto-Backup (keep last 7 daily backups)
-        try:
-            _auto_backup()
-        except Exception as e:
-            logger.warning(f"Auto-backup failed: {e}")
-
         return total
     except Exception as e:
         logger.error(f"Cleanup error: {e}")
@@ -4503,31 +4467,6 @@ def run_cleanup():
         return 0
     finally:
         session.close()
-
-
-# #61 Auto-Backup
-def _auto_backup():
-    """Create automatic daily backup, keep last 7."""
-    backup_dir = os.environ.get("MINDHOME_BACKUP_DIR", get_setting("auto_backup_path") or "/backup")
-    os.makedirs(backup_dir, exist_ok=True)
-
-    db_path = os.environ.get("MINDHOME_DB_PATH", "/data/mindhome/db/mindhome.db")
-    if not os.path.exists(db_path):
-        return
-
-    today = datetime.now().strftime("%Y-%m-%d")
-    backup_path = os.path.join(backup_dir, f"mindhome_auto_{today}.db")
-
-    if not os.path.exists(backup_path):
-        shutil.copy2(db_path, backup_path)
-        logger.info(f"Auto-backup created: {backup_path}")
-
-    # Cleanup old backups (keep 7)
-    backups = sorted([f for f in os.listdir(backup_dir) if f.startswith("mindhome_auto_")])
-    while len(backups) > 7:
-        old = backups.pop(0)
-        os.remove(os.path.join(backup_dir, old))
-        logger.info(f"Removed old backup: {old}")
 
 
 def schedule_cleanup():
