@@ -607,7 +607,7 @@
 
         /* Modal */
         .modal-overlay { position: fixed; inset: 0; background: var(--bg-overlay); backdrop-filter: blur(8px); display: flex; align-items: center; justify-content: center; z-index: 1000; animation: fadeIn 0.2s ease; }
-        .modal { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 24px; min-width: 400px; max-width: 90vw; max-height: 85vh; overflow-y: auto; box-shadow: var(--shadow-lg); animation: slideUp 0.3s var(--transition-slow); }
+        .modal { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 24px; min-width: 400px; max-width: 90vw; max-height: 85vh; overflow: visible; box-shadow: var(--shadow-lg); animation: slideUp 0.3s var(--transition-slow); }
         .modal select { max-height: none; }
         .modal-title { font-size: 18px; font-weight: 600; margin-bottom: 16px; }
         .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
