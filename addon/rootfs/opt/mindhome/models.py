@@ -185,7 +185,19 @@ class LearnedPattern(Base):
     action_definition = Column(JSON, nullable=True)  # What should happen
     last_matched_at = Column(DateTime, nullable=True)
     match_count = Column(Integer, default=0)
-    status = Column(String(30), default="observed")  # observed, suggested, active, disabled
+    status = Column(String(30), default="observed")  # observed, suggested, active, disabled, rejected
+
+    # Block B extensions
+    rejection_reason = Column(String(50), nullable=True)  # "coincidence", "unwanted", "wrong"
+    rejected_at = Column(DateTime, nullable=True)
+    category = Column(String(30), nullable=True)  # "energy", "comfort", "security"
+    season = Column(String(20), nullable=True)  # "spring", "summer", "autumn", "winter", null=all
+    test_mode = Column(Boolean, default=False)  # simulation mode
+    test_results = Column(JSON, nullable=True)  # simulated triggers log
+    depends_on_pattern_id = Column(Integer, ForeignKey("learned_patterns.id"), nullable=True)
+    schedule = Column(JSON, nullable=True)  # {"weekdays": [0,1,2,3,4], "time_after": "08:00", "time_before": "22:00"}
+    delay_seconds = Column(Integer, default=0)
+    conditions = Column(JSON, nullable=True)  # multi-factor: {"presence": "home", "weather": "cloudy"}
 
     created_at = Column(DateTime, default=_utcnow)
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
@@ -258,12 +270,136 @@ class NotificationSetting(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     notification_type = Column(Enum(NotificationType), nullable=False)
     is_enabled = Column(Boolean, default=True)
-    quiet_hours_start = Column(String(5), nullable=True)
-    quiet_hours_end = Column(String(5), nullable=True)
+    priority = Column(Enum(NotificationPriority), default=NotificationPriority.MEDIUM)
+    quiet_hours_start = Column(String(5), nullable=True)  # "22:00"
+    quiet_hours_end = Column(String(5), nullable=True)  # "07:00"
     quiet_hours_allow_critical = Column(Boolean, default=True)
+    push_channel = Column(String(100), nullable=True)  # HA notify service name
+    escalation_enabled = Column(Boolean, default=False)
+    escalation_minutes = Column(Integer, default=30)  # escalate after X min
+    geofencing_only_away = Column(Boolean, default=False)  # only when nobody home
     created_at = Column(DateTime, default=_utcnow)
 
     user = relationship("User", back_populates="notifications_settings")
+
+
+class NotificationChannel(Base):
+    """Available notification channels (discovered from HA notify services)."""
+    __tablename__ = "notification_channels"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    service_name = Column(String(200), nullable=False, unique=True)  # e.g. "notify.mobile_app_iphone"
+    display_name = Column(String(200), nullable=False)
+    channel_type = Column(String(50), nullable=False)  # "push", "persistent", "telegram", "email"
+    is_enabled = Column(Boolean, default=True)
+    config = Column(JSON, nullable=True)
+    created_at = Column(DateTime, default=_utcnow)
+
+
+class DeviceMute(Base):
+    """Muted devices - no notifications for these."""
+    __tablename__ = "device_mutes"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    device_id = Column(Integer, ForeignKey("devices.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    muted_until = Column(DateTime, nullable=True)  # null = permanent
+    reason = Column(String(200), nullable=True)
+    created_at = Column(DateTime, default=_utcnow)
+
+    device = relationship("Device")
+    user = relationship("User")
+
+
+class PatternExclusion(Base):
+    """Exclusion rules: entities/rooms that should never be linked in patterns."""
+    __tablename__ = "pattern_exclusions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    exclusion_type = Column(String(30), nullable=False)  # "device_pair", "room_pair"
+    entity_a = Column(String(255), nullable=False)  # entity_id or room_id
+    entity_b = Column(String(255), nullable=False)
+    reason = Column(String(200), nullable=True)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, default=_utcnow)
+
+    creator = relationship("User")
+
+
+class ManualRule(Base):
+    """User-defined rules (manual patterns)."""
+    __tablename__ = "manual_rules"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(200), nullable=False)
+    trigger_entity = Column(String(255), nullable=False)  # "light.living_room"
+    trigger_state = Column(String(100), nullable=False)  # "on", "off", ">25"
+    action_entity = Column(String(255), nullable=False)  # "light.hallway"
+    action_service = Column(String(100), nullable=False)  # "turn_on", "turn_off"
+    action_data = Column(JSON, nullable=True)  # additional service data
+    conditions = Column(JSON, nullable=True)  # {"time_after": "22:00", "weekdays": [0,1,2,3,4]}
+    delay_seconds = Column(Integer, default=0)
+    is_active = Column(Boolean, default=True)
+    execution_count = Column(Integer, default=0)
+    last_executed_at = Column(DateTime, nullable=True)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, default=_utcnow)
+
+    creator = relationship("User")
+
+
+class AnomalySetting(Base):
+    """Per-room/domain anomaly detection settings."""
+    __tablename__ = "anomaly_settings"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    room_id = Column(Integer, ForeignKey("rooms.id"), nullable=True)
+    domain_id = Column(Integer, ForeignKey("domains.id"), nullable=True)
+    device_id = Column(Integer, ForeignKey("devices.id"), nullable=True)
+    sensitivity = Column(String(20), default="medium")  # "low", "medium", "high", "off"
+    stuck_detection = Column(Boolean, default=True)
+    time_anomaly = Column(Boolean, default=True)
+    frequency_anomaly = Column(Boolean, default=True)
+    whitelisted_hours = Column(JSON, nullable=True)  # [3, 4] = 3am-4am normal
+    auto_action = Column(JSON, nullable=True)  # {"type": "notify"} or {"type": "service", "service": "..."}
+    created_at = Column(DateTime, default=_utcnow)
+
+    room = relationship("Room")
+    domain = relationship("Domain")
+    device = relationship("Device")
+
+
+# ==============================================================================
+# #44 Device Groups
+# ==============================================================================
+
+class DeviceGroup(Base):
+    __tablename__ = "device_groups"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(100), nullable=False)
+    room_id = Column(Integer, ForeignKey("rooms.id"), nullable=True)
+    device_ids = Column(Text, default="[]")  # JSON array of device IDs
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=_utcnow)
+
+    room = relationship("Room")
+
+
+# ==============================================================================
+# #60 Audit Trail
+# ==============================================================================
+
+class AuditTrail(Base):
+    __tablename__ = "audit_trail"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, nullable=True)
+    action = Column(String(100), nullable=False)
+    target = Column(String(200), nullable=True)
+    details = Column(Text, nullable=True)
+    ip_address = Column(String(45), nullable=True)
+    created_at = Column(DateTime, default=_utcnow)
 
 
 class NotificationLog(Base):
@@ -402,7 +538,7 @@ class PatternMatchLog(Base):
 # ==============================================================================
 
 def get_engine(db_path=None):
-    """Create database engine."""
+    """Create database engine with connection pooling (#33)."""
     if db_path is None:
         db_path = os.environ.get("MINDHOME_DB_PATH", "/data/mindhome/db/mindhome.db")
 
@@ -410,13 +546,20 @@ def get_engine(db_path=None):
     if db_dir:
         os.makedirs(db_dir, exist_ok=True)
 
+    from sqlalchemy.pool import QueuePool
+
     engine = create_engine(
         f"sqlite:///{db_path}",
         echo=False,
-        connect_args={"timeout": 30},  # 30s busy timeout for concurrent threads
+        poolclass=QueuePool,       # #33 explicit pool for SQLite threading
+        pool_size=5,
+        max_overflow=10,
+        pool_timeout=30,
+        pool_pre_ping=True,
+        connect_args={"timeout": 30, "check_same_thread": False},
     )
 
-    # Enable WAL mode for better concurrent read/write performance
+    # Enable WAL mode + performance pragmas
     from sqlalchemy import event as sa_event
 
     @sa_event.listens_for(engine, "connect")
@@ -425,6 +568,8 @@ def get_engine(db_path=None):
         cursor.execute("PRAGMA journal_mode=WAL")
         cursor.execute("PRAGMA busy_timeout=30000")
         cursor.execute("PRAGMA synchronous=NORMAL")
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.execute("PRAGMA cache_size=-8000")  # 8MB cache
         cursor.close()
 
     return engine
@@ -515,19 +660,129 @@ MIGRATIONS = [
             "ALTER TABLE predictions ADD COLUMN description_en TEXT",
         ]
     },
+    {
+        "version": 4,
+        "description": "Block B - Notifications, Patterns, Manual Rules, Anomaly Settings",
+        "sql": [
+            # NotificationChannel table
+            """CREATE TABLE IF NOT EXISTS notification_channels (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                service_name VARCHAR(200) NOT NULL UNIQUE,
+                display_name VARCHAR(200) NOT NULL,
+                channel_type VARCHAR(50) NOT NULL,
+                is_enabled BOOLEAN DEFAULT 1,
+                config JSON,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )""",
+
+            # DeviceMute table
+            """CREATE TABLE IF NOT EXISTS device_mutes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                device_id INTEGER NOT NULL REFERENCES devices(id),
+                user_id INTEGER NOT NULL REFERENCES users(id),
+                muted_until DATETIME,
+                reason VARCHAR(200),
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )""",
+
+            # PatternExclusion table
+            """CREATE TABLE IF NOT EXISTS pattern_exclusions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                exclusion_type VARCHAR(30) NOT NULL,
+                entity_a VARCHAR(255) NOT NULL,
+                entity_b VARCHAR(255) NOT NULL,
+                reason VARCHAR(200),
+                created_by INTEGER REFERENCES users(id),
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )""",
+
+            # ManualRule table
+            """CREATE TABLE IF NOT EXISTS manual_rules (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name VARCHAR(200) NOT NULL,
+                trigger_entity VARCHAR(255) NOT NULL,
+                trigger_state VARCHAR(100) NOT NULL,
+                action_entity VARCHAR(255) NOT NULL,
+                action_service VARCHAR(100) NOT NULL,
+                action_data JSON,
+                conditions JSON,
+                delay_seconds INTEGER DEFAULT 0,
+                is_active BOOLEAN DEFAULT 1,
+                execution_count INTEGER DEFAULT 0,
+                last_executed_at DATETIME,
+                created_by INTEGER REFERENCES users(id),
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )""",
+
+            # AnomalySetting table
+            """CREATE TABLE IF NOT EXISTS anomaly_settings (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                room_id INTEGER REFERENCES rooms(id),
+                domain_id INTEGER REFERENCES domains(id),
+                device_id INTEGER REFERENCES devices(id),
+                sensitivity VARCHAR(20) DEFAULT 'medium',
+                stuck_detection BOOLEAN DEFAULT 1,
+                time_anomaly BOOLEAN DEFAULT 1,
+                frequency_anomaly BOOLEAN DEFAULT 1,
+                whitelisted_hours JSON,
+                auto_action JSON,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )""",
+
+            # NotificationSetting extensions
+            "ALTER TABLE notification_settings ADD COLUMN priority VARCHAR(20) DEFAULT 'medium'",
+            "ALTER TABLE notification_settings ADD COLUMN push_channel VARCHAR(100)",
+            "ALTER TABLE notification_settings ADD COLUMN escalation_enabled BOOLEAN DEFAULT 0",
+            "ALTER TABLE notification_settings ADD COLUMN escalation_minutes INTEGER DEFAULT 30",
+            "ALTER TABLE notification_settings ADD COLUMN geofencing_only_away BOOLEAN DEFAULT 0",
+
+            # LearnedPattern Block B extensions
+            "ALTER TABLE learned_patterns ADD COLUMN rejection_reason VARCHAR(50)",
+            "ALTER TABLE learned_patterns ADD COLUMN rejected_at DATETIME",
+            "ALTER TABLE learned_patterns ADD COLUMN category VARCHAR(30)",
+            "ALTER TABLE learned_patterns ADD COLUMN season VARCHAR(20)",
+            "ALTER TABLE learned_patterns ADD COLUMN test_mode BOOLEAN DEFAULT 0",
+            "ALTER TABLE learned_patterns ADD COLUMN test_results JSON",
+            "ALTER TABLE learned_patterns ADD COLUMN depends_on_pattern_id INTEGER",
+            "ALTER TABLE learned_patterns ADD COLUMN schedule JSON",
+            "ALTER TABLE learned_patterns ADD COLUMN delay_seconds INTEGER DEFAULT 0",
+            "ALTER TABLE learned_patterns ADD COLUMN conditions JSON",
+        ]
+    },
+    {
+        "version": 5,
+        "description": "v0.5.0 - Device groups, audit trail, vacation mode",
+        "sql": [
+            """CREATE TABLE IF NOT EXISTS device_groups (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name VARCHAR(100) NOT NULL,
+                room_id INTEGER REFERENCES rooms(id),
+                device_ids TEXT DEFAULT '[]',
+                is_active BOOLEAN DEFAULT 1,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )""",
+            """CREATE TABLE IF NOT EXISTS audit_trail (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                action VARCHAR(100) NOT NULL,
+                target VARCHAR(200),
+                details TEXT,
+                ip_address VARCHAR(45),
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )""",
+        ]
+    },
 ]
 
 
 def run_migrations(engine):
-    """Run pending database migrations safely."""
+    """Run pending database migrations safely. (#15 rollback-safe)"""
     Session = sessionmaker(bind=engine)
     session = Session()
 
     try:
-        # Ensure system_settings table exists (for tracking migration version)
         Base.metadata.create_all(engine)
 
-        # Get current migration version
         current_version = 0
         try:
             result = session.execute(
@@ -538,52 +793,58 @@ def run_migrations(engine):
         except Exception:
             pass
 
-        # Run pending migrations
         for migration in MIGRATIONS:
             if migration["version"] <= current_version:
                 continue
 
             logger.info(f"Running migration v{migration['version']}: {migration['description']}")
 
+            # #15 – Create savepoint for rollback safety
+            migration_ok = True
             for sql in migration["sql"]:
                 try:
                     session.execute(text(sql))
                     logger.info(f"  SQL OK: {sql[:80]}...")
                 except Exception as e:
-                    # Column might already exist (e.g. from fresh install)
                     if "duplicate column" in str(e).lower() or "already exists" in str(e).lower():
                         logger.info(f"  Already exists, skipping: {sql[:60]}")
                     else:
                         logger.warning(f"  Migration SQL warning: {e}")
+                        # Non-critical - continue
 
-            # Update version
-            try:
-                existing = session.execute(
-                    text("SELECT id FROM system_settings WHERE key = 'db_migration_version'")
-                ).fetchone()
-                if existing:
-                    session.execute(
-                        text("UPDATE system_settings SET value = :v WHERE key = 'db_migration_version'"),
-                        {"v": str(migration["version"])}
-                    )
-                else:
-                    session.execute(
-                        text("INSERT INTO system_settings (key, value) VALUES ('db_migration_version', :v)"),
-                        {"v": str(migration["version"])}
-                    )
-            except Exception as e:
-                logger.warning(f"Version update warning: {e}")
+            if migration_ok:
+                try:
+                    existing = session.execute(
+                        text("SELECT id FROM system_settings WHERE key = 'db_migration_version'")
+                    ).fetchone()
+                    if existing:
+                        session.execute(
+                            text("UPDATE system_settings SET value = :v WHERE key = 'db_migration_version'"),
+                            {"v": str(migration["version"])}
+                        )
+                    else:
+                        session.execute(
+                            text("INSERT INTO system_settings (key, value) VALUES ('db_migration_version', :v)"),
+                            {"v": str(migration["version"])}
+                        )
+                except Exception as e:
+                    logger.warning(f"Version update warning: {e}")
 
-            session.commit()
-            logger.info(f"Migration v{migration['version']} complete")
+                session.commit()
+                logger.info(f"Migration v{migration['version']} complete")
+            else:
+                session.rollback()
+                logger.error(f"Migration v{migration['version']} FAILED - rolled back")
+                break
 
-        logger.info(f"Database at migration version {max(m['version'] for m in MIGRATIONS) if MIGRATIONS else 0}")
+        final_v = max(m['version'] for m in MIGRATIONS) if MIGRATIONS else 0
+        logger.info(f"Database at migration version {final_v}")
 
     except Exception as e:
         logger.error(f"Migration error: {e}")
         try:
             session.rollback()
-        except:
+        except Exception:
             pass
     finally:
         session.close()
