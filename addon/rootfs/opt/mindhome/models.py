@@ -1,5 +1,5 @@
 """
-MindHome - Database Models
+MindHome - Database Models - BUILD:20260209-0040
 All persistent data structures for MindHome.
 Phase 1 Final - with migration system
 """
