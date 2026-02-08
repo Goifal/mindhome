@@ -178,9 +178,9 @@ class HAConnection:
 
     def get_calendar_events(self, entity_id, start=None, end=None):
         if not start:
-            start = datetime.now(timezone.utc).isoformat()
+            start = datetime.now(timezone.utc).isoformat(timespec="seconds")
         if not end:
-            end = (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat()
+            end = (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat(timespec="seconds")
         return self._api_request("GET", f"calendars/{entity_id}?start={start}&end={end}") or []
 
     def get_upcoming_events(self, hours=24):
@@ -188,10 +188,12 @@ class HAConnection:
         events = []
         now = datetime.now(timezone.utc)
         end = now + timedelta(hours=hours)
+        start_str = now.isoformat(timespec="seconds")
+        end_str = end.isoformat(timespec="seconds")
         for cal in calendars:
             eid = cal.get("entity_id", "")
             try:
-                cal_events = self.get_calendar_events(eid, now.isoformat(), end.isoformat())
+                cal_events = self.get_calendar_events(eid, start_str, end_str)
                 for ev in cal_events:
                     ev["calendar_entity"] = eid
                     events.append(ev)
