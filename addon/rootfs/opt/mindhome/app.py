@@ -79,7 +79,7 @@ run_migrations(engine)  # Fix 29: DB migration system
 
 # Fix: Auto-set is_controllable=False for sensor-type entities
 try:
-    _mig_session = get_session(engine)()
+    _mig_session = get_session(engine)
     NON_CONTROLLABLE = ("sensor.", "binary_sensor.", "zone.", "sun.", "weather.", "person.", "device_tracker.", "calendar.", "proximity.")
     _updated = 0
     for dev in _mig_session.query(Device).filter_by(is_controllable=True).all():
