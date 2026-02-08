@@ -141,10 +141,10 @@ class HAConnection:
                 max_t = attrs.get("max_temp", 35)
                 temp = float(temp)
                 if temp < min_t:
-                    logger.warning(f"Climate {eid}: clamped {temp}→{min_t}°C (min)")
+                    logger.warning(f"Climate {eid}: clamped {temp}â†’{min_t}Â°C (min)")
                     temp = min_t
                 elif temp > max_t:
-                    logger.warning(f"Climate {eid}: clamped {temp}→{max_t}°C (max)")
+                    logger.warning(f"Climate {eid}: clamped {temp}â†’{max_t}Â°C (max)")
                     temp = max_t
                 payload["temperature"] = temp
         except Exception as e:
@@ -213,7 +213,8 @@ class HAConnection:
             payload["data"] = data
         return self.call_service("notify", target or "notify", payload)
 
-    def announce_tts(self, message, media_player_entity=None):
+    def announce_tts(self, message, media_player_entity=None, tts_service=None):
+        """Send TTS announcement. Auto-detects TTS service if not specified."""
         entity = media_player_entity
         if not entity:
             states = self.get_states()
@@ -225,7 +226,36 @@ class HAConnection:
         if not entity:
             logger.warning("No media player found for TTS")
             return None
-        return self.call_service("tts", "speak", {"entity_id": entity, "message": message})
+
+        # Auto-detect TTS service if not specified
+        if not tts_service:
+            try:
+                services = self.get_services()
+                tts_services = []
+                for svc in services:
+                    if svc.get("domain") == "tts":
+                        for name in svc.get("services", {}).keys():
+                            tts_services.append(f"tts.{name}")
+                # Prefer common services
+                preferred = ["tts.google_translate_say", "tts.cloud_say", "tts.speak"]
+                for p in preferred:
+                    if p in tts_services:
+                        tts_service = p
+                        break
+                if not tts_service and tts_services:
+                    tts_service = tts_services[0]
+            except Exception as e:
+                logger.warning(f"TTS service discovery failed: {e}")
+
+        if not tts_service:
+            tts_service = "tts.speak"
+
+        # Split domain and service
+        parts = tts_service.split(".", 1)
+        domain = parts[0] if len(parts) > 1 else "tts"
+        service = parts[1] if len(parts) > 1 else "speak"
+
+        return self.call_service(domain, service, {"entity_id": entity, "message": message})
 
     def fire_event(self, event_type, event_data=None):
         return self._api_request("POST", f"events/{event_type}", event_data or {})
