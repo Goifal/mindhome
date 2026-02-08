@@ -593,24 +593,6 @@ const DashboardPage = () => {
             )}
 
             {/* #24 Device Health Warnings */}
-            {deviceHealth && deviceHealth.total > 0 && (
-                <div className="card animate-in" style={{ marginBottom: 16, padding: '12px 16px', borderLeft: '3px solid var(--warning)' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <span className="mdi mdi-alert" style={{ color: 'var(--warning)', fontSize: 20 }} />
-                        <div>
-                            <div style={{ fontWeight: 600, fontSize: 13 }}>
-                                {lang === 'de' ? `${deviceHealth.total} Geräte-Probleme` : `${deviceHealth.total} device issues`}
-                            </div>
-                            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                                {deviceHealth.issues?.slice(0, 3).map((iss, i) => (
-                                    <span key={i}>{lang === 'de' ? iss.message_de : iss.message_en}{i < 2 ? ' · ' : ''}</span>
-                                ))}
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
-
             {/* Quick Actions */}
             <div className="card animate-in animate-in-delay-2" style={{ marginBottom: 24 }}>
                 <div className="card-header">
@@ -777,109 +759,51 @@ const DashboardPage = () => {
                 </div>
             )}
 
-            {/* Weekly Report */}
+            {/* Weekly Report - improved (#11) */}
             {weeklyReport && (
                 <div className="card animate-in animate-in-delay-2" style={{ marginBottom: 16 }}>
-                    <div className="card-title" style={{ marginBottom: 12 }}>
-                        <span className="mdi mdi-chart-timeline-variant" style={{ marginRight: 8, color: 'var(--accent-primary)' }} />
+                    <div className="card-title" style={{ marginBottom: 14, display: 'flex', alignItems: 'center' }}>
+                        <span className="mdi mdi-chart-timeline-variant" style={{ marginRight: 8, color: 'var(--accent-primary)', fontSize: 20 }} />
                         {lang === 'de' ? 'Wochenbericht' : 'Weekly Report'}
+                        <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--text-muted)', fontWeight: 400 }}>
+                            {lang === 'de' ? 'Letzte 7 Tage' : 'Last 7 days'}
+                        </span>
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 10 }}>
-                        <div style={{ textAlign: 'center', padding: 10, background: 'var(--bg-main)', borderRadius: 8 }}>
-                            <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--accent-primary)' }}>{weeklyReport.events_collected?.toLocaleString()}</div>
-                            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Events' : 'Events'}</div>
+                        <div style={{ textAlign: 'center', padding: '14px 10px', background: 'var(--bg-main)', borderRadius: 10, border: '1px solid rgba(99,102,241,0.15)' }}>
+                            <span className="mdi mdi-pulse" style={{ fontSize: 20, color: 'var(--accent-primary)', display: 'block', marginBottom: 4 }} />
+                            <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--accent-primary)' }}>{weeklyReport.events_collected?.toLocaleString()}</div>
+                            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{lang === 'de' ? 'Events' : 'Events'}</div>
                         </div>
-                        <div style={{ textAlign: 'center', padding: 10, background: 'var(--bg-main)', borderRadius: 8 }}>
-                            <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--success)' }}>{weeklyReport.new_patterns}</div>
-                            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Neue Muster' : 'New Patterns'}</div>
+                        <div style={{ textAlign: 'center', padding: '14px 10px', background: 'var(--bg-main)', borderRadius: 10, border: '1px solid rgba(52,211,153,0.15)' }}>
+                            <span className="mdi mdi-lightbulb-on" style={{ fontSize: 20, color: 'var(--success)', display: 'block', marginBottom: 4 }} />
+                            <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--success)' }}>{weeklyReport.new_patterns}</div>
+                            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{lang === 'de' ? 'Neue Muster' : 'New Patterns'}</div>
                         </div>
-                        <div style={{ textAlign: 'center', padding: 10, background: 'var(--bg-main)', borderRadius: 8 }}>
-                            <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--warning)' }}>{weeklyReport.automations_executed}</div>
-                            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Automationen' : 'Automations'}</div>
+                        <div style={{ textAlign: 'center', padding: '14px 10px', background: 'var(--bg-main)', borderRadius: 10, border: '1px solid rgba(251,191,36,0.15)' }}>
+                            <span className="mdi mdi-robot" style={{ fontSize: 20, color: 'var(--warning)', display: 'block', marginBottom: 4 }} />
+                            <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--warning)' }}>{weeklyReport.automations_executed}</div>
+                            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{lang === 'de' ? 'Automationen' : 'Automations'}</div>
                         </div>
-                        <div style={{ textAlign: 'center', padding: 10, background: 'var(--bg-main)', borderRadius: 8 }}>
-                            <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--info)' }}>{weeklyReport.success_rate}%</div>
-                            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Erfolgsrate' : 'Success Rate'}</div>
+                        <div style={{ textAlign: 'center', padding: '14px 10px', background: 'var(--bg-main)', borderRadius: 10, border: '1px solid rgba(96,165,250,0.15)' }}>
+                            <span className="mdi mdi-check-decagram" style={{ fontSize: 20, color: 'var(--info)', display: 'block', marginBottom: 4 }} />
+                            <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--info)' }}>{weeklyReport.success_rate}%</div>
+                            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{lang === 'de' ? 'Erfolgsrate' : 'Success Rate'}</div>
                         </div>
                         {weeklyReport.energy_saved_kwh > 0 && (
-                            <div style={{ textAlign: 'center', padding: 10, background: 'var(--bg-main)', borderRadius: 8 }}>
-                                <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--success)' }}>~{weeklyReport.energy_saved_kwh}</div>
-                                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>kWh {lang === 'de' ? 'gespart' : 'saved'}</div>
+                            <div style={{ textAlign: 'center', padding: '14px 10px', background: 'var(--bg-main)', borderRadius: 10, border: '1px solid rgba(52,211,153,0.15)' }}>
+                                <span className="mdi mdi-lightning-bolt" style={{ fontSize: 20, color: 'var(--success)', display: 'block', marginBottom: 4 }} />
+                                <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--success)' }}>~{weeklyReport.energy_saved_kwh}</div>
+                                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>kWh {lang === 'de' ? 'gespart' : 'saved'}</div>
                             </div>
                         )}
                     </div>
                 </div>
             )}
 
-            {/* Config Issues */}
-            {configIssues?.issues?.length > 0 && (
-                <div className="card animate-in" style={{ marginBottom: 16, borderColor: 'var(--warning)', borderWidth: 1 }}>
-                    <div className="card-title" style={{ marginBottom: 8 }}>
-                        <span className="mdi mdi-alert-circle" style={{ marginRight: 8, color: 'var(--warning)' }} />
-                        {lang === 'de' ? 'Konfigurationshinweise' : 'Configuration Hints'}
-                    </div>
-                    {configIssues.issues.map((issue, i) => (
-                        <div key={i} style={{ fontSize: 13, padding: '4px 0', color: issue.type === 'error' ? 'var(--danger)' : 'var(--text-secondary)' }}>
-                            <span className={`mdi ${issue.type === 'error' ? 'mdi-close-circle' : issue.type === 'warning' ? 'mdi-alert' : 'mdi-information'}`}
-                                style={{ marginRight: 6, fontSize: 14 }} />
-                            {lang === 'de' ? issue.message_de : issue.message_en}
-                        </div>
-                    ))}
-                </div>
-            )}
+            {/* Config Issues - removed per user request (#10) */}
 
-            {/* Rooms Overview */}
-            <div className="card animate-in animate-in-delay-3">
-                <div className="card-header">
-                    <div>
-                        <div className="card-title">{lang === 'de' ? 'Räume' : 'Rooms'}</div>
-                        <div className="card-subtitle">
-                            {rooms.length} {lang === 'de' ? 'konfiguriert' : 'configured'}
-                        </div>
-                    </div>
-                </div>
-                {rooms.length === 0 ? (
-                    <div className="empty-state">
-                        <span className="mdi mdi-door-open" />
-                        <h3>{lang === 'de' ? 'Keine Räume' : 'No Rooms'}</h3>
-                        <p>{lang === 'de'
-                            ? 'Starte den Einrichtungsassistenten um Räume hinzuzufügen.'
-                            : 'Start the setup wizard to add rooms.'}</p>
-                    </div>
-                ) : (
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 12 }}>
-                        {rooms.map(room => (
-                            <div key={room.id} className="card" style={{ padding: 14 }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-                                    <span className={`mdi ${room.icon || 'mdi-door'}`}
-                                          style={{ fontSize: 22, color: 'var(--accent-primary)' }} />
-                                    <div>
-                                        <div style={{ fontWeight: 600, fontSize: 14 }}>{room.name}</div>
-                                        <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                                            {room.device_count} {lang === 'de' ? 'Geräte' : 'devices'}
-                                        </div>
-                                    </div>
-                                </div>
-                                {/* Fix 13: Last activity */}
-                                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8 }}>
-                                    <span className="mdi mdi-clock-outline" style={{ marginRight: 4 }} />
-                                    {relativeTime(room.last_activity, lang)}
-                                </div>
-                                {room.domain_states?.length > 0 && (
-                                    <div className="phase-bar">
-                                        {room.domain_states.map((ds, i) => (
-                                            <div key={i} className={`phase-segment ${
-                                                ds.learning_phase === 'autonomous' ? 'completed' :
-                                                ds.learning_phase === 'suggesting' ? 'active' : ''
-                                            }`} />
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
-                        ))}
-                    </div>
-                )}
-            </div>
+            {/* Rooms Overview - removed per user request (#12), use Räume page instead */}
         </div>
     );
 };
@@ -920,13 +844,30 @@ const QuickActionsGrid = () => {
     return (
         <div>
             <div className="quick-actions-grid">
-                {quickActions.map(action => (
+                {quickActions.map(action => {
+                    // #9: Smart icon fallback based on action name/type
+                    const getSmartIcon = (a) => {
+                        if (a.icon && a.icon !== 'mdi:flash' && a.icon !== '') return `mdi ${a.icon}`;
+                        const name = (a.name || '').toLowerCase();
+                        const type = (a.action_data?.type || '').toLowerCase();
+                        if (type === 'emergency_stop' || name.includes('not')) return 'mdi mdi-alert-octagon';
+                        if (type === 'all_off' || name.includes('alles aus')) return 'mdi mdi-power-off';
+                        if (name.includes('gehe') || name.includes('leaving') || name.includes('weg')) return 'mdi mdi-exit-run';
+                        if (name.includes('zurück') || name.includes('back') || name.includes('home')) return 'mdi mdi-home-account';
+                        if (name.includes('gäste') || name.includes('guest') || name.includes('party')) return 'mdi mdi-account-group';
+                        if (name.includes('nacht') || name.includes('night') || name.includes('schlaf')) return 'mdi mdi-weather-night';
+                        if (name.includes('morgen') || name.includes('morning')) return 'mdi mdi-weather-sunset-up';
+                        if (name.includes('kino') || name.includes('movie') || name.includes('film')) return 'mdi mdi-movie-open';
+                        if (name.includes('essen') || name.includes('dinner')) return 'mdi mdi-silverware-fork-knife';
+                        return `mdi ${a.icon || 'mdi-lightning-bolt'}`;
+                    };
+                    return (
                     <div key={action.id} style={{ position: 'relative' }}>
                         <button
                             className={`quick-action-btn ${action.action_data?.type === 'emergency_stop' ? 'danger' : ''}`}
                             onClick={() => executeQuickAction(action.id)}
                         >
-                            <span className={`mdi ${action.icon}`} />
+                            <span className={getSmartIcon(action)} />
                             {action.name}
                         </button>
                         {isAdmin && !action.is_system && (
@@ -941,7 +882,8 @@ const QuickActionsGrid = () => {
                             </button>
                         )}
                     </div>
-                ))}
+                    );
+                })}
                 {isAdmin && (
                     <button className="quick-action-btn" onClick={() => setShowAdd(true)}
                         style={{ borderStyle: 'dashed', opacity: 0.6 }}>
@@ -1048,7 +990,7 @@ const DomainsPage = () => {
                                 <div className="domain-card-desc">{domain.description}</div>
                             </div>
                         </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, marginLeft: 8 }}>
                             {domain.is_custom && (
                                 <button className="btn btn-ghost btn-icon"
                                     onClick={e => { e.stopPropagation(); setConfirmDel(domain); }}
@@ -1701,7 +1643,7 @@ const RoomsPage = () => {
 
     const confirmDelete = async () => {
         const result = await api.delete(`rooms/${confirm.id}`);
-        if (result?.success) { showToast(lang === 'de' ? 'Raum gelöscht' : 'Room deleted', 'success'); refreshData(); }
+        if (result?.success) { showToast(lang === 'de' ? 'Raum gelöscht' : 'Room deleted', 'success'); await refreshData(); }
         setConfirm(null);
     };
 
@@ -1748,6 +1690,12 @@ const RoomsPage = () => {
                                         <div className="card-title">{room.name}</div>
                                         <div className="card-subtitle">
                                             {room.device_count} {lang === 'de' ? 'Geräte' : 'devices'}
+                                            {room.last_activity && (
+                                                <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--text-muted)' }}>
+                                                    · <span className="mdi mdi-clock-outline" style={{ fontSize: 11, marginRight: 2 }} />
+                                                    {relativeTime(room.last_activity, lang)}
+                                                </span>
+                                            )}
                                         </div>
                                     </div>
                                 </div>
@@ -1833,7 +1781,7 @@ const RoomsPage = () => {
                                             onChange={async () => {
                                                 const newMode = { ...room.privacy_mode, enabled: !room.privacy_mode?.enabled };
                                                 await api.put(`rooms/${room.id}`, { privacy_mode: newMode });
-                                                refreshData();
+                                                await refreshData();
                                             }} />
                                         <div className="toggle-slider" />
                                     </label>
@@ -2178,7 +2126,7 @@ const SettingsPage = () => {
     );
 
     return (
-        <div style={{ maxWidth: 600 }}>
+        <div style={{ maxWidth: 600, margin: '0 auto' }}>
             {/* Appearance */}
             <div className="card" style={{ marginBottom: 16 }}>
                 <div className="card-title" style={{ marginBottom: 16 }}>
@@ -2650,6 +2598,8 @@ const PatternsPage = () => {
     const [rejectReason, setRejectReason] = useState(null);
     const [conflicts, setConflicts] = useState([]);    // #26
     const [scenes, setScenes] = useState([]);           // #29
+    const [bulkSelected, setBulkSelected] = useState({});  // #16 Bulk actions
+    const [bulkMode, setBulkMode] = useState(false);       // #16
 
     const load = async () => {
         try {
@@ -2887,11 +2837,23 @@ const PatternsPage = () => {
                             <div className="input-group" style={{ marginBottom: 12 }}>
                                 <label className="input-label">{newExcl.type === 'device_pair' ? (lang === 'de' ? 'Gerät A' : 'Device A') : (lang === 'de' ? 'Raum A' : 'Room A')}</label>
                                 <input className="input" value={newExcl.entity_a} onChange={e => setNewExcl({ ...newExcl, entity_a: e.target.value })}
-                                    placeholder={newExcl.type === 'device_pair' ? 'light.living_room' : 'Wohnzimmer'} />
+                                    placeholder={newExcl.type === 'device_pair' ? 'light.living_room' : 'Wohnzimmer'}
+                                    list="excl-entities-a" />
+                                <datalist id="excl-entities-a">
+                                    {devices.filter(d => d.ha_entity_id).map(d => (
+                                        <option key={d.id} value={d.ha_entity_id}>{d.name} ({d.ha_entity_id})</option>
+                                    ))}
+                                </datalist>
                             </div>
                             <div className="input-group" style={{ marginBottom: 12 }}>
                                 <label className="input-label">{newExcl.type === 'device_pair' ? (lang === 'de' ? 'Gerät B' : 'Device B') : (lang === 'de' ? 'Raum B' : 'Room B')}</label>
-                                <input className="input" value={newExcl.entity_b} onChange={e => setNewExcl({ ...newExcl, entity_b: e.target.value })} />
+                                <input className="input" value={newExcl.entity_b} onChange={e => setNewExcl({ ...newExcl, entity_b: e.target.value })}
+                                    list="excl-entities-b" />
+                                <datalist id="excl-entities-b">
+                                    {devices.filter(d => d.ha_entity_id && d.ha_entity_id !== newExcl.entity_a).map(d => (
+                                        <option key={d.id} value={d.ha_entity_id}>{d.name} ({d.ha_entity_id})</option>
+                                    ))}
+                                </datalist>
                             </div>
                             <div className="input-group">
                                 <label className="input-label">{lang === 'de' ? 'Grund (optional)' : 'Reason (optional)'}</label>
@@ -3032,9 +2994,13 @@ const PatternsPage = () => {
                       { id: 'aggressive', label: lang === 'de' ? 'Aggressiv' : 'Aggressive', icon: '🚀' }].map(s => (
                         <button key={s.id} className={`btn btn-sm ${(stats?.learning_speed || 'normal') === s.id ? 'btn-primary' : 'btn-ghost'}`}
                             onClick={async () => {
-                                await api.put('phases/speed', { speed: s.id });
-                                showToast(`${s.icon} ${s.label}`, 'success');
-                                load();
+                                try {
+                                    await api.put('phases/speed', { speed: s.id });
+                                    showToast(`${s.icon} ${s.label}`, 'success');
+                                    // Force immediate UI update
+                                    setStats(prev => prev ? { ...prev, learning_speed: s.id } : prev);
+                                    load();
+                                } catch(e) { showToast('Fehler', 'error'); }
                             }} style={{ fontSize: 12 }}>
                             {s.icon} {s.label}
                         </button>
@@ -3158,7 +3124,55 @@ const PatternsPage = () => {
                             <span className="badge badge-info" style={{ marginLeft: 8 }}>{filtered.length}</span>
                         </div>
                     </div>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                        <button className={`btn btn-sm ${bulkMode ? 'btn-primary' : 'btn-ghost'}`}
+                            onClick={() => { setBulkMode(!bulkMode); setBulkSelected({}); }}>
+                            <span className="mdi mdi-checkbox-multiple-marked-outline" style={{ marginRight: 4 }} />
+                            {lang === 'de' ? 'Mehrfachauswahl' : 'Multi-select'}
+                        </button>
+                    </div>
                 </div>
+
+                {/* Bulk Action Bar */}
+                {bulkMode && Object.values(bulkSelected).some(v => v) && (() => {
+                    const selectedIds = Object.entries(bulkSelected).filter(([_, v]) => v).map(([k]) => parseInt(k));
+                    const count = selectedIds.length;
+                    return (
+                        <div style={{ padding: '10px 16px', background: 'var(--accent-primary-dim)', borderBottom: '1px solid var(--border)',
+                            display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                            <span style={{ fontSize: 13, fontWeight: 500, marginRight: 8 }}>
+                                {count} {lang === 'de' ? 'ausgewählt' : 'selected'}
+                            </span>
+                            <button className="btn btn-sm btn-ghost" onClick={async () => {
+                                for (const id of selectedIds) { await api.put(`patterns/reject/${id}`, { reason: 'bulk' }); }
+                                setBulkSelected({}); setBulkMode(false); load();
+                                showToast(`${count} ${lang === 'de' ? 'Muster abgelehnt' : 'patterns rejected'}`, 'success');
+                            }}>
+                                <span className="mdi mdi-close-circle" style={{ marginRight: 4, color: 'var(--warning)' }} />
+                                {lang === 'de' ? 'Alle ablehnen' : 'Reject all'}
+                            </button>
+                            <button className="btn btn-sm btn-ghost" onClick={async () => {
+                                for (const id of selectedIds) { await api.delete(`patterns/${id}`); }
+                                setBulkSelected({}); setBulkMode(false); load();
+                                showToast(`${count} ${lang === 'de' ? 'Muster gelöscht' : 'patterns deleted'}`, 'success');
+                            }}>
+                                <span className="mdi mdi-delete" style={{ marginRight: 4, color: 'var(--danger)' }} />
+                                {lang === 'de' ? 'Alle löschen' : 'Delete all'}
+                            </button>
+                            <button className="btn btn-sm btn-ghost" onClick={() => {
+                                const all = {};
+                                filtered.forEach(p => all[p.id] = true);
+                                setBulkSelected(all);
+                            }}>
+                                {lang === 'de' ? 'Alle auswählen' : 'Select all'}
+                            </button>
+                            <button className="btn btn-sm btn-ghost" onClick={() => setBulkSelected({})}>
+                                {lang === 'de' ? 'Auswahl aufheben' : 'Deselect'}
+                            </button>
+                        </div>
+                    );
+                })()}
+
                 {filtered.length === 0 ? (
                     <div className="empty-state">
                         <span className="mdi mdi-lightbulb-on" />
@@ -3184,6 +3198,13 @@ const PatternsPage = () => {
                             }} onClick={() => setExpandedId(expandedId === p.id ? null : p.id)}
                                onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-tertiary)'}
                                onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                                {/* #16 Bulk checkbox */}
+                                {bulkMode && (
+                                    <input type="checkbox" checked={!!bulkSelected[p.id]}
+                                        onClick={e => e.stopPropagation()}
+                                        onChange={e => setBulkSelected(prev => ({ ...prev, [p.id]: e.target.checked }))}
+                                        style={{ width: 16, height: 16, accentColor: 'var(--accent-primary)', flexShrink: 0 }} />
+                                )}
                                 {/* Type icon */}
                                 <span className={`mdi ${typeIcons[p.pattern_type]}`}
                                       style={{ fontSize: 22, color: 'var(--accent-primary)', flexShrink: 0 }} />
@@ -3494,11 +3515,43 @@ const NotificationsPage = () => {
                             <div key={ch.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--border)' }}>
                                 <div><div style={{ fontSize: 13, fontWeight: 500 }}>{ch.display_name}</div>
                                     <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{ch.service_name}</div></div>
-                                <span className={`badge badge-${ch.is_enabled ? 'success' : 'secondary'}`} style={{ fontSize: 10 }}>
-                                    {ch.is_enabled ? '✓' : '—'}</span>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                    <button className="btn btn-ghost" style={{ fontSize: 11, padding: '2px 8px' }}
+                                        onClick={async () => {
+                                            const svc = ch.service_name?.replace('notify.', '') || 'notify';
+                                            await api.post('test-notification', { target: svc, message: `MindHome Test Push ✓ (${new Date().toLocaleTimeString()})`, title: 'MindHome Test' });
+                                            showToast(lang === 'de' ? 'Test gesendet!' : 'Test sent!', 'success');
+                                        }}>
+                                        <span className="mdi mdi-bell-ring" style={{ marginRight: 4, fontSize: 13 }} />
+                                        Test
+                                    </button>
+                                    <span className={`badge badge-${ch.is_enabled ? 'success' : 'secondary'}`} style={{ fontSize: 10 }}>
+                                        {ch.is_enabled ? '✓' : '—'}</span>
+                                </div>
                             </div>
                         )) : <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Klicke "Suchen" um HA Notify-Services zu erkennen.' : 'Click "Discover" to find HA notify services.'}</p>}
                     </div>
+
+                    {/* #21 Notification Stats */}
+                    {stats && (
+                        <div className="card">
+                            <div className="card-title" style={{ marginBottom: 12 }}>{lang === 'de' ? 'Statistiken (30 Tage)' : 'Statistics (30 days)'}</div>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 8 }}>
+                                <div style={{ textAlign: 'center', padding: 10, background: 'var(--bg-main)', borderRadius: 8 }}>
+                                    <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--accent-primary)' }}>{stats.total || 0}</div>
+                                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Gesamt' : 'Total'}</div>
+                                </div>
+                                <div style={{ textAlign: 'center', padding: 10, background: 'var(--bg-main)', borderRadius: 8 }}>
+                                    <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--success)' }}>{stats.read || 0}</div>
+                                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Gelesen' : 'Read'}</div>
+                                </div>
+                                <div style={{ textAlign: 'center', padding: 10, background: 'var(--bg-main)', borderRadius: 8 }}>
+                                    <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--info)' }}>{stats.pushed || 0}</div>
+                                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Push</div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                     <div className="card">
                         <div className="card-title" style={{ marginBottom: 8 }}>{lang === 'de' ? 'Stummgeschaltete Geräte' : 'Muted Devices'}</div>
                         {notifSettings?.muted_devices?.length > 0 ? notifSettings.muted_devices.map(m => (
