@@ -2976,7 +2976,6 @@ const PatternsPage = () => {
     const [rejectReason, setRejectReason] = useState(null);
     const [conflicts, setConflicts] = useState([]);    // #26
     const [scenes, setScenes] = useState([]);           // #29
-    const [conflicts, setConflicts] = useState([]);     // #26
     const [bulkSelected, setBulkSelected] = useState({});  // #16 Bulk actions
     const [bulkMode, setBulkMode] = useState(false);       // #16
 
