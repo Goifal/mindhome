@@ -2500,8 +2500,9 @@ const SettingsPage = () => {
                     )}
                 </Modal>
             )}
+            {/* LEFT COLUMN */}
+            <div>
             <div className="card" style={{ marginBottom: 16 }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
                 <div className="card-title" style={{ marginBottom: 16 }}>
                     {lang === 'de' ? 'Darstellung' : 'Appearance'}
                 </div>
@@ -2543,8 +2544,29 @@ const SettingsPage = () => {
                 </div>
             </div>
 
+            {/* Privacy & Storage */}
+            <div className="card" style={{ marginBottom: 16, borderColor: 'var(--success)', borderWidth: 1 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+                    <span className="mdi mdi-shield-check" style={{ fontSize: 24, color: 'var(--success)' }} />
+                    <div className="card-title" style={{ marginBottom: 0 }}>
+                        {lang === 'de' ? 'Datenschutz & Speicher' : 'Privacy & Storage'}
+                    </div>
+                </div>
+                <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 12 }}>
+                    {lang === 'de'
+                        ? '100% lokal – alle Daten bleiben auf deinem Gerät. Keine Cloud, keine Tracking.'
+                        : '100% local – all data stays on your device. No cloud, no tracking.'}
+                </p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <InfoRow label={lang === 'de' ? 'Datenbankgröße' : 'Database Size'}
+                        value={sysInfo?.db_size_bytes ? formatBytes(sysInfo.db_size_bytes) : '—'} />
+                    <InfoRow label={lang === 'de' ? 'Gesammelte Events' : 'Collected Events'}
+                        value={sysInfo?.state_history_count?.toLocaleString() || '0'} />
+                    <InfoRow label={lang === 'de' ? 'Aufbewahrung' : 'Retention'}
+                        value={`${retention} ${lang === 'de' ? 'Tage' : 'days'}`} />
+                </div>
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+
             {/* System Info */}
             <div className="card" style={{ marginBottom: 16 }}>
                 <div className="card-title" style={{ marginBottom: 16 }}>
@@ -2570,28 +2592,58 @@ const SettingsPage = () => {
                 </div>
             </div>
 
-            {/* Privacy & Storage */}
-            <div className="card" style={{ marginBottom: 16, borderColor: 'var(--success)', borderWidth: 1 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
-                    <span className="mdi mdi-shield-check" style={{ fontSize: 24, color: 'var(--success)' }} />
-                    <div className="card-title" style={{ marginBottom: 0 }}>
-                        {lang === 'de' ? 'Datenschutz & Speicher' : 'Privacy & Storage'}
-                    </div>
+            {/* System Status (#40 Watchdog + #10 Self-Test + #64 Diagnose + #62 Update) */}
+            <div className="card" style={{ marginBottom: 16 }}>
+                <div className="card-title" style={{ marginBottom: 16 }}>
+                    <span className="mdi mdi-monitor-dashboard" style={{ marginRight: 8, color: 'var(--accent-primary)' }} />
+                    {lang === 'de' ? 'Systemstatus' : 'System Status'}
                 </div>
-                <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 12 }}>
-                    {lang === 'de'
-                        ? '100% lokal – alle Daten bleiben auf deinem Gerät. Keine Cloud, keine Tracking.'
-                        : '100% local – all data stays on your device. No cloud, no tracking.'}
-                </p>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    <InfoRow label={lang === 'de' ? 'Datenbankgröße' : 'Database Size'}
-                        value={sysInfo?.db_size_bytes ? formatBytes(sysInfo.db_size_bytes) : '—'} />
-                    <InfoRow label={lang === 'de' ? 'Gesammelte Events' : 'Collected Events'}
-                        value={sysInfo?.state_history_count?.toLocaleString() || '0'} />
-                    <InfoRow label={lang === 'de' ? 'Aufbewahrung' : 'Retention'}
-                        value={`${retention} ${lang === 'de' ? 'Tage' : 'days'}`} />
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <button className="btn btn-sm btn-secondary" onClick={async () => {
+                        const r = await api.get('system/watchdog');
+                        if (r) showToast(r.healthy ? (lang === 'de' ? '✅ System gesund' : '✅ System healthy') : `⚠️ ${r.issues?.join(', ')}`, r.healthy ? 'success' : 'warning');
+                    }}>
+                        <span className="mdi mdi-heart-pulse" style={{ marginRight: 4 }} />
+                        {lang === 'de' ? 'Health-Check' : 'Health Check'}
+                    </button>
+                    <button className="btn btn-sm btn-secondary" onClick={async () => {
+                        const r = await api.get('system/self-test');
+                        if (r) showToast(r.passed ? (lang === 'de' ? '✅ Selbsttest bestanden' : '✅ Self-test passed') : `⚠️ ${r.tests?.filter(t => t.status !== 'ok').map(t => t.test).join(', ')}`, r.passed ? 'success' : 'warning');
+                    }}>
+                        <span className="mdi mdi-flask-outline" style={{ marginRight: 4 }} />
+                        {lang === 'de' ? 'Selbsttest' : 'Self-Test'}
+                    </button>
+                    <button className="btn btn-sm btn-secondary" onClick={async () => {
+                        showToast(lang === 'de' ? 'Diagnose wird erstellt...' : 'Creating diagnostics...', 'info');
+                        try {
+                            const resp = await fetch(`${API_BASE}/api/system/diagnose`, { credentials: 'include' });
+                            if (resp.ok) {
+                                const blob = await resp.blob();
+                                const url = URL.createObjectURL(blob);
+                                const a = document.createElement('a'); a.href = url;
+                                a.download = `mindhome-diagnose-${new Date().toISOString().slice(0,10)}.zip`;
+                                a.click(); URL.revokeObjectURL(url);
+                            } else { showToast('Download failed', 'error'); }
+                        } catch(e) { showToast('Error: ' + e.message, 'error'); }
+                    }}>
+                        <span className="mdi mdi-bug-outline" style={{ marginRight: 4 }} />
+                        {lang === 'de' ? 'Diagnose-Paket' : 'Diagnostic Package'}
+                    </button>
+                    <button className="btn btn-sm btn-secondary" onClick={async () => {
+                        const r = await api.get('system/check-update');
+                        if (r) showToast(r.update_available ? `Update: ${r.latest_version}` : (lang === 'de' ? `v${r.current_version} – Aktuell` : `v${r.current_version} – Up to date`), r.update_available ? 'info' : 'success');
+                    }}>
+                        <span className="mdi mdi-update" style={{ marginRight: 4 }} />
+                        {lang === 'de' ? 'Update prüfen' : 'Check Update'}
+                    </button>
                 </div>
             </div>
+            </div>
+        </div>
+
+            </div>
+            {/* RIGHT COLUMN */}
+            <div>
 
             {/* Data Retention - only in advanced mode */}
             {viewMode === 'advanced' && (
@@ -2691,7 +2743,6 @@ const SettingsPage = () => {
                 </div>
 
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 0, gridColumn: '1 / -1' }}>
                 {/* #23 Vacation Mode */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
                     <span style={{ fontSize: 13 }}><span className="mdi mdi-airplane" style={{ marginRight: 6, color: 'var(--accent-primary)' }} />{lang === 'de' ? 'Urlaubsmodus' : 'Vacation Mode'}</span>
@@ -2749,41 +2800,113 @@ const SettingsPage = () => {
                 </div>
             </div>
 
-            {/* System Status (#40 Watchdog + #10 Self-Test + #64 Diagnose + #62 Update) */}
-            <div className="card" style={{ marginBottom: 16 }}>
-                <div className="card-title" style={{ marginBottom: 16 }}>
-                    <span className="mdi mdi-monitor-dashboard" style={{ marginRight: 8, color: 'var(--accent-primary)' }} />
-                    {lang === 'de' ? 'Systemstatus' : 'System Status'}
-                </div>
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                    <button className="btn btn-sm btn-secondary" onClick={async () => {
-                        const r = await api.get('system/watchdog');
-                        if (r) showToast(r.healthy ? (lang === 'de' ? '✅ System gesund' : '✅ System healthy') : `⚠️ ${r.issues?.join(', ')}`, r.healthy ? 'success' : 'warning');
-                    }}>
-                        <span className="mdi mdi-heart-pulse" style={{ marginRight: 4 }} />
-                        {lang === 'de' ? 'Health-Check' : 'Health Check'}
-                    </button>
-                    <button className="btn btn-sm btn-secondary" onClick={async () => {
-                        const r = await api.get('system/self-test');
-                        if (r) showToast(r.passed ? (lang === 'de' ? '✅ Selbsttest bestanden' : '✅ Self-test passed') : `⚠️ ${r.tests?.filter(t => t.status !== 'ok').map(t => t.test).join(', ')}`, r.passed ? 'success' : 'warning');
-                    }}>
-                        <span className="mdi mdi-flask-outline" style={{ marginRight: 4 }} />
-                        {lang === 'de' ? 'Selbsttest' : 'Self-Test'}
-                    </button>
-                    <button className="btn btn-sm btn-secondary" onClick={() => window.open(`${API_BASE}/api/system/diagnose`, '_blank')}>
-                        <span className="mdi mdi-bug-outline" style={{ marginRight: 4 }} />
-                        {lang === 'de' ? 'Diagnose-Paket' : 'Diagnostic Package'}
-                    </button>
-                    <button className="btn btn-sm btn-secondary" onClick={async () => {
-                        const r = await api.get('system/check-update');
-                        if (r) showToast(r.update_available ? `Update: ${r.latest_version}` : (lang === 'de' ? `v${r.current_version} – Aktuell` : `v${r.current_version} – Up to date`), r.update_available ? 'info' : 'success');
-                    }}>
-                        <span className="mdi mdi-update" style={{ marginRight: 4 }} />
-                        {lang === 'de' ? 'Update prüfen' : 'Check Update'}
-                    </button>
-                </div>
+            {/* Calendar Trigger Configuration */}
+            <CalendarTriggersConfig lang={lang} showToast={showToast} />
+
             </div>
+        </div>
+    );
+};
+
+const CalendarTriggersConfig = ({ lang, showToast }) => {
+    const [triggers, setTriggers] = useState([]);
+    const [calendars, setCalendars] = useState([]);
+    const [showAdd, setShowAdd] = useState(false);
+    const [newTrigger, setNewTrigger] = useState({ calendar: '', keyword: '', action: 'vacation_on', lead_minutes: 0 });
+
+    useEffect(() => {
+        (async () => {
+            const t = await api.get('calendar-triggers');
+            if (t) setTriggers(t);
+            const c = await api.get('ha/entities?domain=calendar');
+            if (c?.entities) setCalendars(c.entities);
+        })();
+    }, []);
+
+    const save = async (updated) => {
+        setTriggers(updated);
+        await api.put('calendar-triggers', { triggers: updated });
+    };
+
+    const addTrigger = () => {
+        if (!newTrigger.calendar || !newTrigger.keyword) return;
+        save([...triggers, { ...newTrigger, id: Date.now() }]);
+        setNewTrigger({ calendar: '', keyword: '', action: 'vacation_on', lead_minutes: 0 });
+        setShowAdd(false);
+        showToast(lang === 'de' ? 'Trigger erstellt' : 'Trigger created', 'success');
+    };
+
+    const removeTrigger = (id) => save(triggers.filter(t => t.id !== id));
+
+    const actionLabels = {
+        vacation_on: lang === 'de' ? 'Urlaubsmodus AN' : 'Vacation ON',
+        vacation_off: lang === 'de' ? 'Urlaubsmodus AUS' : 'Vacation OFF',
+        all_off: lang === 'de' ? 'Alles aus' : 'All off',
+        notify: lang === 'de' ? 'Benachrichtigung' : 'Notification',
+    };
+
+    return (
+        <div className="card" style={{ marginBottom: 16 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <div className="card-title" style={{ marginBottom: 0 }}>
+                    <span className="mdi mdi-calendar-clock" style={{ marginRight: 8, color: 'var(--accent-primary)' }} />
+                    {lang === 'de' ? 'Kalender-Trigger' : 'Calendar Triggers'}
+                </div>
+                <button className="btn btn-sm btn-primary" onClick={() => setShowAdd(!showAdd)}>
+                    <span className="mdi mdi-plus" />
+                </button>
             </div>
+
+            {showAdd && (
+                <div style={{ padding: 12, background: 'var(--bg-main)', borderRadius: 8, marginBottom: 12 }}>
+                    <div className="input-group" style={{ marginBottom: 8 }}>
+                        <label className="input-label">{lang === 'de' ? 'Kalender' : 'Calendar'}</label>
+                        <select className="input" value={newTrigger.calendar} onChange={e => setNewTrigger({ ...newTrigger, calendar: e.target.value })}>
+                            <option value="">-- {lang === 'de' ? 'Auswählen' : 'Select'} --</option>
+                            {calendars.map(c => <option key={c.entity_id} value={c.entity_id}>{c.name || c.entity_id}</option>)}
+                        </select>
+                    </div>
+                    <div className="input-group" style={{ marginBottom: 8 }}>
+                        <label className="input-label">{lang === 'de' ? 'Stichwort im Event' : 'Keyword in event'}</label>
+                        <input className="input" value={newTrigger.keyword} onChange={e => setNewTrigger({ ...newTrigger, keyword: e.target.value })}
+                            placeholder={lang === 'de' ? 'z.B. Urlaub, Meeting' : 'e.g. Vacation, Meeting'} />
+                    </div>
+                    <div className="input-group" style={{ marginBottom: 8 }}>
+                        <label className="input-label">{lang === 'de' ? 'Aktion' : 'Action'}</label>
+                        <select className="input" value={newTrigger.action} onChange={e => setNewTrigger({ ...newTrigger, action: e.target.value })}>
+                            {Object.entries(actionLabels).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                        </select>
+                    </div>
+                    <div className="input-group" style={{ marginBottom: 8 }}>
+                        <label className="input-label">{lang === 'de' ? 'Vorlaufzeit (Min)' : 'Lead time (min)'}</label>
+                        <input className="input" type="number" value={newTrigger.lead_minutes}
+                            onChange={e => setNewTrigger({ ...newTrigger, lead_minutes: parseInt(e.target.value) || 0 })} />
+                    </div>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                        <button className="btn btn-sm btn-primary" onClick={addTrigger}>{lang === 'de' ? 'Erstellen' : 'Create'}</button>
+                        <button className="btn btn-sm btn-secondary" onClick={() => setShowAdd(false)}>{lang === 'de' ? 'Abbrechen' : 'Cancel'}</button>
+                    </div>
+                </div>
+            )}
+
+            {triggers.length === 0 && !showAdd ? (
+                <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                    {lang === 'de' ? 'Keine Kalender-Trigger konfiguriert.' : 'No calendar triggers configured.'}
+                </p>
+            ) : triggers.map(t => (
+                <div key={t.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                    padding: '8px 0', borderBottom: '1px solid var(--border)', fontSize: 12 }}>
+                    <div>
+                        <div style={{ fontWeight: 500 }}>{t.keyword} → {actionLabels[t.action] || t.action}</div>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                            {t.calendar}{t.lead_minutes ? ` · ${t.lead_minutes} min ${lang === 'de' ? 'vorher' : 'before'}` : ''}
+                        </div>
+                    </div>
+                    <button className="btn btn-ghost btn-icon" onClick={() => removeTrigger(t.id)}>
+                        <span className="mdi mdi-delete-outline" style={{ fontSize: 16, color: 'var(--danger)' }} />
+                    </button>
+                </div>
+            ))}
         </div>
     );
 };
@@ -3309,7 +3432,7 @@ const ActivitiesPage = () => {
 // ================================================================
 
 const PatternsPage = () => {
-    const { lang, viewMode, showToast, devices, rooms } = useApp();
+    const { lang, viewMode, showToast, devices, rooms, domains } = useApp();
     const [patterns, setPatterns] = useState([]);
     const [stats, setStats] = useState(null);
     const [stateHistory, setStateHistory] = useState([]);
