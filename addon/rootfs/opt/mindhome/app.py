@@ -3886,7 +3886,7 @@ def _watchdog_loop():
         db_alive = False
         try:
             session = get_db()
-            session.execute(sa.text("SELECT 1"))
+            session.execute(text("SELECT 1"))
             db_alive = True
             session.close()
         except Exception:
@@ -3932,7 +3932,7 @@ def run_startup_self_test():
     # Test DB
     try:
         session = get_db()
-        session.execute(sa.text("SELECT 1"))
+        session.execute(text("SELECT 1"))
         session.close()
         results.append({"test": "database", "status": "ok"})
     except Exception as e:
@@ -3947,7 +3947,7 @@ def run_startup_self_test():
     try:
         session = get_db()
         for table in ["devices", "rooms", "domains", "users", "learned_patterns", "state_history"]:
-            session.execute(sa.text(f"SELECT COUNT(*) FROM {table}"))
+            session.execute(text(f"SELECT COUNT(*) FROM {table}"))
         session.close()
         results.append({"test": "tables", "status": "ok"})
     except Exception as e:
@@ -3955,9 +3955,9 @@ def run_startup_self_test():
     # Test write
     try:
         session = get_db()
-        session.execute(sa.text("INSERT INTO system_settings (key, value) VALUES ('_selftest', 'ok') ON CONFLICT(key) DO UPDATE SET value='ok'"))
+        session.execute(text("INSERT INTO system_settings (key, value) VALUES ('_selftest', 'ok') ON CONFLICT(key) DO UPDATE SET value='ok'"))
         session.commit()
-        session.execute(sa.text("DELETE FROM system_settings WHERE key='_selftest'"))
+        session.execute(text("DELETE FROM system_settings WHERE key='_selftest'"))
         session.commit()
         session.close()
         results.append({"test": "db_write", "status": "ok"})
