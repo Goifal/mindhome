@@ -4716,7 +4716,7 @@ const App = () => {
     if (onboardingDone === false) {
         return (
             <AppContext.Provider value={contextValue}>
-                <OnboardingWizard onComplete={() => {
+                <OnboardingWizard onComplete={async () => {
                     setOnboardingDone(true);
                     await refreshData();
                 }} />
