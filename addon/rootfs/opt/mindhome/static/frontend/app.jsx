@@ -2362,19 +2362,25 @@ const SettingsPage = () => {
         setCleaning(false);
     };
 
-    const handleExport = async () => {
-        const backup = await api.get('backup/export');
+    const handleExport = async (mode = 'standard') => {
+        showToast(lang === 'de' ? 'Backup wird erstellt...' : 'Creating backup...', 'info');
+        const backup = await api.get(`backup/export?mode=${mode}`);
         if (backup) {
             const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `mindhome-backup-${new Date().toISOString().slice(0,10)}.json`;
+            a.download = `mindhome-${mode}-backup-${new Date().toISOString().slice(0,10)}.json`;
             a.click();
             URL.revokeObjectURL(url);
-            showToast(lang === 'de' ? 'Backup exportiert' : 'Backup exported', 'success');
+            const s = backup._summary || {};
+            showToast(lang === 'de'
+                ? `Backup: ${s.rooms || 0} Räume, ${s.devices || 0} Geräte, ${s.patterns || 0} Muster`
+                : `Backup: ${s.rooms || 0} rooms, ${s.devices || 0} devices, ${s.patterns || 0} patterns`, 'success');
         }
     };
+
+    const [importPreview, setImportPreview] = useState(null);
 
     const handleImport = async (e) => {
         const file = e.target.files[0];
@@ -2382,20 +2388,41 @@ const SettingsPage = () => {
         try {
             const text = await file.text();
             const data = JSON.parse(text);
-            const result = await api.post('backup/import', data);
-            if (result?.success) {
-                showToast(lang === 'de'
-                    ? `Backup geladen: ${result.imported.rooms} Räume, ${result.imported.devices} Geräte, ${result.imported.users} Personen`
-                    : `Backup loaded: ${result.imported.rooms} rooms, ${result.imported.devices} devices, ${result.imported.users} users`,
-                    'success');
-                await refreshData();
+            // Show preview first
+            if (data._summary) {
+                setImportPreview({ data, summary: data._summary, filename: file.name });
             } else {
-                showToast(result?.error || 'Import failed', 'error');
+                // Old format without summary - import directly
+                const result = await api.post('backup/import', data);
+                if (result?.success) {
+                    showToast(lang === 'de'
+                        ? `Backup geladen: ${result.imported.rooms} Räume, ${result.imported.devices} Geräte`
+                        : `Backup loaded: ${result.imported.rooms} rooms, ${result.imported.devices} devices`, 'success');
+                    await refreshData();
+                }
             }
         } catch (err) {
             showToast(lang === 'de' ? 'Ungültige Datei' : 'Invalid file', 'error');
         }
         e.target.value = '';
+    };
+
+    const confirmImport = async () => {
+        if (!importPreview) return;
+        try {
+            const result = await api.post('backup/import', importPreview.data);
+            if (result?.success) {
+                showToast(lang === 'de'
+                    ? `Backup geladen: ${result.imported.rooms} Räume, ${result.imported.devices} Geräte`
+                    : `Backup loaded: ${result.imported.rooms} rooms, ${result.imported.devices} devices`, 'success');
+                await refreshData();
+            } else {
+                showToast(result?.error || 'Import failed', 'error');
+            }
+        } catch (err) {
+            showToast('Import error', 'error');
+        }
+        setImportPreview(null);
     };
 
     const InfoRow = ({ label, value }) => (
@@ -2407,7 +2434,28 @@ const SettingsPage = () => {
 
     return (
         <div style={{ maxWidth: 600, margin: '0 auto' }}>
-            {/* Appearance */}
+            {/* Import Preview Modal */}
+            {importPreview && (
+                <Modal title={lang === 'de' ? 'Backup-Vorschau' : 'Backup Preview'} onClose={() => setImportPreview(null)} actions={<>
+                    <button className="btn btn-secondary" onClick={() => setImportPreview(null)}>{lang === 'de' ? 'Abbrechen' : 'Cancel'}</button>
+                    <button className="btn btn-primary" onClick={confirmImport}>{lang === 'de' ? 'Importieren' : 'Import'}</button>
+                </>}>
+                    <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 12 }}>{importPreview.filename}</p>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
+                        {Object.entries(importPreview.summary).map(([key, val]) => (
+                            <div key={key} style={{ padding: '8px 10px', background: 'var(--bg-main)', borderRadius: 8 }}>
+                                <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--accent-primary)' }}>{val}</div>
+                                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{key.replace(/_/g, ' ')}</div>
+                            </div>
+                        ))}
+                    </div>
+                    {importPreview.data.export_mode && (
+                        <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 8 }}>
+                            Modus: {importPreview.data.export_mode} · {importPreview.data.exported_at?.slice(0, 10)}
+                        </p>
+                    )}
+                </Modal>
+            )}
             <div className="card" style={{ marginBottom: 16 }}>
                 <div className="card-title" style={{ marginBottom: 16 }}>
                     {lang === 'de' ? 'Darstellung' : 'Appearance'}
@@ -2535,11 +2583,11 @@ const SettingsPage = () => {
                     {lang === 'de' ? 'Backup & Wiederherstellung' : 'Backup & Restore'}
                 </div>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
-                    <button className="btn btn-primary" onClick={() => window.open(`${API_BASE}/api/backup/export?mode=standard`, '_blank')}>
+                    <button className="btn btn-primary" onClick={() => handleExport('standard')}>
                         <span className="mdi mdi-download" style={{ marginRight: 4 }} />
                         {lang === 'de' ? 'Standard' : 'Standard'}
                     </button>
-                    <button className="btn btn-secondary" onClick={() => window.open(`${API_BASE}/api/backup/export?mode=full`, '_blank')}>
+                    <button className="btn btn-secondary" onClick={() => handleExport('full')}>
                         <span className="mdi mdi-download-multiple" style={{ marginRight: 4 }} />
                         {lang === 'de' ? 'Vollständig' : 'Full'}
                     </button>
@@ -2690,6 +2738,132 @@ const SettingsPage = () => {
     );
 };
 
+const DeviceAnomalyConfig = ({ lang }) => {
+    const { devices, rooms } = useApp();
+    const [search, setSearch] = useState('');
+    const [selected, setSelected] = useState(null);
+    const [deviceConfig, setDeviceConfig] = useState(null);
+    const [allConfigs, setAllConfigs] = useState({});
+
+    useEffect(() => {
+        (async () => { const c = await api.get('anomaly-settings/devices'); if (c) setAllConfigs(c); })();
+    }, []);
+
+    const loadDevice = async (deviceId) => {
+        setSelected(deviceId);
+        const c = await api.get(`anomaly-settings/device/${deviceId}`);
+        if (c) setDeviceConfig(c);
+    };
+
+    const updateDevice = async (key, value) => {
+        const updated = { ...deviceConfig, [key]: value };
+        setDeviceConfig(updated);
+        await api.put(`anomaly-settings/device/${selected}`, { [key]: value });
+        setAllConfigs(prev => ({ ...prev, [selected]: updated }));
+    };
+
+    const filtered = (devices || []).filter(d =>
+        !search || d.name?.toLowerCase().includes(search.toLowerCase()) ||
+        d.entity_id?.toLowerCase().includes(search.toLowerCase())
+    );
+
+    return (
+        <div>
+            <input className="input" placeholder={lang === 'de' ? 'Gerät suchen...' : 'Search device...'}
+                value={search} onChange={e => setSearch(e.target.value)}
+                style={{ width: '100%', marginBottom: 8, padding: '6px 10px', fontSize: 12 }} />
+            <div style={{ maxHeight: 200, overflowY: 'auto', marginBottom: selected ? 12 : 0 }}>
+                {filtered.slice(0, 30).map(d => {
+                    const hasConfig = allConfigs[d.id];
+                    const isWhitelisted = hasConfig?.whitelisted;
+                    const room = rooms?.find(r => r.id === d.room_id);
+                    return (
+                        <div key={d.id} onClick={() => loadDevice(d.id)}
+                            style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                                padding: '5px 6px', cursor: 'pointer', fontSize: 12, borderRadius: 4,
+                                background: selected === d.id ? 'var(--accent-primary-alpha)' : 'transparent',
+                                borderBottom: '1px solid var(--border)' }}>
+                            <div>
+                                <span style={{ fontWeight: selected === d.id ? 600 : 400 }}>{d.name}</span>
+                                {room && <span style={{ fontSize: 10, color: 'var(--text-muted)', marginLeft: 6 }}>{room.name}</span>}
+                            </div>
+                            <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                                {isWhitelisted && <span className="mdi mdi-shield-off" style={{ fontSize: 12, color: 'var(--text-muted)' }} title="Whitelisted" />}
+                                {hasConfig && !isWhitelisted && <span className="mdi mdi-cog" style={{ fontSize: 12, color: 'var(--accent-primary)' }} title="Custom config" />}
+                            </div>
+                        </div>
+                    );
+                })}
+            </div>
+
+            {/* Selected device config */}
+            {selected && deviceConfig && (
+                <div style={{ padding: 10, background: 'var(--bg-main)', borderRadius: 8, marginTop: 8 }}>
+                    <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8 }}>
+                        {devices?.find(d => d.id === selected)?.name}
+                    </div>
+
+                    {/* Enabled / Whitelisted */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 0' }}>
+                        <span style={{ fontSize: 11 }}>{lang === 'de' ? 'Ausgeschlossen (Whitelist)' : 'Excluded (Whitelist)'}</span>
+                        <label className="toggle" style={{ transform: 'scale(0.7)' }}><input type="checkbox" checked={deviceConfig.whitelisted || false}
+                            onChange={() => updateDevice('whitelisted', !deviceConfig.whitelisted)} /><div className="toggle-slider" /></label>
+                    </div>
+
+                    {!deviceConfig.whitelisted && (<>
+                        {/* Sensitivity */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 0' }}>
+                            <span style={{ fontSize: 11 }}>{lang === 'de' ? 'Empfindlichkeit' : 'Sensitivity'}</span>
+                            <div style={{ display: 'flex', gap: 3 }}>
+                                {[{id:'inherit',l:lang==='de'?'Vererbt':'Inherit'},{id:'low',l:lang==='de'?'Niedrig':'Low'},{id:'medium',l:'Medium'},{id:'high',l:lang==='de'?'Hoch':'High'},{id:'off',l:'Aus'}].map(s => (
+                                    <button key={s.id} className={`btn btn-sm ${(deviceConfig.sensitivity || 'inherit') === s.id ? 'btn-primary' : 'btn-ghost'}`}
+                                        onClick={() => updateDevice('sensitivity', s.id)} style={{ fontSize: 9, padding: '2px 5px' }}>{s.l}</button>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Detection Types */}
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6, marginBottom: 2 }}>{lang === 'de' ? 'Erkennungs-Typen' : 'Detection Types'}</div>
+                        {['offline', 'stuck', 'value', 'frequency'].map(t => (
+                            <div key={t} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '2px 0' }}>
+                                <span style={{ fontSize: 11 }}>{t.charAt(0).toUpperCase() + t.slice(1)}</span>
+                                <label className="toggle" style={{ transform: 'scale(0.65)' }}><input type="checkbox"
+                                    checked={deviceConfig.detection_types?.[t] !== false}
+                                    onChange={() => updateDevice('detection_types', { ...(deviceConfig.detection_types || {}), [t]: !deviceConfig.detection_types?.[t] })} /><div className="toggle-slider" /></label>
+                            </div>
+                        ))}
+
+                        {/* Reaction */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 0', marginTop: 4 }}>
+                            <span style={{ fontSize: 11 }}>{lang === 'de' ? 'Reaktion' : 'Reaction'}</span>
+                            <div style={{ display: 'flex', gap: 3 }}>
+                                {[{id:'inherit',l:lang==='de'?'Vererbt':'Inherit'},{id:'log',l:'Log'},{id:'push',l:'Push'},{id:'push_tts',l:'TTS'}].map(r => (
+                                    <button key={r.id} className={`btn btn-sm ${(deviceConfig.reaction || 'inherit') === r.id ? 'btn-primary' : 'btn-ghost'}`}
+                                        onClick={() => updateDevice('reaction', r.id)} style={{ fontSize: 9, padding: '2px 5px' }}>{r.l}</button>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Thresholds */}
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6, marginBottom: 2 }}>{lang === 'de' ? 'Schwellwerte' : 'Thresholds'}</div>
+                        {[{key:'temp_min',l:lang==='de'?'Temp. min °C':'Temp min °C',ph:'5'},
+                          {key:'temp_max',l:lang==='de'?'Temp. max °C':'Temp max °C',ph:'30'},
+                          {key:'power_max',l:lang==='de'?'Strom max W':'Power max W',ph:'3000'},
+                          {key:'battery_min',l:lang==='de'?'Batterie min %':'Battery min %',ph:'20'}].map(t => (
+                            <div key={t.key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '2px 0' }}>
+                                <span style={{ fontSize: 11 }}>{t.l}</span>
+                                <input className="input" type="number" placeholder={t.ph}
+                                    value={deviceConfig.thresholds?.[t.key] || ''} style={{ width: 60, padding: '2px 6px', fontSize: 11, textAlign: 'right' }}
+                                    onChange={e => updateDevice('thresholds', { ...(deviceConfig.thresholds || {}), [t.key]: e.target.value ? Number(e.target.value) : null })} />
+                            </div>
+                        ))}
+                    </>)}
+                </div>
+            )}
+        </div>
+    );
+};
+
 const AnomalyAdvancedPanel = ({ lang, showToast }) => {
     const [config, setConfig] = useState(null);
     const [stats, setStats] = useState(null);
@@ -2809,6 +2983,11 @@ const AnomalyAdvancedPanel = ({ lang, showToast }) => {
                         {lang === 'de' ? 'Pausiert bis' : 'Paused until'} {new Date(config.paused_until).toLocaleTimeString()}
                     </div>
                 )}
+            </CollapsibleCard>
+
+            {/* Per-Device Configuration */}
+            <CollapsibleCard title={lang === 'de' ? 'Geräte-Konfiguration' : 'Device Configuration'} icon="mdi-devices" defaultOpen={false}>
+                <DeviceAnomalyConfig lang={lang} />
             </CollapsibleCard>
 
             {/* Statistics */}
