@@ -2366,15 +2366,20 @@ def serve_index():
         with open(jsx_path, "r", encoding="utf-8") as f:
             jsx_code = f.read()
 
-        # Replace external script reference with inline code
-        # Handles both src="app.jsx" and src="./app.jsx" patterns
+        # Replace external script reference with inline code in a hidden container
+        # Using text/plain so Babel doesn't auto-process it; we transform manually
         import re
-        inline_tag = '<script type="text/babel">\n' + jsx_code + '\n</script>'
+        inline_tag = '<script type="text/plain" id="app-jsx-source">\n' + jsx_code + '\n</script>'
+        # Remove the old text/babel script tag if present
         html = re.sub(
             r'<script\s+type=["\']text/babel["\']\s+src=["\'][^"\']*app\.jsx["\'][^>]*>\s*</script>',
             lambda m: inline_tag,
             html
         )
+        # Also handle case where index.html has no external src (already inline)
+        if 'app-jsx-source' not in html:
+            # Inject before closing </body>
+            html = html.replace('</body>', inline_tag + '\n</body>')
         return html, 200, {"Content-Type": "text/html; charset=utf-8"}
     except FileNotFoundError as e:
         logger.error(f"Frontend file not found: {e}")
