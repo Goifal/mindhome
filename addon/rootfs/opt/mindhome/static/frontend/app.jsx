@@ -2057,7 +2057,6 @@ const UsersPage = () => {
                                 ...haPersons.map(p => ({ value: p.entity_id, label: `${p.name} (${p.entity_id})` }))
                             ]}
                         />
-                        </select>
                     </div>
                 </Modal>
             )}
