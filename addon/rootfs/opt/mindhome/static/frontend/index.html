@@ -758,6 +758,38 @@
         .error-screen .btn {
             margin-top: 8px;
         }
+
+        /* #66 Focus-Visible for keyboard navigation */
+        *:focus-visible {
+            outline: 2px solid var(--accent-primary);
+            outline-offset: 2px;
+        }
+        button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible {
+            outline: 2px solid var(--accent-primary);
+            outline-offset: 2px;
+            box-shadow: 0 0 0 4px rgba(245, 166, 35, 0.15);
+        }
+        .toggle input:focus-visible + .toggle-slider {
+            box-shadow: 0 0 0 3px rgba(245, 166, 35, 0.3);
+        }
+
+        /* #67 High Contrast Mode */
+        @media (prefers-contrast: high) {
+            :root {
+                --bg-main: #000000;
+                --bg-card: #111111;
+                --bg-secondary: #1a1a1a;
+                --text-primary: #ffffff;
+                --text-secondary: #e0e0e0;
+                --text-muted: #b0b0b0;
+                --border: #555555;
+                --border-color: #555555;
+                --accent-primary: #ffaa00;
+            }
+            .card { border-width: 2px; }
+            .btn { border: 1px solid var(--text-primary); }
+            .btn-primary { border-color: var(--accent-primary); }
+        }
     </style>
 </head>
 <body>
