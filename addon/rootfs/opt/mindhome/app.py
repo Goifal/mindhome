@@ -55,6 +55,11 @@ from ml.automation_engine import (
 app = Flask(__name__, static_folder="static", template_folder="templates")
 CORS(app)
 
+# Register MIME types for frontend files
+import mimetypes
+mimetypes.add_type("text/javascript", ".jsx")
+mimetypes.add_type("text/javascript", ".mjs")
+
 # Logging
 log_level = os.environ.get("MINDHOME_LOG_LEVEL", "info").upper()
 logging.basicConfig(
@@ -2363,7 +2368,12 @@ def serve_frontend(path):
     if path.startswith("frontend/"):
         path = path[len("frontend/"):]
     if path and os.path.exists(os.path.join(app.static_folder, "frontend", path)):
-        return send_from_directory(os.path.join(app.static_folder, "frontend"), path)
+        response = send_from_directory(os.path.join(app.static_folder, "frontend"), path)
+        # Fix MIME type for .jsx files (Babel XHR needs text/javascript)
+        if path.endswith(".jsx"):
+            response.headers["Content-Type"] = "text/javascript; charset=utf-8"
+            response.headers["Access-Control-Allow-Origin"] = "*"
+        return response
     return send_from_directory(os.path.join(app.static_folder, "frontend"), "index.html")
 
 
