@@ -1,6 +1,8 @@
 """
-MindHome - Home Assistant Connection
+MindHome - Home Assistant Connection v0.5.0
 Handles real-time WebSocket connection and REST API calls to HA.
+Features: Retry with backoff, reconnect limiter, batch events, calendar integration,
+          climate validation, timezone caching, ingress token forwarding.
 """
 
 import os
@@ -8,12 +10,19 @@ import json
 import logging
 import threading
 import time
-from datetime import datetime
-from typing import Optional, Callable
+import queue
+from datetime import datetime, timezone, timedelta
+from typing import Optional, Callable, List, Dict, Any
 import requests
 import websocket
 
 logger = logging.getLogger("mindhome.ha_connection")
+
+MAX_RECONNECT_ATTEMPTS = 20
+RETRY_MAX_ATTEMPTS = 3
+RETRY_BACKOFF_BASE = 1.5
+BATCH_FLUSH_INTERVAL = 2.0
+BATCH_MAX_SIZE = 100
 
 
 class HAConnection:
@@ -27,70 +36,122 @@ class HAConnection:
             "Authorization": f"Bearer {self.token}",
             "Content-Type": "application/json",
         }
-
-        # WebSocket state
         self._ws = None
         self._ws_thread = None
         self._ws_connected = False
         self._ws_id = 1
-        self._event_callbacks = []
-        self._response_handlers = {}
+        self._ws_lock = threading.Lock()
+        self._event_callbacks: List[dict] = []
+        self._response_handlers: Dict[int, Callable] = {}
         self._reconnect_delay = 5
+        self._reconnect_attempts = 0
         self._should_run = True
-
-        # Offline queue
-        self._offline_queue = []
+        self._offline_queue: List[dict] = []
         self._is_online = False
+        self._timezone: Optional[str] = None
+        self._config_cache: Optional[dict] = None
+        self._config_cache_time: float = 0
+        self._event_queue: queue.Queue = queue.Queue()
+        self._batch_thread: Optional[threading.Thread] = None
+        self._batch_callbacks: List[Callable] = []
+        self._stats = {
+            "api_calls": 0, "api_errors": 0, "ws_messages": 0,
+            "ws_reconnects": 0, "events_received": 0, "events_batched": 0, "retries": 0,
+        }
 
-    # ==========================================================================
-    # REST API Methods
-    # ==========================================================================
+    # ======================================================================
+    # REST API
+    # ======================================================================
 
-    def _api_request(self, method, endpoint, data=None):
-        """Make a REST API request to HA."""
+    def _api_request(self, method, endpoint, data=None, retry=True):
         url = f"{self.ha_url}/api/{endpoint}"
-        try:
-            response = requests.request(
-                method, url, headers=self.headers, json=data, timeout=10
-            )
-            response.raise_for_status()
-            self._is_online = True
-            return response.json() if response.text else None
-        except requests.exceptions.RequestException as e:
-            logger.error(f"HA API request failed: {e}")
-            self._is_online = False
-            return None
+        attempts = RETRY_MAX_ATTEMPTS if retry else 1
+        for attempt in range(attempts):
+            try:
+                self._stats["api_calls"] += 1
+                response = requests.request(method, url, headers=self.headers, json=data, timeout=10)
+                response.raise_for_status()
+                self._is_online = True
+                return response.json() if response.text else None
+            except requests.exceptions.RequestException as e:
+                self._stats["api_errors"] += 1
+                if attempt < attempts - 1:
+                    wait = RETRY_BACKOFF_BASE ** attempt
+                    self._stats["retries"] += 1
+                    logger.warning(f"HA API retry {attempt+1}/{attempts} for {endpoint} in {wait:.1f}s: {e}")
+                    time.sleep(wait)
+                else:
+                    logger.error(f"HA API failed after {attempts} attempts: {endpoint} - {e}")
+                    self._is_online = False
+                    return None
 
     def get_states(self):
-        """Get all entity states from HA."""
         return self._api_request("GET", "states") or []
 
     def get_state(self, entity_id):
-        """Get state of a specific entity."""
-        return self._api_request("GET", f"states/{entity_id}")
+        return self._api_request("GET", f"states/{entity_id}", retry=False)
+
+    def get_config(self):
+        now = time.time()
+        if self._config_cache and (now - self._config_cache_time) < 300:
+            return self._config_cache
+        result = self._api_request("GET", "config")
+        if result:
+            self._config_cache = result
+            self._config_cache_time = now
+        return result
+
+    def get_services(self):
+        return self._api_request("GET", "services") or []
+
+    def get_timezone(self):
+        if self._timezone:
+            return self._timezone
+        config = self.get_config()
+        if config:
+            self._timezone = config.get("time_zone", "UTC")
+            return self._timezone
+        return "UTC"
 
     def call_service(self, domain, service, data=None, entity_id=None):
-        """Call a HA service (e.g., turn on light)."""
         payload = data or {}
         if entity_id:
             payload["entity_id"] = entity_id
-
+        if domain == "climate" and service in ("set_temperature", "set_hvac_mode"):
+            payload = self._validate_climate_call(payload)
         result = self._api_request("POST", f"services/{domain}/{service}", payload)
-
         if result is None and not self._is_online:
-            # Queue for offline fallback
             self._offline_queue.append({
-                "domain": domain,
-                "service": service,
-                "data": payload,
-                "queued_at": datetime.utcnow().isoformat()
+                "domain": domain, "service": service,
+                "data": payload, "queued_at": datetime.now(timezone.utc).isoformat()
             })
             logger.warning(f"Action queued (offline): {domain}.{service}")
-
         return result
 
+    def _validate_climate_call(self, payload):
+        eid = payload.get("entity_id")
+        temp = payload.get("temperature")
+        if not eid or temp is None:
+            return payload
+        try:
+            state = self.get_state(eid)
+            if state:
+                attrs = state.get("attributes", {})
+                min_t = attrs.get("min_temp", 7)
+                max_t = attrs.get("max_temp", 35)
+                temp = float(temp)
+                if temp < min_t:
+                    logger.warning(f"Climate {eid}: clamped {temp}→{min_t}°C (min)")
+                    temp = min_t
+                elif temp > max_t:
+                    logger.warning(f"Climate {eid}: clamped {temp}→{max_t}°C (max)")
+                    temp = max_t
+                payload["temperature"] = temp
+        except Exception as e:
+            logger.warning(f"Climate validation error: {e}")
+        return payload
+
     def get_history(self, entity_id, start_time=None, end_time=None):
-        """Get entity history."""
         params = []
         if start_time:
             params.append(f"filter_entity_id={entity_id}")
@@ -100,63 +161,85 @@ class HAConnection:
         return self._api_request("GET", endpoint) or []
 
     def get_areas(self):
-        """Get all areas (rooms) from HA via WebSocket."""
-        # Areas are only available via WebSocket
         return self._ws_command("config/area_registry/list")
 
     def get_device_registry(self):
-        """Get all devices from HA via WebSocket."""
         return self._ws_command("config/device_registry/list")
 
     def get_entity_registry(self):
-        """Get all entities from HA via WebSocket."""
         return self._ws_command("config/entity_registry/list")
 
     def get_automations(self):
-        """Get all automations from HA."""
         states = self.get_states()
-        if states:
-            return [s for s in states if s.get("entity_id", "").startswith("automation.")]
-        return []
+        return [s for s in states if s.get("entity_id", "").startswith("automation.")] if states else []
 
     def get_calendars(self):
-        """Get all calendar entities."""
         return self._api_request("GET", "calendars") or []
 
+    def get_calendar_events(self, entity_id, start=None, end=None):
+        if not start:
+            start = datetime.now(timezone.utc).isoformat()
+        if not end:
+            end = (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat()
+        return self._api_request("GET", f"calendars/{entity_id}?start={start}&end={end}") or []
+
+    def get_upcoming_events(self, hours=24):
+        calendars = self.get_calendars()
+        events = []
+        now = datetime.now(timezone.utc)
+        end = now + timedelta(hours=hours)
+        for cal in calendars:
+            eid = cal.get("entity_id", "")
+            try:
+                cal_events = self.get_calendar_events(eid, now.isoformat(), end.isoformat())
+                for ev in cal_events:
+                    ev["calendar_entity"] = eid
+                    events.append(ev)
+            except Exception:
+                pass
+        return sorted(events, key=lambda e: e.get("start", {}).get("dateTime", ""))
+
     def send_notification(self, message, title=None, target=None, data=None):
-        """Send a notification via HA notify service."""
         payload = {"message": message}
         if title:
             payload["title"] = title
         if data:
             payload["data"] = data
+        return self.call_service("notify", target or "notify", payload)
 
-        service_target = target or "notify"
-        return self.call_service("notify", service_target, payload)
+    def announce_tts(self, message, media_player_entity=None):
+        entity = media_player_entity
+        if not entity:
+            states = self.get_states()
+            speakers = [s for s in states
+                        if s.get("entity_id", "").startswith("media_player.")
+                        and s.get("state") != "unavailable"]
+            if speakers:
+                entity = speakers[0]["entity_id"]
+        if not entity:
+            logger.warning("No media player found for TTS")
+            return None
+        return self.call_service("tts", "speak", {"entity_id": entity, "message": message})
 
     def fire_event(self, event_type, event_data=None):
-        """Fire a custom event in HA."""
         return self._api_request("POST", f"events/{event_type}", event_data or {})
 
-    # ==========================================================================
-    # WebSocket Methods (Real-time Events)
-    # ==========================================================================
+    # ======================================================================
+    # WebSocket
+    # ======================================================================
 
     def _next_ws_id(self):
-        """Get next WebSocket message ID."""
-        self._ws_id += 1
-        return self._ws_id
+        with self._ws_lock:
+            self._ws_id += 1
+            return self._ws_id
 
     def _ws_command(self, command_type, **kwargs):
-        """Send a WebSocket command and wait for response."""
         if not self._ws_connected:
-            logger.warning("WebSocket not connected, cannot send command")
+            logger.warning("WebSocket not connected")
             return None
-
         msg_id = self._next_ws_id()
         msg = {"id": msg_id, "type": command_type}
         msg.update(kwargs)
-
         result_event = threading.Event()
         result_data = [None]
 
@@ -165,7 +248,6 @@ class HAConnection:
             result_event.set()
 
         self._response_handlers[msg_id] = handler
-
         try:
             self._ws.send(json.dumps(msg))
             result_event.wait(timeout=10)
@@ -177,103 +259,94 @@ class HAConnection:
             self._response_handlers.pop(msg_id, None)
 
     def subscribe_events(self, callback: Callable, event_type: Optional[str] = None):
-        """Subscribe to HA events via WebSocket."""
-        self._event_callbacks.append({
-            "callback": callback,
-            "event_type": event_type
-        })
-
+        self._event_callbacks.append({"callback": callback, "event_type": event_type})
         if self._ws_connected:
-            msg = {
-                "id": self._next_ws_id(),
-                "type": "subscribe_events"
-            }
+            msg = {"id": self._next_ws_id(), "type": "subscribe_events"}
             if event_type:
                 msg["event_type"] = event_type
-            self._ws.send(json.dumps(msg))
+            try:
+                self._ws.send(json.dumps(msg))
+            except Exception:
+                pass
 
     def _on_ws_open(self, ws):
-        """Handle WebSocket connection opened."""
         logger.info("WebSocket connection opened")
 
     def _on_ws_message(self, ws, message):
-        """Handle incoming WebSocket messages."""
         try:
             data = json.loads(message)
             msg_type = data.get("type", "")
+            self._stats["ws_messages"] += 1
 
             if msg_type == "auth_required":
-                # Send authentication
-                ws.send(json.dumps({
-                    "type": "auth",
-                    "access_token": self.token
-                }))
+                ws.send(json.dumps({"type": "auth", "access_token": self.token}))
 
             elif msg_type == "auth_ok":
-                logger.info("WebSocket authenticated successfully")
+                logger.info("WebSocket authenticated")
                 self._ws_connected = True
                 self._is_online = True
                 self._reconnect_delay = 5
-
-                # Subscribe to all state changes
+                self._reconnect_attempts = 0
+                try:
+                    self.get_timezone()
+                except Exception:
+                    pass
                 for cb_info in self._event_callbacks:
-                    msg = {
-                        "id": self._next_ws_id(),
-                        "type": "subscribe_events"
-                    }
+                    msg = {"id": self._next_ws_id(), "type": "subscribe_events"}
                     if cb_info.get("event_type"):
                         msg["event_type"] = cb_info["event_type"]
                     ws.send(json.dumps(msg))
-
-                # Process offline queue
                 self._process_offline_queue()
 
             elif msg_type == "auth_invalid":
-                logger.error("WebSocket authentication failed!")
+                logger.error("WebSocket auth failed!")
                 self._ws_connected = False
 
             elif msg_type == "event":
-                # Dispatch event to callbacks
                 event = data.get("event", {})
                 event_type = event.get("event_type", "")
-
-                for cb_info in self._event_callbacks:
-                    if cb_info["event_type"] is None or cb_info["event_type"] == event_type:
-                        try:
-                            cb_info["callback"](event)
-                        except Exception as e:
-                            logger.error(f"Event callback error: {e}")
+                self._stats["events_received"] += 1
+                if self._batch_callbacks:
+                    self._event_queue.put(event)
+                    self._stats["events_batched"] += 1
+                else:
+                    for cb_info in self._event_callbacks:
+                        if cb_info["event_type"] is None or cb_info["event_type"] == event_type:
+                            try:
+                                cb_info["callback"](event)
+                            except Exception as e:
+                                logger.error(f"Event callback error: {e}")
 
             elif msg_type == "result":
-                # Handle command responses
                 msg_id = data.get("id")
                 handler = self._response_handlers.get(msg_id)
                 if handler:
                     handler(data)
 
         except json.JSONDecodeError:
-            logger.error(f"Invalid WebSocket message: {message[:100]}")
+            logger.error(f"Invalid WS message: {message[:100]}")
 
     def _on_ws_error(self, ws, error):
-        """Handle WebSocket error."""
         logger.error(f"WebSocket error: {error}")
         self._ws_connected = False
         self._is_online = False
 
     def _on_ws_close(self, ws, close_status_code, close_msg):
-        """Handle WebSocket connection closed."""
         logger.warning(f"WebSocket closed: {close_status_code} - {close_msg}")
         self._ws_connected = False
-
-        # Auto-reconnect
         if self._should_run:
-            logger.info(f"Reconnecting in {self._reconnect_delay} seconds...")
+            self._reconnect_attempts += 1
+            self._stats["ws_reconnects"] += 1
+            if self._reconnect_attempts > MAX_RECONNECT_ATTEMPTS:
+                logger.error(f"Max reconnect attempts ({MAX_RECONNECT_ATTEMPTS}) reached.")
+                return
+            logger.info(f"Reconnecting in {self._reconnect_delay}s "
+                        f"(attempt {self._reconnect_attempts}/{MAX_RECONNECT_ATTEMPTS})...")
             time.sleep(self._reconnect_delay)
             self._reconnect_delay = min(self._reconnect_delay * 2, 60)
             self._start_ws()
 
     def _start_ws(self):
-        """Start WebSocket connection in background thread."""
         self._ws = websocket.WebSocketApp(
             self.ha_ws_url,
             on_open=self._on_ws_open,
@@ -284,138 +357,176 @@ class HAConnection:
         self._ws_thread = threading.Thread(target=self._ws.run_forever, daemon=True)
         self._ws_thread.start()
 
-    def connect(self):
-        """Start connection to Home Assistant (WebSocket + verify REST API)."""
-        logger.info("Connecting to Home Assistant...")
+    # ======================================================================
+    # Event Batching (#12)
+    # ======================================================================
 
-        # Verify REST API
+    def register_batch_callback(self, callback: Callable):
+        self._batch_callbacks.append(callback)
+        if not self._batch_thread or not self._batch_thread.is_alive():
+            self._batch_thread = threading.Thread(target=self._batch_worker, daemon=True)
+            self._batch_thread.start()
+
+    def _batch_worker(self):
+        while self._should_run:
+            batch = []
+            deadline = time.time() + BATCH_FLUSH_INTERVAL
+            while time.time() < deadline and len(batch) < BATCH_MAX_SIZE:
+                try:
+                    event = self._event_queue.get(timeout=0.5)
+                    batch.append(event)
+                except queue.Empty:
+                    continue
+            if batch:
+                for cb in self._batch_callbacks:
+                    try:
+                        cb(batch)
+                    except Exception as e:
+                        logger.error(f"Batch callback error: {e}")
+
+    # ======================================================================
+    # Connection Management
+    # ======================================================================
+
+    def connect(self):
+        logger.info("Connecting to Home Assistant...")
         states = self.get_states()
         if states is not None:
             logger.info(f"REST API connected - {len(states)} entities found")
         else:
             logger.warning("REST API not available - will retry via WebSocket")
-
-        # Start WebSocket
         self._start_ws()
 
     def disconnect(self):
-        """Close all connections."""
+        logger.info("Disconnecting from Home Assistant...")
         self._should_run = False
         if self._ws:
-            self._ws.close()
-        logger.info("Disconnected from Home Assistant")
+            try:
+                self._ws.close()
+            except Exception:
+                pass
+        if self._batch_thread and self._batch_thread.is_alive():
+            self._batch_thread.join(timeout=5)
+        logger.info("Disconnected")
+
+    def force_reconnect(self):
+        self._reconnect_attempts = 0
+        self._reconnect_delay = 5
+        if self._ws:
+            try:
+                self._ws.close()
+            except Exception:
+                pass
+        self._start_ws()
 
     def _process_offline_queue(self):
-        """Process queued actions after reconnection."""
         if not self._offline_queue:
             return
-
         logger.info(f"Processing {len(self._offline_queue)} queued actions...")
-        queue = self._offline_queue.copy()
+        q = self._offline_queue.copy()
         self._offline_queue.clear()
+        for action in q:
+            self.call_service(action["domain"], action["service"], action["data"])
 
-        for action in queue:
-            self.call_service(
-                action["domain"],
-                action["service"],
-                action["data"]
-            )
-            logger.info(f"Executed queued action: {action['domain']}.{action['service']}")
+    # ======================================================================
+    # Properties & Helpers
+    # ======================================================================
 
-    # ==========================================================================
-    # Helper Methods
-    # ==========================================================================
-
-    def is_connected(self):
-        """Check if connected to HA."""
+    @property
+    def connected(self):
         return self._ws_connected and self._is_online
 
+    def is_connected(self):
+        return self._ws_connected and self._is_online
+
+    def get_connection_stats(self):
+        return {
+            **self._stats,
+            "ws_connected": self._ws_connected,
+            "is_online": self._is_online,
+            "reconnect_attempts": self._reconnect_attempts,
+            "max_reconnect_attempts": MAX_RECONNECT_ATTEMPTS,
+            "offline_queue_size": len(self._offline_queue),
+        }
+
     def get_entities_by_domain(self, domain):
-        """Get all entities for a specific HA domain."""
         states = self.get_states()
-        if states:
-            return [s for s in states if s.get("entity_id", "").startswith(f"{domain}.")]
-        return []
+        return [s for s in states if s.get("entity_id", "").startswith(f"{domain}.")] if states else []
+
+    def get_offline_queue_size(self):
+        return len(self._offline_queue)
 
     def discover_devices(self):
-        """Discover all available devices grouped by domain type."""
         states = self.get_states()
         if not states:
             return {}
-
-        # Map HA domains to MindHome domains
         domain_mapping = {
-            "light": "light",
-            "climate": "climate",
-            "cover": "cover",
-            "person": "presence",
-            "device_tracker": "presence",
-            "media_player": "media",
-            "binary_sensor": None,  # Needs sub-classification
-            "sensor": None,  # Needs sub-classification
-            "lock": "lock",
-            "switch": "switch",
-            "fan": "ventilation",
-            "weather": "weather",
-            "automation": None,  # Special handling
-            "calendar": None,  # Special handling
+            "light": "light", "climate": "climate", "cover": "cover",
+            "person": "presence", "device_tracker": "presence",
+            "media_player": "media", "binary_sensor": None, "sensor": None,
+            "lock": "lock", "switch": "switch", "fan": "ventilation",
+            "weather": "weather", "vacuum": "vacuum",
         }
-
-        # Sub-classify binary_sensor and sensor by device_class
         sensor_class_mapping = {
-            "motion": "motion",
-            "occupancy": "motion",
-            "door": "door_window",
-            "window": "door_window",
-            "opening": "door_window",
-            "garage_door": "door_window",
-            "moisture": "air_quality",
-            "humidity": "air_quality",
-            "co2": "air_quality",
-            "volatile_organic_compounds": "air_quality",
-            "pm25": "air_quality",
-            "pm10": "air_quality",
+            "motion": "motion", "occupancy": "motion",
+            "door": "door_window", "window": "door_window",
+            "opening": "door_window", "garage_door": "door_window",
+            "moisture": "air_quality", "humidity": "air_quality",
+            "co2": "air_quality", "volatile_organic_compounds": "air_quality",
+            "pm25": "air_quality", "pm10": "air_quality",
             "temperature": "climate",
-            "power": "energy",
-            "energy": "energy",
-            "current": "energy",
-            "voltage": "energy",
-            "gas": "energy",
-            "smoke": "lock",  # Security domain
-            "carbon_monoxide": "lock",
+            "power": "energy", "energy": "energy",
+            "current": "energy", "voltage": "energy", "gas": "energy",
+            "smoke": "lock", "carbon_monoxide": "lock", "battery": "energy",
         }
-
         discovered = {}
-
         for state in states:
             entity_id = state.get("entity_id", "")
             ha_domain = entity_id.split(".")[0]
             attributes = state.get("attributes", {})
             device_class = attributes.get("device_class", "")
             friendly_name = attributes.get("friendly_name", entity_id)
-
-            # Determine MindHome domain
-            mindhome_domain = domain_mapping.get(ha_domain)
-
-            if mindhome_domain is None and ha_domain in ("binary_sensor", "sensor"):
-                mindhome_domain = sensor_class_mapping.get(device_class)
-
-            if mindhome_domain is None:
+            md = domain_mapping.get(ha_domain)
+            if md is None and ha_domain in ("binary_sensor", "sensor"):
+                md = sensor_class_mapping.get(device_class)
+            if md is None:
                 continue
-
-            if mindhome_domain not in discovered:
-                discovered[mindhome_domain] = []
-
-            discovered[mindhome_domain].append({
-                "entity_id": entity_id,
-                "friendly_name": friendly_name,
-                "state": state.get("state"),
-                "device_class": device_class,
+            if md not in discovered:
+                discovered[md] = []
+            discovered[md].append({
+                "entity_id": entity_id, "friendly_name": friendly_name,
+                "state": state.get("state"), "device_class": device_class,
                 "attributes": attributes,
             })
-
         return discovered
 
-    def get_offline_queue_size(self):
-        """Get number of queued offline actions."""
-        return len(self._offline_queue)
+    def check_device_health(self):
+        issues = []
+        states = self.get_states()
+        if not states:
+            return issues
+        for state in states:
+            eid = state.get("entity_id", "")
+            s = state.get("state", "")
+            attrs = state.get("attributes", {})
+            if s in ("unavailable", "unknown"):
+                issues.append({
+                    "entity_id": eid, "type": "unreachable",
+                    "message_de": f"{attrs.get('friendly_name', eid)} ist nicht erreichbar",
+                    "message_en": f"{attrs.get('friendly_name', eid)} is unreachable",
+                    "severity": "warning",
+                })
+            battery = attrs.get("battery_level") or attrs.get("battery")
+            if battery is not None:
+                try:
+                    if float(battery) < 15:
+                        issues.append({
+                            "entity_id": eid, "type": "low_battery",
+                            "battery_level": float(battery),
+                            "message_de": f"{attrs.get('friendly_name', eid)}: Batterie niedrig ({battery}%)",
+                            "message_en": f"{attrs.get('friendly_name', eid)}: Low battery ({battery}%)",
+                            "severity": "warning",
+                        })
+                except (ValueError, TypeError):
+                    pass
+        return issues
