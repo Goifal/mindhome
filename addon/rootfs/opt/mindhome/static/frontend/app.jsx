@@ -339,6 +339,86 @@ const Dropdown = ({ value, onChange, options, placeholder, label }) => {
 };
 
 // ================================================================
+// Searchable Entity Dropdown (matches system design)
+// ================================================================
+const EntitySearchDropdown = ({ value, onChange, entities, label, placeholder }) => {
+    const [open, setOpen] = useState(false);
+    const [search, setSearch] = useState('');
+    const ref = useRef(null);
+    const inputRef = useRef(null);
+
+    useEffect(() => {
+        const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+        document.addEventListener('mousedown', handler);
+        return () => document.removeEventListener('mousedown', handler);
+    }, []);
+
+    useEffect(() => {
+        if (open && inputRef.current) inputRef.current.focus();
+    }, [open]);
+
+    const filtered = (entities || []).filter(e => {
+        if (!search) return true;
+        const s = search.toLowerCase();
+        return (e.ha_entity_id || '').toLowerCase().includes(s) || (e.name || '').toLowerCase().includes(s);
+    }).slice(0, 50);
+
+    const selectedEntity = entities?.find(e => e.ha_entity_id === value);
+    const displayValue = selectedEntity ? `${selectedEntity.name} (${selectedEntity.ha_entity_id})` : value || '';
+
+    return (
+        <div ref={ref} style={{ position: 'relative' }}>
+            {label && <label className="input-label">{label}</label>}
+            <div className="input" onClick={() => setOpen(!open)} style={{
+                cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', userSelect: 'none',
+                borderColor: open ? 'var(--accent-primary)' : undefined,
+                boxShadow: open ? '0 0 0 2px rgba(245,166,35,0.15)' : undefined,
+            }}>
+                <span style={{ color: displayValue ? 'var(--text-primary)' : 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, fontSize: 13 }}>
+                    {displayValue || placeholder || '— Entity wählen —'}
+                </span>
+                <span className={`mdi mdi-chevron-${open ? 'up' : 'down'}`} style={{ fontSize: 18, color: 'var(--text-muted)' }} />
+            </div>
+            {open && (
+                <div style={{
+                    position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 4,
+                    background: 'var(--bg-card)', border: '1px solid var(--border)',
+                    borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-lg)',
+                    zIndex: 1001, animation: 'fadeIn 0.15s ease-out',
+                }}>
+                    <div style={{ padding: '8px 8px 4px' }}>
+                        <input ref={inputRef} className="input" value={search} onChange={e => setSearch(e.target.value)}
+                            placeholder="🔍 Suchen..." style={{ fontSize: 12, padding: '6px 10px' }} />
+                    </div>
+                    <div style={{ maxHeight: 200, overflowY: 'auto' }}>
+                        {filtered.length === 0 ? (
+                            <div style={{ padding: '12px 14px', fontSize: 12, color: 'var(--text-muted)' }}>Keine Ergebnisse</div>
+                        ) : filtered.map(e => {
+                            const isSelected = e.ha_entity_id === value;
+                            return (
+                                <div key={e.id || e.ha_entity_id}
+                                    onClick={() => { onChange(e.ha_entity_id); setOpen(false); setSearch(''); }}
+                                    style={{
+                                        padding: '8px 14px', cursor: 'pointer', fontSize: 13,
+                                        background: isSelected ? 'var(--accent-primary-dim)' : 'transparent',
+                                        borderLeft: isSelected ? '3px solid var(--accent-primary)' : '3px solid transparent',
+                                        transition: 'background 0.15s',
+                                    }}
+                                    onMouseEnter={ev => ev.currentTarget.style.background = isSelected ? 'var(--accent-primary-dim)' : 'var(--bg-tertiary)'}
+                                    onMouseLeave={ev => ev.currentTarget.style.background = isSelected ? 'var(--accent-primary-dim)' : 'transparent'}>
+                                    <div style={{ fontWeight: isSelected ? 600 : 400 }}>{e.name || e.ha_entity_id}</div>
+                                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>{e.ha_entity_id}</div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
+// ================================================================
 // Fix 2: Time Period Filter
 // ================================================================
 
@@ -742,23 +822,6 @@ const DashboardPage = () => {
             )}
 
             {/* Phase 2b: Anomaly Alerts */}
-            {anomalies.length > 0 && (
-                <div className="card animate-in" style={{ marginBottom: 24, borderLeft: '3px solid var(--danger)' }}>
-                    <div className="card-header">
-                        <div className="card-title">
-                            <span className="mdi mdi-alert-circle" style={{ marginRight: 8, color: 'var(--danger)' }} />
-                            {lang === 'de' ? 'Ungewöhnliche Aktivität' : 'Unusual Activity'}
-                        </div>
-                    </div>
-                    {anomalies.slice(0, 3).map((a, i) => (
-                        <div key={i} style={{ padding: '10px 16px', fontSize: 13, borderBottom: '1px solid var(--border-color)' }}>
-                            <span className="mdi mdi-alert" style={{ marginRight: 6, color: 'var(--warning)' }} />
-                            {lang === 'de' ? a.reason_de : a.reason_en}
-                        </div>
-                    ))}
-                </div>
-            )}
-
             {/* Weekly Report - improved (#11) */}
             {weeklyReport && (
                 <div className="card animate-in animate-in-delay-2" style={{ marginBottom: 16 }}>
@@ -769,7 +832,7 @@ const DashboardPage = () => {
                             {lang === 'de' ? 'Letzte 7 Tage' : 'Last 7 days'}
                         </span>
                     </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 10 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
                         <div style={{ textAlign: 'center', padding: '14px 10px', background: 'var(--bg-main)', borderRadius: 10, border: '1px solid rgba(99,102,241,0.15)' }}>
                             <span className="mdi mdi-pulse" style={{ fontSize: 20, color: 'var(--accent-primary)', display: 'block', marginBottom: 4 }} />
                             <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--accent-primary)' }}>{weeklyReport.events_collected?.toLocaleString()}</div>
@@ -802,6 +865,24 @@ const DashboardPage = () => {
             )}
 
             {/* Config Issues - removed per user request (#10) */}
+
+            {/* Anomaly card - moved below weekly report */}
+            {anomalies.length > 0 && (
+                <div className="card animate-in" style={{ marginBottom: 24, borderLeft: '3px solid var(--danger)' }}>
+                    <div className="card-header">
+                        <div className="card-title">
+                            <span className="mdi mdi-alert-circle" style={{ marginRight: 8, color: 'var(--danger)' }} />
+                            {lang === 'de' ? 'Ungewöhnliche Aktivität' : 'Unusual Activity'}
+                        </div>
+                    </div>
+                    {anomalies.slice(0, 3).map((a, i) => (
+                        <div key={i} style={{ padding: '10px 16px', fontSize: 13, borderBottom: '1px solid var(--border-color)' }}>
+                            <span className="mdi mdi-alert" style={{ marginRight: 6, color: 'var(--warning)' }} />
+                            {lang === 'de' ? a.reason_de : a.reason_en}
+                        </div>
+                    ))}
+                </div>
+            )}
 
             {/* Rooms Overview - removed per user request (#12), use Räume page instead */}
         </div>
@@ -2697,16 +2778,24 @@ const PatternsPage = () => {
     };
 
     const rejectPattern = async (id, reason) => {
+        // Optimistic UI update - immediately move from patterns to rejected
+        const pattern = patterns.find(p => p.id === id);
+        setPatterns(prev => prev.filter(p => p.id !== id));
+        if (pattern) setRejected(prev => [{ ...pattern, status: 'rejected', rejected_at: new Date().toISOString() }, ...prev]);
         await api.put(`patterns/reject/${id}`, { reason });
         showToast(lang === 'de' ? 'Muster abgelehnt' : 'Pattern rejected', 'success');
         setRejectReason(null);
-        load();
+        await load();
     };
 
     const reactivatePattern = async (id) => {
+        // Optimistic UI update
+        const pattern = rejected.find(p => p.id === id);
+        setRejected(prev => prev.filter(p => p.id !== id));
+        if (pattern) setPatterns(prev => [{ ...pattern, status: 'observed' }, ...prev]);
         await api.put(`patterns/reactivate/${id}`, {});
         showToast(lang === 'de' ? 'Muster reaktiviert' : 'Pattern reactivated', 'success');
-        load();
+        await load();
     };
 
     const createExclusion = async () => {
@@ -2835,25 +2924,19 @@ const PatternsPage = () => {
                                     options={[{ value: 'device_pair', label: lang === 'de' ? 'Geräte-Paar' : 'Device Pair' }, { value: 'room_pair', label: lang === 'de' ? 'Raum-Paar' : 'Room Pair' }]} />
                             </div>
                             <div className="input-group" style={{ marginBottom: 12 }}>
-                                <label className="input-label">{newExcl.type === 'device_pair' ? (lang === 'de' ? 'Gerät A' : 'Device A') : (lang === 'de' ? 'Raum A' : 'Room A')}</label>
-                                <input className="input" value={newExcl.entity_a} onChange={e => setNewExcl({ ...newExcl, entity_a: e.target.value })}
-                                    placeholder={newExcl.type === 'device_pair' ? 'light.living_room' : 'Wohnzimmer'}
-                                    list="excl-entities-a" />
-                                <datalist id="excl-entities-a">
-                                    {devices.filter(d => d.ha_entity_id).map(d => (
-                                        <option key={d.id} value={d.ha_entity_id}>{d.name} ({d.ha_entity_id})</option>
-                                    ))}
-                                </datalist>
+                                <EntitySearchDropdown
+                                    label={newExcl.type === 'device_pair' ? (lang === 'de' ? 'Gerät A' : 'Device A') : (lang === 'de' ? 'Raum A' : 'Room A')}
+                                    value={newExcl.entity_a}
+                                    onChange={v => setNewExcl({ ...newExcl, entity_a: v })}
+                                    entities={devices.filter(d => d.ha_entity_id)}
+                                    placeholder={newExcl.type === 'device_pair' ? 'light.living_room' : 'Wohnzimmer'} />
                             </div>
                             <div className="input-group" style={{ marginBottom: 12 }}>
-                                <label className="input-label">{newExcl.type === 'device_pair' ? (lang === 'de' ? 'Gerät B' : 'Device B') : (lang === 'de' ? 'Raum B' : 'Room B')}</label>
-                                <input className="input" value={newExcl.entity_b} onChange={e => setNewExcl({ ...newExcl, entity_b: e.target.value })}
-                                    list="excl-entities-b" />
-                                <datalist id="excl-entities-b">
-                                    {devices.filter(d => d.ha_entity_id && d.ha_entity_id !== newExcl.entity_a).map(d => (
-                                        <option key={d.id} value={d.ha_entity_id}>{d.name} ({d.ha_entity_id})</option>
-                                    ))}
-                                </datalist>
+                                <EntitySearchDropdown
+                                    label={newExcl.type === 'device_pair' ? (lang === 'de' ? 'Gerät B' : 'Device B') : (lang === 'de' ? 'Raum B' : 'Room B')}
+                                    value={newExcl.entity_b}
+                                    onChange={v => setNewExcl({ ...newExcl, entity_b: v })}
+                                    entities={devices.filter(d => d.ha_entity_id && d.ha_entity_id !== newExcl.entity_a)} />
                             </div>
                             <div className="input-group">
                                 <label className="input-label">{lang === 'de' ? 'Grund (optional)' : 'Reason (optional)'}</label>
@@ -2912,8 +2995,11 @@ const PatternsPage = () => {
                                     placeholder={lang === 'de' ? 'z.B. Flurlicht bei Haustür' : 'e.g. Hall light on door open'} autoFocus />
                             </div>
                             <div className="input-group" style={{ marginBottom: 12 }}>
-                                <label className="input-label">{lang === 'de' ? 'Wenn (Entity)' : 'When (Entity)'}</label>
-                                <input className="input" value={newRule.trigger_entity} onChange={e => setNewRule({ ...newRule, trigger_entity: e.target.value })}
+                                <EntitySearchDropdown
+                                    label={lang === 'de' ? 'Wenn (Entity)' : 'When (Entity)'}
+                                    value={newRule.trigger_entity}
+                                    onChange={v => setNewRule({ ...newRule, trigger_entity: v })}
+                                    entities={devices.filter(d => d.ha_entity_id)}
                                     placeholder="binary_sensor.front_door" />
                             </div>
                             <div className="input-group" style={{ marginBottom: 12 }}>
@@ -2922,8 +3008,11 @@ const PatternsPage = () => {
                                     placeholder="on" />
                             </div>
                             <div className="input-group" style={{ marginBottom: 12 }}>
-                                <label className="input-label">{lang === 'de' ? 'Dann (Entity)' : 'Then (Entity)'}</label>
-                                <input className="input" value={newRule.action_entity} onChange={e => setNewRule({ ...newRule, action_entity: e.target.value })}
+                                <EntitySearchDropdown
+                                    label={lang === 'de' ? 'Dann (Entity)' : 'Then (Entity)'}
+                                    value={newRule.action_entity}
+                                    onChange={v => setNewRule({ ...newRule, action_entity: v })}
+                                    entities={devices.filter(d => d.ha_entity_id)}
                                     placeholder="light.hallway" />
                             </div>
                             <div className="input-group">
@@ -3144,16 +3233,18 @@ const PatternsPage = () => {
                                 {count} {lang === 'de' ? 'ausgewählt' : 'selected'}
                             </span>
                             <button className="btn btn-sm btn-ghost" onClick={async () => {
+                                setPatterns(prev => prev.filter(p => !selectedIds.includes(p.id)));
                                 for (const id of selectedIds) { await api.put(`patterns/reject/${id}`, { reason: 'bulk' }); }
-                                setBulkSelected({}); setBulkMode(false); load();
+                                setBulkSelected({}); setBulkMode(false); await load();
                                 showToast(`${count} ${lang === 'de' ? 'Muster abgelehnt' : 'patterns rejected'}`, 'success');
                             }}>
                                 <span className="mdi mdi-close-circle" style={{ marginRight: 4, color: 'var(--warning)' }} />
                                 {lang === 'de' ? 'Alle ablehnen' : 'Reject all'}
                             </button>
                             <button className="btn btn-sm btn-ghost" onClick={async () => {
+                                setPatterns(prev => prev.filter(p => !selectedIds.includes(p.id)));
                                 for (const id of selectedIds) { await api.delete(`patterns/${id}`); }
-                                setBulkSelected({}); setBulkMode(false); load();
+                                setBulkSelected({}); setBulkMode(false); await load();
                                 showToast(`${count} ${lang === 'de' ? 'Muster gelöscht' : 'patterns deleted'}`, 'success');
                             }}>
                                 <span className="mdi mdi-delete" style={{ marginRight: 4, color: 'var(--danger)' }} />
