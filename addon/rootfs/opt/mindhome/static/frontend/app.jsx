@@ -1,8 +1,14 @@
 // ================================================================
-// MindHome - React Frontend Application
+// MindHome - React Frontend Application v0.5.0
 // ================================================================
 
-const { useState, useEffect, useCallback, createContext, useContext, useRef } = React;
+const { useState, useEffect, useCallback, createContext, useContext, useRef, useMemo, useReducer } = React;
+
+// ================================================================
+// #32 API Response Cache
+// ================================================================
+const _apiCache = {};
+const CACHE_TTL = 30000; // 30s
 
 // ================================================================
 // API Helper
@@ -20,15 +26,22 @@ const API_BASE = getBasePath();
 const api = {
     async get(endpoint) {
         try {
+            // #32 Cache check
+            const cached = _apiCache[endpoint];
+            if (cached && Date.now() - cached.time < CACHE_TTL) return cached.data;
             const res = await fetch(`${API_BASE}/api/${endpoint}`);
             if (!res.ok) throw new Error(`API Error: ${res.status}`);
-            return await res.json();
+            const data = await res.json();
+            _apiCache[endpoint] = { data, time: Date.now() };
+            return data;
         } catch (e) {
             console.error(`GET ${endpoint} failed:`, e);
             return null;
         }
     },
+    invalidate(endpoint) { delete _apiCache[endpoint]; },
     async post(endpoint, data = {}) {
+        api.invalidate(endpoint); // bust cache on mutations
         try {
             const res = await fetch(`${API_BASE}/api/${endpoint}`, {
                 method: 'POST',
@@ -112,7 +125,66 @@ const AppContext = createContext();
 const useApp = () => useContext(AppContext);
 
 // ================================================================
-// Toast Notifications
+// #4 Error Boundary
+// ================================================================
+class ErrorBoundary extends React.Component {
+    constructor(props) {
+        super(props);
+        this.state = { hasError: false, error: null };
+    }
+    static getDerivedStateFromError(error) {
+        return { hasError: true, error };
+    }
+    componentDidCatch(error, info) {
+        console.error('MindHome Error:', error, info);
+        // #38 Frontend error reporting
+        try { api.post('system/frontend-error', { error: error.toString(), stack: info.componentStack?.slice(0, 500) }); } catch(e) {}
+    }
+    render() {
+        if (this.state.hasError) {
+            return React.createElement('div', {
+                style: { padding: 40, textAlign: 'center', color: 'var(--text-primary)' }
+            },
+                React.createElement('span', { className: 'mdi mdi-alert-circle', style: { fontSize: 48, color: 'var(--danger)', display: 'block', marginBottom: 16 } }),
+                React.createElement('h2', null, 'Etwas ist schiefgelaufen'),
+                React.createElement('p', { style: { color: 'var(--text-muted)', marginBottom: 16 } }, this.state.error?.toString()),
+                React.createElement('button', {
+                    className: 'btn btn-primary',
+                    onClick: () => { this.setState({ hasError: false }); window.location.reload(); }
+                }, 'Seite neu laden')
+            );
+        }
+        return this.props.children;
+    }
+}
+
+// ================================================================
+// #17 Skeleton Loading
+// ================================================================
+const Skeleton = ({ width, height, borderRadius, style }) => (
+    React.createElement('div', {
+        className: 'skeleton-pulse',
+        style: {
+            width: width || '100%',
+            height: height || 16,
+            borderRadius: borderRadius || 4,
+            background: 'var(--bg-tertiary)',
+            animation: 'pulse 1.5s ease-in-out infinite',
+            ...style
+        }
+    })
+);
+
+const SkeletonCard = () => (
+    React.createElement('div', { className: 'card', style: { padding: 16, marginBottom: 12 } },
+        React.createElement(Skeleton, { height: 20, width: '60%', style: { marginBottom: 12 } }),
+        React.createElement(Skeleton, { height: 14, width: '80%', style: { marginBottom: 8 } }),
+        React.createElement(Skeleton, { height: 14, width: '40%' })
+    )
+);
+
+// ================================================================
+// #8 Toast Stacking
 // ================================================================
 
 const Toast = ({ message, type, onClose }) => {
@@ -326,15 +398,34 @@ const DashboardPage = () => {
     const [anomalies, setAnomalies] = useState([]);
     const [unreadCount, setUnreadCount] = useState(0);
     const [sysHealth, setSysHealth] = useState(null);
+    const [weeklyReport, setWeeklyReport] = useState(null);
+    const [configIssues, setConfigIssues] = useState(null);
+    const [deviceHealth, setDeviceHealth] = useState(null);      // #24
+    const [showChangelog, setShowChangelog] = useState(false);     // #21
     const activeDomains = domains.filter(d => d.is_enabled).length;
     const trackedDevices = devices.length;
+
+    // #43 Onboarding checklist
+    const checklist = useMemo(() => {
+        const items = [
+            { key: 'rooms', label: lang === 'de' ? 'Räume erstellt' : 'Rooms created', done: rooms.length > 0 },
+            { key: 'devices', label: lang === 'de' ? 'Geräte zugeordnet' : 'Devices assigned', done: devices.some(d => d.room_id) },
+            { key: 'domains', label: lang === 'de' ? 'Domains aktiv' : 'Domains active', done: domains.some(d => d.is_enabled) },
+            { key: 'patterns', label: lang === 'de' ? 'Erste Muster' : 'First patterns', done: learningStats?.total_patterns > 0 },
+        ];
+        return items;
+    }, [rooms, devices, domains, learningStats, lang]);
+    const checklistProgress = checklist.filter(c => c.done).length;
 
     useEffect(() => {
         api.get('stats/learning').then(setLearningStats).catch(() => {});
         api.get('predictions?status=pending&limit=5').then(setPredictions).catch(() => {});
         api.get('automation/anomalies').then(setAnomalies).catch(() => {});
         api.get('notifications/unread-count').then(d => setUnreadCount(d.unread_count || 0)).catch(() => {});
+        api.get('device-health').then(setDeviceHealth).catch(() => {});  // #24
         api.get('health').then(setSysHealth).catch(() => {});
+        api.get('report/weekly').then(setWeeklyReport).catch(() => {});
+        api.get('validate-config').then(setConfigIssues).catch(() => {});
     }, []);
 
     const modeLabels = {
@@ -423,7 +514,7 @@ const DashboardPage = () => {
                                 <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>MindHome Engine</span>
                             </div>
                             <div style={{ fontSize: 12, color: 'var(--text-muted)', paddingLeft: 16 }}>
-                                v{sysHealth?.version || '0.3.0'} · Uptime {uptimeStr}
+                                v{sysHealth?.version || '0.5.0'} · Uptime {uptimeStr}
                             </div>
                         </div>
                         );
@@ -475,6 +566,50 @@ const DashboardPage = () => {
                     </div>
                 </div>
             </div>
+
+            {/* #43 Onboarding Checklist */}
+            {checklistProgress < checklist.length && (
+                <div className="card animate-in" style={{ marginBottom: 16, padding: 16, borderLeft: '3px solid var(--accent-primary)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                        <div className="card-title" style={{ fontSize: 14 }}>
+                            <span className="mdi mdi-checkbox-marked-circle-outline" style={{ marginRight: 8, color: 'var(--accent-primary)' }} />
+                            {lang === 'de' ? 'Einrichtung' : 'Setup'} ({checklistProgress}/{checklist.length})
+                        </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                        {checklist.map(c => (
+                            <span key={c.key} style={{
+                                fontSize: 12, padding: '4px 10px', borderRadius: 12,
+                                background: c.done ? 'var(--success-dim)' : 'var(--bg-tertiary)',
+                                color: c.done ? 'var(--success)' : 'var(--text-muted)',
+                                textDecoration: c.done ? 'line-through' : 'none',
+                            }}>
+                                <span className={`mdi ${c.done ? 'mdi-check' : 'mdi-circle-outline'}`} style={{ marginRight: 4 }} />
+                                {c.label}
+                            </span>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {/* #24 Device Health Warnings */}
+            {deviceHealth && deviceHealth.total > 0 && (
+                <div className="card animate-in" style={{ marginBottom: 16, padding: '12px 16px', borderLeft: '3px solid var(--warning)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span className="mdi mdi-alert" style={{ color: 'var(--warning)', fontSize: 20 }} />
+                        <div>
+                            <div style={{ fontWeight: 600, fontSize: 13 }}>
+                                {lang === 'de' ? `${deviceHealth.total} Geräte-Probleme` : `${deviceHealth.total} device issues`}
+                            </div>
+                            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                                {deviceHealth.issues?.slice(0, 3).map((iss, i) => (
+                                    <span key={i}>{lang === 'de' ? iss.message_de : iss.message_en}{i < 2 ? ' · ' : ''}</span>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Quick Actions */}
             <div className="card animate-in animate-in-delay-2" style={{ marginBottom: 24 }}>
@@ -564,6 +699,26 @@ const DashboardPage = () => {
                                 {lang === 'de' ? 'MindHome hat neue Muster erkannt' : 'MindHome found new patterns'}
                             </div>
                         </div>
+                        {predictions.length > 1 && (
+                            <div style={{ display: 'flex', gap: 6 }}>
+                                <button className="btn btn-sm btn-success" onClick={async () => {
+                                    for (const p of predictions) await api.post(`predictions/${p.id}/confirm`);
+                                    setPredictions([]);
+                                    showToast(lang === 'de' ? `${predictions.length} aktiviert` : `${predictions.length} activated`, 'success');
+                                }}>
+                                    <span className="mdi mdi-check-all" style={{ marginRight: 4 }} />
+                                    {lang === 'de' ? 'Alle' : 'All'}
+                                </button>
+                                <button className="btn btn-sm btn-ghost" onClick={async () => {
+                                    for (const p of predictions) await api.post(`predictions/${p.id}/reject`);
+                                    setPredictions([]);
+                                    showToast(lang === 'de' ? 'Alle abgelehnt' : 'All rejected', 'info');
+                                }}>
+                                    <span className="mdi mdi-close-circle-outline" style={{ marginRight: 4 }} />
+                                    {lang === 'de' ? 'Alle' : 'All'}
+                                </button>
+                            </div>
+                        )}
                     </div>
                     {predictions.map(pred => (
                         <div key={pred.id} style={{
@@ -617,6 +772,57 @@ const DashboardPage = () => {
                         <div key={i} style={{ padding: '10px 16px', fontSize: 13, borderBottom: '1px solid var(--border-color)' }}>
                             <span className="mdi mdi-alert" style={{ marginRight: 6, color: 'var(--warning)' }} />
                             {lang === 'de' ? a.reason_de : a.reason_en}
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            {/* Weekly Report */}
+            {weeklyReport && (
+                <div className="card animate-in animate-in-delay-2" style={{ marginBottom: 16 }}>
+                    <div className="card-title" style={{ marginBottom: 12 }}>
+                        <span className="mdi mdi-chart-timeline-variant" style={{ marginRight: 8, color: 'var(--accent-primary)' }} />
+                        {lang === 'de' ? 'Wochenbericht' : 'Weekly Report'}
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 10 }}>
+                        <div style={{ textAlign: 'center', padding: 10, background: 'var(--bg-main)', borderRadius: 8 }}>
+                            <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--accent-primary)' }}>{weeklyReport.events_collected?.toLocaleString()}</div>
+                            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Events' : 'Events'}</div>
+                        </div>
+                        <div style={{ textAlign: 'center', padding: 10, background: 'var(--bg-main)', borderRadius: 8 }}>
+                            <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--success)' }}>{weeklyReport.new_patterns}</div>
+                            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Neue Muster' : 'New Patterns'}</div>
+                        </div>
+                        <div style={{ textAlign: 'center', padding: 10, background: 'var(--bg-main)', borderRadius: 8 }}>
+                            <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--warning)' }}>{weeklyReport.automations_executed}</div>
+                            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Automationen' : 'Automations'}</div>
+                        </div>
+                        <div style={{ textAlign: 'center', padding: 10, background: 'var(--bg-main)', borderRadius: 8 }}>
+                            <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--info)' }}>{weeklyReport.success_rate}%</div>
+                            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Erfolgsrate' : 'Success Rate'}</div>
+                        </div>
+                        {weeklyReport.energy_saved_kwh > 0 && (
+                            <div style={{ textAlign: 'center', padding: 10, background: 'var(--bg-main)', borderRadius: 8 }}>
+                                <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--success)' }}>~{weeklyReport.energy_saved_kwh}</div>
+                                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>kWh {lang === 'de' ? 'gespart' : 'saved'}</div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {/* Config Issues */}
+            {configIssues?.issues?.length > 0 && (
+                <div className="card animate-in" style={{ marginBottom: 16, borderColor: 'var(--warning)', borderWidth: 1 }}>
+                    <div className="card-title" style={{ marginBottom: 8 }}>
+                        <span className="mdi mdi-alert-circle" style={{ marginRight: 8, color: 'var(--warning)' }} />
+                        {lang === 'de' ? 'Konfigurationshinweise' : 'Configuration Hints'}
+                    </div>
+                    {configIssues.issues.map((issue, i) => (
+                        <div key={i} style={{ fontSize: 13, padding: '4px 0', color: issue.type === 'error' ? 'var(--danger)' : 'var(--text-secondary)' }}>
+                            <span className={`mdi ${issue.type === 'error' ? 'mdi-close-circle' : issue.type === 'warning' ? 'mdi-alert' : 'mdi-information'}`}
+                                style={{ marginRight: 6, fontSize: 14 }} />
+                            {lang === 'de' ? issue.message_de : issue.message_en}
                         </div>
                     ))}
                 </div>
@@ -683,20 +889,88 @@ const DashboardPage = () => {
 // ================================================================
 
 const QuickActionsGrid = () => {
-    const { quickActions, executeQuickAction, lang } = useApp();
+    const { quickActions, executeQuickAction, lang, showToast, refreshData, isAdmin } = useApp();
+    const [showAdd, setShowAdd] = useState(false);
+    const [editAction, setEditAction] = useState(null);
+    const [newAction, setNewAction] = useState({ name: '', icon: 'mdi:flash', action_data: { type: 'custom', entities: [] } });
+
+    const iconOptions = [
+        { value: 'mdi:flash', label: '⚡ Flash' }, { value: 'mdi:lightbulb', label: '💡 Licht' },
+        { value: 'mdi:home', label: '🏠 Home' }, { value: 'mdi:exit-run', label: '🚪 Gehen' },
+        { value: 'mdi:weather-night', label: '🌙 Nacht' }, { value: 'mdi:shield', label: '🛡️ Schutz' },
+        { value: 'mdi:movie-open', label: '🎬 Kino' }, { value: 'mdi:broom', label: '🧹 Aufräumen' },
+        { value: 'mdi:party-popper', label: '🎉 Party' }, { value: 'mdi:coffee', label: '☕ Kaffee' },
+    ];
+
+    const handleCreate = async () => {
+        if (!newAction.name.trim()) return;
+        await api.post('quick-actions', newAction);
+        setShowAdd(false);
+        setNewAction({ name: '', icon: 'mdi:flash', action_data: { type: 'custom', entities: [] } });
+        refreshData();
+        showToast(lang === 'de' ? 'Quick Action erstellt' : 'Quick Action created', 'success');
+    };
+
+    const handleDelete = async (id) => {
+        await api.delete(`quick-actions/${id}`);
+        refreshData();
+        showToast(lang === 'de' ? 'Quick Action gelöscht' : 'Quick Action deleted', 'success');
+    };
 
     return (
-        <div className="quick-actions-grid">
-            {quickActions.map(action => (
-                <button
-                    key={action.id}
-                    className={`quick-action-btn ${action.action_data?.type === 'emergency_stop' ? 'danger' : ''}`}
-                    onClick={() => executeQuickAction(action.id)}
-                >
-                    <span className={`mdi ${action.icon}`} />
-                    {action.name}
-                </button>
-            ))}
+        <div>
+            <div className="quick-actions-grid">
+                {quickActions.map(action => (
+                    <div key={action.id} style={{ position: 'relative' }}>
+                        <button
+                            className={`quick-action-btn ${action.action_data?.type === 'emergency_stop' ? 'danger' : ''}`}
+                            onClick={() => executeQuickAction(action.id)}
+                        >
+                            <span className={`mdi ${action.icon}`} />
+                            {action.name}
+                        </button>
+                        {isAdmin && !action.is_system && (
+                            <button onClick={() => handleDelete(action.id)}
+                                style={{ position: 'absolute', top: -6, right: -6, width: 20, height: 20, borderRadius: '50%',
+                                    background: 'var(--danger)', border: 'none', color: '#fff', fontSize: 12,
+                                    cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    opacity: 0.8, transition: 'opacity 0.2s' }}
+                                onMouseEnter={e => e.target.style.opacity = 1}
+                                onMouseLeave={e => e.target.style.opacity = 0.8}>
+                                <span className="mdi mdi-close" />
+                            </button>
+                        )}
+                    </div>
+                ))}
+                {isAdmin && (
+                    <button className="quick-action-btn" onClick={() => setShowAdd(true)}
+                        style={{ borderStyle: 'dashed', opacity: 0.6 }}>
+                        <span className="mdi mdi-plus" />
+                        {lang === 'de' ? 'Neu' : 'New'}
+                    </button>
+                )}
+            </div>
+
+            {showAdd && (
+                <Modal title={lang === 'de' ? 'Quick Action erstellen' : 'Create Quick Action'}
+                    onClose={() => setShowAdd(false)}
+                    actions={<>
+                        <button className="btn btn-secondary" onClick={() => setShowAdd(false)}>{lang === 'de' ? 'Abbrechen' : 'Cancel'}</button>
+                        <button className="btn btn-primary" onClick={handleCreate} disabled={!newAction.name.trim()}>{lang === 'de' ? 'Erstellen' : 'Create'}</button>
+                    </>}>
+                    <div className="input-group" style={{ marginBottom: 16 }}>
+                        <label className="input-label">{lang === 'de' ? 'Name' : 'Name'}</label>
+                        <input className="input" value={newAction.name}
+                            onChange={e => setNewAction({ ...newAction, name: e.target.value })}
+                            placeholder={lang === 'de' ? 'z.B. Gute Nacht' : 'e.g. Good Night'} autoFocus />
+                    </div>
+                    <div className="input-group" style={{ marginBottom: 16 }}>
+                        <Dropdown label="Icon" value={newAction.icon}
+                            onChange={v => setNewAction({ ...newAction, icon: v })}
+                            options={iconOptions} />
+                    </div>
+                </Modal>
+            )}
         </div>
     );
 };
@@ -710,6 +984,12 @@ const DomainsPage = () => {
     const [showCreate, setShowCreate] = useState(false);
     const [newDomain, setNewDomain] = useState({ name_de: '', name_en: '', icon: 'mdi:puzzle', description: '' });
     const [confirmDel, setConfirmDel] = useState(null);
+    const [capabilities, setCapabilities] = useState({});
+    const [expandedDomain, setExpandedDomain] = useState(null);
+
+    useEffect(() => {
+        api.get('domains/capabilities').then(c => c && setCapabilities(c));
+    }, []);
 
     const handleCreate = async () => {
         if (!newDomain.name_de.trim()) return;
@@ -759,12 +1039,14 @@ const DomainsPage = () => {
                     <div
                         key={domain.id}
                         className={`domain-card ${domain.is_enabled ? 'enabled' : ''}`}
-                        onClick={() => toggleDomain(domain.id)}
                     >
-                        <span className={`mdi ${domain.icon}`} />
-                        <div className="domain-card-info">
-                            <div className="domain-card-name">{domain.display_name}</div>
-                            <div className="domain-card-desc">{domain.description}</div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, cursor: 'pointer' }}
+                            onClick={() => setExpandedDomain(expandedDomain === domain.id ? null : domain.id)}>
+                            <span className={`mdi ${domain.icon}`} />
+                            <div className="domain-card-info">
+                                <div className="domain-card-name">{domain.display_name}</div>
+                                <div className="domain-card-desc">{domain.description}</div>
+                            </div>
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                             {domain.is_custom && (
@@ -780,6 +1062,69 @@ const DomainsPage = () => {
                                 <div className="toggle-slider" />
                             </label>
                         </div>
+                        {expandedDomain === domain.id && (() => {
+                            const cap = capabilities[domain.name] || {};
+                            const controlLabels = {
+                                toggle: lang === 'de' ? 'Ein/Aus' : 'Toggle',
+                                brightness: lang === 'de' ? 'Helligkeit' : 'Brightness',
+                                color_temp: lang === 'de' ? 'Farbtemperatur' : 'Color Temp',
+                                set_temperature: lang === 'de' ? 'Temperatur' : 'Temperature',
+                                set_hvac_mode: lang === 'de' ? 'Modus' : 'HVAC Mode',
+                                open: lang === 'de' ? 'Öffnen' : 'Open', close: lang === 'de' ? 'Schließen' : 'Close',
+                                set_position: lang === 'de' ? 'Position' : 'Position',
+                                volume: lang === 'de' ? 'Lautstärke' : 'Volume', source: 'Quelle',
+                                lock: lang === 'de' ? 'Sperren' : 'Lock', unlock: lang === 'de' ? 'Entsperren' : 'Unlock',
+                                start: 'Start', stop: 'Stop', return_to_base: lang === 'de' ? 'Zurück' : 'Return',
+                                set_percentage: '%',
+                            };
+                            const featureLabels = {
+                                time_of_day: lang === 'de' ? 'Tageszeit' : 'Time of Day',
+                                brightness_level: lang === 'de' ? 'Helligkeitsstufe' : 'Brightness Level',
+                                duration: lang === 'de' ? 'Dauer' : 'Duration',
+                                target_temp: lang === 'de' ? 'Zieltemperatur' : 'Target Temp',
+                                schedule: lang === 'de' ? 'Zeitplan' : 'Schedule',
+                                comfort_profile: lang === 'de' ? 'Komfortprofil' : 'Comfort Profile',
+                                position: 'Position', sun_based: lang === 'de' ? 'Sonnenstand' : 'Sun Position',
+                                threshold: lang === 'de' ? 'Schwellwert' : 'Threshold',
+                                trend: 'Trend', trigger: 'Trigger', frequency: lang === 'de' ? 'Häufigkeit' : 'Frequency',
+                                source_preference: lang === 'de' ? 'Quellen-Präferenz' : 'Source Pref.',
+                                presence: lang === 'de' ? 'Anwesenheit' : 'Presence',
+                                temperature_based: lang === 'de' ? 'Temperaturbasiert' : 'Temp Based',
+                            };
+                            return cap.controls || cap.pattern_features ? (
+                                <div style={{ width: '100%', padding: '12px 0 4px', borderTop: '1px solid var(--border)', marginTop: 8 }}
+                                    onClick={e => e.stopPropagation()}>
+                                    {cap.controls?.length > 0 && (
+                                        <div style={{ marginBottom: 8 }}>
+                                            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>
+                                                {lang === 'de' ? 'Steuerung:' : 'Controls:'}
+                                            </div>
+                                            <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                                                {cap.controls.map(c => (
+                                                    <span key={c} className="badge badge-info" style={{ fontSize: 10 }}>
+                                                        {controlLabels[c] || c}
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+                                    {cap.pattern_features?.length > 0 && (
+                                        <div>
+                                            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>
+                                                {lang === 'de' ? 'Muster-Erkennung:' : 'Pattern Detection:'}
+                                            </div>
+                                            <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                                                {cap.pattern_features.map(f => (
+                                                    <span key={f} className="badge badge-success" style={{ fontSize: 10 }}>
+                                                        {featureLabels[f] || f}
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            ) : null;
+                        })()}
                     </div>
                 ))}
             </div>
@@ -1145,10 +1490,20 @@ const DevicesPage = () => {
                                     </td>
                                     <td>
                                         <div style={{ display: 'flex', gap: 4 }}>
-                                            <button className="btn btn-ghost btn-icon" onClick={() => setEditDevice({...device})}>
+                                            <button className="btn btn-ghost btn-icon" onClick={() => setEditDevice({...device})}
+                                                title={lang === 'de' ? 'Bearbeiten' : 'Edit'}>
                                                 <span className="mdi mdi-pencil" style={{ fontSize: 16, color: 'var(--accent-primary)' }} />
                                             </button>
-                                            <button className="btn btn-ghost btn-icon" onClick={() => setConfirmDel(device)}>
+                                            <button className="btn btn-ghost btn-icon"
+                                                title={lang === 'de' ? 'Benachrichtigungen stumm' : 'Mute notifications'}
+                                                onClick={async () => {
+                                                    await api.post('notification-settings/mute-device', { device_id: device.id });
+                                                    showToast(lang === 'de' ? 'Gerät stummgeschaltet' : 'Device muted', 'success');
+                                                }}>
+                                                <span className="mdi mdi-bell-off-outline" style={{ fontSize: 16, color: 'var(--text-muted)' }} />
+                                            </button>
+                                            <button className="btn btn-ghost btn-icon" onClick={() => setConfirmDel(device)}
+                                                title={lang === 'de' ? 'Löschen' : 'Delete'}>
                                                 <span className="mdi mdi-delete-outline" style={{ fontSize: 16, color: 'var(--danger)' }} />
                                             </button>
                                         </div>
@@ -1217,18 +1572,26 @@ const DevicesPage = () => {
                         <input className="input" value={editDevice.name} onChange={e => setEditDevice({ ...editDevice, name: e.target.value })} />
                     </div>
                     <div className="input-group" style={{ marginBottom: 16 }}>
-                        <label className="input-label">{lang === 'de' ? 'Raum' : 'Room'}</label>
-                        <select className="input" value={editDevice.room_id || ''} onChange={e => setEditDevice({ ...editDevice, room_id: e.target.value ? parseInt(e.target.value) : null })}>
-                            <option value="">{lang === 'de' ? '— Kein Raum —' : '— No Room —'}</option>
-                            {rooms.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-                        </select>
+                        <Dropdown
+                            label={lang === 'de' ? 'Raum' : 'Room'}
+                            value={editDevice.room_id || ''}
+                            onChange={v => setEditDevice({ ...editDevice, room_id: v ? parseInt(v) : null })}
+                            options={[
+                                { value: '', label: lang === 'de' ? '— Kein Raum —' : '— No Room —' },
+                                ...rooms.map(r => ({ value: r.id, label: r.name }))
+                            ]}
+                        />
                     </div>
                     <div className="input-group" style={{ marginBottom: 16 }}>
-                        <label className="input-label">Domain</label>
-                        <select className="input" value={editDevice.domain_id || ''} onChange={e => setEditDevice({ ...editDevice, domain_id: e.target.value ? parseInt(e.target.value) : null })}>
-                            <option value="">{lang === 'de' ? '— Keine —' : '— None —'}</option>
-                            {domains.map(d => <option key={d.id} value={d.id}>{d.display_name}</option>)}
-                        </select>
+                        <Dropdown
+                            label="Domain"
+                            value={editDevice.domain_id || ''}
+                            onChange={v => setEditDevice({ ...editDevice, domain_id: v ? parseInt(v) : null })}
+                            options={[
+                                { value: '', label: lang === 'de' ? '— Keine —' : '— None —' },
+                                ...domains.map(d => ({ value: d.id, label: d.display_name }))
+                            ]}
+                        />
                     </div>
                     <div style={{ display: 'flex', gap: 24 }}>
                         <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 14 }}>
@@ -1253,18 +1616,26 @@ const DevicesPage = () => {
                         <button className="btn btn-primary" onClick={handleBulkEdit}>{lang === 'de' ? 'Anwenden' : 'Apply'}</button>
                     </>}>
                     <div className="input-group" style={{ marginBottom: 16 }}>
-                        <label className="input-label">{lang === 'de' ? 'Raum zuweisen' : 'Assign Room'}</label>
-                        <select className="input" value={bulkRoom} onChange={e => setBulkRoom(e.target.value)}>
-                            <option value="">{lang === 'de' ? '— Nicht ändern —' : '— No change —'}</option>
-                            {rooms.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-                        </select>
+                        <Dropdown
+                            label={lang === 'de' ? 'Raum zuweisen' : 'Assign Room'}
+                            value={bulkRoom}
+                            onChange={v => setBulkRoom(v)}
+                            options={[
+                                { value: '', label: lang === 'de' ? '— Nicht ändern —' : '— No change —' },
+                                ...rooms.map(r => ({ value: String(r.id), label: r.name }))
+                            ]}
+                        />
                     </div>
                     <div className="input-group">
-                        <label className="input-label">{lang === 'de' ? 'Domain zuweisen' : 'Assign Domain'}</label>
-                        <select className="input" value={bulkDomain} onChange={e => setBulkDomain(e.target.value)}>
-                            <option value="">{lang === 'de' ? '— Nicht ändern —' : '— No change —'}</option>
-                            {domains.map(d => <option key={d.id} value={d.id}>{d.display_name}</option>)}
-                        </select>
+                        <Dropdown
+                            label={lang === 'de' ? 'Domain zuweisen' : 'Assign Domain'}
+                            value={bulkDomain}
+                            onChange={v => setBulkDomain(v)}
+                            options={[
+                                { value: '', label: lang === 'de' ? '— Nicht ändern —' : '— No change —' },
+                                ...domains.map(d => ({ value: String(d.id), label: d.display_name }))
+                            ]}
+                        />
                     </div>
                 </Modal>
             )}
@@ -1396,7 +1767,7 @@ const RoomsPage = () => {
                                     <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8 }}>
                                         {lang === 'de' ? 'Lernphasen' : 'Learning Phases'}
                                     </div>
-                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                                         {room.domain_states.map((ds, i) => {
                                             const phase = phaseLabels[ds.learning_phase] || phaseLabels.observing;
                                             const dom = domains.find(d => d.id === ds.domain_id);
@@ -1404,23 +1775,78 @@ const RoomsPage = () => {
                                             const domIcon = dom?.icon?.replace('mdi:', 'mdi-') || 'mdi-puzzle';
                                             const nextPhase = ds.learning_phase === 'observing' ? 'suggesting' : ds.learning_phase === 'suggesting' ? 'autonomous' : 'observing';
                                             const nextLabel = phaseLabels[nextPhase]?.[lang] || nextPhase;
+                                            const progress = ds.learning_phase === 'autonomous' ? 100 : ds.learning_phase === 'suggesting' ? 66 : ds.confidence_score ? Math.min(33, Math.round(ds.confidence_score * 33)) : 10;
                                             return (
-                                                <span key={i} className={`badge badge-${phase.color}`}
-                                                    style={{ fontSize: 11, cursor: 'pointer' }}
-                                                    title={`${domName}: ${phase[lang]} → ${lang === 'de' ? 'Klick' : 'Click'}: ${nextLabel}`}
-                                                    onClick={async () => {
-                                                        await api.put(`phases/${room.id}/${ds.domain_id}`, { phase: nextPhase });
-                                                        showToast(`${domName}: ${nextLabel}`, 'success');
-                                                        refreshData();
-                                                    }}>
-                                                    <span className={`mdi ${domIcon}`} style={{ marginRight: 4, fontSize: 12 }} />
-                                                    {domName}: {phase[lang]}
-                                                </span>
+                                                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                                    <span className={`mdi ${domIcon}`} style={{ fontSize: 14, color: 'var(--text-muted)', width: 18 }} />
+                                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 2 }}>
+                                                            <span>{domName}</span>
+                                                            <span className={`badge badge-${phase.color}`} style={{ fontSize: 9, padding: '1px 6px', cursor: 'pointer' }}
+                                                                title={`→ ${nextLabel}`}
+                                                                onClick={async () => {
+                                                                    await api.put(`phases/${room.id}/${ds.domain_id}`, { phase: nextPhase });
+                                                                    showToast(`${domName}: ${nextLabel}`, 'success');
+                                                                    refreshData();
+                                                                }}>
+                                                                {phase[lang]}
+                                                            </span>
+                                                        </div>
+                                                        <div style={{ height: 4, borderRadius: 2, background: 'var(--bg-main)', overflow: 'hidden' }}>
+                                                            <div style={{ height: '100%', borderRadius: 2, width: `${progress}%`,
+                                                                background: ds.learning_phase === 'autonomous' ? 'var(--success)' : ds.learning_phase === 'suggesting' ? 'var(--warning)' : 'var(--accent-primary)',
+                                                                transition: 'width 0.3s' }} />
+                                                        </div>
+                                                    </div>
+                                                    {isAdmin && (
+                                                        <button className="btn btn-ghost" style={{ padding: 2, fontSize: 12 }}
+                                                            title={lang === 'de' ? 'Lernphase zurücksetzen' : 'Reset learning phase'}
+                                                            onClick={async (e) => {
+                                                                e.stopPropagation();
+                                                                if (confirm(lang === 'de' ? `${domName} zurücksetzen? Alle Muster werden gelöscht.` : `Reset ${domName}? All patterns will be deleted.`)) {
+                                                                    await api.post(`phases/${room.id}/${ds.domain_id}/reset`);
+                                                                    showToast(lang === 'de' ? 'Zurückgesetzt' : 'Reset', 'success');
+                                                                    refreshData();
+                                                                }
+                                                            }}>
+                                                            <span className="mdi mdi-restart" style={{ color: 'var(--text-muted)' }} />
+                                                        </button>
+                                                    )}
+                                                </div>
                                             );
                                         })}
                                     </div>
                                 </div>
                             )}
+
+                            {/* Privacy Mode */}
+                            <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                        <span className="mdi mdi-shield-lock" style={{ fontSize: 14, color: room.privacy_mode?.enabled ? 'var(--warning)' : 'var(--text-muted)' }} />
+                                        <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                                            {lang === 'de' ? 'Privatsphäre-Modus' : 'Privacy Mode'}
+                                        </span>
+                                    </div>
+                                    <label className="toggle" style={{ transform: 'scale(0.8)' }}>
+                                        <input type="checkbox" checked={!!room.privacy_mode?.enabled}
+                                            onChange={async () => {
+                                                const newMode = { ...room.privacy_mode, enabled: !room.privacy_mode?.enabled };
+                                                await api.put(`rooms/${room.id}`, { privacy_mode: newMode });
+                                                refreshData();
+                                            }} />
+                                        <div className="toggle-slider" />
+                                    </label>
+                                </div>
+                                {room.privacy_mode?.enabled && (
+                                    <div style={{ marginTop: 6, padding: '6px 8px', background: 'var(--bg-main)', borderRadius: 6, fontSize: 11, color: 'var(--warning)' }}>
+                                        <span className="mdi mdi-information" style={{ marginRight: 4 }} />
+                                        {lang === 'de'
+                                            ? 'Keine Datenerfassung, keine Muster, keine Automationen in diesem Raum.'
+                                            : 'No data collection, no patterns, no automations in this room.'}
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     ))}
                 </div>
@@ -1611,17 +2037,26 @@ const UsersPage = () => {
                         <input className="input" value={newUser.name} onChange={e => setNewUser({ ...newUser, name: e.target.value })} autoFocus />
                     </div>
                     <div className="input-group" style={{ marginBottom: 16 }}>
-                        <label className="input-label">{lang === 'de' ? 'Rolle' : 'Role'}</label>
-                        <select className="input" value={newUser.role} onChange={e => setNewUser({ ...newUser, role: e.target.value })}>
-                            <option value="user">{lang === 'de' ? 'Benutzer' : 'User'}</option>
-                            <option value="admin">Administrator</option>
-                        </select>
+                        <Dropdown
+                            label={lang === 'de' ? 'Rolle' : 'Role'}
+                            value={newUser.role}
+                            onChange={v => setNewUser({ ...newUser, role: v })}
+                            options={[
+                                { value: 'user', label: lang === 'de' ? 'Benutzer' : 'User' },
+                                { value: 'admin', label: 'Administrator' },
+                            ]}
+                        />
                     </div>
                     <div className="input-group">
-                        <label className="input-label">{lang === 'de' ? 'HA-Person' : 'HA Person'}</label>
-                        <select className="input" value={newUser.ha_person_entity} onChange={e => setNewUser({ ...newUser, ha_person_entity: e.target.value })}>
-                            <option value="">{lang === 'de' ? '— Keine —' : '— None —'}</option>
-                            {haPersons.map(p => <option key={p.entity_id} value={p.entity_id}>{p.name} ({p.entity_id})</option>)}
+                        <Dropdown
+                            label={lang === 'de' ? 'HA-Person' : 'HA Person'}
+                            value={newUser.ha_person_entity}
+                            onChange={v => setNewUser({ ...newUser, ha_person_entity: v })}
+                            options={[
+                                { value: '', label: lang === 'de' ? '— Keine —' : '— None —' },
+                                ...haPersons.map(p => ({ value: p.entity_id, label: `${p.name} (${p.entity_id})` }))
+                            ]}
+                        />
                         </select>
                     </div>
                 </Modal>
@@ -1794,10 +2229,12 @@ const SettingsPage = () => {
                     {lang === 'de' ? 'System' : 'System'}
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                    <InfoRow label="Version" value={sysInfo?.version || '0.3.0'} />
-                    <InfoRow label="Phase" value={`2b – ${lang === 'de' ? 'Vorschläge & Automationen' : 'Suggestions & Automations'}`} />
+                    <InfoRow label="Version" value={sysInfo?.version || '0.5.0'} />
+                    <InfoRow label="Phase" value={`2 – ${lang === 'de' ? 'Vollständig' : 'Complete'}`} />
                     <InfoRow label="Home Assistant"
                         value={sysInfo?.ha_connected ? (lang === 'de' ? '✅ Verbunden' : '✅ Connected') : (lang === 'de' ? '❌ Getrennt' : '❌ Disconnected')} />
+                    <InfoRow label={lang === 'de' ? 'Zeitzone' : 'Timezone'}
+                        value={sysInfo?.timezone || '—'} />
                     <InfoRow label={lang === 'de' ? 'HA Entities' : 'HA Entities'}
                         value={sysInfo?.ha_entity_count || '—'} />
                     <InfoRow label={lang === 'de' ? 'Datenbankgröße' : 'Database Size'}
@@ -1808,6 +2245,29 @@ const SettingsPage = () => {
                         value={sysInfo?.state_history_count?.toLocaleString() || '0'} />
                     <InfoRow label={lang === 'de' ? 'Erkannte Muster' : 'Detected Patterns'}
                         value={sysInfo?.pattern_count || '0'} />
+                </div>
+            </div>
+
+            {/* Privacy & Storage */}
+            <div className="card" style={{ marginBottom: 16, borderColor: 'var(--success)', borderWidth: 1 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+                    <span className="mdi mdi-shield-check" style={{ fontSize: 24, color: 'var(--success)' }} />
+                    <div className="card-title" style={{ marginBottom: 0 }}>
+                        {lang === 'de' ? 'Datenschutz & Speicher' : 'Privacy & Storage'}
+                    </div>
+                </div>
+                <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 12 }}>
+                    {lang === 'de'
+                        ? '100% lokal – alle Daten bleiben auf deinem Gerät. Keine Cloud, keine Tracking.'
+                        : '100% local – all data stays on your device. No cloud, no tracking.'}
+                </p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <InfoRow label={lang === 'de' ? 'Datenbankgröße' : 'Database Size'}
+                        value={sysInfo?.db_size_bytes ? formatBytes(sysInfo.db_size_bytes) : '—'} />
+                    <InfoRow label={lang === 'de' ? 'Gesammelte Events' : 'Collected Events'}
+                        value={sysInfo?.state_history_count?.toLocaleString() || '0'} />
+                    <InfoRow label={lang === 'de' ? 'Aufbewahrung' : 'Retention'}
+                        value={`${retention} ${lang === 'de' ? 'Tage' : 'days'}`} />
                 </div>
             </div>
 
@@ -1865,65 +2325,265 @@ const SettingsPage = () => {
                         : 'Includes: rooms, devices, users, domains, settings, logs and database.'}
                 </p>
             </div>
+
+            {/* Anomaly Detection Settings */}
+            <div className="card">
+                <div className="card-title" style={{ marginBottom: 16 }}>
+                    <span className="mdi mdi-alert-circle" style={{ marginRight: 8, color: 'var(--warning)' }} />
+                    {lang === 'de' ? 'Anomalie-Erkennung' : 'Anomaly Detection'}
+                </div>
+                <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 16 }}>
+                    {lang === 'de'
+                        ? 'Steuere wie empfindlich MindHome auf ungewöhnliche Gerätezustände reagiert.'
+                        : 'Control how sensitively MindHome reacts to unusual device states.'}
+                </p>
+                <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+                    {[{ id: 'low', label: lang === 'de' ? 'Niedrig' : 'Low', desc: lang === 'de' ? 'Nur extreme Anomalien' : 'Only extreme anomalies' },
+                      { id: 'medium', label: 'Medium', desc: lang === 'de' ? 'Ausgewogen' : 'Balanced' },
+                      { id: 'high', label: lang === 'de' ? 'Hoch' : 'High', desc: lang === 'de' ? 'Auch kleine Abweichungen' : 'Small deviations too' }].map(s => (
+                        <button key={s.id} className="btn btn-secondary" style={{ flex: 1, textAlign: 'center', padding: '10px 8px' }}
+                            onClick={async () => {
+                                await api.post('anomaly-settings', { sensitivity: s.id });
+                                showToast(`${s.label}`, 'success');
+                            }}>
+                            <div style={{ fontWeight: 600, fontSize: 14 }}>{s.label}</div>
+                            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{s.desc}</div>
+                        </button>
+                    ))}
+                </div>
+            </div>
+
+            {/* #23 Vacation Mode + #42 Debug Mode + #49 Auto Theme + #63 Export + #68 Accessibility */}
+            <div className="card">
+                <div className="card-title" style={{ marginBottom: 16 }}>
+                    <span className="mdi mdi-cog-outline" style={{ marginRight: 8, color: 'var(--accent-primary)' }} />
+                    {lang === 'de' ? 'Erweitert' : 'Advanced'}
+                </div>
+
+                {/* #23 Vacation Mode */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
+                    <span style={{ fontSize: 13 }}><span className="mdi mdi-airplane" style={{ marginRight: 6, color: 'var(--accent-primary)' }} />{lang === 'de' ? 'Urlaubsmodus' : 'Vacation Mode'}</span>
+                    <label className="toggle" style={{ transform: 'scale(0.85)' }}>
+                        <input type="checkbox" onChange={async () => {
+                            const r = await api.put('system/vacation-mode', { enabled: true });
+                            showToast(r?.enabled ? (lang === 'de' ? 'Urlaub aktiv' : 'Vacation ON') : (lang === 'de' ? 'Urlaub beendet' : 'Vacation OFF'), 'info');
+                        }} />
+                        <span className="toggle-slider" />
+                    </label>
+                </div>
+
+                {/* #42 Debug Mode */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
+                    <span style={{ fontSize: 13 }}><span className="mdi mdi-bug" style={{ marginRight: 6 }} />{lang === 'de' ? 'Debug-Modus' : 'Debug Mode'}</span>
+                    <label className="toggle" style={{ transform: 'scale(0.85)' }}>
+                        <input type="checkbox" onChange={async () => { const r = await api.put('system/debug'); showToast(r?.debug_mode ? 'Debug ON' : 'Debug OFF', 'info'); }} />
+                        <span className="toggle-slider" />
+                    </label>
+                </div>
+
+                {/* #49 Auto Theme */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
+                    <span style={{ fontSize: 13 }}><span className="mdi mdi-theme-light-dark" style={{ marginRight: 6 }} />{lang === 'de' ? 'Auto-Theme' : 'Auto Theme'}</span>
+                    <label className="toggle" style={{ transform: 'scale(0.85)' }}>
+                        <input type="checkbox" defaultChecked={false} onChange={(e) => {
+                            localStorage.setItem('mindhome_auto_theme', e.target.checked ? 'true' : 'false');
+                            showToast(e.target.checked ? 'Auto' : 'Manual', 'info');
+                        }} />
+                        <span className="toggle-slider" />
+                    </label>
+                </div>
+
+                {/* #68 Font Size */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
+                    <span style={{ fontSize: 13 }}><span className="mdi mdi-format-size" style={{ marginRight: 6 }} />{lang === 'de' ? 'Schriftgröße' : 'Font Size'}</span>
+                    <div style={{ display: 'flex', gap: 4 }}>
+                        {[{ s: '13px', l: 'S' }, { s: '15px', l: 'M' }, { s: '17px', l: 'L' }].map(f => (
+                            <button key={f.l} className="btn btn-sm btn-ghost" onClick={() => { document.documentElement.style.fontSize = f.s; }}
+                                style={{ width: 28, fontSize: 11 }}>{f.l}</button>
+                        ))}
+                    </div>
+                </div>
+
+                {/* #63 Data Export */}
+                <div style={{ padding: '10px 0 4px' }}>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 6 }}>{lang === 'de' ? 'Daten exportieren' : 'Export Data'}</div>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                        {['patterns', 'history', 'automations'].map(dt => (
+                            <button key={dt} className="btn btn-sm btn-secondary"
+                                onClick={() => window.open(`${API_BASE}/api/export/${dt}?format=csv`, '_blank')}
+                                style={{ fontSize: 11, textTransform: 'capitalize' }}>{dt}</button>
+                        ))}
+                    </div>
+                </div>
+            </div>
         </div>
     );
 };
-
-// ================================================================
-// AI Log Page
 // ================================================================
 
-const LogPage = () => {
-    const { lang } = useApp();
+const ActivitiesPage = () => {
+    const { lang, devices, rooms, domains } = useApp();
     const [logs, setLogs] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [period, setPeriod] = useState('all');
+    const [period, setPeriod] = useState('7d');
+    const [tab, setTab] = useState('all');
+    const [search, setSearch] = useState('');
+    const [roomFilter, setRoomFilter] = useState('');
+    const [deviceFilter, setDeviceFilter] = useState('');
+    const [liveMode, setLiveMode] = useState(false);
 
     const loadLogs = async (p) => {
         setLoading(true);
-        const data = await api.get(`action-log?limit=200&period=${p}`);
+        const data = await api.get(`action-log?limit=500&period=${p}`);
         setLogs(data || []);
         setLoading(false);
     };
 
     useEffect(() => { loadLogs(period); }, [period]);
 
+    // Live mode: poll every 10s
+    useEffect(() => {
+        if (!liveMode) return;
+        const iv = setInterval(() => loadLogs(period), 10000);
+        return () => clearInterval(iv);
+    }, [liveMode, period]);
+
     const typeIcons = {
-        observation: 'mdi-eye',
-        quick_action: 'mdi-lightning-bolt',
-        automation: 'mdi-robot',
-        suggestion: 'mdi-lightbulb-on',
-        anomaly: 'mdi-alert',
-        first_time: 'mdi-star-circle'
+        observation: 'mdi-eye', quick_action: 'mdi-lightning-bolt', automation: 'mdi-robot',
+        suggestion: 'mdi-lightbulb-on', anomaly: 'mdi-alert', system: 'mdi-cog', first_time: 'mdi-star-circle'
     };
+    const typeColors = {
+        observation: 'var(--text-muted)', quick_action: 'var(--info)', automation: 'var(--warning)',
+        suggestion: 'var(--accent-primary)', anomaly: 'var(--danger)', system: 'var(--text-secondary)'
+    };
+
+    const tabTypes = {
+        all: null,
+        devices: ['observation'],
+        automations: ['automation', 'suggestion', 'quick_action'],
+        system: ['anomaly', 'system', 'first_time']
+    };
+
+    const getDeviceName = (id) => devices.find(d => d.id === id)?.name || '';
+    const getRoomName = (id) => rooms.find(r => r.id === id)?.name || '';
+
+    const filtered = logs.filter(log => {
+        if (tab !== 'all' && tabTypes[tab] && !tabTypes[tab].includes(log.action_type)) return false;
+        if (roomFilter && log.room_id !== parseInt(roomFilter)) return false;
+        if (deviceFilter && log.device_id !== parseInt(deviceFilter)) return false;
+        if (search) {
+            const s = search.toLowerCase();
+            const reason = (log.reason || '').toLowerCase();
+            const entity = (log.action_data?.entity_id || '').toLowerCase();
+            const devName = getDeviceName(log.device_id).toLowerCase();
+            const roomName = getRoomName(log.room_id).toLowerCase();
+            if (!reason.includes(s) && !entity.includes(s) && !devName.includes(s) && !roomName.includes(s)) return false;
+        }
+        return true;
+    });
+
+    const exportCSV = () => {
+        const headers = ['Datum', 'Typ', 'Beschreibung', 'Gerät', 'Raum'];
+        const rows = filtered.map(l => [
+            new Date(l.created_at).toLocaleString('de-DE'),
+            l.action_type,
+            (l.reason || '').replace(/,/g, ';'),
+            getDeviceName(l.device_id),
+            getRoomName(l.room_id)
+        ]);
+        const csv = [headers, ...rows].map(r => r.join(',')).join('\n');
+        const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
+        const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+        a.download = `mindhome-activities-${new Date().toISOString().slice(0, 10)}.csv`;
+        a.click();
+    };
+
+    const tabs = [
+        { id: 'all', label: lang === 'de' ? 'Alle' : 'All', icon: 'mdi-format-list-bulleted' },
+        { id: 'devices', label: lang === 'de' ? 'Geräte' : 'Devices', icon: 'mdi-devices' },
+        { id: 'automations', label: lang === 'de' ? 'Automationen' : 'Automations', icon: 'mdi-robot' },
+        { id: 'system', label: 'System', icon: 'mdi-alert-circle' },
+    ];
 
     return (
         <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 8 }}>
-                <p style={{ color: 'var(--text-secondary)', fontSize: 14 }}>
-                    {logs.length} {lang === 'de' ? 'Einträge' : 'entries'}
-                </p>
-                <PeriodFilter value={period} onChange={setPeriod} lang={lang} />
+            {/* Tabs */}
+            <div style={{ display: 'flex', gap: 4, marginBottom: 16, overflowX: 'auto', paddingBottom: 4 }}>
+                {tabs.map(t => (
+                    <button key={t.id} className={`btn ${tab === t.id ? 'btn-primary' : 'btn-ghost'}`}
+                        style={{ fontSize: 13, whiteSpace: 'nowrap', padding: '6px 14px' }}
+                        onClick={() => setTab(t.id)}>
+                        <span className={`mdi ${t.icon}`} style={{ marginRight: 6 }} />
+                        {t.label}
+                        {t.id !== 'all' && (() => {
+                            const count = logs.filter(l => tabTypes[t.id]?.includes(l.action_type)).length;
+                            return count > 0 ? <span style={{ marginLeft: 6, opacity: 0.7 }}>({count})</span> : null;
+                        })()}
+                    </button>
+                ))}
             </div>
 
+            {/* Search & Filters */}
+            <div className="card" style={{ marginBottom: 16, padding: 14 }}>
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                    <div style={{ flex: '1 1 200px' }}>
+                        <div style={{ position: 'relative' }}>
+                            <span className="mdi mdi-magnify" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', fontSize: 18 }} />
+                            <input className="input" placeholder={lang === 'de' ? 'Suchen...' : 'Search...'}
+                                value={search} onChange={e => setSearch(e.target.value)}
+                                style={{ paddingLeft: 34 }} />
+                        </div>
+                    </div>
+                    <div style={{ flex: '0 1 160px' }}>
+                        <Dropdown value={roomFilter} onChange={v => setRoomFilter(v)}
+                            placeholder={lang === 'de' ? 'Alle Räume' : 'All Rooms'}
+                            options={[{ value: '', label: lang === 'de' ? 'Alle Räume' : 'All Rooms' }, ...rooms.map(r => ({ value: String(r.id), label: r.name }))]} />
+                    </div>
+                    <div style={{ flex: '0 1 160px' }}>
+                        <Dropdown value={deviceFilter} onChange={v => setDeviceFilter(v)}
+                            placeholder={lang === 'de' ? 'Alle Geräte' : 'All Devices'}
+                            options={[{ value: '', label: lang === 'de' ? 'Alle Geräte' : 'All Devices' }, ...devices.map(d => ({ value: String(d.id), label: d.name }))]} />
+                    </div>
+                    <PeriodFilter value={period} onChange={setPeriod} lang={lang} />
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 }}>
+                    <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                        {filtered.length} {lang === 'de' ? 'Einträge' : 'entries'}
+                        {search && ` (${lang === 'de' ? 'gefiltert' : 'filtered'})`}
+                    </span>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                        <button className={`btn btn-ghost`} onClick={() => setLiveMode(!liveMode)}
+                            style={{ fontSize: 12, padding: '4px 10px', color: liveMode ? 'var(--success)' : undefined }}>
+                            <span className={`mdi ${liveMode ? 'mdi-access-point' : 'mdi-access-point-off'}`} style={{ marginRight: 4 }} />
+                            Live
+                        </button>
+                        <button className="btn btn-ghost" onClick={exportCSV} style={{ fontSize: 12, padding: '4px 10px' }}>
+                            <span className="mdi mdi-download" style={{ marginRight: 4 }} />CSV
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            {/* Log Entries */}
             {loading ? (
                 <div className="empty-state"><div className="loading-spinner" /></div>
-            ) : logs.length > 0 ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    {logs.map(log => {
+            ) : filtered.length > 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {filtered.map(log => {
                         const attrs = log.action_data?.new_attributes || {};
                         const attrParts = [];
                         if (attrs.brightness_pct !== undefined) attrParts.push(`💡 ${attrs.brightness_pct}%`);
                         if (attrs.position_pct !== undefined) attrParts.push(`↕ ${attrs.position_pct}%`);
                         if (attrs.target_temp !== undefined) attrParts.push(`🌡 ${attrs.target_temp}°C`);
                         if (attrs.current_temp !== undefined) attrParts.push(`Ist: ${attrs.current_temp}°C`);
+                        const roomName = getRoomName(log.room_id);
                         return (
-                        <div key={log.id} className="card" style={{ padding: 14, display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                        <div key={log.id} className="card" style={{ padding: '12px 14px', display: 'flex', alignItems: 'flex-start', gap: 12 }}>
                             <span className={`mdi ${typeIcons[log.action_type] || 'mdi-circle-small'}`}
-                                  style={{ fontSize: 22, color: log.action_type === 'automation' ? 'var(--warning)' : 'var(--accent-primary)', marginTop: 2 }} />
-                            <div style={{ flex: 1 }}>
-                                <div style={{ fontSize: 14, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 6 }}>
-                                    {log.reason || log.action_type}
+                                  style={{ fontSize: 20, color: typeColors[log.action_type] || 'var(--accent-primary)', marginTop: 2, flexShrink: 0 }} />
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ fontSize: 14, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{log.reason || log.action_type}</span>
                                     {log.action_type === 'automation' && (
                                         <span className="badge badge-warning" style={{ fontSize: 10 }}>
                                             <span className="mdi mdi-robot" style={{ marginRight: 2 }} />MindHome
@@ -1933,18 +2593,18 @@ const LogPage = () => {
                                 {log.action_data?.confidence && (
                                     <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>
                                         {lang === 'de' ? 'Vertrauen' : 'Confidence'}: {Math.round(log.action_data.confidence * 100)}%
-                                        {log.action_data.pattern_id && ` · Pattern #${log.action_data.pattern_id}`}
                                     </div>
                                 )}
                                 {attrParts.length > 0 && (
                                     <div style={{ fontSize: 12, color: 'var(--accent-secondary)', marginTop: 2 }}>{attrParts.join(' · ')}</div>
                                 )}
-                                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
-                                    {new Date(log.created_at).toLocaleString(lang === 'de' ? 'de-DE' : 'en-US')}
+                                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 3, display: 'flex', gap: 8 }}>
+                                    <span>{new Date(log.created_at).toLocaleString(lang === 'de' ? 'de-DE' : 'en-US')}</span>
+                                    {roomName && <span>· {roomName}</span>}
                                 </div>
                             </div>
                             {log.was_undone && (
-                                <span className="badge badge-warning">{lang === 'de' ? 'Rückgängig' : 'Undone'}</span>
+                                <span className="badge badge-warning" style={{ flexShrink: 0 }}>{lang === 'de' ? 'Rückgängig' : 'Undone'}</span>
                             )}
                         </div>
                         );
@@ -1952,119 +2612,13 @@ const LogPage = () => {
                 </div>
             ) : (
                 <div className="empty-state">
-                    <span className="mdi mdi-text-box-outline" />
-                    <h3>{lang === 'de' ? 'Noch keine Einträge' : 'No Entries Yet'}</h3>
-                    <p>{lang === 'de'
-                        ? 'Hier werden alle Aktionen von MindHome protokolliert.'
-                        : 'All MindHome actions will be logged here.'}</p>
+                    <span className="mdi mdi-text-box-search-outline" />
+                    <h3>{lang === 'de' ? 'Keine Einträge gefunden' : 'No Entries Found'}</h3>
+                    <p>{search || roomFilter || deviceFilter
+                        ? (lang === 'de' ? 'Versuche andere Filter.' : 'Try different filters.')
+                        : (lang === 'de' ? 'Hier werden alle Aktivitäten protokolliert.' : 'All activities will be logged here.')}</p>
                 </div>
             )}
-        </div>
-    );
-};
-
-// ================================================================
-// Data Privacy Page + Backup
-// ================================================================
-
-const DataPage = () => {
-    const { lang, showToast, refreshData, devices, domains } = useApp();
-    const [dataCollections, setDataCollections] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [period, setPeriod] = useState('all');
-
-    const loadData = async (p) => {
-        setLoading(true);
-        const data = await api.get(`data-collections?limit=200&period=${p}`);
-        setDataCollections(data || []);
-        setLoading(false);
-    };
-
-    useEffect(() => { loadData(period); }, [period]);
-
-    const getDeviceName = (deviceId) => {
-        const d = devices.find(d => d.id === deviceId);
-        return d?.name || `#${deviceId}`;
-    };
-
-    return (
-        <div>
-            <div className="card" style={{ marginBottom: 16, borderColor: 'var(--success)', borderWidth: 1 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <span className="mdi mdi-shield-check" style={{ fontSize: 28, color: 'var(--success)' }} />
-                    <div>
-                        <div style={{ fontWeight: 600, fontSize: 15 }}>
-                            {lang === 'de' ? '100% Lokal' : '100% Local'}
-                        </div>
-                        <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
-                            {lang === 'de'
-                                ? 'Alle Daten werden ausschließlich auf deinem Gerät gespeichert. Backup & Wiederherstellung findest du unter Einstellungen.'
-                                : 'All data is stored exclusively on your device. Backup & restore can be found in Settings.'}
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            {/* Collected Data */}
-            <div className="card">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
-                    <div className="card-title" style={{ marginBottom: 0 }}>
-                        {lang === 'de' ? 'Gesammelte Daten' : 'Collected Data'}
-                        <span style={{ fontWeight: 400, fontSize: 13, color: 'var(--text-muted)', marginLeft: 8 }}>
-                            ({dataCollections.length})
-                        </span>
-                    </div>
-                    <PeriodFilter value={period} onChange={setPeriod} lang={lang} />
-                </div>
-                {loading ? (
-                    <div className="empty-state"><div className="loading-spinner" /></div>
-                ) : dataCollections.length > 0 ? (
-                    <div style={{ maxHeight: 400, overflow: 'auto' }}>
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th>{lang === 'de' ? 'Zeit' : 'Time'}</th>
-                                    <th>{lang === 'de' ? 'Gerät' : 'Device'}</th>
-                                    <th>{lang === 'de' ? 'Typ' : 'Type'}</th>
-                                    <th>{lang === 'de' ? 'Wert' : 'Value'}</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {dataCollections.slice(0, 50).map((dc, i) => (
-                                    <tr key={i}>
-                                        <td style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
-                                            {new Date(dc.collected_at).toLocaleString(lang === 'de' ? 'de-DE' : 'en-US')}
-                                        </td>
-                                        <td style={{ fontSize: 12 }}>{getDeviceName(dc.device_id)}</td>
-                                        <td><span className="badge badge-info" style={{ fontSize: 10 }}>{dc.data_type}</span></td>
-                                        <td style={{ fontSize: 11, fontFamily: 'var(--font-mono)', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                            {(() => {
-                                                const dv = dc.data_value || {};
-                                                let text = `${dv.old_state || '?'} → ${dv.new_state || '?'}`;
-                                                const attrs = dv.new_attributes || {};
-                                                const parts = [];
-                                                if (attrs.brightness_pct !== undefined) parts.push(`${attrs.brightness_pct}%`);
-                                                if (attrs.position_pct !== undefined) parts.push(`Pos ${attrs.position_pct}%`);
-                                                if (attrs.target_temp !== undefined) parts.push(`${attrs.target_temp}°C`);
-                                                if (parts.length) text += ` (${parts.join(', ')})`;
-                                                return text;
-                                            })()}
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-                ) : (
-                    <div className="empty-state" style={{ padding: 32 }}>
-                        <span className="mdi mdi-database-outline" />
-                        <h3>{lang === 'de' ? 'Noch keine Daten' : 'No Data Yet'}</h3>
-                        <p>{lang === 'de'
-                            ? 'Daten werden gesammelt sobald überwachte Geräte ihren Status ändern.'
-                            : 'Data will be collected when tracked devices change state.'}</p>
-                    </div>
-                )}
-            </div>
         </div>
     );
 };
@@ -2074,27 +2628,48 @@ const DataPage = () => {
 // ================================================================
 
 const PatternsPage = () => {
-    const { lang, viewMode, showToast } = useApp();
+    const { lang, viewMode, showToast, devices, rooms } = useApp();
     const [patterns, setPatterns] = useState([]);
     const [stats, setStats] = useState(null);
     const [stateHistory, setStateHistory] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [filter, setFilter] = useState('all'); // all, time_based, event_chain, correlation
-    const [statusFilter, setStatusFilter] = useState(''); // observed, suggested, active, disabled
+    const [filter, setFilter] = useState('all');
+    const [statusFilter, setStatusFilter] = useState('');
     const [showHistory, setShowHistory] = useState(false);
     const [historyEntity, setHistoryEntity] = useState('');
     const [analyzing, setAnalyzing] = useState(false);
     const [confirmDel, setConfirmDel] = useState(null);
     const [expandedId, setExpandedId] = useState(null);
+    const [ptab, setPtab] = useState('patterns');
+    const [rejected, setRejected] = useState([]);
+    const [exclusions, setExclusions] = useState([]);
+    const [manualRules, setManualRules] = useState([]);
+    const [showAddExcl, setShowAddExcl] = useState(false);
+    const [showAddRule, setShowAddRule] = useState(false);
+    const [newExcl, setNewExcl] = useState({ type: 'device_pair', entity_a: '', entity_b: '', reason: '' });
+    const [newRule, setNewRule] = useState({ name: '', trigger_entity: '', trigger_state: '', action_entity: '', action_service: 'turn_on' });
+    const [rejectReason, setRejectReason] = useState(null);
+    const [conflicts, setConflicts] = useState([]);    // #26
+    const [scenes, setScenes] = useState([]);           // #29
 
     const load = async () => {
         try {
-            const [pats, st] = await Promise.all([
+            const [pats, st, rej, excl, rules, conf, sc] = await Promise.all([
                 api.get('patterns'),
                 api.get('stats/learning'),
+                api.get('patterns/rejected'),
+                api.get('pattern-exclusions'),
+                api.get('manual-rules'),
+                api.get('patterns/conflicts'),   // #26
+                api.get('patterns/scenes'),       // #29
             ]);
             setPatterns(pats);
             setStats(st);
+            setRejected(rej || []);
+            setExclusions(excl || []);
+            setManualRules(rules || []);
+            setConflicts(conf?.conflicts || []);
+            setScenes(sc?.scenes || []);
         } catch (e) {
             console.error(e);
         }
@@ -2172,10 +2747,235 @@ const PatternsPage = () => {
         disabled: lang === 'de' ? 'Deaktiviert' : 'Disabled',
     };
 
+    const rejectPattern = async (id, reason) => {
+        await api.put(`patterns/reject/${id}`, { reason });
+        showToast(lang === 'de' ? 'Muster abgelehnt' : 'Pattern rejected', 'success');
+        setRejectReason(null);
+        load();
+    };
+
+    const reactivatePattern = async (id) => {
+        await api.put(`patterns/reactivate/${id}`, {});
+        showToast(lang === 'de' ? 'Muster reaktiviert' : 'Pattern reactivated', 'success');
+        load();
+    };
+
+    const createExclusion = async () => {
+        if (!newExcl.entity_a || !newExcl.entity_b) return;
+        await api.post('pattern-exclusions', newExcl);
+        setShowAddExcl(false);
+        setNewExcl({ type: 'device_pair', entity_a: '', entity_b: '', reason: '' });
+        load();
+        showToast(lang === 'de' ? 'Ausschluss erstellt' : 'Exclusion created', 'success');
+    };
+
+    const createRule = async () => {
+        if (!newRule.name || !newRule.trigger_entity || !newRule.action_entity) return;
+        await api.post('manual-rules', newRule);
+        setShowAddRule(false);
+        setNewRule({ name: '', trigger_entity: '', trigger_state: '', action_entity: '', action_service: 'turn_on' });
+        load();
+        showToast(lang === 'de' ? 'Regel erstellt' : 'Rule created', 'success');
+    };
+
     if (loading) return <div style={{ padding: 40, textAlign: 'center' }}><span className="mdi mdi-loading mdi-spin" style={{ fontSize: 32 }} /></div>;
+
+    const ptabs = [
+        { id: 'patterns', label: lang === 'de' ? 'Muster' : 'Patterns', icon: 'mdi-lightbulb-on', count: patterns.length },
+        { id: 'rejected', label: lang === 'de' ? 'Abgelehnt' : 'Rejected', icon: 'mdi-close-circle', count: rejected.length },
+        { id: 'exclusions', label: lang === 'de' ? 'Ausschlüsse' : 'Exclusions', icon: 'mdi-link-off', count: exclusions.length },
+        { id: 'rules', label: lang === 'de' ? 'Eigene Regeln' : 'Manual Rules', icon: 'mdi-pencil-ruler', count: manualRules.length },
+    ];
 
     return (
         <div>
+            {/* #26 Pattern Conflicts Warning */}
+            {conflicts.length > 0 && (
+                <div className="card" style={{ marginBottom: 16, padding: '12px 16px', borderLeft: '3px solid var(--danger)' }}>
+                    <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 6 }}>
+                        <span className="mdi mdi-alert" style={{ color: 'var(--danger)', marginRight: 6 }} />
+                        {lang === 'de' ? `${conflicts.length} Muster-Konflikte` : `${conflicts.length} Pattern Conflicts`}
+                    </div>
+                    {conflicts.slice(0, 3).map((c, i) => (
+                        <div key={i} style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 2 }}>
+                            {lang === 'de' ? c.message_de : c.message_en}
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            {/* #29 Scene Suggestions */}
+            {scenes.length > 0 && (
+                <div className="card" style={{ marginBottom: 16, padding: '12px 16px', borderLeft: '3px solid var(--accent-primary)' }}>
+                    <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 6 }}>
+                        <span className="mdi mdi-group" style={{ color: 'var(--accent-primary)', marginRight: 6 }} />
+                        {lang === 'de' ? 'Szenen-Vorschläge' : 'Scene Suggestions'}
+                    </div>
+                    {scenes.slice(0, 3).map((s, i) => (
+                        <div key={i} style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 2 }}>
+                            {lang === 'de' ? s.message_de : s.message_en}
+                            <span style={{ opacity: 0.6, marginLeft: 4 }}>({s.entities.length} {lang === 'de' ? 'Geräte' : 'devices'})</span>
+                        </div>
+                    ))}
+                </div>
+            )}
+            {/* Tabs */}
+            <div style={{ display: 'flex', gap: 4, marginBottom: 16, overflowX: 'auto', paddingBottom: 4 }}>
+                {ptabs.map(t => (
+                    <button key={t.id} className={`btn ${ptab === t.id ? 'btn-primary' : 'btn-ghost'}`}
+                        style={{ fontSize: 13, whiteSpace: 'nowrap', padding: '6px 14px' }} onClick={() => setPtab(t.id)}>
+                        <span className={`mdi ${t.icon}`} style={{ marginRight: 6 }} />
+                        {t.label}{t.count > 0 ? ` (${t.count})` : ''}
+                    </button>
+                ))}
+            </div>
+
+            {ptab === 'rejected' ? (
+                <div>
+                    {rejected.length > 0 ? rejected.map(p => (
+                        <div key={p.id} className="card" style={{ marginBottom: 8, padding: 14 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                <div>
+                                    <div style={{ fontSize: 14, fontWeight: 500 }}>{p.description || `Pattern #${p.id}`}</div>
+                                    <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+                                        {p.rejection_reason && <span className="badge badge-danger" style={{ fontSize: 10, marginRight: 6 }}>{p.rejection_reason}</span>}
+                                        {p.rejected_at && new Date(p.rejected_at).toLocaleDateString()}
+                                    </div>
+                                </div>
+                                <button className="btn btn-secondary" style={{ fontSize: 12 }}
+                                    onClick={() => reactivatePattern(p.id)}>
+                                    <span className="mdi mdi-refresh" style={{ marginRight: 4 }} />
+                                    {lang === 'de' ? 'Reaktivieren' : 'Reactivate'}
+                                </button>
+                            </div>
+                        </div>
+                    )) : <div className="empty-state"><span className="mdi mdi-check-circle" />
+                        <h3>{lang === 'de' ? 'Keine abgelehnten Muster' : 'No Rejected Patterns'}</h3></div>}
+                </div>
+
+            ) : ptab === 'exclusions' ? (
+                <div>
+                    <button className="btn btn-primary" style={{ marginBottom: 16 }} onClick={() => setShowAddExcl(true)}>
+                        <span className="mdi mdi-plus" style={{ marginRight: 4 }} />
+                        {lang === 'de' ? 'Ausschluss hinzufügen' : 'Add Exclusion'}
+                    </button>
+                    {exclusions.length > 0 ? exclusions.map(e => (
+                        <div key={e.id} className="card" style={{ marginBottom: 8, padding: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div>
+                                <div style={{ fontSize: 13 }}>
+                                    <span style={{ fontWeight: 500 }}>{e.entity_a}</span>
+                                    <span className="mdi mdi-link-off" style={{ margin: '0 8px', color: 'var(--danger)' }} />
+                                    <span style={{ fontWeight: 500 }}>{e.entity_b}</span>
+                                </div>
+                                {e.reason && <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{e.reason}</div>}
+                            </div>
+                            <button className="btn btn-ghost" onClick={async () => { await api.delete(`pattern-exclusions/${e.id}`); load(); }}>
+                                <span className="mdi mdi-delete" style={{ color: 'var(--danger)' }} />
+                            </button>
+                        </div>
+                    )) : <div className="empty-state"><span className="mdi mdi-link-variant" />
+                        <h3>{lang === 'de' ? 'Keine Ausschlüsse' : 'No Exclusions'}</h3>
+                        <p>{lang === 'de' ? 'Bestimme welche Geräte/Räume nie verknüpft werden sollen.' : 'Define which devices/rooms should never be linked.'}</p></div>}
+
+                    {showAddExcl && (
+                        <Modal title={lang === 'de' ? 'Ausschluss erstellen' : 'Create Exclusion'} onClose={() => setShowAddExcl(false)}
+                            actions={<><button className="btn btn-secondary" onClick={() => setShowAddExcl(false)}>{lang === 'de' ? 'Abbrechen' : 'Cancel'}</button>
+                                <button className="btn btn-primary" onClick={createExclusion}>{lang === 'de' ? 'Erstellen' : 'Create'}</button></>}>
+                            <div className="input-group" style={{ marginBottom: 12 }}>
+                                <Dropdown label={lang === 'de' ? 'Typ' : 'Type'} value={newExcl.type} onChange={v => setNewExcl({ ...newExcl, type: v })}
+                                    options={[{ value: 'device_pair', label: lang === 'de' ? 'Geräte-Paar' : 'Device Pair' }, { value: 'room_pair', label: lang === 'de' ? 'Raum-Paar' : 'Room Pair' }]} />
+                            </div>
+                            <div className="input-group" style={{ marginBottom: 12 }}>
+                                <label className="input-label">{newExcl.type === 'device_pair' ? (lang === 'de' ? 'Gerät A' : 'Device A') : (lang === 'de' ? 'Raum A' : 'Room A')}</label>
+                                <input className="input" value={newExcl.entity_a} onChange={e => setNewExcl({ ...newExcl, entity_a: e.target.value })}
+                                    placeholder={newExcl.type === 'device_pair' ? 'light.living_room' : 'Wohnzimmer'} />
+                            </div>
+                            <div className="input-group" style={{ marginBottom: 12 }}>
+                                <label className="input-label">{newExcl.type === 'device_pair' ? (lang === 'de' ? 'Gerät B' : 'Device B') : (lang === 'de' ? 'Raum B' : 'Room B')}</label>
+                                <input className="input" value={newExcl.entity_b} onChange={e => setNewExcl({ ...newExcl, entity_b: e.target.value })} />
+                            </div>
+                            <div className="input-group">
+                                <label className="input-label">{lang === 'de' ? 'Grund (optional)' : 'Reason (optional)'}</label>
+                                <input className="input" value={newExcl.reason} onChange={e => setNewExcl({ ...newExcl, reason: e.target.value })} />
+                            </div>
+                        </Modal>
+                    )}
+                </div>
+
+            ) : ptab === 'rules' ? (
+                <div>
+                    <button className="btn btn-primary" style={{ marginBottom: 16 }} onClick={() => setShowAddRule(true)}>
+                        <span className="mdi mdi-plus" style={{ marginRight: 4 }} />
+                        {lang === 'de' ? 'Regel erstellen' : 'Create Rule'}
+                    </button>
+                    {manualRules.length > 0 ? manualRules.map(r => (
+                        <div key={r.id} className="card" style={{ marginBottom: 8, padding: 14 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                <div>
+                                    <div style={{ fontSize: 14, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 6 }}>
+                                        {r.name}
+                                        <span className={`badge badge-${r.is_active ? 'success' : 'secondary'}`} style={{ fontSize: 10 }}>
+                                            {r.is_active ? (lang === 'de' ? 'Aktiv' : 'Active') : (lang === 'de' ? 'Pausiert' : 'Paused')}
+                                        </span>
+                                    </div>
+                                    <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
+                                        {lang === 'de' ? 'Wenn' : 'If'} <strong>{r.trigger_entity}</strong> = {r.trigger_state}
+                                        → <strong>{r.action_entity}</strong> {r.action_service}
+                                        {r.delay_seconds > 0 && ` (${r.delay_seconds}s ${lang === 'de' ? 'Verzögerung' : 'delay'})`}
+                                    </div>
+                                    {r.execution_count > 0 && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                                        {r.execution_count}x {lang === 'de' ? 'ausgeführt' : 'executed'}
+                                    </div>}
+                                </div>
+                                <div style={{ display: 'flex', gap: 4 }}>
+                                    <button className="btn btn-ghost" onClick={async () => {
+                                        await api.put(`manual-rules/${r.id}`, { is_active: !r.is_active }); load();
+                                    }}><span className={`mdi ${r.is_active ? 'mdi-pause' : 'mdi-play'}`} style={{ fontSize: 16 }} /></button>
+                                    <button className="btn btn-ghost" onClick={async () => {
+                                        await api.delete(`manual-rules/${r.id}`); load();
+                                    }}><span className="mdi mdi-delete" style={{ fontSize: 16, color: 'var(--danger)' }} /></button>
+                                </div>
+                            </div>
+                        </div>
+                    )) : <div className="empty-state"><span className="mdi mdi-pencil-ruler" />
+                        <h3>{lang === 'de' ? 'Keine eigenen Regeln' : 'No Manual Rules'}</h3>
+                        <p>{lang === 'de' ? 'Erstelle eigene Wenn-Dann Regeln.' : 'Create your own If-Then rules.'}</p></div>}
+
+                    {showAddRule && (
+                        <Modal title={lang === 'de' ? 'Regel erstellen' : 'Create Rule'} onClose={() => setShowAddRule(false)}
+                            actions={<><button className="btn btn-secondary" onClick={() => setShowAddRule(false)}>{lang === 'de' ? 'Abbrechen' : 'Cancel'}</button>
+                                <button className="btn btn-primary" onClick={createRule}>{lang === 'de' ? 'Erstellen' : 'Create'}</button></>}>
+                            <div className="input-group" style={{ marginBottom: 12 }}>
+                                <label className="input-label">{lang === 'de' ? 'Name' : 'Name'}</label>
+                                <input className="input" value={newRule.name} onChange={e => setNewRule({ ...newRule, name: e.target.value })}
+                                    placeholder={lang === 'de' ? 'z.B. Flurlicht bei Haustür' : 'e.g. Hall light on door open'} autoFocus />
+                            </div>
+                            <div className="input-group" style={{ marginBottom: 12 }}>
+                                <label className="input-label">{lang === 'de' ? 'Wenn (Entity)' : 'When (Entity)'}</label>
+                                <input className="input" value={newRule.trigger_entity} onChange={e => setNewRule({ ...newRule, trigger_entity: e.target.value })}
+                                    placeholder="binary_sensor.front_door" />
+                            </div>
+                            <div className="input-group" style={{ marginBottom: 12 }}>
+                                <label className="input-label">{lang === 'de' ? 'Status wird' : 'State becomes'}</label>
+                                <input className="input" value={newRule.trigger_state} onChange={e => setNewRule({ ...newRule, trigger_state: e.target.value })}
+                                    placeholder="on" />
+                            </div>
+                            <div className="input-group" style={{ marginBottom: 12 }}>
+                                <label className="input-label">{lang === 'de' ? 'Dann (Entity)' : 'Then (Entity)'}</label>
+                                <input className="input" value={newRule.action_entity} onChange={e => setNewRule({ ...newRule, action_entity: e.target.value })}
+                                    placeholder="light.hallway" />
+                            </div>
+                            <div className="input-group">
+                                <Dropdown label={lang === 'de' ? 'Aktion' : 'Action'} value={newRule.action_service}
+                                    onChange={v => setNewRule({ ...newRule, action_service: v })}
+                                    options={[{ value: 'turn_on', label: lang === 'de' ? 'Einschalten' : 'Turn On' },
+                                        { value: 'turn_off', label: lang === 'de' ? 'Ausschalten' : 'Turn Off' },
+                                        { value: 'toggle', label: 'Toggle' }]} />
+                            </div>
+                        </Modal>
+                    )}
+                </div>
+            ) : (<div>
             {/* Learning Stats Overview */}
             {(() => {
                 const s = stats || {};
@@ -2220,6 +3020,28 @@ const PatternsPage = () => {
                 </div>
                 );
             })()}
+
+            {/* Learning Speed Control */}
+            <div className="card animate-in" style={{ marginBottom: 16, padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+                <div>
+                    <span className="mdi mdi-speedometer" style={{ marginRight: 8, color: 'var(--accent-primary)' }} />
+                    <span style={{ fontSize: 14, fontWeight: 500 }}>{lang === 'de' ? 'Lerngeschwindigkeit' : 'Learning Speed'}</span>
+                </div>
+                <div style={{ display: 'flex', gap: 4 }}>
+                    {[{ id: 'conservative', label: lang === 'de' ? 'Vorsichtig' : 'Conservative', icon: '🐢' },
+                      { id: 'normal', label: 'Normal', icon: '⚖️' },
+                      { id: 'aggressive', label: lang === 'de' ? 'Aggressiv' : 'Aggressive', icon: '🚀' }].map(s => (
+                        <button key={s.id} className={`btn btn-sm ${(stats?.learning_speed || 'normal') === s.id ? 'btn-primary' : 'btn-ghost'}`}
+                            onClick={async () => {
+                                await api.put('phases/speed', { speed: s.id });
+                                showToast(`${s.icon} ${s.label}`, 'success');
+                                load();
+                            }} style={{ fontSize: 12 }}>
+                            {s.icon} {s.label}
+                        </button>
+                    ))}
+                </div>
+            </div>
 
             {/* Pattern Type Distribution */}
             {stats && stats.patterns_by_type && (
@@ -2454,6 +3276,26 @@ const PatternsPage = () => {
                                             <pre style={{ fontSize: 11, marginTop: 4, padding: 8, background: 'var(--bg-primary)', borderRadius: 4, overflow: 'auto', maxHeight: 120 }}>{JSON.stringify({ trigger: p.trigger_conditions, action: p.action_definition }, null, 2)}</pre>
                                         </details>
                                     )}
+                                    {/* Test mode + Reject */}
+                                    <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
+                                        <button className={`btn btn-sm ${p.test_mode ? 'btn-warning' : 'btn-ghost'}`}
+                                            onClick={async (e) => { e.stopPropagation();
+                                                await api.put(`patterns/test-mode/${p.id}`, { enabled: !p.test_mode });
+                                                showToast(p.test_mode ? (lang === 'de' ? 'Testmodus deaktiviert' : 'Test mode off') : (lang === 'de' ? 'Testmodus aktiviert' : 'Test mode on'), 'success');
+                                                load(); }} style={{ fontSize: 11 }}>
+                                            <span className="mdi mdi-flask" style={{ marginRight: 4 }} />
+                                            {p.test_mode ? (lang === 'de' ? 'Test läuft' : 'Testing') : (lang === 'de' ? 'Testlauf' : 'Test Run')}
+                                        </button>
+                                        {p.status !== 'rejected' && (
+                                            <button className="btn btn-sm btn-ghost" onClick={(e) => { e.stopPropagation(); setRejectReason(p.id); }}
+                                                style={{ fontSize: 11, color: 'var(--danger)' }}>
+                                                <span className="mdi mdi-close-circle" style={{ marginRight: 4 }} />
+                                                {lang === 'de' ? 'Ablehnen' : 'Reject'}
+                                            </button>
+                                        )}
+                                        {p.season && <span className="badge badge-info" style={{ fontSize: 10 }}>🌿 {p.season}</span>}
+                                        {p.category && <span className="badge badge-secondary" style={{ fontSize: 10 }}>{p.category}</span>}
+                                    </div>
                                 </div>
                             )}
                             </div>
@@ -2461,6 +3303,7 @@ const PatternsPage = () => {
                     </div>
                 )}
             </div>
+            </div>)}
 
             {/* Confirm delete */}
             {confirmDel && (
@@ -2471,6 +3314,21 @@ const PatternsPage = () => {
                     onCancel={() => setConfirmDel(null)}
                 />
             )}
+
+            {/* Reject reason modal */}
+            {rejectReason && (
+                <Modal title={lang === 'de' ? 'Ablehnungsgrund' : 'Rejection Reason'} onClose={() => setRejectReason(null)}
+                    actions={<button className="btn btn-secondary" onClick={() => setRejectReason(null)}>{lang === 'de' ? 'Abbrechen' : 'Cancel'}</button>}>
+                    {[{ id: 'coincidence', label: lang === 'de' ? 'Zufall' : 'Coincidence' },
+                      { id: 'unwanted', label: lang === 'de' ? 'Will ich nicht' : 'Unwanted' },
+                      { id: 'wrong', label: lang === 'de' ? 'Falsch erkannt' : 'Wrong detection' }].map(r => (
+                        <button key={r.id} className="btn btn-secondary" style={{ display: 'block', width: '100%', marginBottom: 8, textAlign: 'left' }}
+                            onClick={() => rejectPattern(rejectReason, r.id)}>
+                            {r.label}
+                        </button>
+                    ))}
+                </Modal>
+            )}
         </div>
     );
 };
@@ -2480,20 +3338,27 @@ const PatternsPage = () => {
 // ================================================================
 
 const NotificationsPage = () => {
-    const { lang, showToast } = useApp();
+    const { lang, showToast, devices } = useApp();
     const [notifications, setNotifications] = useState([]);
     const [loading, setLoading] = useState(true);
     const [predictions, setPredictions] = useState([]);
     const [predFilter, setPredFilter] = useState('all');
+    const [tab, setTab] = useState('inbox');
+    const [notifSettings, setNotifSettings] = useState(null);
+    const [stats, setStats] = useState(null);
 
     const load = async () => {
         try {
-            const [notifs, preds] = await Promise.all([
+            const [notifs, preds, ns, st] = await Promise.all([
                 api.get('notifications?limit=100'),
                 api.get('predictions?limit=50'),
+                api.get('notification-settings'),
+                api.get('notification-stats'),
             ]);
             setNotifications(notifs);
             setPredictions(preds);
+            setNotifSettings(ns);
+            setStats(st);
         } catch (e) { console.error(e); }
         setLoading(false);
     };
@@ -2552,8 +3417,103 @@ const NotificationsPage = () => {
 
     if (loading) return <div style={{ padding: 40, textAlign: 'center' }}><span className="mdi mdi-loading mdi-spin" style={{ fontSize: 32 }} /></div>;
 
+    const toggleDND = async () => {
+        const newVal = !notifSettings?.dnd_enabled;
+        await api.put('notification-settings/dnd', { enabled: newVal });
+        setNotifSettings(s => ({ ...s, dnd_enabled: newVal }));
+        showToast(newVal ? (lang === 'de' ? 'Nicht stören aktiviert' : 'DND enabled') : (lang === 'de' ? 'Nicht stören deaktiviert' : 'DND disabled'), 'success');
+    };
+
+    const updateNS = async (type, field, value) => {
+        await api.put('notification-settings', { type, [field]: value });
+        load();
+    };
+
+    const discoverChannels = async () => {
+        const result = await api.post('notification-settings/discover-channels');
+        showToast(result?.found > 0 ? `${result.found} ${lang === 'de' ? 'Kanäle gefunden' : 'channels found'}` : (lang === 'de' ? 'Keine neuen Kanäle' : 'No new channels'), result?.found > 0 ? 'success' : 'info');
+        load();
+    };
+
     return (
         <div>
+            {/* Tab bar + DND */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
+                <div style={{ display: 'flex', gap: 4 }}>
+                    {[{ id: 'inbox', label: lang === 'de' ? 'Posteingang' : 'Inbox', icon: 'mdi-bell' },
+                      { id: 'settings', label: lang === 'de' ? 'Einstellungen' : 'Settings', icon: 'mdi-cog' }].map(t => (
+                        <button key={t.id} className={`btn ${tab === t.id ? 'btn-primary' : 'btn-ghost'}`}
+                            style={{ fontSize: 13, padding: '6px 14px' }} onClick={() => setTab(t.id)}>
+                            <span className={`mdi ${t.icon}`} style={{ marginRight: 6 }} />{t.label}
+                        </button>
+                    ))}
+                </div>
+                <button className={`btn ${notifSettings?.dnd_enabled ? 'btn-warning' : 'btn-ghost'}`}
+                    onClick={toggleDND} style={{ fontSize: 12, padding: '6px 12px' }}>
+                    <span className="mdi mdi-bell-off" style={{ marginRight: 4 }} />DND
+                </button>
+            </div>
+
+            {stats && <div style={{ display: 'flex', gap: 12, marginBottom: 16, fontSize: 12, color: 'var(--text-muted)' }}>
+                <span>30d:</span><span>{stats.total} {lang === 'de' ? 'gesamt' : 'total'}</span>
+                <span>· {stats.read} {lang === 'de' ? 'gelesen' : 'read'}</span>
+                <span>· {stats.sent} push</span>
+            </div>}
+
+            {tab === 'settings' ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 600 }}>
+                    <div className="card">
+                        <div className="card-title" style={{ marginBottom: 12 }}>{lang === 'de' ? 'Typen' : 'Types'}</div>
+                        {['anomaly', 'suggestion', 'critical', 'info'].map(type => {
+                            const s = notifSettings?.settings?.find(x => x.type === type);
+                            const labels = { anomaly: lang === 'de' ? 'Anomalien' : 'Anomalies', suggestion: lang === 'de' ? 'Vorschläge' : 'Suggestions', critical: 'Kritisch', info: 'Info' };
+                            return (<div key={type} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
+                                <span style={{ fontSize: 14 }}>{labels[type]}</span>
+                                <label className="toggle" style={{ transform: 'scale(0.8)' }}>
+                                    <input type="checkbox" checked={s?.is_enabled !== false} onChange={() => updateNS(type, 'is_enabled', !(s?.is_enabled !== false))} />
+                                    <div className="toggle-slider" /></label>
+                            </div>);
+                        })}
+                    </div>
+                    <div className="card">
+                        <div className="card-title" style={{ marginBottom: 8 }}>{lang === 'de' ? 'Ruhezeiten' : 'Quiet Hours'}</div>
+                        <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8 }}>{lang === 'de' ? 'Kein Push in diesem Zeitraum (außer Kritisch)' : 'No push during this period (except Critical)'}</p>
+                        <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                            <input className="input" type="time" defaultValue="22:00" style={{ width: 120 }} />
+                            <span>–</span>
+                            <input className="input" type="time" defaultValue="07:00" style={{ width: 120 }} />
+                        </div>
+                    </div>
+                    <div className="card">
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                            <div className="card-title" style={{ marginBottom: 0 }}>{lang === 'de' ? 'Push-Kanäle' : 'Push Channels'}</div>
+                            <button className="btn btn-secondary" onClick={discoverChannels} style={{ fontSize: 12 }}>
+                                <span className="mdi mdi-refresh" style={{ marginRight: 4 }} />{lang === 'de' ? 'Suchen' : 'Discover'}
+                            </button>
+                        </div>
+                        {notifSettings?.channels?.length > 0 ? notifSettings.channels.map(ch => (
+                            <div key={ch.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--border)' }}>
+                                <div><div style={{ fontSize: 13, fontWeight: 500 }}>{ch.display_name}</div>
+                                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{ch.service_name}</div></div>
+                                <span className={`badge badge-${ch.is_enabled ? 'success' : 'secondary'}`} style={{ fontSize: 10 }}>
+                                    {ch.is_enabled ? '✓' : '—'}</span>
+                            </div>
+                        )) : <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Klicke "Suchen" um HA Notify-Services zu erkennen.' : 'Click "Discover" to find HA notify services.'}</p>}
+                    </div>
+                    <div className="card">
+                        <div className="card-title" style={{ marginBottom: 8 }}>{lang === 'de' ? 'Stummgeschaltete Geräte' : 'Muted Devices'}</div>
+                        {notifSettings?.muted_devices?.length > 0 ? notifSettings.muted_devices.map(m => (
+                            <div key={m.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0' }}>
+                                <span style={{ fontSize: 13 }}>{devices.find(d => d.id === m.device_id)?.name || `#${m.device_id}`}</span>
+                                <button className="btn btn-ghost" style={{ fontSize: 11, color: 'var(--danger)' }}
+                                    onClick={async () => { await api.delete(`notification-settings/unmute-device/${m.id}`); load(); }}>
+                                    <span className="mdi mdi-volume-high" style={{ marginRight: 2 }} />{lang === 'de' ? 'Entstummen' : 'Unmute'}
+                                </button>
+                            </div>
+                        )) : <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Keine stummgeschalteten Geräte.' : 'No muted devices.'}</p>}
+                    </div>
+                </div>
+            ) : (<div>
             {/* Suggestions / Predictions */}
             <div className="card animate-in" style={{ marginBottom: 24 }}>
                 <div className="card-header">
@@ -2687,7 +3647,8 @@ const NotificationsPage = () => {
                     ))
                 )}
             </div>
-        </div>
+        </div>)}
+    </div>
     );
 };
 
@@ -3028,7 +3989,7 @@ const App = () => {
     const [lang, setLang] = useState('de');
     const [theme, setTheme] = useState('dark');
     const [viewMode, setViewMode] = useState('simple');
-    const [toast, setToast] = useState(null);
+    const [toasts, setToasts] = useState([]);
 
     const [status, setStatus] = useState(null);
     const [domains, setDomains] = useState([]);
@@ -3041,7 +4002,48 @@ const App = () => {
     const [settingsLoaded, setSettingsLoaded] = useState(false);
     const [unreadNotifs, setUnreadNotifs] = useState(0);
 
-    const showToast = (message, type = 'info') => setToast({ message, type });
+    // #8 Toast stacking
+    const showToast = useCallback((message, type = 'info') => {
+        const id = Date.now();
+        setToasts(prev => [...prev.slice(-4), { id, message, type }]);
+        setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 4000);
+    }, []);
+
+    // Backwards compat
+    const toast = toasts.length > 0 ? toasts[toasts.length - 1] : null;
+
+    // #16 Keyboard Shortcuts
+    useEffect(() => {
+        const handler = (e) => {
+            // Ignore if typing in input/textarea
+            if (['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return;
+            if (e.key === 'Escape') {
+                setSidebarOpen(false);
+                // Close any open modals by dispatching custom event
+                document.dispatchEvent(new CustomEvent('mindhome-escape'));
+            }
+            if (e.key === 'n' && !e.ctrlKey && !e.metaKey) {
+                setPage('notifications');
+            }
+            if (e.key === 'd' && !e.ctrlKey && !e.metaKey) {
+                setPage('dashboard');
+            }
+        };
+        window.addEventListener('keydown', handler);
+        return () => window.removeEventListener('keydown', handler);
+    }, []);
+
+    // #49 Auto Theme (follow system preference)
+    useEffect(() => {
+        const autoTheme = localStorage.getItem('mindhome_auto_theme');
+        if (autoTheme === 'true') {
+            const mq = window.matchMedia('(prefers-color-scheme: dark)');
+            const handler = (e) => setTheme(e.matches ? 'dark' : 'light');
+            handler(mq);
+            mq.addEventListener('change', handler);
+            return () => mq.removeEventListener('change', handler);
+        }
+    }, []);
 
     // Phase 2b: Poll notification count
     useEffect(() => {
@@ -3128,11 +4130,14 @@ const App = () => {
         }
     };
 
+    // Role: first user is always admin, or if only 1 user exists → admin
+    const isAdmin = users.length <= 1 || (users[0]?.role === 'admin');
+
     const contextValue = React.useMemo(() => ({
-        status, domains, devices, rooms, users, quickActions,
+        status, domains, devices, rooms, users, quickActions, isAdmin,
         lang, setLang, theme, setTheme, viewMode, setViewMode,
         showToast, refreshData, toggleDomain, executeQuickAction
-    }), [status, domains, devices, rooms, users, quickActions, lang, theme, viewMode]);
+    }), [status, domains, devices, rooms, users, quickActions, isAdmin, lang, theme, viewMode]);
 
     if (loading) {
         return <SplashScreen />;
@@ -3152,18 +4157,17 @@ const App = () => {
     const navItems = [
         { section: lang === 'de' ? 'Übersicht' : 'Overview' },
         { id: 'dashboard', icon: 'mdi-view-dashboard', label: 'Dashboard' },
-        { section: lang === 'de' ? 'Konfiguration' : 'Configuration' },
-        { id: 'domains', icon: 'mdi-puzzle', label: 'Domains' },
+        { section: lang === 'de' ? 'Konfiguration' : 'Configuration', adminOnly: true },
+        { id: 'domains', icon: 'mdi-puzzle', label: 'Domains', adminOnly: true },
         { id: 'rooms', icon: 'mdi-door', label: lang === 'de' ? 'Räume' : 'Rooms' },
         { id: 'devices', icon: 'mdi-devices', label: lang === 'de' ? 'Geräte' : 'Devices' },
-        { id: 'users', icon: 'mdi-account-group', label: lang === 'de' ? 'Personen' : 'People' },
+        { id: 'users', icon: 'mdi-account-group', label: lang === 'de' ? 'Personen' : 'People', adminOnly: true },
         { section: 'System' },
-        { id: 'log', icon: 'mdi-text-box-outline', label: 'KI-Log' },
+        { id: 'activities', icon: 'mdi-timeline-clock', label: lang === 'de' ? 'Aktivitäten' : 'Activities' },
         { id: 'patterns', icon: 'mdi-lightbulb-on', label: lang === 'de' ? 'Muster' : 'Patterns' },
         { id: 'notifications', icon: 'mdi-bell', label: lang === 'de' ? 'Benachrichtigungen' : 'Notifications' },
-        { id: 'data', icon: 'mdi-shield-lock', label: lang === 'de' ? 'Datenschutz' : 'Privacy' },
-        { id: 'settings', icon: 'mdi-cog', label: lang === 'de' ? 'Einstellungen' : 'Settings' },
-    ];
+        { id: 'settings', icon: 'mdi-cog', label: lang === 'de' ? 'Einstellungen' : 'Settings', adminOnly: true },
+    ].filter(item => !item.adminOnly || isAdmin);
 
     const pages = {
         dashboard: DashboardPage,
@@ -3171,10 +4175,9 @@ const App = () => {
         devices: DevicesPage,
         rooms: RoomsPage,
         users: UsersPage,
-        log: LogPage,
+        activities: ActivitiesPage,
         patterns: PatternsPage,
         notifications: NotificationsPage,
-        data: DataPage,
         settings: SettingsPage,
     };
 
@@ -3199,18 +4202,23 @@ const App = () => {
                         </div>
                     </div>
 
-                    <nav className="sidebar-nav">
+                    <nav className="sidebar-nav" role="navigation" aria-label="Main navigation">
                         {navItems.map((item, i) => {
                             if (item.section) {
-                                return <div key={i} className="nav-section-title">{item.section}</div>;
+                                return <div key={i} className="nav-section-title" role="separator">{item.section}</div>;
                             }
                             return (
                                 <div
                                     key={item.id}
+                                    role="button"
+                                    tabIndex={0}
+                                    aria-label={item.label}
+                                    aria-current={page === item.id ? 'page' : undefined}
                                     className={`nav-item ${page === item.id ? 'active' : ''}`}
                                     onClick={() => { setPage(item.id); setSidebarOpen(false); }}
+                                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setPage(item.id); setSidebarOpen(false); }}}
                                 >
-                                    <span className={`mdi ${item.icon}`} />
+                                    <span className={`mdi ${item.icon}`} aria-hidden="true" />
                                     {item.label}
                                 </div>
                             );
@@ -3279,7 +4287,12 @@ const App = () => {
             </div>
 
             {/* Toast */}
-            {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+            {/* #8 Stacked Toasts */}
+            <div style={{ position: 'fixed', bottom: 20, right: 20, zIndex: 9999, display: 'flex', flexDirection: 'column-reverse', gap: 8 }}>
+                {toasts.map((t, i) => (
+                    <Toast key={t.id} message={t.message} type={t.type} onClose={() => setToasts(prev => prev.filter(x => x.id !== t.id))} />
+                ))}
+            </div>
         </AppContext.Provider>
     );
 };
@@ -3288,4 +4301,68 @@ const App = () => {
 // Mount App
 // ================================================================
 
-ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+// ================================================================
+// #9 Mobile Responsive + #50 Animations + #17 Skeleton + #67 High Contrast CSS
+// ================================================================
+(() => {
+    const style = document.createElement('style');
+    style.textContent = `
+        /* #17 Skeleton pulse */
+        @keyframes pulse {
+            0%, 100% { opacity: 0.4; }
+            50% { opacity: 0.8; }
+        }
+        .skeleton-pulse { animation: pulse 1.5s ease-in-out infinite; }
+
+        /* #50 Smooth transitions */
+        .card { transition: transform 0.15s, box-shadow 0.15s; }
+        .card:hover { transform: translateY(-1px); }
+        .nav-item { transition: background 0.15s, color 0.15s, transform 0.1s; }
+        .btn { transition: background 0.15s, transform 0.1s; }
+        .btn:active { transform: scale(0.97); }
+        .badge { transition: background 0.2s; }
+
+        /* #9 Mobile Responsive */
+        @media (max-width: 768px) {
+            .sidebar { position: fixed !important; z-index: 1000; transform: translateX(-100%); transition: transform 0.25s; }
+            .sidebar.open { transform: translateX(0); }
+            .main-content { margin-left: 0 !important; }
+            .stat-grid { grid-template-columns: 1fr 1fr !important; }
+            .mobile-header { display: flex !important; }
+            .table-container { overflow-x: auto; }
+            table { min-width: 500px; }
+        }
+        @media (max-width: 480px) {
+            .stat-grid { grid-template-columns: 1fr !important; }
+        }
+
+        /* #67 High Contrast Mode */
+        @media (prefers-contrast: high) {
+            :root, [data-theme="dark"] {
+                --border-color: #888 !important;
+                --text-primary: #fff !important;
+                --text-secondary: #ddd !important;
+            }
+            [data-theme="light"] {
+                --border-color: #333 !important;
+                --text-primary: #000 !important;
+                --text-secondary: #222 !important;
+            }
+            .btn { border: 1px solid currentColor !important; }
+            .card { border: 1px solid var(--border-color) !important; }
+        }
+
+        /* #66 Focus visible for keyboard nav */
+        :focus-visible { outline: 2px solid var(--accent-primary) !important; outline-offset: 2px; }
+        .nav-item:focus-visible { background: var(--bg-tertiary); }
+
+        /* Toast position fix for stacking */
+        .toast { position: relative !important; bottom: auto !important; right: auto !important; }
+    `;
+    document.head.appendChild(style);
+})();
+
+
+ReactDOM.createRoot(document.getElementById('root')).render(
+    React.createElement(ErrorBoundary, null, React.createElement(App))
+);
