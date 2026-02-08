@@ -1,3 +1,4 @@
+# MindHome Backend v0.5.0-fix9 (2026-02-08T18:05) - app.py - DIES IST DIE BACKEND DATEI
 """
 MindHome - Main Application
 Flask backend serving the API and frontend.
