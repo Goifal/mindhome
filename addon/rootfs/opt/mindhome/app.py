@@ -34,7 +34,8 @@ from models import (
     DataCollection, OfflineActionQueue,
     StateHistory, LearnedPattern, PatternMatchLog,
     Prediction, NotificationLog,
-    PatternExclusion, ManualRule, AnomalySetting
+    PatternExclusion, ManualRule, AnomalySetting,
+    DeviceGroup, AuditTrail
 )
 from ha_connection import HAConnection
 try:
@@ -3073,11 +3074,14 @@ def api_weekly_report():
 
 @app.route("/api/backup/export", methods=["GET"])
 def api_backup_export():
-    """Export all MindHome configuration as JSON."""
+    """Export MindHome data as JSON. mode=standard|full|custom"""
+    mode = request.args.get("mode", "standard")
+    history_days = request.args.get("history_days", "90", type=int)
     session = get_db()
     try:
         backup = {
             "version": "0.5.0",
+            "export_mode": mode,
             "exported_at": datetime.now(timezone.utc).isoformat(),
             "rooms": [], "devices": [], "users": [], "domains": [],
             "room_domain_states": [], "settings": [], "quick_actions": [],
@@ -3166,6 +3170,66 @@ def api_backup_export():
             backup["quick_actions"].append({"id": qa.id, "name": qa.name, "icon": qa.icon,
                 "action_type": qa.action_type, "action_data": qa.action_data,
                 "sort_order": qa.sort_order, "is_active": qa.is_active})
+
+        # Full/Custom mode: include historical data
+        if mode in ("full", "custom"):
+            cutoff = datetime.now(timezone.utc) - timedelta(days=history_days)
+
+            # State History (limited by days)
+            backup["state_history"] = []
+            for sh in session.query(StateHistory).filter(StateHistory.created_at >= cutoff).order_by(StateHistory.created_at.desc()).all():
+                backup["state_history"].append({"device_id": sh.device_id,
+                    "old_state": sh.old_state, "new_state": sh.new_state,
+                    "attributes": sh.attributes, "created_at": utc_iso(sh.created_at)})
+
+            # Predictions
+            backup["predictions"] = []
+            for p in session.query(Prediction).all():
+                backup["predictions"].append({"id": p.id, "pattern_id": p.pattern_id,
+                    "predicted_action": p.predicted_action, "confidence": p.confidence,
+                    "status": p.status, "user_response": p.user_response,
+                    "description_de": p.description_de, "description_en": p.description_en,
+                    "created_at": utc_iso(p.created_at)})
+
+            # Notification Log
+            backup["notification_log"] = []
+            for nl in session.query(NotificationLog).filter(NotificationLog.created_at >= cutoff).all():
+                backup["notification_log"].append({"id": nl.id,
+                    "notification_type": nl.notification_type, "title": nl.title,
+                    "message": nl.message, "is_read": nl.is_read,
+                    "created_at": utc_iso(nl.created_at)})
+
+            # Audit Trail
+            backup["audit_trail"] = []
+            for at in session.query(AuditTrail).filter(AuditTrail.created_at >= cutoff).all():
+                backup["audit_trail"].append({"action": at.action, "target": at.target,
+                    "details": at.details, "created_at": utc_iso(at.created_at)})
+
+            # Action Log (all, not just 500)
+            backup["action_log"] = []
+            for log in session.query(ActionLog).filter(ActionLog.created_at >= cutoff).order_by(ActionLog.created_at.desc()).all():
+                backup["action_log"].append({"action_type": log.action_type, "domain_id": log.domain_id,
+                    "room_id": log.room_id, "device_id": log.device_id,
+                    "action_data": log.action_data, "reason": log.reason,
+                    "was_undone": log.was_undone, "created_at": log.created_at.isoformat()})
+
+            # Pattern Match Log
+            backup["pattern_match_log"] = []
+            for pm in session.query(PatternMatchLog).filter(PatternMatchLog.created_at >= cutoff).all():
+                backup["pattern_match_log"].append({"pattern_id": pm.pattern_id,
+                    "matched_at": utc_iso(pm.created_at), "match_data": pm.match_data})
+
+        # Summary for import preview
+        backup["_summary"] = {
+            "rooms": len(backup.get("rooms", [])),
+            "devices": len(backup.get("devices", [])),
+            "users": len(backup.get("users", [])),
+            "patterns": len(backup.get("patterns", [])),
+            "settings": len(backup.get("settings", [])),
+            "state_history": len(backup.get("state_history", [])),
+            "action_log": len(backup.get("action_log", [])),
+        }
+
         return jsonify(backup)
     finally:
         session.close()
@@ -4076,6 +4140,7 @@ def api_get_auto_backup_settings():
         "enabled": get_setting("auto_backup_enabled", "true") == "true",
         "keep_count": int(get_setting("auto_backup_keep", "7")),
         "time": get_setting("auto_backup_time", "03:00"),
+        "path": get_setting("auto_backup_path") or "/backup",
         "last_backup": get_setting("auto_backup_last"),
     })
 
@@ -4090,7 +4155,8 @@ def api_update_auto_backup_settings():
         set_setting("auto_backup_keep", str(max(1, min(30, int(data["keep_count"])))))
     if "time" in data:
         set_setting("auto_backup_time", data["time"])
-    audit_log("auto_backup_settings", data)
+    if "path" in data:
+        set_setting("auto_backup_path", data["path"])
     return jsonify({"success": True})
 
 
@@ -4146,13 +4212,35 @@ def api_delete_calendar_trigger(trigger_id):
 
 @app.route("/api/notification-settings/extended", methods=["GET"])
 def api_get_extended_notification_settings():
-    """Get extended notification configuration."""
+    """Get full extended notification configuration (18 features)."""
     return jsonify({
-        "quiet_hours": json.loads(get_setting("notif_quiet_hours") or '{"enabled": true, "start": "22:00", "end": "07:00", "weekday_only": false}'),
+        # Zeitsteuerung
+        "quiet_hours": json.loads(get_setting("notif_quiet_hours") or '{"enabled": true, "start": "22:00", "end": "07:00", "weekday_only": false, "weekend_start": "23:00", "weekend_end": "09:00", "extra_windows": []}'),
+        "weekday_rules": json.loads(get_setting("notif_weekday_rules") or '{"enabled": false, "rules": {}}'),
+        "vacation_coupling": json.loads(get_setting("notif_vacation_coupling") or '{"enabled": false, "only_critical": true}'),
+        # Eskalation
         "escalation": json.loads(get_setting("notif_escalation") or '{"enabled": false, "chain": [{"type": "push", "delay_min": 0}, {"type": "tts", "delay_min": 5}]}'),
-        "digest": json.loads(get_setting("notif_digest") or '{"enabled": false, "frequency": "daily", "time": "08:00"}'),
+        "repeat_rules": json.loads(get_setting("notif_repeat_rules") or '{"enabled": false, "repeat_after_min": 10, "max_repeats": 3}'),
+        "confirmation_required": json.loads(get_setting("notif_confirmation") or '{"enabled": false, "types": ["critical"]}'),
+        "fallback_channels": json.loads(get_setting("notif_fallback") or '{"enabled": false, "chain": ["push", "tts", "persistent"]}'),
+        # Routing
+        "type_channels": json.loads(get_setting("notif_type_channels") or '{}'),
+        "person_channels": json.loads(get_setting("notif_person_channels") or '{}'),
+        # Darstellung
+        "type_sounds": json.loads(get_setting("notif_type_sounds") or '{"anomaly": true, "suggestion": false, "critical": true, "info": false}'),
+        "templates": json.loads(get_setting("notif_templates") or '{}'),
+        # Spam-Schutz
         "grouping": json.loads(get_setting("notif_grouping") or '{"enabled": true, "window_min": 5}'),
-        "person_channels": json.loads(get_setting("notif_person_channels") or "{}"),
+        "rate_limits": json.loads(get_setting("notif_rate_limits") or '{"anomaly": 10, "suggestion": 5, "critical": 0, "info": 20}'),
+        # Sicherheit
+        "critical_override": json.loads(get_setting("notif_critical_override") or '{"enabled": true}'),
+        # Debug
+        "test_mode": json.loads(get_setting("notif_test_mode") or '{"enabled": false, "until": null}'),
+        # Zusammenfassung
+        "digest": json.loads(get_setting("notif_digest") or '{"enabled": false, "frequency": "daily", "time": "08:00"}'),
+        # Spezial
+        "battery_threshold": int(get_setting("notif_battery_threshold") or "20"),
+        "device_thresholds": json.loads(get_setting("notif_device_thresholds") or '{}'),
     })
 
 
@@ -4160,11 +4248,136 @@ def api_get_extended_notification_settings():
 def api_update_extended_notification_settings():
     """Update extended notification settings."""
     data = request.json
-    for key in ["quiet_hours", "escalation", "digest", "grouping", "person_channels"]:
+    setting_keys = [
+        "quiet_hours", "weekday_rules", "vacation_coupling",
+        "escalation", "repeat_rules", "confirmation_required", "fallback_channels",
+        "type_channels", "person_channels",
+        "type_sounds", "templates",
+        "grouping", "rate_limits",
+        "critical_override", "test_mode", "digest",
+        "device_thresholds",
+    ]
+    for key in setting_keys:
         if key in data:
             set_setting(f"notif_{key}", json.dumps(data[key]))
-    audit_log("notification_settings_update", {k: True for k in data.keys()})
+    if "battery_threshold" in data:
+        set_setting("notif_battery_threshold", str(data["battery_threshold"]))
     return jsonify({"success": True})
+
+
+# ==============================================================================
+# Anomaly Settings Extended (27 features - advanced mode only)
+# ==============================================================================
+
+@app.route("/api/anomaly-settings/extended", methods=["GET"])
+def api_get_extended_anomaly_settings():
+    """Get full anomaly detection configuration."""
+    return jsonify({
+        # Empfindlichkeit
+        "global_sensitivity": get_setting("anomaly_sensitivity") or "medium",
+        "domain_sensitivity": json.loads(get_setting("anomaly_domain_sensitivity") or '{}'),
+        "device_sensitivity": json.loads(get_setting("anomaly_device_sensitivity") or '{}'),
+        # Erkennungs-Typen
+        "detection_types": json.loads(get_setting("anomaly_detection_types") or '{"frequency": true, "time": true, "value": true, "offline": true, "stuck": true, "pattern_deviation": false}'),
+        "frequency_threshold": json.loads(get_setting("anomaly_freq_threshold") or '{"count": 20, "window_min": 5}'),
+        "value_deviation_pct": int(get_setting("anomaly_value_deviation") or "30"),
+        "offline_timeout_min": int(get_setting("anomaly_offline_timeout") or "60"),
+        "stuck_timeout_hours": int(get_setting("anomaly_stuck_timeout") or "12"),
+        # Ausnahmen
+        "device_whitelist": json.loads(get_setting("anomaly_device_whitelist") or '[]'),
+        "domain_exceptions": json.loads(get_setting("anomaly_domain_exceptions") or '[]'),
+        "time_exceptions": json.loads(get_setting("anomaly_time_exceptions") or '[]'),
+        "paused_until": get_setting("anomaly_paused_until"),
+        # Reaktionen
+        "reactions": json.loads(get_setting("anomaly_reactions") or '{"low": "log", "medium": "push", "high": "push_tts", "critical": "push_tts_action"}'),
+        "auto_actions": json.loads(get_setting("anomaly_auto_actions") or '{}'),
+        "reaction_delay_min": int(get_setting("anomaly_reaction_delay") or "0"),
+        # Lernphase
+        "learning_mode": json.loads(get_setting("anomaly_learning_mode") or '{"enabled": false, "days_remaining": 0}'),
+        "seasonal_adjustment": json.loads(get_setting("anomaly_seasonal") or '{"enabled": true}'),
+        # Schwellwerte
+        "battery_threshold": int(get_setting("anomaly_battery_threshold") or "20"),
+        "temperature_limits": json.loads(get_setting("anomaly_temp_limits") or '{}'),
+        "power_limits": json.loads(get_setting("anomaly_power_limits") or '{}'),
+        "humidity_limits": json.loads(get_setting("anomaly_humidity_limits") or '{}'),
+    })
+
+
+@app.route("/api/anomaly-settings/extended", methods=["PUT"])
+def api_update_extended_anomaly_settings():
+    """Update extended anomaly settings."""
+    data = request.json
+    string_settings = ["global_sensitivity", "paused_until"]
+    int_settings = ["value_deviation_pct", "offline_timeout_min", "stuck_timeout_hours", "reaction_delay_min", "battery_threshold"]
+    json_settings = [
+        "domain_sensitivity", "device_sensitivity", "detection_types",
+        "frequency_threshold", "device_whitelist", "domain_exceptions",
+        "time_exceptions", "reactions", "auto_actions", "learning_mode",
+        "seasonal_adjustment", "temperature_limits", "power_limits",
+        "humidity_limits",
+    ]
+    for key in string_settings:
+        if key in data:
+            set_setting(f"anomaly_{key}", str(data[key]) if data[key] else None)
+    for key in int_settings:
+        if key in data:
+            set_setting(f"anomaly_{key}", str(int(data[key])))
+    for key in json_settings:
+        if key in data:
+            set_setting(f"anomaly_{key}", json.dumps(data[key]))
+    return jsonify({"success": True})
+
+
+@app.route("/api/anomaly-settings/pause", methods=["POST"])
+def api_pause_anomaly():
+    """Temporarily pause anomaly detection."""
+    data = request.json
+    hours = data.get("hours", 1)
+    until = (datetime.now(timezone.utc) + timedelta(hours=hours)).isoformat()
+    set_setting("anomaly_paused_until", until)
+    return jsonify({"success": True, "paused_until": until})
+
+
+@app.route("/api/anomaly-settings/reset-baseline", methods=["POST"])
+def api_reset_anomaly_baseline():
+    """Reset anomaly baseline - system re-learns what's normal."""
+    set_setting("anomaly_learning_mode", json.dumps({"enabled": True, "days_remaining": 7, "started_at": datetime.now(timezone.utc).isoformat()}))
+    return jsonify({"success": True, "message": "Baseline reset, learning for 7 days"})
+
+
+@app.route("/api/anomaly-settings/stats", methods=["GET"])
+def api_anomaly_stats():
+    """Get anomaly statistics for dashboard."""
+    session = get_db()
+    try:
+        cutoff_30d = datetime.now(timezone.utc) - timedelta(days=30)
+        logs = session.query(ActionLog).filter(
+            ActionLog.action_type == "anomaly_detected",
+            ActionLog.created_at >= cutoff_30d
+        ).all()
+
+        total = len(logs)
+        by_device = {}
+        by_type = {}
+        by_week = {}
+        for log in logs:
+            ad = log.action_data or {}
+            dev_name = ad.get("device_name", "Unknown")
+            atype = ad.get("anomaly_type", "unknown")
+            week = log.created_at.strftime("%Y-W%W") if log.created_at else "?"
+            by_device[dev_name] = by_device.get(dev_name, 0) + 1
+            by_type[atype] = by_type.get(atype, 0) + 1
+            by_week[week] = by_week.get(week, 0) + 1
+
+        top_devices = sorted(by_device.items(), key=lambda x: x[1], reverse=True)[:10]
+        return jsonify({
+            "total_30d": total,
+            "by_type": by_type,
+            "top_devices": [{"name": d[0], "count": d[1]} for d in top_devices],
+            "trend": [{"week": w, "count": c} for w, c in sorted(by_week.items())],
+        })
+    finally:
+        session.close()
 
 
 # State Change Logging
@@ -4295,7 +4508,7 @@ def run_cleanup():
 # #61 Auto-Backup
 def _auto_backup():
     """Create automatic daily backup, keep last 7."""
-    backup_dir = os.environ.get("MINDHOME_BACKUP_DIR", "/data/mindhome/backups")
+    backup_dir = os.environ.get("MINDHOME_BACKUP_DIR", get_setting("auto_backup_path") or "/backup")
     os.makedirs(backup_dir, exist_ok=True)
 
     db_path = os.environ.get("MINDHOME_DB_PATH", "/data/mindhome/db/mindhome.db")
