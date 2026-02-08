@@ -250,6 +250,22 @@ const Modal = ({ title, children, onClose, actions, wide }) => (
     </div>
 );
 
+const CollapsibleCard = ({ title, icon, children, defaultOpen = true }) => {
+    const [open, setOpen] = useState(defaultOpen);
+    return (
+        <div className="card">
+            <div onClick={() => setOpen(!open)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', userSelect: 'none' }}>
+                <div className="card-title" style={{ marginBottom: 0 }}>
+                    {icon && <span className={`mdi ${icon}`} style={{ marginRight: 8, color: 'var(--accent-primary)' }} />}
+                    {title}
+                </div>
+                <span className={`mdi ${open ? 'mdi-chevron-up' : 'mdi-chevron-down'}`} style={{ fontSize: 18, color: 'var(--text-muted)' }} />
+            </div>
+            {open && <div style={{ marginTop: 12 }}>{children}</div>}
+        </div>
+    );
+};
+
 // ================================================================
 // Fix 11: Splash Screen
 // ================================================================
@@ -2513,28 +2529,39 @@ const SettingsPage = () => {
                 </div>
             )}
 
-            {/* Backup & Restore */}
+            {/* Backup & Restore + Auto Backup (merged) */}
             <div className="card" style={{ marginBottom: 16 }}>
                 <div className="card-title" style={{ marginBottom: 16 }}>
                     {lang === 'de' ? 'Backup & Wiederherstellung' : 'Backup & Restore'}
                 </div>
-                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-                    <button className="btn btn-primary" onClick={handleExport}>
-                        <span className="mdi mdi-download" />
-                        {lang === 'de' ? 'Backup exportieren' : 'Export Backup'}
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+                    <button className="btn btn-primary" onClick={() => window.open(`${API_BASE}/api/backup/export?mode=standard`, '_blank')}>
+                        <span className="mdi mdi-download" style={{ marginRight: 4 }} />
+                        {lang === 'de' ? 'Standard' : 'Standard'}
+                    </button>
+                    <button className="btn btn-secondary" onClick={() => window.open(`${API_BASE}/api/backup/export?mode=full`, '_blank')}>
+                        <span className="mdi mdi-download-multiple" style={{ marginRight: 4 }} />
+                        {lang === 'de' ? 'Vollständig' : 'Full'}
                     </button>
                     <button className="btn btn-secondary" onClick={() => fileInputRef.current?.click()}>
-                        <span className="mdi mdi-upload" />
-                        {lang === 'de' ? 'Backup laden' : 'Import Backup'}
+                        <span className="mdi mdi-upload" style={{ marginRight: 4 }} />
+                        {lang === 'de' ? 'Backup laden' : 'Import'}
                     </button>
                     <input ref={fileInputRef} type="file" accept=".json" onChange={handleImport}
                            style={{ display: 'none' }} />
                 </div>
-                <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 12 }}>
+                <p style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 16 }}>
                     {lang === 'de'
-                        ? 'Enthält: Räume, Geräte, Personen, Domains, Einstellungen, Logs und Datenbank.'
-                        : 'Includes: rooms, devices, users, domains, settings, logs and database.'}
+                        ? 'Standard: Konfiguration. Vollständig: inkl. State History, Logs (90 Tage).'
+                        : 'Standard: config only. Full: incl. state history, logs (90 days).'}
                 </p>
+                <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10 }}>
+                        <span className="mdi mdi-backup-restore" style={{ marginRight: 6, color: 'var(--accent-primary)' }} />
+                        {lang === 'de' ? 'Automatisches Backup' : 'Auto Backup'}
+                    </div>
+                    <AutoBackupSettings lang={lang} showToast={showToast} />
+                </div>
             </div>
 
             {/* Anomaly Detection Settings */}
@@ -2563,6 +2590,9 @@ const SettingsPage = () => {
                         </button>
                     ))}
                 </div>
+
+                {/* Advanced Anomaly Settings - only in advanced mode */}
+                {viewMode === 'advanced' && <AnomalyAdvancedPanel lang={lang} showToast={showToast} />}
             </div>
 
             {/* #23 Vacation Mode + #42 Debug Mode + #49 Auto Theme + #63 Export + #68 Accessibility */}
@@ -2663,9 +2693,6 @@ const SettingsPage = () => {
                     </button>
                 </div>
             </div>
-
-            {/* Auto-Backup Config (#61b) */}
-            <AutoBackupSettings lang={lang} showToast={showToast} />
         </div>
     );
 };
@@ -2679,17 +2706,13 @@ const AutoBackupSettings = ({ lang, showToast }) => {
         await api.put('system/auto-backup', { [field]: value });
     };
     return (
-        <div className="card" style={{ marginBottom: 16 }}>
-            <div className="card-title" style={{ marginBottom: 16 }}>
-                <span className="mdi mdi-backup-restore" style={{ marginRight: 8, color: 'var(--accent-primary)' }} />
-                {lang === 'de' ? 'Automatisches Backup' : 'Auto Backup'}
-            </div>
+        <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
-                <span><span className="mdi mdi-timer-outline" style={{ marginRight: 6 }} />{lang === 'de' ? 'Aktiviert' : 'Enabled'}</span>
+                <span style={{ fontSize: 13 }}><span className="mdi mdi-timer-outline" style={{ marginRight: 6 }} />{lang === 'de' ? 'Aktiviert' : 'Enabled'}</span>
                 <label className="toggle"><input type="checkbox" checked={config.enabled} onChange={() => update('enabled', !config.enabled)} /><div className="toggle-slider" /></label>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
-                <span><span className="mdi mdi-counter" style={{ marginRight: 6 }} />{lang === 'de' ? 'Backups behalten' : 'Keep Backups'}</span>
+                <span style={{ fontSize: 13 }}><span className="mdi mdi-counter" style={{ marginRight: 6 }} />{lang === 'de' ? 'Backups behalten' : 'Keep Backups'}</span>
                 <div style={{ display: 'flex', gap: 4 }}>
                     {[3, 7, 14, 30].map(n => (
                         <button key={n} className={`btn btn-sm ${config.keep_count === n ? 'btn-primary' : 'btn-ghost'}`}
@@ -2697,10 +2720,158 @@ const AutoBackupSettings = ({ lang, showToast }) => {
                     ))}
                 </div>
             </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0' }}>
+                <span style={{ fontSize: 13 }}><span className="mdi mdi-folder" style={{ marginRight: 6 }} />{lang === 'de' ? 'Speicherort' : 'Path'}</span>
+                <span style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'monospace' }}>{config.path || '/backup'}</span>
+            </div>
             {config.last_backup && (
                 <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 8 }}>
                     {lang === 'de' ? 'Letztes Backup' : 'Last backup'}: {config.last_backup}
                 </div>
+            )}
+        </div>
+    );
+};
+
+
+const AnomalyAdvancedPanel = ({ lang, showToast }) => {
+    const [config, setConfig] = useState(null);
+    const [stats, setStats] = useState(null);
+    const { domains, devices } = useApp();
+
+    useEffect(() => {
+        (async () => {
+            const [c, s] = await Promise.all([api.get('anomaly-settings/extended'), api.get('anomaly-settings/stats')]);
+            if (c) setConfig(c);
+            if (s) setStats(s);
+        })();
+    }, []);
+
+    if (!config) return null;
+    const update = async (key, value) => {
+        setConfig(prev => ({ ...prev, [key]: value }));
+        await api.put('anomaly-settings/extended', { [key]: value });
+    };
+
+    return (
+        <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 12 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>
+                <span className="mdi mdi-tune" style={{ marginRight: 6, color: 'var(--accent-primary)' }} />
+                {lang === 'de' ? 'Erweiterte Anomalie-Einstellungen' : 'Advanced Anomaly Settings'}
+            </div>
+
+            {/* Detection Types */}
+            <CollapsibleCard title={lang === 'de' ? 'Erkennungs-Typen' : 'Detection Types'} icon="mdi-radar" defaultOpen={false}>
+                {[{key:'frequency',de:'Häufigkeit',en:'Frequency'},{key:'time',de:'Zeitabweichung',en:'Time'},{key:'value',de:'Wertabweichung',en:'Value'},
+                  {key:'offline',de:'Offline',en:'Offline'},{key:'stuck',de:'Stuck',en:'Stuck'},{key:'pattern_deviation',de:'Muster-Abweichung',en:'Pattern'}].map(t => (
+                    <div key={t.key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 0' }}>
+                        <span style={{ fontSize: 12 }}>{lang === 'de' ? t.de : t.en}</span>
+                        <label className="toggle" style={{ transform: 'scale(0.75)' }}><input type="checkbox" checked={config.detection_types?.[t.key] !== false}
+                            onChange={() => update('detection_types', { ...config.detection_types, [t.key]: !config.detection_types?.[t.key] })} /><div className="toggle-slider" /></label>
+                    </div>
+                ))}
+            </CollapsibleCard>
+
+            {/* Thresholds */}
+            <CollapsibleCard title={lang === 'de' ? 'Schwellwerte' : 'Thresholds'} icon="mdi-speedometer" defaultOpen={false}>
+                {[{key:'offline_timeout_min',de:'Offline nach (Min)',en:'Offline after (min)',vals:[15,30,60,120],unit:''},
+                  {key:'stuck_timeout_hours',de:'Stuck nach (Std)',en:'Stuck after (hrs)',vals:[4,8,12,24],unit:''},
+                  {key:'value_deviation_pct',de:'Wert-Abweichung',en:'Value deviation',vals:[10,20,30,50],unit:'%'},
+                  {key:'battery_threshold',de:'Batterie-Warnung',en:'Battery warning',vals:[10,20,30],unit:'%'}].map(t => (
+                    <div key={t.key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 0' }}>
+                        <span style={{ fontSize: 12 }}>{lang === 'de' ? t.de : t.en}</span>
+                        <div style={{ display: 'flex', gap: 3 }}>
+                            {t.vals.map(v => (
+                                <button key={v} className={`btn btn-sm ${config[t.key] === v ? 'btn-primary' : 'btn-ghost'}`}
+                                    onClick={() => update(t.key, v)} style={{ fontSize: 10, padding: '2px 6px' }}>{v}{t.unit}</button>
+                            ))}
+                        </div>
+                    </div>
+                ))}
+            </CollapsibleCard>
+
+            {/* Reactions per severity */}
+            <CollapsibleCard title={lang === 'de' ? 'Reaktionen' : 'Reactions'} icon="mdi-bell-cog" defaultOpen={false}>
+                {['low','medium','high','critical'].map(sev => {
+                    const labels = {low: lang==='de'?'Niedrig':'Low', medium:'Medium', high: lang==='de'?'Hoch':'High', critical: lang==='de'?'Kritisch':'Critical'};
+                    return (
+                        <div key={sev} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 0' }}>
+                            <span style={{ fontSize: 12 }}>{labels[sev]}</span>
+                            <div style={{ display: 'flex', gap: 3 }}>
+                                {[{id:'log',l:'Log'},{id:'push',l:'Push'},{id:'push_tts',l:'Push+TTS'},{id:'push_tts_action',l:'Auto'}].map(o => (
+                                    <button key={o.id} className={`btn btn-sm ${config.reactions?.[sev] === o.id ? 'btn-primary' : 'btn-ghost'}`}
+                                        onClick={() => update('reactions', { ...config.reactions, [sev]: o.id })}
+                                        style={{ fontSize: 9, padding: '2px 5px' }}>{o.l}</button>
+                                ))}
+                            </div>
+                        </div>
+                    );
+                })}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 0', marginTop: 4 }}>
+                    <span style={{ fontSize: 12 }}>{lang === 'de' ? 'Verzögerung (Min)' : 'Delay (min)'}</span>
+                    <div style={{ display: 'flex', gap: 3 }}>
+                        {[0,1,5,10].map(m => (
+                            <button key={m} className={`btn btn-sm ${config.reaction_delay_min === m ? 'btn-primary' : 'btn-ghost'}`}
+                                onClick={() => update('reaction_delay_min', m)} style={{ fontSize: 10, padding: '2px 6px' }}>{m}</button>
+                        ))}
+                    </div>
+                </div>
+            </CollapsibleCard>
+
+            {/* Exceptions & Learning */}
+            <CollapsibleCard title={lang === 'de' ? 'Ausnahmen & Lernen' : 'Exceptions & Learning'} icon="mdi-shield-off" defaultOpen={false}>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
+                    <button className="btn btn-sm btn-secondary" onClick={async () => {
+                        await api.post('anomaly-settings/pause', { hours: 1 });
+                        showToast(lang === 'de' ? 'Pausiert für 1h' : 'Paused 1h', 'info'); }}>
+                        <span className="mdi mdi-pause" style={{ marginRight: 4 }} />1h
+                    </button>
+                    <button className="btn btn-sm btn-secondary" onClick={async () => {
+                        await api.post('anomaly-settings/pause', { hours: 4 });
+                        showToast(lang === 'de' ? 'Pausiert für 4h' : 'Paused 4h', 'info'); }}>
+                        <span className="mdi mdi-pause" style={{ marginRight: 4 }} />4h
+                    </button>
+                    <button className="btn btn-sm btn-secondary" onClick={async () => {
+                        await api.post('anomaly-settings/pause', { hours: 24 });
+                        showToast(lang === 'de' ? 'Pausiert für 24h' : 'Paused 24h', 'info'); }}>
+                        <span className="mdi mdi-pause" style={{ marginRight: 4 }} />24h
+                    </button>
+                    <button className="btn btn-sm btn-warning" onClick={async () => {
+                        await api.post('anomaly-settings/reset-baseline');
+                        showToast(lang === 'de' ? 'Baseline wird neu gelernt (7 Tage)' : 'Baseline reset (7 days)', 'info'); }}>
+                        <span className="mdi mdi-restart" style={{ marginRight: 4 }} />{lang === 'de' ? 'Baseline reset' : 'Reset baseline'}
+                    </button>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 0' }}>
+                    <span style={{ fontSize: 12 }}>{lang === 'de' ? 'Saisonale Anpassung' : 'Seasonal adjustment'}</span>
+                    <label className="toggle" style={{ transform: 'scale(0.75)' }}><input type="checkbox" checked={config.seasonal_adjustment?.enabled !== false}
+                        onChange={() => update('seasonal_adjustment', { enabled: !config.seasonal_adjustment?.enabled })} /><div className="toggle-slider" /></label>
+                </div>
+                {config.paused_until && new Date(config.paused_until) > new Date() && (
+                    <div style={{ fontSize: 11, color: 'var(--warning)', marginTop: 4 }}>
+                        <span className="mdi mdi-pause-circle" style={{ marginRight: 4 }} />
+                        {lang === 'de' ? 'Pausiert bis' : 'Paused until'} {new Date(config.paused_until).toLocaleTimeString()}
+                    </div>
+                )}
+            </CollapsibleCard>
+
+            {/* Statistics */}
+            {stats && stats.total_30d > 0 && (
+                <CollapsibleCard title={`${lang === 'de' ? 'Statistik' : 'Statistics'} · ${stats.total_30d}`} icon="mdi-chart-bar" defaultOpen={false}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 6, marginBottom: 8 }}>
+                        {Object.entries(stats.by_type || {}).map(([type, count]) => (
+                            <div key={type} style={{ padding: '6px 8px', background: 'var(--bg-main)', borderRadius: 6, fontSize: 11 }}>
+                                <div style={{ fontWeight: 600 }}>{count}×</div>
+                                <div style={{ color: 'var(--text-muted)' }}>{type}</div>
+                            </div>
+                        ))}
+                    </div>
+                    {stats.top_devices?.length > 0 && (
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                            {lang === 'de' ? 'Top-Geräte' : 'Top devices'}: {stats.top_devices.slice(0, 3).map(d => `${d.name} (${d.count}×)`).join(', ')}
+                        </div>
+                    )}
+                </CollapsibleCard>
             )}
         </div>
     );
@@ -3901,181 +4072,241 @@ const NotificationsPage = () => {
             </div>}
 
             {tab === 'settings' ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 600 }}>
-                    <div className="card">
-                        <div className="card-title" style={{ marginBottom: 12 }}>{lang === 'de' ? 'Typen' : 'Types'}</div>
-                        {['anomaly', 'suggestion', 'critical', 'info'].map(type => {
-                            const s = notifSettings?.settings?.find(x => x.type === type);
-                            const labels = { anomaly: lang === 'de' ? 'Anomalien' : 'Anomalies', suggestion: lang === 'de' ? 'Vorschläge' : 'Suggestions', critical: 'Kritisch', info: 'Info' };
-                            return (<div key={type} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
-                                <span style={{ fontSize: 14 }}>{labels[type]}</span>
-                                <label className="toggle" style={{ transform: 'scale(0.8)' }}>
-                                    <input type="checkbox" checked={s?.is_enabled !== false} onChange={() => updateNS(type, 'is_enabled', !(s?.is_enabled !== false))} />
-                                    <div className="toggle-slider" /></label>
-                            </div>);
-                        })}
-                    </div>
-                    <div className="card">
-                        <div className="card-title" style={{ marginBottom: 8 }}>{lang === 'de' ? 'Ruhezeiten' : 'Quiet Hours'}</div>
-                        <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8 }}>{lang === 'de' ? 'Kein Push in diesem Zeitraum (außer Kritisch)' : 'No push during this period (except Critical)'}</p>
-                        <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-                            <input className="input" type="time" defaultValue="22:00" style={{ width: 120 }} />
-                            <span>–</span>
-                            <input className="input" type="time" defaultValue="07:00" style={{ width: 120 }} />
-                        </div>
-                    </div>
-                    <div className="card">
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                            <div className="card-title" style={{ marginBottom: 0 }}>{lang === 'de' ? 'Push-Kanäle' : 'Push Channels'}</div>
-                            <button className="btn btn-secondary" onClick={discoverChannels} style={{ fontSize: 12 }}>
-                                <span className="mdi mdi-refresh" style={{ marginRight: 4 }} />{lang === 'de' ? 'Suchen' : 'Discover'}
-                            </button>
-                        </div>
-                        {notifSettings?.channels?.length > 0 ? notifSettings.channels.map(ch => (
-                            <div key={ch.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--border)' }}>
-                                <div><div style={{ fontSize: 13, fontWeight: 500 }}>{ch.display_name}</div>
-                                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{ch.service_name}</div></div>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                    <button className="btn btn-ghost" style={{ fontSize: 11, padding: '2px 8px' }}
-                                        onClick={async () => {
-                                            const svc = ch.service_name?.replace('notify.', '') || 'notify';
-                                            await api.post('test-notification', { target: svc, message: `MindHome Test Push ✓ (${new Date().toLocaleTimeString()})`, title: 'MindHome Test' });
-                                            showToast(lang === 'de' ? 'Test gesendet!' : 'Test sent!', 'success');
-                                        }}>
-                                        <span className="mdi mdi-bell-ring" style={{ marginRight: 4, fontSize: 13 }} />
-                                        Test
-                                    </button>
-                                    <span className={`badge badge-${ch.is_enabled ? 'success' : 'secondary'}`} style={{ fontSize: 10 }}>
-                                        {ch.is_enabled ? '✓' : '—'}</span>
-                                </div>
-                            </div>
-                        )) : <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Klicke "Suchen" um HA Notify-Services zu erkennen.' : 'Click "Discover" to find HA notify services.'}</p>}
-                    </div>
-
-                    {/* #21 Notification Stats */}
-                    {stats && (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16 }}>
+                    {/* LEFT COLUMN */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                        {/* Types with channel + sound */}
                         <div className="card">
-                            <div className="card-title" style={{ marginBottom: 12 }}>{lang === 'de' ? 'Statistiken (30 Tage)' : 'Statistics (30 days)'}</div>
-                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 8 }}>
-                                <div style={{ textAlign: 'center', padding: 10, background: 'var(--bg-main)', borderRadius: 8 }}>
-                                    <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--accent-primary)' }}>{stats.total || 0}</div>
-                                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Gesamt' : 'Total'}</div>
-                                </div>
-                                <div style={{ textAlign: 'center', padding: 10, background: 'var(--bg-main)', borderRadius: 8 }}>
-                                    <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--success)' }}>{stats.read || 0}</div>
-                                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Gelesen' : 'Read'}</div>
-                                </div>
-                                <div style={{ textAlign: 'center', padding: 10, background: 'var(--bg-main)', borderRadius: 8 }}>
-                                    <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--info)' }}>{stats.pushed || 0}</div>
-                                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Push</div>
-                                </div>
+                            <div className="card-title" style={{ marginBottom: 12 }}>{lang === 'de' ? 'Typen' : 'Types'}</div>
+                            {['anomaly', 'suggestion', 'critical', 'info'].map(type => {
+                                const s = notifSettings?.settings?.find(x => x.type === type);
+                                const labels = { anomaly: lang === 'de' ? 'Anomalien' : 'Anomalies', suggestion: lang === 'de' ? 'Vorschläge' : 'Suggestions', critical: lang === 'de' ? 'Kritisch' : 'Critical', info: 'Info' };
+                                const typeSound = extSettings?.type_sounds?.[type];
+                                return (<div key={type} style={{ padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                        <span style={{ fontSize: 13 }}>{labels[type]}</span>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                            <button className={`btn btn-sm ${typeSound !== false ? 'btn-ghost' : 'btn-ghost'}`}
+                                                onClick={async () => {
+                                                    const sounds = { ...(extSettings?.type_sounds || {}), [type]: !typeSound };
+                                                    setExtSettings(prev => ({ ...prev, type_sounds: sounds }));
+                                                    await api.put('notification-settings/extended', { type_sounds: sounds });
+                                                }} title={lang === 'de' ? 'Ton' : 'Sound'} style={{ padding: '2px 4px' }}>
+                                                <span className={`mdi ${typeSound !== false ? 'mdi-volume-high' : 'mdi-volume-off'}`} style={{ color: typeSound !== false ? 'var(--accent-primary)' : 'var(--text-muted)', fontSize: 14 }} />
+                                            </button>
+                                            <label className="toggle"><input type="checkbox" checked={s?.enabled !== false}
+                                                onChange={async () => { await api.put(`notification-settings/${type}`, { enabled: !s?.enabled }); await load(); }} /><div className="toggle-slider" /></label>
+                                        </div>
+                                    </div>
+                                </div>);
+                            })}
+                        </div>
+
+                        {/* Quiet Hours Extended */}
+                        <div className="card">
+                            <div className="card-title" style={{ marginBottom: 12 }}>
+                                <span className="mdi mdi-moon-waning-crescent" style={{ marginRight: 8, color: 'var(--accent-primary)' }} />
+                                {lang === 'de' ? 'Ruhezeiten' : 'Quiet Hours'}
+                            </div>
+                            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8 }}>{lang === 'de' ? 'Kein Push in diesem Zeitraum (außer Kritisch)' : 'No push during this period (except Critical)'}</div>
+                            <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+                                <div style={{ fontSize: 12 }}>{lang === 'de' ? 'Werktag' : 'Weekday'}:</div>
+                                <input type="time" className="input" value={extSettings?.quiet_hours?.start || '22:00'} style={{ width: 90, padding: '4px 8px', fontSize: 12 }}
+                                    onChange={async (e) => { const qh = { ...extSettings?.quiet_hours, start: e.target.value }; setExtSettings(prev => ({ ...prev, quiet_hours: qh })); await api.put('notification-settings/extended', { quiet_hours: qh }); }} />
+                                <span>–</span>
+                                <input type="time" className="input" value={extSettings?.quiet_hours?.end || '07:00'} style={{ width: 90, padding: '4px 8px', fontSize: 12 }}
+                                    onChange={async (e) => { const qh = { ...extSettings?.quiet_hours, end: e.target.value }; setExtSettings(prev => ({ ...prev, quiet_hours: qh })); await api.put('notification-settings/extended', { quiet_hours: qh }); }} />
+                            </div>
+                            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                                <div style={{ fontSize: 12 }}>{lang === 'de' ? 'Wochenende' : 'Weekend'}:</div>
+                                <input type="time" className="input" value={extSettings?.quiet_hours?.weekend_start || '23:00'} style={{ width: 90, padding: '4px 8px', fontSize: 12 }}
+                                    onChange={async (e) => { const qh = { ...extSettings?.quiet_hours, weekend_start: e.target.value }; setExtSettings(prev => ({ ...prev, quiet_hours: qh })); await api.put('notification-settings/extended', { quiet_hours: qh }); }} />
+                                <span>–</span>
+                                <input type="time" className="input" value={extSettings?.quiet_hours?.weekend_end || '09:00'} style={{ width: 90, padding: '4px 8px', fontSize: 12 }}
+                                    onChange={async (e) => { const qh = { ...extSettings?.quiet_hours, weekend_end: e.target.value }; setExtSettings(prev => ({ ...prev, quiet_hours: qh })); await api.put('notification-settings/extended', { quiet_hours: qh }); }} />
                             </div>
                         </div>
-                    )}
-                    <div className="card">
-                        <div className="card-title" style={{ marginBottom: 8 }}>{lang === 'de' ? 'Stummgeschaltete Geräte' : 'Muted Devices'}</div>
-                        {notifSettings?.muted_devices?.length > 0 ? notifSettings.muted_devices.map(m => (
-                            <div key={m.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0' }}>
-                                <span style={{ fontSize: 13 }}>{devices.find(d => d.id === m.device_id)?.name || `#${m.device_id}`}</span>
-                                <button className="btn btn-ghost" style={{ fontSize: 11, color: 'var(--danger)' }}
-                                    onClick={async () => { await api.delete(`notification-settings/unmute-device/${m.id}`); await load(); }}>
-                                    <span className="mdi mdi-volume-high" style={{ marginRight: 2 }} />{lang === 'de' ? 'Entstummen' : 'Unmute'}
-                                </button>
-                            </div>
-                        )) : <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Keine stummgeschalteten Geräte.' : 'No muted devices.'}</p>}
-                    </div>
 
-                    {/* Extended Settings (#12b) */}
-                    {extSettings && (
-                        <div className="card" style={{ marginTop: 16 }}>
+                        {/* Extended Settings */}
+                        <div className="card">
                             <div className="card-title" style={{ marginBottom: 12 }}>
                                 <span className="mdi mdi-tune" style={{ marginRight: 8, color: 'var(--accent-primary)' }} />
                                 {lang === 'de' ? 'Erweiterte Einstellungen' : 'Extended Settings'}
                             </div>
-
-                            {/* Quiet Hours */}
-                            <div style={{ padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                                    <span style={{ fontSize: 13 }}><span className="mdi mdi-moon-waning-crescent" style={{ marginRight: 6 }} />{lang === 'de' ? 'Ruhezeiten' : 'Quiet Hours'}</span>
-                                    <label className="toggle"><input type="checkbox" checked={extSettings.quiet_hours?.enabled}
+                            {[
+                                { key: 'escalation', icon: 'mdi-arrow-up-bold', de: 'Eskalation (Push → TTS)', en: 'Escalation (Push → TTS)' },
+                                { key: 'repeat_rules', icon: 'mdi-repeat', de: 'Wiederholung bei Nichtlesen', en: 'Repeat if unread' },
+                                { key: 'confirmation_required', icon: 'mdi-check-decagram', de: 'Bestätigungspflicht (Kritisch)', en: 'Confirmation required (Critical)' },
+                                { key: 'critical_override', icon: 'mdi-alert-octagon', de: 'Kritisch durchbricht alles', en: 'Critical overrides everything' },
+                                { key: 'fallback_channels', icon: 'mdi-swap-horizontal', de: 'Kanal-Fallback bei Fehler', en: 'Channel fallback on error' },
+                                { key: 'vacation_coupling', icon: 'mdi-palm-tree', de: 'Urlaub: nur Kritisch', en: 'Vacation: critical only' },
+                                { key: 'test_mode', icon: 'mdi-flask', de: 'Testmodus (nur loggen)', en: 'Test mode (log only)' },
+                            ].map(item => (
+                                <div key={item.key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 0', borderBottom: '1px solid var(--border)' }}>
+                                    <span style={{ fontSize: 13 }}><span className={`mdi ${item.icon}`} style={{ marginRight: 6, fontSize: 14 }} />{lang === 'de' ? item.de : item.en}</span>
+                                    <label className="toggle"><input type="checkbox" checked={extSettings?.[item.key]?.enabled || false}
                                         onChange={async () => {
-                                            const qh = { ...extSettings.quiet_hours, enabled: !extSettings.quiet_hours.enabled };
-                                            setExtSettings(prev => ({ ...prev, quiet_hours: qh }));
-                                            await api.put('notification-settings/extended', { quiet_hours: qh });
+                                            const val = { ...(extSettings?.[item.key] || {}), enabled: !extSettings?.[item.key]?.enabled };
+                                            setExtSettings(prev => ({ ...prev, [item.key]: val }));
+                                            await api.put('notification-settings/extended', { [item.key]: val });
                                         }} /><div className="toggle-slider" /></label>
                                 </div>
-                                {extSettings.quiet_hours?.enabled && (
-                                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 12 }}>
-                                        <input type="time" className="input" value={extSettings.quiet_hours?.start || '22:00'} style={{ width: 100, padding: '4px 8px', fontSize: 12 }}
-                                            onChange={async (e) => { const qh = { ...extSettings.quiet_hours, start: e.target.value }; setExtSettings(prev => ({ ...prev, quiet_hours: qh })); await api.put('notification-settings/extended', { quiet_hours: qh }); }} />
-                                        <span>–</span>
-                                        <input type="time" className="input" value={extSettings.quiet_hours?.end || '07:00'} style={{ width: 100, padding: '4px 8px', fontSize: 12 }}
-                                            onChange={async (e) => { const qh = { ...extSettings.quiet_hours, end: e.target.value }; setExtSettings(prev => ({ ...prev, quiet_hours: qh })); await api.put('notification-settings/extended', { quiet_hours: qh }); }} />
-                                    </div>
-                                )}
-                            </div>
+                            ))}
 
-                            {/* Escalation */}
-                            <div style={{ padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                    <span style={{ fontSize: 13 }}><span className="mdi mdi-arrow-up-bold" style={{ marginRight: 6 }} />{lang === 'de' ? 'Eskalation (Push → TTS)' : 'Escalation (Push → TTS)'}</span>
-                                    <label className="toggle"><input type="checkbox" checked={extSettings.escalation?.enabled}
-                                        onChange={async () => {
-                                            const esc = { ...extSettings.escalation, enabled: !extSettings.escalation.enabled };
-                                            setExtSettings(prev => ({ ...prev, escalation: esc }));
-                                            await api.put('notification-settings/extended', { escalation: esc });
-                                        }} /><div className="toggle-slider" /></label>
+                            {/* Grouping window */}
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 0', borderBottom: '1px solid var(--border)' }}>
+                                <span style={{ fontSize: 13 }}><span className="mdi mdi-group" style={{ marginRight: 6, fontSize: 14 }} />{lang === 'de' ? 'Gruppierung' : 'Grouping'}</span>
+                                <div style={{ display: 'flex', gap: 4 }}>
+                                    {[1, 5, 15, 30].map(m => (
+                                        <button key={m} className={`btn btn-sm ${(extSettings?.grouping?.window_min || 5) === m ? 'btn-primary' : 'btn-ghost'}`}
+                                            onClick={async () => { const g = { enabled: true, window_min: m }; setExtSettings(prev => ({ ...prev, grouping: g })); await api.put('notification-settings/extended', { grouping: g }); }}
+                                            style={{ fontSize: 10, padding: '2px 6px' }}>{m}m</button>
+                                    ))}
                                 </div>
                             </div>
 
-                            {/* Grouping */}
-                            <div style={{ padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                    <span style={{ fontSize: 13 }}><span className="mdi mdi-group" style={{ marginRight: 6 }} />{lang === 'de' ? 'Gleiche Meldungen gruppieren' : 'Group similar notifications'}</span>
-                                    <label className="toggle"><input type="checkbox" checked={extSettings.grouping?.enabled}
-                                        onChange={async () => {
-                                            const gr = { ...extSettings.grouping, enabled: !extSettings.grouping.enabled };
-                                            setExtSettings(prev => ({ ...prev, grouping: gr }));
-                                            await api.put('notification-settings/extended', { grouping: gr });
-                                        }} /><div className="toggle-slider" /></label>
+                            {/* Rate limits */}
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 0', borderBottom: '1px solid var(--border)' }}>
+                                <span style={{ fontSize: 13 }}><span className="mdi mdi-speedometer" style={{ marginRight: 6, fontSize: 14 }} />{lang === 'de' ? 'Max pro Stunde' : 'Rate limit /h'}</span>
+                                <div style={{ display: 'flex', gap: 4 }}>
+                                    {[5, 10, 20, 0].map(r => (
+                                        <button key={r} className={`btn btn-sm ${(extSettings?.rate_limits?.anomaly || 10) === r ? 'btn-primary' : 'btn-ghost'}`}
+                                            onClick={async () => { const rl = { anomaly: r, suggestion: r, critical: 0, info: r }; setExtSettings(prev => ({ ...prev, rate_limits: rl })); await api.put('notification-settings/extended', { rate_limits: rl }); }}
+                                            style={{ fontSize: 10, padding: '2px 6px' }}>{r === 0 ? '∞' : r}</button>
+                                    ))}
                                 </div>
                             </div>
 
                             {/* Digest */}
-                            <div style={{ padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                    <span style={{ fontSize: 13 }}><span className="mdi mdi-email-newsletter" style={{ marginRight: 6 }} />{lang === 'de' ? 'Tägliche Zusammenfassung' : 'Daily Digest'}</span>
-                                    <label className="toggle"><input type="checkbox" checked={extSettings.digest?.enabled}
-                                        onChange={async () => {
-                                            const dg = { ...extSettings.digest, enabled: !extSettings.digest.enabled };
-                                            setExtSettings(prev => ({ ...prev, digest: dg }));
-                                            await api.put('notification-settings/extended', { digest: dg });
-                                        }} /><div className="toggle-slider" /></label>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 0', borderBottom: '1px solid var(--border)' }}>
+                                <span style={{ fontSize: 13 }}><span className="mdi mdi-email-newsletter" style={{ marginRight: 6, fontSize: 14 }} />{lang === 'de' ? 'Zusammenfassung' : 'Digest'}</span>
+                                <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                                    <label className="toggle"><input type="checkbox" checked={extSettings?.digest?.enabled || false}
+                                        onChange={async () => { const d = { ...(extSettings?.digest || {}), enabled: !extSettings?.digest?.enabled }; setExtSettings(prev => ({ ...prev, digest: d })); await api.put('notification-settings/extended', { digest: d }); }} /><div className="toggle-slider" /></label>
+                                    {extSettings?.digest?.enabled && <input type="time" className="input" value={extSettings?.digest?.time || '08:00'} style={{ width: 80, padding: '2px 6px', fontSize: 11 }}
+                                        onChange={async (e) => { const d = { ...extSettings.digest, time: e.target.value }; setExtSettings(prev => ({ ...prev, digest: d })); await api.put('notification-settings/extended', { digest: d }); }} />}
+                                </div>
+                            </div>
+
+                            {/* Battery threshold */}
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 0' }}>
+                                <span style={{ fontSize: 13 }}><span className="mdi mdi-battery-alert" style={{ marginRight: 6, fontSize: 14 }} />{lang === 'de' ? 'Batterie-Warnung unter' : 'Battery warning below'}</span>
+                                <div style={{ display: 'flex', gap: 4 }}>
+                                    {[10, 20, 30].map(p => (
+                                        <button key={p} className={`btn btn-sm ${(extSettings?.battery_threshold || 20) === p ? 'btn-primary' : 'btn-ghost'}`}
+                                            onClick={async () => { setExtSettings(prev => ({ ...prev, battery_threshold: p })); await api.put('notification-settings/extended', { battery_threshold: p }); }}
+                                            style={{ fontSize: 10, padding: '2px 6px' }}>{p}%</button>
+                                    ))}
                                 </div>
                             </div>
                         </div>
-                    )}
 
-                    {/* TTS Test (#30) */}
-                    {ttsDevices.length > 0 && (
-                        <div className="card" style={{ marginTop: 16 }}>
-                            <div className="card-title" style={{ marginBottom: 12 }}>
-                                <span className="mdi mdi-bullhorn" style={{ marginRight: 8, color: 'var(--accent-primary)' }} />
-                                {lang === 'de' ? 'Sprachausgabe (TTS)' : 'Text-to-Speech'}
+                        {/* Stats */}
+                        {stats && (
+                            <div className="card">
+                                <div className="card-title" style={{ marginBottom: 12 }}>{lang === 'de' ? 'Statistiken (30 Tage)' : 'Statistics (30 days)'}</div>
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+                                    <div style={{ textAlign: 'center', padding: 10, background: 'var(--bg-main)', borderRadius: 8 }}>
+                                        <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--accent-primary)' }}>{stats.total || 0}</div>
+                                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Gesamt' : 'Total'}</div>
+                                    </div>
+                                    <div style={{ textAlign: 'center', padding: 10, background: 'var(--bg-main)', borderRadius: 8 }}>
+                                        <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--success)' }}>{stats.read || 0}</div>
+                                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Gelesen' : 'Read'}</div>
+                                    </div>
+                                    <div style={{ textAlign: 'center', padding: 10, background: 'var(--bg-main)', borderRadius: 8 }}>
+                                        <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--info)' }}>{stats.pushed || 0}</div>
+                                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Push</div>
+                                    </div>
+                                </div>
                             </div>
-                            {ttsDevices.map(d => (
-                                <div key={d.entity_id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--border)' }}>
-                                    <span style={{ fontSize: 13 }}>{d.name}</span>
-                                    <button className="btn btn-sm btn-secondary" onClick={async () => {
-                                        await api.post('tts/announce', { message: lang === 'de' ? 'Dies ist ein Test von MindHome.' : 'This is a test from MindHome.', entity_id: d.entity_id });
-                                        showToast(lang === 'de' ? 'TTS gesendet' : 'TTS sent', 'success');
-                                    }} style={{ fontSize: 11 }}>
-                                        <span className="mdi mdi-play" style={{ marginRight: 4 }} />Test
-                                    </button>
+                        )}
+                    </div>
+
+                    {/* RIGHT COLUMN */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                        {/* Push Channels - Collapsible */}
+                        <CollapsibleCard title={`${lang === 'de' ? 'Push-Kanäle' : 'Push Channels'} · ${notifSettings?.channels?.length || 0}`} icon="mdi-send" defaultOpen={false}>
+                            <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
+                                <button className="btn btn-sm btn-secondary" onClick={async () => { await api.post('notification-settings/scan-channels'); await load(); }}>
+                                    <span className="mdi mdi-refresh" style={{ marginRight: 4 }} />{lang === 'de' ? 'Suchen' : 'Scan'}
+                                </button>
+                            </div>
+                            <div style={{ maxHeight: 300, overflowY: 'auto' }}>
+                                {(notifSettings?.channels || []).map(ch => (
+                                    <div key={ch.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--border)' }}>
+                                        <div>
+                                            <div style={{ fontSize: 13, fontWeight: 500 }}>{ch.name}</div>
+                                            <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{ch.ha_service}</div>
+                                        </div>
+                                        <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                                            <button className="btn btn-sm btn-ghost" onClick={async () => { await api.post(`notification-settings/test-channel/${ch.id}`); showToast('Test sent', 'success'); }} style={{ fontSize: 10 }}>Test</button>
+                                            <label className="toggle" style={{ transform: 'scale(0.8)' }}><input type="checkbox" checked={ch.is_active}
+                                                onChange={async () => { await api.put(`notification-settings/channel/${ch.id}`, { is_active: !ch.is_active }); await load(); }} /><div className="toggle-slider" /></label>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </CollapsibleCard>
+
+                        {/* Person Channel Assignment - Collapsible */}
+                        <CollapsibleCard title={lang === 'de' ? 'Personen-Zuordnung' : 'Person Assignment'} icon="mdi-account-group" defaultOpen={false}>
+                            {(users || []).map(u => (
+                                <div key={u.id} style={{ padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
+                                    <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 4 }}>{u.name}</div>
+                                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                                        {(notifSettings?.channels || []).filter(c => c.is_active).map(ch => {
+                                            const assigned = extSettings?.person_channels?.[u.id]?.includes(ch.id);
+                                            return <button key={ch.id} className={`btn btn-sm ${assigned ? 'btn-primary' : 'btn-ghost'}`}
+                                                onClick={async () => {
+                                                    const pc = { ...(extSettings?.person_channels || {}) };
+                                                    const current = pc[u.id] || [];
+                                                    pc[u.id] = assigned ? current.filter(id => id !== ch.id) : [...current, ch.id];
+                                                    setExtSettings(prev => ({ ...prev, person_channels: pc }));
+                                                    await api.put('notification-settings/extended', { person_channels: pc });
+                                                }} style={{ fontSize: 10, padding: '2px 6px' }}>{ch.name}</button>;
+                                        })}
+                                    </div>
                                 </div>
                             ))}
-                        </div>
-                    )}
+                        </CollapsibleCard>
+
+                        {/* TTS - Collapsible */}
+                        {ttsDevices.length > 0 && (
+                            <CollapsibleCard title={`${lang === 'de' ? 'Sprachausgabe (TTS)' : 'Text-to-Speech'} · ${ttsDevices.length}`} icon="mdi-bullhorn" defaultOpen={false}>
+                                {ttsDevices.map(d => (
+                                    <div key={d.entity_id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--border)' }}>
+                                        <span style={{ fontSize: 13 }}>{d.name}</span>
+                                        <button className="btn btn-sm btn-secondary" onClick={async () => {
+                                            await api.post('tts/announce', { message: lang === 'de' ? 'Dies ist ein Test von MindHome.' : 'This is a test from MindHome.', entity_id: d.entity_id });
+                                            showToast(lang === 'de' ? 'TTS gesendet' : 'TTS sent', 'success');
+                                        }} style={{ fontSize: 11 }}><span className="mdi mdi-play" style={{ marginRight: 2 }} />Test</button>
+                                    </div>
+                                ))}
+                            </CollapsibleCard>
+                        )}
+
+                        {/* Muted Devices - Collapsible */}
+                        <CollapsibleCard title={`${lang === 'de' ? 'Stummgeschaltete Geräte' : 'Muted Devices'} · ${notifSettings?.muted_devices?.length || 0}`} icon="mdi-volume-off" defaultOpen={false}>
+                            {notifSettings?.muted_devices?.length > 0 ? notifSettings.muted_devices.map(m => (
+                                <div key={m.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0' }}>
+                                    <span style={{ fontSize: 13 }}>{devices.find(d => d.id === m.device_id)?.name || `#${m.device_id}`}</span>
+                                    <button className="btn btn-ghost" style={{ fontSize: 11, color: 'var(--danger)' }}
+                                        onClick={async () => { await api.delete(`notification-settings/unmute-device/${m.id}`); await load(); }}>
+                                        <span className="mdi mdi-volume-high" style={{ marginRight: 2 }} />{lang === 'de' ? 'Entstummen' : 'Unmute'}
+                                    </button>
+                                </div>
+                            )) : <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Keine stummgeschalteten Geräte.' : 'No muted devices.'}</p>}
+                        </CollapsibleCard>
+
+                        {/* DND Button */}
+                        <button className={`btn ${notifSettings?.dnd_enabled ? 'btn-warning' : 'btn-secondary'}`}
+                            onClick={async () => { const newVal = !notifSettings?.dnd_enabled; setNotifSettings(s => ({ ...s, dnd_enabled: newVal })); await api.put('notification-settings/dnd', { enabled: newVal }); }}
+                            style={{ fontSize: 13, padding: '10px 16px' }}>
+                            <span className={`mdi ${notifSettings?.dnd_enabled ? 'mdi-bell-off' : 'mdi-bell-ring'}`} style={{ marginRight: 8 }} />
+                            {notifSettings?.dnd_enabled ? (lang === 'de' ? 'DND aktiv – Benachrichtigungen stumm' : 'DND active') : (lang === 'de' ? 'Nicht stören aktivieren' : 'Enable Do Not Disturb')}
+                        </button>
+                    </div>
                 </div>
             ) : (<div>
             {/* Suggestions / Predictions */}
