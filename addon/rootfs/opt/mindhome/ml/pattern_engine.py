@@ -1,3 +1,4 @@
+# MindHome Pattern Engine v0.5.1-blockA (2026-02-08T19:30) - pattern_engine.py
 """
 MindHome - Pattern Engine (Phase 2a)
 Core intelligence: state logging, context building, pattern detection.
@@ -29,7 +30,7 @@ logger = logging.getLogger("mindhome.pattern_engine")
 
 # Minimum change thresholds per device_class / entity type
 SAMPLING_THRESHOLDS = {
-    "temperature":  0.5,   # only log if >= 0.5° change
+    "temperature":  0.5,   # only log if >= 0.5Â° change
     "humidity":     2.0,   # only log if >= 2% change
     "pressure":     5.0,   # only log if >= 5 hPa change
     "illuminance":  50.0,  # only log if >= 50 lux change
@@ -140,7 +141,7 @@ class ContextBuilder:
                 if eid == "sun.sun":
                     ctx["sun_phase"] = state_val
                     ctx["sun_elevation"] = attrs.get("elevation")
-                    # #57 – dark detection
+                    # #57 â€“ dark detection
                     elev = attrs.get("elevation")
                     if elev is not None and elev < -6:
                         ctx["is_dark"] = True
@@ -337,7 +338,7 @@ class StateLogger:
 
             session.commit()
             self._event_timestamps.append(now)
-            logger.debug(f"Logged: {entity_id} {old_state} → {new_state}")
+            logger.debug(f"Logged: {entity_id} {old_state} â†’ {new_state}")
 
             # B.4: Check manual rules
             self._check_manual_rules(session, entity_id, new_state, ctx)
@@ -643,7 +644,7 @@ class PatternDetector:
                 old_conf = p.confidence
                 p.confidence = max(0.1, p.confidence - decay)
                 if decay > 0:
-                    logger.debug(f"Pattern {p.id} confidence decay: {old_conf:.2f} → {p.confidence:.2f} (stale {days_stale}d)")
+                    logger.debug(f"Pattern {p.id} confidence decay: {old_conf:.2f} â†’ {p.confidence:.2f} (stale {days_stale}d)")
 
             session.commit()
             if stale:
@@ -683,7 +684,7 @@ class PatternDetector:
         pd = p.pattern_data or {}
         tw = pd.get("time_window_min", 60)
         if tw <= 15:
-            factors.append({"factor": "precise_time", "detail": f"±{tw}min window", "impact": "+precise"})
+            factors.append({"factor": "precise_time", "detail": f"Â±{tw}min window", "impact": "+precise"})
 
         return {
             "confidence": conf,
@@ -694,7 +695,7 @@ class PatternDetector:
         }
 
     def detect_cross_room_correlations(self, session):
-        """#56: Detect patterns across rooms (e.g. kitchen→dining room)."""
+        """#56: Detect patterns across rooms (e.g. kitchenâ†’dining room)."""
         try:
             cutoff = datetime.now(timezone.utc) - timedelta(days=14)
             history = session.query(StateHistory).filter(
@@ -844,7 +845,7 @@ class PatternDetector:
                 device = session.query(Device).filter_by(ha_entity_id=entity_id).first()
                 device_name = device.name if device else entity_id
                 time_str = f"{avg_hour:02d}:{avg_minute:02d}"
-                day_str_de = "werktags" if is_weekday_only else ("am Wochenende" if is_weekend_only else "täglich")
+                day_str_de = "werktags" if is_weekday_only else ("am Wochenende" if is_weekend_only else "tÃ¤glich")
                 day_str_en = "on weekdays" if is_weekday_only else ("on weekends" if is_weekend_only else "daily")
                 state_de = "eingeschaltet" if new_state == "on" else ("ausgeschaltet" if new_state == "off" else new_state)
                 state_en = "turned on" if new_state == "on" else ("turned off" if new_state == "off" else new_state)
@@ -873,7 +874,7 @@ class PatternDetector:
     # --------------------------------------------------------------------------
 
     def _detect_sequence_patterns(self, session, events):
-        """Find A→B event chains (within time window)."""
+        """Find Aâ†’B event chains (within time window)."""
         patterns_found = []
         CHAIN_WINDOW = 300  # 5 minutes
 
@@ -963,11 +964,11 @@ class PatternDetector:
             state_b_de = "eingeschaltet" if state_b == "on" else ("ausgeschaltet" if state_b == "off" else state_b)
 
             delay_str = f"{int(avg_delta)}s" if avg_delta < 60 else f"{int(avg_delta/60)} Min"
-            desc_de = f"Wenn {name_a} {state_a_de} wird → {name_b} wird nach ~{delay_str} {state_b_de}"
-            desc_en = f"When {name_a} turns {state_a} → {name_b} turns {state_b} after ~{delay_str}"
+            desc_de = f"Wenn {name_a} {state_a_de} wird â†’ {name_b} wird nach ~{delay_str} {state_b_de}"
+            desc_en = f"When {name_a} turns {state_a} â†’ {name_b} turns {state_b} after ~{delay_str}"
 
             p = self._upsert_pattern(
-                session, f"{eid_a}→{eid_b}", "event_chain", pattern_data,
+                session, f"{eid_a}â†’{eid_b}", "event_chain", pattern_data,
                 confidence, trigger_conditions, action_def,
                 desc_de, desc_en, dev_b
             )
@@ -1054,7 +1055,7 @@ class PatternDetector:
                 desc_en = f"When {name_a} = {state_a}, {name_b} is usually {state_b} ({int(ratio*100)}%)"
 
                 p = self._upsert_pattern(
-                    session, f"{eid_a}⇔{eid_b}", "correlation", pattern_data,
+                    session, f"{eid_a}â‡”{eid_b}", "correlation", pattern_data,
                     confidence, trigger_conditions, action_def,
                     desc_de, desc_en, dev_b
                 )
@@ -1209,6 +1210,24 @@ class PatternDetector:
             domain_id = device.domain_id
             room_id = device.room_id
 
+        # Determine initial status: sensor→sensor patterns are "insight" (lower priority)
+        initial_status = "observed"
+        NON_ACTIONABLE = ("sensor.", "binary_sensor.", "sun.", "weather.", "zone.", "person.", "device_tracker.", "calendar.", "proximity.")
+        if pattern_type == "event_chain":
+            trigger_eid = pattern_data.get("trigger_entity", "")
+            action_eid = pattern_data.get("action_entity", "")
+            trigger_is_sensor = any(trigger_eid.startswith(p) for p in NON_ACTIONABLE)
+            action_is_sensor = any(action_eid.startswith(p) for p in NON_ACTIONABLE)
+            if trigger_is_sensor and action_is_sensor:
+                initial_status = "insight"
+        elif pattern_type == "correlation":
+            cond_eid = pattern_data.get("condition_entity", "")
+            corr_eid = pattern_data.get("correlated_entity", "")
+            cond_is_sensor = any(cond_eid.startswith(p) for p in NON_ACTIONABLE)
+            corr_is_sensor = any(corr_eid.startswith(p) for p in NON_ACTIONABLE)
+            if cond_is_sensor and corr_is_sensor:
+                initial_status = "insight"
+
         pattern = LearnedPattern(
             domain_id=domain_id or 1,
             room_id=room_id,
@@ -1219,7 +1238,7 @@ class PatternDetector:
             action_definition=action_def,
             description_de=desc_de,
             description_en=desc_en,
-            status="observed",
+            status=initial_status,
             is_active=True,
             last_matched_at=datetime.now(timezone.utc),
             match_count=1,
