@@ -2355,8 +2355,29 @@ def api_get_anomalies():
 
 @app.route("/")
 def serve_index():
-    """Serve index.html for root path."""
-    return send_from_directory(os.path.join(app.static_folder, "frontend"), "index.html")
+    """Serve index.html with app.jsx inlined to avoid Ingress XHR issues."""
+    frontend_dir = os.path.join(app.static_folder, "frontend")
+    index_path = os.path.join(frontend_dir, "index.html")
+    jsx_path = os.path.join(frontend_dir, "app.jsx")
+
+    try:
+        with open(index_path, "r", encoding="utf-8") as f:
+            html = f.read()
+        with open(jsx_path, "r", encoding="utf-8") as f:
+            jsx_code = f.read()
+
+        # Replace external script reference with inline code
+        # Handles both src="app.jsx" and src="./app.jsx" patterns
+        import re
+        html = re.sub(
+            r'<script\s+type=["\']text/babel["\']\s+src=["\'][^"\']*app\.jsx["\'][^>]*>\s*</script>',
+            '<script type="text/babel">\n' + jsx_code + '\n</script>',
+            html
+        )
+        return html, 200, {"Content-Type": "text/html; charset=utf-8"}
+    except FileNotFoundError as e:
+        logger.error(f"Frontend file not found: {e}")
+        return f"<h1>Frontend Error</h1><p>File not found: {e}</p>", 500
 
 @app.route("/<path:path>")
 def serve_frontend(path):
