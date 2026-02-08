@@ -1252,6 +1252,7 @@ class PatternScheduler:
 
     def __init__(self, engine, ha_connection):
         self.engine = engine
+        self.Session = sessionmaker(bind=engine)
         self.ha = ha_connection
         self.detector = PatternDetector(engine)
         self.state_logger = StateLogger(engine, ha_connection)
@@ -1314,7 +1315,12 @@ class PatternScheduler:
 
     def _run_confidence_decay(self):
         """#22: Run confidence decay on stale patterns."""
-        session = self.Session()
+        try:
+            Session = self.Session if hasattr(self, 'Session') else sessionmaker(bind=self.engine)
+            session = Session()
+        except Exception as e:
+            logger.warning(f"Confidence decay session error: {e}")
+            return
         try:
             self.detector.apply_confidence_decay(session)
         except Exception as e:
