@@ -3081,7 +3081,11 @@ def api_backup_export():
             "exported_at": datetime.now(timezone.utc).isoformat(),
             "rooms": [], "devices": [], "users": [], "domains": [],
             "room_domain_states": [], "settings": [], "quick_actions": [],
-            "action_log": [], "user_preferences": []
+            "action_log": [], "user_preferences": [],
+            "patterns": [], "pattern_exclusions": [], "manual_rules": [],
+            "anomaly_settings": [], "notification_settings": [],
+            "notification_channels": [], "device_mutes": [],
+            "device_groups": [], "calendar_triggers": [],
         }
         for r in session.query(Room).all():
             backup["rooms"].append({"id": r.id, "name": r.name, "ha_area_id": r.ha_area_id,
@@ -3112,6 +3116,56 @@ def api_backup_export():
         for up in session.query(UserPreference).all():
             backup["user_preferences"].append({"user_id": up.user_id, "room_id": up.room_id,
                 "preference_key": up.preference_key, "preference_value": up.preference_value})
+        # Patterns
+        for p in session.query(LearnedPattern).all():
+            backup["patterns"].append({"id": p.id, "pattern_type": p.pattern_type,
+                "description_de": p.description_de, "description_en": p.description_en,
+                "confidence": p.confidence, "status": p.status, "is_active": p.is_active,
+                "room_id": p.room_id, "domain_id": p.domain_id,
+                "trigger_conditions": p.trigger_conditions, "action_definition": p.action_definition,
+                "pattern_data": p.pattern_data, "match_count": p.match_count,
+                "test_mode": p.test_mode, "created_at": utc_iso(p.created_at)})
+        # Pattern exclusions
+        for pe in session.query(PatternExclusion).all():
+            backup["pattern_exclusions"].append({"id": pe.id, "exclusion_type": pe.exclusion_type,
+                "entity_a": pe.entity_a, "entity_b": pe.entity_b, "reason": pe.reason})
+        # Manual rules
+        for mr in session.query(ManualRule).all():
+            backup["manual_rules"].append({"id": mr.id, "name": mr.name,
+                "trigger_entity": mr.trigger_entity, "trigger_state": mr.trigger_state,
+                "action_entity": mr.action_entity, "action_service": mr.action_service,
+                "is_active": mr.is_active})
+        # Anomaly settings
+        for asetting in session.query(AnomalySetting).all():
+            backup["anomaly_settings"].append({"id": asetting.id, "room_id": asetting.room_id,
+                "domain_id": asetting.domain_id, "device_id": asetting.device_id,
+                "sensitivity": asetting.sensitivity, "stuck_detection": asetting.stuck_detection,
+                "time_anomaly": asetting.time_anomaly, "frequency_anomaly": asetting.frequency_anomaly,
+                "whitelisted_hours": asetting.whitelisted_hours, "auto_action": asetting.auto_action})
+        # Notification settings
+        for ns in session.query(NotificationSetting).all():
+            backup["notification_settings"].append({"notification_type": ns.notification_type,
+                "is_enabled": ns.is_enabled, "priority": ns.priority, "sound": ns.sound,
+                "channel": ns.channel})
+        # Notification channels
+        for nc in session.query(NotificationChannel).all():
+            backup["notification_channels"].append({"id": nc.id, "name": nc.name,
+                "ha_service": nc.ha_service, "is_active": nc.is_active})
+        # Device mutes
+        for dm in session.query(DeviceMute).all():
+            backup["device_mutes"].append({"id": dm.id, "device_id": dm.device_id,
+                "mute_until": utc_iso(dm.mute_until) if dm.mute_until else None,
+                "reason": dm.reason})
+        # Device groups
+        for g in session.query(DeviceGroup).all():
+            backup["device_groups"].append({"id": g.id, "name": g.name,
+                "room_id": g.room_id, "device_ids": g.device_ids, "is_active": g.is_active})
+        # Quick actions
+        backup["quick_actions"] = []
+        for qa in session.query(QuickAction).all():
+            backup["quick_actions"].append({"id": qa.id, "name": qa.name, "icon": qa.icon,
+                "action_type": qa.action_type, "action_data": qa.action_data,
+                "sort_order": qa.sort_order, "is_active": qa.is_active})
         return jsonify(backup)
     finally:
         session.close()
@@ -3643,35 +3697,476 @@ def api_check_update():
         return jsonify({"current_version": "0.5.0", "error": str(e)})
 
 
-# #44 Device Groups
+# #44 Device Groups - FULL CRUD
 @app.route("/api/device-groups", methods=["GET"])
 def api_get_device_groups():
-    """Get suggested device groups based on room + usage patterns."""
+    """Get all device groups (saved + suggested)."""
     session = get_db()
     try:
+        # Saved groups
+        saved = session.query(DeviceGroup).all()
+        saved_groups = [{
+            "id": g.id, "name": g.name, "room_id": g.room_id,
+            "device_ids": json.loads(g.device_ids or "[]"),
+            "is_active": g.is_active,
+            "room_name": g.room.name if g.room else None,
+            "created_at": utc_iso(g.created_at),
+        } for g in saved]
+
+        # Auto-suggested groups
         rooms = session.query(Room).filter_by(is_active=True).all()
-        groups = []
+        suggestions = []
+        saved_device_sets = {frozenset(json.loads(g.device_ids or "[]")) for g in saved}
         for room in rooms:
             devices = session.query(Device).filter_by(room_id=room.id, is_tracked=True).all()
             by_domain = defaultdict(list)
             for d in devices:
-                domain = session.query(Domain).get(d.domain_id) if d.domain_id else None
+                domain = session.get(Domain, d.domain_id) if d.domain_id else None
                 dname = domain.name if domain else "other"
                 by_domain[dname].append({"id": d.id, "name": d.name, "entity_id": d.ha_entity_id})
             for domain_name, devs in by_domain.items():
                 if len(devs) >= 2:
-                    groups.append({
-                        "room": room.name,
-                        "domain": domain_name,
-                        "devices": devs,
-                        "suggested_name": f"{room.name} {domain_name.title()}",
-                    })
-        return jsonify({"groups": groups})
+                    dev_ids = frozenset(d["id"] for d in devs)
+                    if dev_ids not in saved_device_sets:
+                        suggestions.append({
+                            "room": room.name, "room_id": room.id,
+                            "domain": domain_name, "devices": devs,
+                            "suggested_name": f"{room.name} {domain_name.title()}",
+                        })
+        return jsonify({"groups": saved_groups, "suggestions": suggestions})
     except Exception as e:
         logger.error(f"Device groups error: {e}")
-        return jsonify({"groups": [], "error": str(e)})
+        return jsonify({"groups": [], "suggestions": [], "error": str(e)})
     finally:
         session.close()
+
+
+@app.route("/api/device-groups", methods=["POST"])
+def api_create_device_group():
+    """Create a new device group."""
+    data = request.json
+    session = get_db()
+    try:
+        group = DeviceGroup(
+            name=data.get("name", "New Group"),
+            room_id=data.get("room_id"),
+            device_ids=json.dumps(data.get("device_ids", [])),
+            is_active=True,
+        )
+        session.add(group)
+        session.commit()
+        audit_log("device_group_create", {"name": group.name, "id": group.id})
+        return jsonify({"success": True, "id": group.id})
+    except Exception as e:
+        session.rollback()
+        return jsonify({"error": str(e)}), 400
+    finally:
+        session.close()
+
+
+@app.route("/api/device-groups/<int:group_id>", methods=["PUT"])
+def api_update_device_group(group_id):
+    """Update a device group."""
+    data = request.json
+    session = get_db()
+    try:
+        group = session.get(DeviceGroup, group_id)
+        if not group:
+            return jsonify({"error": "Not found"}), 404
+        if "name" in data:
+            group.name = data["name"]
+        if "device_ids" in data:
+            group.device_ids = json.dumps(data["device_ids"])
+        if "is_active" in data:
+            group.is_active = data["is_active"]
+        session.commit()
+        audit_log("device_group_update", {"id": group_id})
+        return jsonify({"success": True})
+    except Exception as e:
+        session.rollback()
+        return jsonify({"error": str(e)}), 400
+    finally:
+        session.close()
+
+
+@app.route("/api/device-groups/<int:group_id>", methods=["DELETE"])
+def api_delete_device_group(group_id):
+    """Delete a device group."""
+    session = get_db()
+    try:
+        group = session.get(DeviceGroup, group_id)
+        if group:
+            session.delete(group)
+            session.commit()
+            audit_log("device_group_delete", {"id": group_id})
+        return jsonify({"success": True})
+    finally:
+        session.close()
+
+
+@app.route("/api/device-groups/<int:group_id>/execute", methods=["POST"])
+def api_execute_device_group(group_id):
+    """Execute an action on all devices in a group."""
+    data = request.json
+    service = data.get("service", "toggle")
+    session = get_db()
+    try:
+        group = session.get(DeviceGroup, group_id)
+        if not group:
+            return jsonify({"error": "Not found"}), 404
+        device_ids = json.loads(group.device_ids or "[]")
+        results = []
+        for did in device_ids:
+            device = session.get(Device, did)
+            if device and device.ha_entity_id:
+                domain_part = device.ha_entity_id.split(".")[0]
+                result = ha.call_service(domain_part, service, {"entity_id": device.ha_entity_id})
+                results.append({"entity_id": device.ha_entity_id, "success": result is not None})
+        audit_log("device_group_execute", {"group_id": group_id, "service": service, "count": len(results)})
+        return jsonify({"success": True, "results": results})
+    finally:
+        session.close()
+
+
+# ==============================================================================
+# #60 Audit Trail - FULL API
+# ==============================================================================
+
+@app.route("/api/audit-trail", methods=["GET"])
+def api_get_audit_trail():
+    """Get audit trail entries."""
+    session = get_db()
+    try:
+        limit = request.args.get("limit", 100, type=int)
+        entries = session.query(AuditTrail).order_by(AuditTrail.created_at.desc()).limit(limit).all()
+        return jsonify([{
+            "id": e.id, "user_id": e.user_id, "action": e.action,
+            "target": e.target, "details": e.details,
+            "ip_address": e.ip_address, "created_at": utc_iso(e.created_at),
+        } for e in entries])
+    finally:
+        session.close()
+
+
+def write_audit(action, target=None, details=None):
+    """Write an audit trail entry."""
+    session = get_db()
+    try:
+        entry = AuditTrail(
+            action=action, target=target,
+            details=json.dumps(details) if isinstance(details, dict) else details,
+            ip_address=request.remote_addr if request else None,
+        )
+        session.add(entry)
+        session.commit()
+    except Exception as e:
+        session.rollback()
+        logger.error(f"Audit write error: {e}")
+    finally:
+        session.close()
+
+
+# ==============================================================================
+# #40 Watchdog Timer
+# ==============================================================================
+
+_watchdog_status = {"last_check": None, "ha_alive": False, "db_alive": False, "issues": []}
+
+
+def _watchdog_loop():
+    """Periodic system health check every 60 seconds."""
+    global _watchdog_status
+    while True:
+        issues = []
+        # Check HA connection
+        ha_alive = ha.is_connected() if ha else False
+        if not ha_alive:
+            issues.append("HA WebSocket disconnected")
+        # Check DB
+        db_alive = False
+        try:
+            session = get_db()
+            session.execute(sa.text("SELECT 1"))
+            db_alive = True
+            session.close()
+        except Exception:
+            issues.append("Database unreachable")
+        # Check disk space
+        try:
+            stat = os.statvfs("/data" if os.path.exists("/data") else "/")
+            free_gb = (stat.f_bavail * stat.f_frsize) / (1024**3)
+            if free_gb < 0.5:
+                issues.append(f"Low disk space: {free_gb:.1f} GB")
+        except Exception:
+            pass
+        # Check memory
+        try:
+            import resource
+            mem_mb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
+            if mem_mb > 500:
+                issues.append(f"High memory usage: {mem_mb:.0f} MB")
+        except Exception:
+            pass
+
+        _watchdog_status = {
+            "last_check": datetime.now(timezone.utc).isoformat(),
+            "ha_alive": ha_alive, "db_alive": db_alive,
+            "issues": issues, "healthy": len(issues) == 0,
+        }
+        time.sleep(60)
+
+
+@app.route("/api/system/watchdog", methods=["GET"])
+def api_watchdog():
+    """Get watchdog status."""
+    return jsonify(_watchdog_status)
+
+
+# ==============================================================================
+# #10 Startup Self-Test
+# ==============================================================================
+
+def run_startup_self_test():
+    """Run startup checks and return results."""
+    results = []
+    # Test DB
+    try:
+        session = get_db()
+        session.execute(sa.text("SELECT 1"))
+        session.close()
+        results.append({"test": "database", "status": "ok"})
+    except Exception as e:
+        results.append({"test": "database", "status": "fail", "error": str(e)})
+    # Test HA
+    try:
+        connected = ha.is_connected() if ha else False
+        results.append({"test": "ha_connection", "status": "ok" if connected else "warn", "connected": connected})
+    except Exception as e:
+        results.append({"test": "ha_connection", "status": "fail", "error": str(e)})
+    # Test tables exist
+    try:
+        session = get_db()
+        for table in ["devices", "rooms", "domains", "users", "learned_patterns", "state_history"]:
+            session.execute(sa.text(f"SELECT COUNT(*) FROM {table}"))
+        session.close()
+        results.append({"test": "tables", "status": "ok"})
+    except Exception as e:
+        results.append({"test": "tables", "status": "fail", "error": str(e)})
+    # Test write
+    try:
+        session = get_db()
+        session.execute(sa.text("INSERT INTO system_settings (key, value) VALUES ('_selftest', 'ok') ON CONFLICT(key) DO UPDATE SET value='ok'"))
+        session.commit()
+        session.execute(sa.text("DELETE FROM system_settings WHERE key='_selftest'"))
+        session.commit()
+        session.close()
+        results.append({"test": "db_write", "status": "ok"})
+    except Exception as e:
+        results.append({"test": "db_write", "status": "fail", "error": str(e)})
+
+    all_ok = all(r["status"] == "ok" for r in results)
+    logger.info(f"Self-test: {'PASSED' if all_ok else 'ISSUES FOUND'} - {results}")
+    return {"passed": all_ok, "tests": results}
+
+
+@app.route("/api/system/self-test", methods=["GET"])
+def api_self_test():
+    """Run self-test and return results."""
+    return jsonify(run_startup_self_test())
+
+
+# ==============================================================================
+# #15b Offline Action Queue
+# ==============================================================================
+
+@app.route("/api/offline-queue", methods=["GET"])
+def api_get_offline_queue():
+    """Get pending offline actions."""
+    session = get_db()
+    try:
+        items = session.query(OfflineActionQueue).filter_by(was_executed=False).order_by(OfflineActionQueue.priority.desc()).all()
+        return jsonify([{
+            "id": i.id, "action_data": i.action_data, "priority": i.priority,
+            "created_at": utc_iso(i.created_at),
+        } for i in items])
+    finally:
+        session.close()
+
+
+@app.route("/api/offline-queue", methods=["POST"])
+def api_add_offline_action():
+    """Queue an action for when HA comes back online."""
+    data = request.json
+    session = get_db()
+    try:
+        item = OfflineActionQueue(
+            action_data=data.get("action_data", {}),
+            priority=data.get("priority", 0),
+        )
+        session.add(item)
+        session.commit()
+        return jsonify({"success": True, "id": item.id})
+    finally:
+        session.close()
+
+
+def process_offline_queue():
+    """Process queued actions when HA reconnects."""
+    if not ha or not ha.is_connected():
+        return 0
+    session = get_db()
+    try:
+        items = session.query(OfflineActionQueue).filter_by(was_executed=False).order_by(OfflineActionQueue.priority.desc()).all()
+        executed = 0
+        for item in items:
+            try:
+                ad = item.action_data or {}
+                domain = ad.get("domain", "homeassistant")
+                service = ad.get("service", "toggle")
+                entity_id = ad.get("entity_id")
+                if entity_id:
+                    ha.call_service(domain, service, {"entity_id": entity_id})
+                item.was_executed = True
+                item.executed_at = datetime.now(timezone.utc)
+                executed += 1
+            except Exception as e:
+                logger.error(f"Offline queue exec error: {e}")
+        session.commit()
+        if executed:
+            logger.info(f"Processed {executed} offline queued actions")
+        return executed
+    finally:
+        session.close()
+
+
+# ==============================================================================
+# #30 TTS Announcements
+# ==============================================================================
+
+@app.route("/api/tts/announce", methods=["POST"])
+def api_tts_announce():
+    """Send a TTS announcement via HA."""
+    data = request.json
+    message = data.get("message", "")
+    entity = data.get("entity_id")
+    if not message:
+        return jsonify({"error": "No message"}), 400
+    result = ha.announce_tts(message, media_player_entity=entity)
+    audit_log("tts_announce", {"message": message[:50], "entity": entity})
+    return jsonify({"success": result is not None})
+
+
+@app.route("/api/tts/devices", methods=["GET"])
+def api_tts_devices():
+    """Get available media players for TTS."""
+    states = ha.get_states() or []
+    players = [{"entity_id": s["entity_id"], "name": s.get("attributes", {}).get("friendly_name", s["entity_id"])}
+               for s in states if s["entity_id"].startswith("media_player.")]
+    return jsonify(players)
+
+
+# ==============================================================================
+# #61b Auto-Backup Configuration
+# ==============================================================================
+
+@app.route("/api/system/auto-backup", methods=["GET"])
+def api_get_auto_backup_settings():
+    """Get auto-backup configuration."""
+    return jsonify({
+        "enabled": get_setting("auto_backup_enabled", "true") == "true",
+        "keep_count": int(get_setting("auto_backup_keep", "7")),
+        "time": get_setting("auto_backup_time", "03:00"),
+        "last_backup": get_setting("auto_backup_last"),
+    })
+
+
+@app.route("/api/system/auto-backup", methods=["PUT"])
+def api_update_auto_backup_settings():
+    """Update auto-backup configuration."""
+    data = request.json
+    if "enabled" in data:
+        set_setting("auto_backup_enabled", "true" if data["enabled"] else "false")
+    if "keep_count" in data:
+        set_setting("auto_backup_keep", str(max(1, min(30, int(data["keep_count"])))))
+    if "time" in data:
+        set_setting("auto_backup_time", data["time"])
+    audit_log("auto_backup_settings", data)
+    return jsonify({"success": True})
+
+
+# ==============================================================================
+# #28b Calendar Automation Triggers
+# ==============================================================================
+
+@app.route("/api/calendar/triggers", methods=["GET"])
+def api_get_calendar_triggers():
+    """Get calendar-based automation triggers."""
+    session = get_db()
+    try:
+        triggers = []
+        raw = get_setting("calendar_triggers")
+        if raw:
+            triggers = json.loads(raw)
+        return jsonify(triggers)
+    finally:
+        session.close()
+
+
+@app.route("/api/calendar/triggers", methods=["POST"])
+def api_create_calendar_trigger():
+    """Create a calendar-based automation trigger."""
+    data = request.json
+    triggers = json.loads(get_setting("calendar_triggers") or "[]")
+    trigger = {
+        "id": str(int(time.time() * 1000)),
+        "keyword": data.get("keyword", ""),
+        "action": data.get("action", ""),
+        "entity_id": data.get("entity_id"),
+        "service": data.get("service", "turn_on"),
+        "is_active": True,
+    }
+    triggers.append(trigger)
+    set_setting("calendar_triggers", json.dumps(triggers))
+    audit_log("calendar_trigger_create", trigger)
+    return jsonify({"success": True, "trigger": trigger})
+
+
+@app.route("/api/calendar/triggers/<trigger_id>", methods=["DELETE"])
+def api_delete_calendar_trigger(trigger_id):
+    """Delete a calendar trigger."""
+    triggers = json.loads(get_setting("calendar_triggers") or "[]")
+    triggers = [t for t in triggers if t.get("id") != trigger_id]
+    set_setting("calendar_triggers", json.dumps(triggers))
+    return jsonify({"success": True})
+
+
+# ==============================================================================
+# #12b Extended Notification Settings
+# ==============================================================================
+
+@app.route("/api/notification-settings/extended", methods=["GET"])
+def api_get_extended_notification_settings():
+    """Get extended notification configuration."""
+    return jsonify({
+        "quiet_hours": json.loads(get_setting("notif_quiet_hours") or '{"enabled": true, "start": "22:00", "end": "07:00", "weekday_only": false}'),
+        "escalation": json.loads(get_setting("notif_escalation") or '{"enabled": false, "chain": [{"type": "push", "delay_min": 0}, {"type": "tts", "delay_min": 5}]}'),
+        "digest": json.loads(get_setting("notif_digest") or '{"enabled": false, "frequency": "daily", "time": "08:00"}'),
+        "grouping": json.loads(get_setting("notif_grouping") or '{"enabled": true, "window_min": 5}'),
+        "person_channels": json.loads(get_setting("notif_person_channels") or "{}"),
+    })
+
+
+@app.route("/api/notification-settings/extended", methods=["PUT"])
+def api_update_extended_notification_settings():
+    """Update extended notification settings."""
+    data = request.json
+    for key in ["quiet_hours", "escalation", "digest", "grouping", "person_channels"]:
+        if key in data:
+            set_setting(f"notif_{key}", json.dumps(data[key]))
+    audit_log("notification_settings_update", {k: True for k in data.keys()})
+    return jsonify({"success": True})
+
+
 # State Change Logging
 # ==============================================================================
 
@@ -3961,6 +4456,16 @@ def start_app():
 
     # Start cleanup scheduler
     schedule_cleanup()
+
+    # Start watchdog thread (#40)
+    watchdog_thread = threading.Thread(target=_watchdog_loop, daemon=True)
+    watchdog_thread.start()
+    logger.info("  ✅ Watchdog started")
+
+    # Run startup self-test (#10)
+    test_results = run_startup_self_test()
+    if not test_results["passed"]:
+        logger.warning(f"Self-test issues: {test_results}")
 
     # Run cleanup once on startup
     try:
