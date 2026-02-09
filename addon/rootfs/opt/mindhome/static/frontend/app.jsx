@@ -3227,15 +3227,27 @@ const ActivitiesPage = () => {
     const [liveMode, setLiveMode] = useState(false);
     const [auditTab, setAuditTab] = useState(false);
     const [auditLogs, setAuditLogs] = useState([]);
+    const [hasMore, setHasMore] = useState(false);
+    const [offset, setOffset] = useState(0);
 
-    const loadLogs = async (p) => {
+    const loadLogs = async (p, append = false) => {
         setLoading(true);
-        const data = await api.get(`action-log?limit=500&period=${p}`);
-        setLogs(data || []);
+        const o = append ? offset : 0;
+        const data = await api.get(`action-log?limit=50&offset=${o}&period=${p}`);
+        if (data && data.items) {
+            setLogs(prev => append ? [...prev, ...data.items] : data.items);
+            setHasMore(data.has_more);
+            setOffset(o + data.items.length);
+        } else {
+            setLogs(Array.isArray(data) ? data : []);
+            setHasMore(false);
+        }
         setLoading(false);
     };
 
-    useEffect(() => { loadLogs(period); }, [period]);
+    useEffect(() => { setOffset(0); loadLogs(period); }, [period]);
+
+    const loadMore = () => loadLogs(period, true);
 
     const loadAudit = async () => { const data = await api.get('audit-trail?limit=200'); setAuditLogs(data || []); };
     useEffect(() => { if (auditTab) loadAudit(); }, [auditTab]);
@@ -3413,6 +3425,12 @@ const ActivitiesPage = () => {
                         </div>
                         );
                     })}
+                    {hasMore && (
+                        <button className="btn btn-secondary" onClick={loadMore} style={{ width: '100%', marginTop: 8 }}>
+                            <span className="mdi mdi-chevron-down" style={{ marginRight: 4 }} />
+                            {lang === 'de' ? 'Mehr laden' : 'Load more'}
+                        </button>
+                    )}
                 </div>
             ) : (
                 <div className="empty-state">
@@ -3484,20 +3502,33 @@ const PatternsPage = () => {
     const [bulkSelected, setBulkSelected] = useState({});  // #16 Bulk actions
     const [bulkMode, setBulkMode] = useState(false);       // #16
 
-    const load = async () => {
+    const [patternsHasMore, setPatternsHasMore] = useState(false);
+    const [patternsOffset, setPatternsOffset] = useState(0);
+    const [rejectedHasMore, setRejectedHasMore] = useState(false);
+    const [rejectedOffset, setRejectedOffset] = useState(0);
+
+    const load = async (appendPatterns = false, appendRejected = false) => {
         try {
+            const pOff = appendPatterns ? patternsOffset : 0;
+            const rOff = appendRejected ? rejectedOffset : 0;
             const [pats, st, rej, excl, rules, conf, sc] = await Promise.all([
-                api.get('patterns'),
+                api.get(`patterns?limit=50&offset=${pOff}`),
                 api.get('stats/learning'),
-                api.get('patterns/rejected'),
+                api.get(`patterns/rejected?limit=50&offset=${rOff}`),
                 api.get('pattern-exclusions'),
                 api.get('manual-rules'),
                 api.get('patterns/conflicts'),   // #26
                 api.get('patterns/scenes'),       // #29
             ]);
-            setPatterns(pats);
+            const pItems = pats?.items || (Array.isArray(pats) ? pats : []);
+            const rItems = rej?.items || (Array.isArray(rej) ? rej : []);
+            setPatterns(prev => appendPatterns ? [...prev, ...pItems] : pItems);
+            setPatternsHasMore(pats?.has_more || false);
+            setPatternsOffset(pOff + pItems.length);
             setStats(st);
-            setRejected(rej || []);
+            setRejected(prev => appendRejected ? [...prev, ...rItems] : rItems);
+            setRejectedHasMore(rej?.has_more || false);
+            setRejectedOffset(rOff + rItems.length);
             setExclusions(excl || []);
             setManualRules(rules || []);
             setConflicts(conf?.conflicts || []);
@@ -3507,6 +3538,9 @@ const PatternsPage = () => {
         }
         setLoading(false);
     };
+
+    const loadMorePatterns = () => load(true, false);
+    const loadMoreRejected = () => load(false, true);
 
     useEffect(() => {
         // Auto-reclassify existing sensorâ†’sensor patterns as insights
@@ -3695,6 +3729,12 @@ const PatternsPage = () => {
                         </div>
                     )) : <div className="empty-state"><span className="mdi mdi-check-circle" />
                         <h3>{lang === 'de' ? 'Keine abgelehnten Muster' : 'No Rejected Patterns'}</h3></div>}
+                    {rejectedHasMore && (
+                        <button className="btn btn-secondary" onClick={loadMoreRejected} style={{ width: '100%', marginTop: 8 }}>
+                            <span className="mdi mdi-chevron-down" style={{ marginRight: 4 }} />
+                            {lang === 'de' ? 'Mehr laden' : 'Load more'}
+                        </button>
+                    )}
                 </div>
 
             ) : ptab === 'exclusions' ? (
@@ -4261,6 +4301,12 @@ const PatternsPage = () => {
                         ))}
                     </div>
                 )}
+                {patternsHasMore && (
+                    <button className="btn btn-secondary" onClick={loadMorePatterns} style={{ width: '100%', marginTop: 8 }}>
+                        <span className="mdi mdi-chevron-down" style={{ marginRight: 4 }} />
+                        {lang === 'de' ? 'Mehr laden' : 'Load more'}
+                    </button>
+                )}
             </div>
             </div>)}
 
@@ -4311,18 +4357,25 @@ const NotificationsPage = () => {
     const [extSettings, setExtSettings] = useState(null);
     const [ttsDevices, setTtsDevices] = useState([]);
 
-    const load = async () => {
+    const [notifHasMore, setNotifHasMore] = useState(false);
+    const [notifOffset, setNotifOffset] = useState(0);
+
+    const load = async (appendNotifs = false) => {
         try {
+            const nOff = appendNotifs ? notifOffset : 0;
             const [notifs, preds, ns, st, ext, tts] = await Promise.all([
-                api.get('notifications?limit=100'),
+                api.get(`notifications?limit=50&offset=${nOff}`),
                 api.get('predictions?limit=50'),
                 api.get('notification-settings'),
                 api.get('notification-stats'),
                 api.get('notification-settings/extended'),
                 api.get('tts/devices'),
             ]);
-            setNotifications(notifs);
-            setPredictions(preds);
+            const nItems = notifs?.items || (Array.isArray(notifs) ? notifs : []);
+            setNotifications(prev => appendNotifs ? [...prev, ...nItems] : nItems);
+            setNotifHasMore(notifs?.has_more || false);
+            setNotifOffset(nOff + nItems.length);
+            setPredictions(Array.isArray(preds) ? preds : []);
             setNotifSettings(ns);
             setStats(st);
             if (ext) setExtSettings(ext);
@@ -4330,6 +4383,8 @@ const NotificationsPage = () => {
         } catch (e) { console.error(e); }
         setLoading(false);
     };
+
+    const loadMoreNotifs = () => load(true);
 
     useEffect(() => { load(); }, []);
 
@@ -4798,6 +4853,12 @@ const NotificationsPage = () => {
                         </div>
                     ))
                 )}
+                {notifHasMore && (
+                    <button className="btn btn-secondary" onClick={loadMoreNotifs} style={{ width: '100%', marginTop: 8 }}>
+                        <span className="mdi mdi-chevron-down" style={{ marginRight: 4 }} />
+                        {lang === 'de' ? 'Mehr laden' : 'Load more'}
+                    </button>
+                )}
             </div>
         </div>)}
     </div>
@@ -5150,12 +5211,12 @@ const EnergyPage = () => {
     const [hours, setHours] = useState(24);
 
     const load = () => {
-        api.get('energy/config').then(setConfig).catch(() => {});
-        api.get(`energy/readings?hours=${hours}`).then(setReadings).catch(() => {});
-        api.get('energy/standby-config').then(setSConfigs).catch(() => {});
-        api.get('energy/summary').then(setSummary).catch(() => {});
+        api.get('energy/config').then(d => setConfig(d || null)).catch(() => {});
+        api.get(`energy/readings?hours=${hours}`).then(d => setReadings(Array.isArray(d) ? d : [])).catch(() => {});
+        api.get('energy/standby-config').then(d => setSConfigs(Array.isArray(d) ? d : [])).catch(() => {});
+        api.get('energy/summary').then(d => setSummary(d || null)).catch(() => {});
     };
-    useEffect(load, [hours]);
+    useEffect(() => { load(); }, [hours]);
 
     const saveConfig = () => {
         api.put('energy/config', config).then(() => showToast(lang === 'de' ? 'Gespeichert' : 'Saved', 'success'));
@@ -5242,11 +5303,11 @@ const ScenesPage = () => {
     const { lang, showToast } = useApp();
     const [scenes, setScenes] = useState([]);
 
-    const load = () => api.get('scenes').then(setScenes).catch(() => {});
-    useEffect(load, []);
+    const load = () => { api.get('scenes').then(d => setScenes(Array.isArray(d) ? d : [])).catch(() => {}); };
+    useEffect(() => { load(); }, []);
 
     const activate = (id) => api.post(`scenes/${id}/activate`).then(() => { showToast(lang === 'de' ? 'Szene aktiviert' : 'Scene activated', 'success'); load(); });
-    const remove = (id) => { if (confirm(lang === 'de' ? 'Szene löschen?' : 'Delete scene?')) api.delete(`scenes/${id}`).then(load); };
+    const remove = (id) => { if (confirm(lang === 'de' ? 'Szene löschen?' : 'Delete scene?')) api.delete(`scenes/${id}`).then(() => load()); };
     const accept = (id) => api.put(`scenes/${id}`, { status: 'accepted' }).then(() => { showToast(lang === 'de' ? 'Akzeptiert' : 'Accepted', 'success'); load(); });
 
     const detected = scenes.filter(s => s.status === 'detected');
@@ -5310,15 +5371,29 @@ const PresencePage = () => {
     const [persons, setPersons] = useState([]);
     const [logs, setLogs] = useState([]);
     const [guests, setGuests] = useState([]);
+    const [logsHasMore, setLogsHasMore] = useState(false);
+    const [logsOffset, setLogsOffset] = useState(0);
 
     const load = () => {
-        api.get('presence-modes').then(setModes).catch(() => {});
-        api.get('presence-modes/current').then(setCurrent).catch(() => {});
+        api.get('presence-modes').then(d => setModes(Array.isArray(d) ? d : [])).catch(() => {});
+        api.get('presence-modes/current').then(d => setCurrent(d || null)).catch(() => {});
         api.get('persons').then(d => setPersons(Array.isArray(d) ? d : [])).catch(() => {});
-        api.get('presence-log').then(setLogs).catch(() => {});
-        api.get('guest-devices').then(setGuests).catch(() => {});
+        api.get('presence-log?limit=50&offset=0').then(d => {
+            setLogs(d?.items || (Array.isArray(d) ? d : []));
+            setLogsHasMore(d?.has_more || false);
+            setLogsOffset(d?.items?.length || 0);
+        }).catch(() => {});
+        api.get('guest-devices').then(d => setGuests(Array.isArray(d) ? d : [])).catch(() => {});
     };
-    useEffect(load, []);
+    const loadMoreLogs = () => {
+        api.get(`presence-log?limit=50&offset=${logsOffset}`).then(d => {
+            const items = d?.items || [];
+            setLogs(prev => [...prev, ...items]);
+            setLogsHasMore(d?.has_more || false);
+            setLogsOffset(prev => prev + items.length);
+        }).catch(() => {});
+    };
+    useEffect(() => { load(); }, []);
 
     const activate = (id) => api.post(`presence-modes/${id}/activate`).then(() => { showToast(lang === 'de' ? 'Modus aktiviert' : 'Mode activated', 'success'); load(); });
 
@@ -5370,13 +5445,19 @@ const PresencePage = () => {
             <div className="card animate-in">
                 <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)', fontWeight: 600 }}>{lang === 'de' ? 'Verlauf' : 'History'}</div>
                 <div style={{ maxHeight: 300, overflowY: 'auto' }}>
-                    {logs.slice(0, 20).map(l => (
+                    {logs.map(l => (
                         <div key={l.id} style={{ padding: '8px 16px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
                             <span>{l.mode_name}</span>
                             <span style={{ color: 'var(--text-muted)' }}>{l.created_at ? new Date(l.created_at).toLocaleString() : '-'}</span>
                         </div>
                     ))}
                 </div>
+                {logsHasMore && (
+                    <button className="btn btn-secondary" onClick={loadMoreLogs} style={{ width: '100%', marginTop: 0, borderRadius: 0 }}>
+                        <span className="mdi mdi-chevron-down" style={{ marginRight: 4 }} />
+                        {lang === 'de' ? 'Mehr laden' : 'Load more'}
+                    </button>
+                )}
             </div>
         </div>
     );
