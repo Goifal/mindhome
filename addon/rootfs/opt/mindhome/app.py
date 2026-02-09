@@ -1,4 +1,4 @@
-# MindHome Backend v0.5.3-phase3C (2026-02-09 12:00) - app.py - BUILD:20260209-1200
+# MindHome Backend v0.5.3-phase3C (2026-02-09 12:30) - app.py - BUILD:20260209-1230
 """
 MindHome - Main Application
 Flask backend serving the API and frontend.
@@ -3381,6 +3381,28 @@ def api_backup_export():
         # Calendar Triggers (always, they're config)
         backup["calendar_triggers"] = json.loads(get_setting("calendar_triggers") or "[]")
 
+        # Phase 3B: Person Schedules, Shift Templates, Holidays (BUILD:20260209-1230)
+        backup["person_schedules"] = []
+        for ps in session.query(PersonSchedule).filter_by(is_active=True).all():
+            backup["person_schedules"].append({"id": ps.id, "user_id": ps.user_id,
+                "schedule_type": ps.schedule_type, "name": ps.name,
+                "time_wake": ps.time_wake, "time_leave": ps.time_leave,
+                "time_home": ps.time_home, "time_sleep": ps.time_sleep,
+                "weekdays": ps.weekdays, "shift_data": ps.shift_data,
+                "valid_from": utc_iso(ps.valid_from) if ps.valid_from else None,
+                "valid_until": utc_iso(ps.valid_until) if ps.valid_until else None})
+
+        backup["shift_templates"] = []
+        for st in session.query(ShiftTemplate).filter_by(is_active=True).all():
+            backup["shift_templates"].append({"id": st.id, "name": st.name,
+                "short_code": st.short_code, "blocks": st.blocks, "color": st.color})
+
+        backup["holidays"] = []
+        for h in session.query(Holiday).filter_by(is_active=True).all():
+            backup["holidays"].append({"id": h.id, "name": h.name, "date": h.date,
+                "is_recurring": h.is_recurring, "region": h.region,
+                "source": h.source, "calendar_entity": h.calendar_entity})
+
         # Summary for import preview
         backup["_summary"] = {
             "rooms": len(backup.get("rooms", [])),
@@ -3390,6 +3412,9 @@ def api_backup_export():
             "settings": len(backup.get("settings", [])),
             "state_history": len(backup.get("state_history", [])),
             "action_log": len(backup.get("action_log", [])),
+            "person_schedules": len(backup.get("person_schedules", [])),
+            "shift_templates": len(backup.get("shift_templates", [])),
+            "holidays": len(backup.get("holidays", [])),
         }
 
         return jsonify(backup)
@@ -3602,13 +3627,65 @@ def api_backup_import():
         finally:
             session2.close()
 
+        # Phase 3: Restore PersonSchedules, ShiftTemplates, Holidays (BUILD:20260209-1230)
+        session3 = get_db()
+        try:
+            for ps_data in data.get("person_schedules", []):
+                try:
+                    ps = PersonSchedule(
+                        user_id=ps_data["user_id"], schedule_type=ps_data.get("schedule_type", "weekday"),
+                        name=ps_data.get("name"), time_wake=ps_data.get("time_wake"),
+                        time_leave=ps_data.get("time_leave"), time_home=ps_data.get("time_home"),
+                        time_sleep=ps_data.get("time_sleep"), weekdays=ps_data.get("weekdays"),
+                        shift_data=ps_data.get("shift_data"),
+                    )
+                    if ps_data.get("valid_from"):
+                        ps.valid_from = datetime.fromisoformat(ps_data["valid_from"].replace("Z", "+00:00"))
+                    if ps_data.get("valid_until"):
+                        ps.valid_until = datetime.fromisoformat(ps_data["valid_until"].replace("Z", "+00:00"))
+                    session3.add(ps)
+                except Exception as e:
+                    logger.warning(f"PersonSchedule import error: {e}")
+
+            for st_data in data.get("shift_templates", []):
+                try:
+                    st = ShiftTemplate(
+                        name=st_data["name"], short_code=st_data.get("short_code"),
+                        blocks=st_data.get("blocks", []), color=st_data.get("color"),
+                    )
+                    session3.add(st)
+                except Exception as e:
+                    logger.warning(f"ShiftTemplate import error: {e}")
+
+            for h_data in data.get("holidays", []):
+                try:
+                    h = Holiday(
+                        name=h_data["name"], date=h_data["date"],
+                        is_recurring=h_data.get("is_recurring", False),
+                        region=h_data.get("region"), source=h_data.get("source", "backup"),
+                        calendar_entity=h_data.get("calendar_entity"),
+                    )
+                    session3.add(h)
+                except Exception as e:
+                    logger.warning(f"Holiday import error: {e}")
+
+            session3.commit()
+        except Exception as e:
+            session3.rollback()
+            logger.warning(f"Phase 3 import error: {e}")
+        finally:
+            session3.close()
+
         set_setting("onboarding_completed", "true")
 
-        logger.info(f"Backup imported: {len(data.get('rooms',[]))} rooms, {len(data.get('devices',[]))} devices")
+        logger.info(f"Backup imported: {len(data.get('rooms',[]))} rooms, {len(data.get('devices',[]))} devices, {len(data.get('person_schedules',[]))} schedules, {len(data.get('holidays',[]))} holidays")
         return jsonify({"success": True, "imported": {
             "rooms": len(data.get("rooms", [])),
             "devices": len(data.get("devices", [])),
-            "users": len(data.get("users", []))
+            "users": len(data.get("users", [])),
+            "person_schedules": len(data.get("person_schedules", [])),
+            "shift_templates": len(data.get("shift_templates", [])),
+            "holidays": len(data.get("holidays", [])),
         }})
     except Exception as e:
         try:
