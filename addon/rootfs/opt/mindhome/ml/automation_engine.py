@@ -910,8 +910,8 @@ class AnomalyDetector:
         # More than 2.5 standard deviations = anomaly
         if diff > std_dev * 2.5 and diff > 3:
             return self._build_anomaly(session, event, hour,
-                f"um {hour}:00 Uhr aktiviert (normalerweise ~{int(mean_hour)}:00 Â±{int(std_dev)}h)",
-                f"activated at {hour}:00 (usually ~{int(mean_hour)}:00 Â±{int(std_dev)}h)")
+                f"um {hour}:00 Uhr aktiviert (normalerweise ~{int(mean_hour)}:00 +/-{int(std_dev)}h)",
+                f"activated at {hour}:00 (usually ~{int(mean_hour)}:00 +/-{int(std_dev)}h)")
 
         return None
 
@@ -926,7 +926,7 @@ class AnomalyDetector:
 
         if change_count >= 10:
             return self._build_anomaly(session, event, None,
-                f"hat sich {change_count}x in 10 Minuten geÃ¤ndert (mÃ¶gliche StÃ¶rung)",
+                f"hat sich {change_count}x in 10 Minuten geaendert (moegliche Stoerung)",
                 f"changed {change_count} times in 10 minutes (possible fault)",
                 severity="critical")
 
@@ -1044,7 +1044,7 @@ class AnomalyDetector:
                     "recent_events": recent,
                     "daily_average": round(weekly_avg),
                     "ratio": round(recent / weekly_avg, 1),
-                    "message_de": f"UngewÃ¶hnlich hohe AktivitÃ¤t: {recent} Events (Ã˜ {weekly_avg:.0f})",
+                    "message_de": f"Ungewoehnlich hohe Aktivitaet: {recent} Events (Avg {weekly_avg:.0f})",
                     "message_en": f"Unusually high activity: {recent} events (avg {weekly_avg:.0f})",
                 }
             return {"guest_likely": False, "recent_events": recent, "daily_average": round(weekly_avg)}
@@ -1111,7 +1111,7 @@ class NotificationManager:
         session = self.Session()
         try:
             entity_id = anomaly.get("entity_id", "")
-            title = "MindHome: UngewÃ¶hnliche AktivitÃ¤t" if lang == "de" else "MindHome: Unusual Activity"
+            title = "MindHome: Ungewoehnliche Aktivitaet" if lang == "de" else "MindHome: Unusual Activity"
             message = anomaly.get("reason_de" if lang == "de" else "reason_en", "")
 
             # Dedup: check if we already notified about this entity in last 24h
