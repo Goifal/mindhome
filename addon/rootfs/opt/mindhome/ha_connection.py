@@ -211,7 +211,11 @@ class HAConnection:
             payload["title"] = title
         if data:
             payload["data"] = data
-        return self.call_service("notify", target or "notify", payload)
+        # Strip "notify." prefix if present to avoid double domain in URL
+        svc = target or "notify"
+        if svc.startswith("notify."):
+            svc = svc[7:]
+        return self.call_service("notify", svc, payload)
 
     def announce_tts(self, message, media_player_entity=None, tts_service=None):
         """Send TTS announcement. Auto-detects TTS service if not specified."""
