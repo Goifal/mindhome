@@ -178,7 +178,7 @@ class FeedbackProcessor:
                 pattern.updated_at = datetime.now(timezone.utc)
 
             session.commit()
-            logger.info(f"Prediction {prediction_id} confirmed → pattern {pred.pattern_id} activated")
+            logger.info(f"Prediction {prediction_id} confirmed â†’ pattern {pred.pattern_id} activated")
             return {"success": True, "status": "confirmed"}
 
         except Exception as e:
@@ -217,7 +217,7 @@ class FeedbackProcessor:
                 pattern.updated_at = datetime.now(timezone.utc)
 
             session.commit()
-            logger.info(f"Prediction {prediction_id} rejected → confidence decreased")
+            logger.info(f"Prediction {prediction_id} rejected â†’ confidence decreased")
             return {"success": True, "status": "rejected"}
 
         except Exception as e:
@@ -290,7 +290,7 @@ class AutomationExecutor:
                 status="active", is_active=True
             ).all()
 
-            now = datetime.now()
+            now = datetime.now(timezone.utc)
 
             for pattern in active_patterns:
                 trigger = pattern.trigger_conditions or {}
@@ -459,7 +459,7 @@ class AutomationExecutor:
             )
             session.add(log)
 
-            logger.info(f"Executed: {entity_id} → {target_state} (pattern {pattern.id}, confidence {pattern.confidence:.2f})")
+            logger.info(f"Executed: {entity_id} â†’ {target_state} (pattern {pattern.id}, confidence {pattern.confidence:.2f})")
 
         except Exception as e:
             logger.error(f"Execution failed for {entity_id}: {e}")
@@ -523,7 +523,7 @@ class AutomationExecutor:
                     logger.info(f"Pattern {pattern.id} auto-deactivated after {undo_count+1} undos")
 
             session.commit()
-            logger.info(f"Undone prediction {prediction_id}: {entity_id} → {restore_state}")
+            logger.info(f"Undone prediction {prediction_id}: {entity_id} â†’ {restore_state}")
             return {"success": True, "restored_state": restore_state}
 
         except Exception as e:
@@ -655,7 +655,7 @@ class PhaseManager:
                     room_name = room.name if room else f"Room {rds.room_id}"
                     domain_name = domain.name if domain else f"Domain {rds.domain_id}"
 
-                    logger.info(f"Phase transition: {room_name}/{domain_name} {old_name} → {new_phase.value}")
+                    logger.info(f"Phase transition: {room_name}/{domain_name} {old_name} â†’ {new_phase.value}")
 
             session.commit()
             if transitions:
@@ -685,7 +685,7 @@ class PhaseManager:
 
         # Days since phase started
         if rds.phase_started_at:
-            days = (datetime.utcnow().replace(tzinfo=None) - rds.phase_started_at.replace(tzinfo=None)).days
+            days = (datetime.now(timezone.utc) - (rds.phase_started_at.replace(tzinfo=timezone.utc) if rds.phase_started_at.tzinfo is None else rds.phase_started_at)).days
             if days < t["min_days"]:
                 return None
 
@@ -730,7 +730,7 @@ class PhaseManager:
         t = self.SUGGEST_TO_AUTONOMOUS
 
         if rds.phase_started_at:
-            days = (datetime.utcnow().replace(tzinfo=None) - rds.phase_started_at.replace(tzinfo=None)).days
+            days = (datetime.now(timezone.utc) - (rds.phase_started_at.replace(tzinfo=timezone.utc) if rds.phase_started_at.tzinfo is None else rds.phase_started_at)).days
             if days < t["min_days"]:
                 return None
 
@@ -910,8 +910,8 @@ class AnomalyDetector:
         # More than 2.5 standard deviations = anomaly
         if diff > std_dev * 2.5 and diff > 3:
             return self._build_anomaly(session, event, hour,
-                f"um {hour}:00 Uhr aktiviert (normalerweise ~{int(mean_hour)}:00 ±{int(std_dev)}h)",
-                f"activated at {hour}:00 (usually ~{int(mean_hour)}:00 ±{int(std_dev)}h)")
+                f"um {hour}:00 Uhr aktiviert (normalerweise ~{int(mean_hour)}:00 Â±{int(std_dev)}h)",
+                f"activated at {hour}:00 (usually ~{int(mean_hour)}:00 Â±{int(std_dev)}h)")
 
         return None
 
@@ -926,7 +926,7 @@ class AnomalyDetector:
 
         if change_count >= 10:
             return self._build_anomaly(session, event, None,
-                f"hat sich {change_count}x in 10 Minuten geändert (mögliche Störung)",
+                f"hat sich {change_count}x in 10 Minuten geÃ¤ndert (mÃ¶gliche StÃ¶rung)",
                 f"changed {change_count} times in 10 minutes (possible fault)",
                 severity="critical")
 
@@ -983,7 +983,7 @@ class AnomalyDetector:
         return {
             "entity_id": event.entity_id,
             "device_name": device_name,
-            "event": f"{event.old_state} → {event.new_state}",
+            "event": f"{event.old_state} â†’ {event.new_state}",
             "time": event.created_at.isoformat() if event.created_at else None,
             "reason_de": f"{device_name} {reason_de}",
             "reason_en": f"{device_name} {reason_en}",
@@ -1044,7 +1044,7 @@ class AnomalyDetector:
                     "recent_events": recent,
                     "daily_average": round(weekly_avg),
                     "ratio": round(recent / weekly_avg, 1),
-                    "message_de": f"Ungewöhnlich hohe Aktivität: {recent} Events (Ø {weekly_avg:.0f})",
+                    "message_de": f"UngewÃ¶hnlich hohe AktivitÃ¤t: {recent} Events (Ã˜ {weekly_avg:.0f})",
                     "message_en": f"Unusually high activity: {recent} events (avg {weekly_avg:.0f})",
                 }
             return {"guest_likely": False, "recent_events": recent, "daily_average": round(weekly_avg)}
@@ -1111,7 +1111,7 @@ class NotificationManager:
         session = self.Session()
         try:
             entity_id = anomaly.get("entity_id", "")
-            title = "MindHome: Ungewöhnliche Aktivität" if lang == "de" else "MindHome: Unusual Activity"
+            title = "MindHome: UngewÃ¶hnliche AktivitÃ¤t" if lang == "de" else "MindHome: Unusual Activity"
             message = anomaly.get("reason_de" if lang == "de" else "reason_en", "")
 
             # Dedup: check if we already notified about this entity in last 24h
