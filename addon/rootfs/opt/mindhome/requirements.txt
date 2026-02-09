@@ -1,21 +1,9 @@
 # BUILD:20260209-1200
-# Web Framework
 flask==3.0.0
 flask-cors==4.0.0
+sqlalchemy==2.0.23
+requests==2.31.0
+websocket-client==1.7.0
 Werkzeug==3.0.1
 Jinja2==3.1.2
 MarkupSafe==2.1.3
-
-# Database
-sqlalchemy==2.0.23
-
-# Home Assistant Communication
-websocket-client==1.7.0
-requests==2.31.0
-
-# Utilities
-python-dateutil==2.8.2
-pytz==2023.3
-
-# PDF Import
-pdfplumber==0.10.3
