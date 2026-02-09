@@ -1,4 +1,4 @@
-# MindHome Backend v0.5.2-phase3B-fix3 (2026-02-09 01:00) - app.py - BUILD:20260209-0100
+#  MindHome Backend v0.5.3-phase3C (2026-02-09 02:30) - app.py - BUILD:20260209-0230
 """
 MindHome - Main Application
 Flask backend serving the API and frontend.
@@ -2682,7 +2682,7 @@ def api_notification_stats():
 def api_update_notification_channel(cid):
     """Update a notification channel (enable/disable)."""
     data = request.get_json() or {}
-    session = Session()
+    session = get_db()
     try:
         ch = session.query(NotificationChannel).get(cid)
         if not ch:
@@ -2700,7 +2700,7 @@ def api_update_notification_channel(cid):
 @app.route("/api/notification-settings/test-channel/<int:cid>", methods=["POST"])
 def api_test_notification_channel(cid):
     """Send a test notification to a specific channel."""
-    session = Session()
+    session = get_db()
     try:
         ch = session.query(NotificationChannel).get(cid)
         if not ch:
@@ -3337,7 +3337,7 @@ def api_backup_export():
             backup["notification_log"] = []
             for nl in session.query(NotificationLog).filter(NotificationLog.created_at >= cutoff).all():
                 backup["notification_log"].append({"id": nl.id,
-                    "notification_type": nl.notification_type, "title": nl.title,
+                    "notification_type": nl.notification_type.value if hasattr(nl.notification_type, 'value') else str(nl.notification_type), "title": nl.title,
                     "message": nl.message, "was_read": nl.was_read,
                     "created_at": utc_iso(nl.created_at)})
 
@@ -4882,6 +4882,20 @@ def start_app():
                         d.is_enabled = True
                     _dm_session.commit()
                     logger.info(f"Auto-enabled {len(all_domains)} domains (first start)")
+
+                # Register custom domains in DOMAIN_PLUGINS so they get tracked
+                custom_domains = _dm_session.query(Domain).filter_by(is_custom=True, is_enabled=True).all()
+                for cd in custom_domains:
+                    if cd.name not in DOMAIN_PLUGINS:
+                        DOMAIN_PLUGINS[cd.name] = {
+                            "ha_domain": cd.name,
+                            "attributes": [],
+                            "controls": ["toggle"],
+                            "pattern_features": ["time_of_day", "state_change", "duration"],
+                            "icon": cd.icon or "mdi:puzzle",
+                            "is_custom": True,
+                        }
+                        logger.info(f"Registered custom domain plugin: {cd.name}")
             finally:
                 _dm_session.close()
             domain_manager.start_enabled_domains()
