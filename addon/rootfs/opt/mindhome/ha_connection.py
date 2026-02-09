@@ -1,8 +1,9 @@
 """
-MindHome - Home Assistant Connection v0.5.2 - BUILD:20260209-0040
+MindHome - Home Assistant Connection v0.6.0-phase3
 Handles real-time WebSocket connection and REST API calls to HA.
 Features: Retry with backoff, reconnect limiter, batch events, calendar integration,
           climate validation, timezone caching, ingress token forwarding.
+Phase 3: Sun tracking, day phases, presence helpers, weather data.
 """
 
 import os
@@ -211,14 +212,9 @@ class HAConnection:
             payload["title"] = title
         if data:
             payload["data"] = data
-        # Strip "notify." prefix if present to avoid double domain in URL
-        svc = target or "notify"
-        if svc.startswith("notify."):
-            svc = svc[7:]
-        return self.call_service("notify", svc, payload)
+        return self.call_service("notify", target or "notify", payload)
 
-    def announce_tts(self, message, media_player_entity=None, tts_service=None):
-        """Send TTS announcement. Auto-detects TTS service if not specified."""
+    def announce_tts(self, message, media_player_entity=None):
         entity = media_player_entity
         if not entity:
             states = self.get_states()
@@ -230,36 +226,7 @@ class HAConnection:
         if not entity:
             logger.warning("No media player found for TTS")
             return None
-
-        # Auto-detect TTS service if not specified
-        if not tts_service:
-            try:
-                services = self.get_services()
-                tts_services = []
-                for svc in services:
-                    if svc.get("domain") == "tts":
-                        for name in svc.get("services", {}).keys():
-                            tts_services.append(f"tts.{name}")
-                # Prefer common services
-                preferred = ["tts.google_translate_say", "tts.cloud_say", "tts.speak"]
-                for p in preferred:
-                    if p in tts_services:
-                        tts_service = p
-                        break
-                if not tts_service and tts_services:
-                    tts_service = tts_services[0]
-            except Exception as e:
-                logger.warning(f"TTS service discovery failed: {e}")
-
-        if not tts_service:
-            tts_service = "tts.speak"
-
-        # Split domain and service
-        parts = tts_service.split(".", 1)
-        domain = parts[0] if len(parts) > 1 else "tts"
-        service = parts[1] if len(parts) > 1 else "speak"
-
-        return self.call_service(domain, service, {"entity_id": entity, "message": message})
+        return self.call_service("tts", "speak", {"entity_id": entity, "message": message})
 
     def fire_event(self, event_type, event_data=None):
         return self._api_request("POST", f"events/{event_type}", event_data or {})
@@ -539,6 +506,182 @@ class HAConnection:
                 "attributes": attributes,
             })
         return discovered
+
+    # ======================================================================
+    # Phase 3: Sun & Day Phase Tracking
+    # ======================================================================
+
+    def get_sun_state(self):
+        """Get current sun.sun state with elevation, azimuth, etc."""
+        state = self.get_state("sun.sun")
+        if not state:
+            return None
+        attrs = state.get("attributes", {})
+        return {
+            "state": state.get("state", "unknown"),  # "above_horizon" / "below_horizon"
+            "elevation": attrs.get("elevation", 0),
+            "azimuth": attrs.get("azimuth", 0),
+            "rising": attrs.get("rising", False),
+            "next_dawn": attrs.get("next_dawn"),
+            "next_dusk": attrs.get("next_dusk"),
+            "next_midnight": attrs.get("next_midnight"),
+            "next_noon": attrs.get("next_noon"),
+            "next_rising": attrs.get("next_rising"),
+            "next_setting": attrs.get("next_setting"),
+        }
+
+    def get_sun_events_today(self):
+        """Calculate today's sun events from sun.sun attributes."""
+        sun = self.get_sun_state()
+        if not sun:
+            return {}
+        return {
+            "dawn": sun.get("next_dawn"),
+            "sunrise": sun.get("next_rising"),
+            "noon": sun.get("next_noon"),
+            "sunset": sun.get("next_setting"),
+            "dusk": sun.get("next_dusk"),
+            "elevation": sun.get("elevation", 0),
+            "azimuth": sun.get("azimuth", 0),
+            "is_day": sun.get("state") == "above_horizon",
+        }
+
+    def get_current_season(self):
+        """Determine astronomical season based on current month."""
+        now = datetime.now(timezone.utc)
+        month = now.month
+        if month in (3, 4, 5):
+            return "spring"
+        elif month in (6, 7, 8):
+            return "summer"
+        elif month in (9, 10, 11):
+            return "autumn"
+        else:
+            return "winter"
+
+    # ======================================================================
+    # Phase 3: Presence Helpers
+    # ======================================================================
+
+    def get_persons_home(self):
+        """Get list of person entities that are currently 'home'."""
+        states = self.get_states()
+        if not states:
+            return []
+        persons = []
+        for s in states:
+            eid = s.get("entity_id", "")
+            if eid.startswith("person.") and s.get("state") == "home":
+                persons.append({
+                    "entity_id": eid,
+                    "name": s.get("attributes", {}).get("friendly_name", eid),
+                    "state": "home",
+                })
+        return persons
+
+    def get_all_persons(self):
+        """Get all person entities with their state."""
+        states = self.get_states()
+        if not states:
+            return []
+        return [{
+            "entity_id": s.get("entity_id"),
+            "name": s.get("attributes", {}).get("friendly_name", s.get("entity_id")),
+            "state": s.get("state"),
+            "source": s.get("attributes", {}).get("source"),
+            "latitude": s.get("attributes", {}).get("latitude"),
+            "longitude": s.get("attributes", {}).get("longitude"),
+        } for s in states if s.get("entity_id", "").startswith("person.")]
+
+    def get_device_trackers(self, network_filter=None):
+        """Get device_tracker entities, optionally filtered by network/source."""
+        states = self.get_states()
+        if not states:
+            return []
+        trackers = []
+        for s in states:
+            eid = s.get("entity_id", "")
+            if not eid.startswith("device_tracker."):
+                continue
+            attrs = s.get("attributes", {})
+            tracker = {
+                "entity_id": eid,
+                "name": attrs.get("friendly_name", eid),
+                "state": s.get("state"),
+                "source_type": attrs.get("source_type"),
+                "mac": attrs.get("mac"),
+                "ip": attrs.get("ip"),
+                "host_name": attrs.get("host_name"),
+                "is_home": s.get("state") == "home",
+            }
+            if network_filter:
+                # Filter by source like "router" or specific integration
+                if attrs.get("source_type") != network_filter:
+                    continue
+            trackers.append(tracker)
+        return trackers
+
+    def is_anyone_home(self):
+        """Quick check if at least one person is home."""
+        try:
+            return len(self.get_persons_home()) > 0
+        except Exception:
+            return False
+
+    def count_persons_home(self):
+        """Count how many persons are home."""
+        try:
+            return len(self.get_persons_home())
+        except Exception:
+            return 0
+
+    # ======================================================================
+    # Phase 3: Weather Helpers
+    # ======================================================================
+
+    def get_weather(self):
+        """Get current weather data from first weather entity."""
+        states = self.get_states()
+        if not states:
+            return None
+        for s in states:
+            if s.get("entity_id", "").startswith("weather."):
+                attrs = s.get("attributes", {})
+                return {
+                    "entity_id": s.get("entity_id"),
+                    "condition": s.get("state"),
+                    "temperature": attrs.get("temperature"),
+                    "humidity": attrs.get("humidity"),
+                    "pressure": attrs.get("pressure"),
+                    "wind_speed": attrs.get("wind_speed"),
+                    "wind_bearing": attrs.get("wind_bearing"),
+                    "forecast": attrs.get("forecast", [])[:5],
+                }
+        return None
+
+    def is_raining(self):
+        """Check if current weather indicates rain."""
+        weather = self.get_weather()
+        if not weather:
+            return False
+        rain_conditions = ("rainy", "pouring", "lightning-rainy", "hail",
+                          "snowy", "snowy-rainy", "exceptional")
+        return weather.get("condition", "") in rain_conditions
+
+    # ======================================================================
+    # Phase 3: Scene Helpers
+    # ======================================================================
+
+    def create_ha_scene(self, name, entities):
+        """Create a scene in HA from entity states."""
+        return self.call_service("scene", "create", {
+            "scene_id": f"mindhome_{name.lower().replace(' ', '_')}",
+            "snapshot_entities": [e["entity_id"] for e in entities] if entities else [],
+        })
+
+    def activate_ha_scene(self, scene_entity_id):
+        """Activate an existing HA scene."""
+        return self.call_service("scene", "turn_on", entity_id=scene_entity_id)
 
     def check_device_health(self):
         issues = []
