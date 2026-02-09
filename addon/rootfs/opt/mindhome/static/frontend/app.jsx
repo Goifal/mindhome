@@ -1,4 +1,4 @@
-// MindHome Frontend v0.5.3-phase3C-fix5 (2026-02-09 10:40) - app.jsx - BUILD:20260209-1040
+// MindHome Frontend v0.5.3-phase3C-fix6 (2026-02-09 11:00) - app.jsx - BUILD:20260209-1100
 // ================================================================
 // MindHome - React Frontend Application v0.5.0
 // ================================================================
@@ -3375,12 +3375,19 @@ const PersonTimeProfiles = ({ lang }) => {
         { id: 'weekend', label: lang === 'de' ? 'Wochenende' : 'Weekend' },
         { id: 'shift', label: lang === 'de' ? 'Schichtdienst' : 'Shift Work' },
         { id: 'child', label: lang === 'de' ? 'Kind/Schule' : 'Child/School' },
-        { id: 'free', label: lang === 'de' ? 'Nicht berufst\u00e4tig' : 'Not employed' },
+        { id: 'free', label: lang === 'de' ? 'Nicht berufstaetig' : 'Not employed' },
     ];
 
     const WEEKDAYS = [
         { id: 'Mo', label: 'Mo' }, { id: 'Di', label: 'Di' }, { id: 'Mi', label: 'Mi' },
         { id: 'Do', label: 'Do' }, { id: 'Fr', label: 'Fr' }, { id: 'Sa', label: 'Sa' }, { id: 'So', label: 'So' },
+    ];
+
+    const DEFAULT_SHIFT_TYPES = [
+        { name: 'Fruehdienst', short: 'F', color: '#4a90d9', time_start: '06:00', time_end: '14:00' },
+        { name: 'Spaetdienst', short: 'S', color: '#f0ad4e', time_start: '14:00', time_end: '22:00' },
+        { name: 'Nachtdienst', short: 'N', color: '#7b68ee', time_start: '22:00', time_end: '06:00' },
+        { name: 'Dienstfrei', short: 'X', color: '#666', time_start: '', time_end: '' },
     ];
 
     const load = async () => {
@@ -3410,7 +3417,23 @@ const PersonTimeProfiles = ({ lang }) => {
         user_id: userId, schedule_type: 'weekday', name: '',
         time_wake: '06:30', time_leave: '07:30', time_home: '17:00', time_sleep: '22:30',
         weekdays: 'Mo,Di,Mi,Do,Fr',
+        shift_data: { shift_types: DEFAULT_SHIFT_TYPES, rotation: [], rotation_start: '', rotation_end: '' },
     });
+
+    const getShiftData = () => {
+        const sd = editing?.shift_data || {};
+        return {
+            shift_types: sd.shift_types || DEFAULT_SHIFT_TYPES,
+            rotation: sd.rotation || [],
+            rotation_start: sd.rotation_start || '',
+            rotation_end: sd.rotation_end || '',
+        };
+    };
+
+    const updateShiftData = (patch) => {
+        const sd = getShiftData();
+        setEditing({ ...editing, shift_data: { ...sd, ...patch } });
+    };
 
     if (loading) return <div style={{ padding: 16, color: 'var(--text-muted)' }}>Laden...</div>;
 
@@ -3418,6 +3441,8 @@ const PersonTimeProfiles = ({ lang }) => {
         <span className="mdi mdi-information" style={{ marginRight: 4 }} />
         {lang === 'de' ? 'Erstelle zuerst Personen unter "Personen" in der Navigation.' : 'Create persons first under "Persons" in navigation.'}
     </div>;
+
+    const sd = editing ? getShiftData() : null;
 
     return (
         <div>
@@ -3432,12 +3457,25 @@ const PersonTimeProfiles = ({ lang }) => {
                             </button>
                         </div>
                         {userSchedules.length === 0 && <div style={{ fontSize: 12, color: 'var(--text-muted)', fontStyle: 'italic' }}>Kein Zeitprofil konfiguriert</div>}
-                        {userSchedules.map(s => (
+                        {userSchedules.map(s => {
+                            const ssd = s.shift_data || {};
+                            const rot = ssd.rotation || [];
+                            const types = ssd.shift_types || [];
+                            return (
                             <div key={s.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--border)' }}>
-                                <div>
+                                <div style={{ flex: 1, minWidth: 0 }}>
                                     <div style={{ fontSize: 12, fontWeight: 500 }}>{SCHEDULE_TYPES.find(t => t.id === s.schedule_type)?.label || s.schedule_type}{s.name ? ` - ${s.name}` : ''}</div>
                                     <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                                        {s.schedule_type !== 'shift' && s.time_wake && <span>{s.time_wake} \u2192 {s.time_leave || '-'} | {s.time_home || '-'} \u2192 {s.time_sleep}</span>}
+                                        {s.schedule_type !== 'shift' && s.time_wake && <span>{s.time_wake} &rarr; {s.time_leave || '-'} | {s.time_home || '-'} &rarr; {s.time_sleep}</span>}
+                                        {s.schedule_type === 'shift' && rot.length > 0 && (
+                                            <span style={{ display: 'inline-flex', gap: 2 }}>
+                                                {rot.slice(0, 14).map((code, i) => {
+                                                    const st = types.find(t => t.short === code);
+                                                    return <span key={i} style={{ display: 'inline-block', width: 16, height: 16, borderRadius: 3, background: st?.color || '#666', color: '#fff', fontSize: 9, textAlign: 'center', lineHeight: '16px', fontWeight: 600 }}>{code}</span>;
+                                                })}
+                                                {rot.length > 14 && <span style={{ fontSize: 10 }}>+{rot.length - 14}</span>}
+                                            </span>
+                                        )}
                                         {s.weekdays && <span style={{ marginLeft: 8 }}>[{s.weekdays}]</span>}
                                     </div>
                                 </div>
@@ -3446,12 +3484,13 @@ const PersonTimeProfiles = ({ lang }) => {
                                     <button className="btn btn-sm btn-ghost" onClick={() => remove(s.id)} style={{ color: 'var(--danger)' }}><span className="mdi mdi-delete" /></button>
                                 </div>
                             </div>
-                        ))}
+                            );
+                        })}
                     </div>
                 );
             })}
             {editing && (
-                <Modal title={lang === 'de' ? 'Zeitprofil bearbeiten' : 'Edit Time Profile'} onClose={() => setEditing(null)} onConfirm={() => save(editing)}>
+                <Modal title={lang === 'de' ? 'Zeitprofil bearbeiten' : 'Edit Time Profile'} onClose={() => setEditing(null)} onConfirm={() => save(editing)} wide={editing.schedule_type === 'shift'}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                         <div>
                             <label style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Typ</label>
@@ -3463,6 +3502,8 @@ const PersonTimeProfiles = ({ lang }) => {
                             </div>
                         </div>
                         <input type="text" placeholder="Name (optional)" value={editing.name || ''} onChange={e => setEditing({ ...editing, name: e.target.value })} style={{ fontSize: 12, padding: '6px 8px' }} />
+
+                        {/* NON-SHIFT: time fields */}
                         {editing.schedule_type !== 'shift' && (
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                                 {[['time_wake','Aufstehen'],['time_leave','Haus verlassen'],['time_home','Heimkommen'],['time_sleep','Schlafen']].map(([key,lbl]) => (
@@ -3473,17 +3514,145 @@ const PersonTimeProfiles = ({ lang }) => {
                                 ))}
                             </div>
                         )}
-                        <div>
-                            <label style={{ fontSize: 11, color: 'var(--text-muted)' }}>Wochentage</label>
-                            <div style={{ display: 'flex', gap: 4, marginTop: 4 }}>
-                                {WEEKDAYS.map(d => {
-                                    const active = (editing.weekdays || '').includes(d.id);
-                                    return <button key={d.id} className={`btn btn-sm ${active ? 'btn-primary' : 'btn-ghost'}`}
-                                        onClick={() => { const days = (editing.weekdays || '').split(',').filter(Boolean); setEditing({ ...editing, weekdays: (active ? days.filter(x => x !== d.id) : [...days, d.id]).join(',') }); }}
-                                        style={{ fontSize: 11, padding: '2px 6px', minWidth: 30 }}>{d.label}</button>;
-                                })}
+
+                        {/* NON-SHIFT: weekdays */}
+                        {editing.schedule_type !== 'shift' && (
+                            <div>
+                                <label style={{ fontSize: 11, color: 'var(--text-muted)' }}>Wochentage</label>
+                                <div style={{ display: 'flex', gap: 4, marginTop: 4 }}>
+                                    {WEEKDAYS.map(d => {
+                                        const active = (editing.weekdays || '').includes(d.id);
+                                        return <button key={d.id} className={`btn btn-sm ${active ? 'btn-primary' : 'btn-ghost'}`}
+                                            onClick={() => { const days = (editing.weekdays || '').split(',').filter(Boolean); setEditing({ ...editing, weekdays: (active ? days.filter(x => x !== d.id) : [...days, d.id]).join(',') }); }}
+                                            style={{ fontSize: 11, padding: '2px 6px', minWidth: 30 }}>{d.label}</button>;
+                                    })}
+                                </div>
                             </div>
-                        </div>
+                        )}
+
+                        {/* SHIFT: Schichttypen definieren */}
+                        {editing.schedule_type === 'shift' && sd && (
+                            <div>
+                                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 8, display: 'block' }}>
+                                    <span className="mdi mdi-clock-outline" style={{ marginRight: 4 }} />
+                                    {lang === 'de' ? 'Schichttypen' : 'Shift Types'}
+                                </label>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                    {sd.shift_types.map((st, idx) => (
+                                        <div key={idx} style={{ display: 'flex', gap: 6, alignItems: 'center', padding: '6px 8px', background: 'var(--bg-primary)', borderRadius: 6, borderLeft: `3px solid ${st.color}` }}>
+                                            <input type="text" value={st.name} onChange={e => {
+                                                const types = [...sd.shift_types]; types[idx] = { ...types[idx], name: e.target.value };
+                                                updateShiftData({ shift_types: types });
+                                            }} style={{ fontSize: 12, flex: 1, padding: '4px 6px', minWidth: 80 }} placeholder="Name" />
+                                            <input type="text" value={st.short} onChange={e => {
+                                                const types = [...sd.shift_types]; types[idx] = { ...types[idx], short: e.target.value.toUpperCase().slice(0, 3) };
+                                                updateShiftData({ shift_types: types });
+                                            }} style={{ fontSize: 12, width: 40, padding: '4px 6px', textAlign: 'center', fontWeight: 700 }} placeholder="F" maxLength={3} />
+                                            <input type="time" value={st.time_start || ''} onChange={e => {
+                                                const types = [...sd.shift_types]; types[idx] = { ...types[idx], time_start: e.target.value };
+                                                updateShiftData({ shift_types: types });
+                                            }} style={{ fontSize: 11, width: 90 }} />
+                                            <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>-</span>
+                                            <input type="time" value={st.time_end || ''} onChange={e => {
+                                                const types = [...sd.shift_types]; types[idx] = { ...types[idx], time_end: e.target.value };
+                                                updateShiftData({ shift_types: types });
+                                            }} style={{ fontSize: 11, width: 90 }} />
+                                            <button className="btn btn-sm btn-ghost" onClick={() => {
+                                                const types = sd.shift_types.filter((_, i) => i !== idx);
+                                                updateShiftData({ shift_types: types, rotation: sd.rotation.filter(r => r !== st.short) });
+                                            }} style={{ color: 'var(--danger)', padding: 2 }}>
+                                                <span className="mdi mdi-close" style={{ fontSize: 14 }} />
+                                            </button>
+                                        </div>
+                                    ))}
+                                    <button className="btn btn-sm btn-ghost" onClick={() => {
+                                        const used = sd.shift_types.map(t => t.short);
+                                        const next = 'ABCDEFGHIJKLMNOPQRSTUVWYZ'.split('').find(c => !used.includes(c)) || '?';
+                                        updateShiftData({ shift_types: [...sd.shift_types, { name: '', short: next, color: ['#50c878','#e74c3c','#d4a','#17a','#f60','#0cc'][sd.shift_types.length % 6], time_start: '', time_end: '' }] });
+                                    }} style={{ fontSize: 11, alignSelf: 'flex-start' }}>
+                                        <span className="mdi mdi-plus" style={{ marginRight: 4 }} />{lang === 'de' ? 'Schichttyp hinzufuegen' : 'Add shift type'}
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* SHIFT: Rotation pattern */}
+                        {editing.schedule_type === 'shift' && sd && (
+                            <div>
+                                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 8, display: 'block' }}>
+                                    <span className="mdi mdi-repeat" style={{ marginRight: 4 }} />
+                                    {lang === 'de' ? 'Rotations-Muster' : 'Rotation Pattern'}
+                                    <span style={{ fontSize: 10, fontWeight: 400, color: 'var(--text-muted)', marginLeft: 6 }}>({sd.rotation.length} {lang === 'de' ? 'Tage' : 'days'})</span>
+                                </label>
+
+                                {/* Quick add: Nx Type */}
+                                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 8 }}>
+                                    {sd.shift_types.map(st => (
+                                        <div key={st.short} style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                                            {[1, 2, 3, 5, 7].map(n => (
+                                                <button key={n} className="btn btn-sm btn-ghost" onClick={() => {
+                                                    updateShiftData({ rotation: [...sd.rotation, ...Array(n).fill(st.short)] });
+                                                }} style={{ fontSize: 10, padding: '2px 4px', background: st.color + '22', color: st.color, border: `1px solid ${st.color}44` }}
+                                                    title={`${n}x ${st.name}`}>
+                                                    {n}x{st.short}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    ))}
+                                </div>
+
+                                {/* Rotation tiles */}
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3, padding: 8, background: 'var(--bg-primary)', borderRadius: 8, minHeight: 40, maxHeight: 200, overflowY: 'auto' }}>
+                                    {sd.rotation.length === 0 && <span style={{ fontSize: 11, color: 'var(--text-muted)', fontStyle: 'italic' }}>{lang === 'de' ? 'Klicke oben um Tage hinzuzufuegen' : 'Click above to add days'}</span>}
+                                    {sd.rotation.map((code, i) => {
+                                        const st = sd.shift_types.find(t => t.short === code);
+                                        return (
+                                            <button key={i} onClick={() => {
+                                                // Cycle through shift types on click
+                                                const typeIdx = sd.shift_types.findIndex(t => t.short === code);
+                                                const nextIdx = (typeIdx + 1) % sd.shift_types.length;
+                                                const newRot = [...sd.rotation];
+                                                newRot[i] = sd.shift_types[nextIdx].short;
+                                                updateShiftData({ rotation: newRot });
+                                            }}
+                                            onContextMenu={e => {
+                                                e.preventDefault();
+                                                updateShiftData({ rotation: sd.rotation.filter((_, idx) => idx !== i) });
+                                            }}
+                                            title={`${st?.name || code} (${lang === 'de' ? 'Klick: wechseln, Rechtsklick: entfernen' : 'Click: change, Right-click: remove'})`}
+                                            style={{ width: 24, height: 24, borderRadius: 4, background: st?.color || '#666', color: '#fff', fontSize: 10, fontWeight: 700, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                {code}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+
+                                {sd.rotation.length > 0 && (
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 6 }}>
+                                        <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+                                            {lang === 'de' ? 'Klick = Typ wechseln | Rechtsklick = entfernen' : 'Click = change type | Right-click = remove'}
+                                        </span>
+                                        <button className="btn btn-sm btn-ghost" onClick={() => updateShiftData({ rotation: [] })} style={{ fontSize: 10, color: 'var(--danger)' }}>
+                                            <span className="mdi mdi-delete-sweep" style={{ marginRight: 2 }} />{lang === 'de' ? 'Alle loeschen' : 'Clear all'}
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {/* SHIFT: Start/End date */}
+                        {editing.schedule_type === 'shift' && sd && (
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                                <div>
+                                    <label style={{ fontSize: 11, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Rotation Start' : 'Rotation Start'}</label>
+                                    <input type="date" value={sd.rotation_start || ''} onChange={e => updateShiftData({ rotation_start: e.target.value })} style={{ fontSize: 12, width: '100%' }} />
+                                </div>
+                                <div>
+                                    <label style={{ fontSize: 11, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Ende (leer = endlos)' : 'End (empty = loop)'}</label>
+                                    <input type="date" value={sd.rotation_end || ''} onChange={e => updateShiftData({ rotation_end: e.target.value })} style={{ fontSize: 12, width: '100%' }} />
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </Modal>
             )}
@@ -3514,7 +3683,7 @@ const ShiftPlanImport = ({ lang }) => {
         try {
             const formData = new FormData();
             formData.append('file', file);
-            const resp = await fetch('/api/shift-plan/import', { method: 'POST', body: formData });
+            const resp = await fetch(`${API_BASE}/api/shift-plan/import`, { method: 'POST', body: formData });
             const data = await resp.json();
             if (data.success) {
                 setParsed(data.parsed);
