@@ -1,4 +1,4 @@
-// MindHome Frontend v0.5.3-phase3C (2026-02-09 02:30) - app.jsx - BUILD:20260209-0230
+// MindHome Frontend v0.5.3-phase3C-fix1 (2026-02-09 10:00) - app.jsx - BUILD:20260209-1000
 // ================================================================
 // MindHome - React Frontend Application v0.5.0
 // ================================================================
@@ -323,7 +323,6 @@ const ConfirmDialog = ({ title, message, onConfirm, onCancel, danger }) => {
     );
     return typeof document !== 'undefined' ? ReactDOM.createPortal(content, document.body) : content;
 };
-);
 
 // ================================================================
 // Fix 8: Custom Dropdown Component
