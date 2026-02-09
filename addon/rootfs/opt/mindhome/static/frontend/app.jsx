@@ -1,4 +1,4 @@
-// MindHome Frontend v0.5.2-phase3B-fix3 (2026-02-09 01:00) - app.jsx - BUILD:20260209-0100
+// MindHome Frontend v0.5.2-phase3B-fix4 (2026-02-09 01:05) - app.jsx - BUILD:20260209-0105
 // ================================================================
 // MindHome - React Frontend Application v0.5.0
 // ================================================================
@@ -3301,6 +3301,8 @@ const AnomalyAdvancedPanel = ({ lang, showToast }) => {
                 </CollapsibleCard>
             )}
             </div>
+    );
+};
 
 // ================================================================
 // Phase 2a: Patterns Page (Muster-Explorer)
