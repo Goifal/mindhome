@@ -5314,7 +5314,7 @@ const PresencePage = () => {
     const load = () => {
         api.get('presence-modes').then(setModes).catch(() => {});
         api.get('presence-modes/current').then(setCurrent).catch(() => {});
-        api.get('persons').then(setPersons).catch(() => {});
+        api.get('persons').then(d => setPersons(Array.isArray(d) ? d : [])).catch(() => {});
         api.get('presence-log').then(setLogs).catch(() => {});
         api.get('guest-devices').then(setGuests).catch(() => {});
     };
