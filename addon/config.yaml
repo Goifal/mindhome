@@ -2,7 +2,7 @@
 name: "MindHome"
 version: "0.5.0"
 slug: "mindhome"
-description: "KI-basierte Automatisierung - lernt deine Gewohnheiten und steuert dein Zuhause intelligent."
+description: "KI-basierte Automatisierung â€“ lernt deine Gewohnheiten und steuert dein Zuhause intelligent."
 url: "https://github.com/Goifal/mindhome"
 arch:
   - aarch64
