@@ -1,4 +1,4 @@
-// MindHome Frontend v0.5.3-phase3C (2026-02-09 12:20) - app.jsx - BUILD:20260209-1220
+// MindHome Frontend v0.5.3-phase3C (2026-02-09 12:35) - app.jsx - BUILD:20260209-1235
 // ================================================================
 // MindHome - React Frontend Application v0.5.0
 // ================================================================
@@ -2569,9 +2569,10 @@ const SettingsPage = () => {
                 const result = await api.post('backup/import', data);
                 if (result?.success) {
                     showToast(lang === 'de'
-                        ? `Backup geladen: ${result.imported.rooms} Räume, ${result.imported.devices} Geräte`
+                        ? `Backup geladen: ${result.imported.rooms} Raeume, ${result.imported.devices} Geraete`
                         : `Backup loaded: ${result.imported.rooms} rooms, ${result.imported.devices} devices`, 'success');
-                    await refreshData();
+                    setTimeout(() => window.location.reload(), 500);
+                    return;
                 }
             }
         } catch (err) {
@@ -2586,9 +2587,12 @@ const SettingsPage = () => {
             const result = await api.post('backup/import', importPreview.data);
             if (result?.success) {
                 showToast(lang === 'de'
-                    ? `Backup geladen: ${result.imported.rooms} Räume, ${result.imported.devices} Geräte`
+                    ? `Backup geladen: ${result.imported.rooms} Raeume, ${result.imported.devices} Geraete`
                     : `Backup loaded: ${result.imported.rooms} rooms, ${result.imported.devices} devices`, 'success');
-                await refreshData();
+                setImportPreview(null);
+                // Full reload to ensure all components pick up new data
+                setTimeout(() => window.location.reload(), 500);
+                return;
             } else {
                 showToast(result?.error || 'Import failed', 'error');
             }
@@ -5638,12 +5642,8 @@ const OnboardingWizard = ({ onComplete }) => {
         try {
             const result = await api.post('backup/import', backupData);
             if (result?.success) {
-                // Bug 6: Wait for data refresh before completing wizard
-                if (typeof onComplete === 'function') {
-                    await onComplete();
-                    // Additional delay to ensure state propagation
-                    await new Promise(r => setTimeout(r, 500));
-                }
+                // Full reload to ensure all data is fresh
+                setTimeout(() => window.location.reload(), 500);
                 return;
             } else {
                 setBackupError(result?.error || (lang === 'de' ? 'Import fehlgeschlagen' : 'Import failed'));
