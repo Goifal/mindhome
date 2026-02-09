@@ -1,944 +1,1328 @@
 """
-MindHome - Database Models - BUILD:20260209-0040
-All persistent data structures for MindHome.
-Phase 1 Final - with migration system
+MindHome - Automation Engine (Phase 2b)
+Suggestions, execution, undo, conflict detection, phase management.
 """
 
-from datetime import datetime, timezone
-
-
-def _utcnow():
-    """Timezone-aware UTC now for SQLAlchemy defaults."""
-    return datetime.now(timezone.utc)
-from sqlalchemy import (
-    create_engine, Column, Integer, String, Float, Boolean,
-    DateTime, Text, ForeignKey, Enum, JSON, inspect, text
-)
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import relationship, sessionmaker
-import enum
 import os
+import json
 import logging
+import threading
+import time
+from datetime import datetime, timedelta, timezone
+from collections import defaultdict
+from sqlalchemy import func, text, and_
+from sqlalchemy.orm import sessionmaker
 
-logger = logging.getLogger("mindhome.models")
+from models import (
+    get_engine, LearnedPattern, Prediction, Device, Domain, Room,
+    RoomDomainState, LearningPhase, ActionLog, NotificationLog,
+    NotificationType, NotificationSetting, SystemSetting, StateHistory
+)
 
-Base = declarative_base()
-
-
-# ==============================================================================
-# Enums
-# ==============================================================================
-
-class UserRole(enum.Enum):
-    ADMIN = "admin"
-    USER = "user"
-
-
-class LearningPhase(enum.Enum):
-    OBSERVING = "observing"
-    SUGGESTING = "suggesting"
-    AUTONOMOUS = "autonomous"
-
-
-class NotificationType(enum.Enum):
-    CRITICAL = "critical"
-    SUGGESTION = "suggestion"
-    ANOMALY = "anomaly"
-    INFO = "info"
-
-
-class NotificationPriority(enum.Enum):
-    HIGH = "high"
-    MEDIUM = "medium"
-    LOW = "low"
+logger = logging.getLogger("mindhome.automation_engine")
 
 
 # ==============================================================================
-# User & Permissions
+# Configuration
 # ==============================================================================
 
-class User(Base):
-    __tablename__ = "users"
+# E4: Safety thresholds - critical domains need higher confidence
+DOMAIN_THRESHOLDS = {
+    "lock":                 {"suggest": 0.85, "auto": 0.95},
+    "alarm_control_panel":  {"suggest": 0.85, "auto": 0.95},
+    "climate":              {"suggest": 0.6,  "auto": 0.85},
+    "cover":                {"suggest": 0.5,  "auto": 0.8},
+    "light":                {"suggest": 0.5,  "auto": 0.75},
+    "switch":               {"suggest": 0.5,  "auto": 0.75},
+    "fan":                  {"suggest": 0.5,  "auto": 0.75},
+    "media_player":         {"suggest": 0.5,  "auto": 0.75},
+    "_default":             {"suggest": 0.5,  "auto": 0.8},
+}
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    name = Column(String(100), nullable=False)
-    ha_person_entity = Column(String(255), nullable=True)
-    role = Column(Enum(UserRole), default=UserRole.USER, nullable=False)
-    is_active = Column(Boolean, default=True)
-    pin_hash = Column(String(255), nullable=True)
-    language = Column(String(5), default="de")
-    created_at = Column(DateTime, default=_utcnow)
-    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+# D5: Time window for execution tolerance
+EXECUTION_TIME_WINDOW_MIN = 10
 
-    preferences = relationship("UserPreference", back_populates="user", cascade="all, delete-orphan")
-    notifications_settings = relationship("NotificationSetting", back_populates="user", cascade="all, delete-orphan")
+# D3: Undo window
+UNDO_WINDOW_MINUTES = 30
 
-
-class UserPreference(Base):
-    __tablename__ = "user_preferences"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    room_id = Column(Integer, ForeignKey("rooms.id"), nullable=True)
-    preference_key = Column(String(100), nullable=False)
-    preference_value = Column(String(255), nullable=False)
-    created_at = Column(DateTime, default=_utcnow)
-    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
-
-    user = relationship("User", back_populates="preferences")
-    room = relationship("Room")
+# Anomaly: how many standard deviations counts as anomaly
+ANOMALY_THRESHOLD_HOURS = 2  # e.g. light on at 3 AM when pattern says never
 
 
 # ==============================================================================
-# Rooms
+# C1: Suggestion Generator
 # ==============================================================================
 
-class Room(Base):
-    __tablename__ = "rooms"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    name = Column(String(100), nullable=False)
-    ha_area_id = Column(String(255), nullable=True)
-    icon = Column(String(50), default="mdi:door")
-    privacy_mode = Column(JSON, default=dict)
-    is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=_utcnow)
-
-    devices = relationship("Device", back_populates="room", cascade="all, delete-orphan")
-    domain_states = relationship("RoomDomainState", back_populates="room", cascade="all, delete-orphan")
-
-
-# ==============================================================================
-# Domains & Devices
-# ==============================================================================
-
-class Domain(Base):
-    __tablename__ = "domains"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    name = Column(String(50), nullable=False, unique=True)
-    display_name_de = Column(String(100), nullable=False)
-    display_name_en = Column(String(100), nullable=False)
-    icon = Column(String(50), nullable=False)
-    is_enabled = Column(Boolean, default=False)
-    is_custom = Column(Boolean, default=False)  # Fix 7: Custom domains
-    description_de = Column(Text, nullable=True)
-    description_en = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=_utcnow)
-
-
-class RoomDomainState(Base):
-    __tablename__ = "room_domain_states"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    room_id = Column(Integer, ForeignKey("rooms.id"), nullable=False)
-    domain_id = Column(Integer, ForeignKey("domains.id"), nullable=False)
-    learning_phase = Column(Enum(LearningPhase), default=LearningPhase.OBSERVING)
-    phase_started_at = Column(DateTime, default=_utcnow)
-    confidence_score = Column(Float, default=0.0)
-    is_paused = Column(Boolean, default=False)
-
-    room = relationship("Room", back_populates="domain_states")
-    domain = relationship("Domain")
-
-
-class Device(Base):
-    __tablename__ = "devices"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    ha_entity_id = Column(String(255), nullable=False, unique=True)
-    name = Column(String(200), nullable=False)
-    domain_id = Column(Integer, ForeignKey("domains.id"), nullable=False)
-    room_id = Column(Integer, ForeignKey("rooms.id"), nullable=True)
-    is_tracked = Column(Boolean, default=True)
-    is_controllable = Column(Boolean, default=True)
-    device_meta = Column(JSON, default=dict)
-    created_at = Column(DateTime, default=_utcnow)
-
-    room = relationship("Room", back_populates="devices")
-    domain = relationship("Domain")
-
-
-# ==============================================================================
-# Patterns & Predictions
-# ==============================================================================
-
-class LearnedPattern(Base):
-    __tablename__ = "learned_patterns"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    domain_id = Column(Integer, ForeignKey("domains.id"), nullable=False)
-    room_id = Column(Integer, ForeignKey("rooms.id"), nullable=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
-    pattern_type = Column(String(50), nullable=False)  # "time_based", "event_chain", "correlation"
-    pattern_data = Column(JSON, nullable=False)  # The pattern definition
-    confidence = Column(Float, default=0.0)
-    times_confirmed = Column(Integer, default=0)
-    times_rejected = Column(Integer, default=0)
-    is_active = Column(Boolean, default=True)
-    description_template = Column(Text, nullable=True)
-
-    # Phase 2a extensions
-    description_de = Column(Text, nullable=True)  # Human-readable German
-    description_en = Column(Text, nullable=True)  # Human-readable English
-    trigger_conditions = Column(JSON, nullable=True)  # When does this pattern fire
-    action_definition = Column(JSON, nullable=True)  # What should happen
-    last_matched_at = Column(DateTime, nullable=True)
-    match_count = Column(Integer, default=0)
-    status = Column(String(30), default="observed")  # observed, suggested, active, disabled, rejected
-
-    # Block B extensions
-    rejection_reason = Column(String(50), nullable=True)  # "coincidence", "unwanted", "wrong"
-    rejected_at = Column(DateTime, nullable=True)
-    category = Column(String(30), nullable=True)  # "energy", "comfort", "security"
-    season = Column(String(20), nullable=True)  # "spring", "summer", "autumn", "winter", null=all
-    test_mode = Column(Boolean, default=False)  # simulation mode
-    test_results = Column(JSON, nullable=True)  # simulated triggers log
-    depends_on_pattern_id = Column(Integer, ForeignKey("learned_patterns.id"), nullable=True)
-    schedule = Column(JSON, nullable=True)  # {"weekdays": [0,1,2,3,4], "time_after": "08:00", "time_before": "22:00"}
-    delay_seconds = Column(Integer, default=0)
-    conditions = Column(JSON, nullable=True)  # multi-factor: {"presence": "home", "weather": "cloudy"}
-
-    created_at = Column(DateTime, default=_utcnow)
-    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
-
-    domain = relationship("Domain")
-    room = relationship("Room")
-    user = relationship("User")
-
-
-class Prediction(Base):
-    __tablename__ = "predictions"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    pattern_id = Column(Integer, ForeignKey("learned_patterns.id"), nullable=False)
-    predicted_action = Column(JSON, nullable=False)
-    predicted_for = Column(DateTime, nullable=False)
-    confidence = Column(Float, nullable=False)
-    was_executed = Column(Boolean, default=False)
-    was_correct = Column(Boolean, nullable=True)
-    execution_result = Column(JSON, nullable=True)
-    created_at = Column(DateTime, default=_utcnow)
-
-    # Phase 2b extensions
-    status = Column(String(30), default="pending")  # pending, confirmed, rejected, ignored, executed, undone
-    user_response = Column(String(30), nullable=True)  # confirmed, rejected, ignored
-    responded_at = Column(DateTime, nullable=True)
-    notification_sent = Column(Boolean, default=False)
-    previous_state = Column(JSON, nullable=True)  # For undo: state before automation
-    executed_at = Column(DateTime, nullable=True)
-    undone_at = Column(DateTime, nullable=True)
-    description_de = Column(Text, nullable=True)
-    description_en = Column(Text, nullable=True)
-
-    pattern = relationship("LearnedPattern")
-
-
-# ==============================================================================
-# Action Log
-# ==============================================================================
-
-class ActionLog(Base):
-    __tablename__ = "action_log"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    action_type = Column(String(50), nullable=False)
-    domain_id = Column(Integer, ForeignKey("domains.id"), nullable=True)
-    room_id = Column(Integer, ForeignKey("rooms.id"), nullable=True)
-    device_id = Column(Integer, ForeignKey("devices.id"), nullable=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
-    action_data = Column(JSON, nullable=False)
-    reason = Column(Text, nullable=True)
-    was_undone = Column(Boolean, default=False)
-    previous_state = Column(JSON, nullable=True)
-    created_at = Column(DateTime, default=_utcnow)
-
-    domain = relationship("Domain")
-    room = relationship("Room")
-    device = relationship("Device")
-    user = relationship("User")
-
-
-# ==============================================================================
-# Notifications
-# ==============================================================================
-
-class NotificationSetting(Base):
-    __tablename__ = "notification_settings"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    notification_type = Column(Enum(NotificationType), nullable=False)
-    is_enabled = Column(Boolean, default=True)
-    priority = Column(Enum(NotificationPriority), default=NotificationPriority.MEDIUM)
-    quiet_hours_start = Column(String(5), nullable=True)  # "22:00"
-    quiet_hours_end = Column(String(5), nullable=True)  # "07:00"
-    quiet_hours_allow_critical = Column(Boolean, default=True)
-    push_channel = Column(String(100), nullable=True)  # HA notify service name
-    escalation_enabled = Column(Boolean, default=False)
-    escalation_minutes = Column(Integer, default=30)  # escalate after X min
-    geofencing_only_away = Column(Boolean, default=False)  # only when nobody home
-    created_at = Column(DateTime, default=_utcnow)
-
-    user = relationship("User", back_populates="notifications_settings")
-
-
-class NotificationChannel(Base):
-    """Available notification channels (discovered from HA notify services)."""
-    __tablename__ = "notification_channels"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    service_name = Column(String(200), nullable=False, unique=True)  # e.g. "notify.mobile_app_iphone"
-    display_name = Column(String(200), nullable=False)
-    channel_type = Column(String(50), nullable=False)  # "push", "persistent", "telegram", "email"
-    is_enabled = Column(Boolean, default=True)
-    config = Column(JSON, nullable=True)
-    created_at = Column(DateTime, default=_utcnow)
-
-
-class DeviceMute(Base):
-    """Muted devices - no notifications for these."""
-    __tablename__ = "device_mutes"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    device_id = Column(Integer, ForeignKey("devices.id"), nullable=False)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    muted_until = Column(DateTime, nullable=True)  # null = permanent
-    reason = Column(String(200), nullable=True)
-    created_at = Column(DateTime, default=_utcnow)
-
-    device = relationship("Device")
-    user = relationship("User")
-
-
-class PatternExclusion(Base):
-    """Exclusion rules: entities/rooms that should never be linked in patterns."""
-    __tablename__ = "pattern_exclusions"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    exclusion_type = Column(String(30), nullable=False)  # "device_pair", "room_pair"
-    entity_a = Column(String(255), nullable=False)  # entity_id or room_id
-    entity_b = Column(String(255), nullable=False)
-    reason = Column(String(200), nullable=True)
-    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
-    created_at = Column(DateTime, default=_utcnow)
-
-    creator = relationship("User")
-
-
-class ManualRule(Base):
-    """User-defined rules (manual patterns)."""
-    __tablename__ = "manual_rules"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    name = Column(String(200), nullable=False)
-    trigger_entity = Column(String(255), nullable=False)  # "light.living_room"
-    trigger_state = Column(String(100), nullable=False)  # "on", "off", ">25"
-    action_entity = Column(String(255), nullable=False)  # "light.hallway"
-    action_service = Column(String(100), nullable=False)  # "turn_on", "turn_off"
-    action_data = Column(JSON, nullable=True)  # additional service data
-    conditions = Column(JSON, nullable=True)  # {"time_after": "22:00", "weekdays": [0,1,2,3,4]}
-    delay_seconds = Column(Integer, default=0)
-    is_active = Column(Boolean, default=True)
-    execution_count = Column(Integer, default=0)
-    last_executed_at = Column(DateTime, nullable=True)
-    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
-    created_at = Column(DateTime, default=_utcnow)
-
-    creator = relationship("User")
-
-
-class AnomalySetting(Base):
-    """Per-room/domain anomaly detection settings."""
-    __tablename__ = "anomaly_settings"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    room_id = Column(Integer, ForeignKey("rooms.id"), nullable=True)
-    domain_id = Column(Integer, ForeignKey("domains.id"), nullable=True)
-    device_id = Column(Integer, ForeignKey("devices.id"), nullable=True)
-    sensitivity = Column(String(20), default="medium")  # "low", "medium", "high", "off"
-    stuck_detection = Column(Boolean, default=True)
-    time_anomaly = Column(Boolean, default=True)
-    frequency_anomaly = Column(Boolean, default=True)
-    whitelisted_hours = Column(JSON, nullable=True)  # [3, 4] = 3am-4am normal
-    auto_action = Column(JSON, nullable=True)  # {"type": "notify"} or {"type": "service", "service": "..."}
-    created_at = Column(DateTime, default=_utcnow)
-
-    room = relationship("Room")
-    domain = relationship("Domain")
-    device = relationship("Device")
-
-
-# ==============================================================================
-# #44 Device Groups
-# ==============================================================================
-
-class DeviceGroup(Base):
-    __tablename__ = "device_groups"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    name = Column(String(100), nullable=False)
-    room_id = Column(Integer, ForeignKey("rooms.id"), nullable=True)
-    device_ids = Column(Text, default="[]")  # JSON array of device IDs
-    is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=_utcnow)
-
-    room = relationship("Room")
-
-
-# ==============================================================================
-# #60 Audit Trail
-# ==============================================================================
-
-class AuditTrail(Base):
-    __tablename__ = "audit_trail"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(Integer, nullable=True)
-    action = Column(String(100), nullable=False)
-    target = Column(String(200), nullable=True)
-    details = Column(Text, nullable=True)
-    ip_address = Column(String(45), nullable=True)
-    created_at = Column(DateTime, default=_utcnow)
-
-
-class NotificationLog(Base):
-    __tablename__ = "notification_log"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    notification_type = Column(Enum(NotificationType), nullable=False)
-    title = Column(String(255), nullable=False)
-    message = Column(Text, nullable=False)
-    was_sent = Column(Boolean, default=False)
-    was_read = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=_utcnow)
-
-
-# ==============================================================================
-# Quick Actions
-# ==============================================================================
-
-class QuickAction(Base):
-    __tablename__ = "quick_actions"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    name_de = Column(String(100), nullable=False)
-    name_en = Column(String(100), nullable=False)
-    icon = Column(String(50), nullable=False)
-    action_data = Column(JSON, nullable=False)
-    sort_order = Column(Integer, default=0)
-    is_system = Column(Boolean, default=False)
-    is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=_utcnow)
-
-
-# ==============================================================================
-# System Settings
-# ==============================================================================
-
-class SystemSetting(Base):
-    __tablename__ = "system_settings"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    key = Column(String(100), nullable=False, unique=True)
-    value = Column(Text, nullable=False)
-    description_de = Column(Text, nullable=True)
-    description_en = Column(Text, nullable=True)
-    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
-
-
-# ==============================================================================
-# Offline Fallback Queue
-# ==============================================================================
-
-class OfflineActionQueue(Base):
-    __tablename__ = "offline_action_queue"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    action_data = Column(JSON, nullable=False)
-    priority = Column(Integer, default=0)
-    created_at = Column(DateTime, default=_utcnow)
-    executed_at = Column(DateTime, nullable=True)
-    was_executed = Column(Boolean, default=False)
-
-
-# ==============================================================================
-# Data Privacy Tracking
-# ==============================================================================
-
-class DataCollection(Base):
-    __tablename__ = "data_collection"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    room_id = Column(Integer, ForeignKey("rooms.id"), nullable=False)
-    domain_id = Column(Integer, ForeignKey("domains.id"), nullable=False)
-    data_type = Column(String(100), nullable=False)
-    record_count = Column(Integer, default=0)
-    first_record_at = Column(DateTime, nullable=True)
-    last_record_at = Column(DateTime, nullable=True)
-    storage_size_bytes = Column(Integer, default=0)
-
-    room = relationship("Room")
-    domain = relationship("Domain")
-
-
-# ==============================================================================
-# Phase 2a: State History (raw event data for pattern learning)
-# ==============================================================================
-
-class StateHistory(Base):
-    """Every significant state change from HA, with context for learning."""
-    __tablename__ = "state_history"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    device_id = Column(Integer, ForeignKey("devices.id"), nullable=True)
-    entity_id = Column(String(255), nullable=False, index=True)
-    old_state = Column(String(100), nullable=True)
-    new_state = Column(String(100), nullable=False)
-    old_attributes = Column(JSON, nullable=True)
-    new_attributes = Column(JSON, nullable=True)
-
-    # Context at the time of the event
-    context = Column(JSON, nullable=True)
-    # Structure: {
-    #   "time_slot": "morning|midday|afternoon|evening|night",
-    #   "weekday": 0-6 (Mon-Sun),
-    #   "is_weekend": true/false,
-    #   "persons_home": ["person.john", ...],
-    #   "sun_elevation": 45.2,
-    #   "sun_phase": "above_horizon|below_horizon",
-    #   "outdoor_temp": 21.5,
-    #   "hour": 14, "minute": 30
-    # }
-
-    created_at = Column(DateTime, default=_utcnow, index=True)
-
-    device = relationship("Device")
-
-
-class PersonSchedule(Base):
-    """Person time profiles: work schedules, shift plans."""
-    __tablename__ = "person_schedules"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    schedule_type = Column(String(30), nullable=False)  # "weekday", "weekend", "shift", "homeoffice", "custom"
-    name = Column(String(100), nullable=True)  # e.g. "Frueh+Abenddienst"
-    time_wake = Column(String(5), nullable=True)  # "06:00"
-    time_leave = Column(String(5), nullable=True)  # "07:00"
-    time_home = Column(String(5), nullable=True)  # "17:00"
-    time_sleep = Column(String(5), nullable=True)  # "22:00"
-    weekdays = Column(JSON, nullable=True)  # [0,1,2,3,4] for Mon-Fri
-    valid_from = Column(DateTime, nullable=True)
-    valid_until = Column(DateTime, nullable=True)
-    shift_data = Column(JSON, nullable=True)  # For shift plans: [{date, shift_type, blocks: [{start, end}]}]
-    is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=_utcnow)
-    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
-
-    user = relationship("User")
-
-
-class ShiftTemplate(Base):
-    """Shift type templates for PDF import mapping."""
-    __tablename__ = "shift_templates"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    name = Column(String(100), nullable=False)  # "Fruehdienst", "Tagdienst"
-    short_code = Column(String(20), nullable=True)  # "F", "T", "FA"
-    blocks = Column(JSON, nullable=False)  # [{"start": "06:00", "end": "14:00"}]
-    color = Column(String(7), nullable=True)  # "#FF9800"
-    is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=_utcnow)
-
-
-class Holiday(Base):
-    """Holidays and special days."""
-    __tablename__ = "holidays"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    name = Column(String(200), nullable=False)
-    date = Column(String(10), nullable=False)  # "2026-01-01" or "01-01" for recurring
-    is_recurring = Column(Boolean, default=False)  # True = every year (e.g. Christmas)
-    region = Column(String(50), nullable=True)  # "AT", "AT-3" (NOE), etc.
-    source = Column(String(30), default="builtin")  # "builtin", "calendar", "manual"
-    calendar_entity = Column(String(255), nullable=True)  # HA calendar entity
-    is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=_utcnow)
-
-
-class PatternMatchLog(Base):
-    """Logs every time a pattern fires/matches to track accuracy."""
-    __tablename__ = "pattern_match_log"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    pattern_id = Column(Integer, ForeignKey("learned_patterns.id"), nullable=False)
-    matched_at = Column(DateTime, default=_utcnow)
-    context = Column(JSON, nullable=True)
-    trigger_event_id = Column(Integer, ForeignKey("state_history.id"), nullable=True)
-    was_executed = Column(Boolean, default=False)
-    was_correct = Column(Boolean, nullable=True)
-
-    pattern = relationship("LearnedPattern")
-    trigger_event = relationship("StateHistory")
-
-
-# ==============================================================================
-# Database Initialization
-# ==============================================================================
-
-def get_engine(db_path=None):
-    """Create database engine with connection pooling (#33)."""
-    if db_path is None:
-        db_path = os.environ.get("MINDHOME_DB_PATH", "/data/mindhome/db/mindhome.db")
-
-    db_dir = os.path.dirname(db_path)
-    if db_dir:
-        os.makedirs(db_dir, exist_ok=True)
-
-    from sqlalchemy.pool import QueuePool
-
-    engine = create_engine(
-        f"sqlite:///{db_path}",
-        echo=False,
-        poolclass=QueuePool,       # #33 explicit pool for SQLite threading
-        pool_size=5,
-        max_overflow=10,
-        pool_timeout=30,
-        pool_pre_ping=True,
-        connect_args={"timeout": 30, "check_same_thread": False},
-    )
-
-    # Enable WAL mode + performance pragmas
-    from sqlalchemy import event as sa_event
-
-    @sa_event.listens_for(engine, "connect")
-    def set_sqlite_pragma(dbapi_connection, connection_record):
-        cursor = dbapi_connection.cursor()
-        cursor.execute("PRAGMA journal_mode=WAL")
-        cursor.execute("PRAGMA busy_timeout=30000")
-        cursor.execute("PRAGMA synchronous=NORMAL")
-        cursor.execute("PRAGMA foreign_keys=ON")
-        cursor.execute("PRAGMA cache_size=-8000")  # 8MB cache
-        cursor.close()
-
-    return engine
-
-
-def get_session(engine=None):
-    """Create database session."""
-    if engine is None:
-        engine = get_engine()
-    Session = sessionmaker(bind=engine)
-    return Session()
-
-
-def init_database(engine=None):
-    """Initialize all database tables."""
-    if engine is None:
-        engine = get_engine()
-    Base.metadata.create_all(engine)
-    return engine
-
-
-# ==============================================================================
-# Fix 29: Database Migration System
-# ==============================================================================
-
-MIGRATIONS = [
-    {
-        "version": 1,
-        "description": "Add is_custom to domains",
-        "sql": [
-            "ALTER TABLE domains ADD COLUMN is_custom BOOLEAN DEFAULT 0",
-        ]
-    },
-    {
-        "version": 2,
-        "description": "Phase 2a - State history, pattern extensions, pattern match log",
-        "sql": [
-            # StateHistory table
-            """CREATE TABLE IF NOT EXISTS state_history (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                device_id INTEGER REFERENCES devices(id),
-                entity_id VARCHAR(255) NOT NULL,
-                old_state VARCHAR(100),
-                new_state VARCHAR(100) NOT NULL,
-                old_attributes JSON,
-                new_attributes JSON,
-                context JSON,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            )""",
-            "CREATE INDEX IF NOT EXISTS idx_state_history_entity ON state_history(entity_id)",
-            "CREATE INDEX IF NOT EXISTS idx_state_history_created ON state_history(created_at)",
-            "CREATE INDEX IF NOT EXISTS idx_state_history_device ON state_history(device_id, created_at)",
-
-            # PatternMatchLog table
-            """CREATE TABLE IF NOT EXISTS pattern_match_log (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                pattern_id INTEGER NOT NULL REFERENCES learned_patterns(id),
-                matched_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                context JSON,
-                trigger_event_id INTEGER REFERENCES state_history(id),
-                was_executed BOOLEAN DEFAULT 0,
-                was_correct BOOLEAN
-            )""",
-            "CREATE INDEX IF NOT EXISTS idx_pattern_match_pattern ON pattern_match_log(pattern_id)",
-
-            # LearnedPattern extensions
-            "ALTER TABLE learned_patterns ADD COLUMN description_de TEXT",
-            "ALTER TABLE learned_patterns ADD COLUMN description_en TEXT",
-            "ALTER TABLE learned_patterns ADD COLUMN trigger_conditions JSON",
-            "ALTER TABLE learned_patterns ADD COLUMN action_definition JSON",
-            "ALTER TABLE learned_patterns ADD COLUMN last_matched_at DATETIME",
-            "ALTER TABLE learned_patterns ADD COLUMN match_count INTEGER DEFAULT 0",
-            "ALTER TABLE learned_patterns ADD COLUMN status VARCHAR(30) DEFAULT 'observed'",
-        ]
-    },
-    {
-        "version": 3,
-        "description": "Phase 2b - Prediction extensions for suggestions & automation",
-        "sql": [
-            "ALTER TABLE predictions ADD COLUMN status VARCHAR(30) DEFAULT 'pending'",
-            "ALTER TABLE predictions ADD COLUMN user_response VARCHAR(30)",
-            "ALTER TABLE predictions ADD COLUMN responded_at DATETIME",
-            "ALTER TABLE predictions ADD COLUMN notification_sent BOOLEAN DEFAULT 0",
-            "ALTER TABLE predictions ADD COLUMN previous_state JSON",
-            "ALTER TABLE predictions ADD COLUMN executed_at DATETIME",
-            "ALTER TABLE predictions ADD COLUMN undone_at DATETIME",
-            "ALTER TABLE predictions ADD COLUMN description_de TEXT",
-            "ALTER TABLE predictions ADD COLUMN description_en TEXT",
-        ]
-    },
-    {
-        "version": 4,
-        "description": "Block B - Notifications, Patterns, Manual Rules, Anomaly Settings",
-        "sql": [
-            # NotificationChannel table
-            """CREATE TABLE IF NOT EXISTS notification_channels (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                service_name VARCHAR(200) NOT NULL UNIQUE,
-                display_name VARCHAR(200) NOT NULL,
-                channel_type VARCHAR(50) NOT NULL,
-                is_enabled BOOLEAN DEFAULT 1,
-                config JSON,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            )""",
-
-            # DeviceMute table
-            """CREATE TABLE IF NOT EXISTS device_mutes (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                device_id INTEGER NOT NULL REFERENCES devices(id),
-                user_id INTEGER NOT NULL REFERENCES users(id),
-                muted_until DATETIME,
-                reason VARCHAR(200),
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            )""",
-
-            # PatternExclusion table
-            """CREATE TABLE IF NOT EXISTS pattern_exclusions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                exclusion_type VARCHAR(30) NOT NULL,
-                entity_a VARCHAR(255) NOT NULL,
-                entity_b VARCHAR(255) NOT NULL,
-                reason VARCHAR(200),
-                created_by INTEGER REFERENCES users(id),
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            )""",
-
-            # ManualRule table
-            """CREATE TABLE IF NOT EXISTS manual_rules (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name VARCHAR(200) NOT NULL,
-                trigger_entity VARCHAR(255) NOT NULL,
-                trigger_state VARCHAR(100) NOT NULL,
-                action_entity VARCHAR(255) NOT NULL,
-                action_service VARCHAR(100) NOT NULL,
-                action_data JSON,
-                conditions JSON,
-                delay_seconds INTEGER DEFAULT 0,
-                is_active BOOLEAN DEFAULT 1,
-                execution_count INTEGER DEFAULT 0,
-                last_executed_at DATETIME,
-                created_by INTEGER REFERENCES users(id),
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            )""",
-
-            # AnomalySetting table
-            """CREATE TABLE IF NOT EXISTS anomaly_settings (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                room_id INTEGER REFERENCES rooms(id),
-                domain_id INTEGER REFERENCES domains(id),
-                device_id INTEGER REFERENCES devices(id),
-                sensitivity VARCHAR(20) DEFAULT 'medium',
-                stuck_detection BOOLEAN DEFAULT 1,
-                time_anomaly BOOLEAN DEFAULT 1,
-                frequency_anomaly BOOLEAN DEFAULT 1,
-                whitelisted_hours JSON,
-                auto_action JSON,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            )""",
-
-            # NotificationSetting extensions
-            "ALTER TABLE notification_settings ADD COLUMN priority VARCHAR(20) DEFAULT 'medium'",
-            "ALTER TABLE notification_settings ADD COLUMN push_channel VARCHAR(100)",
-            "ALTER TABLE notification_settings ADD COLUMN escalation_enabled BOOLEAN DEFAULT 0",
-            "ALTER TABLE notification_settings ADD COLUMN escalation_minutes INTEGER DEFAULT 30",
-            "ALTER TABLE notification_settings ADD COLUMN geofencing_only_away BOOLEAN DEFAULT 0",
-
-            # LearnedPattern Block B extensions
-            "ALTER TABLE learned_patterns ADD COLUMN rejection_reason VARCHAR(50)",
-            "ALTER TABLE learned_patterns ADD COLUMN rejected_at DATETIME",
-            "ALTER TABLE learned_patterns ADD COLUMN category VARCHAR(30)",
-            "ALTER TABLE learned_patterns ADD COLUMN season VARCHAR(20)",
-            "ALTER TABLE learned_patterns ADD COLUMN test_mode BOOLEAN DEFAULT 0",
-            "ALTER TABLE learned_patterns ADD COLUMN test_results JSON",
-            "ALTER TABLE learned_patterns ADD COLUMN depends_on_pattern_id INTEGER",
-            "ALTER TABLE learned_patterns ADD COLUMN schedule JSON",
-            "ALTER TABLE learned_patterns ADD COLUMN delay_seconds INTEGER DEFAULT 0",
-            "ALTER TABLE learned_patterns ADD COLUMN conditions JSON",
-        ]
-    },
-    {
-        "version": 5,
-        "description": "v0.5.0 - Device groups, audit trail, vacation mode",
-        "sql": [
-            """CREATE TABLE IF NOT EXISTS device_groups (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name VARCHAR(100) NOT NULL,
-                room_id INTEGER REFERENCES rooms(id),
-                device_ids TEXT DEFAULT '[]',
-                is_active BOOLEAN DEFAULT 1,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            )""",
-            """CREATE TABLE IF NOT EXISTS audit_trail (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER,
-                action VARCHAR(100) NOT NULL,
-                target VARCHAR(200),
-                details TEXT,
-                ip_address VARCHAR(45),
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            )""",
-        ]
-    },
-    {
-        "version": 6,
-        "description": "Phase 3B - Person schedules, shift templates, holidays",
-        "sql": [
-            """CREATE TABLE IF NOT EXISTS person_schedules (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL REFERENCES users(id),
-                schedule_type VARCHAR(30) NOT NULL,
-                name VARCHAR(100),
-                time_wake VARCHAR(5),
-                time_leave VARCHAR(5),
-                time_home VARCHAR(5),
-                time_sleep VARCHAR(5),
-                weekdays JSON,
-                valid_from DATETIME,
-                valid_until DATETIME,
-                shift_data JSON,
-                is_active BOOLEAN DEFAULT 1,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            )""",
-            """CREATE TABLE IF NOT EXISTS shift_templates (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name VARCHAR(100) NOT NULL,
-                short_code VARCHAR(20),
-                blocks JSON NOT NULL,
-                color VARCHAR(7),
-                is_active BOOLEAN DEFAULT 1,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            )""",
-            """CREATE TABLE IF NOT EXISTS holidays (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name VARCHAR(200) NOT NULL,
-                date VARCHAR(10) NOT NULL,
-                is_recurring BOOLEAN DEFAULT 0,
-                region VARCHAR(50),
-                source VARCHAR(30) DEFAULT 'builtin',
-                calendar_entity VARCHAR(255),
-                is_active BOOLEAN DEFAULT 1,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            )""",
-        ]
-    },
-]
-
-
-def run_migrations(engine):
-    """Run pending database migrations safely. (#15 rollback-safe)"""
-    Session = sessionmaker(bind=engine)
-    session = Session()
-
-    try:
-        Base.metadata.create_all(engine)
-
-        current_version = 0
+class SuggestionGenerator:
+    """Creates suggestions from high-confidence observed patterns."""
+
+    def __init__(self, engine):
+        self.engine = engine
+        self.Session = sessionmaker(bind=engine)
+
+    def generate_suggestions(self):
+        """Check observed patterns and promote to suggestions if ready."""
+        session = self.Session()
         try:
-            result = session.execute(
-                text("SELECT value FROM system_settings WHERE key = 'db_migration_version'")
-            ).fetchone()
-            if result:
-                current_version = int(result[0])
-        except Exception:
-            pass
+            # Find patterns that are 'observed' with high enough confidence
+            patterns = session.query(LearnedPattern).filter_by(
+                status="observed", is_active=True
+            ).all()
 
-        for migration in MIGRATIONS:
-            if migration["version"] <= current_version:
-                continue
+            count = 0
+            for pattern in patterns:
+                ha_domain = self._get_ha_domain(pattern)
+                thresholds = DOMAIN_THRESHOLDS.get(ha_domain, DOMAIN_THRESHOLDS["_default"])
 
-            logger.info(f"Running migration v{migration['version']}: {migration['description']}")
+                if pattern.confidence >= thresholds["suggest"]:
+                    # Check phase: room/domain must be at least SUGGESTING
+                    if not self._check_phase_allows(session, pattern, LearningPhase.SUGGESTING):
+                        continue
 
-            # #15 â€“ Create savepoint for rollback safety
-            migration_ok = True
-            for sql in migration["sql"]:
-                try:
-                    session.execute(text(sql))
-                    logger.info(f"  SQL OK: {sql[:80]}...")
-                except Exception as e:
-                    if "duplicate column" in str(e).lower() or "already exists" in str(e).lower():
-                        logger.info(f"  Already exists, skipping: {sql[:60]}")
-                    else:
-                        logger.warning(f"  Migration SQL warning: {e}")
-                        # Non-critical - continue
+                    # Don't re-suggest patterns rejected 3+ times
+                    if pattern.times_rejected >= 3:
+                        continue
 
-            if migration_ok:
-                try:
-                    existing = session.execute(
-                        text("SELECT id FROM system_settings WHERE key = 'db_migration_version'")
-                    ).fetchone()
-                    if existing:
-                        session.execute(
-                            text("UPDATE system_settings SET value = :v WHERE key = 'db_migration_version'"),
-                            {"v": str(migration["version"])}
-                        )
-                    else:
-                        session.execute(
-                            text("INSERT INTO system_settings (key, value) VALUES ('db_migration_version', :v)"),
-                            {"v": str(migration["version"])}
-                        )
-                except Exception as e:
-                    logger.warning(f"Version update warning: {e}")
+                    # Promote to suggested
+                    pattern.status = "suggested"
+                    pattern.updated_at = datetime.now(timezone.utc)
 
-                session.commit()
-                logger.info(f"Migration v{migration['version']} complete")
-            else:
-                session.rollback()
-                logger.error(f"Migration v{migration['version']} FAILED - rolled back")
-                break
+                    # Create prediction (suggestion entry)
+                    prediction = Prediction(
+                        pattern_id=pattern.id,
+                        predicted_action=pattern.action_definition or {},
+                        predicted_for=datetime.now(timezone.utc),
+                        confidence=pattern.confidence,
+                        status="pending",
+                        description_de=pattern.description_de,
+                        description_en=pattern.description_en,
+                    )
+                    session.add(prediction)
+                    count += 1
 
-        final_v = max(m['version'] for m in MIGRATIONS) if MIGRATIONS else 0
-        logger.info(f"Database at migration version {final_v}")
+                    logger.info(f"New suggestion from pattern {pattern.id}: {pattern.description_de or pattern.pattern_type}")
 
-    except Exception as e:
-        logger.error(f"Migration error: {e}")
-        try:
+            session.commit()
+            if count > 0:
+                logger.info(f"Generated {count} new suggestions")
+            return count
+
+        except Exception as e:
             session.rollback()
+            logger.error(f"Suggestion generation error: {e}")
+            return 0
+        finally:
+            session.close()
+
+    def _get_ha_domain(self, pattern):
+        """Extract HA domain from pattern data."""
+        action = pattern.action_definition or {}
+        entity_id = action.get("entity_id", "")
+        return entity_id.split(".")[0] if entity_id else "_default"
+
+    def _check_phase_allows(self, session, pattern, min_phase):
+        """Check if the room/domain learning phase allows this action."""
+        if not pattern.room_id or not pattern.domain_id:
+            return True  # No room/domain = allow
+
+        rds = session.query(RoomDomainState).filter_by(
+            room_id=pattern.room_id,
+            domain_id=pattern.domain_id
+        ).first()
+
+        if not rds:
+            return False
+
+        if rds.is_paused:
+            return False
+
+        phase_order = {
+            LearningPhase.OBSERVING: 0,
+            LearningPhase.SUGGESTING: 1,
+            LearningPhase.AUTONOMOUS: 2,
+        }
+        current = phase_order.get(rds.learning_phase, 0)
+        required = phase_order.get(min_phase, 1)
+        return current >= required
+
+
+# ==============================================================================
+# C4: Feedback Processor
+# ==============================================================================
+
+class FeedbackProcessor:
+    """Processes user responses to suggestions (confirm/reject)."""
+
+    def __init__(self, engine):
+        self.engine = engine
+        self.Session = sessionmaker(bind=engine)
+
+    def confirm_prediction(self, prediction_id):
+        """User confirmed a suggestion."""
+        session = self.Session()
+        try:
+            pred = session.get(Prediction, prediction_id)
+            if not pred:
+                return {"error": "Prediction not found"}
+
+            pred.status = "confirmed"
+            pred.user_response = "confirmed"
+            pred.responded_at = datetime.now(timezone.utc)
+
+            # Update pattern confidence
+            pattern = session.get(LearnedPattern, pred.pattern_id)
+            if pattern:
+                pattern.confidence = min(pattern.confidence + 0.15, 1.0)
+                pattern.times_confirmed += 1
+                pattern.status = "active"
+                pattern.updated_at = datetime.now(timezone.utc)
+
+            session.commit()
+            logger.info(f"Prediction {prediction_id} confirmed â†’ pattern {pred.pattern_id} activated")
+            return {"success": True, "status": "confirmed"}
+
+        except Exception as e:
+            session.rollback()
+            logger.error(f"Confirm error: {e}")
+            return {"error": str(e)}
+        finally:
+            session.close()
+
+    def reject_prediction(self, prediction_id):
+        """User rejected a suggestion."""
+        session = self.Session()
+        try:
+            pred = session.get(Prediction, prediction_id)
+            if not pred:
+                return {"error": "Prediction not found"}
+
+            pred.status = "rejected"
+            pred.user_response = "rejected"
+            pred.responded_at = datetime.now(timezone.utc)
+
+            # Decrease pattern confidence
+            pattern = session.get(LearnedPattern, pred.pattern_id)
+            if pattern:
+                pattern.confidence = max(pattern.confidence - 0.2, 0.0)
+                pattern.times_rejected += 1
+
+                # Deactivate if rejected 3+ times
+                if pattern.times_rejected >= 3:
+                    pattern.is_active = False
+                    pattern.status = "disabled"
+                    logger.info(f"Pattern {pattern.id} disabled after 3 rejections")
+                else:
+                    pattern.status = "observed"  # Back to observing
+
+                pattern.updated_at = datetime.now(timezone.utc)
+
+            session.commit()
+            logger.info(f"Prediction {prediction_id} rejected â†’ confidence decreased")
+            return {"success": True, "status": "rejected"}
+
+        except Exception as e:
+            session.rollback()
+            logger.error(f"Reject error: {e}")
+            return {"error": str(e)}
+        finally:
+            session.close()
+
+    def ignore_prediction(self, prediction_id):
+        """User chose 'later' / ignored."""
+        session = self.Session()
+        try:
+            pred = session.get(Prediction, prediction_id)
+            if not pred:
+                return {"error": "Prediction not found"}
+
+            pred.status = "ignored"
+            pred.user_response = "ignored"
+            pred.responded_at = datetime.now(timezone.utc)
+            session.commit()
+            return {"success": True, "status": "ignored"}
+        except Exception as e:
+            session.rollback()
+            return {"error": str(e)}
+        finally:
+            session.close()
+
+
+# ==============================================================================
+# D1-D5: Automation Executor
+# ==============================================================================
+
+class AutomationExecutor:
+    """Executes confirmed automations via HA service calls."""
+
+    def __init__(self, engine, ha_connection):
+        self.engine = engine
+        self.ha = ha_connection
+        self.Session = sessionmaker(bind=engine)
+        self._emergency_stop = False
+
+    def set_emergency_stop(self, active):
+        """Emergency stop: halt all automations."""
+        self._emergency_stop = active
+        logger.warning(f"Emergency stop {'ACTIVATED' if active else 'deactivated'}")
+
+    def check_and_execute(self):
+        """D1+D5: Check active patterns and execute if conditions match."""
+        if self._emergency_stop:
+            return
+
+        session = self.Session()
+        try:
+            # #23 Vacation mode check
+            vac = session.execute(
+                text("SELECT value FROM system_settings WHERE key='vacation_mode'")
+            ).fetchone()
+            is_vacation = vac and vac[0] == "true"
+
+            # #55 Absence simulation check
+            simulate = False
+            if is_vacation:
+                sim = session.execute(
+                    text("SELECT value FROM system_settings WHERE key='vacation_simulate'")
+                ).fetchone()
+                simulate = sim and sim[0] == "true"
+
+            active_patterns = session.query(LearnedPattern).filter_by(
+                status="active", is_active=True
+            ).all()
+
+            now = datetime.now(timezone.utc)
+
+            for pattern in active_patterns:
+                trigger = pattern.trigger_conditions or {}
+                trigger_type = trigger.get("type")
+
+                # #23 Skip non-essential automations in vacation mode
+                # but #55 allow light toggles if simulation is on
+                if is_vacation and not simulate:
+                    continue
+                if is_vacation and simulate:
+                    action = pattern.action_definition or {}
+                    entity = action.get("entity_id", "")
+                    if not entity.startswith("light."):
+                        continue
+
+                if trigger_type == "time":
+                    self._check_time_trigger(session, pattern, trigger, now)
+
+            session.commit()
+
+        except Exception as e:
+            session.rollback()
+            logger.error(f"Automation check error: {e}")
+        finally:
+            session.close()
+
+    def _check_time_trigger(self, session, pattern, trigger, now):
+        """D5: Time-window based execution check."""
+        target_hour = trigger.get("hour", -1)
+        target_minute = trigger.get("minute", 0)
+        window = trigger.get("window_min", EXECUTION_TIME_WINDOW_MIN)
+
+        # Check weekday filter
+        if trigger.get("weekdays_only") and now.weekday() >= 5:
+            return
+        if trigger.get("weekends_only") and now.weekday() < 5:
+            return
+
+        # Check if within time window
+        target_minutes = target_hour * 60 + target_minute
+        current_minutes = now.hour * 60 + now.minute
+        diff = abs(current_minutes - target_minutes)
+
+        if diff > window:
+            return
+
+        # Check person requirements
+        required_persons = trigger.get("requires_persons", [])
+        if required_persons:
+            states = self.ha.get_states() or []
+            home_persons = [s["entity_id"] for s in states
+                          if s.get("entity_id", "").startswith("person.") and s.get("state") == "home"]
+            if not all(p in home_persons for p in required_persons):
+                return
+
+        # Check if already executed today
+        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        already_executed = session.query(Prediction).filter(
+            Prediction.pattern_id == pattern.id,
+            Prediction.status == "executed",
+            Prediction.executed_at >= today_start
+        ).first()
+
+        if already_executed:
+            return
+
+        # D5: Check if user already did this action manually within the window
+        action = pattern.action_definition or {}
+        entity_id = action.get("entity_id")
+        target_state = action.get("target_state")
+
+        if entity_id and target_state:
+            recent_manual = session.query(StateHistory).filter(
+                StateHistory.entity_id == entity_id,
+                StateHistory.new_state == target_state,
+                StateHistory.created_at >= now - timedelta(minutes=window)
+            ).first()
+
+            if recent_manual:
+                logger.debug(f"Pattern {pattern.id}: user already did this manually, skipping")
+                return
+
+        # D4: Validate current state
+        if entity_id:
+            current = self._get_current_state(entity_id)
+            if current == target_state:
+                logger.debug(f"Pattern {pattern.id}: {entity_id} already in state {target_state}")
+                return
+
+        # Execute!
+        self._execute_action(session, pattern, action)
+
+    def _execute_action(self, session, pattern, action):
+        """D2: Execute action via HA service call."""
+        entity_id = action.get("entity_id")
+        target_state = action.get("target_state")
+
+        if not entity_id or not target_state:
+            return
+
+        # D3: Save current state for undo
+        previous_state = self._get_current_state(entity_id)
+
+        # D4: Check device reachability
+        if previous_state == "unavailable":
+            logger.warning(f"Device {entity_id} unavailable, skipping automation")
+            return
+
+        # Check room privacy
+        device = session.query(Device).filter_by(ha_entity_id=entity_id).first()
+        if device and device.room_id:
+            room = session.get(Room, device.room_id)
+            if room and room.privacy_mode:
+                domain = session.get(Domain, device.domain_id) if device.domain_id else None
+                if domain and room.privacy_mode.get(domain.name) is False:
+                    logger.debug(f"Privacy blocks automation for {entity_id}")
+                    return
+
+        # Execute via HA
+        ha_domain = entity_id.split(".")[0]
+        service = "turn_on" if target_state == "on" else "turn_off"
+
+        # Special handling for covers/climate
+        if ha_domain == "cover":
+            service = "open_cover" if target_state in ("on", "open") else "close_cover"
+        elif ha_domain == "climate":
+            service = "set_hvac_mode"
+
+        try:
+            service_data = {"entity_id": entity_id}
+            if ha_domain == "climate" and target_state not in ("on", "off"):
+                service_data["hvac_mode"] = target_state
+
+            self.ha.call_service(ha_domain, service, service_data)
+
+            # Create execution record
+            prediction = Prediction(
+                pattern_id=pattern.id,
+                predicted_action=action,
+                predicted_for=datetime.now(timezone.utc),
+                confidence=pattern.confidence,
+                status="executed",
+                was_executed=True,
+                previous_state={"entity_id": entity_id, "state": previous_state},
+                executed_at=datetime.now(timezone.utc),
+                description_de=pattern.description_de,
+                description_en=pattern.description_en,
+            )
+            session.add(prediction)
+
+            # Log to action log
+            log = ActionLog(
+                action_type="automation",
+                domain_id=pattern.domain_id,
+                room_id=pattern.room_id,
+                device_id=device.id if device else None,
+                action_data={
+                    "entity_id": entity_id,
+                    "service": f"{ha_domain}.{service}",
+                    "target_state": target_state,
+                    "previous_state": previous_state,
+                    "pattern_id": pattern.id,
+                    "confidence": pattern.confidence,
+                },
+                reason=f"Automation: {pattern.description_de or pattern.pattern_type}",
+            )
+            session.add(log)
+
+            logger.info(f"Executed: {entity_id} â†’ {target_state} (pattern {pattern.id}, confidence {pattern.confidence:.2f})")
+
+        except Exception as e:
+            logger.error(f"Execution failed for {entity_id}: {e}")
+
+    def undo_prediction(self, prediction_id):
+        """D3: Undo an executed automation."""
+        session = self.Session()
+        try:
+            pred = session.get(Prediction, prediction_id)
+            if not pred:
+                return {"error": "Prediction not found"}
+
+            if pred.status != "executed":
+                return {"error": "Can only undo executed predictions"}
+
+            # Check undo window
+            if pred.executed_at:
+                elapsed = (datetime.now(timezone.utc) - pred.executed_at).total_seconds() / 60
+                if elapsed > UNDO_WINDOW_MINUTES:
+                    return {"error": f"Undo window expired ({UNDO_WINDOW_MINUTES} min)"}
+
+            # Restore previous state
+            prev = pred.previous_state
+            if not prev or "entity_id" not in prev:
+                return {"error": "No previous state saved"}
+
+            entity_id = prev["entity_id"]
+            restore_state = prev["state"]
+
+            if restore_state and restore_state not in ("unavailable", "unknown"):
+                ha_domain = entity_id.split(".")[0]
+                service = "turn_on" if restore_state == "on" else "turn_off"
+
+                if ha_domain == "cover":
+                    service = "open_cover" if restore_state in ("on", "open") else "close_cover"
+
+                self.ha.call_service(ha_domain, service, {"entity_id": entity_id})
+
+            pred.status = "undone"
+            pred.undone_at = datetime.now(timezone.utc)
+
+            # #53: Learn from undo - reduce confidence more if repeated
+            pattern = session.get(LearnedPattern, pred.pattern_id)
+            if pattern:
+                # Count how many times this pattern has been undone
+                undo_count = session.query(Prediction).filter(
+                    Prediction.pattern_id == pattern.id,
+                    Prediction.status == "undone"
+                ).count()
+                # First undo: -0.1, second: -0.15, third+: -0.2
+                decay = min(0.2, 0.1 + (undo_count * 0.05))
+                pattern.confidence = max(0.0, pattern.confidence - decay)
+                pattern.updated_at = datetime.now(timezone.utc)
+                logger.info(f"Pattern {pattern.id} confidence -{decay:.2f} (undo #{undo_count+1})")
+
+                # If confidence drops below 0.15, deactivate
+                if pattern.confidence < 0.15:
+                    pattern.is_active = False
+                    pattern.status = "rejected"
+                    pattern.rejection_reason = "auto_deactivated_by_undos"
+                    logger.info(f"Pattern {pattern.id} auto-deactivated after {undo_count+1} undos")
+
+            session.commit()
+            logger.info(f"Undone prediction {prediction_id}: {entity_id} â†’ {restore_state}")
+            return {"success": True, "restored_state": restore_state}
+
+        except Exception as e:
+            session.rollback()
+            logger.error(f"Undo error: {e}")
+            return {"error": str(e)}
+        finally:
+            session.close()
+
+    def _get_current_state(self, entity_id):
+        """Get current state of an entity from HA."""
+        try:
+            states = self.ha.get_states() or []
+            for s in states:
+                if s.get("entity_id") == entity_id:
+                    return s.get("state", "unknown")
         except Exception:
             pass
-    finally:
-        session.close()
+        return "unknown"
+
+
+# ==============================================================================
+# Conflict Detector
+# ==============================================================================
+
+class ConflictDetector:
+    """Detects conflicting patterns/automations."""
+
+    def __init__(self, engine):
+        self.engine = engine
+        self.Session = sessionmaker(bind=engine)
+
+    def check_conflicts(self):
+        """Find active patterns that conflict with each other."""
+        session = self.Session()
+        try:
+            active = session.query(LearnedPattern).filter_by(
+                status="active", is_active=True
+            ).all()
+
+            conflicts = []
+            for i, p1 in enumerate(active):
+                a1 = p1.action_definition or {}
+                e1 = a1.get("entity_id")
+                if not e1:
+                    continue
+
+                for p2 in active[i+1:]:
+                    a2 = p2.action_definition or {}
+                    e2 = a2.get("entity_id")
+
+                    if e1 != e2:
+                        continue
+
+                    # Same entity, different target states
+                    s1 = a1.get("target_state")
+                    s2 = a2.get("target_state")
+                    if s1 == s2:
+                        continue
+
+                    # Check if they could fire at similar times
+                    t1 = p1.trigger_conditions or {}
+                    t2 = p2.trigger_conditions or {}
+
+                    if t1.get("type") == "time" and t2.get("type") == "time":
+                        h1, m1 = t1.get("hour", -1), t1.get("minute", 0)
+                        h2, m2 = t2.get("hour", -1), t2.get("minute", 0)
+                        diff = abs((h1 * 60 + m1) - (h2 * 60 + m2))
+                        if diff <= 30:
+                            conflicts.append({
+                                "pattern_a": p1.id,
+                                "pattern_b": p2.id,
+                                "entity": e1,
+                                "state_a": s1,
+                                "state_b": s2,
+                                "type": "time_overlap",
+                                "resolution": "higher_confidence",
+                                "winner": p1.id if p1.confidence >= p2.confidence else p2.id,
+                            })
+
+            return conflicts
+
+        except Exception as e:
+            logger.error(f"Conflict check error: {e}")
+            return []
+        finally:
+            session.close()
+# ==============================================================================
+
+class PhaseManager:
+    """Manages learning phase transitions per room/domain."""
+
+    # E1: Thresholds for phase transitions
+    OBSERVE_TO_SUGGEST = {
+        "min_days": 7,
+        "min_events": 50,
+        "min_patterns": 2,
+        "min_avg_confidence": 0.4,
+    }
+    SUGGEST_TO_AUTONOMOUS = {
+        "min_days": 14,
+        "min_confirmed": 3,
+        "min_avg_confidence": 0.7,
+    }
+
+    def __init__(self, engine):
+        self.engine = engine
+        self.Session = sessionmaker(bind=engine)
+
+    def check_transitions(self):
+        """E1: Check all room/domain states for phase transitions."""
+        session = self.Session()
+        try:
+            states = session.query(RoomDomainState).filter_by(is_paused=False).all()
+            transitions = 0
+
+            for rds in states:
+                current = rds.learning_phase
+                new_phase = self._evaluate_phase(session, rds)
+
+                if new_phase and new_phase != current:
+                    old_name = current.value if current else "none"
+                    rds.learning_phase = new_phase
+                    rds.phase_started_at = datetime.now(timezone.utc)
+                    transitions += 1
+
+                    room = session.get(Room, rds.room_id)
+                    domain = session.get(Domain, rds.domain_id)
+                    room_name = room.name if room else f"Room {rds.room_id}"
+                    domain_name = domain.name if domain else f"Domain {rds.domain_id}"
+
+                    logger.info(f"Phase transition: {room_name}/{domain_name} {old_name} â†’ {new_phase.value}")
+
+            session.commit()
+            if transitions:
+                logger.info(f"{transitions} phase transitions completed")
+            return transitions
+
+        except Exception as e:
+            session.rollback()
+            logger.error(f"Phase check error: {e}")
+            return 0
+        finally:
+            session.close()
+
+    def _evaluate_phase(self, session, rds):
+        """Evaluate if a room/domain should transition to next phase."""
+        current = rds.learning_phase
+
+        if current == LearningPhase.OBSERVING:
+            return self._check_observe_to_suggest(session, rds)
+        elif current == LearningPhase.SUGGESTING:
+            return self._check_suggest_to_autonomous(session, rds)
+        return None
+
+    def _check_observe_to_suggest(self, session, rds):
+        """Can we move from observing to suggesting?"""
+        t = self.OBSERVE_TO_SUGGEST
+
+        # Days since phase started
+        if rds.phase_started_at:
+            days = (datetime.now(timezone.utc) - (rds.phase_started_at.replace(tzinfo=timezone.utc) if rds.phase_started_at.tzinfo is None else rds.phase_started_at)).days
+            if days < t["min_days"]:
+                return None
+
+        # Count events for this room/domain
+        devices = session.query(Device).filter_by(
+            room_id=rds.room_id, domain_id=rds.domain_id
+        ).all()
+        device_ids = [d.id for d in devices]
+
+        if not device_ids:
+            return None
+
+        event_count = session.query(func.count(StateHistory.id)).filter(
+            StateHistory.device_id.in_(device_ids)
+        ).scalar() or 0
+
+        if event_count < t["min_events"]:
+            return None
+
+        # Count patterns
+        pattern_count = session.query(func.count(LearnedPattern.id)).filter_by(
+            room_id=rds.room_id, domain_id=rds.domain_id, is_active=True
+        ).scalar() or 0
+
+        if pattern_count < t["min_patterns"]:
+            return None
+
+        # Avg confidence
+        avg_conf = session.query(func.avg(LearnedPattern.confidence)).filter_by(
+            room_id=rds.room_id, domain_id=rds.domain_id, is_active=True
+        ).scalar() or 0.0
+
+        if avg_conf < t["min_avg_confidence"]:
+            return None
+
+        # Update confidence score
+        rds.confidence_score = avg_conf
+        return LearningPhase.SUGGESTING
+
+    def _check_suggest_to_autonomous(self, session, rds):
+        """Can we move from suggesting to autonomous?"""
+        t = self.SUGGEST_TO_AUTONOMOUS
+
+        if rds.phase_started_at:
+            days = (datetime.now(timezone.utc) - (rds.phase_started_at.replace(tzinfo=timezone.utc) if rds.phase_started_at.tzinfo is None else rds.phase_started_at)).days
+            if days < t["min_days"]:
+                return None
+
+        # Count confirmed patterns
+        confirmed = session.query(func.count(LearnedPattern.id)).filter_by(
+            room_id=rds.room_id, domain_id=rds.domain_id,
+            status="active", is_active=True
+        ).scalar() or 0
+
+        if confirmed < t["min_confirmed"]:
+            return None
+
+        # Avg confidence of active patterns
+        avg_conf = session.query(func.avg(LearnedPattern.confidence)).filter_by(
+            room_id=rds.room_id, domain_id=rds.domain_id,
+            status="active", is_active=True
+        ).scalar() or 0.0
+
+        if avg_conf < t["min_avg_confidence"]:
+            return None
+
+        rds.confidence_score = avg_conf
+        return LearningPhase.AUTONOMOUS
+
+    def set_phase_manual(self, room_id, domain_id, phase_str):
+        """Manual phase override by user."""
+        session = self.Session()
+        try:
+            phase_map = {
+                "observing": LearningPhase.OBSERVING,
+                "suggesting": LearningPhase.SUGGESTING,
+                "autonomous": LearningPhase.AUTONOMOUS,
+            }
+            phase = phase_map.get(phase_str)
+            if not phase:
+                return {"error": f"Invalid phase: {phase_str}"}
+
+            rds = session.query(RoomDomainState).filter_by(
+                room_id=room_id, domain_id=domain_id
+            ).first()
+
+            if not rds:
+                return {"error": "Room/domain state not found"}
+
+            rds.learning_phase = phase
+            rds.phase_started_at = datetime.now(timezone.utc)
+            session.commit()
+
+            return {"success": True, "phase": phase.value}
+
+        except Exception as e:
+            session.rollback()
+            return {"error": str(e)}
+        finally:
+            session.close()
+
+    def set_paused(self, room_id, domain_id, paused):
+        """Pause/unpause learning for a room/domain."""
+        session = self.Session()
+        try:
+            rds = session.query(RoomDomainState).filter_by(
+                room_id=room_id, domain_id=domain_id
+            ).first()
+            if not rds:
+                return {"error": "Not found"}
+            rds.is_paused = paused
+            session.commit()
+            return {"success": True, "is_paused": paused}
+        except Exception as e:
+            session.rollback()
+            return {"error": str(e)}
+        finally:
+            session.close()
+
+
+# ==============================================================================
+# G2: Simple Anomaly Detector
+# ==============================================================================
+
+class AnomalyDetector:
+    """Detects unusual events using statistical baselines and heuristics."""
+
+    # Entities we've already reported (avoid spam)
+    _reported = set()
+
+    def __init__(self, engine):
+        self.engine = engine
+        self.Session = sessionmaker(bind=engine)
+
+    def check_recent_anomalies(self, minutes=30):
+        """Check recent events for anomalies using multiple detection methods."""
+        session = self.Session()
+        anomalies = []
+        try:
+            cutoff = datetime.now(timezone.utc) - timedelta(minutes=minutes)
+            recent = session.query(StateHistory).filter(
+                StateHistory.created_at >= cutoff,
+                StateHistory.device_id.isnot(None)
+            ).all()
+
+            for event in recent:
+                # Skip already reported (reset every hour)
+                report_key = f"{event.entity_id}:{event.new_state}:{event.created_at.hour if event.created_at else 0}"
+                if report_key in self._reported:
+                    continue
+
+                anomaly = None
+
+                # Method 1: Unusual time of day (statistical)
+                anomaly = anomaly or self._check_unusual_time(session, event)
+
+                # Method 2: Unusual frequency (too many changes)
+                anomaly = anomaly or self._check_unusual_frequency(session, event)
+
+                if anomaly:
+                    self._reported.add(report_key)
+                    anomalies.append(anomaly)
+
+            # Method 3: Stuck devices (no change for unusually long time)
+            anomalies.extend(self._check_stuck_devices(session))
+
+            # Cleanup reported cache (keep max 200)
+            if len(self._reported) > 200:
+                self._reported.clear()
+
+            return anomalies
+
+        except Exception as e:
+            logger.error(f"Anomaly check error: {e}")
+            return []
+        finally:
+            session.close()
+
+    def _check_unusual_time(self, session, event):
+        """Detect activity at unusual hours based on entity history."""
+        ctx = event.context or {}
+        hour = ctx.get("hour", 12)
+        time_slot = ctx.get("time_slot", "")
+        ha_domain = event.entity_id.split(".")[0]
+
+        # Only check binary state devices
+        if ha_domain not in ("light", "switch", "cover", "lock") or event.new_state not in ("on", "off", "open", "unlocked"):
+            return None
+
+        # Get historical hours for this entity+state
+        history = session.query(StateHistory.context).filter(
+            StateHistory.entity_id == event.entity_id,
+            StateHistory.new_state == event.new_state,
+            StateHistory.created_at >= datetime.now(timezone.utc) - timedelta(days=14),
+        ).all()
+
+        if len(history) < 5:
+            # Not enough data for a baseline, use simple night check
+            if time_slot == "night" and event.new_state in ("on", "unlocked", "open"):
+                return self._build_anomaly(session, event, hour,
+                    f"wurde nachts um {hour}:00 aktiviert (keine Basisdaten)",
+                    f"activated at {hour}:00 during night (no baseline)")
+            return None
+
+        # Calculate statistical baseline
+        historical_hours = []
+        for h in history:
+            if h[0] and isinstance(h[0], dict):
+                historical_hours.append(h[0].get("hour", 12))
+
+        if not historical_hours:
+            return None
+
+        # Calculate mean and standard deviation
+        mean_hour = sum(historical_hours) / len(historical_hours)
+        variance = sum((h - mean_hour) ** 2 for h in historical_hours) / len(historical_hours)
+        std_dev = max(variance ** 0.5, 1.0)  # min 1 hour std
+
+        # Circular distance (23:00 and 01:00 are 2 hours apart, not 22)
+        diff = min(abs(hour - mean_hour), 24 - abs(hour - mean_hour))
+
+        # More than 2.5 standard deviations = anomaly
+        if diff > std_dev * 2.5 and diff > 3:
+            return self._build_anomaly(session, event, hour,
+                f"um {hour}:00 Uhr aktiviert (normalerweise ~{int(mean_hour)}:00 +/-{int(std_dev)}h)",
+                f"activated at {hour}:00 (usually ~{int(mean_hour)}:00 +/-{int(std_dev)}h)")
+
+        return None
+
+    def _check_unusual_frequency(self, session, event):
+        """Detect devices toggling too frequently (possible fault or tampering)."""
+        # Count changes in last 10 minutes
+        recent_cutoff = datetime.now(timezone.utc) - timedelta(minutes=10)
+        change_count = session.query(func.count(StateHistory.id)).filter(
+            StateHistory.entity_id == event.entity_id,
+            StateHistory.created_at >= recent_cutoff
+        ).scalar() or 0
+
+        if change_count >= 10:
+            return self._build_anomaly(session, event, None,
+                f"hat sich {change_count}x in 10 Minuten geaendert (moegliche Stoerung)",
+                f"changed {change_count} times in 10 minutes (possible fault)",
+                severity="critical")
+
+        return None
+
+    def _check_stuck_devices(self, session):
+        """Detect devices that haven't changed state for unusually long."""
+        anomalies = []
+        # Check lights that have been ON for >12 hours
+        threshold = datetime.now(timezone.utc) - timedelta(hours=12)
+
+        stuck_lights = session.query(StateHistory).filter(
+            StateHistory.entity_id.like("light.%"),
+            StateHistory.new_state == "on",
+            StateHistory.created_at <= threshold,
+        ).order_by(StateHistory.created_at.desc()).all()
+
+        seen_entities = set()
+        for event in stuck_lights:
+            if event.entity_id in seen_entities:
+                continue
+            seen_entities.add(event.entity_id)
+
+            # Check if there was a newer event (turned off since)
+            newer = session.query(StateHistory).filter(
+                StateHistory.entity_id == event.entity_id,
+                StateHistory.created_at > event.created_at
+            ).first()
+
+            if not newer:
+                report_key = f"stuck:{event.entity_id}"
+                if report_key not in self._reported:
+                    hours = int((datetime.now(timezone.utc) - event.created_at).total_seconds() / 3600) if event.created_at else 0
+                    device = session.query(Device).filter_by(ha_entity_id=event.entity_id).first()
+                    device_name = device.name if device else event.entity_id
+
+                    anomalies.append({
+                        "entity_id": event.entity_id,
+                        "device_name": device_name,
+                        "event": f"on seit {hours}h",
+                        "time": event.created_at.isoformat() if event.created_at else None,
+                        "reason_de": f"{device_name} ist seit {hours} Stunden eingeschaltet",
+                        "reason_en": f"{device_name} has been on for {hours} hours",
+                        "severity": "info",
+                    })
+                    self._reported.add(report_key)
+
+        return anomalies
+
+    def _build_anomaly(self, session, event, hour, reason_de, reason_en, severity="warning"):
+        """Build an anomaly dict."""
+        device = session.query(Device).filter_by(ha_entity_id=event.entity_id).first()
+        device_name = device.name if device else event.entity_id
+        return {
+            "entity_id": event.entity_id,
+            "device_name": device_name,
+            "event": f"{event.old_state} â†’ {event.new_state}",
+            "time": event.created_at.isoformat() if event.created_at else None,
+            "reason_de": f"{device_name} {reason_de}",
+            "reason_en": f"{device_name} {reason_en}",
+            "severity": severity,
+        }
+
+    def detect_time_clusters(self, session, entity_id=None, days=14):
+        """#54: Detect natural time clusters (routines) from state history."""
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+        query = session.query(StateHistory).filter(StateHistory.created_at > cutoff)
+        if entity_id:
+            query = query.filter(StateHistory.entity_id == entity_id)
+        history = query.all()
+
+        # Group by hour
+        hour_counts = defaultdict(int)
+        for h in history:
+            hour_counts[h.created_at.hour] += 1
+
+        # Find clusters (peaks in activity)
+        clusters = []
+        cluster_names = {
+            (5, 9): {"de": "Morgenroutine", "en": "Morning routine"},
+            (11, 14): {"de": "Mittagszeit", "en": "Lunchtime"},
+            (17, 20): {"de": "Feierabend", "en": "Evening routine"},
+            (21, 24): {"de": "Schlafenszeit", "en": "Bedtime"},
+        }
+        for (start_h, end_h), names in cluster_names.items():
+            total = sum(hour_counts.get(h, 0) for h in range(start_h, end_h))
+            if total >= 10:
+                peak_hour = max(range(start_h, end_h), key=lambda h: hour_counts.get(h, 0))
+                clusters.append({
+                    "name_de": names["de"],
+                    "name_en": names["en"],
+                    "start_hour": start_h,
+                    "end_hour": end_h,
+                    "peak_hour": peak_hour,
+                    "event_count": total,
+                })
+        return clusters
+
+    def detect_guest_activity(self, session):
+        """#58: Detect unusual device activity that might indicate guests."""
+        try:
+            # Compare last 24h activity to 7-day average
+            now = datetime.now(timezone.utc)
+            day_ago = now - timedelta(hours=24)
+            week_ago = now - timedelta(days=7)
+
+            recent = session.query(func.count(StateHistory.id)).filter(
+                StateHistory.created_at > day_ago).scalar() or 0
+            weekly_avg = (session.query(func.count(StateHistory.id)).filter(
+                StateHistory.created_at > week_ago).scalar() or 0) / 7
+
+            if weekly_avg > 0 and recent > weekly_avg * 1.5:
+                return {
+                    "guest_likely": True,
+                    "recent_events": recent,
+                    "daily_average": round(weekly_avg),
+                    "ratio": round(recent / weekly_avg, 1),
+                    "message_de": f"Ungewoehnlich hohe Aktivitaet: {recent} Events (Avg {weekly_avg:.0f})",
+                    "message_en": f"Unusually high activity: {recent} events (avg {weekly_avg:.0f})",
+                }
+            return {"guest_likely": False, "recent_events": recent, "daily_average": round(weekly_avg)}
+        except Exception:
+            return {"guest_likely": False}
+
+
+# ==============================================================================
+# G1+G3: Notification Manager
+# ==============================================================================
+
+class NotificationManager:
+    """Manages notifications for suggestions, anomalies, and events."""
+
+    def __init__(self, engine, ha_connection):
+        self.engine = engine
+        self.ha = ha_connection
+        self.Session = sessionmaker(bind=engine)
+
+    def notify_suggestion(self, prediction_id, lang="de"):
+        """Send notification about a new suggestion."""
+        session = self.Session()
+        try:
+            pred = session.get(Prediction, prediction_id)
+            if not pred:
+                return
+
+            desc = pred.description_de if lang == "de" else (pred.description_en or pred.description_de)
+            title = "MindHome: Neuer Vorschlag" if lang == "de" else "MindHome: New Suggestion"
+            message = desc or "MindHome hat ein neues Muster erkannt"
+
+            # Save to notification log
+            notif = NotificationLog(
+                user_id=1,  # Default user
+                notification_type=NotificationType.SUGGESTION,
+                title=title,
+                message=message,
+                was_sent=False,
+                was_read=False,
+            )
+            session.add(notif)
+
+            # Try to send via HA notification service
+            try:
+                self.ha.call_service("notify", "persistent_notification", {
+                    "title": title,
+                    "message": message,
+                })
+                notif.was_sent = True
+                pred.notification_sent = True
+            except Exception as e:
+                logger.debug(f"HA notification failed (non-critical): {e}")
+
+            session.commit()
+
+        except Exception as e:
+            session.rollback()
+            logger.error(f"Notification error: {e}")
+        finally:
+            session.close()
+
+    def notify_anomaly(self, anomaly, lang="de"):
+        """Send notification about an anomaly. Deduplicate by entity within 24h."""
+        session = self.Session()
+        try:
+            entity_id = anomaly.get("entity_id", "")
+            title = "MindHome: Ungewoehnliche Aktivitaet" if lang == "de" else "MindHome: Unusual Activity"
+            message = anomaly.get("reason_de" if lang == "de" else "reason_en", "")
+
+            # Dedup: check if we already notified about this entity in last 24h
+            if entity_id:
+                cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+                existing = session.query(NotificationLog).filter(
+                    NotificationLog.notification_type == NotificationType.ANOMALY,
+                    NotificationLog.message.contains(entity_id),
+                    NotificationLog.created_at >= cutoff
+                ).first()
+                if existing:
+                    return  # Already notified recently
+
+            notif = NotificationLog(
+                user_id=1,
+                notification_type=NotificationType.ANOMALY,
+                title=title,
+                message=f"{message} [{entity_id}]" if entity_id else message,
+                was_sent=False,
+                was_read=False,
+            )
+            session.add(notif)
+
+            try:
+                self.ha.call_service("notify", "persistent_notification", {
+                    "title": title,
+                    "message": message,
+                })
+                notif.was_sent = True
+            except Exception:
+                pass
+
+            session.commit()
+
+        except Exception as e:
+            session.rollback()
+            logger.error(f"Anomaly notification error: {e}")
+        finally:
+            session.close()
+
+    def get_notifications(self, limit=50, unread_only=False):
+        """Get recent notifications."""
+        session = self.Session()
+        try:
+            query = session.query(NotificationLog).order_by(
+                NotificationLog.created_at.desc()
+            )
+            if unread_only:
+                query = query.filter_by(was_read=False)
+            return query.limit(limit).all()
+        except Exception as e:
+            logger.error(f"Get notifications error: {e}")
+            return []
+        finally:
+            session.close()
+
+    def mark_read(self, notification_id):
+        """Mark a notification as read."""
+        session = self.Session()
+        try:
+            n = session.get(NotificationLog, notification_id)
+            if n:
+                n.was_read = True
+                session.commit()
+                return True
+            return False
+        except Exception as e:
+            logger.error(f"Mark read error: {e}")
+            session.rollback()
+            return False
+        finally:
+            session.close()
+
+    def mark_all_read(self):
+        """Mark all notifications as read."""
+        session = self.Session()
+        try:
+            session.query(NotificationLog).filter_by(
+                was_read=False
+            ).update({"was_read": True})
+            session.commit()
+            return True
+        except Exception:
+            session.rollback()
+            return False
+        finally:
+            session.close()
+
+    def get_unread_count(self):
+        """Get count of unread notifications."""
+        session = self.Session()
+        try:
+            return session.query(func.count(NotificationLog.id)).filter_by(
+                was_read=False
+            ).scalar() or 0
+        except Exception as e:
+            logger.error(f"Unread count error: {e}")
+            return 0
+        finally:
+            session.close()
+
+
+# ==============================================================================
+# Phase 2b Scheduler (extends PatternScheduler)
+# ==============================================================================
+
+class AutomationScheduler:
+    """Background scheduler for Phase 2b: suggestions, execution, phases."""
+
+    def __init__(self, engine, ha_connection):
+        self.engine = engine
+        self.ha = ha_connection
+        self.suggestion_gen = SuggestionGenerator(engine)
+        self.executor = AutomationExecutor(engine, ha_connection)
+        self.phase_mgr = PhaseManager(engine)
+        self.anomaly_det = AnomalyDetector(engine)
+        self.notification_mgr = NotificationManager(engine, ha_connection)
+        self.conflict_det = ConflictDetector(engine)
+        self.feedback = FeedbackProcessor(engine)
+        self._should_run = True
+        self._threads = []
+
+    def start(self):
+        """Start Phase 2b background tasks."""
+        logger.info("Starting Automation Scheduler...")
+
+        # Automation check: every 1 minute
+        t1 = threading.Thread(target=self._run_periodic,
+                              args=(self.executor.check_and_execute, 60, "automation_check"),
+                              daemon=True)
+        t1.start()
+        self._threads.append(t1)
+
+        # Suggestion generation: every 4 hours
+        t2 = threading.Thread(target=self._run_periodic,
+                              args=(self.suggestion_gen.generate_suggestions, 4 * 3600, "suggestion_gen"),
+                              daemon=True)
+        t2.start()
+        self._threads.append(t2)
+
+        # Phase transitions: every 12 hours
+        t3 = threading.Thread(target=self._run_periodic,
+                              args=(self.phase_mgr.check_transitions, 12 * 3600, "phase_check"),
+                              daemon=True)
+        t3.start()
+        self._threads.append(t3)
+
+        # Anomaly check: every 15 minutes
+        t4 = threading.Thread(target=self._anomaly_task, daemon=True)
+        t4.start()
+        self._threads.append(t4)
+
+        logger.info("Automation Scheduler started (exec:1min, suggest:4h, phase:12h, anomaly:15min)")
+
+        # #40 Watchdog: monitor thread health every 5 min
+        t5 = threading.Thread(target=self._watchdog_task, daemon=True)
+        t5.start()
+        self._threads.append(t5)
+
+    def stop(self):
+        self._should_run = False
+        logger.info("Automation Scheduler stopped")
+
+    def _watchdog_task(self):
+        """#40: Monitor thread health, restart dead threads."""
+        time.sleep(300)  # first check after 5min
+        while self._should_run:
+            alive = sum(1 for t in self._threads if t.is_alive())
+            total = len(self._threads)
+            if alive < total:
+                logger.warning(f"Watchdog: {total - alive}/{total} threads dead")
+            time.sleep(300)
+
+    def _run_periodic(self, task_func, interval_seconds, task_name):
+        """Run a task periodically."""
+        # Initial delay: 120s after startup
+        waited = 0
+        while waited < 120 and self._should_run:
+            time.sleep(5)
+            waited += 5
+
+        while self._should_run:
+            try:
+                task_func()
+            except Exception as e:
+                logger.error(f"Task {task_name} error: {e}")
+
+            slept = 0
+            while slept < interval_seconds and self._should_run:
+                time.sleep(10)
+                slept += 10
+
+    def _anomaly_task(self):
+        """Run anomaly detection periodically."""
+        waited = 0
+        while waited < 180 and self._should_run:
+            time.sleep(5)
+            waited += 5
+
+        while self._should_run:
+            try:
+                anomalies = self.anomaly_det.check_recent_anomalies(minutes=15)
+                # Limit to max 5 notifications per cycle to avoid spam
+                for a in anomalies[:5]:
+                    self.notification_mgr.notify_anomaly(a)
+                if len(anomalies) > 5:
+                    logger.info(f"Anomaly check: {len(anomalies)} found, notified first 5")
+            except Exception as e:
+                logger.error(f"Anomaly task error: {e}")
+
+            slept = 0
+            while slept < 900 and self._should_run:  # 15 min
+                time.sleep(10)
+                slept += 10
