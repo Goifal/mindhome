@@ -3176,14 +3176,16 @@ def api_weekly_report():
 
 @app.route("/api/backup/export", methods=["GET"])
 def api_backup_export():
-    """Export MindHome data as JSON. mode=standard|full|custom"""
+    """Export MindHome data as JSON. mode=standard|full|custom, include_history=true|false"""
     mode = request.args.get("mode", "standard")
     history_days = request.args.get("history_days", 90, type=int)
+    include_history = request.args.get("include_history", "false").lower() == "true"
     session = get_db()
     try:
         backup = {
             "version": "0.5.0",
             "export_mode": mode,
+            "include_history": include_history,
             "exported_at": datetime.now(timezone.utc).isoformat(),
             "rooms": [], "devices": [], "users": [], "domains": [],
             "room_domain_states": [], "settings": [], "quick_actions": [],
@@ -3273,8 +3275,8 @@ def api_backup_export():
                 "action_data": qa.action_data,
                 "sort_order": qa.sort_order, "is_active": qa.is_active})
 
-        # Full/Custom mode: include historical data
-        if mode in ("full", "custom"):
+        # Full/Custom mode: include historical data ONLY if requested
+        if mode in ("full", "custom") and include_history:
             cutoff = datetime.now(timezone.utc) - timedelta(days=history_days)
 
             # State History (limited by days)
@@ -3348,6 +3350,7 @@ def api_backup_export():
             "settings": len(backup.get("settings", [])),
             "state_history": len(backup.get("state_history", [])),
             "action_log": len(backup.get("action_log", [])),
+            "include_history": include_history,
         }
 
         return jsonify(backup)
@@ -3357,10 +3360,33 @@ def api_backup_export():
 
 @app.route("/api/backup/import", methods=["POST"])
 def api_backup_import():
-    """Import MindHome configuration from JSON backup."""
-    data = request.json
+    """Import MindHome configuration from JSON backup. Handles large files gracefully."""
+    # Support both JSON body and file upload
+    if request.content_type and 'multipart/form-data' in request.content_type:
+        file = request.files.get('file')
+        if not file:
+            return jsonify({"error": "No file uploaded"}), 400
+        try:
+            raw = file.read()
+            if len(raw) > 200 * 1024 * 1024:  # 200MB hard limit
+                return jsonify({"error": "Backup too large (max 200MB)"}), 413
+            data = json.loads(raw)
+        except Exception as e:
+            return jsonify({"error": f"Invalid JSON: {e}"}), 400
+    else:
+        try:
+            data = request.get_json(force=True, silent=True)
+        except Exception:
+            data = None
+
     if not data or "version" not in data:
         return jsonify({"error": "Invalid backup file"}), 400
+
+    # Skip history tables on import to prevent memory issues
+    skip_history = request.args.get("skip_history", "true").lower() == "true"
+    history_tables = ["state_history", "action_log", "notification_log",
+                      "audit_trail", "pattern_match_log", "data_collection", "offline_queue"]
+
     session = get_db()
     try:
         # Restore domains
