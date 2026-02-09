@@ -1,4 +1,4 @@
-# MindHome Backend v0.5.3-phase3C (2026-02-09 12:30) - app.py - BUILD:20260209-1230
+# MindHome Backend v0.5.1-blockA (2026-02-08T19:30) - app.py - DIES IST DIE BACKEND DATEI
 """
 MindHome - Main Application
 Flask backend serving the API and frontend.
@@ -30,14 +30,18 @@ from models import (
     get_engine, get_session, init_database, run_migrations,
     User, UserRole, Room, Domain, Device, RoomDomainState,
     LearningPhase, QuickAction, SystemSetting, UserPreference,
-    PersonSchedule, ShiftTemplate, Holiday,
     NotificationSetting, NotificationType, NotificationPriority,
     NotificationChannel, DeviceMute, ActionLog,
     DataCollection, OfflineActionQueue,
     StateHistory, LearnedPattern, PatternMatchLog,
     Prediction, NotificationLog,
     PatternExclusion, ManualRule, AnomalySetting,
-    DeviceGroup, AuditTrail
+    DeviceGroup, AuditTrail,
+    # Phase 3
+    DayPhase, RoomOrientation, PersonDevice, GuestDevice,
+    PresenceMode, PresenceLog, SensorGroup, SensorThreshold,
+    EnergyConfig, EnergyReading, StandbyConfig,
+    LearnedScene, PluginSetting, QuietHoursConfig, SchoolVacation,
 )
 from ha_connection import HAConnection
 try:
@@ -2628,7 +2632,6 @@ def api_unmute_device(mute_id):
 
 
 @app.route("/api/notification-settings/discover-channels", methods=["POST"])
-@app.route("/api/notification-settings/scan-channels", methods=["POST"])
 def api_discover_notification_channels():
     """Discover available HA notification services."""
     session = get_db()
@@ -2674,39 +2677,6 @@ def api_notification_stats():
             NotificationLog.created_at >= cutoff, NotificationLog.was_sent == True
         ).scalar() or 0
         return jsonify({"total": total, "read": read, "unread": total - read, "sent": sent, "pushed": sent, "period_days": 30})
-    finally:
-        session.close()
-
-
-@app.route("/api/notification-settings/channel/<int:cid>", methods=["PUT"])
-def api_update_notification_channel(cid):
-    """Update a notification channel (enable/disable)."""
-    data = request.get_json() or {}
-    session = get_db()
-    try:
-        ch = session.get(NotificationChannel, cid)
-        if not ch:
-            return jsonify({"error": "Channel not found"}), 404
-        if "is_enabled" in data:
-            ch.is_enabled = data["is_enabled"]
-        if "display_name" in data:
-            ch.display_name = data["display_name"]
-        session.commit()
-        return jsonify({"success": True, "id": ch.id, "is_enabled": ch.is_enabled})
-    finally:
-        session.close()
-
-
-@app.route("/api/notification-settings/test-channel/<int:cid>", methods=["POST"])
-def api_test_notification_channel(cid):
-    """Send a test notification to a specific channel."""
-    session = get_db()
-    try:
-        ch = session.get(NotificationChannel, cid)
-        if not ch:
-            return jsonify({"error": "Channel not found"}), 404
-        result = ha.send_notification("MindHome Test", title="Test", target=ch.service_name)
-        return jsonify({"success": result is not None})
     finally:
         session.close()
 
@@ -3280,26 +3250,17 @@ def api_backup_export():
                 "whitelisted_hours": asetting.whitelisted_hours, "auto_action": asetting.auto_action})
         # Notification settings
         for ns in session.query(NotificationSetting).all():
-            backup["notification_settings"].append({
-                "user_id": ns.user_id,
-                "notification_type": ns.notification_type.value if hasattr(ns.notification_type, 'value') else str(ns.notification_type),
-                "is_enabled": ns.is_enabled,
-                "priority": ns.priority.value if hasattr(ns.priority, 'value') else str(ns.priority) if ns.priority else "medium",
-                "push_channel": getattr(ns, 'push_channel', None),
-                "quiet_hours_start": ns.quiet_hours_start,
-                "quiet_hours_end": ns.quiet_hours_end,
-                "escalation_enabled": getattr(ns, 'escalation_enabled', False),
-            })
+            backup["notification_settings"].append({"notification_type": ns.notification_type,
+                "is_enabled": ns.is_enabled, "priority": ns.priority, "sound": ns.sound,
+                "channel": ns.channel})
         # Notification channels
         for nc in session.query(NotificationChannel).all():
-            backup["notification_channels"].append({"id": nc.id,
-                "service_name": nc.service_name, "display_name": nc.display_name,
-                "channel_type": nc.channel_type, "is_enabled": nc.is_enabled})
+            backup["notification_channels"].append({"id": nc.id, "name": nc.name,
+                "ha_service": nc.ha_service, "is_active": nc.is_active})
         # Device mutes
         for dm in session.query(DeviceMute).all():
             backup["device_mutes"].append({"id": dm.id, "device_id": dm.device_id,
-                "user_id": dm.user_id,
-                "muted_until": utc_iso(dm.muted_until) if dm.muted_until else None,
+                "mute_until": utc_iso(dm.mute_until) if dm.mute_until else None,
                 "reason": dm.reason})
         # Device groups
         for g in session.query(DeviceGroup).all():
@@ -3313,7 +3274,7 @@ def api_backup_export():
                 "sort_order": qa.sort_order, "is_active": qa.is_active})
 
         # Full/Custom mode: include historical data
-        if mode in ("full", "custom", "standard"):
+        if mode in ("full", "custom"):
             cutoff = datetime.now(timezone.utc) - timedelta(days=history_days)
 
             # State History (limited by days)
@@ -3337,7 +3298,7 @@ def api_backup_export():
             backup["notification_log"] = []
             for nl in session.query(NotificationLog).filter(NotificationLog.created_at >= cutoff).all():
                 backup["notification_log"].append({"id": nl.id,
-                    "notification_type": nl.notification_type.value if hasattr(nl.notification_type, 'value') else str(nl.notification_type), "title": nl.title,
+                    "notification_type": nl.notification_type, "title": nl.title,
                     "message": nl.message, "was_read": nl.was_read,
                     "created_at": utc_iso(nl.created_at)})
 
@@ -3363,45 +3324,20 @@ def api_backup_export():
 
             # Data Collection
             backup["data_collection"] = []
-            for dc in session.query(DataCollection).all():
-                backup["data_collection"].append({"room_id": dc.room_id, "domain_id": dc.domain_id,
-                    "data_type": dc.data_type, "record_count": dc.record_count,
-                    "storage_size_bytes": dc.storage_size_bytes,
-                    "first_record_at": utc_iso(dc.first_record_at) if dc.first_record_at else None,
-                    "last_record_at": utc_iso(dc.last_record_at) if dc.last_record_at else None})
+            for dc in session.query(DataCollection).filter(DataCollection.created_at >= cutoff).all():
+                backup["data_collection"].append({"domain_id": dc.domain_id,
+                    "data_type": dc.data_type, "storage_size_bytes": dc.storage_size_bytes,
+                    "created_at": utc_iso(dc.created_at)})
 
             # Offline Action Queue
             backup["offline_queue"] = []
             for oq in session.query(OfflineActionQueue).all():
-                backup["offline_queue"].append({
-                    "action_data": oq.action_data, "priority": oq.priority,
-                    "was_executed": oq.was_executed,
+                backup["offline_queue"].append({"action_type": oq.action_type,
+                    "action_data": oq.action_data, "status": oq.status,
                     "created_at": utc_iso(oq.created_at)})
 
         # Calendar Triggers (always, they're config)
         backup["calendar_triggers"] = json.loads(get_setting("calendar_triggers") or "[]")
-
-        # Phase 3B: Person Schedules, Shift Templates, Holidays (BUILD:20260209-1230)
-        backup["person_schedules"] = []
-        for ps in session.query(PersonSchedule).filter_by(is_active=True).all():
-            backup["person_schedules"].append({"id": ps.id, "user_id": ps.user_id,
-                "schedule_type": ps.schedule_type, "name": ps.name,
-                "time_wake": ps.time_wake, "time_leave": ps.time_leave,
-                "time_home": ps.time_home, "time_sleep": ps.time_sleep,
-                "weekdays": ps.weekdays, "shift_data": ps.shift_data,
-                "valid_from": utc_iso(ps.valid_from) if ps.valid_from else None,
-                "valid_until": utc_iso(ps.valid_until) if ps.valid_until else None})
-
-        backup["shift_templates"] = []
-        for st in session.query(ShiftTemplate).filter_by(is_active=True).all():
-            backup["shift_templates"].append({"id": st.id, "name": st.name,
-                "short_code": st.short_code, "blocks": st.blocks, "color": st.color})
-
-        backup["holidays"] = []
-        for h in session.query(Holiday).filter_by(is_active=True).all():
-            backup["holidays"].append({"id": h.id, "name": h.name, "date": h.date,
-                "is_recurring": h.is_recurring, "region": h.region,
-                "source": h.source, "calendar_entity": h.calendar_entity})
 
         # Summary for import preview
         backup["_summary"] = {
@@ -3412,9 +3348,6 @@ def api_backup_export():
             "settings": len(backup.get("settings", [])),
             "state_history": len(backup.get("state_history", [])),
             "action_log": len(backup.get("action_log", [])),
-            "person_schedules": len(backup.get("person_schedules", [])),
-            "shift_templates": len(backup.get("shift_templates", [])),
-            "holidays": len(backup.get("holidays", [])),
         }
 
         return jsonify(backup)
@@ -3627,65 +3560,13 @@ def api_backup_import():
         finally:
             session2.close()
 
-        # Phase 3: Restore PersonSchedules, ShiftTemplates, Holidays (BUILD:20260209-1230)
-        session3 = get_db()
-        try:
-            for ps_data in data.get("person_schedules", []):
-                try:
-                    ps = PersonSchedule(
-                        user_id=ps_data["user_id"], schedule_type=ps_data.get("schedule_type", "weekday"),
-                        name=ps_data.get("name"), time_wake=ps_data.get("time_wake"),
-                        time_leave=ps_data.get("time_leave"), time_home=ps_data.get("time_home"),
-                        time_sleep=ps_data.get("time_sleep"), weekdays=ps_data.get("weekdays"),
-                        shift_data=ps_data.get("shift_data"),
-                    )
-                    if ps_data.get("valid_from"):
-                        ps.valid_from = datetime.fromisoformat(ps_data["valid_from"].replace("Z", "+00:00"))
-                    if ps_data.get("valid_until"):
-                        ps.valid_until = datetime.fromisoformat(ps_data["valid_until"].replace("Z", "+00:00"))
-                    session3.add(ps)
-                except Exception as e:
-                    logger.warning(f"PersonSchedule import error: {e}")
-
-            for st_data in data.get("shift_templates", []):
-                try:
-                    st = ShiftTemplate(
-                        name=st_data["name"], short_code=st_data.get("short_code"),
-                        blocks=st_data.get("blocks", []), color=st_data.get("color"),
-                    )
-                    session3.add(st)
-                except Exception as e:
-                    logger.warning(f"ShiftTemplate import error: {e}")
-
-            for h_data in data.get("holidays", []):
-                try:
-                    h = Holiday(
-                        name=h_data["name"], date=h_data["date"],
-                        is_recurring=h_data.get("is_recurring", False),
-                        region=h_data.get("region"), source=h_data.get("source", "backup"),
-                        calendar_entity=h_data.get("calendar_entity"),
-                    )
-                    session3.add(h)
-                except Exception as e:
-                    logger.warning(f"Holiday import error: {e}")
-
-            session3.commit()
-        except Exception as e:
-            session3.rollback()
-            logger.warning(f"Phase 3 import error: {e}")
-        finally:
-            session3.close()
-
         set_setting("onboarding_completed", "true")
 
-        logger.info(f"Backup imported: {len(data.get('rooms',[]))} rooms, {len(data.get('devices',[]))} devices, {len(data.get('person_schedules',[]))} schedules, {len(data.get('holidays',[]))} holidays")
+        logger.info(f"Backup imported: {len(data.get('rooms',[]))} rooms, {len(data.get('devices',[]))} devices")
         return jsonify({"success": True, "imported": {
             "rooms": len(data.get("rooms", [])),
             "devices": len(data.get("devices", [])),
-            "users": len(data.get("users", [])),
-            "person_schedules": len(data.get("person_schedules", [])),
-            "shift_templates": len(data.get("shift_templates", [])),
-            "holidays": len(data.get("holidays", [])),
+            "users": len(data.get("users", []))
         }})
     except Exception as e:
         try:
@@ -4353,37 +4234,11 @@ def api_tts_announce():
     data = request.json
     message = data.get("message", "")
     entity = data.get("entity_id")
-    tts_service = data.get("tts_service") or get_setting("tts_service")
     if not message:
         return jsonify({"error": "No message"}), 400
-    result = ha.announce_tts(message, media_player_entity=entity, tts_service=tts_service)
-    audit_log("tts_announce", {"message": message[:50], "entity": entity, "tts_service": tts_service})
+    result = ha.announce_tts(message, media_player_entity=entity)
+    audit_log("tts_announce", {"message": message[:50], "entity": entity})
     return jsonify({"success": result is not None})
-
-
-@app.route("/api/tts/services", methods=["GET"])
-def api_tts_services():
-    """Get available TTS services from HA."""
-    try:
-        services = ha.get_services()
-        tts_services = []
-        for svc in services:
-            if svc.get("domain") == "tts":
-                for name in svc.get("services", {}).keys():
-                    tts_services.append({"service": f"tts.{name}", "name": name.replace("_", " ").title()})
-        current = get_setting("tts_service")
-        return jsonify({"services": tts_services, "current": current})
-    except Exception as e:
-        return jsonify({"services": [], "error": str(e)})
-
-
-@app.route("/api/tts/service", methods=["PUT"])
-def api_set_tts_service():
-    """Set preferred TTS service."""
-    data = request.get_json() or {}
-    service = data.get("service", "")
-    set_setting("tts_service", service)
-    return jsonify({"success": True, "service": service})
 
 
 @app.route("/api/tts/devices", methods=["GET"])
@@ -4693,27 +4548,12 @@ def api_get_all_device_anomaly_configs():
 # ==============================================================================
 
 def log_state_change(entity_id, new_state, old_state, new_attrs=None, old_attrs=None):
-    """Log state changes to action_log for tracked devices. Fix 1 + Fix 18 + Phase3B dedup."""
+    """Log state changes to action_log for tracked devices. Fix 1 + Fix 18."""
     session = get_db()
     try:
         device = session.query(Device).filter_by(ha_entity_id=entity_id).first()
         if not device or not device.is_tracked:
             return
-
-        # Phase 3B: Deduplicate - check if same entity+state was logged in last 3 seconds
-        from sqlalchemy import and_
-        recent_cutoff = datetime.now(timezone.utc) - timedelta(seconds=3)
-        existing = session.query(ActionLog).filter(
-            and_(
-                ActionLog.device_id == device.id,
-                ActionLog.created_at >= recent_cutoff,
-                ActionLog.action_type == "observation"
-            )
-        ).first()
-        if existing:
-            ex_data = existing.action_data or {}
-            if ex_data.get("new_state") == new_state and ex_data.get("old_state") == old_state:
-                return  # Skip duplicate
 
         # Fix 18: Enforce privacy mode
         if device.room_id:
@@ -4899,654 +4739,569 @@ def graceful_shutdown(signum, frame):
 
 
 # ==============================================================================
-# ==============================================================================
-# Phase 3B: Person Schedules / Time Profiles
-# ==============================================================================
-
-@app.route("/api/person-schedules", methods=["GET"])
-def api_get_person_schedules():
-    session = get_db()
-    try:
-        schedules = session.query(PersonSchedule).filter_by(is_active=True).all()
-        return jsonify([{
-            "id": s.id, "user_id": s.user_id, "schedule_type": s.schedule_type,
-            "name": s.name, "time_wake": s.time_wake, "time_leave": s.time_leave,
-            "time_home": s.time_home, "time_sleep": s.time_sleep,
-            "weekdays": s.weekdays, "shift_data": s.shift_data,
-            "valid_from": utc_iso(s.valid_from) if s.valid_from else None,
-            "valid_until": utc_iso(s.valid_until) if s.valid_until else None,
-        } for s in schedules])
-    finally:
-        session.close()
-
-@app.route("/api/person-schedules", methods=["POST"])
-def api_create_person_schedule():
-    data = request.json
-    session = get_db()
-    try:
-        schedule = PersonSchedule(
-            user_id=data["user_id"], schedule_type=data.get("schedule_type", "weekday"),
-            name=data.get("name"), time_wake=data.get("time_wake"),
-            time_leave=data.get("time_leave"), time_home=data.get("time_home"),
-            time_sleep=data.get("time_sleep"), weekdays=data.get("weekdays"),
-            shift_data=data.get("shift_data"),
-        )
-        if data.get("valid_from"):
-            schedule.valid_from = datetime.fromisoformat(data["valid_from"])
-        if data.get("valid_until"):
-            schedule.valid_until = datetime.fromisoformat(data["valid_until"])
-        session.add(schedule)
-        session.commit()
-        audit_log("create_schedule", {"user_id": data["user_id"], "type": data.get("schedule_type")})
-        return jsonify({"success": True, "id": schedule.id})
-    except Exception as e:
-        session.rollback()
-        return jsonify({"error": str(e)}), 400
-    finally:
-        session.close()
-
-@app.route("/api/person-schedules/<int:sid>", methods=["PUT"])
-def api_update_person_schedule(sid):
-    data = request.json
-    session = get_db()
-    try:
-        s = session.get(PersonSchedule, sid)
-        if not s:
-            return jsonify({"error": "Not found"}), 404
-        for f in ["schedule_type","name","time_wake","time_leave","time_home","time_sleep","weekdays","shift_data"]:
-            if f in data:
-                setattr(s, f, data[f])
-        session.commit()
-        return jsonify({"success": True})
-    finally:
-        session.close()
-
-@app.route("/api/person-schedules/<int:sid>", methods=["DELETE"])
-def api_delete_person_schedule(sid):
-    session = get_db()
-    try:
-        s = session.get(PersonSchedule, sid)
-        if s:
-            s.is_active = False
-            session.commit()
-        return jsonify({"success": True})
-    finally:
-        session.close()
-
-# ==============================================================================
-# Phase 3B: Shift Templates
-# ==============================================================================
-
-@app.route("/api/shift-templates", methods=["GET"])
-def api_get_shift_templates():
-    session = get_db()
-    try:
-        return jsonify([{"id": t.id, "name": t.name, "short_code": t.short_code,
-            "blocks": t.blocks, "color": t.color}
-            for t in session.query(ShiftTemplate).filter_by(is_active=True).all()])
-    finally:
-        session.close()
-
-@app.route("/api/shift-templates", methods=["POST"])
-def api_create_shift_template():
-    data = request.json
-    session = get_db()
-    try:
-        t = ShiftTemplate(name=data["name"], short_code=data.get("short_code"),
-            blocks=data.get("blocks", []), color=data.get("color"))
-        session.add(t)
-        session.commit()
-        return jsonify({"success": True, "id": t.id})
-    except Exception as e:
-        session.rollback()
-        return jsonify({"error": str(e)}), 400
-    finally:
-        session.close()
-
-@app.route("/api/shift-templates/<int:tid>", methods=["PUT"])
-def api_update_shift_template(tid):
-    data = request.json
-    session = get_db()
-    try:
-        t = session.get(ShiftTemplate, tid)
-        if not t:
-            return jsonify({"error": "Not found"}), 404
-        for f in ["name", "short_code", "blocks", "color"]:
-            if f in data:
-                setattr(t, f, data[f])
-        session.commit()
-        return jsonify({"success": True})
-    except Exception as e:
-        session.rollback()
-        return jsonify({"error": str(e)}), 400
-    finally:
-        session.close()
-
-@app.route("/api/shift-templates/<int:tid>", methods=["DELETE"])
-def api_delete_shift_template(tid):
-    session = get_db()
-    try:
-        t = session.get(ShiftTemplate, tid)
-        if t:
-            t.is_active = False
-            session.commit()
-        return jsonify({"success": True})
-    finally:
-        session.close()
-
-# ==============================================================================
-# Phase 3B: Shift Plan PDF Import
-# ==============================================================================
-
-@app.route("/api/shift-plan/import", methods=["POST"])
-def api_import_shift_plan():
-    """Import shift plan from PDF. Parses the confirmed schedule format."""
-    if "file" not in request.files:
-        return jsonify({"error": "No file"}), 400
-    file = request.files["file"]
-    try:
-        import tempfile as _tf
-        with _tf.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-            file.save(tmp.name)
-            tmp_path = tmp.name
-        text = ""
-        try:
-            import pdfplumber
-            with pdfplumber.open(tmp_path) as pdf:
-                for page in pdf.pages:
-                    text += (page.extract_text() or "") + "\n"
-        except ImportError:
-            try:
-                import PyPDF2
-                reader = PyPDF2.PdfReader(tmp_path)
-                for page in reader.pages:
-                    text += (page.extract_text() or "") + "\n"
-            except ImportError:
-                import os; os.unlink(tmp_path)
-                return jsonify({"error": "PDF-Bibliothek fehlt (pdfplumber oder PyPDF2)"}), 500
-        import os; os.unlink(tmp_path)
-        if not text.strip():
-            return jsonify({"error": "Kein Text im PDF gefunden"}), 400
-        parsed = _parse_shift_plan(text)
-        return jsonify({"success": True, "raw_text": text[:3000], "parsed": parsed})
-    except Exception as e:
-        logger.error(f"Shift plan import error: {e}")
-        return jsonify({"error": str(e)}), 500
-
-
-def _parse_shift_plan(text):
-    """Parse confirmed shift plan PDF into structured entries.
-    
-    Tested against real PDFs. Handles multi-line records.
-    Fehlzeiten (Urlaub, Zeitausgleich, Krank) override Dienstplan column.
-    """
-    import re
-    raw_lines = text.strip().split("\n")
-    
-    person_name = None
-    pm = re.search(r"von\s+(\S+)\s+(\S+)\s+best", text)
-    if pm:
-        person_name = f"{pm.group(2)} {pm.group(1)}"
-    month_year = None
-    my = re.search(r"Dienstplan\s+f.{1,3}r\s+(\w+)\s+(\d{4})", text)
-    if my:
-        month_year = f"{my.group(1)} {my.group(2)}"
-
-    date_re = re.compile(r"(\d{2})\.(\d{2})\.(\d{4})")
-    time_re = re.compile(r"(\d{2}:\d{2})\s*-\s*(\d{2}:\d{2})")
-    
-    fehlzeiten_kw = {
-        "urlaub": ("urlaub", "Urlaub"),
-        "zeitausgleich": ("zeitausgleich", "Zeitausgleich"),
-        "krank": ("krank", "Krank"),
-    }
-    
-    clean = []
-    for line in raw_lines:
-        s = line.strip()
-        if not s or s.startswith("Datum ") or s.startswith("Seite") or "best\u00e4tigt" in s or "Dienstplan f" in s:
-            continue
-        clean.append(s)
-    
-    consumed = set()
-    entries = []
-    first_name = (person_name or "").split()[0] if person_name else ""
-    
-    i = 0
-    while i < len(clean):
-        if i in consumed:
-            i += 1
-            continue
-        
-        line = clean[i]
-        line_lower = line.lower()
-        has_date = bool(date_re.search(line))
-        shift_keywords = ["fr\u00fch", "abenddienst", "mittagsdienst", "tagdienst", "dienstfrei", "urlaub", "zeitausgleich", "krank"]
-        has_shift = any(kw in line_lower for kw in shift_keywords)
-        
-        if has_shift and not has_date:
-            record_lines = [line]
-            consumed.add(i)
-            j = i + 1
-            date_found = False
-            while j < len(clean) and j not in consumed:
-                if date_re.search(clean[j]):
-                    record_lines.append(clean[j])
-                    consumed.add(j)
-                    date_found = True
-                    j += 1
-                    break
-                j += 1
-            if date_found:
-                while j < len(clean) and j not in consumed:
-                    nxt = clean[j]
-                    nxt_lower = nxt.lower()
-                    if date_re.search(nxt):
-                        break
-                    if any(nxt_lower.startswith(kw) for kw in ["fr\u00fch", "tag", "dienst"]):
-                        break
-                    record_lines.append(nxt)
-                    consumed.add(j)
-                    j += 1
-                    break
-            merged = " ".join(record_lines)
-            i = j if date_found else i + 1
-            
-        elif has_date and has_shift:
-            merged = line
-            consumed.add(i)
-            i += 1
-        elif has_date and not has_shift:
-            consumed.add(i)
-            i += 1
-            continue
-        else:
-            consumed.add(i)
-            i += 1
-            continue
-        
-        dm = date_re.search(merged)
-        if not dm:
-            continue
-        day, month, year = dm.groups()
-        date_str = f"{year}-{month}-{day}"
-        ml = merged.lower()
-        
-        # Check Fehlzeiten FIRST (overrides Dienstplan)
-        fehlzeit_type = None
-        fehlzeit_label = None
-        for fkw, (ftype, flabel) in fehlzeiten_kw.items():
-            if fkw in ml:
-                fehlzeit_type = ftype
-                fehlzeit_label = flabel
-                break
-        
-        # Determine shift type from Dienstplan column
-        dienstplan_type = "unknown"; dienstplan_label = "Unbekannt"
-        if "dienstfrei" in ml:
-            dienstplan_type = "dienstfrei"; dienstplan_label = "Dienstfrei"
-        elif "fr\u00fch" in ml and "abenddienst" in ml:
-            dienstplan_type = "frueh_abend"; dienstplan_label = "Fr\u00fch- + Abenddienst"
-        elif "fr\u00fch" in ml and "mittagsdienst" in ml:
-            dienstplan_type = "frueh_mittag"; dienstplan_label = "Fr\u00fch- + Mittagsdienst"
-        elif "tagdienst" in ml:
-            dienstplan_type = "tagdienst"; dienstplan_label = "Tagdienst"
-        elif "fr\u00fch" in ml:
-            dienstplan_type = "frueh"; dienstplan_label = "Fr\u00fch"
-        
-        # Fehlzeiten override
-        if fehlzeit_type:
-            shift_type = fehlzeit_type
-            shift_label = fehlzeit_label
-        else:
-            shift_type = dienstplan_type
-            shift_label = dienstplan_label
-        
-        # Extract time blocks (only if no Fehlzeit)
-        all_times = time_re.findall(merged)
-        blocks = []
-        
-        if fehlzeit_type or shift_type == "dienstfrei":
-            pass
-        elif shift_type in ("frueh_abend", "frueh_mittag"):
-            if len(all_times) >= 4:
-                blocks = [
-                    {"start": all_times[1][0], "end": all_times[1][1]},
-                    {"start": all_times[3][0], "end": all_times[3][1]},
-                ]
-            elif len(all_times) == 2:
-                blocks = [
-                    {"start": all_times[0][0], "end": all_times[0][1]},
-                    {"start": all_times[1][0], "end": all_times[1][1]},
-                ]
-        else:
-            if len(all_times) >= 2:
-                blocks = [{"start": all_times[1][0], "end": all_times[1][1]}]
-            elif len(all_times) == 1:
-                blocks = [{"start": all_times[0][0], "end": all_times[0][1]}]
-        
-        # Build calendar events
-        calendar_events = []
-        if fehlzeit_type:
-            calendar_events = [{"label": f"{fehlzeit_label} - {first_name}", "all_day": True}]
-        elif shift_type == "frueh_abend" and len(blocks) == 2:
-            calendar_events = [
-                {"label": f"Fr\u00fchdienst - {first_name}", "start": blocks[0]["start"], "end": blocks[0]["end"]},
-                {"label": f"Abenddienst - {first_name}", "start": blocks[1]["start"], "end": blocks[1]["end"]},
-            ]
-        elif shift_type == "frueh_mittag" and len(blocks) == 2:
-            calendar_events = [
-                {"label": f"Fr\u00fchdienst - {first_name}", "start": blocks[0]["start"], "end": blocks[0]["end"]},
-                {"label": f"Mittagsdienst - {first_name}", "start": blocks[1]["start"], "end": blocks[1]["end"]},
-            ]
-        elif shift_type == "tagdienst" and blocks:
-            calendar_events = [{"label": f"Tagdienst - {first_name}", "start": blocks[0]["start"], "end": blocks[0]["end"]}]
-        elif shift_type == "frueh" and blocks:
-            calendar_events = [{"label": f"Fr\u00fchdienst - {first_name}", "start": blocks[0]["start"], "end": blocks[0]["end"]}]
-        elif shift_type == "dienstfrei":
-            calendar_events = [{"label": f"Dienstfrei - {first_name}", "all_day": True}]
-        
-        entries.append({
-            "date": date_str, "shift_type": shift_type, "shift_label": shift_label,
-            "blocks": blocks, "calendar_events": calendar_events,
-            "fehlzeit": fehlzeit_label,
-        })
-    
-    return {
-        "person_name": person_name, "month_year": month_year,
-        "entries": entries, "parsed_count": len(entries),
-        "work_days": len([e for e in entries if e["shift_type"] not in ("dienstfrei", "urlaub", "zeitausgleich", "krank")]),
-        "off_days": len([e for e in entries if e["shift_type"] in ("dienstfrei", "urlaub", "zeitausgleich", "krank")]),
-    }
-
-
-
-@app.route("/api/shift-plan/apply", methods=["POST"])
-def api_apply_shift_plan():
-    """Apply parsed shift plan: save schedule + create calendar events."""
-    data = request.json
-    user_id = data.get("user_id")
-    entries = data.get("entries", [])
-    calendar_entity = data.get("calendar_entity")
-    person_name = data.get("person_name", "")
-    session = get_db()
-    try:
-        # If no user_id given but person_name available, try to match
-        if not user_id and person_name:
-            # Try matching by name parts
-            parts = person_name.lower().split()
-            for u in session.query(User).all():
-                uname = u.name.lower()
-                if any(p in uname for p in parts):
-                    user_id = u.id
-                    break
-
-        if not user_id:
-            return jsonify({"error": "Kein Benutzer zugeordnet"}), 400
-
-        # Get person name for calendar labels
-        user = session.get(User, user_id)
-        label_name = person_name or (user.name if user else "")
-        # Use first name only for calendar labels
-        first_name = label_name.split()[0] if label_name else ""
-
-        # If no calendar_entity given, try to get from user settings
-        if not calendar_entity and user:
-            # Check if user has a calendar entity configured
-            pref = session.query(UserPreference).filter_by(
-                user_id=user_id, preference_key="calendar_entity"
-            ).first()
-            if pref:
-                calendar_entity = pref.preference_value
-
-        # Save schedule to DB
-        month_year = data.get("month_year", datetime.now().strftime("%m.%Y"))
-        schedule = PersonSchedule(
-            user_id=user_id,
-            schedule_type="shift",
-            name=f"Schichtplan {month_year} - {first_name}",
-            shift_data=entries,
-        )
-        dates = [e["date"] for e in entries if e.get("date")]
-        if dates:
-            schedule.valid_from = datetime.fromisoformat(min(dates))
-            schedule.valid_until = datetime.fromisoformat(max(dates))
-        session.add(schedule)
-        session.commit()
-
-        # Create calendar events
-        created = 0
-        errors = 0
-        if calendar_entity:
-            for entry in entries:
-                cal_events = entry.get("calendar_events", [])
-                for cev in cal_events:
-                    try:
-                        if cev.get("all_day"):
-                            # All-day event (Dienstfrei, Urlaub, ZA)
-                            ha.call_service("calendar", "create_event", {
-                                "entity_id": calendar_entity,
-                                "summary": f"{cev['label']} - {first_name}",
-                                "start_date": entry["date"],
-                                "end_date": entry["date"],
-                            })
-                        else:
-                            # Timed event
-                            ha.call_service("calendar", "create_event", {
-                                "entity_id": calendar_entity,
-                                "summary": f"{cev['label']} - {first_name}",
-                                "start_date_time": f"{entry['date']}T{cev['start']}:00",
-                                "end_date_time": f"{entry['date']}T{cev['end']}:00",
-                            })
-                        created += 1
-                    except Exception as e:
-                        logger.warning(f"Calendar event error for {entry['date']}: {e}")
-                        errors += 1
-
-        audit_log("import_shift_plan", {
-            "user_id": user_id, "person": first_name,
-            "entries": len(entries), "calendar_events": created, "errors": errors
-        })
-        return jsonify({
-            "success": True,
-            "schedule_id": schedule.id,
-            "calendar_events_created": created,
-            "calendar_errors": errors,
-            "matched_user": user.name if user else None,
-        })
-    except Exception as e:
-        session.rollback()
-        logger.error(f"Shift plan apply error: {e}")
-        return jsonify({"error": str(e)}), 500
-    finally:
-        session.close()
-
-
-@app.route("/api/users/<int:user_id>/calendar-entity", methods=["PUT"])
-def api_set_user_calendar_entity(user_id):
-    """Set the HA calendar entity for a user (for shift plan sync)."""
-    data = request.json
-    calendar_entity = data.get("calendar_entity", "")
-    session = get_db()
-    try:
-        pref = session.query(UserPreference).filter_by(
-            user_id=user_id, preference_key="calendar_entity"
-        ).first()
-        if pref:
-            pref.preference_value = calendar_entity
-        else:
-            pref = UserPreference(
-                user_id=user_id, preference_key="calendar_entity",
-                preference_value=calendar_entity
-            )
-            session.add(pref)
-        session.commit()
-        return jsonify({"success": True})
-    finally:
-        session.close()
-
-
-@app.route("/api/ha/calendars", methods=["GET"])
-def api_get_ha_calendars():
-    """Get available HA calendar entities."""
-    states = ha.get_states() or []
-    calendars = [{"entity_id": s["entity_id"],
-                  "name": s.get("attributes", {}).get("friendly_name", s["entity_id"])}
-                 for s in states if s["entity_id"].startswith("calendar.")]
-    return jsonify(calendars)
-
-# ==============================================================================
-# Phase 3B: Holidays
-# ==============================================================================
-
-BUILTIN_HOLIDAYS_AT = [
-    {"name": "Neujahr", "date": "01-01", "recurring": True, "region": "AT"},
-    {"name": "Hl. Drei K\u00f6nige", "date": "01-06", "recurring": True, "region": "AT"},
-    {"name": "Staatsfeiertag", "date": "05-01", "recurring": True, "region": "AT"},
-    {"name": "Mari\u00e4 Himmelfahrt", "date": "08-15", "recurring": True, "region": "AT"},
-    {"name": "Nationalfeiertag", "date": "10-26", "recurring": True, "region": "AT"},
-    {"name": "Allerheiligen", "date": "11-01", "recurring": True, "region": "AT"},
-    {"name": "Mari\u00e4 Empf\u00e4ngnis", "date": "12-08", "recurring": True, "region": "AT"},
-    {"name": "Christtag", "date": "12-25", "recurring": True, "region": "AT"},
-    {"name": "Stefanitag", "date": "12-26", "recurring": True, "region": "AT"},
-    {"name": "Hl. Leopold (N\u00d6)", "date": "11-15", "recurring": True, "region": "AT-3"},
-]
-
-def _compute_easter(year):
-    a = year % 19; b = year // 100; c = year % 100
-    d = b // 4; e = b % 4; f = (b + 8) // 25
-    g = (b - f + 1) // 3; h = (19*a + b - d - g + 15) % 30
-    i = c // 4; k = c % 4; l = (32 + 2*e + 2*i - h - k) % 7
-    m = (a + 11*h + 22*l) // 451
-    month = (h + l - 7*m + 114) // 31
-    day = ((h + l - 7*m + 114) % 31) + 1
-    from datetime import date as _date
-    return _date(year, month, day)
-
-def get_holidays_for_year(year):
-    from datetime import date as _date, timedelta as _td
-    holidays = []
-    for h in BUILTIN_HOLIDAYS_AT:
-        if h["recurring"] and h["date"]:
-            m, d = h["date"].split("-")
-            holidays.append({"name": h["name"], "date": f"{year}-{h['date']}", "region": h["region"]})
-    easter = _compute_easter(year)
-    holidays.append({"name": "Ostermontag", "date": str(easter + _td(days=1)), "region": "AT"})
-    holidays.append({"name": "Christi Himmelfahrt", "date": str(easter + _td(days=39)), "region": "AT"})
-    holidays.append({"name": "Pfingstmontag", "date": str(easter + _td(days=50)), "region": "AT"})
-    holidays.append({"name": "Fronleichnam", "date": str(easter + _td(days=60)), "region": "AT"})
-    return holidays
-
-@app.route("/api/holidays", methods=["GET"])
-def api_get_holidays():
-    year = request.args.get("year", datetime.now().year, type=int)
-    session = get_db()
-    try:
-        builtin = get_holidays_for_year(year)
-        custom = session.query(Holiday).filter_by(is_active=True).all()
-        custom_list = [{"id": h.id, "name": h.name, "date": h.date, "region": h.region,
-            "source": h.source, "is_recurring": h.is_recurring} for h in custom]
-        # HA holiday integration
-        ha_holidays = []
-        ha_cal = request.args.get("calendar_entity", "")
-        if ha_cal:
-            try:
-                # Use HA REST API for calendar events (call_service doesn't support return_response)
-                start = f"{year}-01-01T00:00:00"
-                end = f"{year}-12-31T23:59:59"
-                cal_url = f"calendars/{ha_cal}?start={start}&end={end}"
-                events = ha._api_request("GET", cal_url)
-                if events and isinstance(events, list):
-                    for ev in events:
-                        start_info = ev.get("start", {})
-                        date_str = start_info.get("date", start_info.get("dateTime", "")[:10]) if isinstance(start_info, dict) else str(start_info)[:10]
-                        ha_holidays.append({
-                            "name": ev.get("summary", ""),
-                            "date": date_str,
-                            "source": "ha_integration",
-                        })
-            except Exception as e:
-                logger.warning(f"HA holiday calendar error: {e}")
-        return jsonify({"builtin": builtin, "custom": custom_list, "ha_holidays": ha_holidays, "year": year})
-    finally:
-        session.close()
-
-@app.route("/api/holidays", methods=["POST"])
-def api_create_holiday():
-    data = request.json
-    session = get_db()
-    try:
-        h = Holiday(name=data["name"], date=data["date"],
-            is_recurring=data.get("is_recurring", False),
-            region=data.get("region"), source="manual")
-        session.add(h)
-        session.commit()
-        return jsonify({"success": True, "id": h.id})
-    except Exception as e:
-        session.rollback()
-        return jsonify({"error": str(e)}), 400
-    finally:
-        session.close()
-
-@app.route("/api/holidays/<int:hid>", methods=["DELETE"])
-def api_delete_holiday(hid):
-    session = get_db()
-    try:
-        h = session.get(Holiday, hid)
-        if h:
-            h.is_active = False
-            session.commit()
-        return jsonify({"success": True})
-    finally:
-        session.close()
-
-@app.route("/api/holidays/is-today", methods=["GET"])
-def api_is_today_holiday():
-    """Check if today is a holiday. Used by pattern engine for schedule decisions."""
-    now = datetime.now()
-    holidays = get_holidays_for_year(now.year)
-    today_str = now.strftime("%Y-%m-%d")
-    for h in holidays:
-        if h["date"] == today_str:
-            return jsonify({"is_holiday": True, "holiday": h})
-    return jsonify({"is_holiday": False})
-
-@app.route("/api/holidays/init-builtin", methods=["POST"])
-def api_init_builtin_holidays():
-    """Initialize builtin Austrian holidays in DB."""
-    session = get_db()
-    try:
-        added = 0
-        for h in BUILTIN_HOLIDAYS_AT:
-            existing = session.query(Holiday).filter_by(name=h["name"], source="builtin").first()
-            if not existing:
-                session.add(Holiday(name=h["name"], date=h["date"],
-                    is_recurring=h["recurring"], region=h["region"], source="builtin"))
-                added += 1
-        session.commit()
-        return jsonify({"success": True, "added": added})
-    finally:
-        session.close()
-
-
-@app.route("/api/ha/holiday-calendars", methods=["GET"])
-def api_get_ha_holiday_calendars():
-    """Get HA calendar entities from the holiday integration."""
-    states = ha.get_states() or []
-    # Holiday integration creates calendar.* entities with device_class or specific patterns
-    calendars = []
-    for s in states:
-        eid = s.get("entity_id", "")
-        attrs = s.get("attributes", {})
-        if eid.startswith("calendar."):
-            # Holiday integration calendars typically have country names
-            name = attrs.get("friendly_name", eid)
-            calendars.append({"entity_id": eid, "name": name})
-    return jsonify(calendars)
-
-
 # Startup
 # ==============================================================================
+
+# ==============================================================================
+# Phase 3: Day Phases API
+# ==============================================================================
+
+@app.route("/api/day-phases", methods=["GET"])
+def api_get_day_phases():
+    session = get_db()
+    try:
+        phases = session.query(DayPhase).order_by(DayPhase.sort_order).all()
+        return jsonify([{
+            "id": p.id, "name_de": p.name_de, "name_en": p.name_en,
+            "icon": p.icon, "color": p.color, "sort_order": p.sort_order,
+            "start_type": p.start_type, "start_time": p.start_time,
+            "sun_event": p.sun_event, "sun_offset_minutes": p.sun_offset_minutes,
+            "is_active": p.is_active,
+        } for p in phases])
+    finally:
+        session.close()
+
+@app.route("/api/day-phases", methods=["POST"])
+def api_create_day_phase():
+    data = request.json or {}
+    session = get_db()
+    try:
+        phase = DayPhase(
+            name_de=data.get("name_de", "Neue Phase"), name_en=data.get("name_en", "New Phase"),
+            icon=data.get("icon", "mdi:weather-sunset"), color=data.get("color", "#FFA500"),
+            sort_order=data.get("sort_order", 0), start_type=data.get("start_type", "time"),
+            start_time=data.get("start_time"), sun_event=data.get("sun_event"),
+            sun_offset_minutes=data.get("sun_offset_minutes", 0), is_active=data.get("is_active", True),
+        )
+        session.add(phase)
+        session.commit()
+        audit_log("day_phase_create", f"Phase: {phase.name_de}")
+        return jsonify({"id": phase.id, "success": True})
+    finally:
+        session.close()
+
+@app.route("/api/day-phases/<int:phase_id>", methods=["PUT"])
+def api_update_day_phase(phase_id):
+    data = request.json or {}
+    session = get_db()
+    try:
+        phase = session.get(DayPhase, phase_id)
+        if not phase: return jsonify({"error": "Not found"}), 404
+        for key in ["name_de","name_en","icon","color","sort_order","start_type","start_time","sun_event","sun_offset_minutes","is_active"]:
+            if key in data: setattr(phase, key, data[key])
+        session.commit()
+        return jsonify({"success": True})
+    finally:
+        session.close()
+
+@app.route("/api/day-phases/<int:phase_id>", methods=["DELETE"])
+def api_delete_day_phase(phase_id):
+    session = get_db()
+    try:
+        phase = session.get(DayPhase, phase_id)
+        if phase: session.delete(phase); session.commit()
+        return jsonify({"success": True})
+    finally:
+        session.close()
+
+@app.route("/api/day-phases/current", methods=["GET"])
+def api_current_day_phase():
+    try:
+        from ml.pattern_engine import ContextBuilder
+        builder = ContextBuilder(ha_connection, engine)
+        ctx = builder.build()
+        return jsonify({"day_phase": ctx.get("day_phase","unknown"), "day_phase_id": ctx.get("day_phase_id"), "time_slot": ctx.get("time_slot"), "is_dark": ctx.get("is_dark",False)})
+    except Exception as e:
+        return jsonify({"day_phase": "unknown", "error": str(e)})
+
+# Phase 3: Room Orientations
+@app.route("/api/room-orientations", methods=["GET"])
+def api_get_room_orientations():
+    session = get_db()
+    try:
+        return jsonify([{"id":o.id,"room_id":o.room_id,"orientation":o.orientation,"offset_minutes":o.offset_minutes} for o in session.query(RoomOrientation).all()])
+    finally:
+        session.close()
+
+@app.route("/api/room-orientations/<int:room_id>", methods=["PUT"])
+def api_set_room_orientation(room_id):
+    data = request.json or {}
+    session = get_db()
+    try:
+        existing = session.query(RoomOrientation).filter_by(room_id=room_id).first()
+        if existing:
+            existing.orientation = data.get("orientation", existing.orientation)
+            existing.offset_minutes = data.get("offset_minutes", existing.offset_minutes)
+        else:
+            session.add(RoomOrientation(room_id=room_id, orientation=data.get("orientation","S"), offset_minutes=data.get("offset_minutes",0)))
+        session.commit()
+        return jsonify({"success": True})
+    finally:
+        session.close()
+
+# Phase 3: Presence Modes
+@app.route("/api/presence-modes", methods=["GET"])
+def api_get_presence_modes():
+    session = get_db()
+    try:
+        return jsonify([{"id":m.id,"name_de":m.name_de,"name_en":m.name_en,"icon":m.icon,"color":m.color,"priority":m.priority,"buffer_minutes":m.buffer_minutes,"actions":m.actions or [],"trigger_type":m.trigger_type,"auto_config":m.auto_config,"notify_on_enter":m.notify_on_enter,"notify_on_leave":m.notify_on_leave,"is_system":m.is_system,"is_active":m.is_active} for m in session.query(PresenceMode).order_by(PresenceMode.priority.desc()).all()])
+    finally:
+        session.close()
+
+@app.route("/api/presence-modes", methods=["POST"])
+def api_create_presence_mode():
+    data = request.json or {}
+    session = get_db()
+    try:
+        mode = PresenceMode(name_de=data.get("name_de","Neuer Modus"), name_en=data.get("name_en","New Mode"), icon=data.get("icon","mdi:home"), color=data.get("color","#4CAF50"), priority=data.get("priority",0), buffer_minutes=data.get("buffer_minutes",5), actions=data.get("actions"), trigger_type=data.get("trigger_type","manual"), auto_config=data.get("auto_config"), is_active=data.get("is_active",True))
+        session.add(mode)
+        session.commit()
+        return jsonify({"id": mode.id, "success": True})
+    finally:
+        session.close()
+
+@app.route("/api/presence-modes/<int:mode_id>", methods=["PUT"])
+def api_update_presence_mode(mode_id):
+    data = request.json or {}
+    session = get_db()
+    try:
+        mode = session.get(PresenceMode, mode_id)
+        if not mode: return jsonify({"error": "Not found"}), 404
+        for key in ["name_de","name_en","icon","color","priority","buffer_minutes","actions","trigger_type","auto_config","notify_on_enter","notify_on_leave","is_active"]:
+            if key in data: setattr(mode, key, data[key])
+        session.commit()
+        return jsonify({"success": True})
+    finally:
+        session.close()
+
+@app.route("/api/presence-modes/<int:mode_id>", methods=["DELETE"])
+def api_delete_presence_mode(mode_id):
+    session = get_db()
+    try:
+        mode = session.get(PresenceMode, mode_id)
+        if not mode or mode.is_system: return jsonify({"error": "Cannot delete"}), 400
+        session.delete(mode); session.commit()
+        return jsonify({"success": True})
+    finally:
+        session.close()
+
+@app.route("/api/presence-modes/current", methods=["GET"])
+def api_current_presence_mode():
+    try:
+        return jsonify(automation_scheduler.presence_mgr.get_current_mode() or {"name_de":"Unbekannt","name_en":"Unknown"})
+    except Exception as e:
+        return jsonify({"error": str(e)})
+
+@app.route("/api/presence-modes/<int:mode_id>/activate", methods=["POST"])
+def api_activate_presence_mode(mode_id):
+    try:
+        return jsonify(automation_scheduler.presence_mgr.set_mode(mode_id, trigger="manual"))
+    except Exception as e:
+        return jsonify({"error": str(e)})
+
+@app.route("/api/presence-log", methods=["GET"])
+def api_presence_log():
+    session = get_db()
+    try:
+        logs = session.query(PresenceLog).order_by(PresenceLog.created_at.desc()).limit(50).all()
+        return jsonify([{"id":l.id,"mode_name":l.mode_name,"user_id":l.user_id,"trigger":l.trigger,"created_at":l.created_at.isoformat() if l.created_at else None} for l in logs])
+    finally:
+        session.close()
+
+# Phase 3: Person Devices & Guests
+@app.route("/api/person-devices", methods=["GET"])
+def api_get_person_devices():
+    session = get_db()
+    try:
+        return jsonify([{"id":d.id,"user_id":d.user_id,"entity_id":d.entity_id,"device_type":d.device_type,"timeout_minutes":d.timeout_minutes} for d in session.query(PersonDevice).filter_by(is_active=True).all()])
+    finally:
+        session.close()
+
+@app.route("/api/person-devices", methods=["POST"])
+def api_create_person_device():
+    data = request.json or {}
+    session = get_db()
+    try:
+        pd = PersonDevice(user_id=data["user_id"], entity_id=data["entity_id"], device_type=data.get("device_type","primary"), timeout_minutes=data.get("timeout_minutes",10))
+        session.add(pd); session.commit()
+        return jsonify({"id": pd.id, "success": True})
+    finally:
+        session.close()
+
+@app.route("/api/person-devices/<int:pd_id>", methods=["DELETE"])
+def api_delete_person_device(pd_id):
+    session = get_db()
+    try:
+        pd = session.get(PersonDevice, pd_id)
+        if pd: session.delete(pd); session.commit()
+        return jsonify({"success": True})
+    finally:
+        session.close()
+
+@app.route("/api/guest-devices", methods=["GET"])
+def api_get_guest_devices():
+    session = get_db()
+    try:
+        return jsonify([{"id":g.id,"mac_address":g.mac_address,"entity_id":g.entity_id,"name":g.name,"first_seen":g.first_seen.isoformat() if g.first_seen else None,"last_seen":g.last_seen.isoformat() if g.last_seen else None,"visit_count":g.visit_count,"auto_delete_days":g.auto_delete_days} for g in session.query(GuestDevice).order_by(GuestDevice.last_seen.desc()).all()])
+    finally:
+        session.close()
+
+@app.route("/api/guest-devices/<int:guest_id>", methods=["PUT"])
+def api_update_guest_device(guest_id):
+    data = request.json or {}
+    session = get_db()
+    try:
+        g = session.get(GuestDevice, guest_id)
+        if not g: return jsonify({"error": "Not found"}), 404
+        for key in ["name","auto_delete_days"]:
+            if key in data: setattr(g, key, data[key])
+        session.commit()
+        return jsonify({"success": True})
+    finally:
+        session.close()
+
+@app.route("/api/guest-devices/<int:guest_id>", methods=["DELETE"])
+def api_delete_guest_device(guest_id):
+    session = get_db()
+    try:
+        g = session.get(GuestDevice, guest_id)
+        if g: session.delete(g); session.commit()
+        return jsonify({"success": True})
+    finally:
+        session.close()
+
+# Phase 3: Sensor Groups & Thresholds
+@app.route("/api/sensor-groups", methods=["GET"])
+def api_get_sensor_groups():
+    session = get_db()
+    try:
+        return jsonify([{"id":g.id,"name":g.name,"room_id":g.room_id,"entity_ids":g.entity_ids or [],"fusion_method":g.fusion_method,"is_active":g.is_active} for g in session.query(SensorGroup).all()])
+    finally:
+        session.close()
+
+@app.route("/api/sensor-groups", methods=["POST"])
+def api_create_sensor_group():
+    data = request.json or {}
+    session = get_db()
+    try:
+        sg = SensorGroup(name=data.get("name","Gruppe"), room_id=data.get("room_id"), entity_ids=data.get("entity_ids",[]), fusion_method=data.get("fusion_method","average"))
+        session.add(sg); session.commit()
+        return jsonify({"id": sg.id, "success": True})
+    finally:
+        session.close()
+
+@app.route("/api/sensor-groups/<int:group_id>", methods=["DELETE"])
+def api_delete_sensor_group(group_id):
+    session = get_db()
+    try:
+        sg = session.get(SensorGroup, group_id)
+        if sg: session.delete(sg); session.commit()
+        return jsonify({"success": True})
+    finally:
+        session.close()
+
+@app.route("/api/sensor-thresholds", methods=["GET"])
+def api_get_sensor_thresholds():
+    session = get_db()
+    try:
+        return jsonify([{"id":t.id,"entity_id":t.entity_id,"min_change_percent":t.min_change_percent,"min_change_absolute":t.min_change_absolute,"min_interval_seconds":t.min_interval_seconds} for t in session.query(SensorThreshold).all()])
+    finally:
+        session.close()
+
+@app.route("/api/sensor-thresholds", methods=["POST"])
+def api_create_sensor_threshold():
+    data = request.json or {}
+    session = get_db()
+    try:
+        st = SensorThreshold(entity_id=data.get("entity_id"), min_change_percent=data.get("min_change_percent",5.0), min_change_absolute=data.get("min_change_absolute"), min_interval_seconds=data.get("min_interval_seconds",60))
+        session.add(st); session.commit()
+        return jsonify({"id": st.id, "success": True})
+    finally:
+        session.close()
+
+@app.route("/api/sensor-thresholds/<int:tid>", methods=["DELETE"])
+def api_delete_sensor_threshold(tid):
+    session = get_db()
+    try:
+        st = session.get(SensorThreshold, tid)
+        if st: session.delete(st); session.commit()
+        return jsonify({"success": True})
+    finally:
+        session.close()
+
+# Phase 3: Energy Dashboard
+@app.route("/api/energy/config", methods=["GET"])
+def api_get_energy_config():
+    session = get_db()
+    try:
+        cfg = session.query(EnergyConfig).first()
+        if not cfg: return jsonify({"price_per_kwh":0.25,"currency":"EUR","solar_enabled":False})
+        return jsonify({"id":cfg.id,"price_per_kwh":cfg.price_per_kwh,"currency":cfg.currency,"solar_enabled":cfg.solar_enabled,"solar_entity":cfg.solar_entity,"grid_import_entity":cfg.grid_import_entity,"grid_export_entity":cfg.grid_export_entity})
+    finally:
+        session.close()
+
+@app.route("/api/energy/config", methods=["PUT"])
+def api_update_energy_config():
+    data = request.json or {}
+    session = get_db()
+    try:
+        cfg = session.query(EnergyConfig).first()
+        if not cfg: cfg = EnergyConfig(); session.add(cfg)
+        for key in ["price_per_kwh","currency","solar_enabled","solar_entity","grid_import_entity","grid_export_entity"]:
+            if key in data: setattr(cfg, key, data[key])
+        session.commit()
+        return jsonify({"success": True})
+    finally:
+        session.close()
+
+@app.route("/api/energy/readings", methods=["GET"])
+def api_get_energy_readings():
+    session = get_db()
+    try:
+        hours = request.args.get("hours", 24, type=int)
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+        readings = session.query(EnergyReading).filter(EnergyReading.created_at >= cutoff).order_by(EnergyReading.created_at.desc()).limit(500).all()
+        return jsonify([{"id":r.id,"entity_id":r.entity_id,"device_id":r.device_id,"room_id":r.room_id,"power_w":r.power_w,"energy_kwh":r.energy_kwh,"reading_type":r.reading_type,"created_at":r.created_at.isoformat() if r.created_at else None} for r in readings])
+    finally:
+        session.close()
+
+@app.route("/api/energy/standby-config", methods=["GET"])
+def api_get_standby_configs():
+    session = get_db()
+    try:
+        return jsonify([{"id":c.id,"device_id":c.device_id,"entity_id":c.entity_id,"threshold_watts":c.threshold_watts,"idle_minutes":c.idle_minutes,"notify_dashboard":c.notify_dashboard,"auto_off":c.auto_off,"is_active":c.is_active} for c in session.query(StandbyConfig).all()])
+    finally:
+        session.close()
+
+@app.route("/api/energy/standby-config", methods=["POST"])
+def api_create_standby_config():
+    data = request.json or {}
+    session = get_db()
+    try:
+        sc = StandbyConfig(device_id=data.get("device_id"), entity_id=data.get("entity_id"), threshold_watts=data.get("threshold_watts",5.0), idle_minutes=data.get("idle_minutes",30), auto_off=data.get("auto_off",False))
+        session.add(sc); session.commit()
+        return jsonify({"id": sc.id, "success": True})
+    finally:
+        session.close()
+
+# Phase 3: Scenes
+@app.route("/api/scenes", methods=["GET"])
+def api_get_scenes():
+    session = get_db()
+    try:
+        return jsonify([{"id":s.id,"room_id":s.room_id,"name_de":s.name_de,"name_en":s.name_en,"icon":s.icon,"states":s.states or [],"frequency":s.frequency,"status":s.status,"source":s.source,"is_active":s.is_active,"last_activated":s.last_activated.isoformat() if s.last_activated else None} for s in session.query(LearnedScene).order_by(LearnedScene.frequency.desc()).all()])
+    finally:
+        session.close()
+
+@app.route("/api/scenes", methods=["POST"])
+def api_create_scene():
+    data = request.json or {}
+    session = get_db()
+    try:
+        scene = LearnedScene(room_id=data.get("room_id"), name_de=data.get("name_de","Neue Szene"), name_en=data.get("name_en","New Scene"), icon=data.get("icon","mdi:palette"), states=data.get("states",[]), status="accepted", source="manual")
+        session.add(scene); session.commit()
+        audit_log("scene_create", f"Scene: {scene.name_de}")
+        return jsonify({"id": scene.id, "success": True})
+    finally:
+        session.close()
+
+@app.route("/api/scenes/<int:scene_id>", methods=["PUT"])
+def api_update_scene(scene_id):
+    data = request.json or {}
+    session = get_db()
+    try:
+        scene = session.get(LearnedScene, scene_id)
+        if not scene: return jsonify({"error": "Not found"}), 404
+        for key in ["name_de","name_en","icon","states","status","is_active"]:
+            if key in data: setattr(scene, key, data[key])
+        session.commit()
+        return jsonify({"success": True})
+    finally:
+        session.close()
+
+@app.route("/api/scenes/<int:scene_id>/activate", methods=["POST"])
+def api_activate_scene(scene_id):
+    session = get_db()
+    try:
+        scene = session.get(LearnedScene, scene_id)
+        if not scene: return jsonify({"error": "Not found"}), 404
+        for si in (scene.states or []):
+            eid = si.get("entity_id","")
+            ts = si.get("state","")
+            attrs = si.get("attributes",{})
+            if eid:
+                domain = eid.split(".")[0]
+                if ts == "on": ha_connection.call_service(domain, "turn_on", attrs, entity_id=eid)
+                elif ts == "off": ha_connection.call_service(domain, "turn_off", entity_id=eid)
+        scene.last_activated = datetime.now(timezone.utc)
+        session.commit()
+        return jsonify({"success": True})
+    finally:
+        session.close()
+
+@app.route("/api/scenes/<int:scene_id>", methods=["DELETE"])
+def api_delete_scene(scene_id):
+    session = get_db()
+    try:
+        scene = session.get(LearnedScene, scene_id)
+        if scene: session.delete(scene); session.commit()
+        return jsonify({"success": True})
+    finally:
+        session.close()
+
+# Phase 3: Plugin Settings
+@app.route("/api/plugin-settings", methods=["GET"])
+def api_get_plugin_settings():
+    session = get_db()
+    try:
+        plugin_name = request.args.get("plugin")
+        query = session.query(PluginSetting)
+        if plugin_name: query = query.filter_by(plugin_name=plugin_name)
+        result = {}
+        for s in query.all():
+            if s.plugin_name not in result: result[s.plugin_name] = {}
+            result[s.plugin_name][s.setting_key] = s.setting_value
+        return jsonify(result)
+    finally:
+        session.close()
+
+@app.route("/api/plugin-settings/<plugin_name>", methods=["PUT"])
+def api_update_plugin_settings(plugin_name):
+    data = request.json or {}
+    session = get_db()
+    try:
+        for key, value in data.items():
+            existing = session.query(PluginSetting).filter_by(plugin_name=plugin_name, setting_key=key).first()
+            str_val = json.dumps(value) if not isinstance(value, str) else value
+            if existing: existing.setting_value = str_val
+            else: session.add(PluginSetting(plugin_name=plugin_name, setting_key=key, setting_value=str_val))
+        session.commit()
+        return jsonify({"success": True})
+    finally:
+        session.close()
+
+# Phase 3: Quiet Hours
+@app.route("/api/quiet-hours", methods=["GET"])
+def api_get_quiet_hours():
+    session = get_db()
+    try:
+        return jsonify([{"id":c.id,"user_id":c.user_id,"name":c.name,"start_time":c.start_time,"end_time":c.end_time,"linked_to_shift":c.linked_to_shift,"linked_to_day_phase":c.linked_to_day_phase,"allow_critical":c.allow_critical,"is_active":c.is_active} for c in session.query(QuietHoursConfig).all()])
+    finally:
+        session.close()
+
+@app.route("/api/quiet-hours", methods=["POST"])
+def api_create_quiet_hours():
+    data = request.json or {}
+    session = get_db()
+    try:
+        qh = QuietHoursConfig(name=data.get("name","Nachtruhe"), start_time=data.get("start_time","22:00"), end_time=data.get("end_time","07:00"), linked_to_shift=data.get("linked_to_shift",False), allow_critical=data.get("allow_critical",True), is_active=data.get("is_active",True))
+        session.add(qh); session.commit()
+        return jsonify({"id": qh.id, "success": True})
+    finally:
+        session.close()
+
+@app.route("/api/quiet-hours/<int:qh_id>", methods=["PUT"])
+def api_update_quiet_hours(qh_id):
+    data = request.json or {}
+    session = get_db()
+    try:
+        qh = session.get(QuietHoursConfig, qh_id)
+        if not qh: return jsonify({"error": "Not found"}), 404
+        for key in ["name","start_time","end_time","linked_to_shift","linked_to_day_phase","allow_critical","is_active"]:
+            if key in data: setattr(qh, key, data[key])
+        session.commit()
+        return jsonify({"success": True})
+    finally:
+        session.close()
+
+@app.route("/api/quiet-hours/<int:qh_id>", methods=["DELETE"])
+def api_delete_quiet_hours(qh_id):
+    session = get_db()
+    try:
+        qh = session.get(QuietHoursConfig, qh_id)
+        if qh: session.delete(qh); session.commit()
+        return jsonify({"success": True})
+    finally:
+        session.close()
+
+# Phase 3: School Vacations
+@app.route("/api/school-vacations", methods=["GET"])
+def api_get_school_vacations():
+    session = get_db()
+    try:
+        return jsonify([{"id":v.id,"name_de":v.name_de,"name_en":v.name_en,"start_date":v.start_date,"end_date":v.end_date,"region":v.region,"source":v.source,"is_active":v.is_active} for v in session.query(SchoolVacation).order_by(SchoolVacation.start_date).all()])
+    finally:
+        session.close()
+
+@app.route("/api/school-vacations", methods=["POST"])
+def api_create_school_vacation():
+    data = request.json or {}
+    session = get_db()
+    try:
+        sv = SchoolVacation(name_de=data.get("name_de","Ferien"), name_en=data.get("name_en","Vacation"), start_date=data["start_date"], end_date=data["end_date"], region=data.get("region","AT-NO"), source="manual")
+        session.add(sv); session.commit()
+        return jsonify({"id": sv.id, "success": True})
+    finally:
+        session.close()
+
+@app.route("/api/school-vacations/<int:sv_id>", methods=["DELETE"])
+def api_delete_school_vacation(sv_id):
+    session = get_db()
+    try:
+        sv = session.get(SchoolVacation, sv_id)
+        if sv: session.delete(sv); session.commit()
+        return jsonify({"success": True})
+    finally:
+        session.close()
+
+# Phase 3: Sun, Weather, Persons
+@app.route("/api/sun", methods=["GET"])
+def api_get_sun():
+    return jsonify(ha_connection.get_sun_state() or {"error": "unavailable"})
+
+@app.route("/api/sun/events", methods=["GET"])
+def api_get_sun_events():
+    return jsonify(ha_connection.get_sun_events_today())
+
+@app.route("/api/weather/current", methods=["GET"])
+def api_get_weather_current():
+    return jsonify(ha_connection.get_weather() or {"error": "unavailable"})
+
+@app.route("/api/persons", methods=["GET"])
+def api_get_persons():
+    return jsonify(ha_connection.get_all_persons())
+
+@app.route("/api/persons/home", methods=["GET"])
+def api_get_persons_home():
+    return jsonify(ha_connection.get_persons_home())
+
+# Phase 3: Context & Plugin Evaluate
+@app.route("/api/context", methods=["GET"])
+def api_get_context():
+    try:
+        from ml.pattern_engine import ContextBuilder
+        builder = ContextBuilder(ha_connection, engine)
+        return jsonify(builder.build())
+    except Exception as e:
+        return jsonify({"error": str(e)})
+
+@app.route("/api/plugins/evaluate", methods=["POST"])
+def api_evaluate_plugins():
+    results = {}
+    try:
+        if domain_manager:
+            from ml.pattern_engine import ContextBuilder
+            builder = ContextBuilder(ha_connection, engine)
+            ctx = builder.build()
+            for name, plugin in domain_manager.plugins.items():
+                try:
+                    results[name] = plugin.evaluate(ctx) or []
+                except Exception as e:
+                    results[name] = {"error": str(e)}
+    except Exception as e:
+        return jsonify({"error": str(e)})
+    return jsonify(results)
+
 
 def start_app():
     """Initialize and start MindHome. (#10 Self-Test)"""
@@ -5605,20 +5360,6 @@ def start_app():
                         d.is_enabled = True
                     _dm_session.commit()
                     logger.info(f"Auto-enabled {len(all_domains)} domains (first start)")
-
-                # Register custom domains in DOMAIN_PLUGINS so they get tracked
-                custom_domains = _dm_session.query(Domain).filter_by(is_custom=True, is_enabled=True).all()
-                for cd in custom_domains:
-                    if cd.name not in DOMAIN_PLUGINS:
-                        DOMAIN_PLUGINS[cd.name] = {
-                            "ha_domain": cd.name,
-                            "attributes": [],
-                            "controls": ["toggle"],
-                            "pattern_features": ["time_of_day", "state_change", "duration"],
-                            "icon": cd.icon or "mdi:puzzle",
-                            "is_custom": True,
-                        }
-                        logger.info(f"Registered custom domain plugin: {cd.name}")
             finally:
                 _dm_session.close()
             domain_manager.start_enabled_domains()
