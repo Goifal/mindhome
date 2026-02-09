@@ -1,10 +1,36 @@
 ARG BUILD_FROM
 FROM ${BUILD_FROM}
 
-# BUILD:20260209-1153
+# BUILD:20260209-1155
 
+# Install minimal system dependencies
+RUN apk add --no-cache \
+    py3-pip \
+    gcc \
+    musl-dev \
+    python3-dev \
+    gfortran \
+    openblas-dev
+
+# Copy and install Python requirements
+COPY rootfs/opt/mindhome/requirements.txt /tmp/
+RUN pip3 install --no-cache-dir --break-system-packages -r /tmp/requirements.txt
+
+# Remove build dependencies to save space
+RUN apk del gcc musl-dev python3-dev gfortran
+
+# Copy application files
 COPY rootfs /
+
+# Create data directories
+RUN mkdir -p /data/mindhome/db \
+    && mkdir -p /data/mindhome/models \
+    && mkdir -p /data/mindhome/backups \
+    && mkdir -p /data/mindhome/logs
+
+# Set permissions
 RUN chmod a+x /opt/mindhome/run.sh
-RUN pip3 install --no-cache-dir flask==3.0.0 sqlalchemy==2.0.23 requests==2.31.0 \
-    websocket-client==1.7.0 python-dateutil==2.8.2 pytz==2023.3 \
-    Werkzeug==3.0.1 Jinja2==3.1.2 MarkupSafe==2.1.3 pdfplumber==0.10.3
+
+WORKDIR /opt/mindhome
+
+CMD ["/opt/mindhome/run.sh"]
