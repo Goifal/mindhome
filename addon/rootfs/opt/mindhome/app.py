@@ -3807,7 +3807,7 @@ def api_energy_summary():
         auto_count = session.query(sa_func.count(ActionLog.id)).filter(
             ActionLog.action_type == "automation_executed",
             ActionLog.created_at > cutoff,
-            ActionLog.new_value.like("%off%")
+            ActionLog.reason.like("%off%")
         ).scalar() or 0
         summary["automations_off_count"] = auto_count
         summary["estimated_kwh_saved"] = round(auto_count * 0.06, 2)
@@ -5157,8 +5157,8 @@ def api_activate_scene(scene_id):
             attrs = si.get("attributes",{})
             if eid:
                 domain = eid.split(".")[0]
-                if ts == "on": ha_connection.call_service(domain, "turn_on", attrs, entity_id=eid)
-                elif ts == "off": ha_connection.call_service(domain, "turn_off", entity_id=eid)
+                if ts == "on": ha.call_service(domain, "turn_on", attrs, entity_id=eid)
+                elif ts == "off": ha.call_service(domain, "turn_off", entity_id=eid)
         scene.last_activated = datetime.now(timezone.utc)
         session.commit()
         return jsonify({"success": True})
@@ -5283,23 +5283,23 @@ def api_delete_school_vacation(sv_id):
 # Phase 3: Sun, Weather, Persons
 @app.route("/api/sun", methods=["GET"])
 def api_get_sun():
-    return jsonify(ha_connection.get_sun_state() or {"error": "unavailable"})
+    return jsonify(ha.get_sun_state() or {"error": "unavailable"})
 
 @app.route("/api/sun/events", methods=["GET"])
 def api_get_sun_events():
-    return jsonify(ha_connection.get_sun_events_today())
+    return jsonify(ha.get_sun_events_today())
 
 @app.route("/api/weather/current", methods=["GET"])
 def api_get_weather_current():
-    return jsonify(ha_connection.get_weather() or {"error": "unavailable"})
+    return jsonify(ha.get_weather() or {"error": "unavailable"})
 
 @app.route("/api/persons", methods=["GET"])
 def api_get_persons():
-    return jsonify(ha_connection.get_all_persons())
+    return jsonify(ha.get_all_persons())
 
 @app.route("/api/persons/home", methods=["GET"])
 def api_get_persons_home():
-    return jsonify(ha_connection.get_persons_home())
+    return jsonify(ha.get_persons_home())
 
 # Phase 3: Context & Plugin Evaluate
 @app.route("/api/context", methods=["GET"])
