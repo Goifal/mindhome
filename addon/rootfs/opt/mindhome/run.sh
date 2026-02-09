@@ -51,12 +51,6 @@ if [ ! -f "${MINDHOME_DB_PATH}" ]; then
     fi
 fi
 
-# Install Python dependencies if needed (BUILD:20260209-1120)
-if ! python3 -c "import pdfplumber" 2>/dev/null; then
-    bashio::log.info "Installing Python dependencies..."
-    pip3 install --no-cache-dir pdfplumber 2>&1 || bashio::log.warning "pdfplumber install failed - PDF import unavailable"
-fi
-
 # Start the MindHome application
 bashio::log.info "MindHome is ready!"
 exec python3 /opt/mindhome/app.py
