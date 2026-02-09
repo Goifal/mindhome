@@ -1,6 +1,7 @@
 """
-MindHome - Automation Engine (Phase 2b)
+MindHome - Automation Engine (Phase 2b + Phase 3)
 Suggestions, execution, undo, conflict detection, phase management.
+Phase 3: Presence modes, plugin conflicts, quiet hours, holiday awareness.
 """
 
 import os
@@ -16,7 +17,9 @@ from sqlalchemy.orm import sessionmaker
 from models import (
     get_engine, LearnedPattern, Prediction, Device, Domain, Room,
     RoomDomainState, LearningPhase, ActionLog, NotificationLog,
-    NotificationType, NotificationSetting, SystemSetting, StateHistory
+    NotificationType, NotificationSetting, SystemSetting, StateHistory,
+    PresenceMode, PresenceLog, PluginSetting, QuietHoursConfig,
+    LearnedScene, DayPhase
 )
 
 logger = logging.getLogger("mindhome.automation_engine")
@@ -290,7 +293,7 @@ class AutomationExecutor:
                 status="active", is_active=True
             ).all()
 
-            now = datetime.now(timezone.utc)
+            now = datetime.now()
 
             for pattern in active_patterns:
                 trigger = pattern.trigger_conditions or {}
@@ -685,7 +688,7 @@ class PhaseManager:
 
         # Days since phase started
         if rds.phase_started_at:
-            days = (datetime.now(timezone.utc) - (rds.phase_started_at.replace(tzinfo=timezone.utc) if rds.phase_started_at.tzinfo is None else rds.phase_started_at)).days
+            days = (datetime.utcnow().replace(tzinfo=None) - rds.phase_started_at.replace(tzinfo=None)).days
             if days < t["min_days"]:
                 return None
 
@@ -730,7 +733,7 @@ class PhaseManager:
         t = self.SUGGEST_TO_AUTONOMOUS
 
         if rds.phase_started_at:
-            days = (datetime.now(timezone.utc) - (rds.phase_started_at.replace(tzinfo=timezone.utc) if rds.phase_started_at.tzinfo is None else rds.phase_started_at)).days
+            days = (datetime.utcnow().replace(tzinfo=None) - rds.phase_started_at.replace(tzinfo=None)).days
             if days < t["min_days"]:
                 return None
 
@@ -910,8 +913,8 @@ class AnomalyDetector:
         # More than 2.5 standard deviations = anomaly
         if diff > std_dev * 2.5 and diff > 3:
             return self._build_anomaly(session, event, hour,
-                f"um {hour}:00 Uhr aktiviert (normalerweise ~{int(mean_hour)}:00 +/-{int(std_dev)}h)",
-                f"activated at {hour}:00 (usually ~{int(mean_hour)}:00 +/-{int(std_dev)}h)")
+                f"um {hour}:00 Uhr aktiviert (normalerweise ~{int(mean_hour)}:00 Â±{int(std_dev)}h)",
+                f"activated at {hour}:00 (usually ~{int(mean_hour)}:00 Â±{int(std_dev)}h)")
 
         return None
 
@@ -926,7 +929,7 @@ class AnomalyDetector:
 
         if change_count >= 10:
             return self._build_anomaly(session, event, None,
-                f"hat sich {change_count}x in 10 Minuten geaendert (moegliche Stoerung)",
+                f"hat sich {change_count}x in 10 Minuten geÃ¤ndert (mÃ¶gliche StÃ¶rung)",
                 f"changed {change_count} times in 10 minutes (possible fault)",
                 severity="critical")
 
@@ -1044,7 +1047,7 @@ class AnomalyDetector:
                     "recent_events": recent,
                     "daily_average": round(weekly_avg),
                     "ratio": round(recent / weekly_avg, 1),
-                    "message_de": f"Ungewoehnlich hohe Aktivitaet: {recent} Events (Avg {weekly_avg:.0f})",
+                    "message_de": f"UngewÃ¶hnlich hohe AktivitÃ¤t: {recent} Events (Ã˜ {weekly_avg:.0f})",
                     "message_en": f"Unusually high activity: {recent} events (avg {weekly_avg:.0f})",
                 }
             return {"guest_likely": False, "recent_events": recent, "daily_average": round(weekly_avg)}
@@ -1111,7 +1114,7 @@ class NotificationManager:
         session = self.Session()
         try:
             entity_id = anomaly.get("entity_id", "")
-            title = "MindHome: Ungewoehnliche Aktivitaet" if lang == "de" else "MindHome: Unusual Activity"
+            title = "MindHome: UngewÃ¶hnliche AktivitÃ¤t" if lang == "de" else "MindHome: Unusual Activity"
             message = anomaly.get("reason_de" if lang == "de" else "reason_en", "")
 
             # Dedup: check if we already notified about this entity in last 24h
@@ -1215,6 +1218,241 @@ class NotificationManager:
 
 
 # ==============================================================================
+# Phase 3: Presence Mode Manager
+# ==============================================================================
+
+class PresenceModeManager:
+    """Manages presence modes and transitions."""
+
+    def __init__(self, engine, ha_connection):
+        self.engine = engine
+        self.ha = ha_connection
+        self.Session = sessionmaker(bind=engine)
+        self._current_mode = None
+
+    def get_current_mode(self):
+        """Get current active presence mode."""
+        session = self.Session()
+        try:
+            last = session.query(PresenceLog).order_by(PresenceLog.created_at.desc()).first()
+            if last and last.mode_id:
+                mode = session.get(PresenceMode, last.mode_id)
+                if mode:
+                    return {
+                        "id": mode.id, "name_de": mode.name_de, "name_en": mode.name_en,
+                        "icon": mode.icon, "color": mode.color, "since": last.created_at.isoformat(),
+                    }
+            return None
+        finally:
+            session.close()
+
+    def set_mode(self, mode_id, user_id=None, trigger="manual"):
+        """Activate a presence mode and execute its actions."""
+        session = self.Session()
+        try:
+            mode = session.get(PresenceMode, mode_id)
+            if not mode:
+                return {"error": "Mode not found"}
+
+            # Log the transition
+            log = PresenceLog(
+                mode_id=mode.id, mode_name=mode.name_de,
+                user_id=user_id, trigger=trigger,
+            )
+            session.add(log)
+
+            # Execute mode actions
+            actions = mode.actions or []
+            for action in actions:
+                try:
+                    entity_id = action.get("entity_id", "")
+                    service = action.get("service", "")
+                    data = action.get("data", {})
+                    if entity_id and service:
+                        domain = entity_id.split(".")[0]
+                        data["entity_id"] = entity_id
+                        self.ha.call_service(domain, service, data)
+                except Exception as e:
+                    logger.warning(f"Mode action error: {e}")
+
+            session.commit()
+            self._current_mode = mode.id
+            logger.info(f"Presence mode: {mode.name_de} (trigger: {trigger})")
+            return {"success": True, "mode": mode.name_de}
+        except Exception as e:
+            session.rollback()
+            return {"error": str(e)}
+        finally:
+            session.close()
+
+    def check_auto_transitions(self):
+        """Check if presence mode should change based on person states."""
+        session = self.Session()
+        try:
+            persons_home = self.ha.get_persons_home()
+            anyone_home = len(persons_home) > 0
+
+            modes = session.query(PresenceMode).filter_by(
+                is_active=True, trigger_type="auto"
+            ).order_by(PresenceMode.priority.desc()).all()
+
+            for mode in modes:
+                config = mode.auto_config or {}
+                condition = config.get("condition")
+
+                if condition == "all_away" and not anyone_home:
+                    if self._current_mode != mode.id:
+                        self.set_mode(mode.id, trigger="auto")
+                    return
+                elif condition == "first_home" and anyone_home:
+                    if self._current_mode != mode.id:
+                        self.set_mode(mode.id, trigger="auto")
+                    return
+                elif condition == "all_home":
+                    all_persons = self.ha.get_all_persons()
+                    if all(p["state"] == "home" for p in all_persons):
+                        if self._current_mode != mode.id:
+                            self.set_mode(mode.id, trigger="auto")
+                        return
+        except Exception as e:
+            logger.warning(f"Presence auto-transition error: {e}")
+        finally:
+            session.close()
+
+
+# ==============================================================================
+# Phase 3: Plugin Conflict Detector
+# ==============================================================================
+
+class PluginConflictDetector:
+    """Detects conflicts between domain plugin actions."""
+
+    CONFLICT_RULES = [
+        # (domain_a, state_a, domain_b, state_b, message_de, message_en)
+        ("climate", "heating", "door_window", "open",
+         "Heizung läuft aber Fenster ist offen",
+         "Heating is on but window is open"),
+        ("climate", "cooling", "door_window", "open",
+         "Klimaanlage läuft aber Fenster ist offen",
+         "AC is on but window is open"),
+        ("cover", "closed", "ventilation", "boost",
+         "Rollos geschlossen aber Lüftung auf Boost",
+         "Covers closed but ventilation on boost"),
+    ]
+
+    def __init__(self, engine, ha_connection):
+        self.engine = engine
+        self.ha = ha_connection
+        self.Session = sessionmaker(bind=engine)
+
+    def check_conflicts(self):
+        """Check for active plugin conflicts based on current HA states."""
+        conflicts = []
+        try:
+            states = self.ha.get_states() or []
+            state_map = {s["entity_id"]: s for s in states}
+
+            session = self.Session()
+            devices = session.query(Device).filter(Device.room_id.isnot(None)).all()
+
+            # Group devices by room
+            room_devices = defaultdict(list)
+            for d in devices:
+                room_devices[d.room_id].append(d)
+
+            for room_id, devs in room_devices.items():
+                # Check each conflict rule
+                for rule in self.CONFLICT_RULES:
+                    domain_a, check_a, domain_b, check_b, msg_de, msg_en = rule
+
+                    has_a = False
+                    has_b = False
+
+                    for d in devs:
+                        domain = session.get(Domain, d.domain_id)
+                        if not domain:
+                            continue
+                        ha_state = state_map.get(d.ha_entity_id, {})
+                        state_val = ha_state.get("state", "")
+                        attrs = ha_state.get("attributes", {})
+
+                        if domain.name == domain_a:
+                            if check_a == "heating" and attrs.get("hvac_action") == "heating":
+                                has_a = True
+                            elif check_a == "cooling" and attrs.get("hvac_action") == "cooling":
+                                has_a = True
+
+                        if domain.name == domain_b:
+                            if check_b == "open" and state_val == "on":
+                                has_b = True
+
+                    if has_a and has_b:
+                        room = session.get(Room, room_id)
+                        conflicts.append({
+                            "room_id": room_id,
+                            "room_name": room.name if room else f"Room {room_id}",
+                            "message_de": msg_de,
+                            "message_en": msg_en,
+                            "severity": "warning",
+                        })
+
+            session.close()
+        except Exception as e:
+            logger.warning(f"Plugin conflict check error: {e}")
+
+        return conflicts
+
+
+# ==============================================================================
+# Phase 3: Quiet Hours Manager
+# ==============================================================================
+
+class QuietHoursManager:
+    """Check if current time is within quiet hours."""
+
+    def __init__(self, engine):
+        self.engine = engine
+        self.Session = sessionmaker(bind=engine)
+
+    def is_quiet_time(self, user_id=None):
+        """Check if we're currently in quiet hours."""
+        session = self.Session()
+        try:
+            configs = session.query(QuietHoursConfig).filter_by(is_active=True).all()
+            now = datetime.now()
+            current_minutes = now.hour * 60 + now.minute
+
+            for config in configs:
+                if config.user_id and config.user_id != user_id:
+                    continue
+
+                start_h, start_m = map(int, config.start_time.split(":"))
+                end_h, end_m = map(int, config.end_time.split(":"))
+                start_min = start_h * 60 + start_m
+                end_min = end_h * 60 + end_m
+
+                if start_min > end_min:  # overnight (e.g. 22:00-07:00)
+                    if current_minutes >= start_min or current_minutes < end_min:
+                        return True
+                else:
+                    if start_min <= current_minutes < end_min:
+                        return True
+
+            return False
+        finally:
+            session.close()
+
+    def should_allow(self, notification_type="info"):
+        """Check if a notification should be sent during quiet hours."""
+        if not self.is_quiet_time():
+            return True
+        # Critical notifications always go through
+        if notification_type in ("critical", "emergency"):
+            return True
+        return False
+
+
+# ==============================================================================
 # Phase 2b Scheduler (extends PatternScheduler)
 # ==============================================================================
 
@@ -1231,11 +1469,15 @@ class AutomationScheduler:
         self.notification_mgr = NotificationManager(engine, ha_connection)
         self.conflict_det = ConflictDetector(engine)
         self.feedback = FeedbackProcessor(engine)
+        # Phase 3
+        self.presence_mgr = PresenceModeManager(engine, ha_connection)
+        self.plugin_conflict_det = PluginConflictDetector(engine, ha_connection)
+        self.quiet_hours_mgr = QuietHoursManager(engine)
         self._should_run = True
         self._threads = []
 
     def start(self):
-        """Start Phase 2b background tasks."""
+        """Start Phase 2b + Phase 3 background tasks."""
         logger.info("Starting Automation Scheduler...")
 
         # Automation check: every 1 minute
@@ -1264,7 +1506,21 @@ class AutomationScheduler:
         t4.start()
         self._threads.append(t4)
 
-        logger.info("Automation Scheduler started (exec:1min, suggest:4h, phase:12h, anomaly:15min)")
+        # Phase 3: Presence mode check: every 2 minutes
+        t6 = threading.Thread(target=self._run_periodic,
+                              args=(self.presence_mgr.check_auto_transitions, 120, "presence_check"),
+                              daemon=True)
+        t6.start()
+        self._threads.append(t6)
+
+        # Phase 3: Plugin conflict check: every 5 minutes
+        t7 = threading.Thread(target=self._run_periodic,
+                              args=(self._plugin_conflict_task, 300, "plugin_conflicts"),
+                              daemon=True)
+        t7.start()
+        self._threads.append(t7)
+
+        logger.info("Automation Scheduler started (exec:1min, suggest:4h, phase:12h, anomaly:15min, presence:2min, conflicts:5min)")
 
         # #40 Watchdog: monitor thread health every 5 min
         t5 = threading.Thread(target=self._watchdog_task, daemon=True)
@@ -1326,3 +1582,18 @@ class AutomationScheduler:
             while slept < 900 and self._should_run:  # 15 min
                 time.sleep(10)
                 slept += 10
+
+    def _plugin_conflict_task(self):
+        """Phase 3: Check for plugin conflicts."""
+        try:
+            conflicts = self.plugin_conflict_det.check_conflicts()
+            for c in conflicts[:3]:
+                if not self.quiet_hours_mgr.is_quiet_time():
+                    self.notification_mgr.notify_anomaly({
+                        "entity_id": "",
+                        "reason_de": c["message_de"],
+                        "reason_en": c["message_en"],
+                        "type": "plugin_conflict",
+                    })
+        except Exception as e:
+            logger.warning(f"Plugin conflict task error: {e}")
