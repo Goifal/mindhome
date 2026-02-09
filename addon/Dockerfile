@@ -1,32 +1,22 @@
 ARG BUILD_FROM
 FROM ${BUILD_FROM}
 
-# Install minimal system dependencies
+# Install system dependencies for pdfplumber (needs C compiler for pdfminer)
 RUN apk add --no-cache \
-    py3-pip \
-    gcc \
-    musl-dev \
-    python3-dev
+    build-base \
+    libffi-dev
 
-# Copy and install Python requirements
-COPY rootfs/opt/mindhome/requirements.txt /tmp/
-RUN pip3 install --no-cache-dir --break-system-packages -r /tmp/requirements.txt
-
-# Remove build dependencies to save space
-RUN apk del gcc musl-dev python3-dev
-
-# Copy application files
+# Copy application
 COPY rootfs /
 
-# Create data directories
-RUN mkdir -p /data/mindhome/db \
-    && mkdir -p /data/mindhome/models \
-    && mkdir -p /data/mindhome/backups \
-    && mkdir -p /data/mindhome/logs
+# Install Python dependencies
+RUN pip3 install --no-cache-dir -r /opt/mindhome/requirements.txt
 
-# Set permissions
-RUN chmod a+x /opt/mindhome/run.sh
+# Cleanup build deps to save space
+RUN apk del build-base libffi-dev
 
+# Set working directory
 WORKDIR /opt/mindhome
 
-CMD ["/opt/mindhome/run.sh"]
+# Start script
+CMD [ "/opt/mindhome/run.sh" ]
