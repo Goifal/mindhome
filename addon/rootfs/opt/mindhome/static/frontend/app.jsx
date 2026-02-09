@@ -1,4 +1,4 @@
-// MindHome Frontend v0.5.2-phase3B-fix4 (2026-02-09 01:05) - app.jsx - BUILD:20260209-0105
+// MindHome Frontend v0.5.3-phase3C (2026-02-09 02:30) - app.jsx - BUILD:20260209-0230
 // ================================================================
 // MindHome - React Frontend Application v0.5.0
 // ================================================================
@@ -241,20 +241,25 @@ const Toast = ({ message, type, onClose }) => {
 // Modal Component
 // ================================================================
 
-const Modal = ({ title, children, onClose, onConfirm, actions, wide }) => (
-    <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-        <div className="modal" onClick={e => e.stopPropagation()} style={wide ? { maxWidth: 700, width: '90%' } : { minWidth: 340, maxWidth: 480, width: '90%' }}>
-            <div className="modal-title">{title}</div>
-            {children}
-            {actions ? <div className="modal-actions">{actions}</div> : onConfirm ? (
-                <div className="modal-actions" style={{ marginTop: 16, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-                    <button className="btn btn-secondary" onClick={onClose}>{typeof window !== 'undefined' && document.documentElement.lang === 'en' ? 'Cancel' : 'Abbrechen'}</button>
-                    <button className="btn btn-primary" onClick={onConfirm}>{typeof window !== 'undefined' && document.documentElement.lang === 'en' ? 'Save' : 'Speichern'}</button>
-                </div>
-            ) : null}
+const Modal = ({ title, children, onClose, onConfirm, actions, wide }) => {
+    // Use React portal to render modal at document body level to avoid CSS containment issues
+    const modalContent = (
+        <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+            style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div className="modal" onClick={e => e.stopPropagation()} style={wide ? { maxWidth: 700, width: '90%' } : { minWidth: 340, maxWidth: 480, width: '90%' }}>
+                <div className="modal-title">{title}</div>
+                {children}
+                {actions ? <div className="modal-actions">{actions}</div> : onConfirm ? (
+                    <div className="modal-actions" style={{ marginTop: 16, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                        <button className="btn btn-secondary" onClick={onClose}>{typeof window !== 'undefined' && document.documentElement.lang === 'en' ? 'Cancel' : 'Abbrechen'}</button>
+                        <button className="btn btn-primary" onClick={onConfirm}>{typeof window !== 'undefined' && document.documentElement.lang === 'en' ? 'Save' : 'Speichern'}</button>
+                    </div>
+                ) : null}
+            </div>
         </div>
-    </div>
-);
+    );
+    return typeof document !== 'undefined' ? ReactDOM.createPortal(modalContent, document.body) : modalContent;
+};
 
 const CollapsibleCard = ({ title, icon, children, defaultOpen = true }) => {
     const [open, setOpen] = useState(defaultOpen);
@@ -296,23 +301,28 @@ const SplashScreen = () => (
 // Fix 23: Confirm Dialog
 // ================================================================
 
-const ConfirmDialog = ({ title, message, onConfirm, onCancel, danger }) => (
-    <div className="modal-overlay" onClick={onCancel}>
-        <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 400 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
-                <span className={`mdi ${danger ? 'mdi-alert-circle' : 'mdi-help-circle'}`}
-                      style={{ fontSize: 28, color: danger ? 'var(--danger)' : 'var(--accent-primary)' }} />
-                <div className="modal-title" style={{ marginBottom: 0 }}>{title}</div>
-            </div>
-            <p style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.5, marginBottom: 20 }}>{message}</p>
-            <div className="modal-actions">
-                <button className="btn btn-secondary" onClick={onCancel}>Abbrechen</button>
-                <button className={`btn ${danger ? 'btn-danger' : 'btn-primary'}`} onClick={onConfirm}>
-                    {danger ? 'Löschen' : 'Bestätigen'}
-                </button>
+const ConfirmDialog = ({ title, message, onConfirm, onCancel, danger }) => {
+    const content = (
+        <div className="modal-overlay" onClick={onCancel}
+            style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 400 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+                    <span className={`mdi ${danger ? 'mdi-alert-circle' : 'mdi-help-circle'}`}
+                          style={{ fontSize: 28, color: danger ? 'var(--danger)' : 'var(--accent-primary)' }} />
+                    <div className="modal-title" style={{ marginBottom: 0 }}>{title}</div>
+                </div>
+                <p style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.5, marginBottom: 20 }}>{message}</p>
+                <div className="modal-actions">
+                    <button className="btn btn-secondary" onClick={onCancel}>Abbrechen</button>
+                    <button className={`btn ${danger ? 'btn-danger' : 'btn-primary'}`} onClick={onConfirm}>
+                        {danger ? 'Löschen' : 'Bestätigen'}
+                    </button>
+                </div>
             </div>
         </div>
-    </div>
+    );
+    return typeof document !== 'undefined' ? ReactDOM.createPortal(content, document.body) : content;
+};
 );
 
 // ================================================================
@@ -428,7 +438,7 @@ const EntitySearchDropdown = ({ value, onChange, entities, label, placeholder })
                 }}>
                     <div style={{ padding: '8px 8px 4px' }}>
                         <input ref={inputRef} className="input" value={search} onChange={e => setSearch(e.target.value)}
-                            placeholder=" Suchen..." style={{ fontSize: 12, padding: '6px 10px' }} />
+                            placeholder=" Suchen..." style={{ fontSize: 12, padding: '6px 10px' }} />
                     </div>
                     <div style={{ maxHeight: 200, overflowY: 'auto' }}>
                         {filtered.length === 0 ? (
@@ -1618,7 +1628,7 @@ const DevicesPage = () => {
             {devices.length > 0 ? (
                 <div>
                     <div style={{ marginBottom: 12 }}>
-                        <input className="input" placeholder={lang === 'de' ? ' Geräte suchen...' : ' Search devices...'}
+                        <input className="input" placeholder={lang === 'de' ? ' Geräte suchen...' : ' Search devices...'}
                             value={search} onChange={e => setSearch(e.target.value)} style={{ maxWidth: 400 }} />
                     </div>
                     <div className="table-wrap">
@@ -1650,7 +1660,7 @@ const DevicesPage = () => {
                                 if (attrs.target_temp != null) attrParts.push(`Soll: ${attrs.target_temp}${unit || '°C'}`);
                                 if (attrs.humidity != null) attrParts.push(`'Feuchte: ${attrs.humidity}%`);
                                 if (attrs.power != null || attrs.current_power_w != null) attrParts.push(` ${attrs.power || attrs.current_power_w} W`);
-                                if (attrs.voltage != null) attrParts.push(`Œ ${attrs.voltage} V`);
+                                if (attrs.voltage != null) attrParts.push(` ${attrs.voltage} V`);
                                 // For sensors: show state + unit directly (replaces generic state label)
                                 const isSensorValue = (attrParts.length === 0 && device.live_state && device.live_state !== 'on' && device.live_state !== 'off' && device.live_state !== 'unavailable' && device.live_state !== 'unknown');
                                 if (isSensorValue) {
@@ -2205,6 +2215,29 @@ const RoomsPage = () => {
                                placeholder={lang === 'de' ? 'z.B. Wohnzimmer' : 'e.g. Living Room'}
                                autoFocus />
                     </div>
+                    <div className="input-group">
+                        <label className="input-label">Icon</label>
+                        <div>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(8, 1fr)', gap: 4, maxHeight: 160, overflowY: 'auto', padding: 4, background: 'var(--bg-primary)', borderRadius: 8 }}>
+                                {['mdi:door', 'mdi:door-open', 'mdi:bed', 'mdi:bed-double', 'mdi:sofa', 'mdi:television', 'mdi:desk', 'mdi:desk-lamp',
+                                  'mdi:shower', 'mdi:toilet', 'mdi:bathtub', 'mdi:stove', 'mdi:fridge', 'mdi:washing-machine', 'mdi:tumble-dryer',
+                                  'mdi:car-garage', 'mdi:garage', 'mdi:stairs', 'mdi:home-floor-0', 'mdi:home-floor-1', 'mdi:home-floor-2',
+                                  'mdi:home', 'mdi:tree', 'mdi:flower', 'mdi:grill', 'mdi:pool', 'mdi:dumbbell',
+                                  'mdi:baby-carriage', 'mdi:teddy-bear', 'mdi:gamepad-variant', 'mdi:bookshelf', 'mdi:wardrobe',
+                                  'mdi:broom', 'mdi:vacuum', 'mdi:tools', 'mdi:server', 'mdi:router-wireless',
+                                  'mdi:balcony', 'mdi:terrace', 'mdi:fence', 'mdi:gate'].map(icon => (
+                                    <button key={icon} type="button"
+                                        className={`btn btn-sm ${newRoom.icon === icon ? 'btn-primary' : 'btn-ghost'}`}
+                                        onClick={() => setNewRoom({ ...newRoom, icon })}
+                                        title={icon.replace('mdi:', '')}
+                                        style={{ padding: 6, fontSize: 20, lineHeight: 1 }}>
+                                        <span className={`mdi ${icon.replace('mdi:', 'mdi-')}`} />
+                                    </button>
+                                ))}
+                            </div>
+                            <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 4 }}>{newRoom.icon || 'mdi:door'}</div>
+                        </div>
+                    </div>
                 </Modal>
             )}
 
@@ -2232,9 +2265,42 @@ const RoomsPage = () => {
                     </div>
                     <div className="input-group">
                         <label className="input-label">Icon</label>
-                        <input className="input" value={editRoom.icon || ''}
-                               onChange={e => setEditRoom({ ...editRoom, icon: e.target.value })}
-                               placeholder="mdi:door" />
+                        {(() => {
+                            const ROOM_ICONS = [
+                                'mdi:door', 'mdi:door-open', 'mdi:bed', 'mdi:bed-double', 'mdi:sofa', 'mdi:television', 'mdi:desk', 'mdi:desk-lamp',
+                                'mdi:shower', 'mdi:toilet', 'mdi:bathtub', 'mdi:stove', 'mdi:fridge', 'mdi:washing-machine', 'mdi:tumble-dryer',
+                                'mdi:car-garage', 'mdi:garage', 'mdi:stairs', 'mdi:stairs-up', 'mdi:home-floor-0', 'mdi:home-floor-1', 'mdi:home-floor-2',
+                                'mdi:home-floor-negative-1', 'mdi:home', 'mdi:home-outline', 'mdi:office-building', 'mdi:warehouse',
+                                'mdi:tree', 'mdi:flower', 'mdi:grill', 'mdi:pool', 'mdi:hot-tub', 'mdi:dumbbell', 'mdi:yoga',
+                                'mdi:baby-carriage', 'mdi:teddy-bear', 'mdi:gamepad-variant', 'mdi:bookshelf', 'mdi:wardrobe',
+                                'mdi:hanger', 'mdi:coat-rack', 'mdi:shoe-formal', 'mdi:broom', 'mdi:vacuum', 'mdi:tools',
+                                'mdi:water-pump', 'mdi:radiator', 'mdi:solar-panel', 'mdi:ev-station', 'mdi:server', 'mdi:router-wireless',
+                                'mdi:balcony', 'mdi:terrace', 'mdi:patio-heater', 'mdi:awning', 'mdi:fence', 'mdi:gate',
+                            ];
+                            const [iconSearch, setIconSearch] = useState('');
+                            const filtered = ROOM_ICONS.filter(i => !iconSearch || i.toLowerCase().includes(iconSearch.toLowerCase()));
+                            return (
+                                <div>
+                                    <input className="input" placeholder={lang === 'de' ? 'Icon suchen...' : 'Search icon...'}
+                                        value={iconSearch} onChange={e => setIconSearch(e.target.value)}
+                                        style={{ marginBottom: 8, fontSize: 12 }} />
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(8, 1fr)', gap: 4, maxHeight: 160, overflowY: 'auto', padding: 4, background: 'var(--bg-primary)', borderRadius: 8 }}>
+                                        {filtered.map(icon => (
+                                            <button key={icon} type="button"
+                                                className={`btn btn-sm ${editRoom.icon === icon ? 'btn-primary' : 'btn-ghost'}`}
+                                                onClick={() => setEditRoom({ ...editRoom, icon })}
+                                                title={icon.replace('mdi:', '')}
+                                                style={{ padding: 6, fontSize: 20, lineHeight: 1 }}>
+                                                <span className={`mdi ${icon.replace('mdi:', 'mdi-')}`} />
+                                            </button>
+                                        ))}
+                                    </div>
+                                    <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 4 }}>
+                                        {editRoom.icon || 'mdi:door'}
+                                    </div>
+                                </div>
+                            );
+                        })()}
                     </div>
                 </Modal>
             )}
@@ -2566,6 +2632,30 @@ const SettingsPage = () => {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16, alignItems: 'start' }}>
             {/* LEFT COLUMN */}
             <div>
+            {/* Privacy & Storage - FIRST */}
+            <div className="card" style={{ marginBottom: 16, borderColor: 'var(--success)', borderWidth: 1 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+                    <span className="mdi mdi-shield-check" style={{ fontSize: 24, color: 'var(--success)' }} />
+                    <div className="card-title" style={{ marginBottom: 0 }}>
+                        {lang === 'de' ? 'Datenschutz & Speicher' : 'Privacy & Storage'}
+                    </div>
+                </div>
+                <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 12 }}>
+                    {lang === 'de'
+                        ? '100% lokal – alle Daten bleiben auf deinem Geraet. Keine Cloud, keine Tracking.'
+                        : '100% local – all data stays on your device. No cloud, no tracking.'}
+                </p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <InfoRow label={lang === 'de' ? 'Datenbankgroesse' : 'Database Size'}
+                        value={sysInfo?.db_size_bytes ? formatBytes(sysInfo.db_size_bytes) : '--'} />
+                    <InfoRow label={lang === 'de' ? 'Gesammelte Events' : 'Collected Events'}
+                        value={sysInfo?.state_history_count?.toLocaleString() || '0'} />
+                    <InfoRow label={lang === 'de' ? 'Aufbewahrung' : 'Retention'}
+                        value={`${retention} ${lang === 'de' ? 'Tage' : 'days'}`} />
+                </div>
+            </div>
+
+            {/* Darstellung - SECOND */}
             <div className="card" style={{ marginBottom: 16 }}>
                 <div className="card-title" style={{ marginBottom: 16 }}>
                     {lang === 'de' ? 'Darstellung' : 'Appearance'}
@@ -2589,7 +2679,7 @@ const SettingsPage = () => {
                         value={theme}
                         onChange={v => setTheme(v)}
                         options={[
-                            { value: 'dark', label: lang === 'de' ? ' Dunkel' : ' Dark' },
+                            { value: 'dark', label: lang === 'de' ? 'Dunkel' : 'Dark' },
                             { value: 'light', label: lang === 'de' ? 'Hell' : 'Light' },
                         ]}
                     />
@@ -2601,33 +2691,10 @@ const SettingsPage = () => {
                         value={viewMode}
                         onChange={v => setViewMode(v)}
                         options={[
-                            { value: 'simple', label: lang === 'de' ? '‹ Einfach' : '‹ Simple' },
-                            { value: 'advanced', label: lang === 'de' ? 'Š Ausführlich' : 'Š Advanced' },
+                            { value: 'simple', label: lang === 'de' ? 'Einfach' : 'Simple' },
+                            { value: 'advanced', label: lang === 'de' ? 'Ausfuehrlich' : 'Advanced' },
                         ]}
                     />
-                </div>
-            </div>
-
-            {/* Privacy & Storage */}
-            <div className="card" style={{ marginBottom: 16, borderColor: 'var(--success)', borderWidth: 1 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
-                    <span className="mdi mdi-shield-check" style={{ fontSize: 24, color: 'var(--success)' }} />
-                    <div className="card-title" style={{ marginBottom: 0 }}>
-                        {lang === 'de' ? 'Datenschutz & Speicher' : 'Privacy & Storage'}
-                    </div>
-                </div>
-                <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 12 }}>
-                    {lang === 'de'
-                        ? '100% lokal – alle Daten bleiben auf deinem Gerät. Keine Cloud, keine Tracking.'
-                        : '100% local – all data stays on your device. No cloud, no tracking.'}
-                </p>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    <InfoRow label={lang === 'de' ? 'Datenbankgröße' : 'Database Size'}
-                        value={sysInfo?.db_size_bytes ? formatBytes(sysInfo.db_size_bytes) : '–'} />
-                    <InfoRow label={lang === 'de' ? 'Gesammelte Events' : 'Collected Events'}
-                        value={sysInfo?.state_history_count?.toLocaleString() || '0'} />
-                    <InfoRow label={lang === 'de' ? 'Aufbewahrung' : 'Retention'}
-                        value={`${retention} ${lang === 'de' ? 'Tage' : 'days'}`} />
                 </div>
             </div>
 
@@ -2748,7 +2815,7 @@ const SettingsPage = () => {
                         {lang === 'de' ? 'State History Tage:' : 'State History Days:'}
                     </label>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <input type="range" min="0" max="365" step="1"
+                        <input type="range" min="0" max={retention || 90} step="1"
                             value={backupHistoryDays || 30}
                             onChange={e => setBackupHistoryDays(parseInt(e.target.value))}
                             style={{ flex: 1 }} />
@@ -2787,18 +2854,17 @@ const SettingsPage = () => {
                         ? 'Steuere wie empfindlich MindHome auf ungewöhnliche Gerätezustände reagiert.'
                         : 'Control how sensitively MindHome reacts to unusual device states.'}
                 </p>
-                <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
-                    {[{ id: 'low', label: lang === 'de' ? 'Niedrig' : 'Low', desc: lang === 'de' ? 'Nur extreme Anomalien' : 'Only extreme anomalies' },
-                      { id: 'medium', label: 'Medium', desc: lang === 'de' ? 'Ausgewogen' : 'Balanced' },
-                      { id: 'high', label: lang === 'de' ? 'Hoch' : 'High', desc: lang === 'de' ? 'Auch kleine Abweichungen' : 'Small deviations too' }].map(s => (
-                        <button key={s.id} className={`btn ${anomalySensitivity === s.id ? 'btn-primary' : 'btn-secondary'}`} style={{ flex: '1 1 90px', textAlign: 'center', padding: '8px 6px', minWidth: 0 }}
+                <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+                    {[{ id: 'low', label: lang === 'de' ? 'Niedrig' : 'Low' },
+                      { id: 'medium', label: 'Medium' },
+                      { id: 'high', label: lang === 'de' ? 'Hoch' : 'High' }].map(s => (
+                        <button key={s.id} className={`btn ${anomalySensitivity === s.id ? 'btn-primary' : 'btn-secondary'}`} style={{ flex: 1, textAlign: 'center', padding: '10px 8px' }}
                             onClick={async () => {
                                 setAnomalySensitivity(s.id);
                                 await api.post('anomaly-settings', { sensitivity: s.id });
                                 showToast(`${s.label}`, 'success');
                             }}>
                             <div style={{ fontWeight: 600, fontSize: 13 }}>{s.label}</div>
-                            <div style={{ fontSize: 10, color: anomalySensitivity === s.id ? 'rgba(255,255,255,0.7)' : 'var(--text-muted)', marginTop: 2 }}>{s.desc}</div>
                         </button>
                     ))}
                 </div>
@@ -2847,17 +2913,6 @@ const SettingsPage = () => {
                     </label>
                 </div>
 
-                {/* #68 Font Size */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
-                    <span style={{ fontSize: 13 }}><span className="mdi mdi-format-size" style={{ marginRight: 6 }} />{lang === 'de' ? 'Schriftgröße' : 'Font Size'}</span>
-                    <div style={{ display: 'flex', gap: 4 }}>
-                        {[{ s: '13px', l: 'S' }, { s: '15px', l: 'M' }, { s: '17px', l: 'L' }].map(f => (
-                            <button key={f.l} className="btn btn-sm btn-ghost" onClick={() => { document.documentElement.style.fontSize = f.s; }}
-                                style={{ width: 28, fontSize: 11 }}>{f.l}</button>
-                        ))}
-                    </div>
-                </div>
-
                 {/* #63 Data Export */}
                 <div style={{ padding: '10px 0 4px' }}>
                     <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 6 }}>{lang === 'de' ? 'Daten exportieren' : 'Export Data'}</div>
@@ -2881,13 +2936,15 @@ const SettingsPage = () => {
                 </div>
             </div>
 
-            {/* Calendar Trigger Configuration */}
-            <CalendarTriggersConfig lang={lang} showToast={showToast} />
+            {/* Calendar Trigger at end of right column - REMOVED, moved to third column */}
 
             </div>
 
             {/* THIRD COLUMN - Phase 3B */}
             <div>
+            {/* Calendar Trigger Configuration - moved here */}
+            <CalendarTriggersConfig lang={lang} showToast={showToast} />
+
             {/* Personen-Zeitprofile */}
             <div className="card" style={{ marginBottom: 16 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
@@ -3556,7 +3613,8 @@ const HolidayManager = ({ lang }) => {
     const [holidays, setHolidays] = useState({ builtin: [], custom: [], ha_holidays: [] });
     const [year, setYear] = useState(new Date().getFullYear());
     const [calendars, setCalendars] = useState([]);
-    const [holidayCalendar, setHolidayCalendar] = useState('');
+    const [selectedCalendars, setSelectedCalendars] = useState([]);
+    const [useBuiltin, setUseBuiltin] = useState(true);
     const [newHoliday, setNewHoliday] = useState({ name: '', date: '' });
     const [loading, setLoading] = useState(true);
     const [calError, setCalError] = useState(false);
@@ -3564,10 +3622,10 @@ const HolidayManager = ({ lang }) => {
     const load = async () => {
         setLoading(true);
         try {
-            const calParam = holidayCalendar ? `&calendar_entity=${encodeURIComponent(holidayCalendar)}` : '';
+            const calParam = selectedCalendars.length > 0 ? `&calendar_entity=${encodeURIComponent(selectedCalendars[0])}` : '';
             const data = await api.get(`holidays?year=${year}${calParam}`);
             if (data) setHolidays(data);
-        } catch (e) { /* fallback to empty */ }
+        } catch (e) { /* fallback */ }
         setLoading(false);
     };
 
@@ -3578,80 +3636,109 @@ const HolidayManager = ({ lang }) => {
                 if (cals && Array.isArray(cals)) {
                     setCalendars(cals);
                     const hc = cals.find(c => c.entity_id.includes('austria') || c.entity_id.includes('sterreich') || c.name.toLowerCase().includes('ster'));
-                    if (hc) setHolidayCalendar(hc.entity_id);
+                    if (hc) setSelectedCalendars([hc.entity_id]);
                 }
             } catch (e) { setCalError(true); }
         })();
     }, []);
 
-    useEffect(() => { load(); }, [year, holidayCalendar]);
+    useEffect(() => { load(); }, [year, selectedCalendars, useBuiltin]);
+
+    const toggleCalendar = (entityId) => {
+        setSelectedCalendars(prev => prev.includes(entityId) ? prev.filter(c => c !== entityId) : [...prev, entityId]);
+    };
 
     const addCustom = async () => {
         if (!newHoliday.name || !newHoliday.date) return;
         await api.post('holidays', newHoliday);
         setNewHoliday({ name: '', date: '' });
         await load();
-        showToast('Feiertag hinzugefügt', 'success');
+        showToast(lang === 'de' ? 'Feiertag hinzugefuegt' : 'Holiday added', 'success');
     };
 
     const removeCustom = async (id) => { await api.delete(`holidays/${id}`); await load(); };
 
     const allHolidays = [
-        ...(holidays.ha_holidays || []).map(h => ({ ...h, source: 'ha' })),
-        ...(holidays.ha_holidays?.length ? [] : (holidays.builtin || []).map(h => ({ ...h, source: 'builtin' }))),
+        ...(selectedCalendars.length > 0 ? (holidays.ha_holidays || []).map(h => ({ ...h, source: 'ha' })) : []),
+        ...(useBuiltin ? (holidays.builtin || []).map(h => ({ ...h, source: 'builtin' })) : []),
         ...(holidays.custom || []).map(h => ({ ...h, source: 'custom' })),
     ].sort((a, b) => (a.date || '').localeCompare(b.date || ''));
 
-    const srcLabel = { ha: 'HA Integration', builtin: 'Fallback', custom: 'Manuell' };
+    const srcLabel = { ha: 'Kalender', builtin: 'Eingebaut', custom: 'Manuell' };
     const srcColor = { ha: 'var(--primary)', builtin: 'var(--text-muted)', custom: 'var(--warning)' };
 
     return (
         <div>
+            {/* Calendar Sources */}
             <div style={{ marginBottom: 12 }}>
-                <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>
-                    {lang === 'de' ? 'Feiertags-Quelle:' : 'Holiday Source:'}
+                <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 6 }}>
+                    {lang === 'de' ? 'Feiertags-Quellen:' : 'Holiday Sources:'}
                 </label>
-                <select value={holidayCalendar} onChange={e => setHolidayCalendar(e.target.value)}
-                    style={{ fontSize: 12, padding: '6px 8px', width: '100%', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-secondary)', color: 'var(--text-primary)' }}>
-                    <option value="">{lang === 'de' ? 'Eingebaut (AT/NÖ Fallback)' : 'Builtin (AT/NÖ Fallback)'}</option>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, cursor: 'pointer', padding: '4px 8px', background: useBuiltin ? 'rgba(var(--accent-primary-rgb, 245,166,35), 0.15)' : 'transparent', borderRadius: 6, border: '1px solid var(--border)' }}>
+                        <input type="checkbox" checked={useBuiltin} onChange={() => setUseBuiltin(!useBuiltin)} />
+                        <span className="mdi mdi-flag" style={{ color: 'var(--accent-primary)' }} />
+                        Eingebaut (AT/NOe)
+                    </label>
                     {calendars.map(c => (
-                        <option key={c.entity_id} value={c.entity_id}>{c.name} ({c.entity_id})</option>
+                        <label key={c.entity_id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, cursor: 'pointer', padding: '4px 8px', background: selectedCalendars.includes(c.entity_id) ? 'rgba(var(--accent-primary-rgb, 245,166,35), 0.15)' : 'transparent', borderRadius: 6, border: '1px solid var(--border)' }}>
+                            <input type="checkbox" checked={selectedCalendars.includes(c.entity_id)} onChange={() => toggleCalendar(c.entity_id)} />
+                            <span className="mdi mdi-calendar" style={{ color: 'var(--primary)' }} />
+                            {c.name}
+                        </label>
                     ))}
-                </select>
-                {calError && <div style={{ fontSize: 10, color: 'var(--warning)', marginTop: 2 }}>HA Kalender nicht verfügbar – Fallback aktiv</div>}
+                </div>
+                {calError && <div style={{ fontSize: 10, color: 'var(--warning)', marginTop: 4 }}>
+                    <span className="mdi mdi-alert" style={{ marginRight: 4 }} />
+                    {lang === 'de' ? 'HA Kalender nicht verfuegbar' : 'HA calendars unavailable'}
+                </div>}
             </div>
 
+            {/* Year selector */}
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 12 }}>
-                <label style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Jahr:</label>
+                <label style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{lang === 'de' ? 'Jahr:' : 'Year:'}</label>
                 <button className="btn btn-sm btn-ghost" onClick={() => setYear(y => y - 1)}>&lt;</button>
                 <span style={{ fontSize: 13, fontWeight: 600 }}>{year}</span>
                 <button className="btn btn-sm btn-ghost" onClick={() => setYear(y => y + 1)}>&gt;</button>
             </div>
 
+            {/* Holiday list */}
             {loading ? <div style={{ color: 'var(--text-muted)', fontSize: 12, padding: 8 }}>Laden...</div> : (
-                <div style={{ maxHeight: 300, overflowY: 'auto', marginBottom: 12 }}>
+                <div style={{ maxHeight: 250, overflowY: 'auto', marginBottom: 12 }}>
                     {allHolidays.map((h, i) => (
-                        <div key={`${h.date}-${i}`} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 0', borderBottom: '1px solid var(--border)', fontSize: 12 }}>
-                            <span style={{ minWidth: 75, fontFamily: 'monospace', fontSize: 11 }}>{h.date}</span>
+                        <div key={`${h.date}-${i}`} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 0', borderBottom: '1px solid var(--border)', fontSize: 12 }}>
+                            <span style={{ minWidth: 75, fontFamily: 'monospace', fontSize: 11, color: 'var(--text-secondary)' }}>{h.date}</span>
                             <span style={{ flex: 1 }}>{h.name}</span>
-                            <span style={{ fontSize: 9, color: srcColor[h.source], padding: '1px 4px', background: 'var(--bg-secondary)', borderRadius: 4, whiteSpace: 'nowrap' }}>{srcLabel[h.source]}</span>
+                            <span style={{ fontSize: 9, color: srcColor[h.source], padding: '1px 6px', background: 'var(--bg-primary)', borderRadius: 4, whiteSpace: 'nowrap' }}>{srcLabel[h.source]}</span>
                             {h.source === 'custom' && h.id && (
                                 <button className="btn btn-sm btn-ghost" onClick={() => removeCustom(h.id)} style={{ color: 'var(--danger)', padding: 2 }}><span className="mdi mdi-close" /></button>
                             )}
                         </div>
                     ))}
-                    {allHolidays.length === 0 && <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: 8, textAlign: 'center' }}>Keine Feiertage gefunden</div>}
+                    {allHolidays.length === 0 && <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: 12, textAlign: 'center' }}>
+                        <span className="mdi mdi-calendar-blank" style={{ fontSize: 24, display: 'block', marginBottom: 4 }} />
+                        {lang === 'de' ? 'Keine Feiertage gefunden' : 'No holidays found'}
+                    </div>}
                 </div>
             )}
-            <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 4 }}>
-                {lang === 'de' ? 'Eigenen Feiertag hinzufügen:' : 'Add custom holiday:'}
-            </div>
-            <div style={{ display: 'flex', gap: 6, alignItems: 'end' }}>
-                <input type="text" placeholder="z.B. Betriebsurlaub" value={newHoliday.name} onChange={e => setNewHoliday({ ...newHoliday, name: e.target.value })}
-                    style={{ fontSize: 12, padding: '4px 8px', flex: 1 }} />
-                <input type="date" value={newHoliday.date} onChange={e => setNewHoliday({ ...newHoliday, date: e.target.value })}
-                    style={{ fontSize: 12, padding: '4px 8px', width: 130 }} />
-                <button className="btn btn-sm btn-primary" onClick={addCustom} disabled={!newHoliday.name || !newHoliday.date}><span className="mdi mdi-plus" /></button>
+
+            {/* Add custom holiday */}
+            <div style={{ background: 'var(--bg-primary)', borderRadius: 8, padding: 10, border: '1px solid var(--border)' }}>
+                <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 6 }}>
+                    <span className="mdi mdi-plus-circle" style={{ marginRight: 4 }} />
+                    {lang === 'de' ? 'Eigenen Feiertag hinzufuegen' : 'Add custom holiday'}
+                </label>
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                    <input className="input" type="text" placeholder={lang === 'de' ? 'z.B. Betriebsurlaub' : 'e.g. Company holiday'}
+                        value={newHoliday.name} onChange={e => setNewHoliday({ ...newHoliday, name: e.target.value })}
+                        style={{ fontSize: 12, padding: '6px 8px', flex: 1 }} />
+                    <input className="input" type="date" value={newHoliday.date} onChange={e => setNewHoliday({ ...newHoliday, date: e.target.value })}
+                        style={{ fontSize: 12, padding: '6px 8px', width: 140 }} />
+                    <button className="btn btn-sm btn-primary" onClick={addCustom} disabled={!newHoliday.name || !newHoliday.date}
+                        style={{ padding: '6px 10px' }}>
+                        <span className="mdi mdi-plus" />
+                    </button>
+                </div>
             </div>
         </div>
     );
@@ -5056,7 +5143,10 @@ const NotificationsPage = () => {
 
                         {/* Person Channel Assignment + HA Person - Collapsible */}
                         <CollapsibleCard title={lang === 'de' ? 'Personen-Zuordnung' : 'Person Assignment'} icon="mdi-account-group" defaultOpen={false}>
-                            {(users || []).map(u => (
+                            {(users || []).map(u => {
+                                const selectedChannels = (extSettings?.person_channels?.[u.id] || []);
+                                const enabledChannels = (notifSettings?.channels || []).filter(c => c.is_enabled);
+                                return (
                                 <div key={u.id} style={{ padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
                                         <div style={{ fontSize: 13, fontWeight: 500 }}>{u.name}</div>
@@ -5067,42 +5157,61 @@ const NotificationsPage = () => {
                                         <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 2 }}>
                                             HA Person Entity:
                                         </label>
-                                        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                                            <button className={`btn btn-sm ${!u.ha_person_entity ? 'btn-primary' : 'btn-ghost'}`}
-                                                onClick={async () => { await api.put(`users/${u.id}`, { ha_person_entity: null }); await refreshData(); }}
-                                                style={{ fontSize: 10, padding: '2px 6px' }}>
-                                                {lang === 'de' ? 'Keine' : 'None'}
-                                            </button>
+                                        <select className="input" style={{ fontSize: 12, padding: '4px 8px' }}
+                                            value={u.ha_person_entity || ''}
+                                            onChange={async (e) => { await api.put(`users/${u.id}`, { ha_person_entity: e.target.value || null }); await refreshData(); }}>
+                                            <option value="">{lang === 'de' ? 'Keine' : 'None'}</option>
                                             {(haPersons || []).map(p => (
-                                                <button key={p.entity_id} className={`btn btn-sm ${u.ha_person_entity === p.entity_id ? 'btn-primary' : 'btn-ghost'}`}
-                                                    onClick={async () => { await api.put(`users/${u.id}`, { ha_person_entity: p.entity_id }); await refreshData(); }}
-                                                    style={{ fontSize: 10, padding: '2px 6px' }}>
-                                                    {p.name || p.entity_id}
-                                                </button>
+                                                <option key={p.entity_id} value={p.entity_id}>{p.name || p.entity_id}</option>
                                             ))}
-                                        </div>
+                                        </select>
                                     </div>
-                                    {/* Notification Channels */}
+                                    {/* Notification Channels - Dropdown with checkboxes */}
                                     <div>
                                         <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 2 }}>
-                                            {lang === 'de' ? 'Benachrichtigungs-Kan\u00e4le:' : 'Notification Channels:'}
+                                            {lang === 'de' ? 'Benachrichtigungs-Kanaele:' : 'Notification Channels:'}
                                         </label>
-                                        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                                            {(notifSettings?.channels || []).filter(c => c.is_enabled).map(ch => {
-                                                const assigned = extSettings?.person_channels?.[u.id]?.includes(ch.id);
-                                                return <button key={ch.id} className={`btn btn-sm ${assigned ? 'btn-primary' : 'btn-ghost'}`}
-                                                    onClick={async () => {
-                                                        const pc = { ...(extSettings?.person_channels || {}) };
-                                                        const current = pc[u.id] || [];
-                                                        pc[u.id] = assigned ? current.filter(id => id !== ch.id) : [...current, ch.id];
-                                                        setExtSettings(prev => ({ ...prev, person_channels: pc }));
-                                                        await api.put('notification-settings/extended', { person_channels: pc });
-                                                    }} style={{ fontSize: 10, padding: '2px 6px' }}>{ch.display_name || ch.service_name}</button>;
-                                            })}
-                                        </div>
+                                        <select className="input" style={{ fontSize: 12, padding: '4px 8px' }}
+                                            value=""
+                                            onChange={async (e) => {
+                                                const chId = parseInt(e.target.value);
+                                                if (!chId) return;
+                                                const current = [...selectedChannels];
+                                                const idx = current.indexOf(chId);
+                                                if (idx >= 0) current.splice(idx, 1); else current.push(chId);
+                                                const pc = { ...(extSettings?.person_channels || {}) };
+                                                pc[u.id] = current;
+                                                setExtSettings(prev => ({ ...prev, person_channels: pc }));
+                                                await api.put('notification-settings/extended', { person_channels: pc });
+                                            }}>
+                                            <option value="">{selectedChannels.length ? `${selectedChannels.length} ${lang === 'de' ? 'ausgewaehlt' : 'selected'}` : (lang === 'de' ? 'Kanaele waehlen...' : 'Select channels...')}</option>
+                                            {enabledChannels.map(ch => (
+                                                <option key={ch.id} value={ch.id}>{selectedChannels.includes(ch.id) ? '\u2611 ' : '\u2610 '}{ch.display_name || ch.service_name}</option>
+                                            ))}
+                                        </select>
+                                        {selectedChannels.length > 0 && (
+                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 4 }}>
+                                                {selectedChannels.map(chId => {
+                                                    const ch = enabledChannels.find(c => c.id === chId);
+                                                    return ch ? (
+                                                        <span key={chId} style={{ fontSize: 10, padding: '2px 6px', background: 'var(--accent-primary)', color: '#000', borderRadius: 4, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                                            {ch.display_name || ch.service_name}
+                                                            <span style={{ cursor: 'pointer', fontWeight: 700 }} onClick={async () => {
+                                                                const current = selectedChannels.filter(id => id !== chId);
+                                                                const pc = { ...(extSettings?.person_channels || {}) };
+                                                                pc[u.id] = current;
+                                                                setExtSettings(prev => ({ ...prev, person_channels: pc }));
+                                                                await api.put('notification-settings/extended', { person_channels: pc });
+                                                            }}>x</span>
+                                                        </span>
+                                                    ) : null;
+                                                })}
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
-                            ))}
+                                );
+                            })}
                         </CollapsibleCard>
 
                         {/* TTS - Collapsible */}
