@@ -1,4 +1,4 @@
-# MindHome Backend v0.5.3-phase3C-fix2 (2026-02-09 10:10) - app.py - BUILD:20260209-1010
+# MindHome Backend v0.5.3-phase3C-fix5 (2026-02-09 10:40) - app.py - BUILD:20260209-1040
 """
 MindHome - Main Application
 Flask backend serving the API and frontend.
@@ -2684,7 +2684,7 @@ def api_update_notification_channel(cid):
     data = request.get_json() or {}
     session = get_db()
     try:
-        ch = session.query(NotificationChannel).get(cid)
+        ch = session.get(NotificationChannel, cid)
         if not ch:
             return jsonify({"error": "Channel not found"}), 404
         if "is_enabled" in data:
@@ -2702,7 +2702,7 @@ def api_test_notification_channel(cid):
     """Send a test notification to a specific channel."""
     session = get_db()
     try:
-        ch = session.query(NotificationChannel).get(cid)
+        ch = session.get(NotificationChannel, cid)
         if not ch:
             return jsonify({"error": "Channel not found"}), 404
         result = ha.send_notification("MindHome Test", title="Test", target=ch.service_name)
@@ -5355,16 +5355,18 @@ def api_get_holidays():
         ha_cal = request.args.get("calendar_entity", "")
         if ha_cal:
             try:
-                events = ha.call_service("calendar", "get_events", {
-                    "entity_id": ha_cal,
-                    "start_date_time": f"{year}-01-01T00:00:00",
-                    "end_date_time": f"{year}-12-31T23:59:59",
-                }, return_response=True)
-                if events and ha_cal in events:
-                    for ev in events[ha_cal].get("events", []):
+                # Use HA REST API for calendar events (call_service doesn't support return_response)
+                start = f"{year}-01-01T00:00:00"
+                end = f"{year}-12-31T23:59:59"
+                cal_url = f"calendars/{ha_cal}?start={start}&end={end}"
+                events = ha._api_request("GET", cal_url)
+                if events and isinstance(events, list):
+                    for ev in events:
+                        start_info = ev.get("start", {})
+                        date_str = start_info.get("date", start_info.get("dateTime", "")[:10]) if isinstance(start_info, dict) else str(start_info)[:10]
                         ha_holidays.append({
                             "name": ev.get("summary", ""),
-                            "date": ev.get("start", {}).get("date", ev.get("start", "")),
+                            "date": date_str,
                             "source": "ha_integration",
                         })
             except Exception as e:
