@@ -2407,9 +2407,12 @@ const SettingsPage = () => {
         setCleaning(false);
     };
 
+    const [exportHistory, setExportHistory] = useState(false);
+
     const handleExport = async (mode = 'standard') => {
         showToast(lang === 'de' ? 'Backup wird erstellt...' : 'Creating backup...', 'info');
-        const backup = await api.get(`backup/export?mode=${mode}`);
+        const histParam = mode === 'full' ? `&include_history=${exportHistory}` : '';
+        const backup = await api.get(`backup/export?mode=${mode}${histParam}`);
         if (backup) {
             const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
             const url = URL.createObjectURL(blob);
@@ -2420,7 +2423,7 @@ const SettingsPage = () => {
             URL.revokeObjectURL(url);
             const s = backup._summary || {};
             showToast(lang === 'de'
-                ? `Backup: ${s.rooms || 0} RÃ¤ume, ${s.devices || 0} GerÃ¤te, ${s.patterns || 0} Muster`
+                ? `Backup: ${s.rooms || 0} Räume, ${s.devices || 0} Geräte, ${s.patterns || 0} Muster`
                 : `Backup: ${s.rooms || 0} rooms, ${s.devices || 0} devices, ${s.patterns || 0} patterns`, 'success');
         }
     };
@@ -2433,21 +2436,40 @@ const SettingsPage = () => {
         try {
             const text = await file.text();
             const data = JSON.parse(text);
-            // Show preview first
-            if (data._summary) {
-                setImportPreview({ data, summary: data._summary, filename: file.name });
-            } else {
-                // Old format without summary - import directly
-                const result = await api.post('backup/import', data);
-                if (result?.success) {
-                    showToast(lang === 'de'
-                        ? `Backup geladen: ${result.imported.rooms} RÃ¤ume, ${result.imported.devices} GerÃ¤te`
-                        : `Backup loaded: ${result.imported.rooms} rooms, ${result.imported.devices} devices`, 'success');
-                    await refreshData();
+
+            // Strip heavy history tables from large backups to prevent memory issues
+            const historyKeys = ['state_history', 'notification_log', 'audit_trail',
+                'pattern_match_log', 'data_collection', 'offline_queue'];
+            const strippedCount = {};
+            for (const key of historyKeys) {
+                if (data[key] && Array.isArray(data[key]) && data[key].length > 0) {
+                    strippedCount[key] = data[key].length;
+                    data[key] = [];
                 }
             }
+            // Limit action_log to 500 most recent
+            if (data.action_log && data.action_log.length > 500) {
+                strippedCount['action_log'] = data.action_log.length;
+                data.action_log = data.action_log.slice(0, 500);
+            }
+
+            // Show preview first
+            if (data._summary) {
+                setImportPreview({ data, summary: data._summary, filename: file.name, strippedCount });
+            } else {
+                // Build summary from data
+                const summary = {
+                    rooms: (data.rooms || []).length,
+                    devices: (data.devices || []).length,
+                    users: (data.users || []).length,
+                    patterns: (data.patterns || []).length,
+                    settings: (data.settings || []).length,
+                    action_log: (data.action_log || []).length,
+                };
+                setImportPreview({ data, summary, filename: file.name, strippedCount });
+            }
         } catch (err) {
-            showToast(lang === 'de' ? 'UngÃ¼ltige Datei' : 'Invalid file', 'error');
+            showToast(lang === 'de' ? 'Ungültige Datei' : 'Invalid file', 'error');
         }
         e.target.value = '';
     };
@@ -2688,7 +2710,7 @@ const SettingsPage = () => {
                     </button>
                     <button className="btn btn-secondary" onClick={() => handleExport('full')}>
                         <span className="mdi mdi-download-multiple" style={{ marginRight: 4 }} />
-                        {lang === 'de' ? 'VollstÃ¤ndig' : 'Full'}
+                        {lang === 'de' ? 'Vollständig' : 'Full'}
                     </button>
                     <button className="btn btn-secondary" onClick={() => fileInputRef.current?.click()}>
                         <span className="mdi mdi-upload" style={{ marginRight: 4 }} />
@@ -2697,10 +2719,14 @@ const SettingsPage = () => {
                     <input ref={fileInputRef} type="file" accept=".json" onChange={handleImport}
                            style={{ display: 'none' }} />
                 </div>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, cursor: 'pointer', marginBottom: 8 }}>
+                    <input type="checkbox" checked={exportHistory} onChange={e => setExportHistory(e.target.checked)} />
+                    {lang === 'de' ? 'Historische Daten einschließen (State History, Logs)' : 'Include historical data (state history, logs)'}
+                </label>
                 <p style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 0 }}>
                     {lang === 'de'
-                        ? 'Standard: Konfiguration. VollstÃ¤ndig: inkl. State History, Logs (90 Tage).'
-                        : 'Standard: config only. Full: incl. state history, logs (90 days).'}
+                        ? 'Standard: Konfiguration. Vollständig: inkl. Patterns & Regeln. History-Checkbox: State History, Action Logs (90 Tage).'
+                        : 'Standard: config only. Full: incl. patterns & rules. History checkbox: state history, action logs (90 days).'}
                 </p>
             </div>
 
@@ -5116,7 +5142,7 @@ const OnboardingWizard = ({ onComplete }) => {
 // Phase 3: Energy Dashboard Page
 // ================================================================
 const EnergyPage = () => {
-    const { api, lang, showToast } = useApp();
+    const { lang, showToast } = useApp();
     const [config, setConfig] = useState(null);
     const [readings, setReadings] = useState([]);
     const [standbyConfigs, setSConfigs] = useState([]);
@@ -5213,7 +5239,7 @@ const EnergyPage = () => {
 // Phase 3: Scenes Page
 // ================================================================
 const ScenesPage = () => {
-    const { api, lang, showToast } = useApp();
+    const { lang, showToast } = useApp();
     const [scenes, setScenes] = useState([]);
 
     const load = () => api.get('scenes').then(setScenes).catch(() => {});
@@ -5278,7 +5304,7 @@ const ScenesPage = () => {
 // Phase 3: Presence Page
 // ================================================================
 const PresencePage = () => {
-    const { api, lang, showToast } = useApp();
+    const { lang, showToast } = useApp();
     const [modes, setModes] = useState([]);
     const [current, setCurrent] = useState(null);
     const [persons, setPersons] = useState([]);
