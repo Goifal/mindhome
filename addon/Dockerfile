@@ -1,23 +1,19 @@
 ARG BUILD_FROM
 FROM ${BUILD_FROM}
 
-# BUILD:20260209-1155
-
 # Install minimal system dependencies
 RUN apk add --no-cache \
     py3-pip \
     gcc \
     musl-dev \
-    python3-dev \
-    gfortran \
-    openblas-dev
+    python3-dev
 
 # Copy and install Python requirements
 COPY rootfs/opt/mindhome/requirements.txt /tmp/
 RUN pip3 install --no-cache-dir --break-system-packages -r /tmp/requirements.txt
 
 # Remove build dependencies to save space
-RUN apk del gcc musl-dev python3-dev gfortran
+RUN apk del gcc musl-dev python3-dev
 
 # Copy application files
 COPY rootfs /
