@@ -1,4 +1,4 @@
-// MindHome Frontend v0.5.3-phase3C-fix6 (2026-02-09 11:00) - app.jsx - BUILD:20260209-1100
+// MindHome Frontend v0.5.3-phase3C (2026-02-09 12:20) - app.jsx - BUILD:20260209-1220
 // ================================================================
 // MindHome - React Frontend Application v0.5.0
 // ================================================================
@@ -88,6 +88,13 @@ const api = {
             return { _error: true, message: e.message };
         }
     }
+};
+
+// Time input helper: auto-format "0600" -> "06:00", insert ":" after 2 digits
+const formatTimeInput = (val) => {
+    const nums = val.replace(/[^0-9]/g, '').slice(0, 4);
+    if (nums.length <= 2) return nums;
+    return nums.slice(0, 2) + ':' + nums.slice(2);
 };
 
 // ================================================================
@@ -3490,7 +3497,7 @@ const PersonTimeProfiles = ({ lang }) => {
                 );
             })}
             {editing && (
-                <Modal title={lang === 'de' ? 'Zeitprofil bearbeiten' : 'Edit Time Profile'} onClose={() => setEditing(null)} onConfirm={() => save(editing)} wide={editing.schedule_type === 'shift'}>
+                <Modal title={lang === 'de' ? 'Zeitprofil bearbeiten' : 'Edit Time Profile'} onClose={() => setEditing(null)} onConfirm={() => save(editing)} wide>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                         <div>
                             <label style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Typ</label>
@@ -3509,7 +3516,7 @@ const PersonTimeProfiles = ({ lang }) => {
                                 {[['time_wake','Aufstehen'],['time_leave','Haus verlassen'],['time_home','Heimkommen'],['time_sleep','Schlafen']].map(([key,lbl]) => (
                                     <div key={key}>
                                         <label style={{ fontSize: 11, color: 'var(--text-muted)' }}>{lbl}</label>
-                                        <input type="time" value={editing[key] || ''} onChange={e => setEditing({ ...editing, [key]: e.target.value })} style={{ fontSize: 12, width: '100%' }} />
+                                        <input type="text" placeholder="HH:MM" maxLength={5} pattern="[0-2][0-9]:[0-5][0-9]" value={editing[key] || ''} onChange={e => setEditing({ ...editing, [key]: formatTimeInput(e.target.value) })} style={{ fontSize: 12, width: '100%' }} />
                                     </div>
                                 ))}
                             </div>
@@ -3548,13 +3555,13 @@ const PersonTimeProfiles = ({ lang }) => {
                                                 const types = [...sd.shift_types]; types[idx] = { ...types[idx], short: e.target.value.toUpperCase().slice(0, 3) };
                                                 updateShiftData({ shift_types: types });
                                             }} style={{ fontSize: 12, width: 40, padding: '4px 6px', textAlign: 'center', fontWeight: 700 }} placeholder="F" maxLength={3} />
-                                            <input type="time" value={st.time_start || ''} onChange={e => {
-                                                const types = [...sd.shift_types]; types[idx] = { ...types[idx], time_start: e.target.value };
+                                            <input type="text" placeholder="HH:MM" maxLength={5} pattern="[0-2][0-9]:[0-5][0-9]" value={st.time_start || ''} onChange={e => {
+                                                const types = [...sd.shift_types]; types[idx] = { ...types[idx], time_start: formatTimeInput(e.target.value) };
                                                 updateShiftData({ shift_types: types });
                                             }} style={{ fontSize: 11, width: 90 }} />
                                             <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>-</span>
-                                            <input type="time" value={st.time_end || ''} onChange={e => {
-                                                const types = [...sd.shift_types]; types[idx] = { ...types[idx], time_end: e.target.value };
+                                            <input type="text" placeholder="HH:MM" maxLength={5} pattern="[0-2][0-9]:[0-5][0-9]" value={st.time_end || ''} onChange={e => {
+                                                const types = [...sd.shift_types]; types[idx] = { ...types[idx], time_end: formatTimeInput(e.target.value) };
                                                 updateShiftData({ shift_types: types });
                                             }} style={{ fontSize: 11, width: 90 }} />
                                             <button className="btn btn-sm btn-ghost" onClick={() => {
@@ -5180,19 +5187,19 @@ const NotificationsPage = () => {
                             <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8 }}>{lang === 'de' ? 'Kein Push in diesem Zeitraum (außer Kritisch)' : 'No push during this period (except Critical)'}</div>
                             <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
                                 <div style={{ fontSize: 12 }}>{lang === 'de' ? 'Werktag' : 'Weekday'}:</div>
-                                <input type="time" className="input" value={extSettings?.quiet_hours?.start || '22:00'} style={{ width: 90, padding: '4px 8px', fontSize: 12 }}
-                                    onChange={async (e) => { const qh = { ...extSettings?.quiet_hours, start: e.target.value }; setExtSettings(prev => ({ ...prev, quiet_hours: qh })); await api.put('notification-settings/extended', { quiet_hours: qh }); }} />
+                                <input type="text" placeholder="HH:MM" maxLength={5} pattern="[0-2][0-9]:[0-5][0-9]" className="input" value={extSettings?.quiet_hours?.start || '22:00'} style={{ width: 90, padding: '4px 8px', fontSize: 12 }}
+                                    onChange={async (e) => { const qh = { ...extSettings?.quiet_hours, start: formatTimeInput(e.target.value) }; setExtSettings(prev => ({ ...prev, quiet_hours: qh })); await api.put('notification-settings/extended', { quiet_hours: qh }); }} />
                                 <span>–</span>
-                                <input type="time" className="input" value={extSettings?.quiet_hours?.end || '07:00'} style={{ width: 90, padding: '4px 8px', fontSize: 12 }}
-                                    onChange={async (e) => { const qh = { ...extSettings?.quiet_hours, end: e.target.value }; setExtSettings(prev => ({ ...prev, quiet_hours: qh })); await api.put('notification-settings/extended', { quiet_hours: qh }); }} />
+                                <input type="text" placeholder="HH:MM" maxLength={5} pattern="[0-2][0-9]:[0-5][0-9]" className="input" value={extSettings?.quiet_hours?.end || '07:00'} style={{ width: 90, padding: '4px 8px', fontSize: 12 }}
+                                    onChange={async (e) => { const qh = { ...extSettings?.quiet_hours, end: formatTimeInput(e.target.value) }; setExtSettings(prev => ({ ...prev, quiet_hours: qh })); await api.put('notification-settings/extended', { quiet_hours: qh }); }} />
                             </div>
                             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                                 <div style={{ fontSize: 12 }}>{lang === 'de' ? 'Wochenende' : 'Weekend'}:</div>
-                                <input type="time" className="input" value={extSettings?.quiet_hours?.weekend_start || '23:00'} style={{ width: 90, padding: '4px 8px', fontSize: 12 }}
-                                    onChange={async (e) => { const qh = { ...extSettings?.quiet_hours, weekend_start: e.target.value }; setExtSettings(prev => ({ ...prev, quiet_hours: qh })); await api.put('notification-settings/extended', { quiet_hours: qh }); }} />
+                                <input type="text" placeholder="HH:MM" maxLength={5} pattern="[0-2][0-9]:[0-5][0-9]" className="input" value={extSettings?.quiet_hours?.weekend_start || '23:00'} style={{ width: 90, padding: '4px 8px', fontSize: 12 }}
+                                    onChange={async (e) => { const qh = { ...extSettings?.quiet_hours, weekend_start: formatTimeInput(e.target.value) }; setExtSettings(prev => ({ ...prev, quiet_hours: qh })); await api.put('notification-settings/extended', { quiet_hours: qh }); }} />
                                 <span>–</span>
-                                <input type="time" className="input" value={extSettings?.quiet_hours?.weekend_end || '09:00'} style={{ width: 90, padding: '4px 8px', fontSize: 12 }}
-                                    onChange={async (e) => { const qh = { ...extSettings?.quiet_hours, weekend_end: e.target.value }; setExtSettings(prev => ({ ...prev, quiet_hours: qh })); await api.put('notification-settings/extended', { quiet_hours: qh }); }} />
+                                <input type="text" placeholder="HH:MM" maxLength={5} pattern="[0-2][0-9]:[0-5][0-9]" className="input" value={extSettings?.quiet_hours?.weekend_end || '09:00'} style={{ width: 90, padding: '4px 8px', fontSize: 12 }}
+                                    onChange={async (e) => { const qh = { ...extSettings?.quiet_hours, weekend_end: formatTimeInput(e.target.value) }; setExtSettings(prev => ({ ...prev, quiet_hours: qh })); await api.put('notification-settings/extended', { quiet_hours: qh }); }} />
                             </div>
                         </div>
 
@@ -5252,8 +5259,8 @@ const NotificationsPage = () => {
                                 <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
                                     <label className="toggle"><input type="checkbox" checked={extSettings?.digest?.enabled || false}
                                         onChange={async () => { const d = { ...(extSettings?.digest || {}), enabled: !extSettings?.digest?.enabled }; setExtSettings(prev => ({ ...prev, digest: d })); await api.put('notification-settings/extended', { digest: d }); }} /><div className="toggle-slider" /></label>
-                                    {extSettings?.digest?.enabled && <input type="time" className="input" value={extSettings?.digest?.time || '08:00'} style={{ width: 80, padding: '2px 6px', fontSize: 11 }}
-                                        onChange={async (e) => { const d = { ...extSettings.digest, time: e.target.value }; setExtSettings(prev => ({ ...prev, digest: d })); await api.put('notification-settings/extended', { digest: d }); }} />}
+                                    {extSettings?.digest?.enabled && <input type="text" placeholder="HH:MM" maxLength={5} pattern="[0-2][0-9]:[0-5][0-9]" className="input" value={extSettings?.digest?.time || '08:00'} style={{ width: 80, padding: '2px 6px', fontSize: 11 }}
+                                        onChange={async (e) => { const d = { ...extSettings.digest, time: formatTimeInput(e.target.value) }; setExtSettings(prev => ({ ...prev, digest: d })); await api.put('notification-settings/extended', { digest: d }); }} />}
                                 </div>
                             </div>
 
