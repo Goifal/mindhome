@@ -1,7 +1,9 @@
 ARG BUILD_FROM
 FROM ${BUILD_FROM}
 
-# Install system dependencies for pdfplumber (needs C compiler for pdfminer)
+# BUILD:20260209-1110
+
+# Install system dependencies for pdfplumber
 RUN apk add --no-cache \
     build-base \
     libffi-dev
@@ -9,14 +11,13 @@ RUN apk add --no-cache \
 # Copy application
 COPY rootfs /
 
+# Make run.sh executable
+RUN chmod a+x /opt/mindhome/run.sh
+
 # Install Python dependencies
 RUN pip3 install --no-cache-dir -r /opt/mindhome/requirements.txt
 
 # Cleanup build deps to save space
 RUN apk del build-base libffi-dev
 
-# Set working directory
 WORKDIR /opt/mindhome
-
-# Start script
-CMD [ "/opt/mindhome/run.sh" ]
