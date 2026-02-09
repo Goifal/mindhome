@@ -1,8 +1,4 @@
-"""
-MindHome - Solar PV Domain Plugin
-Tracks photovoltaic generation, self-consumption, feed-in.
-"""
-
+"""MindHome - Solar Domain Plugin (Phase 3)"""
 from .base import DomainPlugin
 
 
@@ -10,32 +6,28 @@ class SolarDomain(DomainPlugin):
     DOMAIN_NAME = "solar"
     HA_DOMAINS = ["sensor"]
     DEVICE_CLASSES = ["power", "energy"]
+    DEFAULT_SETTINGS = {"enabled": "false", "mode": "suggest"}
 
     def on_start(self):
-        self.logger.info("Solar PV domain ready")
+        self.logger.info("Solar domain ready (optional)")
 
     def on_stop(self):
         pass
 
-    def on_state_change(self, entity_id, old_state, new_state):
+    def on_state_change(self, entity_id, old_state, new_state, context=None):
         if not self.is_entity_tracked(entity_id):
             return
-
-        self.logger.debug(
-            f"Solar {entity_id}: {new_state.get('state')} "
-            f"{new_state.get('attributes', {}).get('unit_of_measurement', '')}"
-        )
+        state = new_state.get("state", "") if isinstance(new_state, dict) else new_state
+        self.logger.debug(f"Solar {entity_id}: -> {state}")
 
     def get_trackable_features(self):
         return [
-            {"key": "generation", "label_de": "Erzeugung", "label_en": "Generation"},
-            {"key": "self_consumption", "label_de": "Eigenverbrauch", "label_en": "Self Consumption"},
-            {"key": "feed_in", "label_de": "Einspeisung", "label_en": "Feed-in"},
-            {"key": "battery", "label_de": "Batteriestand", "label_en": "Battery Level"},
+            {"key": "production", "label_de": "Erzeugung", "label_en": "Production"},
+            {"key": "self_consumption", "label_de": "Eigenverbrauch", "label_en": "Self consumption"},
         ]
 
     def get_current_status(self, room_id=None):
-        return {
-            "total": 0,
-            "note": "PV integration ready - activate when available"
-        }
+        return {"total": 0, "production_w": 0}
+
+    def evaluate(self, context):
+        return []  # Solar optimization planned for Phase 4
