@@ -1,7 +1,7 @@
 ARG BUILD_FROM
 FROM ${BUILD_FROM}
 
-# BUILD:20260209-1110
+# BUILD:20260209-1115
 
 # Install system dependencies for pdfplumber
 RUN apk add --no-cache \
@@ -11,8 +11,10 @@ RUN apk add --no-cache \
 # Copy application
 COPY rootfs /
 
-# Make run.sh executable
-RUN chmod a+x /opt/mindhome/run.sh
+# Fix permissions (Git may strip execute bit)
+RUN chmod -R a+x /opt/mindhome/run.sh && \
+    find /opt/mindhome -name "*.sh" -exec chmod a+x {} \; && \
+    find /opt/mindhome -name "*.py" -exec chmod a+r {} \;
 
 # Install Python dependencies
 RUN pip3 install --no-cache-dir -r /opt/mindhome/requirements.txt
