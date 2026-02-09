@@ -1,5 +1,5 @@
 """
-MindHome - Database Models - BUILD:20260209-0040
+MindHome - Database Models
 All persistent data structures for MindHome.
 Phase 1 Final - with migration system
 """
@@ -67,6 +67,11 @@ class User(Base):
     is_active = Column(Boolean, default=True)
     pin_hash = Column(String(255), nullable=True)
     language = Column(String(5), default="de")
+    # Phase 3
+    profile_type = Column(String(20), default="adult")  # "adult", "child", "guest"
+    tracking_enabled = Column(Boolean, default=True)
+    history_enabled = Column(Boolean, default=True)
+
     created_at = Column(DateTime, default=_utcnow)
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
 
@@ -198,6 +203,9 @@ class LearnedPattern(Base):
     schedule = Column(JSON, nullable=True)  # {"weekdays": [0,1,2,3,4], "time_after": "08:00", "time_before": "22:00"}
     delay_seconds = Column(Integer, default=0)
     conditions = Column(JSON, nullable=True)  # multi-factor: {"presence": "home", "weather": "cloudy"}
+
+    # Phase 3
+    context_tags = Column(JSON, nullable=True)  # {"persons": [...], "day_type": "weekday", ...}
 
     created_at = Column(DateTime, default=_utcnow)
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
@@ -402,6 +410,279 @@ class AuditTrail(Base):
     created_at = Column(DateTime, default=_utcnow)
 
 
+# ==============================================================================
+# Phase 3: Day Phases / Sun Tracking
+# ==============================================================================
+
+class DayPhase(Base):
+    """User-definable day phases (e.g. Morning, Day, Dusk, Night)."""
+    __tablename__ = "day_phases"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name_de = Column(String(100), nullable=False)
+    name_en = Column(String(100), nullable=False)
+    icon = Column(String(50), default="mdi:weather-sunset")
+    color = Column(String(20), default="#FFA500")
+    sort_order = Column(Integer, default=0)
+    start_type = Column(String(20), default="time")  # "time" or "sun_event"
+    start_time = Column(String(5), nullable=True)  # "06:00"
+    sun_event = Column(String(30), nullable=True)  # "sunrise", "sunset", "dawn", "dusk"
+    sun_offset_minutes = Column(Integer, default=0)  # +/- minutes from sun event
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=_utcnow)
+
+
+class RoomOrientation(Base):
+    """Optional compass orientation per room (for sun-based automations)."""
+    __tablename__ = "room_orientations"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    room_id = Column(Integer, ForeignKey("rooms.id"), nullable=False, unique=True)
+    orientation = Column(String(5), nullable=False)  # "N", "NE", "E", "SE", "S", "SW", "W", "NW"
+    offset_minutes = Column(Integer, default=0)
+    created_at = Column(DateTime, default=_utcnow)
+
+    room = relationship("Room")
+
+
+# ==============================================================================
+# Phase 3: Person Devices & Guest Management
+# ==============================================================================
+
+class PersonDevice(Base):
+    """Device assignment to persons (primary phone, secondary tablet, etc.)."""
+    __tablename__ = "person_devices"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    entity_id = Column(String(255), nullable=False)
+    device_type = Column(String(20), default="primary")  # "primary", "secondary", "stationary"
+    timeout_minutes = Column(Integer, default=10)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=_utcnow)
+
+    user = relationship("User")
+
+
+class GuestDevice(Base):
+    """Tracked guest devices from guest WLAN."""
+    __tablename__ = "guest_devices"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    mac_address = Column(String(20), nullable=True)
+    entity_id = Column(String(255), nullable=True)
+    name = Column(String(100), nullable=True)
+    first_seen = Column(DateTime, default=_utcnow)
+    last_seen = Column(DateTime, default=_utcnow)
+    visit_count = Column(Integer, default=1)
+    auto_delete_days = Column(Integer, default=30)
+    created_at = Column(DateTime, default=_utcnow)
+
+
+# ==============================================================================
+# Phase 3: Presence Modes
+# ==============================================================================
+
+class PresenceMode(Base):
+    """Configurable presence modes (home, away, vacation, etc.)."""
+    __tablename__ = "presence_modes"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name_de = Column(String(100), nullable=False)
+    name_en = Column(String(100), nullable=False)
+    icon = Column(String(50), default="mdi:home")
+    color = Column(String(20), default="#4CAF50")
+    priority = Column(Integer, default=0)  # higher = takes precedence
+    buffer_minutes = Column(Integer, default=5)  # delay before activating
+    actions = Column(JSON, nullable=True)  # [{"entity_id": "...", "service": "..."}]
+    trigger_type = Column(String(30), default="manual")  # "manual", "auto", "calendar"
+    auto_config = Column(JSON, nullable=True)  # auto-trigger config
+    notify_on_enter = Column(Boolean, default=False)
+    notify_on_leave = Column(Boolean, default=False)
+    is_system = Column(Boolean, default=False)  # built-in modes
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=_utcnow)
+
+
+class PresenceLog(Base):
+    """Log of presence mode changes."""
+    __tablename__ = "presence_log"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    mode_id = Column(Integer, ForeignKey("presence_modes.id"), nullable=True)
+    mode_name = Column(String(100), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    trigger = Column(String(50), default="auto")  # "auto", "manual", "calendar", "plugin"
+    created_at = Column(DateTime, default=_utcnow)
+
+
+# ==============================================================================
+# Phase 3: Multi-Sensor Fusion
+# ==============================================================================
+
+class SensorGroup(Base):
+    """Groups of sensors for fusion (e.g. all temp sensors in a room)."""
+    __tablename__ = "sensor_groups"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(100), nullable=False)
+    room_id = Column(Integer, ForeignKey("rooms.id"), nullable=True)
+    entity_ids = Column(JSON, default=list)  # ["sensor.temp_1", "sensor.temp_2"]
+    fusion_method = Column(String(20), default="average")  # "average", "median", "min", "max", "newest"
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=_utcnow)
+
+    room = relationship("Room")
+
+
+class SensorThreshold(Base):
+    """Significance thresholds for sensor changes (spam reduction)."""
+    __tablename__ = "sensor_thresholds"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    entity_id = Column(String(255), nullable=True)  # null = global default
+    min_change_percent = Column(Float, default=5.0)  # minimum % change to track
+    min_change_absolute = Column(Float, nullable=True)  # or absolute value
+    min_interval_seconds = Column(Integer, default=60)  # minimum time between events
+    created_at = Column(DateTime, default=_utcnow)
+
+
+# ==============================================================================
+# Phase 3: Energy Dashboard
+# ==============================================================================
+
+class EnergyConfig(Base):
+    """Energy pricing and configuration."""
+    __tablename__ = "energy_config"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    price_per_kwh = Column(Float, default=0.25)
+    currency = Column(String(5), default="EUR")
+    solar_enabled = Column(Boolean, default=False)
+    solar_entity = Column(String(255), nullable=True)
+    grid_import_entity = Column(String(255), nullable=True)
+    grid_export_entity = Column(String(255), nullable=True)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+
+class EnergyReading(Base):
+    """Periodic energy readings per device/room."""
+    __tablename__ = "energy_readings"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    entity_id = Column(String(255), nullable=False)
+    device_id = Column(Integer, ForeignKey("devices.id"), nullable=True)
+    room_id = Column(Integer, ForeignKey("rooms.id"), nullable=True)
+    power_w = Column(Float, nullable=True)
+    energy_kwh = Column(Float, nullable=True)
+    reading_type = Column(String(20), default="power")  # "power", "energy", "solar"
+    created_at = Column(DateTime, default=_utcnow, index=True)
+
+    device = relationship("Device")
+    room = relationship("Room")
+
+
+class StandbyConfig(Base):
+    """Standby detection config per device (with global default)."""
+    __tablename__ = "standby_config"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    device_id = Column(Integer, ForeignKey("devices.id"), nullable=True)  # null = global
+    entity_id = Column(String(255), nullable=True)
+    threshold_watts = Column(Float, default=5.0)
+    idle_minutes = Column(Integer, default=30)
+    notify_dashboard = Column(Boolean, default=True)
+    auto_off = Column(Boolean, default=False)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=_utcnow)
+
+    device = relationship("Device")
+
+
+# ==============================================================================
+# Phase 3: Learned Scenes
+# ==============================================================================
+
+class LearnedScene(Base):
+    """Auto-detected or manually created room scenes."""
+    __tablename__ = "learned_scenes"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    room_id = Column(Integer, ForeignKey("rooms.id"), nullable=True)
+    name_de = Column(String(100), nullable=False)
+    name_en = Column(String(100), nullable=False)
+    icon = Column(String(50), default="mdi:palette")
+    states = Column(JSON, nullable=False)  # [{"entity_id": "...", "state": "on", "attributes": {...}}]
+    frequency = Column(Integer, default=0)  # how often detected
+    min_frequency = Column(Integer, default=3)  # min times before suggesting
+    status = Column(String(20), default="detected")  # "detected", "suggested", "accepted", "rejected"
+    source = Column(String(20), default="auto")  # "auto", "manual"
+    last_activated = Column(DateTime, nullable=True)
+    last_detected = Column(DateTime, nullable=True)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=_utcnow)
+
+    room = relationship("Room")
+
+
+# ==============================================================================
+# Phase 3: Plugin Settings
+# ==============================================================================
+
+class PluginSetting(Base):
+    """Per-plugin configuration (mode, thresholds, etc.)."""
+    __tablename__ = "plugin_settings"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    plugin_name = Column(String(50), nullable=False)  # "light", "climate", etc.
+    setting_key = Column(String(100), nullable=False)
+    setting_value = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+
+# ==============================================================================
+# Phase 3: Quiet Hours / Rest Periods
+# ==============================================================================
+
+class QuietHoursConfig(Base):
+    """Quiet hours linked to day phases and shift schedules."""
+    __tablename__ = "quiet_hours_config"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # null = all users
+    name = Column(String(100), default="Nachtruhe")
+    start_time = Column(String(5), default="22:00")
+    end_time = Column(String(5), default="07:00")
+    linked_to_shift = Column(Boolean, default=False)  # adjust based on shift schedule
+    linked_to_day_phase = Column(String(50), nullable=True)  # link to a day phase name
+    allow_critical = Column(Boolean, default=True)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=_utcnow)
+
+    user = relationship("User")
+
+
+# ==============================================================================
+# Phase 3: Holiday / School Vacation Calendar
+# ==============================================================================
+
+class SchoolVacation(Base):
+    """School vacation periods for child profiles."""
+    __tablename__ = "school_vacations"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name_de = Column(String(100), nullable=False)
+    name_en = Column(String(100), nullable=False)
+    start_date = Column(String(10), nullable=False)  # "2026-02-14"
+    end_date = Column(String(10), nullable=False)  # "2026-02-22"
+    region = Column(String(50), default="AT-NÖ")
+    source = Column(String(20), default="manual")  # "manual", "ha_calendar"
+    calendar_entity = Column(String(255), nullable=True)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=_utcnow)
+
+
 class NotificationLog(Base):
     __tablename__ = "notification_log"
 
@@ -515,57 +796,6 @@ class StateHistory(Base):
     created_at = Column(DateTime, default=_utcnow, index=True)
 
     device = relationship("Device")
-
-
-class PersonSchedule(Base):
-    """Person time profiles: work schedules, shift plans."""
-    __tablename__ = "person_schedules"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    schedule_type = Column(String(30), nullable=False)  # "weekday", "weekend", "shift", "homeoffice", "custom"
-    name = Column(String(100), nullable=True)  # e.g. "Frueh+Abenddienst"
-    time_wake = Column(String(5), nullable=True)  # "06:00"
-    time_leave = Column(String(5), nullable=True)  # "07:00"
-    time_home = Column(String(5), nullable=True)  # "17:00"
-    time_sleep = Column(String(5), nullable=True)  # "22:00"
-    weekdays = Column(JSON, nullable=True)  # [0,1,2,3,4] for Mon-Fri
-    valid_from = Column(DateTime, nullable=True)
-    valid_until = Column(DateTime, nullable=True)
-    shift_data = Column(JSON, nullable=True)  # For shift plans: [{date, shift_type, blocks: [{start, end}]}]
-    is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=_utcnow)
-    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
-
-    user = relationship("User")
-
-
-class ShiftTemplate(Base):
-    """Shift type templates for PDF import mapping."""
-    __tablename__ = "shift_templates"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    name = Column(String(100), nullable=False)  # "Fruehdienst", "Tagdienst"
-    short_code = Column(String(20), nullable=True)  # "F", "T", "FA"
-    blocks = Column(JSON, nullable=False)  # [{"start": "06:00", "end": "14:00"}]
-    color = Column(String(7), nullable=True)  # "#FF9800"
-    is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=_utcnow)
-
-
-class Holiday(Base):
-    """Holidays and special days."""
-    __tablename__ = "holidays"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    name = Column(String(200), nullable=False)
-    date = Column(String(10), nullable=False)  # "2026-01-01" or "01-01" for recurring
-    is_recurring = Column(Boolean, default=False)  # True = every year (e.g. Christmas)
-    region = Column(String(50), nullable=True)  # "AT", "AT-3" (NOE), etc.
-    source = Column(String(30), default="builtin")  # "builtin", "calendar", "manual"
-    calendar_entity = Column(String(255), nullable=True)  # HA calendar entity
-    is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=_utcnow)
 
 
 class PatternMatchLog(Base):
@@ -825,45 +1055,210 @@ MIGRATIONS = [
     },
     {
         "version": 6,
-        "description": "Phase 3B - Person schedules, shift templates, holidays",
+        "description": "Phase 3 - Day phases, presence, guests, energy, scenes, plugins",
         "sql": [
-            """CREATE TABLE IF NOT EXISTS person_schedules (
+            # Day Phases
+            """CREATE TABLE IF NOT EXISTS day_phases (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL REFERENCES users(id),
-                schedule_type VARCHAR(30) NOT NULL,
-                name VARCHAR(100),
-                time_wake VARCHAR(5),
-                time_leave VARCHAR(5),
-                time_home VARCHAR(5),
-                time_sleep VARCHAR(5),
-                weekdays JSON,
-                valid_from DATETIME,
-                valid_until DATETIME,
-                shift_data JSON,
-                is_active BOOLEAN DEFAULT 1,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            )""",
-            """CREATE TABLE IF NOT EXISTS shift_templates (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name VARCHAR(100) NOT NULL,
-                short_code VARCHAR(20),
-                blocks JSON NOT NULL,
-                color VARCHAR(7),
+                name_de VARCHAR(100) NOT NULL,
+                name_en VARCHAR(100) NOT NULL,
+                icon VARCHAR(50) DEFAULT 'mdi:weather-sunset',
+                color VARCHAR(20) DEFAULT '#FFA500',
+                sort_order INTEGER DEFAULT 0,
+                start_type VARCHAR(20) DEFAULT 'time',
+                start_time VARCHAR(5),
+                sun_event VARCHAR(30),
+                sun_offset_minutes INTEGER DEFAULT 0,
                 is_active BOOLEAN DEFAULT 1,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )""",
-            """CREATE TABLE IF NOT EXISTS holidays (
+
+            # Room Orientations
+            """CREATE TABLE IF NOT EXISTS room_orientations (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name VARCHAR(200) NOT NULL,
-                date VARCHAR(10) NOT NULL,
-                is_recurring BOOLEAN DEFAULT 0,
-                region VARCHAR(50),
-                source VARCHAR(30) DEFAULT 'builtin',
+                room_id INTEGER NOT NULL UNIQUE REFERENCES rooms(id),
+                orientation VARCHAR(5) NOT NULL,
+                offset_minutes INTEGER DEFAULT 0,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )""",
+
+            # Person Devices
+            """CREATE TABLE IF NOT EXISTS person_devices (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL REFERENCES users(id),
+                entity_id VARCHAR(255) NOT NULL,
+                device_type VARCHAR(20) DEFAULT 'primary',
+                timeout_minutes INTEGER DEFAULT 10,
+                is_active BOOLEAN DEFAULT 1,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )""",
+
+            # Guest Devices
+            """CREATE TABLE IF NOT EXISTS guest_devices (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                mac_address VARCHAR(20),
+                entity_id VARCHAR(255),
+                name VARCHAR(100),
+                first_seen DATETIME DEFAULT CURRENT_TIMESTAMP,
+                last_seen DATETIME DEFAULT CURRENT_TIMESTAMP,
+                visit_count INTEGER DEFAULT 1,
+                auto_delete_days INTEGER DEFAULT 30,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )""",
+
+            # Presence Modes
+            """CREATE TABLE IF NOT EXISTS presence_modes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name_de VARCHAR(100) NOT NULL,
+                name_en VARCHAR(100) NOT NULL,
+                icon VARCHAR(50) DEFAULT 'mdi:home',
+                color VARCHAR(20) DEFAULT '#4CAF50',
+                priority INTEGER DEFAULT 0,
+                buffer_minutes INTEGER DEFAULT 5,
+                actions JSON,
+                trigger_type VARCHAR(30) DEFAULT 'manual',
+                auto_config JSON,
+                notify_on_enter BOOLEAN DEFAULT 0,
+                notify_on_leave BOOLEAN DEFAULT 0,
+                is_system BOOLEAN DEFAULT 0,
+                is_active BOOLEAN DEFAULT 1,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )""",
+
+            # Presence Log
+            """CREATE TABLE IF NOT EXISTS presence_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                mode_id INTEGER REFERENCES presence_modes(id),
+                mode_name VARCHAR(100) NOT NULL,
+                user_id INTEGER REFERENCES users(id),
+                trigger VARCHAR(50) DEFAULT 'auto',
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_presence_log_created ON presence_log(created_at)",
+
+            # Sensor Groups
+            """CREATE TABLE IF NOT EXISTS sensor_groups (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name VARCHAR(100) NOT NULL,
+                room_id INTEGER REFERENCES rooms(id),
+                entity_ids JSON DEFAULT '[]',
+                fusion_method VARCHAR(20) DEFAULT 'average',
+                is_active BOOLEAN DEFAULT 1,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )""",
+
+            # Sensor Thresholds
+            """CREATE TABLE IF NOT EXISTS sensor_thresholds (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                entity_id VARCHAR(255),
+                min_change_percent FLOAT DEFAULT 5.0,
+                min_change_absolute FLOAT,
+                min_interval_seconds INTEGER DEFAULT 60,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )""",
+
+            # Energy Config
+            """CREATE TABLE IF NOT EXISTS energy_config (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                price_per_kwh FLOAT DEFAULT 0.25,
+                currency VARCHAR(5) DEFAULT 'EUR',
+                solar_enabled BOOLEAN DEFAULT 0,
+                solar_entity VARCHAR(255),
+                grid_import_entity VARCHAR(255),
+                grid_export_entity VARCHAR(255),
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )""",
+
+            # Energy Readings
+            """CREATE TABLE IF NOT EXISTS energy_readings (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                entity_id VARCHAR(255) NOT NULL,
+                device_id INTEGER REFERENCES devices(id),
+                room_id INTEGER REFERENCES rooms(id),
+                power_w FLOAT,
+                energy_kwh FLOAT,
+                reading_type VARCHAR(20) DEFAULT 'power',
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_energy_readings_entity ON energy_readings(entity_id, created_at)",
+            "CREATE INDEX IF NOT EXISTS idx_energy_readings_room ON energy_readings(room_id, created_at)",
+
+            # Standby Config
+            """CREATE TABLE IF NOT EXISTS standby_config (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                device_id INTEGER REFERENCES devices(id),
+                entity_id VARCHAR(255),
+                threshold_watts FLOAT DEFAULT 5.0,
+                idle_minutes INTEGER DEFAULT 30,
+                notify_dashboard BOOLEAN DEFAULT 1,
+                auto_off BOOLEAN DEFAULT 0,
+                is_active BOOLEAN DEFAULT 1,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )""",
+
+            # Learned Scenes
+            """CREATE TABLE IF NOT EXISTS learned_scenes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                room_id INTEGER REFERENCES rooms(id),
+                name_de VARCHAR(100) NOT NULL,
+                name_en VARCHAR(100) NOT NULL,
+                icon VARCHAR(50) DEFAULT 'mdi:palette',
+                states JSON NOT NULL,
+                frequency INTEGER DEFAULT 0,
+                min_frequency INTEGER DEFAULT 3,
+                status VARCHAR(20) DEFAULT 'detected',
+                source VARCHAR(20) DEFAULT 'auto',
+                last_activated DATETIME,
+                last_detected DATETIME,
+                is_active BOOLEAN DEFAULT 1,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )""",
+
+            # Plugin Settings
+            """CREATE TABLE IF NOT EXISTS plugin_settings (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                plugin_name VARCHAR(50) NOT NULL,
+                setting_key VARCHAR(100) NOT NULL,
+                setting_value TEXT NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )""",
+
+            # Quiet Hours Config
+            """CREATE TABLE IF NOT EXISTS quiet_hours_config (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER REFERENCES users(id),
+                name VARCHAR(100) DEFAULT 'Nachtruhe',
+                start_time VARCHAR(5) DEFAULT '22:00',
+                end_time VARCHAR(5) DEFAULT '07:00',
+                linked_to_shift BOOLEAN DEFAULT 0,
+                linked_to_day_phase VARCHAR(50),
+                allow_critical BOOLEAN DEFAULT 1,
+                is_active BOOLEAN DEFAULT 1,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )""",
+
+            # School Vacations
+            """CREATE TABLE IF NOT EXISTS school_vacations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name_de VARCHAR(100) NOT NULL,
+                name_en VARCHAR(100) NOT NULL,
+                start_date VARCHAR(10) NOT NULL,
+                end_date VARCHAR(10) NOT NULL,
+                region VARCHAR(50) DEFAULT 'AT-NÖ',
+                source VARCHAR(20) DEFAULT 'manual',
                 calendar_entity VARCHAR(255),
                 is_active BOOLEAN DEFAULT 1,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )""",
+
+            # LearnedPattern: context tags for Phase 3
+            "ALTER TABLE learned_patterns ADD COLUMN context_tags JSON",
+
+            # User extensions for Phase 3
+            "ALTER TABLE users ADD COLUMN profile_type VARCHAR(20) DEFAULT 'adult'",
+            "ALTER TABLE users ADD COLUMN tracking_enabled BOOLEAN DEFAULT 1",
+            "ALTER TABLE users ADD COLUMN history_enabled BOOLEAN DEFAULT 1",
         ]
     },
 ]
