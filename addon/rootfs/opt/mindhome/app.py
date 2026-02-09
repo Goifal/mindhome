@@ -1,4 +1,4 @@
-# MindHome Backend v0.5.3-phase3C-fix5 (2026-02-09 10:40) - app.py - BUILD:20260209-1040
+# MindHome Backend v0.5.3-phase3C-fix6 (2026-02-09 11:00) - app.py - BUILD:20260209-1100
 """
 MindHome - Main Application
 Flask backend serving the API and frontend.
@@ -4920,6 +4920,25 @@ def api_create_shift_template():
         session.add(t)
         session.commit()
         return jsonify({"success": True, "id": t.id})
+    except Exception as e:
+        session.rollback()
+        return jsonify({"error": str(e)}), 400
+    finally:
+        session.close()
+
+@app.route("/api/shift-templates/<int:tid>", methods=["PUT"])
+def api_update_shift_template(tid):
+    data = request.json
+    session = get_db()
+    try:
+        t = session.get(ShiftTemplate, tid)
+        if not t:
+            return jsonify({"error": "Not found"}), 404
+        for f in ["name", "short_code", "blocks", "color"]:
+            if f in data:
+                setattr(t, f, data[f])
+        session.commit()
+        return jsonify({"success": True})
     except Exception as e:
         session.rollback()
         return jsonify({"error": str(e)}), 400
