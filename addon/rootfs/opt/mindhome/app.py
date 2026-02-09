@@ -1,4 +1,4 @@
-#  MindHome Backend v0.5.3-phase3C (2026-02-09 02:30) - app.py - BUILD:20260209-0230
+# MindHome Backend v0.5.3-phase3C-fix2 (2026-02-09 10:10) - app.py - BUILD:20260209-1010
 """
 MindHome - Main Application
 Flask backend serving the API and frontend.
@@ -4822,122 +4822,6 @@ def graceful_shutdown(signum, frame):
 
 
 # ==============================================================================
-# Startup
-# ==============================================================================
-
-def start_app():
-    """Initialize and start MindHome. (#10 Self-Test)"""
-    global _start_time
-    _start_time = time.time()
-
-    logger.info("=" * 60)
-    logger.info("MindHome - Smart Home AI")
-    logger.info(f"Version: 0.5.0 (Phase 1+2 Complete + Improvements)")
-    logger.info(f"Language: {get_language()}")
-    logger.info(f"Log Level: {log_level}")
-    logger.info(f"Ingress Path: {INGRESS_PATH}")
-    logger.info("=" * 60)
-
-    # #10 Startup Self-Test
-    logger.info("Running startup self-test...")
-    try:
-        session = get_db()
-        session.execute(text("SELECT 1"))
-        session.close()
-        logger.info("  âœ… Database OK")
-    except Exception as e:
-        logger.error(f"  âŒ Database FAILED: {e}")
-
-    # Register shutdown handlers (#2)
-    signal.signal(signal.SIGTERM, graceful_shutdown)
-    signal.signal(signal.SIGINT, graceful_shutdown)
-
-    # Set defaults
-    if not get_setting("data_retention_days"):
-        set_setting("data_retention_days", "90")
-
-    # Connect to Home Assistant
-    ha.connect()
-
-    # Check timezone
-    try:
-        tz = get_ha_timezone()
-        logger.info(f"  âœ… Timezone: {tz}")
-    except Exception:
-        logger.warning("  âš ï¸ Timezone fallback to UTC")
-
-    # Subscribe to state changes
-    ha.subscribe_events(on_state_changed, "state_changed")
-
-    # Start domain plugins (if available)
-    if domain_manager:
-        try:
-            # Auto-enable all domains if none are enabled yet
-            _dm_session = get_session(engine)
-            try:
-                enabled_count = _dm_session.query(Domain).filter_by(is_enabled=True).count()
-                if enabled_count == 0:
-                    all_domains = _dm_session.query(Domain).all()
-                    for d in all_domains:
-                        d.is_enabled = True
-                    _dm_session.commit()
-                    logger.info(f"Auto-enabled {len(all_domains)} domains (first start)")
-
-                # Register custom domains in DOMAIN_PLUGINS so they get tracked
-                custom_domains = _dm_session.query(Domain).filter_by(is_custom=True, is_enabled=True).all()
-                for cd in custom_domains:
-                    if cd.name not in DOMAIN_PLUGINS:
-                        DOMAIN_PLUGINS[cd.name] = {
-                            "ha_domain": cd.name,
-                            "attributes": [],
-                            "controls": ["toggle"],
-                            "pattern_features": ["time_of_day", "state_change", "duration"],
-                            "icon": cd.icon or "mdi:puzzle",
-                            "is_custom": True,
-                        }
-                        logger.info(f"Registered custom domain plugin: {cd.name}")
-            finally:
-                _dm_session.close()
-            domain_manager.start_enabled_domains()
-        except Exception as e:
-            logger.warning(f"Domain manager start error: {e}")
-
-    # Start ML engines
-    pattern_scheduler.start()
-    logger.info("  âœ… Pattern Engine started")
-
-    automation_scheduler.start()
-    logger.info("  âœ… Automation Engine started")
-
-    # Start cleanup scheduler
-    schedule_cleanup()
-
-    # Start watchdog thread (#40)
-    watchdog_thread = threading.Thread(target=_watchdog_loop, daemon=True)
-    watchdog_thread.start()
-    logger.info("  âœ… Watchdog started")
-
-    # Run startup self-test (#10)
-    test_results = run_startup_self_test()
-    if not test_results["passed"]:
-        logger.warning(f"Self-test issues: {test_results}")
-
-    # Run cleanup once on startup
-    try:
-        run_cleanup()
-    except Exception:
-        pass
-
-    logger.info("MindHome started successfully!")
-
-    # Start Flask
-    app.run(host="0.0.0.0", port=5000, debug=False)
-
-
-if __name__ == "__main__":
-    start_app()
-
-
 # ==============================================================================
 # Phase 3B: Person Schedules / Time Profiles
 # ==============================================================================
@@ -5561,3 +5445,119 @@ def api_get_ha_holiday_calendars():
             name = attrs.get("friendly_name", eid)
             calendars.append({"entity_id": eid, "name": name})
     return jsonify(calendars)
+
+
+# Startup
+# ==============================================================================
+
+def start_app():
+    """Initialize and start MindHome. (#10 Self-Test)"""
+    global _start_time
+    _start_time = time.time()
+
+    logger.info("=" * 60)
+    logger.info("MindHome - Smart Home AI")
+    logger.info(f"Version: 0.5.0 (Phase 1+2 Complete + Improvements)")
+    logger.info(f"Language: {get_language()}")
+    logger.info(f"Log Level: {log_level}")
+    logger.info(f"Ingress Path: {INGRESS_PATH}")
+    logger.info("=" * 60)
+
+    # #10 Startup Self-Test
+    logger.info("Running startup self-test...")
+    try:
+        session = get_db()
+        session.execute(text("SELECT 1"))
+        session.close()
+        logger.info("  âœ… Database OK")
+    except Exception as e:
+        logger.error(f"  âŒ Database FAILED: {e}")
+
+    # Register shutdown handlers (#2)
+    signal.signal(signal.SIGTERM, graceful_shutdown)
+    signal.signal(signal.SIGINT, graceful_shutdown)
+
+    # Set defaults
+    if not get_setting("data_retention_days"):
+        set_setting("data_retention_days", "90")
+
+    # Connect to Home Assistant
+    ha.connect()
+
+    # Check timezone
+    try:
+        tz = get_ha_timezone()
+        logger.info(f"  âœ… Timezone: {tz}")
+    except Exception:
+        logger.warning("  âš ï¸ Timezone fallback to UTC")
+
+    # Subscribe to state changes
+    ha.subscribe_events(on_state_changed, "state_changed")
+
+    # Start domain plugins (if available)
+    if domain_manager:
+        try:
+            # Auto-enable all domains if none are enabled yet
+            _dm_session = get_session(engine)
+            try:
+                enabled_count = _dm_session.query(Domain).filter_by(is_enabled=True).count()
+                if enabled_count == 0:
+                    all_domains = _dm_session.query(Domain).all()
+                    for d in all_domains:
+                        d.is_enabled = True
+                    _dm_session.commit()
+                    logger.info(f"Auto-enabled {len(all_domains)} domains (first start)")
+
+                # Register custom domains in DOMAIN_PLUGINS so they get tracked
+                custom_domains = _dm_session.query(Domain).filter_by(is_custom=True, is_enabled=True).all()
+                for cd in custom_domains:
+                    if cd.name not in DOMAIN_PLUGINS:
+                        DOMAIN_PLUGINS[cd.name] = {
+                            "ha_domain": cd.name,
+                            "attributes": [],
+                            "controls": ["toggle"],
+                            "pattern_features": ["time_of_day", "state_change", "duration"],
+                            "icon": cd.icon or "mdi:puzzle",
+                            "is_custom": True,
+                        }
+                        logger.info(f"Registered custom domain plugin: {cd.name}")
+            finally:
+                _dm_session.close()
+            domain_manager.start_enabled_domains()
+        except Exception as e:
+            logger.warning(f"Domain manager start error: {e}")
+
+    # Start ML engines
+    pattern_scheduler.start()
+    logger.info("  âœ… Pattern Engine started")
+
+    automation_scheduler.start()
+    logger.info("  âœ… Automation Engine started")
+
+    # Start cleanup scheduler
+    schedule_cleanup()
+
+    # Start watchdog thread (#40)
+    watchdog_thread = threading.Thread(target=_watchdog_loop, daemon=True)
+    watchdog_thread.start()
+    logger.info("  âœ… Watchdog started")
+
+    # Run startup self-test (#10)
+    test_results = run_startup_self_test()
+    if not test_results["passed"]:
+        logger.warning(f"Self-test issues: {test_results}")
+
+    # Run cleanup once on startup
+    try:
+        run_cleanup()
+    except Exception:
+        pass
+
+    logger.info("MindHome started successfully!")
+
+    # Start Flask
+    app.run(host="0.0.0.0", port=5000, debug=False)
+
+
+if __name__ == "__main__":
+    start_app()
