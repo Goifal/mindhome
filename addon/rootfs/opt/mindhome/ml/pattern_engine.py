@@ -1,8 +1,9 @@
-# MindHome Pattern Engine v0.5.2-phase3B-fix2 (2026-02-09 00:40) - pattern_engine.py - BUILD:20260209-0040
+# MindHome Pattern Engine v0.6.0-phase3 (2026-02-09) - pattern_engine.py
 """
-MindHome - Pattern Engine (Phase 2a)
+MindHome - Pattern Engine (Phase 2a + Phase 3)
 Core intelligence: state logging, context building, pattern detection.
-Runs as background service with scheduled analysis.
+Phase 3: Context tags (person, day phase, shift), significance thresholds,
+         sensor fusion, scene detection, holiday awareness.
 """
 
 import os
@@ -18,7 +19,10 @@ from sqlalchemy.orm import sessionmaker
 from models import (
     get_engine, StateHistory, LearnedPattern, PatternMatchLog,
     Device, Domain, Room, RoomDomainState, DataCollection,
-    SystemSetting, User, LearningPhase, NotificationLog, NotificationType
+    SystemSetting, User, LearningPhase, NotificationLog, NotificationType,
+    DayPhase, SensorThreshold, SensorGroup, LearnedScene, PresenceMode,
+    PresenceLog, SchoolVacation, PluginSetting,
+    ManualRule, ActionLog, PatternExclusion
 )
 
 logger = logging.getLogger("mindhome.pattern_engine")
@@ -30,7 +34,7 @@ logger = logging.getLogger("mindhome.pattern_engine")
 
 # Minimum change thresholds per device_class / entity type
 SAMPLING_THRESHOLDS = {
-    "temperature":  0.5,   # only log if >= 0.5\u00b0 change
+    "temperature":  0.5,   # only log if >= 0.5Ã‚Â° change
     "humidity":     2.0,   # only log if >= 2% change
     "pressure":     5.0,   # only log if >= 5 hPa change
     "illuminance":  50.0,  # only log if >= 50 lux change
@@ -117,7 +121,7 @@ class ContextBuilder:
             "wind_speed": None,
             # #27 Seasonal weighting
             "season_weight": {"spring": 0.9, "summer": 1.0, "autumn": 0.9, "winter": 0.8}.get(season, 0.9),
-            # #57 - dark detection
+            # #57 Weather-adaptive fields
             "is_rainy": False,
             "is_sunny": False,
             "is_dark": False,
@@ -141,7 +145,7 @@ class ContextBuilder:
                 if eid == "sun.sun":
                     ctx["sun_phase"] = state_val
                     ctx["sun_elevation"] = attrs.get("elevation")
-                    # #57 - dark detection
+                    # #57 Ã¢â‚¬â€œ dark detection
                     elev = attrs.get("elevation")
                     if elev is not None and elev < -6:
                         ctx["is_dark"] = True
@@ -154,7 +158,7 @@ class ContextBuilder:
                         ctx["humidity"] = attrs["humidity"]
                     if attrs.get("wind_speed") is not None:
                         ctx["wind_speed"] = attrs["wind_speed"]
-                    # #57 - dark detection
+                    # #57 weather flags
                     if state_val in ("rainy", "pouring", "lightning-rainy", "hail", "snowy"):
                         ctx["is_rainy"] = True
                     if state_val in ("sunny", "clear-night"):
@@ -196,6 +200,73 @@ class ContextBuilder:
                 vac = session.query(SystemSetting).filter_by(key="vacation_mode").first()
                 if vac and vac.value == "true":
                     ctx["vacation_mode"] = True
+
+                # Phase 3: Current day phase
+                try:
+                    phases = session.query(DayPhase).filter_by(is_active=True).order_by(DayPhase.sort_order).all()
+                    if phases:
+                        current_phase = None
+                        current_minutes = hour * 60 + now.minute
+                        for phase in reversed(phases):
+                            if phase.start_type == "time" and phase.start_time:
+                                ph, pm = map(int, phase.start_time.split(":"))
+                                phase_minutes = ph * 60 + pm
+                                if current_minutes >= phase_minutes:
+                                    current_phase = phase
+                                    break
+                        if current_phase:
+                            ctx["day_phase"] = current_phase.name_de
+                            ctx["day_phase_id"] = current_phase.id
+                except Exception:
+                    pass
+
+                # Phase 3: Holiday check
+                try:
+                    today_str = now.strftime("%Y-%m-%d")
+                    from models import SystemSetting
+                    holidays_json = session.query(SystemSetting).filter_by(key="holidays_cache").first()
+                    if holidays_json:
+                        holidays = json.loads(holidays_json.value)
+                        ctx["is_holiday"] = today_str in holidays
+                    else:
+                        ctx["is_holiday"] = False
+
+                    # If holiday, treat as weekend for automation purposes
+                    if ctx.get("is_holiday"):
+                        ctx["is_weekend"] = True
+                except Exception:
+                    ctx["is_holiday"] = False
+
+                # Phase 3: School vacation check
+                try:
+                    vacation = session.query(SchoolVacation).filter(
+                        SchoolVacation.is_active == True,
+                        SchoolVacation.start_date <= today_str,
+                        SchoolVacation.end_date >= today_str
+                    ).first()
+                    ctx["is_school_vacation"] = vacation is not None
+                except Exception:
+                    ctx["is_school_vacation"] = False
+
+                # Phase 3: Active presence mode
+                try:
+                    last_mode = session.query(PresenceLog).order_by(
+                        PresenceLog.created_at.desc()
+                    ).first()
+                    if last_mode:
+                        ctx["presence_mode"] = last_mode.mode_name
+                        ctx["presence_mode_id"] = last_mode.mode_id
+                except Exception:
+                    pass
+
+                # Phase 3: Shift info for persons
+                try:
+                    shift_setting = session.query(SystemSetting).filter_by(key="current_shift").first()
+                    if shift_setting:
+                        ctx["current_shift"] = shift_setting.value
+                except Exception:
+                    pass
+
                 session.close()
             except Exception:
                 pass
@@ -222,11 +293,16 @@ class StateLogger:
         # Motion sensor debounce tracking
         self._motion_last_on = {}  # entity_id -> datetime
         self._last_sensor_values = {}  # entity_id -> last_logged_value
+        self._last_sensor_times = {}  # entity_id -> last_logged_timestamp
 
         # Rate limiter: sliding window
         self._event_timestamps = []  # list of timestamps
         self._rate_limit_warned = False
         self._rate_limit_warn_time = None
+
+        # Phase 3: Custom sensor thresholds cache
+        self._custom_thresholds = {}  # entity_id -> SensorThreshold
+        self._thresholds_loaded = False
 
     def should_log(self, entity_id, old_state, new_state, attributes):
         """A4: Intelligent sampling - decide if this state change is worth logging."""
@@ -253,9 +329,56 @@ class StateLogger:
         # For sensors: check threshold
         if ha_domain == "sensor":
             device_class = attributes.get("device_class", "")
+
+            # Phase 3: Load custom thresholds if not loaded
+            if not self._thresholds_loaded:
+                try:
+                    session = self.Session()
+                    for st in session.query(SensorThreshold).all():
+                        if st.entity_id:
+                            self._custom_thresholds[st.entity_id] = st
+                        else:
+                            self._custom_thresholds["__global__"] = st
+                    session.close()
+                    self._thresholds_loaded = True
+                except Exception:
+                    pass
+
+            # Phase 3: Check custom threshold first, then default
+            custom = self._custom_thresholds.get(entity_id) or self._custom_thresholds.get("__global__")
             threshold = SAMPLING_THRESHOLDS.get(device_class)
 
-            if threshold is not None:
+            if custom:
+                # Min interval check
+                now_ts = time.time()
+                last_ts = self._last_sensor_times.get(entity_id, 0)
+                min_interval = custom.min_interval_seconds or 60
+                if (now_ts - last_ts) < min_interval:
+                    return False
+
+                try:
+                    new_val = float(new_state)
+                    last_val = self._last_sensor_values.get(entity_id)
+
+                    if last_val is not None:
+                        abs_change = abs(new_val - last_val)
+                        # Check absolute threshold
+                        if custom.min_change_absolute is not None:
+                            if abs_change < custom.min_change_absolute:
+                                return False
+                        # Check percent threshold
+                        elif custom.min_change_percent and last_val != 0:
+                            pct_change = (abs_change / abs(last_val)) * 100
+                            if pct_change < custom.min_change_percent:
+                                return False
+
+                    self._last_sensor_values[entity_id] = new_val
+                    self._last_sensor_times[entity_id] = now_ts
+                    return True
+                except (ValueError, TypeError):
+                    return False
+
+            elif threshold is not None:
                 try:
                     new_val = float(new_state)
                     last_val = self._last_sensor_values.get(entity_id)
@@ -338,7 +461,7 @@ class StateLogger:
 
             session.commit()
             self._event_timestamps.append(now)
-            logger.debug(f"Logged: {entity_id} {old_state} \u2192 {new_state}")
+            logger.debug(f"Logged: {entity_id} {old_state} Ã¢â€ â€™ {new_state}")
 
             # B.4: Check manual rules
             self._check_manual_rules(session, entity_id, new_state, ctx)
@@ -644,7 +767,7 @@ class PatternDetector:
                 old_conf = p.confidence
                 p.confidence = max(0.1, p.confidence - decay)
                 if decay > 0:
-                    logger.debug(f"Pattern {p.id} confidence decay: {old_conf:.2f} \u2192 {p.confidence:.2f} (stale {days_stale}d)")
+                    logger.debug(f"Pattern {p.id} confidence decay: {old_conf:.2f} Ã¢â€ â€™ {p.confidence:.2f} (stale {days_stale}d)")
 
             session.commit()
             if stale:
@@ -684,7 +807,7 @@ class PatternDetector:
         pd = p.pattern_data or {}
         tw = pd.get("time_window_min", 60)
         if tw <= 15:
-            factors.append({"factor": "precise_time", "detail": f"\u00b1{tw}min window", "impact": "+precise"})
+            factors.append({"factor": "precise_time", "detail": f"Ã‚Â±{tw}min window", "impact": "+precise"})
 
         return {
             "confidence": conf,
@@ -695,7 +818,7 @@ class PatternDetector:
         }
 
     def detect_cross_room_correlations(self, session):
-        """#56: Detect patterns across rooms (e.g. kitchen\u2192dining room)."""
+        """#56: Detect patterns across rooms (e.g. kitchenÃ¢â€ â€™dining room)."""
         try:
             cutoff = datetime.now(timezone.utc) - timedelta(days=14)
             history = session.query(StateHistory).filter(
@@ -845,7 +968,7 @@ class PatternDetector:
                 device = session.query(Device).filter_by(ha_entity_id=entity_id).first()
                 device_name = device.name if device else entity_id
                 time_str = f"{avg_hour:02d}:{avg_minute:02d}"
-                day_str_de = "werktags" if is_weekday_only else ("am Wochenende" if is_weekend_only else "t\u00e4glich")
+                day_str_de = "werktags" if is_weekday_only else ("am Wochenende" if is_weekend_only else "tÃƒÂ¤glich")
                 day_str_en = "on weekdays" if is_weekday_only else ("on weekends" if is_weekend_only else "daily")
                 state_de = "eingeschaltet" if new_state == "on" else ("ausgeschaltet" if new_state == "off" else new_state)
                 state_en = "turned on" if new_state == "on" else ("turned off" if new_state == "off" else new_state)
@@ -874,25 +997,11 @@ class PatternDetector:
     # --------------------------------------------------------------------------
 
     def _detect_sequence_patterns(self, session, events):
-        """Find A\u2192B event chains (within time window)."""
+        """Find AÃ¢â€ â€™B event chains (within time window)."""
         patterns_found = []
         CHAIN_WINDOW = 300  # 5 minutes
-        MAX_NEW_PATTERNS = 20  # Rate limit: max new patterns per cycle
 
-        def is_ignored_pair(eid_a, eid_b):
-            """Check if this entity pair should be ignored."""
-            a_is_sensor = eid_a.startswith("sensor.")
-            b_is_sensor = eid_b.startswith("sensor.")
-            if a_is_sensor and b_is_sensor:
-                return True
-            motion_prefixes = ("binary_sensor.motion", "binary_sensor.occupancy",
-                             "binary_sensor.bewegung", "binary_sensor.prasenz")
-            a_is_motion = any(eid_a.startswith(p) for p in motion_prefixes)
-            b_is_motion = any(eid_b.startswith(p) for p in motion_prefixes)
-            if a_is_motion and b_is_motion:
-                return True
-            return False
-
+        # Build pairs: for each event, what happened within 5 min after?
         pairs = defaultdict(int)
         pair_examples = defaultdict(list)
 
@@ -903,11 +1012,9 @@ class PatternDetector:
 
                 if delta > CHAIN_WINDOW:
                     break
-                if delta < 2:
+                if delta < 2:  # Ignore near-simultaneous (likely same automation)
                     continue
                 if ev_a.entity_id == ev_b.entity_id:
-                    continue
-                if is_ignored_pair(ev_a.entity_id, ev_b.entity_id):
                     continue
 
                 key = (
@@ -922,27 +1029,28 @@ class PatternDetector:
                         "context_b": ev_b.context,
                     })
 
-        new_pattern_count = 0
+        # Filter: need at least 4 occurrences
         for (eid_a, state_a, eid_b, state_b), count in pairs.items():
             if count < 4:
                 continue
-            if new_pattern_count >= MAX_NEW_PATTERNS:
-                break
 
             examples = pair_examples[(eid_a, state_a, eid_b, state_b)]
             avg_delta = sum(e["delta_seconds"] for e in examples) / len(examples)
 
+            # Consistency check: is the delta consistent?
             deltas = [e["delta_seconds"] for e in examples]
             delta_std = (sum((d - avg_delta)**2 for d in deltas) / len(deltas))**0.5
 
+            # Skip if timing is too variable (std > 60% of mean)
             if delta_std > avg_delta * 0.6 and avg_delta > 30:
                 continue
 
+            # Check person context consistency
             contexts_a = [e.get("context_a", {}) for e in examples if e.get("context_a")]
             common_persons = self._find_common_persons(contexts_a)
 
             confidence = min((count / 14) * 0.8, 0.90)
-            if confidence < 0.55:
+            if confidence < 0.3:
                 continue
 
             pattern_data = {
@@ -979,17 +1087,16 @@ class PatternDetector:
             state_b_de = "eingeschaltet" if state_b == "on" else ("ausgeschaltet" if state_b == "off" else state_b)
 
             delay_str = f"{int(avg_delta)}s" if avg_delta < 60 else f"{int(avg_delta/60)} Min"
-            desc_de = f"Wenn {name_a} {state_a_de} wird \u2192 {name_b} wird nach ~{delay_str} {state_b_de}"
-            desc_en = f"When {name_a} turns {state_a} \u2192 {state_b} after ~{delay_str}"
+            desc_de = f"Wenn {name_a} {state_a_de} wird Ã¢â€ â€™ {name_b} wird nach ~{delay_str} {state_b_de}"
+            desc_en = f"When {name_a} turns {state_a} Ã¢â€ â€™ {name_b} turns {state_b} after ~{delay_str}"
 
             p = self._upsert_pattern(
-                session, f"{eid_a}\u2192{eid_b}", "event_chain", pattern_data,
+                session, f"{eid_a}Ã¢â€ â€™{eid_b}", "event_chain", pattern_data,
                 confidence, trigger_conditions, action_def,
                 desc_de, desc_en, dev_b
             )
             if p:
                 patterns_found.append(p)
-                new_pattern_count += 1
 
         return patterns_found
 
@@ -1071,7 +1178,7 @@ class PatternDetector:
                 desc_en = f"When {name_a} = {state_a}, {name_b} is usually {state_b} ({int(ratio*100)}%)"
 
                 p = self._upsert_pattern(
-                    session, f"{eid_a}\u2192{corr_eid}", "correlation", pattern_data,
+                    session, f"{eid_a}Ã¢â€¡â€{eid_b}", "correlation", pattern_data,
                     confidence, trigger_conditions, action_def,
                     desc_de, desc_en, dev_b
                 )
@@ -1152,6 +1259,100 @@ class PatternDetector:
         threshold = len(contexts) * 0.7
         return {p for p, c in person_counts.items() if c >= threshold}
 
+    def _build_context_tags(self, pattern_data, pattern_type):
+        """Phase 3: Build context tags for a pattern."""
+        tags = {}
+        if pattern_data.get("requires_persons"):
+            tags["persons"] = pattern_data["requires_persons"]
+        if pattern_data.get("weekday_filter"):
+            tags["day_type"] = pattern_data["weekday_filter"]
+        if pattern_data.get("sun_relative_elevation") is not None:
+            tags["sun_relative"] = True
+        return tags if tags else None
+
+    def detect_scenes(self, session):
+        """Phase 3: Detect recurring room state combinations as scenes."""
+        try:
+            cutoff = datetime.now(timezone.utc) - timedelta(days=14)
+            rooms = session.query(Room).filter_by(is_active=True).all()
+
+            for room in rooms:
+                devices = session.query(Device).filter_by(room_id=room.id, is_tracked=True).all()
+                if len(devices) < 2:
+                    continue
+
+                entity_ids = [d.ha_entity_id for d in devices]
+
+                # Group state snapshots by 5-minute windows
+                snapshots = defaultdict(dict)
+                for eid in entity_ids:
+                    events = session.query(StateHistory).filter(
+                        StateHistory.entity_id == eid,
+                        StateHistory.created_at >= cutoff,
+                    ).all()
+                    for ev in events:
+                        window_key = int(ev.created_at.timestamp() // 300)
+                        snapshots[window_key][eid] = ev.new_state
+
+                # Find recurring combinations (at least 2 devices active)
+                state_combos = Counter()
+                for wk, states in snapshots.items():
+                    if len(states) < 2:
+                        continue
+                    key = tuple(sorted(states.items()))
+                    state_combos[key] += 1
+
+                # Create scenes from frequent combos
+                for combo, count in state_combos.most_common(5):
+                    if count < 3:
+                        continue
+
+                    states_dict = dict(combo)
+                    states_list = [{"entity_id": eid, "state": st} for eid, st in states_dict.items()]
+
+                    # Check if similar scene already exists
+                    existing = session.query(LearnedScene).filter_by(
+                        room_id=room.id, is_active=True
+                    ).all()
+
+                    is_duplicate = False
+                    for ex in existing:
+                        ex_eids = {s["entity_id"]: s["state"] for s in (ex.states or [])}
+                        if ex_eids == states_dict:
+                            ex.frequency = count
+                            ex.last_detected = datetime.now(timezone.utc)
+                            is_duplicate = True
+                            break
+
+                    if not is_duplicate and len(states_list) >= 2:
+                        # Generate name based on dominant states
+                        on_count = sum(1 for s in states_list if s["state"] == "on")
+                        total = len(states_list)
+                        if on_count == total:
+                            name_de, name_en = f"{room.name} - Alles an", f"{room.name} - All on"
+                        elif on_count == 0:
+                            name_de, name_en = f"{room.name} - Alles aus", f"{room.name} - All off"
+                        else:
+                            name_de = f"{room.name} - Szene ({on_count}/{total})"
+                            name_en = f"{room.name} - Scene ({on_count}/{total})"
+
+                        scene = LearnedScene(
+                            room_id=room.id,
+                            name_de=name_de,
+                            name_en=name_en,
+                            states=states_list,
+                            frequency=count,
+                            status="detected",
+                            source="auto",
+                            last_detected=datetime.now(timezone.utc),
+                        )
+                        session.add(scene)
+                        logger.info(f"New scene detected: {name_de} (frequency: {count})")
+
+            session.commit()
+        except Exception as e:
+            logger.warning(f"Scene detection error: {e}")
+
     def _upsert_pattern(self, session, key_hint, pattern_type, pattern_data,
                         confidence, trigger_conditions, action_def,
                         desc_de, desc_en, device=None):
@@ -1226,7 +1427,7 @@ class PatternDetector:
             domain_id = device.domain_id
             room_id = device.room_id
 
-        # Determine initial status: sensor\u2192sensor patterns are "insight" (lower priority)
+        # Determine initial status: sensorâ†’sensor patterns are "insight" (lower priority)
         initial_status = "observed"
         NON_ACTIONABLE = ("sensor.", "binary_sensor.", "sun.", "weather.", "zone.", "person.", "device_tracker.", "calendar.", "proximity.")
         if pattern_type == "event_chain":
@@ -1258,6 +1459,8 @@ class PatternDetector:
             is_active=True,
             last_matched_at=datetime.now(timezone.utc),
             match_count=1,
+            # Phase 3: Context tags
+            context_tags=self._build_context_tags(pattern_data, pattern_type),
         )
         session.add(pattern)
         logger.info(f"New pattern: {pattern_type} - {desc_de[:80]}... (confidence: {confidence:.2f})")
@@ -1265,11 +1468,10 @@ class PatternDetector:
         # First-time detection notification
         try:
             notification = NotificationLog(
+                user_id=1,  # system notification
                 notification_type=NotificationType.INFO,
-                title_de=f"Neues Muster erkannt: {desc_de[:60]}",
-                title_en=f"New pattern detected: {desc_en[:60]}",
-                message_de=f"MindHome hat erstmals ein {pattern_type}-Muster erkannt. Confidence: {confidence:.0%}",
-                message_en=f"MindHome detected a {pattern_type} pattern for the first time. Confidence: {confidence:.0%}",
+                title=f"Neues Muster erkannt: {desc_de[:60]}",
+                message=f"MindHome hat erstmals ein {pattern_type}-Muster erkannt. Confidence: {confidence:.0%}",
             )
             session.add(notification)
         except Exception as e:
@@ -1319,7 +1521,14 @@ class PatternScheduler:
         t3.start()
         self._threads.append(t3)
 
-        logger.info("Pattern Scheduler started (analysis:6h, storage:2h, decay:12h)")
+        # Phase 3: Scene detection: every 8 hours
+        t4 = threading.Thread(target=self._run_periodic,
+                              args=(self._run_scene_detection, 8 * 3600, "scene_detection"),
+                              daemon=True)
+        t4.start()
+        self._threads.append(t4)
+
+        logger.info("Pattern Scheduler started (analysis:6h, storage:2h, decay:12h, scenes:8h)")
 
     def stop(self):
         """Stop all background tasks."""
@@ -1416,6 +1625,15 @@ class PatternScheduler:
         t = threading.Thread(target=self.detector.run_full_analysis, daemon=True)
         t.start()
         return True
+
+    def _run_scene_detection(self):
+        """Phase 3: Run scene detection."""
+        try:
+            session = self.Session()
+            self.detector.detect_scenes(session)
+            session.close()
+        except Exception as e:
+            logger.warning(f"Scene detection scheduler error: {e}")
 
 
 # ==============================================================================
