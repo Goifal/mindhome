@@ -1,4 +1,4 @@
-// MindHome Frontend v0.5.3-phase3C-fix1 (2026-02-09 10:00) - app.jsx - BUILD:20260209-1000
+// MindHome Frontend v0.5.3-phase3C-fix5 (2026-02-09 10:40) - app.jsx - BUILD:20260209-1040
 // ================================================================
 // MindHome - React Frontend Application v0.5.0
 // ================================================================
@@ -1644,7 +1644,7 @@ const DevicesPage = () => {
                                 <th>Domain</th>
                                 <th>{lang === 'de' ? 'Raum' : 'Room'}</th>
                                 <th>Status</th>
-                                <th style={{ width: 90 }}>{lang === 'de' ? 'Aktionen' : 'Actions'}</th>
+                                <th style={{ width: 100, minWidth: 100 }}>{lang === 'de' ? 'Aktionen' : 'Actions'}</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -1672,7 +1672,7 @@ const DevicesPage = () => {
                                             onChange={() => toggleBulk(device.id)}
                                             style={{ width: 16, height: 16, accentColor: 'var(--accent-primary)' }} />
                                     </td>
-                                    <td style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>{device.ha_entity_id}</td>
+                                    <td style={{ fontFamily: 'var(--font-mono)', fontSize: 12, maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={device.ha_entity_id}>{device.ha_entity_id}</td>
                                     <td>{device.name}</td>
                                     <td>{getDomainName(device.domain_id)}</td>
                                     <td>{getRoomName(device.room_id)}</td>
@@ -1990,6 +1990,7 @@ const RoomsPage = () => {
     const [showAdd, setShowAdd] = useState(false);
     const [newRoom, setNewRoom] = useState({ name: '', icon: 'mdi:door' });
     const [editRoom, setEditRoom] = useState(null);
+    const [roomIconSearch, setRoomIconSearch] = useState('');
     const [confirm, setConfirm] = useState(null);
     const [importing, setImporting] = useState(false);
 
@@ -2264,42 +2265,35 @@ const RoomsPage = () => {
                     </div>
                     <div className="input-group">
                         <label className="input-label">Icon</label>
-                        {(() => {
-                            const ROOM_ICONS = [
-                                'mdi:door', 'mdi:door-open', 'mdi:bed', 'mdi:bed-double', 'mdi:sofa', 'mdi:television', 'mdi:desk', 'mdi:desk-lamp',
-                                'mdi:shower', 'mdi:toilet', 'mdi:bathtub', 'mdi:stove', 'mdi:fridge', 'mdi:washing-machine', 'mdi:tumble-dryer',
-                                'mdi:car-garage', 'mdi:garage', 'mdi:stairs', 'mdi:stairs-up', 'mdi:home-floor-0', 'mdi:home-floor-1', 'mdi:home-floor-2',
-                                'mdi:home-floor-negative-1', 'mdi:home', 'mdi:home-outline', 'mdi:office-building', 'mdi:warehouse',
-                                'mdi:tree', 'mdi:flower', 'mdi:grill', 'mdi:pool', 'mdi:hot-tub', 'mdi:dumbbell', 'mdi:yoga',
-                                'mdi:baby-carriage', 'mdi:teddy-bear', 'mdi:gamepad-variant', 'mdi:bookshelf', 'mdi:wardrobe',
-                                'mdi:hanger', 'mdi:coat-rack', 'mdi:shoe-formal', 'mdi:broom', 'mdi:vacuum', 'mdi:tools',
-                                'mdi:water-pump', 'mdi:radiator', 'mdi:solar-panel', 'mdi:ev-station', 'mdi:server', 'mdi:router-wireless',
-                                'mdi:balcony', 'mdi:terrace', 'mdi:patio-heater', 'mdi:awning', 'mdi:fence', 'mdi:gate',
-                            ];
-                            const [iconSearch, setIconSearch] = useState('');
-                            const filtered = ROOM_ICONS.filter(i => !iconSearch || i.toLowerCase().includes(iconSearch.toLowerCase()));
-                            return (
-                                <div>
-                                    <input className="input" placeholder={lang === 'de' ? 'Icon suchen...' : 'Search icon...'}
-                                        value={iconSearch} onChange={e => setIconSearch(e.target.value)}
-                                        style={{ marginBottom: 8, fontSize: 12 }} />
-                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(8, 1fr)', gap: 4, maxHeight: 160, overflowY: 'auto', padding: 4, background: 'var(--bg-primary)', borderRadius: 8 }}>
-                                        {filtered.map(icon => (
-                                            <button key={icon} type="button"
-                                                className={`btn btn-sm ${editRoom.icon === icon ? 'btn-primary' : 'btn-ghost'}`}
-                                                onClick={() => setEditRoom({ ...editRoom, icon })}
-                                                title={icon.replace('mdi:', '')}
-                                                style={{ padding: 6, fontSize: 20, lineHeight: 1 }}>
-                                                <span className={`mdi ${icon.replace('mdi:', 'mdi-')}`} />
-                                            </button>
-                                        ))}
-                                    </div>
-                                    <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 4 }}>
-                                        {editRoom.icon || 'mdi:door'}
-                                    </div>
-                                </div>
-                            );
-                        })()}
+                        <div>
+                            <input className="input" placeholder={lang === 'de' ? 'Icon suchen...' : 'Search icon...'}
+                                value={roomIconSearch} onChange={e => setRoomIconSearch(e.target.value)}
+                                style={{ marginBottom: 8, fontSize: 12 }} />
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(8, 1fr)', gap: 4, maxHeight: 160, overflowY: 'auto', padding: 4, background: 'var(--bg-primary)', borderRadius: 8 }}>
+                                {[
+                                    'mdi:door', 'mdi:door-open', 'mdi:bed', 'mdi:bed-double', 'mdi:sofa', 'mdi:television', 'mdi:desk', 'mdi:desk-lamp',
+                                    'mdi:shower', 'mdi:toilet', 'mdi:bathtub', 'mdi:stove', 'mdi:fridge', 'mdi:washing-machine', 'mdi:tumble-dryer',
+                                    'mdi:car-garage', 'mdi:garage', 'mdi:stairs', 'mdi:stairs-up', 'mdi:home-floor-0', 'mdi:home-floor-1', 'mdi:home-floor-2',
+                                    'mdi:home-floor-negative-1', 'mdi:home', 'mdi:home-outline', 'mdi:office-building', 'mdi:warehouse',
+                                    'mdi:tree', 'mdi:flower', 'mdi:grill', 'mdi:pool', 'mdi:hot-tub', 'mdi:dumbbell', 'mdi:yoga',
+                                    'mdi:baby-carriage', 'mdi:teddy-bear', 'mdi:gamepad-variant', 'mdi:bookshelf', 'mdi:wardrobe',
+                                    'mdi:hanger', 'mdi:coat-rack', 'mdi:shoe-formal', 'mdi:broom', 'mdi:vacuum', 'mdi:tools',
+                                    'mdi:water-pump', 'mdi:radiator', 'mdi:solar-panel', 'mdi:ev-station', 'mdi:server', 'mdi:router-wireless',
+                                    'mdi:balcony', 'mdi:terrace', 'mdi:patio-heater', 'mdi:awning', 'mdi:fence', 'mdi:gate',
+                                ].filter(i => !roomIconSearch || i.toLowerCase().includes(roomIconSearch.toLowerCase())).map(icon => (
+                                    <button key={icon} type="button"
+                                        className={`btn btn-sm ${editRoom.icon === icon ? 'btn-primary' : 'btn-ghost'}`}
+                                        onClick={() => setEditRoom({ ...editRoom, icon })}
+                                        title={icon.replace('mdi:', '')}
+                                        style={{ padding: 6, fontSize: 20, lineHeight: 1 }}>
+                                        <span className={`mdi ${icon.replace('mdi:', 'mdi-')}`} />
+                                    </button>
+                                ))}
+                            </div>
+                            <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 4 }}>
+                                {editRoom.icon || 'mdi:door'}
+                            </div>
+                        </div>
                     </div>
                 </Modal>
             )}
@@ -3420,6 +3414,11 @@ const PersonTimeProfiles = ({ lang }) => {
 
     if (loading) return <div style={{ padding: 16, color: 'var(--text-muted)' }}>Laden...</div>;
 
+    if (!users || users.length === 0) return <div style={{ padding: 12, color: 'var(--text-muted)', fontSize: 12 }}>
+        <span className="mdi mdi-information" style={{ marginRight: 4 }} />
+        {lang === 'de' ? 'Erstelle zuerst Personen unter "Personen" in der Navigation.' : 'Create persons first under "Persons" in navigation.'}
+    </div>;
+
     return (
         <div>
             {(users || []).map(u => {
@@ -3617,6 +3616,7 @@ const HolidayManager = ({ lang }) => {
     const [newHoliday, setNewHoliday] = useState({ name: '', date: '' });
     const [loading, setLoading] = useState(true);
     const [calError, setCalError] = useState(false);
+    const [showSources, setShowSources] = useState(false);
 
     const load = async () => {
         setLoading(true);
@@ -3668,11 +3668,19 @@ const HolidayManager = ({ lang }) => {
 
     return (
         <div>
-            {/* Calendar Sources */}
+            {/* Calendar Sources - Collapsible */}
             <div style={{ marginBottom: 12 }}>
-                <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 6 }}>
-                    {lang === 'de' ? 'Feiertags-Quellen:' : 'Holiday Sources:'}
-                </label>
+                <div onClick={() => setShowSources(!showSources)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', padding: '6px 0' }}>
+                    <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', cursor: 'pointer' }}>
+                        <span className="mdi mdi-database" style={{ marginRight: 4 }} />
+                        {lang === 'de' ? 'Feiertags-Quellen' : 'Holiday Sources'}
+                        <span style={{ fontSize: 10, color: 'var(--text-muted)', marginLeft: 6 }}>
+                            ({(useBuiltin ? 1 : 0) + selectedCalendars.length} {lang === 'de' ? 'aktiv' : 'active'})
+                        </span>
+                    </label>
+                    <span className={`mdi ${showSources ? 'mdi-chevron-up' : 'mdi-chevron-down'}`} style={{ fontSize: 16, color: 'var(--text-muted)' }} />
+                </div>
+                {showSources && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                     <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, cursor: 'pointer', padding: '4px 8px', background: useBuiltin ? 'rgba(var(--accent-primary-rgb, 245,166,35), 0.15)' : 'transparent', borderRadius: 6, border: '1px solid var(--border)' }}>
                         <input type="checkbox" checked={useBuiltin} onChange={() => setUseBuiltin(!useBuiltin)} />
@@ -3687,6 +3695,7 @@ const HolidayManager = ({ lang }) => {
                         </label>
                     ))}
                 </div>
+                )}
                 {calError && <div style={{ fontSize: 10, color: 'var(--warning)', marginTop: 4 }}>
                     <span className="mdi mdi-alert" style={{ marginRight: 4 }} />
                     {lang === 'de' ? 'HA Kalender nicht verfuegbar' : 'HA calendars unavailable'}
@@ -6099,6 +6108,7 @@ const App = () => {
             .stat-grid { grid-template-columns: 1fr 1fr !important; }
             .mobile-header { display: flex !important; }
             .table-container { overflow-x: auto; }
+            .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
             table { min-width: 500px; }
         }
         @media (max-width: 480px) {
