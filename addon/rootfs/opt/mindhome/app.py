@@ -1796,10 +1796,11 @@ def api_onboarding_complete():
 
 @app.route("/api/action-log", methods=["GET"])
 def api_get_action_log():
-    """Get action log with time filters."""
+    """Get action log with time filters and pagination."""
     session = get_db()
     try:
-        limit = request.args.get("limit", 200, type=int)
+        limit = request.args.get("limit", 50, type=int)
+        offset = request.args.get("offset", 0, type=int)
         action_type = request.args.get("type")
 
         # Fix 2: Time period filter
@@ -1814,27 +1815,34 @@ def api_get_action_log():
         if period == "today":
             start = now.replace(hour=0, minute=0, second=0, microsecond=0)
             query = query.filter(ActionLog.created_at >= start)
-        elif period == "week":
+        elif period == "week" or period == "7d":
             start = now - timedelta(days=7)
             query = query.filter(ActionLog.created_at >= start)
-        elif period == "month":
+        elif period == "month" or period == "30d":
             start = now - timedelta(days=30)
             query = query.filter(ActionLog.created_at >= start)
         # "all" = no date filter
 
-        logs = query.limit(limit).all()
+        total = query.count()
+        logs = query.offset(offset).limit(limit).all()
 
-        return jsonify([{
-            "id": log.id,
-            "action_type": log.action_type,
-            "domain_id": log.domain_id,
-            "room_id": log.room_id,
-            "device_id": log.device_id,
-            "action_data": log.action_data,
-            "reason": log.reason,
-            "was_undone": log.was_undone,
-            "created_at": utc_iso(log.created_at)
-        } for log in logs])
+        return jsonify({
+            "items": [{
+                "id": log.id,
+                "action_type": log.action_type,
+                "domain_id": log.domain_id,
+                "room_id": log.room_id,
+                "device_id": log.device_id,
+                "action_data": log.action_data,
+                "reason": log.reason,
+                "was_undone": log.was_undone,
+                "created_at": utc_iso(log.created_at)
+            } for log in logs],
+            "total": total,
+            "offset": offset,
+            "limit": limit,
+            "has_more": offset + limit < total
+        })
     finally:
         session.close()
 
@@ -1986,30 +1994,39 @@ def api_get_patterns():
         if not status_filter:
             query = query.filter_by(is_active=True).filter(LearnedPattern.status != 'insight')
 
-        patterns = query.limit(200).all()
+        total = query.count()
+        limit = request.args.get("limit", 50, type=int)
+        offset = request.args.get("offset", 0, type=int)
+        patterns = query.offset(offset).limit(limit).all()
 
-        return jsonify([{
-            "id": p.id,
-            "pattern_type": p.pattern_type,
-            "description": p.description_de if lang == "de" else (p.description_en or p.description_de),
-            "description_de": p.description_de,
-            "description_en": p.description_en,
-            "confidence": round(p.confidence, 3),
-            "status": p.status or "observed",
-            "is_active": p.is_active,
-            "match_count": p.match_count or 0,
-            "times_confirmed": p.times_confirmed,
-            "times_rejected": p.times_rejected,
-            "domain_id": p.domain_id,
-            "room_id": p.room_id,
-            "user_id": p.user_id,
-            "trigger_conditions": p.trigger_conditions,
-            "action_definition": p.action_definition,
-            "pattern_data": p.pattern_data,
-            "last_matched_at": utc_iso(p.last_matched_at),
-            "created_at": utc_iso(p.created_at),
-            "updated_at": utc_iso(p.updated_at),
-        } for p in patterns])
+        return jsonify({
+            "items": [{
+                "id": p.id,
+                "pattern_type": p.pattern_type,
+                "description": p.description_de if lang == "de" else (p.description_en or p.description_de),
+                "description_de": p.description_de,
+                "description_en": p.description_en,
+                "confidence": round(p.confidence, 3),
+                "status": p.status or "observed",
+                "is_active": p.is_active,
+                "match_count": p.match_count or 0,
+                "times_confirmed": p.times_confirmed,
+                "times_rejected": p.times_rejected,
+                "domain_id": p.domain_id,
+                "room_id": p.room_id,
+                "user_id": p.user_id,
+                "trigger_conditions": p.trigger_conditions,
+                "action_definition": p.action_definition,
+                "pattern_data": p.pattern_data,
+                "last_matched_at": utc_iso(p.last_matched_at),
+                "created_at": utc_iso(p.created_at),
+                "updated_at": utc_iso(p.updated_at),
+            } for p in patterns],
+            "total": total,
+            "offset": offset,
+            "limit": limit,
+            "has_more": offset + limit < total
+        })
     finally:
         session.close()
 
@@ -2397,21 +2414,36 @@ def api_set_phase(room_id, domain_id):
 
 @app.route("/api/notifications", methods=["GET"])
 def api_get_notifications():
-    """Get notifications."""
+    """Get notifications with pagination."""
     lang = get_language()
     unread = request.args.get("unread", "false").lower() == "true"
     limit = request.args.get("limit", 50, type=int)
+    offset = request.args.get("offset", 0, type=int)
 
-    notifs = automation_scheduler.notification_mgr.get_notifications(limit, unread)
-    return jsonify([{
-        "id": n.id,
-        "type": n.notification_type.value if n.notification_type else "info",
-        "title": n.title,
-        "message": n.message,
-        "was_sent": n.was_sent,
-        "was_read": n.was_read,
-        "created_at": utc_iso(n.created_at),
-    } for n in notifs])
+    session = get_db()
+    try:
+        query = session.query(NotificationLog).order_by(NotificationLog.created_at.desc())
+        if unread:
+            query = query.filter_by(was_read=False)
+        total = query.count()
+        notifs = query.offset(offset).limit(limit).all()
+        return jsonify({
+            "items": [{
+                "id": n.id,
+                "type": n.notification_type.value if n.notification_type else "info",
+                "title": n.title,
+                "message": n.message,
+                "was_sent": n.was_sent,
+                "was_read": n.was_read,
+                "created_at": utc_iso(n.created_at),
+            } for n in notifs],
+            "total": total,
+            "offset": offset,
+            "limit": limit,
+            "has_more": offset + limit < total
+        })
+    finally:
+        session.close()
 
 
 @app.route("/api/notifications/unread-count", methods=["GET"])
@@ -2743,20 +2775,30 @@ def api_reactivate_pattern(pattern_id):
 
 @app.route("/api/patterns/rejected", methods=["GET"])
 def api_get_rejected_patterns():
-    """Get all rejected patterns."""
+    """Get all rejected patterns with pagination."""
     session = get_db()
     try:
-        patterns = session.query(LearnedPattern).filter_by(status="rejected").order_by(
+        query = session.query(LearnedPattern).filter_by(status="rejected").order_by(
             LearnedPattern.rejected_at.desc()
-        ).all()
+        )
+        total = query.count()
+        limit = request.args.get("limit", 50, type=int)
+        offset = request.args.get("offset", 0, type=int)
+        patterns = query.offset(offset).limit(limit).all()
         lang = get_language()
-        return jsonify([{
-            "id": p.id, "pattern_type": p.pattern_type,
-            "description": p.description_de if lang == "de" else p.description_en,
-            "confidence": p.confidence, "rejection_reason": p.rejection_reason,
-            "rejected_at": p.rejected_at.isoformat() if p.rejected_at else None,
-            "category": p.category,
-        } for p in patterns])
+        return jsonify({
+            "items": [{
+                "id": p.id, "pattern_type": p.pattern_type,
+                "description": p.description_de if lang == "de" else p.description_en,
+                "confidence": p.confidence, "rejection_reason": p.rejection_reason,
+                "rejected_at": p.rejected_at.isoformat() if p.rejected_at else None,
+                "category": p.category,
+            } for p in patterns],
+            "total": total,
+            "offset": offset,
+            "limit": limit,
+            "has_more": offset + limit < total
+        })
     finally:
         session.close()
 
@@ -4415,6 +4457,32 @@ def api_update_extended_notification_settings():
     return jsonify({"success": True})
 
 
+@app.route("/api/notification-settings/scan-channels", methods=["POST"])
+def api_scan_notification_channels():
+    """Auto-detect available notification services from HA."""
+    session = get_db()
+    try:
+        services = ha.get_services() or {}
+        channels = []
+        for svc_domain, svc_list in services.items():
+            if "notify" in svc_domain or svc_domain == "notify":
+                for svc_name in svc_list:
+                    full_name = f"{svc_domain}.{svc_name}" if svc_domain != "notify" else f"notify.{svc_name}"
+                    existing = session.query(NotificationChannel).filter_by(ha_service=full_name).first()
+                    if not existing:
+                        ch = NotificationChannel(name=svc_name.replace("_", " ").title(), ha_service=full_name, is_active=True)
+                        session.add(ch)
+                        channels.append(full_name)
+        session.commit()
+        return jsonify({"success": True, "found": len(channels), "channels": channels})
+    except Exception as e:
+        session.rollback()
+        logger.error(f"Scan channels error: {e}")
+        return jsonify({"success": False, "error": str(e), "found": 0, "channels": []})
+    finally:
+        session.close()
+
+
 # ==============================================================================
 # Anomaly Settings Extended (27 features - advanced mode only)
 # ==============================================================================
@@ -4929,8 +4997,15 @@ def api_activate_presence_mode(mode_id):
 def api_presence_log():
     session = get_db()
     try:
-        logs = session.query(PresenceLog).order_by(PresenceLog.created_at.desc()).limit(50).all()
-        return jsonify([{"id":l.id,"mode_name":l.mode_name,"user_id":l.user_id,"trigger":l.trigger,"created_at":l.created_at.isoformat() if l.created_at else None} for l in logs])
+        query = session.query(PresenceLog).order_by(PresenceLog.created_at.desc())
+        total = query.count()
+        limit = request.args.get("limit", 50, type=int)
+        offset = request.args.get("offset", 0, type=int)
+        logs = query.offset(offset).limit(limit).all()
+        return jsonify({
+            "items": [{"id":l.id,"mode_name":l.mode_name,"user_id":l.user_id,"trigger":l.trigger,"created_at":l.created_at.isoformat() if l.created_at else None} for l in logs],
+            "total": total, "offset": offset, "limit": limit, "has_more": offset + limit < total
+        })
     finally:
         session.close()
 
