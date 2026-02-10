@@ -4,12 +4,17 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "0.6.6"
-BUILD = 7
+VERSION = "0.6.7"
+BUILD = 8
 BUILD_DATE = "2026-02-10"
 CODENAME = "Phase 3.5 - Bootloop Fix"
 
 # Changelog
+# Build 8: v0.6.7 Bugfix
+#   - Fix Bootloop: React/ReactDOM/Babel lokal gebundelt (Docker Build)
+#   - CDN-Fallback falls lokale Libs fehlen
+#   - Fix Translations-Pfad (routes/translations -> ../translations)
+#
 # Build 7: v0.6.6 Bugfix
 #   - Version-Bump fuer HA Update-Erkennung
 #
