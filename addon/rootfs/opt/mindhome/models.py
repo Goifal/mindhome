@@ -1345,7 +1345,7 @@ def run_migrations(engine):
 
             logger.info(f"Running migration v{migration['version']}: {migration['description']}")
 
-            # #15 â€“ Create savepoint for rollback safety
+            # #15 – Create savepoint for rollback safety
             migration_ok = True
             for sql in migration["sql"]:
                 try:
@@ -1355,8 +1355,8 @@ def run_migrations(engine):
                     if "duplicate column" in str(e).lower() or "already exists" in str(e).lower():
                         logger.info(f"  Already exists, skipping: {sql[:60]}")
                     else:
-                        logger.warning(f"  Migration SQL warning: {e}")
-                        # Non-critical - continue
+                        logger.error(f"  Migration SQL error: {e}")
+                        migration_ok = False
 
             if migration_ok:
                 try:

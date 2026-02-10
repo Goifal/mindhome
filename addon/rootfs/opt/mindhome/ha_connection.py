@@ -142,10 +142,10 @@ class HAConnection:
                 max_t = attrs.get("max_temp", 35)
                 temp = float(temp)
                 if temp < min_t:
-                    logger.warning(f"Climate {eid}: clamped {temp}â†’{min_t}Â°C (min)")
+                    logger.warning(f"Climate {eid}: clamped {temp}→ â€™{min_t}°C (min)")
                     temp = min_t
                 elif temp > max_t:
-                    logger.warning(f"Climate {eid}: clamped {temp}â†’{max_t}Â°C (max)")
+                    logger.warning(f"Climate {eid}: clamped {temp}→ â€™{max_t}°C (max)")
                     temp = max_t
                 payload["temperature"] = temp
         except Exception as e:
