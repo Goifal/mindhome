@@ -4,12 +4,19 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "0.6.4"
-BUILD = 5
+VERSION = "0.6.5"
+BUILD = 6
 BUILD_DATE = "2026-02-10"
-CODENAME = "Phase 3.5 - Stabilisierung"
+CODENAME = "Phase 3.5 - Bootloop Fix"
 
 # Changelog
+# Build 6: v0.6.5 Bootloop Fix
+#   - Fix: JSX-Syntaxfehler (fehlende { in Zeile 4459) verhinderte Babel-Kompilierung
+#   - Fix: Frontend-Bibliotheken (React/ReactDOM/Babel) lokal gebündelt statt CDN
+#   - Fix: Translations-Endpoint suchte in falschem Verzeichnis (routes/ statt ../)
+#   - Fix: serve_frontend gab index.html statt 404 für fehlende .js-Dateien zurück
+#   - Fix: Mojibake in index.html Fehlermeldungen (ü/ö/ä)
+#
 # Build 5: v0.6.4 Stabilisierung
 #   - Mustererkennung: Confidence Decay 1x/Tag, Cap 10%/Tag, Sequenz-Formel, Korrelation erweitert
 #   - Mustererkennung: Motion-Debounce, Merge-Zeitfenster, Time-Parsing, Context-Tags Update
