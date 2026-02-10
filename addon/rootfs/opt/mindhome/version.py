@@ -4,12 +4,26 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "0.6.3"
-BUILD = 4
+VERSION = "0.6.4"
+BUILD = 5
 BUILD_DATE = "2026-02-10"
-CODENAME = "Phase 3.5 - Bugfix"
+CODENAME = "Phase 3.5 - Stabilisierung"
 
 # Changelog
+# Build 5: v0.6.4 Stabilisierung
+#   - Mustererkennung: Confidence Decay 1x/Tag, Cap 10%/Tag, Sequenz-Formel, Korrelation erweitert
+#   - Mustererkennung: Motion-Debounce, Merge-Zeitfenster, Time-Parsing, Context-Tags Update
+#   - Anwesenheit: Duplikat-Check, Fallback-Mode, notify_on_enter/leave, DB-Init, Debounce
+#   - Push Notifications: push_channel aus Settings, Fallback persistent_notification
+#   - TTS: media_player_entity_id, Language-Parameter, Speaker-Auswahl, Fehler-Feedback
+#   - Anomalie: Sensor-Domain ausgeschlossen, Domain-Exceptions, Device-Whitelist, LRU-Cache
+#   - Stuck-Device: cover + climate Erkennung
+#   - Security: Path-Traversal-Schutz, Hot-Update hinter Debug, CORS, Security-Headers
+#   - Backend: bare except entfernt, request.json Guards, generische Error-Messages
+#   - Frontend: Domain-Redesign, CSS-Variablen, Geraete-Dropdowns, Raeume responsive
+#   - Frontend: Gast-Rolle, Backup-Refresh, Schichtdienst-Fixes, Kalender-Monatsansicht
+#   - Frontend: Anwesenheit Fehlerbehandlung, Input-Validierung, Loesch-Bestaetigungen
+#
 # Build 4: v0.6.3 Bugfix
 #   - Fix ReferenceError: isAdmin nicht verfuegbar in RoomsPage
 #   - Settings-Refresh: Vacation/Debug/Mute/Anomaly-Pause sofort sichtbar

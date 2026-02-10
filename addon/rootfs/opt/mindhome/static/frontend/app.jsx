@@ -214,12 +214,12 @@ const CustomSelect = ({ options = [], value, onChange, placeholder, style: wrapS
     return (
         <div ref={ref} style={{ position: 'relative', width: '100%', ...wrapStyle }}>
             <button type="button" className="input" onClick={() => setOpen(!open)}
-                style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', textAlign: 'left', cursor: 'pointer', background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '8px 12px', fontSize: 13, color: selected ? 'var(--text-primary)' : 'var(--text-muted)' }}>
+                style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', textAlign: 'left', cursor: 'pointer', background: 'var(--bg-input)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '8px 12px', fontSize: 13, color: selected ? 'var(--text-primary)' : 'var(--text-muted)' }}>
                 <span>{selected ? selected.label : (placeholder || '-- Select --')}</span>
                 <span className={`mdi ${open ? 'mdi-chevron-up' : 'mdi-chevron-down'}`} style={{ fontSize: 16 }} />
             </button>
             {open && (
-                <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 2000, background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', boxShadow: 'var(--shadow-lg)', maxHeight: 200, overflowY: 'auto', marginTop: 2 }}>
+                <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 2000, background: 'var(--bg-input)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', boxShadow: 'var(--shadow-lg)', maxHeight: 200, overflowY: 'auto', marginTop: 2 }}>
                     {options.map(o => (
                         <div key={o.value} onClick={() => { onChange(o.value); setOpen(false); }}
                             style={{ padding: '8px 12px', fontSize: 13, cursor: 'pointer', background: o.value === value ? 'var(--bg-hover)' : 'transparent', color: 'var(--text-primary)' }}
@@ -376,7 +376,7 @@ const Dropdown = ({ value, onChange, options, placeholder, label }) => {
             {open && (
                 <div style={{
                     position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 4,
-                    background: 'var(--bg-card)', border: '1px solid var(--border)',
+                    background: 'var(--bg-input)', border: '1px solid var(--border)',
                     borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-lg)',
                     zIndex: 1000, maxHeight: 240, overflow: 'auto',
                     animation: 'fadeIn 0.15s ease-out'
@@ -453,7 +453,7 @@ const MdiIconPicker = ({ value, onChange, label }) => {
                 </button>
             </div>
             {open && (
-                <div style={{ marginTop: 8, border: '1px solid var(--border-color)', borderRadius: 8, background: 'var(--bg-secondary)', maxHeight: 300, overflow: 'hidden' }}>
+                <div style={{ marginTop: 8, border: '1px solid var(--border-color)', borderRadius: 8, background: 'var(--bg-input)', maxHeight: 300, overflow: 'hidden' }}>
                     <div style={{ padding: 8 }}>
                         <input className="form-input" placeholder="Suchen..." value={search} onChange={e => setSearch(e.target.value)} autoFocus style={{ width: '100%' }} />
                     </div>
@@ -1211,106 +1211,82 @@ const DomainsPage = () => {
                     {lang === 'de' ? 'Custom Domain' : 'Custom Domain'}
                 </button>
             </div>
-            <div className="domain-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 12, alignItems: 'stretch' }}>
-                {domains.map(domain => (
-                    <div
-                        key={domain.id}
-                        className={`domain-card ${domain.is_enabled ? 'enabled' : ''}`}
-                        style={{ display: 'flex', flexDirection: 'column', minHeight: 180, padding: 16, borderRadius: 10, border: '1px solid var(--border-color)', background: domain.is_enabled ? 'var(--bg-secondary)' : 'var(--bg-tertiary)', transition: 'all 0.2s' }}
-                    >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1 }}>
-                            <span className={`mdi ${domain.icon}`} />
-                            <div className="domain-card-info">
-                                <div className="domain-card-name">{domain.display_name}</div>
-                                <div className="domain-card-desc">{domain.description}</div>
+            <div className="domain-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: 10, alignItems: 'stretch' }}>
+                {domains.map(domain => {
+                    const cap = capabilities[domain.name] || {};
+                    const controlLabels = {
+                        toggle: lang === 'de' ? 'Ein/Aus' : 'Toggle',
+                        brightness: lang === 'de' ? 'Helligkeit' : 'Brightness',
+                        color_temp: lang === 'de' ? 'Farbtemp.' : 'Color Temp',
+                        set_temperature: lang === 'de' ? 'Temp.' : 'Temp.',
+                        set_hvac_mode: lang === 'de' ? 'Modus' : 'HVAC',
+                        open: lang === 'de' ? 'Öffnen' : 'Open', close: lang === 'de' ? 'Schließen' : 'Close',
+                        set_position: 'Pos.', volume: lang === 'de' ? 'Lautst.' : 'Vol.',
+                        lock: lang === 'de' ? 'Sperren' : 'Lock', unlock: lang === 'de' ? 'Entsperren' : 'Unlock',
+                        start: 'Start', stop: 'Stop', return_to_base: lang === 'de' ? 'Zurück' : 'Return',
+                        set_percentage: '%', source: 'Quelle',
+                    };
+                    const allBadges = [
+                        ...(cap.controls || []).map(c => ({ label: controlLabels[c] || c, type: 'info' })),
+                        ...(cap.pattern_features || []).map(f => ({ label: f, type: 'success' })),
+                    ];
+                    const devCount = devices.filter(d => d.domain_id === domain.id).length;
+                    return (
+                        <div key={domain.id}
+                            style={{
+                                display: 'flex', flexDirection: 'row', borderRadius: 8,
+                                border: '1px solid var(--border-color)', background: 'var(--bg-secondary)',
+                                overflow: 'hidden', transition: 'all 0.2s', opacity: domain.is_enabled ? 1 : 0.6,
+                            }}>
+                            {/* Left accent bar */}
+                            <div style={{ width: 4, flexShrink: 0, background: domain.is_enabled ? 'var(--accent-primary)' : 'var(--border-color)' }} />
+                            <div style={{ flex: 1, padding: '10px 12px', minWidth: 0 }}>
+                                {/* Top row: icon+name on left, toggle+count on right */}
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flex: 1 }}>
+                                        <span className={`mdi ${domain.icon}`} style={{ fontSize: 20, color: domain.is_enabled ? 'var(--accent-primary)' : 'var(--text-muted)', flexShrink: 0 }} />
+                                        <div style={{ minWidth: 0 }}>
+                                            <div style={{ fontWeight: 600, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{domain.display_name}</div>
+                                            <div style={{ fontSize: 11, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{domain.description}</div>
+                                        </div>
+                                    </div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                                        <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{devCount}</span>
+                                        <label className="toggle" onClick={e => e.stopPropagation()} style={{ transform: 'scale(0.85)' }}>
+                                            <input type="checkbox" checked={domain.is_enabled}
+                                                   onChange={() => toggleDomain(domain.id)} />
+                                            <div className="toggle-slider" />
+                                        </label>
+                                    </div>
+                                </div>
+                                {/* Compact capability badges */}
+                                {allBadges.length > 0 && (
+                                    <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
+                                        {allBadges.slice(0, 6).map((b, i) => (
+                                            <span key={i} className={`badge badge-${b.type}`} style={{ fontSize: 9, padding: '1px 5px' }}>{b.label}</span>
+                                        ))}
+                                        {allBadges.length > 6 && <span style={{ fontSize: 9, color: 'var(--text-muted)' }}>+{allBadges.length - 6}</span>}
+                                    </div>
+                                )}
+                                {/* Custom domain actions */}
+                                {domain.is_custom && (
+                                    <div style={{ display: 'flex', gap: 4, marginTop: 6 }}>
+                                        <button className="btn btn-ghost btn-icon" style={{ padding: 2 }}
+                                            onClick={e => { e.stopPropagation(); setEditDomain({ ...domain }); }}
+                                            title={lang === 'de' ? 'Bearbeiten' : 'Edit'}>
+                                            <span className="mdi mdi-pencil-outline" style={{ fontSize: 14, color: 'var(--accent-primary)' }} />
+                                        </button>
+                                        <button className="btn btn-ghost btn-icon" style={{ padding: 2 }}
+                                            onClick={e => { e.stopPropagation(); setConfirmDel(domain); }}
+                                            title={lang === 'de' ? 'Löschen' : 'Delete'}>
+                                            <span className="mdi mdi-delete-outline" style={{ fontSize: 14, color: 'var(--danger)' }} />
+                                        </button>
+                                    </div>
+                                )}
                             </div>
                         </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, marginLeft: 8 }}>
-                            {domain.is_custom && (
-                                <button className="btn btn-ghost btn-icon"
-                                    onClick={e => { e.stopPropagation(); setEditDomain({ ...domain }); }}
-                                    title={lang === 'de' ? 'Bearbeiten' : 'Edit'}>
-                                    <span className="mdi mdi-pencil-outline" style={{ fontSize: 16, color: 'var(--accent-primary)' }} />
-                                </button>
-                            )}
-                            {domain.is_custom && (
-                                <button className="btn btn-ghost btn-icon"
-                                    onClick={e => { e.stopPropagation(); setConfirmDel(domain); }}
-                                    title={lang === 'de' ? 'Löschen' : 'Delete'}>
-                                    <span className="mdi mdi-delete-outline" style={{ fontSize: 16, color: 'var(--danger)' }} />
-                                </button>
-                            )}
-                            <label className="toggle" onClick={e => e.stopPropagation()}>
-                                <input type="checkbox" checked={domain.is_enabled}
-                                       onChange={() => toggleDomain(domain.id)} />
-                                <div className="toggle-slider" />
-                            </label>
-                        </div>
-                        {(() => {
-                            const cap = capabilities[domain.name] || {};
-                            const controlLabels = {
-                                toggle: lang === 'de' ? 'Ein/Aus' : 'Toggle',
-                                brightness: lang === 'de' ? 'Helligkeit' : 'Brightness',
-                                color_temp: lang === 'de' ? 'Farbtemperatur' : 'Color Temp',
-                                set_temperature: lang === 'de' ? 'Temperatur' : 'Temperature',
-                                set_hvac_mode: lang === 'de' ? 'Modus' : 'HVAC Mode',
-                                open: lang === 'de' ? 'Öffnen' : 'Open', close: lang === 'de' ? 'Schließen' : 'Close',
-                                set_position: lang === 'de' ? 'Position' : 'Position',
-                                volume: lang === 'de' ? 'Lautstärke' : 'Volume', source: 'Quelle',
-                                lock: lang === 'de' ? 'Sperren' : 'Lock', unlock: lang === 'de' ? 'Entsperren' : 'Unlock',
-                                start: 'Start', stop: 'Stop', return_to_base: lang === 'de' ? 'Zurück' : 'Return',
-                                set_percentage: '%',
-                            };
-                            const featureLabels = {
-                                time_of_day: lang === 'de' ? 'Tageszeit' : 'Time of Day',
-                                brightness_level: lang === 'de' ? 'Helligkeitsstufe' : 'Brightness Level',
-                                duration: lang === 'de' ? 'Dauer' : 'Duration',
-                                target_temp: lang === 'de' ? 'Zieltemperatur' : 'Target Temp',
-                                schedule: lang === 'de' ? 'Zeitplan' : 'Schedule',
-                                comfort_profile: lang === 'de' ? 'Komfortprofil' : 'Comfort Profile',
-                                position: 'Position', sun_based: lang === 'de' ? 'Sonnenstand' : 'Sun Position',
-                                threshold: lang === 'de' ? 'Schwellwert' : 'Threshold',
-                                trend: 'Trend', trigger: 'Trigger', frequency: lang === 'de' ? 'Häufigkeit' : 'Frequency',
-                                source_preference: lang === 'de' ? 'Quellen-Präferenz' : 'Source Pref.',
-                                presence: lang === 'de' ? 'Anwesenheit' : 'Presence',
-                                temperature_based: lang === 'de' ? 'Temperaturbasiert' : 'Temp Based',
-                            };
-                            return cap.controls || cap.pattern_features ? (
-                                <div style={{ width: '100%', padding: '12px 0 4px', borderTop: '1px solid var(--border)', marginTop: 8 }}
-                                    onClick={e => e.stopPropagation()}>
-                                    {cap.controls?.length > 0 && (
-                                        <div style={{ marginBottom: 8 }}>
-                                            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>
-                                                {lang === 'de' ? 'Steuerung:' : 'Controls:'}
-                                            </div>
-                                            <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                                                {cap.controls.map(c => (
-                                                    <span key={c} className="badge badge-info" style={{ fontSize: 10 }}>
-                                                        {controlLabels[c] || c}
-                                                    </span>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    )}
-                                    {cap.pattern_features?.length > 0 && (
-                                        <div>
-                                            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>
-                                                {lang === 'de' ? 'Muster-Erkennung:' : 'Pattern Detection:'}
-                                            </div>
-                                            <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                                                {cap.pattern_features.map(f => (
-                                                    <span key={f} className="badge badge-success" style={{ fontSize: 10 }}>
-                                                        {featureLabels[f] || f}
-                                                    </span>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
-                            ) : null;
-                        })()}
-                    </div>
-                ))}
+                    );
+                })}
             </div>
 
             {showCreate && (
@@ -1659,14 +1635,12 @@ const DevicesPage = () => {
                     <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
                         <input className="input" placeholder={lang === 'de' ? ' Geräte suchen...' : ' Search devices...'}
                             value={search} onChange={e => setSearch(e.target.value)} style={{ maxWidth: 300, flex: 1, minWidth: 160 }} />
-                        <div style={{ display: 'flex', gap: 4, overflowX: 'auto', scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
-                            <button className={`btn btn-sm ${!filterRoom ? 'btn-primary' : 'btn-ghost'}`} style={{ flexShrink: 0 }} onClick={() => setFilterRoom('')}>{lang === 'de' ? 'Alle Raeume' : 'All rooms'}</button>
-                            {rooms.map(r => <button key={r.id} className={`btn btn-sm ${filterRoom === String(r.id) ? 'btn-primary' : 'btn-ghost'}`} style={{ flexShrink: 0 }} onClick={() => setFilterRoom(String(r.id))}>{r.name}</button>)}
-                        </div>
-                        <div style={{ display: 'flex', gap: 4, overflowX: 'auto', scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
-                            <button className={`btn btn-sm ${!filterDomain ? 'btn-primary' : 'btn-ghost'}`} style={{ flexShrink: 0 }} onClick={() => setFilterDomain('')}>{lang === 'de' ? 'Alle Domains' : 'All domains'}</button>
-                            {domains.map(d => <button key={d.id} className={`btn btn-sm ${filterDomain === String(d.id) ? 'btn-primary' : 'btn-ghost'}`} style={{ flexShrink: 0 }} onClick={() => setFilterDomain(String(d.id))}>{d.display_name || d.name}</button>)}
-                        </div>
+                        <Dropdown value={filterRoom} onChange={v => setFilterRoom(v)}
+                            placeholder={lang === 'de' ? 'Alle Räume' : 'All Rooms'}
+                            options={[{value:'', label: lang === 'de' ? 'Alle Räume' : 'All Rooms'}, ...rooms.map(r => ({value: String(r.id), label: r.name}))]} />
+                        <Dropdown value={filterDomain} onChange={v => setFilterDomain(v)}
+                            placeholder={lang === 'de' ? 'Alle Domains' : 'All Domains'}
+                            options={[{value:'', label: lang === 'de' ? 'Alle Domains' : 'All Domains'}, ...domains.map(d => ({value: String(d.id), label: d.display_name || d.name}))]} />
                     </div>
                     {/* Mobile card view */}
                     <div className="devices-mobile-cards" style={{ display: 'none' }}>
@@ -2129,7 +2103,7 @@ const RoomsPage = () => {
             </div>
 
             {rooms.length > 0 ? (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 16 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 16 }}>
                     {rooms.map(room => (
                         <div key={room.id} className="card">
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -2180,7 +2154,7 @@ const RoomsPage = () => {
                                                     <span className={`mdi ${domIcon}`} style={{ fontSize: 14, color: 'var(--text-muted)', width: 18 }} />
                                                     <div style={{ flex: 1, minWidth: 0 }}>
                                                         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 2 }}>
-                                                            <span>{domName}</span>
+                                                            <span style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>{domName}</span>
                                                             <span className={`badge badge-${phase.color}`} style={{ fontSize: 9, padding: '1px 6px', cursor: 'pointer' }}
                                                                 title={`→ ${nextLabel}`}
                                                                 onClick={async () => {
@@ -2392,15 +2366,15 @@ const UsersPage = () => {
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                                     <div className="card-icon" style={{
-                                        background: user.role === 'admin' ? 'var(--accent-primary-dim)' : 'var(--accent-secondary-dim)',
-                                        color: user.role === 'admin' ? 'var(--accent-primary)' : 'var(--accent-secondary)'
+                                        background: user.role === 'admin' ? 'var(--accent-primary-dim)' : user.role === 'guest' ? 'var(--bg-tertiary)' : 'var(--accent-secondary-dim)',
+                                        color: user.role === 'admin' ? 'var(--accent-primary)' : user.role === 'guest' ? 'var(--text-muted)' : 'var(--accent-secondary)'
                                     }}>
-                                        <span className={`mdi ${user.role === 'admin' ? 'mdi-shield-crown' : 'mdi-account'}`} />
+                                        <span className={`mdi ${user.role === 'admin' ? 'mdi-shield-crown' : user.role === 'guest' ? 'mdi-account-clock' : 'mdi-account'}`} />
                                     </div>
                                     <div>
                                         <div className="card-title">{user.name}</div>
                                         <div className="card-subtitle">
-                                            {user.role === 'admin' ? 'Administrator' : (lang === 'de' ? 'Benutzer' : 'User')}
+                                            {user.role === 'admin' ? 'Administrator' : user.role === 'guest' ? (lang === 'de' ? 'Gast' : 'Guest') : (lang === 'de' ? 'Benutzer' : 'User')}
                                         </div>
                                         <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
                                             {user.ha_person_entity
@@ -2446,6 +2420,7 @@ const UsersPage = () => {
                             options={[
                                 { value: 'user', label: lang === 'de' ? 'Benutzer' : 'User' },
                                 { value: 'admin', label: 'Administrator' },
+                                { value: 'guest', label: lang === 'de' ? 'Gast' : 'Guest' },
                             ]}
                         />
                     </div>
@@ -5068,7 +5043,7 @@ const NotificationsPage = () => {
 // Onboarding Wizard
 // ================================================================
 
-const OnboardingWizard = ({ onComplete }) => {
+const OnboardingWizard = ({ onComplete, refreshData }) => {
     const [step, setStep] = useState(0);
     const [lang, setLangLocal] = useState('de');
     const [adminName, setAdminName] = useState('');
@@ -5104,6 +5079,7 @@ const OnboardingWizard = ({ onComplete }) => {
         try {
             const result = await api.post('backup/import', backupData);
             if (result?.success) {
+                if (refreshData) await refreshData();
                 onComplete();
                 return;
             } else {
@@ -5845,14 +5821,175 @@ const ScenesPage = () => {
 };
 
 // ================================================================
+// Phase 3: Presence Calendar (Month View)
+// ================================================================
+const PresenceCalendar = ({ lang, showToast, schedules, holidays, shiftTemplates }) => {
+    const [viewDate, setViewDate] = useState(new Date());
+    const [editDay, setEditDay] = useState(null);
+    const [dayShift, setDayShift] = useState('');
+
+    const year = viewDate.getFullYear();
+    const month = viewDate.getMonth();
+    const today = new Date();
+    const todayStr = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+
+    const prevMonth = () => setViewDate(new Date(year, month - 1, 1));
+    const nextMonth = () => setViewDate(new Date(year, month + 1, 1));
+    const goToday = () => setViewDate(new Date());
+
+    const monthNames = lang === 'de'
+        ? ['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember']
+        : ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    const dayHeaders = lang === 'de' ? ['Mo','Di','Mi','Do','Fr','Sa','So'] : ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+
+    // Build calendar grid
+    const firstDay = new Date(year, month, 1);
+    const lastDay = new Date(year, month + 1, 0);
+    const startOffset = (firstDay.getDay() + 6) % 7; // Monday-based
+    const totalDays = lastDay.getDate();
+    const cells = [];
+    for (let i = 0; i < startOffset; i++) cells.push(null);
+    for (let d = 1; d <= totalDays; d++) cells.push(d);
+    while (cells.length % 7 !== 0) cells.push(null);
+
+    // Build date-to-info lookup
+    const dateInfo = {};
+    (holidays || []).forEach(h => {
+        if (!h.date) return;
+        let dStr = h.date;
+        // Handle MM-DD recurring format
+        if (h.is_recurring && h.date.length <= 5) {
+            dStr = `${year}-${h.date.replace(/^(\d{2})-(\d{2})$/, '$1-$2')}`;
+            if (dStr.length < 10) dStr = `${year}-${h.date}`;
+        }
+        if (dStr.startsWith(`${year}-`) || dStr.startsWith(`${year}-${String(month+1).padStart(2,'0')}`)) {
+            dateInfo[dStr] = { type: 'holiday', name: h.name, color: '#E91E63' };
+        }
+    });
+    (schedules || []).filter(s => s.schedule_type === 'shift' && s.shift_data?.rotation_pattern).forEach(s => {
+        const pattern = s.shift_data.rotation_pattern;
+        const start = s.shift_data.rotation_start;
+        if (!pattern?.length || !start) return;
+        const startDate = new Date(start);
+        for (let d = 1; d <= totalDays; d++) {
+            const cur = new Date(year, month, d);
+            const diff = Math.floor((cur - startDate) / (1000*60*60*24));
+            if (diff < 0) continue;
+            const idx = diff % pattern.length;
+            const code = pattern[idx];
+            const tmpl = (shiftTemplates || []).find(t => t.short_code === code);
+            const ds = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+            if (!dateInfo[ds]) {
+                dateInfo[ds] = { type: 'shift', code, name: tmpl?.name || code, color: tmpl?.color || '#999' };
+            }
+        }
+    });
+
+    const handleDayClick = (day) => {
+        if (!day) return;
+        const ds = `${year}-${String(month+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+        setEditDay(ds);
+        setDayShift(dateInfo[ds]?.code || '');
+    };
+
+    const handleSaveDay = () => {
+        showToast(lang === 'de' ? 'Zuweisung gespeichert (Vorschau)' : 'Assignment saved (preview)', 'info');
+        setEditDay(null);
+    };
+
+    return (
+        <div className="card animate-in" style={{ marginBottom: 16 }}>
+            <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <button className="btn btn-sm btn-ghost" onClick={prevMonth}><span className="mdi mdi-chevron-left" /></button>
+                    <span style={{ fontWeight: 700, fontSize: 16, minWidth: 160, textAlign: 'center' }}>{monthNames[month]} {year}</span>
+                    <button className="btn btn-sm btn-ghost" onClick={nextMonth}><span className="mdi mdi-chevron-right" /></button>
+                </div>
+                <button className="btn btn-sm btn-ghost" onClick={goToday}>{lang === 'de' ? 'Heute' : 'Today'}</button>
+            </div>
+            <div style={{ padding: 12 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 2, textAlign: 'center' }}>
+                    {dayHeaders.map(h => (
+                        <div key={h} style={{ fontWeight: 600, fontSize: 11, color: 'var(--text-muted)', padding: '4px 0' }}>{h}</div>
+                    ))}
+                    {cells.map((day, i) => {
+                        if (day === null) return <div key={`e${i}`} style={{ padding: 6 }} />;
+                        const ds = `${year}-${String(month+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+                        const info = dateInfo[ds];
+                        const isToday = ds === todayStr;
+                        return (
+                            <div key={ds} onClick={() => handleDayClick(day)}
+                                style={{
+                                    padding: '6px 2px', borderRadius: 6, cursor: 'pointer', minHeight: 48,
+                                    border: isToday ? '2px solid var(--accent-primary)' : '1px solid var(--border-color)',
+                                    background: info ? (info.color + '18') : 'transparent',
+                                    transition: 'background 0.15s',
+                                }}
+                                onMouseEnter={e => e.currentTarget.style.background = info ? (info.color + '33') : 'var(--bg-hover)'}
+                                onMouseLeave={e => e.currentTarget.style.background = info ? (info.color + '18') : 'transparent'}>
+                                <div style={{ fontSize: 12, fontWeight: isToday ? 700 : 400, color: isToday ? 'var(--accent-primary)' : 'var(--text-primary)' }}>{day}</div>
+                                {info && (
+                                    <div style={{ fontSize: 9, fontWeight: 600, color: info.color, marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                        {info.type === 'shift' ? info.code : info.name}
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    })}
+                </div>
+                {/* Legend */}
+                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 12, paddingTop: 8, borderTop: '1px solid var(--border-color)' }}>
+                    {(shiftTemplates || []).map(t => (
+                        <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11 }}>
+                            <span style={{ width: 10, height: 10, borderRadius: 2, background: t.color, display: 'inline-block' }} />
+                            <span>{t.short_code} {t.name}</span>
+                        </div>
+                    ))}
+                    {(holidays || []).length > 0 && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11 }}>
+                            <span style={{ width: 10, height: 10, borderRadius: 2, background: '#E91E63', display: 'inline-block' }} />
+                            <span>{lang === 'de' ? 'Feiertag' : 'Holiday'}</span>
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            {editDay && (
+                <Modal title={`${editDay}`} onClose={() => setEditDay(null)}
+                    actions={<><button className="btn btn-secondary" onClick={() => setEditDay(null)}>{lang === 'de' ? 'Abbrechen' : 'Cancel'}</button>
+                        <button className="btn btn-primary" onClick={handleSaveDay}>{lang === 'de' ? 'Speichern' : 'Save'}</button></>}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                        <label style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Schicht/Feiertag zuweisen' : 'Assign shift/holiday'}</label>
+                        <CustomSelect
+                            options={[
+                                { value: '', label: lang === 'de' ? '-- Keine --' : '-- None --' },
+                                ...(shiftTemplates || []).map(t => ({ value: t.short_code, label: `${t.short_code} - ${t.name}` })),
+                                { value: '_holiday', label: lang === 'de' ? 'Feiertag' : 'Holiday' },
+                            ]}
+                            value={dayShift}
+                            onChange={v => setDayShift(v)}
+                        />
+                        {dateInfo[editDay] && (
+                            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                                {lang === 'de' ? 'Aktuell:' : 'Current:'} <strong style={{ color: dateInfo[editDay].color }}>{dateInfo[editDay].name}</strong>
+                            </div>
+                        )}
+                    </div>
+                </Modal>
+            )}
+        </div>
+    );
+};
+
+// ================================================================
 // Phase 3: Presence Page (6 Tabs: Modus, Personen, Zeitprofile, Schichtdienst, Feiertage, Verlauf)
 // ================================================================
 const WEEKDAYS_SHORT = [{id:'mon',l:'Mo'},{id:'tue',l:'Di'},{id:'wed',l:'Mi'},{id:'thu',l:'Do'},{id:'fri',l:'Fr'},{id:'sat',l:'Sa'},{id:'sun',l:'So'}];
 const DEFAULT_SHIFT_TYPES = [
-    { name: 'Fruehdienst', short: 'F', color: '#FF9800', time_start: '06:00', time_end: '14:00' },
-    { name: 'Spaetdienst', short: 'S', color: '#2196F3', time_start: '14:00', time_end: '22:00' },
-    { name: 'Nachtdienst', short: 'N', color: '#9C27B0', time_start: '22:00', time_end: '06:00' },
-    { name: 'Dienstfrei', short: 'X', color: '#4CAF50', time_start: '', time_end: '' },
+    { name: 'Fruehdienst', short_code: 'F', color: '#FF9800', time_start: '06:00', time_end: '14:00' },
+    { name: 'Spaetdienst', short_code: 'S', color: '#2196F3', time_start: '14:00', time_end: '22:00' },
+    { name: 'Nachtdienst', short_code: 'N', color: '#9C27B0', time_start: '22:00', time_end: '06:00' },
+    { name: 'Dienstfrei', short_code: 'X', color: '#4CAF50', time_start: '', time_end: '' },
 ];
 
 const PresencePage = () => {
@@ -5928,28 +6065,31 @@ const PresencePage = () => {
         }).catch(() => {});
     };
 
-    const activateMode = (id) => api.post(`presence-modes/${id}/activate`).then(() => { showToast(lang === 'de' ? 'Modus aktiviert' : 'Mode activated', 'success'); load(); });
-    const deleteMode = (id) => api.delete(`presence-modes/${id}`).then(() => load());
-    const saveMode = () => { if (!editMode) return; api.put(`presence-modes/${editMode.id}`, editMode).then(() => { showToast(lang === 'de' ? 'Gespeichert' : 'Saved', 'success'); setEditMode(null); load(); }); };
-    const createMode = () => api.post('presence-modes', newMode).then(() => { setShowAddMode(false); setNewMode({ name_de: '', name_en: '', icon: 'mdi-home', color: '#4CAF50', trigger_type: 'manual', buffer_minutes: 5 }); load(); });
+    const activateMode = (id) => api.post(`presence-modes/${id}/activate`).then(() => { showToast(lang === 'de' ? 'Modus aktiviert' : 'Mode activated', 'success'); load(); }).catch(e => showToast(lang === 'de' ? 'Fehler' : 'Error', 'error'));
+    const deleteMode = (id) => { if (!confirm(lang === 'de' ? 'Wirklich löschen?' : 'Really delete?')) return; api.delete(`presence-modes/${id}`).then(() => load()).catch(e => showToast(lang === 'de' ? 'Fehler' : 'Error', 'error')); };
+    const saveMode = () => { if (!editMode) return; api.put(`presence-modes/${editMode.id}`, editMode).then(() => { showToast(lang === 'de' ? 'Gespeichert' : 'Saved', 'success'); setEditMode(null); load(); }).catch(e => showToast(lang === 'de' ? 'Fehler' : 'Error', 'error')); };
+    const createMode = () => { if (!newMode.name_de?.trim()) { showToast('Name required', 'error'); return; } api.post('presence-modes', newMode).then(() => { setShowAddMode(false); setNewMode({ name_de: '', name_en: '', icon: 'mdi-home', color: '#4CAF50', trigger_type: 'manual', buffer_minutes: 5 }); load(); }).catch(e => showToast(lang === 'de' ? 'Fehler' : 'Error', 'error')); };
 
-    const addGuest = () => api.post('guest-devices', newGuest).then(() => { setShowAddGuest(false); setNewGuest({ name: '', entity_id: '' }); load(); });
-    const deleteGuest = (id) => api.delete(`guest-devices/${id}`).then(() => load());
+    const addGuest = () => api.post('guest-devices', newGuest).then(() => { setShowAddGuest(false); setNewGuest({ name: '', entity_id: '' }); load(); }).catch(e => showToast(lang === 'de' ? 'Fehler' : 'Error', 'error'));
+    const deleteGuest = (id) => { if (!confirm(lang === 'de' ? 'Wirklich löschen?' : 'Really delete?')) return; api.delete(`guest-devices/${id}`).then(() => load()).catch(e => showToast(lang === 'de' ? 'Fehler' : 'Error', 'error')); };
 
-    const createSchedule = () => { const data = { ...newSched, user_id: parseInt(newSched.user_id) }; api.post('person-schedules', data).then(() => { setShowAddSchedule(false); load(); }); };
-    const deleteSchedule = (id) => api.delete(`person-schedules/${id}`).then(() => load());
-    const saveSchedule = () => { if (!editSchedule) return; api.put(`person-schedules/${editSchedule.id}`, editSchedule).then(() => { setEditSchedule(null); load(); }); };
+    const createSchedule = () => { if (!newSched.user_id) { showToast('User required', 'error'); return; } const data = { ...newSched, user_id: parseInt(newSched.user_id) }; api.post('person-schedules', data).then(() => { setShowAddSchedule(false); load(); }).catch(e => showToast(lang === 'de' ? 'Fehler' : 'Error', 'error')); };
+    const deleteSchedule = (id) => { if (!confirm(lang === 'de' ? 'Wirklich löschen?' : 'Really delete?')) return; api.delete(`person-schedules/${id}`).then(() => load()).catch(e => showToast(lang === 'de' ? 'Fehler' : 'Error', 'error')); };
+    const saveSchedule = () => { if (!editSchedule) return; api.put(`person-schedules/${editSchedule.id}`, editSchedule).then(() => { setEditSchedule(null); load(); }).catch(e => showToast(lang === 'de' ? 'Fehler' : 'Error', 'error')); };
 
-    const createShiftTemplate = () => api.post('shift-templates', newShift).then(() => { setShowAddShift(false); setNewShift({ name: '', short_code: '', blocks: [{ start: '06:00', end: '14:00' }], color: '#FF9800' }); load(); });
-    const deleteShiftTemplate = (id) => api.delete(`shift-templates/${id}`).then(() => load());
-    const seedDefaults = () => { DEFAULT_SHIFT_TYPES.forEach(t => api.post('shift-templates', { name: t.name, short_code: t.short, blocks: [{ start: t.time_start, end: t.time_end }], color: t.color })); setTimeout(load, 500); };
+    const createShiftTemplate = () => { if (!newShift.name?.trim()) { showToast('Name required', 'error'); return; } api.post('shift-templates', newShift).then(() => { setShowAddShift(false); setNewShift({ name: '', short_code: '', blocks: [{ start: '06:00', end: '14:00' }], color: '#FF9800' }); load(); }).catch(e => showToast(lang === 'de' ? 'Fehler' : 'Error', 'error')); };
+    const deleteShiftTemplate = (id) => { if (!confirm(lang === 'de' ? 'Wirklich löschen?' : 'Really delete?')) return; api.delete(`shift-templates/${id}`).then(() => load()).catch(e => showToast(lang === 'de' ? 'Fehler' : 'Error', 'error')); };
+    const seedDefaults = () => { DEFAULT_SHIFT_TYPES.forEach(t => api.post('shift-templates', { name: t.name, short_code: t.short_code, blocks: [{ start: t.time_start, end: t.time_end }], color: t.color })); setTimeout(load, 500); };
 
     const addToRotation = (short) => setRotation([...rotation, short]);
     const quickAddToRotation = () => { if (!quickAdd.type) return; const arr = []; for (let i = 0; i < quickAdd.count; i++) arr.push(quickAdd.type); setRotation([...rotation, ...arr]); };
     const removeFromRotation = (idx) => setRotation(rotation.filter((_, i) => i !== idx));
     const saveRotation = () => {
         if (!rotationUserId) { showToast(lang === 'de' ? 'Person waehlen' : 'Select person', 'warning'); return; }
-        api.post('person-schedules', { user_id: parseInt(rotationUserId), schedule_type: 'shift', name: 'Schichtrotation', shift_data: { rotation_pattern: rotation, rotation_start: rotationStart, rotation_end: rotationEnd, shift_types: shiftTemplates } }).then(() => { showToast(lang === 'de' ? 'Rotation gespeichert' : 'Rotation saved', 'success'); load(); });
+        if (!rotation.length) { showToast(lang === 'de' ? 'Rotation ist leer' : 'Rotation is empty', 'error'); return; }
+        if (!rotationStart) { showToast(lang === 'de' ? 'Startdatum fehlt' : 'Start date required', 'error'); return; }
+        if (rotationEnd && rotationEnd < rotationStart) { showToast(lang === 'de' ? 'Enddatum vor Startdatum' : 'End date before start date', 'error'); return; }
+        api.post('person-schedules', { user_id: parseInt(rotationUserId), schedule_type: 'shift', name: 'Schichtrotation', shift_data: { rotation_pattern: rotation, rotation_start: rotationStart, rotation_end: rotationEnd, shift_types: shiftTemplates } }).then(() => { showToast(lang === 'de' ? 'Rotation gespeichert' : 'Rotation saved', 'success'); load(); }).catch(e => showToast(lang === 'de' ? 'Fehler' : 'Error', 'error'));
     };
 
     const uploadPdf = (file) => {
@@ -5957,16 +6097,16 @@ const PresencePage = () => {
         fetch('/api/shift-plan/import', { method: 'POST', body: fd }).then(r => r.json()).then(d => { if (d.error) showToast(d.error, 'error'); else setPdfResult(d); }).catch(e => showToast(e.message, 'error'));
     };
 
-    const createHoliday = () => api.post('holidays', newHoliday).then(() => { setShowAddHoliday(false); setNewHoliday({ name: '', date: '', is_recurring: false, region: 'AT' }); load(); });
-    const deleteHoliday = (id) => api.delete(`holidays/${id}`).then(() => load());
-    const seedHolidays = () => api.post('holidays/seed-defaults').then(d => { showToast(lang === 'de' ? `${d.count || 0} Feiertage angelegt` : `${d.count || 0} holidays created`, 'success'); load(); });
+    const createHoliday = () => { if (!newHoliday.name?.trim() || !newHoliday.date) { showToast('Name and date required', 'error'); return; } api.post('holidays', newHoliday).then(() => { setShowAddHoliday(false); setNewHoliday({ name: '', date: '', is_recurring: false, region: 'AT' }); load(); }).catch(e => showToast(lang === 'de' ? 'Fehler' : 'Error', 'error')); };
+    const deleteHoliday = (id) => { if (!confirm(lang === 'de' ? 'Wirklich löschen?' : 'Really delete?')) return; api.delete(`holidays/${id}`).then(() => load()).catch(e => showToast(lang === 'de' ? 'Fehler' : 'Error', 'error')); };
+    const seedHolidays = () => api.post('holidays/seed-defaults').then(d => { showToast(lang === 'de' ? `${d.count || 0} Feiertage angelegt` : `${d.count || 0} holidays created`, 'success'); load(); }).catch(e => showToast(lang === 'de' ? 'Fehler' : 'Error', 'error'));
 
     const tabs = [
         { id: 'mode', label: lang === 'de' ? 'Modus' : 'Mode', icon: 'mdi-home-circle' },
         { id: 'profiles', label: lang === 'de' ? 'Zeitprofile' : 'Profiles', icon: 'mdi-clock-outline' },
-        { id: 'shift', label: lang === 'de' ? 'Schichtdienst' : 'Shift Work', icon: 'mdi-calendar-clock' },
+        { id: 'shift', label: lang === 'de' ? 'Schichtdienst' : 'Shift Work', icon: 'mdi-account-clock' },
         { id: 'holidays', label: lang === 'de' ? 'Feiertage' : 'Holidays', icon: 'mdi-party-popper' },
-        { id: 'calendar', label: lang === 'de' ? 'Kalender' : 'Calendar', icon: 'mdi-calendar-clock' },
+        { id: 'calendar', label: lang === 'de' ? 'Kalender' : 'Calendar', icon: 'mdi-calendar-month' },
         { id: 'history', label: lang === 'de' ? 'Verlauf' : 'History', icon: 'mdi-history' },
     ];
 
@@ -5986,11 +6126,19 @@ const PresencePage = () => {
             {tab === 'mode' && (
                 <div>
                     {current && (
-                        <div className="card animate-in" style={{ marginBottom: 16, padding: 24, textAlign: 'center' }}>
-                            <span className={'mdi ' + (current.icon || 'mdi-home')} style={{ fontSize: 48, color: current.color || 'var(--accent-primary)' }} />
-                            <div style={{ fontSize: 22, fontWeight: 700, marginTop: 8 }}>{lang === 'de' ? current.name_de : current.name_en}</div>
-                            {current.since && <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>seit {new Date(current.since).toLocaleTimeString()}</div>}
-                        </div>
+                        (current.is_default || !current.id) ? (
+                            <div className="card animate-in" style={{ marginBottom: 16, padding: 24, textAlign: 'center', borderLeft: '4px solid var(--warning)' }}>
+                                <span className="mdi mdi-alert-circle-outline" style={{ fontSize: 36, color: 'var(--warning)' }} />
+                                <div style={{ fontSize: 16, fontWeight: 600, marginTop: 8, color: 'var(--warning)' }}>{lang === 'de' ? 'Kein Modus aktiv' : 'No mode active'}</div>
+                                <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 4 }}>{lang === 'de' ? 'Bitte einen Modus wählen' : 'Please select a mode'}</div>
+                            </div>
+                        ) : (
+                            <div className="card animate-in" style={{ marginBottom: 16, padding: 24, textAlign: 'center' }}>
+                                <span className={'mdi ' + (current.icon || 'mdi-home')} style={{ fontSize: 48, color: current.color || 'var(--accent-primary)' }} />
+                                <div style={{ fontSize: 22, fontWeight: 700, marginTop: 8 }}>{lang === 'de' ? current.name_de : current.name_en}</div>
+                                {current.since && <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>seit {new Date(current.since).toLocaleTimeString()}</div>}
+                            </div>
+                        )
                     )}
                     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
                         {modes.map(m => (
@@ -6311,7 +6459,10 @@ const PresencePage = () => {
 
             {/* TAB: Calendar Triggers */}
             {tab === 'calendar' && (
-                <CalendarTriggersConfig lang={lang} showToast={showToast} />
+                <div>
+                    <PresenceCalendar lang={lang} showToast={showToast} schedules={schedules} holidays={holidays} shiftTemplates={shiftTemplates} />
+                    <CalendarTriggersConfig lang={lang} showToast={showToast} />
+                </div>
             )}
 
             {/* TAB: History */}
@@ -6504,7 +6655,7 @@ const App = () => {
     if (onboardingDone === false) {
         return (
             <AppContext.Provider value={contextValue}>
-                <OnboardingWizard onComplete={async () => {
+                <OnboardingWizard refreshData={refreshData} onComplete={async () => {
                     setOnboardingDone(true);
                     await refreshData();
                 }} />

@@ -164,7 +164,9 @@ def api_get_notification_settings():
 @notifications_bp.route("/api/notification-settings", methods=["PUT"])
 def api_update_notification_settings():
     """Update notification settings."""
-    data = request.json
+    data = request.json or {}
+    if not data:
+        return jsonify({"error": "No data provided"}), 400
     session = get_db()
     try:
         ntype = data.get("type")
@@ -194,7 +196,7 @@ def api_update_notification_settings():
 @notifications_bp.route("/api/notification-settings/dnd", methods=["PUT"])
 def api_toggle_dnd():
     """Toggle Do-Not-Disturb mode."""
-    data = request.json
+    data = request.json or {}
     set_setting("dnd_enabled", "true" if data.get("enabled") else "false")
     return jsonify({"success": True, "dnd_enabled": data.get("enabled", False)})
 
@@ -203,7 +205,9 @@ def api_toggle_dnd():
 @notifications_bp.route("/api/notification-settings/mute-device", methods=["POST"])
 def api_mute_device():
     """Mute notifications for a specific device."""
-    data = request.json
+    data = request.json or {}
+    if "device_id" not in data:
+        return jsonify({"error": "device_id required"}), 400
     session = get_db()
     try:
         mute = DeviceMute(

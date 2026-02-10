@@ -476,6 +476,9 @@ def api_delete_collected_data(collection_id):
 @system_bp.route("/api/system/translations/<lang_code>", methods=["GET"])
 def api_get_translations(lang_code):
     """Get translations for a language."""
+    # Whitelist language codes to prevent path traversal
+    if lang_code not in ("de", "en"):
+        return jsonify({"error": "Language not found"}), 404
     import json as json_lib
     lang_file = os.path.join(os.path.dirname(__file__), "translations", f"{lang_code}.json")
     try:
@@ -712,7 +715,9 @@ def serve_index():
 
 @system_bp.route("/api/system/hot-update", methods=["POST"])
 def hot_update_frontend():
-    """Hot-update frontend file (app.jsx) without rebuild."""
+    """Hot-update frontend file (app.jsx) without rebuild. Only available in debug mode."""
+    if get_setting("debug_mode") != "true":
+        return jsonify({"error": "Hot-update only available in debug mode"}), 403
     data = request.json
     if not data or "content" not in data or "filename" not in data:
         return jsonify({"error": "need content and filename"}), 400
@@ -1298,7 +1303,7 @@ def api_backup_import():
     except Exception as e:
         try:
             session.rollback()
-        except:
+        except Exception:
             pass
         logger.error(f"Backup import failed: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500

@@ -151,7 +151,7 @@ def api_scene_snapshot():
                     st = _ha().get_state(d.entity_id)
                     if st:
                         states.append({"entity_id": d.entity_id, "state": st.get("state","off"), "attributes": st.get("attributes",{})})
-                except:
+                except Exception:
                     pass
         room = session.get(Room, room_id)
         room_name = room.name if room else "Raum"

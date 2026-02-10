@@ -214,8 +214,16 @@ class HAConnection:
             payload["data"] = data
         return self.call_service("notify", target or "notify", payload)
 
-    def announce_tts(self, message, media_player_entity=None):
+    def announce_tts(self, message, media_player_entity=None, language=None):
+        """Send TTS announcement via Home Assistant."""
         entity = media_player_entity
+        if not entity:
+            # Check configured TTS media player first
+            try:
+                from helpers import get_setting
+                entity = get_setting("tts_media_player")
+            except Exception:
+                pass
         if not entity:
             states = self.get_states()
             speakers = [s for s in states
@@ -225,16 +233,21 @@ class HAConnection:
                 entity = speakers[0]["entity_id"]
         if not entity:
             logger.warning("No media player found for TTS")
-            return None
+            return {"error": "No media player found for TTS"}
+
+        lang = language or "de"
+
         # Try tts.speak first (HA 2024+), fallback to tts.google_translate_say
         result = self.call_service("tts", "speak", {
-            "entity_id": entity,
-            "message": message
+            "media_player_entity_id": entity,
+            "message": message,
+            "language": lang,
         })
         if result is None:
             result = self.call_service("tts", "google_translate_say", {
                 "entity_id": entity,
-                "message": message
+                "message": message,
+                "language": lang,
             })
         return result
 
