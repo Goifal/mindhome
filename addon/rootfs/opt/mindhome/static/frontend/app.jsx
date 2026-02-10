@@ -1,6 +1,6 @@
-// MindHome Frontend v0.6.2 (2026-02-10) - app.jsx
+// MindHome Frontend v0.6.5 (2026-02-10) - app.jsx
 // ================================================================
-// MindHome - React Frontend Application v0.6.2
+// MindHome - React Frontend Application v0.6.5
 // ================================================================
 
 const { useState, useEffect, useCallback, createContext, useContext, useRef, useMemo, useReducer } = React;
