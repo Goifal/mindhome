@@ -7,7 +7,7 @@
 </p>
 
 <p align="center">
-  <strong>v0.6.5</strong> · Phase 3.5 – Stabilisierung & Refactoring<br>
+  <strong>v0.6.6</strong> · Phase 3.5 – Stabilisierung & Refactoring<br>
   ~130 Features · 14 Domain-Plugins · 100% lokal
 </p>
 
@@ -167,7 +167,7 @@ Alle Daten werden **ausschließlich lokal** gespeichert. MindHome sendet keine D
 # MindHome — Your Home Thinks Ahead!
 
 <p align="center">
-  <strong>v0.6.5</strong> · Phase 3.5 – Stabilization & Refactoring<br>
+  <strong>v0.6.6</strong> · Phase 3.5 – Stabilization & Refactoring<br>
   ~130 Features · 14 Domain Plugins · 100% local
 </p>
 

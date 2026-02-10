@@ -4,17 +4,19 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "0.6.5"
-BUILD = 6
+VERSION = "0.6.6"
+BUILD = 7
 BUILD_DATE = "2026-02-10"
 CODENAME = "Phase 3.5 - Bootloop Fix"
 
 # Changelog
+# Build 7: v0.6.6 Bugfix
+#   - Version-Bump fuer HA Update-Erkennung
+#
 # Build 6: v0.6.5 Bugfix + Bootloop Fix
 #   - Fix: JSX-Syntaxfehler verhinderte Babel-Kompilierung
 #   - Fix: Frontend-Bibliotheken lokal gebuendelt statt CDN
-#   - Fix: Translations-Endpoint suchte in falschem Verzeichnis
-#   - Fix: serve_frontend 404 fuer fehlende .js-Dateien
+#   - Fix: Translations-Endpoint + serve_frontend 404
 #   - Fix Ladescreen: Icon-Pfad kompatibel mit HA Ingress
 #   - Fix TTS: Keine Retry-Schleife bei 400, TTS-Entity-Erkennung
 #   - Fix Backup-Export: muted_until statt mute_until
