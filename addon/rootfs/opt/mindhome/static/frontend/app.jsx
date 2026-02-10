@@ -3239,7 +3239,7 @@ const AnomalyAdvancedPanel = ({ lang, showToast }) => {
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 6, marginBottom: 8 }}>
                         {Object.entries(stats.by_type || {}).map(([type, count]) => (
                             <div key={type} style={{ padding: '6px 8px', background: 'var(--bg-main)', borderRadius: 6, fontSize: 11 }}>
-                                <div style={{ fontWeight: 600 }}>{count}div>
+                                <div style={{ fontWeight: 600 }}>{count}</div>
                                 <div style={{ color: 'var(--text-muted)' }}>{type}</div>
                             </div>
                         ))}
