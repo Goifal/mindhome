@@ -34,6 +34,7 @@
             --text-inverse: #0a0e17;
 
             --accent-primary: #f59e0b;
+            --accent-primary-hover: #e69200;
             --accent-primary-dim: rgba(245, 158, 11, 0.15);
             --accent-primary-glow: rgba(245, 158, 11, 0.3);
             --accent-secondary: #3b82f6;
@@ -438,7 +439,7 @@
             border-color: var(--accent-primary);
         }
         .btn-primary:hover {
-            background: #e69200;
+            background: var(--accent-primary-hover, #e69200);
             box-shadow: var(--shadow-glow);
         }
 
@@ -807,11 +808,11 @@
     <div id="root">
         <div class="loading-screen" id="initial-loader">
             <div class="sidebar-logo">
-                <span class="mdi mdi-brain"></span>
+                <img src="/icon.png" alt="MindHome" style="width: 64px; height: 64px; border-radius: 16px;" />
             </div>
             <div style="font-size: 22px; font-weight: 700; letter-spacing: -0.02em;">MindHome</div>
             <div class="loading-spinner"></div>
-            <div id="load-status" style="font-size: 12px; color: #5a6478; margin-top: 8px;">Lade Bibliotheken...</div>
+            <div id="load-status" style="font-size: 12px; color: var(--text-muted); margin-top: 8px;">Lade Bibliotheken...</div>
         </div>
     </div>
 
@@ -832,7 +833,7 @@
                 '<div class="error-icon">âš ï¸</div>' +
                 '<div class="error-title">' + title + '</div>' +
                 '<div class="error-detail">' + detail + '</div>' +
-                '<div style="font-size:12px;color:#8892a8;margin-top:8px;">Lade-Schritte: ' + window._loadSteps.join(' â†’ ') + '</div>' +
+                '<div style="font-size:12px;color:var(--text-secondary);margin-top:8px;">Lade-Schritte: ' + window._loadSteps.join(' â†' ') + '</div>' +
                 '<button class="btn btn-primary" onclick="location.reload()">Seite neu laden</button>' +
                 '</div>';
         }
