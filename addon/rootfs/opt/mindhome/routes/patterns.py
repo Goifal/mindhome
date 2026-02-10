@@ -1,4 +1,4 @@
-# MindHome - routes/patterns.py | see version.py for version info
+# MindHome routes/patterns v0.6.1 (2026-02-10) - routes/patterns.py
 """
 MindHome API Routes - Patterns
 Auto-extracted from monolithic app.py during Phase 3.5 refactoring.
@@ -36,7 +36,7 @@ from models import (
     PresenceMode, PresenceLog, SensorGroup, SensorThreshold,
     EnergyConfig, EnergyReading, StandbyConfig, LearnedScene,
     PluginSetting, QuietHoursConfig, SchoolVacation,
-    PersonSchedule, ShiftTemplate, Holiday,
+    PersonSchedule, ShiftTemplate, Holiday, PatternSettings,
 )
 
 logger = logging.getLogger("mindhome.routes.patterns")
@@ -186,7 +186,7 @@ def api_trigger_analysis():
 
 @patterns_bp.route("/api/patterns/reclassify-insights", methods=["POST"])
 def api_reclassify_insights():
-    """Reclassify existing sensorÃ¢â€ â€™sensor patterns as 'insight'."""
+    """Reclassify existing sensor→sensor patterns as 'insight'."""
     session = get_db()
     try:
         NON_ACTIONABLE = ("sensor.", "binary_sensor.", "sun.", "weather.", "zone.", "person.", "device_tracker.", "calendar.", "proximity.")
@@ -637,7 +637,7 @@ def api_pattern_conflicts():
 
 @patterns_bp.route("/api/patterns/scenes", methods=["GET"])
 def api_detect_scenes():
-    """Detect groups of devices that are often switched together Ã¢â€ â€™ suggest scenes."""
+    """Detect groups of devices that are often switched together → suggest scenes."""
     session = get_db()
     try:
         cutoff = datetime.now(timezone.utc) - timedelta(days=30)
@@ -665,8 +665,8 @@ def api_detect_scenes():
                 scenes.append({
                     "entities": list(entities),
                     "count": count,
-                    "message_de": f"{len(entities)} Geräte werden oft zusammen geschaltet ({count}Ãƒâ€”)",
-                    "message_en": f"{len(entities)} devices are often switched together ({count}Ãƒâ€”)",
+                    "message_de": f"{len(entities)} Geräte werden oft zusammen geschaltet ({count}×)",
+                    "message_en": f"{len(entities)} devices are often switched together ({count}×)",
                 })
             if len(scenes) >= 10:
                 break
@@ -675,5 +675,155 @@ def api_detect_scenes():
     except Exception as e:
         logger.error(f"Scene detection error: {e}")
         return jsonify({"scenes": [], "error": str(e)})
+    finally:
+        session.close()
+
+
+# ==============================================================================
+# Pattern Settings API (v0.6.1)
+# ==============================================================================
+
+PATTERN_SETTINGS_DEFAULTS = {
+    "chain_window_seconds": {"value": "120", "category": "thresholds", "description_de": "Zeitfenster für Sequenz-Erkennung (Sekunden)", "description_en": "Time window for sequence detection (seconds)"},
+    "min_sequence_count": {"value": "7", "category": "thresholds", "description_de": "Minimum Vorkommen für Sequenz-Muster", "description_en": "Minimum occurrences for sequence patterns"},
+    "min_confidence": {"value": "0.45", "category": "thresholds", "description_de": "Minimale Confidence für Muster", "description_en": "Minimum confidence for patterns"},
+    "learning_speed": {"value": "normal", "category": "general", "description_de": "Lerngeschwindigkeit (cautious/normal/aggressive)", "description_en": "Learning speed (cautious/normal/aggressive)"},
+    "anomaly_person_threshold": {"value": "50", "category": "anomaly", "description_de": "Anomalie-Schwelle für Personen (GPS-Jitter)", "description_en": "Anomaly threshold for persons (GPS jitter)"},
+    "anomaly_heatpump_sensitivity": {"value": "low", "category": "anomaly", "description_de": "Empfindlichkeit für Wärmepumpen-Anomalien (low/medium/high)", "description_en": "Heatpump anomaly sensitivity (low/medium/high)"},
+}
+
+LEARNING_SPEED_PRESETS = {
+    "cautious": {"min_confidence": "0.60", "min_sequence_count": "10", "chain_window_seconds": "90"},
+    "normal": {"min_confidence": "0.45", "min_sequence_count": "7", "chain_window_seconds": "120"},
+    "aggressive": {"min_confidence": "0.30", "min_sequence_count": "4", "chain_window_seconds": "180"},
+}
+
+
+@patterns_bp.route("/api/pattern-settings", methods=["GET"])
+def api_get_pattern_settings():
+    """#25: Get all pattern settings with defaults for missing keys."""
+    session = get_db()
+    try:
+        existing = {ps.key: ps for ps in session.query(PatternSettings).all()}
+        result = {}
+        for key, defaults in PATTERN_SETTINGS_DEFAULTS.items():
+            if key in existing:
+                ps = existing[key]
+                result[key] = {
+                    "value": ps.value,
+                    "category": ps.category or defaults["category"],
+                    "description_de": ps.description_de or defaults["description_de"],
+                    "description_en": ps.description_en or defaults["description_en"],
+                }
+            else:
+                result[key] = defaults.copy()
+
+        # #37: _meta with is_custom and active_preset
+        current_vals = {k: result[k]["value"] for k in result}
+        active_preset = None
+        is_custom = True
+        for preset_name, preset_vals in LEARNING_SPEED_PRESETS.items():
+            if all(current_vals.get(k) == v for k, v in preset_vals.items()):
+                active_preset = preset_name
+                is_custom = False
+                break
+
+        return jsonify({
+            "settings": result,
+            "_meta": {
+                "is_custom": is_custom,
+                "active_preset": active_preset,
+            }
+        })
+    finally:
+        session.close()
+
+
+@patterns_bp.route("/api/pattern-settings", methods=["PUT"])
+def api_update_pattern_settings():
+    """#25: Update pattern settings."""
+    data = request.json or {}
+    session = get_db()
+    try:
+        updated = []
+        for key, value in data.items():
+            if key.startswith("_"):
+                continue
+            ps = session.query(PatternSettings).filter_by(key=key).first()
+            if ps:
+                ps.value = str(value)
+            else:
+                defaults = PATTERN_SETTINGS_DEFAULTS.get(key, {})
+                ps = PatternSettings(
+                    key=key,
+                    value=str(value),
+                    category=defaults.get("category", "general"),
+                    description_de=defaults.get("description_de"),
+                    description_en=defaults.get("description_en"),
+                )
+                session.add(ps)
+            updated.append(key)
+        session.commit()
+        return jsonify({"success": True, "updated": updated})
+    except Exception as e:
+        session.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        session.close()
+
+
+@patterns_bp.route("/api/pattern-settings/preset/<name>", methods=["POST"])
+def api_apply_preset(name):
+    """#32: Apply a learning speed preset."""
+    if name not in LEARNING_SPEED_PRESETS:
+        return jsonify({"error": f"Unknown preset: {name}", "available": list(LEARNING_SPEED_PRESETS.keys())}), 400
+
+    preset = LEARNING_SPEED_PRESETS[name]
+    session = get_db()
+    try:
+        for key, value in preset.items():
+            ps = session.query(PatternSettings).filter_by(key=key).first()
+            if ps:
+                ps.value = value
+            else:
+                defaults = PATTERN_SETTINGS_DEFAULTS.get(key, {})
+                ps = PatternSettings(
+                    key=key, value=value,
+                    category=defaults.get("category", "thresholds"),
+                    description_de=defaults.get("description_de"),
+                    description_en=defaults.get("description_en"),
+                )
+                session.add(ps)
+
+        # Also set learning_speed key
+        ls = session.query(PatternSettings).filter_by(key="learning_speed").first()
+        if ls:
+            ls.value = name
+        else:
+            session.add(PatternSettings(key="learning_speed", value=name, category="general"))
+
+        session.commit()
+        return jsonify({"success": True, "preset": name, "values": preset})
+    except Exception as e:
+        session.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        session.close()
+
+
+@patterns_bp.route("/api/stats/learning-days", methods=["GET"])
+def api_learning_days():
+    """#2: Calculate days of data from oldest StateHistory entry."""
+    session = get_db()
+    try:
+        oldest = session.query(sa_func.min(StateHistory.created_at)).scalar()
+        total = session.query(sa_func.count(StateHistory.id)).scalar() or 0
+        if oldest:
+            if oldest.tzinfo is None:
+                oldest = oldest.replace(tzinfo=timezone.utc)
+            days = (datetime.now(timezone.utc) - oldest).days
+        else:
+            days = 0
+        return jsonify({"days": days, "total_events": total})
     finally:
         session.close()

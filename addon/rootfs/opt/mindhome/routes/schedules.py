@@ -471,8 +471,8 @@ def api_seed_default_holidays():
             ("Neujahr", "01-01"), ("Heilige Drei Koenige", "01-06"),
             ("Staatsfeiertag", "05-01"), ("Christi Himmelfahrt", "05-29"),
             ("Pfingstmontag", "06-09"), ("Fronleichnam", "06-19"),
-            ("MariÃ¤ Himmelfahrt", "08-15"), ("Nationalfeiertag", "10-26"),
-            ("Allerheiligen", "11-01"), ("MariÃ¤ Empfaengnis", "12-08"),
+            ("Mariä Himmelfahrt", "08-15"), ("Nationalfeiertag", "10-26"),
+            ("Allerheiligen", "11-01"), ("Mariä Empfaengnis", "12-08"),
             ("Christtag", "12-25"), ("Stefanitag", "12-26"),
         ]
         for name, date in defaults:

@@ -1,3 +1,4 @@
+# MindHome Models v0.6.1 (2026-02-10) - models.py
 """
 MindHome - Database Models
 All persistent data structures for MindHome.
@@ -32,6 +33,7 @@ Base = declarative_base()
 class UserRole(enum.Enum):
     ADMIN = "admin"
     USER = "user"
+    GUEST = "guest"
 
 
 class LearningPhase(enum.Enum):
@@ -645,6 +647,23 @@ class PluginSetting(Base):
 
 
 # ==============================================================================
+# Pattern Settings (v0.6.1)
+# ==============================================================================
+
+class PatternSettings(Base):
+    """Configurable thresholds and settings for pattern detection engine."""
+    __tablename__ = "pattern_settings"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    key = Column(String(100), nullable=False, unique=True)
+    value = Column(Text, nullable=False)
+    description_de = Column(Text, nullable=True)
+    description_en = Column(Text, nullable=True)
+    category = Column(String(50), default="general")  # "general", "thresholds", "anomaly", "decay"
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+
+# ==============================================================================
 # Phase 3: Quiet Hours / Rest Periods
 # ==============================================================================
 
@@ -816,6 +835,7 @@ class DataCollection(Base):
     first_record_at = Column(DateTime, nullable=True)
     last_record_at = Column(DateTime, nullable=True)
     storage_size_bytes = Column(Integer, default=0)
+    created_at = Column(DateTime, default=_utcnow)
 
     room = relationship("Room")
     domain = relationship("Domain")
@@ -1316,6 +1336,24 @@ MIGRATIONS = [
             "ALTER TABLE users ADD COLUMN profile_type VARCHAR(20) DEFAULT 'adult'",
             "ALTER TABLE users ADD COLUMN tracking_enabled BOOLEAN DEFAULT 1",
             "ALTER TABLE users ADD COLUMN history_enabled BOOLEAN DEFAULT 1",
+        ]
+    },
+    {
+        "version": 7,
+        "description": "v0.6.1 - Pattern settings, DataCollection.created_at",
+        "sql": [
+            # PatternSettings table
+            """CREATE TABLE IF NOT EXISTS pattern_settings (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                key VARCHAR(100) NOT NULL UNIQUE,
+                value TEXT NOT NULL,
+                description_de TEXT,
+                description_en TEXT,
+                category VARCHAR(50) DEFAULT 'general',
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )""",
+            # DataCollection: add created_at
+            "ALTER TABLE data_collection ADD COLUMN created_at DATETIME DEFAULT CURRENT_TIMESTAMP",
         ]
     },
 ]

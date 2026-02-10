@@ -1,4 +1,4 @@
-# MindHome - app.py | see version.py for version info
+# MindHome app v0.6.1 (2026-02-10) - app.py
 """
 MindHome - Main Application Entry Point
 Flask backend initialization, middleware, and startup.
@@ -225,6 +225,11 @@ _start_time = 0
 # State Change Handler
 # ==============================================================================
 
+# Dedup cache for state change events (#15)
+_recent_events = {}
+_DEDUP_WINDOW = 1.0  # seconds
+
+
 def on_state_changed(event):
     """Handle real-time state change events from HA."""
     if domain_manager:
@@ -234,6 +239,20 @@ def on_state_changed(event):
     entity_id = event_data.get("entity_id", "")
     new_state = event_data.get("new_state") or {}
     old_state = event_data.get("old_state") or {}
+
+    # #15: Deduplicate events (same entity+state within 1 second)
+    now = time.time()
+    new_val = new_state.get("state", "") if isinstance(new_state, dict) else ""
+    dedup_key = f"{entity_id}:{new_val}"
+    last_seen = _recent_events.get(dedup_key, 0)
+    if now - last_seen < _DEDUP_WINDOW:
+        return  # Skip duplicate
+    _recent_events[dedup_key] = now
+
+    # Cleanup dedup cache periodically (keep max 500)
+    if len(_recent_events) > 500:
+        cutoff = now - _DEDUP_WINDOW * 2
+        _recent_events.clear()
 
     # Log to state_history via pattern engine
     try:

@@ -1,4 +1,4 @@
-# MindHome - routes/presence.py | see version.py for version info
+# MindHome routes/presence v0.6.1 (2026-02-10) - routes/presence.py
 """
 MindHome API Routes - Presence
 Auto-extracted from monolithic app.py during Phase 3.5 refactoring.
@@ -287,6 +287,92 @@ def api_delete_guest_device(guest_id):
         session.close()
 
 
+@presence_bp.route("/api/presence/auto-detect", methods=["POST"])
+def api_presence_auto_detect():
+    """#13: Auto-detect presence from person.* entities."""
+    session = get_db()
+    try:
+        # Check manual override
+        override = session.query(SystemSetting).filter_by(key="presence_manual_override").first()
+        if override and override.value == "true":
+            return jsonify({"skipped": True, "reason": "manual_override_active"})
+
+        # Get all person entities from HA
+        persons = _ha().get_all_persons() if _ha() else []
+        home_count = sum(1 for p in persons if p.get("state") == "home")
+        total = len(persons)
+
+        # Determine target mode
+        if home_count >= 1:
+            target_name = "Zuhause"
+        else:
+            target_name = "Abwesend"
+
+        # Find matching mode
+        target_mode = session.query(PresenceMode).filter_by(name_de=target_name).first()
+        if not target_mode:
+            return jsonify({"error": f"Mode '{target_name}' not found"}), 404
+
+        # Check current mode
+        current = session.query(PresenceLog).order_by(PresenceLog.created_at.desc()).first()
+        if current and current.mode_name == target_name:
+            return jsonify({"changed": False, "mode": target_name, "home_count": home_count})
+
+        # Switch mode: write PresenceLog
+        log_entry = PresenceLog(
+            mode_name=target_name,
+            trigger="auto_detect",
+        )
+        session.add(log_entry)
+
+        # Create notification for toast
+        notification = NotificationLog(
+            title_de=f"Modus: {target_name}",
+            title_en=f"Mode: {target_mode.name_en}",
+            message_de=f"Automatisch erkannt: {home_count}/{total} Personen zuhause",
+            message_en=f"Auto-detected: {home_count}/{total} persons home",
+            notification_type="info",
+            is_read=False,
+        )
+        session.add(notification)
+        session.commit()
+
+        return jsonify({
+            "changed": True,
+            "mode": target_name,
+            "home_count": home_count,
+            "total_persons": total,
+        })
+    except Exception as e:
+        session.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        session.close()
+
+
+@presence_bp.route("/api/presence/manual-override", methods=["POST"])
+def api_presence_manual_override():
+    """#28: Set or clear manual presence override."""
+    data = request.json or {}
+    session = get_db()
+    try:
+        enabled = data.get("enabled", True)
+        setting = session.query(SystemSetting).filter_by(key="presence_manual_override").first()
+        if setting:
+            setting.value = "true" if enabled else "false"
+        else:
+            session.add(SystemSetting(
+                key="presence_manual_override",
+                value="true" if enabled else "false",
+                description_de="Manuelle Anwesenheits-Steuerung aktiv",
+                description_en="Manual presence control active",
+            ))
+        session.commit()
+        return jsonify({"success": True, "manual_override": enabled})
+    finally:
+        session.close()
+
+
 @presence_bp.route("/api/sun", methods=["GET"])
 def api_get_sun():
     return jsonify(_ha().get_sun_data() if hasattr(ha, 'get_sun_data') else {"error": "not available"})
@@ -296,22 +382,26 @@ def api_get_sun():
 def api_seed_default_presence_modes():
     session = get_db()
     try:
-        existing = session.query(PresenceMode).count()
-        if existing > 0:
-            return jsonify({"message": "Already seeded", "count": existing})
         defaults = [
             {"name_de": "Zuhause", "name_en": "Home", "icon": "mdi-home", "color": "#4CAF50", "priority": 1, "is_system": True, "trigger_type": "auto"},
             {"name_de": "Abwesend", "name_en": "Away", "icon": "mdi-exit-run", "color": "#FF9800", "priority": 2, "is_system": True, "trigger_type": "auto"},
             {"name_de": "Schlaf", "name_en": "Sleep", "icon": "mdi-sleep", "color": "#3F51B5", "priority": 3, "is_system": True, "trigger_type": "auto"},
             {"name_de": "Urlaub", "name_en": "Vacation", "icon": "mdi-beach", "color": "#00BCD4", "priority": 4, "is_system": True, "trigger_type": "manual"},
         ]
+        created = 0
+        skipped = []
         for m in defaults:
+            existing = session.query(PresenceMode).filter_by(name_de=m["name_de"]).first()
+            if existing:
+                skipped.append(m["name_de"])
+                logger.info(f"Seed skip (exists): {m['name_de']}")
+                continue
             session.add(PresenceMode(**m, is_active=True))
+            created += 1
         session.commit()
-        return jsonify({"success": True, "count": len(defaults)})
+        return jsonify({"success": True, "created": created, "skipped": skipped})
     finally:
         session.close()
-    return jsonify(_ha().get_sun_state() or {"error": "unavailable"})
 
 
 @presence_bp.route("/api/sun/events", methods=["GET"])
