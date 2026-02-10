@@ -911,6 +911,16 @@
     </script>
 
     <script>
+        // Debug beacon: this POST tells us the code reached this point
+        fetch((window._apiBase || '') + '/api/system/frontend-error', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                error: 'DEBUG: Babel start. React=' + (typeof React) + ' ReactDOM=' + (typeof ReactDOM) + ' Babel=' + (typeof Babel) + ' jsx-source=' + (!!document.getElementById('app-jsx-source')),
+                source: 'debug-beacon'
+            })
+        }).catch(function(){});
+
         logStep('App wird kompiliert...');
 
         function reportError(msg, src) {

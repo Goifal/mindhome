@@ -4,12 +4,15 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "0.6.9"
-BUILD = 10
+VERSION = "0.6.10"
+BUILD = 11
 BUILD_DATE = "2026-02-10"
 CODENAME = "Phase 3.5 - Bootloop Fix"
 
 # Changelog
+# Build 11: v0.6.10 Debug
+#   - Debug-Beacon POST vor Babel-Kompilierung (zeigt ob Code dort ankommt)
+#
 # Build 10: v0.6.9 Debug
 #   - Cache-Control no-cache auf serve_index (kein Browser-Caching)
 #   - Besseres Error-Reporting: reportError() sendet alle Fehler ans Backend
