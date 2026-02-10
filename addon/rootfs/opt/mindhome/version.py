@@ -4,12 +4,18 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "0.6.8"
-BUILD = 9
+VERSION = "0.6.9"
+BUILD = 10
 BUILD_DATE = "2026-02-10"
 CODENAME = "Phase 3.5 - Bootloop Fix"
 
 # Changelog
+# Build 10: v0.6.9 Debug
+#   - Cache-Control no-cache auf serve_index (kein Browser-Caching)
+#   - Besseres Error-Reporting: reportError() sendet alle Fehler ans Backend
+#   - Babel Kompilierzeit wird angezeigt
+#   - Mojibake in Fehlermeldungen entfernt (ue statt ü)
+#
 # Build 9: v0.6.8 Bugfix
 #   - Fix Ladescreen: onerror-Handler fuer lokale lib-Dateien (CDN-Fallback)
 #   - Fix 404 fuer fehlende .js-Dateien: leerer Body statt JSON (Browser-kompatibel)

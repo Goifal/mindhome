@@ -707,7 +707,11 @@ def serve_index():
             # Fallback: insert before </body>
             html = html.replace('</body>', jsx_block + '\n</body>')
 
-        return html, 200, {"Content-Type": "text/html; charset=utf-8"}
+        return html, 200, {
+            "Content-Type": "text/html; charset=utf-8",
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+        }
     except FileNotFoundError as e:
         logger.error(f"Frontend file not found: {e}")
         return f"<h1>Frontend Error</h1><p>File not found: {e}</p>", 500
