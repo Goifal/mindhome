@@ -1,4 +1,4 @@
-# MindHome Backend v0.5.1-blockA (2026-02-08T19:30) - app.py - DIES IST DIE BACKEND DATEI1
+# MindHome Backend v0.5.1-blockA (2026-02-08T19:30) - app.py - DIES IST DIE BACKEND DATEI
 """
 MindHome - Main Application
 Flask backend serving the API and frontend.
