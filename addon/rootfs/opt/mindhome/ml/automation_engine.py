@@ -181,7 +181,7 @@ class FeedbackProcessor:
                 pattern.updated_at = datetime.now(timezone.utc)
 
             session.commit()
-            logger.info(f"Prediction {prediction_id} confirmed â†’ pattern {pred.pattern_id} activated")
+            logger.info(f"Prediction {prediction_id} confirmed → â€™ pattern {pred.pattern_id} activated")
             return {"success": True, "status": "confirmed"}
 
         except Exception as e:
@@ -220,7 +220,7 @@ class FeedbackProcessor:
                 pattern.updated_at = datetime.now(timezone.utc)
 
             session.commit()
-            logger.info(f"Prediction {prediction_id} rejected â†’ confidence decreased")
+            logger.info(f"Prediction {prediction_id} rejected → â€™ confidence decreased")
             return {"success": True, "status": "rejected"}
 
         except Exception as e:
@@ -462,7 +462,7 @@ class AutomationExecutor:
             )
             session.add(log)
 
-            logger.info(f"Executed: {entity_id} â†’ {target_state} (pattern {pattern.id}, confidence {pattern.confidence:.2f})")
+            logger.info(f"Executed: {entity_id} → â€™ {target_state} (pattern {pattern.id}, confidence {pattern.confidence:.2f})")
 
         except Exception as e:
             logger.error(f"Execution failed for {entity_id}: {e}")
@@ -526,7 +526,7 @@ class AutomationExecutor:
                     logger.info(f"Pattern {pattern.id} auto-deactivated after {undo_count+1} undos")
 
             session.commit()
-            logger.info(f"Undone prediction {prediction_id}: {entity_id} â†’ {restore_state}")
+            logger.info(f"Undone prediction {prediction_id}: {entity_id} → â€™ {restore_state}")
             return {"success": True, "restored_state": restore_state}
 
         except Exception as e:
@@ -658,7 +658,7 @@ class PhaseManager:
                     room_name = room.name if room else f"Room {rds.room_id}"
                     domain_name = domain.name if domain else f"Domain {rds.domain_id}"
 
-                    logger.info(f"Phase transition: {room_name}/{domain_name} {old_name} â†’ {new_phase.value}")
+                    logger.info(f"Phase transition: {room_name}/{domain_name} {old_name} → â€™ {new_phase.value}")
 
             session.commit()
             if transitions:
@@ -913,8 +913,8 @@ class AnomalyDetector:
         # More than 2.5 standard deviations = anomaly
         if diff > std_dev * 2.5 and diff > 3:
             return self._build_anomaly(session, event, hour,
-                f"um {hour}:00 Uhr aktiviert (normalerweise ~{int(mean_hour)}:00 Â±{int(std_dev)}h)",
-                f"activated at {hour}:00 (usually ~{int(mean_hour)}:00 Â±{int(std_dev)}h)")
+                f"um {hour}:00 Uhr aktiviert (normalerweise ~{int(mean_hour)}:00 Ã‚Â±{int(std_dev)}h)",
+                f"activated at {hour}:00 (usually ~{int(mean_hour)}:00 Ã‚Â±{int(std_dev)}h)")
 
         return None
 
@@ -929,7 +929,7 @@ class AnomalyDetector:
 
         if change_count >= 10:
             return self._build_anomaly(session, event, None,
-                f"hat sich {change_count}x in 10 Minuten geÃ¤ndert (mÃ¶gliche StÃ¶rung)",
+                f"hat sich {change_count}x in 10 Minuten geändert (mögliche Störung)",
                 f"changed {change_count} times in 10 minutes (possible fault)",
                 severity="critical")
 
@@ -986,7 +986,7 @@ class AnomalyDetector:
         return {
             "entity_id": event.entity_id,
             "device_name": device_name,
-            "event": f"{event.old_state} â†’ {event.new_state}",
+            "event": f"{event.old_state} → â€™ {event.new_state}",
             "time": event.created_at.isoformat() if event.created_at else None,
             "reason_de": f"{device_name} {reason_de}",
             "reason_en": f"{device_name} {reason_en}",
@@ -1047,7 +1047,7 @@ class AnomalyDetector:
                     "recent_events": recent,
                     "daily_average": round(weekly_avg),
                     "ratio": round(recent / weekly_avg, 1),
-                    "message_de": f"UngewÃ¶hnlich hohe AktivitÃ¤t: {recent} Events (Ã˜ {weekly_avg:.0f})",
+                    "message_de": f"Ungewöhnlich hohe Aktivität: {recent} Events (Ö {weekly_avg:.0f})",
                     "message_en": f"Unusually high activity: {recent} events (avg {weekly_avg:.0f})",
                 }
             return {"guest_likely": False, "recent_events": recent, "daily_average": round(weekly_avg)}
@@ -1114,7 +1114,7 @@ class NotificationManager:
         session = self.Session()
         try:
             entity_id = anomaly.get("entity_id", "")
-            title = "MindHome: UngewÃ¶hnliche AktivitÃ¤t" if lang == "de" else "MindHome: Unusual Activity"
+            title = "MindHome: Ungewöhnliche Aktivität" if lang == "de" else "MindHome: Unusual Activity"
             message = anomaly.get("reason_de" if lang == "de" else "reason_en", "")
 
             # Dedup: check if we already notified about this entity in last 24h
@@ -1330,13 +1330,13 @@ class PluginConflictDetector:
     CONFLICT_RULES = [
         # (domain_a, state_a, domain_b, state_b, message_de, message_en)
         ("climate", "heating", "door_window", "open",
-         "Heizung läuft aber Fenster ist offen",
+         "Heizung laeuft aber Fenster ist offen",
          "Heating is on but window is open"),
         ("climate", "cooling", "door_window", "open",
-         "Klimaanlage läuft aber Fenster ist offen",
+         "Klimaanlage laeuft aber Fenster ist offen",
          "AC is on but window is open"),
         ("cover", "closed", "ventilation", "boost",
-         "Rollos geschlossen aber Lüftung auf Boost",
+         "Rollos geschlossen aber Lueftung auf Boost",
          "Covers closed but ventilation on boost"),
     ]
 
