@@ -16,7 +16,7 @@
     <style>
         /* ================================================================
            MindHome Design System
-           Aesthetic: Refined dark futuristic – clean, minimal, warm accents
+           Aesthetic: Refined dark futuristic â€“ clean, minimal, warm accents
            ================================================================ */
 
         :root {
@@ -818,10 +818,10 @@
         function showError(title, detail) {
             var root = document.getElementById('root');
             root.innerHTML = '<div class="error-screen">' +
-                '<div class="error-icon">⚠️</div>' +
+                '<div class="error-icon">âš ï¸</div>' +
                 '<div class="error-title">' + title + '</div>' +
                 '<div class="error-detail">' + detail + '</div>' +
-                '<div style="font-size:12px;color:#8892a8;margin-top:8px;">Lade-Schritte: ' + window._loadSteps.join(' → ') + '</div>' +
+                '<div style="font-size:12px;color:#8892a8;margin-top:8px;">Lade-Schritte: ' + window._loadSteps.join(' â†’ ') + '</div>' +
                 '<button class="btn btn-primary" onclick="location.reload()">Seite neu laden</button>' +
                 '</div>';
         }
@@ -848,7 +848,7 @@
                 showError(
                     'Laden fehlgeschlagen (Timeout)',
                     'Die App konnte nicht innerhalb von 30 Sekunden geladen werden. ' +
-                    'Mögliche Ursachen: CDN nicht erreichbar, JavaScript-Fehler, oder Netzwerkproblem.\n\n' +
+                    'MÃ¶gliche Ursachen: CDN nicht erreichbar, JavaScript-Fehler, oder Netzwerkproblem.\n\n' +
                     'Geladene Schritte: ' + window._loadSteps.join(', ') + '\n' +
                     'Fehler: ' + (window._loadErrors.length ? window._loadErrors.join(', ') : 'keine')
                 );
@@ -866,7 +866,7 @@
     <!-- React -->
     <script>logStep('React...');</script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"
-            onerror="showError('React konnte nicht geladen werden', 'CDN cdnjs.cloudflare.com ist nicht erreichbar. Prüfe die Internetverbindung des HA-Servers.')"></script>
+            onerror="showError('React konnte nicht geladen werden', 'CDN cdnjs.cloudflare.com ist nicht erreichbar. PrÃ¼fe die Internetverbindung des HA-Servers.')"></script>
     <script>logStep('ReactDOM...');</script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"
             onerror="showError('ReactDOM konnte nicht geladen werden', 'CDN cdnjs.cloudflare.com ist nicht erreichbar.')"></script>
@@ -878,11 +878,11 @@
         logStep('App wird kompiliert...');
         // Verify libraries loaded
         if (typeof React === 'undefined') {
-            showError('React nicht verfügbar', 'Die React-Bibliothek konnte nicht geladen werden. CDN blockiert?');
+            showError('React nicht verfÃ¼gbar', 'Die React-Bibliothek konnte nicht geladen werden. CDN blockiert?');
         } else if (typeof ReactDOM === 'undefined') {
-            showError('ReactDOM nicht verfügbar', 'Die ReactDOM-Bibliothek konnte nicht geladen werden.');
+            showError('ReactDOM nicht verfÃ¼gbar', 'Die ReactDOM-Bibliothek konnte nicht geladen werden.');
         } else if (typeof Babel === 'undefined') {
-            showError('Babel nicht verfügbar', 'Der JSX-Compiler konnte nicht geladen werden.');
+            showError('Babel nicht verfÃ¼gbar', 'Der JSX-Compiler konnte nicht geladen werden.');
         } else {
             // Manual Babel transformation with full error catching
             var jsxEl = document.getElementById('app-jsx-source');
@@ -894,7 +894,7 @@
                         presets: ['react'],
                         filename: 'app.jsx'
                     });
-                    logStep('Code wird ausgeführt...');
+                    logStep('Code wird ausgefÃ¼hrt...');
                     eval(transformed.code);
                 } catch (e) {
                     var detail = e.message || String(e);
@@ -909,7 +909,7 @@
                     } catch(ex) {}
                 }
             } else {
-                showError('App-Code fehlt', 'Der JSX-Quellcode wurde nicht in die Seite eingebettet. Bitte app.jsx prüfen.');
+                showError('App-Code fehlt', 'Der JSX-Quellcode wurde nicht in die Seite eingebettet. Bitte app.jsx prÃ¼fen.');
             }
         }
     </script>
