@@ -65,14 +65,6 @@ def _domain_manager():
 
 
 
-@system_bp.before_request
-def before_request_middleware():
-    """Rate limiting + ingress token check."""
-    if request.path.startswith("/static") or request.path == "/":
-        return None
-    if request.path.startswith("/api/") and not rate_limit_check():
-        return jsonify({"error": "Rate limit exceeded"}), 429
-    return None
 
 
 
