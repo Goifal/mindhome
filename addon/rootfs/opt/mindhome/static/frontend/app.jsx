@@ -303,7 +303,7 @@ const ConfirmDialog = ({ title, message, onConfirm, onCancel, danger }) => (
             <div className="modal-actions">
                 <button className="btn btn-secondary" onClick={onCancel}>Abbrechen</button>
                 <button className={`btn ${danger ? 'btn-danger' : 'btn-primary'}`} onClick={onConfirm}>
-                    {danger ? 'LÃ¶schen' : 'BestÃ¤tigen'}
+                    {danger ? 'Löschen' : 'Bestätigen'}
                 </button>
             </div>
         </div>
@@ -333,7 +333,7 @@ const Dropdown = ({ value, onChange, options, placeholder, label }) => {
                 boxShadow: open ? '0 0 0 2px rgba(245,166,35,0.15)' : undefined,
                 transition: 'border-color 0.2s, box-shadow 0.2s'
             }}>
-                <span style={{ color: selected ? 'var(--text-primary)' : 'var(--text-muted)' }}>{selected?.label || placeholder || 'â€” AuswÃ¤hlen â€”'}</span>
+                <span style={{ color: selected ? 'var(--text-primary)' : 'var(--text-muted)' }}>{selected?.label || placeholder || 'â€” Auswählen â€”'}</span>
                 <span className={`mdi mdi-chevron-${open ? 'up' : 'down'}`} style={{ fontSize: 18, color: 'var(--text-muted)', transition: 'transform 0.2s' }} />
             </div>
             {open && (
@@ -376,6 +376,65 @@ const Dropdown = ({ value, onChange, options, placeholder, label }) => {
 // ================================================================
 // Searchable Entity Dropdown (matches system design)
 // ================================================================
+// MDI Icon Picker with search
+const MDI_ICONS = [
+    'mdi-home','mdi-door','mdi-bed','mdi-sofa','mdi-desk','mdi-fridge','mdi-stove','mdi-shower','mdi-toilet','mdi-garage',
+    'mdi-tree','mdi-flower','mdi-pool','mdi-grill','mdi-car','mdi-bike','mdi-walk','mdi-run','mdi-dog','mdi-cat',
+    'mdi-lamp','mdi-lightbulb','mdi-ceiling-light','mdi-floor-lamp','mdi-led-strip','mdi-wall-sconce',
+    'mdi-television','mdi-speaker','mdi-music','mdi-gamepad','mdi-laptop','mdi-desktop-mac','mdi-printer',
+    'mdi-thermometer','mdi-fan','mdi-air-conditioner','mdi-radiator','mdi-fire','mdi-water','mdi-snowflake',
+    'mdi-lock','mdi-lock-open','mdi-shield','mdi-camera','mdi-cctv','mdi-motion-sensor','mdi-door-sensor',
+    'mdi-window-open','mdi-window-closed','mdi-blinds','mdi-curtains',
+    'mdi-power-plug','mdi-power-socket','mdi-flash','mdi-battery','mdi-solar-power','mdi-ev-station',
+    'mdi-robot-vacuum','mdi-washing-machine','mdi-dishwasher','mdi-microwave','mdi-coffee-maker',
+    'mdi-baby-carriage','mdi-teddy-bear','mdi-controller','mdi-book','mdi-dumbbell','mdi-yoga',
+    'mdi-heart','mdi-star','mdi-flag','mdi-bell','mdi-alarm','mdi-clock','mdi-calendar',
+    'mdi-weather-sunny','mdi-weather-night','mdi-weather-cloudy','mdi-weather-rainy','mdi-weather-snowy',
+    'mdi-palette','mdi-brush','mdi-format-paint','mdi-image','mdi-movie','mdi-headphones',
+    'mdi-food','mdi-food-apple','mdi-glass-wine','mdi-beer','mdi-coffee',
+    'mdi-office-building','mdi-store','mdi-hospital','mdi-school','mdi-church',
+    'mdi-tools','mdi-wrench','mdi-hammer','mdi-screwdriver','mdi-saw',
+    'mdi-wifi','mdi-bluetooth','mdi-router','mdi-server','mdi-database',
+    'mdi-sleep','mdi-exit-run','mdi-beach','mdi-airplane','mdi-train','mdi-bus',
+    'mdi-medical-bag','mdi-pill','mdi-needle','mdi-eye','mdi-ear-hearing',
+    'mdi-leaf','mdi-pine-tree','mdi-cactus','mdi-mushroom',
+];
+
+const MdiIconPicker = ({ value, onChange, label }) => {
+    const [open, setOpen] = useState(false);
+    const [search, setSearch] = useState('');
+    const filtered = MDI_ICONS.filter(i => !search || i.includes(search.toLowerCase()));
+
+    return (
+        <div>
+            {label && <label style={{ fontSize: 12, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>{label}</label>}
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <span className={`mdi ${(value || 'mdi-help').replace('mdi:', 'mdi-')}`} style={{ fontSize: 24, color: 'var(--accent-primary)' }} />
+                <input className="form-input" style={{ flex: 1 }} value={value || ''} onChange={e => onChange(e.target.value)} placeholder="mdi-home" />
+                <button className="btn btn-sm btn-ghost" onClick={() => setOpen(!open)} type="button">
+                    <span className="mdi mdi-magnify" />
+                </button>
+            </div>
+            {open && (
+                <div style={{ marginTop: 8, border: '1px solid var(--border-color)', borderRadius: 8, background: 'var(--bg-secondary)', maxHeight: 300, overflow: 'hidden' }}>
+                    <div style={{ padding: 8 }}>
+                        <input className="form-input" placeholder="Suchen..." value={search} onChange={e => setSearch(e.target.value)} autoFocus style={{ width: '100%' }} />
+                    </div>
+                    <div style={{ maxHeight: 240, overflowY: 'auto', padding: '0 8px 8px', display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                        {filtered.map(icon => (
+                            <button key={icon} type="button" onClick={() => { onChange(icon.replace('mdi-', 'mdi:')); setOpen(false); setSearch(''); }}
+                                style={{ width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center', border: value === icon.replace('mdi-','mdi:') ? '2px solid var(--accent-primary)' : '1px solid var(--border-color)', borderRadius: 6, background: 'var(--bg-tertiary)', cursor: 'pointer' }}
+                                title={icon}>
+                                <span className={`mdi ${icon}`} style={{ fontSize: 18 }} />
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
 const EntitySearchDropdown = ({ value, onChange, entities, label, placeholder }) => {
     const [open, setOpen] = useState(false);
     const [search, setSearch] = useState('');
@@ -410,7 +469,7 @@ const EntitySearchDropdown = ({ value, onChange, entities, label, placeholder })
                 boxShadow: open ? '0 0 0 2px rgba(245,166,35,0.15)' : undefined,
             }}>
                 <span style={{ color: displayValue ? 'var(--text-primary)' : 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, fontSize: 13 }}>
-                    {displayValue || placeholder || 'â€” Entity wÃ¤hlen â€”'}
+                    {displayValue || placeholder || 'â€” Entity wählen â€”'}
                 </span>
                 <span className={`mdi mdi-chevron-${open ? 'up' : 'down'}`} style={{ fontSize: 18, color: 'var(--text-muted)' }} />
             </div>
@@ -484,7 +543,7 @@ const PeriodFilter = ({ value, onChange, lang }) => {
 
 // Fix 13: Relative time helper
 const relativeTime = (isoStr, lang) => {
-    if (!isoStr) return lang === 'de' ? 'Keine AktivitÃ¤t' : 'No activity';
+    if (!isoStr) return lang === 'de' ? 'Keine Aktivität' : 'No activity';
     const diff = (Date.now() - new Date(isoStr).getTime()) / 1000;
     if (diff < 60) return lang === 'de' ? 'Gerade eben' : 'Just now';
     if (diff < 3600) return `${Math.floor(diff / 60)} Min`;
@@ -538,8 +597,8 @@ const DashboardPage = () => {
     // #43 Onboarding checklist
     const checklist = useMemo(() => {
         const items = [
-            { key: 'rooms', label: lang === 'de' ? 'RÃ¤ume erstellt' : 'Rooms created', done: rooms.length > 0 },
-            { key: 'devices', label: lang === 'de' ? 'GerÃ¤te zugeordnet' : 'Devices assigned', done: devices.some(d => d.room_id) },
+            { key: 'rooms', label: lang === 'de' ? 'Räume erstellt' : 'Rooms created', done: rooms.length > 0 },
+            { key: 'devices', label: lang === 'de' ? 'Geräte zugeordnet' : 'Devices assigned', done: devices.some(d => d.room_id) },
             { key: 'domains', label: lang === 'de' ? 'Domains aktiv' : 'Domains active', done: domains.some(d => d.is_enabled) },
             { key: 'patterns', label: lang === 'de' ? 'Erste Muster' : 'First patterns', done: learningStats?.total_patterns > 0 },
         ];
@@ -561,7 +620,7 @@ const DashboardPage = () => {
     const modeLabels = {
         normal: { de: 'Normal', en: 'Normal', color: 'success' },
         away: { de: 'Abwesend', en: 'Away', color: 'info' },
-        guest: { de: 'GÃ¤ste-Modus', en: 'Guest Mode', color: 'info' },
+        guest: { de: 'Gäste-Modus', en: 'Guest Mode', color: 'info' },
         vacation: { de: 'Urlaubsmodus', en: 'Vacation', color: 'warning' },
         emergency_stop: { de: 'NOT-AUS', en: 'EMERGENCY STOP', color: 'danger' }
     };
@@ -591,7 +650,7 @@ const DashboardPage = () => {
                             <div style={{ fontSize: 12, color: 'var(--text-muted)', paddingLeft: 16 }}>
                                 {wsOk ? (lang === 'de' ? 'Verbunden' : 'Connected') : (lang === 'de' ? 'Getrennt' : 'Disconnected')}
                                 {sysHealth?.checks?.ha_websocket?.reconnect_attempts > 0 && (
-                                    <span style={{ color: 'var(--warning)' }}> Â· {sysHealth.checks.ha_websocket.reconnect_attempts} Reconnects</span>
+                                    <span style={{ color: 'var(--warning)' }}> · {sysHealth.checks.ha_websocket.reconnect_attempts} Reconnects</span>
                                 )}
                             </div>
                         </div>
@@ -644,7 +703,7 @@ const DashboardPage = () => {
                                 <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>MindHome Engine</span>
                             </div>
                             <div style={{ fontSize: 12, color: 'var(--text-muted)', paddingLeft: 16 }}>
-                                v{sysHealth?.version || '0.5.0'} Â· Uptime {uptimeStr}
+                                v{sysHealth?.version || '0.5.0'} · Uptime {uptimeStr}
                             </div>
                         </div>
                         );
@@ -682,7 +741,7 @@ const DashboardPage = () => {
                     </div>
                     <div>
                         <div className="stat-value">{trackedDevices}</div>
-                        <div className="stat-label">{lang === 'de' ? 'GerÃ¤te' : 'Devices'}</div>
+                        <div className="stat-label">{lang === 'de' ? 'Geräte' : 'Devices'}</div>
                     </div>
                 </div>
 
@@ -692,7 +751,7 @@ const DashboardPage = () => {
                     </div>
                     <div>
                         <div className="stat-value">{rooms.length}</div>
-                        <div className="stat-label">{lang === 'de' ? 'RÃ¤ume' : 'Rooms'}</div>
+                        <div className="stat-label">{lang === 'de' ? 'Räume' : 'Rooms'}</div>
                     </div>
                 </div>
             </div>
@@ -766,7 +825,7 @@ const DashboardPage = () => {
                                 {learningStats.avg_confidence ? `${Math.round(learningStats.avg_confidence * 100)}%` : 'â€”'}
                             </div>
                             <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-                                {lang === 'de' ? 'Ã˜ Vertrauen' : 'Avg Confidence'}
+                                {lang === 'de' ? 'Ø Vertrauen' : 'Avg Confidence'}
                             </div>
                         </div>
                         <div style={{ padding: 12, background: 'var(--bg-tertiary)', borderRadius: 8, textAlign: 'center' }}>
@@ -804,7 +863,7 @@ const DashboardPage = () => {
                         <div>
                             <div className="card-title">
                                 <span className="mdi mdi-lightbulb-on" style={{ marginRight: 8, color: 'var(--warning)' }} />
-                                {lang === 'de' ? 'VorschlÃ¤ge' : 'Suggestions'}
+                                {lang === 'de' ? 'Vorschläge' : 'Suggestions'}
                                 <span className="badge badge-warning" style={{ marginLeft: 8 }}>{predictions.length}</span>
                             </div>
                             <div className="card-subtitle">
@@ -862,7 +921,7 @@ const DashboardPage = () => {
                                 <button className="btn btn-sm btn-ghost" onClick={async () => {
                                     await api.post(`predictions/${pred.id}/ignore`);
                                     setPredictions(p => p.filter(x => x.id !== pred.id));
-                                }} title={lang === 'de' ? 'SpÃ¤ter' : 'Later'}>
+                                }} title={lang === 'de' ? 'Später' : 'Later'}>
                                     <span className="mdi mdi-clock-outline" />
                                 </button>
                             </div>
@@ -922,7 +981,7 @@ const DashboardPage = () => {
                     <div className="card-header">
                         <div className="card-title">
                             <span className="mdi mdi-alert-circle" style={{ marginRight: 8, color: 'var(--danger)' }} />
-                            {lang === 'de' ? 'UngewÃ¶hnliche AktivitÃ¤t' : 'Unusual Activity'}
+                            {lang === 'de' ? 'Ungewöhnliche Aktivität' : 'Unusual Activity'}
                         </div>
                     </div>
                     {anomalies.slice(0, 3).map((a, i) => (
@@ -934,7 +993,7 @@ const DashboardPage = () => {
                 </div>
             )}
 
-            {/* Rooms Overview - removed per user request (#12), use RÃ¤ume page instead */}
+            {/* Rooms Overview - removed per user request (#12), use Räume page instead */}
         </div>
     );
 };
@@ -956,7 +1015,7 @@ const QuickActionsGrid = () => {
         { value: 'mdi:flash', label: 'âš¡ Flash' }, { value: 'mdi:lightbulb', label: 'ðŸ’¡ Licht' },
         { value: 'mdi:home', label: 'ðŸ  Home' }, { value: 'mdi:exit-run', label: 'ðŸšª Gehen' },
         { value: 'mdi:weather-night', label: 'ðŸŒ™ Nacht' }, { value: 'mdi:shield', label: 'ðŸ›¡ï¸ Schutz' },
-        { value: 'mdi:movie-open', label: 'ðŸŽ¬ Kino' }, { value: 'mdi:broom', label: 'ðŸ§¹ AufrÃ¤umen' },
+        { value: 'mdi:movie-open', label: 'ðŸŽ¬ Kino' }, { value: 'mdi:broom', label: 'ðŸ§¹ Aufräumen' },
         { value: 'mdi:party-popper', label: 'ðŸŽ‰ Party' }, { value: 'mdi:coffee', label: 'â˜• Kaffee' },
     ];
 
@@ -972,7 +1031,7 @@ const QuickActionsGrid = () => {
     const handleDelete = async (id) => {
         await api.delete(`quick-actions/${id}`);
         await refreshData();
-        showToast(lang === 'de' ? 'Quick Action gelÃ¶scht' : 'Quick Action deleted', 'success');
+        showToast(lang === 'de' ? 'Quick Action gelöscht' : 'Quick Action deleted', 'success');
     };
 
     return (
@@ -989,8 +1048,8 @@ const QuickActionsGrid = () => {
                         if (type === 'emergency_stop' || name.includes('not')) return 'mdi mdi-alert-octagon';
                         if (type === 'all_off' || name.includes('alles aus')) return 'mdi mdi-power-off';
                         if (name.includes('gehe') || name.includes('leaving') || name.includes('weg')) return 'mdi mdi-exit-run';
-                        if (name.includes('zurÃ¼ck') || name.includes('back') || name.includes('home')) return 'mdi mdi-home-account';
-                        if (name.includes('gÃ¤ste') || name.includes('guest') || name.includes('party')) return 'mdi mdi-account-group';
+                        if (name.includes('zurück') || name.includes('back') || name.includes('home')) return 'mdi mdi-home-account';
+                        if (name.includes('gäste') || name.includes('guest') || name.includes('party')) return 'mdi mdi-account-group';
                         if (name.includes('nacht') || name.includes('night') || name.includes('schlaf')) return 'mdi mdi-weather-night';
                         if (name.includes('morgen') || name.includes('morning')) return 'mdi mdi-weather-sunset-up';
                         if (name.includes('kino') || name.includes('movie') || name.includes('film')) return 'mdi mdi-movie-open';
@@ -1067,7 +1126,6 @@ const DomainsPage = () => {
     const [confirmDel, setConfirmDel] = useState(null);
     const [editDomain, setEditDomain] = useState(null);
     const [capabilities, setCapabilities] = useState({});
-    const [expandedDomain, setExpandedDomain] = useState(null);
 
     useEffect(() => {
         api.get('domains/capabilities').then(c => c && setCapabilities(c));
@@ -1095,7 +1153,7 @@ const DomainsPage = () => {
         if (!confirmDel) return;
         const result = await api.delete(`domains/${confirmDel.id}`);
         if (result?.success) {
-            showToast(lang === 'de' ? 'Domain gelÃ¶scht' : 'Domain deleted', 'success');
+            showToast(lang === 'de' ? 'Domain gelöscht' : 'Domain deleted', 'success');
             setConfirmDel(null);
             await refreshData();
         } else {
@@ -1108,7 +1166,7 @@ const DomainsPage = () => {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
                 <p style={{ color: 'var(--text-secondary)', fontSize: 14 }}>
                     {lang === 'de'
-                        ? 'Aktiviere die Bereiche die MindHome Ã¼berwachen und steuern soll.'
+                        ? 'Aktiviere die Bereiche die MindHome überwachen und steuern soll.'
                         : 'Activate the areas MindHome should monitor and control.'}
                 </p>
                 <button className="btn btn-primary" onClick={() => setShowCreate(true)}>
@@ -1116,14 +1174,14 @@ const DomainsPage = () => {
                     {lang === 'de' ? 'Custom Domain' : 'Custom Domain'}
                 </button>
             </div>
-            <div className="domain-grid">
+            <div className="domain-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 12, alignItems: 'stretch' }}>
                 {domains.map(domain => (
                     <div
                         key={domain.id}
                         className={`domain-card ${domain.is_enabled ? 'enabled' : ''}`}
+                        style={{ display: 'flex', flexDirection: 'column', minHeight: 180, padding: 16, borderRadius: 10, border: '1px solid var(--border-color)', background: domain.is_enabled ? 'var(--bg-secondary)' : 'var(--bg-tertiary)', transition: 'all 0.2s' }}
                     >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, cursor: 'pointer' }}
-                            onClick={() => setExpandedDomain(expandedDomain === domain.id ? null : domain.id)}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1 }}>
                             <span className={`mdi ${domain.icon}`} />
                             <div className="domain-card-info">
                                 <div className="domain-card-name">{domain.display_name}</div>
@@ -1141,7 +1199,7 @@ const DomainsPage = () => {
                             {domain.is_custom && (
                                 <button className="btn btn-ghost btn-icon"
                                     onClick={e => { e.stopPropagation(); setConfirmDel(domain); }}
-                                    title={lang === 'de' ? 'LÃ¶schen' : 'Delete'}>
+                                    title={lang === 'de' ? 'Löschen' : 'Delete'}>
                                     <span className="mdi mdi-delete-outline" style={{ fontSize: 16, color: 'var(--danger)' }} />
                                 </button>
                             )}
@@ -1151,7 +1209,7 @@ const DomainsPage = () => {
                                 <div className="toggle-slider" />
                             </label>
                         </div>
-                        {expandedDomain === domain.id && (() => {
+                        {(() => {
                             const cap = capabilities[domain.name] || {};
                             const controlLabels = {
                                 toggle: lang === 'de' ? 'Ein/Aus' : 'Toggle',
@@ -1159,11 +1217,11 @@ const DomainsPage = () => {
                                 color_temp: lang === 'de' ? 'Farbtemperatur' : 'Color Temp',
                                 set_temperature: lang === 'de' ? 'Temperatur' : 'Temperature',
                                 set_hvac_mode: lang === 'de' ? 'Modus' : 'HVAC Mode',
-                                open: lang === 'de' ? 'Ã–ffnen' : 'Open', close: lang === 'de' ? 'SchlieÃŸen' : 'Close',
+                                open: lang === 'de' ? 'Öffnen' : 'Open', close: lang === 'de' ? 'Schließen' : 'Close',
                                 set_position: lang === 'de' ? 'Position' : 'Position',
-                                volume: lang === 'de' ? 'LautstÃ¤rke' : 'Volume', source: 'Quelle',
+                                volume: lang === 'de' ? 'Lautstärke' : 'Volume', source: 'Quelle',
                                 lock: lang === 'de' ? 'Sperren' : 'Lock', unlock: lang === 'de' ? 'Entsperren' : 'Unlock',
-                                start: 'Start', stop: 'Stop', return_to_base: lang === 'de' ? 'ZurÃ¼ck' : 'Return',
+                                start: 'Start', stop: 'Stop', return_to_base: lang === 'de' ? 'Zurück' : 'Return',
                                 set_percentage: '%',
                             };
                             const featureLabels = {
@@ -1175,8 +1233,8 @@ const DomainsPage = () => {
                                 comfort_profile: lang === 'de' ? 'Komfortprofil' : 'Comfort Profile',
                                 position: 'Position', sun_based: lang === 'de' ? 'Sonnenstand' : 'Sun Position',
                                 threshold: lang === 'de' ? 'Schwellwert' : 'Threshold',
-                                trend: 'Trend', trigger: 'Trigger', frequency: lang === 'de' ? 'HÃ¤ufigkeit' : 'Frequency',
-                                source_preference: lang === 'de' ? 'Quellen-PrÃ¤ferenz' : 'Source Pref.',
+                                trend: 'Trend', trigger: 'Trigger', frequency: lang === 'de' ? 'Häufigkeit' : 'Frequency',
+                                source_preference: lang === 'de' ? 'Quellen-Präferenz' : 'Source Pref.',
                                 presence: lang === 'de' ? 'Anwesenheit' : 'Presence',
                                 temperature_based: lang === 'de' ? 'Temperaturbasiert' : 'Temp Based',
                             };
@@ -1235,7 +1293,7 @@ const DomainsPage = () => {
                         <label className="input-label">{lang === 'de' ? 'Name (Deutsch)' : 'Name (German)'}</label>
                         <input className="input" value={newDomain.name_de}
                             onChange={e => setNewDomain({ ...newDomain, name_de: e.target.value })}
-                            placeholder={lang === 'de' ? 'z.B. BewÃ¤sserung' : 'e.g. Irrigation'} />
+                            placeholder={lang === 'de' ? 'z.B. Bewässerung' : 'e.g. Irrigation'} />
                     </div>
                     <div className="input-group" style={{ marginBottom: 16 }}>
                         <label className="input-label">{lang === 'de' ? 'Name (Englisch)' : 'Name (English)'}</label>
@@ -1259,8 +1317,8 @@ const DomainsPage = () => {
 
             {confirmDel && (
                 <ConfirmDialog
-                    title={lang === 'de' ? 'Domain lÃ¶schen' : 'Delete Domain'}
-                    message={lang === 'de' ? `"${confirmDel.display_name}" wirklich lÃ¶schen?` : `Delete "${confirmDel.display_name}"?`}
+                    title={lang === 'de' ? 'Domain löschen' : 'Delete Domain'}
+                    message={lang === 'de' ? `"${confirmDel.display_name}" wirklich löschen?` : `Delete "${confirmDel.display_name}"?`}
                     danger onConfirm={handleDeleteDomain} onCancel={() => setConfirmDel(null)} />
             )}
 
@@ -1352,7 +1410,7 @@ const DevicesPage = () => {
         if (!discovered) return;
         const selectedIds = Object.keys(selected).filter(k => selected[k]);
         if (selectedIds.length === 0) {
-            showToast(lang === 'de' ? 'Keine GerÃ¤te ausgewÃ¤hlt' : 'No devices selected', 'error');
+            showToast(lang === 'de' ? 'Keine Geräte ausgewählt' : 'No devices selected', 'error');
             return;
         }
         const result = await api.post('discover/import', {
@@ -1360,7 +1418,7 @@ const DevicesPage = () => {
             selected_entities: selectedIds
         });
         if (result?.success) {
-            showToast(lang === 'de' ? `${result.imported} GerÃ¤te importiert` : `${result.imported} devices imported`, 'success');
+            showToast(lang === 'de' ? `${result.imported} Geräte importiert` : `${result.imported} devices imported`, 'success');
             setDiscovered(null);
             setSelected({});
             await refreshData();
@@ -1379,7 +1437,7 @@ const DevicesPage = () => {
     const handleManualAdd = async (entityId) => {
         const result = await api.post('devices/manual-add', { entity_id: entityId });
         if (result?.success || result?.id) {
-            showToast(lang === 'de' ? 'GerÃ¤t hinzugefÃ¼gt' : 'Device added', 'success');
+            showToast(lang === 'de' ? 'Gerät hinzugefügt' : 'Device added', 'success');
             await refreshData();
             const updated = await api.get('discover/all-entities');
             setManualEntities(updated?.entities || []);
@@ -1393,7 +1451,7 @@ const DevicesPage = () => {
         if (!confirmDel) return;
         const result = await api.delete(`devices/${confirmDel.id}`);
         if (result?.success) {
-            showToast(lang === 'de' ? 'GerÃ¤t entfernt' : 'Device removed', 'success');
+            showToast(lang === 'de' ? 'Gerät entfernt' : 'Device removed', 'success');
             setConfirmDel(null);
             await refreshData();
         }
@@ -1409,7 +1467,7 @@ const DevicesPage = () => {
             is_controllable: editDevice.is_controllable
         });
         if (result?.id) {
-            showToast(lang === 'de' ? 'GerÃ¤t aktualisiert' : 'Device updated', 'success');
+            showToast(lang === 'de' ? 'Gerät aktualisiert' : 'Device updated', 'success');
             setEditDevice(null);
             await refreshData();
         }
@@ -1444,7 +1502,7 @@ const DevicesPage = () => {
         const ids = Object.keys(bulkSelected).filter(k => bulkSelected[k]).map(Number);
         const result = await api.delete('devices/bulk', { device_ids: ids });
         if (result?.success) {
-            showToast(lang === 'de' ? `${result.deleted} gelÃ¶scht` : `${result.deleted} deleted`, 'success');
+            showToast(lang === 'de' ? `${result.deleted} gelöscht` : `${result.deleted} deleted`, 'success');
             setConfirmBulkDel(false);
             setBulkSelected({});
             await refreshData();
@@ -1471,7 +1529,7 @@ const DevicesPage = () => {
         <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 8 }}>
                 <p style={{ color: 'var(--text-secondary)', fontSize: 14 }}>
-                    {devices.length} {lang === 'de' ? 'GerÃ¤te konfiguriert' : 'devices configured'}
+                    {devices.length} {lang === 'de' ? 'Geräte konfiguriert' : 'devices configured'}
                 </p>
                 <div style={{ display: 'flex', gap: 8 }}>
                     <button className="btn btn-secondary" onClick={handleOpenManual}>
@@ -1480,7 +1538,7 @@ const DevicesPage = () => {
                     </button>
                     <button className="btn btn-primary" onClick={handleDiscover} disabled={discovering}>
                         <span className="mdi mdi-magnify" />
-                        {discovering ? (lang === 'de' ? 'Suche...' : 'Searching...') : (lang === 'de' ? 'GerÃ¤te erkennen' : 'Discover')}
+                        {discovering ? (lang === 'de' ? 'Suche...' : 'Searching...') : (lang === 'de' ? 'Geräte erkennen' : 'Discover')}
                     </button>
                 </div>
             </div>
@@ -1490,7 +1548,7 @@ const DevicesPage = () => {
                 <div className="card" style={{ marginBottom: 16, padding: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                     borderColor: 'var(--accent-primary)', background: 'var(--accent-primary-dim)' }}>
                     <span style={{ fontWeight: 600, fontSize: 14 }}>
-                        {bulkCount} {lang === 'de' ? 'ausgewÃ¤hlt' : 'selected'}
+                        {bulkCount} {lang === 'de' ? 'ausgewählt' : 'selected'}
                     </span>
                     <div style={{ display: 'flex', gap: 8 }}>
                         <button className="btn btn-secondary" onClick={() => setBulkSelected({})}>{lang === 'de' ? 'Aufheben' : 'Deselect'}</button>
@@ -1498,7 +1556,7 @@ const DevicesPage = () => {
                             <span className="mdi mdi-pencil" /> {lang === 'de' ? 'Bearbeiten' : 'Edit'}
                         </button>
                         <button className="btn btn-danger" onClick={() => setConfirmBulkDel(true)}>
-                            <span className="mdi mdi-delete" /> {lang === 'de' ? 'LÃ¶schen' : 'Delete'}
+                            <span className="mdi mdi-delete" /> {lang === 'de' ? 'Löschen' : 'Delete'}
                         </button>
                     </div>
                 </div>
@@ -1509,8 +1567,8 @@ const DevicesPage = () => {
                 <div className="card" style={{ marginBottom: 20, borderColor: 'var(--accent-primary)', borderWidth: 2 }}>
                     <div className="card-header">
                         <div>
-                            <div className="card-title">{lang === 'de' ? 'VerfÃ¼gbare GerÃ¤te' : 'Available Devices'}</div>
-                            <div className="card-subtitle">{selectedCount} {lang === 'de' ? 'ausgewÃ¤hlt' : 'selected'}</div>
+                            <div className="card-title">{lang === 'de' ? 'Verfügbare Geräte' : 'Available Devices'}</div>
+                            <div className="card-subtitle">{selectedCount} {lang === 'de' ? 'ausgewählt' : 'selected'}</div>
                         </div>
                         <div style={{ display: 'flex', gap: 8 }}>
                             <button className="btn btn-secondary" onClick={() => { setDiscovered(null); setSelected({}); }}>
@@ -1557,7 +1615,7 @@ const DevicesPage = () => {
             {devices.length > 0 ? (
                 <div>
                     <div style={{ marginBottom: 12 }}>
-                        <input className="input" placeholder={lang === 'de' ? 'ðŸ” GerÃ¤te suchen...' : 'ðŸ” Search devices...'}
+                        <input className="input" placeholder={lang === 'de' ? 'ðŸ” Geräte suchen...' : 'ðŸ” Search devices...'}
                             value={search} onChange={e => setSearch(e.target.value)} style={{ maxWidth: 400 }} />
                     </div>
                     <div className="table-wrap">
@@ -1585,8 +1643,8 @@ const DevicesPage = () => {
                                 const attrParts = [];
                                 if (attrs.brightness_pct != null) attrParts.push(`â˜€ ${attrs.brightness_pct}%`);
                                 if (attrs.position_pct != null) attrParts.push(`â†• ${attrs.position_pct}%`);
-                                if (attrs.current_temp != null) attrParts.push(`ðŸŒ¡ ${attrs.current_temp}${unit || 'Â°C'}`);
-                                if (attrs.target_temp != null) attrParts.push(`â†’ ${attrs.target_temp}${unit || 'Â°C'}`);
+                                if (attrs.current_temp != null) attrParts.push(`ðŸŒ¡ ${attrs.current_temp}${unit || '°C'}`);
+                                if (attrs.target_temp != null) attrParts.push(`â†’ ${attrs.target_temp}${unit || '°C'}`);
                                 if (attrs.humidity != null) attrParts.push(`ðŸ’§ ${attrs.humidity}%`);
                                 if (attrs.power != null || attrs.current_power_w != null) attrParts.push(`âš¡ ${attrs.power || attrs.current_power_w} W`);
                                 if (attrs.voltage != null) attrParts.push(`ðŸ”Œ ${attrs.voltage} V`);
@@ -1611,7 +1669,7 @@ const DevicesPage = () => {
                                             <span style={{ color: st.color, fontWeight: 600, fontSize: 12 }}>{st.label}</span>
                                         )}
                                         {attrParts.length > 0 && (
-                                            <div style={{ fontSize: isSensorValue ? 12 : 11, color: isSensorValue ? 'var(--info)' : 'var(--text-muted)', marginTop: isSensorValue ? 0 : 2, fontWeight: isSensorValue ? 600 : 400 }}>{attrParts.join(' Â· ')}</div>
+                                            <div style={{ fontSize: isSensorValue ? 12 : 11, color: isSensorValue ? 'var(--info)' : 'var(--text-muted)', marginTop: isSensorValue ? 0 : 2, fontWeight: isSensorValue ? 600 : 400 }}>{attrParts.join(' · ')}</div>
                                         )}
                                     </td>
                                     <td>
@@ -1624,12 +1682,12 @@ const DevicesPage = () => {
                                                 title={lang === 'de' ? 'Benachrichtigungen stumm' : 'Mute notifications'}
                                                 onClick={async () => {
                                                     await api.post('notification-settings/mute-device', { device_id: device.id });
-                                                    showToast(lang === 'de' ? 'GerÃ¤t stummgeschaltet' : 'Device muted', 'success');
+                                                    showToast(lang === 'de' ? 'Gerät stummgeschaltet' : 'Device muted', 'success');
                                                 }}>
                                                 <span className="mdi mdi-bell-off-outline" style={{ fontSize: 16, color: 'var(--text-muted)' }} />
                                             </button>
                                             <button className="btn btn-ghost btn-icon" onClick={() => setConfirmDel(device)}
-                                                title={lang === 'de' ? 'LÃ¶schen' : 'Delete'}>
+                                                title={lang === 'de' ? 'Löschen' : 'Delete'}>
                                                 <span className="mdi mdi-delete-outline" style={{ fontSize: 16, color: 'var(--danger)' }} />
                                             </button>
                                         </div>
@@ -1644,14 +1702,14 @@ const DevicesPage = () => {
             ) : !discovered && (
                 <div className="empty-state">
                     <span className="mdi mdi-devices" />
-                    <h3>{lang === 'de' ? 'Keine GerÃ¤te' : 'No Devices'}</h3>
-                    <p>{lang === 'de' ? 'Klicke auf "GerÃ¤te erkennen" um deine HA-GerÃ¤te zu importieren.' : 'Click "Discover" to import your HA devices.'}</p>
+                    <h3>{lang === 'de' ? 'Keine Geräte' : 'No Devices'}</h3>
+                    <p>{lang === 'de' ? 'Klicke auf "Geräte erkennen" um deine HA-Geräte zu importieren.' : 'Click "Discover" to import your HA devices.'}</p>
                 </div>
             )}
 
             {/* Manual Search Modal */}
             {showManual && (
-                <Modal title={lang === 'de' ? 'Manuelle GerÃ¤tesuche' : 'Manual Device Search'} onClose={() => setShowManual(false)} wide>
+                <Modal title={lang === 'de' ? 'Manuelle Gerätesuche' : 'Manual Device Search'} onClose={() => setShowManual(false)} wide>
                     <div className="input-group" style={{ marginBottom: 16 }}>
                         <input className="input" value={manualSearch} onChange={e => setManualSearch(e.target.value)}
                             placeholder={lang === 'de' ? 'Entity-ID oder Name suchen...' : 'Search entity ID or name...'} />
@@ -1687,7 +1745,7 @@ const DevicesPage = () => {
 
             {/* Edit Device Modal */}
             {editDevice && (
-                <Modal title={lang === 'de' ? 'GerÃ¤t bearbeiten' : 'Edit Device'} onClose={() => setEditDevice(null)}
+                <Modal title={lang === 'de' ? 'Gerät bearbeiten' : 'Edit Device'} onClose={() => setEditDevice(null)}
                     actions={<>
                         <button className="btn btn-secondary" onClick={() => setEditDevice(null)}>{lang === 'de' ? 'Abbrechen' : 'Cancel'}</button>
                         <button className="btn btn-primary" onClick={handleUpdateDevice}>{lang === 'de' ? 'Speichern' : 'Save'}</button>
@@ -1723,7 +1781,7 @@ const DevicesPage = () => {
                         <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 14 }}>
                             <input type="checkbox" checked={editDevice.is_tracked} onChange={e => setEditDevice({ ...editDevice, is_tracked: e.target.checked })}
                                 style={{ width: 18, height: 18, accentColor: 'var(--accent-primary)' }} />
-                            {lang === 'de' ? 'Ãœberwacht' : 'Tracked'}
+                            {lang === 'de' ? 'Überwacht' : 'Tracked'}
                         </label>
                         <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 14 }}>
                             <input type="checkbox" checked={editDevice.is_controllable} onChange={e => setEditDevice({ ...editDevice, is_controllable: e.target.checked })}
@@ -1736,7 +1794,7 @@ const DevicesPage = () => {
 
             {/* Bulk Edit Modal */}
             {showBulkEdit && (
-                <Modal title={lang === 'de' ? `${bulkCount} GerÃ¤te bearbeiten` : `Edit ${bulkCount} Devices`} onClose={() => setShowBulkEdit(false)}
+                <Modal title={lang === 'de' ? `${bulkCount} Geräte bearbeiten` : `Edit ${bulkCount} Devices`} onClose={() => setShowBulkEdit(false)}
                     actions={<>
                         <button className="btn btn-secondary" onClick={() => setShowBulkEdit(false)}>{lang === 'de' ? 'Abbrechen' : 'Cancel'}</button>
                         <button className="btn btn-primary" onClick={handleBulkEdit}>{lang === 'de' ? 'Anwenden' : 'Apply'}</button>
@@ -1747,7 +1805,7 @@ const DevicesPage = () => {
                             value={bulkRoom}
                             onChange={v => setBulkRoom(v)}
                             options={[
-                                { value: '', label: lang === 'de' ? 'â€” Nicht Ã¤ndern â€”' : 'â€” No change â€”' },
+                                { value: '', label: lang === 'de' ? 'â€” Nicht ändern â€”' : 'â€” No change â€”' },
                                 ...rooms.map(r => ({ value: String(r.id), label: r.name }))
                             ]}
                         />
@@ -1758,7 +1816,7 @@ const DevicesPage = () => {
                             value={bulkDomain}
                             onChange={v => setBulkDomain(v)}
                             options={[
-                                { value: '', label: lang === 'de' ? 'â€” Nicht Ã¤ndern â€”' : 'â€” No change â€”' },
+                                { value: '', label: lang === 'de' ? 'â€” Nicht ändern â€”' : 'â€” No change â€”' },
                                 ...domains.map(d => ({ value: String(d.id), label: d.display_name }))
                             ]}
                         />
@@ -1768,13 +1826,13 @@ const DevicesPage = () => {
 
             {/* Confirm Delete */}
             {confirmDel && (
-                <ConfirmDialog title={lang === 'de' ? 'GerÃ¤t entfernen' : 'Remove Device'}
+                <ConfirmDialog title={lang === 'de' ? 'Gerät entfernen' : 'Remove Device'}
                     message={lang === 'de' ? `"${confirmDel.name}" wirklich entfernen?` : `Remove "${confirmDel.name}"?`}
                     danger onConfirm={handleDeleteDevice} onCancel={() => setConfirmDel(null)} />
             )}
             {confirmBulkDel && (
-                <ConfirmDialog title={lang === 'de' ? `${bulkCount} GerÃ¤te lÃ¶schen` : `Delete ${bulkCount} Devices`}
-                    message={lang === 'de' ? 'Dies kann nicht rÃ¼ckgÃ¤ngig gemacht werden.' : 'This cannot be undone.'}
+                <ConfirmDialog title={lang === 'de' ? `${bulkCount} Geräte löschen` : `Delete ${bulkCount} Devices`}
+                    message={lang === 'de' ? 'Dies kann nicht rückgängig gemacht werden.' : 'This cannot be undone.'}
                     danger onConfirm={handleBulkDelete} onCancel={() => setConfirmBulkDel(false)} />
             )}
 
@@ -1808,12 +1866,12 @@ const DeviceGroupsSection = () => {
 
     const deleteGroup = async (id) => {
         await api.delete(`device-groups/${id}`);
-        showToast(lang === 'de' ? 'Gruppe gelÃ¶scht' : 'Group deleted', 'success'); await load();
+        showToast(lang === 'de' ? 'Gruppe gelöscht' : 'Group deleted', 'success'); await load();
     };
 
     const executeGroup = async (id, service) => {
         const result = await api.post(`device-groups/${id}/execute`, { service });
-        showToast(result?.success ? (lang === 'de' ? 'Aktion ausgefÃ¼hrt' : 'Action executed') : 'Error', result?.success ? 'success' : 'error');
+        showToast(result?.success ? (lang === 'de' ? 'Aktion ausgeführt' : 'Action executed') : 'Error', result?.success ? 'success' : 'error');
     };
 
     return (
@@ -1821,7 +1879,7 @@ const DeviceGroupsSection = () => {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
                 <h3 style={{ fontSize: 16, fontWeight: 600 }}>
                     <span className="mdi mdi-group" style={{ marginRight: 8, color: 'var(--accent-primary)' }} />
-                    {lang === 'de' ? 'GerÃ¤tegruppen' : 'Device Groups'}
+                    {lang === 'de' ? 'Gerätegruppen' : 'Device Groups'}
                 </h3>
                 <button className="btn btn-secondary" onClick={() => setShowCreate(true)} style={{ fontSize: 12 }}>
                     <span className="mdi mdi-plus" /> {lang === 'de' ? 'Neue Gruppe' : 'New Group'}
@@ -1834,8 +1892,8 @@ const DeviceGroupsSection = () => {
                         <div>
                             <strong>{g.name}</strong>
                             <span style={{ fontSize: 12, color: 'var(--text-muted)', marginLeft: 8 }}>
-                                {g.device_ids?.length || 0} {lang === 'de' ? 'GerÃ¤te' : 'devices'}
-                                {g.room_name && ` Â· ${g.room_name}`}
+                                {g.device_ids?.length || 0} {lang === 'de' ? 'Geräte' : 'devices'}
+                                {g.room_name && ` · ${g.room_name}`}
                             </span>
                         </div>
                         <div style={{ display: 'flex', gap: 4 }}>
@@ -1864,11 +1922,11 @@ const DeviceGroupsSection = () => {
                                 <div>
                                     <span style={{ fontSize: 13 }}>{s.suggested_name}</span>
                                     <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 8 }}>
-                                        {s.devices.length} {lang === 'de' ? 'GerÃ¤te' : 'devices'}
+                                        {s.devices.length} {lang === 'de' ? 'Geräte' : 'devices'}
                                     </span>
                                 </div>
                                 <button className="btn btn-sm btn-ghost" onClick={() => createGroup(s.suggested_name, s.devices.map(d => d.id), s.room_id)}>
-                                    <span className="mdi mdi-plus-circle" style={{ color: 'var(--success)' }} /> {lang === 'de' ? 'Ãœbernehmen' : 'Accept'}
+                                    <span className="mdi mdi-plus-circle" style={{ color: 'var(--success)' }} /> {lang === 'de' ? 'Übernehmen' : 'Accept'}
                                 </button>
                             </div>
                         </div>
@@ -1877,7 +1935,7 @@ const DeviceGroupsSection = () => {
             )}
 
             {showCreate && (
-                <Modal title={lang === 'de' ? 'Neue GerÃ¤tegruppe' : 'New Device Group'} onClose={() => setShowCreate(false)}
+                <Modal title={lang === 'de' ? 'Neue Gerätegruppe' : 'New Device Group'} onClose={() => setShowCreate(false)}
                     actions={<><button className="btn btn-secondary" onClick={() => setShowCreate(false)}>{lang === 'de' ? 'Abbrechen' : 'Cancel'}</button>
                         <button className="btn btn-primary" onClick={() => createGroup(newGroup.name, newGroup.device_ids)}
                             disabled={!newGroup.name || newGroup.device_ids.length < 2}>{lang === 'de' ? 'Erstellen' : 'Create'}</button></>}>
@@ -1886,7 +1944,7 @@ const DeviceGroupsSection = () => {
                         <input className="input" value={newGroup.name} onChange={e => setNewGroup({ ...newGroup, name: e.target.value })} autoFocus />
                     </div>
                     <div className="input-group">
-                        <label className="input-label">{lang === 'de' ? 'GerÃ¤te auswÃ¤hlen' : 'Select Devices'}</label>
+                        <label className="input-label">{lang === 'de' ? 'Geräte auswählen' : 'Select Devices'}</label>
                         <div style={{ maxHeight: 200, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 8, padding: 8 }}>
                             {devices.filter(d => d.ha_entity_id).map(d => (
                                 <label key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', cursor: 'pointer', fontSize: 13 }}>
@@ -1956,7 +2014,7 @@ const RoomsPage = () => {
 
     const confirmDelete = async () => {
         const result = await api.delete(`rooms/${confirm.id}`);
-        if (result?.success) { showToast(lang === 'de' ? 'Raum gelÃ¶scht' : 'Room deleted', 'success'); await refreshData(); }
+        if (result?.success) { showToast(lang === 'de' ? 'Raum gelöscht' : 'Room deleted', 'success'); await refreshData(); }
         setConfirm(null);
     };
 
@@ -1965,7 +2023,7 @@ const RoomsPage = () => {
         setImporting(true);
         const result = await api.post('rooms/import-from-ha');
         if (result?.success) {
-            showToast(lang === 'de' ? `${result.imported} importiert, ${result.skipped} Ã¼bersprungen` : `${result.imported} imported, ${result.skipped} skipped`,
+            showToast(lang === 'de' ? `${result.imported} importiert, ${result.skipped} übersprungen` : `${result.imported} imported, ${result.skipped} skipped`,
                 result.imported > 0 ? 'success' : 'info');
             await refreshData();
         } else { showToast(result?.error || 'Import failed', 'error'); }
@@ -1976,7 +2034,7 @@ const RoomsPage = () => {
         <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 20, flexWrap: 'wrap', gap: 8 }}>
                 <p style={{ color: 'var(--text-secondary)', fontSize: 14 }}>
-                    {rooms.length} {lang === 'de' ? 'RÃ¤ume' : 'Rooms'}
+                    {rooms.length} {lang === 'de' ? 'Räume' : 'Rooms'}
                 </p>
                 <div style={{ display: 'flex', gap: 8 }}>
                     <button className="btn btn-secondary" onClick={handleImportFromHA} disabled={importing}>
@@ -1985,7 +2043,7 @@ const RoomsPage = () => {
                     </button>
                     <button className="btn btn-primary" onClick={() => setShowAdd(true)}>
                         <span className="mdi mdi-plus" />
-                        {lang === 'de' ? 'Raum hinzufÃ¼gen' : 'Add Room'}
+                        {lang === 'de' ? 'Raum hinzufügen' : 'Add Room'}
                     </button>
                 </div>
             </div>
@@ -2002,10 +2060,10 @@ const RoomsPage = () => {
                                     <div>
                                         <div className="card-title">{room.name}</div>
                                         <div className="card-subtitle">
-                                            {room.device_count} {lang === 'de' ? 'GerÃ¤te' : 'devices'}
+                                            {room.device_count} {lang === 'de' ? 'Geräte' : 'devices'}
                                             {room.last_activity && (
                                                 <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--text-muted)' }}>
-                                                    Â· <span className="mdi mdi-clock-outline" style={{ fontSize: 11, marginRight: 2 }} />
+                                                    · <span className="mdi mdi-clock-outline" style={{ fontSize: 11, marginRight: 2 }} />
                                                     {relativeTime(room.last_activity, lang)}
                                                 </span>
                                             )}
@@ -2061,12 +2119,12 @@ const RoomsPage = () => {
                                                     </div>
                                                     {isAdmin && (
                                                         <button className="btn btn-ghost" style={{ padding: 2, fontSize: 12 }}
-                                                            title={lang === 'de' ? 'Lernphase zurÃ¼cksetzen' : 'Reset learning phase'}
+                                                            title={lang === 'de' ? 'Lernphase zurücksetzen' : 'Reset learning phase'}
                                                             onClick={async (e) => {
                                                                 e.stopPropagation();
-                                                                if (confirm(lang === 'de' ? `${domName} zurÃ¼cksetzen? Alle Muster werden gelÃ¶scht.` : `Reset ${domName}? All patterns will be deleted.`)) {
+                                                                if (confirm(lang === 'de' ? `${domName} zurücksetzen? Alle Muster werden gelöscht.` : `Reset ${domName}? All patterns will be deleted.`)) {
                                                                     await api.post(`phases/${room.id}/${ds.domain_id}/reset`);
-                                                                    showToast(lang === 'de' ? 'ZurÃ¼ckgesetzt' : 'Reset', 'success');
+                                                                    showToast(lang === 'de' ? 'Zurückgesetzt' : 'Reset', 'success');
                                                                     await refreshData();
                                                                 }
                                                             }}>
@@ -2086,7 +2144,7 @@ const RoomsPage = () => {
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                                         <span className="mdi mdi-shield-lock" style={{ fontSize: 14, color: room.privacy_mode?.enabled ? 'var(--warning)' : 'var(--text-muted)' }} />
                                         <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-                                            {lang === 'de' ? 'PrivatsphÃ¤re-Modus' : 'Privacy Mode'}
+                                            {lang === 'de' ? 'Privatsphäre-Modus' : 'Privacy Mode'}
                                         </span>
                                     </div>
                                     <label className="toggle" style={{ transform: 'scale(0.8)' }}>
@@ -2114,9 +2172,9 @@ const RoomsPage = () => {
             ) : (
                 <div className="empty-state">
                     <span className="mdi mdi-door-open" />
-                    <h3>{lang === 'de' ? 'Keine RÃ¤ume' : 'No Rooms'}</h3>
+                    <h3>{lang === 'de' ? 'Keine Räume' : 'No Rooms'}</h3>
                     <p>{lang === 'de'
-                        ? 'FÃ¼ge RÃ¤ume hinzu um MindHome zu konfigurieren.'
+                        ? 'Füge Räume hinzu um MindHome zu konfigurieren.'
                         : 'Add rooms to configure MindHome.'}</p>
                 </div>
             )}
@@ -2124,7 +2182,7 @@ const RoomsPage = () => {
             {/* Add Room Modal */}
             {showAdd && (
                 <Modal
-                    title={lang === 'de' ? 'Raum hinzufÃ¼gen' : 'Add Room'}
+                    title={lang === 'de' ? 'Raum hinzufügen' : 'Add Room'}
                     onClose={() => setShowAdd(false)}
                     actions={
                         <>
@@ -2143,6 +2201,9 @@ const RoomsPage = () => {
                                onChange={e => setNewRoom({ ...newRoom, name: e.target.value })}
                                placeholder={lang === 'de' ? 'z.B. Wohnzimmer' : 'e.g. Living Room'}
                                autoFocus />
+                    </div>
+                    <div className="input-group" style={{ marginBottom: 16 }}>
+                        <MdiIconPicker label="Icon" value={newRoom.icon || 'mdi:door'} onChange={v => setNewRoom({ ...newRoom, icon: v })} />
                     </div>
                 </Modal>
             )}
@@ -2170,18 +2231,15 @@ const RoomsPage = () => {
                                autoFocus />
                     </div>
                     <div className="input-group">
-                        <label className="input-label">Icon</label>
-                        <input className="input" value={editRoom.icon || ''}
-                               onChange={e => setEditRoom({ ...editRoom, icon: e.target.value })}
-                               placeholder="mdi:door" />
+                        <MdiIconPicker label="Icon" value={editRoom.icon || ''} onChange={v => setEditRoom({ ...editRoom, icon: v })} />
                     </div>
                 </Modal>
             )}
             {confirm && (
                 <ConfirmDialog
-                    title={lang === 'de' ? 'Raum lÃ¶schen?' : 'Delete room?'}
+                    title={lang === 'de' ? 'Raum löschen?' : 'Delete room?'}
                     message={lang === 'de'
-                        ? `"${confirm.name}" mit ${confirm.count} GerÃ¤ten wird gelÃ¶scht.`
+                        ? `"${confirm.name}" mit ${confirm.count} Geräten wird gelöscht.`
                         : `"${confirm.name}" with ${confirm.count} devices will be deleted.`}
                     danger onConfirm={confirmDelete} onCancel={() => setConfirm(null)} />
             )}
@@ -2243,7 +2301,7 @@ const UsersPage = () => {
                 </p>
                 <button className="btn btn-primary" onClick={() => setShowAdd(true)}>
                     <span className="mdi mdi-account-plus" />
-                    {lang === 'de' ? 'Person hinzufÃ¼gen' : 'Add Person'}
+                    {lang === 'de' ? 'Person hinzufügen' : 'Add Person'}
                 </button>
             </div>
 
@@ -2288,12 +2346,12 @@ const UsersPage = () => {
                 <div className="empty-state">
                     <span className="mdi mdi-account-group" />
                     <h3>{lang === 'de' ? 'Keine Personen' : 'No People'}</h3>
-                    <p>{lang === 'de' ? 'FÃ¼ge Personen hinzu die MindHome nutzen.' : 'Add people who use MindHome.'}</p>
+                    <p>{lang === 'de' ? 'Füge Personen hinzu die MindHome nutzen.' : 'Add people who use MindHome.'}</p>
                 </div>
             )}
 
             {showAdd && (
-                <Modal title={lang === 'de' ? 'Person hinzufÃ¼gen' : 'Add Person'} onClose={() => setShowAdd(false)}
+                <Modal title={lang === 'de' ? 'Person hinzufügen' : 'Add Person'} onClose={() => setShowAdd(false)}
                     actions={<><button className="btn btn-secondary" onClick={() => setShowAdd(false)}>{lang === 'de' ? 'Abbrechen' : 'Cancel'}</button>
                         <button className="btn btn-primary" onClick={handleAdd}>{lang === 'de' ? 'Erstellen' : 'Create'}</button></>}>
                     <div className="input-group" style={{ marginBottom: 16 }}>
@@ -2327,7 +2385,7 @@ const UsersPage = () => {
 
             {editingUser && (
                 <Modal title={lang === 'de' ? `HA-Person: ${editingUser.name}` : `HA Person: ${editingUser.name}`} onClose={() => setEditingUser(null)}
-                    actions={<button className="btn btn-secondary" onClick={() => setEditingUser(null)}>{lang === 'de' ? 'SchlieÃŸen' : 'Close'}</button>}>
+                    actions={<button className="btn btn-secondary" onClick={() => setEditingUser(null)}>{lang === 'de' ? 'Schließen' : 'Close'}</button>}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                         <div style={{ padding: '10px 14px', borderRadius: 8, cursor: 'pointer',
                             border: !editingUser.ha_person_entity ? '2px solid var(--accent-primary)' : '1px solid var(--border-color)',
@@ -2400,7 +2458,7 @@ const SettingsPage = () => {
         setCleaning(true);
         const result = await api.post('system/cleanup');
         if (result?.success) {
-            showToast(lang === 'de' ? `${result.deleted || 0} EintrÃ¤ge gelÃ¶scht` : `${result.deleted || 0} entries deleted`, 'success');
+            showToast(lang === 'de' ? `${result.deleted || 0} Einträge gelöscht` : `${result.deleted || 0} entries deleted`, 'success');
             const info = await api.get('system/info');
             if (info) setSysInfo(info);
         }
@@ -2480,7 +2538,7 @@ const SettingsPage = () => {
             const result = await api.post('backup/import', importPreview.data);
             if (result?.success) {
                 showToast(lang === 'de'
-                    ? `Backup geladen: ${result.imported.rooms} RÃ¤ume, ${result.imported.devices} GerÃ¤te`
+                    ? `Backup geladen: ${result.imported.rooms} Räume, ${result.imported.devices} Geräte`
                     : `Backup loaded: ${result.imported.rooms} rooms, ${result.imported.devices} devices`, 'success');
                 await refreshData();
             } else {
@@ -2518,14 +2576,37 @@ const SettingsPage = () => {
                     </div>
                     {importPreview.data.export_mode && (
                         <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 8 }}>
-                            Modus: {importPreview.data.export_mode} Â· {importPreview.data.exported_at?.slice(0, 10)}
+                            Modus: {importPreview.data.export_mode} · {importPreview.data.exported_at?.slice(0, 10)}
                         </p>
                     )}
                 </Modal>
             )}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16, alignItems: 'start' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16, alignItems: 'start' }}>
             {/* LEFT COLUMN */}
             <div>
+            {/* Privacy & Storage */}
+            <div className="card" style={{ marginBottom: 16, borderColor: 'var(--success)', borderWidth: 1 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+                    <span className="mdi mdi-shield-check" style={{ fontSize: 24, color: 'var(--success)' }} />
+                    <div className="card-title" style={{ marginBottom: 0 }}>
+                        {lang === 'de' ? 'Datenschutz & Speicher' : 'Privacy & Storage'}
+                    </div>
+                </div>
+                <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 12 }}>
+                    {lang === 'de'
+                        ? '100% lokal – alle Daten bleiben auf deinem Gerät. Keine Cloud, keine Tracking.'
+                        : '100% local – all data stays on your device. No cloud, no tracking.'}
+                </p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <InfoRow label={lang === 'de' ? 'Datenbankgröße' : 'Database Size'}
+                        value={sysInfo?.db_size_bytes ? formatBytes(sysInfo.db_size_bytes) : '–'} />
+                    <InfoRow label={lang === 'de' ? 'Gesammelte Events' : 'Collected Events'}
+                        value={sysInfo?.state_history_count?.toLocaleString() || '0'} />
+                    <InfoRow label={lang === 'de' ? 'Aufbewahrung' : 'Retention'}
+                        value={`${retention} ${lang === 'de' ? 'Tage' : 'days'}`} />
+                </div>
+            </div>
+
             <div className="card" style={{ marginBottom: 16 }}>
                 <div className="card-title" style={{ marginBottom: 16 }}>
                     {lang === 'de' ? 'Darstellung' : 'Appearance'}
@@ -2562,32 +2643,9 @@ const SettingsPage = () => {
                         onChange={v => setViewMode(v)}
                         options={[
                             { value: 'simple', label: lang === 'de' ? 'ðŸ“‹ Einfach' : 'ðŸ“‹ Simple' },
-                            { value: 'advanced', label: lang === 'de' ? 'ðŸ“Š AusfÃ¼hrlich' : 'ðŸ“Š Advanced' },
+                            { value: 'advanced', label: lang === 'de' ? 'ðŸ“Š Ausführlich' : 'ðŸ“Š Advanced' },
                         ]}
                     />
-                </div>
-            </div>
-
-            {/* Privacy & Storage */}
-            <div className="card" style={{ marginBottom: 16, borderColor: 'var(--success)', borderWidth: 1 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
-                    <span className="mdi mdi-shield-check" style={{ fontSize: 24, color: 'var(--success)' }} />
-                    <div className="card-title" style={{ marginBottom: 0 }}>
-                        {lang === 'de' ? 'Datenschutz & Speicher' : 'Privacy & Storage'}
-                    </div>
-                </div>
-                <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 12 }}>
-                    {lang === 'de'
-                        ? '100% lokal â€“ alle Daten bleiben auf deinem GerÃ¤t. Keine Cloud, keine Tracking.'
-                        : '100% local â€“ all data stays on your device. No cloud, no tracking.'}
-                </p>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    <InfoRow label={lang === 'de' ? 'DatenbankgrÃ¶ÃŸe' : 'Database Size'}
-                        value={sysInfo?.db_size_bytes ? formatBytes(sysInfo.db_size_bytes) : 'â€”'} />
-                    <InfoRow label={lang === 'de' ? 'Gesammelte Events' : 'Collected Events'}
-                        value={sysInfo?.state_history_count?.toLocaleString() || '0'} />
-                    <InfoRow label={lang === 'de' ? 'Aufbewahrung' : 'Retention'}
-                        value={`${retention} ${lang === 'de' ? 'Tage' : 'days'}`} />
                 </div>
             </div>
 
@@ -2598,14 +2656,14 @@ const SettingsPage = () => {
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                     <InfoRow label="Version" value={sysInfo?.version || '0.5.0'} />
-                    <InfoRow label="Phase" value={`2 â€“ ${lang === 'de' ? 'VollstÃ¤ndig' : 'Complete'}`} />
+                    <InfoRow label="Phase" value={`2 â€“ ${lang === 'de' ? 'Vollständig' : 'Complete'}`} />
                     <InfoRow label="Home Assistant"
                         value={sysInfo?.ha_connected ? (lang === 'de' ? 'âœ… Verbunden' : 'âœ… Connected') : (lang === 'de' ? 'âŒ Getrennt' : 'âŒ Disconnected')} />
                     <InfoRow label={lang === 'de' ? 'Zeitzone' : 'Timezone'}
                         value={sysInfo?.timezone || 'â€”'} />
                     <InfoRow label={lang === 'de' ? 'HA Entities' : 'HA Entities'}
                         value={sysInfo?.ha_entity_count || 'â€”'} />
-                    <InfoRow label={lang === 'de' ? 'DatenbankgrÃ¶ÃŸe' : 'Database Size'}
+                    <InfoRow label={lang === 'de' ? 'Datenbankgröße' : 'Database Size'}
                         value={sysInfo?.db_size_bytes ? formatBytes(sysInfo.db_size_bytes) : 'â€”'} />
                     <InfoRow label="Uptime"
                         value={sysInfo?.uptime_seconds ? `${Math.floor(sysInfo.uptime_seconds / 3600)} h` : 'â€”'} />
@@ -2658,7 +2716,7 @@ const SettingsPage = () => {
                         if (r) showToast(r.update_available ? `Update: ${r.latest_version}` : (lang === 'de' ? `v${r.current_version} â€“ Aktuell` : `v${r.current_version} â€“ Up to date`), r.update_available ? 'info' : 'success');
                     }}>
                         <span className="mdi mdi-update" style={{ marginRight: 4 }} />
-                        {lang === 'de' ? 'Update prÃ¼fen' : 'Check Update'}
+                        {lang === 'de' ? 'Update prüfen' : 'Check Update'}
                     </button>
                 </div>
             </div>
@@ -2675,12 +2733,12 @@ const SettingsPage = () => {
                     </div>
                     <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 16 }}>
                         {lang === 'de'
-                            ? `Daten Ã¤lter als ${retention} Tage werden automatisch gelÃ¶scht (FIFO).`
+                            ? `Daten älter als ${retention} Tage werden automatisch gelöscht (FIFO).`
                             : `Data older than ${retention} days is automatically deleted (FIFO).`}
                     </p>
                     <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', marginBottom: 16 }}>
                         <div className="input-group" style={{ flex: 1 }}>
-                            <label className="input-label">{lang === 'de' ? 'Aufbewahren fÃ¼r (Tage)' : 'Keep for (days)'}</label>
+                            <label className="input-label">{lang === 'de' ? 'Aufbewahren für (Tage)' : 'Keep for (days)'}</label>
                             <input className="input" type="number" min="1" max="3650"
                                 value={retentionInput} onChange={e => setRetentionInput(e.target.value)} />
                         </div>
@@ -2692,8 +2750,8 @@ const SettingsPage = () => {
                     <button className="btn btn-secondary" onClick={handleCleanup} disabled={cleaning}>
                         <span className="mdi mdi-broom" />
                         {cleaning
-                            ? (lang === 'de' ? 'AufrÃ¤umen...' : 'Cleaning...')
-                            : (lang === 'de' ? 'Jetzt aufrÃ¤umen' : 'Clean Up Now')}
+                            ? (lang === 'de' ? 'Aufräumen...' : 'Cleaning...')
+                            : (lang === 'de' ? 'Jetzt aufräumen' : 'Clean Up Now')}
                     </button>
                 </div>
             )}
@@ -2721,12 +2779,12 @@ const SettingsPage = () => {
                 </div>
                 <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, cursor: 'pointer', marginBottom: 8 }}>
                     <input type="checkbox" checked={exportHistory} onChange={e => setExportHistory(e.target.checked)} />
-                    {lang === 'de' ? 'Historische Daten einschließen (State History, Logs)' : 'Include historical data (state history, logs)'}
+                    {lang === 'de' ? 'Historische Daten einschließen' : 'Include historical data'}
                 </label>
                 <p style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 0 }}>
                     {lang === 'de'
-                        ? 'Standard: Konfiguration. Vollständig: inkl. Patterns & Regeln. History-Checkbox: State History, Action Logs (90 Tage).'
-                        : 'Standard: config only. Full: incl. patterns & rules. History checkbox: state history, action logs (90 days).'}
+                        ? 'Standard: Konfiguration + Einstellungen. Vollständig: inkl. Muster, Regeln und Logs.'
+                        : 'Standard: configuration + settings. Full: incl. patterns, rules and logs.'}
                 </p>
             </div>
 
@@ -2738,7 +2796,7 @@ const SettingsPage = () => {
                 </div>
                 <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 16 }}>
                     {lang === 'de'
-                        ? 'Steuere wie empfindlich MindHome auf ungewÃ¶hnliche GerÃ¤tezustÃ¤nde reagiert.'
+                        ? 'Steuere wie empfindlich MindHome auf ungewöhnliche Gerätezustände reagiert.'
                         : 'Control how sensitively MindHome reacts to unusual device states.'}
                 </p>
                 <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
@@ -2768,7 +2826,6 @@ const SettingsPage = () => {
                     {lang === 'de' ? 'Erweitert' : 'Advanced'}
                 </div>
 
-            </div>
                 {/* #23 Vacation Mode */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
                     <span style={{ fontSize: 13 }}><span className="mdi mdi-airplane" style={{ marginRight: 6, color: 'var(--accent-primary)' }} />{lang === 'de' ? 'Urlaubsmodus' : 'Vacation Mode'}</span>
@@ -2804,7 +2861,7 @@ const SettingsPage = () => {
 
                 {/* #68 Font Size */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
-                    <span style={{ fontSize: 13 }}><span className="mdi mdi-format-size" style={{ marginRight: 6 }} />{lang === 'de' ? 'SchriftgrÃ¶ÃŸe' : 'Font Size'}</span>
+                    <span style={{ fontSize: 13 }}><span className="mdi mdi-format-size" style={{ marginRight: 6 }} />{lang === 'de' ? 'Schriftgröße' : 'Font Size'}</span>
                     <div style={{ display: 'flex', gap: 4 }}>
                         {[{ s: '13px', l: 'S' }, { s: '15px', l: 'M' }, { s: '17px', l: 'L' }].map(f => (
                             <button key={f.l} className="btn btn-sm btn-ghost" onClick={() => { document.documentElement.style.fontSize = f.s; }}
@@ -2813,21 +2870,7 @@ const SettingsPage = () => {
                     </div>
                 </div>
 
-                {/* #63 Data Export */}
-                <div style={{ padding: '10px 0 4px' }}>
-                    <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 6 }}>{lang === 'de' ? 'Daten exportieren' : 'Export Data'}</div>
-                    <div style={{ display: 'flex', gap: 6 }}>
-                        {['patterns', 'history', 'automations'].map(dt => (
-                            <button key={dt} className="btn btn-sm btn-secondary"
-                                onClick={() => window.open(`${API_BASE}/api/export/${dt}?format=csv`, '_blank')}
-                                style={{ fontSize: 11, textTransform: 'capitalize' }}>{dt}</button>
-                        ))}
-                    </div>
-                </div>
             </div>
-
-            {/* Calendar Trigger Configuration */}
-            <CalendarTriggersConfig lang={lang} showToast={showToast} />
 
         </div>
         </>
@@ -2888,7 +2931,7 @@ const CalendarTriggersConfig = ({ lang, showToast }) => {
                     <div className="input-group" style={{ marginBottom: 8 }}>
                         <label className="input-label">{lang === 'de' ? 'Kalender' : 'Calendar'}</label>
                         <select className="input" value={newTrigger.calendar} onChange={e => setNewTrigger({ ...newTrigger, calendar: e.target.value })}>
-                            <option value="">-- {lang === 'de' ? 'AuswÃ¤hlen' : 'Select'} --</option>
+                            <option value="">-- {lang === 'de' ? 'Auswählen' : 'Select'} --</option>
                             {calendars.map(c => <option key={c.entity_id} value={c.entity_id}>{c.name || c.entity_id}</option>)}
                         </select>
                     </div>
@@ -2925,7 +2968,7 @@ const CalendarTriggersConfig = ({ lang, showToast }) => {
                     <div>
                         <div style={{ fontWeight: 500 }}>{t.keyword} â†’ {actionLabels[t.action] || t.action}</div>
                         <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                            {t.calendar}{t.lead_minutes ? ` Â· ${t.lead_minutes} min ${lang === 'de' ? 'vorher' : 'before'}` : ''}
+                            {t.calendar}{t.lead_minutes ? ` · ${t.lead_minutes} min ${lang === 'de' ? 'vorher' : 'before'}` : ''}
                         </div>
                     </div>
                     <button className="btn btn-ghost btn-icon" onClick={() => removeTrigger(t.id)}>
@@ -2968,7 +3011,7 @@ const DeviceAnomalyConfig = ({ lang }) => {
 
     return (
         <div>
-            <input className="input" placeholder={lang === 'de' ? 'GerÃ¤t suchen...' : 'Search device...'}
+            <input className="input" placeholder={lang === 'de' ? 'Gerät suchen...' : 'Search device...'}
                 value={search} onChange={e => setSearch(e.target.value)}
                 style={{ width: '100%', marginBottom: 8, padding: '6px 10px', fontSize: 12 }} />
             <div style={{ maxHeight: 200, overflowY: 'auto', marginBottom: selected ? 12 : 0 }}>
@@ -3045,8 +3088,8 @@ const DeviceAnomalyConfig = ({ lang }) => {
 
                         {/* Thresholds */}
                         <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6, marginBottom: 2 }}>{lang === 'de' ? 'Schwellwerte' : 'Thresholds'}</div>
-                        {[{key:'temp_min',l:lang==='de'?'Temp. min Â°C':'Temp min Â°C',ph:'5'},
-                          {key:'temp_max',l:lang==='de'?'Temp. max Â°C':'Temp max Â°C',ph:'30'},
+                        {[{key:'temp_min',l:lang==='de'?'Temp. min °C':'Temp min °C',ph:'5'},
+                          {key:'temp_max',l:lang==='de'?'Temp. max °C':'Temp max °C',ph:'30'},
                           {key:'power_max',l:lang==='de'?'Strom max W':'Power max W',ph:'3000'},
                           {key:'battery_min',l:lang==='de'?'Batterie min %':'Battery min %',ph:'20'}].map(t => (
                             <div key={t.key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '2px 0' }}>
@@ -3091,7 +3134,7 @@ const AnomalyAdvancedPanel = ({ lang, showToast }) => {
 
             {/* Detection Types */}
             <CollapsibleCard title={lang === 'de' ? 'Erkennungs-Typen' : 'Detection Types'} icon="mdi-radar" defaultOpen={false}>
-                {[{key:'frequency',de:'HÃ¤ufigkeit',en:'Frequency'},{key:'time',de:'Zeitabweichung',en:'Time'},{key:'value',de:'Wertabweichung',en:'Value'},
+                {[{key:'frequency',de:'Häufigkeit',en:'Frequency'},{key:'time',de:'Zeitabweichung',en:'Time'},{key:'value',de:'Wertabweichung',en:'Value'},
                   {key:'offline',de:'Offline',en:'Offline'},{key:'stuck',de:'Stuck',en:'Stuck'},{key:'pattern_deviation',de:'Muster-Abweichung',en:'Pattern'}].map(t => (
                     <div key={t.key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 0' }}>
                         <span style={{ fontSize: 12 }}>{lang === 'de' ? t.de : t.en}</span>
@@ -3137,7 +3180,7 @@ const AnomalyAdvancedPanel = ({ lang, showToast }) => {
                     );
                 })}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 0', marginTop: 4 }}>
-                    <span style={{ fontSize: 12 }}>{lang === 'de' ? 'VerzÃ¶gerung (Min)' : 'Delay (min)'}</span>
+                    <span style={{ fontSize: 12 }}>{lang === 'de' ? 'Verzögerung (Min)' : 'Delay (min)'}</span>
                     <div style={{ display: 'flex', gap: 3 }}>
                         {[0,1,5,10].map(m => (
                             <button key={m} className={`btn btn-sm ${config.reaction_delay_min === m ? 'btn-primary' : 'btn-ghost'}`}
@@ -3152,17 +3195,17 @@ const AnomalyAdvancedPanel = ({ lang, showToast }) => {
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
                     <button className="btn btn-sm btn-secondary" onClick={async () => {
                         await api.post('anomaly-settings/pause', { hours: 1 });
-                        showToast(lang === 'de' ? 'Pausiert fÃ¼r 1h' : 'Paused 1h', 'info'); }}>
+                        showToast(lang === 'de' ? 'Pausiert für 1h' : 'Paused 1h', 'info'); }}>
                         <span className="mdi mdi-pause" style={{ marginRight: 4 }} />1h
                     </button>
                     <button className="btn btn-sm btn-secondary" onClick={async () => {
                         await api.post('anomaly-settings/pause', { hours: 4 });
-                        showToast(lang === 'de' ? 'Pausiert fÃ¼r 4h' : 'Paused 4h', 'info'); }}>
+                        showToast(lang === 'de' ? 'Pausiert für 4h' : 'Paused 4h', 'info'); }}>
                         <span className="mdi mdi-pause" style={{ marginRight: 4 }} />4h
                     </button>
                     <button className="btn btn-sm btn-secondary" onClick={async () => {
                         await api.post('anomaly-settings/pause', { hours: 24 });
-                        showToast(lang === 'de' ? 'Pausiert fÃ¼r 24h' : 'Paused 24h', 'info'); }}>
+                        showToast(lang === 'de' ? 'Pausiert für 24h' : 'Paused 24h', 'info'); }}>
                         <span className="mdi mdi-pause" style={{ marginRight: 4 }} />24h
                     </button>
                     <button className="btn btn-sm btn-warning" onClick={async () => {
@@ -3185,24 +3228,24 @@ const AnomalyAdvancedPanel = ({ lang, showToast }) => {
             </CollapsibleCard>
 
             {/* Per-Device Configuration */}
-            <CollapsibleCard title={lang === 'de' ? 'GerÃ¤te-Konfiguration' : 'Device Configuration'} icon="mdi-devices" defaultOpen={false}>
+            <CollapsibleCard title={lang === 'de' ? 'Geräte-Konfiguration' : 'Device Configuration'} icon="mdi-devices" defaultOpen={false}>
                 <DeviceAnomalyConfig lang={lang} />
             </CollapsibleCard>
 
             {/* Statistics */}
             {stats && stats.total_30d > 0 && (
-                <CollapsibleCard title={`${lang === 'de' ? 'Statistik' : 'Statistics'} Â· ${stats.total_30d}`} icon="mdi-chart-bar" defaultOpen={false}>
+                <CollapsibleCard title={`${lang === 'de' ? 'Statistik' : 'Statistics'} · ${stats.total_30d}`} icon="mdi-chart-bar" defaultOpen={false}>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 6, marginBottom: 8 }}>
                         {Object.entries(stats.by_type || {}).map(([type, count]) => (
                             <div key={type} style={{ padding: '6px 8px', background: 'var(--bg-main)', borderRadius: 6, fontSize: 11 }}>
-                                <div style={{ fontWeight: 600 }}>{count}Ã—</div>
+                                <div style={{ fontWeight: 600 }}>{count}×</div>
                                 <div style={{ color: 'var(--text-muted)' }}>{type}</div>
                             </div>
                         ))}
                     </div>
                     {stats.top_devices?.length > 0 && (
                         <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                            {lang === 'de' ? 'Top-GerÃ¤te' : 'Top devices'}: {stats.top_devices.slice(0, 3).map(d => `${d.name} (${d.count}Ã—)`).join(', ')}
+                            {lang === 'de' ? 'Top-Geräte' : 'Top devices'}: {stats.top_devices.slice(0, 3).map(d => `${d.name} (${d.count}×)`).join(', ')}
                         </div>
                     )}
                 </CollapsibleCard>
@@ -3294,7 +3337,7 @@ const ActivitiesPage = () => {
     });
 
     const exportCSV = () => {
-        const headers = ['Datum', 'Typ', 'Beschreibung', 'GerÃ¤t', 'Raum'];
+        const headers = ['Datum', 'Typ', 'Beschreibung', 'Gerät', 'Raum'];
         const rows = filtered.map(l => [
             new Date(l.created_at).toLocaleString('de-DE'),
             l.action_type,
@@ -3311,7 +3354,7 @@ const ActivitiesPage = () => {
 
     const tabs = [
         { id: 'all', label: lang === 'de' ? 'Alle' : 'All', icon: 'mdi-format-list-bulleted' },
-        { id: 'devices', label: lang === 'de' ? 'GerÃ¤te' : 'Devices', icon: 'mdi-devices' },
+        { id: 'devices', label: lang === 'de' ? 'Geräte' : 'Devices', icon: 'mdi-devices' },
         { id: 'automations', label: lang === 'de' ? 'Automationen' : 'Automations', icon: 'mdi-robot' },
         { id: 'system', label: 'System', icon: 'mdi-alert-circle' },
     ];
@@ -3347,19 +3390,19 @@ const ActivitiesPage = () => {
                     </div>
                     <div style={{ flex: '0 1 160px' }}>
                         <Dropdown value={roomFilter} onChange={v => setRoomFilter(v)}
-                            placeholder={lang === 'de' ? 'Alle RÃ¤ume' : 'All Rooms'}
-                            options={[{ value: '', label: lang === 'de' ? 'Alle RÃ¤ume' : 'All Rooms' }, ...rooms.map(r => ({ value: String(r.id), label: r.name }))]} />
+                            placeholder={lang === 'de' ? 'Alle Räume' : 'All Rooms'}
+                            options={[{ value: '', label: lang === 'de' ? 'Alle Räume' : 'All Rooms' }, ...rooms.map(r => ({ value: String(r.id), label: r.name }))]} />
                     </div>
                     <div style={{ flex: '0 1 160px' }}>
                         <Dropdown value={deviceFilter} onChange={v => setDeviceFilter(v)}
-                            placeholder={lang === 'de' ? 'Alle GerÃ¤te' : 'All Devices'}
-                            options={[{ value: '', label: lang === 'de' ? 'Alle GerÃ¤te' : 'All Devices' }, ...devices.map(d => ({ value: String(d.id), label: d.name }))]} />
+                            placeholder={lang === 'de' ? 'Alle Geräte' : 'All Devices'}
+                            options={[{ value: '', label: lang === 'de' ? 'Alle Geräte' : 'All Devices' }, ...devices.map(d => ({ value: String(d.id), label: d.name }))]} />
                     </div>
                     <PeriodFilter value={period} onChange={setPeriod} lang={lang} />
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 }}>
                     <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                        {filtered.length} {lang === 'de' ? 'EintrÃ¤ge' : 'entries'}
+                        {filtered.length} {lang === 'de' ? 'Einträge' : 'entries'}
                         {search && ` (${lang === 'de' ? 'gefiltert' : 'filtered'})`}
                     </span>
                     <div style={{ display: 'flex', gap: 8 }}>
@@ -3390,8 +3433,8 @@ const ActivitiesPage = () => {
                         const attrParts = [];
                         if (attrs.brightness_pct !== undefined) attrParts.push(`ðŸ’¡ ${attrs.brightness_pct}%`);
                         if (attrs.position_pct !== undefined) attrParts.push(`â†• ${attrs.position_pct}%`);
-                        if (attrs.target_temp !== undefined) attrParts.push(`ðŸŒ¡ ${attrs.target_temp}Â°C`);
-                        if (attrs.current_temp !== undefined) attrParts.push(`Ist: ${attrs.current_temp}Â°C`);
+                        if (attrs.target_temp !== undefined) attrParts.push(`ðŸŒ¡ ${attrs.target_temp}°C`);
+                        if (attrs.current_temp !== undefined) attrParts.push(`Ist: ${attrs.current_temp}°C`);
                         const roomName = getRoomName(log.room_id);
                         return (
                         <div key={log.id} className="card" style={{ padding: '12px 14px', display: 'flex', alignItems: 'flex-start', gap: 12 }}>
@@ -3412,15 +3455,15 @@ const ActivitiesPage = () => {
                                     </div>
                                 )}
                                 {attrParts.length > 0 && (
-                                    <div style={{ fontSize: 12, color: 'var(--accent-secondary)', marginTop: 2 }}>{attrParts.join(' Â· ')}</div>
+                                    <div style={{ fontSize: 12, color: 'var(--accent-secondary)', marginTop: 2 }}>{attrParts.join(' · ')}</div>
                                 )}
                                 <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 3, display: 'flex', gap: 8 }}>
                                     <span>{new Date(log.created_at).toLocaleString(lang === 'de' ? 'de-DE' : 'en-US')}</span>
-                                    {roomName && <span>Â· {roomName}</span>}
+                                    {roomName && <span>· {roomName}</span>}
                                 </div>
                             </div>
                             {log.was_undone && (
-                                <span className="badge badge-warning" style={{ flexShrink: 0 }}>{lang === 'de' ? 'RÃ¼ckgÃ¤ngig' : 'Undone'}</span>
+                                <span className="badge badge-warning" style={{ flexShrink: 0 }}>{lang === 'de' ? 'Rückgängig' : 'Undone'}</span>
                             )}
                         </div>
                         );
@@ -3435,10 +3478,10 @@ const ActivitiesPage = () => {
             ) : (
                 <div className="empty-state">
                     <span className="mdi mdi-text-box-search-outline" />
-                    <h3>{lang === 'de' ? 'Keine EintrÃ¤ge gefunden' : 'No Entries Found'}</h3>
+                    <h3>{lang === 'de' ? 'Keine Einträge gefunden' : 'No Entries Found'}</h3>
                     <p>{search || roomFilter || deviceFilter
                         ? (lang === 'de' ? 'Versuche andere Filter.' : 'Try different filters.')
-                        : (lang === 'de' ? 'Hier werden alle AktivitÃ¤ten protokolliert.' : 'All activities will be logged here.')}</p>
+                        : (lang === 'de' ? 'Hier werden alle Aktivitäten protokolliert.' : 'All activities will be logged here.')}</p>
                 </div>
             )}
 
@@ -3447,10 +3490,10 @@ const ActivitiesPage = () => {
                 <div className="card" style={{ marginTop: 16 }}>
                     <div className="card-title" style={{ marginBottom: 12 }}>
                         <span className="mdi mdi-shield-check" style={{ marginRight: 8, color: 'var(--accent-primary)' }} />
-                        {lang === 'de' ? 'Audit-Log (Wer hat was geÃ¤ndert)' : 'Audit Log (Who changed what)'}
+                        {lang === 'de' ? 'Audit-Log (Wer hat was geändert)' : 'Audit Log (Who changed what)'}
                     </div>
                     {auditLogs.length === 0 ? (
-                        <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>{lang === 'de' ? 'Noch keine Audit-EintrÃ¤ge.' : 'No audit entries yet.'}</p>
+                        <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>{lang === 'de' ? 'Noch keine Audit-Einträge.' : 'No audit entries yet.'}</p>
                     ) : (
                         <div style={{ maxHeight: 400, overflowY: 'auto' }}>
                             {auditLogs.map(a => (
@@ -3578,7 +3621,7 @@ const PatternsPage = () => {
     const deletePattern = async (id) => {
         try {
             await api.delete(`patterns/${id}`);
-            showToast(lang === 'de' ? 'Muster gelÃ¶scht' : 'Pattern deleted', 'success');
+            showToast(lang === 'de' ? 'Muster gelöscht' : 'Pattern deleted', 'success');
             setConfirmDel(null);
             await load();
         } catch (e) { showToast('Error', 'error'); }
@@ -3661,7 +3704,7 @@ const PatternsPage = () => {
     const ptabs = [
         { id: 'patterns', label: lang === 'de' ? 'Muster' : 'Patterns', icon: 'mdi-lightbulb-on', count: patterns.length },
         { id: 'rejected', label: lang === 'de' ? 'Abgelehnt' : 'Rejected', icon: 'mdi-close-circle', count: rejected.length },
-        { id: 'exclusions', label: lang === 'de' ? 'AusschlÃ¼sse' : 'Exclusions', icon: 'mdi-link-off', count: exclusions.length },
+        { id: 'exclusions', label: lang === 'de' ? 'Ausschlüsse' : 'Exclusions', icon: 'mdi-link-off', count: exclusions.length },
         { id: 'rules', label: lang === 'de' ? 'Eigene Regeln' : 'Manual Rules', icon: 'mdi-pencil-ruler', count: manualRules.length },
     ];
 
@@ -3687,12 +3730,12 @@ const PatternsPage = () => {
                 <div className="card" style={{ marginBottom: 16, padding: '12px 16px', borderLeft: '3px solid var(--accent-primary)' }}>
                     <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 6 }}>
                         <span className="mdi mdi-group" style={{ color: 'var(--accent-primary)', marginRight: 6 }} />
-                        {lang === 'de' ? 'Szenen-VorschlÃ¤ge' : 'Scene Suggestions'}
+                        {lang === 'de' ? 'Szenen-Vorschläge' : 'Scene Suggestions'}
                     </div>
                     {scenes.slice(0, 3).map((s, i) => (
                         <div key={i} style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 2 }}>
                             {lang === 'de' ? s.message_de : s.message_en}
-                            <span style={{ opacity: 0.6, marginLeft: 4 }}>({s.entities.length} {lang === 'de' ? 'GerÃ¤te' : 'devices'})</span>
+                            <span style={{ opacity: 0.6, marginLeft: 4 }}>({s.entities.length} {lang === 'de' ? 'Geräte' : 'devices'})</span>
                         </div>
                     ))}
                 </div>
@@ -3741,7 +3784,7 @@ const PatternsPage = () => {
                 <div>
                     <button className="btn btn-primary" style={{ marginBottom: 16 }} onClick={() => setShowAddExcl(true)}>
                         <span className="mdi mdi-plus" style={{ marginRight: 4 }} />
-                        {lang === 'de' ? 'Ausschluss hinzufÃ¼gen' : 'Add Exclusion'}
+                        {lang === 'de' ? 'Ausschluss hinzufügen' : 'Add Exclusion'}
                     </button>
                     {exclusions.length > 0 ? exclusions.map(e => (
                         <div key={e.id} className="card" style={{ marginBottom: 8, padding: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -3758,8 +3801,8 @@ const PatternsPage = () => {
                             </button>
                         </div>
                     )) : <div className="empty-state"><span className="mdi mdi-link-variant" />
-                        <h3>{lang === 'de' ? 'Keine AusschlÃ¼sse' : 'No Exclusions'}</h3>
-                        <p>{lang === 'de' ? 'Bestimme welche GerÃ¤te/RÃ¤ume nie verknÃ¼pft werden sollen.' : 'Define which devices/rooms should never be linked.'}</p></div>}
+                        <h3>{lang === 'de' ? 'Keine Ausschlüsse' : 'No Exclusions'}</h3>
+                        <p>{lang === 'de' ? 'Bestimme welche Geräte/Räume nie verknüpft werden sollen.' : 'Define which devices/rooms should never be linked.'}</p></div>}
 
                     {showAddExcl && (
                         <Modal title={lang === 'de' ? 'Ausschluss erstellen' : 'Create Exclusion'} onClose={() => setShowAddExcl(false)}
@@ -3767,16 +3810,16 @@ const PatternsPage = () => {
                                 <button className="btn btn-primary" onClick={createExclusion}>{lang === 'de' ? 'Erstellen' : 'Create'}</button></>}>
                             <div className="input-group" style={{ marginBottom: 12 }}>
                                 <Dropdown label={lang === 'de' ? 'Typ' : 'Type'} value={newExcl.type} onChange={v => setNewExcl({ ...newExcl, type: v, entity_a: '', entity_b: '' })}
-                                    options={[{ value: 'device_pair', label: lang === 'de' ? 'GerÃ¤te-Paar' : 'Device Pair' }, { value: 'room_pair', label: lang === 'de' ? 'Raum-Paar' : 'Room Pair' }, { value: 'domain_pair', label: lang === 'de' ? 'Domain-Paar' : 'Domain Pair' }]} />
+                                    options={[{ value: 'device_pair', label: lang === 'de' ? 'Geräte-Paar' : 'Device Pair' }, { value: 'room_pair', label: lang === 'de' ? 'Raum-Paar' : 'Room Pair' }, { value: 'domain_pair', label: lang === 'de' ? 'Domain-Paar' : 'Domain Pair' }]} />
                             </div>
                             {newExcl.type === 'device_pair' ? (<>
                                 <div className="input-group" style={{ marginBottom: 12 }}>
-                                    <EntitySearchDropdown label={lang === 'de' ? 'GerÃ¤t A' : 'Device A'} value={newExcl.entity_a}
+                                    <EntitySearchDropdown label={lang === 'de' ? 'Gerät A' : 'Device A'} value={newExcl.entity_a}
                                         onChange={v => setNewExcl({ ...newExcl, entity_a: v })}
                                         entities={devices.filter(d => d.ha_entity_id)} placeholder="light.living_room" />
                                 </div>
                                 <div className="input-group" style={{ marginBottom: 12 }}>
-                                    <EntitySearchDropdown label={lang === 'de' ? 'GerÃ¤t B' : 'Device B'} value={newExcl.entity_b}
+                                    <EntitySearchDropdown label={lang === 'de' ? 'Gerät B' : 'Device B'} value={newExcl.entity_b}
                                         onChange={v => setNewExcl({ ...newExcl, entity_b: v })}
                                         entities={devices.filter(d => d.ha_entity_id && d.ha_entity_id !== newExcl.entity_a)} />
                                 </div>
@@ -3830,10 +3873,10 @@ const PatternsPage = () => {
                                     <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
                                         {lang === 'de' ? 'Wenn' : 'If'} <strong>{r.trigger_entity}</strong> = {r.trigger_state}
                                         â†’ <strong>{r.action_entity}</strong> {r.action_service}
-                                        {r.delay_seconds > 0 && ` (${r.delay_seconds}s ${lang === 'de' ? 'VerzÃ¶gerung' : 'delay'})`}
+                                        {r.delay_seconds > 0 && ` (${r.delay_seconds}s ${lang === 'de' ? 'Verzögerung' : 'delay'})`}
                                     </div>
                                     {r.execution_count > 0 && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
-                                        {r.execution_count}x {lang === 'de' ? 'ausgefÃ¼hrt' : 'executed'}
+                                        {r.execution_count}x {lang === 'de' ? 'ausgeführt' : 'executed'}
                                     </div>}
                                 </div>
                                 <div style={{ display: 'flex', gap: 4 }}>
@@ -3857,7 +3900,7 @@ const PatternsPage = () => {
                             <div className="input-group" style={{ marginBottom: 12 }}>
                                 <label className="input-label">{lang === 'de' ? 'Name' : 'Name'}</label>
                                 <input className="input" value={newRule.name} onChange={e => setNewRule({ ...newRule, name: e.target.value })}
-                                    placeholder={lang === 'de' ? 'z.B. Flurlicht bei HaustÃ¼r' : 'e.g. Hall light on door open'} autoFocus />
+                                    placeholder={lang === 'de' ? 'z.B. Flurlicht bei Haustür' : 'e.g. Hall light on door open'} autoFocus />
                             </div>
                             <div className="input-group" style={{ marginBottom: 12 }}>
                                 <EntitySearchDropdown
@@ -3929,7 +3972,7 @@ const PatternsPage = () => {
                         </div>
                         <div>
                             <div className="stat-value">{s.avg_confidence ? `${Math.round(s.avg_confidence * 100)}%` : 'â€”'}</div>
-                            <div className="stat-label">{lang === 'de' ? 'Ã˜ Vertrauen' : 'Avg Confidence'}</div>
+                            <div className="stat-label">{lang === 'de' ? 'Ø Vertrauen' : 'Avg Confidence'}</div>
                         </div>
                     </div>
                 </div>
@@ -4110,7 +4153,7 @@ const PatternsPage = () => {
                         <div style={{ padding: '10px 16px', background: 'var(--accent-primary-dim)', borderBottom: '1px solid var(--border)',
                             display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                             <span style={{ fontSize: 13, fontWeight: 500, marginRight: 8 }}>
-                                {count} {lang === 'de' ? 'ausgewÃ¤hlt' : 'selected'}
+                                {count} {lang === 'de' ? 'ausgewählt' : 'selected'}
                             </span>
                             <button className="btn btn-sm btn-ghost" onClick={async () => {
                                 setPatterns(prev => prev.filter(p => !selectedIds.includes(p.id)));
@@ -4125,17 +4168,17 @@ const PatternsPage = () => {
                                 setPatterns(prev => prev.filter(p => !selectedIds.includes(p.id)));
                                 for (const id of selectedIds) { await api.delete(`patterns/${id}`); }
                                 setBulkSelected({}); setBulkMode(false); await load();
-                                showToast(`${count} ${lang === 'de' ? 'Muster gelÃ¶scht' : 'patterns deleted'}`, 'success');
+                                showToast(`${count} ${lang === 'de' ? 'Muster gelöscht' : 'patterns deleted'}`, 'success');
                             }}>
                                 <span className="mdi mdi-delete" style={{ marginRight: 4, color: 'var(--danger)' }} />
-                                {lang === 'de' ? 'Alle lÃ¶schen' : 'Delete all'}
+                                {lang === 'de' ? 'Alle löschen' : 'Delete all'}
                             </button>
                             <button className="btn btn-sm btn-ghost" onClick={() => {
                                 const all = {};
                                 filtered.forEach(p => all[p.id] = true);
                                 setBulkSelected(all);
                             }}>
-                                {lang === 'de' ? 'Alle auswÃ¤hlen' : 'Select all'}
+                                {lang === 'de' ? 'Alle auswählen' : 'Select all'}
                             </button>
                             <button className="btn btn-sm btn-ghost" onClick={() => setBulkSelected({})}>
                                 {lang === 'de' ? 'Auswahl aufheben' : 'Deselect'}
@@ -4149,7 +4192,7 @@ const PatternsPage = () => {
                         <span className="mdi mdi-lightbulb-on" />
                         <h3>{lang === 'de' ? 'Noch keine Muster' : 'No patterns yet'}</h3>
                         <p>{lang === 'de'
-                            ? 'MindHome sammelt Daten und analysiert regelmÃ¤ÃŸig. Muster erscheinen nach einigen Tagen.'
+                            ? 'MindHome sammelt Daten und analysiert regelmäßig. Muster erscheinen nach einigen Tagen.'
                             : 'MindHome collects data and analyzes regularly. Patterns will appear after a few days.'}</p>
                         <button className="btn btn-primary" onClick={triggerAnalysis} disabled={analyzing}>
                             <span className="mdi mdi-magnify" style={{ marginRight: 6 }} />
@@ -4193,7 +4236,7 @@ const PatternsPage = () => {
                                             {typeLabels[p.pattern_type]}
                                         </span>
                                         <span style={{ color: 'var(--text-muted)' }}>
-                                            {p.match_count}Ã— {lang === 'de' ? 'erkannt' : 'matched'}
+                                            {p.match_count}× {lang === 'de' ? 'erkannt' : 'matched'}
                                         </span>
                                     </div>
                                 </div>
@@ -4226,7 +4269,7 @@ const PatternsPage = () => {
                                     )}
                                     <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }}
                                             onClick={() => setConfirmDel(p.id)}
-                                            title={lang === 'de' ? 'LÃ¶schen' : 'Delete'}>
+                                            title={lang === 'de' ? 'Löschen' : 'Delete'}>
                                         <span className="mdi mdi-delete" />
                                     </button>
                                 </div>
@@ -4248,22 +4291,22 @@ const PatternsPage = () => {
                                             <div><span style={{ color: 'var(--text-muted)' }}>{lang === 'de' ? 'Tage' : 'Days'}:</span> {p.pattern_data.weekday_filter === 'weekdays' ? (lang === 'de' ? 'Moâ€“Fr' : 'Monâ€“Fri') : p.pattern_data.weekday_filter === 'weekends' ? (lang === 'de' ? 'Saâ€“So' : 'Satâ€“Sun') : (lang === 'de' ? 'Alle' : 'All')}</div>
                                         )}
                                         {p.pattern_data?.sun_relative_elevation != null && (
-                                            <div><span style={{ color: 'var(--text-muted)' }}>{lang === 'de' ? 'Sonnenstand' : 'Sun elevation'}:</span> {p.pattern_data.sun_relative_elevation}Â°</div>
+                                            <div><span style={{ color: 'var(--text-muted)' }}>{lang === 'de' ? 'Sonnenstand' : 'Sun elevation'}:</span> {p.pattern_data.sun_relative_elevation}°</div>
                                         )}
                                         {p.pattern_data?.trigger_entity && (
                                             <div><span style={{ color: 'var(--text-muted)' }}>Trigger:</span> <code style={{ fontSize: 12 }}>{p.pattern_data.trigger_entity}</code> â†’ {p.pattern_data.trigger_state}</div>
                                         )}
                                         {p.pattern_data?.avg_delay_sec && (
-                                            <div><span style={{ color: 'var(--text-muted)' }}>{lang === 'de' ? 'VerzÃ¶gerung' : 'Delay'}:</span> {p.pattern_data.avg_delay_sec < 60 ? `${Math.round(p.pattern_data.avg_delay_sec)}s` : `${Math.round(p.pattern_data.avg_delay_sec/60)} min`}</div>
+                                            <div><span style={{ color: 'var(--text-muted)' }}>{lang === 'de' ? 'Verzögerung' : 'Delay'}:</span> {p.pattern_data.avg_delay_sec < 60 ? `${Math.round(p.pattern_data.avg_delay_sec)}s` : `${Math.round(p.pattern_data.avg_delay_sec/60)} min`}</div>
                                         )}
-                                        <div><span style={{ color: 'var(--text-muted)' }}>{lang === 'de' ? 'Beobachtet' : 'Observed'}:</span> {p.pattern_data?.days_observed || 0} {lang === 'de' ? 'Tage' : 'days'}, {p.pattern_data?.occurrence_count || p.match_count || 0}Ã— {lang === 'de' ? 'Treffer' : 'matches'}</div>
+                                        <div><span style={{ color: 'var(--text-muted)' }}>{lang === 'de' ? 'Beobachtet' : 'Observed'}:</span> {p.pattern_data?.days_observed || 0} {lang === 'de' ? 'Tage' : 'days'}, {p.pattern_data?.occurrence_count || p.match_count || 0}× {lang === 'de' ? 'Treffer' : 'matches'}</div>
                                         <div><span style={{ color: 'var(--text-muted)' }}>{lang === 'de' ? 'Erstellt' : 'Created'}:</span> {p.created_at ? new Date(p.created_at).toLocaleDateString() : 'â€“'}</div>
                                         {/* #51 Confidence Explanation */}
                                         <div style={{ marginTop: 6, padding: '6px 10px', background: 'var(--bg-primary)', borderRadius: 6, fontSize: 11 }}>
                                             <span className="mdi mdi-information" style={{ marginRight: 4, color: 'var(--info)' }} />
-                                            {p.confidence >= 0.8 ? (lang === 'de' ? 'Hohe Konfidenz: Muster wurde hÃ¤ufig und konsistent beobachtet.' : 'High confidence: Pattern observed frequently and consistently.')
-                                            : p.confidence >= 0.5 ? (lang === 'de' ? 'Mittlere Konfidenz: Muster zeigt sich regelmÃ¤ÃŸig, aber mit Abweichungen.' : 'Medium confidence: Pattern appears regularly but with variations.')
-                                            : (lang === 'de' ? 'Niedrige Konfidenz: Noch zu wenige Daten fÃ¼r eine sichere Aussage.' : 'Low confidence: Not enough data for reliable prediction.')}
+                                            {p.confidence >= 0.8 ? (lang === 'de' ? 'Hohe Konfidenz: Muster wurde häufig und konsistent beobachtet.' : 'High confidence: Pattern observed frequently and consistently.')
+                                            : p.confidence >= 0.5 ? (lang === 'de' ? 'Mittlere Konfidenz: Muster zeigt sich regelmäßig, aber mit Abweichungen.' : 'Medium confidence: Pattern appears regularly but with variations.')
+                                            : (lang === 'de' ? 'Niedrige Konfidenz: Noch zu wenige Daten für eine sichere Aussage.' : 'Low confidence: Not enough data for reliable prediction.')}
                                             {p.match_count > 0 && ` (${p.match_count} ${lang === 'de' ? 'Treffer' : 'matches'})`}
                                         </div>
                                     </div>
@@ -4283,7 +4326,7 @@ const PatternsPage = () => {
                                                 showToast(p.test_mode ? (lang === 'de' ? 'Testmodus deaktiviert' : 'Test mode off') : (lang === 'de' ? 'Testmodus aktiviert' : 'Test mode on'), 'success');
                                                 await load(); }} style={{ fontSize: 11 }}>
                                             <span className="mdi mdi-flask" style={{ marginRight: 4 }} />
-                                            {p.test_mode ? (lang === 'de' ? 'Test lÃ¤uft' : 'Testing') : (lang === 'de' ? 'Testlauf' : 'Test Run')}
+                                            {p.test_mode ? (lang === 'de' ? 'Test läuft' : 'Testing') : (lang === 'de' ? 'Testlauf' : 'Test Run')}
                                         </button>
                                         {p.status !== 'rejected' && (
                                             <button className="btn btn-sm btn-ghost" onClick={(e) => { e.stopPropagation(); setRejectReason(p.id); }}
@@ -4313,8 +4356,8 @@ const PatternsPage = () => {
             {/* Confirm delete */}
             {confirmDel && (
                 <ConfirmDialog
-                    title={lang === 'de' ? 'Muster lÃ¶schen?' : 'Delete pattern?'}
-                    message={lang === 'de' ? 'Das Muster wird unwiderruflich gelÃ¶scht.' : 'The pattern will be permanently deleted.'}
+                    title={lang === 'de' ? 'Muster löschen?' : 'Delete pattern?'}
+                    message={lang === 'de' ? 'Das Muster wird unwiderruflich gelöscht.' : 'The pattern will be permanently deleted.'}
                     onConfirm={() => deletePattern(confirmDel)}
                     onCancel={() => setConfirmDel(null)}
                 />
@@ -4416,7 +4459,7 @@ const NotificationsPage = () => {
         if (result.error) {
             showToast(result.error, 'error');
         } else {
-            showToast(lang === 'de' ? 'RÃ¼ckgÃ¤ngig gemacht' : 'Undone', 'success');
+            showToast(lang === 'de' ? 'Rückgängig gemacht' : 'Undone', 'success');
             await load();
         }
     };
@@ -4444,7 +4487,7 @@ const NotificationsPage = () => {
         const newVal = !notifSettings?.dnd_enabled;
         await api.put('notification-settings/dnd', { enabled: newVal });
         setNotifSettings(s => ({ ...s, dnd_enabled: newVal }));
-        showToast(newVal ? (lang === 'de' ? 'Nicht stÃ¶ren aktiviert' : 'DND enabled') : (lang === 'de' ? 'Nicht stÃ¶ren deaktiviert' : 'DND disabled'), 'success');
+        showToast(newVal ? (lang === 'de' ? 'Nicht stören aktiviert' : 'DND enabled') : (lang === 'de' ? 'Nicht stören deaktiviert' : 'DND disabled'), 'success');
     };
 
     const updateNS = async (type, field, value) => {
@@ -4454,7 +4497,7 @@ const NotificationsPage = () => {
 
     const discoverChannels = async () => {
         const result = await api.post('notification-settings/discover-channels');
-        showToast(result?.found > 0 ? `${result.found} ${lang === 'de' ? 'KanÃ¤le gefunden' : 'channels found'}` : (lang === 'de' ? 'Keine neuen KanÃ¤le' : 'No new channels'), result?.found > 0 ? 'success' : 'info');
+        showToast(result?.found > 0 ? `${result.found} ${lang === 'de' ? 'Kanäle gefunden' : 'channels found'}` : (lang === 'de' ? 'Keine neuen Kanäle' : 'No new channels'), result?.found > 0 ? 'success' : 'info');
         await load();
     };
 
@@ -4479,8 +4522,8 @@ const NotificationsPage = () => {
 
             {stats && <div style={{ display: 'flex', gap: 12, marginBottom: 16, fontSize: 12, color: 'var(--text-muted)' }}>
                 <span>30d:</span><span>{stats.total} {lang === 'de' ? 'gesamt' : 'total'}</span>
-                <span>Â· {stats.read} {lang === 'de' ? 'gelesen' : 'read'}</span>
-                <span>Â· {stats.sent} push</span>
+                <span>· {stats.read} {lang === 'de' ? 'gelesen' : 'read'}</span>
+                <span>· {stats.sent} push</span>
             </div>}
 
             {tab === 'settings' ? (
@@ -4492,7 +4535,7 @@ const NotificationsPage = () => {
                             <div className="card-title" style={{ marginBottom: 12 }}>{lang === 'de' ? 'Typen' : 'Types'}</div>
                             {['anomaly', 'suggestion', 'critical', 'info'].map(type => {
                                 const s = notifSettings?.settings?.find(x => x.type === type);
-                                const labels = { anomaly: lang === 'de' ? 'Anomalien' : 'Anomalies', suggestion: lang === 'de' ? 'VorschlÃ¤ge' : 'Suggestions', critical: lang === 'de' ? 'Kritisch' : 'Critical', info: 'Info' };
+                                const labels = { anomaly: lang === 'de' ? 'Anomalien' : 'Anomalies', suggestion: lang === 'de' ? 'Vorschläge' : 'Suggestions', critical: lang === 'de' ? 'Kritisch' : 'Critical', info: 'Info' };
                                 const typeSound = extSettings?.type_sounds?.[type];
                                 return (<div key={type} style={{ padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -4520,7 +4563,7 @@ const NotificationsPage = () => {
                                 <span className="mdi mdi-moon-waning-crescent" style={{ marginRight: 8, color: 'var(--accent-primary)' }} />
                                 {lang === 'de' ? 'Ruhezeiten' : 'Quiet Hours'}
                             </div>
-                            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8 }}>{lang === 'de' ? 'Kein Push in diesem Zeitraum (auÃŸer Kritisch)' : 'No push during this period (except Critical)'}</div>
+                            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8 }}>{lang === 'de' ? 'Kein Push in diesem Zeitraum (außer Kritisch)' : 'No push during this period (except Critical)'}</div>
                             <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
                                 <div style={{ fontSize: 12 }}>{lang === 'de' ? 'Werktag' : 'Weekday'}:</div>
                                 <input type="time" className="input" value={extSettings?.quiet_hours?.start || '22:00'} style={{ width: 90, padding: '4px 8px', fontSize: 12 }}
@@ -4548,7 +4591,7 @@ const NotificationsPage = () => {
                             {[
                                 { key: 'escalation', icon: 'mdi-arrow-up-bold', de: 'Eskalation (Push â†’ TTS)', en: 'Escalation (Push â†’ TTS)' },
                                 { key: 'repeat_rules', icon: 'mdi-repeat', de: 'Wiederholung bei Nichtlesen', en: 'Repeat if unread' },
-                                { key: 'confirmation_required', icon: 'mdi-check-decagram', de: 'BestÃ¤tigungspflicht (Kritisch)', en: 'Confirmation required (Critical)' },
+                                { key: 'confirmation_required', icon: 'mdi-check-decagram', de: 'Bestätigungspflicht (Kritisch)', en: 'Confirmation required (Critical)' },
                                 { key: 'critical_override', icon: 'mdi-alert-octagon', de: 'Kritisch durchbricht alles', en: 'Critical overrides everything' },
                                 { key: 'fallback_channels', icon: 'mdi-swap-horizontal', de: 'Kanal-Fallback bei Fehler', en: 'Channel fallback on error' },
                                 { key: 'vacation_coupling', icon: 'mdi-palm-tree', de: 'Urlaub: nur Kritisch', en: 'Vacation: critical only' },
@@ -4638,7 +4681,7 @@ const NotificationsPage = () => {
                     {/* RIGHT COLUMN */}
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                         {/* Push Channels - Collapsible */}
-                        <CollapsibleCard title={`${lang === 'de' ? 'Push-KanÃ¤le' : 'Push Channels'} Â· ${notifSettings?.channels?.length || 0}`} icon="mdi-send" defaultOpen={false}>
+                        <CollapsibleCard title={`${lang === 'de' ? 'Push-Kanäle' : 'Push Channels'} · ${notifSettings?.channels?.length || 0}`} icon="mdi-send" defaultOpen={false}>
                             <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
                                 <button className="btn btn-sm btn-secondary" onClick={async () => { await api.post('notification-settings/scan-channels'); await load(); }}>
                                     <span className="mdi mdi-refresh" style={{ marginRight: 4 }} />{lang === 'de' ? 'Suchen' : 'Scan'}
@@ -4648,13 +4691,13 @@ const NotificationsPage = () => {
                                 {(notifSettings?.channels || []).map(ch => (
                                     <div key={ch.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--border)' }}>
                                         <div>
-                                            <div style={{ fontSize: 13, fontWeight: 500 }}>{ch.name}</div>
-                                            <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{ch.ha_service}</div>
+                                            <div style={{ fontSize: 13, fontWeight: 500 }}>{ch.display_name}</div>
+                                            <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{ch.service_name}</div>
                                         </div>
                                         <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
                                             <button className="btn btn-sm btn-ghost" onClick={async () => { await api.post(`notification-settings/test-channel/${ch.id}`); showToast('Test sent', 'success'); }} style={{ fontSize: 10 }}>Test</button>
-                                            <label className="toggle" style={{ transform: 'scale(0.8)' }}><input type="checkbox" checked={ch.is_active}
-                                                onChange={async () => { await api.put(`notification-settings/channel/${ch.id}`, { is_active: !ch.is_active }); await load(); }} /><div className="toggle-slider" /></label>
+                                            <label className="toggle" style={{ transform: 'scale(0.8)' }}><input type="checkbox" checked={ch.is_enabled}
+                                                onChange={async () => { await api.put(`notification-settings/channel/${ch.id}`, { is_enabled: !ch.is_enabled }); await load(); }} /><div className="toggle-slider" /></label>
                                         </div>
                                     </div>
                                 ))}
@@ -4685,7 +4728,7 @@ const NotificationsPage = () => {
 
                         {/* TTS - Collapsible */}
                         {ttsDevices.length > 0 && (
-                            <CollapsibleCard title={`${lang === 'de' ? 'Sprachausgabe (TTS)' : 'Text-to-Speech'} Â· ${ttsDevices.length}`} icon="mdi-bullhorn" defaultOpen={false}>
+                            <CollapsibleCard title={`${lang === 'de' ? 'Sprachausgabe (TTS)' : 'Text-to-Speech'} · ${ttsDevices.length}`} icon="mdi-bullhorn" defaultOpen={false}>
                                 {ttsDevices.map(d => (
                                     <div key={d.entity_id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--border)' }}>
                                         <span style={{ fontSize: 13 }}>{d.name}</span>
@@ -4699,7 +4742,7 @@ const NotificationsPage = () => {
                         )}
 
                         {/* Muted Devices - Collapsible */}
-                        <CollapsibleCard title={`${lang === 'de' ? 'Stummgeschaltete GerÃ¤te' : 'Muted Devices'} Â· ${notifSettings?.muted_devices?.length || 0}`} icon="mdi-volume-off" defaultOpen={false}>
+                        <CollapsibleCard title={`${lang === 'de' ? 'Stummgeschaltete Geräte' : 'Muted Devices'} · ${notifSettings?.muted_devices?.length || 0}`} icon="mdi-volume-off" defaultOpen={false}>
                             {notifSettings?.muted_devices?.length > 0 ? notifSettings.muted_devices.map(m => (
                                 <div key={m.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0' }}>
                                     <span style={{ fontSize: 13 }}>{devices.find(d => d.id === m.device_id)?.name || `#${m.device_id}`}</span>
@@ -4708,7 +4751,7 @@ const NotificationsPage = () => {
                                         <span className="mdi mdi-volume-high" style={{ marginRight: 2 }} />{lang === 'de' ? 'Entstummen' : 'Unmute'}
                                     </button>
                                 </div>
-                            )) : <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Keine stummgeschalteten GerÃ¤te.' : 'No muted devices.'}</p>}
+                            )) : <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Keine stummgeschalteten Geräte.' : 'No muted devices.'}</p>}
                         </CollapsibleCard>
 
                         {/* DND Button */}
@@ -4716,7 +4759,7 @@ const NotificationsPage = () => {
                             onClick={async () => { const newVal = !notifSettings?.dnd_enabled; setNotifSettings(s => ({ ...s, dnd_enabled: newVal })); await api.put('notification-settings/dnd', { enabled: newVal }); }}
                             style={{ fontSize: 13, padding: '10px 16px' }}>
                             <span className={`mdi ${notifSettings?.dnd_enabled ? 'mdi-bell-off' : 'mdi-bell-ring'}`} style={{ marginRight: 8 }} />
-                            {notifSettings?.dnd_enabled ? (lang === 'de' ? 'DND aktiv â€“ Benachrichtigungen stumm' : 'DND active') : (lang === 'de' ? 'Nicht stÃ¶ren aktivieren' : 'Enable Do Not Disturb')}
+                            {notifSettings?.dnd_enabled ? (lang === 'de' ? 'DND aktiv â€“ Benachrichtigungen stumm' : 'DND active') : (lang === 'de' ? 'Nicht stören aktivieren' : 'Enable Do Not Disturb')}
                         </button>
                     </div>
                 </div>
@@ -4727,7 +4770,7 @@ const NotificationsPage = () => {
                     <div>
                         <div className="card-title">
                             <span className="mdi mdi-lightbulb-on" style={{ marginRight: 8, color: 'var(--warning)' }} />
-                            {lang === 'de' ? 'VorschlÃ¤ge & Automationen' : 'Suggestions & Automations'}
+                            {lang === 'de' ? 'Vorschläge & Automationen' : 'Suggestions & Automations'}
                         </div>
                     </div>
                     <div style={{ display: 'flex', gap: 6 }}>
@@ -4736,10 +4779,10 @@ const NotificationsPage = () => {
                                     onClick={() => setPredFilter(f)} style={{ fontSize: 12 }}>
                                 {f === 'all' ? (lang === 'de' ? 'Alle' : 'All') :
                                  f === 'pending' ? (lang === 'de' ? 'Offen' : 'Pending') :
-                                 f === 'executed' ? (lang === 'de' ? 'AusgefÃ¼hrt' : 'Executed') :
-                                 f === 'confirmed' ? (lang === 'de' ? 'BestÃ¤tigt' : 'Confirmed') :
+                                 f === 'executed' ? (lang === 'de' ? 'Ausgeführt' : 'Executed') :
+                                 f === 'confirmed' ? (lang === 'de' ? 'Bestätigt' : 'Confirmed') :
                                  f === 'rejected' ? (lang === 'de' ? 'Abgelehnt' : 'Rejected') :
-                                 f === 'undone' ? (lang === 'de' ? 'RÃ¼ckgÃ¤ngig' : 'Undone') : f}
+                                 f === 'undone' ? (lang === 'de' ? 'Rückgängig' : 'Undone') : f}
                             </button>
                         ))}
                     </div>
@@ -4747,8 +4790,8 @@ const NotificationsPage = () => {
                 {filteredPreds.length === 0 ? (
                     <div className="empty-state">
                         <span className="mdi mdi-lightbulb-outline" />
-                        <h3>{lang === 'de' ? 'Keine VorschlÃ¤ge' : 'No suggestions'}</h3>
-                        <p>{lang === 'de' ? 'VorschlÃ¤ge erscheinen sobald Muster erkannt werden.' : 'Suggestions will appear once patterns are detected.'}</p>
+                        <h3>{lang === 'de' ? 'Keine Vorschläge' : 'No suggestions'}</h3>
+                        <p>{lang === 'de' ? 'Vorschläge erscheinen sobald Muster erkannt werden.' : 'Suggestions will appear once patterns are detected.'}</p>
                     </div>
                 ) : (
                     (() => {
@@ -4793,7 +4836,7 @@ const NotificationsPage = () => {
                                     </>
                                 )}
                                 {pred.status === 'executed' && (
-                                    <button className="btn btn-sm btn-warning" onClick={() => undoPred(pred.id)} title={lang === 'de' ? 'RÃ¼ckgÃ¤ngig' : 'Undo'}>
+                                    <button className="btn btn-sm btn-warning" onClick={() => undoPred(pred.id)} title={lang === 'de' ? 'Rückgängig' : 'Undo'}>
                                         <span className="mdi mdi-undo" />
                                     </button>
                                 )}
@@ -4891,7 +4934,7 @@ const OnboardingWizard = ({ onComplete }) => {
             const text = await file.text();
             const data = JSON.parse(text);
             if (!data.version) {
-                setBackupError(lang === 'de' ? 'UngÃ¼ltige Backup-Datei' : 'Invalid backup file');
+                setBackupError(lang === 'de' ? 'Ungültige Backup-Datei' : 'Invalid backup file');
                 return;
             }
             setBackupData(data);
@@ -4956,25 +4999,25 @@ const OnboardingWizard = ({ onComplete }) => {
         de: {
             welcome_title: 'Willkommen bei MindHome!',
             welcome_sub: 'Dein Zuhause wird intelligent. Lass uns gemeinsam alles einrichten.',
-            lang_title: 'Sprache wÃ¤hlen',
+            lang_title: 'Sprache wählen',
             lang_sub: 'In welcher Sprache soll MindHome kommunizieren?',
             admin_title: 'Dein Profil',
-            admin_sub: 'Erstelle das Admin-Konto fÃ¼r MindHome.',
+            admin_sub: 'Erstelle das Admin-Konto für MindHome.',
             admin_name: 'Dein Name',
-            discover_title: 'GerÃ¤te erkennen',
-            discover_sub: 'MindHome sucht jetzt nach allen GerÃ¤ten in deinem Home Assistant.',
-            discover_btn: 'GerÃ¤te suchen',
-            discover_searching: 'Suche lÃ¤uft...',
-            discover_found: 'GerÃ¤te gefunden in',
+            discover_title: 'Geräte erkennen',
+            discover_sub: 'MindHome sucht jetzt nach allen Geräten in deinem Home Assistant.',
+            discover_btn: 'Geräte suchen',
+            discover_searching: 'Suche läuft...',
+            discover_found: 'Geräte gefunden in',
             discover_domains: 'Bereichen',
             privacy_title: 'Datenschutz',
-            privacy_sub: 'Alle deine Daten bleiben lokal auf deinem GerÃ¤t. Nichts wird an externe Server gesendet. Du hast volle Kontrolle.',
-            privacy_note: 'Du kannst spÃ¤ter pro Raum einstellen welche Daten erfasst werden.',
+            privacy_sub: 'Alle deine Daten bleiben lokal auf deinem Gerät. Nichts wird an externe Server gesendet. Du hast volle Kontrolle.',
+            privacy_note: 'Du kannst später pro Raum einstellen welche Daten erfasst werden.',
             done_title: 'Alles bereit!',
             done_sub: 'MindHome beginnt jetzt mit der Lernphase. Die ersten Tage beobachtet MindHome nur und sammelt Daten.',
             start: 'Los geht\'s',
             next: 'Weiter',
-            back: 'ZurÃ¼ck',
+            back: 'Zurück',
             finish: 'MindHome starten'
         },
         en: {
@@ -5035,7 +5078,7 @@ const OnboardingWizard = ({ onComplete }) => {
                                     </p>
                                     <button className="btn btn-secondary" onClick={() => restoreInputRef.current?.click()}>
                                         <span className="mdi mdi-upload" />
-                                        {lang === 'de' ? 'Backup-Datei wÃ¤hlen' : 'Choose Backup File'}
+                                        {lang === 'de' ? 'Backup-Datei wählen' : 'Choose Backup File'}
                                     </button>
                                     <input ref={restoreInputRef} type="file" accept=".json" onChange={handleFileSelect} style={{ display: 'none' }} />
                                     {backupError && (
@@ -5052,11 +5095,11 @@ const OnboardingWizard = ({ onComplete }) => {
                                     </div>
                                     <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 16, lineHeight: 1.6 }}>
                                         <div>{lang === 'de' ? 'Erstellt am' : 'Created'}: {new Date(backupData.exported_at).toLocaleString(lang === 'de' ? 'de-DE' : 'en-US')}</div>
-                                        <div>{backupData.rooms?.length || 0} {lang === 'de' ? 'RÃ¤ume' : 'Rooms'} Â· {backupData.devices?.length || 0} {lang === 'de' ? 'GerÃ¤te' : 'Devices'} Â· {backupData.users?.length || 0} {lang === 'de' ? 'Personen' : 'Users'}</div>
+                                        <div>{backupData.rooms?.length || 0} {lang === 'de' ? 'Räume' : 'Rooms'} · {backupData.devices?.length || 0} {lang === 'de' ? 'Geräte' : 'Devices'} · {backupData.users?.length || 0} {lang === 'de' ? 'Personen' : 'Users'}</div>
                                     </div>
                                     <p style={{ fontSize: 14, fontWeight: 600, marginBottom: 16 }}>
                                         {lang === 'de'
-                                            ? 'MÃ¶chtest du dieses Backup in MindHome laden?'
+                                            ? 'Möchtest du dieses Backup in MindHome laden?'
                                             : 'Do you want to load this backup into MindHome?'}
                                     </p>
                                     <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
@@ -5203,95 +5246,246 @@ const OnboardingWizard = ({ onComplete }) => {
 // Phase 3: Energy Dashboard Page
 // ================================================================
 const EnergyPage = () => {
-    const { lang, showToast } = useApp();
+    const { lang, showToast, rooms, devices } = useApp();
     const [config, setConfig] = useState(null);
     const [readings, setReadings] = useState([]);
     const [standbyConfigs, setSConfigs] = useState([]);
-    const [summary, setSummary] = useState(null);
+    const [stats, setStats] = useState(null);
     const [hours, setHours] = useState(24);
+    const [sensors, setSensors] = useState([]);
+    const [showDiscover, setShowDiscover] = useState(false);
+    const [discovering, setDiscovering] = useState(false);
+    const [tab, setTab] = useState('overview');
+    const [showAddStandby, setShowAddStandby] = useState(false);
+    const [newStandby, setNewStandby] = useState({ entity_id: '', threshold_watts: 5, idle_minutes: 30, auto_off: false });
+    const [alertThreshold, setAlertThreshold] = useState(null);
 
     const load = () => {
-        api.get('energy/config').then(d => setConfig(d || null)).catch(() => {});
+        api.get('energy/config').then(d => setConfig(d || { price_per_kwh: 0.25, currency: 'EUR', solar_enabled: false })).catch(() => {});
         api.get(`energy/readings?hours=${hours}`).then(d => setReadings(Array.isArray(d) ? d : [])).catch(() => {});
         api.get('energy/standby-config').then(d => setSConfigs(Array.isArray(d) ? d : [])).catch(() => {});
-        api.get('energy/summary').then(d => setSummary(d || null)).catch(() => {});
+        api.get('energy/stats').then(d => setStats(d || null)).catch(() => {});
     };
     useEffect(() => { load(); }, [hours]);
 
-    const saveConfig = () => {
-        api.put('energy/config', config).then(() => showToast(lang === 'de' ? 'Gespeichert' : 'Saved', 'success'));
+    const saveConfig = () => api.put('energy/config', config).then(() => showToast(lang === 'de' ? 'Gespeichert' : 'Saved', 'success'));
+
+    const discoverSensors = () => {
+        setDiscovering(true);
+        api.get('energy/discover-sensors').then(d => { setSensors(Array.isArray(d) ? d : []); setShowDiscover(true); }).finally(() => setDiscovering(false));
     };
+
+    const addStandby = () => {
+        api.post('energy/standby-config', newStandby).then(() => { showToast(lang === 'de' ? 'Standby-Erkennung hinzugefuegt' : 'Standby detection added', 'success'); setShowAddStandby(false); setNewStandby({ entity_id: '', threshold_watts: 5, idle_minutes: 30, auto_off: false }); load(); });
+    };
+
+    const deleteStandby = (id) => api.delete(`energy/standby-config/${id}`).then(() => load());
+    const updateStandby = (id, data) => api.put(`energy/standby-config/${id}`, data).then(() => load());
+
+    const tabs = [
+        { id: 'overview', label: lang === 'de' ? 'Uebersicht' : 'Overview', icon: 'mdi-flash' },
+        { id: 'readings', label: lang === 'de' ? 'Messwerte' : 'Readings', icon: 'mdi-chart-line' },
+        { id: 'standby', label: 'Standby', icon: 'mdi-power-standby' },
+        { id: 'config', label: lang === 'de' ? 'Konfiguration' : 'Configuration', icon: 'mdi-cog' },
+    ];
 
     return (
         <div>
-            <h2 style={{ marginBottom: 16 }}>{lang === 'de' ? 'Energie-Dashboard' : 'Energy Dashboard'}</h2>
-            {config && (
-                <div className="card animate-in" style={{ marginBottom: 16 }}>
-                    <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)', fontWeight: 600 }}>
-                        {lang === 'de' ? 'Konfiguration' : 'Configuration'}
-                    </div>
-                    <div style={{ padding: 16, display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-                        <div>
-                            <label style={{ fontSize: 12, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>{lang === 'de' ? 'Preis/kWh' : 'Price/kWh'}</label>
-                            <input type="number" step="0.01" className="form-input" style={{ width: 100 }} value={config.price_per_kwh || 0.25}
-                                onChange={e => setConfig({ ...config, price_per_kwh: parseFloat(e.target.value) })} />
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                <h2>{lang === 'de' ? 'Energie-Dashboard' : 'Energy Dashboard'}</h2>
+                <button className="btn btn-primary" onClick={discoverSensors} disabled={discovering}>
+                    <span className="mdi mdi-magnify" style={{ marginRight: 6 }} />
+                    {discovering ? '...' : (lang === 'de' ? 'Sensoren suchen' : 'Discover sensors')}
+                </button>
+            </div>
+
+            <div style={{ display: 'flex', gap: 4, marginBottom: 16, flexWrap: 'wrap' }}>
+                {tabs.map(t => (
+                    <button key={t.id} className={`btn btn-sm ${tab === t.id ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setTab(t.id)}>
+                        <span className={'mdi ' + t.icon} style={{ marginRight: 4 }} />{t.label}
+                    </button>
+                ))}
+            </div>
+
+            {tab === 'overview' && (
+                <div>
+                    {stats && (
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 16 }}>
+                            {[
+                                { label: lang === 'de' ? 'Heute' : 'Today', kwh: stats.today?.kwh, cost: stats.today?.cost },
+                                { label: lang === 'de' ? 'Woche' : 'Week', kwh: stats.week?.kwh, cost: stats.week?.cost },
+                                { label: lang === 'de' ? 'Monat' : 'Month', kwh: stats.month?.kwh, cost: stats.month?.cost },
+                            ].map(s => (
+                                <div key={s.label} className="card animate-in" style={{ padding: 16, textAlign: 'center' }}>
+                                    <div style={{ fontSize: 22, fontWeight: 700 }}>{(s.kwh || 0).toFixed(1)} kWh</div>
+                                    <div style={{ fontSize: 16, color: 'var(--warning)', fontWeight: 600 }}>{(s.cost || 0).toFixed(2)} {stats.currency || 'EUR'}</div>
+                                    <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>{s.label}</div>
+                                </div>
+                            ))}
+                            <div className="card animate-in" style={{ padding: 16, textAlign: 'center' }}>
+                                <div style={{ fontSize: 22, fontWeight: 700 }}>{standbyConfigs.length}</div>
+                                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>{lang === 'de' ? 'Standby-Ueberwachung' : 'Standby monitoring'}</div>
+                            </div>
                         </div>
-                        <div>
-                            <label style={{ fontSize: 12, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>{lang === 'de' ? 'Währung' : 'Currency'}</label>
-                            <input type="text" className="form-input" style={{ width: 80 }} value={config.currency || 'EUR'}
-                                onChange={e => setConfig({ ...config, currency: e.target.value })} />
+                    )}
+                    {!stats && (
+                        <div className="card animate-in" style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)' }}>
+                            <span className="mdi mdi-flash-off" style={{ fontSize: 40, display: 'block', marginBottom: 8 }} />
+                            {lang === 'de' ? 'Noch keine Energiedaten. Klicke "Sensoren suchen" um Energie-Sensoren aus Home Assistant zu finden.' : 'No energy data yet. Click "Discover sensors" to find energy sensors from Home Assistant.'}
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {tab === 'readings' && (
+                <div>
+                    <div style={{ marginBottom: 12, display: 'flex', gap: 6 }}>
+                        {[6, 12, 24, 48, 168].map(hr => (
+                            <button key={hr} className={`btn btn-sm ${hours === hr ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setHours(hr)}>{hr}h</button>
+                        ))}
+                    </div>
+                    <div className="card" style={{ overflow: 'hidden' }}>
+                        <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between' }}>
+                            <span style={{ fontWeight: 600 }}>{lang === 'de' ? 'Messwerte' : 'Readings'}</span>
+                            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{readings.length} {lang === 'de' ? 'Eintraege' : 'entries'}</span>
+                        </div>
+                        <div style={{ maxHeight: 500, overflowY: 'auto' }}>
+                            {readings.length === 0 ? (
+                                <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)' }}>
+                                    {lang === 'de' ? 'Keine Messwerte im gewaehlten Zeitraum' : 'No readings in selected period'}
+                                </div>
+                            ) : (
+                                <table className="data-table" style={{ width: '100%' }}>
+                                    <thead><tr><th>Entity</th><th>W</th><th>kWh</th><th>{lang === 'de' ? 'Zeit' : 'Time'}</th></tr></thead>
+                                    <tbody>
+                                        {readings.slice(0, 200).map(r => (
+                                            <tr key={r.id}><td style={{ fontSize: 12 }}>{r.entity_id}</td><td>{r.power_w?.toFixed(1)}</td><td>{r.energy_kwh?.toFixed(3)}</td>
+                                            <td style={{ fontSize: 12 }}>{r.created_at ? new Date(r.created_at).toLocaleString() : '-'}</td></tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {tab === 'standby' && (
+                <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                        <span style={{ fontWeight: 600 }}>{lang === 'de' ? 'Standby-Erkennung' : 'Standby Detection'}</span>
+                        <button className="btn btn-sm btn-primary" onClick={() => setShowAddStandby(true)}>
+                            <span className="mdi mdi-plus" style={{ marginRight: 4 }} />{lang === 'de' ? 'Hinzufuegen' : 'Add'}
+                        </button>
+                    </div>
+                    {standbyConfigs.length === 0 ? (
+                        <div className="card animate-in" style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)' }}>
+                            {lang === 'de' ? 'Keine Standby-Ueberwachung konfiguriert. Fuege Geraete hinzu um Standby-Verbrauch zu erkennen.' : 'No standby monitoring configured. Add devices to detect standby consumption.'}
+                        </div>
+                    ) : standbyConfigs.map(sc => (
+                        <div key={sc.id} className="card animate-in" style={{ marginBottom: 8, padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div>
+                                <div style={{ fontWeight: 500 }}>{sc.entity_id}</div>
+                                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                                    Schwelle: {sc.threshold_watts}W | Idle: {sc.idle_minutes}min | Auto-Off: {sc.auto_off ? 'Ja' : 'Nein'}
+                                </div>
+                            </div>
+                            <div style={{ display: 'flex', gap: 6 }}>
+                                <button className="btn btn-sm btn-ghost" onClick={() => updateStandby(sc.id, { auto_off: !sc.auto_off })} title="Toggle Auto-Off">
+                                    <span className={`mdi ${sc.auto_off ? 'mdi-power-plug-off' : 'mdi-power-plug'}`} />
+                                </button>
+                                <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} onClick={() => deleteStandby(sc.id)}>
+                                    <span className="mdi mdi-delete" />
+                                </button>
+                            </div>
+                        </div>
+                    ))}
+                    {showAddStandby && (
+                        <Modal title={lang === 'de' ? 'Standby-Ueberwachung hinzufuegen' : 'Add standby monitoring'} onClose={() => setShowAddStandby(false)}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                                <div>
+                                    <label style={{ fontSize: 12, color: 'var(--text-muted)' }}>Entity ID</label>
+                                    <input className="form-input" value={newStandby.entity_id} onChange={e => setNewStandby({ ...newStandby, entity_id: e.target.value })} placeholder="sensor.power_xyz" />
+                                </div>
+                                <div>
+                                    <label style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Schwelle (Watt)' : 'Threshold (Watts)'}</label>
+                                    <input type="number" className="form-input" value={newStandby.threshold_watts} onChange={e => setNewStandby({ ...newStandby, threshold_watts: parseFloat(e.target.value) })} />
+                                </div>
+                                <div>
+                                    <label style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Idle-Zeit (Minuten)' : 'Idle time (minutes)'}</label>
+                                    <input type="number" className="form-input" value={newStandby.idle_minutes} onChange={e => setNewStandby({ ...newStandby, idle_minutes: parseInt(e.target.value) })} />
+                                </div>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                    <input type="checkbox" checked={newStandby.auto_off} onChange={e => setNewStandby({ ...newStandby, auto_off: e.target.checked })} />
+                                    {lang === 'de' ? 'Automatisch ausschalten' : 'Auto turn off'}
+                                </label>
+                                <button className="btn btn-primary" onClick={addStandby}>{lang === 'de' ? 'Hinzufuegen' : 'Add'}</button>
+                            </div>
+                        </Modal>
+                    )}
+                </div>
+            )}
+
+            {tab === 'config' && config && (
+                <div className="card animate-in">
+                    <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)', fontWeight: 600 }}>{lang === 'de' ? 'Energie-Einstellungen' : 'Energy Settings'}</div>
+                    <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                            <div>
+                                <label style={{ fontSize: 12, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>{lang === 'de' ? 'Preis/kWh' : 'Price/kWh'}</label>
+                                <input type="number" step="0.01" className="form-input" style={{ width: 100 }} value={config.price_per_kwh || 0.25}
+                                    onChange={e => setConfig({ ...config, price_per_kwh: parseFloat(e.target.value) })} />
+                            </div>
+                            <div>
+                                <label style={{ fontSize: 12, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>{lang === 'de' ? 'Waehrung' : 'Currency'}</label>
+                                <input type="text" className="form-input" style={{ width: 80 }} value={config.currency || 'EUR'}
+                                    onChange={e => setConfig({ ...config, currency: e.target.value })} />
+                            </div>
                         </div>
                         <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
                             <input type="checkbox" checked={config.solar_enabled || false}
-                                onChange={e => setConfig({ ...config, solar_enabled: e.target.checked })} />
-                            Solar
+                                onChange={e => setConfig({ ...config, solar_enabled: e.target.checked })} /> Solar
                         </label>
-                        <button className="btn btn-primary" onClick={saveConfig}>{lang === 'de' ? 'Speichern' : 'Save'}</button>
+                        {config.solar_enabled && (
+                            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                                <div>
+                                    <label style={{ fontSize: 12, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Solar Entity</label>
+                                    <input className="form-input" style={{ width: 220 }} value={config.solar_entity || ''} onChange={e => setConfig({ ...config, solar_entity: e.target.value })} />
+                                </div>
+                                <div>
+                                    <label style={{ fontSize: 12, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Grid Import Entity</label>
+                                    <input className="form-input" style={{ width: 220 }} value={config.grid_import_entity || ''} onChange={e => setConfig({ ...config, grid_import_entity: e.target.value })} />
+                                </div>
+                                <div>
+                                    <label style={{ fontSize: 12, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Grid Export Entity</label>
+                                    <input className="form-input" style={{ width: 220 }} value={config.grid_export_entity || ''} onChange={e => setConfig({ ...config, grid_export_entity: e.target.value })} />
+                                </div>
+                            </div>
+                        )}
+                        <button className="btn btn-primary" onClick={saveConfig} style={{ alignSelf: 'flex-start' }}>{lang === 'de' ? 'Speichern' : 'Save'}</button>
                     </div>
                 </div>
             )}
-            {summary && (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 16 }}>
-                    <div className="card animate-in" style={{ padding: 16, textAlign: 'center' }}>
-                        <div style={{ fontSize: 24, fontWeight: 700 }}>{(summary.total_kwh || 0).toFixed(1)} kWh</div>
-                        <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Gesamt heute' : 'Total today'}</div>
-                    </div>
-                    <div className="card animate-in" style={{ padding: 16, textAlign: 'center' }}>
-                        <div style={{ fontSize: 24, fontWeight: 700 }}>{(summary.total_cost || 0).toFixed(2)} {config?.currency || 'EUR'}</div>
-                        <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Kosten heute' : 'Cost today'}</div>
-                    </div>
-                    <div className="card animate-in" style={{ padding: 16, textAlign: 'center' }}>
-                        <div style={{ fontSize: 24, fontWeight: 700 }}>{(summary.current_power_w || 0).toFixed(0)} W</div>
-                        <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Aktuelle Leistung' : 'Current power'}</div>
-                    </div>
-                    <div className="card animate-in" style={{ padding: 16, textAlign: 'center' }}>
-                        <div style={{ fontSize: 24, fontWeight: 700 }}>{standbyConfigs.length}</div>
-                        <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Standby-Geräte' : 'Standby devices'}</div>
-                    </div>
-                </div>
-            )}
-            <div style={{ marginBottom: 12, display: 'flex', gap: 6 }}>
-                {[6, 12, 24, 48, 168].map(hr => (
-                    <button key={hr} className={`btn btn-sm ${hours === hr ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setHours(hr)}>{hr}h</button>
-                ))}
-            </div>
-            <div className="card" style={{ overflow: 'hidden' }}>
-                <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ fontWeight: 600 }}>{lang === 'de' ? 'Messwerte' : 'Readings'}</span>
-                    <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{readings.length} {lang === 'de' ? 'Einträge' : 'entries'}</span>
-                </div>
-                <div style={{ maxHeight: 400, overflowY: 'auto' }}>
-                    <table className="data-table" style={{ width: '100%' }}>
-                        <thead><tr><th>Entity</th><th>W</th><th>kWh</th><th>{lang === 'de' ? 'Zeit' : 'Time'}</th></tr></thead>
-                        <tbody>
-                            {readings.slice(0, 100).map(r => (
-                                <tr key={r.id}><td>{r.entity_id}</td><td>{r.power_w?.toFixed(1)}</td><td>{r.energy_kwh?.toFixed(3)}</td>
-                                <td>{r.created_at ? new Date(r.created_at).toLocaleTimeString() : '-'}</td></tr>
+
+            {showDiscover && (
+                <Modal title={lang === 'de' ? 'Gefundene Energie-Sensoren' : 'Discovered Energy Sensors'} onClose={() => setShowDiscover(false)}>
+                    {sensors.length === 0 ? (
+                        <div style={{ padding: 16, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Keine Energie-Sensoren gefunden' : 'No energy sensors found'}</div>
+                    ) : (
+                        <div style={{ maxHeight: 400, overflowY: 'auto' }}>
+                            {sensors.map(s => (
+                                <div key={s.entity_id} style={{ padding: '8px 12px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <div>
+                                        <div style={{ fontWeight: 500, fontSize: 13 }}>{s.name}</div>
+                                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{s.entity_id} | {s.state} {s.unit}</div>
+                                    </div>
+                                    <span className={`badge badge-${s.device_class === 'power' ? 'warning' : 'info'}`} style={{ fontSize: 10 }}>{s.device_class || s.unit}</span>
+                                </div>
                             ))}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
+                        </div>
+                    )}
+                </Modal>
+            )}
         </div>
     );
 };
@@ -5300,77 +5494,227 @@ const EnergyPage = () => {
 // Phase 3: Scenes Page
 // ================================================================
 const ScenesPage = () => {
-    const { lang, showToast } = useApp();
+    const { lang, showToast, rooms } = useApp();
     const [scenes, setScenes] = useState([]);
+    const [suggestions, setSuggestions] = useState([]);
+    const [showCreate, setShowCreate] = useState(false);
+    const [editScene, setEditScene] = useState(null);
+    const [newScene, setNewScene] = useState({ name_de: '', name_en: '', icon: 'mdi:palette', room_id: '', states: [], schedule_cron: '', schedule_enabled: false, action_delay_seconds: 0 });
+    const [newAction, setNewAction] = useState({ entity_id: '', state: 'on' });
+    const [tab, setTab] = useState('active');
 
-    const load = () => { api.get('scenes').then(d => setScenes(Array.isArray(d) ? d : [])).catch(() => {}); };
+    const load = () => {
+        api.get('scenes').then(d => setScenes(Array.isArray(d) ? d : [])).catch(() => {});
+        api.get('scenes/suggestions').then(d => setSuggestions(Array.isArray(d) ? d : [])).catch(() => {});
+    };
     useEffect(() => { load(); }, []);
 
     const activate = (id) => api.post(`scenes/${id}/activate`).then(() => { showToast(lang === 'de' ? 'Szene aktiviert' : 'Scene activated', 'success'); load(); });
-    const remove = (id) => { if (confirm(lang === 'de' ? 'Szene löschen?' : 'Delete scene?')) api.delete(`scenes/${id}`).then(() => load()); };
+    const remove = (id) => { if (confirm(lang === 'de' ? 'Szene loeschen?' : 'Delete scene?')) api.delete(`scenes/${id}`).then(() => load()); };
     const accept = (id) => api.put(`scenes/${id}`, { status: 'accepted' }).then(() => { showToast(lang === 'de' ? 'Akzeptiert' : 'Accepted', 'success'); load(); });
+    const toggleActive = (id, active) => api.put(`scenes/${id}`, { is_active: !active }).then(() => load());
 
-    const detected = scenes.filter(s => s.status === 'detected');
-    const accepted = scenes.filter(s => s.status === 'accepted' || s.source === 'manual');
+    const createScene = () => {
+        api.post('scenes', newScene).then(() => {
+            showToast(lang === 'de' ? 'Szene erstellt' : 'Scene created', 'success');
+            setShowCreate(false); setNewScene({ name_de: '', name_en: '', icon: 'mdi:palette', room_id: '', states: [], schedule_cron: '', schedule_enabled: false, action_delay_seconds: 0 }); load();
+        });
+    };
+    const snapshot = (roomId) => api.post('scenes/snapshot', { room_id: roomId }).then(d => { showToast(lang === 'de' ? `Snapshot (${d.device_count} Geraete)` : `Snapshot (${d.device_count} devices)`, 'success'); load(); });
+    const updateScene = () => { if (!editScene) return; api.put(`scenes/${editScene.id}`, editScene).then(() => { showToast(lang === 'de' ? 'Gespeichert' : 'Saved', 'success'); setEditScene(null); load(); }); };
+    const addAction = () => { if (!newAction.entity_id) return; setNewScene({ ...newScene, states: [...newScene.states, { ...newAction }] }); setNewAction({ entity_id: '', state: 'on' }); };
+    const removeAction = (idx) => setNewScene({ ...newScene, states: newScene.states.filter((_, i) => i !== idx) });
+
+    const detected = scenes.filter(s => s.status === 'detected' || s.status === 'suggested');
+    const accepted = scenes.filter(s => s.status === 'accepted' || s.source === 'manual' || s.source === 'snapshot');
+    const cronExamples = [
+        { label: lang === 'de' ? 'Taeglich 20:00' : 'Daily 8pm', value: '0 20 * * *' },
+        { label: lang === 'de' ? 'Mo-Fr 07:00' : 'Mon-Fri 7am', value: '0 7 * * 1-5' },
+        { label: lang === 'de' ? 'Freitag 20:00' : 'Friday 8pm', value: '0 20 * * 5' },
+        { label: lang === 'de' ? 'Wochenende 10:00' : 'Weekend 10am', value: '0 10 * * 0,6' },
+    ];
 
     return (
         <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
                 <h2>{lang === 'de' ? 'Szenen' : 'Scenes'}</h2>
+                <button className="btn btn-primary" onClick={() => setShowCreate(true)}>
+                    <span className="mdi mdi-plus" style={{ marginRight: 4 }} />{lang === 'de' ? 'Szene erstellen' : 'Create scene'}
+                </button>
             </div>
-            {detected.length > 0 && (
-                <div className="card animate-in" style={{ marginBottom: 16 }}>
-                    <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)', fontWeight: 600, color: 'var(--warning)' }}>
-                        {lang === 'de' ? 'Erkannte Szenen' : 'Detected Scenes'} ({detected.length})
-                    </div>
-                    {detected.map(s => (
-                        <div key={s.id} style={{ padding: '10px 16px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <div>
+            <div className="card animate-in" style={{ padding: 16, marginBottom: 16, background: 'var(--bg-tertiary)', borderLeft: '3px solid var(--accent-primary)' }}>
+                <span className="mdi mdi-information" style={{ marginRight: 6, color: 'var(--accent-primary)' }} />
+                {lang === 'de' ? 'Szenen speichern den Zustand mehrerer Geraete und koennen mit einem Klick aktiviert werden. Erstelle Szenen manuell, mache einen Snapshot oder uebernimm erkannte Muster.' : 'Scenes save the state of multiple devices and can be activated with one click.'}
+            </div>
+            <div style={{ display: 'flex', gap: 4, marginBottom: 16 }}>
+                {[['active', lang === 'de' ? 'Aktiv' : 'Active', accepted.length], ['detected', lang === 'de' ? 'Erkannt' : 'Detected', detected.length], ['snapshot', 'Snapshot', '']].map(([id, label, count]) => (
+                    <button key={id} className={`btn btn-sm ${tab === id ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setTab(id)}>{label}{count !== '' ? ` (${count})` : ''}</button>
+                ))}
+            </div>
+
+            {tab === 'active' && (
+                <div className="card animate-in">
+                    {accepted.length === 0 ? (
+                        <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)' }}>
+                            <span className="mdi mdi-palette-outline" style={{ fontSize: 40, display: 'block', marginBottom: 8 }} />
+                            {lang === 'de' ? 'Noch keine Szenen. Erstelle eine oder mache einen Snapshot.' : 'No scenes yet.'}
+                        </div>
+                    ) : accepted.map(s => (
+                        <div key={s.id} style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', opacity: s.is_active ? 1 : 0.5 }}>
+                            <div style={{ flex: 1 }}>
+                                <span className={'mdi ' + (s.icon || 'mdi-palette')} style={{ marginRight: 8, fontSize: 18, color: 'var(--accent-primary)' }} />
                                 <strong>{lang === 'de' ? s.name_de : s.name_en}</strong>
-                                <span style={{ marginLeft: 8, fontSize: 12, color: 'var(--text-muted)' }}>{s.frequency}x</span>
+                                <span style={{ marginLeft: 8, fontSize: 12, color: 'var(--text-muted)' }}>{s.states?.length || 0} {lang === 'de' ? 'Geraete' : 'devices'}</span>
+                                {s.source === 'snapshot' && <span className="badge badge-info" style={{ marginLeft: 6, fontSize: 10 }}>Snapshot</span>}
+                                {s.schedule_enabled && <span className="badge badge-warning" style={{ marginLeft: 6, fontSize: 10 }}><span className="mdi mdi-clock" /> {s.schedule_cron}</span>}
                             </div>
                             <div style={{ display: 'flex', gap: 6 }}>
-                                <button className="btn btn-sm btn-primary" onClick={() => accept(s.id)}>{lang === 'de' ? 'Akzeptieren' : 'Accept'}</button>
-                                <button className="btn btn-sm btn-ghost" onClick={() => remove(s.id)}>✕</button>
+                                <button className="btn btn-sm btn-primary" onClick={() => activate(s.id)} title="Activate"><span className="mdi mdi-play" /></button>
+                                <button className="btn btn-sm btn-ghost" onClick={() => setEditScene({ ...s })}><span className="mdi mdi-pencil" /></button>
+                                <button className="btn btn-sm btn-ghost" onClick={() => toggleActive(s.id, s.is_active)}><span className={`mdi ${s.is_active ? 'mdi-eye' : 'mdi-eye-off'}`} /></button>
+                                <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} onClick={() => remove(s.id)}><span className="mdi mdi-delete" /></button>
                             </div>
                         </div>
                     ))}
                 </div>
             )}
-            <div className="card animate-in">
-                <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)', fontWeight: 600 }}>
-                    {lang === 'de' ? 'Aktive Szenen' : 'Active Scenes'} ({accepted.length})
+
+            {tab === 'detected' && (
+                <div className="card animate-in">
+                    {detected.length === 0 && suggestions.length === 0 ? (
+                        <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)' }}>{lang === 'de' ? 'Noch keine Szenen erkannt.' : 'No scenes detected yet.'}</div>
+                    ) : [...detected, ...suggestions].map(s => (
+                        <div key={s.id} style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div><strong>{s.name_de || s.description || 'Erkannte Szene'}</strong><span style={{ marginLeft: 8, fontSize: 12, color: 'var(--text-muted)' }}>{s.frequency || s.match_count || 0}x</span></div>
+                            <div style={{ display: 'flex', gap: 6 }}>
+                                <button className="btn btn-sm btn-primary" onClick={() => accept(s.id)}>{lang === 'de' ? 'Uebernehmen' : 'Accept'}</button>
+                                <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} onClick={() => remove(s.id)}><span className="mdi mdi-close" /></button>
+                            </div>
+                        </div>
+                    ))}
                 </div>
-                {accepted.length === 0 ? (
-                    <div style={{ padding: 16, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Noch keine Szenen' : 'No scenes yet'}</div>
-                ) : accepted.map(s => (
-                    <div key={s.id} style={{ padding: '10px 16px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            )}
+
+            {tab === 'snapshot' && (
+                <div className="card animate-in">
+                    <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)', fontWeight: 600 }}>{lang === 'de' ? 'Raum-Snapshot' : 'Room Snapshot'}</div>
+                    <div style={{ padding: '8px 16px', color: 'var(--text-muted)', fontSize: 13 }}>{lang === 'de' ? 'Erfasst den aktuellen Zustand aller Geraete eines Raums.' : 'Captures the current state of all devices in a room.'}</div>
+                    {rooms.map(r => (
+                        <div key={r.id} style={{ padding: '10px 16px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span><span className={'mdi ' + (r.icon || 'mdi-door')} style={{ marginRight: 8 }} />{r.name}</span>
+                            <button className="btn btn-sm btn-primary" onClick={() => snapshot(r.id)}><span className="mdi mdi-camera" style={{ marginRight: 4 }} />Snapshot</button>
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            {showCreate && (
+                <Modal title={lang === 'de' ? 'Szene erstellen' : 'Create Scene'} onClose={() => setShowCreate(false)}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                        <div style={{ display: 'flex', gap: 12 }}>
+                            <div style={{ flex: 1 }}><label style={{ fontSize: 12, color: 'var(--text-muted)' }}>Name (DE)</label><input className="form-input" value={newScene.name_de} onChange={e => setNewScene({ ...newScene, name_de: e.target.value })} placeholder="z.B. Filmabend" /></div>
+                            <div style={{ flex: 1 }}><label style={{ fontSize: 12, color: 'var(--text-muted)' }}>Name (EN)</label><input className="form-input" value={newScene.name_en} onChange={e => setNewScene({ ...newScene, name_en: e.target.value })} /></div>
+                        </div>
+                        <div><label style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Raum' : 'Room'}</label>
+                            <select className="form-input" value={newScene.room_id} onChange={e => setNewScene({ ...newScene, room_id: parseInt(e.target.value) || '' })}>
+                                <option value="">{lang === 'de' ? 'Kein Raum' : 'No room'}</option>
+                                {rooms.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                            </select>
+                        </div>
                         <div>
-                            <span className={'mdi ' + (s.icon || 'mdi-palette')} style={{ marginRight: 8 }} />
-                            <strong>{lang === 'de' ? s.name_de : s.name_en}</strong>
-                            <span style={{ marginLeft: 8, fontSize: 12, color: 'var(--text-muted)' }}>{s.states?.length || 0} {lang === 'de' ? 'Geräte' : 'devices'}</span>
+                            <label style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Geraete-Aktionen' : 'Device Actions'}</label>
+                            {newScene.states.map((a, i) => (
+                                <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 4, padding: '4px 8px', background: 'var(--bg-tertiary)', borderRadius: 6 }}>
+                                    <span style={{ flex: 1, fontSize: 12 }}>{a.entity_id} → {a.state}</span>
+                                    <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)', padding: 2 }} onClick={() => removeAction(i)}><span className="mdi mdi-close" /></button>
+                                </div>
+                            ))}
+                            <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                                <input className="form-input" style={{ flex: 1, fontSize: 12 }} placeholder="entity_id" value={newAction.entity_id} onChange={e => setNewAction({ ...newAction, entity_id: e.target.value })} />
+                                <select className="form-input" style={{ width: 80, fontSize: 12 }} value={newAction.state} onChange={e => setNewAction({ ...newAction, state: e.target.value })}><option value="on">on</option><option value="off">off</option></select>
+                                <button className="btn btn-sm btn-ghost" onClick={addAction}><span className="mdi mdi-plus" /></button>
+                            </div>
                         </div>
-                        <div style={{ display: 'flex', gap: 6 }}>
-                            <button className="btn btn-sm btn-primary" onClick={() => activate(s.id)}>{lang === 'de' ? 'Aktivieren' : 'Activate'}</button>
-                            <button className="btn btn-sm btn-ghost" onClick={() => remove(s.id)}>✕</button>
+                        <div><label style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Verzoegerung (Sek)' : 'Delay (sec)'}</label>
+                            <input type="number" className="form-input" style={{ width: 100 }} value={newScene.action_delay_seconds} onChange={e => setNewScene({ ...newScene, action_delay_seconds: parseInt(e.target.value) || 0 })} />
                         </div>
+                        <div>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}><input type="checkbox" checked={newScene.schedule_enabled} onChange={e => setNewScene({ ...newScene, schedule_enabled: e.target.checked })} /><span style={{ fontSize: 12 }}>{lang === 'de' ? 'Zeitplan' : 'Schedule'}</span></label>
+                            {newScene.schedule_enabled && (<div><input className="form-input" value={newScene.schedule_cron} onChange={e => setNewScene({ ...newScene, schedule_cron: e.target.value })} placeholder="0 20 * * 5" />
+                                <div style={{ display: 'flex', gap: 4, marginTop: 6, flexWrap: 'wrap' }}>{cronExamples.map(c => (<button key={c.value} className="btn btn-sm btn-ghost" onClick={() => setNewScene({ ...newScene, schedule_cron: c.value })} style={{ fontSize: 11 }}>{c.label}</button>))}</div></div>)}
+                        </div>
+                        <button className="btn btn-primary" onClick={createScene} disabled={!newScene.name_de}>{lang === 'de' ? 'Erstellen' : 'Create'}</button>
                     </div>
-                ))}
-            </div>
+                </Modal>
+            )}
+
+            {editScene && (
+                <Modal title={lang === 'de' ? 'Szene bearbeiten' : 'Edit Scene'} onClose={() => setEditScene(null)}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                        <div style={{ display: 'flex', gap: 12 }}>
+                            <div style={{ flex: 1 }}><label style={{ fontSize: 12, color: 'var(--text-muted)' }}>Name (DE)</label><input className="form-input" value={editScene.name_de || ''} onChange={e => setEditScene({ ...editScene, name_de: e.target.value })} /></div>
+                            <div style={{ flex: 1 }}><label style={{ fontSize: 12, color: 'var(--text-muted)' }}>Name (EN)</label><input className="form-input" value={editScene.name_en || ''} onChange={e => setEditScene({ ...editScene, name_en: e.target.value })} /></div>
+                        </div>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}><input type="checkbox" checked={editScene.schedule_enabled || false} onChange={e => setEditScene({ ...editScene, schedule_enabled: e.target.checked })} /><span style={{ fontSize: 12 }}>{lang === 'de' ? 'Zeitplan' : 'Schedule'}</span></label>
+                        {editScene.schedule_enabled && <input className="form-input" value={editScene.schedule_cron || ''} onChange={e => setEditScene({ ...editScene, schedule_cron: e.target.value })} placeholder="0 20 * * 5" />}
+                        <div><label style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Verzoegerung (Sek)' : 'Delay (sec)'}</label><input type="number" className="form-input" style={{ width: 100 }} value={editScene.action_delay_seconds || 0} onChange={e => setEditScene({ ...editScene, action_delay_seconds: parseInt(e.target.value) || 0 })} /></div>
+                        <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{(editScene.states || []).length} {lang === 'de' ? 'Aktionen' : 'actions'}</div>
+                        <button className="btn btn-primary" onClick={updateScene}>{lang === 'de' ? 'Speichern' : 'Save'}</button>
+                    </div>
+                </Modal>
+            )}
         </div>
     );
 };
 
 // ================================================================
-// Phase 3: Presence Page
+// Phase 3: Presence Page (6 Tabs: Modus, Personen, Zeitprofile, Schichtdienst, Feiertage, Verlauf)
 // ================================================================
+const WEEKDAYS_SHORT = [{id:'mon',l:'Mo'},{id:'tue',l:'Di'},{id:'wed',l:'Mi'},{id:'thu',l:'Do'},{id:'fri',l:'Fr'},{id:'sat',l:'Sa'},{id:'sun',l:'So'}];
+const DEFAULT_SHIFT_TYPES = [
+    { name: 'Fruehdienst', short: 'F', color: '#FF9800', time_start: '06:00', time_end: '14:00' },
+    { name: 'Spaetdienst', short: 'S', color: '#2196F3', time_start: '14:00', time_end: '22:00' },
+    { name: 'Nachtdienst', short: 'N', color: '#9C27B0', time_start: '22:00', time_end: '06:00' },
+    { name: 'Dienstfrei', short: 'X', color: '#4CAF50', time_start: '', time_end: '' },
+];
+
 const PresencePage = () => {
-    const { lang, showToast } = useApp();
+    const { lang, showToast, users } = useApp();
+    const [tab, setTab] = useState('mode');
+    // Mode
     const [modes, setModes] = useState([]);
     const [current, setCurrent] = useState(null);
+    const [editMode, setEditMode] = useState(null);
+    const [showAddMode, setShowAddMode] = useState(false);
+    const [newMode, setNewMode] = useState({ name_de: '', name_en: '', icon: 'mdi-home', color: '#4CAF50', trigger_type: 'manual', buffer_minutes: 5 });
+    // Persons & Guests
     const [persons, setPersons] = useState([]);
-    const [logs, setLogs] = useState([]);
     const [guests, setGuests] = useState([]);
+    const [personDevices, setPersonDevices] = useState([]);
+    const [showAddGuest, setShowAddGuest] = useState(false);
+    const [newGuest, setNewGuest] = useState({ name: '', entity_id: '' });
+    // Time Profiles
+    const [schedules, setSchedules] = useState([]);
+    const [showAddSchedule, setShowAddSchedule] = useState(false);
+    const [editSchedule, setEditSchedule] = useState(null);
+    const [newSched, setNewSched] = useState({ user_id: '', schedule_type: 'weekday', name: '', time_wake: '06:00', time_leave: '07:30', time_home: '17:00', time_sleep: '22:00', weekdays: 'mon,tue,wed,thu,fri' });
+    // Shift
+    const [shiftTemplates, setShiftTemplates] = useState([]);
+    const [showAddShift, setShowAddShift] = useState(false);
+    const [newShift, setNewShift] = useState({ name: '', short_code: '', blocks: [{ start: '06:00', end: '14:00' }], color: '#FF9800' });
+    const [rotation, setRotation] = useState([]);
+    const [rotationStart, setRotationStart] = useState('');
+    const [rotationEnd, setRotationEnd] = useState('');
+    const [rotationUserId, setRotationUserId] = useState('');
+    const [quickAdd, setQuickAdd] = useState({ type: '', count: 1 });
+    const [showPdfUpload, setShowPdfUpload] = useState(false);
+    const [pdfResult, setPdfResult] = useState(null);
+    // Holidays
+    const [holidays, setHolidays] = useState([]);
+    const [showAddHoliday, setShowAddHoliday] = useState(false);
+    const [newHoliday, setNewHoliday] = useState({ name: '', date: '', is_recurring: false, region: 'AT' });
+    // Log
+    const [logs, setLogs] = useState([]);
     const [logsHasMore, setLogsHasMore] = useState(false);
     const [logsOffset, setLogsOffset] = useState(0);
 
@@ -5378,13 +5722,26 @@ const PresencePage = () => {
         api.get('presence-modes').then(d => setModes(Array.isArray(d) ? d : [])).catch(() => {});
         api.get('presence-modes/current').then(d => setCurrent(d || null)).catch(() => {});
         api.get('persons').then(d => setPersons(Array.isArray(d) ? d : [])).catch(() => {});
+        api.get('guest-devices').then(d => setGuests(Array.isArray(d) ? d : [])).catch(() => {});
+        api.get('person-devices').then(d => setPersonDevices(Array.isArray(d) ? d : [])).catch(() => {});
+        api.get('person-schedules').then(d => setSchedules(Array.isArray(d) ? d : [])).catch(() => {});
+        api.get('shift-templates').then(d => setShiftTemplates(Array.isArray(d) ? d : [])).catch(() => {});
+        api.get('holidays').then(d => setHolidays(Array.isArray(d) ? d : [])).catch(() => {});
         api.get('presence-log?limit=50&offset=0').then(d => {
             setLogs(d?.items || (Array.isArray(d) ? d : []));
             setLogsHasMore(d?.has_more || false);
             setLogsOffset(d?.items?.length || 0);
         }).catch(() => {});
-        api.get('guest-devices').then(d => setGuests(Array.isArray(d) ? d : [])).catch(() => {});
     };
+    useEffect(() => { load(); }, []);
+
+    // Auto-seed modes on first load
+    useEffect(() => {
+        if (modes.length === 0) {
+            api.post('presence-modes/seed-defaults').then(d => { if (d?.success) load(); }).catch(() => {});
+        }
+    }, [modes]);
+
     const loadMoreLogs = () => {
         api.get(`presence-log?limit=50&offset=${logsOffset}`).then(d => {
             const items = d?.items || [];
@@ -5393,72 +5750,446 @@ const PresencePage = () => {
             setLogsOffset(prev => prev + items.length);
         }).catch(() => {});
     };
-    useEffect(() => { load(); }, []);
 
-    const activate = (id) => api.post(`presence-modes/${id}/activate`).then(() => { showToast(lang === 'de' ? 'Modus aktiviert' : 'Mode activated', 'success'); load(); });
+    const activateMode = (id) => api.post(`presence-modes/${id}/activate`).then(() => { showToast(lang === 'de' ? 'Modus aktiviert' : 'Mode activated', 'success'); load(); });
+    const deleteMode = (id) => api.delete(`presence-modes/${id}`).then(() => load());
+    const saveMode = () => { if (!editMode) return; api.put(`presence-modes/${editMode.id}`, editMode).then(() => { showToast(lang === 'de' ? 'Gespeichert' : 'Saved', 'success'); setEditMode(null); load(); }); };
+    const createMode = () => api.post('presence-modes', newMode).then(() => { setShowAddMode(false); setNewMode({ name_de: '', name_en: '', icon: 'mdi-home', color: '#4CAF50', trigger_type: 'manual', buffer_minutes: 5 }); load(); });
+
+    const addGuest = () => api.post('guest-devices', newGuest).then(() => { setShowAddGuest(false); setNewGuest({ name: '', entity_id: '' }); load(); });
+    const deleteGuest = (id) => api.delete(`guest-devices/${id}`).then(() => load());
+
+    const createSchedule = () => { const data = { ...newSched, user_id: parseInt(newSched.user_id) }; api.post('person-schedules', data).then(() => { setShowAddSchedule(false); load(); }); };
+    const deleteSchedule = (id) => api.delete(`person-schedules/${id}`).then(() => load());
+    const saveSchedule = () => { if (!editSchedule) return; api.put(`person-schedules/${editSchedule.id}`, editSchedule).then(() => { setEditSchedule(null); load(); }); };
+
+    const createShiftTemplate = () => api.post('shift-templates', newShift).then(() => { setShowAddShift(false); setNewShift({ name: '', short_code: '', blocks: [{ start: '06:00', end: '14:00' }], color: '#FF9800' }); load(); });
+    const deleteShiftTemplate = (id) => api.delete(`shift-templates/${id}`).then(() => load());
+    const seedDefaults = () => { DEFAULT_SHIFT_TYPES.forEach(t => api.post('shift-templates', { name: t.name, short_code: t.short, blocks: [{ start: t.time_start, end: t.time_end }], color: t.color })); setTimeout(load, 500); };
+
+    const addToRotation = (short) => setRotation([...rotation, short]);
+    const quickAddToRotation = () => { if (!quickAdd.type) return; const arr = []; for (let i = 0; i < quickAdd.count; i++) arr.push(quickAdd.type); setRotation([...rotation, ...arr]); };
+    const removeFromRotation = (idx) => setRotation(rotation.filter((_, i) => i !== idx));
+    const saveRotation = () => {
+        if (!rotationUserId) { showToast(lang === 'de' ? 'Person waehlen' : 'Select person', 'warning'); return; }
+        api.post('person-schedules', { user_id: parseInt(rotationUserId), schedule_type: 'shift', name: 'Schichtrotation', shift_data: { rotation_pattern: rotation, rotation_start: rotationStart, rotation_end: rotationEnd, shift_types: shiftTemplates } }).then(() => { showToast(lang === 'de' ? 'Rotation gespeichert' : 'Rotation saved', 'success'); load(); });
+    };
+
+    const uploadPdf = (file) => {
+        const fd = new FormData(); fd.append('file', file);
+        fetch('/api/shift-plan/import', { method: 'POST', body: fd }).then(r => r.json()).then(d => { if (d.error) showToast(d.error, 'error'); else setPdfResult(d); }).catch(e => showToast(e.message, 'error'));
+    };
+
+    const createHoliday = () => api.post('holidays', newHoliday).then(() => { setShowAddHoliday(false); setNewHoliday({ name: '', date: '', is_recurring: false, region: 'AT' }); load(); });
+    const deleteHoliday = (id) => api.delete(`holidays/${id}`).then(() => load());
+    const seedHolidays = () => api.post('holidays/seed-defaults').then(d => { showToast(lang === 'de' ? `${d.count || 0} Feiertage angelegt` : `${d.count || 0} holidays created`, 'success'); load(); });
+
+    const tabs = [
+        { id: 'mode', label: lang === 'de' ? 'Modus' : 'Mode', icon: 'mdi-home-circle' },
+        { id: 'persons', label: lang === 'de' ? 'Personen' : 'Persons', icon: 'mdi-account-group' },
+        { id: 'profiles', label: lang === 'de' ? 'Zeitprofile' : 'Profiles', icon: 'mdi-clock-outline' },
+        { id: 'shift', label: lang === 'de' ? 'Schichtdienst' : 'Shift Work', icon: 'mdi-calendar-clock' },
+        { id: 'holidays', label: lang === 'de' ? 'Feiertage' : 'Holidays', icon: 'mdi-party-popper' },
+        { id: 'calendar', label: lang === 'de' ? 'Kalender' : 'Calendar', icon: 'mdi-calendar-clock' },
+        { id: 'history', label: lang === 'de' ? 'Verlauf' : 'History', icon: 'mdi-history' },
+    ];
 
     return (
         <div>
             <h2 style={{ marginBottom: 16 }}>{lang === 'de' ? 'Anwesenheit' : 'Presence'}</h2>
-            {current && (
-                <div className="card animate-in" style={{ marginBottom: 16, padding: 24, textAlign: 'center' }}>
-                    <span className={'mdi ' + (current.icon || 'mdi-home')} style={{ fontSize: 40, color: current.color || 'var(--accent-primary)' }} />
-                    <div style={{ fontSize: 20, fontWeight: 700, marginTop: 8 }}>{lang === 'de' ? current.name_de : current.name_en}</div>
-                    {current.since && <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>seit {new Date(current.since).toLocaleTimeString()}</div>}
-                </div>
-            )}
-            <div className="card animate-in" style={{ marginBottom: 16 }}>
-                <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)', fontWeight: 600 }}>{lang === 'de' ? 'Personen' : 'Persons'}</div>
-                {persons.map(p => (
-                    <div key={p.entity_id} style={{ padding: '10px 16px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between' }}>
-                        <span>{p.name}</span>
-                        <span style={{ padding: '2px 10px', borderRadius: 12, fontSize: 12, fontWeight: 600,
-                            background: p.state === 'home' ? 'rgba(76,175,80,0.15)' : 'rgba(158,158,158,0.15)',
-                            color: p.state === 'home' ? 'var(--success)' : 'var(--text-muted)' }}>{p.state}</span>
-                    </div>
-                ))}
-            </div>
-            <div className="card animate-in" style={{ marginBottom: 16 }}>
-                <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)', fontWeight: 600 }}>{lang === 'de' ? 'Modi' : 'Modes'}</div>
-                {modes.map(m => (
-                    <div key={m.id} style={{ padding: '10px 16px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <div>
-                            <span className={'mdi ' + (m.icon || 'mdi-home')} style={{ marginRight: 8, color: m.color || 'var(--text-primary)' }} />
-                            <strong>{lang === 'de' ? m.name_de : m.name_en}</strong>
-                            <span style={{ marginLeft: 8, fontSize: 12, color: 'var(--text-muted)' }}>{m.trigger_type}</span>
-                        </div>
-                        <button className="btn btn-sm btn-ghost" onClick={() => activate(m.id)}>{lang === 'de' ? 'Aktivieren' : 'Activate'}</button>
-                    </div>
-                ))}
-            </div>
-            {guests.length > 0 && (
-                <div className="card animate-in" style={{ marginBottom: 16 }}>
-                    <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)', fontWeight: 600 }}>{lang === 'de' ? 'Gäste' : 'Guests'} ({guests.length})</div>
-                    {guests.map(g => (
-                        <div key={g.id} style={{ padding: '10px 16px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between' }}>
-                            <span>{g.name || g.mac_address || g.entity_id}</span>
-                            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{g.visit_count}x</span>
-                        </div>
-                    ))}
-                </div>
-            )}
-            <div className="card animate-in">
-                <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)', fontWeight: 600 }}>{lang === 'de' ? 'Verlauf' : 'History'}</div>
-                <div style={{ maxHeight: 300, overflowY: 'auto' }}>
-                    {logs.map(l => (
-                        <div key={l.id} style={{ padding: '8px 16px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
-                            <span>{l.mode_name}</span>
-                            <span style={{ color: 'var(--text-muted)' }}>{l.created_at ? new Date(l.created_at).toLocaleString() : '-'}</span>
-                        </div>
-                    ))}
-                </div>
-                {logsHasMore && (
-                    <button className="btn btn-secondary" onClick={loadMoreLogs} style={{ width: '100%', marginTop: 0, borderRadius: 0 }}>
-                        <span className="mdi mdi-chevron-down" style={{ marginRight: 4 }} />
-                        {lang === 'de' ? 'Mehr laden' : 'Load more'}
+            <div style={{ display: 'flex', gap: 4, marginBottom: 16, flexWrap: 'wrap' }}>
+                {tabs.map(t => (
+                    <button key={t.id} className={`btn btn-sm ${tab === t.id ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setTab(t.id)}>
+                        <span className={'mdi ' + t.icon} style={{ marginRight: 4 }} />{t.label}
                     </button>
-                )}
+                ))}
             </div>
+
+            {/* TAB: Mode */}
+            {tab === 'mode' && (
+                <div>
+                    {current && (
+                        <div className="card animate-in" style={{ marginBottom: 16, padding: 24, textAlign: 'center' }}>
+                            <span className={'mdi ' + (current.icon || 'mdi-home')} style={{ fontSize: 48, color: current.color || 'var(--accent-primary)' }} />
+                            <div style={{ fontSize: 22, fontWeight: 700, marginTop: 8 }}>{lang === 'de' ? current.name_de : current.name_en}</div>
+                            {current.since && <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>seit {new Date(current.since).toLocaleTimeString()}</div>}
+                        </div>
+                    )}
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
+                        {modes.map(m => (
+                            <button key={m.id} className={`btn ${current?.id === m.id ? 'btn-primary' : 'btn-ghost'}`}
+                                onClick={() => activateMode(m.id)} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 16px' }}>
+                                <span className={'mdi ' + (m.icon || 'mdi-home')} style={{ color: m.color || 'var(--text-primary)', fontSize: 18 }} />
+                                {lang === 'de' ? m.name_de : m.name_en}
+                            </button>
+                        ))}
+                    </div>
+                    <div className="card animate-in">
+                        <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between' }}>
+                            <span style={{ fontWeight: 600 }}>{lang === 'de' ? 'Modi verwalten' : 'Manage modes'}</span>
+                            <button className="btn btn-sm btn-primary" onClick={() => setShowAddMode(true)}><span className="mdi mdi-plus" /></button>
+                        </div>
+                        {modes.map(m => (
+                            <div key={m.id} style={{ padding: '10px 16px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div>
+                                    <span className={'mdi ' + (m.icon || 'mdi-home')} style={{ marginRight: 8, color: m.color }} />
+                                    <strong>{lang === 'de' ? m.name_de : m.name_en}</strong>
+                                    <span style={{ marginLeft: 8, fontSize: 12, color: 'var(--text-muted)' }}>{m.trigger_type} | {m.buffer_minutes || 0}min</span>
+                                </div>
+                                <div style={{ display: 'flex', gap: 6 }}>
+                                    <button className="btn btn-sm btn-ghost" onClick={() => setEditMode({ ...m })}><span className="mdi mdi-pencil" /></button>
+                                    {!m.is_system && <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} onClick={() => deleteMode(m.id)}><span className="mdi mdi-delete" /></button>}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                    {showAddMode && (
+                        <Modal title={lang === 'de' ? 'Modus erstellen' : 'Create Mode'} onClose={() => setShowAddMode(false)}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                                <div style={{ display: 'flex', gap: 12 }}>
+                                    <div style={{ flex: 1 }}><label style={{ fontSize: 12, color: 'var(--text-muted)' }}>Name (DE)</label><input className="form-input" value={newMode.name_de} onChange={e => setNewMode({ ...newMode, name_de: e.target.value })} /></div>
+                                    <div style={{ flex: 1 }}><label style={{ fontSize: 12, color: 'var(--text-muted)' }}>Name (EN)</label><input className="form-input" value={newMode.name_en} onChange={e => setNewMode({ ...newMode, name_en: e.target.value })} /></div>
+                                </div>
+                                <div style={{ display: 'flex', gap: 12 }}>
+                                    <div><label style={{ fontSize: 12, color: 'var(--text-muted)' }}>Icon</label><input className="form-input" value={newMode.icon} onChange={e => setNewMode({ ...newMode, icon: e.target.value })} placeholder="mdi-home" /></div>
+                                    <div><label style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Farbe' : 'Color'}</label><input type="color" value={newMode.color} onChange={e => setNewMode({ ...newMode, color: e.target.value })} /></div>
+                                    <div><label style={{ fontSize: 12, color: 'var(--text-muted)' }}>Trigger</label><select className="form-input" value={newMode.trigger_type} onChange={e => setNewMode({ ...newMode, trigger_type: e.target.value })}><option value="manual">Manual</option><option value="auto">Auto</option></select></div>
+                                    <div><label style={{ fontSize: 12, color: 'var(--text-muted)' }}>Puffer (min)</label><input type="number" className="form-input" style={{ width: 70 }} value={newMode.buffer_minutes} onChange={e => setNewMode({ ...newMode, buffer_minutes: parseInt(e.target.value) || 0 })} /></div>
+                                </div>
+                                <button className="btn btn-primary" onClick={createMode}>{lang === 'de' ? 'Erstellen' : 'Create'}</button>
+                            </div>
+                        </Modal>
+                    )}
+                    {editMode && (
+                        <Modal title={lang === 'de' ? 'Modus bearbeiten' : 'Edit Mode'} onClose={() => setEditMode(null)}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                                <div style={{ display: 'flex', gap: 12 }}>
+                                    <div style={{ flex: 1 }}><label style={{ fontSize: 12, color: 'var(--text-muted)' }}>Name (DE)</label><input className="form-input" value={editMode.name_de || ''} onChange={e => setEditMode({ ...editMode, name_de: e.target.value })} /></div>
+                                    <div style={{ flex: 1 }}><label style={{ fontSize: 12, color: 'var(--text-muted)' }}>Name (EN)</label><input className="form-input" value={editMode.name_en || ''} onChange={e => setEditMode({ ...editMode, name_en: e.target.value })} /></div>
+                                </div>
+                                <div style={{ display: 'flex', gap: 12 }}>
+                                    <div><label style={{ fontSize: 12, color: 'var(--text-muted)' }}>Icon</label><input className="form-input" value={editMode.icon || ''} onChange={e => setEditMode({ ...editMode, icon: e.target.value })} /></div>
+                                    <div><label style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Farbe' : 'Color'}</label><input type="color" value={editMode.color || '#4CAF50'} onChange={e => setEditMode({ ...editMode, color: e.target.value })} /></div>
+                                    <div><label style={{ fontSize: 12, color: 'var(--text-muted)' }}>Puffer (min)</label><input type="number" className="form-input" style={{ width: 70 }} value={editMode.buffer_minutes || 0} onChange={e => setEditMode({ ...editMode, buffer_minutes: parseInt(e.target.value) || 0 })} /></div>
+                                </div>
+                                <button className="btn btn-primary" onClick={saveMode}>{lang === 'de' ? 'Speichern' : 'Save'}</button>
+                            </div>
+                        </Modal>
+                    )}
+                </div>
+            )}
+
+            {/* TAB: Persons & Guests */}
+            {tab === 'persons' && (
+                <div>
+                    <div className="card animate-in" style={{ marginBottom: 16 }}>
+                        <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)', fontWeight: 600 }}>{lang === 'de' ? 'Personen' : 'Persons'}</div>
+                        {persons.length === 0 ? (
+                            <div style={{ padding: 16, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Keine Personen in HA gefunden' : 'No persons found in HA'}</div>
+                        ) : persons.map(p => (
+                            <div key={p.entity_id} style={{ padding: '10px 16px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between' }}>
+                                <span>{p.name}</span>
+                                <span style={{ padding: '2px 10px', borderRadius: 12, fontSize: 12, fontWeight: 600,
+                                    background: p.state === 'home' ? 'rgba(76,175,80,0.15)' : 'rgba(158,158,158,0.15)',
+                                    color: p.state === 'home' ? 'var(--success)' : 'var(--text-muted)' }}>{p.state}</span>
+                            </div>
+                        ))}
+                    </div>
+                    <div className="card animate-in">
+                        <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between' }}>
+                            <span style={{ fontWeight: 600 }}>{lang === 'de' ? 'Gaeste' : 'Guests'} ({guests.length})</span>
+                            <button className="btn btn-sm btn-primary" onClick={() => setShowAddGuest(true)}><span className="mdi mdi-plus" style={{ marginRight: 4 }} />{lang === 'de' ? 'Gast hinzufuegen' : 'Add guest'}</button>
+                        </div>
+                        {guests.length === 0 ? (
+                            <div style={{ padding: 16, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Keine Gaeste erkannt' : 'No guests detected'}</div>
+                        ) : guests.map(g => (
+                            <div key={g.id} style={{ padding: '10px 16px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div><strong>{g.name || g.mac_address || g.entity_id}</strong><span style={{ marginLeft: 8, fontSize: 12, color: 'var(--text-muted)' }}>{g.visit_count || 0}x</span></div>
+                                <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} onClick={() => deleteGuest(g.id)}><span className="mdi mdi-delete" /></button>
+                            </div>
+                        ))}
+                    </div>
+                    {showAddGuest && (
+                        <Modal title={lang === 'de' ? 'Gast hinzufuegen' : 'Add Guest'} onClose={() => setShowAddGuest(false)}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                                <div><label style={{ fontSize: 12, color: 'var(--text-muted)' }}>Name</label><input className="form-input" value={newGuest.name} onChange={e => setNewGuest({ ...newGuest, name: e.target.value })} /></div>
+                                <div><label style={{ fontSize: 12, color: 'var(--text-muted)' }}>Entity ID / MAC</label><input className="form-input" value={newGuest.entity_id} onChange={e => setNewGuest({ ...newGuest, entity_id: e.target.value })} placeholder="device_tracker.guest_phone" /></div>
+                                <button className="btn btn-primary" onClick={addGuest}>{lang === 'de' ? 'Hinzufuegen' : 'Add'}</button>
+                            </div>
+                        </Modal>
+                    )}
+                </div>
+            )}
+
+            {/* TAB: Time Profiles */}
+            {tab === 'profiles' && (
+                <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                        <span style={{ fontWeight: 600 }}>{lang === 'de' ? 'Zeitprofile' : 'Time Profiles'}</span>
+                        <button className="btn btn-sm btn-primary" onClick={() => setShowAddSchedule(true)}><span className="mdi mdi-plus" style={{ marginRight: 4 }} />{lang === 'de' ? 'Profil erstellen' : 'Create profile'}</button>
+                    </div>
+                    {schedules.filter(s => s.schedule_type !== 'shift').length === 0 ? (
+                        <div className="card animate-in" style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)' }}>
+                            {lang === 'de' ? 'Noch keine Zeitprofile. Erstelle ein Profil fuer Wochentag, Wochenende oder Homeoffice.' : 'No time profiles yet.'}
+                        </div>
+                    ) : schedules.filter(s => s.schedule_type !== 'shift').map(s => (
+                        <div key={s.id} className="card animate-in" style={{ marginBottom: 8, padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div>
+                                <strong>{s.name || s.schedule_type}</strong>
+                                <span style={{ marginLeft: 8, fontSize: 12, color: 'var(--text-muted)' }}>
+                                    {s.time_wake && `${s.time_wake}`} → {s.time_leave && `${s.time_leave}`} | {s.time_home && `${s.time_home}`} → {s.time_sleep && `${s.time_sleep}`}
+                                </span>
+                                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{s.weekdays || ''}</div>
+                            </div>
+                            <div style={{ display: 'flex', gap: 6 }}>
+                                <button className="btn btn-sm btn-ghost" onClick={() => setEditSchedule({ ...s })}><span className="mdi mdi-pencil" /></button>
+                                <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} onClick={() => deleteSchedule(s.id)}><span className="mdi mdi-delete" /></button>
+                            </div>
+                        </div>
+                    ))}
+                    {showAddSchedule && (
+                        <Modal title={lang === 'de' ? 'Zeitprofil erstellen' : 'Create Profile'} onClose={() => setShowAddSchedule(false)}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                                <div><label style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Person' : 'Person'}</label>
+                                    <select className="form-input" value={newSched.user_id} onChange={e => setNewSched({ ...newSched, user_id: e.target.value })}>
+                                        <option value="">{lang === 'de' ? 'Waehlen...' : 'Select...'}</option>
+                                        {users.map(u => <option key={u.id} value={u.id}>{u.display_name || u.ha_person_name}</option>)}
+                                    </select>
+                                </div>
+                                <div><label style={{ fontSize: 12, color: 'var(--text-muted)' }}>Typ</label>
+                                    <select className="form-input" value={newSched.schedule_type} onChange={e => setNewSched({ ...newSched, schedule_type: e.target.value })}>
+                                        <option value="weekday">{lang === 'de' ? 'Wochentag' : 'Weekday'}</option>
+                                        <option value="weekend">{lang === 'de' ? 'Wochenende' : 'Weekend'}</option>
+                                        <option value="homeoffice">Homeoffice</option>
+                                        <option value="custom">Custom</option>
+                                    </select>
+                                </div>
+                                <div><label style={{ fontSize: 12, color: 'var(--text-muted)' }}>Name</label><input className="form-input" value={newSched.name} onChange={e => setNewSched({ ...newSched, name: e.target.value })} /></div>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                                    {[['time_wake', lang === 'de' ? 'Aufstehen' : 'Wake'], ['time_leave', lang === 'de' ? 'Gehen' : 'Leave'], ['time_home', lang === 'de' ? 'Heimkommen' : 'Home'], ['time_sleep', lang === 'de' ? 'Schlafen' : 'Sleep']].map(([key, lbl]) => (
+                                        <div key={key}><label style={{ fontSize: 11, color: 'var(--text-muted)' }}>{lbl}</label><input type="time" className="form-input" value={newSched[key]} onChange={e => setNewSched({ ...newSched, [key]: e.target.value })} /></div>
+                                    ))}
+                                </div>
+                                <div><label style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Wochentage' : 'Weekdays'}</label>
+                                    <div style={{ display: 'flex', gap: 4 }}>
+                                        {WEEKDAYS_SHORT.map(d => { const active = (newSched.weekdays || '').includes(d.id); return (
+                                            <button key={d.id} className={`btn btn-sm ${active ? 'btn-primary' : 'btn-ghost'}`} style={{ minWidth: 30, fontSize: 11 }}
+                                                onClick={() => { const days = (newSched.weekdays || '').split(',').filter(Boolean); setNewSched({ ...newSched, weekdays: (active ? days.filter(x => x !== d.id) : [...days, d.id]).join(',') }); }}>{d.l}</button>
+                                        ); })}
+                                    </div>
+                                </div>
+                                <button className="btn btn-primary" onClick={createSchedule}>{lang === 'de' ? 'Erstellen' : 'Create'}</button>
+                            </div>
+                        </Modal>
+                    )}
+                    {editSchedule && (
+                        <Modal title={lang === 'de' ? 'Profil bearbeiten' : 'Edit Profile'} onClose={() => setEditSchedule(null)}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                                <div><label style={{ fontSize: 12, color: 'var(--text-muted)' }}>Name</label><input className="form-input" value={editSchedule.name || ''} onChange={e => setEditSchedule({ ...editSchedule, name: e.target.value })} /></div>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                                    {[['time_wake', 'Aufstehen'], ['time_leave', 'Gehen'], ['time_home', 'Heimkommen'], ['time_sleep', 'Schlafen']].map(([key, lbl]) => (
+                                        <div key={key}><label style={{ fontSize: 11, color: 'var(--text-muted)' }}>{lbl}</label><input type="time" className="form-input" value={editSchedule[key] || ''} onChange={e => setEditSchedule({ ...editSchedule, [key]: e.target.value })} /></div>
+                                    ))}
+                                </div>
+                                <button className="btn btn-primary" onClick={saveSchedule}>{lang === 'de' ? 'Speichern' : 'Save'}</button>
+                            </div>
+                        </Modal>
+                    )}
+                </div>
+            )}
+
+            {/* TAB: Shift Work */}
+            {tab === 'shift' && (
+                <div>
+                    {/* Shift Templates */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                        <span style={{ fontWeight: 600 }}>{lang === 'de' ? 'Schichttypen' : 'Shift Types'}</span>
+                        <div style={{ display: 'flex', gap: 6 }}>
+                            {shiftTemplates.length === 0 && <button className="btn btn-sm btn-ghost" onClick={seedDefaults}>{lang === 'de' ? 'Defaults laden' : 'Load defaults'}</button>}
+                            <button className="btn btn-sm btn-primary" onClick={() => setShowAddShift(true)}><span className="mdi mdi-plus" /></button>
+                        </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
+                        {shiftTemplates.map(t => (
+                            <div key={t.id} style={{ padding: '8px 12px', borderRadius: 8, background: t.color + '22', border: `2px solid ${t.color}`, display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <span style={{ fontWeight: 700, color: t.color, fontSize: 16 }}>{t.short_code}</span>
+                                <span style={{ fontSize: 13 }}>{t.name}</span>
+                                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{t.blocks?.[0]?.start}-{t.blocks?.[0]?.end}</span>
+                                <button className="btn btn-sm btn-ghost" style={{ padding: 2, color: 'var(--danger)' }} onClick={() => deleteShiftTemplate(t.id)}><span className="mdi mdi-close" style={{ fontSize: 14 }} /></button>
+                            </div>
+                        ))}
+                    </div>
+
+                    {/* Rotation Builder */}
+                    <div className="card animate-in" style={{ marginBottom: 16 }}>
+                        <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)', fontWeight: 600 }}>{lang === 'de' ? 'Rotation konfigurieren' : 'Configure Rotation'}</div>
+                        <div style={{ padding: 16 }}>
+                            <div style={{ display: 'flex', gap: 12, marginBottom: 12, flexWrap: 'wrap' }}>
+                                <div><label style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Person' : 'Person'}</label>
+                                    <select className="form-input" value={rotationUserId} onChange={e => setRotationUserId(e.target.value)}>
+                                        <option value="">{lang === 'de' ? 'Waehlen...' : 'Select...'}</option>
+                                        {users.map(u => <option key={u.id} value={u.id}>{u.display_name || u.ha_person_name}</option>)}
+                                    </select>
+                                </div>
+                                <div><label style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Startdatum' : 'Start date'}</label><input type="date" className="form-input" value={rotationStart} onChange={e => setRotationStart(e.target.value)} /></div>
+                                <div><label style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Enddatum (opt.)' : 'End date (opt.)'}</label><input type="date" className="form-input" value={rotationEnd} onChange={e => setRotationEnd(e.target.value)} /></div>
+                            </div>
+                            <div style={{ marginBottom: 8 }}>
+                                <label style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Klicke um hinzuzufuegen:' : 'Click to add:'}</label>
+                                <div style={{ display: 'flex', gap: 4, marginTop: 4 }}>
+                                    {shiftTemplates.map(t => (
+                                        <button key={t.id} className="btn btn-sm" onClick={() => addToRotation(t.short_code)}
+                                            style={{ background: t.color + '33', color: t.color, border: `1px solid ${t.color}`, fontWeight: 700 }}>{t.short_code}</button>
+                                    ))}
+                                </div>
+                            </div>
+                            <div style={{ display: 'flex', gap: 6, marginBottom: 12, alignItems: 'center' }}>
+                                <select className="form-input" style={{ width: 80 }} value={quickAdd.type} onChange={e => setQuickAdd({ ...quickAdd, type: e.target.value })}>
+                                    <option value="">-</option>
+                                    {shiftTemplates.map(t => <option key={t.id} value={t.short_code}>{t.short_code}</option>)}
+                                </select>
+                                <span style={{ fontSize: 12 }}>x</span>
+                                <input type="number" className="form-input" style={{ width: 60 }} min={1} max={30} value={quickAdd.count} onChange={e => setQuickAdd({ ...quickAdd, count: parseInt(e.target.value) || 1 })} />
+                                <button className="btn btn-sm btn-ghost" onClick={quickAddToRotation}><span className="mdi mdi-plus" /> {lang === 'de' ? 'Einfuegen' : 'Insert'}</button>
+                                <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} onClick={() => setRotation([])}><span className="mdi mdi-delete" /> Reset</button>
+                            </div>
+                            <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap', marginBottom: 12, minHeight: 36, padding: 8, background: 'var(--bg-tertiary)', borderRadius: 8 }}>
+                                {rotation.length === 0 ? (
+                                    <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>{lang === 'de' ? 'Keine Rotation definiert' : 'No rotation defined'}</span>
+                                ) : rotation.map((r, i) => {
+                                    const tmpl = shiftTemplates.find(t => t.short_code === r);
+                                    return (
+                                        <span key={i} onClick={() => removeFromRotation(i)} title={lang === 'de' ? 'Klick zum Entfernen' : 'Click to remove'}
+                                            style={{ padding: '3px 8px', borderRadius: 4, background: (tmpl?.color || '#999') + '33', color: tmpl?.color || '#999', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>{r}</span>
+                                    );
+                                })}
+                            </div>
+                            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{rotation.length} {lang === 'de' ? 'Tage Zyklus' : 'day cycle'}</span>
+                            <button className="btn btn-primary" onClick={saveRotation} style={{ marginLeft: 12 }}>{lang === 'de' ? 'Rotation speichern' : 'Save rotation'}</button>
+                        </div>
+                    </div>
+
+                    {/* PDF Import */}
+                    <div className="card animate-in">
+                        <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between' }}>
+                            <span style={{ fontWeight: 600 }}>PDF Import</span>
+                            <label className="btn btn-sm btn-primary" style={{ cursor: 'pointer' }}>
+                                <span className="mdi mdi-file-pdf-box" style={{ marginRight: 4 }} />{lang === 'de' ? 'PDF hochladen' : 'Upload PDF'}
+                                <input type="file" accept=".pdf" style={{ display: 'none' }} onChange={e => e.target.files[0] && uploadPdf(e.target.files[0])} />
+                            </label>
+                        </div>
+                        {pdfResult && (
+                            <div style={{ padding: 16 }}>
+                                <div style={{ marginBottom: 8, fontSize: 13 }}>{pdfResult.parsed_count} {lang === 'de' ? 'Eintraege erkannt' : 'entries found'}</div>
+                                {pdfResult.unmatched_types?.length > 0 && (
+                                    <div style={{ marginBottom: 8, color: 'var(--warning)', fontSize: 12 }}>
+                                        {lang === 'de' ? 'Unbekannte Typen: ' : 'Unknown types: '}{pdfResult.unmatched_types.join(', ')}
+                                    </div>
+                                )}
+                                <div style={{ maxHeight: 300, overflowY: 'auto' }}>
+                                    {pdfResult.entries?.slice(0, 50).map((e, i) => (
+                                        <div key={i} style={{ padding: '4px 8px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
+                                            <span>{e.date}</span>
+                                            <span style={{ color: e.shift ? e.shift.color : 'var(--danger)', fontWeight: 600 }}>{e.shift ? e.shift.short_code : e.raw}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {showAddShift && (
+                        <Modal title={lang === 'de' ? 'Schichttyp erstellen' : 'Create Shift Type'} onClose={() => setShowAddShift(false)}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                                <div style={{ display: 'flex', gap: 12 }}>
+                                    <div style={{ flex: 1 }}><label style={{ fontSize: 12, color: 'var(--text-muted)' }}>Name</label><input className="form-input" value={newShift.name} onChange={e => setNewShift({ ...newShift, name: e.target.value })} /></div>
+                                    <div><label style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Kuerzel' : 'Code'}</label><input className="form-input" style={{ width: 60 }} value={newShift.short_code} onChange={e => setNewShift({ ...newShift, short_code: e.target.value })} /></div>
+                                    <div><label style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Farbe' : 'Color'}</label><input type="color" value={newShift.color} onChange={e => setNewShift({ ...newShift, color: e.target.value })} /></div>
+                                </div>
+                                <div style={{ display: 'flex', gap: 12 }}>
+                                    <div><label style={{ fontSize: 12, color: 'var(--text-muted)' }}>Start</label><input type="time" className="form-input" value={newShift.blocks[0]?.start || ''} onChange={e => setNewShift({ ...newShift, blocks: [{ ...newShift.blocks[0], start: e.target.value }] })} /></div>
+                                    <div><label style={{ fontSize: 12, color: 'var(--text-muted)' }}>Ende</label><input type="time" className="form-input" value={newShift.blocks[0]?.end || ''} onChange={e => setNewShift({ ...newShift, blocks: [{ ...newShift.blocks[0], end: e.target.value }] })} /></div>
+                                </div>
+                                <button className="btn btn-primary" onClick={createShiftTemplate}>{lang === 'de' ? 'Erstellen' : 'Create'}</button>
+                            </div>
+                        </Modal>
+                    )}
+                </div>
+            )}
+
+            {/* TAB: Holidays */}
+            {tab === 'holidays' && (
+                <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                        <span style={{ fontWeight: 600 }}>{lang === 'de' ? 'Feiertage' : 'Holidays'}</span>
+                        <div style={{ display: 'flex', gap: 6 }}>
+                            {holidays.filter(h => h.source === 'builtin').length === 0 && (
+                                <button className="btn btn-sm btn-ghost" onClick={seedHolidays}><span className="mdi mdi-download" style={{ marginRight: 4 }} />{lang === 'de' ? 'AT Feiertage laden' : 'Load AT holidays'}</button>
+                            )}
+                            <button className="btn btn-sm btn-primary" onClick={() => setShowAddHoliday(true)}><span className="mdi mdi-plus" /></button>
+                        </div>
+                    </div>
+                    {holidays.length === 0 ? (
+                        <div className="card animate-in" style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)' }}>
+                            {lang === 'de' ? 'Keine Feiertage. Lade die oesterreichischen Standard-Feiertage oder fuege eigene hinzu.' : 'No holidays. Load Austrian defaults or add custom ones.'}
+                        </div>
+                    ) : holidays.map(h => (
+                        <div key={h.id} className="card animate-in" style={{ marginBottom: 4, padding: '10px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div>
+                                <strong>{h.name}</strong>
+                                <span style={{ marginLeft: 8, fontSize: 12, color: 'var(--text-muted)' }}>{h.date}</span>
+                                {h.is_recurring && <span className="badge badge-info" style={{ marginLeft: 6, fontSize: 10 }}>{lang === 'de' ? 'jaehrlich' : 'yearly'}</span>}
+                                <span className="badge badge-secondary" style={{ marginLeft: 6, fontSize: 10 }}>{h.region || 'AT'}</span>
+                            </div>
+                            <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} onClick={() => deleteHoliday(h.id)}><span className="mdi mdi-delete" /></button>
+                        </div>
+                    ))}
+                    {showAddHoliday && (
+                        <Modal title={lang === 'de' ? 'Feiertag hinzufuegen' : 'Add Holiday'} onClose={() => setShowAddHoliday(false)}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                                <div><label style={{ fontSize: 12, color: 'var(--text-muted)' }}>Name</label><input className="form-input" value={newHoliday.name} onChange={e => setNewHoliday({ ...newHoliday, name: e.target.value })} /></div>
+                                <div><label style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Datum (DD-MM oder YYYY-MM-DD)' : 'Date'}</label><input className="form-input" value={newHoliday.date} onChange={e => setNewHoliday({ ...newHoliday, date: e.target.value })} placeholder="25-12 oder 2026-12-25" /></div>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}><input type="checkbox" checked={newHoliday.is_recurring} onChange={e => setNewHoliday({ ...newHoliday, is_recurring: e.target.checked })} />{lang === 'de' ? 'Jaehrlich wiederkehrend' : 'Recurring yearly'}</label>
+                                <div><label style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Region' : 'Region'}</label>
+                                    <select className="form-input" value={newHoliday.region} onChange={e => setNewHoliday({ ...newHoliday, region: e.target.value })}>
+                                        <option value="AT">AT</option><option value="DE">DE</option><option value="CH">CH</option>
+                                    </select>
+                                </div>
+                                <button className="btn btn-primary" onClick={createHoliday}>{lang === 'de' ? 'Hinzufuegen' : 'Add'}</button>
+                            </div>
+                        </Modal>
+                    )}
+                </div>
+            )}
+
+            {/* TAB: Calendar Triggers */}
+            {tab === 'calendar' && (
+                <CalendarTriggersConfig lang={lang} showToast={showToast} />
+            )}
+
+            {/* TAB: History */}
+            {tab === 'history' && (
+                <div className="card animate-in">
+                    <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)', fontWeight: 600 }}>{lang === 'de' ? 'Anwesenheits-Verlauf' : 'Presence History'}</div>
+                    {logs.length === 0 ? (
+                        <div style={{ padding: 16, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Noch kein Verlauf' : 'No history yet'}</div>
+                    ) : (
+                        <div style={{ maxHeight: 500, overflowY: 'auto' }}>
+                            {logs.map(l => (
+                                <div key={l.id} style={{ padding: '8px 16px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
+                                    <div><strong>{l.mode_name}</strong>{l.trigger && <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--text-muted)' }}>{l.trigger}</span>}</div>
+                                    <span style={{ color: 'var(--text-muted)' }}>{l.created_at ? new Date(l.created_at).toLocaleString() : '-'}</span>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                    {logsHasMore && (
+                        <button className="btn btn-secondary" onClick={loadMoreLogs} style={{ width: '100%', borderRadius: 0 }}>
+                            <span className="mdi mdi-chevron-down" style={{ marginRight: 4 }} />{lang === 'de' ? 'Mehr laden' : 'Load more'}
+                        </button>
+                    )}
+                </div>
+            )}
         </div>
     );
 };
@@ -5605,7 +6336,7 @@ const App = () => {
     const executeQuickAction = async (actionId) => {
         const result = await api.post(`quick-actions/execute/${actionId}`);
         if (result?.success) {
-            showToast(lang === 'de' ? 'Aktion ausgefÃ¼hrt' : 'Action executed', 'success');
+            showToast(lang === 'de' ? 'Aktion ausgeführt' : 'Action executed', 'success');
             await refreshData();
         }
     };
@@ -5635,15 +6366,15 @@ const App = () => {
     }
 
     const navItems = [
-        { section: lang === 'de' ? 'Ãœbersicht' : 'Overview' },
+        { section: lang === 'de' ? 'Übersicht' : 'Overview' },
         { id: 'dashboard', icon: 'mdi-view-dashboard', label: 'Dashboard' },
         { section: lang === 'de' ? 'Konfiguration' : 'Configuration', adminOnly: true },
         { id: 'domains', icon: 'mdi-puzzle', label: 'Domains', adminOnly: true },
-        { id: 'rooms', icon: 'mdi-door', label: lang === 'de' ? 'RÃ¤ume' : 'Rooms' },
-        { id: 'devices', icon: 'mdi-devices', label: lang === 'de' ? 'GerÃ¤te' : 'Devices' },
+        { id: 'rooms', icon: 'mdi-door', label: lang === 'de' ? 'Räume' : 'Rooms' },
+        { id: 'devices', icon: 'mdi-devices', label: lang === 'de' ? 'Geräte' : 'Devices' },
         { id: 'users', icon: 'mdi-account-group', label: lang === 'de' ? 'Personen' : 'People', adminOnly: true },
         { section: 'System' },
-        { id: 'activities', icon: 'mdi-timeline-clock', label: lang === 'de' ? 'AktivitÃ¤ten' : 'Activities' },
+        { id: 'activities', icon: 'mdi-timeline-clock', label: lang === 'de' ? 'Aktivitäten' : 'Activities' },
         { id: 'patterns', icon: 'mdi-lightbulb-on', label: lang === 'de' ? 'Muster' : 'Patterns' },
         { id: 'energy', icon: 'mdi-lightning-bolt', label: lang === 'de' ? 'Energie' : 'Energy' },
         { id: 'scenes', icon: 'mdi-palette', label: lang === 'de' ? 'Szenen' : 'Scenes' },
