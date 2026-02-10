@@ -480,7 +480,7 @@ def api_get_translations(lang_code):
     if lang_code not in ("de", "en"):
         return jsonify({"error": "Language not found"}), 404
     import json as json_lib
-    lang_file = os.path.join(os.path.dirname(__file__), "translations", f"{lang_code}.json")
+    lang_file = os.path.join(os.path.dirname(__file__), "..", "translations", f"{lang_code}.json")
     try:
         with open(lang_file, "r", encoding="utf-8") as f:
             return jsonify(json_lib.load(f))

@@ -875,16 +875,31 @@
         })();
     </script>
 
-    <!-- React -->
+    <!-- React, ReactDOM, Babel (lokal gebündelt, CDN-Fallback) -->
     <script>logStep('React...');</script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"
-            onerror="showError('React konnte nicht geladen werden', 'CDN cdnjs.cloudflare.com ist nicht erreichbar. PrÃ¼fe die Internetverbindung des HA-Servers.')"></script>
+    <script src="lib/react.production.min.js"></script>
+    <script>
+        if (typeof React === 'undefined') {
+            logStep('React lokal nicht gefunden, lade von CDN...');
+            document.write('<scr' + 'ipt src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"><\/scr' + 'ipt>');
+        }
+    </script>
     <script>logStep('ReactDOM...');</script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"
-            onerror="showError('ReactDOM konnte nicht geladen werden', 'CDN cdnjs.cloudflare.com ist nicht erreichbar.')"></script>
+    <script src="lib/react-dom.production.min.js"></script>
+    <script>
+        if (typeof ReactDOM === 'undefined') {
+            logStep('ReactDOM lokal nicht gefunden, lade von CDN...');
+            document.write('<scr' + 'ipt src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"><\/scr' + 'ipt>');
+        }
+    </script>
     <script>logStep('Babel...');</script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.6/babel.min.js"
-            onerror="showError('Babel konnte nicht geladen werden', 'CDN cdnjs.cloudflare.com ist nicht erreichbar.')"></script>
+    <script src="lib/babel.min.js"></script>
+    <script>
+        if (typeof Babel === 'undefined') {
+            logStep('Babel lokal nicht gefunden, lade von CDN...');
+            document.write('<scr' + 'ipt src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.6/babel.min.js"><\/scr' + 'ipt>');
+        }
+    </script>
 
     <script>
         logStep('App wird kompiliert...');

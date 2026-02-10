@@ -18,6 +18,15 @@ RUN apk del gcc musl-dev python3-dev
 # Copy application files
 COPY rootfs /
 
+# Download frontend libraries locally (avoid CDN dependency at runtime)
+RUN mkdir -p /opt/mindhome/static/frontend/lib \
+    && wget -q -O /opt/mindhome/static/frontend/lib/react.production.min.js \
+       "https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js" \
+    && wget -q -O /opt/mindhome/static/frontend/lib/react-dom.production.min.js \
+       "https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js" \
+    && wget -q -O /opt/mindhome/static/frontend/lib/babel.min.js \
+       "https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.6/babel.min.js"
+
 # Create data directories
 RUN mkdir -p /data/mindhome/db \
     && mkdir -p /data/mindhome/models \
