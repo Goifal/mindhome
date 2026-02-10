@@ -1,4 +1,4 @@
-# MindHome routes/presence v0.6.1 (2026-02-10) - routes/presence.py
+# MindHome routes/presence v0.6.2 (2026-02-10) - routes/presence.py
 """
 MindHome API Routes - Presence
 Auto-extracted from monolithic app.py during Phase 3.5 refactoring.

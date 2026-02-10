@@ -1,4 +1,4 @@
-# MindHome Models v0.6.1 (2026-02-10) - models.py
+# MindHome Models v0.6.2 (2026-02-10) - models.py
 """
 MindHome - Database Models
 All persistent data structures for MindHome.

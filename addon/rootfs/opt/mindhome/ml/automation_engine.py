@@ -1,4 +1,4 @@
-# MindHome ML/automation_engine v0.6.1 (2026-02-10) - ml/automation_engine.py
+# MindHome ML/automation_engine v0.6.2 (2026-02-10) - ml/automation_engine.py
 """
 MindHome - Automation Engine (Phase 2b + Phase 3)
 Suggestions, execution, undo, conflict detection, phase management.

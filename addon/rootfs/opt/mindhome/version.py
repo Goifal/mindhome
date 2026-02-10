@@ -4,12 +4,24 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "0.6.1"
-BUILD = 2
+VERSION = "0.6.3"
+BUILD = 4
 BUILD_DATE = "2026-02-10"
-CODENAME = "Phase 3.5 - Hotfix"
+CODENAME = "Phase 3.5 - Bugfix"
 
 # Changelog
+# Build 4: v0.6.3 Bugfix
+#   - Fix ReferenceError: isAdmin nicht verfuegbar in RoomsPage
+#   - Settings-Refresh: Vacation/Debug/Mute/Anomaly-Pause sofort sichtbar
+#   - Hardcoded Version "0.5.0" durch zentrale VERSION ersetzt
+#   - Frontend Version-Fallbacks entfernt
+#
+# Build 3: v0.6.2 Bugfix (Issue #3)
+#   - Fix AttributeError in /api/backup/export (NotificationSetting, NotificationChannel)
+#   - Fix AttributeError in /api/backup/export (OfflineActionQueue)
+#   - Fix AttributeError in /api/export/automations (ActionLog)
+#   - Enum-Serialisierung fuer NotificationType/NotificationPriority
+#
 # Build 2: v0.6.1 Hotfix
 #   - PatternSettings (konfigurierbare Schwellenwerte)
 #   - Unified Confidence Decay (Grace 2d, 1%/w, 5%/d)

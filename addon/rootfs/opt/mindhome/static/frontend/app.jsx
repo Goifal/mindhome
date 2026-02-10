@@ -1,6 +1,6 @@
-// MindHome Frontend v0.6.1 (2026-02-10) - app.jsx
+// MindHome Frontend v0.6.2 (2026-02-10) - app.jsx
 // ================================================================
-// MindHome - React Frontend Application v0.6.1
+// MindHome - React Frontend Application v0.6.2
 // ================================================================
 
 const { useState, useEffect, useCallback, createContext, useContext, useRef, useMemo, useReducer } = React;
@@ -740,7 +740,7 @@ const DashboardPage = () => {
                                 <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>MindHome Engine</span>
                             </div>
                             <div style={{ fontSize: 12, color: 'var(--text-muted)', paddingLeft: 16 }}>
-                                v{sysHealth?.version || '0.5.0'} · Uptime {uptimeStr}
+                                v{sysHealth?.version || '...'} · Uptime {uptimeStr}
                             </div>
                         </div>
                         );
@@ -1761,6 +1761,7 @@ const DevicesPage = () => {
                                                 onClick={async () => {
                                                     await api.post('notification-settings/mute-device', { device_id: device.id });
                                                     showToast(lang === 'de' ? 'Gerät stummgeschaltet' : 'Device muted', 'success');
+                                                    refreshData();
                                                 }}>
                                                 <span className="mdi mdi-bell-off-outline" style={{ fontSize: 16, color: 'var(--text-muted)' }} />
                                             </button>
@@ -2053,7 +2054,7 @@ const DeviceGroupsSection = () => {
 // ================================================================
 
 const RoomsPage = () => {
-    const { rooms, domains, lang, showToast, refreshData } = useApp();
+    const { rooms, domains, lang, showToast, refreshData, isAdmin } = useApp();
     const [showAdd, setShowAdd] = useState(false);
     const [newRoom, setNewRoom] = useState({ name: '', icon: 'mdi:door' });
     const [editRoom, setEditRoom] = useState(null);
@@ -2507,6 +2508,8 @@ const SettingsPage = () => {
     const [patternSettings, setPatternSettings] = useState({});
     const [patternMeta, setPatternMeta] = useState({});
     const [learningDays, setLearningDays] = useState(null);
+    const [vacationMode, setVacationMode] = useState(false);
+    const [debugMode, setDebugMode] = useState(false);
     const fileInputRef = useRef(null);
 
     useEffect(() => {
@@ -2527,6 +2530,10 @@ const SettingsPage = () => {
             if (ps) { const { _meta, ...rest } = ps; setPatternSettings(rest); setPatternMeta(_meta || {}); }
             const ld = await api.get('stats/learning-days');
             if (ld) setLearningDays(ld.learning_days);
+            const vm = await api.get('system/vacation-mode');
+            if (vm) setVacationMode(!!vm.enabled);
+            const dm = await api.get('system/debug');
+            if (dm) setDebugMode(!!dm.debug_mode);
         })();
     }, []);
 
@@ -2741,8 +2748,8 @@ const SettingsPage = () => {
                     {lang === 'de' ? 'System' : 'System'}
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                    <InfoRow label="Version" value={sysInfo?.version || '0.5.0'} />
-                    <InfoRow label="Phase" value={`2 – ${lang === 'de' ? 'Vollständig' : 'Complete'}`} />
+                    <InfoRow label="Version" value={sysInfo?.version || '...'} />
+                    <InfoRow label="Phase" value={sysInfo?.phase || 'Phase 3.5'} />
                     <InfoRow label="Home Assistant"
                         value={sysInfo?.ha_connected ? (lang === 'de' ? ' Verbunden' : ' Connected') : (lang === 'de' ? ' Getrennt' : ' Disconnected')} />
                     <InfoRow label={lang === 'de' ? 'Zeitzone' : 'Timezone'}
@@ -2977,9 +2984,10 @@ const SettingsPage = () => {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
                     <span style={{ fontSize: 13 }}><span className="mdi mdi-airplane" style={{ marginRight: 6, color: 'var(--accent-primary)' }} />{lang === 'de' ? 'Urlaubsmodus' : 'Vacation Mode'}</span>
                     <label className="toggle" style={{ transform: 'scale(0.85)' }}>
-                        <input type="checkbox" onChange={async () => {
-                            const r = await api.put('system/vacation-mode', { enabled: true });
-                            showToast(r?.enabled ? (lang === 'de' ? 'Urlaub aktiv' : 'Vacation ON') : (lang === 'de' ? 'Urlaub beendet' : 'Vacation OFF'), 'info');
+                        <input type="checkbox" checked={vacationMode} onChange={async () => {
+                            const newVal = !vacationMode;
+                            const r = await api.put('system/vacation-mode', { enabled: newVal });
+                            if (r) { setVacationMode(!!r.enabled); showToast(r.enabled ? (lang === 'de' ? 'Urlaub aktiv' : 'Vacation ON') : (lang === 'de' ? 'Urlaub beendet' : 'Vacation OFF'), 'info'); }
                         }} />
                         <span className="toggle-slider" />
                     </label>
@@ -2989,7 +2997,7 @@ const SettingsPage = () => {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
                     <span style={{ fontSize: 13 }}><span className="mdi mdi-bug" style={{ marginRight: 6 }} />{lang === 'de' ? 'Debug-Modus' : 'Debug Mode'}</span>
                     <label className="toggle" style={{ transform: 'scale(0.85)' }}>
-                        <input type="checkbox" onChange={async () => { const r = await api.put('system/debug'); showToast(r?.debug_mode ? 'Debug ON' : 'Debug OFF', 'info'); }} />
+                        <input type="checkbox" checked={debugMode} onChange={async () => { const r = await api.put('system/debug'); if (r) { setDebugMode(!!r.debug_mode); showToast(r.debug_mode ? 'Debug ON' : 'Debug OFF', 'info'); } }} />
                         <span className="toggle-slider" />
                     </label>
                 </div>
@@ -2998,7 +3006,7 @@ const SettingsPage = () => {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
                     <span style={{ fontSize: 13 }}><span className="mdi mdi-theme-light-dark" style={{ marginRight: 6 }} />{lang === 'de' ? 'Auto-Theme' : 'Auto Theme'}</span>
                     <label className="toggle" style={{ transform: 'scale(0.85)' }}>
-                        <input type="checkbox" defaultChecked={false} onChange={(e) => {
+                        <input type="checkbox" defaultChecked={localStorage.getItem('mindhome_auto_theme') === 'true'} onChange={(e) => {
                             localStorage.setItem('mindhome_auto_theme', e.target.checked ? 'true' : 'false');
                             showToast(e.target.checked ? 'Auto' : 'Manual', 'info');
                         }} />
@@ -3336,22 +3344,26 @@ const AnomalyAdvancedPanel = ({ lang, showToast }) => {
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
                     <button className="btn btn-sm btn-secondary" onClick={async () => {
                         await api.post('anomaly-settings/pause', { hours: 1 });
-                        showToast(lang === 'de' ? 'Pausiert für 1h' : 'Paused 1h', 'info'); }}>
+                        showToast(lang === 'de' ? 'Pausiert für 1h' : 'Paused 1h', 'info');
+                        const c = await api.get('anomaly-settings/devices'); if (c) setAllConfigs(c); }}>
                         <span className="mdi mdi-pause" style={{ marginRight: 4 }} />1h
                     </button>
                     <button className="btn btn-sm btn-secondary" onClick={async () => {
                         await api.post('anomaly-settings/pause', { hours: 4 });
-                        showToast(lang === 'de' ? 'Pausiert für 4h' : 'Paused 4h', 'info'); }}>
+                        showToast(lang === 'de' ? 'Pausiert für 4h' : 'Paused 4h', 'info');
+                        const c = await api.get('anomaly-settings/devices'); if (c) setAllConfigs(c); }}>
                         <span className="mdi mdi-pause" style={{ marginRight: 4 }} />4h
                     </button>
                     <button className="btn btn-sm btn-secondary" onClick={async () => {
                         await api.post('anomaly-settings/pause', { hours: 24 });
-                        showToast(lang === 'de' ? 'Pausiert für 24h' : 'Paused 24h', 'info'); }}>
+                        showToast(lang === 'de' ? 'Pausiert für 24h' : 'Paused 24h', 'info');
+                        const c = await api.get('anomaly-settings/devices'); if (c) setAllConfigs(c); }}>
                         <span className="mdi mdi-pause" style={{ marginRight: 4 }} />24h
                     </button>
                     <button className="btn btn-sm btn-warning" onClick={async () => {
                         await api.post('anomaly-settings/reset-baseline');
-                        showToast(lang === 'de' ? 'Baseline wird neu gelernt (7 Tage)' : 'Baseline reset (7 days)', 'info'); }}>
+                        showToast(lang === 'de' ? 'Baseline wird neu gelernt (7 Tage)' : 'Baseline reset (7 days)', 'info');
+                        const c = await api.get('anomaly-settings/devices'); if (c) setAllConfigs(c); }}>
                         <span className="mdi mdi-restart" style={{ marginRight: 4 }} />{lang === 'de' ? 'Baseline reset' : 'Reset baseline'}
                     </button>
                 </div>

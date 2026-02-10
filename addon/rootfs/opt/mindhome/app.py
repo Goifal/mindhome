@@ -1,4 +1,4 @@
-# MindHome app v0.6.1 (2026-02-10) - app.py
+# MindHome app v0.6.2 (2026-02-10) - app.py
 """
 MindHome - Main Application Entry Point
 Flask backend initialization, middleware, and startup.
