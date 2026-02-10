@@ -5,6 +5,7 @@ Auto-extracted from monolithic app.py during Phase 3.5 refactoring.
 """
 
 import os
+import sys
 import json
 import logging
 import time
@@ -13,6 +14,7 @@ import io
 import hashlib
 import zipfile
 import shutil
+from collections import defaultdict
 from datetime import datetime, timezone, timedelta
 from flask import Blueprint, request, jsonify, Response, make_response, send_from_directory, redirect, current_app
 from sqlalchemy import func as sa_func, text
@@ -111,11 +113,11 @@ def api_health_check():
 
     # HA connection
     health["checks"]["ha_websocket"] = {
-        "status": "ok" if ha._ws_connected else "disconnected",
-        "reconnect_attempts": ha._reconnect_attempts,
+        "status": "ok" if _ha()._ws_connected else "disconnected",
+        "reconnect_attempts": _ha()._reconnect_attempts,
     }
     health["checks"]["ha_rest_api"] = {
-        "status": "ok" if ha._is_online else "offline"
+        "status": "ok" if _ha()._is_online else "offline"
     }
 
     # #41 Connection stats
@@ -171,7 +173,7 @@ def api_system_info():
             "version": "0.5.0",
             "phase": "2 (complete)",
             "ha_connected": _ha().is_connected(),
-            "ws_connected": ha._ws_connected,
+            "ws_connected": _ha()._ws_connected,
             "ha_entity_count": len(_ha().get_states() or []),
             "timezone": str(get_ha_timezone()),
             "local_time": local_now().isoformat(),
@@ -1627,9 +1629,37 @@ def api_get_audit_trail():
 
 
 
+_watchdog_status = {"last_check": None, "ha_alive": False, "db_alive": False, "issues": []}
+
+
 @system_bp.route("/api/system/watchdog", methods=["GET"])
 def api_watchdog():
-    """Get watchdog status."""
+    """Get watchdog status - runs live check."""
+    global _watchdog_status
+    issues = []
+    ha_alive = _ha().is_connected() if _ha() else False
+    if not ha_alive:
+        issues.append("HA WebSocket disconnected")
+    db_alive = False
+    try:
+        session = get_db()
+        session.execute(text("SELECT 1"))
+        db_alive = True
+        session.close()
+    except Exception:
+        issues.append("Database unreachable")
+    try:
+        stat = os.statvfs("/data" if os.path.exists("/data") else "/")
+        free_gb = (stat.f_bavail * stat.f_frsize) / (1024**3)
+        if free_gb < 0.5:
+            issues.append(f"Low disk space: {free_gb:.1f} GB")
+    except Exception:
+        pass
+    _watchdog_status = {
+        "last_check": datetime.now(timezone.utc).isoformat(),
+        "ha_alive": ha_alive, "db_alive": db_alive,
+        "issues": issues, "healthy": len(issues) == 0,
+    }
     return jsonify(_watchdog_status)
 
 
@@ -1637,7 +1667,39 @@ def api_watchdog():
 @system_bp.route("/api/system/self-test", methods=["GET"])
 def api_self_test():
     """Run self-test and return results."""
-    return jsonify(run_startup_self_test())
+    results = []
+    try:
+        session = get_db()
+        session.execute(text("SELECT 1"))
+        session.close()
+        results.append({"test": "database", "status": "ok"})
+    except Exception as e:
+        results.append({"test": "database", "status": "fail", "error": str(e)})
+    try:
+        connected = _ha().is_connected() if _ha() else False
+        results.append({"test": "ha_connection", "status": "ok" if connected else "warn", "connected": connected})
+    except Exception as e:
+        results.append({"test": "ha_connection", "status": "fail", "error": str(e)})
+    try:
+        session = get_db()
+        for table in ["devices", "rooms", "domains", "users", "learned_patterns", "state_history"]:
+            session.execute(text(f"SELECT COUNT(*) FROM {table}"))
+        session.close()
+        results.append({"test": "tables", "status": "ok"})
+    except Exception as e:
+        results.append({"test": "tables", "status": "fail", "error": str(e)})
+    try:
+        session = get_db()
+        session.execute(text("INSERT INTO system_settings (key, value) VALUES ('_selftest', 'ok') ON CONFLICT(key) DO UPDATE SET value='ok'"))
+        session.commit()
+        session.execute(text("DELETE FROM system_settings WHERE key='_selftest'"))
+        session.commit()
+        session.close()
+        results.append({"test": "db_write", "status": "ok"})
+    except Exception as e:
+        results.append({"test": "db_write", "status": "fail", "error": str(e)})
+    all_ok = all(r["status"] == "ok" for r in results)
+    return jsonify({"passed": all_ok, "tests": results})
 
 
 
