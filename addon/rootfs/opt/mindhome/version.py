@@ -10,12 +10,20 @@ BUILD_DATE = "2026-02-10"
 CODENAME = "Phase 3.5 - Bootloop Fix"
 
 # Changelog
-# Build 6: v0.6.5 Bootloop Fix
-#   - Fix: JSX-Syntaxfehler (fehlende { in Zeile 4459) verhinderte Babel-Kompilierung
-#   - Fix: Frontend-Bibliotheken (React/ReactDOM/Babel) lokal gebündelt statt CDN
-#   - Fix: Translations-Endpoint suchte in falschem Verzeichnis (routes/ statt ../)
-#   - Fix: serve_frontend gab index.html statt 404 für fehlende .js-Dateien zurück
-#   - Fix: Mojibake in index.html Fehlermeldungen (ü/ö/ä)
+# Build 6: v0.6.5 Bugfix + Bootloop Fix
+#   - Fix: JSX-Syntaxfehler verhinderte Babel-Kompilierung
+#   - Fix: Frontend-Bibliotheken lokal gebuendelt statt CDN
+#   - Fix: Translations-Endpoint suchte in falschem Verzeichnis
+#   - Fix: serve_frontend 404 fuer fehlende .js-Dateien
+#   - Fix Ladescreen: Icon-Pfad kompatibel mit HA Ingress
+#   - Fix TTS: Keine Retry-Schleife bei 400, TTS-Entity-Erkennung
+#   - Fix Backup-Export: muted_until statt mute_until
+#   - Fix DomainsPage: fehlende devices Variable
+#   - Fix Notification: test-channel + channel-toggle Routes
+#   - Fix Anwesenheit: Modus-Deduplizierung
+#   - Fix Zeiteingabe: TimeInput statt type=time (Safari)
+#   - Fix Geraete: Responsive Grid Layout
+#   - Design: Einheitliche CSS-Variablen
 #
 # Build 5: v0.6.4 Stabilisierung
 #   - Mustererkennung: Confidence Decay 1x/Tag, Cap 10%/Tag, Sequenz-Formel, Korrelation erweitert

@@ -808,7 +808,7 @@
     <div id="root">
         <div class="loading-screen" id="initial-loader">
             <div class="sidebar-logo">
-                <img src="/icon.png" alt="MindHome" style="width: 64px; height: 64px; border-radius: 16px;" />
+                <img id="app-logo" src="icon.png" alt="MindHome" style="width: 64px; height: 64px; border-radius: 16px;" />
             </div>
             <div style="font-size: 22px; font-weight: 700; letter-spacing: -0.02em;">MindHome</div>
             <div class="loading-spinner"></div>
@@ -820,6 +820,18 @@
     <script>
         window._loadErrors = [];
         window._loadSteps = [];
+
+        // Detect API base path for Ingress FIRST (before anything else needs it)
+        (function() {
+            var path = window.location.pathname;
+            var match = path.match(/\/api\/hassio_ingress\/[^/]+/);
+            window._apiBase = match ? match[0] : '';
+            // Fix logo path for ingress
+            var logo = document.getElementById('app-logo');
+            if (logo && window._apiBase) {
+                logo.src = window._apiBase + '/icon.png';
+            }
+        })();
 
         function logStep(step) {
             window._loadSteps.push(step);
@@ -867,12 +879,6 @@
             }
         }, 30000);
 
-        // Detect API base path for Ingress
-        (function() {
-            var path = window.location.pathname;
-            var match = path.match(/\/api\/hassio_ingress\/[^/]+/);
-            window._apiBase = match ? match[0] : '';
-        })();
     </script>
 
     <!-- React, ReactDOM, Babel (lokal gebündelt, CDN-Fallback) -->
