@@ -14,7 +14,7 @@ import hashlib
 import zipfile
 import shutil
 from datetime import datetime, timezone, timedelta
-from flask import Blueprint, request, jsonify, Response, make_response, send_from_directory, redirect
+from flask import Blueprint, request, jsonify, Response, make_response, send_from_directory, redirect, current_app
 from sqlalchemy import func as sa_func, text
 
 from db import get_db_session, get_db_readonly, get_db
@@ -676,7 +676,7 @@ def api_manual_cleanup():
 @system_bp.route("/")
 def serve_index():
     """Serve index.html with app.jsx inlined to avoid Ingress XHR issues."""
-    frontend_dir = os.path.join(app.static_folder, "frontend")
+    frontend_dir = os.path.join(current_app.static_folder, "frontend")
     index_path = os.path.join(frontend_dir, "index.html")
     jsx_path = os.path.join(frontend_dir, "app.jsx")
 
@@ -722,7 +722,7 @@ def hot_update_frontend():
     filename = data["filename"]
     if filename not in ("app.jsx", "index.html"):
         return jsonify({"error": "only app.jsx and index.html allowed"}), 400
-    filepath = os.path.join(app.static_folder, "frontend", filename)
+    filepath = os.path.join(current_app.static_folder, "frontend", filename)
     try:
         with open(filepath, "w", encoding="utf-8") as f:
             f.write(data["content"])
@@ -742,14 +742,14 @@ def serve_frontend(path):
     # Strip frontend/ prefix if present (to avoid double-nesting)
     if path.startswith("frontend/"):
         path = path[len("frontend/"):]
-    if path and os.path.exists(os.path.join(app.static_folder, "frontend", path)):
-        response = send_from_directory(os.path.join(app.static_folder, "frontend"), path)
+    if path and os.path.exists(os.path.join(current_app.static_folder, "frontend", path)):
+        response = send_from_directory(os.path.join(current_app.static_folder, "frontend"), path)
         # Fix MIME type for .jsx files (Babel XHR needs text/javascript)
         if path.endswith(".jsx"):
             response.headers["Content-Type"] = "text/javascript; charset=utf-8"
             response.headers["Access-Control-Allow-Origin"] = "*"
         return response
-    return send_from_directory(os.path.join(app.static_folder, "frontend"), "index.html")
+    return send_from_directory(os.path.join(current_app.static_folder, "frontend"), "index.html")
 
 
 
@@ -1751,4 +1751,3 @@ def api_evaluate_plugins():
     except Exception as e:
         return jsonify({"error": str(e)})
     return jsonify(results)
-
