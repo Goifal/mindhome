@@ -4,12 +4,16 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "0.6.7"
-BUILD = 8
+VERSION = "0.6.8"
+BUILD = 9
 BUILD_DATE = "2026-02-10"
 CODENAME = "Phase 3.5 - Bootloop Fix"
 
 # Changelog
+# Build 9: v0.6.8 Bugfix
+#   - Fix Ladescreen: onerror-Handler fuer lokale lib-Dateien (CDN-Fallback)
+#   - Fix 404 fuer fehlende .js-Dateien: leerer Body statt JSON (Browser-kompatibel)
+#
 # Build 8: v0.6.7 Bugfix
 #   - Fix Bootloop: React/ReactDOM/Babel lokal gebundelt (Docker Build)
 #   - CDN-Fallback falls lokale Libs fehlen
