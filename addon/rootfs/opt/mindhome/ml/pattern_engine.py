@@ -1,4 +1,4 @@
-# MindHome Pattern Engine v0.6.0-phase3 (2026-02-09) - pattern_engine.py
+# MindHome Pattern Engine v0.6.1 (2026-02-10) - pattern_engine.py
 """
 MindHome - Pattern Engine (Phase 2a + Phase 3)
 Core intelligence: state logging, context building, pattern detection.
@@ -21,7 +21,7 @@ from models import (
     Device, Domain, Room, RoomDomainState, DataCollection,
     SystemSetting, User, LearningPhase, NotificationLog, NotificationType,
     DayPhase, SensorThreshold, SensorGroup, LearnedScene, PresenceMode,
-    PresenceLog, SchoolVacation, PluginSetting,
+    PresenceLog, SchoolVacation, PluginSetting, PatternSettings,
     ManualRule, ActionLog, PatternExclusion
 )
 
@@ -34,7 +34,7 @@ logger = logging.getLogger("mindhome.pattern_engine")
 
 # Minimum change thresholds per device_class / entity type
 SAMPLING_THRESHOLDS = {
-    "temperature":  0.5,   # only log if >= 0.5Ãƒâ€šÃ‚° change
+    "temperature":  0.5,   # only log if >= 0.5° change
     "humidity":     2.0,   # only log if >= 2% change
     "pressure":     5.0,   # only log if >= 5 hPa change
     "illuminance":  50.0,  # only log if >= 50 lux change
@@ -145,7 +145,7 @@ class ContextBuilder:
                 if eid == "sun.sun":
                     ctx["sun_phase"] = state_val
                     ctx["sun_elevation"] = attrs.get("elevation")
-                    # #57 ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“ dark detection
+                    # #57 dark detection
                     elev = attrs.get("elevation")
                     if elev is not None and elev < -6:
                         ctx["is_dark"] = True
@@ -461,7 +461,7 @@ class StateLogger:
 
             session.commit()
             self._event_timestamps.append(now)
-            logger.debug(f"Logged: {entity_id} {old_state} ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ {new_state}")
+            logger.debug(f"Logged: {entity_id} {old_state} → {new_state}")
 
             # B.4: Check manual rules
             self._check_manual_rules(session, entity_id, new_state, ctx)
@@ -671,8 +671,7 @@ class PatternDetector:
                             p.season = s_name
                             break
 
-            # B5: Apply decay to existing patterns
-            self._apply_decay(session)
+            # B5: Decay now handled solely by apply_confidence_decay (scheduler, every 12h)
 
             total = len(time_patterns) + len(sequence_patterns) + len(correlation_patterns)
             logger.info(
@@ -723,26 +722,51 @@ class PatternDetector:
             logger.warning(f"Domain scoring error: {e}")
 
     def apply_confidence_decay(self, session):
-        """#22: Decay confidence of patterns not matched recently."""
+        """Unified confidence decay (v0.6.1).
+
+        Algorithm: Grace period 2 days, then 1%/week for 14 days,
+        then 5%/day. Deactivate at < 0.1.
+        Called by scheduler every 12h (not from run_full_analysis).
+        """
         try:
-            cutoff = datetime.now(timezone.utc) - timedelta(days=14)
-            stale = session.query(LearnedPattern).filter(
+            now = datetime.now(timezone.utc)
+            patterns = session.query(LearnedPattern).filter(
                 LearnedPattern.is_active == True,
-                LearnedPattern.last_matched_at < cutoff,
                 LearnedPattern.confidence > 0.1
             ).all()
 
-            for p in stale:
-                days_stale = (datetime.now(timezone.utc) - p.last_matched_at).days
-                decay = 0.01 * (days_stale // 7)  # lose 1% per week of inactivity
+            decayed_count = 0
+            for p in patterns:
+                last_active = p.last_matched_at or p.created_at
+                if last_active and last_active.tzinfo is None:
+                    last_active = last_active.replace(tzinfo=timezone.utc)
+                days_inactive = (now - last_active).days if last_active else 0
+
+                if days_inactive <= 2:
+                    continue  # Grace period
+
+                if days_inactive <= 16:  # 2 + 14 days: gentle decay
+                    decay = 0.01 * ((days_inactive - 2) / 7)
+                else:  # After 16 days: aggressive decay
+                    gentle_decay = 0.01 * 2  # 2 weeks of gentle
+                    aggressive_days = days_inactive - 16
+                    decay = gentle_decay + 0.05 * aggressive_days
+
                 old_conf = p.confidence
-                p.confidence = max(0.1, p.confidence - decay)
+                p.confidence = max(0.0, p.confidence - decay)
+
+                if p.confidence < 0.1:
+                    p.is_active = False
+                    p.status = "disabled"
+                    logger.info(f"Pattern {p.id} deactivated (confidence {p.confidence:.2f})")
+
                 if decay > 0:
-                    logger.debug(f"Pattern {p.id} confidence decay: {old_conf:.2f} ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ {p.confidence:.2f} (stale {days_stale}d)")
+                    decayed_count += 1
+                    logger.debug(f"Pattern {p.id} decay: {old_conf:.2f} → {p.confidence:.2f} ({days_inactive}d inactive)")
 
             session.commit()
-            if stale:
-                logger.info(f"Confidence decay applied to {len(stale)} stale patterns")
+            if decayed_count:
+                logger.info(f"Confidence decay applied to {decayed_count} patterns")
         except Exception as e:
             logger.warning(f"Confidence decay error: {e}")
 
@@ -778,7 +802,7 @@ class PatternDetector:
         pd = p.pattern_data or {}
         tw = pd.get("time_window_min", 60)
         if tw <= 15:
-            factors.append({"factor": "precise_time", "detail": f"Ãƒâ€šÃ‚Â±{tw}min window", "impact": "+precise"})
+            factors.append({"factor": "precise_time", "detail": f"±{tw}min window", "impact": "+precise"})
 
         return {
             "confidence": conf,
@@ -789,7 +813,7 @@ class PatternDetector:
         }
 
     def detect_cross_room_correlations(self, session):
-        """#56: Detect patterns across rooms (e.g. kitchenÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢dining room)."""
+        """#56: Detect patterns across rooms (e.g. kitchen→dining room)."""
         try:
             cutoff = datetime.now(timezone.utc) - timedelta(days=14)
             history = session.query(StateHistory).filter(
@@ -822,8 +846,8 @@ class PatternDetector:
 
             for (r1, r2), count in pair_counter.most_common(5):
                 if count >= 5:
-                    room1 = session.query(Room).get(r1)
-                    room2 = session.query(Room).get(r2)
+                    room1 = session.get(Room,r1)
+                    room2 = session.get(Room,r2)
                     if room1 and room2:
                         correlations.append({
                             "room_a": {"id": r1, "name": room1.name},
@@ -939,7 +963,7 @@ class PatternDetector:
                 device = session.query(Device).filter_by(ha_entity_id=entity_id).first()
                 device_name = device.name if device else entity_id
                 time_str = f"{avg_hour:02d}:{avg_minute:02d}"
-                day_str_de = "werktags" if is_weekday_only else ("am Wochenende" if is_weekend_only else "tÃƒÆ’Ã‚Â¤glich")
+                day_str_de = "werktags" if is_weekday_only else ("am Wochenende" if is_weekend_only else "täglich")
                 day_str_en = "on weekdays" if is_weekday_only else ("on weekends" if is_weekend_only else "daily")
                 state_de = "eingeschaltet" if new_state == "on" else ("ausgeschaltet" if new_state == "off" else new_state)
                 state_en = "turned on" if new_state == "on" else ("turned off" if new_state == "off" else new_state)
@@ -968,9 +992,9 @@ class PatternDetector:
     # --------------------------------------------------------------------------
 
     def _detect_sequence_patterns(self, session, events):
-        """Find AÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢B event chains (within time window)."""
+        """Find A→B event chains (within time window)."""
         patterns_found = []
-        CHAIN_WINDOW = 300  # 5 minutes
+        CHAIN_WINDOW = self._get_pattern_setting(session, "chain_window_seconds", 120)
 
         # Build pairs: for each event, what happened within 5 min after?
         pairs = defaultdict(int)
@@ -1000,9 +1024,10 @@ class PatternDetector:
                         "context_b": ev_b.context,
                     })
 
-        # Filter: need at least 4 occurrences
+        # Filter: need minimum occurrences (configurable, default 7)
+        min_seq_count = self._get_pattern_setting(session, "min_sequence_count", 7)
         for (eid_a, state_a, eid_b, state_b), count in pairs.items():
-            if count < 4:
+            if count < min_seq_count:
                 continue
 
             examples = pair_examples[(eid_a, state_a, eid_b, state_b)]
@@ -1021,7 +1046,8 @@ class PatternDetector:
             common_persons = self._find_common_persons(contexts_a)
 
             confidence = min((count / 14) * 0.8, 0.90)
-            if confidence < 0.3:
+            min_confidence = self._get_pattern_setting(session, "min_confidence", 0.45)
+            if confidence < min_confidence:
                 continue
 
             pattern_data = {
@@ -1058,11 +1084,11 @@ class PatternDetector:
             state_b_de = "eingeschaltet" if state_b == "on" else ("ausgeschaltet" if state_b == "off" else state_b)
 
             delay_str = f"{int(avg_delta)}s" if avg_delta < 60 else f"{int(avg_delta/60)} Min"
-            desc_de = f"Wenn {name_a} {state_a_de} wird ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ {name_b} wird nach ~{delay_str} {state_b_de}"
-            desc_en = f"When {name_a} turns {state_a} ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ {name_b} turns {state_b} after ~{delay_str}"
+            desc_de = f"Wenn {name_a} {state_a_de} wird → {name_b} wird nach ~{delay_str} {state_b_de}"
+            desc_en = f"When {name_a} turns {state_a} → {name_b} turns {state_b} after ~{delay_str}"
 
             p = self._upsert_pattern(
-                session, f"{eid_a}ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢{eid_b}", "event_chain", pattern_data,
+                session, f"{eid_a}→{eid_b}", "event_chain", pattern_data,
                 confidence, trigger_conditions, action_def,
                 desc_de, desc_en, dev_b
             )
@@ -1149,7 +1175,7 @@ class PatternDetector:
                 desc_en = f"When {name_a} = {state_a}, {name_b} is usually {state_b} ({int(ratio*100)}%)"
 
                 p = self._upsert_pattern(
-                    session, f"{eid_a}ÃƒÂ¢Ã¢â‚¬Â¡Ã¢â‚¬Â{eid_b}", "correlation", pattern_data,
+                    session, f"{eid_a}↔{eid_b}", "correlation", pattern_data,
                     confidence, trigger_conditions, action_def,
                     desc_de, desc_en, dev_b
                 )
@@ -1162,34 +1188,19 @@ class PatternDetector:
     # B5: Pattern Decay
     # --------------------------------------------------------------------------
 
-    def _apply_decay(self, session):
-        """Reduce confidence of patterns that haven't matched recently."""
-        DECAY_PER_DAY = 0.05
-        DEACTIVATE_THRESHOLD = 0.1
-
-        patterns = session.query(LearnedPattern).filter_by(is_active=True).all()
-        now = datetime.now(timezone.utc)
-
-        for p in patterns:
-            if p.last_matched_at:
-                days_inactive = (now - p.last_matched_at).days
-            else:
-                days_inactive = (now - p.created_at).days
-
-            if days_inactive > 2:  # Grace period: 2 days
-                decay = DECAY_PER_DAY * (days_inactive - 2)
-                p.confidence = max(p.confidence - decay, 0.0)
-
-                if p.confidence < DEACTIVATE_THRESHOLD:
-                    p.is_active = False
-                    p.status = "disabled"
-                    logger.info(f"Pattern {p.id} deactivated (confidence {p.confidence:.2f})")
-
-        logger.debug(f"Decay applied to {len(patterns)} patterns")
-
     # --------------------------------------------------------------------------
     # Helpers
     # --------------------------------------------------------------------------
+
+    def _get_pattern_setting(self, session, key, default):
+        """Read a setting from PatternSettings table, with fallback to default."""
+        try:
+            ps = session.query(PatternSettings).filter_by(key=key).first()
+            if ps:
+                return type(default)(ps.value)
+        except Exception:
+            pass
+        return default
 
     def _cluster_by_time(self, occurrences, window_minutes=30):
         """Cluster events by time of day (ignoring date)."""
@@ -1359,7 +1370,9 @@ class PatternDetector:
             for ep in existing:
                 if (ep.pattern_data and
                     ep.pattern_data.get("trigger_entity") == pattern_data.get("trigger_entity") and
-                    ep.pattern_data.get("action_entity") == pattern_data.get("action_entity")):
+                    ep.pattern_data.get("action_entity") == pattern_data.get("action_entity") and
+                    ep.pattern_data.get("trigger_state") == pattern_data.get("trigger_state") and
+                    ep.pattern_data.get("action_state") == pattern_data.get("action_state")):
                     ep.pattern_data = pattern_data
                     ep.confidence = max(ep.confidence, confidence)
                     ep.trigger_conditions = trigger_conditions
@@ -1379,7 +1392,9 @@ class PatternDetector:
             for ep in existing:
                 if (ep.pattern_data and
                     ep.pattern_data.get("condition_entity") == pattern_data.get("condition_entity") and
-                    ep.pattern_data.get("correlated_entity") == pattern_data.get("correlated_entity")):
+                    ep.pattern_data.get("correlated_entity") == pattern_data.get("correlated_entity") and
+                    ep.pattern_data.get("condition_state") == pattern_data.get("condition_state") and
+                    ep.pattern_data.get("correlated_state") == pattern_data.get("correlated_state")):
                     ep.pattern_data = pattern_data
                     ep.confidence = max(ep.confidence, confidence)
                     ep.trigger_conditions = trigger_conditions

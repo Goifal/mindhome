@@ -1,6 +1,6 @@
-// MindHome Frontend v0.5.1-blockA2 (2026-02-08T20:10) - app.jsx - DIES IST DIE FRONTEND DATEI
+// MindHome Frontend v0.6.1 (2026-02-10) - app.jsx
 // ================================================================
-// MindHome - React Frontend Application v0.5.0
+// MindHome - React Frontend Application v0.6.1
 // ================================================================
 
 const { useState, useEffect, useCallback, createContext, useContext, useRef, useMemo, useReducer } = React;
@@ -197,6 +197,43 @@ const SkeletonCard = () => (
 );
 
 // ================================================================
+// CustomSelect Component (v0.6.1)
+// ================================================================
+
+const CustomSelect = ({ options = [], value, onChange, placeholder, style: wrapStyle }) => {
+    const [open, setOpen] = React.useState(false);
+    const ref = React.useRef(null);
+    const selected = options.find(o => o.value === value);
+
+    React.useEffect(() => {
+        const handleClick = e => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+        document.addEventListener('mousedown', handleClick);
+        return () => document.removeEventListener('mousedown', handleClick);
+    }, []);
+
+    return (
+        <div ref={ref} style={{ position: 'relative', width: '100%', ...wrapStyle }}>
+            <button type="button" className="input" onClick={() => setOpen(!open)}
+                style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', textAlign: 'left', cursor: 'pointer', background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '8px 12px', fontSize: 13, color: selected ? 'var(--text-primary)' : 'var(--text-muted)' }}>
+                <span>{selected ? selected.label : (placeholder || '-- Select --')}</span>
+                <span className={`mdi ${open ? 'mdi-chevron-up' : 'mdi-chevron-down'}`} style={{ fontSize: 16 }} />
+            </button>
+            {open && (
+                <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 2000, background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', boxShadow: 'var(--shadow-lg)', maxHeight: 200, overflowY: 'auto', marginTop: 2 }}>
+                    {options.map(o => (
+                        <div key={o.value} onClick={() => { onChange(o.value); setOpen(false); }}
+                            style={{ padding: '8px 12px', fontSize: 13, cursor: 'pointer', background: o.value === value ? 'var(--bg-hover)' : 'transparent', color: 'var(--text-primary)' }}
+                            onMouseEnter={e => e.target.style.background = 'var(--bg-hover)'}
+                            onMouseLeave={e => e.target.style.background = o.value === value ? 'var(--bg-hover)' : 'transparent'}>
+                            {o.label}
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+};
+
 // #8 Toast Stacking
 // ================================================================
 
@@ -1385,6 +1422,8 @@ const DevicesPage = () => {
     const [bulkDomain, setBulkDomain] = useState('');
     const [confirmDel, setConfirmDel] = useState(null);
     const [confirmBulkDel, setConfirmBulkDel] = useState(false);
+    const [filterRoom, setFilterRoom] = useState('');
+    const [filterDomain, setFilterDomain] = useState('');
 
     const handleDiscover = async () => {
         setDiscovering(true);
@@ -1516,9 +1555,12 @@ const DevicesPage = () => {
     const getRoomName = (roomId) => rooms.find(r => r.id === roomId)?.name || '–';
 
     const getFilteredDevices = () => {
-        if (!search) return devices;
+        let list = devices;
+        if (filterRoom) list = list.filter(d => String(d.room_id) === filterRoom);
+        if (filterDomain) list = list.filter(d => String(d.domain_id) === filterDomain);
+        if (!search) return list;
         const s = search.toLowerCase();
-        return devices.filter(d =>
+        return list.filter(d =>
             d.ha_entity_id?.toLowerCase().includes(s) || d.name?.toLowerCase().includes(s)
             || getDomainName(d.domain_id)?.toLowerCase().includes(s)
             || getRoomName(d.room_id)?.toLowerCase().includes(s)
@@ -1614,10 +1656,46 @@ const DevicesPage = () => {
             {/* Device Table */}
             {devices.length > 0 ? (
                 <div>
-                    <div style={{ marginBottom: 12 }}>
+                    <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
                         <input className="input" placeholder={lang === 'de' ? ' Geräte suchen...' : ' Search devices...'}
-                            value={search} onChange={e => setSearch(e.target.value)} style={{ maxWidth: 400 }} />
+                            value={search} onChange={e => setSearch(e.target.value)} style={{ maxWidth: 300, flex: 1, minWidth: 160 }} />
+                        <div style={{ display: 'flex', gap: 4, overflowX: 'auto', scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
+                            <button className={`btn btn-sm ${!filterRoom ? 'btn-primary' : 'btn-ghost'}`} style={{ flexShrink: 0 }} onClick={() => setFilterRoom('')}>{lang === 'de' ? 'Alle Raeume' : 'All rooms'}</button>
+                            {rooms.map(r => <button key={r.id} className={`btn btn-sm ${filterRoom === String(r.id) ? 'btn-primary' : 'btn-ghost'}`} style={{ flexShrink: 0 }} onClick={() => setFilterRoom(String(r.id))}>{r.name}</button>)}
+                        </div>
+                        <div style={{ display: 'flex', gap: 4, overflowX: 'auto', scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
+                            <button className={`btn btn-sm ${!filterDomain ? 'btn-primary' : 'btn-ghost'}`} style={{ flexShrink: 0 }} onClick={() => setFilterDomain('')}>{lang === 'de' ? 'Alle Domains' : 'All domains'}</button>
+                            {domains.map(d => <button key={d.id} className={`btn btn-sm ${filterDomain === String(d.id) ? 'btn-primary' : 'btn-ghost'}`} style={{ flexShrink: 0 }} onClick={() => setFilterDomain(String(d.id))}>{d.display_name || d.name}</button>)}
+                        </div>
                     </div>
+                    {/* Mobile card view */}
+                    <div className="devices-mobile-cards" style={{ display: 'none' }}>
+                        {getFilteredDevices().map(device => {
+                            const st = stateDisplay(device.live_state);
+                            const attrs = device.live_attributes || {};
+                            return (
+                                <div key={device.id} className="card" style={{ marginBottom: 8, padding: 12 }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                        <div style={{ flex: 1, minWidth: 0 }}>
+                                            <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 2 }}>{device.name}</div>
+                                            <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-muted)', marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{device.ha_entity_id}</div>
+                                            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', fontSize: 11 }}>
+                                                <span className="badge badge-info" style={{ fontSize: 10 }}>{getDomainName(device.domain_id)}</span>
+                                                <span className="badge" style={{ fontSize: 10, background: 'var(--bg-secondary)' }}>{getRoomName(device.room_id)}</span>
+                                                <span style={{ color: st.color, fontWeight: 600 }}>{st.label}</span>
+                                            </div>
+                                        </div>
+                                        <div style={{ display: 'flex', gap: 4 }}>
+                                            <button className="btn btn-ghost btn-icon" onClick={() => setEditDevice({...device})}><span className="mdi mdi-pencil" style={{ fontSize: 16, color: 'var(--accent-primary)' }} /></button>
+                                            <button className="btn btn-ghost btn-icon" onClick={() => setConfirmDel(device)}><span className="mdi mdi-delete-outline" style={{ fontSize: 16, color: 'var(--danger)' }} /></button>
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                    {/* Desktop table view */}
+                    <div className="devices-table-wrap">
                     <div className="table-wrap">
                     <table>
                         <thead>
@@ -1697,6 +1775,7 @@ const DevicesPage = () => {
                             })}
                         </tbody>
                     </table>
+                    </div>
                     </div>
                 </div>
             ) : !discovered && (
@@ -2425,6 +2504,9 @@ const SettingsPage = () => {
     const [retentionInput, setRetentionInput] = useState('90');
     const [cleaning, setCleaning] = useState(false);
     const [anomalySensitivity, setAnomalySensitivity] = useState('medium');
+    const [patternSettings, setPatternSettings] = useState({});
+    const [patternMeta, setPatternMeta] = useState({});
+    const [learningDays, setLearningDays] = useState(null);
     const fileInputRef = useRef(null);
 
     useEffect(() => {
@@ -2441,6 +2523,10 @@ const SettingsPage = () => {
                 const global = anomSettings.find(s => !s.room_id && !s.domain_id && !s.device_id);
                 if (global) setAnomalySensitivity(global.sensitivity || 'medium');
             }
+            const ps = await api.get('pattern-settings');
+            if (ps) { const { _meta, ...rest } = ps; setPatternSettings(rest); setPatternMeta(_meta || {}); }
+            const ld = await api.get('stats/learning-days');
+            if (ld) setLearningDays(ld.learning_days);
         })();
     }, []);
 
@@ -2581,7 +2667,7 @@ const SettingsPage = () => {
                     )}
                 </Modal>
             )}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16, alignItems: 'start' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 420px), 1fr))', gap: 16, alignItems: 'start' }}>
             {/* LEFT COLUMN */}
             <div>
             {/* Privacy & Storage */}
@@ -2594,12 +2680,12 @@ const SettingsPage = () => {
                 </div>
                 <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 12 }}>
                     {lang === 'de'
-                        ? '100% lokal â€“ alle Daten bleiben auf deinem Gerät. Keine Cloud, keine Tracking.'
-                        : '100% local â€“ all data stays on your device. No cloud, no tracking.'}
+                        ? '100% lokal – alle Daten bleiben auf deinem Gerät. Keine Cloud, keine Tracking.'
+                        : '100% local – all data stays on your device. No cloud, no tracking.'}
                 </p>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                     <InfoRow label={lang === 'de' ? 'Datenbankgröße' : 'Database Size'}
-                        value={sysInfo?.db_size_bytes ? formatBytes(sysInfo.db_size_bytes) : 'â€“'} />
+                        value={sysInfo?.db_size_bytes ? formatBytes(sysInfo.db_size_bytes) : '–'} />
                     <InfoRow label={lang === 'de' ? 'Gesammelte Events' : 'Collected Events'}
                         value={sysInfo?.state_history_count?.toLocaleString() || '0'} />
                     <InfoRow label={lang === 'de' ? 'Aufbewahrung' : 'Retention'}
@@ -2819,6 +2905,67 @@ const SettingsPage = () => {
                 {viewMode === 'advanced' && <AnomalyAdvancedPanel lang={lang} showToast={showToast} />}
             </div>
 
+            {/* Pattern Settings (#25, #32, #37) */}
+            <div className="card" style={{ marginBottom: 16 }}>
+                <div className="card-title" style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span className="mdi mdi-brain" style={{ color: 'var(--accent-primary)' }} />
+                    {lang === 'de' ? 'Muster-Erkennung' : 'Pattern Detection'}
+                    {patternMeta.is_custom && <span className="badge badge-warning" style={{ fontSize: 10 }}>{lang === 'de' ? 'Benutzerdefiniert' : 'Custom'}</span>}
+                </div>
+                {learningDays != null && (
+                    <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 12 }}>
+                        {lang === 'de' ? `Lerndauer: ${learningDays} Tage` : `Learning: ${learningDays} days`}
+                    </div>
+                )}
+                <div style={{ marginBottom: 12 }}>
+                    <label style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 6, display: 'block' }}>{lang === 'de' ? 'Lerngeschwindigkeit' : 'Learning Speed'}</label>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                        {[{ id: 'cautious', label: lang === 'de' ? 'Vorsichtig' : 'Cautious' },
+                          { id: 'normal', label: 'Normal' },
+                          { id: 'aggressive', label: lang === 'de' ? 'Aggressiv' : 'Aggressive' }].map(p => (
+                            <button key={p.id} className={`btn btn-sm ${patternMeta.active_preset === p.id && !patternMeta.is_custom ? 'btn-primary' : 'btn-ghost'}`}
+                                style={{ flex: 1 }}
+                                onClick={async () => {
+                                    const r = await api.post(`pattern-settings/preset/${p.id}`);
+                                    if (r?.success) {
+                                        showToast(`${p.label}`, 'success');
+                                        const ps = await api.get('pattern-settings');
+                                        if (ps) { const { _meta, ...rest } = ps; setPatternSettings(rest); setPatternMeta(_meta || {}); }
+                                    }
+                                }}>{p.label}</button>
+                        ))}
+                    </div>
+                </div>
+                {viewMode === 'advanced' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
+                        {[
+                            { key: 'chain_window_seconds', label: lang === 'de' ? 'Ketten-Fenster (Sek)' : 'Chain window (sec)', type: 'number' },
+                            { key: 'min_sequence_count', label: lang === 'de' ? 'Min. Sequenzen' : 'Min. sequences', type: 'number' },
+                            { key: 'min_confidence', label: lang === 'de' ? 'Min. Konfidenz' : 'Min. confidence', type: 'number', step: '0.05' },
+                        ].map(f => (
+                            <div key={f.key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                                <label style={{ fontSize: 12, color: 'var(--text-muted)', flex: 1 }}>{f.label}</label>
+                                <input className="input" type={f.type} step={f.step || '1'}
+                                    style={{ width: 80, textAlign: 'right' }}
+                                    value={patternSettings[f.key] ?? ''}
+                                    onChange={e => setPatternSettings({ ...patternSettings, [f.key]: e.target.value })} />
+                            </div>
+                        ))}
+                        <button className="btn btn-sm btn-primary" style={{ alignSelf: 'flex-end', marginTop: 4 }}
+                            onClick={async () => {
+                                const r = await api.put('pattern-settings', patternSettings);
+                                if (r?.success) {
+                                    showToast(lang === 'de' ? 'Gespeichert' : 'Saved', 'success');
+                                    const ps = await api.get('pattern-settings');
+                                    if (ps) { const { _meta, ...rest } = ps; setPatternSettings(rest); setPatternMeta(_meta || {}); }
+                                }
+                            }}>
+                            {lang === 'de' ? 'Speichern' : 'Save'}
+                        </button>
+                    </div>
+                )}
+            </div>
+
             {/* #23 Vacation Mode + #42 Debug Mode + #49 Auto Theme + #63 Export + #68 Accessibility */}
             <div className="card" style={{ marginBottom: 16 }}>
                 <div className="card-title" style={{ marginBottom: 16 }}>
@@ -2857,17 +3004,6 @@ const SettingsPage = () => {
                         }} />
                         <span className="toggle-slider" />
                     </label>
-                </div>
-
-                {/* #68 Font Size */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
-                    <span style={{ fontSize: 13 }}><span className="mdi mdi-format-size" style={{ marginRight: 6 }} />{lang === 'de' ? 'Schriftgröße' : 'Font Size'}</span>
-                    <div style={{ display: 'flex', gap: 4 }}>
-                        {[{ s: '13px', l: 'S' }, { s: '15px', l: 'M' }, { s: '17px', l: 'L' }].map(f => (
-                            <button key={f.l} className="btn btn-sm btn-ghost" onClick={() => { document.documentElement.style.fontSize = f.s; }}
-                                style={{ width: 28, fontSize: 11 }}>{f.l}</button>
-                        ))}
-                    </div>
                 </div>
 
             </div>
@@ -2931,10 +3067,12 @@ const CalendarTriggersConfig = ({ lang, showToast }) => {
                 <div style={{ padding: 12, background: 'var(--bg-main)', borderRadius: 8, marginBottom: 12 }}>
                     <div className="input-group" style={{ marginBottom: 8 }}>
                         <label className="input-label">{lang === 'de' ? 'Kalender' : 'Calendar'}</label>
-                        <select className="input" value={newTrigger.calendar} onChange={e => setNewTrigger({ ...newTrigger, calendar: e.target.value })}>
-                            <option value="">-- {lang === 'de' ? 'Auswählen' : 'Select'} --</option>
-                            {calendars.map(c => <option key={c.entity_id} value={c.entity_id}>{c.name || c.entity_id}</option>)}
-                        </select>
+                        <CustomSelect
+                            options={calendars.map(c => ({ value: c.entity_id, label: c.name || c.entity_id }))}
+                            value={newTrigger.calendar}
+                            onChange={v => setNewTrigger({ ...newTrigger, calendar: v })}
+                            placeholder={lang === 'de' ? '-- Auswählen --' : '-- Select --'}
+                        />
                     </div>
                     <div className="input-group" style={{ marginBottom: 8 }}>
                         <label className="input-label">{lang === 'de' ? 'Stichwort im Event' : 'Keyword in event'}</label>
@@ -2943,9 +3081,11 @@ const CalendarTriggersConfig = ({ lang, showToast }) => {
                     </div>
                     <div className="input-group" style={{ marginBottom: 8 }}>
                         <label className="input-label">{lang === 'de' ? 'Aktion' : 'Action'}</label>
-                        <select className="input" value={newTrigger.action} onChange={e => setNewTrigger({ ...newTrigger, action: e.target.value })}>
-                            {Object.entries(actionLabels).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                        </select>
+                        <CustomSelect
+                            options={Object.entries(actionLabels).map(([k, v]) => ({ value: k, label: v }))}
+                            value={newTrigger.action}
+                            onChange={v => setNewTrigger({ ...newTrigger, action: v })}
+                        />
                     </div>
                     <div className="input-group" style={{ marginBottom: 8 }}>
                         <label className="input-label">{lang === 'de' ? 'Vorlaufzeit (Min)' : 'Lead time (min)'}</label>
@@ -3742,10 +3882,10 @@ const PatternsPage = () => {
                 </div>
             )}
             {/* Tabs */}
-            <div style={{ display: 'flex', gap: 4, marginBottom: 16, overflowX: 'auto', paddingBottom: 4 }}>
+            <div style={{ display: 'flex', gap: 4, marginBottom: 16, overflowX: 'auto', paddingBottom: 4, whiteSpace: 'nowrap', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
                 {ptabs.map(t => (
                     <button key={t.id} className={`btn ${ptab === t.id ? 'btn-primary' : 'btn-ghost'}`}
-                        style={{ fontSize: 13, whiteSpace: 'nowrap', padding: '6px 14px' }} onClick={() => setPtab(t.id)}>
+                        style={{ fontSize: 13, whiteSpace: 'nowrap', padding: '6px 14px', flexShrink: 0 }} onClick={() => setPtab(t.id)}>
                         <span className={`mdi ${t.icon}`} style={{ marginRight: 6 }} />
                         {t.label}{t.count > 0 ? ` (${t.count})` : ''}
                     </button>
@@ -4123,7 +4263,7 @@ const PatternsPage = () => {
                     </div>
                     {conflicts.slice(0, 3).map((c, i) => (
                         <div key={i} style={{ fontSize: 12, color: 'var(--text-secondary)', padding: '4px 0' }}>
-                            {c.message_de || c.message_en || c.description || `${c.pattern_a?.desc || c.pattern_a?.id || '?'}  â€ ${c.pattern_b?.desc || c.pattern_b?.id || '?'}`}
+                            {c.message_de || c.message_en || c.description || `${c.pattern_a?.desc || c.pattern_a?.id || '?'} ↔ ${c.pattern_b?.desc || c.pattern_b?.id || '?'}`}
                         </div>
                     ))}
                 </div>
@@ -4292,7 +4432,7 @@ const PatternsPage = () => {
                                             <div><span style={{ color: 'var(--text-muted)' }}>{lang === 'de' ? 'Tage' : 'Days'}:</span> {p.pattern_data.weekday_filter === 'weekdays' ? (lang === 'de' ? 'Mo–Fr' : 'Mon–Fri') : p.pattern_data.weekday_filter === 'weekends' ? (lang === 'de' ? 'Sa–So' : 'Sat–Sun') : (lang === 'de' ? 'Alle' : 'All')}</div>
                                         )}
                                         {p.pattern_data?.sun_relative_elevation != null && (
-                                            <div><span style={{ color: 'var(--text-muted)' }}>{lang === 'de' ? 'Sonnenstand' : 'Sun elevation'}:</span> {p.pattern_data.sun_relative_elevation}Â°</div>
+                                            <div><span style={{ color: 'var(--text-muted)' }}>{lang === 'de' ? 'Sonnenstand' : 'Sun elevation'}:</span> {p.pattern_data.sun_relative_elevation}°</div>
                                         )}
                                         {p.pattern_data?.trigger_entity && (
                                             <div><span style={{ color: 'var(--text-muted)' }}>Trigger:</span> <code style={{ fontSize: 12 }}>{p.pattern_data.trigger_entity}</code> → {p.pattern_data.trigger_state}</div>
@@ -4506,11 +4646,11 @@ const NotificationsPage = () => {
         <div>
             {/* Tab bar + DND */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
-                <div style={{ display: 'flex', gap: 4 }}>
+                <div style={{ display: 'flex', gap: 4, overflowX: 'auto', whiteSpace: 'nowrap', scrollbarWidth: 'none' }}>
                     {[{ id: 'inbox', label: lang === 'de' ? 'Posteingang' : 'Inbox', icon: 'mdi-bell' },
                       { id: 'settings', label: lang === 'de' ? 'Einstellungen' : 'Settings', icon: 'mdi-cog' }].map(t => (
                         <button key={t.id} className={`btn ${tab === t.id ? 'btn-primary' : 'btn-ghost'}`}
-                            style={{ fontSize: 13, padding: '6px 14px' }} onClick={() => setTab(t.id)}>
+                            style={{ fontSize: 13, padding: '6px 14px', flexShrink: 0 }} onClick={() => setTab(t.id)}>
                             <span className={`mdi ${t.icon}`} style={{ marginRight: 6 }} />{t.label}
                         </button>
                     ))}
@@ -5300,9 +5440,10 @@ const EnergyPage = () => {
                 </button>
             </div>
 
-            <div style={{ display: 'flex', gap: 4, marginBottom: 16, flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: 4, marginBottom: 16, overflowX: 'auto', whiteSpace: 'nowrap', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
                 {tabs.map(t => (
-                    <button key={t.id} className={`btn btn-sm ${tab === t.id ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setTab(t.id)}>
+                    <button key={t.id} className={`btn btn-sm ${tab === t.id ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setTab(t.id)}
+                        style={{ flexShrink: 0 }}>
                         <span className={'mdi ' + t.icon} style={{ marginRight: 4 }} />{t.label}
                     </button>
                 ))}
@@ -5503,6 +5644,7 @@ const ScenesPage = () => {
     const [newScene, setNewScene] = useState({ name_de: '', name_en: '', icon: 'mdi:palette', room_id: '', states: [], schedule_cron: '', schedule_enabled: false, action_delay_seconds: 0 });
     const [newAction, setNewAction] = useState({ entity_id: '', state: 'on' });
     const [tab, setTab] = useState('active');
+    const [expandedScene, setExpandedScene] = useState(null);
 
     const load = () => {
         api.get('scenes').then(d => setScenes(Array.isArray(d) ? d : [])).catch(() => {});
@@ -5547,9 +5689,9 @@ const ScenesPage = () => {
                 <span className="mdi mdi-information" style={{ marginRight: 6, color: 'var(--accent-primary)' }} />
                 {lang === 'de' ? 'Szenen speichern den Zustand mehrerer Geraete und koennen mit einem Klick aktiviert werden. Erstelle Szenen manuell, mache einen Snapshot oder uebernimm erkannte Muster.' : 'Scenes save the state of multiple devices and can be activated with one click.'}
             </div>
-            <div style={{ display: 'flex', gap: 4, marginBottom: 16 }}>
+            <div style={{ display: 'flex', gap: 4, marginBottom: 16, overflowX: 'auto', whiteSpace: 'nowrap', scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
                 {[['active', lang === 'de' ? 'Aktiv' : 'Active', accepted.length], ['detected', lang === 'de' ? 'Erkannt' : 'Detected', detected.length], ['snapshot', 'Snapshot', '']].map(([id, label, count]) => (
-                    <button key={id} className={`btn btn-sm ${tab === id ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setTab(id)}>{label}{count !== '' ? ` (${count})` : ''}</button>
+                    <button key={id} className={`btn btn-sm ${tab === id ? 'btn-primary' : 'btn-ghost'}`} style={{ flexShrink: 0 }} onClick={() => setTab(id)}>{label}{count !== '' ? ` (${count})` : ''}</button>
                 ))}
             </div>
 
@@ -5561,20 +5703,37 @@ const ScenesPage = () => {
                             {lang === 'de' ? 'Noch keine Szenen. Erstelle eine oder mache einen Snapshot.' : 'No scenes yet.'}
                         </div>
                     ) : accepted.map(s => (
-                        <div key={s.id} style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', opacity: s.is_active ? 1 : 0.5 }}>
-                            <div style={{ flex: 1 }}>
-                                <span className={'mdi ' + (s.icon || 'mdi-palette')} style={{ marginRight: 8, fontSize: 18, color: 'var(--accent-primary)' }} />
-                                <strong>{lang === 'de' ? s.name_de : s.name_en}</strong>
-                                <span style={{ marginLeft: 8, fontSize: 12, color: 'var(--text-muted)' }}>{s.states?.length || 0} {lang === 'de' ? 'Geraete' : 'devices'}</span>
-                                {s.source === 'snapshot' && <span className="badge badge-info" style={{ marginLeft: 6, fontSize: 10 }}>Snapshot</span>}
-                                {s.schedule_enabled && <span className="badge badge-warning" style={{ marginLeft: 6, fontSize: 10 }}><span className="mdi mdi-clock" /> {s.schedule_cron}</span>}
+                        <div key={s.id} style={{ borderBottom: '1px solid var(--border-color)', opacity: s.is_active ? 1 : 0.5 }}>
+                            <div style={{ padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}
+                                onClick={() => setExpandedScene(expandedScene === s.id ? null : s.id)}>
+                                <div style={{ flex: 1 }}>
+                                    <span className={'mdi ' + (s.icon || 'mdi-palette')} style={{ marginRight: 8, fontSize: 18, color: 'var(--accent-primary)' }} />
+                                    <strong>{lang === 'de' ? s.name_de : s.name_en}</strong>
+                                    <span style={{ marginLeft: 8, fontSize: 12, color: 'var(--text-muted)' }}>{s.states?.length || 0} {lang === 'de' ? 'Geraete' : 'devices'}</span>
+                                    {s.source === 'snapshot' && <span className="badge badge-info" style={{ marginLeft: 6, fontSize: 10 }}>Snapshot</span>}
+                                    {s.schedule_enabled && <span className="badge badge-warning" style={{ marginLeft: 6, fontSize: 10 }}><span className="mdi mdi-clock" /> {s.schedule_cron}</span>}
+                                    <span className={`mdi ${expandedScene === s.id ? 'mdi-chevron-up' : 'mdi-chevron-down'}`} style={{ marginLeft: 8, fontSize: 14, color: 'var(--text-muted)' }} />
+                                </div>
+                                <div style={{ display: 'flex', gap: 6 }} onClick={e => e.stopPropagation()}>
+                                    <button className="btn btn-sm btn-primary" onClick={() => activate(s.id)} title="Activate"><span className="mdi mdi-play" /></button>
+                                    <button className="btn btn-sm btn-ghost" onClick={() => setEditScene({ ...s })}><span className="mdi mdi-pencil" /></button>
+                                    <button className="btn btn-sm btn-ghost" onClick={() => toggleActive(s.id, s.is_active)}><span className={`mdi ${s.is_active ? 'mdi-eye' : 'mdi-eye-off'}`} /></button>
+                                    <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} onClick={() => remove(s.id)}><span className="mdi mdi-delete" /></button>
+                                </div>
                             </div>
-                            <div style={{ display: 'flex', gap: 6 }}>
-                                <button className="btn btn-sm btn-primary" onClick={() => activate(s.id)} title="Activate"><span className="mdi mdi-play" /></button>
-                                <button className="btn btn-sm btn-ghost" onClick={() => setEditScene({ ...s })}><span className="mdi mdi-pencil" /></button>
-                                <button className="btn btn-sm btn-ghost" onClick={() => toggleActive(s.id, s.is_active)}><span className={`mdi ${s.is_active ? 'mdi-eye' : 'mdi-eye-off'}`} /></button>
-                                <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} onClick={() => remove(s.id)}><span className="mdi mdi-delete" /></button>
-                            </div>
+                            {expandedScene === s.id && s.states && s.states.length > 0 && (
+                                <div style={{ padding: '4px 16px 12px 44px', background: 'var(--bg-tertiary)' }}>
+                                    {s.states.map((st, i) => (
+                                        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', fontSize: 12, borderBottom: i < s.states.length - 1 ? '1px solid var(--border)' : 'none' }}>
+                                            <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', minWidth: 180 }}>{st.entity_id}</span>
+                                            <span className="badge" style={{ background: st.state === 'on' ? 'var(--success)' : 'var(--bg-secondary)', color: st.state === 'on' ? '#fff' : 'var(--text-muted)', fontSize: 10 }}>{st.state}</span>
+                                            {st.attributes && Object.entries(st.attributes).map(([k, v]) => (
+                                                <span key={k} style={{ fontSize: 11, color: 'var(--text-muted)' }}>{k}: {typeof v === 'object' ? JSON.stringify(v) : String(v)}</span>
+                                            ))}
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
                         </div>
                     ))}
                 </div>
@@ -5617,10 +5776,11 @@ const ScenesPage = () => {
                             <div style={{ flex: 1 }}><label style={{ fontSize: 12, color: 'var(--text-muted)' }}>Name (EN)</label><input className="form-input" value={newScene.name_en} onChange={e => setNewScene({ ...newScene, name_en: e.target.value })} /></div>
                         </div>
                         <div><label style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Raum' : 'Room'}</label>
-                            <select className="form-input" value={newScene.room_id} onChange={e => setNewScene({ ...newScene, room_id: parseInt(e.target.value) || '' })}>
-                                <option value="">{lang === 'de' ? 'Kein Raum' : 'No room'}</option>
-                                {rooms.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-                            </select>
+                            <CustomSelect
+                                options={[{ value: '', label: lang === 'de' ? 'Kein Raum' : 'No room' }, ...rooms.map(r => ({ value: r.id, label: r.name }))]}
+                                value={newScene.room_id}
+                                onChange={v => setNewScene({ ...newScene, room_id: parseInt(v) || '' })}
+                            />
                         </div>
                         <div>
                             <label style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Geraete-Aktionen' : 'Device Actions'}</label>
@@ -5632,7 +5792,11 @@ const ScenesPage = () => {
                             ))}
                             <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
                                 <input className="form-input" style={{ flex: 1, fontSize: 12 }} placeholder="entity_id" value={newAction.entity_id} onChange={e => setNewAction({ ...newAction, entity_id: e.target.value })} />
-                                <select className="form-input" style={{ width: 80, fontSize: 12 }} value={newAction.state} onChange={e => setNewAction({ ...newAction, state: e.target.value })}><option value="on">on</option><option value="off">off</option></select>
+                                <CustomSelect style={{ width: 80 }}
+                                    options={[{ value: 'on', label: 'on' }, { value: 'off', label: 'off' }]}
+                                    value={newAction.state}
+                                    onChange={v => setNewAction({ ...newAction, state: v })}
+                                />
                                 <button className="btn btn-sm btn-ghost" onClick={addAction}><span className="mdi mdi-plus" /></button>
                             </div>
                         </div>
@@ -5787,7 +5951,6 @@ const PresencePage = () => {
 
     const tabs = [
         { id: 'mode', label: lang === 'de' ? 'Modus' : 'Mode', icon: 'mdi-home-circle' },
-        { id: 'persons', label: lang === 'de' ? 'Personen' : 'Persons', icon: 'mdi-account-group' },
         { id: 'profiles', label: lang === 'de' ? 'Zeitprofile' : 'Profiles', icon: 'mdi-clock-outline' },
         { id: 'shift', label: lang === 'de' ? 'Schichtdienst' : 'Shift Work', icon: 'mdi-calendar-clock' },
         { id: 'holidays', label: lang === 'de' ? 'Feiertage' : 'Holidays', icon: 'mdi-party-popper' },
@@ -5798,9 +5961,10 @@ const PresencePage = () => {
     return (
         <div>
             <h2 style={{ marginBottom: 16 }}>{lang === 'de' ? 'Anwesenheit' : 'Presence'}</h2>
-            <div style={{ display: 'flex', gap: 4, marginBottom: 16, flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: 4, marginBottom: 16, overflowX: 'auto', whiteSpace: 'nowrap', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
                 {tabs.map(t => (
-                    <button key={t.id} className={`btn btn-sm ${tab === t.id ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setTab(t.id)}>
+                    <button key={t.id} className={`btn btn-sm ${tab === t.id ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setTab(t.id)}
+                        style={{ flexShrink: 0 }}>
                         <span className={'mdi ' + t.icon} style={{ marginRight: 4 }} />{t.label}
                     </button>
                 ))}
@@ -5854,7 +6018,7 @@ const PresencePage = () => {
                                 <div style={{ display: 'flex', gap: 12 }}>
                                     <div><label style={{ fontSize: 12, color: 'var(--text-muted)' }}>Icon</label><input className="form-input" value={newMode.icon} onChange={e => setNewMode({ ...newMode, icon: e.target.value })} placeholder="mdi-home" /></div>
                                     <div><label style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Farbe' : 'Color'}</label><input type="color" value={newMode.color} onChange={e => setNewMode({ ...newMode, color: e.target.value })} /></div>
-                                    <div><label style={{ fontSize: 12, color: 'var(--text-muted)' }}>Trigger</label><select className="form-input" value={newMode.trigger_type} onChange={e => setNewMode({ ...newMode, trigger_type: e.target.value })}><option value="manual">Manual</option><option value="auto">Auto</option></select></div>
+                                    <div><label style={{ fontSize: 12, color: 'var(--text-muted)' }}>Trigger</label><CustomSelect options={[{ value: 'manual', label: 'Manual' }, { value: 'auto', label: 'Auto' }]} value={newMode.trigger_type} onChange={v => setNewMode({ ...newMode, trigger_type: v })} /></div>
                                     <div><label style={{ fontSize: 12, color: 'var(--text-muted)' }}>Puffer (min)</label><input type="number" className="form-input" style={{ width: 70 }} value={newMode.buffer_minutes} onChange={e => setNewMode({ ...newMode, buffer_minutes: parseInt(e.target.value) || 0 })} /></div>
                                 </div>
                                 <button className="btn btn-primary" onClick={createMode}>{lang === 'de' ? 'Erstellen' : 'Create'}</button>
@@ -5881,47 +6045,6 @@ const PresencePage = () => {
             )}
 
             {/* TAB: Persons & Guests */}
-            {tab === 'persons' && (
-                <div>
-                    <div className="card animate-in" style={{ marginBottom: 16 }}>
-                        <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)', fontWeight: 600 }}>{lang === 'de' ? 'Personen' : 'Persons'}</div>
-                        {persons.length === 0 ? (
-                            <div style={{ padding: 16, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Keine Personen in HA gefunden' : 'No persons found in HA'}</div>
-                        ) : persons.map(p => (
-                            <div key={p.entity_id} style={{ padding: '10px 16px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between' }}>
-                                <span>{p.name}</span>
-                                <span style={{ padding: '2px 10px', borderRadius: 12, fontSize: 12, fontWeight: 600,
-                                    background: p.state === 'home' ? 'rgba(76,175,80,0.15)' : 'rgba(158,158,158,0.15)',
-                                    color: p.state === 'home' ? 'var(--success)' : 'var(--text-muted)' }}>{p.state}</span>
-                            </div>
-                        ))}
-                    </div>
-                    <div className="card animate-in">
-                        <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between' }}>
-                            <span style={{ fontWeight: 600 }}>{lang === 'de' ? 'Gaeste' : 'Guests'} ({guests.length})</span>
-                            <button className="btn btn-sm btn-primary" onClick={() => setShowAddGuest(true)}><span className="mdi mdi-plus" style={{ marginRight: 4 }} />{lang === 'de' ? 'Gast hinzufuegen' : 'Add guest'}</button>
-                        </div>
-                        {guests.length === 0 ? (
-                            <div style={{ padding: 16, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Keine Gaeste erkannt' : 'No guests detected'}</div>
-                        ) : guests.map(g => (
-                            <div key={g.id} style={{ padding: '10px 16px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <div><strong>{g.name || g.mac_address || g.entity_id}</strong><span style={{ marginLeft: 8, fontSize: 12, color: 'var(--text-muted)' }}>{g.visit_count || 0}x</span></div>
-                                <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} onClick={() => deleteGuest(g.id)}><span className="mdi mdi-delete" /></button>
-                            </div>
-                        ))}
-                    </div>
-                    {showAddGuest && (
-                        <Modal title={lang === 'de' ? 'Gast hinzufuegen' : 'Add Guest'} onClose={() => setShowAddGuest(false)}>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                                <div><label style={{ fontSize: 12, color: 'var(--text-muted)' }}>Name</label><input className="form-input" value={newGuest.name} onChange={e => setNewGuest({ ...newGuest, name: e.target.value })} /></div>
-                                <div><label style={{ fontSize: 12, color: 'var(--text-muted)' }}>Entity ID / MAC</label><input className="form-input" value={newGuest.entity_id} onChange={e => setNewGuest({ ...newGuest, entity_id: e.target.value })} placeholder="device_tracker.guest_phone" /></div>
-                                <button className="btn btn-primary" onClick={addGuest}>{lang === 'de' ? 'Hinzufuegen' : 'Add'}</button>
-                            </div>
-                        </Modal>
-                    )}
-                </div>
-            )}
-
             {/* TAB: Time Profiles */}
             {tab === 'profiles' && (
                 <div>
@@ -5952,18 +6075,24 @@ const PresencePage = () => {
                         <Modal title={lang === 'de' ? 'Zeitprofil erstellen' : 'Create Profile'} onClose={() => setShowAddSchedule(false)}>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                                 <div><label style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Person' : 'Person'}</label>
-                                    <select className="form-input" value={newSched.user_id} onChange={e => setNewSched({ ...newSched, user_id: e.target.value })}>
-                                        <option value="">{lang === 'de' ? 'Waehlen...' : 'Select...'}</option>
-                                        {users.map(u => <option key={u.id} value={u.id}>{u.display_name || u.ha_person_name}</option>)}
-                                    </select>
+                                    <CustomSelect
+                                        options={[{ value: '', label: lang === 'de' ? 'Waehlen...' : 'Select...' }, ...users.map(u => ({ value: u.id, label: u.display_name || u.ha_person_name }))]}
+                                        value={newSched.user_id}
+                                        onChange={v => setNewSched({ ...newSched, user_id: v })}
+                                        placeholder={lang === 'de' ? 'Waehlen...' : 'Select...'}
+                                    />
                                 </div>
                                 <div><label style={{ fontSize: 12, color: 'var(--text-muted)' }}>Typ</label>
-                                    <select className="form-input" value={newSched.schedule_type} onChange={e => setNewSched({ ...newSched, schedule_type: e.target.value })}>
-                                        <option value="weekday">{lang === 'de' ? 'Wochentag' : 'Weekday'}</option>
-                                        <option value="weekend">{lang === 'de' ? 'Wochenende' : 'Weekend'}</option>
-                                        <option value="homeoffice">Homeoffice</option>
-                                        <option value="custom">Custom</option>
-                                    </select>
+                                    <CustomSelect
+                                        options={[
+                                            { value: 'weekday', label: lang === 'de' ? 'Wochentag' : 'Weekday' },
+                                            { value: 'weekend', label: lang === 'de' ? 'Wochenende' : 'Weekend' },
+                                            { value: 'homeoffice', label: 'Homeoffice' },
+                                            { value: 'custom', label: 'Custom' },
+                                        ]}
+                                        value={newSched.schedule_type}
+                                        onChange={v => setNewSched({ ...newSched, schedule_type: v })}
+                                    />
                                 </div>
                                 <div><label style={{ fontSize: 12, color: 'var(--text-muted)' }}>Name</label><input className="form-input" value={newSched.name} onChange={e => setNewSched({ ...newSched, name: e.target.value })} /></div>
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
@@ -6027,10 +6156,12 @@ const PresencePage = () => {
                         <div style={{ padding: 16 }}>
                             <div style={{ display: 'flex', gap: 12, marginBottom: 12, flexWrap: 'wrap' }}>
                                 <div><label style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Person' : 'Person'}</label>
-                                    <select className="form-input" value={rotationUserId} onChange={e => setRotationUserId(e.target.value)}>
-                                        <option value="">{lang === 'de' ? 'Waehlen...' : 'Select...'}</option>
-                                        {users.map(u => <option key={u.id} value={u.id}>{u.display_name || u.ha_person_name}</option>)}
-                                    </select>
+                                    <CustomSelect
+                                        options={[{ value: '', label: lang === 'de' ? 'Waehlen...' : 'Select...' }, ...users.map(u => ({ value: u.id, label: u.display_name || u.ha_person_name }))]}
+                                        value={rotationUserId}
+                                        onChange={v => setRotationUserId(v)}
+                                        placeholder={lang === 'de' ? 'Waehlen...' : 'Select...'}
+                                    />
                                 </div>
                                 <div><label style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Startdatum' : 'Start date'}</label><input type="date" className="form-input" value={rotationStart} onChange={e => setRotationStart(e.target.value)} /></div>
                                 <div><label style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Enddatum (opt.)' : 'End date (opt.)'}</label><input type="date" className="form-input" value={rotationEnd} onChange={e => setRotationEnd(e.target.value)} /></div>
@@ -6045,10 +6176,11 @@ const PresencePage = () => {
                                 </div>
                             </div>
                             <div style={{ display: 'flex', gap: 6, marginBottom: 12, alignItems: 'center' }}>
-                                <select className="form-input" style={{ width: 80 }} value={quickAdd.type} onChange={e => setQuickAdd({ ...quickAdd, type: e.target.value })}>
-                                    <option value="">-</option>
-                                    {shiftTemplates.map(t => <option key={t.id} value={t.short_code}>{t.short_code}</option>)}
-                                </select>
+                                <CustomSelect style={{ width: 80 }}
+                                    options={[{ value: '', label: '-' }, ...shiftTemplates.map(t => ({ value: t.short_code, label: t.short_code }))]}
+                                    value={quickAdd.type}
+                                    onChange={v => setQuickAdd({ ...quickAdd, type: v })}
+                                />
                                 <span style={{ fontSize: 12 }}>x</span>
                                 <input type="number" className="form-input" style={{ width: 60 }} min={1} max={30} value={quickAdd.count} onChange={e => setQuickAdd({ ...quickAdd, count: parseInt(e.target.value) || 1 })} />
                                 <button className="btn btn-sm btn-ghost" onClick={quickAddToRotation}><span className="mdi mdi-plus" /> {lang === 'de' ? 'Einfuegen' : 'Insert'}</button>
@@ -6152,9 +6284,11 @@ const PresencePage = () => {
                                 <div><label style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Datum (DD-MM oder YYYY-MM-DD)' : 'Date'}</label><input className="form-input" value={newHoliday.date} onChange={e => setNewHoliday({ ...newHoliday, date: e.target.value })} placeholder="25-12 oder 2026-12-25" /></div>
                                 <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}><input type="checkbox" checked={newHoliday.is_recurring} onChange={e => setNewHoliday({ ...newHoliday, is_recurring: e.target.checked })} />{lang === 'de' ? 'Jaehrlich wiederkehrend' : 'Recurring yearly'}</label>
                                 <div><label style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Region' : 'Region'}</label>
-                                    <select className="form-input" value={newHoliday.region} onChange={e => setNewHoliday({ ...newHoliday, region: e.target.value })}>
-                                        <option value="AT">AT</option><option value="DE">DE</option><option value="CH">CH</option>
-                                    </select>
+                                    <CustomSelect
+                                        options={[{ value: 'AT', label: 'AT' }, { value: 'DE', label: 'DE' }, { value: 'CH', label: 'CH' }]}
+                                        value={newHoliday.region}
+                                        onChange={v => setNewHoliday({ ...newHoliday, region: v })}
+                                    />
                                 </div>
                                 <button className="btn btn-primary" onClick={createHoliday}>{lang === 'de' ? 'Hinzufuegen' : 'Add'}</button>
                             </div>
@@ -6552,6 +6686,8 @@ const App = () => {
             .mobile-header { display: flex !important; }
             .table-container { overflow-x: auto; }
             table { min-width: 500px; }
+            .devices-mobile-cards { display: block !important; }
+            .devices-table-wrap { display: none !important; }
         }
         @media (max-width: 480px) {
             .stat-grid { grid-template-columns: 1fr !important; }

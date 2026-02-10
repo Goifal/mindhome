@@ -1,3 +1,4 @@
+# MindHome init_db v0.6.1 (2026-02-10) - init_db.py
 """
 MindHome - Database Initialization
 Creates tables and populates default data on first run.
@@ -5,11 +6,14 @@ Creates tables and populates default data on first run.
 
 import os
 import sys
+import logging
 from models import (
     init_database, get_engine, get_session,
     Domain, QuickAction, SystemSetting, UserRole, User,
     NotificationSetting, NotificationType
 )
+
+logger = logging.getLogger("mindhome.init_db")
 
 
 def create_default_domains(session):
@@ -33,10 +37,10 @@ def create_default_domains(session):
         },
         {
             "name": "cover",
-            "display_name_de": "RolllÃ¤den & Abdeckungen",
+            "display_name_de": "Rollläden & Abdeckungen",
             "display_name_en": "Covers & Blinds",
             "icon": "mdi:blinds",
-            "description_de": "RolllÃ¤den, Jalousien, Markisen, Garagentore",
+            "description_de": "Rollläden, Jalousien, Markisen, Garagentore",
             "description_en": "Blinds, shutters, awnings, garage doors"
         },
         {
@@ -57,10 +61,10 @@ def create_default_domains(session):
         },
         {
             "name": "door_window",
-            "display_name_de": "TÃ¼ren & Fenster",
+            "display_name_de": "Türen & Fenster",
             "display_name_en": "Doors & Windows",
             "icon": "mdi:door-open",
-            "description_de": "Kontaktsensoren fÃ¼r TÃ¼ren und Fenster",
+            "description_de": "Kontaktsensoren für Türen und Fenster",
             "description_en": "Contact sensors for doors and windows"
         },
         {
@@ -89,10 +93,10 @@ def create_default_domains(session):
         },
         {
             "name": "lock",
-            "display_name_de": "SchlÃ¶sser & Sicherheit",
+            "display_name_de": "Schlösser & Sicherheit",
             "display_name_en": "Locks & Security",
             "icon": "mdi:lock",
-            "description_de": "TÃ¼rschlÃ¶sser, Alarmanlagen",
+            "description_de": "Türschlösser, Alarmanlagen",
             "description_en": "Door locks, alarm systems"
         },
         {
@@ -105,7 +109,7 @@ def create_default_domains(session):
         },
         {
             "name": "air_quality",
-            "display_name_de": "LuftqualitÃ¤t",
+            "display_name_de": "Luftqualität",
             "display_name_en": "Air Quality",
             "icon": "mdi:air-filter",
             "description_de": "CO2, VOC, Feuchtigkeit, Feinstaub",
@@ -113,10 +117,10 @@ def create_default_domains(session):
         },
         {
             "name": "ventilation",
-            "display_name_de": "LÃ¼ftungsanlage",
+            "display_name_de": "Lüftungsanlage",
             "display_name_en": "Ventilation",
             "icon": "mdi:fan",
-            "description_de": "KWL, LÃ¼ftungsanlage mit WÃ¤rmerÃ¼ckgewinnung",
+            "description_de": "KWL, Lüftungsanlage mit Wärmerückgewinnung",
             "description_en": "HRV, ventilation with heat recovery"
         },
         {
@@ -157,7 +161,7 @@ def create_default_quick_actions(session):
             "is_system": True
         },
         {
-            "name_de": "Ich bin zurÃ¼ck",
+            "name_de": "Ich bin zurück",
             "name_en": "I'm back",
             "icon": "mdi:home",
             "action_data": {"type": "arriving_home", "targets": "all"},
@@ -165,7 +169,7 @@ def create_default_quick_actions(session):
             "is_system": True
         },
         {
-            "name_de": "GÃ¤ste kommen",
+            "name_de": "Gäste kommen",
             "name_en": "Guests arriving",
             "icon": "mdi:account-group",
             "action_data": {"type": "guest_mode_on", "targets": "all"},
@@ -182,12 +186,18 @@ def create_default_quick_actions(session):
         },
     ]
 
+    created = 0
     for action_data in actions:
+        existing = session.query(QuickAction).filter_by(name_de=action_data["name_de"]).first()
+        if existing:
+            logger.info(f"Seed skip (exists): {action_data['name_de']}")
+            continue
         action = QuickAction(**action_data)
         session.add(action)
+        created += 1
 
     session.commit()
-    print(f"Created {len(actions)} quick actions.")
+    print(f"Created {created} quick actions ({len(actions) - created} skipped).")
 
 
 def create_default_settings(session):
@@ -226,7 +236,7 @@ def create_default_settings(session):
         {
             "key": "prediction_confidence_threshold",
             "value": "0.7",
-            "description_de": "Minimale Confidence fÃ¼r automatische Aktionen (0.0 - 1.0)",
+            "description_de": "Minimale Confidence für automatische Aktionen (0.0 - 1.0)",
             "description_en": "Minimum confidence for automatic actions (0.0 - 1.0)"
         },
         {

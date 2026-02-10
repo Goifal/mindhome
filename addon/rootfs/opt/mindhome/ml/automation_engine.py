@@ -1,3 +1,4 @@
+# MindHome ML/automation_engine v0.6.1 (2026-02-10) - ml/automation_engine.py
 """
 MindHome - Automation Engine (Phase 2b + Phase 3)
 Suggestions, execution, undo, conflict detection, phase management.
@@ -19,7 +20,7 @@ from models import (
     RoomDomainState, LearningPhase, ActionLog, NotificationLog,
     NotificationType, NotificationSetting, SystemSetting, StateHistory,
     PresenceMode, PresenceLog, PluginSetting, QuietHoursConfig,
-    LearnedScene, DayPhase
+    LearnedScene, DayPhase, PatternSettings
 )
 
 logger = logging.getLogger("mindhome.automation_engine")
@@ -181,7 +182,7 @@ class FeedbackProcessor:
                 pattern.updated_at = datetime.now(timezone.utc)
 
             session.commit()
-            logger.info(f"Prediction {prediction_id} confirmed → â€™ pattern {pred.pattern_id} activated")
+            logger.info(f"Prediction {prediction_id} confirmed → pattern {pred.pattern_id} activated")
             return {"success": True, "status": "confirmed"}
 
         except Exception as e:
@@ -220,7 +221,7 @@ class FeedbackProcessor:
                 pattern.updated_at = datetime.now(timezone.utc)
 
             session.commit()
-            logger.info(f"Prediction {prediction_id} rejected → â€™ confidence decreased")
+            logger.info(f"Prediction {prediction_id} rejected → confidence decreased")
             return {"success": True, "status": "rejected"}
 
         except Exception as e:
@@ -462,7 +463,7 @@ class AutomationExecutor:
             )
             session.add(log)
 
-            logger.info(f"Executed: {entity_id} → â€™ {target_state} (pattern {pattern.id}, confidence {pattern.confidence:.2f})")
+            logger.info(f"Executed: {entity_id} → {target_state} (pattern {pattern.id}, confidence {pattern.confidence:.2f})")
 
         except Exception as e:
             logger.error(f"Execution failed for {entity_id}: {e}")
@@ -526,7 +527,7 @@ class AutomationExecutor:
                     logger.info(f"Pattern {pattern.id} auto-deactivated after {undo_count+1} undos")
 
             session.commit()
-            logger.info(f"Undone prediction {prediction_id}: {entity_id} → â€™ {restore_state}")
+            logger.info(f"Undone prediction {prediction_id}: {entity_id} → {restore_state}")
             return {"success": True, "restored_state": restore_state}
 
         except Exception as e:
@@ -658,7 +659,7 @@ class PhaseManager:
                     room_name = room.name if room else f"Room {rds.room_id}"
                     domain_name = domain.name if domain else f"Domain {rds.domain_id}"
 
-                    logger.info(f"Phase transition: {room_name}/{domain_name} {old_name} → â€™ {new_phase.value}")
+                    logger.info(f"Phase transition: {room_name}/{domain_name} {old_name} → {new_phase.value}")
 
             session.commit()
             if transitions:
@@ -823,6 +824,16 @@ class AnomalyDetector:
         self.engine = engine
         self.Session = sessionmaker(bind=engine)
 
+    def _get_pattern_setting(self, session, key, default):
+        """Read a setting from PatternSettings table."""
+        try:
+            ps = session.query(PatternSettings).filter_by(key=key).first()
+            if ps:
+                return type(default)(ps.value)
+        except Exception:
+            pass
+        return default
+
     def check_recent_anomalies(self, minutes=30):
         """Check recent events for anomalies using multiple detection methods."""
         session = self.Session()
@@ -913,8 +924,8 @@ class AnomalyDetector:
         # More than 2.5 standard deviations = anomaly
         if diff > std_dev * 2.5 and diff > 3:
             return self._build_anomaly(session, event, hour,
-                f"um {hour}:00 Uhr aktiviert (normalerweise ~{int(mean_hour)}:00 Ã‚Â±{int(std_dev)}h)",
-                f"activated at {hour}:00 (usually ~{int(mean_hour)}:00 Ã‚Â±{int(std_dev)}h)")
+                f"um {hour}:00 Uhr aktiviert (normalerweise ~{int(mean_hour)}:00 ±{int(std_dev)}h)",
+                f"activated at {hour}:00 (usually ~{int(mean_hour)}:00 ±{int(std_dev)}h)")
 
         return None
 
@@ -926,6 +937,30 @@ class AnomalyDetector:
             StateHistory.entity_id == event.entity_id,
             StateHistory.created_at >= recent_cutoff
         ).scalar() or 0
+
+        ha_domain = event.entity_id.split(".")[0] if event.entity_id else ""
+
+        # Person entities: higher threshold due to GPS jitter (configurable)
+        if ha_domain in ("person", "device_tracker"):
+            threshold = self._get_pattern_setting(session, "anomaly_person_threshold", 50)
+            if change_count >= threshold:
+                return self._build_anomaly(session, event, None,
+                    f"hat sich {change_count}x in 10 Min geändert (GPS-Jitter?)",
+                    f"changed {change_count} times in 10 min (GPS jitter?)",
+                    severity="info")
+            return None
+
+        # Climate/heatpump: configurable sensitivity
+        if ha_domain == "climate":
+            sensitivity = self._get_pattern_setting(session, "anomaly_heatpump_sensitivity", "low")
+            threshold_map = {"low": 30, "medium": 15, "high": 10}
+            threshold = threshold_map.get(sensitivity, 30)
+            if change_count >= threshold:
+                return self._build_anomaly(session, event, None,
+                    f"hat sich {change_count}x in 10 Min geändert",
+                    f"changed {change_count} times in 10 min",
+                    severity="warning")
+            return None
 
         if change_count >= 10:
             return self._build_anomaly(session, event, None,
@@ -986,7 +1021,7 @@ class AnomalyDetector:
         return {
             "entity_id": event.entity_id,
             "device_name": device_name,
-            "event": f"{event.old_state} → â€™ {event.new_state}",
+            "event": f"{event.old_state} → {event.new_state}",
             "time": event.created_at.isoformat() if event.created_at else None,
             "reason_de": f"{device_name} {reason_de}",
             "reason_en": f"{device_name} {reason_en}",

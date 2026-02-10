@@ -4,19 +4,32 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "0.6.0"
-BUILD = 1
+VERSION = "0.6.1"
+BUILD = 2
 BUILD_DATE = "2026-02-10"
-CODENAME = "Phase 3.5 - Stabilisierung & Refactoring"
+CODENAME = "Phase 3.5 - Hotfix"
 
 # Changelog
+# Build 2: v0.6.1 Hotfix
+#   - PatternSettings (konfigurierbare Schwellenwerte)
+#   - Unified Confidence Decay (Grace 2d, 1%/w, 5%/d)
+#   - Event-Deduplizierung (#15)
+#   - Muster-Duplikat-Erkennung verbessert (#4)
+#   - Mojibake-Fixes in allen Dateien (#31)
+#   - CustomSelect ersetzt native <select> (#9)
+#   - Szenen-Detailansicht (#12)
+#   - Geraete Mobile Card Layout (#23)
+#   - Presence Auto-Detect + Manual-Override (#13/#28)
+#   - DataCollection.created_at Fix
+#   - Query.get() -> Session.get() Migration
+#
 # Build 1: Phase 3.5 - Kompletter Umbau
 #   - Bugs gefixt (duplizierte Methoden, Encoding, Session-Leaks, migration_ok)
-#   - DB Context Manager eingeführt
+#   - DB Context Manager eingefuehrt
 #   - Backend in Flask Blueprints aufgeteilt
 #   - Frontend in React Komponenten aufgeteilt
 #   - Event-Bus + Task-Scheduler erweitert
-#   - Zentrale Versionsverwaltung eingeführt
+#   - Zentrale Versionsverwaltung eingefuehrt
 
 
 def version_string():
