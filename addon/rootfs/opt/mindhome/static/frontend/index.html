@@ -883,26 +883,29 @@
 
     <!-- React, ReactDOM, Babel (lokal gebündelt, CDN-Fallback) -->
     <script>logStep('React...');</script>
-    <script src="lib/react.production.min.js"></script>
+    <script src="lib/react.production.min.js"
+            onerror="logStep('React lokal nicht gefunden, lade CDN...'); var s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js'; s.onerror=function(){showError('React nicht ladbar','Weder lokal noch CDN erreichbar.')}; document.head.appendChild(s);"></script>
     <script>
         if (typeof React === 'undefined') {
-            logStep('React lokal nicht gefunden, lade von CDN...');
+            logStep('React CDN Fallback...');
             document.write('<scr' + 'ipt src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"><\/scr' + 'ipt>');
         }
     </script>
     <script>logStep('ReactDOM...');</script>
-    <script src="lib/react-dom.production.min.js"></script>
+    <script src="lib/react-dom.production.min.js"
+            onerror="logStep('ReactDOM lokal nicht gefunden, lade CDN...'); var s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js'; s.onerror=function(){showError('ReactDOM nicht ladbar','Weder lokal noch CDN erreichbar.')}; document.head.appendChild(s);"></script>
     <script>
         if (typeof ReactDOM === 'undefined') {
-            logStep('ReactDOM lokal nicht gefunden, lade von CDN...');
+            logStep('ReactDOM CDN Fallback...');
             document.write('<scr' + 'ipt src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"><\/scr' + 'ipt>');
         }
     </script>
     <script>logStep('Babel...');</script>
-    <script src="lib/babel.min.js"></script>
+    <script src="lib/babel.min.js"
+            onerror="logStep('Babel lokal nicht gefunden, lade CDN...'); var s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.6/babel.min.js'; s.onerror=function(){showError('Babel nicht ladbar','Weder lokal noch CDN erreichbar.')}; document.head.appendChild(s);"></script>
     <script>
         if (typeof Babel === 'undefined') {
-            logStep('Babel lokal nicht gefunden, lade von CDN...');
+            logStep('Babel CDN Fallback...');
             document.write('<scr' + 'ipt src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.6/babel.min.js"><\/scr' + 'ipt>');
         }
     </script>

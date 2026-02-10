@@ -753,7 +753,7 @@ def serve_frontend(path):
         return response
     # Static assets (js/css/images) must return 404 if missing, not index.html
     if path and any(path.endswith(ext) for ext in (".js", ".css", ".map", ".png", ".jpg", ".ico", ".svg", ".woff", ".woff2", ".ttf")):
-        return jsonify({"error": "not found"}), 404
+        return "", 404
     return send_from_directory(os.path.join(current_app.static_folder, "frontend"), "index.html")
 
 
