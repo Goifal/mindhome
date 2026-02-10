@@ -44,6 +44,8 @@ logger = logging.getLogger("mindhome.routes.system")
 
 system_bp = Blueprint("system", __name__)
 
+INGRESS_PATH = os.environ.get("INGRESS_PATH", "")
+
 # Module-level dependencies (set by init function)
 _deps = {}
 
@@ -1327,12 +1329,12 @@ def api_get_debug():
 def api_toggle_debug():
     """Toggle debug mode."""
     try:
-        global _debug_mode
-        _debug_mode = not _debug_mode
-        level = logging.DEBUG if _debug_mode else logging.INFO
+        new_mode = not is_debug_mode()
+        set_debug_mode(new_mode)
+        level = logging.DEBUG if new_mode else logging.INFO
         logging.getLogger("mindhome").setLevel(level)
-        audit_log("debug_mode_toggle", {"enabled": _debug_mode})
-        return jsonify({"debug_mode": _debug_mode})
+        audit_log("debug_mode_toggle", {"enabled": new_mode})
+        return jsonify({"debug_mode": new_mode})
     except Exception as e:
         return jsonify({"debug_mode": False, "error": str(e)}), 500
 
@@ -1805,4 +1807,3 @@ def api_evaluate_plugins():
     except Exception as e:
         return jsonify({"error": str(e)})
     return jsonify(results)
-
