@@ -966,7 +966,7 @@ def api_backup_export():
         # Device mutes
         for dm in session.query(DeviceMute).all():
             backup["device_mutes"].append({"id": dm.id, "device_id": dm.device_id,
-                "mute_until": utc_iso(dm.mute_until) if dm.mute_until else None,
+                "muted_until": utc_iso(dm.muted_until) if dm.muted_until else None,
                 "reason": dm.reason})
         # Device groups
         for g in session.query(DeviceGroup).all():

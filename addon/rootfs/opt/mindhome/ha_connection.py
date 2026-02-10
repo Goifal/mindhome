@@ -74,6 +74,23 @@ class HAConnection:
                 response.raise_for_status()
                 self._is_online = True
                 return response.json() if response.text else None
+            except requests.exceptions.HTTPError as e:
+                self._stats["api_errors"] += 1
+                status_code = e.response.status_code if e.response is not None else 0
+                # Don't retry client errors (4xx) — the request is wrong, retrying won't help
+                if 400 <= status_code < 500:
+                    logger.error(f"HA API client error for {endpoint}: {e}")
+                    self._is_online = True
+                    return None
+                if attempt < attempts - 1:
+                    wait = RETRY_BACKOFF_BASE ** attempt
+                    self._stats["retries"] += 1
+                    logger.warning(f"HA API retry {attempt+1}/{attempts} for {endpoint} in {wait:.1f}s: {e}")
+                    time.sleep(wait)
+                else:
+                    logger.error(f"HA API failed after {attempts} attempts: {endpoint} - {e}")
+                    self._is_online = False
+                    return None
             except requests.exceptions.RequestException as e:
                 self._stats["api_errors"] += 1
                 if attempt < attempts - 1:
@@ -218,7 +235,6 @@ class HAConnection:
         """Send TTS announcement via Home Assistant."""
         entity = media_player_entity
         if not entity:
-            # Check configured TTS media player first
             try:
                 from helpers import get_setting
                 entity = get_setting("tts_media_player")
@@ -237,18 +253,29 @@ class HAConnection:
 
         lang = language or "de"
 
-        # Try tts.speak first (HA 2024+), fallback to tts.google_translate_say
-        result = self.call_service("tts", "speak", {
-            "media_player_entity_id": entity,
-            "message": message,
-            "language": lang,
-        })
-        if result is None:
-            result = self.call_service("tts", "google_translate_say", {
-                "entity_id": entity,
+        # Discover available TTS entities for tts.speak (HA 2024+)
+        states = self.get_states()
+        tts_entities = [s["entity_id"] for s in states
+                        if s.get("entity_id", "").startswith("tts.")]
+
+        # Try tts.speak with discovered TTS entity (HA 2024+)
+        if tts_entities:
+            tts_entity = tts_entities[0]
+            result = self.call_service("tts", "speak", {
+                "entity_id": tts_entity,
+                "media_player_entity_id": entity,
                 "message": message,
                 "language": lang,
             })
+            if result is not None:
+                return result
+
+        # Fallback: tts.google_translate_say (legacy)
+        result = self.call_service("tts", "google_translate_say", {
+            "entity_id": entity,
+            "message": message,
+            "language": lang,
+        })
         return result
 
     def fire_event(self, event_type, event_data=None):

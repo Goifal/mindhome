@@ -305,6 +305,43 @@ def api_test_notification():
 
 
 
+@notifications_bp.route("/api/notification-settings/test-channel/<int:channel_id>", methods=["POST"])
+def api_test_channel(channel_id):
+    """Send a test notification via a specific channel."""
+    session = get_db()
+    try:
+        channel = session.get(NotificationChannel, channel_id)
+        if not channel:
+            return jsonify({"error": "Channel not found"}), 404
+        result = _ha().send_notification(
+            "MindHome Test Notification",
+            title="MindHome Test",
+            target=channel.service_name
+        )
+        return jsonify({"success": result is not None, "channel": channel.service_name})
+    finally:
+        session.close()
+
+
+
+@notifications_bp.route("/api/notification-settings/channel/<int:channel_id>", methods=["PUT"])
+def api_update_channel(channel_id):
+    """Update a notification channel (enable/disable)."""
+    data = request.json or {}
+    session = get_db()
+    try:
+        channel = session.get(NotificationChannel, channel_id)
+        if not channel:
+            return jsonify({"error": "Channel not found"}), 404
+        if "is_enabled" in data:
+            channel.is_enabled = data["is_enabled"]
+        session.commit()
+        return jsonify({"success": True})
+    finally:
+        session.close()
+
+
+
 @notifications_bp.route("/api/notification-settings/extended", methods=["GET"])
 def api_get_extended_notification_settings():
     """Get full extended notification configuration (18 features)."""

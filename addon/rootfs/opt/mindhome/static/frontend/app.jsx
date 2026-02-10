@@ -312,17 +312,60 @@ const SplashScreen = () => (
     <div style={{
         position: 'fixed', inset: 0, display: 'flex', flexDirection: 'column',
         alignItems: 'center', justifyContent: 'center', gap: 20,
-        background: 'linear-gradient(135deg, #0D1117 0%, #161B22 50%, #1A1F2B 100%)', zIndex: 9999
+        background: 'var(--bg-primary)', zIndex: 9999
     }}>
         <img src={`${API_BASE}/icon.png`} alt="MindHome" style={{
             width: 80, height: 80, borderRadius: 18,
             boxShadow: '0 0 40px rgba(245,166,35,0.3)', animation: 'pulse 2s ease-in-out infinite'
         }} />
-        <div style={{ fontSize: 26, fontWeight: 700, color: '#F0F6FC', letterSpacing: 1 }}>MindHome</div>
-        <div style={{ fontSize: 13, color: '#8B949E' }}>Dein Zuhause denkt mit</div>
+        <div style={{ fontSize: 26, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: 1 }}>MindHome</div>
+        <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Dein Zuhause denkt mit</div>
         <div className="loading-spinner" style={{ marginTop: 8 }} />
     </div>
 );
+
+// ================================================================
+// TimeInput - Safari-compatible time input (HH:MM with two number fields)
+// ================================================================
+
+const TimeInput = ({ value, onChange, className, style }) => {
+    const parts = (value || '00:00').split(':');
+    const hh = parts[0] || '00';
+    const mm = parts[1] || '00';
+
+    const handleChange = (type, val) => {
+        let num = parseInt(val, 10);
+        if (isNaN(num)) num = 0;
+        if (type === 'hh') {
+            num = Math.max(0, Math.min(23, num));
+            onChange(String(num).padStart(2, '0') + ':' + mm);
+        } else {
+            num = Math.max(0, Math.min(59, num));
+            onChange(hh + ':' + String(num).padStart(2, '0'));
+        }
+    };
+
+    const inputStyle = {
+        width: 38, padding: '4px 6px', fontSize: 13, textAlign: 'center',
+        background: 'var(--bg-input)', color: 'var(--text-primary)',
+        border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)',
+        MozAppearance: 'textfield', ...(style || {})
+    };
+
+    return React.createElement('span', { className: className || '', style: { display: 'inline-flex', alignItems: 'center', gap: 2 } },
+        React.createElement('input', {
+            type: 'number', min: 0, max: 23, value: hh,
+            onChange: e => handleChange('hh', e.target.value),
+            style: inputStyle
+        }),
+        React.createElement('span', { style: { fontWeight: 600, color: 'var(--text-muted)' } }, ':'),
+        React.createElement('input', {
+            type: 'number', min: 0, max: 59, value: mm,
+            onChange: e => handleChange('mm', e.target.value),
+            style: inputStyle
+        })
+    );
+};
 
 // ================================================================
 // Fix 23: Confirm Dialog
@@ -1157,7 +1200,7 @@ const QuickActionsGrid = () => {
 // ================================================================
 
 const DomainsPage = () => {
-    const { domains, toggleDomain, lang, showToast, refreshData } = useApp();
+    const { domains, devices, toggleDomain, lang, showToast, refreshData } = useApp();
     const [showCreate, setShowCreate] = useState(false);
     const [newDomain, setNewDomain] = useState({ name_de: '', name_en: '', icon: 'mdi:puzzle', description: '' });
     const [confirmDel, setConfirmDel] = useState(null);
@@ -1642,8 +1685,8 @@ const DevicesPage = () => {
                             placeholder={lang === 'de' ? 'Alle Domains' : 'All Domains'}
                             options={[{value:'', label: lang === 'de' ? 'Alle Domains' : 'All Domains'}, ...domains.map(d => ({value: String(d.id), label: d.display_name || d.name}))]} />
                     </div>
-                    {/* Mobile card view */}
-                    <div className="devices-mobile-cards" style={{ display: 'none' }}>
+                    {/* Responsive card view */}
+                    <div className="devices-mobile-cards" style={{ display: 'none', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
                         {getFilteredDevices().map(device => {
                             const st = stateDisplay(device.live_state);
                             const attrs = device.live_attributes || {};
@@ -2878,7 +2921,7 @@ const SettingsPage = () => {
                                 showToast(`${s.label}`, 'success');
                             }}>
                             <div style={{ fontWeight: 600, fontSize: 14 }}>{s.label}</div>
-                            <div style={{ fontSize: 11, color: anomalySensitivity === s.id ? 'rgba(255,255,255,0.7)' : 'var(--text-muted)', marginTop: 2 }}>{s.desc}</div>
+                            <div style={{ fontSize: 11, color: anomalySensitivity === s.id ? 'var(--text-secondary)' : 'var(--text-muted)', marginTop: 2 }}>{s.desc}</div>
                         </button>
                     ))}
                 </div>
@@ -4694,19 +4737,19 @@ const NotificationsPage = () => {
                             <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8 }}>{lang === 'de' ? 'Kein Push in diesem Zeitraum (außer Kritisch)' : 'No push during this period (except Critical)'}</div>
                             <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
                                 <div style={{ fontSize: 12 }}>{lang === 'de' ? 'Werktag' : 'Weekday'}:</div>
-                                <input type="time" className="input" value={extSettings?.quiet_hours?.start || '22:00'} style={{ width: 90, padding: '4px 8px', fontSize: 12 }}
-                                    onChange={async (e) => { const qh = { ...extSettings?.quiet_hours, start: e.target.value }; setExtSettings(prev => ({ ...prev, quiet_hours: qh })); await api.put('notification-settings/extended', { quiet_hours: qh }); }} />
+                                <TimeInput value={extSettings?.quiet_hours?.start || '22:00'}
+                                    onChange={async (v) => { const qh = { ...extSettings?.quiet_hours, start: v }; setExtSettings(prev => ({ ...prev, quiet_hours: qh })); await api.put('notification-settings/extended', { quiet_hours: qh }); }} />
                                 <span>–</span>
-                                <input type="time" className="input" value={extSettings?.quiet_hours?.end || '07:00'} style={{ width: 90, padding: '4px 8px', fontSize: 12 }}
-                                    onChange={async (e) => { const qh = { ...extSettings?.quiet_hours, end: e.target.value }; setExtSettings(prev => ({ ...prev, quiet_hours: qh })); await api.put('notification-settings/extended', { quiet_hours: qh }); }} />
+                                <TimeInput value={extSettings?.quiet_hours?.end || '07:00'}
+                                    onChange={async (v) => { const qh = { ...extSettings?.quiet_hours, end: v }; setExtSettings(prev => ({ ...prev, quiet_hours: qh })); await api.put('notification-settings/extended', { quiet_hours: qh }); }} />
                             </div>
                             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                                 <div style={{ fontSize: 12 }}>{lang === 'de' ? 'Wochenende' : 'Weekend'}:</div>
-                                <input type="time" className="input" value={extSettings?.quiet_hours?.weekend_start || '23:00'} style={{ width: 90, padding: '4px 8px', fontSize: 12 }}
-                                    onChange={async (e) => { const qh = { ...extSettings?.quiet_hours, weekend_start: e.target.value }; setExtSettings(prev => ({ ...prev, quiet_hours: qh })); await api.put('notification-settings/extended', { quiet_hours: qh }); }} />
+                                <TimeInput value={extSettings?.quiet_hours?.weekend_start || '23:00'}
+                                    onChange={async (v) => { const qh = { ...extSettings?.quiet_hours, weekend_start: v }; setExtSettings(prev => ({ ...prev, quiet_hours: qh })); await api.put('notification-settings/extended', { quiet_hours: qh }); }} />
                                 <span>–</span>
-                                <input type="time" className="input" value={extSettings?.quiet_hours?.weekend_end || '09:00'} style={{ width: 90, padding: '4px 8px', fontSize: 12 }}
-                                    onChange={async (e) => { const qh = { ...extSettings?.quiet_hours, weekend_end: e.target.value }; setExtSettings(prev => ({ ...prev, quiet_hours: qh })); await api.put('notification-settings/extended', { quiet_hours: qh }); }} />
+                                <TimeInput value={extSettings?.quiet_hours?.weekend_end || '09:00'}
+                                    onChange={async (v) => { const qh = { ...extSettings?.quiet_hours, weekend_end: v }; setExtSettings(prev => ({ ...prev, quiet_hours: qh })); await api.put('notification-settings/extended', { quiet_hours: qh }); }} />
                             </div>
                         </div>
 
@@ -4766,8 +4809,8 @@ const NotificationsPage = () => {
                                 <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
                                     <label className="toggle"><input type="checkbox" checked={extSettings?.digest?.enabled || false}
                                         onChange={async () => { const d = { ...(extSettings?.digest || {}), enabled: !extSettings?.digest?.enabled }; setExtSettings(prev => ({ ...prev, digest: d })); await api.put('notification-settings/extended', { digest: d }); }} /><div className="toggle-slider" /></label>
-                                    {extSettings?.digest?.enabled && <input type="time" className="input" value={extSettings?.digest?.time || '08:00'} style={{ width: 80, padding: '2px 6px', fontSize: 11 }}
-                                        onChange={async (e) => { const d = { ...extSettings.digest, time: e.target.value }; setExtSettings(prev => ({ ...prev, digest: d })); await api.put('notification-settings/extended', { digest: d }); }} />}
+                                    {extSettings?.digest?.enabled && <TimeInput value={extSettings?.digest?.time || '08:00'}
+                                        onChange={async (v) => { const d = { ...extSettings.digest, time: v }; setExtSettings(prev => ({ ...prev, digest: d })); await api.put('notification-settings/extended', { digest: d }); }} />}
                                 </div>
                             </div>
 
@@ -6033,7 +6076,18 @@ const PresencePage = () => {
     const [logsOffset, setLogsOffset] = useState(0);
 
     const load = () => {
-        api.get('presence-modes').then(d => setModes(Array.isArray(d) ? d : [])).catch(() => {});
+        api.get('presence-modes').then(d => {
+            const raw = Array.isArray(d) ? d : [];
+            // Deduplicate modes by name_de (keep first occurrence)
+            const seen = new Set();
+            const deduped = raw.filter(m => {
+                const key = (m.name_de || '').toLowerCase().trim();
+                if (seen.has(key)) return false;
+                seen.add(key);
+                return true;
+            });
+            setModes(deduped);
+        }).catch(() => {});
         api.get('presence-modes/current').then(d => setCurrent(d || null)).catch(() => {});
         api.get('persons').then(d => setPersons(Array.isArray(d) ? d : [])).catch(() => {});
         api.get('guest-devices').then(d => setGuests(Array.isArray(d) ? d : [])).catch(() => {});
@@ -6257,7 +6311,7 @@ const PresencePage = () => {
                                 <div><label style={{ fontSize: 12, color: 'var(--text-muted)' }}>Name</label><input className="form-input" value={newSched.name} onChange={e => setNewSched({ ...newSched, name: e.target.value })} /></div>
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                                     {[['time_wake', lang === 'de' ? 'Aufstehen' : 'Wake'], ['time_leave', lang === 'de' ? 'Gehen' : 'Leave'], ['time_home', lang === 'de' ? 'Heimkommen' : 'Home'], ['time_sleep', lang === 'de' ? 'Schlafen' : 'Sleep']].map(([key, lbl]) => (
-                                        <div key={key}><label style={{ fontSize: 11, color: 'var(--text-muted)' }}>{lbl}</label><input type="time" className="form-input" value={newSched[key]} onChange={e => setNewSched({ ...newSched, [key]: e.target.value })} /></div>
+                                        <div key={key}><label style={{ fontSize: 11, color: 'var(--text-muted)' }}>{lbl}</label><TimeInput value={newSched[key]} onChange={v => setNewSched({ ...newSched, [key]: v })} /></div>
                                     ))}
                                 </div>
                                 <div><label style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Wochentage' : 'Weekdays'}</label>
@@ -6278,7 +6332,7 @@ const PresencePage = () => {
                                 <div><label style={{ fontSize: 12, color: 'var(--text-muted)' }}>Name</label><input className="form-input" value={editSchedule.name || ''} onChange={e => setEditSchedule({ ...editSchedule, name: e.target.value })} /></div>
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                                     {[['time_wake', 'Aufstehen'], ['time_leave', 'Gehen'], ['time_home', 'Heimkommen'], ['time_sleep', 'Schlafen']].map(([key, lbl]) => (
-                                        <div key={key}><label style={{ fontSize: 11, color: 'var(--text-muted)' }}>{lbl}</label><input type="time" className="form-input" value={editSchedule[key] || ''} onChange={e => setEditSchedule({ ...editSchedule, [key]: e.target.value })} /></div>
+                                        <div key={key}><label style={{ fontSize: 11, color: 'var(--text-muted)' }}>{lbl}</label><TimeInput value={editSchedule[key] || ''} onChange={v => setEditSchedule({ ...editSchedule, [key]: v })} /></div>
                                     ))}
                                 </div>
                                 <button className="btn btn-primary" onClick={saveSchedule}>{lang === 'de' ? 'Speichern' : 'Save'}</button>
@@ -6400,8 +6454,8 @@ const PresencePage = () => {
                                     <div><label style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Farbe' : 'Color'}</label><input type="color" value={newShift.color} onChange={e => setNewShift({ ...newShift, color: e.target.value })} /></div>
                                 </div>
                                 <div style={{ display: 'flex', gap: 12 }}>
-                                    <div><label style={{ fontSize: 12, color: 'var(--text-muted)' }}>Start</label><input type="time" className="form-input" value={newShift.blocks[0]?.start || ''} onChange={e => setNewShift({ ...newShift, blocks: [{ ...newShift.blocks[0], start: e.target.value }] })} /></div>
-                                    <div><label style={{ fontSize: 12, color: 'var(--text-muted)' }}>Ende</label><input type="time" className="form-input" value={newShift.blocks[0]?.end || ''} onChange={e => setNewShift({ ...newShift, blocks: [{ ...newShift.blocks[0], end: e.target.value }] })} /></div>
+                                    <div><label style={{ fontSize: 12, color: 'var(--text-muted)' }}>Start</label><TimeInput value={newShift.blocks[0]?.start || ''} onChange={v => setNewShift({ ...newShift, blocks: [{ ...newShift.blocks[0], start: v }] })} /></div>
+                                    <div><label style={{ fontSize: 12, color: 'var(--text-muted)' }}>Ende</label><TimeInput value={newShift.blocks[0]?.end || ''} onChange={v => setNewShift({ ...newShift, blocks: [{ ...newShift.blocks[0], end: v }] })} /></div>
                                 </div>
                                 <button className="btn btn-primary" onClick={createShiftTemplate}>{lang === 'de' ? 'Erstellen' : 'Create'}</button>
                             </div>
@@ -6840,6 +6894,14 @@ const App = () => {
         .btn:active { transform: scale(0.97); }
         .badge { transition: background 0.2s; }
 
+        /* Devices responsive grid: cards on small/medium, table on large */
+        .devices-mobile-cards { display: grid !important; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+        .devices-table-wrap { display: none !important; }
+        @media (min-width: 1100px) {
+            .devices-mobile-cards { display: none !important; }
+            .devices-table-wrap { display: block !important; }
+        }
+
         /* #9 Mobile Responsive */
         @media (max-width: 768px) {
             .sidebar { position: fixed !important; z-index: 1000; transform: translateX(-100%); transition: transform 0.25s; }
@@ -6849,8 +6911,7 @@ const App = () => {
             .mobile-header { display: flex !important; }
             .table-container { overflow-x: auto; }
             table { min-width: 500px; }
-            .devices-mobile-cards { display: block !important; }
-            .devices-table-wrap { display: none !important; }
+            .devices-mobile-cards { grid-template-columns: 1fr !important; }
         }
         @media (max-width: 480px) {
             .stat-grid { grid-template-columns: 1fr !important; }
