@@ -226,7 +226,17 @@ class HAConnection:
         if not entity:
             logger.warning("No media player found for TTS")
             return None
-        return self.call_service("tts", "speak", {"entity_id": entity, "message": message})
+        # Try tts.speak first (HA 2024+), fallback to tts.google_translate_say
+        result = self.call_service("tts", "speak", {
+            "entity_id": entity,
+            "message": message
+        })
+        if result is None:
+            result = self.call_service("tts", "google_translate_say", {
+                "entity_id": entity,
+                "message": message
+            })
+        return result
 
     def fire_event(self, event_type, event_data=None):
         return self._api_request("POST", f"events/{event_type}", event_data or {})

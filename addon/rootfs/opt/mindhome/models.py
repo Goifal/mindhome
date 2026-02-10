@@ -616,9 +616,12 @@ class LearnedScene(Base):
     frequency = Column(Integer, default=0)  # how often detected
     min_frequency = Column(Integer, default=3)  # min times before suggesting
     status = Column(String(20), default="detected")  # "detected", "suggested", "accepted", "rejected"
-    source = Column(String(20), default="auto")  # "auto", "manual"
+    source = Column(String(20), default="auto")  # "auto", "manual", "snapshot"
     last_activated = Column(DateTime, nullable=True)
     last_detected = Column(DateTime, nullable=True)
+    schedule_cron = Column(String(100), nullable=True)  # cron-like: "0 20 * * 5" = Fri 20:00
+    schedule_enabled = Column(Boolean, default=False)
+    action_delay_seconds = Column(Integer, default=0)  # delay between actions
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=_utcnow)
 
@@ -664,6 +667,60 @@ class QuietHoursConfig(Base):
 
 
 # ==============================================================================
+# Phase 3B: Person Schedules / Time Profiles
+# ==============================================================================
+
+class PersonSchedule(Base):
+    """Person time profiles: work schedules, shift plans."""
+    __tablename__ = "person_schedules"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    schedule_type = Column(String(30), nullable=False)  # "weekday", "weekend", "shift", "homeoffice", "custom"
+    name = Column(String(100), nullable=True)
+    time_wake = Column(String(5), nullable=True)
+    time_leave = Column(String(5), nullable=True)
+    time_home = Column(String(5), nullable=True)
+    time_sleep = Column(String(5), nullable=True)
+    weekdays = Column(JSON, nullable=True)  # [0,1,2,3,4]
+    valid_from = Column(DateTime, nullable=True)
+    valid_until = Column(DateTime, nullable=True)
+    shift_data = Column(JSON, nullable=True)  # {shift_types, rotation_pattern, rotation_start, rotation_end}
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+    user = relationship("User")
+
+
+class ShiftTemplate(Base):
+    """Shift type templates."""
+    __tablename__ = "shift_templates"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(100), nullable=False)
+    short_code = Column(String(20), nullable=True)
+    blocks = Column(JSON, nullable=False)  # [{"start": "06:00", "end": "14:00"}]
+    color = Column(String(7), nullable=True)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=_utcnow)
+
+
+class Holiday(Base):
+    """Holidays and special days."""
+    __tablename__ = "holidays"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(200), nullable=False)
+    date = Column(String(10), nullable=False)  # "2026-01-01" or "01-01" for recurring
+    is_recurring = Column(Boolean, default=False)
+    region = Column(String(50), nullable=True)  # "AT", "DE"
+    source = Column(String(30), default="manual")  # "manual", "builtin", "calendar"
+    calendar_entity = Column(String(255), nullable=True)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=_utcnow)
+
+
 # Phase 3: Holiday / School Vacation Calendar
 # ==============================================================================
 
