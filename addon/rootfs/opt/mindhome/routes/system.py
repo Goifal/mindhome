@@ -949,13 +949,14 @@ def api_backup_export():
                 "whitelisted_hours": asetting.whitelisted_hours, "auto_action": asetting.auto_action})
         # Notification settings
         for ns in session.query(NotificationSetting).all():
-            backup["notification_settings"].append({"notification_type": ns.notification_type,
-                "is_enabled": ns.is_enabled, "priority": ns.priority, "sound": ns.sound,
-                "channel": ns.channel})
+            backup["notification_settings"].append({"notification_type": ns.notification_type.value if ns.notification_type else None,
+                "is_enabled": ns.is_enabled, "priority": ns.priority.value if ns.priority else "medium",
+                "push_channel": ns.push_channel})
         # Notification channels
         for nc in session.query(NotificationChannel).all():
-            backup["notification_channels"].append({"id": nc.id, "name": nc.name,
-                "ha_service": nc.ha_service, "is_active": nc.is_active})
+            backup["notification_channels"].append({"id": nc.id, "name": nc.display_name,
+                "service_name": nc.service_name, "channel_type": nc.channel_type,
+                "is_enabled": nc.is_enabled})
         # Device mutes
         for dm in session.query(DeviceMute).all():
             backup["device_mutes"].append({"id": dm.id, "device_id": dm.device_id,
@@ -997,7 +998,7 @@ def api_backup_export():
             backup["notification_log"] = []
             for nl in session.query(NotificationLog).filter(NotificationLog.created_at >= cutoff).all():
                 backup["notification_log"].append({"id": nl.id,
-                    "notification_type": nl.notification_type, "title": nl.title,
+                    "notification_type": nl.notification_type.value if nl.notification_type else None, "title": nl.title,
                     "message": nl.message, "was_read": nl.was_read,
                     "created_at": utc_iso(nl.created_at)})
 
@@ -1031,8 +1032,9 @@ def api_backup_export():
             # Offline Action Queue
             backup["offline_queue"] = []
             for oq in session.query(OfflineActionQueue).all():
-                backup["offline_queue"].append({"action_type": oq.action_type,
-                    "action_data": oq.action_data, "status": oq.status,
+                backup["offline_queue"].append({
+                    "action_data": oq.action_data, "priority": oq.priority,
+                    "was_executed": oq.was_executed,
                     "created_at": utc_iso(oq.created_at)})
 
         # Calendar Triggers (always, they're config)
@@ -1404,9 +1406,10 @@ def api_export_data(data_type):
             items = session.query(ActionLog).filter(
                 ActionLog.action_type.in_(["automation_executed", "automation_undone"])
             ).order_by(ActionLog.created_at.desc()).limit(500).all()
-            data = [{"type": a.action_type, "device": a.device_name,
-                      "old": a.old_value, "new": a.new_value,
-                      "reason": a.reason, "created": str(a.created_at)} for a in items]
+            data = [{"type": a.action_type, "device_id": a.device_id,
+                      "action_data": a.action_data,
+                      "reason": a.reason, "was_undone": a.was_undone,
+                      "created": str(a.created_at)} for a in items]
         else:
             return jsonify({"error": "Unknown data type"}), 400
 
