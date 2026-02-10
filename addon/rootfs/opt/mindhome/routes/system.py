@@ -19,6 +19,7 @@ from datetime import datetime, timezone, timedelta
 from flask import Blueprint, request, jsonify, Response, make_response, send_from_directory, redirect, current_app
 from sqlalchemy import func as sa_func, text
 
+from version import VERSION
 from db import get_db_session, get_db_readonly, get_db
 from helpers import (
     get_ha_timezone, local_now, utc_iso, sanitize_input, sanitize_dict,
@@ -88,7 +89,7 @@ def api_system_status():
             "language": get_language(),
             "theme": get_setting("theme", "dark"),
             "view_mode": get_setting("view_mode", "simple"),
-            "version": "0.5.0",
+            "version": VERSION,
             "timezone": tz_name,
             "local_time": local_now().isoformat(),
             "timestamp": datetime.now(timezone.utc).isoformat()
@@ -144,7 +145,7 @@ def api_health_check():
         pass
 
     health["uptime_seconds"] = int(time.time() - _deps.get("start_time", 0)) if _deps.get("start_time", 0) else 0
-    health["version"] = "0.5.0"
+    health["version"] = VERSION
     health["debug_mode"] = is_debug_mode()
 
     status_code = 200 if health["status"] == "healthy" else 503
@@ -172,8 +173,8 @@ def api_system_info():
         retention_days = int(get_setting("data_retention_days", "90"))
 
         return jsonify({
-            "version": "0.5.0",
-            "phase": "2 (complete)",
+            "version": VERSION,
+            "phase": "3.5 (stabilization)",
             "ha_connected": _ha().is_connected(),
             "ws_connected": _ha()._ws_connected,
             "ha_entity_count": len(_ha().get_states() or []),
@@ -880,7 +881,7 @@ def api_backup_export():
     session = get_db()
     try:
         backup = {
-            "version": "0.5.0",
+            "version": VERSION,
             "export_mode": mode,
             "include_history": include_history,
             "exported_at": datetime.now(timezone.utc).isoformat(),
@@ -1438,7 +1439,7 @@ def api_diagnose():
     try:
         db_path = os.environ.get("MINDHOME_DB_PATH", "/data/mindhome/db/mindhome.db")
         diag = {
-            "version": "0.5.0",
+            "version": VERSION,
             "python": sys.version.split()[0],
             "uptime_seconds": int(time.time() - _deps.get("start_time", 0)) if _deps.get("start_time", 0) else 0,
             "ha_connected": _ha().is_connected(),
@@ -1462,7 +1463,7 @@ def api_diagnose():
         return jsonify(diag)
     except Exception as e:
         logger.error(f"Diagnose error: {e}")
-        return jsonify({"error": str(e), "version": "0.5.0"})
+        return jsonify({"error": str(e), "version": VERSION})
     finally:
         session.close()
 
@@ -1471,14 +1472,14 @@ def api_diagnose():
 def api_check_update():
     """Check if a newer version is available."""
     try:
-        current = "0.5.0"
+        current = VERSION
         return jsonify({
             "current_version": current,
             "update_available": False,
             "message": "Update check requires network access to GitHub.",
         })
     except Exception as e:
-        return jsonify({"current_version": "0.5.0", "error": str(e)})
+        return jsonify({"current_version": VERSION, "error": str(e)})
 
 
 
