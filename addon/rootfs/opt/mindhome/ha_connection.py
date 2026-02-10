@@ -308,7 +308,7 @@ class HAConnection:
                     self.get_timezone()
                 except Exception:
                     pass
-                for cb_info in self._event_callbacks:
+                for cb_info in list(self._event_callbacks):
                     msg = {"id": self._next_ws_id(), "type": "subscribe_events"}
                     if cb_info.get("event_type"):
                         msg["event_type"] = cb_info["event_type"]
@@ -327,7 +327,7 @@ class HAConnection:
                     self._event_queue.put(event)
                     self._stats["events_batched"] += 1
                 else:
-                    for cb_info in self._event_callbacks:
+                    for cb_info in list(self._event_callbacks):
                         if cb_info["event_type"] is None or cb_info["event_type"] == event_type:
                             try:
                                 cb_info["callback"](event)
@@ -395,7 +395,7 @@ class HAConnection:
                 except queue.Empty:
                     continue
             if batch:
-                for cb in self._batch_callbacks:
+                for cb in list(self._batch_callbacks):
                     try:
                         cb(batch)
                     except Exception as e:
