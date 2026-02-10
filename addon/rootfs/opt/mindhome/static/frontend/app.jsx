@@ -740,7 +740,7 @@ const DashboardPage = () => {
                                 <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>MindHome Engine</span>
                             </div>
                             <div style={{ fontSize: 12, color: 'var(--text-muted)', paddingLeft: 16 }}>
-                                v{sysHealth?.version || '0.5.0'} · Uptime {uptimeStr}
+                                v{sysHealth?.version || '...'} · Uptime {uptimeStr}
                             </div>
                         </div>
                         );
@@ -2741,8 +2741,8 @@ const SettingsPage = () => {
                     {lang === 'de' ? 'System' : 'System'}
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                    <InfoRow label="Version" value={sysInfo?.version || '0.5.0'} />
-                    <InfoRow label="Phase" value={`2 – ${lang === 'de' ? 'Vollständig' : 'Complete'}`} />
+                    <InfoRow label="Version" value={sysInfo?.version || '...'} />
+                    <InfoRow label="Phase" value={sysInfo?.phase || 'Phase 3.5'} />
                     <InfoRow label="Home Assistant"
                         value={sysInfo?.ha_connected ? (lang === 'de' ? ' Verbunden' : ' Connected') : (lang === 'de' ? ' Getrennt' : ' Disconnected')} />
                     <InfoRow label={lang === 'de' ? 'Zeitzone' : 'Timezone'}
