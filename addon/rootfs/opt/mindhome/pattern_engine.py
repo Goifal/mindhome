@@ -314,16 +314,22 @@ class StateLogger:
             if old_state == new_state:
                 return False
 
-            # Motion sensor debounce
+            # Motion sensor debounce (on + off)
             device_class = attributes.get("device_class", "")
             if ha_domain == "binary_sensor" and device_class in ("motion", "occupancy"):
+                now = datetime.now()
                 if new_state == "on":
                     last_on = self._motion_last_on.get(entity_id)
-                    now = datetime.now()
                     if last_on and (now - last_on).total_seconds() < MOTION_DEBOUNCE_SECONDS:
                         return False
                     self._motion_last_on[entity_id] = now
-                # Always log motion "off" (end of presence)
+                elif new_state == "off":
+                    if not hasattr(self, '_motion_last_off'):
+                        self._motion_last_off = {}
+                    last_off = self._motion_last_off.get(entity_id)
+                    if last_off and (now - last_off).total_seconds() < MOTION_DEBOUNCE_SECONDS:
+                        return False
+                    self._motion_last_off[entity_id] = now
             return True
 
         # For sensors: check threshold
@@ -549,13 +555,20 @@ class StateLogger:
                 if "weekdays" in conds and ctx.get("weekday") not in conds["weekdays"]:
                     continue
                 if "time_after" in conds:
-                    h, m = map(int, conds["time_after"].split(":"))
-                    if ctx["hour"] < h or (ctx["hour"] == h and ctx["minute"] < m):
-                        continue
+                    try:
+                        h, m = map(int, conds["time_after"].split(":")[:2])
+                        if ctx["hour"] < h or (ctx["hour"] == h and ctx["minute"] < m):
+                            continue
+                    except (ValueError, TypeError):
+                        logger.warning(f"Manual rule '{rule.name}': invalid time_after format '{conds['time_after']}'")
                 if "time_before" in conds:
-                    h, m = map(int, conds["time_before"].split(":"))
-                    if ctx["hour"] > h or (ctx["hour"] == h and ctx["minute"] > m):
-                        continue
+                    try:
+                        h, m = map(int, conds["time_before"].split(":")[:2])
+                        if ctx["hour"] > h or (ctx["hour"] == h and ctx["minute"] > m):
+                            continue
+                    except (ValueError, TypeError):
+                        logger.warning(f"Manual rule '{rule.name}': invalid time_before format '{conds['time_before']}'")
+
                 if conds.get("only_home") and not ctx.get("anyone_home"):
                     continue
 
@@ -722,14 +735,15 @@ class PatternDetector:
             logger.warning(f"Domain scoring error: {e}")
 
     def apply_confidence_decay(self, session):
-        """Unified confidence decay (v0.6.1).
+        """Unified confidence decay (v0.6.4).
 
         Algorithm: Grace period 2 days, then 1%/week for 14 days,
-        then 5%/day. Deactivate at < 0.1.
-        Called by scheduler every 12h (not from run_full_analysis).
+        then max 10%/day after 16 days. Deactivate at < 0.1.
+        Called by scheduler every 12h but applies decay only once per calendar day.
         """
         try:
             now = datetime.now(timezone.utc)
+            today = now.date()
             patterns = session.query(LearnedPattern).filter(
                 LearnedPattern.is_active == True,
                 LearnedPattern.confidence > 0.1
@@ -737,6 +751,16 @@ class PatternDetector:
 
             decayed_count = 0
             for p in patterns:
+                # Only apply decay once per calendar day (stored in pattern_data)
+                pdata = p.pattern_data if isinstance(p.pattern_data, dict) else {}
+                last_decay_str = pdata.get("_last_decay_date")
+                if last_decay_str:
+                    try:
+                        if datetime.fromisoformat(last_decay_str).date() == today:
+                            continue
+                    except (ValueError, TypeError):
+                        pass
+
                 last_active = p.last_matched_at or p.created_at
                 if last_active and last_active.tzinfo is None:
                     last_active = last_active.replace(tzinfo=timezone.utc)
@@ -747,13 +771,19 @@ class PatternDetector:
 
                 if days_inactive <= 16:  # 2 + 14 days: gentle decay
                     decay = 0.01 * ((days_inactive - 2) / 7)
-                else:  # After 16 days: aggressive decay
+                else:  # After 16 days: aggressive decay, capped at 10%/day
                     gentle_decay = 0.01 * 2  # 2 weeks of gentle
                     aggressive_days = days_inactive - 16
-                    decay = gentle_decay + 0.05 * aggressive_days
+                    decay = min(gentle_decay + 0.05 * aggressive_days, 0.10)
 
                 old_conf = p.confidence
                 p.confidence = max(0.0, p.confidence - decay)
+
+                # Track last decay date
+                if p.pattern_data is None:
+                    p.pattern_data = {}
+                if isinstance(p.pattern_data, dict):
+                    p.pattern_data["_last_decay_date"] = today.isoformat()
 
                 if p.confidence < 0.1:
                     p.is_active = False
@@ -1038,14 +1068,14 @@ class PatternDetector:
             delta_std = (sum((d - avg_delta)**2 for d in deltas) / len(deltas))**0.5
 
             # Skip if timing is too variable (std > 60% of mean)
-            if delta_std > avg_delta * 0.6 and avg_delta > 30:
+            if delta_std > avg_delta * 0.6:
                 continue
 
             # Check person context consistency
             contexts_a = [e.get("context_a", {}) for e in examples if e.get("context_a")]
             common_persons = self._find_common_persons(contexts_a)
 
-            confidence = min((count / 14) * 0.8, 0.90)
+            confidence = min((count / (min_seq_count * 1.5)) * 0.8, 0.90)
             min_confidence = self._get_pattern_setting(session, "min_confidence", 0.45)
             if confidence < min_confidence:
                 continue
@@ -1117,7 +1147,7 @@ class PatternDetector:
 
             # Only check correlations for "important" state changes
             ha_domain = ev.entity_id.split(".")[0]
-            if ha_domain not in {"person", "binary_sensor", "sun"} and ev.entity_id != "sun.sun":
+            if ha_domain not in {"person", "binary_sensor", "sun", "switch", "light", "cover", "climate", "input_boolean"} and ev.entity_id != "sun.sun":
                 continue
 
             # Record what other entities are doing when this event happens
@@ -1349,7 +1379,7 @@ class PatternDetector:
                 if (ep.pattern_data and
                     ep.pattern_data.get("entity_id") == pattern_data.get("entity_id") and
                     ep.pattern_data.get("target_state") == pattern_data.get("target_state") and
-                    abs(ep.pattern_data.get("avg_hour", -1) - pattern_data.get("avg_hour", -2)) <= 1):
+                    abs(ep.pattern_data.get("avg_hour", -1) - pattern_data.get("avg_hour", -2)) <= 0.5):
                     # Update existing
                     ep.pattern_data = pattern_data
                     ep.confidence = max(ep.confidence, confidence)
@@ -1360,6 +1390,7 @@ class PatternDetector:
                     ep.last_matched_at = datetime.now(timezone.utc)
                     ep.match_count += 1
                     ep.updated_at = datetime.now(timezone.utc)
+                    ep.context_tags = self._build_context_tags(pattern_data, pattern_type)
                     return ep
 
         elif pattern_type == "event_chain":
@@ -1382,6 +1413,7 @@ class PatternDetector:
                     ep.last_matched_at = datetime.now(timezone.utc)
                     ep.match_count += 1
                     ep.updated_at = datetime.now(timezone.utc)
+                    ep.context_tags = self._build_context_tags(pattern_data, pattern_type)
                     return ep
 
         elif pattern_type == "correlation":
@@ -1404,6 +1436,7 @@ class PatternDetector:
                     ep.last_matched_at = datetime.now(timezone.utc)
                     ep.match_count += 1
                     ep.updated_at = datetime.now(timezone.utc)
+                    ep.context_tags = self._build_context_tags(pattern_data, pattern_type)
                     return ep
 
         # Create new pattern

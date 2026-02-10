@@ -496,7 +496,7 @@ def api_get_all_device_anomaly_configs():
             device_id = s.key.replace("anomaly_device_", "")
             try:
                 configs[device_id] = json.loads(s.value)
-            except:
+            except Exception:
                 pass
         return jsonify(configs)
     finally:

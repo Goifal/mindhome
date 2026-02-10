@@ -54,7 +54,7 @@ app = Flask(__name__, static_folder="static", template_folder="templates")
 app.json.ensure_ascii = False
 app.config['JSON_AS_ASCII'] = False
 app.config['JSONIFY_MIMETYPE'] = 'application/json; charset=utf-8'
-CORS(app)
+CORS(app, supports_credentials=False)
 
 mimetypes.add_type("text/javascript", ".jsx")
 mimetypes.add_type("text/javascript", ".mjs")
@@ -330,7 +330,7 @@ def before_request_middleware():
 @app.errorhandler(500)
 def handle_500(error):
     logger.error(f"Unhandled 500 error: {error}")
-    return jsonify({"error": "Internal server error", "message": str(error)[:200]}), 500
+    return jsonify({"error": "Internal server error"}), 500
 
 
 @app.errorhandler(404)
@@ -344,8 +344,17 @@ def handle_404(error):
 def handle_exception(error):
     logger.error(f"Unhandled exception: {type(error).__name__}: {error}")
     if request.path.startswith("/api/"):
-        return jsonify({"error": type(error).__name__, "message": str(error)[:200]}), 500
+        return jsonify({"error": "Internal server error"}), 500
     return redirect("/")
+
+
+@app.after_request
+def add_security_headers(response):
+    """Add security headers to all responses."""
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "SAMEORIGIN"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    return response
 
 
 # ==============================================================================

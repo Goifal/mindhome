@@ -106,7 +106,9 @@ def api_get_rooms():
 @rooms_bp.route("/api/rooms", methods=["POST"])
 def api_create_room():
     """Create a new room."""
-    data = request.json
+    data = request.json or {}
+    if not data.get("name"):
+        return jsonify({"error": "name required"}), 400
     session = get_db()
     try:
         room = Room(

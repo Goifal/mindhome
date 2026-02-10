@@ -20,7 +20,7 @@ from models import (
     RoomDomainState, LearningPhase, ActionLog, NotificationLog,
     NotificationType, NotificationSetting, SystemSetting, StateHistory,
     PresenceMode, PresenceLog, PluginSetting, QuietHoursConfig,
-    LearnedScene, DayPhase, PatternSettings
+    LearnedScene, DayPhase, PatternSettings, AnomalySetting
 )
 
 logger = logging.getLogger("mindhome.automation_engine")
@@ -294,7 +294,7 @@ class AutomationExecutor:
                 status="active", is_active=True
             ).all()
 
-            now = datetime.now()
+            now = datetime.now(timezone.utc)
 
             for pattern in active_patterns:
                 trigger = pattern.trigger_conditions or {}
@@ -429,6 +429,9 @@ class AutomationExecutor:
                 service_data["hvac_mode"] = target_state
 
             self.ha.call_service(ha_domain, service, service_data)
+
+            # Update pattern's last_matched_at on execution
+            pattern.last_matched_at = datetime.now(timezone.utc)
 
             # Create execution record
             prediction = Prediction(
@@ -839,6 +842,24 @@ class AnomalyDetector:
         session = self.Session()
         anomalies = []
         try:
+            # Load exclusion settings
+            try:
+                from helpers import get_setting
+                domain_exceptions = json.loads(get_setting("anomaly_domain_exceptions") or "[]")
+                device_whitelist = json.loads(get_setting("anomaly_device_whitelist") or "[]")
+            except Exception:
+                domain_exceptions = []
+                device_whitelist = []
+
+            # Load per-device anomaly settings
+            device_settings = {}
+            try:
+                for ds in session.query(AnomalySetting).all():
+                    if ds.device_id:
+                        device_settings[ds.device_id] = ds
+            except Exception:
+                pass
+
             cutoff = datetime.now(timezone.utc) - timedelta(minutes=minutes)
             recent = session.query(StateHistory).filter(
                 StateHistory.created_at >= cutoff,
@@ -850,6 +871,25 @@ class AnomalyDetector:
                 report_key = f"{event.entity_id}:{event.new_state}:{event.created_at.hour if event.created_at else 0}"
                 if report_key in self._reported:
                     continue
+
+                # Skip whitelisted entities
+                if event.entity_id in device_whitelist:
+                    continue
+
+                # Skip excluded domains
+                ha_domain = event.entity_id.split(".")[0] if event.entity_id else ""
+                if ha_domain in domain_exceptions:
+                    continue
+
+                # Skip sensor domain entirely for frequency checks (power meters etc.)
+                if ha_domain == "sensor":
+                    continue
+
+                # Check per-device settings
+                if event.device_id and event.device_id in device_settings:
+                    ds = device_settings[event.device_id]
+                    if not ds.frequency_anomaly and not ds.time_anomaly:
+                        continue
 
                 anomaly = None
 
@@ -866,9 +906,11 @@ class AnomalyDetector:
             # Method 3: Stuck devices (no change for unusually long time)
             anomalies.extend(self._check_stuck_devices(session))
 
-            # Cleanup reported cache (keep max 200)
+            # LRU cleanup: remove oldest half when exceeding 200
             if len(self._reported) > 200:
-                self._reported.clear()
+                to_remove = list(self._reported)[:100]
+                for key in to_remove:
+                    self._reported.discard(key)
 
             return anomalies
 
@@ -973,44 +1015,51 @@ class AnomalyDetector:
     def _check_stuck_devices(self, session):
         """Detect devices that haven't changed state for unusually long."""
         anomalies = []
-        # Check lights that have been ON for >12 hours
         threshold = datetime.now(timezone.utc) - timedelta(hours=12)
 
-        stuck_lights = session.query(StateHistory).filter(
-            StateHistory.entity_id.like("light.%"),
-            StateHistory.new_state == "on",
-            StateHistory.created_at <= threshold,
-        ).order_by(StateHistory.created_at.desc()).all()
+        # Check lights (on), covers (open), climate (heating) stuck for >12h
+        stuck_checks = [
+            ("light.%", "on", "eingeschaltet", "on"),
+            ("cover.%", "open", "offen", "open"),
+            ("climate.%", "heat", "im Heizbetrieb", "heating"),
+        ]
 
         seen_entities = set()
-        for event in stuck_lights:
-            if event.entity_id in seen_entities:
-                continue
-            seen_entities.add(event.entity_id)
+        for entity_pattern, stuck_state, reason_de_word, reason_en_word in stuck_checks:
+            stuck_events = session.query(StateHistory).filter(
+                StateHistory.entity_id.like(entity_pattern),
+                StateHistory.new_state == stuck_state,
+                StateHistory.created_at <= threshold,
+            ).order_by(StateHistory.created_at.desc()).all()
 
-            # Check if there was a newer event (turned off since)
-            newer = session.query(StateHistory).filter(
-                StateHistory.entity_id == event.entity_id,
-                StateHistory.created_at > event.created_at
-            ).first()
+            for event in stuck_events:
+                if event.entity_id in seen_entities:
+                    continue
+                seen_entities.add(event.entity_id)
 
-            if not newer:
-                report_key = f"stuck:{event.entity_id}"
-                if report_key not in self._reported:
-                    hours = int((datetime.now(timezone.utc) - event.created_at).total_seconds() / 3600) if event.created_at else 0
-                    device = session.query(Device).filter_by(ha_entity_id=event.entity_id).first()
-                    device_name = device.name if device else event.entity_id
+                # Check if there was a newer event (state changed since)
+                newer = session.query(StateHistory).filter(
+                    StateHistory.entity_id == event.entity_id,
+                    StateHistory.created_at > event.created_at
+                ).first()
 
-                    anomalies.append({
-                        "entity_id": event.entity_id,
-                        "device_name": device_name,
-                        "event": f"on seit {hours}h",
-                        "time": event.created_at.isoformat() if event.created_at else None,
-                        "reason_de": f"{device_name} ist seit {hours} Stunden eingeschaltet",
-                        "reason_en": f"{device_name} has been on for {hours} hours",
-                        "severity": "info",
-                    })
-                    self._reported.add(report_key)
+                if not newer:
+                    report_key = f"stuck:{event.entity_id}"
+                    if report_key not in self._reported:
+                        hours = int((datetime.now(timezone.utc) - event.created_at).total_seconds() / 3600) if event.created_at else 0
+                        device = session.query(Device).filter_by(ha_entity_id=event.entity_id).first()
+                        device_name = device.name if device else event.entity_id
+
+                        anomalies.append({
+                            "entity_id": event.entity_id,
+                            "device_name": device_name,
+                            "event": f"{stuck_state} seit {hours}h",
+                            "time": event.created_at.isoformat() if event.created_at else None,
+                            "reason_de": f"{device_name} ist seit {hours} Stunden {reason_de_word}",
+                            "reason_en": f"{device_name} has been {reason_en_word} for {hours} hours",
+                            "severity": "info",
+                        })
+                        self._reported.add(report_key)
 
         return anomalies
 
@@ -1102,6 +1151,41 @@ class NotificationManager:
         self.ha = ha_connection
         self.Session = sessionmaker(bind=engine)
 
+    def _send_via_push(self, session, title, message):
+        """Send notification via configured push channel with fallback to persistent_notification."""
+        sent = False
+        # Try push_channel from NotificationSettings for all users
+        try:
+            settings = session.query(NotificationSetting).filter(
+                NotificationSetting.push_channel.isnot(None),
+                NotificationSetting.is_enabled == True,
+            ).all()
+            for setting in settings:
+                channel = setting.push_channel
+                if channel:
+                    try:
+                        self.ha.call_service("notify", channel, {
+                            "title": title,
+                            "message": message,
+                        })
+                        sent = True
+                    except Exception as e:
+                        logger.debug(f"Push to {channel} failed: {e}")
+        except Exception as e:
+            logger.debug(f"Push channel query error: {e}")
+
+        # Fallback: always send to persistent_notification
+        try:
+            self.ha.call_service("notify", "persistent_notification", {
+                "title": title,
+                "message": message,
+            })
+            sent = True
+        except Exception as e:
+            logger.debug(f"Persistent notification failed: {e}")
+
+        return sent
+
     def notify_suggestion(self, prediction_id, lang="de"):
         """Send notification about a new suggestion."""
         session = self.Session()
@@ -1116,7 +1200,7 @@ class NotificationManager:
 
             # Save to notification log
             notif = NotificationLog(
-                user_id=1,  # Default user
+                user_id=1,
                 notification_type=NotificationType.SUGGESTION,
                 title=title,
                 message=message,
@@ -1125,16 +1209,9 @@ class NotificationManager:
             )
             session.add(notif)
 
-            # Try to send via HA notification service
-            try:
-                self.ha.call_service("notify", "persistent_notification", {
-                    "title": title,
-                    "message": message,
-                })
-                notif.was_sent = True
-                pred.notification_sent = True
-            except Exception as e:
-                logger.debug(f"HA notification failed (non-critical): {e}")
+            # Send via push channel + persistent notification
+            notif.was_sent = self._send_via_push(session, title, message)
+            pred.notification_sent = notif.was_sent
 
             session.commit()
 
@@ -1173,14 +1250,7 @@ class NotificationManager:
             )
             session.add(notif)
 
-            try:
-                self.ha.call_service("notify", "persistent_notification", {
-                    "title": title,
-                    "message": message,
-                })
-                notif.was_sent = True
-            except Exception:
-                pass
+            notif.was_sent = self._send_via_push(session, title, message)
 
             session.commit()
 
@@ -1264,19 +1334,31 @@ class PresenceModeManager:
         self.ha = ha_connection
         self.Session = sessionmaker(bind=engine)
         self._current_mode = None
+        self._last_mode_change = None
+        # Initialize _current_mode from DB
+        try:
+            session = self.Session()
+            last = session.query(PresenceLog).order_by(PresenceLog.created_at.desc()).first()
+            if last and last.mode_id:
+                self._current_mode = last.mode_id
+            session.close()
+        except Exception:
+            pass
 
     def get_current_mode(self):
         """Get current active presence mode."""
         session = self.Session()
         try:
-            last = session.query(PresenceLog).order_by(PresenceLog.created_at.desc()).first()
-            if last and last.mode_id:
-                mode = session.get(PresenceMode, last.mode_id)
-                if mode:
-                    return {
-                        "id": mode.id, "name_de": mode.name_de, "name_en": mode.name_en,
-                        "icon": mode.icon, "color": mode.color, "since": last.created_at.isoformat(),
-                    }
+            # Search recent PresenceLogs for a valid mode
+            recent_logs = session.query(PresenceLog).order_by(PresenceLog.created_at.desc()).limit(10).all()
+            for log_entry in recent_logs:
+                if log_entry.mode_id:
+                    mode = session.get(PresenceMode, log_entry.mode_id)
+                    if mode:
+                        return {
+                            "id": mode.id, "name_de": mode.name_de, "name_en": mode.name_en,
+                            "icon": mode.icon, "color": mode.color, "since": log_entry.created_at.isoformat(),
+                        }
             return None
         finally:
             session.close()
@@ -1302,10 +1384,9 @@ class PresenceModeManager:
                 try:
                     entity_id = action.get("entity_id", "")
                     service = action.get("service", "")
-                    data = action.get("data", {})
                     if entity_id and service:
                         domain = entity_id.split(".")[0]
-                        data["entity_id"] = entity_id
+                        data = {**action.get("data", {}), "entity_id": entity_id}
                         self.ha.call_service(domain, service, data)
                 except Exception as e:
                     logger.warning(f"Mode action error: {e}")
@@ -1322,6 +1403,13 @@ class PresenceModeManager:
 
     def check_auto_transitions(self):
         """Check if presence mode should change based on person states."""
+        # Debounce: skip if last mode change was < 5 minutes ago
+        now = datetime.now(timezone.utc)
+        if hasattr(self, '_last_mode_change') and self._last_mode_change:
+            elapsed = (now - self._last_mode_change).total_seconds()
+            if elapsed < 300:  # 5 minutes cooldown
+                return
+
         session = self.Session()
         try:
             persons_home = self.ha.get_persons_home()
@@ -1338,16 +1426,19 @@ class PresenceModeManager:
                 if condition == "all_away" and not anyone_home:
                     if self._current_mode != mode.id:
                         self.set_mode(mode.id, trigger="auto")
+                        self._last_mode_change = now
                     return
                 elif condition == "first_home" and anyone_home:
                     if self._current_mode != mode.id:
                         self.set_mode(mode.id, trigger="auto")
+                        self._last_mode_change = now
                     return
                 elif condition == "all_home":
                     all_persons = self.ha.get_all_persons()
-                    if all(p["state"] == "home" for p in all_persons):
+                    if all_persons and all(p["state"] == "home" for p in all_persons):
                         if self._current_mode != mode.id:
                             self.set_mode(mode.id, trigger="auto")
+                            self._last_mode_change = now
                         return
         except Exception as e:
             logger.warning(f"Presence auto-transition error: {e}")
@@ -1456,21 +1547,42 @@ class QuietHoursManager:
             configs = session.query(QuietHoursConfig).filter_by(is_active=True).all()
             now = datetime.now()
             current_minutes = now.hour * 60 + now.minute
+            current_weekday = now.weekday()  # 0=Mon, 6=Sun
 
             for config in configs:
                 if config.user_id and config.user_id != user_id:
                     continue
 
-                start_h, start_m = map(int, config.start_time.split(":"))
-                end_h, end_m = map(int, config.end_time.split(":"))
+                # Check weekday restrictions if configured
+                weekdays = getattr(config, 'weekdays', None)
+                if weekdays and current_weekday not in weekdays:
+                    # For overnight crossing: also check if we started yesterday
+                    pass  # Will be checked below
+
+                try:
+                    start_h, start_m = map(int, config.start_time.split(":")[:2])
+                    end_h, end_m = map(int, config.end_time.split(":")[:2])
+                except (ValueError, TypeError):
+                    continue
                 start_min = start_h * 60 + start_m
                 end_min = end_h * 60 + end_m
 
                 if start_min > end_min:  # overnight (e.g. 22:00-07:00)
-                    if current_minutes >= start_min or current_minutes < end_min:
+                    if current_minutes >= start_min:
+                        # We're in the evening part — check today's weekday
+                        if weekdays and current_weekday not in weekdays:
+                            continue
+                        return True
+                    elif current_minutes < end_min:
+                        # We're in the morning part after midnight — check yesterday's weekday
+                        yesterday = (current_weekday - 1) % 7
+                        if weekdays and yesterday not in weekdays:
+                            continue
                         return True
                 else:
                     if start_min <= current_minutes < end_min:
+                        if weekdays and current_weekday not in weekdays:
+                            continue
                         return True
 
             return False

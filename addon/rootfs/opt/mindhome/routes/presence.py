@@ -152,7 +152,12 @@ def api_create_presence_mode():
     data = request.json or {}
     session = get_db()
     try:
-        mode = PresenceMode(name_de=data.get("name_de","Neuer Modus"), name_en=data.get("name_en","New Mode"), icon=data.get("icon","mdi:home"), color=data.get("color","#4CAF50"), priority=data.get("priority",0), buffer_minutes=data.get("buffer_minutes",5), actions=data.get("actions"), trigger_type=data.get("trigger_type","manual"), auto_config=data.get("auto_config"), is_active=data.get("is_active",True))
+        # Duplikat-Check: Name darf nicht bereits existieren
+        name_de = data.get("name_de", "Neuer Modus")
+        existing = session.query(PresenceMode).filter_by(name_de=name_de).first()
+        if existing:
+            return jsonify({"error": f"Modus '{name_de}' existiert bereits"}), 409
+        mode = PresenceMode(name_de=name_de, name_en=data.get("name_en","New Mode"), icon=data.get("icon","mdi:home"), color=data.get("color","#4CAF50"), priority=data.get("priority",0), buffer_minutes=data.get("buffer_minutes",5), actions=data.get("actions"), trigger_type=data.get("trigger_type","manual"), auto_config=data.get("auto_config"), notify_on_enter=data.get("notify_on_enter", False), notify_on_leave=data.get("notify_on_leave", False), is_active=data.get("is_active",True))
         session.add(mode)
         session.commit()
         return jsonify({"id": mode.id, "success": True})
@@ -190,7 +195,18 @@ def api_delete_presence_mode(mode_id):
 @presence_bp.route("/api/presence-modes/current", methods=["GET"])
 def api_current_presence_mode():
     try:
-        return jsonify(_deps.get("automation_scheduler").presence_mgr.get_current_mode() or {"name_de":"Unbekannt","name_en":"Unknown"})
+        current = _deps.get("automation_scheduler").presence_mgr.get_current_mode()
+        if current:
+            return jsonify(current)
+        # Fallback: ersten System-Modus laden statt "Unbekannt"
+        session = get_db()
+        try:
+            default = session.query(PresenceMode).filter_by(is_system=True, is_active=True).order_by(PresenceMode.priority.asc()).first()
+            if default:
+                return jsonify({"id": default.id, "name_de": default.name_de, "name_en": default.name_en, "icon": default.icon, "color": default.color, "since": None, "is_default": True})
+        finally:
+            session.close()
+        return jsonify({"name_de": "Kein Modus", "name_en": "No mode", "icon": "mdi-help-circle", "color": "#9E9E9E", "since": None, "is_default": True})
     except Exception as e:
         return jsonify({"error": str(e)})
 
