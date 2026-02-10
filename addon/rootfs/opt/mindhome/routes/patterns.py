@@ -1,4 +1,4 @@
-# MindHome routes/patterns v0.6.1 (2026-02-10) - routes/patterns.py
+# MindHome routes/patterns v0.6.2 (2026-02-10) - routes/patterns.py
 """
 MindHome API Routes - Patterns
 Auto-extracted from monolithic app.py during Phase 3.5 refactoring.

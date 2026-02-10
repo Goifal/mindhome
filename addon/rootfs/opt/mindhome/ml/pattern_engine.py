@@ -1,4 +1,4 @@
-# MindHome Pattern Engine v0.6.1 (2026-02-10) - pattern_engine.py
+# MindHome Pattern Engine v0.6.2 (2026-02-10) - pattern_engine.py
 """
 MindHome - Pattern Engine (Phase 2a + Phase 3)
 Core intelligence: state logging, context building, pattern detection.

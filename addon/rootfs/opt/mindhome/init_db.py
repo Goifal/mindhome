@@ -1,4 +1,4 @@
-# MindHome init_db v0.6.1 (2026-02-10) - init_db.py
+# MindHome init_db v0.6.2 (2026-02-10) - init_db.py
 """
 MindHome - Database Initialization
 Creates tables and populates default data on first run.
