@@ -13,6 +13,7 @@ import io
 import hashlib
 import zipfile
 import shutil
+from collections import defaultdict
 from datetime import datetime, timezone, timedelta
 from flask import Blueprint, request, jsonify, Response, make_response, send_from_directory, redirect
 from sqlalchemy import func as sa_func, text
