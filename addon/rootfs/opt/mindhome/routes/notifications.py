@@ -365,6 +365,14 @@ def api_scan_notification_channels():
     try:
         services = _ha().get_services() or {}
         channels = []
+        # get_services() may return list or dict depending on HA version
+        if isinstance(services, list):
+            svc_dict = {}
+            for svc in services:
+                if isinstance(svc, dict):
+                    domain = svc.get("domain", "")
+                    svc_dict[domain] = list(svc.get("services", {}).keys()) if isinstance(svc.get("services"), dict) else []
+            services = svc_dict
         for svc_domain, svc_list in services.items():
             if "notify" in svc_domain or svc_domain == "notify":
                 for svc_name in svc_list:
