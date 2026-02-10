@@ -912,40 +912,48 @@
 
     <script>
         logStep('App wird kompiliert...');
-        // Verify libraries loaded
+
+        function reportError(msg, src) {
+            try {
+                fetch((window._apiBase || '') + '/api/system/frontend-error', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({error: msg, source: src || 'unknown'})
+                });
+            } catch(ex) {}
+        }
+
         if (typeof React === 'undefined') {
-            showError('React nicht verfügbar', 'Die React-Bibliothek konnte nicht geladen werden. CDN blockiert?');
+            showError('React nicht verfuegbar', 'React konnte nicht geladen werden.');
+            reportError('React undefined after all load attempts', 'lib-check');
         } else if (typeof ReactDOM === 'undefined') {
-            showError('ReactDOM nicht verfügbar', 'Die ReactDOM-Bibliothek konnte nicht geladen werden.');
+            showError('ReactDOM nicht verfuegbar', 'ReactDOM konnte nicht geladen werden.');
+            reportError('ReactDOM undefined', 'lib-check');
         } else if (typeof Babel === 'undefined') {
-            showError('Babel nicht verfügbar', 'Der JSX-Compiler konnte nicht geladen werden.');
+            showError('Babel nicht verfuegbar', 'JSX-Compiler konnte nicht geladen werden.');
+            reportError('Babel undefined', 'lib-check');
         } else {
-            // Manual Babel transformation with full error catching
             var jsxEl = document.getElementById('app-jsx-source');
-            if (jsxEl) {
+            if (!jsxEl) {
+                showError('App-Code fehlt', 'JSX-Quellcode nicht eingebettet.');
+                reportError('app-jsx-source element not found', 'jsx-inject');
+            } else {
                 try {
                     var jsxCode = jsxEl.textContent;
                     logStep('Babel transformiert ' + Math.round(jsxCode.length/1024) + 'KB JSX...');
+                    var t0 = Date.now();
                     var transformed = Babel.transform(jsxCode, {
                         presets: ['react'],
                         filename: 'app.jsx'
                     });
-                    logStep('Code wird ausgeführt...');
+                    logStep('Kompiliert in ' + ((Date.now()-t0)/1000).toFixed(1) + 's, starte App...');
                     eval(transformed.code);
                 } catch (e) {
                     var detail = e.message || String(e);
-                    if (e.loc) detail += '\n\nZeile: ' + e.loc.line + ', Spalte: ' + e.loc.column;
+                    if (e.loc) detail += ' (Zeile: ' + e.loc.line + ', Spalte: ' + e.loc.column + ')';
                     showError('JSX Fehler', detail);
-                    try {
-                        fetch((window._apiBase || '') + '/api/system/frontend-error', {
-                            method: 'POST',
-                            headers: {'Content-Type': 'application/json'},
-                            body: JSON.stringify({error: detail, source: 'babel-transform'})
-                        });
-                    } catch(ex) {}
+                    reportError(detail, 'babel-transform');
                 }
-            } else {
-                showError('App-Code fehlt', 'Der JSX-Quellcode wurde nicht in die Seite eingebettet. Bitte app.jsx prüfen.');
             }
         }
     </script>
