@@ -2054,7 +2054,7 @@ const DeviceGroupsSection = () => {
 // ================================================================
 
 const RoomsPage = () => {
-    const { rooms, domains, lang, showToast, refreshData } = useApp();
+    const { rooms, domains, lang, showToast, refreshData, isAdmin } = useApp();
     const [showAdd, setShowAdd] = useState(false);
     const [newRoom, setNewRoom] = useState({ name: '', icon: 'mdi:door' });
     const [editRoom, setEditRoom] = useState(null);
