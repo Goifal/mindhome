@@ -897,9 +897,19 @@ class PatternDetector:
         """Find recurring actions at similar times."""
         patterns_found = []
 
+        # Sensors are read-only: their values are consequences of other actions,
+        # not actionable automations. Skip them for time-based pattern detection.
+        NON_ACTIONABLE_PREFIXES = (
+            "sensor.", "binary_sensor.", "sun.", "weather.",
+            "zone.", "person.", "device_tracker.", "calendar.", "proximity.",
+        )
+
         # Group events by (entity_id, new_state)
         groups = defaultdict(list)
         for ev in events:
+            # Skip non-actionable entities (sensors, etc.) - they can't be controlled
+            if ev.entity_id and ev.entity_id.startswith(NON_ACTIONABLE_PREFIXES):
+                continue
             key = (ev.entity_id, ev.new_state)
             if ev.context:
                 groups[key].append({
@@ -1446,10 +1456,15 @@ class PatternDetector:
             domain_id = device.domain_id
             room_id = device.room_id
 
-        # Determine initial status: sensor→sensor patterns are "insight" (lower priority)
+        # Determine initial status: non-actionable entity patterns are "insight" (lower priority)
         initial_status = "observed"
         NON_ACTIONABLE = ("sensor.", "binary_sensor.", "sun.", "weather.", "zone.", "person.", "device_tracker.", "calendar.", "proximity.")
-        if pattern_type == "event_chain":
+        if pattern_type == "time_based":
+            # Time-based patterns for read-only entities are purely informational
+            eid = pattern_data.get("entity_id", "")
+            if any(eid.startswith(p) for p in NON_ACTIONABLE):
+                initial_status = "insight"
+        elif pattern_type == "event_chain":
             trigger_eid = pattern_data.get("trigger_entity", "")
             action_eid = pattern_data.get("action_entity", "")
             trigger_is_sensor = any(trigger_eid.startswith(p) for p in NON_ACTIONABLE)
