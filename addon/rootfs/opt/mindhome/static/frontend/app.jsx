@@ -667,29 +667,27 @@ const DashboardPage = () => {
     return (
         <div>
             {/* System Status Panel */}
-            <div className="card animate-in" style={{ marginBottom: 24, padding: 0, overflow: 'hidden' }}>
-                <div style={{ padding: '16px 20px 12px', borderBottom: '1px solid var(--border-color)' }}>
-                    <div className="card-title" style={{ marginBottom: 0 }}>
+            <div className="card animate-in" style={{ marginBottom: 24 }}>
+                <div className="card-header">
+                    <div className="card-title">
                         <span className="mdi mdi-server-network" style={{ marginRight: 8, color: 'var(--accent-primary)' }} />
                         {lang === 'de' ? 'Systemstatus' : 'System Status'}
                     </div>
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 0 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12 }}>
                     {/* HA WebSocket */}
                     {(() => {
                         const wsOk = sysHealth?.checks?.ha_websocket?.status === 'ok';
                         return (
-                        <div style={{ padding: '14px 20px', borderRight: '1px solid var(--border-color)', borderBottom: '1px solid var(--border-color)' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                                <span style={{ width: 8, height: 8, borderRadius: '50%', background: wsOk ? 'var(--success)' : 'var(--danger)', boxShadow: wsOk ? '0 0 6px var(--success)' : '0 0 6px var(--danger)', flexShrink: 0 }} />
-                                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>HA WebSocket</span>
-                            </div>
-                            <div style={{ fontSize: 12, color: 'var(--text-muted)', paddingLeft: 16 }}>
+                        <div style={{ padding: 12, background: 'var(--bg-tertiary)', borderRadius: 8, textAlign: 'center' }}>
+                            <span className="mdi mdi-lan-connect" style={{ fontSize: 22, color: wsOk ? 'var(--success)' : 'var(--danger)', display: 'block', marginBottom: 6 }} />
+                            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 2 }}>WebSocket</div>
+                            <div style={{ fontSize: 12, color: wsOk ? 'var(--success)' : 'var(--danger)' }}>
                                 {wsOk ? (lang === 'de' ? 'Verbunden' : 'Connected') : (lang === 'de' ? 'Getrennt' : 'Disconnected')}
-                                {sysHealth?.checks?.ha_websocket?.reconnect_attempts > 0 && (
-                                    <span style={{ color: 'var(--warning)' }}> · {sysHealth.checks.ha_websocket.reconnect_attempts} Reconnects</span>
-                                )}
                             </div>
+                            {sysHealth?.checks?.ha_websocket?.reconnect_attempts > 0 && (
+                                <div style={{ fontSize: 10, color: 'var(--warning)', marginTop: 2 }}>{sysHealth.checks.ha_websocket.reconnect_attempts} Reconnects</div>
+                            )}
                         </div>
                         );
                     })()}
@@ -698,13 +696,11 @@ const DashboardPage = () => {
                     {(() => {
                         const restOk = sysHealth?.checks?.ha_rest_api?.status === 'ok';
                         return (
-                        <div style={{ padding: '14px 20px', borderRight: '1px solid var(--border-color)', borderBottom: '1px solid var(--border-color)' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                                <span style={{ width: 8, height: 8, borderRadius: '50%', background: restOk ? 'var(--success)' : 'var(--danger)', boxShadow: restOk ? '0 0 6px var(--success)' : '0 0 6px var(--danger)', flexShrink: 0 }} />
-                                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>HA REST API</span>
-                            </div>
-                            <div style={{ fontSize: 12, color: 'var(--text-muted)', paddingLeft: 16 }}>
-                                {restOk ? (lang === 'de' ? 'Erreichbar' : 'Reachable') : (lang === 'de' ? 'Offline' : 'Offline')}
+                        <div style={{ padding: 12, background: 'var(--bg-tertiary)', borderRadius: 8, textAlign: 'center' }}>
+                            <span className="mdi mdi-api" style={{ fontSize: 22, color: restOk ? 'var(--success)' : 'var(--danger)', display: 'block', marginBottom: 6 }} />
+                            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 2 }}>REST API</div>
+                            <div style={{ fontSize: 12, color: restOk ? 'var(--success)' : 'var(--danger)' }}>
+                                {restOk ? (lang === 'de' ? 'Erreichbar' : 'Reachable') : 'Offline'}
                             </div>
                         </div>
                         );
@@ -714,12 +710,10 @@ const DashboardPage = () => {
                     {(() => {
                         const dbOk = sysHealth?.checks?.database?.status === 'ok';
                         return (
-                        <div style={{ padding: '14px 20px', borderRight: '1px solid var(--border-color)', borderBottom: '1px solid var(--border-color)' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                                <span style={{ width: 8, height: 8, borderRadius: '50%', background: dbOk ? 'var(--success)' : 'var(--danger)', boxShadow: dbOk ? '0 0 6px var(--success)' : '0 0 6px var(--danger)', flexShrink: 0 }} />
-                                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{lang === 'de' ? 'Datenbank' : 'Database'}</span>
-                            </div>
-                            <div style={{ fontSize: 12, color: 'var(--text-muted)', paddingLeft: 16 }}>
+                        <div style={{ padding: 12, background: 'var(--bg-tertiary)', borderRadius: 8, textAlign: 'center' }}>
+                            <span className="mdi mdi-database" style={{ fontSize: 22, color: dbOk ? 'var(--success)' : 'var(--danger)', display: 'block', marginBottom: 6 }} />
+                            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 2 }}>{lang === 'de' ? 'Datenbank' : 'Database'}</div>
+                            <div style={{ fontSize: 12, color: dbOk ? 'var(--success)' : 'var(--danger)' }}>
                                 {dbOk ? 'SQLite OK' : (sysHealth?.checks?.database?.message || 'Error')}
                             </div>
                         </div>
@@ -734,14 +728,13 @@ const DashboardPage = () => {
                         const days = Math.floor(hours / 24);
                         const uptimeStr = days > 0 ? `${days}d ${hours % 24}h` : hours > 0 ? `${hours}h ${Math.floor((uptime % 3600) / 60)}m` : `${Math.floor(uptime / 60)}m`;
                         return (
-                        <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--border-color)' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                                <span style={{ width: 8, height: 8, borderRadius: '50%', background: ok ? 'var(--success)' : 'var(--danger)', boxShadow: ok ? '0 0 6px var(--success)' : '0 0 6px var(--danger)', flexShrink: 0 }} />
-                                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>MindHome Engine</span>
+                        <div style={{ padding: 12, background: 'var(--bg-tertiary)', borderRadius: 8, textAlign: 'center' }}>
+                            <span className="mdi mdi-cog" style={{ fontSize: 22, color: ok ? 'var(--accent-primary)' : 'var(--danger)', display: 'block', marginBottom: 6 }} />
+                            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 2 }}>Engine</div>
+                            <div style={{ fontSize: 12, color: ok ? 'var(--success)' : 'var(--danger)' }}>
+                                v{sysHealth?.version || '...'}
                             </div>
-                            <div style={{ fontSize: 12, color: 'var(--text-muted)', paddingLeft: 16 }}>
-                                v{sysHealth?.version || '...'} · Uptime {uptimeStr}
-                            </div>
+                            <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>Uptime {uptimeStr}</div>
                         </div>
                         );
                     })()}
@@ -978,32 +971,32 @@ const DashboardPage = () => {
                             {lang === 'de' ? 'Letzte 7 Tage' : 'Last 7 days'}
                         </span>
                     </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
-                        <div style={{ textAlign: 'center', padding: '14px 10px', background: 'var(--bg-main)', borderRadius: 10, border: '1px solid rgba(99,102,241,0.15)' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12 }}>
+                        <div style={{ textAlign: 'center', padding: 12, background: 'var(--bg-tertiary)', borderRadius: 8 }}>
                             <span className="mdi mdi-pulse" style={{ fontSize: 20, color: 'var(--accent-primary)', display: 'block', marginBottom: 4 }} />
-                            <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--accent-primary)' }}>{weeklyReport.events_collected?.toLocaleString()}</div>
-                            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{lang === 'de' ? 'Events' : 'Events'}</div>
+                            <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--accent-primary)' }}>{weeklyReport.events_collected?.toLocaleString()}</div>
+                            <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>{lang === 'de' ? 'Events' : 'Events'}</div>
                         </div>
-                        <div style={{ textAlign: 'center', padding: '14px 10px', background: 'var(--bg-main)', borderRadius: 10, border: '1px solid rgba(52,211,153,0.15)' }}>
+                        <div style={{ textAlign: 'center', padding: 12, background: 'var(--bg-tertiary)', borderRadius: 8 }}>
                             <span className="mdi mdi-lightbulb-on" style={{ fontSize: 20, color: 'var(--success)', display: 'block', marginBottom: 4 }} />
-                            <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--success)' }}>{weeklyReport.new_patterns}</div>
-                            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{lang === 'de' ? 'Neue Muster' : 'New Patterns'}</div>
+                            <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--success)' }}>{weeklyReport.new_patterns}</div>
+                            <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>{lang === 'de' ? 'Neue Muster' : 'New Patterns'}</div>
                         </div>
-                        <div style={{ textAlign: 'center', padding: '14px 10px', background: 'var(--bg-main)', borderRadius: 10, border: '1px solid rgba(251,191,36,0.15)' }}>
+                        <div style={{ textAlign: 'center', padding: 12, background: 'var(--bg-tertiary)', borderRadius: 8 }}>
                             <span className="mdi mdi-robot" style={{ fontSize: 20, color: 'var(--warning)', display: 'block', marginBottom: 4 }} />
-                            <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--warning)' }}>{weeklyReport.automations_executed}</div>
-                            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{lang === 'de' ? 'Automationen' : 'Automations'}</div>
+                            <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--warning)' }}>{weeklyReport.automations_executed}</div>
+                            <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>{lang === 'de' ? 'Automationen' : 'Automations'}</div>
                         </div>
-                        <div style={{ textAlign: 'center', padding: '14px 10px', background: 'var(--bg-main)', borderRadius: 10, border: '1px solid rgba(96,165,250,0.15)' }}>
+                        <div style={{ textAlign: 'center', padding: 12, background: 'var(--bg-tertiary)', borderRadius: 8 }}>
                             <span className="mdi mdi-check-decagram" style={{ fontSize: 20, color: 'var(--info)', display: 'block', marginBottom: 4 }} />
-                            <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--info)' }}>{weeklyReport.success_rate}%</div>
-                            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{lang === 'de' ? 'Erfolgsrate' : 'Success Rate'}</div>
+                            <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--info)' }}>{weeklyReport.success_rate}%</div>
+                            <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>{lang === 'de' ? 'Erfolgsrate' : 'Success Rate'}</div>
                         </div>
                         {weeklyReport.energy_saved_kwh > 0 && (
-                            <div style={{ textAlign: 'center', padding: '14px 10px', background: 'var(--bg-main)', borderRadius: 10, border: '1px solid rgba(52,211,153,0.15)' }}>
+                            <div style={{ textAlign: 'center', padding: 12, background: 'var(--bg-tertiary)', borderRadius: 8 }}>
                                 <span className="mdi mdi-lightning-bolt" style={{ fontSize: 20, color: 'var(--success)', display: 'block', marginBottom: 4 }} />
-                                <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--success)' }}>~{weeklyReport.energy_saved_kwh}</div>
-                                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>kWh {lang === 'de' ? 'gespart' : 'saved'}</div>
+                                <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--success)' }}>~{weeklyReport.energy_saved_kwh}</div>
+                                <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>kWh {lang === 'de' ? 'gespart' : 'saved'}</div>
                             </div>
                         )}
                     </div>
@@ -1211,7 +1204,7 @@ const DomainsPage = () => {
                     {lang === 'de' ? 'Custom Domain' : 'Custom Domain'}
                 </button>
             </div>
-            <div className="domain-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: 10, alignItems: 'stretch' }}>
+            <div className="domain-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 14, alignItems: 'stretch' }}>
                 {domains.map(domain => {
                     const cap = capabilities[domain.name] || {};
                     const controlLabels = {
@@ -1234,38 +1227,41 @@ const DomainsPage = () => {
                     return (
                         <div key={domain.id}
                             style={{
-                                display: 'flex', flexDirection: 'row', borderRadius: 8,
+                                display: 'flex', flexDirection: 'row', borderRadius: 10,
                                 border: '1px solid var(--border-color)', background: 'var(--bg-secondary)',
                                 overflow: 'hidden', transition: 'all 0.2s', opacity: domain.is_enabled ? 1 : 0.6,
                             }}>
                             {/* Left accent bar */}
                             <div style={{ width: 4, flexShrink: 0, background: domain.is_enabled ? 'var(--accent-primary)' : 'var(--border-color)' }} />
-                            <div style={{ flex: 1, padding: '10px 12px', minWidth: 0 }}>
+                            <div style={{ flex: 1, padding: '14px 16px', minWidth: 0 }}>
                                 {/* Top row: icon+name on left, toggle+count on right */}
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flex: 1 }}>
-                                        <span className={`mdi ${domain.icon}`} style={{ fontSize: 20, color: domain.is_enabled ? 'var(--accent-primary)' : 'var(--text-muted)', flexShrink: 0 }} />
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1 }}>
+                                        <span className={`mdi ${domain.icon}`} style={{ fontSize: 26, color: domain.is_enabled ? 'var(--accent-primary)' : 'var(--text-muted)', flexShrink: 0 }} />
                                         <div style={{ minWidth: 0 }}>
-                                            <div style={{ fontWeight: 600, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{domain.display_name}</div>
-                                            <div style={{ fontSize: 11, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{domain.description}</div>
+                                            <div style={{ fontWeight: 600, fontSize: 15, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{domain.display_name}</div>
+                                            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{devCount} {lang === 'de' ? 'Geraete' : 'devices'}</div>
                                         </div>
                                     </div>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-                                        <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{devCount}</span>
-                                        <label className="toggle" onClick={e => e.stopPropagation()} style={{ transform: 'scale(0.85)' }}>
+                                        <label className="toggle" onClick={e => e.stopPropagation()}>
                                             <input type="checkbox" checked={domain.is_enabled}
                                                    onChange={() => toggleDomain(domain.id)} />
                                             <div className="toggle-slider" />
                                         </label>
                                     </div>
                                 </div>
-                                {/* Compact capability badges */}
+                                {/* Description */}
+                                {domain.description && (
+                                    <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 8, lineHeight: 1.4 }}>{domain.description}</div>
+                                )}
+                                {/* Capability badges */}
                                 {allBadges.length > 0 && (
-                                    <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
-                                        {allBadges.slice(0, 6).map((b, i) => (
-                                            <span key={i} className={`badge badge-${b.type}`} style={{ fontSize: 9, padding: '1px 5px' }}>{b.label}</span>
+                                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                                        {allBadges.slice(0, 8).map((b, i) => (
+                                            <span key={i} className={`badge badge-${b.type}`} style={{ fontSize: 10, padding: '2px 7px' }}>{b.label}</span>
                                         ))}
-                                        {allBadges.length > 6 && <span style={{ fontSize: 9, color: 'var(--text-muted)' }}>+{allBadges.length - 6}</span>}
+                                        {allBadges.length > 8 && <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>+{allBadges.length - 8}</span>}
                                     </div>
                                 )}
                                 {/* Custom domain actions */}

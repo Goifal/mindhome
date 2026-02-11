@@ -1365,6 +1365,15 @@ class PresenceModeManager:
 
     def set_mode(self, mode_id, user_id=None, trigger="manual"):
         """Activate a presence mode and execute its actions."""
+        # Skip if already in this mode
+        if self._current_mode == mode_id:
+            session = self.Session()
+            try:
+                mode = session.get(PresenceMode, mode_id)
+                return {"success": True, "mode": mode.name_de if mode else "?", "already_active": True}
+            finally:
+                session.close()
+
         session = self.Session()
         try:
             mode = session.get(PresenceMode, mode_id)
