@@ -130,7 +130,7 @@ def api_delete_day_phase(phase_id):
 @presence_bp.route("/api/day-phases/current", methods=["GET"])
 def api_current_day_phase():
     try:
-        from ml.pattern_engine import ContextBuilder
+        from pattern_engine import ContextBuilder
         builder = ContextBuilder(ha_connection, engine)
         ctx = builder.build()
         return jsonify({"day_phase": ctx.get("day_phase","unknown"), "day_phase_id": ctx.get("day_phase_id"), "time_slot": ctx.get("time_slot"), "is_dark": ctx.get("is_dark",False)})
