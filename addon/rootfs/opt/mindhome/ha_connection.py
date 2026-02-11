@@ -239,7 +239,6 @@ class HAConnection:
         """Send TTS announcement via Home Assistant."""
         entity = media_player_entity
         if not entity:
-            # Check configured TTS media player first
             try:
                 from helpers import get_setting
                 entity = get_setting("tts_media_player")
@@ -256,37 +255,53 @@ class HAConnection:
             logger.warning("No media player found for TTS")
             return {"error": "No media player found for TTS"}
 
-        lang = language or "de"
+        lang_short = language or "de"
+        lang_full = f"{lang_short}-{lang_short.upper()}" if len(lang_short) == 2 else lang_short
 
         # Discover available TTS entities for tts.speak (HA 2024+)
         states = self.get_states()
         tts_entities = [s["entity_id"] for s in states
                         if s.get("entity_id", "").startswith("tts.")]
 
-        logger.info(f"TTS: speaker={entity}, tts_entities={tts_entities}, lang={lang}")
+        logger.info(f"TTS: speaker={entity}, tts_entities={tts_entities}, lang={lang_short}")
 
-        # Try tts.speak with discovered TTS entity (HA 2024+)
-        if tts_entities:
-            tts_entity = tts_entities[0]
-            result = self._api_request("POST", f"services/tts/speak", {
+        # Try tts.speak with each TTS entity (HA 2024+)
+        for tts_entity in tts_entities:
+            # HA Cloud needs full locale (de-DE), others use short (de)
+            tts_lang = lang_full if "cloud" in tts_entity else lang_short
+            result = self._api_request("POST", "services/tts/speak", {
                 "entity_id": tts_entity,
                 "media_player_entity_id": entity,
                 "message": message,
-                "language": lang,
+                "language": tts_lang,
             }, retry=False)
             if result is not None:
+                logger.info(f"TTS: success with tts.speak entity={tts_entity}")
                 return result
-            logger.warning(f"TTS: tts.speak failed with entity {tts_entity}, trying fallback")
+            logger.warning(f"TTS: tts.speak failed with entity {tts_entity}")
 
-        # Fallback: tts.google_translate_say (legacy)
-        result = self._api_request("POST", f"services/tts/google_translate_say", {
+        # Fallback: tts.cloud_say (HA Cloud legacy)
+        result = self._api_request("POST", "services/tts/cloud_say", {
             "entity_id": entity,
             "message": message,
-            "language": lang,
+            "language": lang_full,
         }, retry=False)
-        if result is None:
-            logger.warning("TTS: All TTS methods failed")
-        return result
+        if result is not None:
+            logger.info("TTS: success with tts.cloud_say")
+            return result
+
+        # Fallback: tts.google_translate_say (legacy)
+        result = self._api_request("POST", "services/tts/google_translate_say", {
+            "entity_id": entity,
+            "message": message,
+            "language": lang_short,
+        }, retry=False)
+        if result is not None:
+            logger.info("TTS: success with tts.google_translate_say")
+            return result
+
+        logger.warning("TTS: All TTS methods failed")
+        return {"error": "All TTS methods failed"}
 
     def fire_event(self, event_type, event_data=None):
         return self._api_request("POST", f"events/{event_type}", event_data or {})
