@@ -1219,10 +1219,8 @@ const DomainsPage = () => {
                         start: 'Start', stop: 'Stop', return_to_base: lang === 'de' ? 'Zurück' : 'Return',
                         set_percentage: '%', source: 'Quelle',
                     };
-                    const allBadges = [
-                        ...(cap.controls || []).map(c => ({ label: controlLabels[c] || c, type: 'info' })),
-                        ...(cap.pattern_features || []).map(f => ({ label: f, type: 'success' })),
-                    ];
+                    const controlBadges = (cap.controls || []).map(c => ({ label: controlLabels[c] || c, type: 'info' }));
+                    const sensorBadges = (cap.pattern_features || []).map(f => ({ label: f, type: 'success' }));
                     const devCount = devices.filter(d => d.domain_id === domain.id).length;
                     return (
                         <div key={domain.id}
@@ -1256,12 +1254,22 @@ const DomainsPage = () => {
                                     <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 8, lineHeight: 1.4 }}>{domain.description}</div>
                                 )}
                                 {/* Capability badges */}
-                                {allBadges.length > 0 && (
-                                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                                        {allBadges.slice(0, 8).map((b, i) => (
-                                            <span key={i} className={`badge badge-${b.type}`} style={{ fontSize: 10, padding: '2px 7px' }}>{b.label}</span>
+                                {(controlBadges.length > 0 || sensorBadges.length > 0) && (
+                                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
+                                        {controlBadges.slice(0, 5).map((b, i) => (
+                                            <span key={'c' + i} className="badge badge-info" style={{ fontSize: 10, padding: '2px 7px' }}>{b.label}</span>
                                         ))}
-                                        {allBadges.length > 8 && <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>+{allBadges.length - 8}</span>}
+                                        {controlBadges.length > 0 && sensorBadges.length > 0 && (
+                                            <span style={{ width: 1, height: 14, background: 'var(--border-color)', margin: '0 2px' }} />
+                                        )}
+                                        {sensorBadges.slice(0, 5).map((b, i) => (
+                                            <span key={'s' + i} className="badge badge-success" style={{ fontSize: 10, padding: '2px 7px' }}>{b.label}</span>
+                                        ))}
+                                    </div>
+                                )}
+                                {domain.is_custom && controlBadges.length === 0 && sensorBadges.length === 0 && devCount > 0 && (
+                                    <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+                                        {devCount} {lang === 'de' ? 'Geraete zugewiesen' : 'devices assigned'}
                                     </div>
                                 )}
                                 {/* Custom domain actions */}
@@ -1676,9 +1684,9 @@ const DevicesPage = () => {
                         })}
                     </div>
                     {/* Desktop table view */}
-                    <div className="devices-table-wrap">
+                    <div className="devices-table-wrap" style={{ overflowX: 'auto' }}>
                     <div className="table-wrap">
-                    <table>
+                    <table style={{ tableLayout: 'fixed', width: '100%' }}>
                         <thead>
                             <tr>
                                 <th style={{ width: 40 }}>
@@ -1686,11 +1694,11 @@ const DevicesPage = () => {
                                         checked={getFilteredDevices().length > 0 && getFilteredDevices().every(d => bulkSelected[d.id])}
                                         onChange={toggleBulkAll} style={{ width: 16, height: 16, accentColor: 'var(--accent-primary)' }} />
                                 </th>
-                                <th>Entity ID</th>
-                                <th>{lang === 'de' ? 'Name' : 'Name'}</th>
-                                <th>Domain</th>
-                                <th>{lang === 'de' ? 'Raum' : 'Room'}</th>
-                                <th>Status</th>
+                                <th style={{ width: '25%' }}>Entity ID</th>
+                                <th style={{ width: '20%' }}>{lang === 'de' ? 'Name' : 'Name'}</th>
+                                <th style={{ width: '12%' }}>Domain</th>
+                                <th style={{ width: '12%' }}>{lang === 'de' ? 'Raum' : 'Room'}</th>
+                                <th style={{ width: '16%' }}>Status</th>
                                 <th style={{ width: 90 }}>{lang === 'de' ? 'Aktionen' : 'Actions'}</th>
                             </tr>
                         </thead>
@@ -1719,10 +1727,10 @@ const DevicesPage = () => {
                                             onChange={() => toggleBulk(device.id)}
                                             style={{ width: 16, height: 16, accentColor: 'var(--accent-primary)' }} />
                                     </td>
-                                    <td style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>{device.ha_entity_id}</td>
-                                    <td>{device.name}</td>
-                                    <td>{getDomainName(device.domain_id)}</td>
-                                    <td>{getRoomName(device.room_id)}</td>
+                                    <td style={{ fontFamily: 'var(--font-mono)', fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={device.ha_entity_id}>{device.ha_entity_id}</td>
+                                    <td style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{device.name}</td>
+                                    <td style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{getDomainName(device.domain_id)}</td>
+                                    <td style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{getRoomName(device.room_id)}</td>
                                     <td>
                                         {!isSensorValue && (
                                             <span style={{ color: st.color, fontWeight: 600, fontSize: 12 }}>{st.label}</span>
@@ -6022,6 +6030,7 @@ const PresencePage = () => {
     // Shift
     const [shiftTemplates, setShiftTemplates] = useState([]);
     const [showAddShift, setShowAddShift] = useState(false);
+    const [editShift, setEditShift] = useState(null);
     const [newShift, setNewShift] = useState({ name: '', short_code: '', blocks: [{ start: '06:00', end: '14:00' }], color: '#FF9800' });
     const [rotation, setRotation] = useState([]);
     const [rotationStart, setRotationStart] = useState('');
@@ -6106,6 +6115,7 @@ const PresencePage = () => {
     const saveSchedule = () => { if (!editSchedule) return; api.put(`person-schedules/${editSchedule.id}`, editSchedule).then(() => { setEditSchedule(null); load(); }).catch(e => showToast(lang === 'de' ? 'Fehler' : 'Error', 'error')); };
 
     const createShiftTemplate = () => { if (!newShift.name?.trim()) { showToast('Name required', 'error'); return; } api.post('shift-templates', newShift).then(() => { setShowAddShift(false); setNewShift({ name: '', short_code: '', blocks: [{ start: '06:00', end: '14:00' }], color: '#FF9800' }); load(); }).catch(e => showToast(lang === 'de' ? 'Fehler' : 'Error', 'error')); };
+    const saveShiftTemplate = () => { if (!editShift) return; api.put(`shift-templates/${editShift.id}`, editShift).then(() => { setEditShift(null); load(); showToast(lang === 'de' ? 'Gespeichert' : 'Saved', 'success'); }).catch(e => showToast(lang === 'de' ? 'Fehler' : 'Error', 'error')); };
     const deleteShiftTemplate = (id) => { if (!confirm(lang === 'de' ? 'Wirklich löschen?' : 'Really delete?')) return; api.delete(`shift-templates/${id}`).then(() => load()).catch(e => showToast(lang === 'de' ? 'Fehler' : 'Error', 'error')); };
     const seedDefaults = () => { DEFAULT_SHIFT_TYPES.forEach(t => api.post('shift-templates', { name: t.name, short_code: t.short_code, blocks: [{ start: t.time_start, end: t.time_end }], color: t.color })); setTimeout(load, 500); };
 
@@ -6264,7 +6274,7 @@ const PresencePage = () => {
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                                 <div><label style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Person' : 'Person'}</label>
                                     <CustomSelect
-                                        options={[{ value: '', label: lang === 'de' ? 'Waehlen...' : 'Select...' }, ...users.map(u => ({ value: u.id, label: u.display_name || u.ha_person_name }))]}
+                                        options={[{ value: '', label: lang === 'de' ? 'Waehlen...' : 'Select...' }, ...persons.map(u => ({ value: u.entity_id, label: u.name }))]}
                                         value={newSched.user_id}
                                         onChange={v => setNewSched({ ...newSched, user_id: v })}
                                         placeholder={lang === 'de' ? 'Waehlen...' : 'Select...'}
@@ -6333,6 +6343,7 @@ const PresencePage = () => {
                                 <span style={{ fontWeight: 700, color: t.color, fontSize: 16 }}>{t.short_code}</span>
                                 <span style={{ fontSize: 13 }}>{t.name}</span>
                                 <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{t.blocks?.[0]?.start}-{t.blocks?.[0]?.end}</span>
+                                <button className="btn btn-sm btn-ghost" style={{ padding: 2 }} onClick={() => setEditShift({ ...t })}><span className="mdi mdi-pencil" style={{ fontSize: 14, color: 'var(--accent-primary)' }} /></button>
                                 <button className="btn btn-sm btn-ghost" style={{ padding: 2, color: 'var(--danger)' }} onClick={() => deleteShiftTemplate(t.id)}><span className="mdi mdi-close" style={{ fontSize: 14 }} /></button>
                             </div>
                         ))}
@@ -6342,17 +6353,17 @@ const PresencePage = () => {
                     <div className="card animate-in" style={{ marginBottom: 16 }}>
                         <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)', fontWeight: 600 }}>{lang === 'de' ? 'Rotation konfigurieren' : 'Configure Rotation'}</div>
                         <div style={{ padding: 16 }}>
-                            <div style={{ display: 'flex', gap: 12, marginBottom: 12, flexWrap: 'wrap' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 12 }}>
                                 <div><label style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Person' : 'Person'}</label>
                                     <CustomSelect
-                                        options={[{ value: '', label: lang === 'de' ? 'Waehlen...' : 'Select...' }, ...users.map(u => ({ value: u.id, label: u.display_name || u.ha_person_name }))]}
+                                        options={[{ value: '', label: lang === 'de' ? 'Waehlen...' : 'Select...' }, ...persons.map(u => ({ value: u.entity_id, label: u.name }))]}
                                         value={rotationUserId}
                                         onChange={v => setRotationUserId(v)}
                                         placeholder={lang === 'de' ? 'Waehlen...' : 'Select...'}
                                     />
                                 </div>
-                                <div><label style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Startdatum' : 'Start date'}</label><input type="date" className="form-input" value={rotationStart} onChange={e => setRotationStart(e.target.value)} /></div>
-                                <div><label style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Enddatum (opt.)' : 'End date (opt.)'}</label><input type="date" className="form-input" value={rotationEnd} onChange={e => setRotationEnd(e.target.value)} /></div>
+                                <div><label style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Startdatum' : 'Start date'}</label><input type="date" className="form-input" style={{ width: '100%' }} value={rotationStart} onChange={e => setRotationStart(e.target.value)} /></div>
+                                <div><label style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Enddatum (opt.)' : 'End date (opt.)'}</label><input type="date" className="form-input" style={{ width: '100%' }} value={rotationEnd} onChange={e => setRotationEnd(e.target.value)} /></div>
                             </div>
                             <div style={{ marginBottom: 8 }}>
                                 <label style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Klicke um hinzuzufuegen:' : 'Click to add:'}</label>
@@ -6432,6 +6443,22 @@ const PresencePage = () => {
                                     <div><label style={{ fontSize: 12, color: 'var(--text-muted)' }}>Ende</label><input type="text" placeholder="HH:MM" className="form-input" value={newShift.blocks[0]?.end || ''} onChange={e => setNewShift({ ...newShift, blocks: [{ ...newShift.blocks[0], end: e.target.value }] })} /></div>
                                 </div>
                                 <button className="btn btn-primary" onClick={createShiftTemplate}>{lang === 'de' ? 'Erstellen' : 'Create'}</button>
+                            </div>
+                        </Modal>
+                    )}
+                    {editShift && (
+                        <Modal title={lang === 'de' ? 'Schichttyp bearbeiten' : 'Edit Shift Type'} onClose={() => setEditShift(null)}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                                <div style={{ display: 'flex', gap: 12 }}>
+                                    <div style={{ flex: 1 }}><label style={{ fontSize: 12, color: 'var(--text-muted)' }}>Name</label><input className="form-input" value={editShift.name || ''} onChange={e => setEditShift({ ...editShift, name: e.target.value })} /></div>
+                                    <div><label style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Kuerzel' : 'Code'}</label><input className="form-input" style={{ width: 60 }} value={editShift.short_code || ''} onChange={e => setEditShift({ ...editShift, short_code: e.target.value })} /></div>
+                                    <div><label style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Farbe' : 'Color'}</label><input type="color" value={editShift.color || '#FF9800'} onChange={e => setEditShift({ ...editShift, color: e.target.value })} /></div>
+                                </div>
+                                <div style={{ display: 'flex', gap: 12 }}>
+                                    <div><label style={{ fontSize: 12, color: 'var(--text-muted)' }}>Start</label><input type="text" placeholder="HH:MM" className="form-input" value={editShift.blocks?.[0]?.start || ''} onChange={e => setEditShift({ ...editShift, blocks: [{ ...(editShift.blocks?.[0] || {}), start: e.target.value }] })} /></div>
+                                    <div><label style={{ fontSize: 12, color: 'var(--text-muted)' }}>Ende</label><input type="text" placeholder="HH:MM" className="form-input" value={editShift.blocks?.[0]?.end || ''} onChange={e => setEditShift({ ...editShift, blocks: [{ ...(editShift.blocks?.[0] || {}), end: e.target.value }] })} /></div>
+                                </div>
+                                <button className="btn btn-primary" onClick={saveShiftTemplate}>{lang === 'de' ? 'Speichern' : 'Save'}</button>
                             </div>
                         </Modal>
                     )}
