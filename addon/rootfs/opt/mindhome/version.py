@@ -4,12 +4,16 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "0.6.16"
-BUILD = 17
+VERSION = "0.6.17"
+BUILD = 18
 BUILD_DATE = "2026-02-11"
 CODENAME = "Phase 3.5 - Bugfix"
 
 # Changelog
+# Build 18: v0.6.17 Standby-Geraeteauswahl
+#   - Standby-Ueberwachung: Sensor-Dropdown statt Textfeld
+#   - Laedt Power-Sensoren (W/kW) aus HA via discover-sensors API
+#
 # Build 17: v0.6.16 UI-Fixes
 #   - Fix Schichttypen: Person-Dropdown (users→persons), Edit-Modal, Date-Grid
 #   - Fix Geraete: Tabelle fixed-layout, Entity-ID truncate, overflow-x scroll

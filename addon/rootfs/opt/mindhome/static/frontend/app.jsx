@@ -5519,7 +5519,7 @@ const EnergyPage = () => {
                 <div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
                         <span style={{ fontWeight: 600 }}>{lang === 'de' ? 'Standby-Erkennung' : 'Standby Detection'}</span>
-                        <button className="btn btn-sm btn-primary" onClick={() => setShowAddStandby(true)}>
+                        <button className="btn btn-sm btn-primary" onClick={() => { api.get('energy/discover-sensors').then(d => setSensors(Array.isArray(d) ? d : [])); setShowAddStandby(true); }}>
                             <span className="mdi mdi-plus" style={{ marginRight: 4 }} />{lang === 'de' ? 'Hinzufuegen' : 'Add'}
                         </button>
                     </div>
@@ -5549,8 +5549,13 @@ const EnergyPage = () => {
                         <Modal title={lang === 'de' ? 'Standby-Ueberwachung hinzufuegen' : 'Add standby monitoring'} onClose={() => setShowAddStandby(false)}>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                                 <div>
-                                    <label style={{ fontSize: 12, color: 'var(--text-muted)' }}>Entity ID</label>
-                                    <input className="form-input" value={newStandby.entity_id} onChange={e => setNewStandby({ ...newStandby, entity_id: e.target.value })} placeholder="sensor.power_xyz" />
+                                    <label style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Geraet' : 'Device'}</label>
+                                    <CustomSelect
+                                        options={[{ value: '', label: lang === 'de' ? 'Sensor waehlen...' : 'Select sensor...' }, ...sensors.filter(s => s.unit === 'W' || s.unit === 'kW' || s.unit === 'mW' || s.device_class === 'power').map(s => ({ value: s.entity_id, label: `${s.name} (${s.state || '?'} ${s.unit})` }))]}
+                                        value={newStandby.entity_id}
+                                        onChange={v => setNewStandby({ ...newStandby, entity_id: v })}
+                                        placeholder={lang === 'de' ? 'Sensor waehlen...' : 'Select sensor...'}
+                                    />
                                 </div>
                                 <div>
                                     <label style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Schwelle (Watt)' : 'Threshold (Watts)'}</label>
