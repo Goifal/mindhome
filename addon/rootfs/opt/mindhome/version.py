@@ -4,12 +4,18 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "0.6.15"
-BUILD = 16
+VERSION = "0.6.16"
+BUILD = 17
 BUILD_DATE = "2026-02-11"
 CODENAME = "Phase 3.5 - Bugfix"
 
 # Changelog
+# Build 17: v0.6.16 UI-Fixes
+#   - Fix Schichttypen: Person-Dropdown (users→persons), Edit-Modal, Date-Grid
+#   - Fix Geraete: Tabelle fixed-layout, Entity-ID truncate, overflow-x scroll
+#   - Fix Domains: Trennstrich zwischen Steuerung/Sensoren, Custom-Domain Info
+#   - Fix Dashboard: stat-card bg-tertiary (einheitlich mit Domains/Lernfortschritt)
+#
 # Build 16: v0.6.15 Refactoring
 #   - ml/ Verzeichnis entfernt — alle Imports auf Root-Module umgestellt
 #   - Root automation_engine.py + pattern_engine.py werden jetzt direkt verwendet

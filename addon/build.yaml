@@ -6,6 +6,6 @@ build_from:
 labels:
   org.opencontainers.image.title: "MindHome"
   org.opencontainers.image.description: "KI-basierte Smart Home Automatisierung"
-  org.opencontainers.image.version: "0.6.15"
+  org.opencontainers.image.version: "0.6.16"
   org.opencontainers.image.source: "https://github.com/Goifal/mindhome"
   org.opencontainers.image.licenses: "MIT"
