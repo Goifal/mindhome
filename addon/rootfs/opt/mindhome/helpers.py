@@ -69,7 +69,7 @@ def utc_iso(dt):
 _rate_limit_data = defaultdict(list)
 _rate_limit_lock = __import__('threading').Lock()
 _RATE_LIMIT_WINDOW = 60
-_RATE_LIMIT_MAX = 120
+_RATE_LIMIT_MAX = 300
 
 
 def rate_limit_check(ip):
