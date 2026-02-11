@@ -229,7 +229,11 @@ class HAConnection:
             payload["title"] = title
         if data:
             payload["data"] = data
-        return self.call_service("notify", target or "notify", payload)
+        # Strip "notify." prefix if present (service name must be without domain)
+        service = target or "notify"
+        if service.startswith("notify."):
+            service = service[len("notify."):]
+        return self.call_service("notify", service, payload)
 
     def announce_tts(self, message, media_player_entity=None, language=None):
         """Send TTS announcement via Home Assistant."""
@@ -259,24 +263,29 @@ class HAConnection:
         tts_entities = [s["entity_id"] for s in states
                         if s.get("entity_id", "").startswith("tts.")]
 
+        logger.info(f"TTS: speaker={entity}, tts_entities={tts_entities}, lang={lang}")
+
         # Try tts.speak with discovered TTS entity (HA 2024+)
         if tts_entities:
             tts_entity = tts_entities[0]
-            result = self.call_service("tts", "speak", {
+            result = self._api_request("POST", f"services/tts/speak", {
                 "entity_id": tts_entity,
                 "media_player_entity_id": entity,
                 "message": message,
                 "language": lang,
-            })
+            }, retry=False)
             if result is not None:
                 return result
+            logger.warning(f"TTS: tts.speak failed with entity {tts_entity}, trying fallback")
 
         # Fallback: tts.google_translate_say (legacy)
-        result = self.call_service("tts", "google_translate_say", {
+        result = self._api_request("POST", f"services/tts/google_translate_say", {
             "entity_id": entity,
             "message": message,
             "language": lang,
-        })
+        }, retry=False)
+        if result is None:
+            logger.warning("TTS: All TTS methods failed")
         return result
 
     def fire_event(self, event_type, event_data=None):
