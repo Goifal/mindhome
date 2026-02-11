@@ -235,6 +235,7 @@ class HAConnection:
         """Send TTS announcement via Home Assistant."""
         entity = media_player_entity
         if not entity:
+            # Check configured TTS media player first
             try:
                 from helpers import get_setting
                 entity = get_setting("tts_media_player")

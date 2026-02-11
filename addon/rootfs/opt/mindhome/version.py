@@ -4,46 +4,24 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "0.6.10"
-BUILD = 11
-BUILD_DATE = "2026-02-10"
-CODENAME = "Phase 3.5 - Bootloop Fix"
+VERSION = "0.6.11"
+BUILD = 12
+BUILD_DATE = "2026-02-11"
+CODENAME = "Phase 3.5 - Bugfix"
 
 # Changelog
-# Build 11: v0.6.10 Debug
-#   - Debug-Beacon POST vor Babel-Kompilierung (zeigt ob Code dort ankommt)
-#
-# Build 10: v0.6.9 Debug
-#   - Cache-Control no-cache auf serve_index (kein Browser-Caching)
-#   - Besseres Error-Reporting: reportError() sendet alle Fehler ans Backend
-#   - Babel Kompilierzeit wird angezeigt
-#   - Mojibake in Fehlermeldungen entfernt (ue statt ü)
-#
-# Build 9: v0.6.8 Bugfix
-#   - Fix Ladescreen: onerror-Handler fuer lokale lib-Dateien (CDN-Fallback)
-#   - Fix 404 fuer fehlende .js-Dateien: leerer Body statt JSON (Browser-kompatibel)
-#
-# Build 8: v0.6.7 Bugfix
-#   - Fix Bootloop: React/ReactDOM/Babel lokal gebundelt (Docker Build)
-#   - CDN-Fallback falls lokale Libs fehlen
-#   - Fix Translations-Pfad (routes/translations -> ../translations)
-#
-# Build 7: v0.6.6 Bugfix
-#   - Version-Bump fuer HA Update-Erkennung
-#
-# Build 6: v0.6.5 Bugfix + Bootloop Fix
-#   - Fix: JSX-Syntaxfehler verhinderte Babel-Kompilierung
-#   - Fix: Frontend-Bibliotheken lokal gebuendelt statt CDN
-#   - Fix: Translations-Endpoint + serve_frontend 404
-#   - Fix Ladescreen: Icon-Pfad kompatibel mit HA Ingress
-#   - Fix TTS: Keine Retry-Schleife bei 400, TTS-Entity-Erkennung
-#   - Fix Backup-Export: muted_until statt mute_until
-#   - Fix DomainsPage: fehlende devices Variable
-#   - Fix Notification: test-channel + channel-toggle Routes
-#   - Fix Anwesenheit: Modus-Deduplizierung
-#   - Fix Zeiteingabe: TimeInput statt type=time (Safari)
-#   - Fix Geraete: Responsive Grid Layout
-#   - Design: Einheitliche CSS-Variablen
+# Build 12: v0.6.11 Bugfix
+#   - Fix TTS: tts.speak mit entity_id (TTS-Entity Discovery), kein Retry bei 4xx
+#   - Fix Notification: test-channel POST + channel PUT Routen hinzugefuegt
+#   - Fix DomainsPage: devices Variable in useApp() Destrukturierung
+#   - Fix Anwesenheit: Modus-Deduplizierung + Auto-Select
+#   - Fix Zeiteingabe: type="text" statt type="time" (Safari-Kompatibilitaet)
+#   - Fix Geraete: Responsive Layout (Mobile Cards / Desktop Tabelle)
+#   - Fix Ladescreen: MindHome-Logo statt Gehirn-Icon
+#   - Fix Design: Fehlende CSS-Variablen (--bg-hover, --accent-primary-alpha)
+#   - Fix SplashScreen: CSS-Variablen statt hardcoded Farben
+#   - Fix Bibliotheken: Lokal gebundelt mit CDN-Fallback
+#   - Fix Mojibake: Umlaute in Fehlermeldungen entfernt
 #
 # Build 5: v0.6.4 Stabilisierung
 #   - Mustererkennung: Confidence Decay 1x/Tag, Cap 10%/Tag, Sequenz-Formel, Korrelation erweitert

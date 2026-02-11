@@ -480,7 +480,7 @@ def api_get_translations(lang_code):
     if lang_code not in ("de", "en"):
         return jsonify({"error": "Language not found"}), 404
     import json as json_lib
-    lang_file = os.path.join(os.path.dirname(__file__), "..", "translations", f"{lang_code}.json")
+    lang_file = os.path.join(os.path.dirname(__file__), "translations", f"{lang_code}.json")
     try:
         with open(lang_file, "r", encoding="utf-8") as f:
             return jsonify(json_lib.load(f))
@@ -707,11 +707,7 @@ def serve_index():
             # Fallback: insert before </body>
             html = html.replace('</body>', jsx_block + '\n</body>')
 
-        return html, 200, {
-            "Content-Type": "text/html; charset=utf-8",
-            "Cache-Control": "no-cache, no-store, must-revalidate",
-            "Pragma": "no-cache",
-        }
+        return html, 200, {"Content-Type": "text/html; charset=utf-8"}
     except FileNotFoundError as e:
         logger.error(f"Frontend file not found: {e}")
         return f"<h1>Frontend Error</h1><p>File not found: {e}</p>", 500
@@ -755,8 +751,8 @@ def serve_frontend(path):
             response.headers["Content-Type"] = "text/javascript; charset=utf-8"
             response.headers["Access-Control-Allow-Origin"] = "*"
         return response
-    # Static assets (js/css/images) must return 404 if missing, not index.html
-    if path and any(path.endswith(ext) for ext in (".js", ".css", ".map", ".png", ".jpg", ".ico", ".svg", ".woff", ".woff2", ".ttf")):
+    # Return 404 for missing static assets (so onerror CDN fallback works)
+    if path and "." in path.split("/")[-1]:
         return "", 404
     return send_from_directory(os.path.join(current_app.static_folder, "frontend"), "index.html")
 
@@ -973,7 +969,7 @@ def api_backup_export():
         # Device mutes
         for dm in session.query(DeviceMute).all():
             backup["device_mutes"].append({"id": dm.id, "device_id": dm.device_id,
-                "muted_until": utc_iso(dm.muted_until) if dm.muted_until else None,
+                "mute_until": utc_iso(dm.mute_until) if dm.mute_until else None,
                 "reason": dm.reason})
         # Device groups
         for g in session.query(DeviceGroup).all():

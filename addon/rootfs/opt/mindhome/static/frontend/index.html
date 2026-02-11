@@ -34,7 +34,6 @@
             --text-inverse: #0a0e17;
 
             --accent-primary: #f59e0b;
-            --accent-primary-hover: #e69200;
             --accent-primary-dim: rgba(245, 158, 11, 0.15);
             --accent-primary-glow: rgba(245, 158, 11, 0.3);
             --accent-secondary: #3b82f6;
@@ -75,7 +74,9 @@
 
             --bg-tertiary: #1a1f2e;
             --bg-main: #0d1117;
+            --bg-hover: #1f2847;
             --border-color: rgba(255, 255, 255, 0.06);
+            --accent-primary-alpha: rgba(245, 158, 11, 0.12);
         }
 
         /* Light Theme */
@@ -102,7 +103,9 @@
 
             --bg-tertiary: #e8eaf0;
             --bg-main: #dfe1e6;
+            --bg-hover: #e4e6ec;
             --border-color: rgba(0, 0, 0, 0.08);
+            --accent-primary-alpha: rgba(245, 158, 11, 0.12);
         }
 
         /* ================================================================
@@ -439,7 +442,7 @@
             border-color: var(--accent-primary);
         }
         .btn-primary:hover {
-            background: var(--accent-primary-hover, #e69200);
+            background: #e69200;
             box-shadow: var(--shadow-glow);
         }
 
@@ -808,11 +811,11 @@
     <div id="root">
         <div class="loading-screen" id="initial-loader">
             <div class="sidebar-logo">
-                <img id="app-logo" src="icon.png" alt="MindHome" style="width: 64px; height: 64px; border-radius: 16px;" />
+                <img src="icon.png" alt="MindHome" style="width: 48px; height: 48px; border-radius: 12px;" onerror="this.style.display='none'">
             </div>
             <div style="font-size: 22px; font-weight: 700; letter-spacing: -0.02em;">MindHome</div>
             <div class="loading-spinner"></div>
-            <div id="load-status" style="font-size: 12px; color: var(--text-muted); margin-top: 8px;">Lade Bibliotheken...</div>
+            <div id="load-status" style="font-size: 12px; color: #5a6478; margin-top: 8px;">Lade Bibliotheken...</div>
         </div>
     </div>
 
@@ -820,18 +823,6 @@
     <script>
         window._loadErrors = [];
         window._loadSteps = [];
-
-        // Detect API base path for Ingress FIRST (before anything else needs it)
-        (function() {
-            var path = window.location.pathname;
-            var match = path.match(/\/api\/hassio_ingress\/[^/]+/);
-            window._apiBase = match ? match[0] : '';
-            // Fix logo path for ingress
-            var logo = document.getElementById('app-logo');
-            if (logo && window._apiBase) {
-                logo.src = window._apiBase + '/icon.png';
-            }
-        })();
 
         function logStep(step) {
             window._loadSteps.push(step);
@@ -845,7 +836,7 @@
                 '<div class="error-icon">âš ï¸</div>' +
                 '<div class="error-title">' + title + '</div>' +
                 '<div class="error-detail">' + detail + '</div>' +
-                '<div style="font-size:12px;color:var(--text-secondary);margin-top:8px;">Lade-Schritte: ' + window._loadSteps.join(' â†' ') + '</div>' +
+                '<div style="font-size:12px;color:#8892a8;margin-top:8px;">Lade-Schritte: ' + window._loadSteps.join(' â†’ ') + '</div>' +
                 '<button class="btn btn-primary" onclick="location.reload()">Seite neu laden</button>' +
                 '</div>';
         }
@@ -872,98 +863,68 @@
                 showError(
                     'Laden fehlgeschlagen (Timeout)',
                     'Die App konnte nicht innerhalb von 30 Sekunden geladen werden. ' +
-                    'Mögliche Ursachen: CDN nicht erreichbar, JavaScript-Fehler, oder Netzwerkproblem.\n\n' +
+                    'Moegliche Ursachen: CDN nicht erreichbar, JavaScript-Fehler, oder Netzwerkproblem.\n\n' +
                     'Geladene Schritte: ' + window._loadSteps.join(', ') + '\n' +
                     'Fehler: ' + (window._loadErrors.length ? window._loadErrors.join(', ') : 'keine')
                 );
             }
         }, 30000);
 
+        // Detect API base path for Ingress
+        (function() {
+            var path = window.location.pathname;
+            var match = path.match(/\/api\/hassio_ingress\/[^/]+/);
+            window._apiBase = match ? match[0] : '';
+        })();
     </script>
 
-    <!-- React, ReactDOM, Babel (lokal gebündelt, CDN-Fallback) -->
+    <!-- React (local with CDN fallback) -->
     <script>logStep('React...');</script>
     <script src="lib/react.production.min.js"
-            onerror="logStep('React lokal nicht gefunden, lade CDN...'); var s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js'; s.onerror=function(){showError('React nicht ladbar','Weder lokal noch CDN erreichbar.')}; document.head.appendChild(s);"></script>
-    <script>
-        if (typeof React === 'undefined') {
-            logStep('React CDN Fallback...');
-            document.write('<scr' + 'ipt src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"><\/scr' + 'ipt>');
-        }
-    </script>
+            onerror="this.onerror=null; this.src='https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js'"></script>
     <script>logStep('ReactDOM...');</script>
     <script src="lib/react-dom.production.min.js"
-            onerror="logStep('ReactDOM lokal nicht gefunden, lade CDN...'); var s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js'; s.onerror=function(){showError('ReactDOM nicht ladbar','Weder lokal noch CDN erreichbar.')}; document.head.appendChild(s);"></script>
-    <script>
-        if (typeof ReactDOM === 'undefined') {
-            logStep('ReactDOM CDN Fallback...');
-            document.write('<scr' + 'ipt src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"><\/scr' + 'ipt>');
-        }
-    </script>
+            onerror="this.onerror=null; this.src='https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js'"></script>
     <script>logStep('Babel...');</script>
     <script src="lib/babel.min.js"
-            onerror="logStep('Babel lokal nicht gefunden, lade CDN...'); var s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.6/babel.min.js'; s.onerror=function(){showError('Babel nicht ladbar','Weder lokal noch CDN erreichbar.')}; document.head.appendChild(s);"></script>
-    <script>
-        if (typeof Babel === 'undefined') {
-            logStep('Babel CDN Fallback...');
-            document.write('<scr' + 'ipt src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.6/babel.min.js"><\/scr' + 'ipt>');
-        }
-    </script>
+            onerror="this.onerror=null; this.src='https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.6/babel.min.js'"></script>
 
     <script>
-        // Debug beacon: this POST tells us the code reached this point
-        fetch((window._apiBase || '') + '/api/system/frontend-error', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({
-                error: 'DEBUG: Babel start. React=' + (typeof React) + ' ReactDOM=' + (typeof ReactDOM) + ' Babel=' + (typeof Babel) + ' jsx-source=' + (!!document.getElementById('app-jsx-source')),
-                source: 'debug-beacon'
-            })
-        }).catch(function(){});
-
         logStep('App wird kompiliert...');
-
-        function reportError(msg, src) {
-            try {
-                fetch((window._apiBase || '') + '/api/system/frontend-error', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({error: msg, source: src || 'unknown'})
-                });
-            } catch(ex) {}
-        }
-
+        // Verify libraries loaded
         if (typeof React === 'undefined') {
-            showError('React nicht verfuegbar', 'React konnte nicht geladen werden.');
-            reportError('React undefined after all load attempts', 'lib-check');
+            showError('React nicht verfuegbar', 'Die React-Bibliothek konnte nicht geladen werden. CDN blockiert?');
         } else if (typeof ReactDOM === 'undefined') {
-            showError('ReactDOM nicht verfuegbar', 'ReactDOM konnte nicht geladen werden.');
-            reportError('ReactDOM undefined', 'lib-check');
+            showError('ReactDOM nicht verfuegbar', 'Die ReactDOM-Bibliothek konnte nicht geladen werden.');
         } else if (typeof Babel === 'undefined') {
-            showError('Babel nicht verfuegbar', 'JSX-Compiler konnte nicht geladen werden.');
-            reportError('Babel undefined', 'lib-check');
+            showError('Babel nicht verfuegbar', 'Der JSX-Compiler konnte nicht geladen werden.');
         } else {
+            // Manual Babel transformation with full error catching
             var jsxEl = document.getElementById('app-jsx-source');
-            if (!jsxEl) {
-                showError('App-Code fehlt', 'JSX-Quellcode nicht eingebettet.');
-                reportError('app-jsx-source element not found', 'jsx-inject');
-            } else {
+            if (jsxEl) {
                 try {
                     var jsxCode = jsxEl.textContent;
                     logStep('Babel transformiert ' + Math.round(jsxCode.length/1024) + 'KB JSX...');
-                    var t0 = Date.now();
                     var transformed = Babel.transform(jsxCode, {
                         presets: ['react'],
                         filename: 'app.jsx'
                     });
-                    logStep('Kompiliert in ' + ((Date.now()-t0)/1000).toFixed(1) + 's, starte App...');
+                    logStep('Code wird ausgefuehrt...');
                     eval(transformed.code);
                 } catch (e) {
                     var detail = e.message || String(e);
-                    if (e.loc) detail += ' (Zeile: ' + e.loc.line + ', Spalte: ' + e.loc.column + ')';
+                    if (e.loc) detail += '\n\nZeile: ' + e.loc.line + ', Spalte: ' + e.loc.column;
                     showError('JSX Fehler', detail);
-                    reportError(detail, 'babel-transform');
+                    try {
+                        fetch((window._apiBase || '') + '/api/system/frontend-error', {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({error: detail, source: 'babel-transform'})
+                        });
+                    } catch(ex) {}
                 }
+            } else {
+                showError('App-Code fehlt', 'Der JSX-Quellcode wurde nicht in die Seite eingebettet. Bitte app.jsx pruefen.');
             }
         }
     </script>
