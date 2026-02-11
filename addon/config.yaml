@@ -1,6 +1,6 @@
 # MindHome - Home Assistant Add-on Configuration
 name: "MindHome"
-version: "0.6.12"
+version: "0.6.13"
 slug: "mindhome"
 description: "KI-basierte Smart Home Automatisierung — lernt deine Gewohnheiten und steuert dein Zuhause intelligent. 100% lokal."
 url: "https://github.com/Goifal/mindhome"

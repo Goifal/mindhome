@@ -4,12 +4,15 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "0.6.12"
-BUILD = 13
+VERSION = "0.6.13"
+BUILD = 14
 BUILD_DATE = "2026-02-11"
 CODENAME = "Phase 3.5 - Bugfix"
 
 # Changelog
+# Build 14: v0.6.13 Bugfix
+#   - Fix Anwesenheit: Infinite Loop bei Auto-Select (useRef Guard)
+#
 # Build 13: v0.6.12 Bugfix
 #   - Fix Push: notify.* Prefix aus Service-Name entfernt (doppeltes notify)
 #   - Fix TTS: Kein Retry bei Fehler, direkter _api_request statt call_service
