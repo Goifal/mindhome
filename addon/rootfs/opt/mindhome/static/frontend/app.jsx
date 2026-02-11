@@ -6077,9 +6077,12 @@ const PresencePage = () => {
         }
     }, [modes]);
 
-    // Auto-select first mode if none is active
+    // Auto-select first mode if none is active (run only once)
+    const autoSelectDone = useRef(false);
     useEffect(() => {
-        if (modes.length > 0 && (!current || current.is_default || !current.id)) {
+        if (autoSelectDone.current) return;
+        if (modes.length > 0 && (!current || !current.id)) {
+            autoSelectDone.current = true;
             const zuhause = modes.find(m => m.name_de === 'Zuhause') || modes[0];
             if (zuhause) activateMode(zuhause.id);
         }
