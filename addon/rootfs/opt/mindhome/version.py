@@ -4,12 +4,17 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "0.6.11"
-BUILD = 12
+VERSION = "0.6.12"
+BUILD = 13
 BUILD_DATE = "2026-02-11"
 CODENAME = "Phase 3.5 - Bugfix"
 
 # Changelog
+# Build 13: v0.6.12 Bugfix
+#   - Fix Push: notify.* Prefix aus Service-Name entfernt (doppeltes notify)
+#   - Fix TTS: Kein Retry bei Fehler, direkter _api_request statt call_service
+#   - Fix TTS: Besseres Logging (Speaker, TTS-Entity, Language)
+#
 # Build 12: v0.6.11 Bugfix
 #   - Fix TTS: tts.speak mit entity_id (TTS-Entity Discovery), kein Retry bei 4xx
 #   - Fix Notification: test-channel POST + channel PUT Routen hinzugefuegt
