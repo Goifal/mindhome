@@ -6718,21 +6718,21 @@ const App = () => {
         return () => clearInterval(interval);
     }, []);
 
-    // Apply theme
+    // Apply theme (only PUT on actual user change, not on initial load)
     useEffect(() => {
         document.documentElement.setAttribute('data-theme', theme);
         if (settingsLoaded) api.put('system/settings/theme', { value: theme });
-    }, [theme, settingsLoaded]);
+    }, [theme]);
 
-    // Save viewMode
+    // Save viewMode (only PUT on actual user change)
     useEffect(() => {
         if (settingsLoaded) api.put('system/settings/view_mode', { value: viewMode });
-    }, [viewMode, settingsLoaded]);
+    }, [viewMode]);
 
-    // Save language
+    // Save language (only PUT on actual user change)
     useEffect(() => {
         if (settingsLoaded) api.put('system/settings/language', { value: lang });
-    }, [lang, settingsLoaded]);
+    }, [lang]);
 
     const toggleDomain = async (domainId) => {
         const result = await api.post(`domains/${domainId}/toggle`);
