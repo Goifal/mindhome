@@ -4,12 +4,18 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "0.6.13"
-BUILD = 14
+VERSION = "0.6.14"
+BUILD = 15
 BUILD_DATE = "2026-02-11"
 CODENAME = "Phase 3.5 - Bugfix"
 
 # Changelog
+# Build 15: v0.6.14 UI + Bugfix
+#   - Fix Domains: Groessere Kacheln, bessere Lesbarkeit (300px min, Font 15px)
+#   - Fix Wochenbericht: bg-tertiary statt bg-main (einheitliche Kartenfarbe)
+#   - Fix Systemstatus: Neues Card-Design mit Icons (wie Lernfortschritt)
+#   - Fix Anwesenheit: Backend-Dedup verhindert Log-Spam bei bereits aktivem Modus
+#
 # Build 14: v0.6.13 Bugfix
 #   - Fix Anwesenheit: Infinite Loop bei Auto-Select (useRef Guard)
 #
