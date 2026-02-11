@@ -4,12 +4,24 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "0.6.16"
-BUILD = 17
+VERSION = "0.6.18"
+BUILD = 19
 BUILD_DATE = "2026-02-11"
 CODENAME = "Phase 3.5 - Bugfix"
 
 # Changelog
+# Build 19: v0.6.18 Rotation + TTS + Fixes
+#   - Fix Rotation: Speichern funktioniert (parseInt-Bug bei Person-ID gefixt)
+#   - Gespeicherte Rotationen: Anzeige, Bearbeiten, Loeschen im Schichtdienst-Tab
+#   - Kalender-Eintraege einstellbar: Toggle "Im Kalender anzeigen" pro Rotation
+#   - TTS Fix: Alle TTS-Entities durchprobieren, HA Cloud (de-DE), cloud_say Fallback
+#   - Domain-Separator: Sichtbarer Trennstrich zwischen Steuerung/Sensoren
+#   - Zeitprofile: Person-Dropdown fix (users.id statt persons.entity_id)
+#
+# Build 18: v0.6.17 Standby-Geraeteauswahl
+#   - Standby-Ueberwachung: Sensor-Dropdown statt Textfeld
+#   - Laedt Power-Sensoren (W/kW) aus HA via discover-sensors API
+#
 # Build 17: v0.6.16 UI-Fixes
 #   - Fix Schichttypen: Person-Dropdown (users→persons), Edit-Modal, Date-Grid
 #   - Fix Geraete: Tabelle fixed-layout, Entity-ID truncate, overflow-x scroll

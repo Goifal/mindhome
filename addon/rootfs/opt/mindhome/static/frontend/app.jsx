@@ -1260,7 +1260,7 @@ const DomainsPage = () => {
                                             <span key={'c' + i} className="badge badge-info" style={{ fontSize: 10, padding: '2px 7px' }}>{b.label}</span>
                                         ))}
                                         {controlBadges.length > 0 && sensorBadges.length > 0 && (
-                                            <span style={{ width: 1, height: 14, background: 'var(--border-color)', margin: '0 2px' }} />
+                                            <span style={{ display: 'inline-block', width: 2, height: 16, background: 'var(--text-muted)', margin: '0 4px', borderRadius: 1, opacity: 0.4, flexShrink: 0 }} />
                                         )}
                                         {sensorBadges.slice(0, 5).map((b, i) => (
                                             <span key={'s' + i} className="badge badge-success" style={{ fontSize: 10, padding: '2px 7px' }}>{b.label}</span>
@@ -5519,7 +5519,7 @@ const EnergyPage = () => {
                 <div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
                         <span style={{ fontWeight: 600 }}>{lang === 'de' ? 'Standby-Erkennung' : 'Standby Detection'}</span>
-                        <button className="btn btn-sm btn-primary" onClick={() => setShowAddStandby(true)}>
+                        <button className="btn btn-sm btn-primary" onClick={() => { api.get('energy/discover-sensors').then(d => setSensors(Array.isArray(d) ? d : [])); setShowAddStandby(true); }}>
                             <span className="mdi mdi-plus" style={{ marginRight: 4 }} />{lang === 'de' ? 'Hinzufuegen' : 'Add'}
                         </button>
                     </div>
@@ -5549,8 +5549,13 @@ const EnergyPage = () => {
                         <Modal title={lang === 'de' ? 'Standby-Ueberwachung hinzufuegen' : 'Add standby monitoring'} onClose={() => setShowAddStandby(false)}>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                                 <div>
-                                    <label style={{ fontSize: 12, color: 'var(--text-muted)' }}>Entity ID</label>
-                                    <input className="form-input" value={newStandby.entity_id} onChange={e => setNewStandby({ ...newStandby, entity_id: e.target.value })} placeholder="sensor.power_xyz" />
+                                    <label style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Geraet' : 'Device'}</label>
+                                    <CustomSelect
+                                        options={[{ value: '', label: lang === 'de' ? 'Sensor waehlen...' : 'Select sensor...' }, ...sensors.filter(s => s.unit === 'W' || s.unit === 'kW' || s.unit === 'mW' || s.device_class === 'power').map(s => ({ value: s.entity_id, label: `${s.name} (${s.state || '?'} ${s.unit})` }))]}
+                                        value={newStandby.entity_id}
+                                        onChange={v => setNewStandby({ ...newStandby, entity_id: v })}
+                                        placeholder={lang === 'de' ? 'Sensor waehlen...' : 'Select sensor...'}
+                                    />
                                 </div>
                                 <div>
                                     <label style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Schwelle (Watt)' : 'Threshold (Watts)'}</label>
@@ -5881,7 +5886,7 @@ const PresenceCalendar = ({ lang, showToast, schedules, holidays, shiftTemplates
             dateInfo[dStr] = { type: 'holiday', name: h.name, color: '#E91E63' };
         }
     });
-    (schedules || []).filter(s => s.schedule_type === 'shift' && s.shift_data?.rotation_pattern).forEach(s => {
+    (schedules || []).filter(s => s.schedule_type === 'shift' && s.shift_data?.rotation_pattern && s.shift_data?.show_in_calendar !== false).forEach(s => {
         const pattern = s.shift_data.rotation_pattern;
         const start = s.shift_data.rotation_start;
         if (!pattern?.length || !start) return;
@@ -6037,6 +6042,8 @@ const PresencePage = () => {
     const [rotationEnd, setRotationEnd] = useState('');
     const [rotationUserId, setRotationUserId] = useState('');
     const [quickAdd, setQuickAdd] = useState({ type: '', count: 1 });
+    const [editRotationId, setEditRotationId] = useState(null);
+    const [saveToCalendar, setSaveToCalendar] = useState(true);
     const [showPdfUpload, setShowPdfUpload] = useState(false);
     const [pdfResult, setPdfResult] = useState(null);
     // Holidays
@@ -6127,8 +6134,11 @@ const PresencePage = () => {
         if (!rotation.length) { showToast(lang === 'de' ? 'Rotation ist leer' : 'Rotation is empty', 'error'); return; }
         if (!rotationStart) { showToast(lang === 'de' ? 'Startdatum fehlt' : 'Start date required', 'error'); return; }
         if (rotationEnd && rotationEnd < rotationStart) { showToast(lang === 'de' ? 'Enddatum vor Startdatum' : 'End date before start date', 'error'); return; }
-        api.post('person-schedules', { user_id: parseInt(rotationUserId), schedule_type: 'shift', name: 'Schichtrotation', shift_data: { rotation_pattern: rotation, rotation_start: rotationStart, rotation_end: rotationEnd, shift_types: shiftTemplates } }).then(() => { showToast(lang === 'de' ? 'Rotation gespeichert' : 'Rotation saved', 'success'); load(); }).catch(e => showToast(lang === 'de' ? 'Fehler' : 'Error', 'error'));
+        const data = { user_id: parseInt(rotationUserId), schedule_type: 'shift', name: 'Schichtrotation', shift_data: { rotation_pattern: rotation, rotation_start: rotationStart, rotation_end: rotationEnd, shift_types: shiftTemplates, show_in_calendar: saveToCalendar } };
+        const promise = editRotationId ? api.put(`person-schedules/${editRotationId}`, data) : api.post('person-schedules', data);
+        promise.then(() => { showToast(lang === 'de' ? 'Rotation gespeichert' : 'Rotation saved', 'success'); setEditRotationId(null); setRotation([]); setRotationStart(''); setRotationEnd(''); setRotationUserId(''); setSaveToCalendar(true); load(); }).catch(e => showToast(lang === 'de' ? 'Fehler' : 'Error', 'error'));
     };
+    const cancelEditRotation = () => { setEditRotationId(null); setRotation([]); setRotationStart(''); setRotationEnd(''); setRotationUserId(''); setSaveToCalendar(true); };
 
     const uploadPdf = (file) => {
         const fd = new FormData(); fd.append('file', file);
@@ -6274,7 +6284,7 @@ const PresencePage = () => {
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                                 <div><label style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Person' : 'Person'}</label>
                                     <CustomSelect
-                                        options={[{ value: '', label: lang === 'de' ? 'Waehlen...' : 'Select...' }, ...persons.map(u => ({ value: u.entity_id, label: u.name }))]}
+                                        options={[{ value: '', label: lang === 'de' ? 'Waehlen...' : 'Select...' }, ...users.map(u => ({ value: String(u.id), label: u.name || u.ha_person_entity }))]}
                                         value={newSched.user_id}
                                         onChange={v => setNewSched({ ...newSched, user_id: v })}
                                         placeholder={lang === 'de' ? 'Waehlen...' : 'Select...'}
@@ -6351,12 +6361,12 @@ const PresencePage = () => {
 
                     {/* Rotation Builder */}
                     <div className="card animate-in" style={{ marginBottom: 16 }}>
-                        <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)', fontWeight: 600 }}>{lang === 'de' ? 'Rotation konfigurieren' : 'Configure Rotation'}</div>
+                        <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)', fontWeight: 600 }}>{editRotationId ? (lang === 'de' ? 'Rotation bearbeiten' : 'Edit Rotation') : (lang === 'de' ? 'Rotation konfigurieren' : 'Configure Rotation')}</div>
                         <div style={{ padding: 16 }}>
                             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 12 }}>
                                 <div><label style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Person' : 'Person'}</label>
                                     <CustomSelect
-                                        options={[{ value: '', label: lang === 'de' ? 'Waehlen...' : 'Select...' }, ...persons.map(u => ({ value: u.entity_id, label: u.name }))]}
+                                        options={[{ value: '', label: lang === 'de' ? 'Waehlen...' : 'Select...' }, ...users.map(u => ({ value: String(u.id), label: u.name || u.ha_person_entity }))]}
                                         value={rotationUserId}
                                         onChange={v => setRotationUserId(v)}
                                         placeholder={lang === 'de' ? 'Waehlen...' : 'Select...'}
@@ -6396,10 +6406,57 @@ const PresencePage = () => {
                                     );
                                 })}
                             </div>
-                            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{rotation.length} {lang === 'de' ? 'Tage Zyklus' : 'day cycle'}</span>
-                            <button className="btn btn-primary" onClick={saveRotation} style={{ marginLeft: 12 }}>{lang === 'de' ? 'Rotation speichern' : 'Save rotation'}</button>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                                <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{rotation.length} {lang === 'de' ? 'Tage Zyklus' : 'day cycle'}</span>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, cursor: 'pointer' }}>
+                                    <input type="checkbox" checked={saveToCalendar} onChange={e => setSaveToCalendar(e.target.checked)} />
+                                    <span className="mdi mdi-calendar-check" style={{ fontSize: 14 }} />
+                                    {lang === 'de' ? 'Im Kalender anzeigen' : 'Show in calendar'}
+                                </label>
+                                <button className="btn btn-primary" onClick={saveRotation}>{editRotationId ? (lang === 'de' ? 'Rotation aktualisieren' : 'Update rotation') : (lang === 'de' ? 'Rotation speichern' : 'Save rotation')}</button>
+                                {editRotationId && <button className="btn btn-ghost" onClick={cancelEditRotation}>{lang === 'de' ? 'Abbrechen' : 'Cancel'}</button>}
+                            </div>
                         </div>
                     </div>
+
+                    {/* Gespeicherte Rotationen */}
+                    {schedules.filter(s => s.schedule_type === 'shift').length > 0 && (
+                        <div className="card animate-in" style={{ marginBottom: 16 }}>
+                            <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)', fontWeight: 600 }}>
+                                {lang === 'de' ? 'Gespeicherte Rotationen' : 'Saved Rotations'}
+                            </div>
+                            <div style={{ padding: 0 }}>
+                                {schedules.filter(s => s.schedule_type === 'shift').map(s => {
+                                    const person = users.find(u => u.id === s.user_id || String(u.id) === String(s.user_id));
+                                    const pattern = s.shift_data?.rotation_pattern || [];
+                                    const start = s.shift_data?.rotation_start || '';
+                                    const end = s.shift_data?.rotation_end || '';
+                                    const inCalendar = s.shift_data?.show_in_calendar !== false;
+                                    return (
+                                        <div key={s.id} style={{ padding: '10px 16px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                            <div style={{ flex: 1, minWidth: 0 }}>
+                                                <div style={{ fontWeight: 600, marginBottom: 4 }}>{person?.name || `User ${s.user_id}`}</div>
+                                                <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap', marginBottom: 4 }}>
+                                                    {pattern.map((r, i) => {
+                                                        const tmpl = shiftTemplates.find(t => t.short_code === r);
+                                                        return <span key={i} style={{ padding: '2px 6px', borderRadius: 3, background: (tmpl?.color || '#999') + '33', color: tmpl?.color || '#999', fontWeight: 700, fontSize: 11 }}>{r}</span>;
+                                                    })}
+                                                </div>
+                                                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                                                    {start}{end ? ` \u2192 ${end}` : ''} | {pattern.length} {lang === 'de' ? 'Tage Zyklus' : 'day cycle'}
+                                                    {inCalendar && <span style={{ marginLeft: 8, color: 'var(--accent-primary)' }}><span className="mdi mdi-calendar-check" style={{ fontSize: 12 }} /> {lang === 'de' ? 'Kalender' : 'Calendar'}</span>}
+                                                </div>
+                                            </div>
+                                            <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                                                <button className="btn btn-sm btn-ghost" onClick={() => { setRotationUserId(String(s.user_id)); setRotation([...(s.shift_data?.rotation_pattern || [])]); setRotationStart(s.shift_data?.rotation_start || ''); setRotationEnd(s.shift_data?.rotation_end || ''); setSaveToCalendar(s.shift_data?.show_in_calendar !== false); setEditRotationId(s.id); }}><span className="mdi mdi-pencil" style={{ color: 'var(--accent-primary)' }} /></button>
+                                                <button className="btn btn-sm btn-ghost" onClick={() => deleteSchedule(s.id)}><span className="mdi mdi-delete" style={{ color: 'var(--danger)' }} /></button>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
 
                     {/* PDF Import */}
                     <div className="card animate-in">
