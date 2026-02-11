@@ -4,12 +4,17 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "0.6.14"
-BUILD = 15
+VERSION = "0.6.15"
+BUILD = 16
 BUILD_DATE = "2026-02-11"
 CODENAME = "Phase 3.5 - Bugfix"
 
 # Changelog
+# Build 16: v0.6.15 Refactoring
+#   - ml/ Verzeichnis entfernt — alle Imports auf Root-Module umgestellt
+#   - Root automation_engine.py + pattern_engine.py werden jetzt direkt verwendet
+#   - Fixes greifen jetzt: Sensor-Anomalie-Skip, Presence-Dedup, Confidence-Decay
+#
 # Build 15: v0.6.14 UI + Bugfix
 #   - Fix Domains: Groessere Kacheln, bessere Lesbarkeit (300px min, Font 15px)
 #   - Fix Wochenbericht: bg-tertiary statt bg-main (einheitliche Kartenfarbe)

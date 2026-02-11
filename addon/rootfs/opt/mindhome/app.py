@@ -40,8 +40,8 @@ try:
 except ImportError:
     DomainManager = None
 
-from ml.pattern_engine import EventBus as LegacyEventBus, StateLogger, PatternScheduler, PatternDetector
-from ml.automation_engine import (
+from pattern_engine import EventBus as LegacyEventBus, StateLogger, PatternScheduler, PatternDetector
+from automation_engine import (
     AutomationScheduler, FeedbackProcessor, AutomationExecutor,
     PhaseManager, NotificationManager, AnomalyDetector, ConflictDetector
 )

@@ -81,7 +81,7 @@ class DomainPlugin(ABC):
         if self._context_cache and (now - self._context_cache_time) < 30:
             return self._context_cache
         try:
-            from ml.pattern_engine import ContextBuilder
+            from pattern_engine import ContextBuilder
             builder = ContextBuilder(self.ha)
             self._context_cache = builder.build()
             self._context_cache_time = now
@@ -98,7 +98,7 @@ class DomainPlugin(ABC):
 
     def is_quiet_time(self):
         try:
-            from ml.automation_engine import QuietHoursManager
+            from automation_engine import QuietHoursManager
             from models import get_engine
             mgr = QuietHoursManager(get_engine())
             return mgr.is_quiet_time()

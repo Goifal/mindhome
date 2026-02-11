@@ -1796,7 +1796,7 @@ def api_get_ha_entities():
 @system_bp.route("/api/context", methods=["GET"])
 def api_get_context():
     try:
-        from ml.pattern_engine import ContextBuilder
+        from pattern_engine import ContextBuilder
         builder = ContextBuilder(ha_connection, engine)
         return jsonify(builder.build())
     except Exception as e:
@@ -1808,7 +1808,7 @@ def api_evaluate_plugins():
     results = {}
     try:
         if _domain_manager():
-            from ml.pattern_engine import ContextBuilder
+            from pattern_engine import ContextBuilder
             builder = ContextBuilder(ha_connection, engine)
             ctx = builder.build()
             for name, plugin in _domain_manager().plugins.items():
