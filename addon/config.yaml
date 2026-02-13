@@ -15,6 +15,7 @@ ingress: true
 ingress_port: 5000
 panel_icon: "mdi:home-lightbulb-outline"
 panel_title: "MindHome"
+panel_admin: false
 init: false
 options:
   language: "de"

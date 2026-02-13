@@ -686,6 +686,35 @@ def api_export_ical():
                         "END:VEVENT",
                     ])
 
+        # --- Weekday / Homeoffice Schedules ---
+        weekday_scheds = [s for s in schedules if s.schedule_type in ("weekday", "homeoffice", "weekend") and s.weekdays]
+        day_names_de = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"]
+        for sched in weekday_scheds:
+            user_name = users.get(sched.user_id, "")
+            type_label = {"weekday": "Arbeit", "homeoffice": "Homeoffice", "weekend": "Wochenende"}.get(sched.schedule_type, sched.schedule_type)
+            wdays = sched.weekdays if isinstance(sched.weekdays, list) else []
+            # iCal BYDAY mapping: MO=0, TU=1, WE=2, TH=3, FR=4, SA=5, SU=6
+            ical_days = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"]
+            byday = ",".join(ical_days[d] for d in wdays if 0 <= d <= 6)
+            if not byday:
+                continue
+            summary = f"{type_label}" + (f" ({user_name})" if user_name else "")
+            time_leave = sched.time_leave or "08:00"
+            time_home = sched.time_home or "17:00"
+            uid = f"schedule-{sched.id}@mindhome"
+            start_date = now.strftime("%Y%m%d")
+            lines.extend([
+                "BEGIN:VEVENT",
+                f"UID:{uid}",
+                f"DTSTART:{start_date}T{time_leave.replace(':', '')}00",
+                f"DTEND:{start_date}T{time_home.replace(':', '')}00",
+                f"RRULE:FREQ=WEEKLY;BYDAY={byday}",
+                _fold_line(f"SUMMARY:{_ical_escape(summary)}"),
+                f"CATEGORIES:{type_label}",
+                f"DTSTAMP:{now.strftime('%Y%m%dT%H%M%SZ')}",
+                "END:VEVENT",
+            ])
+
         lines.append("END:VCALENDAR")
 
         ical_content = "\r\n".join(lines) + "\r\n"
@@ -706,11 +735,12 @@ def api_export_ical():
 def api_get_ha_calendar_sources():
     """List all HA calendar entities with their sync status."""
     try:
-        ha_calendars = _ha().get_calendars()
+        ha = _ha()
+        ha_calendars = ha.get_calendars() if ha else []
         synced_raw = get_setting("calendar_synced_sources") or "[]"
         synced_ids = json.loads(synced_raw)
         result = []
-        for cal in ha_calendars:
+        for cal in (ha_calendars or []):
             eid = cal.get("entity_id", "")
             result.append({
                 "entity_id": eid,
@@ -720,7 +750,10 @@ def api_get_ha_calendar_sources():
         return jsonify({"sources": result, "synced_ids": synced_ids})
     except Exception as e:
         logger.warning(f"HA calendar sources error: {e}")
-        return jsonify({"sources": [], "synced_ids": [], "error": str(e)})
+        # Fallback: return synced IDs from settings even if HA is offline
+        synced_raw = get_setting("calendar_synced_sources") or "[]"
+        synced_ids = json.loads(synced_raw)
+        return jsonify({"sources": [{"entity_id": eid, "name": eid, "synced": True} for eid in synced_ids], "synced_ids": synced_ids, "ha_offline": True})
 
 
 @schedules_bp.route("/api/calendar/ha-sources", methods=["PUT"])

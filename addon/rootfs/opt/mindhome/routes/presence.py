@@ -343,12 +343,11 @@ def api_presence_auto_detect():
 
         # Create notification for toast
         notification = NotificationLog(
-            title_de=f"Modus: {target_name}",
-            title_en=f"Mode: {target_mode.name_en}",
-            message_de=f"Automatisch erkannt: {home_count}/{total} Personen zuhause",
-            message_en=f"Auto-detected: {home_count}/{total} persons home",
-            notification_type="info",
-            is_read=False,
+            user_id=1,
+            title=f"Modus: {target_name}",
+            message=f"Automatisch erkannt: {home_count}/{total} Personen zuhause",
+            notification_type=NotificationType.INFO,
+            was_read=False,
         )
         session.add(notification)
         session.commit()
@@ -399,10 +398,11 @@ def api_seed_default_presence_modes():
     session = get_db()
     try:
         defaults = [
-            {"name_de": "Zuhause", "name_en": "Home", "icon": "mdi-home", "color": "#4CAF50", "priority": 1, "is_system": True, "trigger_type": "auto"},
-            {"name_de": "Abwesend", "name_en": "Away", "icon": "mdi-exit-run", "color": "#FF9800", "priority": 2, "is_system": True, "trigger_type": "auto"},
-            {"name_de": "Schlaf", "name_en": "Sleep", "icon": "mdi-sleep", "color": "#3F51B5", "priority": 3, "is_system": True, "trigger_type": "auto"},
+            {"name_de": "Zuhause", "name_en": "Home", "icon": "mdi-home", "color": "#4CAF50", "priority": 1, "is_system": True, "trigger_type": "auto", "auto_config": {"condition": "first_home"}},
+            {"name_de": "Abwesend", "name_en": "Away", "icon": "mdi-exit-run", "color": "#FF9800", "priority": 2, "is_system": True, "trigger_type": "auto", "auto_config": {"condition": "all_away"}},
+            {"name_de": "Schlaf", "name_en": "Sleep", "icon": "mdi-sleep", "color": "#3F51B5", "priority": 3, "is_system": True, "trigger_type": "auto", "auto_config": {"condition": "all_home", "time_range": {"start": "22:00", "end": "06:00"}}},
             {"name_de": "Urlaub", "name_en": "Vacation", "icon": "mdi-beach", "color": "#00BCD4", "priority": 4, "is_system": True, "trigger_type": "manual"},
+            {"name_de": "Besuch", "name_en": "Guests", "icon": "mdi-account-group", "color": "#9C27B0", "priority": 5, "is_system": True, "trigger_type": "manual"},
         ]
         created = 0
         skipped = []

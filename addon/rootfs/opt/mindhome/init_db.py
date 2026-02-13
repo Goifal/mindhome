@@ -10,7 +10,7 @@ import logging
 from models import (
     init_database, get_engine, get_session,
     Domain, QuickAction, SystemSetting, UserRole, User,
-    NotificationSetting, NotificationType
+    NotificationSetting, NotificationType, PresenceMode,
 )
 
 logger = logging.getLogger("mindhome.init_db")
@@ -261,6 +261,26 @@ def create_default_settings(session):
     print(f"Created {len(settings)} system settings.")
 
 
+def create_default_presence_modes(session):
+    """Create default presence modes (Zuhause, Abwesend, Schlaf, Urlaub, Besuch)."""
+    defaults = [
+        {"name_de": "Zuhause", "name_en": "Home", "icon": "mdi-home", "color": "#4CAF50", "priority": 1, "is_system": True, "trigger_type": "auto", "auto_config": {"condition": "first_home"}},
+        {"name_de": "Abwesend", "name_en": "Away", "icon": "mdi-exit-run", "color": "#FF9800", "priority": 2, "is_system": True, "trigger_type": "auto", "auto_config": {"condition": "all_away"}},
+        {"name_de": "Schlaf", "name_en": "Sleep", "icon": "mdi-sleep", "color": "#3F51B5", "priority": 3, "is_system": True, "trigger_type": "auto", "auto_config": {"condition": "all_home", "time_range": {"start": "22:00", "end": "06:00"}}},
+        {"name_de": "Urlaub", "name_en": "Vacation", "icon": "mdi-beach", "color": "#00BCD4", "priority": 4, "is_system": True, "trigger_type": "manual"},
+        {"name_de": "Besuch", "name_en": "Guests", "icon": "mdi-account-group", "color": "#9C27B0", "priority": 5, "is_system": True, "trigger_type": "manual"},
+    ]
+    created = 0
+    for m in defaults:
+        existing = session.query(PresenceMode).filter_by(name_de=m["name_de"]).first()
+        if existing:
+            continue
+        session.add(PresenceMode(**m, is_active=True))
+        created += 1
+    session.commit()
+    print(f"Created {created} default presence modes ({len(defaults) - created} already existed).")
+
+
 def main():
     """Initialize the database with all defaults."""
     print("=" * 60)
@@ -277,6 +297,7 @@ def main():
         create_default_domains(session)
         create_default_quick_actions(session)
         create_default_settings(session)
+        create_default_presence_modes(session)
         print("=" * 60)
         print("Database initialization complete!")
         print("=" * 60)
