@@ -1812,7 +1812,8 @@ class AutomationScheduler:
         """Sync shift schedules to a configured HA calendar entity.
 
         Reconciliation approach: reads actual HA calendar, compares with expected
-        shifts, deletes obsolete events, creates missing ones. No local UID tracking.
+        shifts, deletes obsolete/duplicate events, creates missing ones.
+        Identifies own events via '[MH]' tag in summary (description not returned by HA API).
         """
         try:
             from helpers import get_setting, set_setting, get_ha_timezone
@@ -1831,6 +1832,8 @@ class AutomationScheduler:
             if not target_calendar:
                 return
 
+            MH_TAG = "[MH]"  # Marker in summary to identify MindHome events
+
             # Use HA's local timezone for correct date calculations
             local_tz = get_ha_timezone()
             now = datetime.now(local_tz)
@@ -1847,7 +1850,7 @@ class AutomationScheduler:
             finally:
                 session.close()
 
-            # expected_events: key = "YYYY-MM-DD|summary" → event details
+            # expected_events: key = "YYYY-MM-DD|summary_without_tag" → event details
             expected_events = {}
 
             for sched in schedules:
@@ -1875,8 +1878,7 @@ class AutomationScheduler:
                         continue
 
                     day_str = day.strftime("%Y-%m-%d")
-                    summary = f"{tmpl.name}" + (f" ({user_name})" if user_name else "")
-                    desc = f"MindHome Schicht: {code}"
+                    base_summary = f"{tmpl.name}" + (f" ({user_name})" if user_name else "")
                     blocks = tmpl.blocks if isinstance(tmpl.blocks, list) and tmpl.blocks else []
                     if blocks:
                         start_time = blocks[0].get("start", "06:00")
@@ -1887,63 +1889,75 @@ class AutomationScheduler:
                         ev_start = day_str
                         ev_end = day_str
 
-                    # Key: date + summary to uniquely identify expected events
-                    key = f"{day_str}|{summary}"
+                    key = f"{day_str}|{base_summary}"
                     expected_events[key] = {
-                        "summary": summary, "start": ev_start,
-                        "end": ev_end, "description": desc,
+                        "summary": f"{base_summary} {MH_TAG}",
+                        "start": ev_start, "end": ev_end,
+                        "description": f"MindHome Schicht: {code}",
                     }
 
-            # --- Step 2: Read actual HA calendar events ---
+            # --- Step 2: Read ALL events from HA calendar in sync range ---
             query_start = now.replace(hour=0, minute=0, second=0, microsecond=0).strftime("%Y-%m-%dT00:00:00.000Z")
             query_end = (now + timedelta(days=sync_days + 1)).strftime("%Y-%m-%dT23:59:59.000Z")
             try:
                 existing = self.ha.get_calendar_events(target_calendar, query_start, query_end)
-            except Exception:
+            except Exception as e:
+                logger.warning(f"Shift sync: failed to read calendar: {e}")
                 existing = []
 
-            # Build map of existing MindHome shift events: key → list of HA UIDs
-            existing_map = {}  # key → [ha_uid, ...]
+            # Build map: identify MindHome events by [MH] tag in summary
+            # Also detect old events without [MH] tag but with "MindHome Schicht:" description
+            existing_mh = {}  # key → [ha_uid, ...]
             for ev in existing:
-                desc = (ev.get("description") or "").strip()
-                if not desc.startswith("MindHome Schicht:"):
-                    continue  # Not our event
                 ev_uid = ev.get("uid")
                 if not ev_uid:
                     continue
                 ev_summary = (ev.get("summary") or "").strip()
+                ev_desc = (ev.get("description") or "").strip()
+
+                is_mh_event = False
+                if MH_TAG in ev_summary:
+                    is_mh_event = True
+                elif ev_desc.startswith("MindHome Schicht:"):
+                    is_mh_event = True  # Legacy event without [MH] tag
+
+                if not is_mh_event:
+                    continue
+
                 ev_start = ev.get("start", {})
                 ev_date = ev_start.get("date") or (ev_start.get("dateTime", "")[:10])
-                key = f"{ev_date}|{ev_summary}"
-                if key not in existing_map:
-                    existing_map[key] = []
-                existing_map[key].append(ev_uid)
+                # Strip [MH] tag for matching
+                base = ev_summary.replace(MH_TAG, "").strip()
+                key = f"{ev_date}|{base}"
+                if key not in existing_mh:
+                    existing_mh[key] = []
+                existing_mh[key].append(ev_uid)
 
-            # --- Step 3: Delete events that shouldn't exist ---
+            # --- Step 3: Delete events that shouldn't exist + duplicates ---
             deleted = 0
-            for key, ha_uids in existing_map.items():
+            for key, ha_uids in existing_mh.items():
                 if key in expected_events:
-                    # Keep exactly one, delete duplicates
+                    # Keep exactly one, delete all duplicates
                     for dup_uid in ha_uids[1:]:
                         try:
                             self.ha.delete_calendar_event(target_calendar, dup_uid)
                             deleted += 1
                         except Exception as e:
-                            logger.debug(f"Shift sync dedup delete error: {e}")
+                            logger.debug(f"Shift sync dedup error: {e}")
                 else:
-                    # Event no longer expected - delete all
+                    # Event no longer in schedule - delete all copies
                     for ha_uid in ha_uids:
                         try:
                             self.ha.delete_calendar_event(target_calendar, ha_uid)
                             deleted += 1
                         except Exception as e:
-                            logger.debug(f"Shift sync obsolete delete error: {e}")
+                            logger.debug(f"Shift sync delete error: {e}")
 
             # --- Step 4: Create missing events ---
             created = 0
             for key, ev_data in expected_events.items():
-                if key in existing_map and len(existing_map[key]) >= 1:
-                    continue  # Already exists in HA calendar
+                if key in existing_mh and len(existing_mh[key]) >= 1:
+                    continue  # Already exists in HA
                 try:
                     self.ha.create_calendar_event(
                         entity_id=target_calendar,
@@ -1954,13 +1968,13 @@ class AutomationScheduler:
                     )
                     created += 1
                 except Exception as e:
-                    logger.debug(f"Shift sync event create error: {e}")
+                    logger.debug(f"Shift sync create error: {e}")
 
             if created > 0 or deleted > 0:
-                logger.info(f"Shift calendar sync: created {created}, deleted {deleted} in {target_calendar}")
+                logger.info(f"Shift calendar sync: +{created} -{deleted} in {target_calendar}")
 
         except Exception as e:
-            logger.debug(f"Shift calendar sync error: {e}")
+            logger.warning(f"Shift calendar sync error: {e}")
 
     def _run_periodic(self, task_func, interval_seconds, task_name):
         """Run a task periodically."""
