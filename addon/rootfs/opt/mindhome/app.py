@@ -76,6 +76,14 @@ init_database(engine)
 run_migrations(engine)
 init_db(engine)
 
+# Ensure new system domains exist in DB (for upgrades)
+try:
+    from init_db import create_default_domains
+    with get_db_session() as session:
+        create_default_domains(session)
+except Exception as e:
+    logger.warning(f"Domain seed check: {e}")
+
 # Fix: Auto-set is_controllable=False for sensor-type entities
 try:
     with get_db_session() as session:
@@ -154,13 +162,6 @@ DOMAIN_PLUGINS = {
         "pattern_features": ["time_of_day", "presence"],
         "icon": "mdi:lock",
     },
-    "vacuum": {
-        "ha_domain": "vacuum",
-        "attributes": ["battery_level", "status"],
-        "controls": ["start", "stop", "return_to_base"],
-        "pattern_features": ["schedule", "presence"],
-        "icon": "mdi:robot-vacuum",
-    },
     "fan": {
         "ha_domain": "fan",
         "attributes": ["percentage", "preset_mode"],
@@ -205,6 +206,29 @@ DOMAIN_PLUGINS = {
         "controls": [],
         "pattern_features": ["condition_correlation"],
         "icon": "mdi:weather-cloudy",
+    },
+    "bed_occupancy": {
+        "ha_domain": "binary_sensor",
+        "device_class": "occupancy",
+        "attributes": ["device_class"],
+        "controls": [],
+        "pattern_features": ["sleep_start", "sleep_end", "duration"],
+        "icon": "mdi:bed",
+    },
+    "seat_occupancy": {
+        "ha_domain": "binary_sensor",
+        "device_class": "occupancy",
+        "attributes": ["device_class"],
+        "controls": [],
+        "pattern_features": ["occupied_duration", "frequency"],
+        "icon": "mdi:seat",
+    },
+    "vacuum": {
+        "ha_domain": "vacuum",
+        "attributes": ["battery_level", "status"],
+        "controls": ["start", "stop", "return_to_base"],
+        "pattern_features": ["schedule", "presence"],
+        "icon": "mdi:robot-vacuum",
     },
 }
 
