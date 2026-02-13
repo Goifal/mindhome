@@ -4,12 +4,19 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "0.6.25"
-BUILD = 26
+VERSION = "0.6.26"
+BUILD = 27
 BUILD_DATE = "2026-02-13"
 CODENAME = "Phase 3.5 - Kalender & Presence"
 
 # Changelog
+# Build 27: v0.6.26 UI: Domain-Karten an Raeume/Personen-Design angeglichen
+#   - Domain-Karten nutzen jetzt card/card-icon/card-title/card-subtitle Klassen
+#   - Rundes Icon mit Farbhintergrund statt flachem Icon
+#   - Einheitliches Grid (320px min) und Card-Layout wie Raeume und Personen
+#   - Linker Akzentbalken entfernt, konsistentes .card Design
+#   - Edit/Delete Buttons fuer Custom-Domains neben Toggle verschoben
+#
 # Build 26: v0.6.25 Schicht-Sync: [MH]-Tag Erkennung statt Description (Fix Duplikate)
 #   - Root-Cause: HA Calendar API gibt description nicht zurueck → Events nie als "eigene" erkannt
 #   - Fix: Events werden jetzt mit [MH]-Tag im Summary markiert (z.B. "Frueh (Max) [MH]")
