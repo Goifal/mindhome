@@ -155,6 +155,22 @@ def create_default_domains(session):
             "description_de": "Saugroboter, automatische Reinigung",
             "description_en": "Robot vacuums, automatic cleaning"
         },
+        {
+            "name": "system",
+            "display_name_de": "System",
+            "display_name_en": "System",
+            "icon": "mdi:cellphone-link",
+            "description_de": "Telefone, Proximität, Rechner, Akkus, Netzwerk",
+            "description_en": "Phones, proximity, computers, batteries, network"
+        },
+        {
+            "name": "motion_control",
+            "display_name_de": "Bewegungsmelder Steuerung",
+            "display_name_en": "Motion Sensor Control",
+            "icon": "mdi:motion-sensor-off",
+            "description_de": "Bewegungsmelder ein-/ausschalten, Empfindlichkeit",
+            "description_en": "Toggle motion sensors on/off, sensitivity"
+        },
     ]
 
     created = 0
