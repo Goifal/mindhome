@@ -1811,17 +1811,18 @@ class AutomationScheduler:
     def _shift_calendar_sync_task(self, full_resync=False):
         """Sync shift schedules to a configured HA calendar entity.
 
-        full_resync: if True, delete all existing shift events first, then re-create.
+        Reconciliation approach: reads actual HA calendar, compares with expected
+        shifts, deletes obsolete events, creates missing ones. No local UID tracking.
         """
         try:
             from helpers import get_setting, set_setting, get_ha_timezone
             from db import get_db
             from models import PersonSchedule, ShiftTemplate, User
-            import json as _json
 
             config_raw = get_setting("shift_calendar_sync")
             if not config_raw:
                 return
+            import json as _json
             config = _json.loads(config_raw)
             if not config.get("enabled"):
                 return
@@ -1834,38 +1835,7 @@ class AutomationScheduler:
             local_tz = get_ha_timezone()
             now = datetime.now(local_tz)
 
-            # --- Full resync: delete existing shift events first ---
-            if full_resync:
-                deleted = 0
-                try:
-                    # Query events for the full sync range (past 7 days + future sync_days)
-                    query_start = (now - timedelta(days=7)).strftime("%Y-%m-%dT00:00:00.000Z")
-                    query_end = (now + timedelta(days=sync_days + 1)).strftime("%Y-%m-%dT23:59:59.000Z")
-                    existing = self.ha.get_calendar_events(target_calendar, query_start, query_end)
-
-                    for ev in existing:
-                        desc = (ev.get("description") or "").strip()
-                        # Only delete events created by shift sync (marker: "MindHome Schicht:")
-                        if desc.startswith("MindHome Schicht:"):
-                            ev_uid = ev.get("uid")
-                            if ev_uid:
-                                try:
-                                    self.ha.delete_calendar_event(target_calendar, ev_uid)
-                                    deleted += 1
-                                except Exception as e:
-                                    logger.debug(f"Shift resync delete error: {e}")
-                except Exception as e:
-                    logger.warning(f"Shift resync query/delete error: {e}")
-
-                # Reset UID tracking so all events get re-created
-                set_setting("shift_calendar_synced_uids", "[]")
-                synced_uids = set()
-                logger.info(f"Shift resync: deleted {deleted} old shift events from {target_calendar}")
-            else:
-                # Incremental: track which events we already synced
-                synced_raw = get_setting("shift_calendar_synced_uids") or "[]"
-                synced_uids = set(_json.loads(synced_raw))
-
+            # --- Step 1: Build expected events from current shift schedules ---
             session = get_db()
             try:
                 schedules = session.query(PersonSchedule).filter_by(
@@ -1877,8 +1847,8 @@ class AutomationScheduler:
             finally:
                 session.close()
 
-            new_uids = set()
-            created = 0
+            # expected_events: key = "YYYY-MM-DD|summary" → event details
+            expected_events = {}
 
             for sched in schedules:
                 sd = sched.shift_data if isinstance(sched.shift_data, dict) else {}
@@ -1905,70 +1875,89 @@ class AutomationScheduler:
                         continue
 
                     day_str = day.strftime("%Y-%m-%d")
-                    uid = f"shift-{sched.id}-{day_str}"
-                    new_uids.add(uid)
-
-                    if uid in synced_uids:
-                        continue  # already synced
-
                     summary = f"{tmpl.name}" + (f" ({user_name})" if user_name else "")
+                    desc = f"MindHome Schicht: {code}"
                     blocks = tmpl.blocks if isinstance(tmpl.blocks, list) and tmpl.blocks else []
                     if blocks:
                         start_time = blocks[0].get("start", "06:00")
                         end_time = blocks[-1].get("end", "14:00")
-                        start_dt_str = f"{day_str}T{start_time}:00"
-                        end_dt_str = f"{day_str}T{end_time}:00"
+                        ev_start = f"{day_str}T{start_time}:00"
+                        ev_end = f"{day_str}T{end_time}:00"
                     else:
-                        start_dt_str = day_str
-                        end_dt_str = day_str
+                        ev_start = day_str
+                        ev_end = day_str
 
-                    try:
-                        self.ha.create_calendar_event(
-                            entity_id=target_calendar,
-                            summary=summary,
-                            start=start_dt_str,
-                            end=end_dt_str,
-                            description=f"MindHome Schicht: {code}",
-                        )
-                        created += 1
-                    except Exception as e:
-                        logger.debug(f"Shift sync event create error: {e}")
+                    # Key: date + summary to uniquely identify expected events
+                    key = f"{day_str}|{summary}"
+                    expected_events[key] = {
+                        "summary": summary, "start": ev_start,
+                        "end": ev_end, "description": desc,
+                    }
 
-            # Delete obsolete events (synced before but no longer in current schedule)
+            # --- Step 2: Read actual HA calendar events ---
+            query_start = now.replace(hour=0, minute=0, second=0, microsecond=0).strftime("%Y-%m-%dT00:00:00.000Z")
+            query_end = (now + timedelta(days=sync_days + 1)).strftime("%Y-%m-%dT23:59:59.000Z")
+            try:
+                existing = self.ha.get_calendar_events(target_calendar, query_start, query_end)
+            except Exception:
+                existing = []
+
+            # Build map of existing MindHome shift events: key → list of HA UIDs
+            existing_map = {}  # key → [ha_uid, ...]
+            for ev in existing:
+                desc = (ev.get("description") or "").strip()
+                if not desc.startswith("MindHome Schicht:"):
+                    continue  # Not our event
+                ev_uid = ev.get("uid")
+                if not ev_uid:
+                    continue
+                ev_summary = (ev.get("summary") or "").strip()
+                ev_start = ev.get("start", {})
+                ev_date = ev_start.get("date") or (ev_start.get("dateTime", "")[:10])
+                key = f"{ev_date}|{ev_summary}"
+                if key not in existing_map:
+                    existing_map[key] = []
+                existing_map[key].append(ev_uid)
+
+            # --- Step 3: Delete events that shouldn't exist ---
             deleted = 0
-            obsolete_uids = synced_uids - new_uids
-            if obsolete_uids:
+            for key, ha_uids in existing_map.items():
+                if key in expected_events:
+                    # Keep exactly one, delete duplicates
+                    for dup_uid in ha_uids[1:]:
+                        try:
+                            self.ha.delete_calendar_event(target_calendar, dup_uid)
+                            deleted += 1
+                        except Exception as e:
+                            logger.debug(f"Shift sync dedup delete error: {e}")
+                else:
+                    # Event no longer expected - delete all
+                    for ha_uid in ha_uids:
+                        try:
+                            self.ha.delete_calendar_event(target_calendar, ha_uid)
+                            deleted += 1
+                        except Exception as e:
+                            logger.debug(f"Shift sync obsolete delete error: {e}")
+
+            # --- Step 4: Create missing events ---
+            created = 0
+            for key, ev_data in expected_events.items():
+                if key in existing_map and len(existing_map[key]) >= 1:
+                    continue  # Already exists in HA calendar
                 try:
-                    query_start = (now - timedelta(days=7)).strftime("%Y-%m-%dT00:00:00.000Z")
-                    query_end = (now + timedelta(days=sync_days + 1)).strftime("%Y-%m-%dT23:59:59.000Z")
-                    existing = self.ha.get_calendar_events(target_calendar, query_start, query_end)
-                    for ev in existing:
-                        desc = (ev.get("description") or "").strip()
-                        ev_uid = ev.get("uid")
-                        if desc.startswith("MindHome Schicht:") and ev_uid:
-                            # Check if this event's date matches an obsolete UID
-                            ev_start = ev.get("start", {})
-                            ev_date = ev_start.get("date") or (ev_start.get("dateTime", "")[:10])
-                            for obs_uid in obsolete_uids:
-                                # UIDs are like "shift-{sched_id}-{YYYY-MM-DD}"
-                                if obs_uid.endswith(ev_date):
-                                    try:
-                                        self.ha.delete_calendar_event(target_calendar, ev_uid)
-                                        deleted += 1
-                                    except Exception as e:
-                                        logger.debug(f"Shift sync delete obsolete error: {e}")
-                                    break
+                    self.ha.create_calendar_event(
+                        entity_id=target_calendar,
+                        summary=ev_data["summary"],
+                        start=ev_data["start"],
+                        end=ev_data["end"],
+                        description=ev_data["description"],
+                    )
+                    created += 1
                 except Exception as e:
-                    logger.debug(f"Shift sync obsolete cleanup error: {e}")
+                    logger.debug(f"Shift sync event create error: {e}")
 
-            # Update synced UIDs (keep only future-relevant ones)
-            cutoff = (now - timedelta(days=7)).strftime("%Y-%m-%d")
-            pruned = [u for u in new_uids if not u.startswith("shift-") or u.rsplit("-", 1)[-1] >= cutoff]
-            set_setting("shift_calendar_synced_uids", _json.dumps(pruned))
-
-            if created > 0 or deleted > 0 or full_resync:
-                logger.info(f"Shift calendar sync: created {created}, deleted {deleted} events in {target_calendar}" +
-                            (" (full resync)" if full_resync else ""))
+            if created > 0 or deleted > 0:
+                logger.info(f"Shift calendar sync: created {created}, deleted {deleted} in {target_calendar}")
 
         except Exception as e:
             logger.debug(f"Shift calendar sync error: {e}")
