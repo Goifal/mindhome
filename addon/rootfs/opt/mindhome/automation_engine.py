@@ -1714,7 +1714,14 @@ class AutomationScheduler:
         t8.start()
         self._threads.append(t8)
 
-        logger.info("Automation Scheduler started (exec:1min, suggest:4h, phase:12h, anomaly:15min, presence:2min, conflicts:5min, cal-triggers:5min)")
+        # Shift-to-calendar sync: every 6 hours
+        t9 = threading.Thread(target=self._run_periodic,
+                              args=(self._shift_calendar_sync_task, 6 * 3600, "shift_cal_sync"),
+                              daemon=True)
+        t9.start()
+        self._threads.append(t9)
+
+        logger.info("Automation Scheduler started (exec:1min, suggest:4h, phase:12h, anomaly:15min, presence:2min, conflicts:5min, cal-triggers:5min, shift-sync:6h)")
 
         # #40 Watchdog: monitor thread health every 5 min
         t5 = threading.Thread(target=self._watchdog_task, daemon=True)
@@ -1789,6 +1796,111 @@ class AutomationScheduler:
 
         except Exception as e:
             logger.debug(f"Calendar trigger check error: {e}")
+
+    def _shift_calendar_sync_task(self):
+        """Sync shift schedules to a configured HA calendar entity."""
+        try:
+            from helpers import get_setting, set_setting
+            from db import get_db
+            from models import PersonSchedule, ShiftTemplate, User
+            import json as _json
+
+            config_raw = get_setting("shift_calendar_sync")
+            if not config_raw:
+                return
+            config = _json.loads(config_raw)
+            if not config.get("enabled"):
+                return
+            target_calendar = config.get("calendar_entity", "")
+            sync_days = config.get("sync_days", 30)
+            if not target_calendar:
+                return
+
+            # Track which events we already synced to avoid duplicates
+            synced_raw = get_setting("shift_calendar_synced_uids") or "[]"
+            synced_uids = set(_json.loads(synced_raw))
+
+            session = get_db()
+            try:
+                schedules = session.query(PersonSchedule).filter_by(
+                    is_active=True, schedule_type="shift").all()
+                templates = {t.short_code: t for t in
+                             session.query(ShiftTemplate).filter_by(is_active=True).all()}
+                users = {u.id: u.name for u in
+                         session.query(User).filter_by(is_active=True).all()}
+            finally:
+                session.close()
+
+            now = datetime.now(timezone.utc)
+            new_uids = set()
+            created = 0
+
+            for sched in schedules:
+                sd = sched.shift_data if isinstance(sched.shift_data, dict) else {}
+                pattern = sd.get("rotation_pattern", [])
+                rotation_start = sd.get("rotation_start")
+                if not pattern or not rotation_start:
+                    continue
+                try:
+                    start_dt = datetime.strptime(rotation_start, "%Y-%m-%d")
+                except (ValueError, TypeError):
+                    continue
+
+                user_name = users.get(sched.user_id, "")
+
+                for day_offset in range(sync_days):
+                    day = now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=day_offset)
+                    diff = (day - start_dt.replace(tzinfo=timezone.utc)).days
+                    if diff < 0:
+                        continue
+                    idx = diff % len(pattern)
+                    code = pattern[idx]
+                    tmpl = templates.get(code)
+                    if not tmpl or code.upper() in ("X", "F", "-", "FREI"):
+                        continue
+
+                    day_str = day.strftime("%Y-%m-%d")
+                    uid = f"shift-{sched.id}-{day_str}"
+                    new_uids.add(uid)
+
+                    if uid in synced_uids:
+                        continue  # already synced
+
+                    summary = f"{tmpl.name}" + (f" ({user_name})" if user_name else "")
+                    blocks = tmpl.blocks if isinstance(tmpl.blocks, list) and tmpl.blocks else []
+                    if blocks:
+                        start_time = blocks[0].get("start", "06:00")
+                        end_time = blocks[-1].get("end", "14:00")
+                        start_dt_str = f"{day_str}T{start_time}:00"
+                        end_dt_str = f"{day_str}T{end_time}:00"
+                    else:
+                        start_dt_str = day_str
+                        end_dt_str = day_str
+
+                    try:
+                        self.ha.create_calendar_event(
+                            entity_id=target_calendar,
+                            summary=summary,
+                            start=start_dt_str,
+                            end=end_dt_str,
+                            description=f"MindHome Schicht: {code}",
+                        )
+                        created += 1
+                    except Exception as e:
+                        logger.debug(f"Shift sync event create error: {e}")
+
+            # Update synced UIDs (keep only future-relevant ones)
+            all_uids = list(synced_uids | new_uids)
+            # Prune old UIDs (older than sync_days)
+            cutoff = (now - timedelta(days=7)).strftime("%Y-%m-%d")
+            pruned = [u for u in all_uids if not u.startswith("shift-") or u.rsplit("-", 1)[-1] >= cutoff]
+            set_setting("shift_calendar_synced_uids", _json.dumps(pruned))
+
+            if created > 0:
+                logger.info(f"Shift calendar sync: created {created} events in {target_calendar}")
+
+        except Exception as e:
+            logger.debug(f"Shift calendar sync error: {e}")
 
     def _run_periodic(self, task_func, interval_seconds, task_name):
         """Run a task periodically."""

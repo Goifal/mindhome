@@ -4,12 +4,27 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "0.6.19"
-BUILD = 20
+VERSION = "0.6.21"
+BUILD = 22
 BUILD_DATE = "2026-02-13"
 CODENAME = "Phase 3.5 - Kalender & Presence"
 
 # Changelog
+# Build 22: v0.6.21 Schicht-Auto-Sync in HA-Kalender
+#   - Kalender: Schichtplan automatisch in HA-Kalender schreiben (Google Calendar, etc.)
+#   - Kalender: Background-Task alle 6h, Duplikat-Erkennung via UID-Tracking
+#   - Kalender: Konfigurierbarer Ziel-Kalender und Vorlaufzeit (7-90 Tage)
+#   - Kalender: "Jetzt synchronisieren" Button fuer sofortigen Sync
+#   - Kalender: API GET/PUT /api/calendar/shift-sync + POST shift-sync/run
+#   - Kalender: Frontend ShiftCalendarSync Komponente mit Toggle
+#
+# Build 21: v0.6.20 Kalender-Schreiben (HA Calendar Events)
+#   - Kalender: Termine direkt in HA-Kalender erstellen (Google Calendar, CalDAV, etc.)
+#   - Kalender: calendar.create_event + calendar.delete_event Service-Aufrufe
+#   - Kalender: API-Routen POST/DELETE /api/calendar/events
+#   - Kalender: Frontend CalendarEventCreator mit Ganztags-/Zeitraum-Support
+#   - Kalender: Beschreibung und Ort optional
+#
 # Build 20: v0.6.19 Kalender-Sync, Presence-System, UX-Verbesserungen
 #   - Personen: Bearbeiten (Name, Rolle, HA-Person) + Geraete-Zuweisung (device_tracker)
 #   - Personen: Device-Tracker Live-State (home/away Punkt mit Farbindikator)

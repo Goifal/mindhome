@@ -808,3 +808,87 @@ def api_get_synced_calendar_events():
     except Exception as e:
         logger.warning(f"Synced events error: {e}")
         return jsonify({"events": [], "error": str(e)})
+
+
+@schedules_bp.route("/api/calendar/events", methods=["POST"])
+def api_create_calendar_event():
+    """Create a new event on a HA calendar (Google Calendar, CalDAV, etc.)."""
+    data = request.json or {}
+    summary = sanitize_input(data.get("summary", "")).strip()
+    entity_id = data.get("entity_id", "").strip()
+    if not summary or not entity_id:
+        return jsonify({"error": "summary and entity_id required"}), 400
+    start = data.get("start", "").strip()
+    end = data.get("end", "").strip()
+    if not start or not end:
+        return jsonify({"error": "start and end required"}), 400
+    description = sanitize_input(data.get("description", "")) if data.get("description") else None
+    location = sanitize_input(data.get("location", "")) if data.get("location") else None
+    try:
+        ha = _ha()
+        result = ha.create_calendar_event(
+            entity_id=entity_id, summary=summary,
+            start=start, end=end,
+            description=description, location=location,
+        )
+        audit_log("calendar_event_create", {"entity_id": entity_id, "summary": summary})
+        return jsonify({"success": True, "result": result})
+    except Exception as e:
+        logger.warning(f"Create calendar event error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@schedules_bp.route("/api/calendar/events", methods=["DELETE"])
+def api_delete_calendar_event():
+    """Delete an event from a HA calendar."""
+    data = request.json or {}
+    entity_id = data.get("entity_id", "").strip()
+    uid = data.get("uid", "").strip()
+    if not entity_id or not uid:
+        return jsonify({"error": "entity_id and uid required"}), 400
+    try:
+        ha = _ha()
+        result = ha.delete_calendar_event(entity_id=entity_id, uid=uid)
+        audit_log("calendar_event_delete", {"entity_id": entity_id, "uid": uid})
+        return jsonify({"success": True, "result": result})
+    except Exception as e:
+        logger.warning(f"Delete calendar event error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@schedules_bp.route("/api/calendar/shift-sync", methods=["GET"])
+def api_get_shift_sync_config():
+    """Get shift-to-calendar sync configuration."""
+    raw = get_setting("shift_calendar_sync")
+    if raw:
+        config = json.loads(raw)
+    else:
+        config = {"enabled": False, "calendar_entity": "", "sync_days": 30}
+    return jsonify(config)
+
+
+@schedules_bp.route("/api/calendar/shift-sync", methods=["PUT"])
+def api_update_shift_sync_config():
+    """Update shift-to-calendar sync configuration."""
+    data = request.json or {}
+    config = {
+        "enabled": bool(data.get("enabled", False)),
+        "calendar_entity": data.get("calendar_entity", "").strip(),
+        "sync_days": min(max(int(data.get("sync_days", 30)), 7), 90),
+    }
+    set_setting("shift_calendar_sync", json.dumps(config))
+    audit_log("shift_sync_config_update", config)
+    return jsonify({"success": True, **config})
+
+
+@schedules_bp.route("/api/calendar/shift-sync/run", methods=["POST"])
+def api_run_shift_sync_now():
+    """Trigger an immediate shift-to-calendar sync."""
+    scheduler = _deps.get("automation_scheduler")
+    if scheduler:
+        try:
+            scheduler._shift_calendar_sync_task()
+            return jsonify({"success": True, "message": "Sync completed"})
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+    return jsonify({"error": "Scheduler not available"}), 503
