@@ -4,12 +4,19 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "0.6.44"
-BUILD = 45
+VERSION = "0.6.45"
+BUILD = 46
 BUILD_DATE = "2026-02-13"
 CODENAME = "Phase 3.5 - Kalender & Presence"
 
 # Changelog
+# Build 46: v0.6.45 Domains erweitert + Controls/Features zweisprachig
+#   - Neue Domains: humidifier (Luftbefeuchter), camera (Kamera)
+#   - Proximity von System-Domain nach Presence-Domain verschoben
+#   - alarm_control_panel entfernt (redundant mit Lock/Sicherheit)
+#   - DOMAIN_PLUGINS: controls + pattern_features jetzt bilingual (label_de/label_en)
+#   - Konsistente Zweisprachigkeit ueber alle 21 Domains
+#
 # Build 31: v0.6.30 Raum-Domain-Modus (Hierarchie)
 #   - Neues mode-Feld in RoomDomainState (global/suggest/auto/off)
 #   - API: PUT /api/phases/{room}/{domain}/mode

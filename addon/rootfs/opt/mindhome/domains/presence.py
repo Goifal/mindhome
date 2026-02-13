@@ -4,7 +4,7 @@ from .base import DomainPlugin
 
 class PresenceDomain(DomainPlugin):
     DOMAIN_NAME = "presence"
-    HA_DOMAINS = ["person", "device_tracker"]
+    HA_DOMAINS = ["person", "device_tracker", "proximity"]
     DEFAULT_SETTINGS = {"enabled": "true", "mode": "suggest"}
 
     def on_start(self):
@@ -23,12 +23,20 @@ class PresenceDomain(DomainPlugin):
         return [
             {"key": "home_away", "label_de": "Zuhause/Weg", "label_en": "Home/Away"},
             {"key": "location", "label_de": "Standort", "label_en": "Location"},
+            {"key": "proximity", "label_de": "Entfernung/Proximität", "label_en": "Proximity/Distance"},
         ]
 
     def get_current_status(self, room_id=None):
         entities = self.get_entities()
-        home = sum(1 for e in entities if e.get("state") == "home")
-        return {"total": len(entities), "home": home, "away": len(entities) - home}
+        persons = [e for e in entities if not e.get("entity_id", "").startswith("proximity.")]
+        home = sum(1 for e in persons if e.get("state") == "home")
+        proximity_entities = [e for e in entities if e.get("entity_id", "").startswith("proximity.")]
+        return {
+            "total": len(persons),
+            "home": home,
+            "away": len(persons) - home,
+            "proximity_sensors": len(proximity_entities),
+        }
 
     def evaluate(self, context):
         return []  # Presence triggers are handled by PresenceModeManager
