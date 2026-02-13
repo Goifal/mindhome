@@ -181,7 +181,7 @@ DOMAIN_PLUGINS = {
         "ha_domain": "person",
         "attributes": ["source", "gps_accuracy"],
         "controls": [],
-        "pattern_features": ["arrival_time", "departure_time", "routine"],
+        "pattern_features": ["arrival_time", "departure_time", "routine", "proximity"],
         "icon": "mdi:account-multiple",
     },
     "door_window": {
@@ -235,7 +235,7 @@ DOMAIN_PLUGINS = {
         "device_class": "battery",
         "attributes": ["device_class", "unit_of_measurement"],
         "controls": [],
-        "pattern_features": ["battery_trend", "connectivity", "proximity"],
+        "pattern_features": ["battery_trend", "connectivity"],
         "icon": "mdi:cellphone-link",
     },
     "motion_control": {

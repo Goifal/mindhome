@@ -48,8 +48,8 @@ def create_default_domains(session):
             "display_name_de": "Anwesenheit",
             "display_name_en": "Presence",
             "icon": "mdi:home-account",
-            "description_de": "Wer ist zuhause? Handy-Tracking, BLE, Router",
-            "description_en": "Who is home? Phone tracking, BLE, router"
+            "description_de": "Wer ist zuhause? Handy-Tracking, BLE, Router, Proximität",
+            "description_en": "Who is home? Phone tracking, BLE, router, proximity"
         },
         {
             "name": "media",
@@ -160,8 +160,8 @@ def create_default_domains(session):
             "display_name_de": "System",
             "display_name_en": "System",
             "icon": "mdi:cellphone-link",
-            "description_de": "Telefone, Proximität, Rechner, Akkus, Netzwerk",
-            "description_en": "Phones, proximity, computers, batteries, network"
+            "description_de": "Telefone, Rechner, Akkus, Netzwerk",
+            "description_en": "Phones, computers, batteries, network"
         },
         {
             "name": "motion_control",

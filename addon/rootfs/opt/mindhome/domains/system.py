@@ -4,7 +4,7 @@ from .base import DomainPlugin
 
 class SystemDomain(DomainPlugin):
     DOMAIN_NAME = "system"
-    HA_DOMAINS = ["sensor", "binary_sensor", "proximity"]
+    HA_DOMAINS = ["sensor", "binary_sensor"]
     DEVICE_CLASSES = [
         "battery", "connectivity", "plug", "power",
         "data_size", "data_rate", "frequency",
@@ -31,15 +31,13 @@ class SystemDomain(DomainPlugin):
         return [
             {"key": "battery_level", "label_de": "Akkustand", "label_en": "Battery level"},
             {"key": "connectivity", "label_de": "Verbindungsstatus", "label_en": "Connectivity status"},
-            {"key": "proximity", "label_de": "Entfernung/Proximität", "label_en": "Proximity/Distance"},
             {"key": "system_load", "label_de": "Systemauslastung", "label_en": "System load"},
         ]
 
     def get_current_status(self, room_id=None):
         entities = self.get_entities()
         relevant = [e for e in entities
-                    if e.get("attributes", {}).get("device_class") in self.DEVICE_CLASSES
-                    or e.get("entity_id", "").startswith("proximity.")]
+                    if e.get("attributes", {}).get("device_class") in self.DEVICE_CLASSES]
         online = sum(1 for e in relevant
                      if e.get("state") not in ("unavailable", "unknown", "off"))
         return {"total": len(relevant), "online": online, "offline": len(relevant) - online}
