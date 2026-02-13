@@ -4,12 +4,18 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "0.6.22"
-BUILD = 23
+VERSION = "0.6.23"
+BUILD = 24
 BUILD_DATE = "2026-02-13"
 CODENAME = "Phase 3.5 - Kalender & Presence"
 
 # Changelog
+# Build 24: v0.6.23 Fix Schicht-Kalender Datum off-by-one + alte Events loeschen
+#   - Fix: Schicht-Startdatum wurde 1 Tag zu frueh in Kalender geschrieben (UTC vs Lokalzeit)
+#   - Fix: Kalender-Sync nutzt jetzt HA-Timezone statt UTC fuer Datumsberechnung
+#   - Fix: Alte Kalender-Eintraege werden jetzt bei Aenderung automatisch geloescht
+#   - Fix: iCal Export hatte gleichen Timezone-Bug (ebenfalls gefixt)
+#
 # Build 23: v0.6.22 Fix Anwesenheitserkennung (7 Bugs)
 #   - Fix: get_current_mode() ignorierte Logs ohne mode_id - mode_name Fallback + Backfill
 #   - Fix: auto_detect Endpoint schrieb kein mode_id in PresenceLog
