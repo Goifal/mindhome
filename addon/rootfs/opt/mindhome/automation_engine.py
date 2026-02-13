@@ -1814,7 +1814,7 @@ class AutomationScheduler:
         full_resync: if True, delete all existing shift events first, then re-create.
         """
         try:
-            from helpers import get_setting, set_setting
+            from helpers import get_setting, set_setting, get_ha_timezone
             from db import get_db
             from models import PersonSchedule, ShiftTemplate, User
             import json as _json
@@ -1830,7 +1830,9 @@ class AutomationScheduler:
             if not target_calendar:
                 return
 
-            now = datetime.now(timezone.utc)
+            # Use HA's local timezone for correct date calculations
+            local_tz = get_ha_timezone()
+            now = datetime.now(local_tz)
 
             # --- Full resync: delete existing shift events first ---
             if full_resync:
@@ -1885,7 +1887,7 @@ class AutomationScheduler:
                 if not pattern or not rotation_start:
                     continue
                 try:
-                    start_dt = datetime.strptime(rotation_start, "%Y-%m-%d")
+                    start_dt = datetime.strptime(rotation_start, "%Y-%m-%d").replace(tzinfo=local_tz)
                 except (ValueError, TypeError):
                     continue
 
@@ -1893,7 +1895,7 @@ class AutomationScheduler:
 
                 for day_offset in range(sync_days):
                     day = now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=day_offset)
-                    diff = (day - start_dt.replace(tzinfo=timezone.utc)).days
+                    diff = (day - start_dt).days
                     if diff < 0:
                         continue
                     idx = diff % len(pattern)
@@ -1932,15 +1934,40 @@ class AutomationScheduler:
                     except Exception as e:
                         logger.debug(f"Shift sync event create error: {e}")
 
+            # Delete obsolete events (synced before but no longer in current schedule)
+            deleted = 0
+            obsolete_uids = synced_uids - new_uids
+            if obsolete_uids:
+                try:
+                    query_start = (now - timedelta(days=7)).strftime("%Y-%m-%dT00:00:00.000Z")
+                    query_end = (now + timedelta(days=sync_days + 1)).strftime("%Y-%m-%dT23:59:59.000Z")
+                    existing = self.ha.get_calendar_events(target_calendar, query_start, query_end)
+                    for ev in existing:
+                        desc = (ev.get("description") or "").strip()
+                        ev_uid = ev.get("uid")
+                        if desc.startswith("MindHome Schicht:") and ev_uid:
+                            # Check if this event's date matches an obsolete UID
+                            ev_start = ev.get("start", {})
+                            ev_date = ev_start.get("date") or (ev_start.get("dateTime", "")[:10])
+                            for obs_uid in obsolete_uids:
+                                # UIDs are like "shift-{sched_id}-{YYYY-MM-DD}"
+                                if obs_uid.endswith(ev_date):
+                                    try:
+                                        self.ha.delete_calendar_event(target_calendar, ev_uid)
+                                        deleted += 1
+                                    except Exception as e:
+                                        logger.debug(f"Shift sync delete obsolete error: {e}")
+                                    break
+                except Exception as e:
+                    logger.debug(f"Shift sync obsolete cleanup error: {e}")
+
             # Update synced UIDs (keep only future-relevant ones)
-            all_uids = list(synced_uids | new_uids)
-            # Prune old UIDs (older than sync_days)
             cutoff = (now - timedelta(days=7)).strftime("%Y-%m-%d")
-            pruned = [u for u in all_uids if not u.startswith("shift-") or u.rsplit("-", 1)[-1] >= cutoff]
+            pruned = [u for u in new_uids if not u.startswith("shift-") or u.rsplit("-", 1)[-1] >= cutoff]
             set_setting("shift_calendar_synced_uids", _json.dumps(pruned))
 
-            if created > 0 or full_resync:
-                logger.info(f"Shift calendar sync: created {created} events in {target_calendar}" +
+            if created > 0 or deleted > 0 or full_resync:
+                logger.info(f"Shift calendar sync: created {created}, deleted {deleted} events in {target_calendar}" +
                             (" (full resync)" if full_resync else ""))
 
         except Exception as e:

@@ -556,7 +556,9 @@ def api_export_ical():
 
     session = get_db()
     try:
-        now = datetime.now(timezone.utc)
+        from helpers import get_ha_timezone
+        local_tz = get_ha_timezone()
+        now = datetime.now(local_tz)
         lines = [
             "BEGIN:VCALENDAR",
             "VERSION:2.0",
@@ -639,7 +641,7 @@ def api_export_ical():
             if not pattern or not rotation_start:
                 continue
             try:
-                start_dt = datetime.strptime(rotation_start, "%Y-%m-%d")
+                start_dt = datetime.strptime(rotation_start, "%Y-%m-%d").replace(tzinfo=local_tz)
             except (ValueError, TypeError):
                 continue
             # Generate shift events for configurable days from now
@@ -648,7 +650,7 @@ def api_export_ical():
             user_name = users.get(sched.user_id, "")
             for day_offset in range(export_days):
                 day = now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=day_offset)
-                diff = (day - start_dt.replace(tzinfo=timezone.utc)).days
+                diff = (day - start_dt).days
                 if diff < 0:
                     continue
                 idx = diff % len(pattern)
