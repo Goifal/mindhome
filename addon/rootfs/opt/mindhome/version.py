@@ -4,12 +4,19 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "0.6.26"
-BUILD = 27
+VERSION = "0.6.27"
+BUILD = 28
 BUILD_DATE = "2026-02-13"
 CODENAME = "Phase 3.5 - Kalender & Presence"
 
 # Changelog
+# Build 28: v0.6.27 Domain-Steuerung anzeigen und bearbeitbar
+#   - Domain-Karten zeigen Plugin-Settings (Steuerung) unterhalb Trennstrich an
+#   - Bearbeiten-Button fuer ALLE Domains (nicht nur Custom)
+#   - MdiIconPicker im Edit- und Create-Dialog (statt Text-Input)
+#   - Steuerungs-Einstellungen editierbar (Mode, Helligkeit, Temperatur etc.)
+#   - Backend: Icon-Aenderung auch fuer System-Domains erlaubt
+#
 # Build 27: v0.6.26 UI: Domain-Karten an Raeume/Personen-Design angeglichen
 #   - Domain-Karten nutzen jetzt card/card-icon/card-title/card-subtitle Klassen
 #   - Rundes Icon mit Farbhintergrund statt flachem Icon
