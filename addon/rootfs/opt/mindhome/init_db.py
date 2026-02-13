@@ -171,6 +171,22 @@ def create_default_domains(session):
             "description_de": "Bewegungsmelder ein-/ausschalten, Empfindlichkeit",
             "description_en": "Toggle motion sensors on/off, sensitivity"
         },
+        {
+            "name": "humidifier",
+            "display_name_de": "Luftbefeuchter",
+            "display_name_en": "Humidifier",
+            "icon": "mdi:air-humidifier",
+            "description_de": "Luftbefeuchter und Entfeuchter, Ziel-Luftfeuchtigkeit",
+            "description_en": "Humidifiers and dehumidifiers, target humidity"
+        },
+        {
+            "name": "camera",
+            "display_name_de": "Kamera",
+            "display_name_en": "Camera",
+            "icon": "mdi:cctv",
+            "description_de": "Überwachungskameras, Aufnahme, Live-Stream",
+            "description_en": "Security cameras, recording, live stream"
+        },
     ]
 
     created = 0
