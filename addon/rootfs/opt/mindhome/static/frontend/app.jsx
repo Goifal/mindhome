@@ -1059,6 +1059,7 @@ const QuickActionsGrid = () => {
     };
 
     const handleDelete = async (id) => {
+        if (!confirm(lang === 'de' ? 'Quick Action wirklich löschen?' : 'Really delete Quick Action?')) return;
         await api.delete(`quick-actions/${id}`);
         await refreshData();
         showToast(lang === 'de' ? 'Quick Action gelöscht' : 'Quick Action deleted', 'success');
@@ -1934,6 +1935,7 @@ const DeviceGroupsSection = () => {
     };
 
     const deleteGroup = async (id) => {
+        if (!confirm(lang === 'de' ? 'Gerätegruppe wirklich löschen?' : 'Really delete device group?')) return;
         await api.delete(`device-groups/${id}`);
         showToast(lang === 'de' ? 'Gruppe gelöscht' : 'Group deleted', 'success'); await load();
     };
@@ -2358,6 +2360,7 @@ const UsersPage = () => {
     };
 
     const handleDelete = async (id) => {
+        if (!confirm(lang === 'de' ? 'Person wirklich löschen? Alle zugewiesenen Geräte werden ebenfalls entfernt.' : 'Really delete person? All assigned devices will be removed too.')) return;
         const result = await api.delete(`users/${id}`);
         if (result?.success) {
             showToast(lang === 'de' ? 'Person entfernt' : 'Person removed', 'success');
@@ -2400,6 +2403,7 @@ const UsersPage = () => {
     };
 
     const handleRemoveDevice = async (pdId) => {
+        if (!confirm(lang === 'de' ? 'Gerätezuweisung wirklich entfernen?' : 'Really remove device assignment?')) return;
         const result = await api.delete(`person-devices/${pdId}`);
         if (result?.success) {
             showToast(lang === 'de' ? 'Gerät entfernt' : 'Device removed', 'success');
@@ -4243,7 +4247,7 @@ const PatternsPage = () => {
                                 </div>
                                 {e.reason && <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{e.reason}</div>}
                             </div>
-                            <button className="btn btn-ghost" onClick={async () => { await api.delete(`pattern-exclusions/${e.id}`); await load(); }}>
+                            <button className="btn btn-ghost" onClick={async () => { if (!confirm(lang === 'de' ? 'Ausschluss wirklich löschen?' : 'Really delete exclusion?')) return; await api.delete(`pattern-exclusions/${e.id}`); await load(); }}>
                                 <span className="mdi mdi-delete" style={{ color: 'var(--danger)' }} />
                             </button>
                         </div>
@@ -4331,6 +4335,7 @@ const PatternsPage = () => {
                                         await api.put(`manual-rules/${r.id}`, { is_active: !r.is_active }); await load();
                                     }}><span className={`mdi ${r.is_active ? 'mdi-pause' : 'mdi-play'}`} style={{ fontSize: 16 }} /></button>
                                     <button className="btn btn-ghost" onClick={async () => {
+                                        if (!confirm(lang === 'de' ? 'Regel wirklich löschen?' : 'Really delete rule?')) return;
                                         await api.delete(`manual-rules/${r.id}`); await load();
                                     }}><span className="mdi mdi-delete" style={{ fontSize: 16, color: 'var(--danger)' }} /></button>
                                 </div>
@@ -4612,6 +4617,7 @@ const PatternsPage = () => {
                                 {lang === 'de' ? 'Alle ablehnen' : 'Reject all'}
                             </button>
                             <button className="btn btn-sm btn-ghost" onClick={async () => {
+                                if (!confirm(lang === 'de' ? `${count} Muster wirklich löschen?` : `Really delete ${count} patterns?`)) return;
                                 setPatterns(prev => prev.filter(p => !selectedIds.includes(p.id)));
                                 for (const id of selectedIds) { await api.delete(`patterns/${id}`); }
                                 setBulkSelected({}); setBulkMode(false); await load();
@@ -5194,7 +5200,7 @@ const NotificationsPage = () => {
                                 <div key={m.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0' }}>
                                     <span style={{ fontSize: 13 }}>{devices.find(d => d.id === m.device_id)?.name || `#${m.device_id}`}</span>
                                     <button className="btn btn-ghost" style={{ fontSize: 11, color: 'var(--danger)' }}
-                                        onClick={async () => { await api.delete(`notification-settings/unmute-device/${m.id}`); await load(); }}>
+                                        onClick={async () => { if (!confirm(lang === 'de' ? 'Gerät wirklich entstummen?' : 'Really unmute device?')) return; await api.delete(`notification-settings/unmute-device/${m.id}`); await load(); }}>
                                         <span className="mdi mdi-volume-high" style={{ marginRight: 2 }} />{lang === 'de' ? 'Entstummen' : 'Unmute'}
                                     </button>
                                 </div>
@@ -5727,7 +5733,7 @@ const EnergyPage = () => {
         api.post('energy/standby-config', newStandby).then(() => { showToast(lang === 'de' ? 'Standby-Erkennung hinzugefuegt' : 'Standby detection added', 'success'); setShowAddStandby(false); setNewStandby({ entity_id: '', threshold_watts: 5, idle_minutes: 30, auto_off: false }); load(); });
     };
 
-    const deleteStandby = (id) => api.delete(`energy/standby-config/${id}`).then(() => load());
+    const deleteStandby = (id) => { if (!confirm(lang === 'de' ? 'Standby-Erkennung wirklich löschen?' : 'Really delete standby detection?')) return; api.delete(`energy/standby-config/${id}`).then(() => load()); };
     const updateStandby = (id, data) => api.put(`energy/standby-config/${id}`, data).then(() => load());
 
     const tabs = [
