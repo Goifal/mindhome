@@ -2329,9 +2329,21 @@ const UsersPage = () => {
     const [newUser, setNewUser] = useState({ name: '', role: 'user', ha_person_entity: '' });
     const [haPersons, setHaPersons] = useState([]);
     const [editingUser, setEditingUser] = useState(null);
+    const [editForm, setEditForm] = useState({ name: '', role: '', ha_person_entity: '' });
+    const [personDevices, setPersonDevices] = useState([]);
+    const [deviceTrackers, setDeviceTrackers] = useState([]);
+    const [addingDeviceFor, setAddingDeviceFor] = useState(null);
+    const [newDevice, setNewDevice] = useState({ entity_id: '', device_type: 'primary' });
+
+    const loadDevices = async () => {
+        const pd = await api.get('person-devices');
+        if (Array.isArray(pd)) setPersonDevices(pd);
+    };
 
     useEffect(() => {
         api.get('ha/persons').then(r => setHaPersons(r?.persons || []));
+        loadDevices();
+        api.get('ha/entities?domain=device_tracker').then(r => setDeviceTrackers(r?.entities || []));
     }, []);
 
     const handleAdd = async () => {
@@ -2353,13 +2365,62 @@ const UsersPage = () => {
         }
     };
 
-    const handleAssignPerson = async (userId, haEntity) => {
-        const result = await api.put(`users/${userId}`, { ha_person_entity: haEntity || null });
+    const handleEdit = (user) => {
+        setEditForm({ name: user.name, role: user.role, ha_person_entity: user.ha_person_entity || '' });
+        setEditingUser(user);
+    };
+
+    const handleSaveEdit = async () => {
+        if (!editForm.name.trim()) return;
+        const result = await api.put(`users/${editingUser.id}`, {
+            name: editForm.name,
+            role: editForm.role,
+            ha_person_entity: editForm.ha_person_entity || null,
+        });
         if (result?.id) {
-            showToast(lang === 'de' ? 'HA-Person zugewiesen' : 'HA person assigned', 'success');
-            await refreshData();
+            showToast(lang === 'de' ? 'Person aktualisiert' : 'Person updated', 'success');
             setEditingUser(null);
+            await refreshData();
         }
+    };
+
+    const handleAddDevice = async () => {
+        if (!newDevice.entity_id || !addingDeviceFor) return;
+        const result = await api.post('person-devices', {
+            user_id: addingDeviceFor,
+            entity_id: newDevice.entity_id,
+            device_type: newDevice.device_type,
+        });
+        if (result?.success) {
+            showToast(lang === 'de' ? 'Gerät zugewiesen' : 'Device assigned', 'success');
+            setNewDevice({ entity_id: '', device_type: 'primary' });
+            setAddingDeviceFor(null);
+            await loadDevices();
+        }
+    };
+
+    const handleRemoveDevice = async (pdId) => {
+        const result = await api.delete(`person-devices/${pdId}`);
+        if (result?.success) {
+            showToast(lang === 'de' ? 'Gerät entfernt' : 'Device removed', 'success');
+            await loadDevices();
+        }
+    };
+
+    const getUserDevices = (userId) => personDevices.filter(d => d.user_id === userId);
+
+    const getTrackerName = (entityId) => {
+        const t = deviceTrackers.find(d => d.entity_id === entityId);
+        return t ? t.name : entityId;
+    };
+
+    const deviceTypeLabel = (type) => {
+        const labels = { primary: lang === 'de' ? 'Primär' : 'Primary', secondary: lang === 'de' ? 'Sekundär' : 'Secondary', stationary: lang === 'de' ? 'Stationär' : 'Stationary' };
+        return labels[type] || type;
+    };
+
+    const deviceTypeIcon = (type) => {
+        return type === 'primary' ? 'mdi-cellphone' : type === 'secondary' ? 'mdi-tablet' : 'mdi-access-point';
     };
 
     return (
@@ -2375,10 +2436,12 @@ const UsersPage = () => {
             </div>
 
             {users.length > 0 ? (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16 }}>
-                    {users.map(user => (
-                        <div key={user.id} className="card">
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 16 }}>
+                    {users.map(user => {
+                        const devices = getUserDevices(user.id);
+                        return (
+                        <div key={user.id} className="card" style={{ padding: 0 }}>
+                            <div style={{ padding: '16px 16px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                                     <div className="card-icon" style={{
                                         background: user.role === 'admin' ? 'var(--accent-primary-dim)' : user.role === 'guest' ? 'var(--bg-tertiary)' : 'var(--accent-secondary-dim)',
@@ -2390,26 +2453,62 @@ const UsersPage = () => {
                                         <div className="card-title">{user.name}</div>
                                         <div className="card-subtitle">
                                             {user.role === 'admin' ? 'Administrator' : user.role === 'guest' ? (lang === 'de' ? 'Gast' : 'Guest') : (lang === 'de' ? 'Benutzer' : 'User')}
-                                        </div>
-                                        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
-                                            {user.ha_person_entity
-                                                ? ` ${user.ha_person_entity}`
-                                                : (lang === 'de' ? ' ️ Keine HA-Person' : ' ️ No HA person')}
+                                            {user.ha_person_entity && <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--text-muted)' }}>{user.ha_person_entity}</span>}
                                         </div>
                                     </div>
                                 </div>
                                 <div style={{ display: 'flex', gap: 4 }}>
-                                    <button className="btn btn-ghost btn-icon" onClick={() => setEditingUser(user)}
-                                        title={lang === 'de' ? 'HA-Person zuweisen' : 'Assign HA person'}>
-                                        <span className="mdi mdi-link-variant" style={{ fontSize: 18, color: 'var(--accent-primary)' }} />
+                                    <button className="btn btn-ghost btn-icon" onClick={() => handleEdit(user)}
+                                        title={lang === 'de' ? 'Bearbeiten' : 'Edit'}>
+                                        <span className="mdi mdi-pencil-outline" style={{ fontSize: 18, color: 'var(--accent-primary)' }} />
                                     </button>
-                                    <button className="btn btn-ghost btn-icon" onClick={() => handleDelete(user.id)}>
+                                    <button className="btn btn-ghost btn-icon" onClick={() => handleDelete(user.id)}
+                                        title={lang === 'de' ? 'Löschen' : 'Delete'}>
                                         <span className="mdi mdi-delete-outline" style={{ fontSize: 18, color: 'var(--text-muted)' }} />
                                     </button>
                                 </div>
                             </div>
+
+                            {/* Device assignments */}
+                            <div style={{ borderTop: '1px solid var(--border-color)', padding: '10px 16px 14px' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: devices.length > 0 ? 8 : 0 }}>
+                                    <span style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-muted)' }}>
+                                        <span className="mdi mdi-cellphone-link" style={{ marginRight: 4 }} />
+                                        {lang === 'de' ? 'Geräte' : 'Devices'}
+                                    </span>
+                                    <button className="btn btn-ghost" style={{ fontSize: 11, padding: '2px 8px' }}
+                                        onClick={() => { setAddingDeviceFor(user.id); setNewDevice({ entity_id: '', device_type: 'primary' }); }}>
+                                        <span className="mdi mdi-plus" style={{ fontSize: 14 }} />
+                                        {lang === 'de' ? 'Zuweisen' : 'Assign'}
+                                    </button>
+                                </div>
+                                {devices.length > 0 ? devices.map(d => (
+                                    <div key={d.id} style={{
+                                        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                                        padding: '6px 10px', borderRadius: 6, marginBottom: 4,
+                                        background: 'var(--bg-tertiary)', fontSize: 12,
+                                    }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                                            <span className={`mdi ${deviceTypeIcon(d.device_type)}`} style={{ fontSize: 16, color: 'var(--accent-primary)', flexShrink: 0 }} />
+                                            <div style={{ minWidth: 0 }}>
+                                                <div style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{getTrackerName(d.entity_id)}</div>
+                                                <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{d.entity_id} · {deviceTypeLabel(d.device_type)}</div>
+                                            </div>
+                                        </div>
+                                        <button className="btn btn-ghost btn-icon" onClick={() => handleRemoveDevice(d.id)}
+                                            style={{ padding: 2, marginLeft: 4, flexShrink: 0 }}>
+                                            <span className="mdi mdi-close" style={{ fontSize: 14, color: 'var(--text-muted)' }} />
+                                        </button>
+                                    </div>
+                                )) : (
+                                    <div style={{ fontSize: 11, color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                                        {lang === 'de' ? 'Keine Geräte zugewiesen' : 'No devices assigned'}
+                                    </div>
+                                )}
+                            </div>
                         </div>
-                    ))}
+                        );
+                    })}
                 </div>
             ) : (
                 <div className="empty-state">
@@ -2419,6 +2518,7 @@ const UsersPage = () => {
                 </div>
             )}
 
+            {/* Add person modal */}
             {showAdd && (
                 <Modal title={lang === 'de' ? 'Person hinzufügen' : 'Add Person'} onClose={() => setShowAdd(false)}
                     actions={<><button className="btn btn-secondary" onClick={() => setShowAdd(false)}>{lang === 'de' ? 'Abbrechen' : 'Cancel'}</button>
@@ -2453,34 +2553,77 @@ const UsersPage = () => {
                 </Modal>
             )}
 
+            {/* Edit person modal */}
             {editingUser && (
-                <Modal title={lang === 'de' ? `HA-Person: ${editingUser.name}` : `HA Person: ${editingUser.name}`} onClose={() => setEditingUser(null)}
-                    actions={<button className="btn btn-secondary" onClick={() => setEditingUser(null)}>{lang === 'de' ? 'Schließen' : 'Close'}</button>}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                        <div style={{ padding: '10px 14px', borderRadius: 8, cursor: 'pointer',
-                            border: !editingUser.ha_person_entity ? '2px solid var(--accent-primary)' : '1px solid var(--border-color)',
-                            background: !editingUser.ha_person_entity ? 'var(--accent-primary-dim)' : 'transparent'
-                        }} onClick={() => handleAssignPerson(editingUser.id, '')}>
-                            {lang === 'de' ? '– Keine Person –' : '– No Person –'}
-                        </div>
-                        {haPersons.map(p => (
-                            <div key={p.entity_id} style={{ padding: '10px 14px', borderRadius: 8, cursor: 'pointer',
-                                border: editingUser.ha_person_entity === p.entity_id ? '2px solid var(--accent-primary)' : '1px solid var(--border-color)',
-                                background: editingUser.ha_person_entity === p.entity_id ? 'var(--accent-primary-dim)' : 'transparent',
-                                display: 'flex', justifyContent: 'space-between', alignItems: 'center'
-                            }} onClick={() => handleAssignPerson(editingUser.id, p.entity_id)}>
-                                <div><strong>{p.name}</strong><div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{p.entity_id}</div></div>
-                                <span className={`badge badge-${p.state === 'home' ? 'success' : 'warning'}`}>
-                                    <span className="badge-dot" />{p.state === 'home' ? (lang === 'de' ? 'Zuhause' : 'Home') : (lang === 'de' ? 'Weg' : 'Away')}
-                                </span>
-                            </div>
-                        ))}
+                <Modal title={lang === 'de' ? `Person bearbeiten: ${editingUser.name}` : `Edit Person: ${editingUser.name}`} onClose={() => setEditingUser(null)}
+                    actions={<><button className="btn btn-secondary" onClick={() => setEditingUser(null)}>{lang === 'de' ? 'Abbrechen' : 'Cancel'}</button>
+                        <button className="btn btn-primary" onClick={handleSaveEdit}>{lang === 'de' ? 'Speichern' : 'Save'}</button></>}>
+                    <div className="input-group" style={{ marginBottom: 16 }}>
+                        <label className="input-label">{lang === 'de' ? 'Name' : 'Name'}</label>
+                        <input className="input" value={editForm.name} onChange={e => setEditForm({ ...editForm, name: e.target.value })} autoFocus />
+                    </div>
+                    <div className="input-group" style={{ marginBottom: 16 }}>
+                        <Dropdown
+                            label={lang === 'de' ? 'Rolle' : 'Role'}
+                            value={editForm.role}
+                            onChange={v => setEditForm({ ...editForm, role: v })}
+                            options={[
+                                { value: 'user', label: lang === 'de' ? 'Benutzer' : 'User' },
+                                { value: 'admin', label: 'Administrator' },
+                                { value: 'guest', label: lang === 'de' ? 'Gast' : 'Guest' },
+                            ]}
+                        />
+                    </div>
+                    <div className="input-group">
+                        <Dropdown
+                            label={lang === 'de' ? 'HA-Person' : 'HA Person'}
+                            value={editForm.ha_person_entity}
+                            onChange={v => setEditForm({ ...editForm, ha_person_entity: v })}
+                            options={[
+                                { value: '', label: lang === 'de' ? '– Keine –' : '– None –' },
+                                ...haPersons.map(p => ({ value: p.entity_id, label: `${p.name} (${p.entity_id})` }))
+                            ]}
+                        />
+                    </div>
+                </Modal>
+            )}
+
+            {/* Add device to person modal */}
+            {addingDeviceFor && (
+                <Modal title={lang === 'de' ? `Gerät zuweisen: ${users.find(u => u.id === addingDeviceFor)?.name || ''}` : `Assign Device: ${users.find(u => u.id === addingDeviceFor)?.name || ''}`}
+                    onClose={() => setAddingDeviceFor(null)}
+                    actions={<><button className="btn btn-secondary" onClick={() => setAddingDeviceFor(null)}>{lang === 'de' ? 'Abbrechen' : 'Cancel'}</button>
+                        <button className="btn btn-primary" onClick={handleAddDevice} disabled={!newDevice.entity_id}>{lang === 'de' ? 'Zuweisen' : 'Assign'}</button></>}>
+                    <div className="input-group" style={{ marginBottom: 16 }}>
+                        <Dropdown
+                            label={lang === 'de' ? 'Gerät (device_tracker)' : 'Device (device_tracker)'}
+                            value={newDevice.entity_id}
+                            onChange={v => setNewDevice({ ...newDevice, entity_id: v })}
+                            placeholder={lang === 'de' ? '– Gerät wählen –' : '– Select device –'}
+                            options={[
+                                { value: '', label: lang === 'de' ? '– Gerät wählen –' : '– Select device –' },
+                                ...deviceTrackers.map(d => ({ value: d.entity_id, label: `${d.name} (${d.entity_id})` }))
+                            ]}
+                        />
+                    </div>
+                    <div className="input-group">
+                        <Dropdown
+                            label={lang === 'de' ? 'Gerätetyp' : 'Device Type'}
+                            value={newDevice.device_type}
+                            onChange={v => setNewDevice({ ...newDevice, device_type: v })}
+                            options={[
+                                { value: 'primary', label: lang === 'de' ? 'Primär (Handy)' : 'Primary (Phone)' },
+                                { value: 'secondary', label: lang === 'de' ? 'Sekundär (Tablet)' : 'Secondary (Tablet)' },
+                                { value: 'stationary', label: lang === 'de' ? 'Stationär (festes Gerät)' : 'Stationary (fixed device)' },
+                            ]}
+                        />
                     </div>
                 </Modal>
             )}
         </div>
     );
 };
+
 
 // ================================================================
 // Phase 2a: Patterns Page (Muster-Explorer)
