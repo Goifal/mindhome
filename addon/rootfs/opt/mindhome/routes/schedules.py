@@ -481,3 +481,250 @@ def api_seed_default_holidays():
         return jsonify({"success": True, "count": len(defaults)})
     finally:
         session.close()
+
+
+# ==============================================================================
+# Calendar Sync: iCal Export + HA Calendar Integration
+# ==============================================================================
+
+def _ical_escape(text):
+    """Escape text for iCal format."""
+    if not text:
+        return ""
+    return text.replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,").replace("\n", "\\n")
+
+
+def _fold_line(line):
+    """Fold long iCal lines at 75 octets per RFC 5545."""
+    result = []
+    while len(line.encode("utf-8")) > 75:
+        # Find a safe split point
+        cut = 75
+        while len(line[:cut].encode("utf-8")) > 75:
+            cut -= 1
+        result.append(line[:cut])
+        line = " " + line[cut:]
+    result.append(line)
+    return "\r\n".join(result)
+
+
+@schedules_bp.route("/api/calendar/export.ics", methods=["GET"])
+def api_export_ical():
+    """Export MindHome calendar as iCal feed (shifts, holidays, vacations)."""
+    session = get_db()
+    try:
+        now = datetime.now(timezone.utc)
+        lines = [
+            "BEGIN:VCALENDAR",
+            "VERSION:2.0",
+            "PRODID:-//MindHome//Calendar Export//DE",
+            "CALSCALE:GREGORIAN",
+            "METHOD:PUBLISH",
+            "X-WR-CALNAME:MindHome",
+            "X-WR-TIMEZONE:Europe/Vienna",
+        ]
+
+        # --- Holidays ---
+        holidays = session.query(Holiday).filter_by(is_active=True).all()
+        current_year = now.year
+        for h in holidays:
+            date_str = h.date
+            if h.is_recurring and len(date_str) == 5:
+                # MM-DD format -> generate for current year and next year
+                for year in [current_year, current_year + 1]:
+                    dt = f"{year}-{date_str}"
+                    uid = f"holiday-{h.id}-{year}@mindhome"
+                    lines.extend([
+                        "BEGIN:VEVENT",
+                        f"UID:{uid}",
+                        f"DTSTART;VALUE=DATE:{dt.replace('-', '')}",
+                        f"DTEND;VALUE=DATE:{dt.replace('-', '')}",
+                        f"SUMMARY:{_ical_escape(h.name)}",
+                        "CATEGORIES:Feiertag",
+                        "TRANSP:TRANSPARENT",
+                        f"DTSTAMP:{now.strftime('%Y%m%dT%H%M%SZ')}",
+                        "END:VEVENT",
+                    ])
+            elif len(date_str) == 10:
+                uid = f"holiday-{h.id}@mindhome"
+                lines.extend([
+                    "BEGIN:VEVENT",
+                    f"UID:{uid}",
+                    f"DTSTART;VALUE=DATE:{date_str.replace('-', '')}",
+                    f"DTEND;VALUE=DATE:{date_str.replace('-', '')}",
+                    f"SUMMARY:{_ical_escape(h.name)}",
+                    "CATEGORIES:Feiertag",
+                    "TRANSP:TRANSPARENT",
+                    f"DTSTAMP:{now.strftime('%Y%m%dT%H%M%SZ')}",
+                    "END:VEVENT",
+                ])
+
+        # --- School Vacations ---
+        vacations = session.query(SchoolVacation).filter_by(is_active=True).all()
+        for v in vacations:
+            uid = f"vacation-{v.id}@mindhome"
+            name = v.name_de or v.name_en or "Ferien"
+            # end_date in iCal is exclusive, so add 1 day
+            try:
+                end_dt = datetime.strptime(v.end_date, "%Y-%m-%d") + timedelta(days=1)
+                end_str = end_dt.strftime("%Y%m%d")
+            except (ValueError, TypeError):
+                end_str = v.end_date.replace("-", "") if v.end_date else ""
+            lines.extend([
+                "BEGIN:VEVENT",
+                f"UID:{uid}",
+                f"DTSTART;VALUE=DATE:{v.start_date.replace('-', '')}",
+                f"DTEND;VALUE=DATE:{end_str}",
+                f"SUMMARY:{_ical_escape(name)}",
+                "CATEGORIES:Ferien",
+                "TRANSP:TRANSPARENT",
+                f"DTSTAMP:{now.strftime('%Y%m%dT%H%M%SZ')}",
+                "END:VEVENT",
+            ])
+
+        # --- Shift Schedules ---
+        schedules = session.query(PersonSchedule).filter_by(is_active=True).all()
+        templates = {t.short_code: t for t in session.query(ShiftTemplate).filter_by(is_active=True).all()}
+        users = {u.id: u.name for u in session.query(User).filter_by(is_active=True).all()}
+
+        for sched in schedules:
+            if sched.schedule_type != "shift" or not sched.shift_data:
+                continue
+            sd = sched.shift_data if isinstance(sched.shift_data, dict) else {}
+            pattern = sd.get("rotation_pattern", [])
+            rotation_start = sd.get("rotation_start")
+            if not pattern or not rotation_start:
+                continue
+            try:
+                start_dt = datetime.strptime(rotation_start, "%Y-%m-%d")
+            except (ValueError, TypeError):
+                continue
+            # Generate shift events for 90 days from now
+            user_name = users.get(sched.user_id, "")
+            for day_offset in range(90):
+                day = now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=day_offset)
+                diff = (day - start_dt.replace(tzinfo=timezone.utc)).days
+                if diff < 0:
+                    continue
+                idx = diff % len(pattern)
+                code = pattern[idx]
+                tmpl = templates.get(code)
+                if not tmpl or code.upper() in ("X", "F", "-", "FREI"):
+                    continue  # Skip free days
+                day_str = day.strftime("%Y%m%d")
+                uid = f"shift-{sched.id}-{day_str}@mindhome"
+                summary = f"{tmpl.name}" + (f" ({user_name})" if user_name else "")
+                # Use blocks for start/end times if available
+                blocks = tmpl.blocks if isinstance(tmpl.blocks, list) and tmpl.blocks else []
+                if blocks:
+                    block_start = blocks[0].get("start", "06:00")
+                    block_end = blocks[-1].get("end", "14:00")
+                    lines.extend([
+                        "BEGIN:VEVENT",
+                        f"UID:{uid}",
+                        f"DTSTART:{day_str}T{block_start.replace(':', '')}00",
+                        f"DTEND:{day_str}T{block_end.replace(':', '')}00",
+                        _fold_line(f"SUMMARY:{_ical_escape(summary)}"),
+                        "CATEGORIES:Schicht",
+                        f"DTSTAMP:{now.strftime('%Y%m%dT%H%M%SZ')}",
+                        "END:VEVENT",
+                    ])
+                else:
+                    lines.extend([
+                        "BEGIN:VEVENT",
+                        f"UID:{uid}",
+                        f"DTSTART;VALUE=DATE:{day_str}",
+                        f"DTEND;VALUE=DATE:{day_str}",
+                        _fold_line(f"SUMMARY:{_ical_escape(summary)}"),
+                        "CATEGORIES:Schicht",
+                        f"DTSTAMP:{now.strftime('%Y%m%dT%H%M%SZ')}",
+                        "END:VEVENT",
+                    ])
+
+        lines.append("END:VCALENDAR")
+
+        ical_content = "\r\n".join(lines) + "\r\n"
+        response = make_response(ical_content)
+        response.headers["Content-Type"] = "text/calendar; charset=utf-8"
+        response.headers["Content-Disposition"] = "attachment; filename=mindhome.ics"
+        return response
+    except Exception as e:
+        logger.error(f"iCal export error: {e}")
+        return jsonify({"error": str(e)}), 500
+    finally:
+        session.close()
+
+
+@schedules_bp.route("/api/calendar/ha-sources", methods=["GET"])
+def api_get_ha_calendar_sources():
+    """List all HA calendar entities with their sync status."""
+    try:
+        ha_calendars = _ha().get_calendars()
+        synced_raw = get_setting("calendar_synced_sources") or "[]"
+        synced_ids = json.loads(synced_raw)
+        result = []
+        for cal in ha_calendars:
+            eid = cal.get("entity_id", "")
+            result.append({
+                "entity_id": eid,
+                "name": cal.get("name", eid),
+                "synced": eid in synced_ids,
+            })
+        return jsonify({"sources": result, "synced_ids": synced_ids})
+    except Exception as e:
+        logger.warning(f"HA calendar sources error: {e}")
+        return jsonify({"sources": [], "synced_ids": [], "error": str(e)})
+
+
+@schedules_bp.route("/api/calendar/ha-sources", methods=["PUT"])
+def api_update_ha_calendar_sources():
+    """Update which HA calendars are synced into MindHome."""
+    data = request.json or {}
+    synced_ids = data.get("synced_ids", [])
+    set_setting("calendar_synced_sources", json.dumps(synced_ids))
+    audit_log("calendar_sync_update", {"synced_ids": synced_ids})
+    return jsonify({"success": True, "synced_ids": synced_ids})
+
+
+@schedules_bp.route("/api/calendar/synced-events", methods=["GET"])
+def api_get_synced_calendar_events():
+    """Get events from synced HA calendars for a date range."""
+    try:
+        synced_raw = get_setting("calendar_synced_sources") or "[]"
+        synced_ids = json.loads(synced_raw)
+        if not synced_ids:
+            return jsonify({"events": []})
+
+        start = request.args.get("start")
+        end = request.args.get("end")
+        if not start:
+            start = datetime.now(timezone.utc).strftime("%Y-%m-%dT00:00:00.000Z")
+        if not end:
+            end = (datetime.now(timezone.utc) + timedelta(days=31)).strftime("%Y-%m-%dT23:59:59.000Z")
+
+        events = []
+        for eid in synced_ids:
+            try:
+                cal_events = _ha().get_calendar_events(eid, start, end)
+                for ev in cal_events:
+                    ev["calendar_entity"] = eid
+                    # Normalize date fields
+                    ev_start = ev.get("start", {})
+                    ev_end = ev.get("end", {})
+                    events.append({
+                        "summary": ev.get("summary", ""),
+                        "description": ev.get("description", ""),
+                        "start": ev_start.get("dateTime") or ev_start.get("date", ""),
+                        "end": ev_end.get("dateTime") or ev_end.get("date", ""),
+                        "all_day": "date" in ev_start and "dateTime" not in ev_start,
+                        "calendar_entity": eid,
+                        "location": ev.get("location", ""),
+                    })
+            except Exception as e:
+                logger.debug(f"Error fetching events from {eid}: {e}")
+
+        events.sort(key=lambda e: e.get("start", ""))
+        return jsonify({"events": events})
+    except Exception as e:
+        logger.warning(f"Synced events error: {e}")
+        return jsonify({"events": [], "error": str(e)})
