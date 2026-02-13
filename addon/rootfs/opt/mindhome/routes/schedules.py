@@ -801,6 +801,7 @@ def api_get_synced_calendar_events():
                         "all_day": "date" in ev_start and "dateTime" not in ev_start,
                         "calendar_entity": eid,
                         "location": ev.get("location", ""),
+                        "uid": ev.get("uid", ""),
                     })
             except Exception as e:
                 logger.debug(f"Error fetching events from {eid}: {e}")
