@@ -1154,24 +1154,64 @@ class NotificationManager:
 
     def _send_via_push(self, session, title, message):
         """Send notification via configured push channel with fallback to persistent_notification."""
+        import json as _json
+        from helpers import get_setting
         sent = False
-        # Try push_channel from NotificationSettings for all users
+
+        # Load person-channel assignments: {user_id: [channel_id, ...]}
+        person_channels = {}
         try:
-            settings = session.query(NotificationSetting).filter(
+            raw = get_setting("notif_person_channels")
+            if raw:
+                person_channels = _json.loads(raw)
+        except Exception:
+            pass
+
+        # Load available channels for resolving channel_id → service_name
+        channels_by_id = {}
+        try:
+            from models import NotificationChannel
+            for ch in session.query(NotificationChannel).filter_by(is_enabled=True).all():
+                channels_by_id[ch.id] = ch.service_name
+        except Exception:
+            pass
+
+        # Try push_channel from NotificationSettings for all non-guest users
+        try:
+            from models import User, UserRole
+            settings = session.query(NotificationSetting).join(User).filter(
                 NotificationSetting.push_channel.isnot(None),
                 NotificationSetting.is_enabled == True,
+                User.role != UserRole.GUEST,
+                User.is_active == True,
             ).all()
             for setting in settings:
-                channel = setting.push_channel
-                if channel:
-                    try:
-                        self.ha.call_service("notify", channel, {
-                            "title": title,
-                            "message": message,
-                        })
-                        sent = True
-                    except Exception as e:
-                        logger.debug(f"Push to {channel} failed: {e}")
+                user_id_str = str(setting.user_id)
+                assigned = person_channels.get(user_id_str)
+
+                if assigned and channels_by_id:
+                    # Person has specific channel assignments → only send to those
+                    for ch_id in assigned:
+                        svc = channels_by_id.get(ch_id)
+                        if svc:
+                            try:
+                                self.ha.call_service("notify", svc.replace("notify.", ""), {
+                                    "title": title, "message": message,
+                                })
+                                sent = True
+                            except Exception as e:
+                                logger.debug(f"Push to {svc} for user {user_id_str} failed: {e}")
+                else:
+                    # No specific assignment → use legacy push_channel
+                    channel = setting.push_channel
+                    if channel:
+                        try:
+                            self.ha.call_service("notify", channel, {
+                                "title": title, "message": message,
+                            })
+                            sent = True
+                        except Exception as e:
+                            logger.debug(f"Push to {channel} failed: {e}")
         except Exception as e:
             logger.debug(f"Push channel query error: {e}")
 
@@ -1184,6 +1224,20 @@ class NotificationManager:
             sent = True
         except Exception as e:
             logger.debug(f"Persistent notification failed: {e}")
+
+        # TTS: send to assigned room speakers if configured
+        try:
+            tts_raw = get_setting("notif_tts_room_assignments")
+            if tts_raw:
+                tts_assignments = _json.loads(tts_raw)
+                # tts_assignments: {entity_id: room_id} → announce on all assigned speakers
+                for entity_id in tts_assignments:
+                    try:
+                        self.ha.announce_tts(message, media_player_entity=entity_id)
+                    except Exception as e:
+                        logger.debug(f"TTS to {entity_id} failed: {e}")
+        except Exception:
+            pass
 
         return sent
 
