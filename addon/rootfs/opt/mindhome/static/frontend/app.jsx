@@ -1156,11 +1156,44 @@ const DomainsPage = () => {
     const [newDomain, setNewDomain] = useState({ name_de: '', name_en: '', icon: 'mdi:puzzle', description: '' });
     const [confirmDel, setConfirmDel] = useState(null);
     const [editDomain, setEditDomain] = useState(null);
+    const [editSettings, setEditSettings] = useState({});
     const [capabilities, setCapabilities] = useState({});
+    const [pluginSettings, setPluginSettings] = useState({});
+
+    const settingLabels = {
+        mode: { de: 'Modus', en: 'Mode' },
+        enabled: { de: 'Aktiviert', en: 'Enabled' },
+        dim_brightness_pct: { de: 'Dim-Helligkeit (%)', en: 'Dim Brightness (%)' },
+        dusk_brightness_pct: { de: 'Dämmerung-Helligkeit (%)', en: 'Dusk Brightness (%)' },
+        away_temp: { de: 'Abwesend-Temp. (°C)', en: 'Away Temp (°C)' },
+        night_temp: { de: 'Nacht-Temp. (°C)', en: 'Night Temp (°C)' },
+        preheat_minutes: { de: 'Vorheizen (Min.)', en: 'Preheat (min)' },
+        sun_elevation_threshold: { de: 'Sonnen-Elevation (°)', en: 'Sun Elevation (°)' },
+        night_volume_pct: { de: 'Nacht-Lautstärke (%)', en: 'Night Volume (%)' },
+        standby_threshold_w: { de: 'Standby-Schwelle (W)', en: 'Standby Threshold (W)' },
+        standby_idle_minutes: { de: 'Standby-Leerlauf (Min.)', en: 'Standby Idle (min)' },
+        standby_kill_hours: { de: 'Standby-Abschaltung (Std.)', en: 'Standby Kill (hrs)' },
+        co2_warning: { de: 'CO₂ Warnung (ppm)', en: 'CO₂ Warning (ppm)' },
+        co2_critical: { de: 'CO₂ Kritisch (ppm)', en: 'CO₂ Critical (ppm)' },
+        co2_boost_threshold: { de: 'CO₂ Boost-Schwelle (ppm)', en: 'CO₂ Boost Threshold (ppm)' },
+        humidity_low: { de: 'Feuchte Min. (%)', en: 'Humidity Low (%)' },
+        humidity_high: { de: 'Feuchte Max. (%)', en: 'Humidity High (%)' },
+    };
+
+    const modeOptions = [
+        { value: 'suggest', de: 'Vorschlagen', en: 'Suggest' },
+        { value: 'auto', de: 'Automatisch', en: 'Automatic' },
+    ];
 
     useEffect(() => {
         api.get('domains/capabilities').then(c => c && setCapabilities(c));
+        api.get('plugin-settings').then(s => s && setPluginSettings(s));
     }, []);
+
+    const loadPluginSettings = async () => {
+        const s = await api.get('plugin-settings');
+        if (s) setPluginSettings(s);
+    };
 
     const handleCreate = async () => {
         if (!newDomain.name_de.trim()) return;
@@ -1190,6 +1223,48 @@ const DomainsPage = () => {
         } else {
             showToast(result?.error || 'Error', 'error');
         }
+    };
+
+    const openEditDomain = async (domain) => {
+        const settings = pluginSettings[domain.name] || {};
+        setEditDomain({ ...domain });
+        setEditSettings({ ...settings });
+    };
+
+    const handleSaveEdit = async () => {
+        if (!editDomain) return;
+        // Save domain (icon, and for custom: name/description)
+        await api.put(`domains/${editDomain.id}`, {
+            icon: editDomain.icon,
+            ...(editDomain.is_custom ? {
+                name_de: editDomain.display_name,
+                description: editDomain.description,
+                keywords: editDomain.keywords
+            } : {})
+        });
+        // Save plugin settings if any
+        if (Object.keys(editSettings).length > 0) {
+            await api.put(`plugin-settings/${editDomain.name}`, editSettings);
+        }
+        setEditDomain(null);
+        setEditSettings({});
+        await refreshData();
+        await loadPluginSettings();
+        showToast(lang === 'de' ? 'Domain aktualisiert' : 'Domain updated', 'success');
+    };
+
+    const getSettingLabel = (key) => {
+        const l = settingLabels[key];
+        return l ? (lang === 'de' ? l.de : l.en) : key;
+    };
+
+    const getSettingDisplayValue = (key, value) => {
+        if (key === 'mode') {
+            const opt = modeOptions.find(o => o.value === value);
+            return opt ? (lang === 'de' ? opt.de : opt.en) : value;
+        }
+        if (key === 'enabled') return value === 'true' ? (lang === 'de' ? 'Ja' : 'Yes') : (lang === 'de' ? 'Nein' : 'No');
+        return value;
     };
 
     return (
@@ -1223,6 +1298,8 @@ const DomainsPage = () => {
                     const controlBadges = (cap.controls || []).map(c => ({ label: controlLabels[c] || c, type: 'info' }));
                     const sensorBadges = (cap.pattern_features || []).map(f => ({ label: f, type: 'success' }));
                     const devCount = devices.filter(d => d.domain_id === domain.id).length;
+                    const domSettings = pluginSettings[domain.name] || {};
+                    const settingKeys = Object.keys(domSettings).filter(k => k !== 'enabled');
                     return (
                         <div key={domain.id} className="card" style={{ opacity: domain.is_enabled ? 1 : 0.6, transition: 'opacity 0.2s' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -1241,19 +1318,17 @@ const DomainsPage = () => {
                                     </div>
                                 </div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                    <button className="btn btn-ghost btn-icon" style={{ padding: 2 }}
+                                        onClick={e => { e.stopPropagation(); openEditDomain(domain); }}
+                                        title={lang === 'de' ? 'Bearbeiten' : 'Edit'}>
+                                        <span className="mdi mdi-pencil-outline" style={{ fontSize: 16, color: 'var(--accent-primary)' }} />
+                                    </button>
                                     {domain.is_custom && (
-                                        <>
-                                            <button className="btn btn-ghost btn-icon" style={{ padding: 2 }}
-                                                onClick={e => { e.stopPropagation(); setEditDomain({ ...domain }); }}
-                                                title={lang === 'de' ? 'Bearbeiten' : 'Edit'}>
-                                                <span className="mdi mdi-pencil-outline" style={{ fontSize: 16, color: 'var(--accent-primary)' }} />
-                                            </button>
-                                            <button className="btn btn-ghost btn-icon" style={{ padding: 2 }}
-                                                onClick={e => { e.stopPropagation(); setConfirmDel(domain); }}
-                                                title={lang === 'de' ? 'Löschen' : 'Delete'}>
-                                                <span className="mdi mdi-delete-outline" style={{ fontSize: 16, color: 'var(--text-muted)' }} />
-                                            </button>
-                                        </>
+                                        <button className="btn btn-ghost btn-icon" style={{ padding: 2 }}
+                                            onClick={e => { e.stopPropagation(); setConfirmDel(domain); }}
+                                            title={lang === 'de' ? 'Löschen' : 'Delete'}>
+                                            <span className="mdi mdi-delete-outline" style={{ fontSize: 16, color: 'var(--text-muted)' }} />
+                                        </button>
                                     )}
                                     <label className="toggle" onClick={e => e.stopPropagation()}>
                                         <input type="checkbox" checked={domain.is_enabled}
@@ -1279,6 +1354,24 @@ const DomainsPage = () => {
                                         <span key={'s' + i} className="badge badge-success" style={{ fontSize: 10, padding: '2px 7px' }}>{b.label}</span>
                                     ))}
                                 </div>
+                            )}
+                            {/* Steuerung - Plugin Settings */}
+                            {settingKeys.length > 0 && (
+                                <>
+                                    <hr style={{ border: 'none', borderTop: '1px solid var(--border-color)', margin: '12px 0' }} />
+                                    <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 6 }}>
+                                        <span className="mdi mdi-tune-vertical" style={{ fontSize: 13, marginRight: 4 }} />
+                                        {lang === 'de' ? 'Steuerung' : 'Controls'}
+                                    </div>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                                        {settingKeys.map(key => (
+                                            <div key={key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12 }}>
+                                                <span style={{ color: 'var(--text-secondary)' }}>{getSettingLabel(key)}</span>
+                                                <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>{getSettingDisplayValue(key, domSettings[key])}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </>
                             )}
                         </div>
                     );
@@ -1311,10 +1404,7 @@ const DomainsPage = () => {
                             placeholder={lang === 'de' ? 'z.B. Irrigation' : 'e.g. Irrigation'} />
                     </div>
                     <div className="input-group" style={{ marginBottom: 16 }}>
-                        <label className="input-label">Icon (MDI)</label>
-                        <input className="input" value={newDomain.icon}
-                            onChange={e => setNewDomain({ ...newDomain, icon: e.target.value })}
-                            placeholder="mdi:puzzle" />
+                        <MdiIconPicker value={newDomain.icon} onChange={v => setNewDomain({ ...newDomain, icon: v })} label="Icon" />
                     </div>
                     <div className="input-group">
                         <label className="input-label">{lang === 'de' ? 'Beschreibung' : 'Description'}</label>
@@ -1332,36 +1422,57 @@ const DomainsPage = () => {
             )}
 
             {editDomain && (
-                <Modal title={lang === 'de' ? 'Domain bearbeiten' : 'Edit Domain'} onClose={() => setEditDomain(null)}
-                    actions={<><button className="btn btn-secondary" onClick={() => setEditDomain(null)}>{lang === 'de' ? 'Abbrechen' : 'Cancel'}</button>
-                        <button className="btn btn-primary" onClick={async () => {
-                            await api.put(`domains/${editDomain.id}`, {
-                                name_de: editDomain.display_name,
-                                description: editDomain.description,
-                                icon: editDomain.icon,
-                                keywords: editDomain.keywords
-                            });
-                            setEditDomain(null);
-                            await refreshData();
-                            showToast(lang === 'de' ? 'Domain aktualisiert' : 'Domain updated', 'success');
-                        }}>{lang === 'de' ? 'Speichern' : 'Save'}</button></>}>
-                    <div className="input-group" style={{ marginBottom: 12 }}>
-                        <label className="input-label">{lang === 'de' ? 'Name' : 'Name'}</label>
-                        <input className="input" value={editDomain.display_name || ''} onChange={e => setEditDomain({ ...editDomain, display_name: e.target.value })} />
+                <Modal title={`${editDomain.display_name} ${lang === 'de' ? 'bearbeiten' : 'edit'}`} onClose={() => { setEditDomain(null); setEditSettings({}); }}
+                    actions={<><button className="btn btn-secondary" onClick={() => { setEditDomain(null); setEditSettings({}); }}>{lang === 'de' ? 'Abbrechen' : 'Cancel'}</button>
+                        <button className="btn btn-primary" onClick={handleSaveEdit}>{lang === 'de' ? 'Speichern' : 'Save'}</button></>}>
+                    {/* Icon picker for all domains */}
+                    <div className="input-group" style={{ marginBottom: 16 }}>
+                        <MdiIconPicker value={editDomain.icon} onChange={v => setEditDomain({ ...editDomain, icon: v })} label="Icon" />
                     </div>
-                    <div className="input-group" style={{ marginBottom: 12 }}>
-                        <label className="input-label">{lang === 'de' ? 'Beschreibung' : 'Description'}</label>
-                        <input className="input" value={editDomain.description || ''} onChange={e => setEditDomain({ ...editDomain, description: e.target.value })} />
-                    </div>
-                    <div className="input-group" style={{ marginBottom: 12 }}>
-                        <label className="input-label">Icon (mdi:icon-name)</label>
-                        <input className="input" value={editDomain.icon || ''} onChange={e => setEditDomain({ ...editDomain, icon: e.target.value })} />
-                    </div>
-                    <div className="input-group">
-                        <label className="input-label">Keywords</label>
-                        <input className="input" value={editDomain.keywords || ''} onChange={e => setEditDomain({ ...editDomain, keywords: e.target.value })}
-                            placeholder={lang === 'de' ? 'Komma-getrennt' : 'Comma-separated'} />
-                    </div>
+                    {/* Name/Description/Keywords only for custom domains */}
+                    {editDomain.is_custom && (
+                        <>
+                            <div className="input-group" style={{ marginBottom: 12 }}>
+                                <label className="input-label">{lang === 'de' ? 'Name' : 'Name'}</label>
+                                <input className="input" value={editDomain.display_name || ''} onChange={e => setEditDomain({ ...editDomain, display_name: e.target.value })} />
+                            </div>
+                            <div className="input-group" style={{ marginBottom: 12 }}>
+                                <label className="input-label">{lang === 'de' ? 'Beschreibung' : 'Description'}</label>
+                                <input className="input" value={editDomain.description || ''} onChange={e => setEditDomain({ ...editDomain, description: e.target.value })} />
+                            </div>
+                            <div className="input-group" style={{ marginBottom: 12 }}>
+                                <label className="input-label">Keywords</label>
+                                <input className="input" value={editDomain.keywords || ''} onChange={e => setEditDomain({ ...editDomain, keywords: e.target.value })}
+                                    placeholder={lang === 'de' ? 'Komma-getrennt' : 'Comma-separated'} />
+                            </div>
+                        </>
+                    )}
+                    {/* Steuerung - Plugin Settings */}
+                    {Object.keys(editSettings).filter(k => k !== 'enabled').length > 0 && (
+                        <>
+                            <hr style={{ border: 'none', borderTop: '1px solid var(--border-color)', margin: '16px 0' }} />
+                            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 12 }}>
+                                <span className="mdi mdi-tune-vertical" style={{ fontSize: 14, marginRight: 4 }} />
+                                {lang === 'de' ? 'Steuerung' : 'Controls'}
+                            </div>
+                            {Object.keys(editSettings).filter(k => k !== 'enabled').map(key => (
+                                <div key={key} className="input-group" style={{ marginBottom: 10 }}>
+                                    <label className="input-label">{getSettingLabel(key)}</label>
+                                    {key === 'mode' ? (
+                                        <select className="input" value={editSettings[key] || 'suggest'}
+                                            onChange={e => setEditSettings({ ...editSettings, [key]: e.target.value })}>
+                                            {modeOptions.map(o => (
+                                                <option key={o.value} value={o.value}>{lang === 'de' ? o.de : o.en}</option>
+                                            ))}
+                                        </select>
+                                    ) : (
+                                        <input className="input" value={editSettings[key] || ''}
+                                            onChange={e => setEditSettings({ ...editSettings, [key]: e.target.value })} />
+                                    )}
+                                </div>
+                            ))}
+                        </>
+                    )}
                 </Modal>
             )}
         </div>

@@ -120,36 +120,40 @@ def api_create_domain():
 
 @domains_bp.route("/api/domains/<int:domain_id>", methods=["PUT"])
 def api_update_domain(domain_id):
-    """Update a custom domain."""
+    """Update a domain. System domains: only icon editable. Custom domains: all fields."""
     data = request.json
     session = get_db()
     try:
         domain = session.get(Domain, domain_id)
         if not domain:
             return jsonify({"error": "Domain not found"}), 404
-        if not getattr(domain, 'is_custom', False):
-            return jsonify({"error": "Cannot edit system domains"}), 400
 
-        if "display_name_de" in data:
-            domain.display_name_de = data["display_name_de"]
-        if "display_name_en" in data:
-            domain.display_name_en = data["display_name_en"]
-        if "name_de" in data:
-            domain.display_name_de = data["name_de"]
-            if not domain.display_name_en:
-                domain.display_name_en = data["name_de"]
+        is_custom = getattr(domain, 'is_custom', False)
+
+        # Icon is editable for ALL domains
         if "icon" in data:
             domain.icon = data["icon"]
-        if "description_de" in data:
-            domain.description_de = data["description_de"]
-        if "description_en" in data:
-            domain.description_en = data["description_en"]
-        if "description" in data:
-            domain.description_de = data["description"]
-            if not domain.description_en:
-                domain.description_en = data["description"]
-        if "keywords" in data:
-            domain.keywords = data["keywords"]
+
+        # Other fields only for custom domains
+        if is_custom:
+            if "display_name_de" in data:
+                domain.display_name_de = data["display_name_de"]
+            if "display_name_en" in data:
+                domain.display_name_en = data["display_name_en"]
+            if "name_de" in data:
+                domain.display_name_de = data["name_de"]
+                if not domain.display_name_en:
+                    domain.display_name_en = data["name_de"]
+            if "description_de" in data:
+                domain.description_de = data["description_de"]
+            if "description_en" in data:
+                domain.description_en = data["description_en"]
+            if "description" in data:
+                domain.description_de = data["description"]
+                if not domain.description_en:
+                    domain.description_en = data["description"]
+            if "keywords" in data:
+                domain.keywords = data["keywords"]
 
         session.commit()
         return jsonify({"id": domain.id, "name": domain.name})
