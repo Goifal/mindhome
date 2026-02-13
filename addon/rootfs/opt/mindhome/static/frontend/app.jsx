@@ -1343,9 +1343,9 @@ const DomainsPage = () => {
                             )}
                             {/* Capability badges */}
                             {controlBadges.length > 0 && (
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginTop: 12 }}>
+                                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center', marginTop: 12 }}>
                                     {controlBadges.slice(0, 5).map((b, i) => (
-                                        <span key={'c' + i} className="badge badge-info" style={{ fontSize: 10, padding: '2px 7px', alignSelf: 'flex-start' }}>{b.label}</span>
+                                        <span key={'c' + i} className="badge badge-info" style={{ fontSize: 10, padding: '2px 7px' }}>{b.label}</span>
                                     ))}
                                 </div>
                             )}
@@ -1353,9 +1353,9 @@ const DomainsPage = () => {
                                 <hr style={{ border: 'none', borderTop: '1px solid var(--border-color)', margin: '8px 0' }} />
                             )}
                             {sensorBadges.length > 0 && (
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginTop: controlBadges.length > 0 ? 0 : 12 }}>
+                                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center', marginTop: controlBadges.length > 0 ? 0 : 12 }}>
                                     {sensorBadges.slice(0, 5).map((b, i) => (
-                                        <span key={'s' + i} className="badge badge-success" style={{ fontSize: 10, padding: '2px 7px', alignSelf: 'flex-start' }}>{b.label}</span>
+                                        <span key={'s' + i} className="badge badge-success" style={{ fontSize: 10, padding: '2px 7px' }}>{b.label}</span>
                                     ))}
                                 </div>
                             )}
