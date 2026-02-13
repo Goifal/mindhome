@@ -469,6 +469,8 @@ class StateLogger:
                 return  # Skip: device not imported into MindHome
 
             device_id = device.id
+            device_room_id = device.room_id
+            device_domain_id = device.domain_id
 
             # Build context
             ctx = self.context_builder.build()
@@ -477,21 +479,23 @@ class StateLogger:
             old_attrs_slim = self._slim_attributes(old_state_obj.get("attributes", {})) if old_state_obj else None
             new_attrs_slim = self._slim_attributes(new_attrs)
 
-            # Create state history entry
-            entry = StateHistory(
-                device_id=device_id,
-                entity_id=entity_id,
-                old_state=old_state,
-                new_state=new_state,
-                old_attributes=old_attrs_slim,
-                new_attributes=new_attrs_slim,
-                context=ctx,
-            )
-            session.add(entry)
+            # Use no_autoflush to prevent premature flush when querying DataCollection
+            with session.no_autoflush:
+                # Create state history entry
+                entry = StateHistory(
+                    device_id=device_id,
+                    entity_id=entity_id,
+                    old_state=old_state,
+                    new_state=new_state,
+                    old_attributes=old_attrs_slim,
+                    new_attributes=new_attrs_slim,
+                    context=ctx,
+                )
+                session.add(entry)
 
-            # A3: Update DataCollection tracking
-            if device and device.domain_id and device.room_id:
-                self._update_data_collection(session, device)
+                # A3: Update DataCollection tracking
+                if device_room_id and device_domain_id:
+                    self._update_data_collection(session, device_room_id, device_domain_id)
 
             session.commit()
             self._event_timestamps.append(now)
@@ -535,12 +539,12 @@ class StateLogger:
                 result[k] = attrs[k]
         return result if result else None
 
-    def _update_data_collection(self, session, device):
+    def _update_data_collection(self, session, room_id, domain_id):
         """A3: Update DataCollection tracking for transparency dashboard."""
         try:
             dc = session.query(DataCollection).filter_by(
-                room_id=device.room_id,
-                domain_id=device.domain_id,
+                room_id=room_id,
+                domain_id=domain_id,
                 data_type="state_changes"
             ).first()
 
@@ -550,8 +554,8 @@ class StateLogger:
                 dc.last_record_at = now
             else:
                 dc = DataCollection(
-                    room_id=device.room_id,
-                    domain_id=device.domain_id,
+                    room_id=room_id,
+                    domain_id=domain_id,
                     data_type="state_changes",
                     record_count=1,
                     first_record_at=now,
@@ -660,11 +664,13 @@ class PatternDetector:
     def run_full_analysis(self):
         """B6: Run complete pattern analysis (called by scheduler)."""
         logger.info("Starting pattern analysis...")
-        session = self.Session()
+
+        # Phase 1: Read events into memory, then close read session immediately
+        # to avoid holding SQLite locks during long-running analysis
+        read_session = self.Session()
         try:
-            # Only analyze last 14 days of data, only MindHome-assigned devices
             cutoff = datetime.now(timezone.utc) - timedelta(days=14)
-            events = session.query(StateHistory).filter(
+            events = read_session.query(StateHistory).filter(
                 StateHistory.created_at >= cutoff,
                 StateHistory.device_id.isnot(None)
             ).order_by(StateHistory.created_at.asc()).all()
@@ -673,16 +679,24 @@ class PatternDetector:
                 logger.info(f"Only {len(events)} events, need at least 20 for analysis")
                 return
 
-            logger.info(f"Analyzing {len(events)} events from last 14 days")
+            # Detach events from session so they can be used after close
+            for ev in events:
+                read_session.expunge(ev)
 
-            # Load exclusions to filter patterns
             from models import PatternExclusion
-            exclusions = session.query(PatternExclusion).all()
+            exclusions = read_session.query(PatternExclusion).all()
             excluded_pairs = set()
             for e in exclusions:
                 excluded_pairs.add((e.entity_a, e.entity_b))
                 excluded_pairs.add((e.entity_b, e.entity_a))
+        finally:
+            read_session.close()
 
+        logger.info(f"Analyzing {len(events)} events from last 14 days")
+
+        # Phase 2: Run analysis and write results in a separate session
+        session = self.Session()
+        try:
             # B1: Time-based patterns
             time_patterns = self._detect_time_patterns(session, events)
 
