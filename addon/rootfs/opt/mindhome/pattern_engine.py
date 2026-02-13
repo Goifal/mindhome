@@ -1683,33 +1683,36 @@ class PatternScheduler:
             else:
                 total_size = 0
 
-            # Count events per room/domain and estimate size
-            counts = session.query(
-                StateHistory.device_id,
-                func.count(StateHistory.id).label("cnt")
-            ).group_by(StateHistory.device_id).all()
+            # Use no_autoflush: queries in the loop would otherwise trigger
+            # a premature flush of pending updates, hitting SQLite locks
+            with session.no_autoflush:
+                # Count events per room/domain and estimate size
+                counts = session.query(
+                    StateHistory.device_id,
+                    func.count(StateHistory.id).label("cnt")
+                ).group_by(StateHistory.device_id).all()
 
-            total_events = sum(c.cnt for c in counts)
-            if total_events == 0:
-                return
+                total_events = sum(c.cnt for c in counts)
+                if total_events == 0:
+                    return
 
-            for row in counts:
-                if not row.device_id:
-                    continue
-                device = session.get(Device, row.device_id)
-                if not device or not device.room_id:
-                    continue
+                for row in counts:
+                    if not row.device_id:
+                        continue
+                    device = session.get(Device, row.device_id)
+                    if not device or not device.room_id:
+                        continue
 
-                dc = session.query(DataCollection).filter_by(
-                    room_id=device.room_id,
-                    domain_id=device.domain_id,
-                    data_type="state_changes"
-                ).first()
+                    dc = session.query(DataCollection).filter_by(
+                        room_id=device.room_id,
+                        domain_id=device.domain_id,
+                        data_type="state_changes"
+                    ).first()
 
-                if dc:
-                    # Proportional size estimate
-                    dc.storage_size_bytes = int(total_size * (row.cnt / total_events))
-                    dc.record_count = row.cnt
+                    if dc:
+                        # Proportional size estimate
+                        dc.storage_size_bytes = int(total_size * (row.cnt / total_events))
+                        dc.record_count = row.cnt
 
             session.commit()
 
