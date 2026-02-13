@@ -497,14 +497,24 @@ class StateLogger:
             self._event_timestamps.append(now)
             logger.debug(f"Logged: {entity_id} {old_state} → {new_state}")
 
-            # B.4: Check manual rules
-            self._check_manual_rules(session, entity_id, new_state, ctx)
-
         except Exception as e:
             session.rollback()
             logger.error(f"State log error: {e}")
         finally:
             session.close()
+
+        # B.4: Check manual rules in separate session to avoid SQLite lock contention
+        try:
+            session2 = self.Session()
+            try:
+                self._check_manual_rules(session2, entity_id, new_state, ctx)
+            except Exception as e:
+                session2.rollback()
+                logger.warning(f"Manual rule check error: {e}")
+            finally:
+                session2.close()
+        except Exception:
+            pass
 
     def _slim_attributes(self, attrs):
         """Keep only relevant attributes for learning, not full HA dump."""
