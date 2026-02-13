@@ -854,3 +854,41 @@ def api_delete_calendar_event():
     except Exception as e:
         logger.warning(f"Delete calendar event error: {e}")
         return jsonify({"error": str(e)}), 500
+
+
+@schedules_bp.route("/api/calendar/shift-sync", methods=["GET"])
+def api_get_shift_sync_config():
+    """Get shift-to-calendar sync configuration."""
+    raw = get_setting("shift_calendar_sync")
+    if raw:
+        config = json.loads(raw)
+    else:
+        config = {"enabled": False, "calendar_entity": "", "sync_days": 30}
+    return jsonify(config)
+
+
+@schedules_bp.route("/api/calendar/shift-sync", methods=["PUT"])
+def api_update_shift_sync_config():
+    """Update shift-to-calendar sync configuration."""
+    data = request.json or {}
+    config = {
+        "enabled": bool(data.get("enabled", False)),
+        "calendar_entity": data.get("calendar_entity", "").strip(),
+        "sync_days": min(max(int(data.get("sync_days", 30)), 7), 90),
+    }
+    set_setting("shift_calendar_sync", json.dumps(config))
+    audit_log("shift_sync_config_update", config)
+    return jsonify({"success": True, **config})
+
+
+@schedules_bp.route("/api/calendar/shift-sync/run", methods=["POST"])
+def api_run_shift_sync_now():
+    """Trigger an immediate shift-to-calendar sync."""
+    scheduler = _deps.get("automation_scheduler")
+    if scheduler:
+        try:
+            scheduler._shift_calendar_sync_task()
+            return jsonify({"success": True, "message": "Sync completed"})
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+    return jsonify({"error": "Scheduler not available"}), 503

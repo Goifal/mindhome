@@ -3449,6 +3449,107 @@ const CalendarSyncConfig = ({ lang, showToast, onEventsLoaded }) => {
     );
 };
 
+const ShiftCalendarSync = ({ lang, showToast }) => {
+    const [calendars, setCalendars] = useState([]);
+    const [config, setConfig] = useState({ enabled: false, calendar_entity: '', sync_days: 30 });
+    const [loading, setLoading] = useState(true);
+    const [saving, setSaving] = useState(false);
+    const [syncing, setSyncing] = useState(false);
+
+    useEffect(() => {
+        Promise.all([
+            api.get('calendar/ha-sources'),
+            api.get('calendar/shift-sync'),
+        ]).then(([sourcesR, configR]) => {
+            if (sourcesR?.sources) setCalendars(sourcesR.sources);
+            if (configR && !configR._error) setConfig(configR);
+            setLoading(false);
+        });
+    }, []);
+
+    const saveConfig = async (newConfig) => {
+        setSaving(true);
+        const r = await api.put('calendar/shift-sync', newConfig);
+        setSaving(false);
+        if (r?.success) {
+            setConfig(newConfig);
+            showToast(lang === 'de' ? 'Schicht-Sync gespeichert' : 'Shift sync saved', 'success');
+        } else {
+            showToast(r?.error || 'Error', 'error');
+        }
+    };
+
+    const runNow = async () => {
+        setSyncing(true);
+        const r = await api.post('calendar/shift-sync/run');
+        setSyncing(false);
+        if (r?.success) {
+            showToast(lang === 'de' ? 'Schichten synchronisiert' : 'Shifts synced', 'success');
+        } else {
+            showToast(r?.error || 'Error', 'error');
+        }
+    };
+
+    if (loading) return null;
+
+    return (
+        <div className="card animate-in" style={{ marginTop: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center' }}>
+                    <span className="mdi mdi-calendar-sync" style={{ marginRight: 8, color: 'var(--accent-primary)', fontSize: 20 }} />
+                    <span style={{ fontWeight: 600 }}>{lang === 'de' ? 'Schichten in HA-Kalender schreiben' : 'Sync Shifts to HA Calendar'}</span>
+                </div>
+                <label className="toggle">
+                    <input type="checkbox" checked={config.enabled}
+                        onChange={e => saveConfig({ ...config, enabled: e.target.checked })} />
+                    <span className="toggle-slider"></span>
+                </label>
+            </div>
+            <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: config.enabled ? 12 : 0 }}>
+                {lang === 'de'
+                    ? 'Schichtplan-Eintraege automatisch in deinen HA-Kalender (z.B. Google Calendar) schreiben. Laeuft alle 6 Stunden.'
+                    : 'Automatically write shift schedule entries to your HA calendar (e.g. Google Calendar). Runs every 6 hours.'}
+            </p>
+            {config.enabled && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    <div>
+                        <label className="input-label">{lang === 'de' ? 'Ziel-Kalender' : 'Target Calendar'}</label>
+                        {calendars.length === 0 ? (
+                            <div style={{ fontSize: 12, color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                                {lang === 'de' ? 'Keine Kalender gefunden.' : 'No calendars found.'}
+                            </div>
+                        ) : (
+                            <CustomSelect
+                                options={calendars.map(c => ({ value: c.entity_id, label: c.name || c.entity_id }))}
+                                value={config.calendar_entity}
+                                onChange={v => saveConfig({ ...config, calendar_entity: v })}
+                            />
+                        )}
+                    </div>
+                    <div>
+                        <label className="input-label">{lang === 'de' ? 'Tage im Voraus' : 'Days ahead'}</label>
+                        <CustomSelect
+                            options={[
+                                { value: '7', label: '7' }, { value: '14', label: '14' },
+                                { value: '30', label: '30' }, { value: '60', label: '60' },
+                                { value: '90', label: '90' },
+                            ]}
+                            value={String(config.sync_days)}
+                            onChange={v => saveConfig({ ...config, sync_days: parseInt(v) })}
+                        />
+                    </div>
+                    <button className="btn btn-secondary" onClick={runNow} disabled={syncing || !config.calendar_entity}>
+                        <span className="mdi mdi-sync" style={{ marginRight: 6 }} />
+                        {syncing
+                            ? (lang === 'de' ? 'Wird synchronisiert...' : 'Syncing...')
+                            : (lang === 'de' ? 'Jetzt synchronisieren' : 'Sync now')}
+                    </button>
+                </div>
+            )}
+        </div>
+    );
+};
+
 const CalendarEventCreator = ({ lang, showToast, syncedIds }) => {
     const [calendars, setCalendars] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -7079,6 +7180,7 @@ const PresencePage = () => {
                 <div>
                     <PresenceCalendar lang={lang} showToast={showToast} schedules={schedules} holidays={holidays} shiftTemplates={shiftTemplates} syncedEvents={syncedEvents} />
                     <CalendarEventCreator lang={lang} showToast={showToast} syncedIds={syncedEvents} />
+                    <ShiftCalendarSync lang={lang} showToast={showToast} />
                     <CalendarSyncConfig lang={lang} showToast={showToast} onEventsLoaded={setSyncedEvents} />
                     <CalendarTriggersConfig lang={lang} showToast={showToast} />
                 </div>
