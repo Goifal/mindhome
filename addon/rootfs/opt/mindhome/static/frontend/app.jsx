@@ -1342,14 +1342,18 @@ const DomainsPage = () => {
                                 <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 10, lineHeight: 1.4 }}>{domain.description}</div>
                             )}
                             {/* Capability badges */}
-                            {(controlBadges.length > 0 || sensorBadges.length > 0) && (
+                            {controlBadges.length > 0 && (
                                 <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center', marginTop: 12 }}>
                                     {controlBadges.slice(0, 5).map((b, i) => (
                                         <span key={'c' + i} className="badge badge-info" style={{ fontSize: 10, padding: '2px 7px' }}>{b.label}</span>
                                     ))}
-                                    {controlBadges.length > 0 && sensorBadges.length > 0 && (
-                                        <span style={{ display: 'inline-block', width: 2, height: 16, background: 'var(--text-muted)', margin: '0 4px', borderRadius: 1, opacity: 0.4, flexShrink: 0 }} />
-                                    )}
+                                </div>
+                            )}
+                            {controlBadges.length > 0 && sensorBadges.length > 0 && (
+                                <hr style={{ border: 'none', borderTop: '1px solid var(--border-color)', margin: '8px 0' }} />
+                            )}
+                            {sensorBadges.length > 0 && (
+                                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center', marginTop: controlBadges.length > 0 ? 0 : 12 }}>
                                     {sensorBadges.slice(0, 5).map((b, i) => (
                                         <span key={'s' + i} className="badge badge-success" style={{ fontSize: 10, padding: '2px 7px' }}>{b.label}</span>
                                     ))}
