@@ -1308,7 +1308,7 @@ const DomainsPage = () => {
                                         background: domain.is_enabled ? 'var(--accent-primary-dim)' : 'var(--bg-tertiary)',
                                         color: domain.is_enabled ? 'var(--accent-primary)' : 'var(--text-muted)'
                                     }}>
-                                        <span className={`mdi ${domain.icon}`} />
+                                        <span className={`mdi ${(domain.icon || 'mdi-puzzle').replace('mdi:', 'mdi-')}`} />
                                     </div>
                                     <div>
                                         <div className="card-title">{domain.display_name}</div>
