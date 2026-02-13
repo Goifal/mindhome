@@ -131,14 +131,43 @@ def create_default_domains(session):
             "description_de": "Photovoltaik, Erzeugung, Eigenverbrauch, Einspeisung",
             "description_en": "Photovoltaics, generation, self-consumption, feed-in"
         },
+        {
+            "name": "bed_occupancy",
+            "display_name_de": "Bettbelegung",
+            "display_name_en": "Bed Occupancy",
+            "icon": "mdi:bed",
+            "description_de": "Bettbelegungssensoren, Schlaftracking",
+            "description_en": "Bed occupancy sensors, sleep tracking"
+        },
+        {
+            "name": "seat_occupancy",
+            "display_name_de": "Sitzbelegung",
+            "display_name_en": "Seat Occupancy",
+            "icon": "mdi:seat",
+            "description_de": "Sitzbelegungssensoren fuer Sofa, Stuhl, etc.",
+            "description_en": "Seat occupancy sensors for sofa, chair, etc."
+        },
+        {
+            "name": "vacuum",
+            "display_name_de": "Saugroboter",
+            "display_name_en": "Robot Vacuum",
+            "icon": "mdi:robot-vacuum",
+            "description_de": "Saugroboter, automatische Reinigung",
+            "description_en": "Robot vacuums, automatic cleaning"
+        },
     ]
 
+    created = 0
     for domain_data in domains:
+        existing = session.query(Domain).filter_by(name=domain_data["name"]).first()
+        if existing:
+            continue
         domain = Domain(**domain_data)
         session.add(domain)
+        created += 1
 
     session.commit()
-    print(f"Created {len(domains)} domains.")
+    print(f"Created {created} domains ({len(domains) - created} already existed).")
 
 
 def create_default_quick_actions(session):

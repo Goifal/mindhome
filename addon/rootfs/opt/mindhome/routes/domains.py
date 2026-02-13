@@ -179,8 +179,12 @@ def api_delete_domain(domain_id):
         for d in devices:
             d.domain_id = default_domain.id if default_domain else 1
 
-        # Remove room domain states
+        # Remove all FK references to this domain
         session.query(RoomDomainState).filter_by(domain_id=domain_id).delete()
+        session.query(LearnedPattern).filter_by(domain_id=domain_id).delete()
+        session.query(ActionLog).filter_by(domain_id=domain_id).delete()
+        session.query(AnomalySetting).filter_by(domain_id=domain_id).delete()
+        session.query(DataCollection).filter_by(domain_id=domain_id).delete()
 
         session.delete(domain)
         session.commit()
