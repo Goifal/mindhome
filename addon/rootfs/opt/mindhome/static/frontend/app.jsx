@@ -3262,6 +3262,119 @@ const CalendarTriggersConfig = ({ lang, showToast }) => {
     );
 };
 
+const CalendarSyncConfig = ({ lang, showToast, onEventsLoaded }) => {
+    const [sources, setSources] = useState([]);
+    const [syncedIds, setSyncedIds] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [exportUrl, setExportUrl] = useState('');
+    const [copied, setCopied] = useState(false);
+
+    useEffect(() => {
+        (async () => {
+            const r = await api.get('calendar/ha-sources');
+            if (r) { setSources(r.sources || []); setSyncedIds(r.synced_ids || []); }
+            setLoading(false);
+            // Build export URL
+            setExportUrl(`${window.location.origin}/api/calendar/export.ics`);
+        })();
+    }, []);
+
+    useEffect(() => {
+        if (syncedIds.length === 0) { onEventsLoaded?.([]); return; }
+        const now = new Date();
+        const start = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString();
+        const end = new Date(now.getFullYear(), now.getMonth() + 2, 0).toISOString();
+        api.get(`calendar/synced-events?start=${start}&end=${end}`).then(r => {
+            onEventsLoaded?.(r?.events || []);
+        });
+    }, [syncedIds]);
+
+    const toggleSource = async (entityId) => {
+        const newIds = syncedIds.includes(entityId)
+            ? syncedIds.filter(id => id !== entityId)
+            : [...syncedIds, entityId];
+        const r = await api.put('calendar/ha-sources', { synced_ids: newIds });
+        if (r?.success) {
+            setSyncedIds(newIds);
+            showToast(lang === 'de' ? 'Kalender-Sync aktualisiert' : 'Calendar sync updated', 'success');
+        }
+    };
+
+    const copyUrl = () => {
+        navigator.clipboard?.writeText(exportUrl).then(() => {
+            setCopied(true);
+            showToast(lang === 'de' ? 'URL kopiert' : 'URL copied', 'success');
+            setTimeout(() => setCopied(false), 2000);
+        });
+    };
+
+    return (
+        <div className="card" style={{ marginBottom: 16 }}>
+            {/* Export Section */}
+            <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)' }}>
+                <div className="card-title" style={{ marginBottom: 8 }}>
+                    <span className="mdi mdi-export" style={{ marginRight: 8, color: 'var(--accent-primary)' }} />
+                    {lang === 'de' ? 'Kalender exportieren' : 'Export Calendar'}
+                </div>
+                <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8 }}>
+                    {lang === 'de'
+                        ? 'Diese URL in Google Calendar, Apple Calendar oder Outlook als Abo-Kalender eintragen.'
+                        : 'Add this URL as a subscription calendar in Google Calendar, Apple Calendar, or Outlook.'}
+                </p>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <input className="input" value={exportUrl} readOnly
+                        style={{ flex: 1, fontSize: 11, fontFamily: 'monospace', background: 'var(--bg-tertiary)' }}
+                        onClick={e => e.target.select()} />
+                    <button className="btn btn-sm btn-primary" onClick={copyUrl}>
+                        <span className={`mdi ${copied ? 'mdi-check' : 'mdi-content-copy'}`} style={{ marginRight: 4 }} />
+                        {copied ? 'OK' : (lang === 'de' ? 'Kopieren' : 'Copy')}
+                    </button>
+                </div>
+            </div>
+
+            {/* Import Section */}
+            <div style={{ padding: '12px 16px' }}>
+                <div className="card-title" style={{ marginBottom: 8 }}>
+                    <span className="mdi mdi-import" style={{ marginRight: 8, color: 'var(--accent-secondary)' }} />
+                    {lang === 'de' ? 'HA-Kalender importieren' : 'Import HA Calendars'}
+                </div>
+                <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 10 }}>
+                    {lang === 'de'
+                        ? 'Kalender aus Home Assistant in MindHome anzeigen (z.B. Google Calendar, CalDAV).'
+                        : 'Show Home Assistant calendars in MindHome (e.g., Google Calendar, CalDAV).'}
+                </p>
+                {loading ? (
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Laden...' : 'Loading...'}</div>
+                ) : sources.length === 0 ? (
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                        {lang === 'de'
+                            ? 'Keine Kalender in Home Assistant gefunden. Richte zuerst eine Kalender-Integration in HA ein (Google Calendar, CalDAV, etc.).'
+                            : 'No calendars found in Home Assistant. Set up a calendar integration in HA first (Google Calendar, CalDAV, etc.).'}
+                    </div>
+                ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        {sources.map(s => (
+                            <label key={s.entity_id} style={{
+                                display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px',
+                                borderRadius: 6, cursor: 'pointer', fontSize: 13,
+                                background: syncedIds.includes(s.entity_id) ? 'var(--accent-primary-dim)' : 'var(--bg-tertiary)',
+                                border: syncedIds.includes(s.entity_id) ? '1px solid var(--accent-primary)' : '1px solid var(--border-color)',
+                            }}>
+                                <input type="checkbox" checked={syncedIds.includes(s.entity_id)}
+                                    onChange={() => toggleSource(s.entity_id)} />
+                                <div>
+                                    <div style={{ fontWeight: 500 }}>{s.name}</div>
+                                    <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{s.entity_id}</div>
+                                </div>
+                            </label>
+                        ))}
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+};
+
 const DeviceAnomalyConfig = ({ lang }) => {
     const { devices, rooms } = useApp();
     const [search, setSearch] = useState('');
@@ -5986,7 +6099,7 @@ const ScenesPage = () => {
 // ================================================================
 // Phase 3: Presence Calendar (Month View)
 // ================================================================
-const PresenceCalendar = ({ lang, showToast, schedules, holidays, shiftTemplates }) => {
+const PresenceCalendar = ({ lang, showToast, schedules, holidays, shiftTemplates, syncedEvents }) => {
     const [viewDate, setViewDate] = useState(new Date());
     const [editDay, setEditDay] = useState(null);
     const [dayShift, setDayShift] = useState('');
@@ -6047,6 +6160,22 @@ const PresenceCalendar = ({ lang, showToast, schedules, holidays, shiftTemplates
             }
         }
     });
+    // Synced calendar events
+    const eventsByDate = {};
+    (syncedEvents || []).forEach(ev => {
+        const d = (ev.start || '').substring(0, 10);
+        if (d) {
+            if (!eventsByDate[d]) eventsByDate[d] = [];
+            eventsByDate[d].push(ev);
+        }
+    });
+    Object.entries(eventsByDate).forEach(([ds, evts]) => {
+        if (!dateInfo[ds]) {
+            dateInfo[ds] = { type: 'event', name: evts[0].summary, color: '#2196F3', events: evts };
+        } else {
+            dateInfo[ds].events = evts;
+        }
+    });
 
     const handleDayClick = (day) => {
         if (!day) return;
@@ -6096,6 +6225,14 @@ const PresenceCalendar = ({ lang, showToast, schedules, holidays, shiftTemplates
                                         {info.type === 'shift' ? info.code : info.name}
                                     </div>
                                 )}
+                                {info?.events && (
+                                    <div style={{ display: 'flex', justifyContent: 'center', gap: 2, marginTop: 1 }}>
+                                        {info.events.slice(0, 3).map((ev, ei) => (
+                                            <span key={ei} style={{ width: 5, height: 5, borderRadius: '50%', background: '#2196F3', display: 'inline-block' }}
+                                                title={ev.summary} />
+                                        ))}
+                                    </div>
+                                )}
                             </div>
                         );
                     })}
@@ -6112,6 +6249,12 @@ const PresenceCalendar = ({ lang, showToast, schedules, holidays, shiftTemplates
                         <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11 }}>
                             <span style={{ width: 10, height: 10, borderRadius: 2, background: '#E91E63', display: 'inline-block' }} />
                             <span>{lang === 'de' ? 'Feiertag' : 'Holiday'}</span>
+                        </div>
+                    )}
+                    {(syncedEvents || []).length > 0 && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11 }}>
+                            <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#2196F3', display: 'inline-block' }} />
+                            <span>{lang === 'de' ? 'Kalender-Event' : 'Calendar Event'}</span>
                         </div>
                     )}
                 </div>
@@ -6193,6 +6336,8 @@ const PresencePage = () => {
     const [holidays, setHolidays] = useState([]);
     const [showAddHoliday, setShowAddHoliday] = useState(false);
     const [newHoliday, setNewHoliday] = useState({ name: '', date: '', is_recurring: false, region: 'AT' });
+    // Synced calendar events
+    const [syncedEvents, setSyncedEvents] = useState([]);
     // Log
     const [logs, setLogs] = useState([]);
     const [logsHasMore, setLogsHasMore] = useState(false);
@@ -6712,10 +6857,11 @@ const PresencePage = () => {
                 </div>
             )}
 
-            {/* TAB: Calendar Triggers */}
+            {/* TAB: Calendar */}
             {tab === 'calendar' && (
                 <div>
-                    <PresenceCalendar lang={lang} showToast={showToast} schedules={schedules} holidays={holidays} shiftTemplates={shiftTemplates} />
+                    <PresenceCalendar lang={lang} showToast={showToast} schedules={schedules} holidays={holidays} shiftTemplates={shiftTemplates} syncedEvents={syncedEvents} />
+                    <CalendarSyncConfig lang={lang} showToast={showToast} onEventsLoaded={setSyncedEvents} />
                     <CalendarTriggersConfig lang={lang} showToast={showToast} />
                 </div>
             )}
