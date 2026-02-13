@@ -198,15 +198,8 @@ def api_current_presence_mode():
         current = _deps.get("automation_scheduler").presence_mgr.get_current_mode()
         if current:
             return jsonify(current)
-        # Fallback: ersten System-Modus laden statt "Unbekannt"
-        session = get_db()
-        try:
-            default = session.query(PresenceMode).filter_by(is_system=True, is_active=True).order_by(PresenceMode.priority.asc()).first()
-            if default:
-                return jsonify({"id": default.id, "name_de": default.name_de, "name_en": default.name_en, "icon": default.icon, "color": default.color, "since": None, "is_default": True})
-        finally:
-            session.close()
-        return jsonify({"name_de": "Kein Modus", "name_en": "No mode", "icon": "mdi-help-circle", "color": "#9E9E9E", "since": None, "is_default": True})
+        # Fallback: no log exists yet - return placeholder without auto-selecting
+        return jsonify({"name_de": "Erkennung laeuft...", "name_en": "Detecting...", "icon": "mdi-crosshairs-question", "color": "#9E9E9E", "since": None, "is_default": True})
     except Exception as e:
         return jsonify({"error": str(e)})
 
@@ -334,8 +327,9 @@ def api_presence_auto_detect():
         if current and current.mode_name == target_name:
             return jsonify({"changed": False, "mode": target_name, "home_count": home_count})
 
-        # Switch mode: write PresenceLog
+        # Switch mode: write PresenceLog with mode_id
         log_entry = PresenceLog(
+            mode_id=target_mode.id,
             mode_name=target_name,
             trigger="auto_detect",
         )

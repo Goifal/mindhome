@@ -1353,13 +1353,24 @@ class PresenceModeManager:
             # Search recent PresenceLogs for a valid mode
             recent_logs = session.query(PresenceLog).order_by(PresenceLog.created_at.desc()).limit(10).all()
             for log_entry in recent_logs:
+                mode = None
                 if log_entry.mode_id:
                     mode = session.get(PresenceMode, log_entry.mode_id)
-                    if mode:
-                        return {
-                            "id": mode.id, "name_de": mode.name_de, "name_en": mode.name_en,
-                            "icon": mode.icon, "color": mode.color, "since": log_entry.created_at.isoformat(),
-                        }
+                elif log_entry.mode_name:
+                    # Fallback: lookup by name (for auto_detect logs without mode_id)
+                    mode = session.query(PresenceMode).filter_by(name_de=log_entry.mode_name).first()
+                    if mode and not log_entry.mode_id:
+                        # Back-fill mode_id for future lookups
+                        log_entry.mode_id = mode.id
+                        try:
+                            session.commit()
+                        except Exception:
+                            session.rollback()
+                if mode:
+                    return {
+                        "id": mode.id, "name_de": mode.name_de, "name_en": mode.name_en,
+                        "icon": mode.icon, "color": mode.color, "since": log_entry.created_at.isoformat(),
+                    }
             return None
         finally:
             session.close()

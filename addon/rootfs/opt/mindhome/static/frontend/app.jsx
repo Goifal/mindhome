@@ -6695,14 +6695,14 @@ const PresencePage = () => {
         }
     }, [modes]);
 
-    // Auto-select first mode if none is active (run only once)
+    // Trigger auto-detect on startup if no mode is active yet (run only once)
     const autoSelectDone = useRef(false);
     useEffect(() => {
         if (autoSelectDone.current) return;
         if (modes.length > 0 && (!current || !current.id)) {
             autoSelectDone.current = true;
-            const zuhause = modes.find(m => m.name_de === 'Zuhause') || modes[0];
-            if (zuhause) activateMode(zuhause.id);
+            // Trigger HA-based auto-detection instead of hardcoding "Zuhause"
+            api.post('presence/auto-detect').then(() => load()).catch(() => {});
         }
     }, [modes, current]);
 
