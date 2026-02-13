@@ -1083,6 +1083,16 @@ class PatternDetector:
     # B2: Sequence patterns (event chains)
     # --------------------------------------------------------------------------
 
+    # HA domains that produce purely numeric/measurement data - not useful
+    # as automation triggers or actions in sequence patterns
+    _SENSOR_ONLY_DOMAINS = frozenset({"sensor", "weather", "number"})
+
+    def _is_same_domain_sensor_pair(self, entity_a, entity_b):
+        """Check if both entities are sensor-only domains (no actionable patterns)."""
+        domain_a = entity_a.split(".")[0]
+        domain_b = entity_b.split(".")[0]
+        return domain_a in self._SENSOR_ONLY_DOMAINS and domain_b in self._SENSOR_ONLY_DOMAINS
+
     def _detect_sequence_patterns(self, session, events):
         """Find A→B event chains (within time window)."""
         patterns_found = []
@@ -1102,6 +1112,9 @@ class PatternDetector:
                 if delta < 2:  # Ignore near-simultaneous (likely same automation)
                     continue
                 if ev_a.entity_id == ev_b.entity_id:
+                    continue
+                # Skip sensor→sensor pairs (numeric correlations, not actionable)
+                if self._is_same_domain_sensor_pair(ev_a.entity_id, ev_b.entity_id):
                     continue
 
                 key = (

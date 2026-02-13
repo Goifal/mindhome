@@ -5245,7 +5245,7 @@ const PatternsPage = () => {
 // ================================================================
 
 const NotificationsPage = () => {
-    const { lang, showToast, devices, users } = useApp();
+    const { lang, showToast, devices, users, rooms } = useApp();
     const [notifications, setNotifications] = useState([]);
     const [loading, setLoading] = useState(true);
     const [predictions, setPredictions] = useState([]);
@@ -5560,9 +5560,9 @@ const NotificationsPage = () => {
                             </div>
                         </CollapsibleCard>
 
-                        {/* Person Channel Assignment - Collapsible */}
+                        {/* Person Channel Assignment - Collapsible (admins + users only, no guests) */}
                         <CollapsibleCard title={lang === 'de' ? 'Personen-Zuordnung' : 'Person Assignment'} icon="mdi-account-group" defaultOpen={false}>
-                            {(users || []).map(u => (
+                            {(users || []).filter(u => u.role !== 'guest').map(u => (
                                 <div key={u.id} style={{ padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
                                     <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 4 }}>{u.name}</div>
                                     <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
@@ -5585,15 +5585,38 @@ const NotificationsPage = () => {
                         {/* TTS - Collapsible */}
                         {ttsDevices.length > 0 && (
                             <CollapsibleCard title={`${lang === 'de' ? 'Sprachausgabe (TTS)' : 'Text-to-Speech'} · ${ttsDevices.length}`} icon="mdi-bullhorn" defaultOpen={false}>
-                                {ttsDevices.map(d => (
-                                    <div key={d.entity_id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--border)' }}>
-                                        <span style={{ fontSize: 13 }}>{d.name}</span>
-                                        <button className="btn btn-sm btn-secondary" onClick={async () => {
-                                            await api.post('tts/announce', { message: lang === 'de' ? 'Dies ist ein Test von MindHome.' : 'This is a test from MindHome.', entity_id: d.entity_id });
-                                            showToast(lang === 'de' ? 'TTS gesendet' : 'TTS sent', 'success');
-                                        }} style={{ fontSize: 11 }}><span className="mdi mdi-play" style={{ marginRight: 2 }} />Test</button>
-                                    </div>
-                                ))}
+                                <p style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8 }}>
+                                    {lang === 'de' ? 'Weise jedem Lautsprecher einen Raum zu, damit TTS-Benachrichtigungen gezielt gesendet werden können.' : 'Assign each speaker to a room for targeted TTS notifications.'}
+                                </p>
+                                {ttsDevices.map(d => {
+                                    const assignedRoom = extSettings?.tts_room_assignments?.[d.entity_id] || '';
+                                    return (
+                                        <div key={d.entity_id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
+                                            <div style={{ flex: 1, minWidth: 0 }}>
+                                                <div style={{ fontSize: 13, fontWeight: 500 }}>{d.name}</div>
+                                                <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{d.entity_id}</div>
+                                            </div>
+                                            <select className="input" value={assignedRoom}
+                                                onChange={async (e) => {
+                                                    const roomId = e.target.value ? parseInt(e.target.value) : null;
+                                                    const assignments = { ...(extSettings?.tts_room_assignments || {}) };
+                                                    if (roomId) { assignments[d.entity_id] = roomId; } else { delete assignments[d.entity_id]; }
+                                                    setExtSettings(prev => ({ ...prev, tts_room_assignments: assignments }));
+                                                    await api.put('notification-settings/extended', { tts_room_assignments: assignments });
+                                                }}
+                                                style={{ width: 'auto', fontSize: 11, padding: '4px 8px', minWidth: 120 }}>
+                                                <option value="">{lang === 'de' ? '-- Kein Raum --' : '-- No Room --'}</option>
+                                                {(rooms || []).map(r => (
+                                                    <option key={r.id} value={r.id}>{r.name}</option>
+                                                ))}
+                                            </select>
+                                            <button className="btn btn-sm btn-secondary" onClick={async () => {
+                                                await api.post('tts/announce', { message: lang === 'de' ? 'Dies ist ein Test von MindHome.' : 'This is a test from MindHome.', entity_id: d.entity_id });
+                                                showToast(lang === 'de' ? 'TTS gesendet' : 'TTS sent', 'success');
+                                            }} style={{ fontSize: 11, flexShrink: 0 }}><span className="mdi mdi-play" style={{ marginRight: 2 }} />Test</button>
+                                        </div>
+                                    );
+                                })}
                             </CollapsibleCard>
                         )}
 
@@ -6556,10 +6579,11 @@ const ScenesPage = () => {
 // ================================================================
 // Phase 3: Presence Calendar (Month View)
 // ================================================================
-const PresenceCalendar = ({ lang, showToast, schedules, holidays, shiftTemplates, syncedEvents }) => {
+const PresenceCalendar = ({ lang, showToast, schedules, holidays, shiftTemplates, syncedEvents, onEventDeleted }) => {
     const [viewDate, setViewDate] = useState(new Date());
     const [editDay, setEditDay] = useState(null);
     const [dayShift, setDayShift] = useState('');
+    const [deletingUid, setDeletingUid] = useState(null);
 
     const year = viewDate.getFullYear();
     const month = viewDate.getMonth();
@@ -6646,6 +6670,22 @@ const PresenceCalendar = ({ lang, showToast, schedules, holidays, shiftTemplates
         setEditDay(null);
     };
 
+    const handleDeleteEvent = async (ev) => {
+        if (!ev.uid || !ev.calendar_entity) {
+            showToast(lang === 'de' ? 'Event kann nicht gelöscht werden (keine UID)' : 'Cannot delete event (no UID)', 'error');
+            return;
+        }
+        setDeletingUid(ev.uid);
+        const r = await api.delete('calendar/events', { entity_id: ev.calendar_entity, uid: ev.uid });
+        setDeletingUid(null);
+        if (r?.success) {
+            showToast(lang === 'de' ? 'Termin gelöscht' : 'Event deleted', 'success');
+            onEventDeleted?.();
+        } else {
+            showToast(r?.error || (lang === 'de' ? 'Fehler beim Löschen' : 'Delete failed'), 'error');
+        }
+    };
+
     return (
         <div className="card animate-in" style={{ marginBottom: 16 }}>
             <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -6719,9 +6759,51 @@ const PresenceCalendar = ({ lang, showToast, schedules, holidays, shiftTemplates
 
             {editDay && (
                 <Modal title={`${editDay}`} onClose={() => setEditDay(null)}
-                    actions={<><button className="btn btn-secondary" onClick={() => setEditDay(null)}>{lang === 'de' ? 'Abbrechen' : 'Cancel'}</button>
+                    actions={<><button className="btn btn-secondary" onClick={() => setEditDay(null)}>{lang === 'de' ? 'Schließen' : 'Close'}</button>
                         <button className="btn btn-primary" onClick={handleSaveDay}>{lang === 'de' ? 'Speichern' : 'Save'}</button></>}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                        {/* Calendar events for this day */}
+                        {dateInfo[editDay]?.events?.length > 0 && (
+                            <div>
+                                <label style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 6, display: 'block' }}>
+                                    {lang === 'de' ? 'Kalender-Termine' : 'Calendar Events'}
+                                </label>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                    {dateInfo[editDay].events.map((ev, i) => (
+                                        <div key={i} style={{
+                                            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                            padding: '8px 12px', borderRadius: 6,
+                                            background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)',
+                                        }}>
+                                            <div style={{ flex: 1, minWidth: 0 }}>
+                                                <div style={{ fontSize: 13, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                    <span className="mdi mdi-calendar" style={{ marginRight: 6, color: '#2196F3', fontSize: 14 }} />
+                                                    {ev.summary}
+                                                </div>
+                                                {ev.start && (
+                                                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                                                        {ev.all_day
+                                                            ? (lang === 'de' ? 'Ganztägig' : 'All day')
+                                                            : `${(ev.start || '').substring(11, 16)} - ${(ev.end || '').substring(11, 16)}`}
+                                                        {ev.location ? ` · ${ev.location}` : ''}
+                                                    </div>
+                                                )}
+                                            </div>
+                                            {ev.uid && (
+                                                <button className="btn btn-sm"
+                                                    disabled={deletingUid === ev.uid}
+                                                    onClick={() => handleDeleteEvent(ev)}
+                                                    style={{ marginLeft: 8, color: 'var(--danger)', flexShrink: 0 }}
+                                                    title={lang === 'de' ? 'Termin löschen' : 'Delete event'}>
+                                                    <span className={`mdi ${deletingUid === ev.uid ? 'mdi-loading mdi-spin' : 'mdi-delete-outline'}`} />
+                                                </button>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                        {/* Shift assignment */}
                         <label style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Schicht/Feiertag zuweisen' : 'Assign shift/holiday'}</label>
                         <CustomSelect
                             options={[
@@ -6732,7 +6814,7 @@ const PresenceCalendar = ({ lang, showToast, schedules, holidays, shiftTemplates
                             value={dayShift}
                             onChange={v => setDayShift(v)}
                         />
-                        {dateInfo[editDay] && (
+                        {dateInfo[editDay] && dateInfo[editDay].type !== 'event' && (
                             <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
                                 {lang === 'de' ? 'Aktuell:' : 'Current:'} <strong style={{ color: dateInfo[editDay].color }}>{dateInfo[editDay].name}</strong>
                             </div>
@@ -6795,6 +6877,14 @@ const PresencePage = () => {
     const [newHoliday, setNewHoliday] = useState({ name: '', date: '', is_recurring: false, region: 'AT' });
     // Synced calendar events
     const [syncedEvents, setSyncedEvents] = useState([]);
+    const reloadSyncedEvents = () => {
+        const now = new Date();
+        const start = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString();
+        const end = new Date(now.getFullYear(), now.getMonth() + 2, 0).toISOString();
+        api.get(`calendar/synced-events?start=${start}&end=${end}`).then(r => {
+            setSyncedEvents(r?.events || []);
+        });
+    };
     // Log
     const [logs, setLogs] = useState([]);
     const [logsHasMore, setLogsHasMore] = useState(false);
@@ -7317,7 +7407,7 @@ const PresencePage = () => {
             {/* TAB: Calendar */}
             {tab === 'calendar' && (
                 <div>
-                    <PresenceCalendar lang={lang} showToast={showToast} schedules={schedules} holidays={holidays} shiftTemplates={shiftTemplates} syncedEvents={syncedEvents} />
+                    <PresenceCalendar lang={lang} showToast={showToast} schedules={schedules} holidays={holidays} shiftTemplates={shiftTemplates} syncedEvents={syncedEvents} onEventDeleted={reloadSyncedEvents} />
                     <CalendarEventCreator lang={lang} showToast={showToast} syncedIds={syncedEvents} />
                     <ShiftCalendarSync lang={lang} showToast={showToast} />
                     <CalendarSyncConfig lang={lang} showToast={showToast} onEventsLoaded={setSyncedEvents} />
