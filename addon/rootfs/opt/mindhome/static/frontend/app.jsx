@@ -1205,7 +1205,7 @@ const DomainsPage = () => {
                     {lang === 'de' ? 'Custom Domain' : 'Custom Domain'}
                 </button>
             </div>
-            <div className="domain-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 14, alignItems: 'stretch' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 16, alignItems: 'stretch' }}>
                 {domains.map(domain => {
                     const cap = capabilities[domain.name] || {};
                     const controlLabels = {
@@ -1224,71 +1224,62 @@ const DomainsPage = () => {
                     const sensorBadges = (cap.pattern_features || []).map(f => ({ label: f, type: 'success' }));
                     const devCount = devices.filter(d => d.domain_id === domain.id).length;
                     return (
-                        <div key={domain.id}
-                            style={{
-                                display: 'flex', flexDirection: 'row', borderRadius: 10,
-                                border: '1px solid var(--border-color)', background: 'var(--bg-secondary)',
-                                overflow: 'hidden', transition: 'all 0.2s', opacity: domain.is_enabled ? 1 : 0.6,
-                            }}>
-                            {/* Left accent bar */}
-                            <div style={{ width: 4, flexShrink: 0, background: domain.is_enabled ? 'var(--accent-primary)' : 'var(--border-color)' }} />
-                            <div style={{ flex: 1, padding: '14px 16px', minWidth: 0 }}>
-                                {/* Top row: icon+name on left, toggle+count on right */}
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1 }}>
-                                        <span className={`mdi ${domain.icon}`} style={{ fontSize: 26, color: domain.is_enabled ? 'var(--accent-primary)' : 'var(--text-muted)', flexShrink: 0 }} />
-                                        <div style={{ minWidth: 0 }}>
-                                            <div style={{ fontWeight: 600, fontSize: 15, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{domain.display_name}</div>
-                                            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{devCount} {lang === 'de' ? 'Geraete' : 'devices'}</div>
+                        <div key={domain.id} className="card" style={{ opacity: domain.is_enabled ? 1 : 0.6, transition: 'opacity 0.2s' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                                    <div className="card-icon" style={{
+                                        background: domain.is_enabled ? 'var(--accent-primary-dim)' : 'var(--bg-tertiary)',
+                                        color: domain.is_enabled ? 'var(--accent-primary)' : 'var(--text-muted)'
+                                    }}>
+                                        <span className={`mdi ${domain.icon}`} />
+                                    </div>
+                                    <div>
+                                        <div className="card-title">{domain.display_name}</div>
+                                        <div className="card-subtitle">
+                                            {devCount} {lang === 'de' ? 'Geräte' : 'devices'}
                                         </div>
                                     </div>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-                                        <label className="toggle" onClick={e => e.stopPropagation()}>
-                                            <input type="checkbox" checked={domain.is_enabled}
-                                                   onChange={() => toggleDomain(domain.id)} />
-                                            <div className="toggle-slider" />
-                                        </label>
-                                    </div>
                                 </div>
-                                {/* Description */}
-                                {domain.description && (
-                                    <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 8, lineHeight: 1.4 }}>{domain.description}</div>
-                                )}
-                                {/* Capability badges */}
-                                {(controlBadges.length > 0 || sensorBadges.length > 0) && (
-                                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
-                                        {controlBadges.slice(0, 5).map((b, i) => (
-                                            <span key={'c' + i} className="badge badge-info" style={{ fontSize: 10, padding: '2px 7px' }}>{b.label}</span>
-                                        ))}
-                                        {controlBadges.length > 0 && sensorBadges.length > 0 && (
-                                            <span style={{ display: 'inline-block', width: 2, height: 16, background: 'var(--text-muted)', margin: '0 4px', borderRadius: 1, opacity: 0.4, flexShrink: 0 }} />
-                                        )}
-                                        {sensorBadges.slice(0, 5).map((b, i) => (
-                                            <span key={'s' + i} className="badge badge-success" style={{ fontSize: 10, padding: '2px 7px' }}>{b.label}</span>
-                                        ))}
-                                    </div>
-                                )}
-                                {domain.is_custom && controlBadges.length === 0 && sensorBadges.length === 0 && devCount > 0 && (
-                                    <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
-                                        {devCount} {lang === 'de' ? 'Geraete zugewiesen' : 'devices assigned'}
-                                    </div>
-                                )}
-                                {/* Custom domain actions */}
-                                {domain.is_custom && (
-                                    <div style={{ display: 'flex', gap: 4, marginTop: 6 }}>
-                                        <button className="btn btn-ghost btn-icon" style={{ padding: 2 }}
-                                            onClick={e => { e.stopPropagation(); setEditDomain({ ...domain }); }}
-                                            title={lang === 'de' ? 'Bearbeiten' : 'Edit'}>
-                                            <span className="mdi mdi-pencil-outline" style={{ fontSize: 14, color: 'var(--accent-primary)' }} />
-                                        </button>
-                                        <button className="btn btn-ghost btn-icon" style={{ padding: 2 }}
-                                            onClick={e => { e.stopPropagation(); setConfirmDel(domain); }}
-                                            title={lang === 'de' ? 'Löschen' : 'Delete'}>
-                                            <span className="mdi mdi-delete-outline" style={{ fontSize: 14, color: 'var(--danger)' }} />
-                                        </button>
-                                    </div>
-                                )}
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                    {domain.is_custom && (
+                                        <>
+                                            <button className="btn btn-ghost btn-icon" style={{ padding: 2 }}
+                                                onClick={e => { e.stopPropagation(); setEditDomain({ ...domain }); }}
+                                                title={lang === 'de' ? 'Bearbeiten' : 'Edit'}>
+                                                <span className="mdi mdi-pencil-outline" style={{ fontSize: 16, color: 'var(--accent-primary)' }} />
+                                            </button>
+                                            <button className="btn btn-ghost btn-icon" style={{ padding: 2 }}
+                                                onClick={e => { e.stopPropagation(); setConfirmDel(domain); }}
+                                                title={lang === 'de' ? 'Löschen' : 'Delete'}>
+                                                <span className="mdi mdi-delete-outline" style={{ fontSize: 16, color: 'var(--text-muted)' }} />
+                                            </button>
+                                        </>
+                                    )}
+                                    <label className="toggle" onClick={e => e.stopPropagation()}>
+                                        <input type="checkbox" checked={domain.is_enabled}
+                                               onChange={() => toggleDomain(domain.id)} />
+                                        <div className="toggle-slider" />
+                                    </label>
+                                </div>
                             </div>
+                            {/* Description */}
+                            {domain.description && (
+                                <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 10, lineHeight: 1.4 }}>{domain.description}</div>
+                            )}
+                            {/* Capability badges */}
+                            {(controlBadges.length > 0 || sensorBadges.length > 0) && (
+                                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center', marginTop: 12 }}>
+                                    {controlBadges.slice(0, 5).map((b, i) => (
+                                        <span key={'c' + i} className="badge badge-info" style={{ fontSize: 10, padding: '2px 7px' }}>{b.label}</span>
+                                    ))}
+                                    {controlBadges.length > 0 && sensorBadges.length > 0 && (
+                                        <span style={{ display: 'inline-block', width: 2, height: 16, background: 'var(--text-muted)', margin: '0 4px', borderRadius: 1, opacity: 0.4, flexShrink: 0 }} />
+                                    )}
+                                    {sensorBadges.slice(0, 5).map((b, i) => (
+                                        <span key={'s' + i} className="badge badge-success" style={{ fontSize: 10, padding: '2px 7px' }}>{b.label}</span>
+                                    ))}
+                                </div>
+                            )}
                         </div>
                     );
                 })}
