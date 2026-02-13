@@ -230,6 +230,22 @@ DOMAIN_PLUGINS = {
         "pattern_features": ["schedule", "presence"],
         "icon": "mdi:robot-vacuum",
     },
+    "system": {
+        "ha_domain": "sensor",
+        "device_class": "battery",
+        "attributes": ["device_class", "unit_of_measurement"],
+        "controls": [],
+        "pattern_features": ["battery_trend", "connectivity", "proximity"],
+        "icon": "mdi:cellphone-link",
+    },
+    "motion_control": {
+        "ha_domain": "switch",
+        "device_class": "motion",
+        "attributes": ["device_class"],
+        "controls": ["toggle", "turn_on", "turn_off"],
+        "pattern_features": ["quiet_hours", "presence_based"],
+        "icon": "mdi:motion-sensor-off",
+    },
 }
 
 # Domain Manager (optional)

@@ -24,6 +24,8 @@ from .solar import SolarDomain
 from .bed_occupancy import BedOccupancyDomain
 from .seat_occupancy import SeatOccupancyDomain
 from .vacuum import VacuumDomain
+from .system import SystemDomain
+from .motion_control import MotionControlDomain
 
 logger = logging.getLogger("mindhome.domain_manager")
 
@@ -46,6 +48,8 @@ DOMAIN_REGISTRY: Dict[str, type] = {
     "bed_occupancy": BedOccupancyDomain,
     "seat_occupancy": SeatOccupancyDomain,
     "vacuum": VacuumDomain,
+    "system": SystemDomain,
+    "motion_control": MotionControlDomain,
 }
 
 
