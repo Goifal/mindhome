@@ -4630,20 +4630,22 @@ const PatternsPage = () => {
                                 {count} {lang === 'de' ? 'ausgewählt' : 'selected'}
                             </span>
                             <button className="btn btn-sm btn-ghost" onClick={async () => {
-                                setPatterns(prev => prev.filter(p => !selectedIds.includes(p.id)));
-                                for (const id of selectedIds) { await api.put(`patterns/reject/${id}`, { reason: 'bulk' }); }
-                                setBulkSelected({}); setBulkMode(false); await load();
-                                showToast(`${count} ${lang === 'de' ? 'Muster abgelehnt' : 'patterns rejected'}`, 'success');
+                                try {
+                                    for (const id of selectedIds) { await api.put(`patterns/reject/${id}`, { reason: 'bulk' }); }
+                                    setBulkSelected({}); setBulkMode(false); await load();
+                                    showToast(`${count} ${lang === 'de' ? 'Muster abgelehnt' : 'patterns rejected'}`, 'success');
+                                } catch (e) { showToast(lang === 'de' ? 'Fehler beim Ablehnen' : 'Error rejecting patterns', 'error'); await load(); }
                             }}>
                                 <span className="mdi mdi-close-circle" style={{ marginRight: 4, color: 'var(--warning)' }} />
                                 {lang === 'de' ? 'Alle ablehnen' : 'Reject all'}
                             </button>
                             <button className="btn btn-sm btn-ghost" onClick={async () => {
                                 if (!confirm(lang === 'de' ? `${count} Muster wirklich löschen?` : `Really delete ${count} patterns?`)) return;
-                                setPatterns(prev => prev.filter(p => !selectedIds.includes(p.id)));
-                                for (const id of selectedIds) { await api.delete(`patterns/${id}`); }
-                                setBulkSelected({}); setBulkMode(false); await load();
-                                showToast(`${count} ${lang === 'de' ? 'Muster gelöscht' : 'patterns deleted'}`, 'success');
+                                try {
+                                    for (const id of selectedIds) { await api.delete(`patterns/${id}`); }
+                                    setBulkSelected({}); setBulkMode(false); await load();
+                                    showToast(`${count} ${lang === 'de' ? 'Muster gelöscht' : 'patterns deleted'}`, 'success');
+                                } catch (e) { showToast(lang === 'de' ? 'Fehler beim Löschen' : 'Error deleting patterns', 'error'); await load(); }
                             }}>
                                 <span className="mdi mdi-delete" style={{ marginRight: 4, color: 'var(--danger)' }} />
                                 {lang === 'de' ? 'Alle löschen' : 'Delete all'}
@@ -7080,7 +7082,18 @@ const App = () => {
         const interval = setInterval(() => {
             api.get('system/status').then(s => { if (s) setStatus(s); });
         }, 60000);
-        return () => clearInterval(interval);
+
+        // Auto-refresh when tab becomes visible again (stale-data check)
+        let lastVisible = Date.now();
+        const onVisibility = () => {
+            if (document.visibilityState === 'visible' && Date.now() - lastVisible > 30000) {
+                refreshData();
+            }
+            if (document.visibilityState === 'visible') lastVisible = Date.now();
+        };
+        document.addEventListener('visibilitychange', onVisibility);
+
+        return () => { clearInterval(interval); document.removeEventListener('visibilitychange', onVisibility); };
     }, []);
 
     // Apply theme (only PUT on actual user change, not on initial load)

@@ -46,6 +46,18 @@ SAMPLING_THRESHOLDS = {
     "pm25":         5.0,
     "pm10":         5.0,
     "co2":          50.0,
+    "signal_strength": 5.0,  # dBm
+    "distance":     0.5,     # m
+    "weight":       0.5,     # kg
+    "gas":          10.0,    # ppm/ppb
+    "nitrogen_dioxide": 5.0, # µg/m³
+    "volatile_organic_compounds": 10.0,  # ppb
+    "carbon_monoxide": 5.0,  # ppm
+    "speed":        1.0,     # m/s or km/h
+    "wind_speed":   1.0,     # m/s
+    "precipitation": 0.5,    # mm
+    "moisture":     2.0,     # %
+    "sound_pressure": 5.0,   # dB
 }
 
 # These entity domains always log (binary on/off changes are always significant)
@@ -53,6 +65,9 @@ ALWAYS_LOG_DOMAINS = {
     "light", "switch", "lock", "cover", "climate", "fan",
     "media_player", "alarm_control_panel", "person", "device_tracker",
     "binary_sensor", "automation", "scene", "input_boolean",
+    "water_heater", "vacuum", "humidifier", "valve", "siren",
+    "select", "number", "input_select", "input_number",
+    "camera", "remote", "button",
 }
 
 # Motion sensor debounce: only log first "on" and final "off" within window
@@ -282,7 +297,7 @@ class StateLogger:
     """Logs significant state changes to state_history with context."""
 
     # Max events per minute (prevent DB flood from chatty devices)
-    MAX_EVENTS_PER_MINUTE = 300
+    MAX_EVENTS_PER_MINUTE = 600
 
     def __init__(self, engine, ha_connection):
         self.engine = engine
@@ -397,11 +412,24 @@ class StateLogger:
                 except (ValueError, TypeError):
                     return False
 
-            # Unknown sensor type: don't log (too noisy)
-            return False
+            # Unknown sensor type: log with conservative fallback threshold
+            try:
+                new_val = float(new_state.get("state", ""))
+                old_val = self._last_sensor_values.get(entity_id)
+                if old_val is not None and abs(new_val - old_val) < 10.0:
+                    return False
+                self._last_sensor_values[entity_id] = new_val
+                return True
+            except (ValueError, TypeError):
+                # Non-numeric sensor: log state text changes
+                old_text = old_state.get("state", "") if isinstance(old_state, dict) else ""
+                new_text = new_state.get("state", "") if isinstance(new_state, dict) else ""
+                return old_text != new_text
 
-        # Skip unknown domains
-        return False
+        # Unknown domains: log if state actually changed
+        old_text = old_state.get("state", "") if isinstance(old_state, dict) else ""
+        new_text = new_state.get("state", "") if isinstance(new_state, dict) else ""
+        return old_text != new_text
 
     def log_state_change(self, event_data):
         """Process a state_changed event from HA and log if significant."""
