@@ -883,12 +883,12 @@ def api_update_shift_sync_config():
 
 @schedules_bp.route("/api/calendar/shift-sync/run", methods=["POST"])
 def api_run_shift_sync_now():
-    """Trigger an immediate shift-to-calendar sync."""
+    """Trigger an immediate full shift-to-calendar resync (delete + recreate)."""
     scheduler = _deps.get("automation_scheduler")
     if scheduler:
         try:
-            scheduler._shift_calendar_sync_task()
-            return jsonify({"success": True, "message": "Sync completed"})
+            scheduler._shift_calendar_sync_task(full_resync=True)
+            return jsonify({"success": True, "message": "Full resync completed"})
         except Exception as e:
             return jsonify({"error": str(e)}), 500
     return jsonify({"error": "Scheduler not available"}), 503
