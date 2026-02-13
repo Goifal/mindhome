@@ -4,12 +4,16 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "0.6.27"
-BUILD = 28
+VERSION = "0.6.28"
+BUILD = 29
 BUILD_DATE = "2026-02-13"
 CODENAME = "Phase 3.5 - Kalender & Presence"
 
 # Changelog
+# Build 29: v0.6.28 Domain-Karten Layout verbessert
+#   - Control-Badges und Pattern-Badges als getrennte Gruppen mit Trennlinie
+#   - Domain-Icons: mdi: zu mdi- Konvertierung korrigiert
+#   - Plugin-Settings API liefert DEFAULT_SETTINGS aus allen Domain-Plugins
 # Build 28: v0.6.27 Domain-Steuerung anzeigen und bearbeitbar
 #   - Domain-Karten zeigen Plugin-Settings (Steuerung) unterhalb Trennstrich an
 #   - Bearbeiten-Button fuer ALLE Domains (nicht nur Custom)
