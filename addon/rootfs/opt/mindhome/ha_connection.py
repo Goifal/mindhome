@@ -208,7 +208,7 @@ class HAConnection:
     def create_calendar_event(self, entity_id, summary, start, end,
                                description=None, location=None):
         """Create event on a HA calendar entity via calendar.create_event service."""
-        data = {"entity_id": entity_id, "summary": summary}
+        data = {"summary": summary}
         # Support both all-day (date) and timed (dateTime) events
         if "T" in start:
             data["start_date_time"] = start
@@ -220,13 +220,13 @@ class HAConnection:
             data["description"] = description
         if location:
             data["location"] = location
-        return self.call_service("calendar", "create_event", data)
+        return self.call_service("calendar", "create_event", data, entity_id=entity_id)
 
     def delete_calendar_event(self, entity_id, uid):
         """Delete event from a HA calendar entity via calendar.delete_event service."""
         return self.call_service("calendar", "delete_event", {
-            "entity_id": entity_id, "uid": uid,
-        })
+            "uid": uid,
+        }, entity_id=entity_id)
 
     def get_upcoming_events(self, hours=24):
         calendars = self.get_calendars()
