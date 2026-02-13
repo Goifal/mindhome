@@ -1353,13 +1353,24 @@ class PresenceModeManager:
             # Search recent PresenceLogs for a valid mode
             recent_logs = session.query(PresenceLog).order_by(PresenceLog.created_at.desc()).limit(10).all()
             for log_entry in recent_logs:
+                mode = None
                 if log_entry.mode_id:
                     mode = session.get(PresenceMode, log_entry.mode_id)
-                    if mode:
-                        return {
-                            "id": mode.id, "name_de": mode.name_de, "name_en": mode.name_en,
-                            "icon": mode.icon, "color": mode.color, "since": log_entry.created_at.isoformat(),
-                        }
+                elif log_entry.mode_name:
+                    # Fallback: lookup by name (for auto_detect logs without mode_id)
+                    mode = session.query(PresenceMode).filter_by(name_de=log_entry.mode_name).first()
+                    if mode and not log_entry.mode_id:
+                        # Back-fill mode_id for future lookups
+                        log_entry.mode_id = mode.id
+                        try:
+                            session.commit()
+                        except Exception:
+                            session.rollback()
+                if mode:
+                    return {
+                        "id": mode.id, "name_de": mode.name_de, "name_en": mode.name_en,
+                        "icon": mode.icon, "color": mode.color, "since": log_entry.created_at.isoformat(),
+                    }
             return None
         finally:
             session.close()
@@ -1797,8 +1808,11 @@ class AutomationScheduler:
         except Exception as e:
             logger.debug(f"Calendar trigger check error: {e}")
 
-    def _shift_calendar_sync_task(self):
-        """Sync shift schedules to a configured HA calendar entity."""
+    def _shift_calendar_sync_task(self, full_resync=False):
+        """Sync shift schedules to a configured HA calendar entity.
+
+        full_resync: if True, delete all existing shift events first, then re-create.
+        """
         try:
             from helpers import get_setting, set_setting
             from db import get_db
@@ -1816,9 +1830,39 @@ class AutomationScheduler:
             if not target_calendar:
                 return
 
-            # Track which events we already synced to avoid duplicates
-            synced_raw = get_setting("shift_calendar_synced_uids") or "[]"
-            synced_uids = set(_json.loads(synced_raw))
+            now = datetime.now(timezone.utc)
+
+            # --- Full resync: delete existing shift events first ---
+            if full_resync:
+                deleted = 0
+                try:
+                    # Query events for the full sync range (past 7 days + future sync_days)
+                    query_start = (now - timedelta(days=7)).strftime("%Y-%m-%dT00:00:00.000Z")
+                    query_end = (now + timedelta(days=sync_days + 1)).strftime("%Y-%m-%dT23:59:59.000Z")
+                    existing = self.ha.get_calendar_events(target_calendar, query_start, query_end)
+
+                    for ev in existing:
+                        desc = (ev.get("description") or "").strip()
+                        # Only delete events created by shift sync (marker: "MindHome Schicht:")
+                        if desc.startswith("MindHome Schicht:"):
+                            ev_uid = ev.get("uid")
+                            if ev_uid:
+                                try:
+                                    self.ha.delete_calendar_event(target_calendar, ev_uid)
+                                    deleted += 1
+                                except Exception as e:
+                                    logger.debug(f"Shift resync delete error: {e}")
+                except Exception as e:
+                    logger.warning(f"Shift resync query/delete error: {e}")
+
+                # Reset UID tracking so all events get re-created
+                set_setting("shift_calendar_synced_uids", "[]")
+                synced_uids = set()
+                logger.info(f"Shift resync: deleted {deleted} old shift events from {target_calendar}")
+            else:
+                # Incremental: track which events we already synced
+                synced_raw = get_setting("shift_calendar_synced_uids") or "[]"
+                synced_uids = set(_json.loads(synced_raw))
 
             session = get_db()
             try:
@@ -1831,7 +1875,6 @@ class AutomationScheduler:
             finally:
                 session.close()
 
-            now = datetime.now(timezone.utc)
             new_uids = set()
             created = 0
 
@@ -1896,8 +1939,9 @@ class AutomationScheduler:
             pruned = [u for u in all_uids if not u.startswith("shift-") or u.rsplit("-", 1)[-1] >= cutoff]
             set_setting("shift_calendar_synced_uids", _json.dumps(pruned))
 
-            if created > 0:
-                logger.info(f"Shift calendar sync: created {created} events in {target_calendar}")
+            if created > 0 or full_resync:
+                logger.info(f"Shift calendar sync: created {created} events in {target_calendar}" +
+                            (" (full resync)" if full_resync else ""))
 
         except Exception as e:
             logger.debug(f"Shift calendar sync error: {e}")

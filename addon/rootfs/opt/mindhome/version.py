@@ -4,12 +4,21 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "0.6.21"
-BUILD = 22
+VERSION = "0.6.22"
+BUILD = 23
 BUILD_DATE = "2026-02-13"
 CODENAME = "Phase 3.5 - Kalender & Presence"
 
 # Changelog
+# Build 23: v0.6.22 Fix Anwesenheitserkennung (7 Bugs)
+#   - Fix: get_current_mode() ignorierte Logs ohne mode_id - mode_name Fallback + Backfill
+#   - Fix: auto_detect Endpoint schrieb kein mode_id in PresenceLog
+#   - Fix: API fallback waehlte immer "Zuhause" (priority.asc statt desc)
+#   - Fix: API fallback entfernt - zeigt "Erkennung laeuft..." statt falsches "Zuhause"
+#   - Fix: Frontend Auto-Select hardcoded "Zuhause" - jetzt HA-basierte Auto-Detection
+#   - Fix: Kaskadierende Fehler: kein mode_id → get_current_mode null → Fallback Zuhause
+#   - Fix: System blieb permanent auf "Zuhause" auch wenn niemand zuhause war
+#
 # Build 22: v0.6.21 Schicht-Auto-Sync in HA-Kalender
 #   - Kalender: Schichtplan automatisch in HA-Kalender schreiben (Google Calendar, etc.)
 #   - Kalender: Background-Task alle 6h, Duplikat-Erkennung via UID-Tracking
