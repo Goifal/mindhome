@@ -4,12 +4,20 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "0.6.23"
-BUILD = 24
+VERSION = "0.6.24"
+BUILD = 25
 BUILD_DATE = "2026-02-13"
 CODENAME = "Phase 3.5 - Kalender & Presence"
 
 # Changelog
+# Build 25: v0.6.24 Kompletter Rewrite Schicht-Kalender-Sync (Duplikate + Loeschung)
+#   - Rewrite: Sync gleicht jetzt direkt gegen HA-Kalender ab (Reconciliation)
+#   - Fix: Duplikate (10x gleiche Schicht pro Tag) werden automatisch bereinigt
+#   - Fix: Alte/geaenderte Schichten werden aus dem Kalender geloescht
+#   - Fix: Lokales UID-Tracking entfernt (war fundamental kaputt, HA kennt eigene UIDs)
+#   - Fix: Schichtplan-Aenderungen werden bei jedem Sync korrekt uebernommen
+#   - Ablauf: 1) Erwartete Events berechnen, 2) HA-Kalender lesen, 3) Diff, 4) Loeschen/Erstellen
+#
 # Build 24: v0.6.23 Fix Schicht-Kalender Datum off-by-one + alte Events loeschen
 #   - Fix: Schicht-Startdatum wurde 1 Tag zu frueh in Kalender geschrieben (UTC vs Lokalzeit)
 #   - Fix: Kalender-Sync nutzt jetzt HA-Timezone statt UTC fuer Datumsberechnung
