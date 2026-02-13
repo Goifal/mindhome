@@ -4,18 +4,21 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "0.6.24"
-BUILD = 25
+VERSION = "0.6.25"
+BUILD = 26
 BUILD_DATE = "2026-02-13"
 CODENAME = "Phase 3.5 - Kalender & Presence"
 
 # Changelog
+# Build 26: v0.6.25 Schicht-Sync: [MH]-Tag Erkennung statt Description (Fix Duplikate)
+#   - Root-Cause: HA Calendar API gibt description nicht zurueck → Events nie als "eigene" erkannt
+#   - Fix: Events werden jetzt mit [MH]-Tag im Summary markiert (z.B. "Frueh (Max) [MH]")
+#   - Fix: Erkennung per Summary-Tag statt Description (funktioniert mit allen HA-Kalendern)
+#   - Fix: Legacy-Events ohne [MH] aber mit "MindHome Schicht:" Description werden auch erkannt
+#   - Fix: Alle Duplikate pro Tag werden bis auf 1 geloescht
+#   - Fix: Veraltete Events (Rotation geaendert) werden automatisch entfernt
+#
 # Build 25: v0.6.24 Kompletter Rewrite Schicht-Kalender-Sync (Duplikate + Loeschung)
-#   - Rewrite: Sync gleicht jetzt direkt gegen HA-Kalender ab (Reconciliation)
-#   - Fix: Duplikate (10x gleiche Schicht pro Tag) werden automatisch bereinigt
-#   - Fix: Alte/geaenderte Schichten werden aus dem Kalender geloescht
-#   - Fix: Lokales UID-Tracking entfernt (war fundamental kaputt, HA kennt eigene UIDs)
-#   - Fix: Schichtplan-Aenderungen werden bei jedem Sync korrekt uebernommen
 #   - Ablauf: 1) Erwartete Events berechnen, 2) HA-Kalender lesen, 3) Diff, 4) Loeschen/Erstellen
 #
 # Build 24: v0.6.23 Fix Schicht-Kalender Datum off-by-one + alte Events loeschen
