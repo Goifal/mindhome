@@ -13,6 +13,7 @@ import io
 import hashlib
 import zipfile
 import shutil
+import secrets
 from datetime import datetime, timezone, timedelta
 from flask import Blueprint, request, jsonify, Response, make_response, send_from_directory, redirect
 from sqlalchemy import func as sa_func, text
@@ -508,9 +509,51 @@ def _fold_line(line):
     return "\r\n".join(result)
 
 
+@schedules_bp.route("/api/calendar/export-token", methods=["GET"])
+def api_get_export_token():
+    """Get the current iCal export token (creates one if none exists)."""
+    token = get_setting("calendar_export_token")
+    if not token:
+        token = secrets.token_urlsafe(32)
+        set_setting("calendar_export_token", token)
+    return jsonify({"token": token})
+
+
+@schedules_bp.route("/api/calendar/export-token", methods=["POST"])
+def api_regenerate_export_token():
+    """Regenerate the iCal export token (invalidates old URLs)."""
+    token = secrets.token_urlsafe(32)
+    set_setting("calendar_export_token", token)
+    audit_log("calendar_token_regenerated", {})
+    return jsonify({"token": token})
+
+
+@schedules_bp.route("/api/calendar/export-settings", methods=["GET"])
+def api_get_export_settings():
+    """Get calendar export settings."""
+    days = get_setting("calendar_export_days")
+    return jsonify({"export_days": int(days) if days else 90})
+
+
+@schedules_bp.route("/api/calendar/export-settings", methods=["PUT"])
+def api_update_export_settings():
+    """Update calendar export settings."""
+    data = request.json or {}
+    days = max(7, min(365, int(data.get("export_days", 90))))
+    set_setting("calendar_export_days", str(days))
+    audit_log("calendar_export_settings", {"export_days": days})
+    return jsonify({"success": True, "export_days": days})
+
+
 @schedules_bp.route("/api/calendar/export.ics", methods=["GET"])
 def api_export_ical():
     """Export MindHome calendar as iCal feed (shifts, holidays, vacations)."""
+    # Token validation
+    expected_token = get_setting("calendar_export_token")
+    provided_token = request.args.get("token", "")
+    if not expected_token or provided_token != expected_token:
+        return "Unauthorized – invalid or missing token", 403
+
     session = get_db()
     try:
         now = datetime.now(timezone.utc)
@@ -599,9 +642,11 @@ def api_export_ical():
                 start_dt = datetime.strptime(rotation_start, "%Y-%m-%d")
             except (ValueError, TypeError):
                 continue
-            # Generate shift events for 90 days from now
+            # Generate shift events for configurable days from now
+            export_days_raw = get_setting("calendar_export_days")
+            export_days = int(export_days_raw) if export_days_raw else 90
             user_name = users.get(sched.user_id, "")
-            for day_offset in range(90):
+            for day_offset in range(export_days):
                 day = now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=day_offset)
                 diff = (day - start_dt.replace(tzinfo=timezone.utc)).days
                 if diff < 0:
@@ -647,6 +692,8 @@ def api_export_ical():
         response = make_response(ical_content)
         response.headers["Content-Type"] = "text/calendar; charset=utf-8"
         response.headers["Content-Disposition"] = "attachment; filename=mindhome.ics"
+        response.headers["Cache-Control"] = "public, max-age=3600"
+        response.headers["ETag"] = hashlib.md5(ical_content.encode()).hexdigest()
         return response
     except Exception as e:
         logger.error(f"iCal export error: {e}")

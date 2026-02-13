@@ -3268,14 +3268,21 @@ const CalendarSyncConfig = ({ lang, showToast, onEventsLoaded }) => {
     const [loading, setLoading] = useState(true);
     const [exportUrl, setExportUrl] = useState('');
     const [copied, setCopied] = useState(false);
+    const [exportDays, setExportDays] = useState(90);
+    const [savingDays, setSavingDays] = useState(false);
 
     useEffect(() => {
         (async () => {
-            const r = await api.get('calendar/ha-sources');
-            if (r) { setSources(r.sources || []); setSyncedIds(r.synced_ids || []); }
+            const [sourcesR, tokenR, settingsR] = await Promise.all([
+                api.get('calendar/ha-sources'),
+                api.get('calendar/export-token'),
+                api.get('calendar/export-settings'),
+            ]);
+            if (sourcesR) { setSources(sourcesR.sources || []); setSyncedIds(sourcesR.synced_ids || []); }
+            const token = tokenR?.token || '';
+            setExportUrl(`${window.location.origin}/api/calendar/export.ics?token=${token}`);
+            if (settingsR) setExportDays(settingsR.export_days || 90);
             setLoading(false);
-            // Build export URL
-            setExportUrl(`${window.location.origin}/api/calendar/export.ics`);
         })();
     }, []);
 
@@ -3308,6 +3315,24 @@ const CalendarSyncConfig = ({ lang, showToast, onEventsLoaded }) => {
         });
     };
 
+    const regenerateToken = async () => {
+        const r = await api.post('calendar/export-token');
+        if (r?.token) {
+            setExportUrl(`${window.location.origin}/api/calendar/export.ics?token=${r.token}`);
+            showToast(lang === 'de' ? 'Neuer Token generiert – alte URLs sind ungültig' : 'New token generated – old URLs are invalid', 'warning');
+        }
+    };
+
+    const saveExportDays = async (days) => {
+        setSavingDays(true);
+        const r = await api.put('calendar/export-settings', { export_days: days });
+        if (r?.success) {
+            setExportDays(r.export_days);
+            showToast(lang === 'de' ? `Schicht-Zeitraum auf ${r.export_days} Tage gesetzt` : `Shift range set to ${r.export_days} days`, 'success');
+        }
+        setSavingDays(false);
+    };
+
     return (
         <div className="card" style={{ marginBottom: 16 }}>
             {/* Export Section */}
@@ -3328,6 +3353,29 @@ const CalendarSyncConfig = ({ lang, showToast, onEventsLoaded }) => {
                     <button className="btn btn-sm btn-primary" onClick={copyUrl}>
                         <span className={`mdi ${copied ? 'mdi-check' : 'mdi-content-copy'}`} style={{ marginRight: 4 }} />
                         {copied ? 'OK' : (lang === 'de' ? 'Kopieren' : 'Copy')}
+                    </button>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <label style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                            {lang === 'de' ? 'Schichten exportieren:' : 'Export shifts:'}
+                        </label>
+                        <select className="input" value={exportDays} disabled={savingDays}
+                            onChange={e => saveExportDays(parseInt(e.target.value))}
+                            style={{ width: 'auto', fontSize: 12, padding: '4px 8px' }}>
+                            <option value={14}>14 {lang === 'de' ? 'Tage' : 'days'}</option>
+                            <option value={30}>30 {lang === 'de' ? 'Tage' : 'days'}</option>
+                            <option value={60}>60 {lang === 'de' ? 'Tage' : 'days'}</option>
+                            <option value={90}>90 {lang === 'de' ? 'Tage' : 'days'}</option>
+                            <option value={180}>180 {lang === 'de' ? 'Tage' : 'days'}</option>
+                            <option value={365}>365 {lang === 'de' ? 'Tage' : 'days'}</option>
+                        </select>
+                    </div>
+                    <button className="btn btn-sm" onClick={regenerateToken}
+                        style={{ fontSize: 11, color: 'var(--text-muted)' }}
+                        title={lang === 'de' ? 'Neuen Token generieren (alte URLs werden ungültig)' : 'Regenerate token (old URLs will stop working)'}>
+                        <span className="mdi mdi-refresh" style={{ marginRight: 4 }} />
+                        {lang === 'de' ? 'Token erneuern' : 'Regenerate token'}
                     </button>
                 </div>
             </div>
