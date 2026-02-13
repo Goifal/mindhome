@@ -1268,16 +1268,21 @@ const DomainsPage = () => {
                             )}
                             {/* Capability badges */}
                             {(controlBadges.length > 0 || sensorBadges.length > 0) && (
-                                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center', marginTop: 12 }}>
-                                    {controlBadges.slice(0, 5).map((b, i) => (
-                                        <span key={'c' + i} className="badge badge-info" style={{ fontSize: 10, padding: '2px 7px' }}>{b.label}</span>
-                                    ))}
-                                    {controlBadges.length > 0 && sensorBadges.length > 0 && (
-                                        <span style={{ display: 'inline-block', width: 2, height: 16, background: 'var(--text-muted)', margin: '0 4px', borderRadius: 1, opacity: 0.4, flexShrink: 0 }} />
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 12 }}>
+                                    {controlBadges.length > 0 && (
+                                        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                                            {controlBadges.slice(0, 5).map((b, i) => (
+                                                <span key={'c' + i} className="badge badge-info" style={{ fontSize: 10, padding: '2px 7px' }}>{b.label}</span>
+                                            ))}
+                                        </div>
                                     )}
-                                    {sensorBadges.slice(0, 5).map((b, i) => (
-                                        <span key={'s' + i} className="badge badge-success" style={{ fontSize: 10, padding: '2px 7px' }}>{b.label}</span>
-                                    ))}
+                                    {sensorBadges.length > 0 && (
+                                        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                                            {sensorBadges.slice(0, 5).map((b, i) => (
+                                                <span key={'s' + i} className="badge badge-success" style={{ fontSize: 10, padding: '2px 7px' }}>{b.label}</span>
+                                            ))}
+                                        </div>
+                                    )}
                                 </div>
                             )}
                         </div>
