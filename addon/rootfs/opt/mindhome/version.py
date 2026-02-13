@@ -4,12 +4,16 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "0.6.45"
-BUILD = 46
-BUILD_DATE = "2026-02-13"
+VERSION = "0.6.46"
+BUILD = 47
+BUILD_DATE = "2026-02-14"
 CODENAME = "Phase 3.5 - Kalender & Presence"
 
 # Changelog
+# Build 47: v0.6.46 Frontend-Fix bilingual Controls/Features
+#   - Fix: React Error #31 in DomainsPage (Objekte statt Strings gerendert)
+#   - Frontend liest jetzt label_de/label_en je nach Spracheinstellung
+#
 # Build 46: v0.6.45 Domains erweitert + Controls/Features zweisprachig
 #   - Neue Domains: humidifier (Luftbefeuchter), camera (Kamera)
 #   - Proximity von System-Domain nach Presence-Domain verschoben
