@@ -392,24 +392,39 @@ def api_seed_default_presence_modes():
     session = get_db()
     try:
         defaults = [
-            {"name_de": "Zuhause", "name_en": "Home", "icon": "mdi-home", "color": "#4CAF50", "priority": 1, "is_system": True, "trigger_type": "auto", "auto_config": {"condition": "first_home"}},
-            {"name_de": "Abwesend", "name_en": "Away", "icon": "mdi-exit-run", "color": "#FF9800", "priority": 2, "is_system": True, "trigger_type": "auto", "auto_config": {"condition": "all_away"}},
-            {"name_de": "Schlaf", "name_en": "Sleep", "icon": "mdi-sleep", "color": "#3F51B5", "priority": 3, "is_system": True, "trigger_type": "auto", "auto_config": {"condition": "all_home", "time_range": {"start": "22:00", "end": "06:00"}}},
-            {"name_de": "Urlaub", "name_en": "Vacation", "icon": "mdi-beach", "color": "#00BCD4", "priority": 4, "is_system": True, "trigger_type": "manual"},
-            {"name_de": "Besuch", "name_en": "Guests", "icon": "mdi-account-group", "color": "#9C27B0", "priority": 5, "is_system": True, "trigger_type": "manual"},
+            {"name_de": "Zuhause", "name_en": "Home", "icon": "mdi-home", "color": "#4CAF50", "priority": 10, "is_system": True, "trigger_type": "auto", "auto_config": {"condition": "first_home"}},
+            {"name_de": "Besuch", "name_en": "Guests", "icon": "mdi-account-group", "color": "#9C27B0", "priority": 15, "is_system": True, "trigger_type": "auto", "auto_config": {"condition": "guests_home"}},
+            {"name_de": "Schlaf", "name_en": "Sleep", "icon": "mdi-sleep", "color": "#3F51B5", "priority": 20, "is_system": True, "trigger_type": "auto", "auto_config": {"condition": "all_home", "time_range": {"start": "22:00", "end": "06:00"}}},
+            {"name_de": "Abwesend", "name_en": "Away", "icon": "mdi-exit-run", "color": "#FF9800", "priority": 5, "is_system": True, "trigger_type": "auto", "auto_config": {"condition": "all_away"}},
+            {"name_de": "Urlaub", "name_en": "Vacation", "icon": "mdi-beach", "color": "#00BCD4", "priority": 25, "is_system": True, "trigger_type": "manual"},
         ]
         created = 0
+        updated = 0
         skipped = []
         for m in defaults:
             existing = session.query(PresenceMode).filter_by(name_de=m["name_de"]).first()
             if existing:
-                skipped.append(m["name_de"])
-                logger.info(f"Seed skip (exists): {m['name_de']}")
+                # Fix existing priorities, trigger_type and auto_config
+                changed = False
+                if existing.priority != m["priority"]:
+                    existing.priority = m["priority"]
+                    changed = True
+                if existing.trigger_type != m.get("trigger_type", "manual"):
+                    existing.trigger_type = m.get("trigger_type", "manual")
+                    changed = True
+                if m.get("auto_config") and existing.auto_config != m["auto_config"]:
+                    existing.auto_config = m["auto_config"]
+                    changed = True
+                if changed:
+                    updated += 1
+                    logger.info(f"Seed update: {m['name_de']} (prio={m['priority']}, trigger={m.get('trigger_type')})")
+                else:
+                    skipped.append(m["name_de"])
                 continue
             session.add(PresenceMode(**m, is_active=True))
             created += 1
         session.commit()
-        return jsonify({"success": True, "created": created, "skipped": skipped})
+        return jsonify({"success": True, "created": created, "updated": updated, "skipped": skipped})
     finally:
         session.close()
 

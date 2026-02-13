@@ -1424,11 +1424,11 @@ class PresenceModeManager:
 
     def check_auto_transitions(self):
         """Check if presence mode should change based on person states and PersonDevice entities."""
-        # Debounce: skip if last mode change was < 5 minutes ago
+        # Debounce: skip if last mode change was < 60 seconds ago
         now = datetime.now(timezone.utc)
         if hasattr(self, '_last_mode_change') and self._last_mode_change:
             elapsed = (now - self._last_mode_change).total_seconds()
-            if elapsed < 300:  # 5 minutes cooldown
+            if elapsed < 60:
                 return
 
         session = self.Session()
@@ -1447,7 +1447,7 @@ class PresenceModeManager:
                 if tracker_state == "home":
                     persons_home_set.add(pd.entity_id)
 
-            # GuestDevice: count guests with 'home' state for anyone_home
+            # GuestDevice: count guests with 'home' state
             guest_devices = session.query(GuestDevice).all()
             guests_home = 0
             for gd in guest_devices:
@@ -1459,35 +1459,42 @@ class PresenceModeManager:
                     gd.last_seen = now
 
             anyone_home = len(persons_home_set) > 0 or guests_home > 0
+            all_persons = self.ha.get_all_persons()
+            all_home = all_persons and all(p["state"] == "home" for p in all_persons)
 
+            # Evaluate auto modes - highest priority first
             modes = session.query(PresenceMode).filter_by(
                 is_active=True, trigger_type="auto"
             ).order_by(PresenceMode.priority.desc()).all()
 
+            # Find the best matching mode
+            target_mode = None
             for mode in modes:
                 config = mode.auto_config or {}
                 condition = config.get("condition")
 
-                if condition == "all_away" and not anyone_home:
-                    if self._current_mode != mode.id:
-                        self.set_mode(mode.id, trigger="auto")
-                        self._last_mode_change = now
-                    session.commit()
-                    return
+                # Time range check (e.g. Schlaf only between 22:00-06:00)
+                time_range = config.get("time_range")
+                if time_range and not self._in_time_range(time_range):
+                    continue
+
+                matched = False
+                if condition == "guests_home" and guests_home > 0:
+                    matched = True
+                elif condition == "all_home" and all_home:
+                    matched = True
                 elif condition == "first_home" and anyone_home:
-                    if self._current_mode != mode.id:
-                        self.set_mode(mode.id, trigger="auto")
-                        self._last_mode_change = now
-                    session.commit()
-                    return
-                elif condition == "all_home":
-                    all_persons = self.ha.get_all_persons()
-                    if all_persons and all(p["state"] == "home" for p in all_persons):
-                        if self._current_mode != mode.id:
-                            self.set_mode(mode.id, trigger="auto")
-                            self._last_mode_change = now
-                        session.commit()
-                        return
+                    matched = True
+                elif condition == "all_away" and not anyone_home:
+                    matched = True
+
+                if matched:
+                    target_mode = mode
+                    break  # Highest priority wins
+
+            if target_mode and self._current_mode != target_mode.id:
+                self.set_mode(target_mode.id, trigger="auto")
+                self._last_mode_change = now
 
             session.commit()  # Save GuestDevice updates
         except Exception as e:
@@ -1495,6 +1502,26 @@ class PresenceModeManager:
             session.rollback()
         finally:
             session.close()
+
+    def _in_time_range(self, time_range):
+        """Check if current local time is within a time range like {'start': '22:00', 'end': '06:00'}."""
+        try:
+            from helpers import local_now
+            now = local_now()
+            current_minutes = now.hour * 60 + now.minute
+            start_parts = time_range.get("start", "00:00").split(":")
+            end_parts = time_range.get("end", "23:59").split(":")
+            start_min = int(start_parts[0]) * 60 + int(start_parts[1])
+            end_min = int(end_parts[0]) * 60 + int(end_parts[1])
+
+            if start_min <= end_min:
+                # Same-day range (e.g. 08:00-18:00)
+                return start_min <= current_minutes <= end_min
+            else:
+                # Overnight range (e.g. 22:00-06:00)
+                return current_minutes >= start_min or current_minutes <= end_min
+        except Exception:
+            return True
 
 
 # ==============================================================================

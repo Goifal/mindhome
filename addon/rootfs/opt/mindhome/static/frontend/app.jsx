@@ -5,6 +5,15 @@
 
 const { useState, useEffect, useCallback, createContext, useContext, useRef, useMemo, useReducer } = React;
 
+// Timezone fix: server returns UTC timestamps without 'Z' suffix.
+// Append 'Z' so the browser correctly interprets them as UTC.
+const parseUTC = (ts) => {
+    if (!ts) return null;
+    const s = String(ts);
+    if (s.endsWith('Z') || s.includes('+') || s.includes('T') && s.split('T')[1].includes('-')) return new Date(s);
+    return new Date(s + 'Z');
+};
+
 // ================================================================
 // #32 API Response Cache
 // ================================================================
@@ -4062,10 +4071,10 @@ const AnomalyAdvancedPanel = ({ lang, showToast }) => {
                     <label className="toggle" style={{ transform: 'scale(0.75)' }}><input type="checkbox" checked={config.seasonal_adjustment?.enabled !== false}
                         onChange={() => update('seasonal_adjustment', { enabled: !config.seasonal_adjustment?.enabled })} /><div className="toggle-slider" /></label>
                 </div>
-                {config.paused_until && new Date(config.paused_until) > new Date() && (
+                {config.paused_until && parseUTC(config.paused_until) > new Date() && (
                     <div style={{ fontSize: 11, color: 'var(--warning)', marginTop: 4 }}>
                         <span className="mdi mdi-pause-circle" style={{ marginRight: 4 }} />
-                        {lang === 'de' ? 'Pausiert bis' : 'Paused until'} {new Date(config.paused_until).toLocaleTimeString()}
+                        {lang === 'de' ? 'Pausiert bis' : 'Paused until'} {parseUTC(config.paused_until).toLocaleTimeString()}
                     </div>
                 )}
             </CollapsibleCard>
@@ -4182,7 +4191,7 @@ const ActivitiesPage = () => {
     const exportCSV = () => {
         const headers = ['Datum', 'Typ', 'Beschreibung', 'Gerät', 'Raum'];
         const rows = filtered.map(l => [
-            new Date(l.created_at).toLocaleString('de-DE'),
+            parseUTC(l.created_at).toLocaleString('de-DE'),
             l.action_type,
             (l.reason || '').replace(/,/g, ';'),
             getDeviceName(l.device_id),
@@ -4301,7 +4310,7 @@ const ActivitiesPage = () => {
                                     <div style={{ fontSize: 12, color: 'var(--accent-secondary)', marginTop: 2 }}>{attrParts.join(' · ')}</div>
                                 )}
                                 <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 3, display: 'flex', gap: 8 }}>
-                                    <span>{new Date(log.created_at).toLocaleString(lang === 'de' ? 'de-DE' : 'en-US')}</span>
+                                    <span>{parseUTC(log.created_at).toLocaleString(lang === 'de' ? 'de-DE' : 'en-US')}</span>
                                     {roomName && <span>· {roomName}</span>}
                                 </div>
                             </div>
@@ -4931,7 +4940,7 @@ const PatternsPage = () => {
                             <tbody>
                                 {stateHistory.map(ev => (
                                     <tr key={ev.id}>
-                                        <td style={{ whiteSpace: 'nowrap' }}>{ev.created_at ? new Date(ev.created_at).toLocaleTimeString() : '–'}</td>
+                                        <td style={{ whiteSpace: 'nowrap' }}>{ev.created_at ? parseUTC(ev.created_at).toLocaleTimeString() : '–'}</td>
                                         <td style={{ fontFamily: 'monospace', fontSize: 11 }}>{ev.entity_id}</td>
                                         <td>
                                             <span style={{ color: 'var(--text-muted)' }}>{ev.old_state || '?'}</span>
@@ -5147,7 +5156,7 @@ const PatternsPage = () => {
                                             <div><span style={{ color: 'var(--text-muted)' }}>{lang === 'de' ? 'Verzögerung' : 'Delay'}:</span> {p.pattern_data.avg_delay_sec < 60 ? `${Math.round(p.pattern_data.avg_delay_sec)}s` : `${Math.round(p.pattern_data.avg_delay_sec/60)} min`}</div>
                                         )}
                                         <div><span style={{ color: 'var(--text-muted)' }}>{lang === 'de' ? 'Beobachtet' : 'Observed'}:</span> {p.pattern_data?.days_observed || 0} {lang === 'de' ? 'Tage' : 'days'}, {p.pattern_data?.occurrence_count || p.match_count || 0} {lang === 'de' ? 'Treffer' : 'matches'}</div>
-                                        <div><span style={{ color: 'var(--text-muted)' }}>{lang === 'de' ? 'Erstellt' : 'Created'}:</span> {p.created_at ? new Date(p.created_at).toLocaleDateString() : '–'}</div>
+                                        <div><span style={{ color: 'var(--text-muted)' }}>{lang === 'de' ? 'Erstellt' : 'Created'}:</span> {p.created_at ? parseUTC(p.created_at).toLocaleDateString() : '–'}</div>
                                         {/* #51 Confidence Explanation */}
                                         <div style={{ marginTop: 6, padding: '6px 10px', background: 'var(--bg-primary)', borderRadius: 6, fontSize: 11 }}>
                                             <span className="mdi mdi-information" style={{ marginRight: 4, color: 'var(--info)' }} />
@@ -5645,7 +5654,7 @@ const NotificationsPage = () => {
                         // Group by day for timeline
                         const grouped = {};
                         filteredPreds.forEach(pred => {
-                            const day = pred.created_at ? new Date(pred.created_at).toLocaleDateString(lang === 'de' ? 'de-DE' : 'en-US', { weekday: 'long', day: 'numeric', month: 'long' }) : (lang === 'de' ? 'Unbekannt' : 'Unknown');
+                            const day = pred.created_at ? parseUTC(pred.created_at).toLocaleDateString(lang === 'de' ? 'de-DE' : 'en-US', { weekday: 'long', day: 'numeric', month: 'long' }) : (lang === 'de' ? 'Unbekannt' : 'Unknown');
                             if (!grouped[day]) grouped[day] = [];
                             grouped[day].push(pred);
                         });
@@ -5737,7 +5746,7 @@ const NotificationsPage = () => {
                                 <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{n.message}</div>
                             </div>
                             <div style={{ fontSize: 11, color: 'var(--text-muted)', flexShrink: 0, whiteSpace: 'nowrap' }}>
-                                {n.created_at ? new Date(n.created_at).toLocaleString() : ''}
+                                {n.created_at ? parseUTC(n.created_at).toLocaleString() : ''}
                             </div>
                             {!n.was_read && <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--accent-primary)', flexShrink: 0 }} />}
                         </div>
@@ -6209,7 +6218,7 @@ const EnergyPage = () => {
                                     <tbody>
                                         {readings.slice(0, 200).map(r => (
                                             <tr key={r.id}><td style={{ fontSize: 12 }}>{r.entity_id}</td><td>{r.power_w?.toFixed(1)}</td><td>{r.energy_kwh?.toFixed(3)}</td>
-                                            <td style={{ fontSize: 12 }}>{r.created_at ? new Date(r.created_at).toLocaleString() : '-'}</td></tr>
+                                            <td style={{ fontSize: 12 }}>{r.created_at ? parseUTC(r.created_at).toLocaleString() : '-'}</td></tr>
                                         ))}
                                     </tbody>
                                 </table>
@@ -6920,7 +6929,7 @@ const PresencePage = () => {
                             <div className="card animate-in" style={{ marginBottom: 16, padding: 24, textAlign: 'center' }}>
                                 <span className={'mdi ' + (current.icon || 'mdi-home')} style={{ fontSize: 48, color: current.color || 'var(--accent-primary)' }} />
                                 <div style={{ fontSize: 22, fontWeight: 700, marginTop: 8 }}>{lang === 'de' ? current.name_de : current.name_en}</div>
-                                {current.since && <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>seit {new Date(current.since).toLocaleTimeString()}</div>}
+                                {current.since && <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>seit {parseUTC(current.since).toLocaleTimeString()}</div>}
                             </div>
                         )
                     )}
@@ -7327,7 +7336,7 @@ const PresencePage = () => {
                             {logs.map(l => (
                                 <div key={l.id} style={{ padding: '8px 16px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
                                     <div><strong>{l.mode_name}</strong>{l.trigger && <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--text-muted)' }}>{l.trigger}</span>}</div>
-                                    <span style={{ color: 'var(--text-muted)' }}>{l.created_at ? new Date(l.created_at).toLocaleString() : '-'}</span>
+                                    <span style={{ color: 'var(--text-muted)' }}>{l.created_at ? parseUTC(l.created_at).toLocaleString() : '-'}</span>
                                 </div>
                             ))}
                         </div>
