@@ -2272,42 +2272,66 @@ const RoomsPage = () => {
                                             const nextPhase = ds.learning_phase === 'observing' ? 'suggesting' : ds.learning_phase === 'suggesting' ? 'autonomous' : 'observing';
                                             const nextLabel = phaseLabels[nextPhase]?.[lang] || nextPhase;
                                             const progress = ds.learning_phase === 'autonomous' ? 100 : ds.learning_phase === 'suggesting' ? 66 : ds.confidence_score ? Math.min(33, Math.round(ds.confidence_score * 33)) : 10;
+                                            const currentMode = ds.mode || 'global';
+                                            const modeColors = { global: 'var(--text-muted)', suggest: 'var(--accent-primary)', auto: 'var(--success)', off: 'var(--text-muted)' };
+                                            const isOff = currentMode === 'off' || !dom?.is_enabled;
                                             return (
-                                                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                                    <span className={`mdi ${domIcon}`} style={{ fontSize: 14, color: 'var(--text-muted)', width: 18 }} />
-                                                    <div style={{ flex: 1, minWidth: 0 }}>
-                                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 2 }}>
-                                                            <span style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>{domName}</span>
-                                                            <span className={`badge badge-${phase.color}`} style={{ fontSize: 9, padding: '1px 6px', cursor: 'pointer' }}
-                                                                title={`→ ${nextLabel}`}
-                                                                onClick={async () => {
-                                                                    await api.put(`phases/${room.id}/${ds.domain_id}`, { phase: nextPhase });
-                                                                    showToast(`${domName}: ${nextLabel}`, 'success');
-                                                                    await refreshData();
+                                                <div key={i} style={{ opacity: isOff ? 0.5 : 1, transition: 'opacity 0.2s' }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                                        <span className={`mdi ${domIcon}`} style={{ fontSize: 14, color: 'var(--text-muted)', width: 18 }} />
+                                                        <div style={{ flex: 1, minWidth: 0 }}>
+                                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11, marginBottom: 2 }}>
+                                                                <span style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>{domName}</span>
+                                                                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                                                    <span className={`badge badge-${phase.color}`} style={{ fontSize: 9, padding: '1px 6px', cursor: 'pointer' }}
+                                                                        title={`→ ${nextLabel}`}
+                                                                        onClick={async () => {
+                                                                            await api.put(`phases/${room.id}/${ds.domain_id}`, { phase: nextPhase });
+                                                                            showToast(`${domName}: ${nextLabel}`, 'success');
+                                                                            await refreshData();
+                                                                        }}>
+                                                                        {phase[lang]}
+                                                                    </span>
+                                                                    <select
+                                                                        value={currentMode}
+                                                                        onChange={async (e) => {
+                                                                            await api.put(`phases/${room.id}/${ds.domain_id}/mode`, { mode: e.target.value });
+                                                                            showToast(`${domName}: ${e.target.value === 'global' ? 'Global' : e.target.value === 'suggest' ? (lang === 'de' ? 'Vorschlagen' : 'Suggest') : e.target.value === 'auto' ? (lang === 'de' ? 'Automatisch' : 'Auto') : (lang === 'de' ? 'Aus' : 'Off')}`, 'success');
+                                                                            await refreshData();
+                                                                        }}
+                                                                        style={{
+                                                                            fontSize: 10, padding: '1px 4px', border: '1px solid var(--border-color)',
+                                                                            borderRadius: 4, background: 'var(--bg-secondary)', color: modeColors[currentMode],
+                                                                            fontWeight: 600, cursor: 'pointer', outline: 'none'
+                                                                        }}>
+                                                                        <option value="global">{lang === 'de' ? 'Global' : 'Global'}</option>
+                                                                        <option value="suggest">{lang === 'de' ? 'Vorschlagen' : 'Suggest'}</option>
+                                                                        <option value="auto">{lang === 'de' ? 'Automatisch' : 'Auto'}</option>
+                                                                        <option value="off">{lang === 'de' ? 'Aus' : 'Off'}</option>
+                                                                    </select>
+                                                                </div>
+                                                            </div>
+                                                            <div style={{ height: 4, borderRadius: 2, background: 'var(--bg-main)', overflow: 'hidden' }}>
+                                                                <div style={{ height: '100%', borderRadius: 2, width: `${progress}%`,
+                                                                    background: ds.learning_phase === 'autonomous' ? 'var(--success)' : ds.learning_phase === 'suggesting' ? 'var(--warning)' : 'var(--accent-primary)',
+                                                                    transition: 'width 0.3s' }} />
+                                                            </div>
+                                                        </div>
+                                                        {isAdmin && (
+                                                            <button className="btn btn-ghost" style={{ padding: 2, fontSize: 12 }}
+                                                                title={lang === 'de' ? 'Lernphase zurücksetzen' : 'Reset learning phase'}
+                                                                onClick={async (e) => {
+                                                                    e.stopPropagation();
+                                                                    if (confirm(lang === 'de' ? `${domName} zurücksetzen? Alle Muster werden gelöscht.` : `Reset ${domName}? All patterns will be deleted.`)) {
+                                                                        await api.post(`phases/${room.id}/${ds.domain_id}/reset`);
+                                                                        showToast(lang === 'de' ? 'Zurückgesetzt' : 'Reset', 'success');
+                                                                        await refreshData();
+                                                                    }
                                                                 }}>
-                                                                {phase[lang]}
-                                                            </span>
-                                                        </div>
-                                                        <div style={{ height: 4, borderRadius: 2, background: 'var(--bg-main)', overflow: 'hidden' }}>
-                                                            <div style={{ height: '100%', borderRadius: 2, width: `${progress}%`,
-                                                                background: ds.learning_phase === 'autonomous' ? 'var(--success)' : ds.learning_phase === 'suggesting' ? 'var(--warning)' : 'var(--accent-primary)',
-                                                                transition: 'width 0.3s' }} />
-                                                        </div>
+                                                                <span className="mdi mdi-restart" style={{ color: 'var(--text-muted)' }} />
+                                                            </button>
+                                                        )}
                                                     </div>
-                                                    {isAdmin && (
-                                                        <button className="btn btn-ghost" style={{ padding: 2, fontSize: 12 }}
-                                                            title={lang === 'de' ? 'Lernphase zurücksetzen' : 'Reset learning phase'}
-                                                            onClick={async (e) => {
-                                                                e.stopPropagation();
-                                                                if (confirm(lang === 'de' ? `${domName} zurücksetzen? Alle Muster werden gelöscht.` : `Reset ${domName}? All patterns will be deleted.`)) {
-                                                                    await api.post(`phases/${room.id}/${ds.domain_id}/reset`);
-                                                                    showToast(lang === 'de' ? 'Zurückgesetzt' : 'Reset', 'success');
-                                                                    await refreshData();
-                                                                }
-                                                            }}>
-                                                            <span className="mdi mdi-restart" style={{ color: 'var(--text-muted)' }} />
-                                                        </button>
-                                                    )}
                                                 </div>
                                             );
                                         })}
