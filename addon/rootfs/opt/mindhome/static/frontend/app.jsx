@@ -1350,7 +1350,7 @@ const DomainsPage = () => {
                                 </div>
                             )}
                             {controlBadges.length > 0 && sensorBadges.length > 0 && (
-                                <hr style={{ border: 'none', borderTop: '1px solid var(--border-color)', margin: '8px 0' }} />
+                                <div style={{ height: 8 }} />
                             )}
                             {sensorBadges.length > 0 && (
                                 <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center', marginTop: controlBadges.length > 0 ? 0 : 12 }}>
