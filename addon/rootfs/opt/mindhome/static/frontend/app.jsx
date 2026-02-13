@@ -2418,6 +2418,14 @@ const UsersPage = () => {
         return t ? t.name : entityId;
     };
 
+    const getTrackerState = (entityId) => {
+        const t = deviceTrackers.find(d => d.entity_id === entityId);
+        return t?.state || 'unknown';
+    };
+
+    const stateColor = (state) => state === 'home' ? 'var(--success)' : state === 'not_home' ? 'var(--danger)' : 'var(--text-muted)';
+    const stateLabel = (state) => state === 'home' ? (lang === 'de' ? 'Zuhause' : 'Home') : state === 'not_home' ? (lang === 'de' ? 'Abwesend' : 'Away') : state;
+
     const deviceTypeLabel = (type) => {
         const labels = { primary: lang === 'de' ? 'Primär' : 'Primary', secondary: lang === 'de' ? 'Sekundär' : 'Secondary', stationary: lang === 'de' ? 'Stationär' : 'Stationary' };
         return labels[type] || type;
@@ -2486,17 +2494,30 @@ const UsersPage = () => {
                                         {lang === 'de' ? 'Zuweisen' : 'Assign'}
                                     </button>
                                 </div>
-                                {devices.length > 0 ? devices.map(d => (
+                                {devices.length > 0 ? devices.map(d => {
+                                    const st = getTrackerState(d.entity_id);
+                                    return (
                                     <div key={d.id} style={{
                                         display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                                         padding: '6px 10px', borderRadius: 6, marginBottom: 4,
                                         background: 'var(--bg-tertiary)', fontSize: 12,
                                     }}>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-                                            <span className={`mdi ${deviceTypeIcon(d.device_type)}`} style={{ fontSize: 16, color: 'var(--accent-primary)', flexShrink: 0 }} />
+                                            <div style={{ position: 'relative', flexShrink: 0 }}>
+                                                <span className={`mdi ${deviceTypeIcon(d.device_type)}`} style={{ fontSize: 16, color: 'var(--accent-primary)' }} />
+                                                <span title={stateLabel(st)} style={{
+                                                    position: 'absolute', bottom: -2, right: -2,
+                                                    width: 8, height: 8, borderRadius: '50%',
+                                                    background: stateColor(st),
+                                                    border: '2px solid var(--bg-tertiary)',
+                                                }} />
+                                            </div>
                                             <div style={{ minWidth: 0 }}>
                                                 <div style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{getTrackerName(d.entity_id)}</div>
-                                                <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{d.entity_id} · {deviceTypeLabel(d.device_type)}</div>
+                                                <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+                                                    {d.entity_id} · {deviceTypeLabel(d.device_type)}
+                                                    <span style={{ marginLeft: 6, color: stateColor(st), fontWeight: 500 }}>{stateLabel(st)}</span>
+                                                </div>
                                             </div>
                                         </div>
                                         <button className="btn btn-ghost btn-icon" onClick={() => handleRemoveDevice(d.id)}
@@ -2504,7 +2525,8 @@ const UsersPage = () => {
                                             <span className="mdi mdi-close" style={{ fontSize: 14, color: 'var(--text-muted)' }} />
                                         </button>
                                     </div>
-                                )) : (
+                                    );
+                                }) : (
                                     <div style={{ fontSize: 11, color: 'var(--text-muted)', fontStyle: 'italic' }}>
                                         {lang === 'de' ? 'Keine Geräte zugewiesen' : 'No devices assigned'}
                                     </div>
