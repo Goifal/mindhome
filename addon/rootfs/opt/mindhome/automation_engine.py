@@ -20,7 +20,8 @@ from models import (
     RoomDomainState, LearningPhase, ActionLog, NotificationLog,
     NotificationType, NotificationSetting, SystemSetting, StateHistory,
     PresenceMode, PresenceLog, PluginSetting, QuietHoursConfig,
-    LearnedScene, DayPhase, PatternSettings, AnomalySetting
+    LearnedScene, DayPhase, PatternSettings, AnomalySetting,
+    PersonDevice, GuestDevice,
 )
 
 logger = logging.getLogger("mindhome.automation_engine")
@@ -1411,7 +1412,7 @@ class PresenceModeManager:
             session.close()
 
     def check_auto_transitions(self):
-        """Check if presence mode should change based on person states."""
+        """Check if presence mode should change based on person states and PersonDevice entities."""
         # Debounce: skip if last mode change was < 5 minutes ago
         now = datetime.now(timezone.utc)
         if hasattr(self, '_last_mode_change') and self._last_mode_change:
@@ -1421,8 +1422,32 @@ class PresenceModeManager:
 
         session = self.Session()
         try:
+            # Primary: HA person entities
             persons_home = self.ha.get_persons_home()
-            anyone_home = len(persons_home) > 0
+            persons_home_set = set(p.get("entity_id", "") for p in persons_home)
+
+            # Secondary: PersonDevice device_tracker entities (complements HA persons)
+            person_devices = session.query(PersonDevice).filter_by(is_active=True).all()
+            all_states = self.ha.get_states() or []
+            state_map = {s["entity_id"]: s.get("state", "") for s in all_states}
+
+            for pd in person_devices:
+                tracker_state = state_map.get(pd.entity_id, "")
+                if tracker_state == "home":
+                    persons_home_set.add(pd.entity_id)
+
+            # GuestDevice: count guests with 'home' state for anyone_home
+            guest_devices = session.query(GuestDevice).all()
+            guests_home = 0
+            for gd in guest_devices:
+                if gd.entity_id and state_map.get(gd.entity_id, "") == "home":
+                    guests_home += 1
+                    # Update last_seen and visit_count
+                    if gd.last_seen is None or (now - gd.last_seen).total_seconds() > 3600:
+                        gd.visit_count = (gd.visit_count or 0) + 1
+                    gd.last_seen = now
+
+            anyone_home = len(persons_home_set) > 0 or guests_home > 0
 
             modes = session.query(PresenceMode).filter_by(
                 is_active=True, trigger_type="auto"
@@ -1436,11 +1461,13 @@ class PresenceModeManager:
                     if self._current_mode != mode.id:
                         self.set_mode(mode.id, trigger="auto")
                         self._last_mode_change = now
+                    session.commit()
                     return
                 elif condition == "first_home" and anyone_home:
                     if self._current_mode != mode.id:
                         self.set_mode(mode.id, trigger="auto")
                         self._last_mode_change = now
+                    session.commit()
                     return
                 elif condition == "all_home":
                     all_persons = self.ha.get_all_persons()
@@ -1448,9 +1475,13 @@ class PresenceModeManager:
                         if self._current_mode != mode.id:
                             self.set_mode(mode.id, trigger="auto")
                             self._last_mode_change = now
+                        session.commit()
                         return
+
+            session.commit()  # Save GuestDevice updates
         except Exception as e:
             logger.warning(f"Presence auto-transition error: {e}")
+            session.rollback()
         finally:
             session.close()
 
@@ -1676,7 +1707,14 @@ class AutomationScheduler:
         t7.start()
         self._threads.append(t7)
 
-        logger.info("Automation Scheduler started (exec:1min, suggest:4h, phase:12h, anomaly:15min, presence:2min, conflicts:5min)")
+        # Calendar trigger check: every 5 minutes
+        t8 = threading.Thread(target=self._run_periodic,
+                              args=(self._calendar_trigger_task, 300, "calendar_triggers"),
+                              daemon=True)
+        t8.start()
+        self._threads.append(t8)
+
+        logger.info("Automation Scheduler started (exec:1min, suggest:4h, phase:12h, anomaly:15min, presence:2min, conflicts:5min, cal-triggers:5min)")
 
         # #40 Watchdog: monitor thread health every 5 min
         t5 = threading.Thread(target=self._watchdog_task, daemon=True)
@@ -1696,6 +1734,61 @@ class AutomationScheduler:
             if alive < total:
                 logger.warning(f"Watchdog: {total - alive}/{total} threads dead")
             time.sleep(300)
+
+    def _calendar_trigger_task(self):
+        """Check calendar triggers against upcoming HA calendar events."""
+        try:
+            from helpers import get_setting
+            import json as _json
+
+            raw = get_setting("calendar_triggers")
+            if not raw:
+                return
+            triggers = _json.loads(raw)
+            active_triggers = [t for t in triggers if t.get("is_active", True)]
+            if not active_triggers:
+                return
+
+            # Get events from synced HA calendars for next 24 hours
+            synced_raw = get_setting("calendar_synced_sources") or "[]"
+            synced_ids = _json.loads(synced_raw)
+            if not synced_ids:
+                return
+
+            now = datetime.now(timezone.utc)
+            start = now.isoformat()
+            end = (now + timedelta(hours=1)).isoformat()
+
+            events = []
+            for eid in synced_ids:
+                try:
+                    cal_events = self.ha.get_calendar_events(eid, start, end)
+                    events.extend(cal_events)
+                except Exception:
+                    pass
+
+            # Match triggers to events
+            for trigger in active_triggers:
+                keyword = (trigger.get("keyword", "")).lower()
+                entity_id = trigger.get("entity_id")
+                service = trigger.get("service", "turn_on")
+                if not keyword or not entity_id:
+                    continue
+
+                for ev in events:
+                    summary = (ev.get("summary", "") or "").lower()
+                    if keyword in summary:
+                        # Execute the trigger action
+                        try:
+                            domain = entity_id.split(".")[0] if "." in entity_id else "homeassistant"
+                            self.ha.call_service(domain, service, {"entity_id": entity_id})
+                            logger.info(f"Calendar trigger fired: '{keyword}' → {entity_id}.{service}")
+                        except Exception as e:
+                            logger.warning(f"Calendar trigger exec error: {e}")
+                        break  # One match per trigger per cycle
+
+        except Exception as e:
+            logger.debug(f"Calendar trigger check error: {e}")
 
     def _run_periodic(self, task_func, interval_seconds, task_name):
         """Run a task periodically."""

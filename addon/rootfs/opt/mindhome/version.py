@@ -4,12 +4,37 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "0.6.18"
-BUILD = 19
-BUILD_DATE = "2026-02-11"
-CODENAME = "Phase 3.5 - Bugfix"
+VERSION = "0.6.19"
+BUILD = 20
+BUILD_DATE = "2026-02-13"
+CODENAME = "Phase 3.5 - Kalender & Presence"
 
 # Changelog
+# Build 20: v0.6.19 Kalender-Sync, Presence-System, UX-Verbesserungen
+#   - Personen: Bearbeiten (Name, Rolle, HA-Person) + Geraete-Zuweisung (device_tracker)
+#   - Personen: Device-Tracker Live-State (home/away Punkt mit Farbindikator)
+#   - Kalender: iCal-Export mit Token-Schutz und Cache-Header
+#   - Kalender: HA-Kalender-Import (Google, CalDAV) mit Sync-Konfiguration
+#   - Kalender: Synced Events in Monatsansicht (blaue Punkte)
+#   - Kalender: Konfigurierbarer Schicht-Export-Zeitraum (14-365 Tage)
+#   - Kalender: Weekday/Homeoffice-Profile im iCal-Export (RRULE)
+#   - Kalender: Trigger Background-Loop (5min, Keyword-Match → HA-Service)
+#   - Kalender: HA-Offline Fallback fuer Calendar API
+#   - Presence: Default-Modi beim DB-Init (Zuhause, Abwesend, Schlaf, Urlaub, Besuch)
+#   - Presence: auto_config mit Conditions (first_home, all_away, all_home)
+#   - Presence: PersonDevice in Erkennung integriert
+#   - Presence: Gaeste in anyone_home Logik + GuestDevice Pflege
+#   - Presence: NotificationLog-Felder gefixed (title, user_id, was_read)
+#   - UX: Loesch-Bestaetigungen fuer alle 9 fehlenden Delete-Operationen
+#   - UX: Auto-Refresh bei Tab-Wechsel (>30s inaktiv)
+#   - UX: Bulk-Pattern-Ops Error-Handling (kein Optimistic Update mehr)
+#   - Data: SAMPLING_THRESHOLDS +13 device_classes (signal_strength, gas, etc.)
+#   - Data: ALWAYS_LOG_DOMAINS +12 Domains (vacuum, humidifier, valve, etc.)
+#   - Data: Fallback fuer unbekannte Sensoren (konservativer Schwellwert)
+#   - Data: Rate-Limit auf 600 erhoeht (Events + HTTP API)
+#   - Data: Dedup-Cache selektive Bereinigung statt clear()
+#   - Config: panel_admin: false (Zugang fuer alle HA-Benutzer)
+#
 # Build 19: v0.6.18 Rotation + TTS + Fixes
 #   - Fix Rotation: Speichern funktioniert (parseInt-Bug bei Person-ID gefixt)
 #   - Gespeicherte Rotationen: Anzeige, Bearbeiten, Loeschen im Schichtdienst-Tab

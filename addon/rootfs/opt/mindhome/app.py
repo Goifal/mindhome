@@ -249,10 +249,12 @@ def on_state_changed(event):
         return  # Skip duplicate
     _recent_events[dedup_key] = now
 
-    # Cleanup dedup cache periodically (keep max 500)
+    # Cleanup dedup cache periodically (evict expired entries, keep max 500)
     if len(_recent_events) > 500:
         cutoff = now - _DEDUP_WINDOW * 2
-        _recent_events.clear()
+        expired = [k for k, v in _recent_events.items() if v < cutoff]
+        for k in expired:
+            del _recent_events[k]
 
     # Log to state_history via pattern engine
     try:

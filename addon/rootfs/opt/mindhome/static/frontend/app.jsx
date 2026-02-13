@@ -1059,6 +1059,7 @@ const QuickActionsGrid = () => {
     };
 
     const handleDelete = async (id) => {
+        if (!confirm(lang === 'de' ? 'Quick Action wirklich löschen?' : 'Really delete Quick Action?')) return;
         await api.delete(`quick-actions/${id}`);
         await refreshData();
         showToast(lang === 'de' ? 'Quick Action gelöscht' : 'Quick Action deleted', 'success');
@@ -1934,6 +1935,7 @@ const DeviceGroupsSection = () => {
     };
 
     const deleteGroup = async (id) => {
+        if (!confirm(lang === 'de' ? 'Gerätegruppe wirklich löschen?' : 'Really delete device group?')) return;
         await api.delete(`device-groups/${id}`);
         showToast(lang === 'de' ? 'Gruppe gelöscht' : 'Group deleted', 'success'); await load();
     };
@@ -2329,9 +2331,21 @@ const UsersPage = () => {
     const [newUser, setNewUser] = useState({ name: '', role: 'user', ha_person_entity: '' });
     const [haPersons, setHaPersons] = useState([]);
     const [editingUser, setEditingUser] = useState(null);
+    const [editForm, setEditForm] = useState({ name: '', role: '', ha_person_entity: '' });
+    const [personDevices, setPersonDevices] = useState([]);
+    const [deviceTrackers, setDeviceTrackers] = useState([]);
+    const [addingDeviceFor, setAddingDeviceFor] = useState(null);
+    const [newDevice, setNewDevice] = useState({ entity_id: '', device_type: 'primary' });
+
+    const loadDevices = async () => {
+        const pd = await api.get('person-devices');
+        if (Array.isArray(pd)) setPersonDevices(pd);
+    };
 
     useEffect(() => {
         api.get('ha/persons').then(r => setHaPersons(r?.persons || []));
+        loadDevices();
+        api.get('ha/entities?domain=device_tracker').then(r => setDeviceTrackers(r?.entities || []));
     }, []);
 
     const handleAdd = async () => {
@@ -2346,6 +2360,7 @@ const UsersPage = () => {
     };
 
     const handleDelete = async (id) => {
+        if (!confirm(lang === 'de' ? 'Person wirklich löschen? Alle zugewiesenen Geräte werden ebenfalls entfernt.' : 'Really delete person? All assigned devices will be removed too.')) return;
         const result = await api.delete(`users/${id}`);
         if (result?.success) {
             showToast(lang === 'de' ? 'Person entfernt' : 'Person removed', 'success');
@@ -2353,13 +2368,71 @@ const UsersPage = () => {
         }
     };
 
-    const handleAssignPerson = async (userId, haEntity) => {
-        const result = await api.put(`users/${userId}`, { ha_person_entity: haEntity || null });
+    const handleEdit = (user) => {
+        setEditForm({ name: user.name, role: user.role, ha_person_entity: user.ha_person_entity || '' });
+        setEditingUser(user);
+    };
+
+    const handleSaveEdit = async () => {
+        if (!editForm.name.trim()) return;
+        const result = await api.put(`users/${editingUser.id}`, {
+            name: editForm.name,
+            role: editForm.role,
+            ha_person_entity: editForm.ha_person_entity || null,
+        });
         if (result?.id) {
-            showToast(lang === 'de' ? 'HA-Person zugewiesen' : 'HA person assigned', 'success');
-            await refreshData();
+            showToast(lang === 'de' ? 'Person aktualisiert' : 'Person updated', 'success');
             setEditingUser(null);
+            await refreshData();
         }
+    };
+
+    const handleAddDevice = async () => {
+        if (!newDevice.entity_id || !addingDeviceFor) return;
+        const result = await api.post('person-devices', {
+            user_id: addingDeviceFor,
+            entity_id: newDevice.entity_id,
+            device_type: newDevice.device_type,
+        });
+        if (result?.success) {
+            showToast(lang === 'de' ? 'Gerät zugewiesen' : 'Device assigned', 'success');
+            setNewDevice({ entity_id: '', device_type: 'primary' });
+            setAddingDeviceFor(null);
+            await loadDevices();
+        }
+    };
+
+    const handleRemoveDevice = async (pdId) => {
+        if (!confirm(lang === 'de' ? 'Gerätezuweisung wirklich entfernen?' : 'Really remove device assignment?')) return;
+        const result = await api.delete(`person-devices/${pdId}`);
+        if (result?.success) {
+            showToast(lang === 'de' ? 'Gerät entfernt' : 'Device removed', 'success');
+            await loadDevices();
+        }
+    };
+
+    const getUserDevices = (userId) => personDevices.filter(d => d.user_id === userId);
+
+    const getTrackerName = (entityId) => {
+        const t = deviceTrackers.find(d => d.entity_id === entityId);
+        return t ? t.name : entityId;
+    };
+
+    const getTrackerState = (entityId) => {
+        const t = deviceTrackers.find(d => d.entity_id === entityId);
+        return t?.state || 'unknown';
+    };
+
+    const stateColor = (state) => state === 'home' ? 'var(--success)' : state === 'not_home' ? 'var(--danger)' : 'var(--text-muted)';
+    const stateLabel = (state) => state === 'home' ? (lang === 'de' ? 'Zuhause' : 'Home') : state === 'not_home' ? (lang === 'de' ? 'Abwesend' : 'Away') : state;
+
+    const deviceTypeLabel = (type) => {
+        const labels = { primary: lang === 'de' ? 'Primär' : 'Primary', secondary: lang === 'de' ? 'Sekundär' : 'Secondary', stationary: lang === 'de' ? 'Stationär' : 'Stationary' };
+        return labels[type] || type;
+    };
+
+    const deviceTypeIcon = (type) => {
+        return type === 'primary' ? 'mdi-cellphone' : type === 'secondary' ? 'mdi-tablet' : 'mdi-access-point';
     };
 
     return (
@@ -2375,10 +2448,12 @@ const UsersPage = () => {
             </div>
 
             {users.length > 0 ? (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16 }}>
-                    {users.map(user => (
-                        <div key={user.id} className="card">
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 16 }}>
+                    {users.map(user => {
+                        const devices = getUserDevices(user.id);
+                        return (
+                        <div key={user.id} className="card" style={{ padding: 0 }}>
+                            <div style={{ padding: '16px 16px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                                     <div className="card-icon" style={{
                                         background: user.role === 'admin' ? 'var(--accent-primary-dim)' : user.role === 'guest' ? 'var(--bg-tertiary)' : 'var(--accent-secondary-dim)',
@@ -2390,26 +2465,76 @@ const UsersPage = () => {
                                         <div className="card-title">{user.name}</div>
                                         <div className="card-subtitle">
                                             {user.role === 'admin' ? 'Administrator' : user.role === 'guest' ? (lang === 'de' ? 'Gast' : 'Guest') : (lang === 'de' ? 'Benutzer' : 'User')}
-                                        </div>
-                                        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
-                                            {user.ha_person_entity
-                                                ? ` ${user.ha_person_entity}`
-                                                : (lang === 'de' ? ' ️ Keine HA-Person' : ' ️ No HA person')}
+                                            {user.ha_person_entity && <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--text-muted)' }}>{user.ha_person_entity}</span>}
                                         </div>
                                     </div>
                                 </div>
                                 <div style={{ display: 'flex', gap: 4 }}>
-                                    <button className="btn btn-ghost btn-icon" onClick={() => setEditingUser(user)}
-                                        title={lang === 'de' ? 'HA-Person zuweisen' : 'Assign HA person'}>
-                                        <span className="mdi mdi-link-variant" style={{ fontSize: 18, color: 'var(--accent-primary)' }} />
+                                    <button className="btn btn-ghost btn-icon" onClick={() => handleEdit(user)}
+                                        title={lang === 'de' ? 'Bearbeiten' : 'Edit'}>
+                                        <span className="mdi mdi-pencil-outline" style={{ fontSize: 18, color: 'var(--accent-primary)' }} />
                                     </button>
-                                    <button className="btn btn-ghost btn-icon" onClick={() => handleDelete(user.id)}>
+                                    <button className="btn btn-ghost btn-icon" onClick={() => handleDelete(user.id)}
+                                        title={lang === 'de' ? 'Löschen' : 'Delete'}>
                                         <span className="mdi mdi-delete-outline" style={{ fontSize: 18, color: 'var(--text-muted)' }} />
                                     </button>
                                 </div>
                             </div>
+
+                            {/* Device assignments */}
+                            <div style={{ borderTop: '1px solid var(--border-color)', padding: '10px 16px 14px' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: devices.length > 0 ? 8 : 0 }}>
+                                    <span style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-muted)' }}>
+                                        <span className="mdi mdi-cellphone-link" style={{ marginRight: 4 }} />
+                                        {lang === 'de' ? 'Geräte' : 'Devices'}
+                                    </span>
+                                    <button className="btn btn-ghost" style={{ fontSize: 11, padding: '2px 8px' }}
+                                        onClick={() => { setAddingDeviceFor(user.id); setNewDevice({ entity_id: '', device_type: 'primary' }); }}>
+                                        <span className="mdi mdi-plus" style={{ fontSize: 14 }} />
+                                        {lang === 'de' ? 'Zuweisen' : 'Assign'}
+                                    </button>
+                                </div>
+                                {devices.length > 0 ? devices.map(d => {
+                                    const st = getTrackerState(d.entity_id);
+                                    return (
+                                    <div key={d.id} style={{
+                                        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                                        padding: '6px 10px', borderRadius: 6, marginBottom: 4,
+                                        background: 'var(--bg-tertiary)', fontSize: 12,
+                                    }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                                            <div style={{ position: 'relative', flexShrink: 0 }}>
+                                                <span className={`mdi ${deviceTypeIcon(d.device_type)}`} style={{ fontSize: 16, color: 'var(--accent-primary)' }} />
+                                                <span title={stateLabel(st)} style={{
+                                                    position: 'absolute', bottom: -2, right: -2,
+                                                    width: 8, height: 8, borderRadius: '50%',
+                                                    background: stateColor(st),
+                                                    border: '2px solid var(--bg-tertiary)',
+                                                }} />
+                                            </div>
+                                            <div style={{ minWidth: 0 }}>
+                                                <div style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{getTrackerName(d.entity_id)}</div>
+                                                <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+                                                    {d.entity_id} · {deviceTypeLabel(d.device_type)}
+                                                    <span style={{ marginLeft: 6, color: stateColor(st), fontWeight: 500 }}>{stateLabel(st)}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <button className="btn btn-ghost btn-icon" onClick={() => handleRemoveDevice(d.id)}
+                                            style={{ padding: 2, marginLeft: 4, flexShrink: 0 }}>
+                                            <span className="mdi mdi-close" style={{ fontSize: 14, color: 'var(--text-muted)' }} />
+                                        </button>
+                                    </div>
+                                    );
+                                }) : (
+                                    <div style={{ fontSize: 11, color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                                        {lang === 'de' ? 'Keine Geräte zugewiesen' : 'No devices assigned'}
+                                    </div>
+                                )}
+                            </div>
                         </div>
-                    ))}
+                        );
+                    })}
                 </div>
             ) : (
                 <div className="empty-state">
@@ -2419,6 +2544,7 @@ const UsersPage = () => {
                 </div>
             )}
 
+            {/* Add person modal */}
             {showAdd && (
                 <Modal title={lang === 'de' ? 'Person hinzufügen' : 'Add Person'} onClose={() => setShowAdd(false)}
                     actions={<><button className="btn btn-secondary" onClick={() => setShowAdd(false)}>{lang === 'de' ? 'Abbrechen' : 'Cancel'}</button>
@@ -2453,34 +2579,77 @@ const UsersPage = () => {
                 </Modal>
             )}
 
+            {/* Edit person modal */}
             {editingUser && (
-                <Modal title={lang === 'de' ? `HA-Person: ${editingUser.name}` : `HA Person: ${editingUser.name}`} onClose={() => setEditingUser(null)}
-                    actions={<button className="btn btn-secondary" onClick={() => setEditingUser(null)}>{lang === 'de' ? 'Schließen' : 'Close'}</button>}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                        <div style={{ padding: '10px 14px', borderRadius: 8, cursor: 'pointer',
-                            border: !editingUser.ha_person_entity ? '2px solid var(--accent-primary)' : '1px solid var(--border-color)',
-                            background: !editingUser.ha_person_entity ? 'var(--accent-primary-dim)' : 'transparent'
-                        }} onClick={() => handleAssignPerson(editingUser.id, '')}>
-                            {lang === 'de' ? '– Keine Person –' : '– No Person –'}
-                        </div>
-                        {haPersons.map(p => (
-                            <div key={p.entity_id} style={{ padding: '10px 14px', borderRadius: 8, cursor: 'pointer',
-                                border: editingUser.ha_person_entity === p.entity_id ? '2px solid var(--accent-primary)' : '1px solid var(--border-color)',
-                                background: editingUser.ha_person_entity === p.entity_id ? 'var(--accent-primary-dim)' : 'transparent',
-                                display: 'flex', justifyContent: 'space-between', alignItems: 'center'
-                            }} onClick={() => handleAssignPerson(editingUser.id, p.entity_id)}>
-                                <div><strong>{p.name}</strong><div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{p.entity_id}</div></div>
-                                <span className={`badge badge-${p.state === 'home' ? 'success' : 'warning'}`}>
-                                    <span className="badge-dot" />{p.state === 'home' ? (lang === 'de' ? 'Zuhause' : 'Home') : (lang === 'de' ? 'Weg' : 'Away')}
-                                </span>
-                            </div>
-                        ))}
+                <Modal title={lang === 'de' ? `Person bearbeiten: ${editingUser.name}` : `Edit Person: ${editingUser.name}`} onClose={() => setEditingUser(null)}
+                    actions={<><button className="btn btn-secondary" onClick={() => setEditingUser(null)}>{lang === 'de' ? 'Abbrechen' : 'Cancel'}</button>
+                        <button className="btn btn-primary" onClick={handleSaveEdit}>{lang === 'de' ? 'Speichern' : 'Save'}</button></>}>
+                    <div className="input-group" style={{ marginBottom: 16 }}>
+                        <label className="input-label">{lang === 'de' ? 'Name' : 'Name'}</label>
+                        <input className="input" value={editForm.name} onChange={e => setEditForm({ ...editForm, name: e.target.value })} autoFocus />
+                    </div>
+                    <div className="input-group" style={{ marginBottom: 16 }}>
+                        <Dropdown
+                            label={lang === 'de' ? 'Rolle' : 'Role'}
+                            value={editForm.role}
+                            onChange={v => setEditForm({ ...editForm, role: v })}
+                            options={[
+                                { value: 'user', label: lang === 'de' ? 'Benutzer' : 'User' },
+                                { value: 'admin', label: 'Administrator' },
+                                { value: 'guest', label: lang === 'de' ? 'Gast' : 'Guest' },
+                            ]}
+                        />
+                    </div>
+                    <div className="input-group">
+                        <Dropdown
+                            label={lang === 'de' ? 'HA-Person' : 'HA Person'}
+                            value={editForm.ha_person_entity}
+                            onChange={v => setEditForm({ ...editForm, ha_person_entity: v })}
+                            options={[
+                                { value: '', label: lang === 'de' ? '– Keine –' : '– None –' },
+                                ...haPersons.map(p => ({ value: p.entity_id, label: `${p.name} (${p.entity_id})` }))
+                            ]}
+                        />
+                    </div>
+                </Modal>
+            )}
+
+            {/* Add device to person modal */}
+            {addingDeviceFor && (
+                <Modal title={lang === 'de' ? `Gerät zuweisen: ${users.find(u => u.id === addingDeviceFor)?.name || ''}` : `Assign Device: ${users.find(u => u.id === addingDeviceFor)?.name || ''}`}
+                    onClose={() => setAddingDeviceFor(null)}
+                    actions={<><button className="btn btn-secondary" onClick={() => setAddingDeviceFor(null)}>{lang === 'de' ? 'Abbrechen' : 'Cancel'}</button>
+                        <button className="btn btn-primary" onClick={handleAddDevice} disabled={!newDevice.entity_id}>{lang === 'de' ? 'Zuweisen' : 'Assign'}</button></>}>
+                    <div className="input-group" style={{ marginBottom: 16 }}>
+                        <Dropdown
+                            label={lang === 'de' ? 'Gerät (device_tracker)' : 'Device (device_tracker)'}
+                            value={newDevice.entity_id}
+                            onChange={v => setNewDevice({ ...newDevice, entity_id: v })}
+                            placeholder={lang === 'de' ? '– Gerät wählen –' : '– Select device –'}
+                            options={[
+                                { value: '', label: lang === 'de' ? '– Gerät wählen –' : '– Select device –' },
+                                ...deviceTrackers.map(d => ({ value: d.entity_id, label: `${d.name} (${d.entity_id})` }))
+                            ]}
+                        />
+                    </div>
+                    <div className="input-group">
+                        <Dropdown
+                            label={lang === 'de' ? 'Gerätetyp' : 'Device Type'}
+                            value={newDevice.device_type}
+                            onChange={v => setNewDevice({ ...newDevice, device_type: v })}
+                            options={[
+                                { value: 'primary', label: lang === 'de' ? 'Primär (Handy)' : 'Primary (Phone)' },
+                                { value: 'secondary', label: lang === 'de' ? 'Sekundär (Tablet)' : 'Secondary (Tablet)' },
+                                { value: 'stationary', label: lang === 'de' ? 'Stationär (festes Gerät)' : 'Stationary (fixed device)' },
+                            ]}
+                        />
                     </div>
                 </Modal>
             )}
         </div>
     );
 };
+
 
 // ================================================================
 // Phase 2a: Patterns Page (Muster-Explorer)
@@ -3115,6 +3284,167 @@ const CalendarTriggersConfig = ({ lang, showToast }) => {
                     </button>
                 </div>
             ))}
+        </div>
+    );
+};
+
+const CalendarSyncConfig = ({ lang, showToast, onEventsLoaded }) => {
+    const [sources, setSources] = useState([]);
+    const [syncedIds, setSyncedIds] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [exportUrl, setExportUrl] = useState('');
+    const [copied, setCopied] = useState(false);
+    const [exportDays, setExportDays] = useState(90);
+    const [savingDays, setSavingDays] = useState(false);
+
+    useEffect(() => {
+        (async () => {
+            const [sourcesR, tokenR, settingsR] = await Promise.all([
+                api.get('calendar/ha-sources'),
+                api.get('calendar/export-token'),
+                api.get('calendar/export-settings'),
+            ]);
+            if (sourcesR) { setSources(sourcesR.sources || []); setSyncedIds(sourcesR.synced_ids || []); }
+            const token = tokenR?.token || '';
+            setExportUrl(`${window.location.origin}/api/calendar/export.ics?token=${token}`);
+            if (settingsR) setExportDays(settingsR.export_days || 90);
+            setLoading(false);
+        })();
+    }, []);
+
+    useEffect(() => {
+        if (syncedIds.length === 0) { onEventsLoaded?.([]); return; }
+        const now = new Date();
+        const start = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString();
+        const end = new Date(now.getFullYear(), now.getMonth() + 2, 0).toISOString();
+        api.get(`calendar/synced-events?start=${start}&end=${end}`).then(r => {
+            onEventsLoaded?.(r?.events || []);
+        });
+    }, [syncedIds]);
+
+    const toggleSource = async (entityId) => {
+        const newIds = syncedIds.includes(entityId)
+            ? syncedIds.filter(id => id !== entityId)
+            : [...syncedIds, entityId];
+        const r = await api.put('calendar/ha-sources', { synced_ids: newIds });
+        if (r?.success) {
+            setSyncedIds(newIds);
+            showToast(lang === 'de' ? 'Kalender-Sync aktualisiert' : 'Calendar sync updated', 'success');
+        }
+    };
+
+    const copyUrl = () => {
+        navigator.clipboard?.writeText(exportUrl).then(() => {
+            setCopied(true);
+            showToast(lang === 'de' ? 'URL kopiert' : 'URL copied', 'success');
+            setTimeout(() => setCopied(false), 2000);
+        });
+    };
+
+    const regenerateToken = async () => {
+        const r = await api.post('calendar/export-token');
+        if (r?.token) {
+            setExportUrl(`${window.location.origin}/api/calendar/export.ics?token=${r.token}`);
+            showToast(lang === 'de' ? 'Neuer Token generiert – alte URLs sind ungültig' : 'New token generated – old URLs are invalid', 'warning');
+        }
+    };
+
+    const saveExportDays = async (days) => {
+        setSavingDays(true);
+        const r = await api.put('calendar/export-settings', { export_days: days });
+        if (r?.success) {
+            setExportDays(r.export_days);
+            showToast(lang === 'de' ? `Schicht-Zeitraum auf ${r.export_days} Tage gesetzt` : `Shift range set to ${r.export_days} days`, 'success');
+        }
+        setSavingDays(false);
+    };
+
+    return (
+        <div className="card" style={{ marginBottom: 16 }}>
+            {/* Export Section */}
+            <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)' }}>
+                <div className="card-title" style={{ marginBottom: 8 }}>
+                    <span className="mdi mdi-export" style={{ marginRight: 8, color: 'var(--accent-primary)' }} />
+                    {lang === 'de' ? 'Kalender exportieren' : 'Export Calendar'}
+                </div>
+                <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8 }}>
+                    {lang === 'de'
+                        ? 'Diese URL in Google Calendar, Apple Calendar oder Outlook als Abo-Kalender eintragen.'
+                        : 'Add this URL as a subscription calendar in Google Calendar, Apple Calendar, or Outlook.'}
+                </p>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <input className="input" value={exportUrl} readOnly
+                        style={{ flex: 1, fontSize: 11, fontFamily: 'monospace', background: 'var(--bg-tertiary)' }}
+                        onClick={e => e.target.select()} />
+                    <button className="btn btn-sm btn-primary" onClick={copyUrl}>
+                        <span className={`mdi ${copied ? 'mdi-check' : 'mdi-content-copy'}`} style={{ marginRight: 4 }} />
+                        {copied ? 'OK' : (lang === 'de' ? 'Kopieren' : 'Copy')}
+                    </button>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <label style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                            {lang === 'de' ? 'Schichten exportieren:' : 'Export shifts:'}
+                        </label>
+                        <select className="input" value={exportDays} disabled={savingDays}
+                            onChange={e => saveExportDays(parseInt(e.target.value))}
+                            style={{ width: 'auto', fontSize: 12, padding: '4px 8px' }}>
+                            <option value={14}>14 {lang === 'de' ? 'Tage' : 'days'}</option>
+                            <option value={30}>30 {lang === 'de' ? 'Tage' : 'days'}</option>
+                            <option value={60}>60 {lang === 'de' ? 'Tage' : 'days'}</option>
+                            <option value={90}>90 {lang === 'de' ? 'Tage' : 'days'}</option>
+                            <option value={180}>180 {lang === 'de' ? 'Tage' : 'days'}</option>
+                            <option value={365}>365 {lang === 'de' ? 'Tage' : 'days'}</option>
+                        </select>
+                    </div>
+                    <button className="btn btn-sm" onClick={regenerateToken}
+                        style={{ fontSize: 11, color: 'var(--text-muted)' }}
+                        title={lang === 'de' ? 'Neuen Token generieren (alte URLs werden ungültig)' : 'Regenerate token (old URLs will stop working)'}>
+                        <span className="mdi mdi-refresh" style={{ marginRight: 4 }} />
+                        {lang === 'de' ? 'Token erneuern' : 'Regenerate token'}
+                    </button>
+                </div>
+            </div>
+
+            {/* Import Section */}
+            <div style={{ padding: '12px 16px' }}>
+                <div className="card-title" style={{ marginBottom: 8 }}>
+                    <span className="mdi mdi-import" style={{ marginRight: 8, color: 'var(--accent-secondary)' }} />
+                    {lang === 'de' ? 'HA-Kalender importieren' : 'Import HA Calendars'}
+                </div>
+                <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 10 }}>
+                    {lang === 'de'
+                        ? 'Kalender aus Home Assistant in MindHome anzeigen (z.B. Google Calendar, CalDAV).'
+                        : 'Show Home Assistant calendars in MindHome (e.g., Google Calendar, CalDAV).'}
+                </p>
+                {loading ? (
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Laden...' : 'Loading...'}</div>
+                ) : sources.length === 0 ? (
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                        {lang === 'de'
+                            ? 'Keine Kalender in Home Assistant gefunden. Richte zuerst eine Kalender-Integration in HA ein (Google Calendar, CalDAV, etc.).'
+                            : 'No calendars found in Home Assistant. Set up a calendar integration in HA first (Google Calendar, CalDAV, etc.).'}
+                    </div>
+                ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        {sources.map(s => (
+                            <label key={s.entity_id} style={{
+                                display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px',
+                                borderRadius: 6, cursor: 'pointer', fontSize: 13,
+                                background: syncedIds.includes(s.entity_id) ? 'var(--accent-primary-dim)' : 'var(--bg-tertiary)',
+                                border: syncedIds.includes(s.entity_id) ? '1px solid var(--accent-primary)' : '1px solid var(--border-color)',
+                            }}>
+                                <input type="checkbox" checked={syncedIds.includes(s.entity_id)}
+                                    onChange={() => toggleSource(s.entity_id)} />
+                                <div>
+                                    <div style={{ fontWeight: 500 }}>{s.name}</div>
+                                    <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{s.entity_id}</div>
+                                </div>
+                            </label>
+                        ))}
+                    </div>
+                )}
+            </div>
         </div>
     );
 };
@@ -3939,7 +4269,7 @@ const PatternsPage = () => {
                                 </div>
                                 {e.reason && <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{e.reason}</div>}
                             </div>
-                            <button className="btn btn-ghost" onClick={async () => { await api.delete(`pattern-exclusions/${e.id}`); await load(); }}>
+                            <button className="btn btn-ghost" onClick={async () => { if (!confirm(lang === 'de' ? 'Ausschluss wirklich löschen?' : 'Really delete exclusion?')) return; await api.delete(`pattern-exclusions/${e.id}`); await load(); }}>
                                 <span className="mdi mdi-delete" style={{ color: 'var(--danger)' }} />
                             </button>
                         </div>
@@ -4027,6 +4357,7 @@ const PatternsPage = () => {
                                         await api.put(`manual-rules/${r.id}`, { is_active: !r.is_active }); await load();
                                     }}><span className={`mdi ${r.is_active ? 'mdi-pause' : 'mdi-play'}`} style={{ fontSize: 16 }} /></button>
                                     <button className="btn btn-ghost" onClick={async () => {
+                                        if (!confirm(lang === 'de' ? 'Regel wirklich löschen?' : 'Really delete rule?')) return;
                                         await api.delete(`manual-rules/${r.id}`); await load();
                                     }}><span className="mdi mdi-delete" style={{ fontSize: 16, color: 'var(--danger)' }} /></button>
                                 </div>
@@ -4299,19 +4630,22 @@ const PatternsPage = () => {
                                 {count} {lang === 'de' ? 'ausgewählt' : 'selected'}
                             </span>
                             <button className="btn btn-sm btn-ghost" onClick={async () => {
-                                setPatterns(prev => prev.filter(p => !selectedIds.includes(p.id)));
-                                for (const id of selectedIds) { await api.put(`patterns/reject/${id}`, { reason: 'bulk' }); }
-                                setBulkSelected({}); setBulkMode(false); await load();
-                                showToast(`${count} ${lang === 'de' ? 'Muster abgelehnt' : 'patterns rejected'}`, 'success');
+                                try {
+                                    for (const id of selectedIds) { await api.put(`patterns/reject/${id}`, { reason: 'bulk' }); }
+                                    setBulkSelected({}); setBulkMode(false); await load();
+                                    showToast(`${count} ${lang === 'de' ? 'Muster abgelehnt' : 'patterns rejected'}`, 'success');
+                                } catch (e) { showToast(lang === 'de' ? 'Fehler beim Ablehnen' : 'Error rejecting patterns', 'error'); await load(); }
                             }}>
                                 <span className="mdi mdi-close-circle" style={{ marginRight: 4, color: 'var(--warning)' }} />
                                 {lang === 'de' ? 'Alle ablehnen' : 'Reject all'}
                             </button>
                             <button className="btn btn-sm btn-ghost" onClick={async () => {
-                                setPatterns(prev => prev.filter(p => !selectedIds.includes(p.id)));
-                                for (const id of selectedIds) { await api.delete(`patterns/${id}`); }
-                                setBulkSelected({}); setBulkMode(false); await load();
-                                showToast(`${count} ${lang === 'de' ? 'Muster gelöscht' : 'patterns deleted'}`, 'success');
+                                if (!confirm(lang === 'de' ? `${count} Muster wirklich löschen?` : `Really delete ${count} patterns?`)) return;
+                                try {
+                                    for (const id of selectedIds) { await api.delete(`patterns/${id}`); }
+                                    setBulkSelected({}); setBulkMode(false); await load();
+                                    showToast(`${count} ${lang === 'de' ? 'Muster gelöscht' : 'patterns deleted'}`, 'success');
+                                } catch (e) { showToast(lang === 'de' ? 'Fehler beim Löschen' : 'Error deleting patterns', 'error'); await load(); }
                             }}>
                                 <span className="mdi mdi-delete" style={{ marginRight: 4, color: 'var(--danger)' }} />
                                 {lang === 'de' ? 'Alle löschen' : 'Delete all'}
@@ -4890,7 +5224,7 @@ const NotificationsPage = () => {
                                 <div key={m.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0' }}>
                                     <span style={{ fontSize: 13 }}>{devices.find(d => d.id === m.device_id)?.name || `#${m.device_id}`}</span>
                                     <button className="btn btn-ghost" style={{ fontSize: 11, color: 'var(--danger)' }}
-                                        onClick={async () => { await api.delete(`notification-settings/unmute-device/${m.id}`); await load(); }}>
+                                        onClick={async () => { if (!confirm(lang === 'de' ? 'Gerät wirklich entstummen?' : 'Really unmute device?')) return; await api.delete(`notification-settings/unmute-device/${m.id}`); await load(); }}>
                                         <span className="mdi mdi-volume-high" style={{ marginRight: 2 }} />{lang === 'de' ? 'Entstummen' : 'Unmute'}
                                     </button>
                                 </div>
@@ -5423,7 +5757,7 @@ const EnergyPage = () => {
         api.post('energy/standby-config', newStandby).then(() => { showToast(lang === 'de' ? 'Standby-Erkennung hinzugefuegt' : 'Standby detection added', 'success'); setShowAddStandby(false); setNewStandby({ entity_id: '', threshold_watts: 5, idle_minutes: 30, auto_off: false }); load(); });
     };
 
-    const deleteStandby = (id) => api.delete(`energy/standby-config/${id}`).then(() => load());
+    const deleteStandby = (id) => { if (!confirm(lang === 'de' ? 'Standby-Erkennung wirklich löschen?' : 'Really delete standby detection?')) return; api.delete(`energy/standby-config/${id}`).then(() => load()); };
     const updateStandby = (id, data) => api.put(`energy/standby-config/${id}`, data).then(() => load());
 
     const tabs = [
@@ -5843,7 +6177,7 @@ const ScenesPage = () => {
 // ================================================================
 // Phase 3: Presence Calendar (Month View)
 // ================================================================
-const PresenceCalendar = ({ lang, showToast, schedules, holidays, shiftTemplates }) => {
+const PresenceCalendar = ({ lang, showToast, schedules, holidays, shiftTemplates, syncedEvents }) => {
     const [viewDate, setViewDate] = useState(new Date());
     const [editDay, setEditDay] = useState(null);
     const [dayShift, setDayShift] = useState('');
@@ -5904,6 +6238,22 @@ const PresenceCalendar = ({ lang, showToast, schedules, holidays, shiftTemplates
             }
         }
     });
+    // Synced calendar events
+    const eventsByDate = {};
+    (syncedEvents || []).forEach(ev => {
+        const d = (ev.start || '').substring(0, 10);
+        if (d) {
+            if (!eventsByDate[d]) eventsByDate[d] = [];
+            eventsByDate[d].push(ev);
+        }
+    });
+    Object.entries(eventsByDate).forEach(([ds, evts]) => {
+        if (!dateInfo[ds]) {
+            dateInfo[ds] = { type: 'event', name: evts[0].summary, color: '#2196F3', events: evts };
+        } else {
+            dateInfo[ds].events = evts;
+        }
+    });
 
     const handleDayClick = (day) => {
         if (!day) return;
@@ -5953,6 +6303,14 @@ const PresenceCalendar = ({ lang, showToast, schedules, holidays, shiftTemplates
                                         {info.type === 'shift' ? info.code : info.name}
                                     </div>
                                 )}
+                                {info?.events && (
+                                    <div style={{ display: 'flex', justifyContent: 'center', gap: 2, marginTop: 1 }}>
+                                        {info.events.slice(0, 3).map((ev, ei) => (
+                                            <span key={ei} style={{ width: 5, height: 5, borderRadius: '50%', background: '#2196F3', display: 'inline-block' }}
+                                                title={ev.summary} />
+                                        ))}
+                                    </div>
+                                )}
                             </div>
                         );
                     })}
@@ -5969,6 +6327,12 @@ const PresenceCalendar = ({ lang, showToast, schedules, holidays, shiftTemplates
                         <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11 }}>
                             <span style={{ width: 10, height: 10, borderRadius: 2, background: '#E91E63', display: 'inline-block' }} />
                             <span>{lang === 'de' ? 'Feiertag' : 'Holiday'}</span>
+                        </div>
+                    )}
+                    {(syncedEvents || []).length > 0 && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11 }}>
+                            <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#2196F3', display: 'inline-block' }} />
+                            <span>{lang === 'de' ? 'Kalender-Event' : 'Calendar Event'}</span>
                         </div>
                     )}
                 </div>
@@ -6050,6 +6414,8 @@ const PresencePage = () => {
     const [holidays, setHolidays] = useState([]);
     const [showAddHoliday, setShowAddHoliday] = useState(false);
     const [newHoliday, setNewHoliday] = useState({ name: '', date: '', is_recurring: false, region: 'AT' });
+    // Synced calendar events
+    const [syncedEvents, setSyncedEvents] = useState([]);
     // Log
     const [logs, setLogs] = useState([]);
     const [logsHasMore, setLogsHasMore] = useState(false);
@@ -6569,10 +6935,11 @@ const PresencePage = () => {
                 </div>
             )}
 
-            {/* TAB: Calendar Triggers */}
+            {/* TAB: Calendar */}
             {tab === 'calendar' && (
                 <div>
-                    <PresenceCalendar lang={lang} showToast={showToast} schedules={schedules} holidays={holidays} shiftTemplates={shiftTemplates} />
+                    <PresenceCalendar lang={lang} showToast={showToast} schedules={schedules} holidays={holidays} shiftTemplates={shiftTemplates} syncedEvents={syncedEvents} />
+                    <CalendarSyncConfig lang={lang} showToast={showToast} onEventsLoaded={setSyncedEvents} />
                     <CalendarTriggersConfig lang={lang} showToast={showToast} />
                 </div>
             )}
@@ -6715,7 +7082,18 @@ const App = () => {
         const interval = setInterval(() => {
             api.get('system/status').then(s => { if (s) setStatus(s); });
         }, 60000);
-        return () => clearInterval(interval);
+
+        // Auto-refresh when tab becomes visible again (stale-data check)
+        let lastVisible = Date.now();
+        const onVisibility = () => {
+            if (document.visibilityState === 'visible' && Date.now() - lastVisible > 30000) {
+                refreshData();
+            }
+            if (document.visibilityState === 'visible') lastVisible = Date.now();
+        };
+        document.addEventListener('visibilitychange', onVisibility);
+
+        return () => { clearInterval(interval); document.removeEventListener('visibilitychange', onVisibility); };
     }, []);
 
     // Apply theme (only PUT on actual user change, not on initial load)
