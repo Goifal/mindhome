@@ -4,12 +4,17 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "0.6.29"
-BUILD = 30
+VERSION = "0.6.30"
+BUILD = 31
 BUILD_DATE = "2026-02-13"
 CODENAME = "Phase 3.5 - Kalender & Presence"
 
 # Changelog
+# Build 31: v0.6.30 Raum-Domain-Modus (Hierarchie)
+#   - Neues mode-Feld in RoomDomainState (global/suggest/auto/off)
+#   - API: PUT /api/phases/{room}/{domain}/mode
+#   - Frontend: Modus-Dropdown pro Domain auf Raum-Karte
+#   - Hierarchie: Global aus = immer aus, Raum kann verfeinern
 # Build 29: v0.6.28 Domain-Karten Layout verbessert
 #   - Control-Badges und Pattern-Badges als getrennte Gruppen mit Trennlinie
 #   - Domain-Icons: mdi: zu mdi- Konvertierung korrigiert

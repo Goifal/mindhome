@@ -144,6 +144,7 @@ class RoomDomainState(Base):
     phase_started_at = Column(DateTime, default=_utcnow)
     confidence_score = Column(Float, default=0.0)
     is_paused = Column(Boolean, default=False)
+    mode = Column(String(20), default="global")  # global, suggest, auto, off
 
     room = relationship("Room", back_populates="domain_states")
     domain = relationship("Domain")
@@ -1354,6 +1355,13 @@ MIGRATIONS = [
             )""",
             # DataCollection: add created_at
             "ALTER TABLE data_collection ADD COLUMN created_at DATETIME DEFAULT CURRENT_TIMESTAMP",
+        ]
+    },
+    {
+        "version": 8,
+        "description": "v0.6.30 - Room-level domain mode override",
+        "sql": [
+            "ALTER TABLE room_domain_states ADD COLUMN mode VARCHAR(20) DEFAULT 'global'",
         ]
     },
 ]

@@ -205,6 +205,27 @@ def api_set_phase(room_id, domain_id):
 
 
 
+@automation_bp.route("/api/phases/<int:room_id>/<int:domain_id>/mode", methods=["PUT"])
+def api_set_room_domain_mode(room_id, domain_id):
+    """Set the mode override for a domain in a specific room."""
+    data = request.json or {}
+    mode = data.get("mode", "global")
+    if mode not in ("global", "suggest", "auto", "off"):
+        return jsonify({"error": "Invalid mode. Use: global, suggest, auto, off"}), 400
+
+    session = get_db()
+    try:
+        ds = session.query(RoomDomainState).filter_by(room_id=room_id, domain_id=domain_id).first()
+        if not ds:
+            return jsonify({"error": "Room/Domain combination not found"}), 404
+        ds.mode = mode
+        session.commit()
+        return jsonify({"room_id": room_id, "domain_id": domain_id, "mode": mode})
+    finally:
+        session.close()
+
+
+
 @automation_bp.route("/api/automation/anomalies", methods=["GET"])
 def api_get_anomalies():
     """Get recent anomalies."""

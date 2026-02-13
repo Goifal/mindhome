@@ -94,7 +94,8 @@ def api_get_rooms():
                     "domain_id": ds.domain_id,
                     "learning_phase": ds.learning_phase.value,
                     "confidence_score": ds.confidence_score,
-                    "is_paused": ds.is_paused
+                    "is_paused": ds.is_paused,
+                    "mode": getattr(ds, 'mode', 'global') or 'global'
                 } for ds in r.domain_states if ds.domain_id in device_domain_ids]
             })
         return jsonify(result)
