@@ -1304,8 +1304,14 @@ const DomainsPage = () => {
                         start: 'Start', stop: 'Stop', return_to_base: lang === 'de' ? 'Zurück' : 'Return',
                         set_percentage: '%', source: 'Quelle',
                     };
-                    const controlBadges = (cap.controls || []).map(c => ({ label: controlLabels[c] || c, type: 'info' }));
-                    const sensorBadges = (cap.pattern_features || []).map(f => ({ label: f, type: 'success' }));
+                    const controlBadges = (cap.controls || []).map(c => ({
+                        label: typeof c === 'object' ? (lang === 'de' ? c.label_de : c.label_en) : (controlLabels[c] || c),
+                        type: 'info'
+                    }));
+                    const sensorBadges = (cap.pattern_features || []).map(f => ({
+                        label: typeof f === 'object' ? (lang === 'de' ? f.label_de : f.label_en) : f,
+                        type: 'success'
+                    }));
                     const devCount = devices.filter(d => d.domain_id === domain.id).length;
                     const domSettings = pluginSettings[domain.name] || {};
                     const settingKeys = Object.keys(domSettings).filter(k => k !== 'enabled');
