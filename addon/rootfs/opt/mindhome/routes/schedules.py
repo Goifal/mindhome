@@ -808,3 +808,49 @@ def api_get_synced_calendar_events():
     except Exception as e:
         logger.warning(f"Synced events error: {e}")
         return jsonify({"events": [], "error": str(e)})
+
+
+@schedules_bp.route("/api/calendar/events", methods=["POST"])
+def api_create_calendar_event():
+    """Create a new event on a HA calendar (Google Calendar, CalDAV, etc.)."""
+    data = request.json or {}
+    summary = sanitize_input(data.get("summary", "")).strip()
+    entity_id = data.get("entity_id", "").strip()
+    if not summary or not entity_id:
+        return jsonify({"error": "summary and entity_id required"}), 400
+    start = data.get("start", "").strip()
+    end = data.get("end", "").strip()
+    if not start or not end:
+        return jsonify({"error": "start and end required"}), 400
+    description = sanitize_input(data.get("description", "")) if data.get("description") else None
+    location = sanitize_input(data.get("location", "")) if data.get("location") else None
+    try:
+        ha = _ha()
+        result = ha.create_calendar_event(
+            entity_id=entity_id, summary=summary,
+            start=start, end=end,
+            description=description, location=location,
+        )
+        audit_log("calendar_event_create", {"entity_id": entity_id, "summary": summary})
+        return jsonify({"success": True, "result": result})
+    except Exception as e:
+        logger.warning(f"Create calendar event error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@schedules_bp.route("/api/calendar/events", methods=["DELETE"])
+def api_delete_calendar_event():
+    """Delete an event from a HA calendar."""
+    data = request.json or {}
+    entity_id = data.get("entity_id", "").strip()
+    uid = data.get("uid", "").strip()
+    if not entity_id or not uid:
+        return jsonify({"error": "entity_id and uid required"}), 400
+    try:
+        ha = _ha()
+        result = ha.delete_calendar_event(entity_id=entity_id, uid=uid)
+        audit_log("calendar_event_delete", {"entity_id": entity_id, "uid": uid})
+        return jsonify({"success": True, "result": result})
+    except Exception as e:
+        logger.warning(f"Delete calendar event error: {e}")
+        return jsonify({"error": str(e)}), 500

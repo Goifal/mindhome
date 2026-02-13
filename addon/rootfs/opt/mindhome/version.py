@@ -4,12 +4,19 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "0.6.19"
-BUILD = 20
+VERSION = "0.6.20"
+BUILD = 21
 BUILD_DATE = "2026-02-13"
 CODENAME = "Phase 3.5 - Kalender & Presence"
 
 # Changelog
+# Build 21: v0.6.20 Kalender-Schreiben (HA Calendar Events)
+#   - Kalender: Termine direkt in HA-Kalender erstellen (Google Calendar, CalDAV, etc.)
+#   - Kalender: calendar.create_event + calendar.delete_event Service-Aufrufe
+#   - Kalender: API-Routen POST/DELETE /api/calendar/events
+#   - Kalender: Frontend CalendarEventCreator mit Ganztags-/Zeitraum-Support
+#   - Kalender: Beschreibung und Ort optional
+#
 # Build 20: v0.6.19 Kalender-Sync, Presence-System, UX-Verbesserungen
 #   - Personen: Bearbeiten (Name, Rolle, HA-Person) + Geraete-Zuweisung (device_tracker)
 #   - Personen: Device-Tracker Live-State (home/away Punkt mit Farbindikator)

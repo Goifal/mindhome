@@ -3449,6 +3449,145 @@ const CalendarSyncConfig = ({ lang, showToast, onEventsLoaded }) => {
     );
 };
 
+const CalendarEventCreator = ({ lang, showToast, syncedIds }) => {
+    const [calendars, setCalendars] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [creating, setCreating] = useState(false);
+    const [showForm, setShowForm] = useState(false);
+    const [form, setForm] = useState({
+        entity_id: '', summary: '', description: '', location: '',
+        start_date: '', start_time: '', end_date: '', end_time: '', all_day: false,
+    });
+
+    useEffect(() => {
+        api.get('calendar/ha-sources').then(r => {
+            if (r?.sources) setCalendars(r.sources.filter(s => s.synced));
+            setLoading(false);
+        });
+    }, [syncedIds]);
+
+    const resetForm = () => {
+        setForm({ entity_id: calendars[0]?.entity_id || '', summary: '', description: '', location: '',
+            start_date: '', start_time: '09:00', end_date: '', end_time: '10:00', all_day: false });
+    };
+
+    const handleCreate = async () => {
+        if (!form.entity_id || !form.summary || !form.start_date) {
+            showToast(lang === 'de' ? 'Kalender, Titel und Startdatum erforderlich' : 'Calendar, title and start date required', 'error');
+            return;
+        }
+        setCreating(true);
+        const endDate = form.end_date || form.start_date;
+        let start, end;
+        if (form.all_day) {
+            start = form.start_date;
+            // HA all-day end date is exclusive, add 1 day
+            const ed = new Date(endDate + 'T00:00:00');
+            ed.setDate(ed.getDate() + 1);
+            end = ed.toISOString().split('T')[0];
+        } else {
+            start = `${form.start_date}T${form.start_time || '09:00'}:00`;
+            end = `${endDate}T${form.end_time || '10:00'}:00`;
+        }
+        const r = await api.post('calendar/events', {
+            entity_id: form.entity_id, summary: form.summary.trim(),
+            start, end,
+            description: form.description.trim() || null,
+            location: form.location.trim() || null,
+        });
+        setCreating(false);
+        if (r?.success) {
+            showToast(lang === 'de' ? 'Termin erstellt' : 'Event created', 'success');
+            setShowForm(false);
+            resetForm();
+        } else {
+            showToast(r?.error || (lang === 'de' ? 'Fehler beim Erstellen' : 'Creation failed'), 'error');
+        }
+    };
+
+    if (loading || calendars.length === 0) return null;
+
+    return (
+        <div className="card animate-in" style={{ marginTop: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: showForm ? 16 : 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center' }}>
+                    <span className="mdi mdi-calendar-plus" style={{ marginRight: 8, color: 'var(--success)', fontSize: 20 }} />
+                    <span style={{ fontWeight: 600 }}>{lang === 'de' ? 'Termin in HA-Kalender erstellen' : 'Create Event in HA Calendar'}</span>
+                </div>
+                <button className="btn btn-primary btn-sm" onClick={() => { setShowForm(!showForm); if (!showForm) resetForm(); }}>
+                    <span className={`mdi ${showForm ? 'mdi-close' : 'mdi-plus'}`} style={{ marginRight: 4 }} />
+                    {showForm ? (lang === 'de' ? 'Abbrechen' : 'Cancel') : (lang === 'de' ? 'Neuer Termin' : 'New Event')}
+                </button>
+            </div>
+            {showForm && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    <div>
+                        <label className="input-label">{lang === 'de' ? 'Kalender' : 'Calendar'}</label>
+                        <CustomSelect
+                            options={calendars.map(c => ({ value: c.entity_id, label: c.name || c.entity_id }))}
+                            value={form.entity_id}
+                            onChange={v => setForm({ ...form, entity_id: v })}
+                        />
+                    </div>
+                    <div>
+                        <label className="input-label">{lang === 'de' ? 'Titel' : 'Title'}</label>
+                        <input className="form-input" value={form.summary}
+                            onChange={e => setForm({ ...form, summary: e.target.value })}
+                            placeholder={lang === 'de' ? 'z.B. Heizungswartung' : 'e.g. Heating maintenance'} />
+                    </div>
+                    <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                        <div style={{ flex: 1, minWidth: 140 }}>
+                            <label className="input-label">{lang === 'de' ? 'Startdatum' : 'Start Date'}</label>
+                            <input className="form-input" type="date" value={form.start_date}
+                                onChange={e => setForm({ ...form, start_date: e.target.value, end_date: form.end_date || e.target.value })} />
+                        </div>
+                        {!form.all_day && (
+                            <div style={{ flex: 1, minWidth: 100 }}>
+                                <label className="input-label">{lang === 'de' ? 'Startzeit' : 'Start Time'}</label>
+                                <input className="form-input" type="time" value={form.start_time}
+                                    onChange={e => setForm({ ...form, start_time: e.target.value })} />
+                            </div>
+                        )}
+                        <div style={{ flex: 1, minWidth: 140 }}>
+                            <label className="input-label">{lang === 'de' ? 'Enddatum' : 'End Date'}</label>
+                            <input className="form-input" type="date" value={form.end_date}
+                                onChange={e => setForm({ ...form, end_date: e.target.value })} />
+                        </div>
+                        {!form.all_day && (
+                            <div style={{ flex: 1, minWidth: 100 }}>
+                                <label className="input-label">{lang === 'de' ? 'Endzeit' : 'End Time'}</label>
+                                <input className="form-input" type="time" value={form.end_time}
+                                    onChange={e => setForm({ ...form, end_time: e.target.value })} />
+                            </div>
+                        )}
+                    </div>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
+                        <input type="checkbox" checked={form.all_day}
+                            onChange={e => setForm({ ...form, all_day: e.target.checked })} />
+                        {lang === 'de' ? 'Ganztaegig' : 'All day'}
+                    </label>
+                    <div>
+                        <label className="input-label">{lang === 'de' ? 'Beschreibung (optional)' : 'Description (optional)'}</label>
+                        <input className="form-input" value={form.description}
+                            onChange={e => setForm({ ...form, description: e.target.value })} />
+                    </div>
+                    <div>
+                        <label className="input-label">{lang === 'de' ? 'Ort (optional)' : 'Location (optional)'}</label>
+                        <input className="form-input" value={form.location}
+                            onChange={e => setForm({ ...form, location: e.target.value })} />
+                    </div>
+                    <button className="btn btn-primary" onClick={handleCreate} disabled={creating}>
+                        <span className="mdi mdi-calendar-check" style={{ marginRight: 6 }} />
+                        {creating
+                            ? (lang === 'de' ? 'Wird erstellt...' : 'Creating...')
+                            : (lang === 'de' ? 'Termin erstellen' : 'Create Event')}
+                    </button>
+                </div>
+            )}
+        </div>
+    );
+};
+
 const DeviceAnomalyConfig = ({ lang }) => {
     const { devices, rooms } = useApp();
     const [search, setSearch] = useState('');
@@ -6939,6 +7078,7 @@ const PresencePage = () => {
             {tab === 'calendar' && (
                 <div>
                     <PresenceCalendar lang={lang} showToast={showToast} schedules={schedules} holidays={holidays} shiftTemplates={shiftTemplates} syncedEvents={syncedEvents} />
+                    <CalendarEventCreator lang={lang} showToast={showToast} syncedIds={syncedEvents} />
                     <CalendarSyncConfig lang={lang} showToast={showToast} onEventsLoaded={setSyncedEvents} />
                     <CalendarTriggersConfig lang={lang} showToast={showToast} />
                 </div>
