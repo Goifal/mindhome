@@ -236,15 +236,31 @@ def api_domain_features(domain_name):
 
 @domains_bp.route("/api/plugin-settings", methods=["GET"])
 def api_get_plugin_settings():
+    """Get plugin settings: DEFAULT_SETTINGS merged with DB overrides."""
     session = get_db()
     try:
         plugin_name = request.args.get("plugin")
-        query = session.query(PluginSetting)
-        if plugin_name: query = query.filter_by(plugin_name=plugin_name)
+
+        # Start with DEFAULT_SETTINGS from all domain plugins
         result = {}
+        dm = _domain_manager()
+        if dm:
+            plugins = dm._all_plugins
+            for name, plugin in plugins.items():
+                if plugin_name and name != plugin_name:
+                    continue
+                if hasattr(plugin, 'DEFAULT_SETTINGS') and plugin.DEFAULT_SETTINGS:
+                    result[name] = dict(plugin.DEFAULT_SETTINGS)
+
+        # Override with DB values
+        query = session.query(PluginSetting)
+        if plugin_name:
+            query = query.filter_by(plugin_name=plugin_name)
         for s in query.all():
-            if s.plugin_name not in result: result[s.plugin_name] = {}
+            if s.plugin_name not in result:
+                result[s.plugin_name] = {}
             result[s.plugin_name][s.setting_key] = s.setting_value
+
         return jsonify(result)
     finally:
         session.close()
