@@ -5245,7 +5245,7 @@ const PatternsPage = () => {
 // ================================================================
 
 const NotificationsPage = () => {
-    const { lang, showToast, devices, users } = useApp();
+    const { lang, showToast, devices, users, rooms } = useApp();
     const [notifications, setNotifications] = useState([]);
     const [loading, setLoading] = useState(true);
     const [predictions, setPredictions] = useState([]);
@@ -5560,9 +5560,9 @@ const NotificationsPage = () => {
                             </div>
                         </CollapsibleCard>
 
-                        {/* Person Channel Assignment - Collapsible */}
+                        {/* Person Channel Assignment - Collapsible (admins + users only, no guests) */}
                         <CollapsibleCard title={lang === 'de' ? 'Personen-Zuordnung' : 'Person Assignment'} icon="mdi-account-group" defaultOpen={false}>
-                            {(users || []).map(u => (
+                            {(users || []).filter(u => u.role !== 'guest').map(u => (
                                 <div key={u.id} style={{ padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
                                     <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 4 }}>{u.name}</div>
                                     <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
@@ -5585,15 +5585,38 @@ const NotificationsPage = () => {
                         {/* TTS - Collapsible */}
                         {ttsDevices.length > 0 && (
                             <CollapsibleCard title={`${lang === 'de' ? 'Sprachausgabe (TTS)' : 'Text-to-Speech'} · ${ttsDevices.length}`} icon="mdi-bullhorn" defaultOpen={false}>
-                                {ttsDevices.map(d => (
-                                    <div key={d.entity_id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--border)' }}>
-                                        <span style={{ fontSize: 13 }}>{d.name}</span>
-                                        <button className="btn btn-sm btn-secondary" onClick={async () => {
-                                            await api.post('tts/announce', { message: lang === 'de' ? 'Dies ist ein Test von MindHome.' : 'This is a test from MindHome.', entity_id: d.entity_id });
-                                            showToast(lang === 'de' ? 'TTS gesendet' : 'TTS sent', 'success');
-                                        }} style={{ fontSize: 11 }}><span className="mdi mdi-play" style={{ marginRight: 2 }} />Test</button>
-                                    </div>
-                                ))}
+                                <p style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8 }}>
+                                    {lang === 'de' ? 'Weise jedem Lautsprecher einen Raum zu, damit TTS-Benachrichtigungen gezielt gesendet werden können.' : 'Assign each speaker to a room for targeted TTS notifications.'}
+                                </p>
+                                {ttsDevices.map(d => {
+                                    const assignedRoom = extSettings?.tts_room_assignments?.[d.entity_id] || '';
+                                    return (
+                                        <div key={d.entity_id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
+                                            <div style={{ flex: 1, minWidth: 0 }}>
+                                                <div style={{ fontSize: 13, fontWeight: 500 }}>{d.name}</div>
+                                                <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{d.entity_id}</div>
+                                            </div>
+                                            <select className="input" value={assignedRoom}
+                                                onChange={async (e) => {
+                                                    const roomId = e.target.value ? parseInt(e.target.value) : null;
+                                                    const assignments = { ...(extSettings?.tts_room_assignments || {}) };
+                                                    if (roomId) { assignments[d.entity_id] = roomId; } else { delete assignments[d.entity_id]; }
+                                                    setExtSettings(prev => ({ ...prev, tts_room_assignments: assignments }));
+                                                    await api.put('notification-settings/extended', { tts_room_assignments: assignments });
+                                                }}
+                                                style={{ width: 'auto', fontSize: 11, padding: '4px 8px', minWidth: 120 }}>
+                                                <option value="">{lang === 'de' ? '-- Kein Raum --' : '-- No Room --'}</option>
+                                                {(rooms || []).map(r => (
+                                                    <option key={r.id} value={r.id}>{r.name}</option>
+                                                ))}
+                                            </select>
+                                            <button className="btn btn-sm btn-secondary" onClick={async () => {
+                                                await api.post('tts/announce', { message: lang === 'de' ? 'Dies ist ein Test von MindHome.' : 'This is a test from MindHome.', entity_id: d.entity_id });
+                                                showToast(lang === 'de' ? 'TTS gesendet' : 'TTS sent', 'success');
+                                            }} style={{ fontSize: 11, flexShrink: 0 }}><span className="mdi mdi-play" style={{ marginRight: 2 }} />Test</button>
+                                        </div>
+                                    );
+                                })}
                             </CollapsibleCard>
                         )}
 
