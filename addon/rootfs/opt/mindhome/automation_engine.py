@@ -1901,20 +1901,26 @@ class AutomationScheduler:
                     idx = diff % len(pattern)
                     code = pattern[idx]
                     tmpl = templates.get(code)
-                    if not tmpl or code.upper() in ("X", "F", "-", "FREI"):
+                    # Skip free/off codes (X, F, -, FREI, and variants like "X (M)")
+                    code_base = code.split("(")[0].strip().upper()
+                    if not tmpl or code_base in ("X", "F", "-", "FREI", "OFF", "AUS"):
                         continue
 
                     day_str = day.strftime("%Y-%m-%d")
                     base_summary = f"{tmpl.name}" + (f" ({user_name})" if user_name else "")
                     blocks = tmpl.blocks if isinstance(tmpl.blocks, list) and tmpl.blocks else []
+                    start_time = ""
+                    end_time = ""
                     if blocks:
-                        start_time = blocks[0].get("start", "06:00")
-                        end_time = blocks[-1].get("end", "14:00")
+                        start_time = blocks[0].get("start", "") or ""
+                        end_time = blocks[-1].get("end", "") or ""
+                    if start_time and end_time:
                         ev_start = f"{day_str}T{start_time}:00"
                         ev_end = f"{day_str}T{end_time}:00"
                     else:
+                        # All-day event for shifts without specific times
                         ev_start = day_str
-                        ev_end = day_str
+                        ev_end = (day + timedelta(days=1)).strftime("%Y-%m-%d")
 
                     key = f"{day_str}|{base_summary}"
                     expected_events[key] = {
@@ -1961,24 +1967,29 @@ class AutomationScheduler:
                 existing_mh[key].append(ev_uid)
 
             # --- Step 3: Delete events that shouldn't exist + duplicates ---
+            # Note: delete_event only works on local calendars, not Google Calendar
             deleted = 0
-            for key, ha_uids in existing_mh.items():
-                if key in expected_events:
-                    # Keep exactly one, delete all duplicates
-                    for dup_uid in ha_uids[1:]:
-                        try:
-                            self.ha.delete_calendar_event(target_calendar, dup_uid)
-                            deleted += 1
-                        except Exception as e:
-                            logger.debug(f"Shift sync dedup error: {e}")
-                else:
-                    # Event no longer in schedule - delete all copies
-                    for ha_uid in ha_uids:
-                        try:
-                            self.ha.delete_calendar_event(target_calendar, ha_uid)
-                            deleted += 1
-                        except Exception as e:
-                            logger.debug(f"Shift sync delete error: {e}")
+            is_local_calendar = not any(
+                uid.endswith("@google.com") for uids in existing_mh.values() for uid in uids
+            )
+            if is_local_calendar:
+                for key, ha_uids in existing_mh.items():
+                    if key in expected_events:
+                        for dup_uid in ha_uids[1:]:
+                            try:
+                                self.ha.delete_calendar_event(target_calendar, dup_uid)
+                                deleted += 1
+                            except Exception as e:
+                                logger.debug(f"Shift sync dedup error: {e}")
+                    else:
+                        for ha_uid in ha_uids:
+                            try:
+                                self.ha.delete_calendar_event(target_calendar, ha_uid)
+                                deleted += 1
+                            except Exception as e:
+                                logger.debug(f"Shift sync delete error: {e}")
+            else:
+                logger.debug(f"Shift sync: skipping delete on remote calendar {target_calendar}")
 
             # --- Step 4: Create missing events ---
             created = 0
