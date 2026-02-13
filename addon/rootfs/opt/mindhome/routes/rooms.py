@@ -71,6 +71,26 @@ def api_get_rooms():
     session = get_db()
     try:
         rooms = session.query(Room).filter_by(is_active=True).all()
+        enabled_domains = session.query(Domain).filter_by(is_enabled=True).all()
+
+        # Auto-sync: create missing RoomDomainState entries
+        created = 0
+        for r in rooms:
+            existing_domain_ids = {ds.domain_id for ds in r.domain_states}
+            device_domain_ids_for_room = {d.domain_id for d in r.devices}
+            for domain in enabled_domains:
+                if domain.id not in existing_domain_ids and domain.id in device_domain_ids_for_room:
+                    session.add(RoomDomainState(
+                        room_id=r.id,
+                        domain_id=domain.id,
+                        learning_phase=LearningPhase.OBSERVING
+                    ))
+                    created += 1
+        if created:
+            session.commit()
+            # Refresh rooms to include new states
+            rooms = session.query(Room).filter_by(is_active=True).all()
+
         result = []
         for r in rooms:
             # Fix 13: Get last activity for this room
