@@ -1087,6 +1087,13 @@ class PatternDetector:
     # as automation triggers or actions in sequence patterns
     _SENSOR_ONLY_DOMAINS = frozenset({"sensor", "weather", "number"})
 
+    # HA domains that can actually be controlled (valid as action side of a pattern)
+    _ACTIONABLE_DOMAINS = frozenset({
+        "light", "switch", "cover", "climate", "fan", "media_player",
+        "lock", "vacuum", "humidifier", "water_heater", "valve",
+        "input_boolean", "input_number", "input_select", "scene", "script",
+    })
+
     def _is_same_domain_sensor_pair(self, entity_a, entity_b):
         """Check if both entities are sensor-only domains (no actionable patterns)."""
         domain_a = entity_a.split(".")[0]
@@ -1115,6 +1122,9 @@ class PatternDetector:
                     continue
                 # Skip sensor→sensor pairs (numeric correlations, not actionable)
                 if self._is_same_domain_sensor_pair(ev_a.entity_id, ev_b.entity_id):
+                    continue
+                # Action side must be controllable (sensor as action makes no sense)
+                if ev_b.entity_id.split(".")[0] not in self._ACTIONABLE_DOMAINS:
                     continue
 
                 key = (
