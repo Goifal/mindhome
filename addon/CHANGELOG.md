@@ -1,14 +1,19 @@
 # Changelog
 
+## 0.7.15 – Fix Korrelations-Ratio Berechnung (kritischer Bug)
+
+### Fix
+- **CRITICAL: Korrelations-Ratio falsch berechnet**: `ratio = count / total` dividierte durch die Summe ALLER Entity/State-Paare statt pro Target-Entity. Bei ~50 Entities wurde jede Ratio um Faktor ~50 verduennt (z.B. 0.75 → 0.015), dadurch scheiterten ALLE 22.103 Paare am Schwellwert. Fix: Ratio wird jetzt pro Target-Entity berechnet
+- **Schwellwerte korrigiert**: Zurueck auf 0.7/0.8 (same/cross-room) da Ratios jetzt korrekte Werte liefern
+
 ## 0.7.14 – Fix Zeitmuster-Confidence & Korrelations-Schwellwerte
 
 ### Fix
-- **Zeitmuster-Confidence Formel**: Multiplikation von Frequenz und Konsistenz war zu streng (effektiv Quadrierung). Neue Formel: gewichteter Durchschnitt (50% Frequenz + 50% Konsistenz). Beispiel: 6 Events an 6 Tagen — alt: 0.18 (blockiert), neu: 0.51 (erkannt)
-- **expected_days fuer "alle Tage"**: Von 14 auf 10 gesenkt — realistischer, da Nutzer nicht jeden einzelnen Tag aktiv sind
-- **Korrelations-Schwellwerte gelockert**: same-room Ratio 0.7→0.55, cross-room Ratio 0.8→0.7, cross-room Count 10→7 — 22.103 Entity-Paare scheiterten zuvor an den zu strengen Schwellwerten
+- **Zeitmuster-Confidence Formel**: gewichteter Durchschnitt statt Multiplikation
+- **expected_days**: 14 → 10 fuer "alle Tage"
 
 ### Diagnose
-- **Near-Miss-Logging**: Korrelationspaare die knapp am Schwellwert scheitern werden im Debug-Log protokolliert
+- **Near-Miss-Logging**: Korrelationspaare die knapp am Schwellwert scheitern
 
 ## 0.7.13 – Diagnose-Logging & Cross-Room Integration
 

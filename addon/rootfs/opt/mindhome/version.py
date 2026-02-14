@@ -4,19 +4,22 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "0.7.14"
-BUILD = 67
+VERSION = "0.7.15"
+BUILD = 68
 BUILD_DATE = "2026-02-15"
 CODENAME = "Phase 4 - Smart Health"
 
 # Changelog
+# Build 68: v0.7.15 Fix Korrelations-Ratio Berechnung (kritischer Bug)
+#   - CRITICAL FIX: ratio = count / total war falsch — total summierte ALLE Entity/State-Paare
+#     Bei 50 Entities wurde ratio um Faktor ~50 verduennt (0.75 → 0.015)
+#     Jetzt: ratio pro Target-Entity berechnet (korrekt: "75% wenn Kueche an, ist Wohnzimmer auch an")
+#   - Schwellwerte zurueck auf Originalwerte (0.7/0.8) da Ratios jetzt korrekt berechnet werden
+#
 # Build 67: v0.7.14 Fix Zeitmuster-Confidence + Korrelations-Schwellwerte
 #   - Fix: Zeitmuster-Confidence Formel: Multiplikation → gewichteter Durchschnitt (0.5*freq + 0.5*consistency)
-#     Alte Formel quadrierte effektiv (6 Events/6 Tage → 0.18), neue Formel: → 0.51
-#   - Fix: expected_days fuer "alle Tage" von 14 auf 10 (realistischer, Leute fehlen mal)
-#   - Fix: Korrelations-Schwellwerte gelockert (same-room: 0.7→0.55, cross-room: 0.8→0.7, count: 10→7)
-#     22.103 Paare scheiterten bei alten Schwellwerten
-#   - Diagnose: Near-Miss-Logging fuer Korrelationen (Paare die knapp scheitern)
+#   - Fix: expected_days fuer "alle Tage" von 14 auf 10
+#   - Diagnose: Near-Miss-Logging fuer Korrelationen
 #
 # Build 66: v0.7.13 Diagnose-Logging + Cross-Room Integration
 #   - INFO-Logging: Zeitmuster zeigt actionable Events, Gruppen, Cluster, Confidence-Filter
