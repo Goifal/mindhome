@@ -784,10 +784,38 @@ class PatternDetector:
             # B3: Correlation patterns (with exclusions)
             correlation_patterns = self._detect_correlation_patterns(session, events, excluded_pairs)
 
-            # Fix #24: Cross-room correlations (was orphaned, now integrated)
+            # Fix #24: Cross-room correlations → create insight patterns
+            cross_room_patterns = []
             try:
                 cross_room = self.detect_cross_room_correlations(session)
                 logger.info(f"Cross-room correlations: {len(cross_room)} room pairs found")
+                for cr in cross_room:
+                    ra = cr["room_a"]
+                    rb = cr["room_b"]
+                    count = cr["co_occurrence_count"]
+                    confidence = min(count / 100, 0.85)  # 100+ co-occurrences = max confidence
+                    pattern_data = {
+                        "condition_entity": f"room:{ra['id']}",
+                        "correlated_entity": f"room:{rb['id']}",
+                        "condition_state": "active",
+                        "correlated_state": "active",
+                        "room_a_name": ra["name"],
+                        "room_b_name": rb["name"],
+                        "co_occurrence_count": count,
+                        "subtype": "cross_room",
+                        "same_room": False,
+                    }
+                    trigger_conditions = {"type": "room_activity", "room_id": ra["id"]}
+                    action_def = {"type": "room_activity", "room_id": rb["id"]}
+                    desc_de = f"Aktivitaet in {ra['name']} und {rb['name']} korrelieren ({count}x gleichzeitig)"
+                    desc_en = f"Activity in {ra['name']} and {rb['name']} correlate ({count}x simultaneous)"
+                    p = self._upsert_pattern(
+                        session, f"room:{ra['id']}↔room:{rb['id']}", "correlation",
+                        pattern_data, confidence, trigger_conditions, action_def,
+                        desc_de, desc_en, None
+                    )
+                    if p:
+                        cross_room_patterns.append(p)
             except Exception as e:
                 logger.warning(f"Cross-room correlation error: {e}")
 
@@ -813,11 +841,12 @@ class PatternDetector:
 
             # B5: Decay now handled solely by apply_confidence_decay (scheduler, every 12h)
 
-            total = len(time_patterns) + len(sequence_patterns) + len(correlation_patterns)
+            total = len(time_patterns) + len(sequence_patterns) + len(correlation_patterns) + len(cross_room_patterns)
             logger.info(
                 f"Analysis complete: {len(time_patterns)} time, "
                 f"{len(sequence_patterns)} sequence, "
-                f"{len(correlation_patterns)} correlation patterns"
+                f"{len(correlation_patterns)} correlation, "
+                f"{len(cross_room_patterns)} cross-room patterns"
             )
 
             session.commit()
@@ -1042,10 +1071,13 @@ class PatternDetector:
 
         # Group events by (entity_id, new_state)
         groups = defaultdict(list)
+        actionable_count = 0
+        no_context_count = 0
         for ev in events:
             # Skip non-actionable entities (sensors, etc.) - they can't be controlled
             if ev.entity_id and ev.entity_id.startswith(NON_ACTIONABLE_PREFIXES):
                 continue
+            actionable_count += 1
             key = (ev.entity_id, ev.new_state)
             if ev.context:
                 groups[key].append({
@@ -1057,9 +1089,19 @@ class PatternDetector:
                     "sun_elevation": ev.context.get("sun_elevation"),
                     "created_at": ev.created_at,
                 })
+            else:
+                no_context_count += 1
 
         eligible_groups = {k: v for k, v in groups.items() if len(v) >= 4}
-        logger.debug(f"Time patterns: {len(groups)} entity/state groups, {len(eligible_groups)} with >=4 occurrences")
+        logger.info(
+            f"Time patterns: {actionable_count} actionable events "
+            f"(of {len(events)} total, {no_context_count} without context), "
+            f"{len(groups)} entity/state groups, {len(eligible_groups)} with >=4 occurrences"
+        )
+
+        small_cluster_count = 0
+        low_confidence_count = 0
+        skipped_rejected_count = 0
 
         for (entity_id, new_state), occurrences in groups.items():
             if len(occurrences) < 4:
@@ -1070,6 +1112,7 @@ class PatternDetector:
 
             for cluster in time_clusters:
                 if len(cluster) < 3:
+                    small_cluster_count += 1
                     continue
 
                 # Calculate average time
@@ -1094,6 +1137,7 @@ class PatternDetector:
                 confidence = min((len(cluster) / 14) * consistency, 0.95)
 
                 if confidence < 0.3:
+                    low_confidence_count += 1
                     continue
 
                 # Check sun-relative timing
@@ -1164,9 +1208,15 @@ class PatternDetector:
                 if p:
                     patterns_found.append(p)
                 else:
-                    logger.debug(f"Time pattern skipped (rejected/disabled or duplicate): {entity_id} -> {new_state} at {avg_hour:02d}:{avg_minute:02d}")
+                    skipped_rejected_count += 1
+                    logger.debug(f"Time pattern skipped (rejected/disabled): {entity_id} -> {new_state} at {avg_hour:02d}:{avg_minute:02d}")
 
-        logger.debug(f"Time patterns: {len(patterns_found)} new/updated, rest were rejected/disabled")
+        logger.info(
+            f"Time patterns: {len(patterns_found)} created/updated, "
+            f"{small_cluster_count} small clusters (<3), "
+            f"{low_confidence_count} low confidence (<0.3), "
+            f"{skipped_rejected_count} rejected/disabled"
+        )
         return patterns_found
 
     # --------------------------------------------------------------------------
@@ -1473,9 +1523,17 @@ class PatternDetector:
         min_corr_ratio_same = 0.7
         min_corr_ratio_cross = 0.8
 
+        total_pairs = len(cooccurrences)
+        pairs_too_few = 0
+        pairs_below_threshold = 0
+        pairs_low_confidence = 0
+
+        logger.info(f"Correlation patterns: {total_pairs} trigger entity/state combinations found")
+
         for (eid_a, state_a), targets in cooccurrences.items():
             total = sum(targets.values())
             if total < 5:
+                pairs_too_few += 1
                 continue
 
             for (eid_b, state_b), count in targets.items():
@@ -1490,11 +1548,13 @@ class PatternDetector:
                 min_ratio = min_corr_ratio_same if same_room else min_corr_ratio_cross
 
                 if ratio < min_ratio or count < min_count:
+                    pairs_below_threshold += 1
                     continue
 
                 confidence = min(ratio * (count / 14), 0.85)
                 min_conf = 0.3 if same_room else 0.5
                 if confidence < min_conf:
+                    pairs_low_confidence += 1
                     continue
 
                 pattern_data = {
@@ -1535,6 +1595,12 @@ class PatternDetector:
                 if p:
                     patterns_found.append(p)
 
+        logger.info(
+            f"Correlation patterns: {len(patterns_found)} created/updated, "
+            f"{pairs_too_few} triggers with <5 observations, "
+            f"{pairs_below_threshold} below ratio/count threshold, "
+            f"{pairs_low_confidence} low confidence"
+        )
         return patterns_found
 
     # --------------------------------------------------------------------------

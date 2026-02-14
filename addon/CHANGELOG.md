@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.7.13 – Diagnose-Logging & Cross-Room Integration
+
+### Diagnose
+- **Zeitmuster-Logging**: INFO-Log zeigt jetzt actionable Events (nach Sensor-Filter), Entity/State-Gruppen, Cluster-Groessen und Confidence-Ablehnungen — hilft bei der Diagnose warum 0 Zeitmuster erkannt werden
+- **Korrelations-Logging**: INFO-Log zeigt Trigger-Entity/State-Kombinationen, Paare unter Schwellwert, und Paare mit zu niedriger Confidence
+
+### Fix
+- **Cross-Room Korrelationen orphaned**: `detect_cross_room_correlations()` fand 5 Raumpaare, aber die Ergebnisse wurden nie in LearnedPattern-Objekte umgewandelt — Raumpaare werden jetzt als correlation/insight Patterns gespeichert
+- **Analyse-Summary erweitert**: Zeigt jetzt alle 4 Pattern-Typen (time, sequence, correlation, cross-room)
+
 ## 0.7.12 – Fix Korrelations-Regression
 
 ### Fix
