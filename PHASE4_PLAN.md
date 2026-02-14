@@ -11,16 +11,37 @@
 
 ## Strategie
 
-Phase 4 wird in **9 Batches** implementiert, geordnet nach Abhängigkeiten:
+Phase 4 wird in **6 Batches** mit **~15 Commits** implementiert:
+
 1. Zuerst die **Infrastruktur** (Modul-Struktur, DB-Migration, Feature-Flags, Retention)
 2. Dann Feature-Batches in logischer Reihenfolge
 3. Jeder Batch: Backend → Frontend → Tests
 4. Jedes Feature: Graceful Degradation bei fehlenden Sensoren
-5. Am Ende: Task-Gruppierung, Version-Bump, README-Update, Changelog
+5. Am Ende: Dashboard, Version-Bump, README-Update, Changelog
+
+### Commit-Plan (Hybrid: ~15 Commits)
+
+| # | Commit | Batch | Features |
+|---|--------|-------|----------|
+| 1 | `chore: Bump to v0.7.0` | 0 | version.py |
+| 2 | `feat: Add Phase 4 infrastructure` | 0 | engines/ stubs, routes/health.py, feature flags, bus_type |
+| 3 | `feat: Add Phase 4 DB models + migration v8` | 0 | models.py + migration + retention |
+| 4 | `feat(energy): Add optimization + forecaster` | 1 | #1, #26 |
+| 5 | `feat(energy): Add PV management + standby killer` | 1 | #2, #3 |
+| 6 | `feat(sleep): Add detection + quality tracker` | 2 | #4, #16 |
+| 7 | `feat(sleep): Add smart wakeup + morning routine` | 2 | #25, #5 |
+| 8 | `feat(presence): Add room transitions + visit prep + vacation` | 2 | #6, #22, #29 |
+| 9 | `feat(comfort): Add score + climate traffic light` | 3 | #10, #17 |
+| 10 | `feat(comfort): Add ventilation + circadian lighting` | 3 | #18, #27 |
+| 11 | `feat(weather): Add alerts` | 3 | #21 |
+| 12 | `feat(ai): Add adaptive timing + habit drift + mood` | 4 | #11, #12, #15 |
+| 13 | `feat(ux): Add favorites + calendar + screen time + gentle + context notifications` | 4 | #20, #13, #14, #19, #23, #24 |
+| 14 | `feat(health): Add dashboard` | 5 | #28 |
+| 15 | `docs: Finalize Phase 4` | 5 | README, Changelog, Translations |
 
 ---
 
-## Batch 0: Infrastruktur & Datenbank
+## Batch 0: Infrastruktur & Datenbank (Commits 1-3)
 
 **Ziel:** Modul-Struktur anlegen, DB-Migration, Feature-Flags, Retention-Policy.
 
@@ -163,7 +184,7 @@ Für KNX-spezifische Optimierungen (Transition, schnellere Erkennung):
 
 ---
 
-## Batch 1: Energie & Solar (Features #1, #2, #3, #26)
+## Batch 1: Energie & Solar — Commits 4-5 (Features #1, #2, #3, #26)
 
 ### #1 Energieoptimierung
 **Dateien:** `engines/energy.py`, `routes/energy.py`, `domains/energy.py`
@@ -214,7 +235,7 @@ Für KNX-spezifische Optimierungen (Transition, schnellere Erkennung):
 
 ---
 
-## Batch 2: Schlaf & Gesundheit (Features #4, #16, #25)
+## Batch 2: Schlaf, Routinen & Anwesenheit — Commits 6-8 (Features #4, #16, #25, #5, #6, #22, #29)
 
 ### #4 Schlaf-Erkennung
 **Dateien:** `engines/sleep.py`, `routes/health.py`
@@ -250,10 +271,6 @@ Für KNX-spezifische Optimierungen (Transition, schnellere Erkennung):
   - Scheduler-Task: Jede Minute prüfen ob Weckzeit naht
   - API: `GET/PUT /api/health/wakeup` → Konfiguration
 - **Frontend:** Weck-Konfiguration (Zeit, Geräte, Ramp-Dauer)
-
----
-
-## Batch 3: Routinen & Anwesenheit (Features #5, #6, #22, #29)
 
 ### #5 Morgenroutine (Vervollständigung)
 **Dateien:** `engines/routines.py`, `routes/patterns.py`
@@ -303,7 +320,7 @@ Für KNX-spezifische Optimierungen (Transition, schnellere Erkennung):
 
 ---
 
-## Batch 4: Klima & Umgebung (Features #10, #17, #18, #27, #21)
+## Batch 3: Klima & Umgebung — Commits 9-11 (Features #10, #17, #18, #27, #21)
 
 ### #10 Komfort-Score
 **Dateien:** `engines/comfort.py`, `routes/health.py`
@@ -412,7 +429,7 @@ Unterstützt drei **Lampentypen** und zwei **Steuerungsmodi**:
 
 ---
 
-## Batch 5: KI-Verbesserungen (Features #11, #12, #15)
+## Batch 4: KI, Kalender & UX — Commits 12-13 (Features #11, #12, #15, #13, #14, #20, #19, #23, #24)
 
 ### #11 Adaptive Reaktionszeit
 **Dateien:** `automation_engine.py` (AutomationExecutor erweitern)
@@ -449,10 +466,6 @@ Unterstützt drei **Lampentypen** und zwei **Steuerungsmodi**:
   - API: `GET /api/health/mood-estimate` → aktuelle Einschätzung
   - Nutzt Mood für Beleuchtungs-/Musik-Vorschläge
 
----
-
-## Batch 6: Kalender & Saison (Features #13, #14)
-
 ### #13 Saison-Kalender (Vervollständigung)
 **Dateien:** `routes/system.py`, Frontend
 
@@ -473,10 +486,6 @@ Unterstützt drei **Lampentypen** und zwei **Steuerungsmodi**:
   - Unterstützt HA-Kalender-Entities (local_calendar, Google via HA)
   - API: `GET /api/system/calendar-events` → kommende Events
   - API: `PUT /api/system/calendar-config` → Kalender-Entity zuordnen
-
----
-
-## Batch 7: UX Features (Features #20, #19, #23, #24)
 
 ### #20 Szenen-Favoriten
 **Dateien:** `models.py`, `routes/scenes.py`, Frontend
@@ -530,13 +539,13 @@ Unterstützt drei **Lampentypen** und zwei **Steuerungsmodi**:
 
 ---
 
-## Batch 8: Gesundheits-Dashboard (Feature #28)
+## Batch 5: Dashboard & Finalisierung — Commits 14-15 (Feature #28)
 
 ### #28 Gesundheits-Dashboard
 **Dateien:** `routes/health.py`, Frontend
 
 - **Backend:**
-  - Neuer Blueprint `routes/health.py` (erstellt in Batch 2)
+  - Neuer Blueprint `routes/health.py` (erstellt in Batch 0)
   - Aggregiert alle Health-Daten:
     - Schlafqualität (letzte 7 Tage)
     - Komfort-Scores (alle Räume)
@@ -551,10 +560,6 @@ Unterstützt drei **Lampentypen** und zwei **Steuerungsmodi**:
   - Kacheln: Schlaf, Komfort, Klima, Lüftung, Bildschirmzeit
   - Trend-Charts (7 Tage)
   - Wöchentlicher Bericht (PDF-ähnlich)
-
----
-
-## Batch 9: Finalisierung
 
 ### Version & Dokumentation
 - `version.py`: VERSION = "0.7.0", CODENAME = "Phase 4 - Smart Health"
@@ -584,18 +589,14 @@ Statt 11 einzelner Tasks → **5 gruppierte Tasks** + 2 Einzel-Tasks:
 
 ## Zusammenfassung
 
-| Batch | Features | Neue Dateien | Geänderte Dateien |
-|-------|----------|-------------|-------------------|
-| 0 | Infrastruktur | engines/__init__.py, engines/sleep.py, engines/energy.py, engines/circadian.py, engines/comfort.py, engines/routines.py, engines/weather_alerts.py, engines/visit.py, routes/health.py | models.py, automation_engine.py |
-| 1 | #1, #2, #3, #26 | — | engines/energy.py, routes/energy.py, domains/solar.py |
-| 2 | #4, #16, #25 | — | engines/sleep.py, routes/health.py |
-| 3 | #5, #6, #22, #29 | — | engines/routines.py, engines/visit.py, routes/presence.py, pattern_engine.py, automation_engine.py |
-| 4 | #10, #17, #18, #27, #21 | — | engines/comfort.py, engines/circadian.py, engines/weather_alerts.py, routes/health.py, domains/light.py, domains/air_quality.py |
-| 5 | #11, #12, #15 | — | automation_engine.py, pattern_engine.py, engines/routines.py |
-| 6 | #13, #14 | — | routes/system.py, pattern_engine.py |
-| 7 | #20, #19, #23, #24 | — | routes/scenes.py, engines/comfort.py, automation_engine.py, routes/notifications.py |
-| 8 | #28 | — | routes/health.py, app.jsx |
-| 9 | Finalisierung | — | version.py, README.md, CHANGELOG.md, de.json, en.json |
+| Batch | Features | Commits | Neue Dateien | Geänderte Dateien |
+|-------|----------|---------|-------------|-------------------|
+| 0 | Infrastruktur | 1-3 | engines/ (8 Dateien), routes/health.py | models.py, automation_engine.py, version.py |
+| 1 | #1, #2, #3, #26 | 4-5 | — | engines/energy.py, routes/energy.py, domains/solar.py |
+| 2 | #4, #16, #25, #5, #6, #22, #29 | 6-8 | — | engines/sleep.py, engines/routines.py, engines/visit.py, routes/health.py, routes/presence.py, routes/patterns.py, pattern_engine.py, automation_engine.py |
+| 3 | #10, #17, #18, #27, #21 | 9-11 | — | engines/comfort.py, engines/circadian.py, engines/weather_alerts.py, routes/health.py, domains/light.py, domains/air_quality.py, domains/weather.py |
+| 4 | #11, #12, #15, #13, #14, #20, #19, #23, #24 | 12-13 | — | automation_engine.py, pattern_engine.py, engines/routines.py, engines/comfort.py, routes/system.py, routes/scenes.py, routes/health.py, routes/notifications.py |
+| 5 | #28 + Finalisierung | 14-15 | — | routes/health.py, app.jsx, version.py, README.md, de.json, en.json |
 
 **Geschätzte Änderungen:**
 - 9 neue Dateien: `engines/` (7 Module + __init__) + `routes/health.py`
@@ -607,3 +608,4 @@ Statt 11 einzelner Tasks → **5 gruppierte Tasks** + 2 Einzel-Tasks:
 - 1 Data-Retention-Task (Nacht-Cleanup)
 - Frontend: ~5 neue Seiten/Tabs in app.jsx
 - Graceful Degradation für alle Sensor-abhängigen Features
+- **6 Batches, ~15 Commits**
