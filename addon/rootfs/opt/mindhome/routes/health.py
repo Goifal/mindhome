@@ -632,18 +632,36 @@ def api_get_calendar_entities():
 
 
 # ──────────────────────────────────────────────
-# Health Dashboard (Batch 5 — stub endpoints)
+# Batch 5: Health Dashboard & Weekly Report
 # ──────────────────────────────────────────────
 
 @health_bp.route("/api/health/dashboard", methods=["GET"])
 def api_health_dashboard():
-    """Aggregated health dashboard data."""
-    # TODO: Batch 5 — Aggregate all health data
-    return jsonify({
-        "sleep": None,
-        "comfort": None,
-        "climate": None,
-        "ventilation": None,
-        "screen_time": None,
-        "mood": None,
-    })
+    """Aggregated health dashboard data (#28)."""
+    aggregator = _deps.get("health_aggregator")
+    if not aggregator:
+        return jsonify({
+            "overall_score": None, "sleep": None, "comfort": None,
+            "ventilation": None, "screen_time": None, "mood": None,
+            "weather": None, "energy": None, "updated_at": None,
+        })
+    return jsonify(aggregator.get_dashboard())
+
+
+@health_bp.route("/api/health/weekly-report", methods=["GET"])
+def api_health_weekly_report():
+    """Weekly health report with trends and recommendations (#28)."""
+    aggregator = _deps.get("health_aggregator")
+    if not aggregator:
+        return jsonify({"period": None, "sections": {}, "recommendations": [], "generated_at": None})
+    return jsonify(aggregator.get_weekly_report())
+
+
+@health_bp.route("/api/health/metrics/<metric_type>/history", methods=["GET"])
+def api_health_metric_history(metric_type):
+    """Get historical values for a specific health metric."""
+    aggregator = _deps.get("health_aggregator")
+    if not aggregator:
+        return jsonify([])
+    days = request.args.get("days", 30, type=int)
+    return jsonify(aggregator.get_metric_history(metric_type, days=days))
