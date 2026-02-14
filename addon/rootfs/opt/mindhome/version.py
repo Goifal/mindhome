@@ -4,12 +4,19 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "0.7.12"
-BUILD = 65
+VERSION = "0.7.13"
+BUILD = 66
 BUILD_DATE = "2026-02-14"
 CODENAME = "Phase 4 - Smart Health"
 
 # Changelog
+# Build 66: v0.7.13 Diagnose-Logging + Cross-Room Integration
+#   - INFO-Logging: Zeitmuster zeigt actionable Events, Gruppen, Cluster, Confidence-Filter
+#   - INFO-Logging: Korrelationen zeigt Trigger-Paare, Schwellwert-Filter, Confidence-Filter
+#   - Fix: Cross-Room Korrelationen waren orphaned (5 Raumpaare gefunden, 0 Patterns erstellt)
+#   - Cross-Room Raumpaare werden jetzt als correlation/insight Patterns gespeichert
+#   - Analyse-Summary zeigt jetzt alle 4 Pattern-Typen (time, sequence, correlation, cross-room)
+#
 # Build 65: v0.7.12 Fix Korrelations-Regression (MAX_STATE_AGE 2h → 8h)
 #   - Fix: 0 Korrelationsmuster durch zu aggressiven Staleness-Filter (2h → 8h)
 #   - Viele Entities (person, Licht, Klima) halten State stundenlang
