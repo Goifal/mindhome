@@ -674,6 +674,10 @@ def start_app():
                             interval_seconds=7 * 24 * 3600,  # weekly
                             run_immediately=False)
 
+    # Register Phase 4 tasks
+    from engines.data_retention import run_data_retention
+    task_scheduler.register("data_retention", run_data_retention, interval_seconds=3600)
+
     # Start task scheduler
     task_scheduler.start()
     logger.info("  ✅ Task Scheduler started (cleanup:24h, maintenance:7d)")

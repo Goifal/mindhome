@@ -4,12 +4,21 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "0.6.51"
-BUILD = 52
+VERSION = "0.7.0"
+BUILD = 53
 BUILD_DATE = "2026-02-14"
-CODENAME = "Phase 3.5 - Kalender & Presence"
+CODENAME = "Phase 4 - Smart Health"
 
 # Changelog
+# Build 53: v0.7.0 Phase 4 - Smart Health
+#   - Infrastruktur: engines/ Modul-Struktur, Feature-Flags, Data Retention
+#   - Energie: Optimierung, PV-Lastmanagement, Standby-Killer, Prognose
+#   - Schlaf: Erkennung, Qualitaets-Tracker, Sanftes Wecken, Morgenroutine
+#   - Klima: Komfort-Score, Raumklima-Ampel, Lueftungserinnerung, Zirkadian
+#   - KI: Adaptive Reaktionszeit, Gewohnheits-Drift, Stimmungserkennung
+#   - UX: Favoriten, Kalender, Bildschirmzeit, Sanftes Eingreifen
+#   - Gesundheits-Dashboard mit Wochenbericht
+#
 # Build 52: v0.6.51 DB Cleanup, Indexes & Maintenance
 #   - DB Indexes: 7 neue Indexes auf learned_patterns + pattern_match_log
 #     (status+is_active, pattern_type+is_active, domain_id, room_id, confidence, last_matched_at, matched_at)

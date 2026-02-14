@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.7.0 – Phase 4: Smart Health & Energie
+
+### Neue Features
+- **Schlaf-Erkennung**: Automatische Schlaf/Wach-Erkennung via Bewegungssensoren
+- **Schlaf-Qualität**: Temperatur, CO2, Luftfeuchtigkeit — Schlafbewertung und Tipps
+- **Sanftes Wecken**: Zirkadiane Lichtsteuerung als natürlicher Wecker
+- **Energie-Optimierung**: PV-Lastmanagement, Standby-Killer, Verbrauchsprognose
+- **Komfort-Score**: Raumklima-Bewertung (Temperatur, Luftfeuchtigkeit, CO2)
+- **Lüftungserinnerung**: Intelligente Lüftungsvorschläge basierend auf CO2/Fenster-Kontakten
+- **Zirkadiane Beleuchtung**: Automatische Farbtemperatur-Anpassung nach Tageszeit
+- **Wetter-Alerts**: Frost-, Sturm-, Hitze-Warnungen mit Smart-Home-Reaktionen
+- **Bildschirmzeit-Monitor**: Media-Player Nutzungsstatistiken
+- **Stimmungserkennung**: Schätzung basierend auf Aktivitätsmuster
+- **Besuch-Vorbereitung**: Automatische Szenen bei erwartetem Besuch
+- **Gewohnheits-Drift**: Erkennung wenn sich Routinen verschieben
+- **Adaptive Reaktionszeit**: KI-optimierte Timing-Anpassung
+- **Gesundheits-Dashboard**: Aggregierte Gesundheitsdaten mit Wochenbericht
+
+### Infrastruktur
+- **engines/ Modul-Struktur**: 8 neue Engine-Module für Phase 4 Features
+- **Feature-Flags**: 20 konfigurierbare Phase 4 Features (auto/true/false)
+- **Data Retention**: Automatische nächtliche Bereinigung alter Daten
+- **10 neue DB-Modelle**: SleepSession, ComfortScore, HealthMetric, WakeUpConfig, CircadianConfig, EnergyForecast, VentilationReminder, WeatherAlert, VisitPreparation, ScreenTimeConfig
+- **Migration v10**: Neue Tabellen und Spalten für Phase 4
+
+### API-Endpunkte
+- `GET /api/system/phase4-features` — Feature-Flag Übersicht
+- `PUT /api/system/phase4-features/<key>` — Feature aktivieren/deaktivieren
+- `GET /api/health/dashboard` — Gesundheits-Dashboard Daten
+
+---
+
 ## 0.6.19 – Kalender-Sync, Presence-System & UX-Verbesserungen
 
 ### Neue Features
