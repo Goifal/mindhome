@@ -4,12 +4,30 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "0.7.2"
-BUILD = 55
+VERSION = "0.7.3"
+BUILD = 56
 BUILD_DATE = "2026-02-14"
 CODENAME = "Phase 4 - Smart Health"
 
 # Changelog
+# Build 56: v0.7.3 Batch 2 - Schlaf, Routinen & Anwesenheit
+#   - SleepDetector: Schlaf-Erkennung via Motion+Licht-Heuristik (20-11 Uhr)
+#   - SleepDetector: Schlafqualitaet (0-100) aus Dauer, Unterbrechungen, Temperatur
+#   - WakeUpManager: Sanftes Wecken (Licht/Rolladen/Klima Ramp, pro User konfigurierbar)
+#   - RoutineEngine: Morgen-/Abend-Routinen aus Pattern-Daten erkennen + manuell starten
+#   - RoutineEngine: Raumuebergangs-Erkennung (Motion-Events → Transitions-Graph)
+#   - VisitPreparationManager: Besuchs-Vorlagen (Aktionen: Licht, Temp, Musik)
+#   - VacationDetector: Automatische Urlaubserkennung (>24h weg → Vacation-Modus)
+#   - VacationDetector: Anwesenheitssimulation (18-23 Uhr Licht-Toggle)
+#   - API: 12 neue Endpunkte (/health/sleep, wakeup, routines, visit, vacation)
+#   - Scheduler: sleep_check (5min), visit_vacation_check (10min), routine_detect (24h)
+#   - Frontend: Neue "Gesundheit" Seite mit 5 Tabs (Schlaf, Wecken, Routinen, Besuch, Urlaub)
+#   - Frontend: Schlaf-Balkendiagramm (14 Tage, Qualitaet farbcodiert)
+#   - Frontend: Wecker-Management (CRUD mit Entity-Konfiguration)
+#   - Frontend: Routinen-Karten mit Steps + manueller Aktivierung
+#   - Frontend: Besuchs-Vorlagen mit Aktionen-Builder
+#   - Frontend: Urlaubs-Status mit Auto-Erkennung Info
+#
 # Build 55: v0.7.2 Frontend Batch 1 + Phase 4 Feature-Flags UI
 #   - Energy-Dashboard: 3 neue Tabs (Optimierung, Solar/PV, Prognose)
 #   - Optimierung-Tab: Spar-Empfehlungen, Einsparpotenzial (EUR/kWh)

@@ -10,7 +10,7 @@ from engines.circadian import CircadianLightManager
 from engines.comfort import ComfortCalculator, VentilationMonitor, ScreenTimeMonitor
 from engines.routines import RoutineEngine, MoodEstimator
 from engines.weather_alerts import WeatherAlertManager
-from engines.visit import VisitPreparationManager
+from engines.visit import VisitPreparationManager, VacationDetector
 
 __all__ = [
     "SleepDetector",
@@ -26,4 +26,5 @@ __all__ = [
     "MoodEstimator",
     "WeatherAlertManager",
     "VisitPreparationManager",
+    "VacationDetector",
 ]

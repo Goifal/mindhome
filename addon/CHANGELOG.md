@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.7.3 – Batch 2: Schlaf, Routinen & Anwesenheit
+
+### Engines (7 Features)
+- **SleepDetector (#4, #16)**: Schlaf-Erkennung via Motion+Licht (20-11 Uhr), Qualitaets-Score (0-100)
+- **WakeUpManager (#25)**: Sanftes Wecken mit Licht/Rolladen/Klima-Ramp, pro User konfigurierbar
+- **RoutineEngine (#5)**: Morgen-/Abend-Routinen automatisch erkennen + manuell starten
+- **RoutineEngine (#6)**: Raumuebergangs-Erkennung (Motion → Transitions-Graph)
+- **VisitPreparationManager (#22)**: Besuchs-Vorlagen mit Aktionen (Licht, Temp, Musik)
+- **VacationDetector (#29)**: Auto-Urlaubserkennung (>24h weg) + Anwesenheitssimulation
+
+### API (12 neue Endpunkte)
+- GET /api/health/sleep, /sleep-quality
+- GET/POST/PUT/DELETE /api/health/wakeup
+- GET /api/health/routines, POST routines/:id/activate, GET room-transitions
+- GET/POST/PUT/DELETE /api/health/visit-preparations, POST :id/activate
+- GET /api/health/vacation-status
+
+### Frontend: Neue "Gesundheit" Seite
+- **Schlaf-Tab**: Qualitaets-Balkendiagramm (14 Tage), Session-Liste mit Dauer/Score
+- **Wecken-Tab**: Wecker CRUD (Licht/Rolladen/Klima Entity + Ramp-Dauer)
+- **Routinen-Tab**: Erkannte Routinen mit Steps + "Starten"-Button, Raumuebergaenge
+- **Besuch-Tab**: Vorlagen erstellen/aktivieren/loeschen mit Aktionen-Builder
+- **Urlaub-Tab**: Status-Karte (Auto-Erkennung, Schwelle, Simulation)
+
+### Scheduler
+- sleep_check (5 Min): Schlaf-Erkennung + Weck-Ramp
+- visit_vacation_check (10 Min): Besuch-Trigger + Urlaubserkennung
+- routine_detect (24h): Routinen aus Mustern clustern
+
+---
+
 ## 0.7.2 – Frontend Batch 1 + Feature-Flags UI
 
 ### Energie-Dashboard: 3 neue Tabs
