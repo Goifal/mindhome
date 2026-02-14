@@ -1522,10 +1522,10 @@ class PatternDetector:
 
         # Find strong correlations
         # Fix #8: Room-aware thresholds for correlations
-        # v0.7.14: Fixed ratio calculation (was diluted across all entities)
-        # Now ratios are per-entity, so thresholds can be meaningful
-        min_corr_count_same = 4
-        min_corr_count_cross = 7
+        # v0.7.15: Fixed ratio calculation (was diluted across all entities)
+        # v0.7.16: Added baseline filter + bidirectional dedup to reduce 4220→~30 patterns
+        min_corr_count_same = 6
+        min_corr_count_cross = 10
         min_corr_ratio_same = 0.7
         min_corr_ratio_cross = 0.8
 
@@ -1533,9 +1533,22 @@ class PatternDetector:
         pairs_too_few = 0
         pairs_below_threshold = 0
         pairs_low_confidence = 0
-        near_miss_count = 0
+        pairs_trivial_baseline = 0
 
         logger.info(f"Correlation patterns: {total_pairs} trigger entity/state combinations found")
+
+        # Pre-compute global baseline: how often is each entity in each state?
+        # If entity_b is ALWAYS in state_b (e.g. person.home=home 95% of time),
+        # correlations with that state are trivial and uninformative.
+        global_state_counts = {}
+        global_entity_counts = {}
+        for (_ea, _sa), targets in cooccurrences.items():
+            for (eb, sb), cnt in targets.items():
+                global_state_counts[(eb, sb)] = global_state_counts.get((eb, sb), 0) + cnt
+                global_entity_counts[eb] = global_entity_counts.get(eb, 0) + cnt
+
+        # Collect candidates first, then deduplicate bidirectional pairs
+        correlation_candidates = []
 
         for (eid_a, state_a), targets in cooccurrences.items():
             total = sum(targets.values())
@@ -1544,17 +1557,22 @@ class PatternDetector:
                 continue
 
             # Pre-compute per-entity totals for correct ratio calculation
-            # ratio = "of all times eid_b was observed, how often was it in state_b?"
             entity_totals = {}
             for (eid, st), cnt in targets.items():
                 entity_totals[eid] = entity_totals.get(eid, 0) + cnt
 
             for (eid_b, state_b), count in targets.items():
-                # Fix: ratio per target entity, not across all targets
-                # Old: ratio = count / total (diluted by ~50 entities → always < 0.02)
-                # New: ratio = count / observations_of_eid_b (correct: "75% of the time kitchen is on")
+                # Ratio per target entity (v0.7.15 fix)
                 entity_total = entity_totals.get(eid_b, 1)
                 ratio = count / entity_total
+
+                # Baseline filter: skip if entity_b is in state_b >85% of the time globally
+                # This filters trivial correlations like "person.home is always home"
+                global_total = global_entity_counts.get(eid_b, 1)
+                baseline = global_state_counts.get((eid_b, state_b), 0) / global_total
+                if baseline > 0.85:
+                    pairs_trivial_baseline += 1
+                    continue
 
                 # Fix #8: Apply room-aware filtering
                 room_a = entity_room_map.get(eid_a)
@@ -1566,59 +1584,75 @@ class PatternDetector:
 
                 if ratio < min_ratio or count < min_count:
                     pairs_below_threshold += 1
-                    # Log near-misses (within 80% of thresholds) for diagnosis
-                    if near_miss_count < 5 and ratio >= min_ratio * 0.8 and count >= min_count * 0.8:
-                        near_miss_count += 1
-                        loc = "same-room" if same_room else "cross-room"
-                        logger.debug(
-                            f"Correlation near-miss ({loc}): {eid_a}={state_a} → {eid_b}={state_b} "
-                            f"ratio={ratio:.2f} (need {min_ratio}), count={count} (need {min_count})"
-                        )
                     continue
 
                 confidence = min(ratio * (count / 14), 0.85)
-                min_conf = 0.3 if same_room else 0.5
+                min_conf = 0.4 if same_room else 0.55
                 if confidence < min_conf:
                     pairs_low_confidence += 1
                     continue
 
-                pattern_data = {
-                    "condition_entity": eid_a,
-                    "condition_state": state_a,
-                    "correlated_entity": eid_b,
-                    "correlated_state": state_b,
-                    "correlation_ratio": round(ratio, 3),
-                    "occurrence_count": count,
-                    "total_observations": total,
-                    "same_room": same_room,
-                }
+                correlation_candidates.append((
+                    eid_a, state_a, eid_b, state_b,
+                    ratio, count, total, confidence, same_room
+                ))
 
-                trigger_conditions = {
-                    "type": "state",
-                    "condition_entity": eid_a,
-                    "condition_state": state_a,
-                }
+        # Deduplicate bidirectional pairs: A→B and B→A → keep only the stronger one
+        seen_pairs = {}
+        for cand in correlation_candidates:
+            eid_a, state_a, eid_b, state_b, ratio, count, total, confidence, same_room = cand
+            pair_key = tuple(sorted([eid_a, eid_b]))
+            existing = seen_pairs.get(pair_key)
+            if existing is None or confidence > existing[7]:
+                seen_pairs[pair_key] = cand
 
-                action_def = {
-                    "entity_id": eid_b,
-                    "target_state": state_b,
-                }
+        dedup_removed = len(correlation_candidates) - len(seen_pairs)
+        logger.info(
+            f"Correlation filtering: {len(correlation_candidates)} candidates, "
+            f"{dedup_removed} bidirectional duplicates removed, "
+            f"{pairs_trivial_baseline} trivial baseline filtered"
+        )
 
-                # Fix #16: Use pre-fetched names
-                name_a = entity_name_map.get(eid_a, eid_a)
-                name_b = entity_name_map.get(eid_b, eid_b)
+        for cand in seen_pairs.values():
+            eid_a, state_a, eid_b, state_b, ratio, count, total, confidence, same_room = cand
 
-                desc_de = f"Wenn {name_a} = {state_a}, ist {name_b} meist {state_b} ({int(ratio*100)}%)"
-                desc_en = f"When {name_a} = {state_a}, {name_b} is usually {state_b} ({int(ratio*100)}%)"
+            pattern_data = {
+                "condition_entity": eid_a,
+                "condition_state": state_a,
+                "correlated_entity": eid_b,
+                "correlated_state": state_b,
+                "correlation_ratio": round(ratio, 3),
+                "occurrence_count": count,
+                "total_observations": total,
+                "same_room": same_room,
+            }
 
-                dev_b = self._device_cache.get(eid_b)
-                p = self._upsert_pattern(
-                    session, f"{eid_a}↔{eid_b}", "correlation", pattern_data,
-                    confidence, trigger_conditions, action_def,
-                    desc_de, desc_en, dev_b
-                )
-                if p:
-                    patterns_found.append(p)
+            trigger_conditions = {
+                "type": "state",
+                "condition_entity": eid_a,
+                "condition_state": state_a,
+            }
+
+            action_def = {
+                "entity_id": eid_b,
+                "target_state": state_b,
+            }
+
+            # Fix #16: Use pre-fetched names
+            name_a = entity_name_map.get(eid_a, eid_a)
+            name_b = entity_name_map.get(eid_b, eid_b)
+
+            desc_de = f"Wenn {name_a} = {state_a}, ist {name_b} meist {state_b} ({int(ratio*100)}%)"
+            desc_en = f"When {name_a} = {state_a}, {name_b} is usually {state_b} ({int(ratio*100)}%)"
+
+            dev_b = self._device_cache.get(eid_b)
+            p = self._upsert_pattern(
+                session, f"{eid_a}↔{eid_b}", "correlation", pattern_data,
+                confidence, trigger_conditions, action_def,
+                desc_de, desc_en, dev_b
+            )
+            if p:
+                patterns_found.append(p)
 
         logger.info(
             f"Correlation patterns: {len(patterns_found)} created/updated, "
