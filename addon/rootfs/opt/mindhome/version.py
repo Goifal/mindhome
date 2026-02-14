@@ -4,12 +4,29 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "0.6.50"
-BUILD = 51
+VERSION = "0.6.51"
+BUILD = 52
 BUILD_DATE = "2026-02-14"
 CODENAME = "Phase 3.5 - Kalender & Presence"
 
 # Changelog
+# Build 52: v0.6.51 DB Cleanup, Indexes & Maintenance
+#   - DB Indexes: 7 neue Indexes auf learned_patterns + pattern_match_log
+#     (status+is_active, pattern_type+is_active, domain_id, room_id, confidence, last_matched_at, matched_at)
+#   - run_cleanup(): Intelligentes Aufraeumen implementiert (war vorher undefiniert/crashte)
+#     - Rejected Patterns nach 30 Tagen loeschen
+#     - Disabled Patterns (confidence < 0.1) nach 14 Tagen loeschen
+#     - StateHistory nach data_retention_days loeschen
+#     - PatternMatchLog nach 90 Tagen loeschen
+#     - ActionLog nach data_retention_days loeschen
+#     - NotificationLog nach 90 Tagen loeschen
+#     - AuditTrail nach 180 Tagen loeschen
+#   - Smart Eviction: Bei > 500 observed Patterns werden die mit niedrigster
+#     Confidence + aeltestem last_matched_at zuerst entfernt
+#   - DB Maintenance: Woechentliches VACUUM + ANALYZE (SQLite Optimierung)
+#   - Scheduler: Cleanup taeglich, Maintenance woechentlich
+#   - Migration v9: Indexes als DB-Migration fuer bestehende Installationen
+#
 # Build 51: v0.6.50 Presence Auto-Detection Fix
 #   - Event-basierte Erkennung: person.*/device_tracker.* loest sofort check aus
 #   - Kein falsches "Abwesend" mehr bei HA-API-Ausfall (502 Gateway)

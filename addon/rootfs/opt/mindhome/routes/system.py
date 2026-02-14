@@ -665,6 +665,158 @@ def api_set_retention():
 
 
 
+def run_cleanup():
+    """Run intelligent database cleanup. Returns dict with deletion counts.
+
+    Cleans up:
+    1. Rejected patterns older than 30 days
+    2. Disabled patterns with confidence < 0.1, older than 14 days
+    3. StateHistory older than data_retention_days
+    4. PatternMatchLog older than 90 days
+    5. ActionLog older than data_retention_days
+    6. NotificationLog older than 90 days
+    7. AuditTrail older than 180 days
+    8. Smart eviction: if > 500 observed patterns, remove lowest confidence first
+    """
+    session = get_db()
+    result = {
+        "rejected_patterns": 0,
+        "disabled_patterns": 0,
+        "state_history": 0,
+        "pattern_match_log": 0,
+        "action_log": 0,
+        "notification_log": 0,
+        "audit_trail": 0,
+        "evicted_patterns": 0,
+    }
+    try:
+        now = datetime.now(timezone.utc)
+        retention_days = int(get_setting("data_retention_days", "90"))
+
+        # 1. Rejected patterns older than 30 days
+        cutoff_rejected = now - timedelta(days=30)
+        rejected = session.query(LearnedPattern).filter(
+            LearnedPattern.status == "rejected",
+            LearnedPattern.rejected_at < cutoff_rejected
+        ).all()
+        # Also catch rejected patterns without rejected_at set
+        rejected += session.query(LearnedPattern).filter(
+            LearnedPattern.status == "rejected",
+            LearnedPattern.rejected_at == None,
+            LearnedPattern.updated_at < cutoff_rejected
+        ).all()
+        seen_ids = set()
+        for p in rejected:
+            if p.id not in seen_ids:
+                seen_ids.add(p.id)
+                # Delete related match logs first
+                session.query(PatternMatchLog).filter_by(pattern_id=p.id).delete()
+                session.delete(p)
+                result["rejected_patterns"] += 1
+
+        # 2. Disabled patterns with very low confidence, older than 14 days
+        cutoff_disabled = now - timedelta(days=14)
+        disabled = session.query(LearnedPattern).filter(
+            LearnedPattern.status == "disabled",
+            LearnedPattern.is_active == False,
+            LearnedPattern.confidence < 0.1,
+            LearnedPattern.updated_at < cutoff_disabled
+        ).all()
+        for p in disabled:
+            session.query(PatternMatchLog).filter_by(pattern_id=p.id).delete()
+            session.delete(p)
+            result["disabled_patterns"] += 1
+
+        # 3. StateHistory older than retention_days
+        cutoff_history = now - timedelta(days=retention_days)
+        result["state_history"] = session.query(StateHistory).filter(
+            StateHistory.created_at < cutoff_history
+        ).delete()
+
+        # 4. PatternMatchLog older than 90 days
+        cutoff_match = now - timedelta(days=90)
+        result["pattern_match_log"] = session.query(PatternMatchLog).filter(
+            PatternMatchLog.matched_at < cutoff_match
+        ).delete()
+
+        # 5. ActionLog older than retention_days
+        result["action_log"] = session.query(ActionLog).filter(
+            ActionLog.created_at < cutoff_history
+        ).delete()
+
+        # 6. NotificationLog older than 90 days
+        result["notification_log"] = session.query(NotificationLog).filter(
+            NotificationLog.created_at < cutoff_match
+        ).delete()
+
+        # 7. AuditTrail older than 180 days
+        cutoff_audit = now - timedelta(days=180)
+        result["audit_trail"] = session.query(AuditTrail).filter(
+            AuditTrail.created_at < cutoff_audit
+        ).delete()
+
+        # 8. Smart eviction: if > 500 observed patterns, evict lowest confidence
+        observed_count = session.query(LearnedPattern).filter(
+            LearnedPattern.status == "observed",
+            LearnedPattern.is_active == True
+        ).count()
+        if observed_count > 500:
+            excess = observed_count - 500
+            to_evict = session.query(LearnedPattern).filter(
+                LearnedPattern.status == "observed",
+                LearnedPattern.is_active == True
+            ).order_by(
+                LearnedPattern.confidence.asc(),
+                LearnedPattern.last_matched_at.asc()
+            ).limit(excess).all()
+            for p in to_evict:
+                session.query(PatternMatchLog).filter_by(pattern_id=p.id).delete()
+                session.delete(p)
+                result["evicted_patterns"] += 1
+
+        session.commit()
+
+        total = sum(result.values())
+        if total > 0:
+            logger.info(f"Cleanup complete: {result}")
+        else:
+            logger.debug("Cleanup: nothing to delete")
+
+        return result
+    except Exception as e:
+        session.rollback()
+        logger.error(f"Cleanup error: {e}")
+        return result
+    finally:
+        session.close()
+
+
+def run_db_maintenance():
+    """Run SQLite VACUUM and ANALYZE for performance optimization."""
+    try:
+        db_path = os.environ.get("MINDHOME_DB_PATH", "/data/mindhome/db/mindhome.db")
+        if not os.path.exists(db_path):
+            return
+
+        import sqlite3
+        conn = sqlite3.connect(db_path, timeout=60)
+        size_before = os.path.getsize(db_path)
+
+        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        conn.execute("ANALYZE")
+        conn.execute("VACUUM")
+        conn.close()
+
+        size_after = os.path.getsize(db_path)
+        saved = size_before - size_after
+        logger.info(
+            f"DB maintenance complete: VACUUM saved {saved / 1024:.0f} KB "
+            f"({size_before / 1024 / 1024:.1f} MB → {size_after / 1024 / 1024:.1f} MB)"
+        )
+    except Exception as e:
+        logger.warning(f"DB maintenance error: {e}")
+
+
 @system_bp.route("/api/system/cleanup", methods=["POST"])
 def api_manual_cleanup():
     """Manually trigger data cleanup."""
