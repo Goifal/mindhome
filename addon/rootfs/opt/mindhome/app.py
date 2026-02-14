@@ -556,6 +556,15 @@ routine_engine = RoutineEngine(ha, get_db_session, event_bus)
 visit_manager = VisitPreparationManager(ha, get_db_session, event_bus)
 vacation_detector = VacationDetector(ha, get_db_session, event_bus)
 
+# Phase 4 Batch 3: Comfort, Ventilation, Circadian, Weather engines
+from engines.comfort import ComfortCalculator, VentilationMonitor
+from engines.circadian import CircadianLightManager
+from engines.weather_alerts import WeatherAlertManager
+comfort_calculator = ComfortCalculator(ha, get_db_session)
+ventilation_monitor = VentilationMonitor(ha, get_db_session, event_bus)
+circadian_manager = CircadianLightManager(ha, get_db_session, event_bus)
+weather_alert_manager = WeatherAlertManager(ha, get_db_session, event_bus)
+
 dependencies = {
     "ha": ha,
     "engine": engine,
@@ -576,6 +585,10 @@ dependencies = {
     "routine_engine": routine_engine,
     "visit_manager": visit_manager,
     "vacation_detector": vacation_detector,
+    "comfort_calculator": comfort_calculator,
+    "ventilation_monitor": ventilation_monitor,
+    "circadian_manager": circadian_manager,
+    "weather_alert_manager": weather_alert_manager,
 }
 
 from routes import register_blueprints
@@ -607,7 +620,11 @@ def graceful_shutdown(signum=None, frame=None):
                           ("wakeup_manager", wakeup_manager),
                           ("routine_engine", routine_engine),
                           ("visit_manager", visit_manager),
-                          ("vacation_detector", vacation_detector)]:
+                          ("vacation_detector", vacation_detector),
+                          ("comfort_calculator", comfort_calculator),
+                          ("ventilation_monitor", ventilation_monitor),
+                          ("circadian_manager", circadian_manager),
+                          ("weather_alert_manager", weather_alert_manager)]:
         try:
             eng.stop()
         except Exception:
@@ -769,9 +786,38 @@ def start_app():
                             interval_seconds=24 * 3600,  # daily
                             run_immediately=False)
 
+    # Phase 4 Batch 3: Comfort, Ventilation, Circadian, Weather scheduler tasks
+    comfort_calculator.start()
+    ventilation_monitor.start()
+    circadian_manager.start()
+    weather_alert_manager.start()
+
+    def run_comfort_check():
+        """15-min check: comfort scoring + circadian lighting."""
+        comfort_calculator.calculate()
+        circadian_manager.check()
+
+    def run_ventilation_check():
+        """10-min check: ventilation monitoring."""
+        ventilation_monitor.check()
+
+    def run_weather_check():
+        """30-min check: weather forecast alerts."""
+        weather_alert_manager.check()
+
+    task_scheduler.register("comfort_check", run_comfort_check,
+                            interval_seconds=15 * 60,  # 15 min
+                            run_immediately=False)
+    task_scheduler.register("ventilation_check", run_ventilation_check,
+                            interval_seconds=10 * 60,  # 10 min
+                            run_immediately=False)
+    task_scheduler.register("weather_check", run_weather_check,
+                            interval_seconds=30 * 60,  # 30 min
+                            run_immediately=False)
+
     # Start task scheduler
     task_scheduler.start()
-    logger.info("  ✅ Task Scheduler started (cleanup:24h, maintenance:7d, energy:5m, sleep:5m, visit:10m, daily:24h)")
+    logger.info("  ✅ Task Scheduler started (cleanup:24h, maintenance:7d, energy:5m, sleep:5m, visit:10m, comfort:15m, ventilation:10m, weather:30m, daily:24h)")
 
     logger.info(f"MindHome {vi['full']} started successfully!")
 

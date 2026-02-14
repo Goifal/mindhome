@@ -152,7 +152,7 @@ class RoutineEngine:
             except Exception as e:
                 logger.error(f"Routine step error {entity}: {e}")
 
-        self.event_bus.emit("routine_activated", {
+        self.event_bus.emit("routine.activated", {
             "routine_id": routine_id,
             "steps_executed": len(activated),
         })

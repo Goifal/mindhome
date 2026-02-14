@@ -354,6 +354,163 @@ def api_get_vacation_status():
 
 
 # ──────────────────────────────────────────────
+# Batch 3: Comfort Score & Climate Traffic Light
+# ──────────────────────────────────────────────
+
+@health_bp.route("/api/health/comfort", methods=["GET"])
+def api_get_comfort_scores():
+    """Get current comfort scores per room."""
+    calculator = _deps.get("comfort_calculator")
+    if not calculator:
+        return jsonify([])
+    return jsonify(calculator.get_scores())
+
+
+@health_bp.route("/api/health/comfort/<int:room_id>/history", methods=["GET"])
+def api_get_comfort_history(room_id):
+    """Get comfort score history for a room."""
+    calculator = _deps.get("comfort_calculator")
+    if not calculator:
+        return jsonify([])
+    days = request.args.get("days", 7, type=int)
+    return jsonify(calculator.get_history(room_id, days=days))
+
+
+@health_bp.route("/api/health/climate-traffic-light", methods=["GET"])
+def api_get_climate_traffic_light():
+    """Get traffic light status per room (green/yellow/red)."""
+    calculator = _deps.get("comfort_calculator")
+    if not calculator:
+        return jsonify([])
+    return jsonify(calculator.get_traffic_lights())
+
+
+# ──────────────────────────────────────────────
+# Batch 3: Ventilation Endpoints
+# ──────────────────────────────────────────────
+
+@health_bp.route("/api/health/ventilation", methods=["GET"])
+def api_get_ventilation_status():
+    """Get ventilation status per room."""
+    monitor = _deps.get("ventilation_monitor")
+    if not monitor:
+        return jsonify([])
+    return jsonify(monitor.get_status())
+
+
+@health_bp.route("/api/health/ventilation/<int:room_id>", methods=["PUT"])
+def api_update_ventilation_config(room_id):
+    """Update ventilation config for a room."""
+    monitor = _deps.get("ventilation_monitor")
+    if not monitor:
+        return jsonify({"error": "Not available"}), 503
+    data = request.json or {}
+    result = monitor.update_config(room_id, data)
+    return jsonify(result)
+
+
+# ──────────────────────────────────────────────
+# Batch 3: Circadian Lighting Endpoints
+# ──────────────────────────────────────────────
+
+@health_bp.route("/api/health/circadian", methods=["GET"])
+def api_get_circadian_configs():
+    """Get all circadian lighting configurations."""
+    manager = _deps.get("circadian_manager")
+    if not manager:
+        return jsonify([])
+    return jsonify(manager.get_configs())
+
+
+@health_bp.route("/api/health/circadian/status", methods=["GET"])
+def api_get_circadian_status():
+    """Get current circadian state per room."""
+    manager = _deps.get("circadian_manager")
+    if not manager:
+        return jsonify([])
+    return jsonify(manager.get_status())
+
+
+@health_bp.route("/api/health/circadian", methods=["POST"])
+def api_create_circadian_config():
+    """Create a new circadian lighting configuration."""
+    from db import get_db
+    from models import CircadianConfig
+    data = request.json or {}
+    session = get_db()
+    try:
+        cfg = CircadianConfig(
+            room_id=data.get("room_id"),
+            enabled=data.get("enabled", True),
+            control_mode=data.get("control_mode", "mindhome"),
+            light_type=data.get("light_type", "dim2warm"),
+            brightness_curve=data.get("brightness_curve"),
+            hcl_pause_ga=data.get("hcl_pause_ga"),
+            hcl_resume_ga=data.get("hcl_resume_ga"),
+            override_sleep=data.get("override_sleep", 10),
+            override_wakeup=data.get("override_wakeup", 70),
+            override_guests=data.get("override_guests", 90),
+            override_transition_sec=data.get("override_transition_sec", 300),
+        )
+        session.add(cfg)
+        session.commit()
+        return jsonify({"id": cfg.id, "success": True})
+    finally:
+        session.close()
+
+
+@health_bp.route("/api/health/circadian/<int:config_id>", methods=["PUT"])
+def api_update_circadian_config(config_id):
+    """Update a circadian lighting configuration."""
+    from db import get_db
+    from models import CircadianConfig
+    data = request.json or {}
+    session = get_db()
+    try:
+        cfg = session.get(CircadianConfig, config_id)
+        if not cfg:
+            return jsonify({"error": "Not found"}), 404
+        for key in ["enabled", "control_mode", "light_type", "brightness_curve",
+                     "hcl_pause_ga", "hcl_resume_ga", "override_sleep",
+                     "override_wakeup", "override_guests", "override_transition_sec"]:
+            if key in data:
+                setattr(cfg, key, data[key])
+        session.commit()
+        return jsonify({"success": True})
+    finally:
+        session.close()
+
+
+@health_bp.route("/api/health/circadian/<int:config_id>", methods=["DELETE"])
+def api_delete_circadian_config(config_id):
+    """Delete a circadian lighting configuration."""
+    from db import get_db
+    from models import CircadianConfig
+    session = get_db()
+    try:
+        cfg = session.get(CircadianConfig, config_id)
+        if cfg:
+            session.delete(cfg)
+            session.commit()
+        return jsonify({"success": True})
+    finally:
+        session.close()
+
+
+# ──────────────────────────────────────────────
+# Batch 3: Weather Alerts Endpoints
+# ──────────────────────────────────────────────
+
+@health_bp.route("/api/health/weather-alerts", methods=["GET"])
+def api_get_weather_alerts():
+    """Get active weather alerts."""
+    manager = _deps.get("weather_alert_manager")
+    if not manager:
+        return jsonify([])
+    return jsonify(manager.get_active_alerts())
+
+
+# ──────────────────────────────────────────────
 # Health Dashboard (Batch 5 — stub endpoints)
 # ──────────────────────────────────────────────
 

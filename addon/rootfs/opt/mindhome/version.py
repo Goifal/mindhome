@@ -4,12 +4,32 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "0.7.3"
-BUILD = 56
+VERSION = "0.7.4"
+BUILD = 57
 BUILD_DATE = "2026-02-14"
 CODENAME = "Phase 4 - Smart Health"
 
 # Changelog
+# Build 57: v0.7.4 Batch 3 - Klima & Umgebung
+#   - Fix: EventBus emit/publish Alias (Batch 2 Engines nutzten .emit, EventBus hat .publish)
+#   - Fix: Event-Namen auf Dot-Notation (sleep.detected statt sleep_detected)
+#   - ComfortCalculator (#10): Komfort-Score pro Raum (Temp/Feuchtigkeit/CO2/Licht gewichtet)
+#   - ComfortCalculator (#17): Raumklima-Ampel (gruen/gelb/rot pro Faktor)
+#   - VentilationMonitor (#18): Lueftungserinnerung (CO2-Schwellwert + Fenster-Tracking)
+#   - CircadianLightManager (#27): Zirkadiane Beleuchtung (MindHome + Hybrid HCL Modus)
+#   - CircadianLightManager: 3 Lampentypen (dim2warm, tunable_white, standard)
+#   - CircadianLightManager: Event-basierte Overrides (Schlaf/Aufwachen/Gaeste)
+#   - CircadianLightManager: Brightness + Color-Temperature Interpolation
+#   - WeatherAlertManager (#21): Wetter-Vorwarnung (Frost/Hitze/Starkregen/Sturm/Schnee)
+#   - WeatherAlertManager: 2-12h Vorlauf, Deduplizierung, Severity-Level
+#   - API: 10 neue Endpunkte (comfort, traffic-light, ventilation, circadian CRUD, weather)
+#   - Scheduler: comfort_check (15min), ventilation_check (10min), weather_check (30min)
+#   - Frontend: Neue "Klima" Seite mit 4 Tabs (Komfort, Lueftung, Zirkadian, Wetter)
+#   - Frontend: Komfort-Score Kacheln mit Ampel-Farben + Verlaufs-Balkendiagramm
+#   - Frontend: Lueftungs-Status mit CO2-Werten und Fenster-Tracking
+#   - Frontend: Zirkadian CRUD (Modus/Lampentyp/Override-Konfiguration)
+#   - Frontend: Wetter-Warnungen mit Severity-Badges und Zeitfenster
+#
 # Build 56: v0.7.3 Batch 2 - Schlaf, Routinen & Anwesenheit
 #   - SleepDetector: Schlaf-Erkennung via Motion+Licht-Heuristik (20-11 Uhr)
 #   - SleepDetector: Schlafqualitaet (0-100) aus Dauer, Unterbrechungen, Temperatur
