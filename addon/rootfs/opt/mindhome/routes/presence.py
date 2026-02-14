@@ -376,6 +376,18 @@ def api_presence_manual_override():
                 description_de="Manuelle Anwesenheits-Steuerung aktiv",
                 description_en="Manual presence control active",
             ))
+        # Store timestamp for auto-reset (4h)
+        ts_setting = session.query(SystemSetting).filter_by(key="presence_manual_override_ts").first()
+        ts_val = datetime.now(timezone.utc).isoformat() if enabled else ""
+        if ts_setting:
+            ts_setting.value = ts_val
+        else:
+            session.add(SystemSetting(
+                key="presence_manual_override_ts",
+                value=ts_val,
+                description_de="Zeitpunkt der manuellen Übersteuerung",
+                description_en="Manual override timestamp",
+            ))
         session.commit()
         return jsonify({"success": True, "manual_override": enabled})
     finally:

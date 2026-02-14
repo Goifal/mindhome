@@ -431,6 +431,20 @@ def on_state_changed(event):
     # Publish to new event bus
     event_bus.publish("state.changed", event_data, source="ha")
 
+    # Real-time presence detection: trigger on person/device_tracker changes
+    try:
+        new_val_p = new_state.get("state", "") if isinstance(new_state, dict) else ""
+        old_val_p = old_state.get("state", "") if isinstance(old_state, dict) else ""
+        if (entity_id.startswith("person.") or entity_id.startswith("device_tracker.")) and new_val_p != old_val_p:
+            if hasattr(automation_scheduler, 'presence_mgr'):
+                threading.Thread(
+                    target=automation_scheduler.presence_mgr.check_auto_transitions,
+                    daemon=True,
+                ).start()
+                logger.info(f"Presence check triggered by {entity_id}: {old_val_p} -> {new_val_p}")
+    except Exception as e:
+        logger.debug(f"Presence event trigger error: {e}")
+
     # Log tracked device state changes
     try:
         new_val = new_state.get("state", "unknown") if isinstance(new_state, dict) else "unknown"

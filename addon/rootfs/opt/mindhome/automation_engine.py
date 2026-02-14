@@ -1563,16 +1563,44 @@ class PresenceModeManager:
 
     def check_auto_transitions(self):
         """Check if presence mode should change based on person states and PersonDevice entities."""
-        # Debounce: skip if last mode change was < 60 seconds ago
+        # Debounce: skip if last mode change was < 30 seconds ago
         now = datetime.now(timezone.utc)
         if hasattr(self, '_last_mode_change') and self._last_mode_change:
             elapsed = (now - self._last_mode_change).total_seconds()
-            if elapsed < 60:
+            if elapsed < 30:
                 return
 
         session = self.Session()
         try:
+            # Check manual override
+            override = session.query(SystemSetting).filter_by(key="presence_manual_override").first()
+            if override and override.value == "true":
+                # Auto-reset manual override after 4 hours
+                override_ts = session.query(SystemSetting).filter_by(key="presence_manual_override_ts").first()
+                if override_ts:
+                    try:
+                        ts = datetime.fromisoformat(override_ts.value)
+                        if (now - ts).total_seconds() > 4 * 3600:
+                            override.value = "false"
+                            session.commit()
+                            logger.info("Manual presence override auto-reset after 4h")
+                        else:
+                            return  # Manual override still active
+                    except (ValueError, TypeError):
+                        return
+                else:
+                    return  # No timestamp, skip
+
             # Primary: HA person entities
+            all_persons = self.ha.get_all_persons()
+
+            # Safety: skip if HA API is unreachable (don't false-switch to "Abwesend")
+            if all_persons is None or len(all_persons) == 0:
+                all_states_check = self.ha.get_states()
+                if not all_states_check:
+                    logger.debug("Presence check skipped: HA API unreachable")
+                    return
+
             persons_home = self.ha.get_persons_home()
             persons_home_set = set(p.get("entity_id", "") for p in persons_home)
 
@@ -1598,7 +1626,6 @@ class PresenceModeManager:
                     gd.last_seen = now
 
             anyone_home = len(persons_home_set) > 0 or guests_home > 0
-            all_persons = self.ha.get_all_persons()
             all_home = all_persons and all(p["state"] == "home" for p in all_persons)
 
             # Evaluate auto modes - highest priority first
@@ -1870,9 +1897,9 @@ class AutomationScheduler:
         t4.start()
         self._threads.append(t4)
 
-        # Phase 3: Presence mode check: every 2 minutes
+        # Phase 3: Presence mode check: every 60 seconds (fallback to event-based)
         t6 = threading.Thread(target=self._run_periodic,
-                              args=(self.presence_mgr.check_auto_transitions, 120, "presence_check"),
+                              args=(self.presence_mgr.check_auto_transitions, 60, "presence_check"),
                               daemon=True)
         t6.start()
         self._threads.append(t6)

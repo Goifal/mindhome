@@ -4,12 +4,20 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "0.6.49"
-BUILD = 50
+VERSION = "0.6.50"
+BUILD = 51
 BUILD_DATE = "2026-02-14"
 CODENAME = "Phase 3.5 - Kalender & Presence"
 
 # Changelog
+# Build 51: v0.6.50 Presence Auto-Detection Fix
+#   - Event-basierte Erkennung: person.*/device_tracker.* loest sofort check aus
+#   - Kein falsches "Abwesend" mehr bei HA-API-Ausfall (502 Gateway)
+#   - Manual Override wird in check_auto_transitions geprueft
+#   - Manual Override auto-reset nach 4 Stunden
+#   - Debounce reduziert: 60s -> 30s
+#   - Polling-Fallback: 120s -> 60s
+#
 # Build 50: v0.6.49 TTS Speaker-Toggle rechts + UI Polish
 #   - Speaker Ein/Aus-Toggle nach ganz rechts verschoben
 #   - Layout: Name | Raum-Dropdown | Test | Toggle
