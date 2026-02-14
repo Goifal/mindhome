@@ -306,3 +306,79 @@ def api_energy_stats():
         })
     finally:
         session.close()
+
+
+# ==============================================================================
+# Phase 4 Batch 1 — Energy Optimization, PV, Standby, Forecast
+# ==============================================================================
+
+@energy_bp.route("/api/energy/optimization", methods=["GET"])
+def api_energy_optimization():
+    """Get energy optimization recommendations (#1)."""
+    optimizer = _deps.get("energy_optimizer")
+    if not optimizer:
+        return jsonify({"recommendations": [], "last_analysis": None})
+    return jsonify({
+        "recommendations": optimizer.get_recommendations(),
+        "last_analysis": optimizer._last_analysis.isoformat() if optimizer._last_analysis else None,
+    })
+
+
+@energy_bp.route("/api/energy/savings", methods=["GET"])
+def api_energy_savings():
+    """Get estimated energy savings (#1)."""
+    optimizer = _deps.get("energy_optimizer")
+    if not optimizer:
+        return jsonify({"estimated_monthly_eur": 0, "potential_kwh": 0})
+    return jsonify(optimizer.get_savings_estimate())
+
+
+@energy_bp.route("/api/energy/forecast", methods=["GET"])
+def api_energy_forecast():
+    """Get energy forecast for next N days (#26)."""
+    forecaster = _deps.get("energy_forecaster")
+    if not forecaster:
+        return jsonify([])
+    days = request.args.get("days", 7, type=int)
+    return jsonify(forecaster.get_forecast(days=days))
+
+
+@energy_bp.route("/api/energy/pv-status", methods=["GET"])
+def api_pv_status():
+    """Get current PV production/consumption/surplus (#2)."""
+    optimizer = _deps.get("energy_optimizer")
+    if not optimizer:
+        return jsonify({"error": "Not available"}), 503
+    status = optimizer.get_pv_status()
+    if not status:
+        return jsonify({"error": "PV not configured or feature disabled"}), 404
+    return jsonify(status)
+
+
+@energy_bp.route("/api/energy/pv-priorities", methods=["PUT"])
+def api_set_pv_priorities():
+    """Set PV load management priorities (#2)."""
+    data = request.json or {}
+    session = get_db()
+    try:
+        cfg = session.query(EnergyConfig).first()
+        if not cfg:
+            cfg = EnergyConfig()
+            session.add(cfg)
+        if "enabled" in data:
+            cfg.pv_load_management = data["enabled"]
+        if "priority_entities" in data:
+            cfg.pv_priority_entities = data["priority_entities"]
+        session.commit()
+        return jsonify({"success": True})
+    finally:
+        session.close()
+
+
+@energy_bp.route("/api/energy/standby-status", methods=["GET"])
+def api_standby_status():
+    """Get current standby devices (#3)."""
+    monitor = _deps.get("standby_monitor")
+    if not monitor:
+        return jsonify([])
+    return jsonify(monitor.get_standby_status())
