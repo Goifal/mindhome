@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.7.14 – Fix Zeitmuster-Confidence & Korrelations-Schwellwerte
+
+### Fix
+- **Zeitmuster-Confidence Formel**: Multiplikation von Frequenz und Konsistenz war zu streng (effektiv Quadrierung). Neue Formel: gewichteter Durchschnitt (50% Frequenz + 50% Konsistenz). Beispiel: 6 Events an 6 Tagen — alt: 0.18 (blockiert), neu: 0.51 (erkannt)
+- **expected_days fuer "alle Tage"**: Von 14 auf 10 gesenkt — realistischer, da Nutzer nicht jeden einzelnen Tag aktiv sind
+- **Korrelations-Schwellwerte gelockert**: same-room Ratio 0.7→0.55, cross-room Ratio 0.8→0.7, cross-room Count 10→7 — 22.103 Entity-Paare scheiterten zuvor an den zu strengen Schwellwerten
+
+### Diagnose
+- **Near-Miss-Logging**: Korrelationspaare die knapp am Schwellwert scheitern werden im Debug-Log protokolliert
+
 ## 0.7.13 – Diagnose-Logging & Cross-Room Integration
 
 ### Diagnose

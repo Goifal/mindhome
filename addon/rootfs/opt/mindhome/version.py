@@ -4,12 +4,20 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "0.7.13"
-BUILD = 66
-BUILD_DATE = "2026-02-14"
+VERSION = "0.7.14"
+BUILD = 67
+BUILD_DATE = "2026-02-15"
 CODENAME = "Phase 4 - Smart Health"
 
 # Changelog
+# Build 67: v0.7.14 Fix Zeitmuster-Confidence + Korrelations-Schwellwerte
+#   - Fix: Zeitmuster-Confidence Formel: Multiplikation → gewichteter Durchschnitt (0.5*freq + 0.5*consistency)
+#     Alte Formel quadrierte effektiv (6 Events/6 Tage → 0.18), neue Formel: → 0.51
+#   - Fix: expected_days fuer "alle Tage" von 14 auf 10 (realistischer, Leute fehlen mal)
+#   - Fix: Korrelations-Schwellwerte gelockert (same-room: 0.7→0.55, cross-room: 0.8→0.7, count: 10→7)
+#     22.103 Paare scheiterten bei alten Schwellwerten
+#   - Diagnose: Near-Miss-Logging fuer Korrelationen (Paare die knapp scheitern)
+#
 # Build 66: v0.7.13 Diagnose-Logging + Cross-Room Integration
 #   - INFO-Logging: Zeitmuster zeigt actionable Events, Gruppen, Cluster, Confidence-Filter
 #   - INFO-Logging: Korrelationen zeigt Trigger-Paare, Schwellwert-Filter, Confidence-Filter
