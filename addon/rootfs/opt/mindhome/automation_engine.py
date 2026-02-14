@@ -1225,21 +1225,101 @@ class NotificationManager:
         except Exception as e:
             logger.debug(f"Persistent notification failed: {e}")
 
-        # TTS: send to assigned room speakers if configured
+        # TTS: send to assigned room speakers if configured and enabled
         try:
-            tts_raw = get_setting("notif_tts_room_assignments")
-            if tts_raw:
-                tts_assignments = _json.loads(tts_raw)
-                # tts_assignments: {entity_id: room_id} → announce on all assigned speakers
-                for entity_id in tts_assignments:
-                    try:
-                        self.ha.announce_tts(message, media_player_entity=entity_id)
-                    except Exception as e:
-                        logger.debug(f"TTS to {entity_id} failed: {e}")
+            tts_enabled = _json.loads(get_setting("notif_tts_enabled") or "true")
+            if not tts_enabled:
+                logger.debug("TTS globally disabled, skipping")
+            else:
+                tts_raw = get_setting("notif_tts_room_assignments")
+                if tts_raw:
+                    tts_assignments = _json.loads(tts_raw)
+                    # tts_assignments: {entity_id: room_id}
+                    motion_mode = _json.loads(get_setting("notif_tts_motion_mode") or '{"enabled": false}')
+
+                    if motion_mode.get("enabled"):
+                        # Only announce on speaker in room with last motion
+                        target_speakers = self._get_motion_tts_speakers(tts_assignments, motion_mode)
+                    else:
+                        target_speakers = list(tts_assignments.keys())
+
+                    for entity_id in target_speakers:
+                        try:
+                            self.ha.announce_tts(message, media_player_entity=entity_id)
+                        except Exception as e:
+                            logger.debug(f"TTS to {entity_id} failed: {e}")
         except Exception:
             pass
 
         return sent
+
+    def _get_motion_tts_speakers(self, tts_assignments, motion_mode):
+        """Find TTS speakers in the room with the most recent motion."""
+        try:
+            timeout_min = motion_mode.get("timeout_min", 30)
+            fallback_all = motion_mode.get("fallback_all", False)
+
+            # Build reverse map: room_id → [speaker_entity_ids]
+            room_speakers = {}
+            for entity_id, room_id in tts_assignments.items():
+                rid = str(room_id)
+                if rid not in room_speakers:
+                    room_speakers[rid] = []
+                room_speakers[rid].append(entity_id)
+
+            # Find motion sensors with room assignments
+            session = self.Session()
+            try:
+                motion_devices = session.query(Device).filter(
+                    Device.ha_entity_id.like("binary_sensor.%"),
+                    Device.room_id.isnot(None),
+                ).all()
+
+                states = self.ha.get_states() or []
+                state_map = {s["entity_id"]: s for s in states}
+
+                # Find room with most recent motion
+                latest_room_id = None
+                latest_time = ""
+                now = datetime.now(timezone.utc)
+
+                for dev in motion_devices:
+                    s = state_map.get(dev.ha_entity_id, {})
+                    device_class = s.get("attributes", {}).get("device_class", "")
+                    if device_class not in ("motion", "occupancy"):
+                        continue
+                    last_changed = s.get("last_changed", "")
+                    if not last_changed:
+                        continue
+
+                    # Check timeout
+                    try:
+                        changed_dt = datetime.fromisoformat(last_changed.replace("Z", "+00:00"))
+                        if (now - changed_dt).total_seconds() > timeout_min * 60:
+                            continue
+                    except (ValueError, TypeError):
+                        pass
+
+                    if last_changed > latest_time:
+                        latest_time = last_changed
+                        latest_room_id = str(dev.room_id)
+            finally:
+                session.close()
+
+            if latest_room_id and latest_room_id in room_speakers:
+                logger.info(f"TTS motion mode: announcing in room {latest_room_id}")
+                return room_speakers[latest_room_id]
+
+            # Fallback
+            if fallback_all:
+                logger.info("TTS motion mode: no recent motion, fallback to all speakers")
+                return list(tts_assignments.keys())
+
+            logger.info("TTS motion mode: no recent motion, no fallback - skipping TTS")
+            return []
+        except Exception as e:
+            logger.warning(f"TTS motion mode error: {e}, falling back to all speakers")
+            return list(tts_assignments.keys())
 
     def notify_suggestion(self, prediction_id, lang="de"):
         """Send notification about a new suggestion."""

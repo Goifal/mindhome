@@ -4718,37 +4718,58 @@ const PatternsPage = () => {
                         <span className="mdi mdi-plus" style={{ marginRight: 4 }} />
                         {lang === 'de' ? 'Regel erstellen' : 'Create Rule'}
                     </button>
-                    {manualRules.length > 0 ? manualRules.map(r => (
-                        <div key={r.id} className="card" style={{ marginBottom: 8, padding: 14 }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                                <div>
-                                    <div style={{ fontSize: 14, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 6 }}>
-                                        {r.name}
-                                        <span className={`badge badge-${r.is_active ? 'success' : 'secondary'}`} style={{ fontSize: 10 }}>
-                                            {r.is_active ? (lang === 'de' ? 'Aktiv' : 'Active') : (lang === 'de' ? 'Pausiert' : 'Paused')}
-                                        </span>
+                    {manualRules.length > 0 ? (() => {
+                        const grouped = {};
+                        manualRules.forEach(r => {
+                            const key = `${r.trigger_entity}::${r.trigger_state}`;
+                            if (!grouped[key]) grouped[key] = [];
+                            grouped[key].push(r);
+                        });
+                        return Object.entries(grouped).map(([key, rules]) => {
+                            const [trigEntity, trigState] = key.split('::');
+                            const triggerDev = devices.find(d => d.ha_entity_id === trigEntity);
+                            return (
+                                <div key={key} className="card" style={{ marginBottom: 12, padding: 14 }}>
+                                    <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                                        <span className="mdi mdi-ray-start-arrow" style={{ color: 'var(--accent-primary)' }} />
+                                        {lang === 'de' ? 'Wenn' : 'If'} <strong>{triggerDev?.name || trigEntity}</strong> = {trigState}
                                     </div>
-                                    <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
-                                        {lang === 'de' ? 'Wenn' : 'If'} <strong>{r.trigger_entity}</strong> = {r.trigger_state}
-                                        → <strong>{r.action_entity}</strong> {r.action_service}
-                                        {r.delay_seconds > 0 && ` (${r.delay_seconds}s ${lang === 'de' ? 'Verzögerung' : 'delay'})`}
-                                    </div>
-                                    {r.execution_count > 0 && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
-                                        {r.execution_count}x {lang === 'de' ? 'ausgeführt' : 'executed'}
-                                    </div>}
+                                    {rules.map(r => (
+                                        <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0 6px 20px', borderBottom: '1px solid var(--border)' }}>
+                                            <div style={{ flex: 1 }}>
+                                                <div style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
+                                                    <span className="mdi mdi-arrow-right" style={{ color: 'var(--text-muted)', fontSize: 12 }} />
+                                                    <strong>{devices.find(d => d.ha_entity_id === r.action_entity)?.name || r.action_entity}</strong>
+                                                    <span style={{ color: 'var(--text-muted)' }}>{r.action_service === 'turn_on' ? (lang === 'de' ? 'ein' : 'on') : r.action_service === 'turn_off' ? (lang === 'de' ? 'aus' : 'off') : r.action_service}</span>
+                                                    {r.delay_seconds > 0 && <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>⏱ {r.delay_seconds}s</span>}
+                                                    <span className={`badge badge-${r.is_active ? 'success' : 'secondary'}`} style={{ fontSize: 9 }}>
+                                                        {r.is_active ? (lang === 'de' ? 'Aktiv' : 'Active') : (lang === 'de' ? 'Pausiert' : 'Paused')}
+                                                    </span>
+                                                </div>
+                                                {r.execution_count > 0 && <div style={{ fontSize: 10, color: 'var(--text-muted)', marginLeft: 22, marginTop: 1 }}>
+                                                    {r.execution_count}x {lang === 'de' ? 'ausgeführt' : 'executed'}
+                                                </div>}
+                                            </div>
+                                            <div style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
+                                                <button className="btn btn-ghost" style={{ padding: '4px 6px' }} onClick={async () => {
+                                                    await api.put(`manual-rules/${r.id}`, { is_active: !r.is_active }); await load();
+                                                }}><span className={`mdi ${r.is_active ? 'mdi-pause' : 'mdi-play'}`} style={{ fontSize: 14 }} /></button>
+                                                <button className="btn btn-ghost" style={{ padding: '4px 6px' }} onClick={async () => {
+                                                    if (!confirm(lang === 'de' ? 'Aktion wirklich löschen?' : 'Really delete action?')) return;
+                                                    await api.delete(`manual-rules/${r.id}`); await load();
+                                                }}><span className="mdi mdi-delete" style={{ fontSize: 14, color: 'var(--danger)' }} /></button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                    <button className="btn btn-ghost" style={{ fontSize: 11, marginTop: 6, padding: '4px 10px', color: 'var(--accent-primary)' }}
+                                        onClick={() => { setNewRule({ name: '', trigger_entity: trigEntity, trigger_state: trigState, action_entity: '', action_service: 'turn_on' }); setShowAddRule(true); }}>
+                                        <span className="mdi mdi-plus" style={{ marginRight: 4 }} />
+                                        {lang === 'de' ? 'Aktion hinzufügen' : 'Add action'}
+                                    </button>
                                 </div>
-                                <div style={{ display: 'flex', gap: 4 }}>
-                                    <button className="btn btn-ghost" onClick={async () => {
-                                        await api.put(`manual-rules/${r.id}`, { is_active: !r.is_active }); await load();
-                                    }}><span className={`mdi ${r.is_active ? 'mdi-pause' : 'mdi-play'}`} style={{ fontSize: 16 }} /></button>
-                                    <button className="btn btn-ghost" onClick={async () => {
-                                        if (!confirm(lang === 'de' ? 'Regel wirklich löschen?' : 'Really delete rule?')) return;
-                                        await api.delete(`manual-rules/${r.id}`); await load();
-                                    }}><span className="mdi mdi-delete" style={{ fontSize: 16, color: 'var(--danger)' }} /></button>
-                                </div>
-                            </div>
-                        </div>
-                    )) : <div className="empty-state"><span className="mdi mdi-pencil-ruler" />
+                            );
+                        });
+                    })() : <div className="empty-state"><span className="mdi mdi-pencil-ruler" />
                         <h3>{lang === 'de' ? 'Keine eigenen Regeln' : 'No Manual Rules'}</h3>
                         <p>{lang === 'de' ? 'Erstelle eigene Wenn-Dann Regeln.' : 'Create your own If-Then rules.'}</p></div>}
 
@@ -4782,12 +4803,17 @@ const PatternsPage = () => {
                                     entities={devices.filter(d => d.ha_entity_id)}
                                     placeholder="light.hallway" />
                             </div>
-                            <div className="input-group">
+                            <div className="input-group" style={{ marginBottom: 12 }}>
                                 <Dropdown label={lang === 'de' ? 'Aktion' : 'Action'} value={newRule.action_service}
                                     onChange={v => setNewRule({ ...newRule, action_service: v })}
                                     options={[{ value: 'turn_on', label: lang === 'de' ? 'Einschalten' : 'Turn On' },
                                         { value: 'turn_off', label: lang === 'de' ? 'Ausschalten' : 'Turn Off' },
                                         { value: 'toggle', label: 'Toggle' }]} />
+                            </div>
+                            <div className="input-group">
+                                <label className="input-label">{lang === 'de' ? 'Verzögerung (Sekunden)' : 'Delay (seconds)'}</label>
+                                <input className="input" type="number" min="0" value={newRule.delay_seconds || 0}
+                                    onChange={e => setNewRule({ ...newRule, delay_seconds: parseInt(e.target.value) || 0 })} />
                             </div>
                         </Modal>
                     )}
@@ -5591,13 +5617,63 @@ const NotificationsPage = () => {
                         {/* TTS - Collapsible */}
                         {ttsDevices.length > 0 && (
                             <CollapsibleCard title={`${lang === 'de' ? 'Sprachausgabe (TTS)' : 'Text-to-Speech'} · ${ttsDevices.length}`} icon="mdi-bullhorn" defaultOpen={false}>
+                                {/* Global TTS Toggle */}
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--border)', marginBottom: 8 }}>
+                                    <span style={{ fontSize: 13, fontWeight: 600 }}>
+                                        <span className="mdi mdi-power" style={{ marginRight: 6, color: extSettings?.tts_enabled !== false ? 'var(--success)' : 'var(--text-muted)' }} />
+                                        {lang === 'de' ? 'TTS aktiviert' : 'TTS enabled'}
+                                    </span>
+                                    <label className="toggle"><input type="checkbox" checked={extSettings?.tts_enabled !== false}
+                                        onChange={async () => {
+                                            const newVal = !(extSettings?.tts_enabled !== false);
+                                            setExtSettings(prev => ({ ...prev, tts_enabled: newVal }));
+                                            await api.put('notification-settings/extended', { tts_enabled: newVal });
+                                            showToast(newVal ? (lang === 'de' ? 'TTS aktiviert' : 'TTS enabled') : (lang === 'de' ? 'TTS deaktiviert' : 'TTS disabled'), 'success');
+                                        }} /><div className="toggle-slider" /></label>
+                                </div>
+
+                                {/* Motion Mode Toggle */}
+                                <div style={{ padding: '8px 0', borderBottom: '1px solid var(--border)', marginBottom: 8, opacity: extSettings?.tts_enabled !== false ? 1 : 0.4 }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                        <span style={{ fontSize: 13 }}>
+                                            <span className="mdi mdi-motion-sensor" style={{ marginRight: 6, color: 'var(--accent-primary)' }} />
+                                            {lang === 'de' ? 'Nur im Raum mit Bewegung' : 'Only in room with motion'}
+                                        </span>
+                                        <label className="toggle"><input type="checkbox" checked={extSettings?.tts_motion_mode?.enabled || false}
+                                            onChange={async () => {
+                                                const mm = { ...(extSettings?.tts_motion_mode || {}), enabled: !extSettings?.tts_motion_mode?.enabled };
+                                                setExtSettings(prev => ({ ...prev, tts_motion_mode: mm }));
+                                                await api.put('notification-settings/extended', { tts_motion_mode: mm });
+                                            }} /><div className="toggle-slider" /></label>
+                                    </div>
+                                    {extSettings?.tts_motion_mode?.enabled && (
+                                        <div style={{ marginTop: 8, paddingLeft: 22 }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                                                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Timeout:' : 'Timeout:'}</span>
+                                                {[15, 30, 60].map(m => (
+                                                    <button key={m} className={`btn btn-sm ${(extSettings?.tts_motion_mode?.timeout_min || 30) === m ? 'btn-primary' : 'btn-ghost'}`}
+                                                        onClick={async () => { const mm = { ...extSettings.tts_motion_mode, timeout_min: m }; setExtSettings(prev => ({ ...prev, tts_motion_mode: mm })); await api.put('notification-settings/extended', { tts_motion_mode: mm }); }}
+                                                        style={{ fontSize: 10, padding: '2px 6px' }}>{m} min</button>
+                                                ))}
+                                            </div>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                                                    {lang === 'de' ? 'Fallback: alle Speaker wenn keine Bewegung' : 'Fallback: all speakers if no motion'}
+                                                </span>
+                                                <label className="toggle" style={{ transform: 'scale(0.8)' }}><input type="checkbox" checked={extSettings?.tts_motion_mode?.fallback_all || false}
+                                                    onChange={async () => { const mm = { ...extSettings.tts_motion_mode, fallback_all: !extSettings.tts_motion_mode.fallback_all }; setExtSettings(prev => ({ ...prev, tts_motion_mode: mm })); await api.put('notification-settings/extended', { tts_motion_mode: mm }); }} /><div className="toggle-slider" /></label>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+
                                 <p style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8 }}>
-                                    {lang === 'de' ? 'Weise jedem Lautsprecher einen Raum zu, damit TTS-Benachrichtigungen gezielt gesendet werden können.' : 'Assign each speaker to a room for targeted TTS notifications.'}
+                                    {lang === 'de' ? 'Weise jedem Lautsprecher einen Raum zu.' : 'Assign each speaker to a room.'}
                                 </p>
                                 {ttsDevices.map(d => {
                                     const assignedRoom = extSettings?.tts_room_assignments?.[d.entity_id] || '';
                                     return (
-                                        <div key={d.entity_id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
+                                        <div key={d.entity_id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', borderBottom: '1px solid var(--border)', opacity: extSettings?.tts_enabled !== false ? 1 : 0.4 }}>
                                             <div style={{ flex: 1, minWidth: 0 }}>
                                                 <div style={{ fontSize: 13, fontWeight: 500 }}>{d.name}</div>
                                                 <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{d.entity_id}</div>
