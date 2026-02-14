@@ -1,10 +1,18 @@
 # Changelog
 
+## 0.7.19 – Stale-Pattern-Cleanup fuer observed + insight
+
+### Fix
+- **Cleanup erweitert**: Entfernt jetzt `observed` + `insight` Patterns die im Analyse-Lauf nicht bestaetigt wurden
+- **suggested bleibt erhalten**: User soll vorgeschlagene Patterns selbst bestätigen/ablehnen
+- **Geschuetzt**: `active`, `rejected`, `disabled` werden nie automatisch geloescht
+- Ursache: 2.851 "insight"-Patterns blieben nach v0.7.18 in DB weil Cleanup nur `observed` filterte
+
 ## 0.7.18 – Stale-Pattern-Cleanup + defaultdict-Fix
 
 ### Fix
 - **defaultdict-Import**: "cannot access local variable 'defaultdict'" — doppelter Import entfernt (war schon global importiert)
-- **Stale-Pattern-Cleanup**: Nach jeder Analyse werden Patterns automatisch geloescht, die in diesem Lauf nicht bestaetigt/aktualisiert wurden. Betrifft nur `status=observed` — vom User bestaetigte/abgelehnte Patterns bleiben erhalten. Loest das Problem: 4.234 alte Korrelationen blieben in der DB obwohl die neuen Filter sie nicht mehr erzeugen
+- **Stale-Pattern-Cleanup**: Nach jeder Analyse werden Patterns automatisch geloescht, die in diesem Lauf nicht bestaetigt/aktualisiert wurden. Loest das Problem: 4.234 alte Korrelationen blieben in der DB obwohl die neuen Filter sie nicht mehr erzeugen
 
 ## 0.7.17 – Korrelations-Filter verschaerft (364 → ~30 Patterns)
 
