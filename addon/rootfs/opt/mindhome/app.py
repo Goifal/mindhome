@@ -565,6 +565,18 @@ ventilation_monitor = VentilationMonitor(ha, get_db_session, event_bus)
 circadian_manager = CircadianLightManager(ha, get_db_session, event_bus)
 weather_alert_manager = WeatherAlertManager(ha, get_db_session, event_bus)
 
+# Phase 4 Batch 4: KI, Kalender & UX engines
+from engines.comfort import ScreenTimeMonitor
+from engines.routines import MoodEstimator
+from engines.adaptive import HabitDriftDetector, AdaptiveTimingManager, GradualTransitioner, SeasonalAdvisor, CalendarIntegration
+mood_estimator = MoodEstimator(ha, get_db_session)
+screen_time_monitor = ScreenTimeMonitor(ha, get_db_session, event_bus)
+habit_drift_detector = HabitDriftDetector(ha, get_db_session, event_bus)
+adaptive_timing_manager = AdaptiveTimingManager(ha, get_db_session, event_bus)
+gradual_transitioner = GradualTransitioner(ha)
+seasonal_advisor = SeasonalAdvisor(ha)
+calendar_integration = CalendarIntegration(ha)
+
 dependencies = {
     "ha": ha,
     "engine": engine,
@@ -589,6 +601,13 @@ dependencies = {
     "ventilation_monitor": ventilation_monitor,
     "circadian_manager": circadian_manager,
     "weather_alert_manager": weather_alert_manager,
+    "mood_estimator": mood_estimator,
+    "screen_time_monitor": screen_time_monitor,
+    "habit_drift_detector": habit_drift_detector,
+    "adaptive_timing_manager": adaptive_timing_manager,
+    "gradual_transitioner": gradual_transitioner,
+    "seasonal_advisor": seasonal_advisor,
+    "calendar_integration": calendar_integration,
 }
 
 from routes import register_blueprints
@@ -624,7 +643,12 @@ def graceful_shutdown(signum=None, frame=None):
                           ("comfort_calculator", comfort_calculator),
                           ("ventilation_monitor", ventilation_monitor),
                           ("circadian_manager", circadian_manager),
-                          ("weather_alert_manager", weather_alert_manager)]:
+                          ("weather_alert_manager", weather_alert_manager),
+                          ("mood_estimator", mood_estimator),
+                          ("screen_time_monitor", screen_time_monitor),
+                          ("habit_drift_detector", habit_drift_detector),
+                          ("adaptive_timing_manager", adaptive_timing_manager),
+                          ("gradual_transitioner", gradual_transitioner)]:
         try:
             eng.stop()
         except Exception:
@@ -815,9 +839,39 @@ def start_app():
                             interval_seconds=30 * 60,  # 30 min
                             run_immediately=False)
 
+    # Phase 4 Batch 4: KI, Kalender & UX scheduler tasks
+    mood_estimator.start()
+    screen_time_monitor.start()
+    habit_drift_detector.start()
+    adaptive_timing_manager.start()
+    gradual_transitioner.start()
+
+    def run_screen_time_check():
+        """5-min check: screen time tracking + mood estimate."""
+        screen_time_monitor.check()
+        mood_estimator.estimate()
+
+    def run_adaptive_check():
+        """15-min check: adaptive timing learning."""
+        adaptive_timing_manager.check()
+
+    def run_weekly_drift():
+        """Weekly: detect habit drifts."""
+        habit_drift_detector.detect()
+
+    task_scheduler.register("screen_time_check", run_screen_time_check,
+                            interval_seconds=5 * 60,  # 5 min
+                            run_immediately=False)
+    task_scheduler.register("adaptive_check", run_adaptive_check,
+                            interval_seconds=15 * 60,  # 15 min
+                            run_immediately=False)
+    task_scheduler.register("weekly_drift", run_weekly_drift,
+                            interval_seconds=7 * 24 * 3600,  # weekly
+                            run_immediately=False)
+
     # Start task scheduler
     task_scheduler.start()
-    logger.info("  ✅ Task Scheduler started (cleanup:24h, maintenance:7d, energy:5m, sleep:5m, visit:10m, comfort:15m, ventilation:10m, weather:30m, daily:24h)")
+    logger.info("  ✅ Task Scheduler started (cleanup:24h, maintenance:7d, energy:5m, sleep:5m, visit:10m, comfort:15m, ventilation:10m, weather:30m, screen:5m, adaptive:15m, drift:7d)")
 
     logger.info(f"MindHome {vi['full']} started successfully!")
 

@@ -4,12 +4,28 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "0.7.4"
-BUILD = 57
+VERSION = "0.7.5"
+BUILD = 58
 BUILD_DATE = "2026-02-14"
 CODENAME = "Phase 4 - Smart Health"
 
 # Changelog
+# Build 58: v0.7.5 Batch 4 - KI, Kalender & UX
+#   - MoodEstimator (#15): Stimmungserkennung (Relaxed/Active/Cozy/Quiet/Away/Focused)
+#   - MoodEstimator: Heuristik aus Media/Licht/Motion/Klima Zustaenden
+#   - ScreenTimeMonitor (#19): Bildschirmzeit-Tracking (Media-Player Nutzung pro User)
+#   - ScreenTimeMonitor: Tages-Limit + Erinnerungen (konfigurierbar)
+#   - HabitDriftDetector (#12): Gewohnheits-Drift (2-Wochen Vergleich, Zeitverschiebung)
+#   - AdaptiveTimingManager (#11): Lernt Timing aus manuellen Aktionen (gleitender Durchschnitt)
+#   - GradualTransitioner (#23): Sanftes Eingreifen (Licht-Transition, Klima-Schritte)
+#   - SeasonalAdvisor (#13): Saison-Tipps (Winter/Fruehling/Sommer/Herbst + Wetter)
+#   - CalendarIntegration (#14): HA-Kalender Events (naechste 48h)
+#   - Szenen-Favoriten (#20): Stern-Toggle + Favoriten-API
+#   - API: 14 neue Endpunkte (mood, screen-time, drift, adaptive, seasonal, calendar, favorites)
+#   - Scheduler: screen_time_check (5min), adaptive_check (15min), weekly_drift (7d)
+#   - Frontend: Neue "KI" Seite mit 6 Tabs (Stimmung, Bildschirmzeit, Gewohnheiten, Adaptive, Saison, Kalender)
+#   - Frontend: Szenen-Favoriten Stern in Szenen-Liste
+#
 # Build 57: v0.7.4 Batch 3 - Klima & Umgebung
 #   - Fix: EventBus emit/publish Alias (Batch 2 Engines nutzten .emit, EventBus hat .publish)
 #   - Fix: Event-Namen auf Dot-Notation (sleep.detected statt sleep_detected)

@@ -234,6 +234,7 @@ class MoodEstimator:
         self.ha = ha_connection
         self.get_session = db_session_factory
         self._is_running = False
+        self._cached_mood = {"mood": "unknown", "confidence": 0}
 
     def start(self):
         self._is_running = True
@@ -244,6 +245,98 @@ class MoodEstimator:
         logger.info("MoodEstimator stopped")
 
     def estimate(self):
-        """Estimate current household mood."""
-        # TODO: Batch 4
-        return {"mood": "unknown", "confidence": 0}
+        """Estimate current household mood from device states."""
+        if not self._is_running:
+            return self._cached_mood
+        try:
+            from routes.health import is_feature_enabled
+            if not is_feature_enabled("phase4.mood_estimate"):
+                return {"mood": "unknown", "confidence": 0}
+
+            states = self.ha.get_states() or []
+            state_map = {s.get("entity_id", ""): s for s in states}
+
+            # Count active devices by category
+            media_active = 0
+            lights_on = 0
+            lights_dim = 0  # brightness < 40%
+            motion_recent = 0
+            climate_active = 0
+
+            for eid, s in state_map.items():
+                st = s.get("state", "")
+                attrs = s.get("attributes", {})
+
+                if eid.startswith("media_player.") and st in ("playing", "on"):
+                    media_active += 1
+
+                if eid.startswith("light.") and st == "on":
+                    lights_on += 1
+                    brightness = attrs.get("brightness", 255)
+                    if brightness < 102:  # < 40%
+                        lights_dim += 1
+
+                if eid.startswith("binary_sensor.") and attrs.get("device_class") == "motion" and st == "on":
+                    motion_recent += 1
+
+                if eid.startswith("climate.") and st not in ("off", "unavailable"):
+                    climate_active += 1
+
+            # Determine mood via heuristics
+            mood = "neutral"
+            confidence = 0.3
+            indicators = []
+
+            # Relaxed: media playing + dim lights + little motion
+            if media_active > 0 and lights_dim > 0 and motion_recent <= 1:
+                mood = "relaxed"
+                confidence = 0.7
+                indicators = ["media_active", "dim_lights", "low_motion"]
+
+            # Active: lots of motion + many lights on
+            elif motion_recent >= 3 and lights_on >= 3:
+                mood = "active"
+                confidence = 0.7
+                indicators = ["high_motion", "many_lights"]
+
+            # Cozy: media + warm lights, no high motion
+            elif media_active > 0 and lights_on >= 2 and motion_recent <= 2:
+                mood = "cozy"
+                confidence = 0.6
+                indicators = ["media_active", "warm_lights"]
+
+            # Quiet: few lights, no media, low motion
+            elif lights_on <= 1 and media_active == 0 and motion_recent <= 1:
+                mood = "quiet"
+                confidence = 0.6
+                indicators = ["few_lights", "no_media", "low_motion"]
+
+            # Away: no lights, no motion, no media
+            elif lights_on == 0 and motion_recent == 0 and media_active == 0:
+                mood = "away"
+                confidence = 0.8
+                indicators = ["no_activity"]
+
+            # Focused: lights on but no media, moderate motion
+            elif lights_on >= 2 and media_active == 0 and 1 <= motion_recent <= 2:
+                mood = "focused"
+                confidence = 0.5
+                indicators = ["lights_no_media", "moderate_motion"]
+
+            self._cached_mood = {
+                "mood": mood,
+                "confidence": round(confidence, 2),
+                "indicators": indicators,
+                "stats": {
+                    "media_active": media_active,
+                    "lights_on": lights_on,
+                    "lights_dim": lights_dim,
+                    "motion_recent": motion_recent,
+                },
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }
+            return self._cached_mood
+
+        except Exception as e:
+            logger.error(f"MoodEstimator error: {e}")
+            return self._cached_mood

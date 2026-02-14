@@ -511,6 +511,127 @@ def api_get_weather_alerts():
 
 
 # ──────────────────────────────────────────────
+# Batch 4: Mood, Screen Time, Drift, Adaptive
+# ──────────────────────────────────────────────
+
+@health_bp.route("/api/health/mood-estimate", methods=["GET"])
+def api_get_mood_estimate():
+    """Get current household mood estimate (#15)."""
+    estimator = _deps.get("mood_estimator")
+    if not estimator:
+        return jsonify({"mood": "unknown", "confidence": 0})
+    return jsonify(estimator.estimate())
+
+
+@health_bp.route("/api/health/screen-time", methods=["GET"])
+def api_get_screen_time():
+    """Get current screen time data (#19)."""
+    monitor = _deps.get("screen_time_monitor")
+    if not monitor:
+        return jsonify([])
+    user_id = request.args.get("user_id", type=int)
+    return jsonify(monitor.get_usage(user_id))
+
+
+@health_bp.route("/api/health/screen-time/config", methods=["GET"])
+def api_get_screen_time_config():
+    """Get screen time configurations."""
+    monitor = _deps.get("screen_time_monitor")
+    if not monitor:
+        return jsonify([])
+    return jsonify(monitor.get_config())
+
+
+@health_bp.route("/api/health/screen-time/config", methods=["POST"])
+def api_create_screen_time_config():
+    """Create screen time config for a user."""
+    from db import get_db
+    from models import ScreenTimeConfig
+    data = request.json or {}
+    session = get_db()
+    try:
+        cfg = ScreenTimeConfig(
+            user_id=data.get("user_id", 1),
+            entity_ids=data.get("entity_ids"),
+            daily_limit_min=data.get("daily_limit_min", 180),
+            reminder_interval_min=data.get("reminder_interval_min", 60),
+            is_active=data.get("is_active", True),
+        )
+        session.add(cfg)
+        session.commit()
+        return jsonify({"id": cfg.id, "success": True})
+    finally:
+        session.close()
+
+
+@health_bp.route("/api/health/screen-time/config/<int:config_id>", methods=["PUT"])
+def api_update_screen_time_config(config_id):
+    """Update screen time config."""
+    from db import get_db
+    from models import ScreenTimeConfig
+    data = request.json or {}
+    session = get_db()
+    try:
+        cfg = session.get(ScreenTimeConfig, config_id)
+        if not cfg:
+            return jsonify({"error": "Not found"}), 404
+        for key in ["entity_ids", "daily_limit_min", "reminder_interval_min", "is_active"]:
+            if key in data:
+                setattr(cfg, key, data[key])
+        session.commit()
+        return jsonify({"success": True})
+    finally:
+        session.close()
+
+
+@health_bp.route("/api/patterns/drift", methods=["GET"])
+def api_get_habit_drift():
+    """Get detected habit drifts (#12)."""
+    detector = _deps.get("habit_drift_detector")
+    if not detector:
+        return jsonify([])
+    return jsonify(detector.get_drifts())
+
+
+@health_bp.route("/api/health/adaptive-timing", methods=["GET"])
+def api_get_adaptive_timing():
+    """Get patterns with adaptive timing data (#11)."""
+    manager = _deps.get("adaptive_timing_manager")
+    if not manager:
+        return jsonify([])
+    return jsonify(manager.get_adaptations())
+
+
+@health_bp.route("/api/system/seasonal-tips", methods=["GET"])
+def api_get_seasonal_tips():
+    """Get seasonal recommendations (#13)."""
+    advisor = _deps.get("seasonal_advisor")
+    if not advisor:
+        return jsonify({"season": "unknown", "tips": []})
+    lang = request.args.get("lang", "de")
+    return jsonify(advisor.get_tips(lang))
+
+
+@health_bp.route("/api/system/calendar-events", methods=["GET"])
+def api_get_calendar_events():
+    """Get upcoming calendar events (#14)."""
+    cal = _deps.get("calendar_integration")
+    if not cal:
+        return jsonify([])
+    hours = request.args.get("hours", 24, type=int)
+    return jsonify(cal.get_events(hours))
+
+
+@health_bp.route("/api/system/calendar-entities", methods=["GET"])
+def api_get_calendar_entities():
+    """List available HA calendar entities."""
+    cal = _deps.get("calendar_integration")
+    if not cal:
+        return jsonify([])
+    return jsonify(cal.get_calendar_entities())
+
+
+# ──────────────────────────────────────────────
 # Health Dashboard (Batch 5 — stub endpoints)
 # ──────────────────────────────────────────────
 

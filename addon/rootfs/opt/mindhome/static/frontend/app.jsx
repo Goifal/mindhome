@@ -7645,6 +7645,241 @@ const ClimatePage = () => {
 
 
 // ================================================================
+// Phase 4 Batch 4: KI & Adaptive Page
+// ================================================================
+const AiPage = () => {
+    const { lang, showToast } = useApp();
+    const [tab, setTab] = useState('mood');
+    const [mood, setMood] = useState(null);
+    const [screenTime, setScreenTime] = useState([]);
+    const [drifts, setDrifts] = useState([]);
+    const [adaptations, setAdaptations] = useState([]);
+    const [seasonalTips, setSeasonalTips] = useState(null);
+    const [calendarEvents, setCalendarEvents] = useState([]);
+    const [calendarEntities, setCalendarEntities] = useState([]);
+
+    const load = () => {
+        api.get('health/mood-estimate').then(d => setMood(d || null)).catch(() => {});
+        api.get('health/screen-time').then(d => setScreenTime(Array.isArray(d) ? d : [])).catch(() => {});
+        api.get('patterns/drift').then(d => setDrifts(Array.isArray(d) ? d : [])).catch(() => {});
+        api.get('health/adaptive-timing').then(d => setAdaptations(Array.isArray(d) ? d : [])).catch(() => {});
+        api.get(`system/seasonal-tips?lang=${lang}`).then(d => setSeasonalTips(d || null)).catch(() => {});
+        api.get('system/calendar-events?hours=48').then(d => setCalendarEvents(Array.isArray(d) ? d : [])).catch(() => {});
+        api.get('system/calendar-entities').then(d => setCalendarEntities(Array.isArray(d) ? d : [])).catch(() => {});
+    };
+    useEffect(() => { load(); }, []);
+
+    const tabs = [
+        { id: 'mood', label: lang === 'de' ? 'Stimmung' : 'Mood', icon: 'mdi-emoticon-outline' },
+        { id: 'screen', label: lang === 'de' ? 'Bildschirmzeit' : 'Screen Time', icon: 'mdi-television' },
+        { id: 'drift', label: lang === 'de' ? 'Gewohnheiten' : 'Habits', icon: 'mdi-trending-up' },
+        { id: 'adaptive', label: lang === 'de' ? 'Adaptive' : 'Adaptive', icon: 'mdi-brain' },
+        { id: 'seasonal', label: lang === 'de' ? 'Saison' : 'Seasonal', icon: 'mdi-weather-partly-cloudy' },
+        { id: 'calendar', label: lang === 'de' ? 'Kalender' : 'Calendar', icon: 'mdi-calendar' },
+    ];
+
+    const moodIcon = (m) => ({ relaxed: 'mdi-sofa', active: 'mdi-run', cozy: 'mdi-fireplace', quiet: 'mdi-volume-off', away: 'mdi-home-outline', focused: 'mdi-target', neutral: 'mdi-circle-outline', unknown: 'mdi-help-circle-outline' }[m] || 'mdi-help-circle-outline');
+    const moodLabel = (m) => ({ relaxed: lang==='de'?'Entspannt':'Relaxed', active: lang==='de'?'Aktiv':'Active', cozy: lang==='de'?'Gemuetlich':'Cozy', quiet: lang==='de'?'Ruhig':'Quiet', away: lang==='de'?'Abwesend':'Away', focused: lang==='de'?'Fokussiert':'Focused', neutral: 'Neutral', unknown: lang==='de'?'Unbekannt':'Unknown' }[m] || m);
+    const moodColor = (m) => ({ relaxed: '#4CAF50', active: '#FF9800', cozy: '#E91E63', quiet: '#9C27B0', away: '#607D8B', focused: '#2196F3', neutral: '#999', unknown: '#999' }[m] || '#999');
+
+    return (
+        <div>
+            <div style={{display:'flex',gap:8,marginBottom:16,flexWrap:'wrap'}}>
+                {tabs.map(t => (
+                    <button key={t.id} onClick={() => setTab(t.id)}
+                        style={{padding:'8px 16px',borderRadius:8,border: tab===t.id ? '2px solid var(--primary)' : '1px solid var(--border)',background: tab===t.id ? 'var(--primary-bg)' : 'var(--card-bg)',cursor:'pointer',display:'flex',alignItems:'center',gap:6}}>
+                        <span className={`mdi ${t.icon}`} /> {t.label}
+                    </button>
+                ))}
+            </div>
+
+            {/* Mood Tab */}
+            {tab === 'mood' && (
+                <div>
+                    <h3 style={{marginBottom:12}}><span className="mdi mdi-emoticon-outline" /> {lang === 'de' ? 'Stimmungserkennung' : 'Mood Estimation'}</h3>
+                    {mood && (
+                        <div style={{background:'var(--card-bg)',borderRadius:16,padding:24,border:'1px solid var(--border)',maxWidth:400,textAlign:'center'}}>
+                            <div style={{fontSize:48,marginBottom:8}}><span className={`mdi ${moodIcon(mood.mood)}`} style={{color:moodColor(mood.mood)}} /></div>
+                            <div style={{fontSize:24,fontWeight:'bold',color:moodColor(mood.mood),marginBottom:4}}>{moodLabel(mood.mood)}</div>
+                            <div style={{fontSize:13,color:'var(--text-secondary)',marginBottom:12}}>
+                                {lang === 'de' ? 'Konfidenz' : 'Confidence'}: {Math.round((mood.confidence || 0) * 100)}%
+                            </div>
+                            {mood.indicators && mood.indicators.length > 0 && (
+                                <div style={{display:'flex',gap:6,justifyContent:'center',flexWrap:'wrap'}}>
+                                    {mood.indicators.map((ind, i) => (
+                                        <span key={i} style={{fontSize:11,padding:'2px 8px',borderRadius:12,background:'var(--primary-bg)',color:'var(--primary)'}}>{ind}</span>
+                                    ))}
+                                </div>
+                            )}
+                            {mood.stats && (
+                                <div style={{marginTop:16,display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:8,fontSize:12}}>
+                                    <div>Media: <strong>{mood.stats.media_active}</strong></div>
+                                    <div>Lichter: <strong>{mood.stats.lights_on}</strong></div>
+                                    <div>Dim: <strong>{mood.stats.lights_dim}</strong></div>
+                                    <div>Motion: <strong>{mood.stats.motion_recent}</strong></div>
+                                </div>
+                            )}
+                        </div>
+                    )}
+                    {!mood && <p style={{color:'var(--text-secondary)'}}>{lang === 'de' ? 'Stimmung wird berechnet...' : 'Calculating mood...'}</p>}
+                </div>
+            )}
+
+            {/* Screen Time Tab */}
+            {tab === 'screen' && (
+                <div>
+                    <h3 style={{marginBottom:12}}><span className="mdi mdi-television" /> {lang === 'de' ? 'Bildschirmzeit' : 'Screen Time'}</h3>
+                    {screenTime.length === 0 && <p style={{color:'var(--text-secondary)'}}>{lang === 'de' ? 'Noch keine Daten. Wird alle 5 Min geprueft.' : 'No data yet. Checked every 5 min.'}</p>}
+                    {screenTime.map((st, i) => (
+                        <div key={i} style={{background:'var(--card-bg)',borderRadius:12,padding:16,border:'1px solid var(--border)',marginBottom:12}}>
+                            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+                                <strong>{lang === 'de' ? `Benutzer ${st.user_id || ''}` : `User ${st.user_id || ''}`}</strong>
+                                <span style={{fontSize:24,fontWeight:'bold',color: st.today_minutes > (st.daily_limit_min || 180) ? '#F44336' : '#4CAF50'}}>
+                                    {st.today_minutes} min
+                                </span>
+                            </div>
+                            {/* Progress bar */}
+                            <div style={{background:'var(--border)',borderRadius:8,height:8,marginBottom:8}}>
+                                <div style={{background: st.today_minutes > (st.daily_limit_min || 180) ? '#F44336' : '#4CAF50',
+                                    height:'100%',borderRadius:8,width:`${Math.min(100, (st.today_minutes / (st.daily_limit_min || 180)) * 100)}%`,transition:'width 0.3s'}} />
+                            </div>
+                            <div style={{fontSize:12,color:'var(--text-secondary)'}}>
+                                {lang === 'de' ? 'Verbleibend' : 'Remaining'}: {st.remaining_minutes || 0} min · Limit: {st.daily_limit_min || 180} min
+                            </div>
+                            {st.sessions && st.sessions.length > 0 && (
+                                <div style={{marginTop:12}}>
+                                    {st.sessions.filter(s => s.minutes_today > 0 || s.is_active).map((s, j) => (
+                                        <div key={j} style={{display:'flex',justifyContent:'space-between',alignItems:'center',fontSize:12,padding:'4px 0',borderTop:'1px solid var(--border)'}}>
+                                            <span>{s.entity_id.split('.').pop()}</span>
+                                            <span style={{display:'flex',alignItems:'center',gap:4}}>
+                                                {s.is_active && <span style={{width:6,height:6,borderRadius:'50%',background:'#4CAF50',display:'inline-block'}} />}
+                                                {s.minutes_today} min
+                                            </span>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            {/* Habit Drift Tab */}
+            {tab === 'drift' && (
+                <div>
+                    <h3 style={{marginBottom:12}}><span className="mdi mdi-trending-up" /> {lang === 'de' ? 'Gewohnheits-Drift' : 'Habit Drift'}</h3>
+                    {drifts.length === 0 && <p style={{color:'var(--text-secondary)'}}>{lang === 'de' ? 'Keine Veraenderungen erkannt. Analyse laeuft woechentlich.' : 'No changes detected. Analysis runs weekly.'}</p>}
+                    {drifts.map((d, i) => (
+                        <div key={i} style={{background:'var(--card-bg)',borderRadius:12,padding:16,border:'1px solid var(--border)',marginBottom:8,
+                            borderLeft: `4px solid ${d.drift_minutes > 0 ? '#FF9800' : '#2196F3'}`}}>
+                            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
+                                <strong>{d.description || d.pattern_type}</strong>
+                                <span style={{fontSize:14,fontWeight:'bold',color: d.drift_minutes > 0 ? '#FF9800' : '#2196F3'}}>
+                                    {d.drift_minutes > 0 ? '+' : ''}{d.drift_minutes} min
+                                </span>
+                            </div>
+                            <div style={{fontSize:12,color:'var(--text-secondary)'}}>
+                                <span className="mdi mdi-clock-outline" /> {d.original_time}
+                                {d.entity_id && <span> · {d.entity_id.split('.').pop()}</span>}
+                            </div>
+                            <div style={{fontSize:12,marginTop:4,color:d.drift_minutes > 0 ? '#FF9800' : '#2196F3'}}>
+                                {lang === 'de' ? d.message_de : d.message_en}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            {/* Adaptive Timing Tab */}
+            {tab === 'adaptive' && (
+                <div>
+                    <h3 style={{marginBottom:12}}><span className="mdi mdi-brain" /> {lang === 'de' ? 'Adaptive Zeiten' : 'Adaptive Timing'}</h3>
+                    {adaptations.length === 0 && <p style={{color:'var(--text-secondary)'}}>{lang === 'de' ? 'Noch keine Anpassungen. Das System lernt aus deinen manuellen Aktionen.' : 'No adaptations yet. The system learns from your manual actions.'}</p>}
+                    {adaptations.map((a, i) => (
+                        <div key={i} style={{background:'var(--card-bg)',borderRadius:12,padding:16,border:'1px solid var(--border)',marginBottom:8}}>
+                            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
+                                <strong>{a.description}</strong>
+                                <span style={{fontSize:13,padding:'2px 8px',borderRadius:12,background:'#E3F2FD',color:'#1565C0'}}>
+                                    {a.trigger_time}
+                                </span>
+                            </div>
+                            {a.entity_id && <div style={{fontSize:12,color:'var(--text-secondary)'}}>Entity: {a.entity_id.split('.').pop()}</div>}
+                            {a.adaptive_timing && (
+                                <div style={{marginTop:8,fontSize:12}}>
+                                    <span style={{color:'var(--text-secondary)'}}>Avg Offset: </span>
+                                    <strong style={{color: a.adaptive_timing.avg_offset_min > 0 ? '#FF9800' : '#2196F3'}}>
+                                        {a.adaptive_timing.avg_offset_min > 0 ? '+' : ''}{a.adaptive_timing.avg_offset_min} min
+                                    </strong>
+                                    <span style={{marginLeft:8,color:'var(--text-secondary)'}}>({a.adaptive_timing.sample_count} Samples)</span>
+                                </div>
+                            )}
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            {/* Seasonal Tab */}
+            {tab === 'seasonal' && (
+                <div>
+                    <h3 style={{marginBottom:12}}><span className="mdi mdi-weather-partly-cloudy" /> {lang === 'de' ? 'Saison-Tipps' : 'Seasonal Tips'}</h3>
+                    {seasonalTips && (
+                        <div>
+                            <div style={{background:'var(--card-bg)',borderRadius:12,padding:16,border:'1px solid var(--border)',marginBottom:16,textAlign:'center'}}>
+                                <div style={{fontSize:18,fontWeight:'bold'}}>{seasonalTips.season_label}</div>
+                            </div>
+                            <div style={{display:'grid',gap:8}}>
+                                {(seasonalTips.tips || []).map((t, i) => (
+                                    <div key={i} style={{background:'var(--card-bg)',borderRadius:12,padding:14,border:'1px solid var(--border)',display:'flex',gap:12,alignItems:'flex-start'}}>
+                                        <span className={`mdi ${t.icon}`} style={{fontSize:22,color:'var(--primary)',flexShrink:0}} />
+                                        <div>
+                                            <div style={{fontSize:13}}>{t.tip}</div>
+                                            <span style={{fontSize:10,padding:'1px 6px',borderRadius:8,background:'var(--primary-bg)',color:'var(--primary)',marginTop:4,display:'inline-block'}}>{t.category}</span>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* Calendar Tab */}
+            {tab === 'calendar' && (
+                <div>
+                    <h3 style={{marginBottom:12}}><span className="mdi mdi-calendar" /> {lang === 'de' ? 'Kalender-Events' : 'Calendar Events'}</h3>
+                    {calendarEntities.length > 0 && (
+                        <div style={{fontSize:12,color:'var(--text-secondary)',marginBottom:12}}>
+                            {lang === 'de' ? 'Verbundene Kalender' : 'Connected calendars'}: {calendarEntities.map(c => c.name).join(', ')}
+                        </div>
+                    )}
+                    {calendarEvents.length === 0 && <p style={{color:'var(--text-secondary)'}}>{lang === 'de' ? 'Keine Events in den naechsten 48h.' : 'No events in the next 48h.'}</p>}
+                    <div style={{display:'grid',gap:8}}>
+                        {calendarEvents.map((e, i) => (
+                            <div key={i} style={{background:'var(--card-bg)',borderRadius:12,padding:14,border:'1px solid var(--border)',
+                                borderLeft: `4px solid ${e.hours_until < 2 ? '#F44336' : e.hours_until < 6 ? '#FF9800' : '#4CAF50'}`}}>
+                                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                                    <strong>{e.title || 'Event'}</strong>
+                                    <span style={{fontSize:12,padding:'2px 8px',borderRadius:12,
+                                        background: e.hours_until < 2 ? '#FFEBEE' : '#E8F5E9',
+                                        color: e.hours_until < 2 ? '#C62828' : '#2E7D32'}}>
+                                        {e.hours_until < 1 ? `${Math.round(e.hours_until * 60)} min` : `${e.hours_until}h`}
+                                    </span>
+                                </div>
+                                <div style={{fontSize:12,color:'var(--text-secondary)',marginTop:4}}>
+                                    {e.start && new Date(e.start).toLocaleString()}
+                                    {e.location && <span> · {e.location}</span>}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
+
+// ================================================================
 // Phase 3: Scenes Page
 // ================================================================
 const ScenesPage = () => {
@@ -7727,6 +7962,7 @@ const ScenesPage = () => {
                                     <span className={`mdi ${expandedScene === s.id ? 'mdi-chevron-up' : 'mdi-chevron-down'}`} style={{ marginLeft: 8, fontSize: 14, color: 'var(--text-muted)' }} />
                                 </div>
                                 <div style={{ display: 'flex', gap: 6 }} onClick={e => e.stopPropagation()}>
+                                    <button className="btn btn-sm btn-ghost" onClick={() => { api.put(`scenes/${s.id}/favorite`).then(() => loadScenes()); }} title="Favorite"><span className={`mdi ${s.is_favorite ? 'mdi-star' : 'mdi-star-outline'}`} style={{color: s.is_favorite ? '#FFC107' : undefined}} /></button>
                                     <button className="btn btn-sm btn-primary" onClick={() => activate(s.id)} title="Activate"><span className="mdi mdi-play" /></button>
                                     <button className="btn btn-sm btn-ghost" onClick={() => setEditScene({ ...s })}><span className="mdi mdi-pencil" /></button>
                                     <button className="btn btn-sm btn-ghost" onClick={() => toggleActive(s.id, s.is_active)}><span className={`mdi ${s.is_active ? 'mdi-eye' : 'mdi-eye-off'}`} /></button>
@@ -8906,6 +9142,7 @@ const App = () => {
         { id: 'energy', icon: 'mdi-lightning-bolt', label: lang === 'de' ? 'Energie' : 'Energy' },
         { id: 'health', icon: 'mdi-heart-pulse', label: lang === 'de' ? 'Gesundheit' : 'Health' },
         { id: 'climate', icon: 'mdi-home-thermometer', label: lang === 'de' ? 'Klima' : 'Climate' },
+        { id: 'ai', icon: 'mdi-brain', label: 'KI' },
         { id: 'scenes', icon: 'mdi-palette', label: lang === 'de' ? 'Szenen' : 'Scenes' },
         { id: 'presence', icon: 'mdi-account-multiple', label: lang === 'de' ? 'Anwesenheit' : 'Presence' },
         { id: 'notifications', icon: 'mdi-bell', label: lang === 'de' ? 'Benachrichtigungen' : 'Notifications' },
@@ -8923,6 +9160,7 @@ const App = () => {
         energy: EnergyPage,
         health: HealthPage,
         climate: ClimatePage,
+        ai: AiPage,
         scenes: ScenesPage,
         presence: PresencePage,
         notifications: NotificationsPage,

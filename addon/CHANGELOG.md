@@ -1,5 +1,55 @@
 # Changelog
 
+## 0.7.5 – Batch 4: KI, Kalender & UX
+
+### Engines (9 Features)
+- **MoodEstimator (#15)**: Stimmungserkennung (Relaxed/Active/Cozy/Quiet/Away/Focused)
+  - Heuristik aus Media-Player, Lichter, Motion-Sensoren, Klima-Zustaende
+  - Haus-Level (kein persoenliches Profiling)
+- **ScreenTimeMonitor (#19)**: Bildschirmzeit-Tracking fuer Media-Player
+  - Tages-Akkumulation pro Entity, konfigurierbares Limit + Erinnerungen
+- **HabitDriftDetector (#12)**: Gewohnheits-Veraenderungen erkennen
+  - 2-Wochen Vergleich: Zeitverschiebung, Frequenzaenderungen
+  - Woechentliche Analyse
+- **AdaptiveTimingManager (#11)**: Lernende Timing-Anpassung
+  - Gleitender Durchschnitt der letzten 10 manuellen Ausfuehrungen
+  - Auto-Adjustment bei >5 Min Drift mit >5 Samples
+- **GradualTransitioner (#23)**: Sanftes Eingreifen
+  - Licht: HA transition-Parameter, Klima: Temperatur-Schritte, Cover: Position
+- **SeasonalAdvisor (#13)**: Saisonale Empfehlungen
+  - 4 Jahreszeiten × 4 Tipps (Energie, Komfort, Sicherheit, Wartung)
+  - Wetter-basierter Bonus-Tipp
+- **CalendarIntegration (#14)**: HA-Kalender Anbindung
+  - Naechste 48h Events, Kalender-Entity Discovery
+- **Szenen-Favoriten (#20)**: Stern-Toggle + sortierte Favoriten-Liste
+- **Kontext-Benachrichtigungen (#24)**: context_data Modell-Erweiterung
+
+### API (14 neue Endpunkte)
+- GET /api/health/mood-estimate
+- GET /api/health/screen-time, GET/POST/PUT screen-time/config
+- GET /api/patterns/drift
+- GET /api/health/adaptive-timing
+- GET /api/system/seasonal-tips, GET /api/system/calendar-events, GET calendar-entities
+- PUT /api/scenes/:id/favorite, GET /api/scenes/favorites
+
+### Frontend: Neue "KI" Seite
+- **Stimmung-Tab**: Stimmungs-Karte mit Icon, Konfidenz, Indikatoren, Statistiken
+- **Bildschirmzeit-Tab**: Nutzungs-Balken pro User, Entity-Sessions, Limit-Anzeige
+- **Gewohnheiten-Tab**: Drift-Karten mit Zeitverschiebung und Richtung
+- **Adaptive-Tab**: Pattern-Anpassungen mit Offset-Anzeige und Sample-Count
+- **Saison-Tab**: Saisonale Tipps mit Icons und Kategorien
+- **Kalender-Tab**: Event-Liste mit Zeitabstand-Badges
+
+### Frontend: Szenen-Favoriten
+- Stern-Icon in Szenen-Liste (Toggle Favorit)
+
+### Scheduler
+- screen_time_check (5 Min): Bildschirmzeit + Stimmung
+- adaptive_check (15 Min): Timing-Lernen
+- weekly_drift (7 Tage): Gewohnheits-Analyse
+
+---
+
 ## 0.7.4 – Batch 3: Klima & Umgebung
 
 ### Bugfixes
