@@ -4,12 +4,17 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "0.6.47"
-BUILD = 48
+VERSION = "0.6.48"
+BUILD = 49
 BUILD_DATE = "2026-02-14"
 CODENAME = "Phase 3.5 - Kalender & Presence"
 
 # Changelog
+# Build 49: v0.6.48 Einzelne TTS-Speaker ein/ausschaltbar
+#   - Toggle pro Speaker in der TTS-Sektion (ein/aus)
+#   - Deaktivierte Speaker werden im Backend gefiltert (tts_disabled_speakers)
+#   - Visuelles Dimming bei deaktivierten Speakern
+#
 # Build 48: v0.6.47 Gruppierte Regeln + TTS Motion-Routing
 #   - ManualRules gruppiert nach Trigger (1 Sensor → n Aktionen visuell)
 #   - "+ Aktion hinzufuegen" Button pro Trigger-Gruppe

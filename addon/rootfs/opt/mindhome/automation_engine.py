@@ -1237,11 +1237,16 @@ class NotificationManager:
                     # tts_assignments: {entity_id: room_id}
                     motion_mode = _json.loads(get_setting("notif_tts_motion_mode") or '{"enabled": false}')
 
+                    # Filter out individually disabled speakers
+                    disabled_speakers = _json.loads(get_setting("notif_tts_disabled_speakers") or "[]")
+
                     if motion_mode.get("enabled"):
                         # Only announce on speaker in room with last motion
                         target_speakers = self._get_motion_tts_speakers(tts_assignments, motion_mode)
                     else:
                         target_speakers = list(tts_assignments.keys())
+
+                    target_speakers = [s for s in target_speakers if s not in disabled_speakers]
 
                     for entity_id in target_speakers:
                         try:
