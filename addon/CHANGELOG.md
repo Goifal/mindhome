@@ -1,5 +1,41 @@
 # Changelog
 
+## 0.7.9 – Phase 4 Feature-Konfiguration
+
+### Umfassende Feature-Einstellungen
+- **20 Phase-4 Features** mit detaillierten Konfigurationsoptionen
+- Neuer **Konfiguration-Tab** auf Klima-, Gesundheits- und KI-Seite
+- Erweiterter Konfiguration-Tab auf der Energie-Seite
+- Pro Feature: An/Aus/Auto Toggle + alle relevanten Parameter
+
+### Klima-Konfiguration
+- Komfort-Score: Gewichtung (Temp/Feuchte/CO2/Licht), Zielwerte
+- Lueftungserinnerung: CO2-Schwellwert, Intervall, Ruhezeiten
+- Zirkadiane Beleuchtung: Farbtemperatur-Bereich, Morgen/Abend-Rampe, Nacht-Helligkeit
+- Wetter-Alerts: Schweregrad-Filter, Frost/Sturm/Hitze-Toggles, Auto-Rolllaeden
+
+### Gesundheits-Konfiguration
+- Schlaf: Empfindlichkeit, Min-Dauer, Temp/Feuchte-Optimalbereiche
+- Sanftes Wecken: Rampe, Max-Helligkeit, Rolllaeden/Heizung
+- Bildschirmzeit: Tageslimit, Erinnerungsintervall
+- Urlaub: Min-Abwesenheit, Urlaubstemperatur, Anwesenheitssimulation
+- Besuch: Gaestetemperatur, Vorheizzeit, Auto-Beleuchtung
+
+### Energie-Konfiguration
+- Optimierung: Modus (Eco/Balanced/Komfort), Ziel-Einsparung
+- PV-Management: Ueberschuss-Schwelle, Min-Dauer, Auto-Lastumschaltung
+- Standby-Killer: Schwellwert, Leerlaufzeit, Auto-Abschaltung
+- Prognose: Tage, Wetter/Kalender-Integration
+
+### KI-Konfiguration
+- Stimmung: Empfindlichkeit, Dashboard-Anzeige
+- Gewohnheits-Drift: Erkennungszeitraum, Empfindlichkeit
+- Adaptives Timing: Lerngeschwindigkeit, Max-Anpassung, Wochenende
+- Kalender: Sync-Intervall, Vorbereitungszeit, Auto-Klima
+
+### Fixes
+- Domain-Filter erweitert um RoomDomainState.mode='off' (per-room Deaktivierung)
+
 ## 0.7.8 – Bugfix: Muster-Ablehnung & Domain-Ausschluss
 
 ### Muster-Ablehnung Fix

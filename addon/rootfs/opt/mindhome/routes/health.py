@@ -60,6 +60,319 @@ PHASE4_FEATURES = {
 }
 
 
+# ──────────────────────────────────────────────
+# Per-Feature Configuration (settings per feature)
+# ──────────────────────────────────────────────
+# Stored as system_settings with key: "<feature_key>.<setting_key>"
+
+PHASE4_FEATURE_SETTINGS = {
+    # ── Climate Page features ──
+    "phase4.comfort_score": {
+        "category": "climate",
+        "settings": [
+            {"key": "weight_temperature", "type": "number", "default": "35", "min": 0, "max": 100, "step": 5,
+             "label_de": "Gewicht: Temperatur (%)", "label_en": "Weight: Temperature (%)"},
+            {"key": "weight_humidity", "type": "number", "default": "25", "min": 0, "max": 100, "step": 5,
+             "label_de": "Gewicht: Luftfeuchte (%)", "label_en": "Weight: Humidity (%)"},
+            {"key": "weight_co2", "type": "number", "default": "25", "min": 0, "max": 100, "step": 5,
+             "label_de": "Gewicht: CO2 (%)", "label_en": "Weight: CO2 (%)"},
+            {"key": "weight_light", "type": "number", "default": "15", "min": 0, "max": 100, "step": 5,
+             "label_de": "Gewicht: Licht (%)", "label_en": "Weight: Light (%)"},
+            {"key": "target_temp", "type": "number", "default": "21", "min": 16, "max": 28, "step": 0.5,
+             "label_de": "Ziel-Temperatur (°C)", "label_en": "Target temperature (°C)"},
+            {"key": "target_humidity", "type": "number", "default": "50", "min": 30, "max": 70, "step": 5,
+             "label_de": "Ziel-Luftfeuchte (%)", "label_en": "Target humidity (%)"},
+            {"key": "co2_good_max", "type": "number", "default": "800", "min": 400, "max": 1500, "step": 50,
+             "label_de": "CO2 Gut-Grenze (ppm)", "label_en": "CO2 good threshold (ppm)"},
+        ],
+    },
+    "phase4.ventilation_reminder": {
+        "category": "climate",
+        "settings": [
+            {"key": "co2_threshold", "type": "number", "default": "1000", "min": 500, "max": 2000, "step": 50,
+             "label_de": "CO2-Schwellwert (ppm)", "label_en": "CO2 threshold (ppm)"},
+            {"key": "reminder_interval", "type": "number", "default": "120", "min": 30, "max": 480, "step": 15,
+             "label_de": "Erinnerungs-Intervall (Min)", "label_en": "Reminder interval (min)"},
+            {"key": "quiet_hours_start", "type": "time", "default": "22:00",
+             "label_de": "Ruhezeit Start", "label_en": "Quiet hours start"},
+            {"key": "quiet_hours_end", "type": "time", "default": "07:00",
+             "label_de": "Ruhezeit Ende", "label_en": "Quiet hours end"},
+        ],
+    },
+    "phase4.circadian_lighting": {
+        "category": "climate",
+        "settings": [
+            {"key": "morning_ramp_min", "type": "number", "default": "30", "min": 5, "max": 90, "step": 5,
+             "label_de": "Morgen-Rampe (Min)", "label_en": "Morning ramp (min)"},
+            {"key": "evening_ramp_min", "type": "number", "default": "60", "min": 15, "max": 120, "step": 5,
+             "label_de": "Abend-Rampe (Min)", "label_en": "Evening ramp (min)"},
+            {"key": "min_color_temp", "type": "number", "default": "2200", "min": 1800, "max": 3000, "step": 100,
+             "label_de": "Min. Farbtemperatur (K)", "label_en": "Min color temp (K)"},
+            {"key": "max_color_temp", "type": "number", "default": "5500", "min": 4000, "max": 6500, "step": 100,
+             "label_de": "Max. Farbtemperatur (K)", "label_en": "Max color temp (K)"},
+            {"key": "night_brightness", "type": "number", "default": "5", "min": 1, "max": 30, "step": 1,
+             "label_de": "Nacht-Helligkeit (%)", "label_en": "Night brightness (%)"},
+        ],
+    },
+    "phase4.weather_alerts": {
+        "category": "climate",
+        "settings": [
+            {"key": "min_severity", "type": "select", "default": "moderate",
+             "options": ["minor", "moderate", "severe"],
+             "options_de": ["Gering", "Mittel", "Schwer"], "options_en": ["Minor", "Moderate", "Severe"],
+             "label_de": "Min. Schweregrad", "label_en": "Min severity"},
+            {"key": "alert_frost", "type": "toggle", "default": "true",
+             "label_de": "Frost-Warnung", "label_en": "Frost alert"},
+            {"key": "alert_storm", "type": "toggle", "default": "true",
+             "label_de": "Sturm-Warnung", "label_en": "Storm alert"},
+            {"key": "alert_heat", "type": "toggle", "default": "true",
+             "label_de": "Hitze-Warnung", "label_en": "Heat alert"},
+            {"key": "auto_close_covers", "type": "toggle", "default": "false",
+             "label_de": "Auto-Rolllaeden bei Sturm", "label_en": "Auto-close covers on storm"},
+        ],
+    },
+    # ── Health Page features ──
+    "phase4.sleep_detection": {
+        "category": "health",
+        "settings": [
+            {"key": "sensitivity", "type": "select", "default": "medium",
+             "options": ["low", "medium", "high"],
+             "options_de": ["Niedrig", "Mittel", "Hoch"], "options_en": ["Low", "Medium", "High"],
+             "label_de": "Empfindlichkeit", "label_en": "Sensitivity"},
+            {"key": "min_duration_hours", "type": "number", "default": "4", "min": 1, "max": 12, "step": 0.5,
+             "label_de": "Min. Schlafdauer (Std)", "label_en": "Min sleep duration (h)"},
+            {"key": "motion_timeout_min", "type": "number", "default": "15", "min": 5, "max": 60, "step": 5,
+             "label_de": "Bewegungs-Timeout (Min)", "label_en": "Motion timeout (min)"},
+        ],
+    },
+    "phase4.sleep_quality": {
+        "category": "health",
+        "settings": [
+            {"key": "good_threshold", "type": "number", "default": "70", "min": 40, "max": 100, "step": 5,
+             "label_de": "Gute Qualitaet ab (Score)", "label_en": "Good quality threshold"},
+            {"key": "optimal_temp_min", "type": "number", "default": "17", "min": 12, "max": 22, "step": 0.5,
+             "label_de": "Opt. Temp. min (°C)", "label_en": "Opt. temp min (°C)"},
+            {"key": "optimal_temp_max", "type": "number", "default": "20", "min": 17, "max": 25, "step": 0.5,
+             "label_de": "Opt. Temp. max (°C)", "label_en": "Opt. temp max (°C)"},
+            {"key": "optimal_humidity_min", "type": "number", "default": "40", "min": 20, "max": 60, "step": 5,
+             "label_de": "Opt. Feuchte min (%)", "label_en": "Opt. humidity min (%)"},
+            {"key": "optimal_humidity_max", "type": "number", "default": "60", "min": 40, "max": 80, "step": 5,
+             "label_de": "Opt. Feuchte max (%)", "label_en": "Opt. humidity max (%)"},
+        ],
+    },
+    "phase4.smart_wakeup": {
+        "category": "health",
+        "settings": [
+            {"key": "ramp_minutes", "type": "number", "default": "20", "min": 5, "max": 60, "step": 5,
+             "label_de": "Aufwach-Rampe (Min)", "label_en": "Wake ramp (min)"},
+            {"key": "max_brightness", "type": "number", "default": "80", "min": 10, "max": 100, "step": 5,
+             "label_de": "Max. Helligkeit (%)", "label_en": "Max brightness (%)"},
+            {"key": "include_cover", "type": "toggle", "default": "true",
+             "label_de": "Rolllaeden oeffnen", "label_en": "Open covers"},
+            {"key": "include_climate", "type": "toggle", "default": "true",
+             "label_de": "Heizung vorwaermen", "label_en": "Pre-heat climate"},
+        ],
+    },
+    "phase4.screen_time": {
+        "category": "health",
+        "settings": [
+            {"key": "daily_limit_min", "type": "number", "default": "240", "min": 30, "max": 720, "step": 30,
+             "label_de": "Tageslimit (Min)", "label_en": "Daily limit (min)"},
+            {"key": "reminder_interval_min", "type": "number", "default": "60", "min": 15, "max": 120, "step": 15,
+             "label_de": "Erinnerungs-Intervall (Min)", "label_en": "Reminder interval (min)"},
+            {"key": "count_background", "type": "toggle", "default": "false",
+             "label_de": "Hintergrund-Wiedergabe zaehlen", "label_en": "Count background playback"},
+        ],
+    },
+    "phase4.room_transitions": {
+        "category": "health",
+        "settings": [
+            {"key": "transition_delay_sec", "type": "number", "default": "120", "min": 30, "max": 600, "step": 30,
+             "label_de": "Uebergangs-Verzoegerung (Sek)", "label_en": "Transition delay (sec)"},
+            {"key": "auto_lights_off", "type": "toggle", "default": "false",
+             "label_de": "Auto-Licht-Aus bei Verlassen", "label_en": "Auto lights off on leave"},
+        ],
+    },
+    "phase4.visit_preparation": {
+        "category": "health",
+        "settings": [
+            {"key": "default_guest_temp", "type": "number", "default": "22", "min": 18, "max": 26, "step": 0.5,
+             "label_de": "Standard Gaeste-Temp (°C)", "label_en": "Default guest temp (°C)"},
+            {"key": "preheat_minutes", "type": "number", "default": "30", "min": 10, "max": 120, "step": 10,
+             "label_de": "Vorheizen (Min)", "label_en": "Pre-heat (min)"},
+            {"key": "auto_lighting", "type": "toggle", "default": "true",
+             "label_de": "Auto-Beleuchtung fuer Gaeste", "label_en": "Auto lighting for guests"},
+        ],
+    },
+    "phase4.vacation_detection": {
+        "category": "health",
+        "settings": [
+            {"key": "min_away_hours", "type": "number", "default": "24", "min": 8, "max": 72, "step": 4,
+             "label_de": "Min. Abwesenheit (Std)", "label_en": "Min away time (h)"},
+            {"key": "reduce_heating", "type": "toggle", "default": "true",
+             "label_de": "Heizung reduzieren", "label_en": "Reduce heating"},
+            {"key": "vacation_temp", "type": "number", "default": "16", "min": 10, "max": 20, "step": 0.5,
+             "label_de": "Urlaubs-Temperatur (°C)", "label_en": "Vacation temp (°C)"},
+            {"key": "simulate_presence", "type": "toggle", "default": "false",
+             "label_de": "Anwesenheit simulieren", "label_en": "Simulate presence"},
+        ],
+    },
+    "phase4.health_dashboard": {
+        "category": "health",
+        "settings": [
+            {"key": "weekly_report_day", "type": "select", "default": "monday",
+             "options": ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"],
+             "options_de": ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"],
+             "options_en": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"],
+             "label_de": "Wochenbericht-Tag", "label_en": "Weekly report day"},
+            {"key": "show_sleep", "type": "toggle", "default": "true",
+             "label_de": "Schlaf anzeigen", "label_en": "Show sleep"},
+            {"key": "show_comfort", "type": "toggle", "default": "true",
+             "label_de": "Komfort anzeigen", "label_en": "Show comfort"},
+            {"key": "show_screen_time", "type": "toggle", "default": "true",
+             "label_de": "Bildschirmzeit anzeigen", "label_en": "Show screen time"},
+        ],
+    },
+    # ── Energy Page features ──
+    "phase4.energy_optimization": {
+        "category": "energy",
+        "settings": [
+            {"key": "optimization_mode", "type": "select", "default": "balanced",
+             "options": ["eco", "balanced", "comfort"],
+             "options_de": ["Eco", "Ausgewogen", "Komfort"], "options_en": ["Eco", "Balanced", "Comfort"],
+             "label_de": "Optimierungs-Modus", "label_en": "Optimization mode"},
+            {"key": "target_savings_pct", "type": "number", "default": "15", "min": 5, "max": 50, "step": 5,
+             "label_de": "Ziel-Einsparung (%)", "label_en": "Target savings (%)"},
+            {"key": "notify_savings", "type": "toggle", "default": "true",
+             "label_de": "Spar-Benachrichtigungen", "label_en": "Savings notifications"},
+        ],
+    },
+    "phase4.pv_management": {
+        "category": "energy",
+        "settings": [
+            {"key": "surplus_threshold_w", "type": "number", "default": "200", "min": 50, "max": 2000, "step": 50,
+             "label_de": "Ueberschuss-Schwelle (W)", "label_en": "Surplus threshold (W)"},
+            {"key": "min_surplus_duration_min", "type": "number", "default": "5", "min": 1, "max": 30, "step": 1,
+             "label_de": "Min. Ueberschuss-Dauer (Min)", "label_en": "Min surplus duration (min)"},
+            {"key": "auto_switch_loads", "type": "toggle", "default": "false",
+             "label_de": "Auto-Lastumschaltung", "label_en": "Auto load switching"},
+        ],
+    },
+    "phase4.standby_killer": {
+        "category": "energy",
+        "settings": [
+            {"key": "default_threshold_w", "type": "number", "default": "5", "min": 1, "max": 50, "step": 1,
+             "label_de": "Standard-Schwellwert (W)", "label_en": "Default threshold (W)"},
+            {"key": "default_idle_min", "type": "number", "default": "30", "min": 5, "max": 240, "step": 5,
+             "label_de": "Standard-Leerlaufzeit (Min)", "label_en": "Default idle time (min)"},
+            {"key": "auto_off", "type": "toggle", "default": "false",
+             "label_de": "Auto-Abschaltung", "label_en": "Auto power-off"},
+            {"key": "notify_standby", "type": "toggle", "default": "true",
+             "label_de": "Standby-Benachrichtigung", "label_en": "Standby notification"},
+        ],
+    },
+    "phase4.energy_forecast": {
+        "category": "energy",
+        "settings": [
+            {"key": "forecast_days", "type": "number", "default": "7", "min": 1, "max": 14, "step": 1,
+             "label_de": "Prognose-Tage", "label_en": "Forecast days"},
+            {"key": "include_weather", "type": "toggle", "default": "true",
+             "label_de": "Wetter einbeziehen", "label_en": "Include weather"},
+            {"key": "include_calendar", "type": "toggle", "default": "false",
+             "label_de": "Kalender einbeziehen", "label_en": "Include calendar"},
+        ],
+    },
+    # ── AI Page features ──
+    "phase4.mood_estimate": {
+        "category": "ai",
+        "settings": [
+            {"key": "sensitivity", "type": "select", "default": "medium",
+             "options": ["low", "medium", "high"],
+             "options_de": ["Niedrig", "Mittel", "Hoch"], "options_en": ["Low", "Medium", "High"],
+             "label_de": "Empfindlichkeit", "label_en": "Sensitivity"},
+            {"key": "show_on_dashboard", "type": "toggle", "default": "true",
+             "label_de": "Im Dashboard anzeigen", "label_en": "Show on dashboard"},
+        ],
+    },
+    "phase4.habit_drift": {
+        "category": "ai",
+        "settings": [
+            {"key": "detection_period_days", "type": "number", "default": "30", "min": 7, "max": 90, "step": 7,
+             "label_de": "Erkennungs-Zeitraum (Tage)", "label_en": "Detection period (days)"},
+            {"key": "sensitivity", "type": "select", "default": "medium",
+             "options": ["low", "medium", "high"],
+             "options_de": ["Niedrig", "Mittel", "Hoch"], "options_en": ["Low", "Medium", "High"],
+             "label_de": "Empfindlichkeit", "label_en": "Sensitivity"},
+            {"key": "notify_drift", "type": "toggle", "default": "true",
+             "label_de": "Drift-Benachrichtigung", "label_en": "Drift notification"},
+        ],
+    },
+    "phase4.adaptive_timing": {
+        "category": "ai",
+        "settings": [
+            {"key": "learning_speed", "type": "select", "default": "medium",
+             "options": ["slow", "medium", "fast"],
+             "options_de": ["Langsam", "Mittel", "Schnell"], "options_en": ["Slow", "Medium", "Fast"],
+             "label_de": "Lerngeschwindigkeit", "label_en": "Learning speed"},
+            {"key": "max_adjustment_min", "type": "number", "default": "15", "min": 5, "max": 60, "step": 5,
+             "label_de": "Max. Anpassung (Min)", "label_en": "Max adjustment (min)"},
+            {"key": "apply_weekends", "type": "toggle", "default": "true",
+             "label_de": "Wochenende beruecksichtigen", "label_en": "Apply on weekends"},
+        ],
+    },
+    "phase4.calendar_integration": {
+        "category": "ai",
+        "settings": [
+            {"key": "sync_interval_min", "type": "number", "default": "15", "min": 5, "max": 60, "step": 5,
+             "label_de": "Sync-Intervall (Min)", "label_en": "Sync interval (min)"},
+            {"key": "pre_event_min", "type": "number", "default": "10", "min": 0, "max": 60, "step": 5,
+             "label_de": "Vorbereitung vor Termin (Min)", "label_en": "Pre-event prep (min)"},
+            {"key": "auto_adjust_climate", "type": "toggle", "default": "false",
+             "label_de": "Auto-Klimaanpassung", "label_en": "Auto climate adjust"},
+        ],
+    },
+}
+
+
+@health_bp.route("/api/system/phase4-feature-settings/<path:category>", methods=["GET"])
+def api_get_feature_settings_by_category(category):
+    """Get all feature settings for a category (climate/health/energy/ai)."""
+    result = {}
+    for feature_key, fdef in PHASE4_FEATURE_SETTINGS.items():
+        if fdef["category"] != category:
+            continue
+        stored_status = get_setting(feature_key, PHASE4_FEATURES.get(feature_key, {}).get("default", "auto"))
+        settings_values = {}
+        for s in fdef["settings"]:
+            full_key = f"{feature_key}.{s['key']}"
+            settings_values[s["key"]] = get_setting(full_key, s["default"])
+        result[feature_key] = {
+            "enabled": _resolve_feature_status(stored_status),
+            "value": stored_status,
+            "settings_def": fdef["settings"],
+            "settings_values": settings_values,
+        }
+    return jsonify(result)
+
+
+@health_bp.route("/api/system/phase4-feature-settings/<path:feature_key>", methods=["PUT"])
+def api_set_feature_settings(feature_key):
+    """Update settings for a specific feature. Body: {"setting_key": "value", ...}"""
+    fdef = PHASE4_FEATURE_SETTINGS.get(feature_key)
+    if not fdef:
+        return jsonify({"error": "Unknown feature"}), 404
+    data = request.json or {}
+    valid_keys = {s["key"] for s in fdef["settings"]}
+    updated = []
+    for key, value in data.items():
+        if key not in valid_keys:
+            continue
+        full_key = f"{feature_key}.{key}"
+        set_setting(full_key, str(value))
+        updated.append(key)
+    return jsonify({"success": True, "updated": updated})
+
+
 def _resolve_feature_status(stored_value):
     """Resolve actual enabled/disabled status for a feature.
 
