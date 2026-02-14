@@ -1,4 +1,4 @@
-// MindHome Frontend v0.6.11 (2026-02-11) - app.jsx
+// MindHome Frontend v0.7.2 (2026-02-14) - app.jsx
 // ================================================================
 // MindHome - React Frontend Application v0.6.2
 // ================================================================
@@ -2802,6 +2802,82 @@ const UsersPage = () => {
 // Settings Page
 // ================================================================
 
+const Phase4FeaturesPanel = ({ lang, showToast }) => {
+    const [features, setFeatures] = useState([]);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        api.get('system/phase4-features').then(d => { setFeatures(Array.isArray(d) ? d : []); setLoading(false); }).catch(() => setLoading(false));
+    }, []);
+
+    const toggleFeature = async (key, currentValue) => {
+        const next = currentValue === 'true' ? 'false' : currentValue === 'false' ? 'auto' : 'true';
+        const r = await api.put(`system/phase4-features/${key}`, { value: next });
+        if (r?.success) {
+            setFeatures(features.map(f => f.key === key ? { ...f, value: next, enabled: r.enabled } : f));
+            showToast(`${key.replace('phase4.', '')}: ${next}`, 'info');
+        }
+    };
+
+    const featureLabels = {
+        'phase4.sleep_detection': { de: 'Schlaf-Erkennung', en: 'Sleep Detection', icon: 'mdi-sleep' },
+        'phase4.sleep_quality': { de: 'Schlaf-Qualitaet', en: 'Sleep Quality', icon: 'mdi-bed' },
+        'phase4.smart_wakeup': { de: 'Sanftes Wecken', en: 'Smart Wake-Up', icon: 'mdi-alarm' },
+        'phase4.energy_optimization': { de: 'Energie-Optimierung', en: 'Energy Optimization', icon: 'mdi-lightning-bolt' },
+        'phase4.pv_management': { de: 'PV-Lastmanagement', en: 'PV Management', icon: 'mdi-solar-power' },
+        'phase4.standby_killer': { de: 'Standby-Killer', en: 'Standby Killer', icon: 'mdi-power-standby' },
+        'phase4.energy_forecast': { de: 'Energieprognose', en: 'Energy Forecast', icon: 'mdi-chart-timeline-variant' },
+        'phase4.comfort_score': { de: 'Komfort-Score', en: 'Comfort Score', icon: 'mdi-thermometer' },
+        'phase4.ventilation_reminder': { de: 'Lueftungserinnerung', en: 'Ventilation Reminder', icon: 'mdi-air-filter' },
+        'phase4.circadian_lighting': { de: 'Zirkadiane Beleuchtung', en: 'Circadian Lighting', icon: 'mdi-lightbulb-group' },
+        'phase4.weather_alerts': { de: 'Wetter-Alerts', en: 'Weather Alerts', icon: 'mdi-weather-lightning-rainy' },
+        'phase4.screen_time': { de: 'Bildschirmzeit', en: 'Screen Time', icon: 'mdi-monitor' },
+        'phase4.mood_estimate': { de: 'Stimmungserkennung', en: 'Mood Estimate', icon: 'mdi-emoticon-outline' },
+        'phase4.room_transitions': { de: 'Raum-Uebergaenge', en: 'Room Transitions', icon: 'mdi-door-sliding-open' },
+        'phase4.visit_preparation': { de: 'Besuch-Vorbereitung', en: 'Visit Preparation', icon: 'mdi-account-plus' },
+        'phase4.vacation_detection': { de: 'Urlaubs-Erkennung', en: 'Vacation Detection', icon: 'mdi-airplane' },
+        'phase4.habit_drift': { de: 'Gewohnheits-Drift', en: 'Habit Drift', icon: 'mdi-trending-up' },
+        'phase4.adaptive_timing': { de: 'Adaptives Timing', en: 'Adaptive Timing', icon: 'mdi-clock-fast' },
+        'phase4.calendar_integration': { de: 'Kalender-Integration', en: 'Calendar Integration', icon: 'mdi-calendar' },
+        'phase4.health_dashboard': { de: 'Gesundheits-Dashboard', en: 'Health Dashboard', icon: 'mdi-heart-pulse' },
+    };
+
+    const valueColor = (v) => v === 'true' ? 'var(--success)' : v === 'false' ? 'var(--danger)' : 'var(--warning)';
+    const valueLabel = (v) => v === 'true' ? 'AN' : v === 'false' ? 'AUS' : 'Auto';
+
+    if (loading) return null;
+    if (features.length === 0) return null;
+
+    return (
+        <div className="card" style={{ marginBottom: 16 }}>
+            <div className="card-title" style={{ marginBottom: 12 }}>
+                <span className="mdi mdi-toggle-switch" style={{ marginRight: 8, color: 'var(--accent-primary)' }} />
+                {lang === 'de' ? 'Phase 4 Features' : 'Phase 4 Features'}
+            </div>
+            <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 12 }}>
+                {lang === 'de' ? 'Klicke um umzuschalten: Auto → An → Aus → Auto' : 'Click to cycle: Auto → On → Off → Auto'}
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                {features.map(f => {
+                    const lbl = featureLabels[f.key] || { de: f.key, en: f.key, icon: 'mdi-help' };
+                    return (
+                        <div key={f.key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--border)', cursor: 'pointer' }}
+                            onClick={() => toggleFeature(f.key, f.value)}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
+                                <span className={`mdi ${lbl.icon}`} style={{ fontSize: 16, color: f.enabled ? 'var(--accent-primary)' : 'var(--text-muted)', flexShrink: 0 }} />
+                                <span style={{ fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{lang === 'de' ? lbl.de : lbl.en}</span>
+                            </div>
+                            <span className="badge" style={{ fontSize: 10, background: valueColor(f.value), color: '#fff', flexShrink: 0 }}>
+                                {valueLabel(f.value)}
+                            </span>
+                        </div>
+                    );
+                })}
+            </div>
+        </div>
+    );
+};
+
 const SettingsPage = () => {
     const { lang, setLang, theme, setTheme, viewMode, setViewMode, showToast, refreshData } = useApp();
     const [sysInfo, setSysInfo] = useState(null);
@@ -3276,6 +3352,9 @@ const SettingsPage = () => {
                     </div>
                 )}
             </div>
+
+            {/* Phase 4 Feature Flags */}
+            <Phase4FeaturesPanel lang={lang} showToast={showToast} />
 
             {/* #23 Vacation Mode + #42 Debug Mode + #49 Auto Theme + #63 Export + #68 Accessibility */}
             <div className="card" style={{ marginBottom: 16 }}>
@@ -6231,12 +6310,23 @@ const EnergyPage = () => {
     const [showAddStandby, setShowAddStandby] = useState(false);
     const [newStandby, setNewStandby] = useState({ entity_id: '', threshold_watts: 5, idle_minutes: 30, auto_off: false });
     const [alertThreshold, setAlertThreshold] = useState(null);
+    const [optimization, setOptimization] = useState(null);
+    const [savings, setSavings] = useState(null);
+    const [pvStatus, setPvStatus] = useState(null);
+    const [forecast, setForecast] = useState([]);
+    const [standbyLive, setStandbyLive] = useState([]);
+    const [newPvEntity, setNewPvEntity] = useState('');
 
     const load = () => {
         api.get('energy/config').then(d => setConfig(d || { price_per_kwh: 0.25, currency: 'EUR', solar_enabled: false })).catch(() => {});
         api.get(`energy/readings?hours=${hours}`).then(d => setReadings(Array.isArray(d) ? d : [])).catch(() => {});
         api.get('energy/standby-config').then(d => setSConfigs(Array.isArray(d) ? d : [])).catch(() => {});
         api.get('energy/stats').then(d => setStats(d || null)).catch(() => {});
+        api.get('energy/optimization').then(d => setOptimization(d || null)).catch(() => {});
+        api.get('energy/savings').then(d => setSavings(d || null)).catch(() => {});
+        api.get('energy/pv-status').then(d => setPvStatus(d || null)).catch(() => {});
+        api.get('energy/forecast?days=7').then(d => setForecast(Array.isArray(d) ? d : [])).catch(() => {});
+        api.get('energy/standby-status').then(d => setStandbyLive(Array.isArray(d) ? d : [])).catch(() => {});
     };
     useEffect(() => { load(); }, [hours]);
 
@@ -6256,6 +6346,9 @@ const EnergyPage = () => {
 
     const tabs = [
         { id: 'overview', label: lang === 'de' ? 'Uebersicht' : 'Overview', icon: 'mdi-flash' },
+        { id: 'optimization', label: lang === 'de' ? 'Optimierung' : 'Optimization', icon: 'mdi-lightbulb-on' },
+        { id: 'solar', label: 'Solar/PV', icon: 'mdi-solar-power' },
+        { id: 'forecast', label: lang === 'de' ? 'Prognose' : 'Forecast', icon: 'mdi-chart-timeline-variant' },
         { id: 'readings', label: lang === 'de' ? 'Messwerte' : 'Readings', icon: 'mdi-chart-line' },
         { id: 'standby', label: 'Standby', icon: 'mdi-power-standby' },
         { id: 'config', label: lang === 'de' ? 'Konfiguration' : 'Configuration', icon: 'mdi-cog' },
@@ -6296,17 +6389,292 @@ const EnergyPage = () => {
                                 </div>
                             ))}
                             <div className="card animate-in" style={{ padding: 16, textAlign: 'center' }}>
-                                <div style={{ fontSize: 22, fontWeight: 700 }}>{standbyConfigs.length}</div>
-                                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>{lang === 'de' ? 'Standby-Ueberwachung' : 'Standby monitoring'}</div>
+                                <div style={{ fontSize: 22, fontWeight: 700 }}>{standbyLive.length}</div>
+                                <div style={{ fontSize: 12, color: standbyLive.length > 0 ? 'var(--warning)' : 'var(--text-muted)', marginTop: 4 }}>{lang === 'de' ? 'Standby-Geraete' : 'Standby devices'}</div>
                             </div>
                         </div>
                     )}
+
+                    {/* Quick summary cards */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, marginBottom: 16 }}>
+                        {savings && savings.estimated_monthly_eur > 0 && (
+                            <div className="card animate-in" style={{ padding: 12, cursor: 'pointer' }} onClick={() => setTab('optimization')}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                                    <span className="mdi mdi-piggy-bank" style={{ color: 'var(--success)' }} />
+                                    <span style={{ fontSize: 12, fontWeight: 600 }}>{lang === 'de' ? 'Einsparpotenzial' : 'Savings'}</span>
+                                </div>
+                                <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--success)' }}>{savings.estimated_monthly_eur.toFixed(2)} EUR/Mo</div>
+                            </div>
+                        )}
+                        {pvStatus && !pvStatus.error && (
+                            <div className="card animate-in" style={{ padding: 12, cursor: 'pointer' }} onClick={() => setTab('solar')}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                                    <span className="mdi mdi-solar-power" style={{ color: 'var(--warning)' }} />
+                                    <span style={{ fontSize: 12, fontWeight: 600 }}>Solar</span>
+                                </div>
+                                <div style={{ fontSize: 18, fontWeight: 700 }}>{(pvStatus.production_w || 0).toFixed(0)} W</div>
+                                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Ueberschuss' : 'Surplus'}: {(pvStatus.surplus_w || 0).toFixed(0)} W</div>
+                            </div>
+                        )}
+                        {optimization?.recommendations?.length > 0 && (
+                            <div className="card animate-in" style={{ padding: 12, cursor: 'pointer' }} onClick={() => setTab('optimization')}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                                    <span className="mdi mdi-lightbulb-on" style={{ color: 'var(--warning)' }} />
+                                    <span style={{ fontSize: 12, fontWeight: 600 }}>{lang === 'de' ? 'Empfehlungen' : 'Tips'}</span>
+                                </div>
+                                <div style={{ fontSize: 18, fontWeight: 700 }}>{optimization.recommendations.length}</div>
+                            </div>
+                        )}
+                    </div>
                     {!stats && (
                         <div className="card animate-in" style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)' }}>
                             <span className="mdi mdi-flash-off" style={{ fontSize: 40, display: 'block', marginBottom: 8 }} />
                             {lang === 'de' ? 'Noch keine Energiedaten. Klicke "Sensoren suchen" um Energie-Sensoren aus Home Assistant zu finden.' : 'No energy data yet. Click "Discover sensors" to find energy sensors from Home Assistant.'}
                         </div>
                     )}
+                </div>
+            )}
+
+            {/* ── Optimization Tab ── */}
+            {tab === 'optimization' && (
+                <div>
+                    {/* Savings summary */}
+                    {savings && (savings.estimated_monthly_eur > 0 || savings.potential_kwh > 0) && (
+                        <div className="card animate-in" style={{ padding: 16, marginBottom: 16, borderLeft: '4px solid var(--success)' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div>
+                                    <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>
+                                        <span className="mdi mdi-piggy-bank" style={{ marginRight: 4 }} />
+                                        {lang === 'de' ? 'Einsparpotenzial/Monat' : 'Monthly savings potential'}
+                                    </div>
+                                    <div style={{ fontSize: 28, fontWeight: 700, color: 'var(--success)' }}>
+                                        {(savings.estimated_monthly_eur || 0).toFixed(2)} {savings.currency || 'EUR'}
+                                    </div>
+                                </div>
+                                <div style={{ textAlign: 'right' }}>
+                                    <div style={{ fontSize: 20, fontWeight: 600 }}>{(savings.potential_kwh || 0).toFixed(1)} kWh</div>
+                                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{lang === 'de' ? 'einsparbar' : 'saveable'}</div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Recommendations list */}
+                    <div className="card" style={{ overflow: 'hidden' }}>
+                        <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)', fontWeight: 600 }}>
+                            <span className="mdi mdi-lightbulb-on" style={{ marginRight: 6, color: 'var(--warning)' }} />
+                            {lang === 'de' ? 'Empfehlungen' : 'Recommendations'}
+                            {optimization?.last_analysis && (
+                                <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 400, marginLeft: 8 }}>
+                                    {lang === 'de' ? 'Letzte Analyse: ' : 'Last analysis: '}{new Date(optimization.last_analysis).toLocaleString()}
+                                </span>
+                            )}
+                        </div>
+                        {(!optimization?.recommendations || optimization.recommendations.length === 0) ? (
+                            <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)' }}>
+                                <span className="mdi mdi-check-circle" style={{ fontSize: 36, display: 'block', marginBottom: 8, color: 'var(--success)' }} />
+                                {lang === 'de' ? 'Keine Optimierungen noetig — alles im gruenen Bereich!' : 'No optimizations needed — all good!'}
+                            </div>
+                        ) : (
+                            <div>
+                                {optimization.recommendations.map((rec, i) => (
+                                    <div key={i} style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)', display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+                                        <span className={`mdi ${rec.type === 'peak_load' ? 'mdi-flash-alert' : rec.type === 'high_consumer' ? 'mdi-fire' : rec.type === 'shift_load' ? 'mdi-clock-arrow' : 'mdi-information'}`}
+                                            style={{ fontSize: 20, color: rec.type === 'peak_load' ? 'var(--danger)' : rec.type === 'high_consumer' ? 'var(--warning)' : 'var(--accent-primary)', flexShrink: 0, marginTop: 2 }} />
+                                        <div style={{ flex: 1 }}>
+                                            <div style={{ fontSize: 13, fontWeight: 500 }}>{rec.message}</div>
+                                            {rec.entity_id && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{rec.entity_id}</div>}
+                                            {rec.savings_eur > 0 && (
+                                                <span className="badge badge-success" style={{ fontSize: 10, marginTop: 4 }}>
+                                                    ~{rec.savings_eur.toFixed(2)} EUR/Mo
+                                                </span>
+                                            )}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {/* ── Solar / PV Tab ── */}
+            {tab === 'solar' && (
+                <div>
+                    {/* PV Live Status */}
+                    {pvStatus && !pvStatus.error ? (
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12, marginBottom: 16 }}>
+                            <div className="card animate-in" style={{ padding: 16, textAlign: 'center' }}>
+                                <span className="mdi mdi-solar-power" style={{ fontSize: 28, color: 'var(--warning)', display: 'block', marginBottom: 4 }} />
+                                <div style={{ fontSize: 22, fontWeight: 700 }}>{(pvStatus.production_w || 0).toFixed(0)} W</div>
+                                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Produktion' : 'Production'}</div>
+                            </div>
+                            <div className="card animate-in" style={{ padding: 16, textAlign: 'center' }}>
+                                <span className="mdi mdi-home-lightning-bolt" style={{ fontSize: 28, color: 'var(--accent-primary)', display: 'block', marginBottom: 4 }} />
+                                <div style={{ fontSize: 22, fontWeight: 700 }}>{(pvStatus.consumption_w || 0).toFixed(0)} W</div>
+                                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Verbrauch' : 'Consumption'}</div>
+                            </div>
+                            <div className="card animate-in" style={{ padding: 16, textAlign: 'center' }}>
+                                <span className="mdi mdi-transmission-tower-export" style={{ fontSize: 28, color: pvStatus.surplus_w > 0 ? 'var(--success)' : 'var(--text-muted)', display: 'block', marginBottom: 4 }} />
+                                <div style={{ fontSize: 22, fontWeight: 700, color: pvStatus.surplus_w > 0 ? 'var(--success)' : 'inherit' }}>{(pvStatus.surplus_w || 0).toFixed(0)} W</div>
+                                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Ueberschuss' : 'Surplus'}</div>
+                            </div>
+                            <div className="card animate-in" style={{ padding: 16, textAlign: 'center' }}>
+                                <span className="mdi mdi-percent" style={{ fontSize: 28, color: 'var(--info)', display: 'block', marginBottom: 4 }} />
+                                <div style={{ fontSize: 22, fontWeight: 700 }}>{(pvStatus.self_consumption_pct || 0).toFixed(0)}%</div>
+                                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Eigenverbrauch' : 'Self-consumption'}</div>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="card animate-in" style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)', marginBottom: 16 }}>
+                            <span className="mdi mdi-solar-power" style={{ fontSize: 40, display: 'block', marginBottom: 8 }} />
+                            {lang === 'de' ? 'Solar nicht konfiguriert. Aktiviere Solar im Konfiguration-Tab und setze die Sensor-Entities.' : 'Solar not configured. Enable Solar in the Configuration tab and set the sensor entities.'}
+                        </div>
+                    )}
+
+                    {/* PV Priority Management */}
+                    <div className="card" style={{ overflow: 'hidden' }}>
+                        <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span style={{ fontWeight: 600 }}>
+                                <span className="mdi mdi-sort-ascending" style={{ marginRight: 6 }} />
+                                {lang === 'de' ? 'PV-Ueberschuss Prioritaeten' : 'PV Surplus Priorities'}
+                            </span>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+                                <input type="checkbox" checked={config?.pv_load_management || false}
+                                    onChange={e => {
+                                        const enabled = e.target.checked;
+                                        api.put('energy/pv-priorities', { enabled }).then(() => {
+                                            setConfig({ ...config, pv_load_management: enabled });
+                                            showToast(enabled ? (lang === 'de' ? 'PV-Lastmanagement aktiv' : 'PV load management active') : 'Off', 'success');
+                                        });
+                                    }} />
+                                {lang === 'de' ? 'Aktiv' : 'Active'}
+                            </label>
+                        </div>
+                        <div style={{ padding: 16 }}>
+                            <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 12 }}>
+                                {lang === 'de' ? 'Geraete werden bei PV-Ueberschuss (>100W) automatisch nach Prioritaet eingeschaltet.' : 'Devices are auto-activated by priority when PV surplus exceeds 100W.'}
+                            </p>
+                            {(config?.pv_priority_entities || []).length === 0 ? (
+                                <div style={{ padding: 12, textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>
+                                    {lang === 'de' ? 'Keine Prioritaeten gesetzt.' : 'No priorities set.'}
+                                </div>
+                            ) : (config.pv_priority_entities || []).map((eid, idx) => (
+                                <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--border-color)' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                        <span className="badge badge-info" style={{ fontSize: 10 }}>#{idx + 1}</span>
+                                        <span style={{ fontSize: 13 }}>{eid}</span>
+                                    </div>
+                                    <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }}
+                                        onClick={() => {
+                                            const updated = (config.pv_priority_entities || []).filter((_, i) => i !== idx);
+                                            api.put('energy/pv-priorities', { priority_entities: updated }).then(() => {
+                                                setConfig({ ...config, pv_priority_entities: updated });
+                                            });
+                                        }}>
+                                        <span className="mdi mdi-close" />
+                                    </button>
+                                </div>
+                            ))}
+                            <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                                <input className="form-input" style={{ flex: 1, fontSize: 12 }} placeholder="switch.wallbox, switch.waschmaschine..."
+                                    value={newPvEntity} onChange={e => setNewPvEntity(e.target.value)} />
+                                <button className="btn btn-sm btn-primary" disabled={!newPvEntity.trim()}
+                                    onClick={() => {
+                                        const updated = [...(config?.pv_priority_entities || []), newPvEntity.trim()];
+                                        api.put('energy/pv-priorities', { priority_entities: updated }).then(() => {
+                                            setConfig({ ...config, pv_priority_entities: updated });
+                                            setNewPvEntity('');
+                                            showToast(lang === 'de' ? 'Prioritaet hinzugefuegt' : 'Priority added', 'success');
+                                        });
+                                    }}>
+                                    <span className="mdi mdi-plus" />
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ── Forecast Tab ── */}
+            {tab === 'forecast' && (
+                <div>
+                    <div className="card" style={{ overflow: 'hidden' }}>
+                        <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)', fontWeight: 600 }}>
+                            <span className="mdi mdi-chart-timeline-variant" style={{ marginRight: 6, color: 'var(--accent-primary)' }} />
+                            {lang === 'de' ? '7-Tage Energieprognose' : '7-Day Energy Forecast'}
+                        </div>
+                        {forecast.length === 0 ? (
+                            <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)' }}>
+                                <span className="mdi mdi-chart-timeline-variant" style={{ fontSize: 36, display: 'block', marginBottom: 8 }} />
+                                {lang === 'de' ? 'Noch keine Prognose vorhanden. Die Prognose wird taeglich um 00:05 generiert.' : 'No forecast yet. Forecast is generated daily at 00:05.'}
+                            </div>
+                        ) : (
+                            <div>
+                                {/* Bar chart visualization */}
+                                <div style={{ padding: 16 }}>
+                                    {(() => {
+                                        const maxKwh = Math.max(...forecast.map(f => Math.max(f.predicted_kwh || 0, f.actual_kwh || 0)), 1);
+                                        const weekDays = lang === 'de' ? ['So','Mo','Di','Mi','Do','Fr','Sa'] : ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+                                        return (
+                                            <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', height: 180 }}>
+                                                {forecast.map((f, i) => {
+                                                    const predH = Math.max((f.predicted_kwh / maxKwh) * 150, 4);
+                                                    const actH = f.actual_kwh ? Math.max((f.actual_kwh / maxKwh) * 150, 4) : 0;
+                                                    const d = new Date(f.date);
+                                                    const dayLabel = weekDays[d.getDay()];
+                                                    const dateLabel = `${d.getDate()}.${d.getMonth() + 1}`;
+                                                    return (
+                                                        <div key={i} style={{ flex: 1, textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end' }}>
+                                                            <div style={{ fontSize: 10, fontWeight: 600, marginBottom: 4 }}>
+                                                                {f.predicted_kwh?.toFixed(1)}
+                                                            </div>
+                                                            <div style={{ display: 'flex', gap: 2, alignItems: 'flex-end' }}>
+                                                                <div style={{ width: 16, height: predH, background: 'var(--accent-primary)', borderRadius: '4px 4px 0 0', opacity: 0.8 }}
+                                                                    title={`${lang === 'de' ? 'Prognose' : 'Forecast'}: ${f.predicted_kwh?.toFixed(1)} kWh`} />
+                                                                {actH > 0 && (
+                                                                    <div style={{ width: 16, height: actH, background: 'var(--success)', borderRadius: '4px 4px 0 0', opacity: 0.8 }}
+                                                                        title={`${lang === 'de' ? 'Tatsaechlich' : 'Actual'}: ${f.actual_kwh?.toFixed(1)} kWh`} />
+                                                                )}
+                                                            </div>
+                                                            <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 4 }}>{dayLabel}</div>
+                                                            <div style={{ fontSize: 9, color: 'var(--text-muted)' }}>{dateLabel}</div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        );
+                                    })()}
+                                    <div style={{ display: 'flex', gap: 16, justifyContent: 'center', marginTop: 12, fontSize: 11 }}>
+                                        <span><span style={{ display: 'inline-block', width: 10, height: 10, background: 'var(--accent-primary)', borderRadius: 2, marginRight: 4, opacity: 0.8 }} />{lang === 'de' ? 'Prognose' : 'Forecast'}</span>
+                                        <span><span style={{ display: 'inline-block', width: 10, height: 10, background: 'var(--success)', borderRadius: 2, marginRight: 4, opacity: 0.8 }} />{lang === 'de' ? 'Tatsaechlich' : 'Actual'}</span>
+                                    </div>
+                                </div>
+
+                                {/* Detail table */}
+                                <table className="data-table" style={{ width: '100%' }}>
+                                    <thead><tr>
+                                        <th>{lang === 'de' ? 'Datum' : 'Date'}</th>
+                                        <th>{lang === 'de' ? 'Prognose' : 'Forecast'}</th>
+                                        <th>{lang === 'de' ? 'Tatsaechlich' : 'Actual'}</th>
+                                        <th>{lang === 'de' ? 'Wetter' : 'Weather'}</th>
+                                        <th>{lang === 'de' ? 'Typ' : 'Type'}</th>
+                                    </tr></thead>
+                                    <tbody>
+                                        {forecast.map((f, i) => (
+                                            <tr key={i}>
+                                                <td style={{ fontSize: 12 }}>{f.date}</td>
+                                                <td style={{ fontWeight: 600 }}>{f.predicted_kwh?.toFixed(2)} kWh</td>
+                                                <td>{f.actual_kwh ? `${f.actual_kwh.toFixed(2)} kWh` : <span style={{ color: 'var(--text-muted)' }}>–</span>}</td>
+                                                <td style={{ fontSize: 12 }}>{f.weather_condition || '–'}</td>
+                                                <td><span className="badge badge-info" style={{ fontSize: 10 }}>{f.day_type || '–'}</span></td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                    </div>
                 </div>
             )}
 
@@ -6345,6 +6713,27 @@ const EnergyPage = () => {
 
             {tab === 'standby' && (
                 <div>
+                    {/* Live standby devices */}
+                    {standbyLive.length > 0 && (
+                        <div className="card animate-in" style={{ marginBottom: 16, borderLeft: '4px solid var(--warning)' }}>
+                            <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)', fontWeight: 600, fontSize: 13 }}>
+                                <span className="mdi mdi-power-sleep" style={{ marginRight: 6, color: 'var(--warning)' }} />
+                                {lang === 'de' ? `${standbyLive.length} Geraet(e) im Standby` : `${standbyLive.length} device(s) in standby`}
+                            </div>
+                            {standbyLive.map((dev, i) => (
+                                <div key={i} style={{ padding: '8px 16px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <div>
+                                        <div style={{ fontSize: 13, fontWeight: 500 }}>{dev.entity_id}</div>
+                                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                                            {dev.power_w?.toFixed(1)} W · {lang === 'de' ? 'Idle seit' : 'Idle since'} {dev.idle_minutes ? `${dev.idle_minutes} min` : '–'}
+                                        </div>
+                                    </div>
+                                    <span className="badge badge-warning" style={{ fontSize: 10 }}>Standby</span>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
                         <span style={{ fontWeight: 600 }}>{lang === 'de' ? 'Standby-Erkennung' : 'Standby Detection'}</span>
                         <button className="btn btn-sm btn-primary" onClick={() => { api.get('energy/discover-sensors').then(d => setSensors(Array.isArray(d) ? d : [])); setShowAddStandby(true); }}>
@@ -6439,6 +6828,13 @@ const EnergyPage = () => {
                                     <input className="form-input" style={{ width: 220 }} value={config.grid_export_entity || ''} onChange={e => setConfig({ ...config, grid_export_entity: e.target.value })} />
                                 </div>
                             </div>
+                        )}
+                        {config.solar_enabled && (
+                            <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                                <input type="checkbox" checked={config.pv_load_management || false}
+                                    onChange={e => setConfig({ ...config, pv_load_management: e.target.checked })} />
+                                {lang === 'de' ? 'PV-Lastmanagement aktivieren' : 'Enable PV load management'}
+                            </label>
                         )}
                         <button className="btn btn-primary" onClick={saveConfig} style={{ alignSelf: 'flex-start' }}>{lang === 'de' ? 'Speichern' : 'Save'}</button>
                     </div>

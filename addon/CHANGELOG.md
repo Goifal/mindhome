@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.7.2 – Frontend Batch 1 + Feature-Flags UI
+
+### Energie-Dashboard: 3 neue Tabs
+- **Optimierung**: Spar-Empfehlungen mit EUR-Einsparpotenzial, Spitzenlast-Hinweise, Top-Verbraucher
+- **Solar/PV**: Live-Status (Produktion, Verbrauch, Ueberschuss, Eigenverbrauch-%), PV-Prioritaeten verwalten
+- **Prognose**: 7-Tage Balkendiagramm (Prognose vs. Ist), Detailtabelle mit Wetter und Tagestyp
+
+### Bestehende Tabs erweitert
+- **Uebersicht**: Quick-Cards fuer Einsparpotenzial, Solar-Status und Empfehlungen
+- **Standby**: Live-Standby-Geraete mit Idle-Dauer am Tab-Anfang
+- **Konfiguration**: PV-Lastmanagement Checkbox bei aktiviertem Solar
+
+### Settings: Phase 4 Feature-Flags
+- 20 Phase 4 Features einzeln steuerbar (Auto/An/Aus)
+- Klick-Zyklus: Auto → An → Aus → Auto
+- Icons und Labels fuer jedes Feature
+
+---
+
 ## 0.7.1 – Batch 1: Energie & Solar
 
 ### Energie-Optimierung (#1)

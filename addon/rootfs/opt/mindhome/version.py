@@ -4,12 +4,23 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "0.7.1"
-BUILD = 54
+VERSION = "0.7.2"
+BUILD = 55
 BUILD_DATE = "2026-02-14"
 CODENAME = "Phase 4 - Smart Health"
 
 # Changelog
+# Build 55: v0.7.2 Frontend Batch 1 + Phase 4 Feature-Flags UI
+#   - Energy-Dashboard: 3 neue Tabs (Optimierung, Solar/PV, Prognose)
+#   - Optimierung-Tab: Spar-Empfehlungen, Einsparpotenzial (EUR/kWh)
+#   - Solar/PV-Tab: Live-Status (Produktion/Verbrauch/Ueberschuss/Eigenverbrauch)
+#   - Solar/PV-Tab: PV-Prioritaeten-Management (Geraete hinzufuegen/entfernen)
+#   - Prognose-Tab: 7-Tage Balkendiagramm + Detailtabelle (Prognose vs Ist)
+#   - Standby-Tab: Live-Standby-Geraete mit Idle-Dauer oben angezeigt
+#   - Uebersicht-Tab: Quick-Cards (Einsparpotenzial, Solar, Empfehlungen)
+#   - Settings: Phase 4 Feature-Flags Panel (20 Features toggle: Auto/An/Aus)
+#   - Config-Tab: PV-Lastmanagement Checkbox bei Solar-Konfiguration
+#
 # Build 54: v0.7.1 Batch 1 - Energie & Solar
 #   - EnergyOptimizer: Verbrauchsmuster-Analyse, Spar-Empfehlungen, EUR-Schaetzung
 #   - EnergyForecaster: 7-Tage-Prognose (Wochentag + Wetter gewichtet)
