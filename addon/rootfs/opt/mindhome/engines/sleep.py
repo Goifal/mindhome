@@ -44,8 +44,7 @@ class SleepDetector:
             if not is_feature_enabled("phase4.sleep_detection"):
                 return
 
-            session = self.get_session()
-            try:
+            with self.get_session() as session:
                 now = datetime.now(timezone.utc)
                 hour = now.hour
 
@@ -69,7 +68,6 @@ class SleepDetector:
                             active_session.quality_score = self._calc_quality(
                                 session, active_session.sleep_start, now, uid
                             )
-                            session.commit()
                             self._sleep_active.pop(uid, None)
                             self.event_bus.emit("wake_detected", {
                                 "user_id": uid,
@@ -87,23 +85,38 @@ class SleepDetector:
                                 source="auto",
                             )
                             session.add(ss)
-                            session.commit()
+                            session.flush()
                             self._sleep_active[uid] = ss.id
                             self.event_bus.emit("sleep_detected", {
                                 "user_id": uid,
                                 "session_id": ss.id,
                             })
                             logger.info(f"Sleep detected user={uid}")
-            finally:
-                session.close()
         except Exception as e:
             logger.error(f"SleepDetector check error: {e}")
 
     def _detect_sleep(self, session, now):
-        """Heuristic: Bedroom lights off + no motion for 30+ min."""
+        """Heuristic: Bed occupancy sensor OR (lights off + no motion 30 min)."""
         from models import StateHistory
+
+        # Priority 1: Bed occupancy sensor (binary_sensor with device_class=occupancy)
+        try:
+            states = self.ha.get_states() or []
+            bed_sensors = [s for s in states
+                           if s.get("entity_id", "").startswith("binary_sensor.")
+                           and s.get("attributes", {}).get("device_class") == "occupancy"]
+            if bed_sensors:
+                # If any bed sensor is "on" (occupied), sleep detected
+                occupied = any(s.get("state") == "on" for s in bed_sensors)
+                if occupied:
+                    logger.debug("Sleep detected via bed occupancy sensor")
+                    return True
+                return False  # Bed sensors exist but not occupied
+        except Exception:
+            pass
+
+        # Priority 2: Fallback — no motion + lights off for 30+ min
         cutoff = now - timedelta(minutes=30)
-        # Check bedroom motion sensors
         recent_motion = session.query(StateHistory).filter(
             StateHistory.entity_id.like("binary_sensor.%motion%"),
             StateHistory.new_state == "on",
@@ -112,7 +125,6 @@ class SleepDetector:
         if recent_motion > 0:
             return False
 
-        # Check bedroom lights
         recent_lights = session.query(StateHistory).filter(
             StateHistory.entity_id.like("light.%"),
             StateHistory.new_state == "on",
@@ -121,9 +133,8 @@ class SleepDetector:
         if recent_lights > 0:
             return False
 
-        # Also check HA current states: any light on?
+        # Check HA: bedroom lights currently on?
         try:
-            states = self.ha.get_states() or []
             lights_on = [s for s in states if s.get("entity_id", "").startswith("light.")
                          and s.get("state") == "on"
                          and ("schlaf" in s.get("entity_id", "").lower()
@@ -137,7 +148,23 @@ class SleepDetector:
         return True
 
     def _detect_wake(self, session, now):
-        """Heuristic: Motion detected or lights on in last 5 min."""
+        """Heuristic: Bed sensor off OR motion/lights in last 5 min."""
+        # Priority 1: Bed occupancy sensor turned off (person left bed)
+        try:
+            states = self.ha.get_states() or []
+            bed_sensors = [s for s in states
+                           if s.get("entity_id", "").startswith("binary_sensor.")
+                           and s.get("attributes", {}).get("device_class") == "occupancy"]
+            if bed_sensors:
+                all_empty = all(s.get("state") == "off" for s in bed_sensors)
+                if all_empty:
+                    logger.debug("Wake detected via bed occupancy sensor (all off)")
+                    return True
+                return False  # Still in bed
+        except Exception:
+            pass
+
+        # Priority 2: Fallback — motion or lights in last 5 min
         from models import StateHistory
         cutoff = now - timedelta(minutes=5)
         recent_activity = session.query(StateHistory).filter(
@@ -204,8 +231,7 @@ class SleepDetector:
         """Return recent SleepSession entries."""
         try:
             from models import SleepSession
-            session = self.get_session()
-            try:
+            with self.get_session() as session:
                 cutoff = datetime.now(timezone.utc) - timedelta(days=days)
                 q = session.query(SleepSession).filter(SleepSession.created_at > cutoff)
                 if user_id:
@@ -221,8 +247,6 @@ class SleepDetector:
                     "source": s.source,
                     "context": s.context,
                 } for s in sessions]
-            finally:
-                session.close()
         except Exception as e:
             logger.error(f"get_recent_sessions error: {e}")
             return []
@@ -261,8 +285,7 @@ class WakeUpManager:
             if not is_feature_enabled("phase4.smart_wakeup"):
                 return
 
-            session = self.get_session()
-            try:
+            with self.get_session() as session:
                 now = datetime.now(timezone.utc)
                 configs = session.query(WakeUpConfig).filter(
                     WakeUpConfig.enabled == True,
@@ -304,8 +327,6 @@ class WakeUpManager:
                     elif now > today and cfg.id in self._active_ramps:
                         # Ramp complete, clean up
                         del self._active_ramps[cfg.id]
-            finally:
-                session.close()
         except Exception as e:
             logger.error(f"WakeUpManager check error: {e}")
 
@@ -360,8 +381,7 @@ class WakeUpManager:
         """Return all WakeUpConfig entries."""
         try:
             from models import WakeUpConfig
-            session = self.get_session()
-            try:
+            with self.get_session() as session:
                 q = session.query(WakeUpConfig)
                 if user_id:
                     q = q.filter(WakeUpConfig.user_id == user_id)
@@ -378,8 +398,6 @@ class WakeUpManager:
                     "ramp_minutes": c.ramp_minutes,
                     "is_active": c.is_active,
                 } for c in configs]
-            finally:
-                session.close()
         except Exception as e:
             logger.error(f"get_configs error: {e}")
             return []

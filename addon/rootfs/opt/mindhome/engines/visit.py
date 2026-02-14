@@ -35,8 +35,7 @@ class VisitPreparationManager:
         """Activate a visit preparation by ID — execute all actions."""
         try:
             from models import VisitPreparation
-            session = self.get_session()
-            try:
+            with self.get_session() as session:
                 prep = session.get(VisitPreparation, preparation_id)
                 if not prep:
                     return {"error": "Preparation not found"}
@@ -64,8 +63,6 @@ class VisitPreparationManager:
                 })
                 logger.info(f"Visit preparation '{prep.name}' activated: {executed}/{len(actions)} actions")
                 return {"success": True, "actions_executed": executed, "total_actions": len(actions)}
-            finally:
-                session.close()
         except Exception as e:
             logger.error(f"activate error: {e}")
             return {"error": str(e)}
@@ -74,8 +71,7 @@ class VisitPreparationManager:
         """Return list of configured visit preparations."""
         try:
             from models import VisitPreparation
-            session = self.get_session()
-            try:
+            with self.get_session() as session:
                 preps = session.query(VisitPreparation).order_by(VisitPreparation.name).all()
                 return [{
                     "id": p.id,
@@ -87,8 +83,6 @@ class VisitPreparationManager:
                     "is_active": p.is_active,
                     "created_at": p.created_at.isoformat() if p.created_at else None,
                 } for p in preps]
-            finally:
-                session.close()
         except Exception as e:
             logger.error(f"get_preparations error: {e}")
             return []
@@ -106,8 +100,7 @@ class VisitPreparationManager:
             if not is_feature_enabled("phase4.visit_preparation"):
                 return
 
-            session = self.get_session()
-            try:
+            with self.get_session() as session:
                 auto_preps = session.query(VisitPreparation).filter(
                     VisitPreparation.auto_trigger == True,
                     VisitPreparation.is_active == True
@@ -127,8 +120,6 @@ class VisitPreparationManager:
                                     self.activate(prep.id)
                             except Exception:
                                 pass
-            finally:
-                session.close()
         except Exception as e:
             logger.error(f"check_triggers error: {e}")
 
