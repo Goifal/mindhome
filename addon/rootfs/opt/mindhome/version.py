@@ -4,12 +4,16 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "0.6.48"
-BUILD = 49
+VERSION = "0.6.49"
+BUILD = 50
 BUILD_DATE = "2026-02-14"
 CODENAME = "Phase 3.5 - Kalender & Presence"
 
 # Changelog
+# Build 50: v0.6.49 TTS Speaker-Toggle rechts + UI Polish
+#   - Speaker Ein/Aus-Toggle nach ganz rechts verschoben
+#   - Layout: Name | Raum-Dropdown | Test | Toggle
+#
 # Build 49: v0.6.48 Einzelne TTS-Speaker ein/ausschaltbar
 #   - Toggle pro Speaker in der TTS-Sektion (ein/aus)
 #   - Deaktivierte Speaker werden im Backend gefiltert (tts_disabled_speakers)
