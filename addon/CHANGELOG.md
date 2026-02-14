@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.16 – Korrelations-Qualitaetsfilter (4220 → ~30 Patterns)
+
+### Fix
+- **Baseline-Filter**: Entities die >85% der Zeit im gleichen State sind werden als triviale Korrelation uebersprungen (z.B. person.home=home 95% → uninformativ)
+- **Bidirektionale Dedup**: A→B und B→A erzeugen nicht mehr zwei Patterns — nur die staerkere Richtung wird behalten
+- **Hoehere Schwellwerte**: Count same-room 4→6, cross-room 7→10; Confidence same 0.3→0.4, cross 0.5→0.55
+
 ## 0.7.15 – Fix Korrelations-Ratio Berechnung (kritischer Bug)
 
 ### Fix

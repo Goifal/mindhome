@@ -4,16 +4,21 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "0.7.15"
-BUILD = 68
+VERSION = "0.7.16"
+BUILD = 69
 BUILD_DATE = "2026-02-15"
 CODENAME = "Phase 4 - Smart Health"
 
 # Changelog
+# Build 69: v0.7.16 Korrelations-Qualitaetsfilter (4220 → ~30 Patterns)
+#   - Baseline-Filter: Entities die >85% der Zeit im gleichen State sind = triviale Korrelation
+#     (z.B. person.home=home 95% → jede Korrelation damit ist uninformativ)
+#   - Bidirektionale Dedup: A→B und B→A = nur die staerkere Richtung behalten
+#   - Hoehere Count-Schwellwerte: same-room 4→6, cross-room 7→10
+#   - Hoehere Confidence-Schwellwerte: same-room 0.3→0.4, cross-room 0.5→0.55
+#
 # Build 68: v0.7.15 Fix Korrelations-Ratio Berechnung (kritischer Bug)
 #   - CRITICAL FIX: ratio = count / total war falsch — total summierte ALLE Entity/State-Paare
-#     Bei 50 Entities wurde ratio um Faktor ~50 verduennt (0.75 → 0.015)
-#     Jetzt: ratio pro Target-Entity berechnet (korrekt: "75% wenn Kueche an, ist Wohnzimmer auch an")
 #   - Schwellwerte zurueck auf Originalwerte (0.7/0.8) da Ratios jetzt korrekt berechnet werden
 #
 # Build 67: v0.7.14 Fix Zeitmuster-Confidence + Korrelations-Schwellwerte
