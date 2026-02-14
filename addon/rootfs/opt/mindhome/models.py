@@ -1729,6 +1729,27 @@ MIGRATIONS = [
             "ALTER TABLE learned_scenes ADD COLUMN action_delay_seconds INTEGER DEFAULT 0",
         ]
     },
+    {
+        "version": 11,
+        "description": "v0.7.0 - Pattern detection quality: missing indexes, performance",
+        "sql": [
+            # Fix #25: PatternMatchLog — composite index for per-pattern time queries
+            "CREATE INDEX IF NOT EXISTS idx_pattern_match_log_pattern_matched ON pattern_match_log(pattern_id, matched_at DESC)",
+            # Fix #25: PatternExclusion — lookup index
+            "CREATE INDEX IF NOT EXISTS idx_pattern_exclusions_lookup ON pattern_exclusions(entity_a, entity_b)",
+            # Fix #25: NotificationLog — user + time queries
+            "CREATE INDEX IF NOT EXISTS idx_notification_log_user_created ON notification_log(user_id, created_at DESC)",
+            "CREATE INDEX IF NOT EXISTS idx_notification_log_unread ON notification_log(user_id, was_read)",
+            # Fix #25: RoomDomainState — mode filtering
+            "CREATE INDEX IF NOT EXISTS idx_room_domain_state_mode ON room_domain_states(mode)",
+            "CREATE INDEX IF NOT EXISTS idx_room_domain_state_lookup ON room_domain_states(room_id, domain_id)",
+            # Fix #25: LearnedScene — room + status filtering
+            "CREATE INDEX IF NOT EXISTS idx_learned_scenes_room_active ON learned_scenes(room_id, is_active)",
+            "CREATE INDEX IF NOT EXISTS idx_learned_scenes_status ON learned_scenes(status, is_active)",
+            # Fix #25: Domain — enabled filtering
+            "CREATE INDEX IF NOT EXISTS idx_domain_enabled ON domains(is_enabled)",
+        ]
+    },
 ]
 
 

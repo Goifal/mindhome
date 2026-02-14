@@ -1,14 +1,18 @@
-# MindHome Pattern Engine v0.6.2 (2026-02-10) - pattern_engine.py
+# MindHome Pattern Engine v0.7.0 (2026-02-14) - pattern_engine.py
 """
-MindHome - Pattern Engine (Phase 2a + Phase 3)
+MindHome - Pattern Engine (Phase 2a + Phase 3 + Phase 4 fixes)
 Core intelligence: state logging, context building, pattern detection.
 Phase 3: Context tags (person, day phase, shift), significance thresholds,
          sensor fusion, scene detection, holiday awareness.
+Phase 4 fixes: Midnight clustering, cross-room confidence, bidirectional
+         loop detection, correlation room filter, upsert confidence decay,
+         unavailable/unknown filtering, automation-chain detection.
 """
 
 import os
 import json
 import logging
+import math
 import threading
 import time
 from datetime import datetime, timedelta, timezone
@@ -224,7 +228,14 @@ class ContextBuilder:
                         current_minutes = hour * 60 + now.minute
                         for phase in reversed(phases):
                             if phase.start_type == "time" and phase.start_time:
-                                ph, pm = map(int, phase.start_time.split(":"))
+                                # Fix #26: Validate time string format
+                                try:
+                                    parts = phase.start_time.split(":")
+                                    ph, pm = int(parts[0]), int(parts[1])
+                                    if not (0 <= ph <= 23 and 0 <= pm <= 59):
+                                        continue
+                                except (ValueError, IndexError):
+                                    continue
                                 phase_minutes = ph * 60 + pm
                                 if current_minutes >= phase_minutes:
                                     current_phase = phase
@@ -657,13 +668,38 @@ class StateLogger:
 class PatternDetector:
     """Analyzes state_history to find recurring patterns."""
 
+    # Fix #11: Mutex to prevent concurrent analysis runs
+    _analysis_lock = threading.Lock()
+
     def __init__(self, engine):
         self.engine = engine
         self.Session = sessionmaker(bind=engine)
+        self._device_cache = {}
 
     def run_full_analysis(self):
-        """B6: Run complete pattern analysis (called by scheduler)."""
+        """B6: Run complete pattern analysis (called by scheduler).
+
+        v0.7.0: Added mutex lock, exclusion passthrough to detectors,
+        unavailable/unknown event filtering, cross-room correlation integration.
+        """
+        # Fix #11: Prevent concurrent analysis runs
+        if not self._analysis_lock.acquire(blocking=False):
+            logger.warning("Pattern analysis already running, skipping")
+            return
+        try:
+            self._run_full_analysis_inner()
+        finally:
+            self._analysis_lock.release()
+
+    def _run_full_analysis_inner(self):
+        """Inner analysis method (runs under lock)."""
         logger.info("Starting pattern analysis...")
+
+        # Fix #18: Clear upsert caches from previous run
+        for attr in list(vars(self)):
+            if attr.startswith("_upsert_cache_"):
+                delattr(self, attr)
+        self._device_cache = {}
 
         # Phase 1: Read events into memory, then close read session immediately
         # to avoid holding SQLite locks during long-running analysis
@@ -726,6 +762,13 @@ class PatternDetector:
             if filtered:
                 logger.info(f"Filtered {filtered} events from disabled domains/rooms")
 
+        # Fix #7: Filter out events with invalid HA states (unavailable, unknown)
+        before_count = len(events)
+        events = [ev for ev in events if ev.new_state not in self._INVALID_STATES]
+        invalid_filtered = before_count - len(events)
+        if invalid_filtered:
+            logger.info(f"Filtered {invalid_filtered} events with invalid states (unavailable/unknown)")
+
         logger.info(f"Analyzing {len(events)} events from last 14 days")
 
         # Phase 2: Run analysis and write results in a separate session
@@ -735,20 +778,18 @@ class PatternDetector:
             time_patterns = self._detect_time_patterns(session, events)
 
             # B2: Sequence patterns (event chains)
-            sequence_patterns = self._detect_sequence_patterns(session, events)
+            # Fix #10: Pass exclusions directly to detectors for immediate effect
+            sequence_patterns = self._detect_sequence_patterns(session, events, excluded_pairs)
 
-            # B3: Correlation patterns (filter by exclusions)
-            correlation_patterns = self._detect_correlation_patterns(session, events)
+            # B3: Correlation patterns (with exclusions)
+            correlation_patterns = self._detect_correlation_patterns(session, events, excluded_pairs)
 
-            # Filter out excluded pairs from correlation patterns
-            for p in correlation_patterns:
-                pd = p.pattern_data or {}
-                ea = pd.get("entity_a", "")
-                eb = pd.get("entity_b", "")
-                if (ea, eb) in excluded_pairs:
-                    p.is_active = False
-                    p.status = "disabled"
-                    logger.info(f"Pattern {p.id} disabled: excluded pair {ea} <-> {eb}")
+            # Fix #24: Cross-room correlations (was orphaned, now integrated)
+            try:
+                cross_room = self.detect_cross_room_correlations(session)
+                logger.info(f"Cross-room correlations: {len(cross_room)} room pairs found")
+            except Exception as e:
+                logger.warning(f"Cross-room correlation error: {e}")
 
             # B7: Domain-specific confidence boost
             self._apply_domain_scoring(session)
@@ -929,12 +970,22 @@ class PatternDetector:
         }
 
     def detect_cross_room_correlations(self, session):
-        """#56: Detect patterns across rooms (e.g. kitchen→dining room)."""
+        """#56: Detect patterns across rooms (e.g. kitchen→dining room).
+
+        Fix #17: Pre-fetches all devices to avoid N+1 query explosion.
+        Previously did one DB query per event per window (~20k queries).
+        """
         try:
             cutoff = datetime.now(timezone.utc) - timedelta(days=14)
             history = session.query(StateHistory).filter(
                 StateHistory.created_at > cutoff
             ).order_by(StateHistory.created_at).all()
+
+            # Fix #17: Pre-fetch ALL device→room mappings in one query
+            all_devices = session.query(Device).filter(
+                Device.room_id.isnot(None)
+            ).all()
+            entity_room_map = {d.ha_entity_id: d.room_id for d in all_devices}
 
             # Group by 60-second windows
             windows = {}
@@ -946,14 +997,13 @@ class PatternDetector:
 
             # Find cross-room pairs
             correlations = []
-            from collections import Counter
             pair_counter = Counter()
             for wk, events in windows.items():
                 rooms = set()
                 for e in events:
-                    device = session.query(Device).filter_by(ha_entity_id=e.entity_id).first()
-                    if device and device.room_id:
-                        rooms.add(device.room_id)
+                    room_id = entity_room_map.get(e.entity_id)
+                    if room_id:
+                        rooms.add(room_id)
                 if len(rooms) >= 2:
                     for r1 in rooms:
                         for r2 in rooms:
@@ -962,8 +1012,8 @@ class PatternDetector:
 
             for (r1, r2), count in pair_counter.most_common(5):
                 if count >= 5:
-                    room1 = session.get(Room,r1)
-                    room2 = session.get(Room,r2)
+                    room1 = session.get(Room, r1)
+                    room2 = session.get(Room, r2)
                     if room1 and room2:
                         correlations.append({
                             "room_a": {"id": r1, "name": room1.name},
@@ -1134,25 +1184,42 @@ class PatternDetector:
         domain_b = entity_b.split(".")[0]
         return domain_a in self._SENSOR_ONLY_DOMAINS and domain_b in self._SENSOR_ONLY_DOMAINS
 
-    def _detect_sequence_patterns(self, session, events):
-        """Find A→B event chains (within time window)."""
+    # HA states that indicate errors, not real device activity
+    _INVALID_STATES = frozenset({"unavailable", "unknown", "none", ""})
+
+    def _detect_sequence_patterns(self, session, events, excluded_pairs=None):
+        """Find A→B event chains (within time window).
+
+        v0.7.0 fixes: cross-room confidence formula, bidirectional loop
+        detection, unavailable/unknown filtering, automation-chain detection,
+        timing consistency as confidence factor, minimum absolute timing
+        tolerance, increased example cap, pre-fetched device names.
+        """
         patterns_found = []
+        excluded_pairs = excluded_pairs or set()
         CHAIN_WINDOW = self._get_pattern_setting(session, "chain_window_seconds", 120)
 
-        # Pre-build entity→room_id lookup for room-aware filtering
+        # Pre-build entity→room_id AND entity→name lookup (avoid N+1 queries)
         all_entity_ids = {ev.entity_id for ev in events}
         entity_room_map = {}
+        entity_name_map = {}
         if all_entity_ids:
             devs = session.query(Device).filter(
                 Device.ha_entity_id.in_(all_entity_ids)
             ).all()
             entity_room_map = {d.ha_entity_id: d.room_id for d in devs}
+            entity_name_map = {d.ha_entity_id: d.name for d in devs}
+            self._device_cache = {d.ha_entity_id: d for d in devs}
 
         # Build pairs: for each event, what happened within the time window after?
         pairs = defaultdict(int)
         pair_examples = defaultdict(list)
 
         for i, ev_a in enumerate(events):
+            # Fix #7: Skip invalid HA states (unavailable, unknown)
+            if ev_a.new_state in self._INVALID_STATES:
+                continue
+
             for j in range(i + 1, len(events)):
                 ev_b = events[j]
                 delta = (ev_b.created_at - ev_a.created_at).total_seconds()
@@ -1163,11 +1230,23 @@ class PatternDetector:
                     continue
                 if ev_a.entity_id == ev_b.entity_id:
                     continue
+                # Fix #7: Skip invalid states on B side too
+                if ev_b.new_state in self._INVALID_STATES:
+                    continue
                 # Skip sensor→sensor pairs (numeric correlations, not actionable)
                 if self._is_same_domain_sensor_pair(ev_a.entity_id, ev_b.entity_id):
                     continue
                 # Action side must be controllable (sensor as action makes no sense)
                 if ev_b.entity_id.split(".")[0] not in self._ACTIONABLE_DOMAINS:
+                    continue
+                # Fix #10: Skip excluded entity pairs
+                if (ev_a.entity_id, ev_b.entity_id) in excluded_pairs:
+                    continue
+
+                # Fix #22: Skip if B was triggered by an HA automation
+                ctx_b = ev_b.context if isinstance(ev_b.context, dict) else {}
+                context_id = ctx_b.get("context_id", "")
+                if isinstance(context_id, str) and context_id.startswith("automation."):
                     continue
 
                 key = (
@@ -1175,7 +1254,8 @@ class PatternDetector:
                     ev_b.entity_id, ev_b.new_state
                 )
                 pairs[key] += 1
-                if len(pair_examples[key]) < 20:
+                # Fix #19: Increase example cap from 20 to 50 for better statistics
+                if len(pair_examples[key]) < 50:
                     pair_examples[key].append({
                         "delta_seconds": delta,
                         "context_a": ev_a.context,
@@ -1188,6 +1268,9 @@ class PatternDetector:
         min_confidence_base = self._get_pattern_setting(session, "min_confidence", 0.45)
         min_confidence_cross = self._get_pattern_setting(session, "min_confidence_cross_room", 0.65)
         cross_room_filtered = 0
+
+        # Fix #6: Collect accepted patterns to detect bidirectional loops
+        accepted_pairs = set()
 
         for (eid_a, state_a, eid_b, state_b), count in pairs.items():
             # Determine if same room or cross-room
@@ -1204,6 +1287,12 @@ class PatternDetector:
                     cross_room_filtered += 1
                 continue
 
+            # Fix #6: Skip reverse direction if forward already accepted
+            reverse_key = (eid_b, state_b, eid_a, state_a)
+            if reverse_key in accepted_pairs:
+                logger.debug(f"Skipping reverse pattern {eid_b}→{eid_a} (forward exists)")
+                continue
+
             examples = pair_examples[(eid_a, state_a, eid_b, state_b)]
             avg_delta = sum(e["delta_seconds"] for e in examples) / len(examples)
 
@@ -1211,9 +1300,12 @@ class PatternDetector:
             deltas = [e["delta_seconds"] for e in examples]
             delta_std = (sum((d - avg_delta)**2 for d in deltas) / len(deltas))**0.5
 
-            # Skip if timing is too variable (std > 60% of mean, stricter for cross-room)
+            # Fix #21: Minimum absolute tolerance for short delays
+            # A 3s avg with 2s std is normal for motion→light patterns
             max_variation = 0.6 if same_room else 0.4
-            if delta_std > avg_delta * max_variation:
+            min_abs_tolerance = 5.0  # seconds — always allow at least 5s std
+            timing_threshold = max(avg_delta * max_variation, min_abs_tolerance)
+            if delta_std > timing_threshold:
                 if not same_room:
                     cross_room_filtered += 1
                 continue
@@ -1222,9 +1314,23 @@ class PatternDetector:
             contexts_a = [e.get("context_a", {}) for e in examples if e.get("context_a")]
             common_persons = self._find_common_persons(contexts_a)
 
-            confidence = min((count / (effective_min_count * 1.5)) * 0.8, 0.90)
+            # Fix #1: Separate confidence formula for same-room vs cross-room
+            # Same-room: count/min_count scales 0..1, then * 0.8, capped at 0.90
+            # Cross-room: use same base formula (count/min_count) so min_count
+            # threshold is effective (not double-penalized)
+            base_ratio = min(count / effective_min_count, 2.0)  # cap at 2x
+            confidence = min(base_ratio * 0.5, 0.90)
+
+            # Fix #20: Timing consistency bonus — tight timing = more confidence
+            if avg_delta > 0:
+                timing_consistency = max(0, 1.0 - (delta_std / max(avg_delta, 1.0)))
+                confidence = min(confidence + timing_consistency * 0.15, 0.90)
+
             if confidence < effective_min_conf:
                 continue
+
+            # Fix #6: Track accepted pair
+            accepted_pairs.add((eid_a, state_a, eid_b, state_b))
 
             pattern_data = {
                 "trigger_entity": eid_a,
@@ -1253,10 +1359,9 @@ class PatternDetector:
                 "target_state": state_b,
             }
 
-            dev_a = session.query(Device).filter_by(ha_entity_id=eid_a).first()
-            dev_b = session.query(Device).filter_by(ha_entity_id=eid_b).first()
-            name_a = dev_a.name if dev_a else eid_a
-            name_b = dev_b.name if dev_b else eid_b
+            # Fix #16: Use pre-fetched name map instead of DB queries
+            name_a = entity_name_map.get(eid_a, eid_a)
+            name_b = entity_name_map.get(eid_b, eid_b)
             state_a_de = "eingeschaltet" if state_a == "on" else ("ausgeschaltet" if state_a == "off" else state_a)
             state_b_de = "eingeschaltet" if state_b == "on" else ("ausgeschaltet" if state_b == "off" else state_b)
 
@@ -1264,6 +1369,7 @@ class PatternDetector:
             desc_de = f"Wenn {name_a} {state_a_de} wird → {name_b} wird nach ~{delay_str} {state_b_de}"
             desc_en = f"When {name_a} turns {state_a} → {name_b} turns {state_b} after ~{delay_str}"
 
+            dev_b = self._device_cache.get(eid_b)
             p = self._upsert_pattern(
                 session, f"{eid_a}→{eid_b}", "event_chain", pattern_data,
                 confidence, trigger_conditions, action_def,
@@ -1281,19 +1387,48 @@ class PatternDetector:
     # B3: Correlation patterns
     # --------------------------------------------------------------------------
 
-    def _detect_correlation_patterns(self, session, events):
-        """Find state correlations (when X is Y, Z is usually W)."""
+    def _detect_correlation_patterns(self, session, events, excluded_pairs=None):
+        """Find state correlations (when X is Y, Z is usually W).
+
+        v0.7.0 fixes: room-aware filtering (same thresholds as sequence
+        patterns), entity_states time-based cleanup, unavailable/unknown
+        filtering, pre-fetched device names, exclusion support.
+        """
         patterns_found = []
+        excluded_pairs = excluded_pairs or set()
+
+        # Fix #8: Pre-build entity→room_id and name lookup
+        all_entity_ids = {ev.entity_id for ev in events}
+        entity_room_map = {}
+        entity_name_map = {}
+        if all_entity_ids:
+            devs = session.query(Device).filter(
+                Device.ha_entity_id.in_(all_entity_ids)
+            ).all()
+            entity_room_map = {d.ha_entity_id: d.room_id for d in devs}
+            entity_name_map = {d.ha_entity_id: d.name for d in devs}
+            if not hasattr(self, '_device_cache'):
+                self._device_cache = {}
+            self._device_cache.update({d.ha_entity_id: d for d in devs})
 
         # Build state snapshots: for each entity, when it changes,
         # what are the states of other entities?
         entity_states = {}  # current known state per entity
+        entity_last_seen = {}  # Fix #9: track when state was last updated
 
         cooccurrences = defaultdict(lambda: defaultdict(int))
         # cooccurrences[(entity_a, state_a)][(entity_b, state_b)] = count
 
+        # Fix #9: Max staleness for correlated states (2 hours)
+        MAX_STATE_AGE_SECONDS = 7200
+
         for ev in events:
+            # Fix #7: Skip invalid states
+            if ev.new_state in self._INVALID_STATES:
+                continue
+
             entity_states[ev.entity_id] = ev.new_state
+            entity_last_seen[ev.entity_id] = ev.created_at
 
             # Only check correlations for "important" state changes
             ha_domain = ev.entity_id.split(".")[0]
@@ -1307,10 +1442,29 @@ class PatternDetector:
                 other_domain = other_eid.split(".")[0]
                 if other_domain in {"sensor", "weather"}:
                     continue  # Skip numeric sensors
+                # Fix #7: Skip invalid states in correlated entities
+                if other_state in self._INVALID_STATES:
+                    continue
+                # Fix #10: Skip excluded pairs
+                if (ev.entity_id, other_eid) in excluded_pairs:
+                    continue
+
+                # Fix #9: Only correlate with recently-seen states
+                other_last = entity_last_seen.get(other_eid)
+                if other_last:
+                    age = (ev.created_at - other_last).total_seconds()
+                    if age > MAX_STATE_AGE_SECONDS:
+                        continue
 
                 cooccurrences[(ev.entity_id, ev.new_state)][(other_eid, other_state)] += 1
 
         # Find strong correlations
+        # Fix #8: Room-aware thresholds for correlations
+        min_corr_count_same = 4
+        min_corr_count_cross = 10
+        min_corr_ratio_same = 0.7
+        min_corr_ratio_cross = 0.8
+
         for (eid_a, state_a), targets in cooccurrences.items():
             total = sum(targets.values())
             if total < 5:
@@ -1318,11 +1472,21 @@ class PatternDetector:
 
             for (eid_b, state_b), count in targets.items():
                 ratio = count / total
-                if ratio < 0.7 or count < 4:
+
+                # Fix #8: Apply room-aware filtering
+                room_a = entity_room_map.get(eid_a)
+                room_b = entity_room_map.get(eid_b)
+                same_room = (room_a is not None and room_b is not None and room_a == room_b)
+
+                min_count = min_corr_count_same if same_room else min_corr_count_cross
+                min_ratio = min_corr_ratio_same if same_room else min_corr_ratio_cross
+
+                if ratio < min_ratio or count < min_count:
                     continue
 
                 confidence = min(ratio * (count / 14), 0.85)
-                if confidence < 0.3:
+                min_conf = 0.3 if same_room else 0.5
+                if confidence < min_conf:
                     continue
 
                 pattern_data = {
@@ -1333,6 +1497,7 @@ class PatternDetector:
                     "correlation_ratio": round(ratio, 3),
                     "occurrence_count": count,
                     "total_observations": total,
+                    "same_room": same_room,
                 }
 
                 trigger_conditions = {
@@ -1346,14 +1511,14 @@ class PatternDetector:
                     "target_state": state_b,
                 }
 
-                dev_a = session.query(Device).filter_by(ha_entity_id=eid_a).first()
-                dev_b = session.query(Device).filter_by(ha_entity_id=eid_b).first()
-                name_a = dev_a.name if dev_a else eid_a
-                name_b = dev_b.name if dev_b else eid_b
+                # Fix #16: Use pre-fetched names
+                name_a = entity_name_map.get(eid_a, eid_a)
+                name_b = entity_name_map.get(eid_b, eid_b)
 
                 desc_de = f"Wenn {name_a} = {state_a}, ist {name_b} meist {state_b} ({int(ratio*100)}%)"
                 desc_en = f"When {name_a} = {state_a}, {name_b} is usually {state_b} ({int(ratio*100)}%)"
 
+                dev_b = self._device_cache.get(eid_b)
                 p = self._upsert_pattern(
                     session, f"{eid_a}↔{eid_b}", "correlation", pattern_data,
                     confidence, trigger_conditions, action_def,
@@ -1383,7 +1548,11 @@ class PatternDetector:
         return default
 
     def _cluster_by_time(self, occurrences, window_minutes=30):
-        """Cluster events by time of day (ignoring date)."""
+        """Cluster events by time of day (ignoring date).
+
+        Fix #2: Handles midnight wrap-around correctly.
+        Events at 23:50 and 00:10 are now recognized as 20 minutes apart.
+        """
         # Convert to minutes since midnight
         minutes_list = []
         for o in occurrences:
@@ -1391,6 +1560,10 @@ class PatternDetector:
             minutes_list.append((m, o))
 
         minutes_list.sort(key=lambda x: x[0])
+
+        if not minutes_list:
+            return []
+
         clusters = []
         current_cluster = [minutes_list[0]]
 
@@ -1402,13 +1575,40 @@ class PatternDetector:
                 current_cluster = [minutes_list[i]]
 
         clusters.append([o for _, o in current_cluster])
+
+        # Fix #2: Check if first and last cluster wrap around midnight
+        if len(clusters) >= 2:
+            first_cluster_min = min(o["hour"] * 60 + o["minute"] for o in clusters[0])
+            last_cluster_max = max(o["hour"] * 60 + o["minute"] for o in clusters[-1])
+            # Distance across midnight: (1440 - last) + first
+            midnight_gap = (1440 - last_cluster_max) + first_cluster_min
+            if midnight_gap <= window_minutes:
+                # Merge first and last cluster
+                merged = clusters[-1] + clusters[0]
+                clusters = [merged] + clusters[1:-1]
+
         return clusters
 
     def _average_time(self, cluster):
-        """Calculate average hour:minute from cluster."""
-        total_min = sum(o["hour"] * 60 + o["minute"] for o in cluster)
-        avg_min = total_min / len(cluster)
-        return int(avg_min // 60), int(avg_min % 60)
+        """Calculate average hour:minute from cluster.
+
+        Fix #3: Uses circular averaging to handle midnight wrap-around.
+        Events at 23:50 and 00:10 correctly average to ~00:00, not 12:00.
+        """
+        # Use circular mean via sin/cos to handle midnight wrap
+        sin_sum = 0.0
+        cos_sum = 0.0
+        for o in cluster:
+            minutes = o["hour"] * 60 + o["minute"]
+            angle = (minutes / 1440.0) * 2 * math.pi  # Convert to radians
+            sin_sum += math.sin(angle)
+            cos_sum += math.cos(angle)
+
+        avg_angle = math.atan2(sin_sum / len(cluster), cos_sum / len(cluster))
+        if avg_angle < 0:
+            avg_angle += 2 * math.pi
+        avg_min = (avg_angle / (2 * math.pi)) * 1440.0
+        return int(avg_min // 60) % 24, int(avg_min % 60)
 
     def _find_common_persons(self, contexts):
         """Find persons present in most contexts (>70%)."""
@@ -1519,14 +1719,24 @@ class PatternDetector:
                         confidence, trigger_conditions, action_def,
                         desc_de, desc_en, device=None):
         """Create or update a pattern. Avoid duplicates.
-        Also checks rejected/disabled patterns to prevent re-creation."""
-        # Find existing by type + entity combination
-        # Include rejected/disabled patterns so they don't get re-created
-        if pattern_type == "time_based":
-            existing = session.query(LearnedPattern).filter(
+        Also checks rejected/disabled patterns to prevent re-creation.
+
+        Fix #18: Uses per-session cache to avoid repeated full-table queries.
+        """
+        # Fix #18: Cache existing patterns per type per session
+        cache_key = f"_upsert_cache_{pattern_type}"
+        if not hasattr(self, cache_key):
+            cached = session.query(LearnedPattern).filter(
                 LearnedPattern.pattern_type == pattern_type,
                 or_(LearnedPattern.is_active == True, LearnedPattern.status.in_(["rejected", "disabled"])),
             ).all()
+            setattr(self, cache_key, cached)
+        existing_all = getattr(self, cache_key)
+
+        # Find existing by type + entity combination
+        # Include rejected/disabled patterns so they don't get re-created
+        if pattern_type == "time_based":
+            existing = existing_all
             for ep in existing:
                 if (ep.pattern_data and
                     ep.pattern_data.get("entity_id") == pattern_data.get("entity_id") and
@@ -1538,7 +1748,9 @@ class PatternDetector:
                         return None
                     # Update existing active pattern
                     ep.pattern_data = pattern_data
-                    ep.confidence = max(ep.confidence, confidence)
+                    # Fix #4: Allow confidence to decrease (weighted average)
+                    # Old behavior: max() meant confidence never dropped
+                    ep.confidence = ep.confidence * 0.3 + confidence * 0.7
                     ep.trigger_conditions = trigger_conditions
                     ep.action_definition = action_def
                     ep.description_de = desc_de
@@ -1550,10 +1762,7 @@ class PatternDetector:
                     return ep
 
         elif pattern_type == "event_chain":
-            existing = session.query(LearnedPattern).filter(
-                LearnedPattern.pattern_type == pattern_type,
-                or_(LearnedPattern.is_active == True, LearnedPattern.status.in_(["rejected", "disabled"])),
-            ).all()
+            existing = existing_all
             for ep in existing:
                 if (ep.pattern_data and
                     ep.pattern_data.get("trigger_entity") == pattern_data.get("trigger_entity") and
@@ -1564,7 +1773,9 @@ class PatternDetector:
                         logger.debug(f"Skipping {ep.status} pattern {ep.id}: {ep.description_de}")
                         return None
                     ep.pattern_data = pattern_data
-                    ep.confidence = max(ep.confidence, confidence)
+                    # Fix #4: Allow confidence to decrease (weighted average)
+                    # Old behavior: max() meant confidence never dropped
+                    ep.confidence = ep.confidence * 0.3 + confidence * 0.7
                     ep.trigger_conditions = trigger_conditions
                     ep.action_definition = action_def
                     ep.description_de = desc_de
@@ -1576,10 +1787,7 @@ class PatternDetector:
                     return ep
 
         elif pattern_type == "correlation":
-            existing = session.query(LearnedPattern).filter(
-                LearnedPattern.pattern_type == pattern_type,
-                or_(LearnedPattern.is_active == True, LearnedPattern.status.in_(["rejected", "disabled"])),
-            ).all()
+            existing = existing_all
             for ep in existing:
                 if (ep.pattern_data and
                     ep.pattern_data.get("condition_entity") == pattern_data.get("condition_entity") and
@@ -1590,7 +1798,9 @@ class PatternDetector:
                         logger.debug(f"Skipping {ep.status} pattern {ep.id}: {ep.description_de}")
                         return None
                     ep.pattern_data = pattern_data
-                    ep.confidence = max(ep.confidence, confidence)
+                    # Fix #4: Allow confidence to decrease (weighted average)
+                    # Old behavior: max() meant confidence never dropped
+                    ep.confidence = ep.confidence * 0.3 + confidence * 0.7
                     ep.trigger_conditions = trigger_conditions
                     ep.action_definition = action_def
                     ep.description_de = desc_de
@@ -1649,6 +1859,10 @@ class PatternDetector:
             context_tags=self._build_context_tags(pattern_data, pattern_type),
         )
         session.add(pattern)
+        # Fix #18: Add to cache so subsequent upsert calls see it
+        cache_key = f"_upsert_cache_{pattern_type}"
+        if hasattr(self, cache_key):
+            getattr(self, cache_key).append(pattern)
         logger.info(f"New pattern: {pattern_type} - {desc_de[:80]}... (confidence: {confidence:.2f})")
 
         # First-time detection notification
@@ -1810,7 +2024,8 @@ class PatternScheduler:
             session.close()
 
     def trigger_analysis_now(self):
-        """Manually trigger pattern analysis (for API)."""
+        """Manually trigger pattern analysis (for API).
+        Uses the same mutex-protected run_full_analysis."""
         t = threading.Thread(target=self.detector.run_full_analysis, daemon=True)
         t.start()
         return True
