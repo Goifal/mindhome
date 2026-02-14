@@ -1,4 +1,4 @@
-// MindHome Frontend v0.7.2 (2026-02-14) - app.jsx
+// MindHome Frontend v0.7.3 (2026-02-14) - app.jsx
 // ================================================================
 // MindHome - React Frontend Application v0.6.2
 // ================================================================
@@ -6865,6 +6865,458 @@ const EnergyPage = () => {
 };
 
 // ================================================================
+// ================================================================
+// Phase 4 Batch 2: Health Page (Sleep, WakeUp, Routines, Visit, Vacation)
+// ================================================================
+const HealthPage = () => {
+    const { lang, showToast, rooms, devices } = useApp();
+    const [tab, setTab] = useState('sleep');
+    const [sleepData, setSleepData] = useState(null);
+    const [wakeupConfigs, setWakeupConfigs] = useState([]);
+    const [routines, setRoutines] = useState([]);
+    const [transitions, setTransitions] = useState([]);
+    const [visitPreps, setVisitPreps] = useState([]);
+    const [vacationStatus, setVacationStatus] = useState(null);
+    const [showAddWakeup, setShowAddWakeup] = useState(false);
+    const [showAddVisit, setShowAddVisit] = useState(false);
+    const [newWakeup, setNewWakeup] = useState({ user_id: null, wake_time: '06:30', light_entity: '', climate_entity: '', cover_entity: '', ramp_minutes: 20, linked_to_schedule: true });
+    const [newVisit, setNewVisit] = useState({ name: '', guest_count: 1, preparation_actions: [], auto_trigger: false });
+    const [newAction, setNewAction] = useState({ entity_id: '', service: 'turn_on', data: {} });
+    const [users, setUsers] = useState([]);
+
+    const load = () => {
+        api.get('health/sleep-quality?days=14').then(d => setSleepData(d || null)).catch(() => {});
+        api.get('health/wakeup').then(d => setWakeupConfigs(Array.isArray(d) ? d : [])).catch(() => {});
+        api.get('health/routines').then(d => setRoutines(Array.isArray(d) ? d : [])).catch(() => {});
+        api.get('health/room-transitions').then(d => setTransitions(Array.isArray(d) ? d : [])).catch(() => {});
+        api.get('health/visit-preparations').then(d => setVisitPreps(Array.isArray(d) ? d : [])).catch(() => {});
+        api.get('health/vacation-status').then(d => setVacationStatus(d || null)).catch(() => {});
+        api.get('users').then(d => setUsers(Array.isArray(d) ? d : [])).catch(() => {});
+    };
+    useEffect(() => { load(); }, []);
+
+    const tabs = [
+        { id: 'sleep', label: lang === 'de' ? 'Schlaf' : 'Sleep', icon: 'mdi-sleep' },
+        { id: 'wakeup', label: lang === 'de' ? 'Wecken' : 'Wake-Up', icon: 'mdi-alarm' },
+        { id: 'routines', label: lang === 'de' ? 'Routinen' : 'Routines', icon: 'mdi-playlist-check' },
+        { id: 'visit', label: lang === 'de' ? 'Besuch' : 'Visitors', icon: 'mdi-account-plus' },
+        { id: 'vacation', label: lang === 'de' ? 'Urlaub' : 'Vacation', icon: 'mdi-airplane' },
+    ];
+
+    return (
+        <div>
+            <h2 style={{ marginBottom: 16 }}>
+                <span className="mdi mdi-heart-pulse" style={{ marginRight: 8 }} />
+                {lang === 'de' ? 'Gesundheit & Routinen' : 'Health & Routines'}
+            </h2>
+
+            <div style={{ display: 'flex', gap: 4, marginBottom: 16, overflowX: 'auto', whiteSpace: 'nowrap', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none' }}>
+                {tabs.map(t => (
+                    <button key={t.id} className={`btn btn-sm ${tab === t.id ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setTab(t.id)} style={{ flexShrink: 0 }}>
+                        <span className={'mdi ' + t.icon} style={{ marginRight: 4 }} />{t.label}
+                    </button>
+                ))}
+            </div>
+
+            {/* ── Sleep Tab ── */}
+            {tab === 'sleep' && (
+                <div>
+                    {/* Summary cards */}
+                    {sleepData && (
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12, marginBottom: 16 }}>
+                            <div className="card animate-in" style={{ padding: 16, textAlign: 'center' }}>
+                                <span className="mdi mdi-sleep" style={{ fontSize: 24, color: 'var(--accent-primary)', display: 'block', marginBottom: 4 }} />
+                                <div style={{ fontSize: 22, fontWeight: 700 }}>{sleepData.avg_quality ?? '–'}</div>
+                                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Qualitaet (Ø)' : 'Quality (avg)'}</div>
+                            </div>
+                            <div className="card animate-in" style={{ padding: 16, textAlign: 'center' }}>
+                                <span className="mdi mdi-clock-outline" style={{ fontSize: 24, color: 'var(--info)', display: 'block', marginBottom: 4 }} />
+                                <div style={{ fontSize: 22, fontWeight: 700 }}>{sleepData.avg_duration ? `${sleepData.avg_duration}h` : '–'}</div>
+                                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Dauer (Ø)' : 'Duration (avg)'}</div>
+                            </div>
+                            <div className="card animate-in" style={{ padding: 16, textAlign: 'center' }}>
+                                <span className="mdi mdi-counter" style={{ fontSize: 24, color: 'var(--success)', display: 'block', marginBottom: 4 }} />
+                                <div style={{ fontSize: 22, fontWeight: 700 }}>{sleepData.total_nights || 0}</div>
+                                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Naechte' : 'Nights'}</div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Sleep sessions chart */}
+                    {sleepData?.sessions?.length > 0 ? (
+                        <div className="card" style={{ overflow: 'hidden' }}>
+                            <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)', fontWeight: 600 }}>
+                                {lang === 'de' ? 'Schlaf-Verlauf (14 Tage)' : 'Sleep History (14 days)'}
+                            </div>
+                            <div style={{ padding: 16 }}>
+                                <div style={{ display: 'flex', gap: 6, alignItems: 'flex-end', height: 140 }}>
+                                    {sleepData.sessions.filter(s => s.quality_score != null).reverse().map((s, i) => {
+                                        const h = Math.max((s.quality_score / 100) * 120, 8);
+                                        const color = s.quality_score >= 70 ? 'var(--success)' : s.quality_score >= 50 ? 'var(--warning)' : 'var(--danger)';
+                                        const d = s.sleep_start ? new Date(s.sleep_start) : null;
+                                        return (
+                                            <div key={i} style={{ flex: 1, textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end' }}>
+                                                <div style={{ fontSize: 9, fontWeight: 600, marginBottom: 2 }}>{s.quality_score}</div>
+                                                <div style={{ width: '100%', maxWidth: 24, height: h, background: color, borderRadius: '4px 4px 0 0', opacity: 0.85 }}
+                                                    title={`${s.duration_hours || '?'}h | Q:${s.quality_score}`} />
+                                                <div style={{ fontSize: 8, color: 'var(--text-muted)', marginTop: 2 }}>
+                                                    {d ? `${d.getDate()}.${d.getMonth() + 1}` : ''}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                                <div style={{ display: 'flex', gap: 16, justifyContent: 'center', marginTop: 8, fontSize: 10 }}>
+                                    <span><span style={{ display: 'inline-block', width: 8, height: 8, background: 'var(--success)', borderRadius: 2, marginRight: 3 }} />70+</span>
+                                    <span><span style={{ display: 'inline-block', width: 8, height: 8, background: 'var(--warning)', borderRadius: 2, marginRight: 3 }} />50-69</span>
+                                    <span><span style={{ display: 'inline-block', width: 8, height: 8, background: 'var(--danger)', borderRadius: 2, marginRight: 3 }} />&lt;50</span>
+                                </div>
+                            </div>
+
+                            {/* Session list */}
+                            <div style={{ maxHeight: 300, overflowY: 'auto' }}>
+                                {sleepData.sessions.map((s, i) => (
+                                    <div key={i} style={{ padding: '8px 16px', borderTop: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12 }}>
+                                        <div>
+                                            <span style={{ fontWeight: 500 }}>{s.sleep_start ? new Date(s.sleep_start).toLocaleDateString() : '–'}</span>
+                                            <span style={{ color: 'var(--text-muted)', marginLeft: 8 }}>
+                                                {s.sleep_start ? new Date(s.sleep_start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''} –
+                                                {s.sleep_end ? new Date(s.sleep_end).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '...'}
+                                            </span>
+                                        </div>
+                                        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                                            {s.duration_hours && <span>{s.duration_hours}h</span>}
+                                            {s.quality_score != null && (
+                                                <span className={`badge ${s.quality_score >= 70 ? 'badge-success' : s.quality_score >= 50 ? 'badge-warning' : 'badge-danger'}`} style={{ fontSize: 10 }}>
+                                                    Q:{s.quality_score}
+                                                </span>
+                                            )}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="card animate-in" style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)' }}>
+                            <span className="mdi mdi-sleep" style={{ fontSize: 40, display: 'block', marginBottom: 8 }} />
+                            {lang === 'de' ? 'Noch keine Schlaf-Daten. Die Erkennung startet automatisch ab 20:00 Uhr.' : 'No sleep data yet. Detection starts automatically at 8 PM.'}
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* ── Wake-Up Tab ── */}
+            {tab === 'wakeup' && (
+                <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                        <span style={{ fontWeight: 600 }}>{lang === 'de' ? 'Sanftes Wecken' : 'Smart Wake-Up'}</span>
+                        <button className="btn btn-sm btn-primary" onClick={() => setShowAddWakeup(true)}>
+                            <span className="mdi mdi-plus" style={{ marginRight: 4 }} />{lang === 'de' ? 'Neu' : 'New'}
+                        </button>
+                    </div>
+
+                    {wakeupConfigs.length === 0 ? (
+                        <div className="card animate-in" style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)' }}>
+                            <span className="mdi mdi-alarm" style={{ fontSize: 40, display: 'block', marginBottom: 8 }} />
+                            {lang === 'de' ? 'Kein Wecker konfiguriert. Licht, Rolladen und Heizung werden sanft hochgefahren.' : 'No alarm configured. Light, covers and heating ramp up gently.'}
+                        </div>
+                    ) : wakeupConfigs.map(cfg => (
+                        <div key={cfg.id} className="card animate-in" style={{ marginBottom: 8, padding: '12px 16px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div>
+                                    <div style={{ fontWeight: 600, fontSize: 18 }}>
+                                        <span className="mdi mdi-alarm" style={{ marginRight: 6 }} />
+                                        {cfg.wake_time || '–'}
+                                        {cfg.linked_to_schedule && <span className="badge badge-info" style={{ fontSize: 9, marginLeft: 8 }}>Zeitprofil</span>}
+                                    </div>
+                                    <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
+                                        {cfg.ramp_minutes} min Ramp
+                                        {cfg.light_entity && <span> · <span className="mdi mdi-lightbulb" /> {cfg.light_entity.split('.').pop()}</span>}
+                                        {cfg.cover_entity && <span> · <span className="mdi mdi-blinds" /> {cfg.cover_entity.split('.').pop()}</span>}
+                                        {cfg.climate_entity && <span> · <span className="mdi mdi-thermostat" /> {cfg.climate_entity.split('.').pop()}</span>}
+                                    </div>
+                                </div>
+                                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                                    <label className="toggle" style={{ transform: 'scale(0.8)' }}>
+                                        <input type="checkbox" checked={cfg.enabled} onChange={() => {
+                                            api.put(`health/wakeup/${cfg.id}`, { enabled: !cfg.enabled }).then(() => load());
+                                        }} />
+                                        <span className="toggle-slider" />
+                                    </label>
+                                    <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }}
+                                        onClick={() => { if (confirm(lang === 'de' ? 'Wecker loeschen?' : 'Delete alarm?')) api.delete(`health/wakeup/${cfg.id}`).then(() => load()); }}>
+                                        <span className="mdi mdi-delete" />
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    ))}
+
+                    {showAddWakeup && (
+                        <Modal title={lang === 'de' ? 'Wecker erstellen' : 'Create Alarm'} onClose={() => setShowAddWakeup(false)}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                                <div>
+                                    <label style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Person' : 'Person'}</label>
+                                    <CustomSelect options={users.map(u => ({ value: u.id, label: u.name || `User ${u.id}` }))}
+                                        value={newWakeup.user_id} onChange={v => setNewWakeup({ ...newWakeup, user_id: parseInt(v) })} placeholder="..." />
+                                </div>
+                                <div>
+                                    <label style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Weckzeit' : 'Wake time'}</label>
+                                    <input type="text" className="form-input" placeholder="06:30" value={newWakeup.wake_time}
+                                        onChange={e => setNewWakeup({ ...newWakeup, wake_time: e.target.value })} />
+                                </div>
+                                <div>
+                                    <label style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Licht Entity' : 'Light entity'}</label>
+                                    <input type="text" className="form-input" placeholder="light.schlafzimmer" value={newWakeup.light_entity}
+                                        onChange={e => setNewWakeup({ ...newWakeup, light_entity: e.target.value })} />
+                                </div>
+                                <div>
+                                    <label style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Rolladen Entity' : 'Cover entity'}</label>
+                                    <input type="text" className="form-input" placeholder="cover.schlafzimmer" value={newWakeup.cover_entity}
+                                        onChange={e => setNewWakeup({ ...newWakeup, cover_entity: e.target.value })} />
+                                </div>
+                                <div>
+                                    <label style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Klima Entity' : 'Climate entity'}</label>
+                                    <input type="text" className="form-input" placeholder="climate.schlafzimmer" value={newWakeup.climate_entity}
+                                        onChange={e => setNewWakeup({ ...newWakeup, climate_entity: e.target.value })} />
+                                </div>
+                                <div>
+                                    <label style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Ramp-Dauer (Minuten)' : 'Ramp duration (minutes)'}</label>
+                                    <input type="number" className="form-input" value={newWakeup.ramp_minutes}
+                                        onChange={e => setNewWakeup({ ...newWakeup, ramp_minutes: parseInt(e.target.value) || 20 })} />
+                                </div>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                    <input type="checkbox" checked={newWakeup.linked_to_schedule}
+                                        onChange={e => setNewWakeup({ ...newWakeup, linked_to_schedule: e.target.checked })} />
+                                    {lang === 'de' ? 'Aus Zeitprofil uebernehmen' : 'Use from schedule'}
+                                </label>
+                                <button className="btn btn-primary" disabled={!newWakeup.user_id}
+                                    onClick={() => {
+                                        api.post('health/wakeup', newWakeup).then(() => {
+                                            showToast(lang === 'de' ? 'Wecker erstellt' : 'Alarm created', 'success');
+                                            setShowAddWakeup(false);
+                                            setNewWakeup({ user_id: null, wake_time: '06:30', light_entity: '', climate_entity: '', cover_entity: '', ramp_minutes: 20, linked_to_schedule: true });
+                                            load();
+                                        });
+                                    }}>{lang === 'de' ? 'Erstellen' : 'Create'}</button>
+                            </div>
+                        </Modal>
+                    )}
+                </div>
+            )}
+
+            {/* ── Routines Tab ── */}
+            {tab === 'routines' && (
+                <div>
+                    {routines.length === 0 ? (
+                        <div className="card animate-in" style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)' }}>
+                            <span className="mdi mdi-playlist-check" style={{ fontSize: 40, display: 'block', marginBottom: 8 }} />
+                            {lang === 'de' ? 'Noch keine Routinen erkannt. MindHome analysiert deine Muster taeglich und gruppiert sie zu Routinen.' : 'No routines detected yet. MindHome analyzes your patterns daily and groups them into routines.'}
+                        </div>
+                    ) : routines.map(r => (
+                        <div key={r.id} className="card animate-in" style={{ marginBottom: 12 }}>
+                            <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div>
+                                    <span style={{ fontWeight: 600, fontSize: 15 }}>{lang === 'de' ? r.name_de : r.name_en}</span>
+                                    <span className="badge badge-info" style={{ fontSize: 10, marginLeft: 8 }}>{r.step_count} {lang === 'de' ? 'Schritte' : 'steps'}</span>
+                                    <span className="badge badge-success" style={{ fontSize: 10, marginLeft: 4 }}>{(r.avg_confidence * 100).toFixed(0)}%</span>
+                                </div>
+                                <button className="btn btn-sm btn-primary" onClick={() => {
+                                    api.post(`health/routines/${r.id}/activate`).then(res => {
+                                        if (res?.success) showToast(lang === 'de' ? 'Routine aktiviert' : 'Routine activated', 'success');
+                                    });
+                                }}>
+                                    <span className="mdi mdi-play" style={{ marginRight: 4 }} />{lang === 'de' ? 'Starten' : 'Start'}
+                                </button>
+                            </div>
+                            <div style={{ padding: '8px 16px' }}>
+                                {r.steps.map((s, i) => (
+                                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', fontSize: 12 }}>
+                                        <span className="badge badge-info" style={{ fontSize: 9, minWidth: 20, textAlign: 'center' }}>{i + 1}</span>
+                                        <span style={{ color: 'var(--text-muted)' }}>{s.entity_id}</span>
+                                        <span className="mdi mdi-arrow-right" style={{ fontSize: 10 }} />
+                                        <span style={{ fontWeight: 500 }}>{s.action || '–'}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    ))}
+
+                    {/* Room Transitions */}
+                    {transitions.length > 0 && (
+                        <div className="card" style={{ marginTop: 16, overflow: 'hidden' }}>
+                            <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)', fontWeight: 600 }}>
+                                <span className="mdi mdi-door-sliding-open" style={{ marginRight: 6 }} />
+                                {lang === 'de' ? 'Raumuebergaenge' : 'Room Transitions'}
+                            </div>
+                            {transitions.map((t, i) => (
+                                <div key={i} style={{ padding: '8px 16px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13 }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                        <span style={{ fontWeight: 500 }}>{t.from_room_name}</span>
+                                        <span className="mdi mdi-arrow-right" style={{ color: 'var(--accent-primary)' }} />
+                                        <span style={{ fontWeight: 500 }}>{t.to_room_name}</span>
+                                    </div>
+                                    <span className="badge badge-info" style={{ fontSize: 10 }}>{t.count}x</span>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* ── Visit Tab ── */}
+            {tab === 'visit' && (
+                <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                        <span style={{ fontWeight: 600 }}>{lang === 'de' ? 'Besuchs-Vorbereitungen' : 'Visit Preparations'}</span>
+                        <button className="btn btn-sm btn-primary" onClick={() => setShowAddVisit(true)}>
+                            <span className="mdi mdi-plus" style={{ marginRight: 4 }} />{lang === 'de' ? 'Neu' : 'New'}
+                        </button>
+                    </div>
+
+                    {visitPreps.length === 0 ? (
+                        <div className="card animate-in" style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)' }}>
+                            <span className="mdi mdi-account-plus" style={{ fontSize: 40, display: 'block', marginBottom: 8 }} />
+                            {lang === 'de' ? 'Keine Vorbereitungen konfiguriert. Erstelle Vorlagen fuer Besuch (Licht, Temperatur, Musik).' : 'No preparations configured. Create templates for visitors (lights, temperature, music).'}
+                        </div>
+                    ) : visitPreps.map(prep => (
+                        <div key={prep.id} className="card animate-in" style={{ marginBottom: 8, padding: '12px 16px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div>
+                                    <span style={{ fontWeight: 600 }}>{prep.name}</span>
+                                    <span className="badge badge-info" style={{ fontSize: 10, marginLeft: 8 }}>{prep.guest_count} {lang === 'de' ? 'Gaeste' : 'guests'}</span>
+                                    {prep.auto_trigger && <span className="badge badge-warning" style={{ fontSize: 10, marginLeft: 4 }}>Auto</span>}
+                                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                                        {(prep.preparation_actions || []).length} {lang === 'de' ? 'Aktionen' : 'actions'}
+                                    </div>
+                                </div>
+                                <div style={{ display: 'flex', gap: 6 }}>
+                                    <button className="btn btn-sm btn-primary" onClick={() => {
+                                        api.post(`health/visit-preparations/${prep.id}/activate`).then(res => {
+                                            if (res?.success) showToast(lang === 'de' ? 'Vorbereitung aktiviert' : 'Preparation activated', 'success');
+                                        });
+                                    }}>
+                                        <span className="mdi mdi-play" />
+                                    </button>
+                                    <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }}
+                                        onClick={() => { if (confirm(lang === 'de' ? 'Loeschen?' : 'Delete?')) api.delete(`health/visit-preparations/${prep.id}`).then(() => load()); }}>
+                                        <span className="mdi mdi-delete" />
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    ))}
+
+                    {showAddVisit && (
+                        <Modal title={lang === 'de' ? 'Besuchs-Vorbereitung' : 'Visit Preparation'} onClose={() => setShowAddVisit(false)}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                                <div>
+                                    <label style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Name' : 'Name'}</label>
+                                    <input type="text" className="form-input" placeholder="z.B. Eltern zu Besuch" value={newVisit.name}
+                                        onChange={e => setNewVisit({ ...newVisit, name: e.target.value })} />
+                                </div>
+                                <div>
+                                    <label style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Gaeste' : 'Guests'}</label>
+                                    <input type="number" className="form-input" value={newVisit.guest_count} min="1"
+                                        onChange={e => setNewVisit({ ...newVisit, guest_count: parseInt(e.target.value) || 1 })} />
+                                </div>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                    <input type="checkbox" checked={newVisit.auto_trigger}
+                                        onChange={e => setNewVisit({ ...newVisit, auto_trigger: e.target.checked })} />
+                                    {lang === 'de' ? 'Auto-Trigger (Geraet erkannt)' : 'Auto-trigger (device detected)'}
+                                </label>
+
+                                {/* Actions list */}
+                                <div style={{ fontSize: 12, fontWeight: 600 }}>{lang === 'de' ? 'Aktionen' : 'Actions'}</div>
+                                {(newVisit.preparation_actions || []).map((a, i) => (
+                                    <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 12, padding: '4px 8px', background: 'var(--bg-main)', borderRadius: 6 }}>
+                                        <span>{a.entity_id} → {a.service}</span>
+                                        <button className="btn btn-ghost btn-icon" style={{ marginLeft: 'auto' }}
+                                            onClick={() => setNewVisit({ ...newVisit, preparation_actions: newVisit.preparation_actions.filter((_, j) => j !== i) })}>
+                                            <span className="mdi mdi-close" style={{ fontSize: 14, color: 'var(--danger)' }} />
+                                        </button>
+                                    </div>
+                                ))}
+                                <div style={{ display: 'flex', gap: 6 }}>
+                                    <input className="form-input" style={{ flex: 1, fontSize: 12 }} placeholder="light.wohnzimmer"
+                                        value={newAction.entity_id} onChange={e => setNewAction({ ...newAction, entity_id: e.target.value })} />
+                                    <CustomSelect options={[{ value: 'turn_on', label: 'On' }, { value: 'turn_off', label: 'Off' }]}
+                                        value={newAction.service} onChange={v => setNewAction({ ...newAction, service: v })} />
+                                    <button className="btn btn-sm btn-ghost" disabled={!newAction.entity_id}
+                                        onClick={() => { setNewVisit({ ...newVisit, preparation_actions: [...newVisit.preparation_actions, { ...newAction }] }); setNewAction({ entity_id: '', service: 'turn_on', data: {} }); }}>
+                                        <span className="mdi mdi-plus" />
+                                    </button>
+                                </div>
+
+                                <button className="btn btn-primary" disabled={!newVisit.name}
+                                    onClick={() => {
+                                        api.post('health/visit-preparations', newVisit).then(() => {
+                                            showToast(lang === 'de' ? 'Erstellt' : 'Created', 'success');
+                                            setShowAddVisit(false);
+                                            setNewVisit({ name: '', guest_count: 1, preparation_actions: [], auto_trigger: false });
+                                            load();
+                                        });
+                                    }}>{lang === 'de' ? 'Erstellen' : 'Create'}</button>
+                            </div>
+                        </Modal>
+                    )}
+                </div>
+            )}
+
+            {/* ── Vacation Tab ── */}
+            {tab === 'vacation' && (
+                <div>
+                    <div className="card animate-in" style={{ padding: 16 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+                            <span className={`mdi ${vacationStatus?.vacation_active ? 'mdi-airplane' : 'mdi-home'}`}
+                                style={{ fontSize: 32, color: vacationStatus?.vacation_active ? 'var(--warning)' : 'var(--success)' }} />
+                            <div>
+                                <div style={{ fontSize: 18, fontWeight: 700 }}>
+                                    {vacationStatus?.vacation_active
+                                        ? (lang === 'de' ? 'Urlaubsmodus aktiv' : 'Vacation mode active')
+                                        : (lang === 'de' ? 'Zuhause' : 'Home')}
+                                </div>
+                                {vacationStatus?.hours_away > 0 && (
+                                    <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                                        {lang === 'de' ? 'Abwesend seit' : 'Away since'}: {vacationStatus.hours_away.toFixed(0)}h
+                                    </div>
+                                )}
+                                {vacationStatus?.auto_activated && (
+                                    <span className="badge badge-warning" style={{ fontSize: 10, marginTop: 4 }}>
+                                        {lang === 'de' ? 'Automatisch erkannt' : 'Auto-detected'}
+                                    </span>
+                                )}
+                            </div>
+                        </div>
+
+                        <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 12 }}>
+                            {lang === 'de'
+                                ? 'MindHome erkennt automatisch wenn alle Bewohner > 24h abwesend sind und aktiviert den Urlaubsmodus (Energiesparen + Anwesenheitssimulation).'
+                                : 'MindHome auto-detects when all residents are away > 24h and activates vacation mode (energy saving + presence simulation).'}
+                        </p>
+
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
+                                <span style={{ color: 'var(--text-muted)' }}>{lang === 'de' ? 'Erkennung' : 'Detection'}</span>
+                                <span>{lang === 'de' ? 'Alle person.* Entities' : 'All person.* entities'}</span>
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
+                                <span style={{ color: 'var(--text-muted)' }}>{lang === 'de' ? 'Schwelle' : 'Threshold'}</span>
+                                <span>24h</span>
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
+                                <span style={{ color: 'var(--text-muted)' }}>{lang === 'de' ? 'Anwesenheitssimulation' : 'Presence simulation'}</span>
+                                <span>18:00–23:00</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
+// ================================================================
 // Phase 3: Scenes Page
 // ================================================================
 const ScenesPage = () => {
@@ -8124,6 +8576,7 @@ const App = () => {
         { id: 'activities', icon: 'mdi-timeline-clock', label: lang === 'de' ? 'Aktivitäten' : 'Activities' },
         { id: 'patterns', icon: 'mdi-lightbulb-on', label: lang === 'de' ? 'Muster' : 'Patterns' },
         { id: 'energy', icon: 'mdi-lightning-bolt', label: lang === 'de' ? 'Energie' : 'Energy' },
+        { id: 'health', icon: 'mdi-heart-pulse', label: lang === 'de' ? 'Gesundheit' : 'Health' },
         { id: 'scenes', icon: 'mdi-palette', label: lang === 'de' ? 'Szenen' : 'Scenes' },
         { id: 'presence', icon: 'mdi-account-multiple', label: lang === 'de' ? 'Anwesenheit' : 'Presence' },
         { id: 'notifications', icon: 'mdi-bell', label: lang === 'de' ? 'Benachrichtigungen' : 'Notifications' },
@@ -8139,6 +8592,7 @@ const App = () => {
         activities: ActivitiesPage,
         patterns: PatternsPage,
         energy: EnergyPage,
+        health: HealthPage,
         scenes: ScenesPage,
         presence: PresencePage,
         notifications: NotificationsPage,

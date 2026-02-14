@@ -546,6 +546,16 @@ energy_optimizer = EnergyOptimizer(ha, get_db_session)
 standby_monitor = StandbyMonitor(ha, get_db_session, event_bus)
 energy_forecaster = EnergyForecaster(ha, get_db_session)
 
+# Phase 4 Batch 2: Sleep, Routines, Visit, Vacation engines
+from engines.sleep import SleepDetector, WakeUpManager
+from engines.routines import RoutineEngine
+from engines.visit import VisitPreparationManager, VacationDetector
+sleep_detector = SleepDetector(ha, get_db_session, event_bus)
+wakeup_manager = WakeUpManager(ha, get_db_session, event_bus)
+routine_engine = RoutineEngine(ha, get_db_session, event_bus)
+visit_manager = VisitPreparationManager(ha, get_db_session, event_bus)
+vacation_detector = VacationDetector(ha, get_db_session, event_bus)
+
 dependencies = {
     "ha": ha,
     "engine": engine,
@@ -561,6 +571,11 @@ dependencies = {
     "energy_optimizer": energy_optimizer,
     "standby_monitor": standby_monitor,
     "energy_forecaster": energy_forecaster,
+    "sleep_detector": sleep_detector,
+    "wakeup_manager": wakeup_manager,
+    "routine_engine": routine_engine,
+    "visit_manager": visit_manager,
+    "vacation_detector": vacation_detector,
 }
 
 from routes import register_blueprints
@@ -587,7 +602,12 @@ def graceful_shutdown(signum=None, frame=None):
     # Stop Phase 4 engines
     for eng_name, eng in [("energy_optimizer", energy_optimizer),
                           ("standby_monitor", standby_monitor),
-                          ("energy_forecaster", energy_forecaster)]:
+                          ("energy_forecaster", energy_forecaster),
+                          ("sleep_detector", sleep_detector),
+                          ("wakeup_manager", wakeup_manager),
+                          ("routine_engine", routine_engine),
+                          ("visit_manager", visit_manager),
+                          ("vacation_detector", vacation_detector)]:
         try:
             eng.stop()
         except Exception:
@@ -718,9 +738,40 @@ def start_app():
                             interval_seconds=24 * 3600,  # daily
                             run_immediately=False)
 
+    # Phase 4 Batch 2: Sleep, Routines, Visit, Vacation scheduler tasks
+    sleep_detector.start()
+    wakeup_manager.start()
+    routine_engine.start()
+    visit_manager.start()
+    vacation_detector.start()
+
+    def run_sleep_check():
+        """5-min check: sleep detection + wake-up ramp."""
+        sleep_detector.check()
+        wakeup_manager.check()
+
+    def run_visit_vacation_check():
+        """10-min check: visit triggers + vacation detection."""
+        visit_manager.check_triggers()
+        vacation_detector.check()
+
+    def run_routine_detect():
+        """Daily: detect routine sequences from patterns."""
+        routine_engine.detect_routines()
+
+    task_scheduler.register("sleep_check", run_sleep_check,
+                            interval_seconds=5 * 60,  # 5 min
+                            run_immediately=False)
+    task_scheduler.register("visit_vacation_check", run_visit_vacation_check,
+                            interval_seconds=10 * 60,  # 10 min
+                            run_immediately=False)
+    task_scheduler.register("routine_detect", run_routine_detect,
+                            interval_seconds=24 * 3600,  # daily
+                            run_immediately=False)
+
     # Start task scheduler
     task_scheduler.start()
-    logger.info("  ✅ Task Scheduler started (cleanup:24h, maintenance:7d, energy:5m, daily:24h)")
+    logger.info("  ✅ Task Scheduler started (cleanup:24h, maintenance:7d, energy:5m, sleep:5m, visit:10m, daily:24h)")
 
     logger.info(f"MindHome {vi['full']} started successfully!")
 

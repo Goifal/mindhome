@@ -1,11 +1,13 @@
 # MindHome - engines/routines.py | see version.py for version info
 """
 Routine detection/execution and mood estimation.
-Features: #5 Morgenroutine, #15 Stimmungserkennung
+Features: #5 Morgenroutine, #6 Raumuebergaenge, #15 Stimmungserkennung
 """
 
 import logging
-from datetime import datetime, timezone
+import time as _time
+from datetime import datetime, timezone, timedelta
+from collections import defaultdict
 
 logger = logging.getLogger("mindhome.engines.routines")
 
@@ -22,6 +24,8 @@ class RoutineEngine:
         self.get_session = db_session_factory
         self.event_bus = event_bus
         self._is_running = False
+        self._cached_routines = []
+        self._last_detect = None
 
     def start(self):
         self._is_running = True
@@ -32,19 +36,197 @@ class RoutineEngine:
         logger.info("RoutineEngine stopped")
 
     def detect_routines(self):
-        """Detect routine sequences from pattern data."""
-        # TODO: Batch 2
-        return []
+        """Detect routine sequences from pattern data. Called daily."""
+        if not self._is_running:
+            return []
+        try:
+            from models import LearnedPattern
+            from routes.health import is_feature_enabled
+
+            if not is_feature_enabled("phase4.room_transitions"):
+                return self._cached_routines
+
+            session = self.get_session()
+            try:
+                # Get accepted/active patterns with time info
+                patterns = session.query(LearnedPattern).filter(
+                    LearnedPattern.is_active == True,
+                    LearnedPattern.status == "accepted",
+                    LearnedPattern.confidence >= 0.5
+                ).all()
+
+                if not patterns:
+                    return []
+
+                # Group by time window
+                time_groups = {
+                    "morning": [],    # 05:00 - 09:00
+                    "daytime": [],    # 09:00 - 17:00
+                    "evening": [],    # 17:00 - 22:00
+                    "night": [],      # 22:00 - 05:00
+                }
+
+                for p in patterns:
+                    ctx = p.context_tags or {}
+                    time_str = ctx.get("time_of_day") or ctx.get("hour")
+                    hour = None
+                    if time_str:
+                        try:
+                            hour = int(str(time_str).split(":")[0]) if ":" in str(time_str) else int(time_str)
+                        except (ValueError, TypeError):
+                            pass
+
+                    if hour is None and p.last_matched_at:
+                        hour = p.last_matched_at.hour
+
+                    if hour is None:
+                        continue
+
+                    if 5 <= hour < 9:
+                        time_groups["morning"].append(p)
+                    elif 9 <= hour < 17:
+                        time_groups["daytime"].append(p)
+                    elif 17 <= hour < 22:
+                        time_groups["evening"].append(p)
+                    else:
+                        time_groups["night"].append(p)
+
+                routines = []
+                for period, pats in time_groups.items():
+                    if len(pats) < 2:
+                        continue
+
+                    # Sort by typical occurrence time
+                    pats.sort(key=lambda p: (p.context_tags or {}).get("hour", "12:00"))
+
+                    steps = []
+                    for p in pats[:8]:  # max 8 steps per routine
+                        steps.append({
+                            "pattern_id": p.id,
+                            "entity_id": p.entity_id,
+                            "domain": p.domain_id,
+                            "room_id": p.room_id,
+                            "action": p.trigger_state or p.action_taken,
+                            "confidence": round(p.confidence, 2),
+                        })
+
+                    routines.append({
+                        "id": f"routine_{period}",
+                        "name_de": {"morning": "Morgenroutine", "daytime": "Tagesroutine",
+                                    "evening": "Abendroutine", "night": "Nachtroutine"}[period],
+                        "name_en": {"morning": "Morning Routine", "daytime": "Day Routine",
+                                    "evening": "Evening Routine", "night": "Night Routine"}[period],
+                        "period": period,
+                        "step_count": len(steps),
+                        "steps": steps,
+                        "avg_confidence": round(sum(s["confidence"] for s in steps) / len(steps), 2) if steps else 0,
+                    })
+
+                self._cached_routines = routines
+                self._last_detect = datetime.now(timezone.utc)
+                logger.info(f"Detected {len(routines)} routines ({', '.join(r['period'] for r in routines)})")
+                return routines
+            finally:
+                session.close()
+        except Exception as e:
+            logger.error(f"detect_routines error: {e}")
+            return self._cached_routines
 
     def activate_routine(self, routine_id):
-        """Manually trigger a routine."""
-        # TODO: Batch 2
-        pass
+        """Manually trigger a routine — execute steps with delays."""
+        routine = next((r for r in self._cached_routines if r["id"] == routine_id), None)
+        if not routine:
+            return {"error": "Routine not found"}
+
+        activated = []
+        for step in routine["steps"]:
+            entity = step.get("entity_id")
+            action = step.get("action")
+            if not entity or not action:
+                continue
+            try:
+                domain = entity.split(".")[0]
+                if action in ("on", "turn_on"):
+                    self.ha.call_service(domain, "turn_on", {"entity_id": entity})
+                elif action in ("off", "turn_off"):
+                    self.ha.call_service(domain, "turn_off", {"entity_id": entity})
+                activated.append(entity)
+                _time.sleep(1)  # 1s delay between steps
+            except Exception as e:
+                logger.error(f"Routine step error {entity}: {e}")
+
+        self.event_bus.emit("routine_activated", {
+            "routine_id": routine_id,
+            "steps_executed": len(activated),
+        })
+        logger.info(f"Routine '{routine_id}' activated: {len(activated)} steps")
+        return {"success": True, "steps_executed": len(activated)}
 
     def get_routines(self):
         """Return list of detected routines."""
-        # TODO: Batch 2
-        return []
+        return self._cached_routines
+
+    def detect_room_transitions(self):
+        """Detect room transition patterns from motion/activity data (#6)."""
+        try:
+            from models import StateHistory, Room, Device
+            from routes.health import is_feature_enabled
+
+            if not is_feature_enabled("phase4.room_transitions"):
+                return []
+
+            session = self.get_session()
+            try:
+                cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+                # Get motion events grouped by room
+                motion_events = session.query(StateHistory).filter(
+                    StateHistory.entity_id.like("binary_sensor.%motion%"),
+                    StateHistory.new_state == "on",
+                    StateHistory.created_at > cutoff
+                ).order_by(StateHistory.created_at).all()
+
+                if len(motion_events) < 10:
+                    return []
+
+                # Map entities to rooms
+                devices = {d.entity_id: d.room_id for d in session.query(Device).filter(Device.room_id.isnot(None)).all()}
+                rooms = {r.id: (r.name_de or r.name_en or f"Room {r.id}") for r in session.query(Room).all()}
+
+                # Build transition pairs
+                transitions = defaultdict(int)
+                prev_room = None
+                prev_time = None
+
+                for ev in motion_events:
+                    room_id = devices.get(ev.entity_id)
+                    if not room_id:
+                        continue
+                    if prev_room and prev_room != room_id:
+                        if prev_time and (ev.created_at - prev_time).total_seconds() < 600:  # within 10 min
+                            key = (prev_room, room_id)
+                            transitions[key] += 1
+                    prev_room = room_id
+                    prev_time = ev.created_at
+
+                # Build results
+                results = []
+                for (from_room, to_room), count in sorted(transitions.items(), key=lambda x: -x[1]):
+                    if count < 3:  # min 3 occurrences
+                        continue
+                    results.append({
+                        "from_room_id": from_room,
+                        "from_room_name": rooms.get(from_room, f"#{from_room}"),
+                        "to_room_id": to_room,
+                        "to_room_name": rooms.get(to_room, f"#{to_room}"),
+                        "count": count,
+                    })
+
+                return results[:20]  # top 20
+            finally:
+                session.close()
+        except Exception as e:
+            logger.error(f"detect_room_transitions error: {e}")
+            return []
 
 
 class MoodEstimator:

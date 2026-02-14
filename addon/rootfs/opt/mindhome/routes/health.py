@@ -118,6 +118,242 @@ def is_feature_enabled(feature_key):
 
 
 # ──────────────────────────────────────────────
+# Batch 2: Sleep Endpoints
+# ──────────────────────────────────────────────
+
+@health_bp.route("/api/health/sleep", methods=["GET"])
+def api_get_sleep_data():
+    """Get recent sleep sessions."""
+    detector = _deps.get("sleep_detector")
+    if not detector:
+        return jsonify([])
+    days = request.args.get("days", 7, type=int)
+    user_id = request.args.get("user_id", type=int)
+    return jsonify(detector.get_recent_sessions(user_id=user_id, days=days))
+
+
+@health_bp.route("/api/health/sleep-quality", methods=["GET"])
+def api_get_sleep_quality():
+    """Get sleep quality trend (last N days)."""
+    detector = _deps.get("sleep_detector")
+    if not detector:
+        return jsonify({"sessions": [], "avg_quality": None, "avg_duration": None})
+    days = request.args.get("days", 14, type=int)
+    sessions = detector.get_recent_sessions(days=days)
+    completed = [s for s in sessions if s.get("quality_score") is not None and s.get("duration_hours")]
+    avg_quality = round(sum(s["quality_score"] for s in completed) / len(completed), 1) if completed else None
+    avg_duration = round(sum(s["duration_hours"] for s in completed) / len(completed), 1) if completed else None
+    return jsonify({
+        "sessions": sessions,
+        "avg_quality": avg_quality,
+        "avg_duration": avg_duration,
+        "total_nights": len(completed),
+    })
+
+
+# ──────────────────────────────────────────────
+# Batch 2: Wake-Up Endpoints
+# ──────────────────────────────────────────────
+
+@health_bp.route("/api/health/wakeup", methods=["GET"])
+def api_get_wakeup_configs():
+    """Get all wake-up configurations."""
+    manager = _deps.get("wakeup_manager")
+    if not manager:
+        return jsonify([])
+    user_id = request.args.get("user_id", type=int)
+    return jsonify(manager.get_configs(user_id=user_id))
+
+
+@health_bp.route("/api/health/wakeup", methods=["POST"])
+def api_create_wakeup_config():
+    """Create a new wake-up configuration."""
+    from db import get_db
+    from models import WakeUpConfig
+    data = request.json or {}
+    session = get_db()
+    try:
+        cfg = WakeUpConfig(
+            user_id=data.get("user_id"),
+            enabled=data.get("enabled", True),
+            wake_time=data.get("wake_time"),
+            linked_to_schedule=data.get("linked_to_schedule", True),
+            light_entity=data.get("light_entity"),
+            climate_entity=data.get("climate_entity"),
+            cover_entity=data.get("cover_entity"),
+            ramp_minutes=data.get("ramp_minutes", 20),
+        )
+        session.add(cfg)
+        session.commit()
+        return jsonify({"id": cfg.id, "success": True})
+    finally:
+        session.close()
+
+
+@health_bp.route("/api/health/wakeup/<int:config_id>", methods=["PUT"])
+def api_update_wakeup_config(config_id):
+    """Update a wake-up configuration."""
+    from db import get_db
+    from models import WakeUpConfig
+    data = request.json or {}
+    session = get_db()
+    try:
+        cfg = session.get(WakeUpConfig, config_id)
+        if not cfg:
+            return jsonify({"error": "Not found"}), 404
+        for key in ["enabled", "wake_time", "linked_to_schedule", "light_entity",
+                     "climate_entity", "cover_entity", "ramp_minutes", "is_active"]:
+            if key in data:
+                setattr(cfg, key, data[key])
+        session.commit()
+        return jsonify({"success": True})
+    finally:
+        session.close()
+
+
+@health_bp.route("/api/health/wakeup/<int:config_id>", methods=["DELETE"])
+def api_delete_wakeup_config(config_id):
+    """Delete a wake-up configuration."""
+    from db import get_db
+    from models import WakeUpConfig
+    session = get_db()
+    try:
+        cfg = session.get(WakeUpConfig, config_id)
+        if cfg:
+            session.delete(cfg)
+            session.commit()
+        return jsonify({"success": True})
+    finally:
+        session.close()
+
+
+# ──────────────────────────────────────────────
+# Batch 2: Routines Endpoints
+# ──────────────────────────────────────────────
+
+@health_bp.route("/api/health/routines", methods=["GET"])
+def api_get_routines():
+    """Get detected routines."""
+    engine = _deps.get("routine_engine")
+    if not engine:
+        return jsonify([])
+    return jsonify(engine.get_routines())
+
+
+@health_bp.route("/api/health/routines/<routine_id>/activate", methods=["POST"])
+def api_activate_routine(routine_id):
+    """Manually activate a routine."""
+    engine = _deps.get("routine_engine")
+    if not engine:
+        return jsonify({"error": "Not available"}), 503
+    result = engine.activate_routine(routine_id)
+    return jsonify(result)
+
+
+@health_bp.route("/api/health/room-transitions", methods=["GET"])
+def api_get_room_transitions():
+    """Get detected room transition patterns."""
+    engine = _deps.get("routine_engine")
+    if not engine:
+        return jsonify([])
+    return jsonify(engine.detect_room_transitions())
+
+
+# ──────────────────────────────────────────────
+# Batch 2: Visit Preparation Endpoints
+# ──────────────────────────────────────────────
+
+@health_bp.route("/api/health/visit-preparations", methods=["GET"])
+def api_get_visit_preparations():
+    """Get all visit preparation templates."""
+    manager = _deps.get("visit_manager")
+    if not manager:
+        return jsonify([])
+    return jsonify(manager.get_preparations())
+
+
+@health_bp.route("/api/health/visit-preparations", methods=["POST"])
+def api_create_visit_preparation():
+    """Create a new visit preparation."""
+    from db import get_db
+    from models import VisitPreparation
+    data = request.json or {}
+    session = get_db()
+    try:
+        prep = VisitPreparation(
+            name=data.get("name", "Besuch"),
+            guest_count=data.get("guest_count", 1),
+            preparation_actions=data.get("preparation_actions", []),
+            auto_trigger=data.get("auto_trigger", False),
+            trigger_config=data.get("trigger_config"),
+        )
+        session.add(prep)
+        session.commit()
+        return jsonify({"id": prep.id, "success": True})
+    finally:
+        session.close()
+
+
+@health_bp.route("/api/health/visit-preparations/<int:prep_id>", methods=["PUT"])
+def api_update_visit_preparation(prep_id):
+    """Update a visit preparation."""
+    from db import get_db
+    from models import VisitPreparation
+    data = request.json or {}
+    session = get_db()
+    try:
+        prep = session.get(VisitPreparation, prep_id)
+        if not prep:
+            return jsonify({"error": "Not found"}), 404
+        for key in ["name", "guest_count", "preparation_actions", "auto_trigger", "trigger_config", "is_active"]:
+            if key in data:
+                setattr(prep, key, data[key])
+        session.commit()
+        return jsonify({"success": True})
+    finally:
+        session.close()
+
+
+@health_bp.route("/api/health/visit-preparations/<int:prep_id>", methods=["DELETE"])
+def api_delete_visit_preparation(prep_id):
+    """Delete a visit preparation."""
+    from db import get_db
+    from models import VisitPreparation
+    session = get_db()
+    try:
+        prep = session.get(VisitPreparation, prep_id)
+        if prep:
+            session.delete(prep)
+            session.commit()
+        return jsonify({"success": True})
+    finally:
+        session.close()
+
+
+@health_bp.route("/api/health/visit-preparations/<int:prep_id>/activate", methods=["POST"])
+def api_activate_visit_preparation(prep_id):
+    """Activate a visit preparation (execute actions)."""
+    manager = _deps.get("visit_manager")
+    if not manager:
+        return jsonify({"error": "Not available"}), 503
+    result = manager.activate(prep_id)
+    return jsonify(result)
+
+
+# ──────────────────────────────────────────────
+# Batch 2: Vacation Detection Endpoints
+# ──────────────────────────────────────────────
+
+@health_bp.route("/api/health/vacation-status", methods=["GET"])
+def api_get_vacation_status():
+    """Get vacation detection status."""
+    detector = _deps.get("vacation_detector")
+    if not detector:
+        return jsonify({"vacation_active": False, "away_since": None, "hours_away": 0})
+    return jsonify(detector.get_status())
+
+
+# ──────────────────────────────────────────────
 # Health Dashboard (Batch 5 — stub endpoints)
 # ──────────────────────────────────────────────
 
