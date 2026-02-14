@@ -843,10 +843,11 @@ class PatternDetector:
             # B5: Decay now handled solely by apply_confidence_decay (scheduler, every 12h)
 
             # Cleanup: Remove stale patterns not confirmed in this analysis run
-            # Only remove "observed" patterns (user-approved/rejected are kept)
+            # Remove auto-generated patterns (observed/insight/suggested) that were not
+            # updated. User-approved ("active") and user-rejected ("rejected"/"disabled") are kept.
             stale = session.query(LearnedPattern).filter(
                 LearnedPattern.updated_at < analysis_start,
-                LearnedPattern.status == "observed",
+                LearnedPattern.status.in_(["observed", "insight", "suggested"]),
                 LearnedPattern.is_active == True,
             ).all()
             stale_count = len(stale)
