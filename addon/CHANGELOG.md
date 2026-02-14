@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.12 – Fix Korrelations-Regression
+
+### Fix
+- **Korrelations-Filter zu aggressiv**: `MAX_STATE_AGE_SECONDS` von 2 Stunden auf 8 Stunden erhoeht — viele Entities (person, Licht, Klima) halten ihren State stundenlang, der 2h-Filter hat praktisch alle Korrelationen herausgefiltert (0 Korrelationsmuster in Produktion)
+- **Debug-Logging**: Zeitmuster-Erkennung protokolliert jetzt Gruppen/Schwellwerte/Ablehnungen fuer bessere Diagnose
+
 ## 0.7.11 – Mustererkennung komplett ueberarbeitet (29 Fixes)
 
 ### Kritische Fixes
@@ -12,7 +18,7 @@
 
 ### Datenqualitaet
 - **Korrelationen Room-Aware**: B3-Korrelationen haben jetzt getrennte Schwellwerte fuer same-room (ratio 0.7, count 4) und cross-room (ratio 0.8, count 10)
-- **State-Bereinigung**: Korrelationen ignorieren Entity-States die aelter als 2 Stunden sind
+- **State-Bereinigung**: Korrelationen ignorieren Entity-States die aelter als 8 Stunden sind
 - **Exclusions sofort wirksam**: Ausschluesse werden direkt an Detektoren und den Executor weitergegeben (nicht erst bei naechster 6h-Analyse)
 - **Bessere Statistik**: Example-Cap von 20 auf 50 erhoeht, Timing-Konsistenz fliesst in Confidence ein, 5s Mindest-Toleranz fuer kurze Delays
 - **Automation-Ketten**: Events die durch bestehende HA-Automationen ausgeloest wurden, werden erkannt und uebersprungen
