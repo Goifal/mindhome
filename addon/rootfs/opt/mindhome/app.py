@@ -486,6 +486,10 @@ def start_app():
     automation_scheduler.start()
     logger.info("  ✅ Automation Engine started")
 
+    # Register Phase 4 tasks
+    from engines.data_retention import run_data_retention
+    task_scheduler.register("data_retention", run_data_retention, interval_seconds=3600)
+
     # Start task scheduler
     task_scheduler.start()
     logger.info("  ✅ Task Scheduler started")

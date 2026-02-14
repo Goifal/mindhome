@@ -1,4 +1,4 @@
-# MindHome Models v0.6.2 (2026-02-10) - models.py
+# MindHome Models v0.7.0 (2026-02-14) - models.py
 """
 MindHome - Database Models
 All persistent data structures for MindHome.
@@ -160,6 +160,8 @@ class Device(Base):
     is_tracked = Column(Boolean, default=True)
     is_controllable = Column(Boolean, default=True)
     device_meta = Column(JSON, default=dict)
+    # Phase 4: bus type for protocol-specific optimizations
+    bus_type = Column(String(20), nullable=True)  # "knx", "zigbee", "wifi", "zwave", null
     created_at = Column(DateTime, default=_utcnow)
 
     room = relationship("Room", back_populates="devices")
@@ -208,6 +210,10 @@ class LearnedPattern(Base):
 
     # Phase 3
     context_tags = Column(JSON, nullable=True)  # {"persons": [...], "day_type": "weekday", ...}
+
+    # Phase 4
+    transition_config = Column(JSON, nullable=True)  # #23 Sanftes Eingreifen: {"type": "gradual", "duration_min": 15, "steps": 5}
+    adaptive_timing = Column(JSON, nullable=True)  # #11 Adaptive Reaktionszeit: {"avg_offset_min": -3, "samples": 10}
 
     created_at = Column(DateTime, default=_utcnow)
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
@@ -564,6 +570,10 @@ class EnergyConfig(Base):
     solar_entity = Column(String(255), nullable=True)
     grid_import_entity = Column(String(255), nullable=True)
     grid_export_entity = Column(String(255), nullable=True)
+    # Phase 4
+    optimization_mode = Column(String(30), nullable=True)  # #1 "balanced", "eco", "comfort"
+    pv_load_management = Column(Boolean, default=False)  # #2 PV-Lastmanagement aktiv
+    pv_priority_entities = Column(JSON, nullable=True)  # #2 Prioritaetsliste Geraete
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
 
 
@@ -624,6 +634,9 @@ class LearnedScene(Base):
     schedule_cron = Column(String(100), nullable=True)  # cron-like: "0 20 * * 5" = Fri 20:00
     schedule_enabled = Column(Boolean, default=False)
     action_delay_seconds = Column(Integer, default=0)  # delay between actions
+    # Phase 4
+    is_favorite = Column(Boolean, default=False)  # #20 Szenen-Favoriten
+    favorite_sort = Column(Integer, default=0)  # Sortierung Favoriten
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=_utcnow)
 
@@ -769,6 +782,9 @@ class NotificationLog(Base):
     message = Column(Text, nullable=False)
     was_sent = Column(Boolean, default=False)
     was_read = Column(Boolean, default=False)
+    # Phase 4
+    context_data = Column(JSON, nullable=True)  # #24 {"room": "Wohnzimmer", "person": "Max", ...}
+    room_id = Column(Integer, ForeignKey("rooms.id"), nullable=True)  # #24 Raum-Bezug
     created_at = Column(DateTime, default=_utcnow)
 
 
@@ -889,6 +905,180 @@ class PatternMatchLog(Base):
 
     pattern = relationship("LearnedPattern")
     trigger_event = relationship("StateHistory")
+
+
+# ==============================================================================
+# Phase 4: Sleep & Health
+# ==============================================================================
+
+class SleepSession(Base):
+    """Sleep tracking per user (#4, #16)."""
+    __tablename__ = "sleep_sessions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    sleep_start = Column(DateTime, nullable=False)
+    sleep_end = Column(DateTime, nullable=True)
+    quality_score = Column(Float, nullable=True)  # 0-100
+    context = Column(JSON, nullable=True)  # {"interruptions": 2, "room_temp": 21.5, ...}
+    source = Column(String(30), default="auto")  # "auto", "manual"
+    created_at = Column(DateTime, default=_utcnow)
+
+    user = relationship("User")
+
+
+class ComfortScore(Base):
+    """Per-room comfort scoring (#10)."""
+    __tablename__ = "comfort_scores"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    room_id = Column(Integer, ForeignKey("rooms.id"), nullable=False)
+    score = Column(Float, nullable=False)  # 0-100
+    factors = Column(JSON, nullable=True)  # {"temp": 85, "humidity": 70, "co2": 90, "light": 60}
+    created_at = Column(DateTime, default=_utcnow, index=True)
+
+    room = relationship("Room")
+
+
+class HealthMetric(Base):
+    """Aggregated health metrics for dashboard (#28)."""
+    __tablename__ = "health_metrics"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    metric_type = Column(String(50), nullable=False)  # "sleep_quality", "comfort_avg", "screen_time"
+    value = Column(Float, nullable=False)
+    unit = Column(String(20), nullable=True)  # "score", "minutes", "ppm"
+    context = Column(JSON, nullable=True)
+    created_at = Column(DateTime, default=_utcnow, index=True)
+
+    user = relationship("User")
+
+
+class WakeUpConfig(Base):
+    """Smart wake-up configuration per user (#25)."""
+    __tablename__ = "wakeup_configs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    enabled = Column(Boolean, default=True)
+    wake_time = Column(String(5), nullable=True)  # "06:30"
+    linked_to_schedule = Column(Boolean, default=True)  # use PersonSchedule.time_wake
+    light_entity = Column(String(255), nullable=True)
+    climate_entity = Column(String(255), nullable=True)
+    cover_entity = Column(String(255), nullable=True)
+    ramp_minutes = Column(Integer, default=20)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=_utcnow)
+
+    user = relationship("User")
+
+
+class CircadianConfig(Base):
+    """Circadian lighting config per room (#27)."""
+    __tablename__ = "circadian_configs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    room_id = Column(Integer, ForeignKey("rooms.id"), nullable=False)
+    enabled = Column(Boolean, default=True)
+    control_mode = Column(String(20), default="mindhome")  # "mindhome" or "hybrid_hcl"
+    light_type = Column(String(20), default="dim2warm")  # "dim2warm", "tunable_white", "standard"
+    brightness_curve = Column(JSON, nullable=True)  # [{"time": "06:00", "pct": 50}, ...]
+    hcl_pause_ga = Column(String(50), nullable=True)  # KNX group address: pause HCL
+    hcl_resume_ga = Column(String(50), nullable=True)  # KNX group address: resume HCL
+    override_sleep = Column(Integer, default=10)  # brightness % when sleep detected
+    override_wakeup = Column(Integer, default=70)  # brightness % for wake-up
+    override_guests = Column(Integer, default=90)  # brightness % when guests
+    override_transition_sec = Column(Integer, default=300)  # transition time for overrides
+    created_at = Column(DateTime, default=_utcnow)
+
+    room = relationship("Room")
+
+
+# ==============================================================================
+# Phase 4: Energy Forecasting
+# ==============================================================================
+
+class EnergyForecast(Base):
+    """Daily energy consumption forecast (#26)."""
+    __tablename__ = "energy_forecasts"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    date = Column(String(10), nullable=False)  # "2026-02-14"
+    predicted_kwh = Column(Float, nullable=True)
+    actual_kwh = Column(Float, nullable=True)
+    weather_condition = Column(String(50), nullable=True)
+    day_type = Column(String(20), nullable=True)  # "weekday", "weekend", "holiday"
+    model_version = Column(String(20), default="v1")
+    created_at = Column(DateTime, default=_utcnow)
+
+
+# ==============================================================================
+# Phase 4: Climate & Ventilation
+# ==============================================================================
+
+class VentilationReminder(Base):
+    """Ventilation tracking per room (#18)."""
+    __tablename__ = "ventilation_reminders"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    room_id = Column(Integer, ForeignKey("rooms.id"), nullable=False)
+    last_ventilated = Column(DateTime, nullable=True)
+    reminder_interval_min = Column(Integer, default=120)  # default 2 hours
+    co2_threshold = Column(Integer, default=1000)  # ppm
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=_utcnow)
+
+    room = relationship("Room")
+
+
+class WeatherAlert(Base):
+    """Weather forecast alerts (#21)."""
+    __tablename__ = "weather_alerts"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    alert_type = Column(String(30), nullable=False)  # "heavy_rain", "storm", "frost", "heat", "snow"
+    severity = Column(String(20), default="warning")  # "info", "warning", "severe"
+    message_de = Column(Text, nullable=True)
+    message_en = Column(Text, nullable=True)
+    valid_from = Column(DateTime, nullable=True)
+    valid_until = Column(DateTime, nullable=True)
+    was_notified = Column(Boolean, default=False)
+    forecast_data = Column(JSON, nullable=True)
+    created_at = Column(DateTime, default=_utcnow)
+
+
+# ==============================================================================
+# Phase 4: Visit & Screen Time
+# ==============================================================================
+
+class VisitPreparation(Base):
+    """Visit preparation templates (#22)."""
+    __tablename__ = "visit_preparations"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(200), nullable=False)
+    guest_count = Column(Integer, default=1)
+    preparation_actions = Column(JSON, nullable=True)  # [{"entity_id": "...", "service": "...", "data": {...}}]
+    auto_trigger = Column(Boolean, default=False)
+    trigger_config = Column(JSON, nullable=True)  # {"type": "calendar"|"device", "entity": "..."}
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=_utcnow)
+
+
+class ScreenTimeConfig(Base):
+    """Screen time tracking configuration per user (#19)."""
+    __tablename__ = "screen_time_configs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    entity_ids = Column(JSON, nullable=True)  # ["media_player.tv_wohnzimmer", ...]
+    daily_limit_min = Column(Integer, default=180)  # 3 hours default
+    reminder_interval_min = Column(Integer, default=60)  # remind every hour
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=_utcnow)
+
+    user = relationship("User")
 
 
 # ==============================================================================
@@ -1354,6 +1544,168 @@ MIGRATIONS = [
             )""",
             # DataCollection: add created_at
             "ALTER TABLE data_collection ADD COLUMN created_at DATETIME DEFAULT CURRENT_TIMESTAMP",
+        ]
+    },
+    {
+        "version": 8,
+        "description": "Phase 4 - Sleep, comfort, health, circadian, energy forecast, weather alerts, visits, screen time",
+        "sql": [
+            # --- New tables ---
+
+            # SleepSession
+            """CREATE TABLE IF NOT EXISTS sleep_sessions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER REFERENCES users(id),
+                sleep_start DATETIME NOT NULL,
+                sleep_end DATETIME,
+                quality_score FLOAT,
+                context JSON,
+                source VARCHAR(30) DEFAULT 'auto',
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_sleep_sessions_user ON sleep_sessions(user_id, sleep_start)",
+
+            # ComfortScore
+            """CREATE TABLE IF NOT EXISTS comfort_scores (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                room_id INTEGER NOT NULL REFERENCES rooms(id),
+                score FLOAT NOT NULL,
+                factors JSON,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_comfort_scores_room ON comfort_scores(room_id, created_at)",
+
+            # HealthMetric
+            """CREATE TABLE IF NOT EXISTS health_metrics (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER REFERENCES users(id),
+                metric_type VARCHAR(50) NOT NULL,
+                value FLOAT NOT NULL,
+                unit VARCHAR(20),
+                context JSON,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_health_metrics_type ON health_metrics(metric_type, created_at)",
+
+            # WakeUpConfig
+            """CREATE TABLE IF NOT EXISTS wakeup_configs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL REFERENCES users(id),
+                enabled BOOLEAN DEFAULT 1,
+                wake_time VARCHAR(5),
+                linked_to_schedule BOOLEAN DEFAULT 1,
+                light_entity VARCHAR(255),
+                climate_entity VARCHAR(255),
+                cover_entity VARCHAR(255),
+                ramp_minutes INTEGER DEFAULT 20,
+                is_active BOOLEAN DEFAULT 1,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )""",
+
+            # CircadianConfig
+            """CREATE TABLE IF NOT EXISTS circadian_configs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                room_id INTEGER NOT NULL REFERENCES rooms(id),
+                enabled BOOLEAN DEFAULT 1,
+                control_mode VARCHAR(20) DEFAULT 'mindhome',
+                light_type VARCHAR(20) DEFAULT 'dim2warm',
+                brightness_curve JSON,
+                hcl_pause_ga VARCHAR(50),
+                hcl_resume_ga VARCHAR(50),
+                override_sleep INTEGER DEFAULT 10,
+                override_wakeup INTEGER DEFAULT 70,
+                override_guests INTEGER DEFAULT 90,
+                override_transition_sec INTEGER DEFAULT 300,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )""",
+
+            # EnergyForecast
+            """CREATE TABLE IF NOT EXISTS energy_forecasts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                date VARCHAR(10) NOT NULL,
+                predicted_kwh FLOAT,
+                actual_kwh FLOAT,
+                weather_condition VARCHAR(50),
+                day_type VARCHAR(20),
+                model_version VARCHAR(20) DEFAULT 'v1',
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_energy_forecasts_date ON energy_forecasts(date)",
+
+            # VentilationReminder
+            """CREATE TABLE IF NOT EXISTS ventilation_reminders (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                room_id INTEGER NOT NULL REFERENCES rooms(id),
+                last_ventilated DATETIME,
+                reminder_interval_min INTEGER DEFAULT 120,
+                co2_threshold INTEGER DEFAULT 1000,
+                is_active BOOLEAN DEFAULT 1,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )""",
+
+            # WeatherAlert
+            """CREATE TABLE IF NOT EXISTS weather_alerts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                alert_type VARCHAR(30) NOT NULL,
+                severity VARCHAR(20) DEFAULT 'warning',
+                message_de TEXT,
+                message_en TEXT,
+                valid_from DATETIME,
+                valid_until DATETIME,
+                was_notified BOOLEAN DEFAULT 0,
+                forecast_data JSON,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )""",
+
+            # VisitPreparation
+            """CREATE TABLE IF NOT EXISTS visit_preparations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name VARCHAR(200) NOT NULL,
+                guest_count INTEGER DEFAULT 1,
+                preparation_actions JSON,
+                auto_trigger BOOLEAN DEFAULT 0,
+                trigger_config JSON,
+                is_active BOOLEAN DEFAULT 1,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )""",
+
+            # ScreenTimeConfig
+            """CREATE TABLE IF NOT EXISTS screen_time_configs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL REFERENCES users(id),
+                entity_ids JSON,
+                daily_limit_min INTEGER DEFAULT 180,
+                reminder_interval_min INTEGER DEFAULT 60,
+                is_active BOOLEAN DEFAULT 1,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )""",
+
+            # --- Alter existing tables ---
+
+            # Device: bus_type
+            "ALTER TABLE devices ADD COLUMN bus_type VARCHAR(20)",
+
+            # LearnedPattern: Phase 4 extensions
+            "ALTER TABLE learned_patterns ADD COLUMN transition_config JSON",
+            "ALTER TABLE learned_patterns ADD COLUMN adaptive_timing JSON",
+
+            # LearnedScene: favorites
+            "ALTER TABLE learned_scenes ADD COLUMN is_favorite BOOLEAN DEFAULT 0",
+            "ALTER TABLE learned_scenes ADD COLUMN favorite_sort INTEGER DEFAULT 0",
+
+            # NotificationLog: context
+            "ALTER TABLE notification_log ADD COLUMN context_data JSON",
+            "ALTER TABLE notification_log ADD COLUMN room_id INTEGER REFERENCES rooms(id)",
+
+            # EnergyConfig: optimization + PV
+            "ALTER TABLE energy_config ADD COLUMN optimization_mode VARCHAR(30)",
+            "ALTER TABLE energy_config ADD COLUMN pv_load_management BOOLEAN DEFAULT 0",
+            "ALTER TABLE energy_config ADD COLUMN pv_priority_entities JSON",
+
+            # LearnedScene: schedule columns (missed in v6)
+            "ALTER TABLE learned_scenes ADD COLUMN schedule_cron VARCHAR(100)",
+            "ALTER TABLE learned_scenes ADD COLUMN schedule_enabled BOOLEAN DEFAULT 0",
+            "ALTER TABLE learned_scenes ADD COLUMN action_delay_seconds INTEGER DEFAULT 0",
         ]
     },
 ]
