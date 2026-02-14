@@ -690,7 +690,7 @@ class PatternDetector:
                 excluded_pairs.add((e.entity_a, e.entity_b))
                 excluded_pairs.add((e.entity_b, e.entity_a))
 
-            # Filter out entities from disabled domains
+            # Filter out entities from disabled domains (global toggle)
             disabled_domain_ids = {d.id for d in read_session.query(Domain).filter_by(is_enabled=False).all()}
             disabled_entities = set()
             if disabled_domain_ids:
@@ -698,16 +698,33 @@ class PatternDetector:
                     Device.domain_id.in_(disabled_domain_ids)
                 ).all()
                 disabled_entities = {d.ha_entity_id for d in disabled_devs}
+
+            # Also filter entities where ALL room-domain modes are "off"
+            # (domain is on globally but disabled in every room where it has devices)
+            from models import RoomDomainState
+            off_room_domains = read_session.query(RoomDomainState).filter(
+                RoomDomainState.mode == "off"
+            ).all()
+            off_rd_pairs = {(rds.room_id, rds.domain_id) for rds in off_room_domains}
+            if off_rd_pairs:
+                all_devices = read_session.query(Device).filter(
+                    Device.is_tracked == True,
+                    Device.room_id.isnot(None),
+                    Device.domain_id.isnot(None),
+                ).all()
+                for dev in all_devices:
+                    if (dev.room_id, dev.domain_id) in off_rd_pairs:
+                        disabled_entities.add(dev.ha_entity_id)
         finally:
             read_session.close()
 
-        # Remove events from disabled domains before analysis
+        # Remove events from disabled domains/room-modes before analysis
         if disabled_entities:
             before_count = len(events)
             events = [ev for ev in events if ev.entity_id not in disabled_entities]
             filtered = before_count - len(events)
             if filtered:
-                logger.info(f"Filtered {filtered} events from disabled domains")
+                logger.info(f"Filtered {filtered} events from disabled domains/rooms")
 
         logger.info(f"Analyzing {len(events)} events from last 14 days")
 
