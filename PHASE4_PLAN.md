@@ -12,18 +12,121 @@
 ## Strategie
 
 Phase 4 wird in **9 Batches** implementiert, geordnet nach Abhängigkeiten:
-1. Zuerst die **Datenbank-Migration** (alle neuen Models auf einmal)
+1. Zuerst die **Infrastruktur** (Modul-Struktur, DB-Migration, Feature-Flags, Retention)
 2. Dann Feature-Batches in logischer Reihenfolge
 3. Jeder Batch: Backend → Frontend → Tests
-4. Am Ende: Version-Bump, README-Update, Changelog
+4. Jedes Feature: Graceful Degradation bei fehlenden Sensoren
+5. Am Ende: Task-Gruppierung, Version-Bump, README-Update, Changelog
 
 ---
 
-## Batch 0: Datenbank & Infrastruktur
+## Batch 0: Infrastruktur & Datenbank
 
-**Ziel:** Alle neuen DB-Models und Migration v8 auf einmal anlegen.
+**Ziel:** Modul-Struktur anlegen, DB-Migration, Feature-Flags, Retention-Policy.
 
-### Neue Models in `models.py`:
+### 0a: Engine-Module auslagern (automation_engine.py → engines/)
+
+`automation_engine.py` ist bereits 1756 Zeilen. Statt alle neuen Klassen dort reinzupacken,
+werden sie in eigene Module ausgelagert. `automation_engine.py` bleibt als Orchestrator.
+
+```
+engines/
+├── __init__.py               # Exports aller Engine-Klassen
+├── sleep.py                  # SleepDetector, WakeUpManager (#4, #16, #25)
+├── energy.py                 # EnergyOptimizer, StandbyMonitor, EnergyForecaster (#1, #3, #26)
+├── circadian.py              # CircadianLightManager (#27)
+├── comfort.py                # ComfortCalculator, VentilationMonitor (#10, #17, #18)
+├── routines.py               # RoutineEngine, MoodEstimator (#5, #15)
+├── weather_alerts.py         # WeatherAlertManager (#21)
+└── visit.py                  # VisitPreparationManager (#22)
+```
+
+Bestehende Klassen in `automation_engine.py` bleiben dort (SuggestionGenerator,
+FeedbackProcessor, AutomationExecutor, ConflictDetector, PhaseManager, AnomalyDetector,
+NotificationManager, PresenceModeManager, PluginConflictDetector, QuietHoursManager).
+Nur neue Phase-4-Klassen kommen in `engines/`.
+
+### 0b: Feature-Flags
+
+Nicht jeder User hat alle Sensoren. Features können einzeln aktiviert/deaktiviert werden
+über `SystemSettings`-Einträge:
+
+```
+phase4.sleep_detection      = true/false  (braucht: Bewegungsmelder oder Licht im Schlafzimmer)
+phase4.sleep_quality        = true/false  (braucht: #4 + optional Temp/CO2-Sensor)
+phase4.smart_wakeup         = true/false  (braucht: dimmbare Lampe im Schlafzimmer)
+phase4.energy_optimization  = true/false  (braucht: Power-Sensoren)
+phase4.pv_management        = true/false  (braucht: Solar-Sensoren)
+phase4.standby_killer       = true/false  (braucht: Power-Sensoren an Geräten)
+phase4.energy_forecast      = true/false  (braucht: EnergyReadings Verlaufsdaten)
+phase4.comfort_score        = true/false  (braucht: min. 1 Sensor: Temp ODER Humidity ODER CO2)
+phase4.ventilation_reminder = true/false  (braucht: CO2-Sensor ODER Fenster-Kontakt)
+phase4.circadian_lighting   = true/false  (braucht: dimmbare Lampen)
+phase4.weather_alerts       = true/false  (braucht: weather.* Entity)
+phase4.screen_time          = true/false  (braucht: media_player Entity)
+phase4.mood_estimate        = true/false  (braucht: mehrere aktive Domains)
+phase4.room_transitions     = true/false  (braucht: Bewegungsmelder in >1 Raum)
+phase4.visit_preparation    = true/false
+phase4.vacation_detection   = true/false  (braucht: Person-Tracking)
+phase4.habit_drift          = true/false  (braucht: >30 Tage Pattern-Daten)
+phase4.adaptive_timing      = true/false
+phase4.calendar_integration = true/false  (braucht: calendar.* Entity)
+phase4.health_dashboard     = true/false
+```
+
+- Jeder Scheduler-Task prüft sein Flag bevor er läuft
+- Frontend zeigt nur aktivierte Features im Menü
+- Defaults: Features ohne spezielle Sensoren = true, mit Sensoren = auto-detect
+- API: `GET /api/system/phase4-features` → Liste mit Status + Sensor-Anforderungen
+- API: `PUT /api/system/phase4-features/<key>` → Feature ein/ausschalten
+
+### 0c: Graceful Degradation
+
+Jedes Feature muss mit **Minimal-Sensorik** funktionieren:
+
+| Feature | Voll-Sensorik | Fallback wenn fehlt |
+|---------|---------------|---------------------|
+| Schlaf-Erkennung | Bewegungsmelder Schlafzimmer | Licht-aus + Inaktivität > 30 Min |
+| Schlafqualität | Temp + CO2 + Bewegung | Score nur aus vorhandenen Faktoren (Gewichtung anpassen) |
+| Lüftungserinnerung | CO2-Sensor | Timer-basiert (alle 2h erinnern) |
+| Komfort-Score | Temp + Humidity + CO2 + Lux | Score aus vorhandenen Sensoren, fehlende = neutral (50/100) |
+| PV-Lastmanagement | Solar-Sensor | Feature auto-deaktiviert |
+| Bildschirmzeit | Media-Player Entity | Feature auto-deaktiviert |
+| Wetter-Vorwarnung | weather.* Entity | Feature auto-deaktiviert |
+| Stimmungserkennung | Mehrere aktive Domains | Nur "Aktiv"/"Ruhig" aus Bewegungsdaten |
+
+### 0d: Data Retention Policy
+
+Hochfrequente Tabellen brauchen Cleanup, sonst wächst DB unkontrolliert:
+
+| Tabelle | Frequenz | Rows/Jahr (5 Räume) | Retention |
+|---------|----------|---------------------|-----------|
+| `ComfortScore` | 15 Min | ~175.000 | 90 Tage Detail, dann Tages-Durchschnitt behalten |
+| `HealthMetric` | 15 Min | ~35.000 | 30 Tage Detail, dann Wochen-Summary |
+| `EnergyForecast` | täglich | ~1.800 | 365 Tage, dann löschen |
+| `SleepSession` | täglich | ~730 | Unbegrenzt (kleine Tabelle) |
+| `WeatherAlert` | bei Bedarf | ~500 | 30 Tage nach Ablauf löschen |
+| `EnergyReading` (besteht) | ~5 Min | ~525.000 | 90 Tage Detail, dann Stunden-Durchschnitt |
+| `StateHistory` (besteht) | Events | variabel | 30 Tage (bestehende Policy beibehalten) |
+
+Neuer Scheduler-Task: `data_retention_cleanup` — 1x/Nacht um 03:30:
+1. Aggregiert alte Detail-Daten zu Summaries
+2. Löscht aggregierte Detail-Rows
+3. Loggt Cleanup-Ergebnis in AuditTrail
+
+### 0e: Neue Spalte `bus_type` in Device
+
+Für KNX-spezifische Optimierungen (Transition, schnellere Erkennung):
+
+| Model | Neue Spalte | Werte |
+|-------|-------------|-------|
+| `Device` | `bus_type` (String, default=null) | `"knx"`, `"zigbee"`, `"wifi"`, `"zwave"`, `null` (unbekannt) |
+
+- Automatisch erkennbar aus Entity-ID-Prefix oder HA Device-Registry
+- Nutzen: KNX-Geräte können native Transitions, Zigbee hat Latenz, etc.
+- Feature #23 (Sanftes Eingreifen) kann bus_type-spezifische Strategien wählen
+
+### 0f: Neue Models in `models.py`
 
 | Model | Zweck | Felder |
 |-------|-------|--------|
@@ -51,9 +154,11 @@ Phase 4 wird in **9 Batches** implementiert, geordnet nach Abhängigkeiten:
 | `EnergyConfig` | `optimization_mode` (String) | Energieoptimierung (#1) |
 | `EnergyConfig` | `pv_load_management` (Boolean) | PV-Lastmanagement (#2) |
 | `EnergyConfig` | `pv_priority_entities` (JSON) | PV-Priorisierung |
+| `Device` | `bus_type` (String, default=null) | KNX/Zigbee/WiFi Erkennung |
 
-### Migration v8:
+### 0g: Migration v8:
 - Alle `CREATE TABLE` + `ALTER TABLE` Statements
+- Feature-Flag Defaults in `SystemSettings` einfügen
 - `db_migration_version` auf 8 setzen
 
 ---
@@ -61,10 +166,10 @@ Phase 4 wird in **9 Batches** implementiert, geordnet nach Abhängigkeiten:
 ## Batch 1: Energie & Solar (Features #1, #2, #3, #26)
 
 ### #1 Energieoptimierung
-**Dateien:** `routes/energy.py`, `automation_engine.py`, `domains/energy.py`
+**Dateien:** `engines/energy.py`, `routes/energy.py`, `domains/energy.py`
 
 - **Backend:**
-  - `EnergyOptimizer`-Klasse in `automation_engine.py`
+  - `EnergyOptimizer`-Klasse in `engines/energy.py`
   - Analysiert Verbrauchsmuster pro Gerät/Raum
   - Erkennt Spitzenlasten und schlägt Verlagerungen vor
   - Vergleicht Tagesverbrauch mit Durchschnitt → Spar-Tipps
@@ -73,7 +178,7 @@ Phase 4 wird in **9 Batches** implementiert, geordnet nach Abhängigkeiten:
 - **Frontend:** Neuer Tab "Optimierung" in der Energie-Seite
 
 ### #2 PV-Lastmanagement
-**Dateien:** `domains/solar.py`, `routes/energy.py`, `automation_engine.py`
+**Dateien:** `domains/solar.py`, `routes/energy.py`, `engines/energy.py`
 
 - **Backend:**
   - `solar.py` → `evaluate()` implementieren
@@ -85,10 +190,10 @@ Phase 4 wird in **9 Batches** implementiert, geordnet nach Abhängigkeiten:
 - **Frontend:** PV-Karte mit Flussdiagramm (Produktion → Verbrauch → Netz)
 
 ### #3 Standby-Killer (Vervollständigung)
-**Dateien:** `routes/energy.py`, `automation_engine.py`
+**Dateien:** `engines/energy.py`, `routes/energy.py`
 
 - **Backend:**
-  - `StandbyMonitor`-Klasse: Prüft alle konfigurierten Geräte
+  - `StandbyMonitor`-Klasse in `engines/energy.py`: Prüft alle konfigurierten Geräte
   - Wenn Power < threshold_watts für > idle_minutes → Aktion
   - Aktion: Benachrichtigung ODER Auto-Off (je nach Config)
   - Scheduler-Task: Alle 5 Min Standby-Geräte prüfen
@@ -96,10 +201,10 @@ Phase 4 wird in **9 Batches** implementiert, geordnet nach Abhängigkeiten:
 - **Frontend:** Standby-Geräte-Liste mit geschätzten Kosten
 
 ### #26 Energieprognose
-**Dateien:** `automation_engine.py`, `routes/energy.py`
+**Dateien:** `engines/energy.py`, `routes/energy.py`
 
 - **Backend:**
-  - `EnergyForecaster`-Klasse
+  - `EnergyForecaster`-Klasse in `engines/energy.py`
   - Nutzt letzte 30 Tage EnergyReadings + Wetter + Wochentag
   - Gewichteter Durchschnitt (gleicher Wochentag + ähnliches Wetter)
   - Speichert Prognose in `EnergyForecast`
@@ -112,10 +217,10 @@ Phase 4 wird in **9 Batches** implementiert, geordnet nach Abhängigkeiten:
 ## Batch 2: Schlaf & Gesundheit (Features #4, #16, #25)
 
 ### #4 Schlaf-Erkennung
-**Dateien:** `automation_engine.py`, `pattern_engine.py`
+**Dateien:** `engines/sleep.py`, `routes/health.py`
 
 - **Backend:**
-  - `SleepDetector`-Klasse
+  - `SleepDetector`-Klasse in `engines/sleep.py`
   - Heuristiken: Letzte Aktivität im Haus, Licht aus, Bewegungssensoren inaktiv
   - Nutzt `PersonSchedule.time_sleep` als Referenz
   - Erzeugt `SleepSession`-Einträge (start/end)
@@ -123,7 +228,7 @@ Phase 4 wird in **9 Batches** implementiert, geordnet nach Abhängigkeiten:
   - API: `GET /api/health/sleep` → letzte 7 Tage Schlaf-Daten
 
 ### #16 Schlafqualitäts-Tracker
-**Dateien:** `automation_engine.py`, `routes/system.py` (neuer Blueprint: `routes/health.py`)
+**Dateien:** `engines/sleep.py`, `routes/health.py`
 
 - **Backend:**
   - Erweitert `SleepSession` um Quality-Score
@@ -133,10 +238,10 @@ Phase 4 wird in **9 Batches** implementiert, geordnet nach Abhängigkeiten:
 - **Frontend:** Schlafqualitäts-Karte mit Trendlinie
 
 ### #25 Sanftes Wecken (Smart Wake-Up)
-**Dateien:** `automation_engine.py`, `routes/health.py`
+**Dateien:** `engines/sleep.py`, `routes/health.py`
 
 - **Backend:**
-  - `WakeUpManager`-Klasse
+  - `WakeUpManager`-Klasse in `engines/sleep.py`
   - Liest `WakeUpConfig` pro User
   - X Min vor Weckzeit: Licht langsam hochdimmen (0% → 100% über ramp_minutes)
   - Rollläden schrittweise öffnen
@@ -151,10 +256,10 @@ Phase 4 wird in **9 Batches** implementiert, geordnet nach Abhängigkeiten:
 ## Batch 3: Routinen & Anwesenheit (Features #5, #6, #22, #29)
 
 ### #5 Morgenroutine (Vervollständigung)
-**Dateien:** `automation_engine.py`
+**Dateien:** `engines/routines.py`, `routes/patterns.py`
 
 - **Backend:**
-  - `RoutineEngine`-Klasse
+  - `RoutineEngine`-Klasse in `engines/routines.py`
   - Erkennt Morgen-Sequenzen aus Pattern Engine (Cluster 5-9 Uhr)
   - Fasst einzelne Patterns zu einer "Routine" zusammen
   - Führt Routine als koordinierte Sequenz aus (nicht einzelne Patterns)
@@ -174,10 +279,10 @@ Phase 4 wird in **9 Batches** implementiert, geordnet nach Abhängigkeiten:
   - Kann Licht im nächsten Raum vorab einschalten
 
 ### #22 Besuchs-Vorbereitung
-**Dateien:** `automation_engine.py`, `routes/presence.py`
+**Dateien:** `engines/visit.py`, `routes/presence.py`
 
 - **Backend:**
-  - `VisitPreparationManager`-Klasse
+  - `VisitPreparationManager`-Klasse in `engines/visit.py`
   - Konfigurierbare Vorbereitungs-Aktionen (Licht, Temperatur, Musik)
   - Trigger: Manuell, Kalender-Event, Gast-Gerät erkannt
   - Template-System: "Gäste kommen" → [Wohnzimmer 22°C, Licht 80%, Musik an]
@@ -186,7 +291,7 @@ Phase 4 wird in **9 Batches** implementiert, geordnet nach Abhängigkeiten:
 - **Frontend:** Besuchs-Vorbereitungs-Seite mit Templates
 
 ### #29 Automatische Urlaubserkennung
-**Dateien:** `automation_engine.py`, `routes/presence.py`
+**Dateien:** `automation_engine.py` (PresenceModeManager erweitern), `routes/presence.py`
 
 - **Backend:**
   - Erweitert `PresenceModeManager`
@@ -201,10 +306,10 @@ Phase 4 wird in **9 Batches** implementiert, geordnet nach Abhängigkeiten:
 ## Batch 4: Klima & Umgebung (Features #10, #17, #18, #27, #21)
 
 ### #10 Komfort-Score
-**Dateien:** `automation_engine.py`, `routes/health.py`
+**Dateien:** `engines/comfort.py`, `routes/health.py`
 
 - **Backend:**
-  - `ComfortCalculator`-Klasse
+  - `ComfortCalculator`-Klasse in `engines/comfort.py`
   - Bewertet pro Raum: Temperatur (20-23°C ideal), Luftfeuchtigkeit (40-60%), CO2 (<1000ppm), Lichtniveau
   - Gewichteter Score 0-100
   - Speichert in `ComfortScore` (alle 15 Min)
@@ -224,7 +329,7 @@ Phase 4 wird in **9 Batches** implementiert, geordnet nach Abhängigkeiten:
 - **Frontend:** Ampel-Widget (3 Kreise pro Raum, farbcodiert)
 
 ### #18 Lüftungserinnerung (Vervollständigung)
-**Dateien:** `domains/air_quality.py`, `automation_engine.py`, `routes/health.py`
+**Dateien:** `engines/comfort.py`, `domains/air_quality.py`, `routes/health.py`
 
 - **Backend:**
   - Erweitert `VentilationReminder`-Model
@@ -236,7 +341,7 @@ Phase 4 wird in **9 Batches** implementiert, geordnet nach Abhängigkeiten:
   - API: `PUT /api/health/ventilation/<room_id>` → Config
 
 ### #27 Zirkadiane Beleuchtung (Dual-Mode: MindHome + MDT KNX HCL)
-**Dateien:** `automation_engine.py`, `routes/health.py`, `domains/light.py`
+**Dateien:** `engines/circadian.py`, `routes/health.py`, `domains/light.py`
 
 Unterstützt drei **Lampentypen** und zwei **Steuerungsmodi**:
 
@@ -291,10 +396,10 @@ Unterstützt drei **Lampentypen** und zwei **Steuerungsmodi**:
   - Bei Hybrid: KNX Gruppenadresse eingeben (Pause/Resume)
 
 ### #21 Wetter-Vorwarnung (Vervollständigung)
-**Dateien:** `domains/weather.py`, `automation_engine.py`
+**Dateien:** `engines/weather_alerts.py`, `domains/weather.py`
 
 - **Backend:**
-  - `WeatherAlertManager`-Klasse
+  - `WeatherAlertManager`-Klasse in `engines/weather_alerts.py`
   - Prüft HA-Wetter-Forecast auf:
     - Starkregen/Sturm → "Fenster schließen!"
     - Frost → "Heizung prüfen, Pflanzen schützen"
@@ -310,7 +415,7 @@ Unterstützt drei **Lampentypen** und zwei **Steuerungsmodi**:
 ## Batch 5: KI-Verbesserungen (Features #11, #12, #15)
 
 ### #11 Adaptive Reaktionszeit
-**Dateien:** `automation_engine.py`
+**Dateien:** `automation_engine.py` (AutomationExecutor erweitern)
 
 - **Backend:**
   - Erweitert `AutomationExecutor._check_time_trigger()`
@@ -331,10 +436,10 @@ Unterstützt drei **Lampentypen** und zwei **Steuerungsmodi**:
   - API: `GET /api/patterns/drift` → erkannte Veränderungen
 
 ### #15 Stimmungserkennung
-**Dateien:** `automation_engine.py`
+**Dateien:** `engines/routines.py`, `routes/health.py`
 
 - **Backend:**
-  - `MoodEstimator`-Klasse (kein ML, regelbasiert)
+  - `MoodEstimator`-Klasse in `engines/routines.py` (kein ML, regelbasiert)
   - Heuristiken aus Gerätenutzung:
     - Viel Medienkonsum + dunkles Licht → "Entspannt"
     - Hohe Aktivität, viele Raumwechsel → "Aktiv"
@@ -386,10 +491,10 @@ Unterstützt drei **Lampentypen** und zwei **Steuerungsmodi**:
   - Drag & Drop Sortierung (optional)
 
 ### #19 Bildschirmzeit-Reminder
-**Dateien:** `automation_engine.py`, `routes/health.py`
+**Dateien:** `engines/comfort.py`, `routes/health.py`
 
 - **Backend:**
-  - `ScreenTimeMonitor`-Klasse
+  - `ScreenTimeMonitor`-Klasse in `engines/comfort.py`
   - Trackt: Media-Player aktiv, TV-Entity an
   - Erinnerung nach X Min Nutzung: "Du schaust seit 2h fern"
   - Konfigurierbar pro User: Limit, Intervall
@@ -397,7 +502,7 @@ Unterstützt drei **Lampentypen** und zwei **Steuerungsmodi**:
   - API: `PUT /api/health/screen-time/config` → Konfiguration
 
 ### #23 Sanftes Eingreifen (Vervollständigung)
-**Dateien:** `automation_engine.py`
+**Dateien:** `automation_engine.py` (AutomationExecutor erweitern)
 
 - **Backend:**
   - Erweitert `_execute_action()` um `transition`-Parameter
@@ -411,7 +516,7 @@ Unterstützt drei **Lampentypen** und zwei **Steuerungsmodi**:
   - Default: 5 Min Übergang für Licht, 30 Min für Klima
 
 ### #24 Kontext-Benachrichtigungen (Vervollständigung)
-**Dateien:** `automation_engine.py`, `routes/notifications.py`
+**Dateien:** `automation_engine.py` (NotificationManager erweitern), `routes/notifications.py`
 
 - **Backend:**
   - Erweitert `NotificationManager`
@@ -461,20 +566,19 @@ Unterstützt drei **Lampentypen** und zwei **Steuerungsmodi**:
 - `routes/__init__.py`: `health_bp` registrieren
 - `app.py`: Health-Blueprint importieren
 
-### Scheduler-Tasks (Zusammenfassung)
-| Task | Intervall | Feature |
-|------|-----------|---------|
-| Standby-Check | 5 Min | #3 |
-| PV-Überschuss | 5 Min | #2 |
-| Komfort-Score | 15 Min | #10 |
-| Zirkadiane Beleuchtung | 15 Min | #27 |
-| Lüftungserinnerung | 10 Min | #18 |
-| Wetter-Forecast | 30 Min | #21 |
-| Schlaf-Erkennung | 5 Min | #4 |
-| Wakeup-Check | 1 Min | #25 |
-| Energieprognose | 1x/Tag | #26 |
-| Gewohnheits-Drift | 1x/Woche | #12 |
-| Energieoptimierung | 1x/Tag | #1 |
+### Scheduler-Tasks (gruppiert für Performance)
+
+Statt 11 einzelner Tasks → **5 gruppierte Tasks** + 2 Einzel-Tasks:
+
+| Gruppen-Task | Intervall | Enthält | Features |
+|--------------|-----------|---------|----------|
+| `energy_check` | 5 Min | StandbyMonitor + PV-Überschuss | #2, #3 |
+| `health_check` | 15 Min | ComfortScore + Circadian + Ventilation + ScreenTime | #10, #18, #19, #27 |
+| `sleep_check` | 5 Min | SleepDetector + WakeUpManager | #4, #25 |
+| `weather_check` | 30 Min | WeatherAlerts | #21 |
+| `daily_batch` | 1x/Tag 00:05 | Energieprognose + Energieoptimierung | #1, #26 |
+| `weekly_batch` | 1x/Woche So 03:00 | Gewohnheits-Drift | #12 |
+| `data_retention` | 1x/Nacht 03:30 | Cleanup aller Retention-Policies | Infrastruktur |
 
 ---
 
@@ -482,21 +586,24 @@ Unterstützt drei **Lampentypen** und zwei **Steuerungsmodi**:
 
 | Batch | Features | Neue Dateien | Geänderte Dateien |
 |-------|----------|-------------|-------------------|
-| 0 | DB-Migration | — | models.py |
-| 1 | #1, #2, #3, #26 | — | energy.py, solar.py, automation_engine.py |
-| 2 | #4, #16, #25 | routes/health.py | automation_engine.py, pattern_engine.py |
-| 3 | #5, #6, #22, #29 | — | automation_engine.py, presence.py, pattern_engine.py |
-| 4 | #10, #17, #18, #27, #21 | — | health.py, automation_engine.py, weather.py, light.py, air_quality.py |
-| 5 | #11, #12, #15 | — | automation_engine.py, pattern_engine.py |
-| 6 | #13, #14 | — | system.py, pattern_engine.py |
-| 7 | #20, #19, #23, #24 | — | scenes.py, health.py, automation_engine.py, notifications.py |
-| 8 | #28 | — | health.py, app.jsx |
+| 0 | Infrastruktur | engines/__init__.py, engines/sleep.py, engines/energy.py, engines/circadian.py, engines/comfort.py, engines/routines.py, engines/weather_alerts.py, engines/visit.py, routes/health.py | models.py, automation_engine.py |
+| 1 | #1, #2, #3, #26 | — | engines/energy.py, routes/energy.py, domains/solar.py |
+| 2 | #4, #16, #25 | — | engines/sleep.py, routes/health.py |
+| 3 | #5, #6, #22, #29 | — | engines/routines.py, engines/visit.py, routes/presence.py, pattern_engine.py, automation_engine.py |
+| 4 | #10, #17, #18, #27, #21 | — | engines/comfort.py, engines/circadian.py, engines/weather_alerts.py, routes/health.py, domains/light.py, domains/air_quality.py |
+| 5 | #11, #12, #15 | — | automation_engine.py, pattern_engine.py, engines/routines.py |
+| 6 | #13, #14 | — | routes/system.py, pattern_engine.py |
+| 7 | #20, #19, #23, #24 | — | routes/scenes.py, engines/comfort.py, automation_engine.py, routes/notifications.py |
+| 8 | #28 | — | routes/health.py, app.jsx |
 | 9 | Finalisierung | — | version.py, README.md, CHANGELOG.md, de.json, en.json |
 
 **Geschätzte Änderungen:**
-- 1 neue Datei: `routes/health.py`
-- ~10 neue DB-Models + ~8 neue Spalten
+- 9 neue Dateien: `engines/` (7 Module + __init__) + `routes/health.py`
+- ~10 neue DB-Models + ~9 neue Spalten (inkl. bus_type)
+- ~20 Feature-Flags in SystemSettings
 - ~15 bestehende Dateien modifiziert
 - ~20 neue API-Endpoints
-- ~15 neue Scheduler-Tasks
+- 7 gruppierte Scheduler-Tasks (statt 11 einzelne)
+- 1 Data-Retention-Task (Nacht-Cleanup)
 - Frontend: ~5 neue Seiten/Tabs in app.jsx
+- Graceful Degradation für alle Sensor-abhängigen Features
