@@ -1522,11 +1522,12 @@ class PatternDetector:
 
         # Find strong correlations
         # Fix #8: Room-aware thresholds for correlations
-        # v0.7.14: Relaxed from 0.7/0.8 to 0.55/0.7 — 22k pairs failed at old thresholds
+        # v0.7.14: Fixed ratio calculation (was diluted across all entities)
+        # Now ratios are per-entity, so thresholds can be meaningful
         min_corr_count_same = 4
         min_corr_count_cross = 7
-        min_corr_ratio_same = 0.55
-        min_corr_ratio_cross = 0.7
+        min_corr_ratio_same = 0.7
+        min_corr_ratio_cross = 0.8
 
         total_pairs = len(cooccurrences)
         pairs_too_few = 0
@@ -1542,8 +1543,18 @@ class PatternDetector:
                 pairs_too_few += 1
                 continue
 
+            # Pre-compute per-entity totals for correct ratio calculation
+            # ratio = "of all times eid_b was observed, how often was it in state_b?"
+            entity_totals = {}
+            for (eid, st), cnt in targets.items():
+                entity_totals[eid] = entity_totals.get(eid, 0) + cnt
+
             for (eid_b, state_b), count in targets.items():
-                ratio = count / total
+                # Fix: ratio per target entity, not across all targets
+                # Old: ratio = count / total (diluted by ~50 entities → always < 0.02)
+                # New: ratio = count / observations_of_eid_b (correct: "75% of the time kitchen is on")
+                entity_total = entity_totals.get(eid_b, 1)
+                ratio = count / entity_total
 
                 # Fix #8: Apply room-aware filtering
                 room_a = entity_room_map.get(eid_a)
