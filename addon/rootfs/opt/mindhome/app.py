@@ -665,9 +665,18 @@ def start_app():
     automation_scheduler.start()
     logger.info("  ✅ Automation Engine started")
 
+    # Register cleanup + DB maintenance tasks
+    from routes.system import run_cleanup, run_db_maintenance
+    task_scheduler.register("db_cleanup", run_cleanup,
+                            interval_seconds=24 * 3600,  # daily
+                            run_immediately=False)
+    task_scheduler.register("db_maintenance", run_db_maintenance,
+                            interval_seconds=7 * 24 * 3600,  # weekly
+                            run_immediately=False)
+
     # Start task scheduler
     task_scheduler.start()
-    logger.info("  ✅ Task Scheduler started")
+    logger.info("  ✅ Task Scheduler started (cleanup:24h, maintenance:7d)")
 
     logger.info(f"MindHome {vi['full']} started successfully!")
 

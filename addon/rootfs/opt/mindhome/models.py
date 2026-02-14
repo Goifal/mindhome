@@ -1,4 +1,4 @@
-# MindHome Models v0.6.2 (2026-02-10) - models.py
+# MindHome Models v0.6.51 (2026-02-14) - models.py
 """
 MindHome - Database Models
 All persistent data structures for MindHome.
@@ -1362,6 +1362,19 @@ MIGRATIONS = [
         "description": "v0.6.30 - Room-level domain mode override",
         "sql": [
             "ALTER TABLE room_domain_states ADD COLUMN mode VARCHAR(20) DEFAULT 'global'",
+        ]
+    },
+    {
+        "version": 9,
+        "description": "v0.6.51 - DB indexes on learned_patterns + pattern_match_log cleanup index",
+        "sql": [
+            "CREATE INDEX IF NOT EXISTS idx_learned_patterns_status_active ON learned_patterns(status, is_active)",
+            "CREATE INDEX IF NOT EXISTS idx_learned_patterns_type_active ON learned_patterns(pattern_type, is_active)",
+            "CREATE INDEX IF NOT EXISTS idx_learned_patterns_domain ON learned_patterns(domain_id)",
+            "CREATE INDEX IF NOT EXISTS idx_learned_patterns_room ON learned_patterns(room_id)",
+            "CREATE INDEX IF NOT EXISTS idx_learned_patterns_confidence ON learned_patterns(confidence)",
+            "CREATE INDEX IF NOT EXISTS idx_learned_patterns_last_matched ON learned_patterns(last_matched_at)",
+            "CREATE INDEX IF NOT EXISTS idx_pattern_match_log_matched ON pattern_match_log(matched_at)",
         ]
     },
 ]
