@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.7.8 – Bugfix: Muster-Ablehnung & Domain-Ausschluss
+
+### Muster-Ablehnung Fix
+- Abgelehnte Muster tauchen nach "Jetzt synchronisieren" nicht mehr wieder auf
+- `_upsert_pattern()` prüft jetzt auch rejected/disabled Muster bei Duplikat-Erkennung
+- Betrifft alle 3 Mustertypen: time_based, event_chain, correlation
+
+### Domain-Ausschluss Fix
+- Deaktivierte Domains (z.B. Klima, Licht) werden jetzt bei Mustererkennung respektiert
+- Events von Geräten deaktivierter Domains werden vor der Analyse herausgefiltert
+- Kein erneutes Auftauchen von Mustern für ausgeschlossene Domains mehr
+
 ## 0.7.7 – UI Polish: Klima & KI Seiten
 
 ### ClimatePage Redesign
