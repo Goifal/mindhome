@@ -46,8 +46,7 @@ class RoutineEngine:
             if not is_feature_enabled("phase4.room_transitions"):
                 return self._cached_routines
 
-            session = self.get_session()
-            try:
+            with self.get_session() as session:
                 # Get accepted/active patterns with time info
                 patterns = session.query(LearnedPattern).filter(
                     LearnedPattern.is_active == True,
@@ -126,8 +125,6 @@ class RoutineEngine:
                 self._last_detect = datetime.now(timezone.utc)
                 logger.info(f"Detected {len(routines)} routines ({', '.join(r['period'] for r in routines)})")
                 return routines
-            finally:
-                session.close()
         except Exception as e:
             logger.error(f"detect_routines error: {e}")
             return self._cached_routines
@@ -175,8 +172,7 @@ class RoutineEngine:
             if not is_feature_enabled("phase4.room_transitions"):
                 return []
 
-            session = self.get_session()
-            try:
+            with self.get_session() as session:
                 cutoff = datetime.now(timezone.utc) - timedelta(days=7)
                 # Get motion events grouped by room
                 motion_events = session.query(StateHistory).filter(
@@ -222,8 +218,6 @@ class RoutineEngine:
                     })
 
                 return results[:20]  # top 20
-            finally:
-                session.close()
         except Exception as e:
             logger.error(f"detect_room_transitions error: {e}")
             return []
