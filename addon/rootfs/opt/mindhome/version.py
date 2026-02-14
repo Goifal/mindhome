@@ -4,12 +4,35 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "0.7.10"
-BUILD = 63
+VERSION = "0.7.11"
+BUILD = 64
 BUILD_DATE = "2026-02-14"
 CODENAME = "Phase 4 - Smart Health"
 
 # Changelog
+# Build 64: v0.7.11 Mustererkennung komplett ueberarbeitet (29 Fixes)
+#   KRITISCHE FIXES:
+#   - Fix: Cross-Room Confidence-Formel (Doppelbestrafung behoben, min_count wirkt korrekt)
+#   - Fix: Mitternachts-Bug in Clustering + Average (zirkulaerer Mittelwert via sin/cos)
+#   - Fix: Confidence sinkt jetzt bei Upsert (gewichteter Durchschnitt 30/70 statt max())
+#   - Fix: Executor prueft DOMAIN_THRESHOLDS vor Ausfuehrung (Schloss braucht 0.95)
+#   - Fix: Bidirektionale Loop-Erkennung (A->B + B->A wird verhindert)
+#   - Fix: unavailable/unknown States werden aus Analyse gefiltert
+#   DATEN-QUALITAET:
+#   - Korrelationen (B3) Room-Aware Filtering (same/cross-room Schwellwerte)
+#   - entity_states Bereinigung in Korrelationen (max 2h Alter)
+#   - Exclusions sofort wirksam (Detektoren + Executor Runtime)
+#   - Example-Cap 20->50, Timing als Confidence-Faktor, 5s Min-Toleranz
+#   - Automation-triggered Ketten werden uebersprungen
+#   PERFORMANCE:
+#   - Mutex-Lock verhindert parallele Analysen
+#   - Thread-Lock fuer Dedup-Cache, Pre-Fetch Devices, Upsert-Cache
+#   - Cross-Room Correlations in run_full_analysis integriert
+#   INFRASTRUKTUR:
+#   - Migration v11: 9 neue DB-Indexes
+#   - API: Status "insight"/"rejected" in Whitelist
+#   - Time-String Validierung im Context Builder
+#
 # Build 63: v0.7.10 Raum-Filter fuer Sequence-Patterns + JSX-Fix
 #   - Fix: Cross-Room-Patterns (z.B. Wohnzimmer-BWM → Toilette-Licht) werden jetzt gefiltert
 #     Same-Room: normaler Schwellwert (min 7 Vorkommen, Confidence 0.45)

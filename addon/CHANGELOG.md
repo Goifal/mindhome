@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.7.11 – Mustererkennung komplett ueberarbeitet (29 Fixes)
+
+### Kritische Fixes
+- **Cross-Room Confidence-Formel**: Doppelbestrafung behoben — min_count=20 wirkt jetzt tatsaechlich (vorher waren real ~25 noetig)
+- **Mitternachts-Bug**: Clustering und Durchschnittsberechnung um Mitternacht funktionieren jetzt korrekt (zirkulaerer Mittelwert via sin/cos)
+- **Confidence sinkt bei Upsert**: Gewichteter Durchschnitt (30% alt / 70% neu) statt `max()` — Muster die schwaecher werden, verlieren jetzt Confidence
+- **Executor prueft Schwellwerte**: `DOMAIN_THRESHOLDS` werden vor jeder Ausfuehrung geprueft (z.B. Schloss braucht 0.95 Confidence)
+- **Bidirektionale Loop-Erkennung**: Wenn A→B existiert, wird B→A nicht mehr als Pattern akzeptiert (verhindert Endlosschleifen)
+- **unavailable/unknown Filter**: HA-Fehlerzustaende werden vor der Analyse komplett herausgefiltert
+
+### Datenqualitaet
+- **Korrelationen Room-Aware**: B3-Korrelationen haben jetzt getrennte Schwellwerte fuer same-room (ratio 0.7, count 4) und cross-room (ratio 0.8, count 10)
+- **State-Bereinigung**: Korrelationen ignorieren Entity-States die aelter als 2 Stunden sind
+- **Exclusions sofort wirksam**: Ausschluesse werden direkt an Detektoren und den Executor weitergegeben (nicht erst bei naechster 6h-Analyse)
+- **Bessere Statistik**: Example-Cap von 20 auf 50 erhoeht, Timing-Konsistenz fliesst in Confidence ein, 5s Mindest-Toleranz fuer kurze Delays
+- **Automation-Ketten**: Events die durch bestehende HA-Automationen ausgeloest wurden, werden erkannt und uebersprungen
+
+### Performance
+- **Analyse-Mutex**: Verhindert parallele Analyselaeufe (war vorher moeglich bei langen Laeufen)
+- **Thread-Lock**: Dedup-Cache in app.py ist jetzt thread-safe
+- **Pre-Fetch**: Device-Namen werden einmal geladen statt N+1 DB-Queries pro Pattern
+- **Cross-Room Pre-Fetch**: ~20.000 DB-Queries auf 1 reduziert
+- **Upsert-Cache**: Pattern-Lookup wird pro Session gecacht statt bei jedem Aufruf neu geladen
+
+### Infrastruktur
+- **DB-Migration v11**: 9 neue Indexes (PatternMatchLog, PatternExclusion, NotificationLog, RoomDomainState, LearnedScene, Domain)
+- **API**: Status "insight" und "rejected" koennen jetzt per PUT gesetzt werden
+- **Cross-Room Integration**: `detect_cross_room_correlations()` wird jetzt in der Hauptanalyse aufgerufen
+- **Time-Validation**: Ungueltige Zeitstrings im Context Builder werden abgefangen
+
 ## 0.7.10 – Raum-Filter fuer Sequence-Patterns
 
 ### Intelligentere Mustererkennung
