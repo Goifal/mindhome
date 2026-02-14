@@ -693,6 +693,7 @@ class PatternDetector:
 
     def _run_full_analysis_inner(self):
         """Inner analysis method (runs under lock)."""
+        analysis_start = datetime.now(timezone.utc)
         logger.info("Starting pattern analysis...")
 
         # Fix #18: Clear upsert caches from previous run
@@ -840,6 +841,19 @@ class PatternDetector:
                             break
 
             # B5: Decay now handled solely by apply_confidence_decay (scheduler, every 12h)
+
+            # Cleanup: Remove stale patterns not confirmed in this analysis run
+            # Only remove "observed" patterns (user-approved/rejected are kept)
+            stale = session.query(LearnedPattern).filter(
+                LearnedPattern.updated_at < analysis_start,
+                LearnedPattern.status == "observed",
+                LearnedPattern.is_active == True,
+            ).all()
+            stale_count = len(stale)
+            for sp in stale:
+                session.delete(sp)
+            if stale_count > 0:
+                logger.info(f"Cleanup: removed {stale_count} stale patterns not confirmed in this run")
 
             total = len(time_patterns) + len(sequence_patterns) + len(correlation_patterns) + len(cross_room_patterns)
             logger.info(
@@ -1600,7 +1614,6 @@ class PatternDetector:
 
         # Top-N per trigger entity: keep only the strongest correlations per entity
         # This prevents a single entity from flooding the UI with dozens of patterns
-        from collections import defaultdict
         trigger_groups = defaultdict(list)
         for cand in correlation_candidates:
             trigger_groups[cand[0]].append(cand)  # group by eid_a

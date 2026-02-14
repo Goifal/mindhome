@@ -4,15 +4,20 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "0.7.17"
-BUILD = 70
+VERSION = "0.7.18"
+BUILD = 71
 BUILD_DATE = "2026-02-15"
 CODENAME = "Phase 4 - Smart Health"
 
 # Changelog
+# Build 71: v0.7.18 Stale-Pattern-Cleanup + defaultdict-Fix
+#   - FIX: "cannot access local variable 'defaultdict'" — doppelter Import entfernt
+#   - Stale-Pattern-Cleanup: Nach Analyse werden nicht-bestaetigte observed-Patterns geloescht
+#     Loest: 4234 alte Korrelationen blieben in DB obwohl Filter verschaerft
+#
 # Build 70: v0.7.17 Korrelations-Filter verschaerft (364 → ~30 Patterns)
-#   - Baseline verschaerft: 0.85 → 0.75 (mehr "immer gleich" Entities filtern)
-#   - Top-3 pro Trigger-Entity: Nur die 3 staerksten Korrelationen pro Trigger behalten
+#   - Baseline verschaerft: 0.85 → 0.75
+#   - Top-3 pro Trigger-Entity
 #   - Count-Schwellwerte erhoeht: same 6→8, cross 10→14
 #
 # Build 69: v0.7.16 Korrelations-Qualitaetsfilter (4220 → 364 Patterns)

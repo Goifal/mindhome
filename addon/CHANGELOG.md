@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.18 – Stale-Pattern-Cleanup + defaultdict-Fix
+
+### Fix
+- **defaultdict-Import**: "cannot access local variable 'defaultdict'" — doppelter Import entfernt (war schon global importiert)
+- **Stale-Pattern-Cleanup**: Nach jeder Analyse werden Patterns automatisch geloescht, die in diesem Lauf nicht bestaetigt/aktualisiert wurden. Betrifft nur `status=observed` — vom User bestaetigte/abgelehnte Patterns bleiben erhalten. Loest das Problem: 4.234 alte Korrelationen blieben in der DB obwohl die neuen Filter sie nicht mehr erzeugen
+
 ## 0.7.17 – Korrelations-Filter verschaerft (364 → ~30 Patterns)
 
 ### Fix
