@@ -35,6 +35,7 @@ def register_blueprints(app, dependencies):
     from routes.presence import presence_bp, init_presence
     from routes.schedules import schedules_bp, init_schedules
     from routes.frontend import frontend_bp, init_frontend
+    from routes.health import health_bp, init_health
 
     # Initialize each module with dependencies
     init_system(dependencies)
@@ -50,6 +51,7 @@ def register_blueprints(app, dependencies):
     init_presence(dependencies)
     init_schedules(dependencies)
     init_frontend(dependencies)
+    init_health(dependencies)
 
     # Register blueprints
     app.register_blueprint(system_bp)
@@ -65,3 +67,4 @@ def register_blueprints(app, dependencies):
     app.register_blueprint(presence_bp)
     app.register_blueprint(schedules_bp)
     app.register_blueprint(frontend_bp)
+    app.register_blueprint(health_bp)
