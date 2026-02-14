@@ -1,5 +1,41 @@
 # Changelog
 
+## 0.7.1 – Batch 1: Energie & Solar
+
+### Energie-Optimierung (#1)
+- **Verbrauchsanalyse**: Stündliche Spitzenlast-Erkennung, Tagesvergleich mit 30-Tage-Durchschnitt
+- **Top-Verbraucher**: Die 5 größten Stromfresser mit monatlichen Kosten in EUR
+- **Spar-Empfehlungen**: Automatische Tipps zur Lastverschiebung
+
+### PV-Lastmanagement (#2)
+- **Überschuss-Erkennung**: Echtzeit-Vergleich Produktion vs. Verbrauch
+- **Prioritätsliste**: Konfigurierbare Geräte-Reihenfolge bei Überschuss
+- **Auto-Aktivierung**: Geräte automatisch einschalten bei PV-Überschuss (>100W)
+
+### Standby-Killer (#3)
+- **Standby-Erkennung**: Leistung < Schwellwert über konfigurierbare Idle-Zeit
+- **Auto-Off**: Automatisches Abschalten oder Dashboard-Benachrichtigung
+- **Live-Status**: Aktuelle Standby-Geräte mit Idle-Dauer
+
+### Energieprognose (#26)
+- **7-Tage-Forecast**: Gewichteter Durchschnitt (gleicher Wochentag 2×, Recency-Bonus)
+- **Wetter-Integration**: Aktuelle Wetterbedingung wird berücksichtigt
+- **Ist-Vergleich**: Gestern-Prognose wird mit tatsächlichem Verbrauch verglichen
+
+### Neue API-Endpunkte
+- `GET /api/energy/optimization` — Empfehlungen
+- `GET /api/energy/savings` — Einsparpotenzial (EUR/kWh)
+- `GET /api/energy/forecast` — 7-Tage-Prognose
+- `GET /api/energy/pv-status` — PV Produktion/Verbrauch/Überschuss
+- `PUT /api/energy/pv-priorities` — PV-Prioritäten setzen
+- `GET /api/energy/standby-status` — Aktuelle Standby-Geräte
+
+### Scheduler
+- `energy_check`: Alle 5 Min (Standby + PV-Überschuss)
+- `daily_batch`: Täglich (Analyse + Forecast)
+
+---
+
 ## 0.7.0 – Phase 4: Smart Health & Energie
 
 ### Neue Features
