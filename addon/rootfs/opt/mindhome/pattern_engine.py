@@ -46,6 +46,18 @@ SAMPLING_THRESHOLDS = {
     "pm25":         5.0,
     "pm10":         5.0,
     "co2":          50.0,
+    "signal_strength": 5.0,  # dBm
+    "distance":     0.5,     # m
+    "weight":       0.5,     # kg
+    "gas":          10.0,    # ppm/ppb
+    "nitrogen_dioxide": 5.0, # µg/m³
+    "volatile_organic_compounds": 10.0,  # ppb
+    "carbon_monoxide": 5.0,  # ppm
+    "speed":        1.0,     # m/s or km/h
+    "wind_speed":   1.0,     # m/s
+    "precipitation": 0.5,    # mm
+    "moisture":     2.0,     # %
+    "sound_pressure": 5.0,   # dB
 }
 
 # These entity domains always log (binary on/off changes are always significant)
@@ -53,6 +65,9 @@ ALWAYS_LOG_DOMAINS = {
     "light", "switch", "lock", "cover", "climate", "fan",
     "media_player", "alarm_control_panel", "person", "device_tracker",
     "binary_sensor", "automation", "scene", "input_boolean",
+    "water_heater", "vacuum", "humidifier", "valve", "siren",
+    "select", "number", "input_select", "input_number",
+    "camera", "remote", "button",
 }
 
 # Motion sensor debounce: only log first "on" and final "off" within window
@@ -282,7 +297,7 @@ class StateLogger:
     """Logs significant state changes to state_history with context."""
 
     # Max events per minute (prevent DB flood from chatty devices)
-    MAX_EVENTS_PER_MINUTE = 300
+    MAX_EVENTS_PER_MINUTE = 600
 
     def __init__(self, engine, ha_connection):
         self.engine = engine
@@ -397,11 +412,24 @@ class StateLogger:
                 except (ValueError, TypeError):
                     return False
 
-            # Unknown sensor type: don't log (too noisy)
-            return False
+            # Unknown sensor type: log with conservative fallback threshold
+            try:
+                new_val = float(new_state.get("state", ""))
+                old_val = self._last_sensor_values.get(entity_id)
+                if old_val is not None and abs(new_val - old_val) < 10.0:
+                    return False
+                self._last_sensor_values[entity_id] = new_val
+                return True
+            except (ValueError, TypeError):
+                # Non-numeric sensor: log state text changes
+                old_text = old_state.get("state", "") if isinstance(old_state, dict) else ""
+                new_text = new_state.get("state", "") if isinstance(new_state, dict) else ""
+                return old_text != new_text
 
-        # Skip unknown domains
-        return False
+        # Unknown domains: log if state actually changed
+        old_text = old_state.get("state", "") if isinstance(old_state, dict) else ""
+        new_text = new_state.get("state", "") if isinstance(new_state, dict) else ""
+        return old_text != new_text
 
     def log_state_change(self, event_data):
         """Process a state_changed event from HA and log if significant."""
@@ -441,6 +469,8 @@ class StateLogger:
                 return  # Skip: device not imported into MindHome
 
             device_id = device.id
+            device_room_id = device.room_id
+            device_domain_id = device.domain_id
 
             # Build context
             ctx = self.context_builder.build()
@@ -449,34 +479,46 @@ class StateLogger:
             old_attrs_slim = self._slim_attributes(old_state_obj.get("attributes", {})) if old_state_obj else None
             new_attrs_slim = self._slim_attributes(new_attrs)
 
-            # Create state history entry
-            entry = StateHistory(
-                device_id=device_id,
-                entity_id=entity_id,
-                old_state=old_state,
-                new_state=new_state,
-                old_attributes=old_attrs_slim,
-                new_attributes=new_attrs_slim,
-                context=ctx,
-            )
-            session.add(entry)
+            # Use no_autoflush to prevent premature flush when querying DataCollection
+            with session.no_autoflush:
+                # Create state history entry
+                entry = StateHistory(
+                    device_id=device_id,
+                    entity_id=entity_id,
+                    old_state=old_state,
+                    new_state=new_state,
+                    old_attributes=old_attrs_slim,
+                    new_attributes=new_attrs_slim,
+                    context=ctx,
+                )
+                session.add(entry)
 
-            # A3: Update DataCollection tracking
-            if device and device.domain_id and device.room_id:
-                self._update_data_collection(session, device)
+                # A3: Update DataCollection tracking
+                if device_room_id and device_domain_id:
+                    self._update_data_collection(session, device_room_id, device_domain_id)
 
             session.commit()
             self._event_timestamps.append(now)
             logger.debug(f"Logged: {entity_id} {old_state} → {new_state}")
-
-            # B.4: Check manual rules
-            self._check_manual_rules(session, entity_id, new_state, ctx)
 
         except Exception as e:
             session.rollback()
             logger.error(f"State log error: {e}")
         finally:
             session.close()
+
+        # B.4: Check manual rules in separate session to avoid SQLite lock contention
+        try:
+            session2 = self.Session()
+            try:
+                self._check_manual_rules(session2, entity_id, new_state, ctx)
+            except Exception as e:
+                session2.rollback()
+                logger.warning(f"Manual rule check error: {e}")
+            finally:
+                session2.close()
+        except Exception:
+            pass
 
     def _slim_attributes(self, attrs):
         """Keep only relevant attributes for learning, not full HA dump."""
@@ -497,12 +539,12 @@ class StateLogger:
                 result[k] = attrs[k]
         return result if result else None
 
-    def _update_data_collection(self, session, device):
+    def _update_data_collection(self, session, room_id, domain_id):
         """A3: Update DataCollection tracking for transparency dashboard."""
         try:
             dc = session.query(DataCollection).filter_by(
-                room_id=device.room_id,
-                domain_id=device.domain_id,
+                room_id=room_id,
+                domain_id=domain_id,
                 data_type="state_changes"
             ).first()
 
@@ -512,8 +554,8 @@ class StateLogger:
                 dc.last_record_at = now
             else:
                 dc = DataCollection(
-                    room_id=device.room_id,
-                    domain_id=device.domain_id,
+                    room_id=room_id,
+                    domain_id=domain_id,
                     data_type="state_changes",
                     record_count=1,
                     first_record_at=now,
@@ -622,11 +664,13 @@ class PatternDetector:
     def run_full_analysis(self):
         """B6: Run complete pattern analysis (called by scheduler)."""
         logger.info("Starting pattern analysis...")
-        session = self.Session()
+
+        # Phase 1: Read events into memory, then close read session immediately
+        # to avoid holding SQLite locks during long-running analysis
+        read_session = self.Session()
         try:
-            # Only analyze last 14 days of data, only MindHome-assigned devices
             cutoff = datetime.now(timezone.utc) - timedelta(days=14)
-            events = session.query(StateHistory).filter(
+            events = read_session.query(StateHistory).filter(
                 StateHistory.created_at >= cutoff,
                 StateHistory.device_id.isnot(None)
             ).order_by(StateHistory.created_at.asc()).all()
@@ -635,16 +679,24 @@ class PatternDetector:
                 logger.info(f"Only {len(events)} events, need at least 20 for analysis")
                 return
 
-            logger.info(f"Analyzing {len(events)} events from last 14 days")
+            # Detach events from session so they can be used after close
+            for ev in events:
+                read_session.expunge(ev)
 
-            # Load exclusions to filter patterns
             from models import PatternExclusion
-            exclusions = session.query(PatternExclusion).all()
+            exclusions = read_session.query(PatternExclusion).all()
             excluded_pairs = set()
             for e in exclusions:
                 excluded_pairs.add((e.entity_a, e.entity_b))
                 excluded_pairs.add((e.entity_b, e.entity_a))
+        finally:
+            read_session.close()
 
+        logger.info(f"Analyzing {len(events)} events from last 14 days")
+
+        # Phase 2: Run analysis and write results in a separate session
+        session = self.Session()
+        try:
             # B1: Time-based patterns
             time_patterns = self._detect_time_patterns(session, events)
 
@@ -1031,6 +1083,23 @@ class PatternDetector:
     # B2: Sequence patterns (event chains)
     # --------------------------------------------------------------------------
 
+    # HA domains that produce purely numeric/measurement data - not useful
+    # as automation triggers or actions in sequence patterns
+    _SENSOR_ONLY_DOMAINS = frozenset({"sensor", "weather", "number"})
+
+    # HA domains that can actually be controlled (valid as action side of a pattern)
+    _ACTIONABLE_DOMAINS = frozenset({
+        "light", "switch", "cover", "climate", "fan", "media_player",
+        "lock", "vacuum", "humidifier", "water_heater", "valve",
+        "input_boolean", "input_number", "input_select", "scene", "script",
+    })
+
+    def _is_same_domain_sensor_pair(self, entity_a, entity_b):
+        """Check if both entities are sensor-only domains (no actionable patterns)."""
+        domain_a = entity_a.split(".")[0]
+        domain_b = entity_b.split(".")[0]
+        return domain_a in self._SENSOR_ONLY_DOMAINS and domain_b in self._SENSOR_ONLY_DOMAINS
+
     def _detect_sequence_patterns(self, session, events):
         """Find A→B event chains (within time window)."""
         patterns_found = []
@@ -1050,6 +1119,12 @@ class PatternDetector:
                 if delta < 2:  # Ignore near-simultaneous (likely same automation)
                     continue
                 if ev_a.entity_id == ev_b.entity_id:
+                    continue
+                # Skip sensor→sensor pairs (numeric correlations, not actionable)
+                if self._is_same_domain_sensor_pair(ev_a.entity_id, ev_b.entity_id):
+                    continue
+                # Action side must be controllable (sensor as action makes no sense)
+                if ev_b.entity_id.split(".")[0] not in self._ACTIONABLE_DOMAINS:
                     continue
 
                 key = (
@@ -1618,33 +1693,36 @@ class PatternScheduler:
             else:
                 total_size = 0
 
-            # Count events per room/domain and estimate size
-            counts = session.query(
-                StateHistory.device_id,
-                func.count(StateHistory.id).label("cnt")
-            ).group_by(StateHistory.device_id).all()
+            # Use no_autoflush: queries in the loop would otherwise trigger
+            # a premature flush of pending updates, hitting SQLite locks
+            with session.no_autoflush:
+                # Count events per room/domain and estimate size
+                counts = session.query(
+                    StateHistory.device_id,
+                    func.count(StateHistory.id).label("cnt")
+                ).group_by(StateHistory.device_id).all()
 
-            total_events = sum(c.cnt for c in counts)
-            if total_events == 0:
-                return
+                total_events = sum(c.cnt for c in counts)
+                if total_events == 0:
+                    return
 
-            for row in counts:
-                if not row.device_id:
-                    continue
-                device = session.get(Device, row.device_id)
-                if not device or not device.room_id:
-                    continue
+                for row in counts:
+                    if not row.device_id:
+                        continue
+                    device = session.get(Device, row.device_id)
+                    if not device or not device.room_id:
+                        continue
 
-                dc = session.query(DataCollection).filter_by(
-                    room_id=device.room_id,
-                    domain_id=device.domain_id,
-                    data_type="state_changes"
-                ).first()
+                    dc = session.query(DataCollection).filter_by(
+                        room_id=device.room_id,
+                        domain_id=device.domain_id,
+                        data_type="state_changes"
+                    ).first()
 
-                if dc:
-                    # Proportional size estimate
-                    dc.storage_size_bytes = int(total_size * (row.cnt / total_events))
-                    dc.record_count = row.cnt
+                    if dc:
+                        # Proportional size estimate
+                        dc.storage_size_bytes = int(total_size * (row.cnt / total_events))
+                        dc.record_count = row.cnt
 
             session.commit()
 

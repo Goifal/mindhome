@@ -120,36 +120,40 @@ def api_create_domain():
 
 @domains_bp.route("/api/domains/<int:domain_id>", methods=["PUT"])
 def api_update_domain(domain_id):
-    """Update a custom domain."""
+    """Update a domain. System domains: only icon editable. Custom domains: all fields."""
     data = request.json
     session = get_db()
     try:
         domain = session.get(Domain, domain_id)
         if not domain:
             return jsonify({"error": "Domain not found"}), 404
-        if not getattr(domain, 'is_custom', False):
-            return jsonify({"error": "Cannot edit system domains"}), 400
 
-        if "display_name_de" in data:
-            domain.display_name_de = data["display_name_de"]
-        if "display_name_en" in data:
-            domain.display_name_en = data["display_name_en"]
-        if "name_de" in data:
-            domain.display_name_de = data["name_de"]
-            if not domain.display_name_en:
-                domain.display_name_en = data["name_de"]
+        is_custom = getattr(domain, 'is_custom', False)
+
+        # Icon is editable for ALL domains
         if "icon" in data:
             domain.icon = data["icon"]
-        if "description_de" in data:
-            domain.description_de = data["description_de"]
-        if "description_en" in data:
-            domain.description_en = data["description_en"]
-        if "description" in data:
-            domain.description_de = data["description"]
-            if not domain.description_en:
-                domain.description_en = data["description"]
-        if "keywords" in data:
-            domain.keywords = data["keywords"]
+
+        # Other fields only for custom domains
+        if is_custom:
+            if "display_name_de" in data:
+                domain.display_name_de = data["display_name_de"]
+            if "display_name_en" in data:
+                domain.display_name_en = data["display_name_en"]
+            if "name_de" in data:
+                domain.display_name_de = data["name_de"]
+                if not domain.display_name_en:
+                    domain.display_name_en = data["name_de"]
+            if "description_de" in data:
+                domain.description_de = data["description_de"]
+            if "description_en" in data:
+                domain.description_en = data["description_en"]
+            if "description" in data:
+                domain.description_de = data["description"]
+                if not domain.description_en:
+                    domain.description_en = data["description"]
+            if "keywords" in data:
+                domain.keywords = data["keywords"]
 
         session.commit()
         return jsonify({"id": domain.id, "name": domain.name})
@@ -175,8 +179,12 @@ def api_delete_domain(domain_id):
         for d in devices:
             d.domain_id = default_domain.id if default_domain else 1
 
-        # Remove room domain states
+        # Remove all FK references to this domain
         session.query(RoomDomainState).filter_by(domain_id=domain_id).delete()
+        session.query(LearnedPattern).filter_by(domain_id=domain_id).delete()
+        session.query(ActionLog).filter_by(domain_id=domain_id).delete()
+        session.query(AnomalySetting).filter_by(domain_id=domain_id).delete()
+        session.query(DataCollection).filter_by(domain_id=domain_id).delete()
 
         session.delete(domain)
         session.commit()
@@ -232,15 +240,31 @@ def api_domain_features(domain_name):
 
 @domains_bp.route("/api/plugin-settings", methods=["GET"])
 def api_get_plugin_settings():
+    """Get plugin settings: DEFAULT_SETTINGS merged with DB overrides."""
     session = get_db()
     try:
         plugin_name = request.args.get("plugin")
-        query = session.query(PluginSetting)
-        if plugin_name: query = query.filter_by(plugin_name=plugin_name)
+
+        # Start with DEFAULT_SETTINGS from all domain plugins
         result = {}
+        dm = _domain_manager()
+        if dm:
+            plugins = dm._all_plugins
+            for name, plugin in plugins.items():
+                if plugin_name and name != plugin_name:
+                    continue
+                if hasattr(plugin, 'DEFAULT_SETTINGS') and plugin.DEFAULT_SETTINGS:
+                    result[name] = dict(plugin.DEFAULT_SETTINGS)
+
+        # Override with DB values
+        query = session.query(PluginSetting)
+        if plugin_name:
+            query = query.filter_by(plugin_name=plugin_name)
         for s in query.all():
-            if s.plugin_name not in result: result[s.plugin_name] = {}
+            if s.plugin_name not in result:
+                result[s.plugin_name] = {}
             result[s.plugin_name][s.setting_key] = s.setting_value
+
         return jsonify(result)
     finally:
         session.close()

@@ -5,6 +5,15 @@
 
 const { useState, useEffect, useCallback, createContext, useContext, useRef, useMemo, useReducer } = React;
 
+// Timezone fix: server returns UTC timestamps without 'Z' suffix.
+// Append 'Z' so the browser correctly interprets them as UTC.
+const parseUTC = (ts) => {
+    if (!ts) return null;
+    const s = String(ts);
+    if (s.endsWith('Z') || s.includes('+') || s.includes('T') && s.split('T')[1].includes('-')) return new Date(s);
+    return new Date(s + 'Z');
+};
+
 // ================================================================
 // #32 API Response Cache
 // ================================================================
@@ -1059,6 +1068,7 @@ const QuickActionsGrid = () => {
     };
 
     const handleDelete = async (id) => {
+        if (!confirm(lang === 'de' ? 'Quick Action wirklich löschen?' : 'Really delete Quick Action?')) return;
         await api.delete(`quick-actions/${id}`);
         await refreshData();
         showToast(lang === 'de' ? 'Quick Action gelöscht' : 'Quick Action deleted', 'success');
@@ -1155,11 +1165,44 @@ const DomainsPage = () => {
     const [newDomain, setNewDomain] = useState({ name_de: '', name_en: '', icon: 'mdi:puzzle', description: '' });
     const [confirmDel, setConfirmDel] = useState(null);
     const [editDomain, setEditDomain] = useState(null);
+    const [editSettings, setEditSettings] = useState({});
     const [capabilities, setCapabilities] = useState({});
+    const [pluginSettings, setPluginSettings] = useState({});
+
+    const settingLabels = {
+        mode: { de: 'Modus', en: 'Mode' },
+        enabled: { de: 'Aktiviert', en: 'Enabled' },
+        dim_brightness_pct: { de: 'Dim-Helligkeit (%)', en: 'Dim Brightness (%)' },
+        dusk_brightness_pct: { de: 'Dämmerung-Helligkeit (%)', en: 'Dusk Brightness (%)' },
+        away_temp: { de: 'Abwesend-Temp. (°C)', en: 'Away Temp (°C)' },
+        night_temp: { de: 'Nacht-Temp. (°C)', en: 'Night Temp (°C)' },
+        preheat_minutes: { de: 'Vorheizen (Min.)', en: 'Preheat (min)' },
+        sun_elevation_threshold: { de: 'Sonnen-Elevation (°)', en: 'Sun Elevation (°)' },
+        night_volume_pct: { de: 'Nacht-Lautstärke (%)', en: 'Night Volume (%)' },
+        standby_threshold_w: { de: 'Standby-Schwelle (W)', en: 'Standby Threshold (W)' },
+        standby_idle_minutes: { de: 'Standby-Leerlauf (Min.)', en: 'Standby Idle (min)' },
+        standby_kill_hours: { de: 'Standby-Abschaltung (Std.)', en: 'Standby Kill (hrs)' },
+        co2_warning: { de: 'CO₂ Warnung (ppm)', en: 'CO₂ Warning (ppm)' },
+        co2_critical: { de: 'CO₂ Kritisch (ppm)', en: 'CO₂ Critical (ppm)' },
+        co2_boost_threshold: { de: 'CO₂ Boost-Schwelle (ppm)', en: 'CO₂ Boost Threshold (ppm)' },
+        humidity_low: { de: 'Feuchte Min. (%)', en: 'Humidity Low (%)' },
+        humidity_high: { de: 'Feuchte Max. (%)', en: 'Humidity High (%)' },
+    };
+
+    const modeOptions = [
+        { value: 'suggest', de: 'Vorschlagen', en: 'Suggest' },
+        { value: 'auto', de: 'Automatisch', en: 'Automatic' },
+    ];
 
     useEffect(() => {
         api.get('domains/capabilities').then(c => c && setCapabilities(c));
+        api.get('plugin-settings').then(s => s && setPluginSettings(s));
     }, []);
+
+    const loadPluginSettings = async () => {
+        const s = await api.get('plugin-settings');
+        if (s) setPluginSettings(s);
+    };
 
     const handleCreate = async () => {
         if (!newDomain.name_de.trim()) return;
@@ -1191,6 +1234,48 @@ const DomainsPage = () => {
         }
     };
 
+    const openEditDomain = async (domain) => {
+        const settings = pluginSettings[domain.name] || {};
+        setEditDomain({ ...domain });
+        setEditSettings({ ...settings });
+    };
+
+    const handleSaveEdit = async () => {
+        if (!editDomain) return;
+        // Save domain (icon, and for custom: name/description)
+        await api.put(`domains/${editDomain.id}`, {
+            icon: editDomain.icon,
+            ...(editDomain.is_custom ? {
+                name_de: editDomain.display_name,
+                description: editDomain.description,
+                keywords: editDomain.keywords
+            } : {})
+        });
+        // Save plugin settings if any
+        if (Object.keys(editSettings).length > 0) {
+            await api.put(`plugin-settings/${editDomain.name}`, editSettings);
+        }
+        setEditDomain(null);
+        setEditSettings({});
+        await refreshData();
+        await loadPluginSettings();
+        showToast(lang === 'de' ? 'Domain aktualisiert' : 'Domain updated', 'success');
+    };
+
+    const getSettingLabel = (key) => {
+        const l = settingLabels[key];
+        return l ? (lang === 'de' ? l.de : l.en) : key;
+    };
+
+    const getSettingDisplayValue = (key, value) => {
+        if (key === 'mode') {
+            const opt = modeOptions.find(o => o.value === value);
+            return opt ? (lang === 'de' ? opt.de : opt.en) : value;
+        }
+        if (key === 'enabled') return value === 'true' ? (lang === 'de' ? 'Ja' : 'Yes') : (lang === 'de' ? 'Nein' : 'No');
+        return value;
+    };
+
     return (
         <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
@@ -1204,7 +1289,7 @@ const DomainsPage = () => {
                     {lang === 'de' ? 'Custom Domain' : 'Custom Domain'}
                 </button>
             </div>
-            <div className="domain-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 14, alignItems: 'stretch' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 16, alignItems: 'stretch' }}>
                 {domains.map(domain => {
                     const cap = capabilities[domain.name] || {};
                     const controlLabels = {
@@ -1219,75 +1304,94 @@ const DomainsPage = () => {
                         start: 'Start', stop: 'Stop', return_to_base: lang === 'de' ? 'Zurück' : 'Return',
                         set_percentage: '%', source: 'Quelle',
                     };
-                    const controlBadges = (cap.controls || []).map(c => ({ label: controlLabels[c] || c, type: 'info' }));
-                    const sensorBadges = (cap.pattern_features || []).map(f => ({ label: f, type: 'success' }));
+                    const controlBadges = (cap.controls || []).map(c => ({
+                        label: typeof c === 'object' ? (lang === 'de' ? c.label_de : c.label_en) : (controlLabels[c] || c),
+                        type: 'info'
+                    }));
+                    const sensorBadges = (cap.pattern_features || []).map(f => ({
+                        label: typeof f === 'object' ? (lang === 'de' ? f.label_de : f.label_en) : f,
+                        type: 'success'
+                    }));
                     const devCount = devices.filter(d => d.domain_id === domain.id).length;
+                    const domSettings = pluginSettings[domain.name] || {};
+                    const settingKeys = Object.keys(domSettings).filter(k => k !== 'enabled');
                     return (
-                        <div key={domain.id}
-                            style={{
-                                display: 'flex', flexDirection: 'row', borderRadius: 10,
-                                border: '1px solid var(--border-color)', background: 'var(--bg-secondary)',
-                                overflow: 'hidden', transition: 'all 0.2s', opacity: domain.is_enabled ? 1 : 0.6,
-                            }}>
-                            {/* Left accent bar */}
-                            <div style={{ width: 4, flexShrink: 0, background: domain.is_enabled ? 'var(--accent-primary)' : 'var(--border-color)' }} />
-                            <div style={{ flex: 1, padding: '14px 16px', minWidth: 0 }}>
-                                {/* Top row: icon+name on left, toggle+count on right */}
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1 }}>
-                                        <span className={`mdi ${domain.icon}`} style={{ fontSize: 26, color: domain.is_enabled ? 'var(--accent-primary)' : 'var(--text-muted)', flexShrink: 0 }} />
-                                        <div style={{ minWidth: 0 }}>
-                                            <div style={{ fontWeight: 600, fontSize: 15, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{domain.display_name}</div>
-                                            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{devCount} {lang === 'de' ? 'Geraete' : 'devices'}</div>
+                        <div key={domain.id} className="card" style={{ opacity: domain.is_enabled ? 1 : 0.6, transition: 'opacity 0.2s' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                                    <div className="card-icon" style={{
+                                        background: domain.is_enabled ? 'var(--accent-primary-dim)' : 'var(--bg-tertiary)',
+                                        color: domain.is_enabled ? 'var(--accent-primary)' : 'var(--text-muted)'
+                                    }}>
+                                        <span className={`mdi ${(domain.icon || 'mdi-puzzle').replace('mdi:', 'mdi-')}`} />
+                                    </div>
+                                    <div>
+                                        <div className="card-title">{domain.display_name}</div>
+                                        <div className="card-subtitle">
+                                            {devCount} {lang === 'de' ? 'Geräte' : 'devices'}
                                         </div>
                                     </div>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-                                        <label className="toggle" onClick={e => e.stopPropagation()}>
-                                            <input type="checkbox" checked={domain.is_enabled}
-                                                   onChange={() => toggleDomain(domain.id)} />
-                                            <div className="toggle-slider" />
-                                        </label>
-                                    </div>
                                 </div>
-                                {/* Description */}
-                                {domain.description && (
-                                    <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 8, lineHeight: 1.4 }}>{domain.description}</div>
-                                )}
-                                {/* Capability badges */}
-                                {(controlBadges.length > 0 || sensorBadges.length > 0) && (
-                                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
-                                        {controlBadges.slice(0, 5).map((b, i) => (
-                                            <span key={'c' + i} className="badge badge-info" style={{ fontSize: 10, padding: '2px 7px' }}>{b.label}</span>
-                                        ))}
-                                        {controlBadges.length > 0 && sensorBadges.length > 0 && (
-                                            <span style={{ display: 'inline-block', width: 2, height: 16, background: 'var(--text-muted)', margin: '0 4px', borderRadius: 1, opacity: 0.4, flexShrink: 0 }} />
-                                        )}
-                                        {sensorBadges.slice(0, 5).map((b, i) => (
-                                            <span key={'s' + i} className="badge badge-success" style={{ fontSize: 10, padding: '2px 7px' }}>{b.label}</span>
-                                        ))}
-                                    </div>
-                                )}
-                                {domain.is_custom && controlBadges.length === 0 && sensorBadges.length === 0 && devCount > 0 && (
-                                    <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
-                                        {devCount} {lang === 'de' ? 'Geraete zugewiesen' : 'devices assigned'}
-                                    </div>
-                                )}
-                                {/* Custom domain actions */}
-                                {domain.is_custom && (
-                                    <div style={{ display: 'flex', gap: 4, marginTop: 6 }}>
-                                        <button className="btn btn-ghost btn-icon" style={{ padding: 2 }}
-                                            onClick={e => { e.stopPropagation(); setEditDomain({ ...domain }); }}
-                                            title={lang === 'de' ? 'Bearbeiten' : 'Edit'}>
-                                            <span className="mdi mdi-pencil-outline" style={{ fontSize: 14, color: 'var(--accent-primary)' }} />
-                                        </button>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                    <button className="btn btn-ghost btn-icon" style={{ padding: 2 }}
+                                        onClick={e => { e.stopPropagation(); openEditDomain(domain); }}
+                                        title={lang === 'de' ? 'Bearbeiten' : 'Edit'}>
+                                        <span className="mdi mdi-pencil-outline" style={{ fontSize: 16, color: 'var(--accent-primary)' }} />
+                                    </button>
+                                    {domain.is_custom && (
                                         <button className="btn btn-ghost btn-icon" style={{ padding: 2 }}
                                             onClick={e => { e.stopPropagation(); setConfirmDel(domain); }}
                                             title={lang === 'de' ? 'Löschen' : 'Delete'}>
-                                            <span className="mdi mdi-delete-outline" style={{ fontSize: 14, color: 'var(--danger)' }} />
+                                            <span className="mdi mdi-delete-outline" style={{ fontSize: 16, color: 'var(--text-muted)' }} />
                                         </button>
-                                    </div>
-                                )}
+                                    )}
+                                    <label className="toggle" onClick={e => e.stopPropagation()}>
+                                        <input type="checkbox" checked={domain.is_enabled}
+                                               onChange={() => toggleDomain(domain.id)} />
+                                        <div className="toggle-slider" />
+                                    </label>
+                                </div>
                             </div>
+                            {/* Description */}
+                            {domain.description && (
+                                <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 10, lineHeight: 1.4 }}>{domain.description}</div>
+                            )}
+                            {/* Capability badges */}
+                            {controlBadges.length > 0 && (
+                                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center', marginTop: 12 }}>
+                                    {controlBadges.slice(0, 5).map((b, i) => (
+                                        <span key={'c' + i} className="badge badge-info" style={{ fontSize: 10, padding: '2px 7px' }}>{b.label}</span>
+                                    ))}
+                                </div>
+                            )}
+                            {controlBadges.length > 0 && sensorBadges.length > 0 && (
+                                <div style={{ height: 8 }} />
+                            )}
+                            {sensorBadges.length > 0 && (
+                                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center', marginTop: controlBadges.length > 0 ? 0 : 12 }}>
+                                    {sensorBadges.slice(0, 5).map((b, i) => (
+                                        <span key={'s' + i} className="badge badge-success" style={{ fontSize: 10, padding: '2px 7px' }}>{b.label}</span>
+                                    ))}
+                                </div>
+                            )}
+                            {/* Steuerung - Plugin Settings */}
+                            {settingKeys.length > 0 && (
+                                <>
+                                    <hr style={{ border: 'none', borderTop: '1px solid var(--border-color)', margin: '12px 0' }} />
+                                    <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 6 }}>
+                                        <span className="mdi mdi-tune-vertical" style={{ fontSize: 13, marginRight: 4 }} />
+                                        {lang === 'de' ? 'Steuerung' : 'Controls'}
+                                    </div>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                                        {settingKeys.map(key => (
+                                            <div key={key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12 }}>
+                                                <span style={{ color: 'var(--text-secondary)' }}>{getSettingLabel(key)}</span>
+                                                <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>{getSettingDisplayValue(key, domSettings[key])}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </>
+                            )}
                         </div>
                     );
                 })}
@@ -1319,10 +1423,7 @@ const DomainsPage = () => {
                             placeholder={lang === 'de' ? 'z.B. Irrigation' : 'e.g. Irrigation'} />
                     </div>
                     <div className="input-group" style={{ marginBottom: 16 }}>
-                        <label className="input-label">Icon (MDI)</label>
-                        <input className="input" value={newDomain.icon}
-                            onChange={e => setNewDomain({ ...newDomain, icon: e.target.value })}
-                            placeholder="mdi:puzzle" />
+                        <MdiIconPicker value={newDomain.icon} onChange={v => setNewDomain({ ...newDomain, icon: v })} label="Icon" />
                     </div>
                     <div className="input-group">
                         <label className="input-label">{lang === 'de' ? 'Beschreibung' : 'Description'}</label>
@@ -1340,36 +1441,57 @@ const DomainsPage = () => {
             )}
 
             {editDomain && (
-                <Modal title={lang === 'de' ? 'Domain bearbeiten' : 'Edit Domain'} onClose={() => setEditDomain(null)}
-                    actions={<><button className="btn btn-secondary" onClick={() => setEditDomain(null)}>{lang === 'de' ? 'Abbrechen' : 'Cancel'}</button>
-                        <button className="btn btn-primary" onClick={async () => {
-                            await api.put(`domains/${editDomain.id}`, {
-                                name_de: editDomain.display_name,
-                                description: editDomain.description,
-                                icon: editDomain.icon,
-                                keywords: editDomain.keywords
-                            });
-                            setEditDomain(null);
-                            await refreshData();
-                            showToast(lang === 'de' ? 'Domain aktualisiert' : 'Domain updated', 'success');
-                        }}>{lang === 'de' ? 'Speichern' : 'Save'}</button></>}>
-                    <div className="input-group" style={{ marginBottom: 12 }}>
-                        <label className="input-label">{lang === 'de' ? 'Name' : 'Name'}</label>
-                        <input className="input" value={editDomain.display_name || ''} onChange={e => setEditDomain({ ...editDomain, display_name: e.target.value })} />
+                <Modal title={`${editDomain.display_name} ${lang === 'de' ? 'bearbeiten' : 'edit'}`} onClose={() => { setEditDomain(null); setEditSettings({}); }}
+                    actions={<><button className="btn btn-secondary" onClick={() => { setEditDomain(null); setEditSettings({}); }}>{lang === 'de' ? 'Abbrechen' : 'Cancel'}</button>
+                        <button className="btn btn-primary" onClick={handleSaveEdit}>{lang === 'de' ? 'Speichern' : 'Save'}</button></>}>
+                    {/* Icon picker for all domains */}
+                    <div className="input-group" style={{ marginBottom: 16 }}>
+                        <MdiIconPicker value={editDomain.icon} onChange={v => setEditDomain({ ...editDomain, icon: v })} label="Icon" />
                     </div>
-                    <div className="input-group" style={{ marginBottom: 12 }}>
-                        <label className="input-label">{lang === 'de' ? 'Beschreibung' : 'Description'}</label>
-                        <input className="input" value={editDomain.description || ''} onChange={e => setEditDomain({ ...editDomain, description: e.target.value })} />
-                    </div>
-                    <div className="input-group" style={{ marginBottom: 12 }}>
-                        <label className="input-label">Icon (mdi:icon-name)</label>
-                        <input className="input" value={editDomain.icon || ''} onChange={e => setEditDomain({ ...editDomain, icon: e.target.value })} />
-                    </div>
-                    <div className="input-group">
-                        <label className="input-label">Keywords</label>
-                        <input className="input" value={editDomain.keywords || ''} onChange={e => setEditDomain({ ...editDomain, keywords: e.target.value })}
-                            placeholder={lang === 'de' ? 'Komma-getrennt' : 'Comma-separated'} />
-                    </div>
+                    {/* Name/Description/Keywords only for custom domains */}
+                    {editDomain.is_custom && (
+                        <>
+                            <div className="input-group" style={{ marginBottom: 12 }}>
+                                <label className="input-label">{lang === 'de' ? 'Name' : 'Name'}</label>
+                                <input className="input" value={editDomain.display_name || ''} onChange={e => setEditDomain({ ...editDomain, display_name: e.target.value })} />
+                            </div>
+                            <div className="input-group" style={{ marginBottom: 12 }}>
+                                <label className="input-label">{lang === 'de' ? 'Beschreibung' : 'Description'}</label>
+                                <input className="input" value={editDomain.description || ''} onChange={e => setEditDomain({ ...editDomain, description: e.target.value })} />
+                            </div>
+                            <div className="input-group" style={{ marginBottom: 12 }}>
+                                <label className="input-label">Keywords</label>
+                                <input className="input" value={editDomain.keywords || ''} onChange={e => setEditDomain({ ...editDomain, keywords: e.target.value })}
+                                    placeholder={lang === 'de' ? 'Komma-getrennt' : 'Comma-separated'} />
+                            </div>
+                        </>
+                    )}
+                    {/* Steuerung - Plugin Settings */}
+                    {Object.keys(editSettings).filter(k => k !== 'enabled').length > 0 && (
+                        <>
+                            <hr style={{ border: 'none', borderTop: '1px solid var(--border-color)', margin: '16px 0' }} />
+                            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 12 }}>
+                                <span className="mdi mdi-tune-vertical" style={{ fontSize: 14, marginRight: 4 }} />
+                                {lang === 'de' ? 'Steuerung' : 'Controls'}
+                            </div>
+                            {Object.keys(editSettings).filter(k => k !== 'enabled').map(key => (
+                                <div key={key} className="input-group" style={{ marginBottom: 10 }}>
+                                    <label className="input-label">{getSettingLabel(key)}</label>
+                                    {key === 'mode' ? (
+                                        <select className="input" value={editSettings[key] || 'suggest'}
+                                            onChange={e => setEditSettings({ ...editSettings, [key]: e.target.value })}>
+                                            {modeOptions.map(o => (
+                                                <option key={o.value} value={o.value}>{lang === 'de' ? o.de : o.en}</option>
+                                            ))}
+                                        </select>
+                                    ) : (
+                                        <input className="input" value={editSettings[key] || ''}
+                                            onChange={e => setEditSettings({ ...editSettings, [key]: e.target.value })} />
+                                    )}
+                                </div>
+                            ))}
+                        </>
+                    )}
                 </Modal>
             )}
         </div>
@@ -1934,6 +2056,7 @@ const DeviceGroupsSection = () => {
     };
 
     const deleteGroup = async (id) => {
+        if (!confirm(lang === 'de' ? 'Gerätegruppe wirklich löschen?' : 'Really delete device group?')) return;
         await api.delete(`device-groups/${id}`);
         showToast(lang === 'de' ? 'Gruppe gelöscht' : 'Group deleted', 'success'); await load();
     };
@@ -2164,42 +2287,66 @@ const RoomsPage = () => {
                                             const nextPhase = ds.learning_phase === 'observing' ? 'suggesting' : ds.learning_phase === 'suggesting' ? 'autonomous' : 'observing';
                                             const nextLabel = phaseLabels[nextPhase]?.[lang] || nextPhase;
                                             const progress = ds.learning_phase === 'autonomous' ? 100 : ds.learning_phase === 'suggesting' ? 66 : ds.confidence_score ? Math.min(33, Math.round(ds.confidence_score * 33)) : 10;
+                                            const currentMode = ds.mode || 'global';
+                                            const modeColors = { global: 'var(--text-muted)', suggest: 'var(--accent-primary)', auto: 'var(--success)', off: 'var(--text-muted)' };
+                                            const isOff = currentMode === 'off' || !dom?.is_enabled;
                                             return (
-                                                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                                    <span className={`mdi ${domIcon}`} style={{ fontSize: 14, color: 'var(--text-muted)', width: 18 }} />
-                                                    <div style={{ flex: 1, minWidth: 0 }}>
-                                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 2 }}>
-                                                            <span style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>{domName}</span>
-                                                            <span className={`badge badge-${phase.color}`} style={{ fontSize: 9, padding: '1px 6px', cursor: 'pointer' }}
-                                                                title={`→ ${nextLabel}`}
-                                                                onClick={async () => {
-                                                                    await api.put(`phases/${room.id}/${ds.domain_id}`, { phase: nextPhase });
-                                                                    showToast(`${domName}: ${nextLabel}`, 'success');
-                                                                    await refreshData();
+                                                <div key={i} style={{ opacity: isOff ? 0.5 : 1, transition: 'opacity 0.2s' }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                                        <span className={`mdi ${domIcon}`} style={{ fontSize: 14, color: 'var(--text-muted)', width: 18 }} />
+                                                        <div style={{ flex: 1, minWidth: 0 }}>
+                                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11, marginBottom: 2 }}>
+                                                                <span style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>{domName}</span>
+                                                                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                                                    <span className={`badge badge-${phase.color}`} style={{ fontSize: 9, padding: '1px 6px', cursor: 'pointer' }}
+                                                                        title={`→ ${nextLabel}`}
+                                                                        onClick={async () => {
+                                                                            await api.put(`phases/${room.id}/${ds.domain_id}`, { phase: nextPhase });
+                                                                            showToast(`${domName}: ${nextLabel}`, 'success');
+                                                                            await refreshData();
+                                                                        }}>
+                                                                        {phase[lang]}
+                                                                    </span>
+                                                                    <select
+                                                                        value={currentMode}
+                                                                        onChange={async (e) => {
+                                                                            await api.put(`phases/${room.id}/${ds.domain_id}/mode`, { mode: e.target.value });
+                                                                            showToast(`${domName}: ${e.target.value === 'global' ? 'Global' : e.target.value === 'suggest' ? (lang === 'de' ? 'Vorschlagen' : 'Suggest') : e.target.value === 'auto' ? (lang === 'de' ? 'Automatisch' : 'Auto') : (lang === 'de' ? 'Aus' : 'Off')}`, 'success');
+                                                                            await refreshData();
+                                                                        }}
+                                                                        style={{
+                                                                            fontSize: 10, padding: '1px 4px', border: '1px solid var(--border-color)',
+                                                                            borderRadius: 4, background: 'var(--bg-secondary)', color: modeColors[currentMode],
+                                                                            fontWeight: 600, cursor: 'pointer', outline: 'none'
+                                                                        }}>
+                                                                        <option value="global">{lang === 'de' ? 'Global' : 'Global'}</option>
+                                                                        <option value="suggest">{lang === 'de' ? 'Vorschlagen' : 'Suggest'}</option>
+                                                                        <option value="auto">{lang === 'de' ? 'Automatisch' : 'Auto'}</option>
+                                                                        <option value="off">{lang === 'de' ? 'Aus' : 'Off'}</option>
+                                                                    </select>
+                                                                </div>
+                                                            </div>
+                                                            <div style={{ height: 4, borderRadius: 2, background: 'var(--bg-main)', overflow: 'hidden' }}>
+                                                                <div style={{ height: '100%', borderRadius: 2, width: `${progress}%`,
+                                                                    background: ds.learning_phase === 'autonomous' ? 'var(--success)' : ds.learning_phase === 'suggesting' ? 'var(--warning)' : 'var(--accent-primary)',
+                                                                    transition: 'width 0.3s' }} />
+                                                            </div>
+                                                        </div>
+                                                        {isAdmin && (
+                                                            <button className="btn btn-ghost" style={{ padding: 2, fontSize: 12 }}
+                                                                title={lang === 'de' ? 'Lernphase zurücksetzen' : 'Reset learning phase'}
+                                                                onClick={async (e) => {
+                                                                    e.stopPropagation();
+                                                                    if (confirm(lang === 'de' ? `${domName} zurücksetzen? Alle Muster werden gelöscht.` : `Reset ${domName}? All patterns will be deleted.`)) {
+                                                                        await api.post(`phases/${room.id}/${ds.domain_id}/reset`);
+                                                                        showToast(lang === 'de' ? 'Zurückgesetzt' : 'Reset', 'success');
+                                                                        await refreshData();
+                                                                    }
                                                                 }}>
-                                                                {phase[lang]}
-                                                            </span>
-                                                        </div>
-                                                        <div style={{ height: 4, borderRadius: 2, background: 'var(--bg-main)', overflow: 'hidden' }}>
-                                                            <div style={{ height: '100%', borderRadius: 2, width: `${progress}%`,
-                                                                background: ds.learning_phase === 'autonomous' ? 'var(--success)' : ds.learning_phase === 'suggesting' ? 'var(--warning)' : 'var(--accent-primary)',
-                                                                transition: 'width 0.3s' }} />
-                                                        </div>
+                                                                <span className="mdi mdi-restart" style={{ color: 'var(--text-muted)' }} />
+                                                            </button>
+                                                        )}
                                                     </div>
-                                                    {isAdmin && (
-                                                        <button className="btn btn-ghost" style={{ padding: 2, fontSize: 12 }}
-                                                            title={lang === 'de' ? 'Lernphase zurücksetzen' : 'Reset learning phase'}
-                                                            onClick={async (e) => {
-                                                                e.stopPropagation();
-                                                                if (confirm(lang === 'de' ? `${domName} zurücksetzen? Alle Muster werden gelöscht.` : `Reset ${domName}? All patterns will be deleted.`)) {
-                                                                    await api.post(`phases/${room.id}/${ds.domain_id}/reset`);
-                                                                    showToast(lang === 'de' ? 'Zurückgesetzt' : 'Reset', 'success');
-                                                                    await refreshData();
-                                                                }
-                                                            }}>
-                                                            <span className="mdi mdi-restart" style={{ color: 'var(--text-muted)' }} />
-                                                        </button>
-                                                    )}
                                                 </div>
                                             );
                                         })}
@@ -2329,9 +2476,21 @@ const UsersPage = () => {
     const [newUser, setNewUser] = useState({ name: '', role: 'user', ha_person_entity: '' });
     const [haPersons, setHaPersons] = useState([]);
     const [editingUser, setEditingUser] = useState(null);
+    const [editForm, setEditForm] = useState({ name: '', role: '', ha_person_entity: '' });
+    const [personDevices, setPersonDevices] = useState([]);
+    const [deviceTrackers, setDeviceTrackers] = useState([]);
+    const [addingDeviceFor, setAddingDeviceFor] = useState(null);
+    const [newDevice, setNewDevice] = useState({ entity_id: '', device_type: 'primary' });
+
+    const loadDevices = async () => {
+        const pd = await api.get('person-devices');
+        if (Array.isArray(pd)) setPersonDevices(pd);
+    };
 
     useEffect(() => {
         api.get('ha/persons').then(r => setHaPersons(r?.persons || []));
+        loadDevices();
+        api.get('ha/entities?domain=device_tracker').then(r => setDeviceTrackers(r?.entities || []));
     }, []);
 
     const handleAdd = async () => {
@@ -2346,6 +2505,7 @@ const UsersPage = () => {
     };
 
     const handleDelete = async (id) => {
+        if (!confirm(lang === 'de' ? 'Person wirklich löschen? Alle zugewiesenen Geräte werden ebenfalls entfernt.' : 'Really delete person? All assigned devices will be removed too.')) return;
         const result = await api.delete(`users/${id}`);
         if (result?.success) {
             showToast(lang === 'de' ? 'Person entfernt' : 'Person removed', 'success');
@@ -2353,13 +2513,71 @@ const UsersPage = () => {
         }
     };
 
-    const handleAssignPerson = async (userId, haEntity) => {
-        const result = await api.put(`users/${userId}`, { ha_person_entity: haEntity || null });
+    const handleEdit = (user) => {
+        setEditForm({ name: user.name, role: user.role, ha_person_entity: user.ha_person_entity || '' });
+        setEditingUser(user);
+    };
+
+    const handleSaveEdit = async () => {
+        if (!editForm.name.trim()) return;
+        const result = await api.put(`users/${editingUser.id}`, {
+            name: editForm.name,
+            role: editForm.role,
+            ha_person_entity: editForm.ha_person_entity || null,
+        });
         if (result?.id) {
-            showToast(lang === 'de' ? 'HA-Person zugewiesen' : 'HA person assigned', 'success');
-            await refreshData();
+            showToast(lang === 'de' ? 'Person aktualisiert' : 'Person updated', 'success');
             setEditingUser(null);
+            await refreshData();
         }
+    };
+
+    const handleAddDevice = async () => {
+        if (!newDevice.entity_id || !addingDeviceFor) return;
+        const result = await api.post('person-devices', {
+            user_id: addingDeviceFor,
+            entity_id: newDevice.entity_id,
+            device_type: newDevice.device_type,
+        });
+        if (result?.success) {
+            showToast(lang === 'de' ? 'Gerät zugewiesen' : 'Device assigned', 'success');
+            setNewDevice({ entity_id: '', device_type: 'primary' });
+            setAddingDeviceFor(null);
+            await loadDevices();
+        }
+    };
+
+    const handleRemoveDevice = async (pdId) => {
+        if (!confirm(lang === 'de' ? 'Gerätezuweisung wirklich entfernen?' : 'Really remove device assignment?')) return;
+        const result = await api.delete(`person-devices/${pdId}`);
+        if (result?.success) {
+            showToast(lang === 'de' ? 'Gerät entfernt' : 'Device removed', 'success');
+            await loadDevices();
+        }
+    };
+
+    const getUserDevices = (userId) => personDevices.filter(d => d.user_id === userId);
+
+    const getTrackerName = (entityId) => {
+        const t = deviceTrackers.find(d => d.entity_id === entityId);
+        return t ? t.name : entityId;
+    };
+
+    const getTrackerState = (entityId) => {
+        const t = deviceTrackers.find(d => d.entity_id === entityId);
+        return t?.state || 'unknown';
+    };
+
+    const stateColor = (state) => state === 'home' ? 'var(--success)' : state === 'not_home' ? 'var(--danger)' : 'var(--text-muted)';
+    const stateLabel = (state) => state === 'home' ? (lang === 'de' ? 'Zuhause' : 'Home') : state === 'not_home' ? (lang === 'de' ? 'Abwesend' : 'Away') : state;
+
+    const deviceTypeLabel = (type) => {
+        const labels = { primary: lang === 'de' ? 'Primär' : 'Primary', secondary: lang === 'de' ? 'Sekundär' : 'Secondary', stationary: lang === 'de' ? 'Stationär' : 'Stationary' };
+        return labels[type] || type;
+    };
+
+    const deviceTypeIcon = (type) => {
+        return type === 'primary' ? 'mdi-cellphone' : type === 'secondary' ? 'mdi-tablet' : 'mdi-access-point';
     };
 
     return (
@@ -2375,10 +2593,12 @@ const UsersPage = () => {
             </div>
 
             {users.length > 0 ? (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16 }}>
-                    {users.map(user => (
-                        <div key={user.id} className="card">
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 16 }}>
+                    {users.map(user => {
+                        const devices = getUserDevices(user.id);
+                        return (
+                        <div key={user.id} className="card" style={{ padding: 0 }}>
+                            <div style={{ padding: '16px 16px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                                     <div className="card-icon" style={{
                                         background: user.role === 'admin' ? 'var(--accent-primary-dim)' : user.role === 'guest' ? 'var(--bg-tertiary)' : 'var(--accent-secondary-dim)',
@@ -2390,26 +2610,76 @@ const UsersPage = () => {
                                         <div className="card-title">{user.name}</div>
                                         <div className="card-subtitle">
                                             {user.role === 'admin' ? 'Administrator' : user.role === 'guest' ? (lang === 'de' ? 'Gast' : 'Guest') : (lang === 'de' ? 'Benutzer' : 'User')}
-                                        </div>
-                                        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
-                                            {user.ha_person_entity
-                                                ? ` ${user.ha_person_entity}`
-                                                : (lang === 'de' ? ' ️ Keine HA-Person' : ' ️ No HA person')}
+                                            {user.ha_person_entity && <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--text-muted)' }}>{user.ha_person_entity}</span>}
                                         </div>
                                     </div>
                                 </div>
                                 <div style={{ display: 'flex', gap: 4 }}>
-                                    <button className="btn btn-ghost btn-icon" onClick={() => setEditingUser(user)}
-                                        title={lang === 'de' ? 'HA-Person zuweisen' : 'Assign HA person'}>
-                                        <span className="mdi mdi-link-variant" style={{ fontSize: 18, color: 'var(--accent-primary)' }} />
+                                    <button className="btn btn-ghost btn-icon" onClick={() => handleEdit(user)}
+                                        title={lang === 'de' ? 'Bearbeiten' : 'Edit'}>
+                                        <span className="mdi mdi-pencil-outline" style={{ fontSize: 18, color: 'var(--accent-primary)' }} />
                                     </button>
-                                    <button className="btn btn-ghost btn-icon" onClick={() => handleDelete(user.id)}>
+                                    <button className="btn btn-ghost btn-icon" onClick={() => handleDelete(user.id)}
+                                        title={lang === 'de' ? 'Löschen' : 'Delete'}>
                                         <span className="mdi mdi-delete-outline" style={{ fontSize: 18, color: 'var(--text-muted)' }} />
                                     </button>
                                 </div>
                             </div>
+
+                            {/* Device assignments */}
+                            <div style={{ borderTop: '1px solid var(--border-color)', padding: '10px 16px 14px' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: devices.length > 0 ? 8 : 0 }}>
+                                    <span style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-muted)' }}>
+                                        <span className="mdi mdi-cellphone-link" style={{ marginRight: 4 }} />
+                                        {lang === 'de' ? 'Geräte' : 'Devices'}
+                                    </span>
+                                    <button className="btn btn-ghost" style={{ fontSize: 11, padding: '2px 8px' }}
+                                        onClick={() => { setAddingDeviceFor(user.id); setNewDevice({ entity_id: '', device_type: 'primary' }); }}>
+                                        <span className="mdi mdi-plus" style={{ fontSize: 14 }} />
+                                        {lang === 'de' ? 'Zuweisen' : 'Assign'}
+                                    </button>
+                                </div>
+                                {devices.length > 0 ? devices.map(d => {
+                                    const st = getTrackerState(d.entity_id);
+                                    return (
+                                    <div key={d.id} style={{
+                                        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                                        padding: '6px 10px', borderRadius: 6, marginBottom: 4,
+                                        background: 'var(--bg-tertiary)', fontSize: 12,
+                                    }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                                            <div style={{ position: 'relative', flexShrink: 0 }}>
+                                                <span className={`mdi ${deviceTypeIcon(d.device_type)}`} style={{ fontSize: 16, color: 'var(--accent-primary)' }} />
+                                                <span title={stateLabel(st)} style={{
+                                                    position: 'absolute', bottom: -2, right: -2,
+                                                    width: 8, height: 8, borderRadius: '50%',
+                                                    background: stateColor(st),
+                                                    border: '2px solid var(--bg-tertiary)',
+                                                }} />
+                                            </div>
+                                            <div style={{ minWidth: 0 }}>
+                                                <div style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{getTrackerName(d.entity_id)}</div>
+                                                <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+                                                    {d.entity_id} · {deviceTypeLabel(d.device_type)}
+                                                    <span style={{ marginLeft: 6, color: stateColor(st), fontWeight: 500 }}>{stateLabel(st)}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <button className="btn btn-ghost btn-icon" onClick={() => handleRemoveDevice(d.id)}
+                                            style={{ padding: 2, marginLeft: 4, flexShrink: 0 }}>
+                                            <span className="mdi mdi-close" style={{ fontSize: 14, color: 'var(--text-muted)' }} />
+                                        </button>
+                                    </div>
+                                    );
+                                }) : (
+                                    <div style={{ fontSize: 11, color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                                        {lang === 'de' ? 'Keine Geräte zugewiesen' : 'No devices assigned'}
+                                    </div>
+                                )}
+                            </div>
                         </div>
-                    ))}
+                        );
+                    })}
                 </div>
             ) : (
                 <div className="empty-state">
@@ -2419,6 +2689,7 @@ const UsersPage = () => {
                 </div>
             )}
 
+            {/* Add person modal */}
             {showAdd && (
                 <Modal title={lang === 'de' ? 'Person hinzufügen' : 'Add Person'} onClose={() => setShowAdd(false)}
                     actions={<><button className="btn btn-secondary" onClick={() => setShowAdd(false)}>{lang === 'de' ? 'Abbrechen' : 'Cancel'}</button>
@@ -2453,34 +2724,77 @@ const UsersPage = () => {
                 </Modal>
             )}
 
+            {/* Edit person modal */}
             {editingUser && (
-                <Modal title={lang === 'de' ? `HA-Person: ${editingUser.name}` : `HA Person: ${editingUser.name}`} onClose={() => setEditingUser(null)}
-                    actions={<button className="btn btn-secondary" onClick={() => setEditingUser(null)}>{lang === 'de' ? 'Schließen' : 'Close'}</button>}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                        <div style={{ padding: '10px 14px', borderRadius: 8, cursor: 'pointer',
-                            border: !editingUser.ha_person_entity ? '2px solid var(--accent-primary)' : '1px solid var(--border-color)',
-                            background: !editingUser.ha_person_entity ? 'var(--accent-primary-dim)' : 'transparent'
-                        }} onClick={() => handleAssignPerson(editingUser.id, '')}>
-                            {lang === 'de' ? '– Keine Person –' : '– No Person –'}
-                        </div>
-                        {haPersons.map(p => (
-                            <div key={p.entity_id} style={{ padding: '10px 14px', borderRadius: 8, cursor: 'pointer',
-                                border: editingUser.ha_person_entity === p.entity_id ? '2px solid var(--accent-primary)' : '1px solid var(--border-color)',
-                                background: editingUser.ha_person_entity === p.entity_id ? 'var(--accent-primary-dim)' : 'transparent',
-                                display: 'flex', justifyContent: 'space-between', alignItems: 'center'
-                            }} onClick={() => handleAssignPerson(editingUser.id, p.entity_id)}>
-                                <div><strong>{p.name}</strong><div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{p.entity_id}</div></div>
-                                <span className={`badge badge-${p.state === 'home' ? 'success' : 'warning'}`}>
-                                    <span className="badge-dot" />{p.state === 'home' ? (lang === 'de' ? 'Zuhause' : 'Home') : (lang === 'de' ? 'Weg' : 'Away')}
-                                </span>
-                            </div>
-                        ))}
+                <Modal title={lang === 'de' ? `Person bearbeiten: ${editingUser.name}` : `Edit Person: ${editingUser.name}`} onClose={() => setEditingUser(null)}
+                    actions={<><button className="btn btn-secondary" onClick={() => setEditingUser(null)}>{lang === 'de' ? 'Abbrechen' : 'Cancel'}</button>
+                        <button className="btn btn-primary" onClick={handleSaveEdit}>{lang === 'de' ? 'Speichern' : 'Save'}</button></>}>
+                    <div className="input-group" style={{ marginBottom: 16 }}>
+                        <label className="input-label">{lang === 'de' ? 'Name' : 'Name'}</label>
+                        <input className="input" value={editForm.name} onChange={e => setEditForm({ ...editForm, name: e.target.value })} autoFocus />
+                    </div>
+                    <div className="input-group" style={{ marginBottom: 16 }}>
+                        <Dropdown
+                            label={lang === 'de' ? 'Rolle' : 'Role'}
+                            value={editForm.role}
+                            onChange={v => setEditForm({ ...editForm, role: v })}
+                            options={[
+                                { value: 'user', label: lang === 'de' ? 'Benutzer' : 'User' },
+                                { value: 'admin', label: 'Administrator' },
+                                { value: 'guest', label: lang === 'de' ? 'Gast' : 'Guest' },
+                            ]}
+                        />
+                    </div>
+                    <div className="input-group">
+                        <Dropdown
+                            label={lang === 'de' ? 'HA-Person' : 'HA Person'}
+                            value={editForm.ha_person_entity}
+                            onChange={v => setEditForm({ ...editForm, ha_person_entity: v })}
+                            options={[
+                                { value: '', label: lang === 'de' ? '– Keine –' : '– None –' },
+                                ...haPersons.map(p => ({ value: p.entity_id, label: `${p.name} (${p.entity_id})` }))
+                            ]}
+                        />
+                    </div>
+                </Modal>
+            )}
+
+            {/* Add device to person modal */}
+            {addingDeviceFor && (
+                <Modal title={lang === 'de' ? `Gerät zuweisen: ${users.find(u => u.id === addingDeviceFor)?.name || ''}` : `Assign Device: ${users.find(u => u.id === addingDeviceFor)?.name || ''}`}
+                    onClose={() => setAddingDeviceFor(null)}
+                    actions={<><button className="btn btn-secondary" onClick={() => setAddingDeviceFor(null)}>{lang === 'de' ? 'Abbrechen' : 'Cancel'}</button>
+                        <button className="btn btn-primary" onClick={handleAddDevice} disabled={!newDevice.entity_id}>{lang === 'de' ? 'Zuweisen' : 'Assign'}</button></>}>
+                    <div className="input-group" style={{ marginBottom: 16 }}>
+                        <Dropdown
+                            label={lang === 'de' ? 'Gerät (device_tracker)' : 'Device (device_tracker)'}
+                            value={newDevice.entity_id}
+                            onChange={v => setNewDevice({ ...newDevice, entity_id: v })}
+                            placeholder={lang === 'de' ? '– Gerät wählen –' : '– Select device –'}
+                            options={[
+                                { value: '', label: lang === 'de' ? '– Gerät wählen –' : '– Select device –' },
+                                ...deviceTrackers.map(d => ({ value: d.entity_id, label: `${d.name} (${d.entity_id})` }))
+                            ]}
+                        />
+                    </div>
+                    <div className="input-group">
+                        <Dropdown
+                            label={lang === 'de' ? 'Gerätetyp' : 'Device Type'}
+                            value={newDevice.device_type}
+                            onChange={v => setNewDevice({ ...newDevice, device_type: v })}
+                            options={[
+                                { value: 'primary', label: lang === 'de' ? 'Primär (Handy)' : 'Primary (Phone)' },
+                                { value: 'secondary', label: lang === 'de' ? 'Sekundär (Tablet)' : 'Secondary (Tablet)' },
+                                { value: 'stationary', label: lang === 'de' ? 'Stationär (festes Gerät)' : 'Stationary (fixed device)' },
+                            ]}
+                        />
                     </div>
                 </Modal>
             )}
         </div>
     );
 };
+
 
 // ================================================================
 // Phase 2a: Patterns Page (Muster-Explorer)
@@ -3119,6 +3433,407 @@ const CalendarTriggersConfig = ({ lang, showToast }) => {
     );
 };
 
+const CalendarSyncConfig = ({ lang, showToast, onEventsLoaded }) => {
+    const [sources, setSources] = useState([]);
+    const [syncedIds, setSyncedIds] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [exportUrl, setExportUrl] = useState('');
+    const [copied, setCopied] = useState(false);
+    const [exportDays, setExportDays] = useState(90);
+    const [savingDays, setSavingDays] = useState(false);
+
+    useEffect(() => {
+        (async () => {
+            const [sourcesR, tokenR, settingsR] = await Promise.all([
+                api.get('calendar/ha-sources'),
+                api.get('calendar/export-token'),
+                api.get('calendar/export-settings'),
+            ]);
+            if (sourcesR) { setSources(sourcesR.sources || []); setSyncedIds(sourcesR.synced_ids || []); }
+            const token = tokenR?.token || '';
+            setExportUrl(`${window.location.origin}/api/calendar/export.ics?token=${token}`);
+            if (settingsR) setExportDays(settingsR.export_days || 90);
+            setLoading(false);
+        })();
+    }, []);
+
+    useEffect(() => {
+        if (syncedIds.length === 0) { onEventsLoaded?.([]); return; }
+        const now = new Date();
+        const start = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString();
+        const end = new Date(now.getFullYear(), now.getMonth() + 2, 0).toISOString();
+        api.get(`calendar/synced-events?start=${start}&end=${end}`).then(r => {
+            onEventsLoaded?.(r?.events || []);
+        });
+    }, [syncedIds]);
+
+    const toggleSource = async (entityId) => {
+        const newIds = syncedIds.includes(entityId)
+            ? syncedIds.filter(id => id !== entityId)
+            : [...syncedIds, entityId];
+        const r = await api.put('calendar/ha-sources', { synced_ids: newIds });
+        if (r?.success) {
+            setSyncedIds(newIds);
+            showToast(lang === 'de' ? 'Kalender-Sync aktualisiert' : 'Calendar sync updated', 'success');
+        }
+    };
+
+    const copyUrl = () => {
+        navigator.clipboard?.writeText(exportUrl).then(() => {
+            setCopied(true);
+            showToast(lang === 'de' ? 'URL kopiert' : 'URL copied', 'success');
+            setTimeout(() => setCopied(false), 2000);
+        });
+    };
+
+    const regenerateToken = async () => {
+        const r = await api.post('calendar/export-token');
+        if (r?.token) {
+            setExportUrl(`${window.location.origin}/api/calendar/export.ics?token=${r.token}`);
+            showToast(lang === 'de' ? 'Neuer Token generiert – alte URLs sind ungültig' : 'New token generated – old URLs are invalid', 'warning');
+        }
+    };
+
+    const saveExportDays = async (days) => {
+        setSavingDays(true);
+        const r = await api.put('calendar/export-settings', { export_days: days });
+        if (r?.success) {
+            setExportDays(r.export_days);
+            showToast(lang === 'de' ? `Schicht-Zeitraum auf ${r.export_days} Tage gesetzt` : `Shift range set to ${r.export_days} days`, 'success');
+        }
+        setSavingDays(false);
+    };
+
+    return (
+        <div className="card" style={{ marginBottom: 16 }}>
+            {/* Export Section */}
+            <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)' }}>
+                <div className="card-title" style={{ marginBottom: 8 }}>
+                    <span className="mdi mdi-export" style={{ marginRight: 8, color: 'var(--accent-primary)' }} />
+                    {lang === 'de' ? 'Kalender exportieren' : 'Export Calendar'}
+                </div>
+                <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8 }}>
+                    {lang === 'de'
+                        ? 'Diese URL in Google Calendar, Apple Calendar oder Outlook als Abo-Kalender eintragen.'
+                        : 'Add this URL as a subscription calendar in Google Calendar, Apple Calendar, or Outlook.'}
+                </p>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <input className="input" value={exportUrl} readOnly
+                        style={{ flex: 1, fontSize: 11, fontFamily: 'monospace', background: 'var(--bg-tertiary)' }}
+                        onClick={e => e.target.select()} />
+                    <button className="btn btn-sm btn-primary" onClick={copyUrl}>
+                        <span className={`mdi ${copied ? 'mdi-check' : 'mdi-content-copy'}`} style={{ marginRight: 4 }} />
+                        {copied ? 'OK' : (lang === 'de' ? 'Kopieren' : 'Copy')}
+                    </button>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <label style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                            {lang === 'de' ? 'Schichten exportieren:' : 'Export shifts:'}
+                        </label>
+                        <select className="input" value={exportDays} disabled={savingDays}
+                            onChange={e => saveExportDays(parseInt(e.target.value))}
+                            style={{ width: 'auto', fontSize: 12, padding: '4px 8px' }}>
+                            <option value={14}>14 {lang === 'de' ? 'Tage' : 'days'}</option>
+                            <option value={30}>30 {lang === 'de' ? 'Tage' : 'days'}</option>
+                            <option value={60}>60 {lang === 'de' ? 'Tage' : 'days'}</option>
+                            <option value={90}>90 {lang === 'de' ? 'Tage' : 'days'}</option>
+                            <option value={180}>180 {lang === 'de' ? 'Tage' : 'days'}</option>
+                            <option value={365}>365 {lang === 'de' ? 'Tage' : 'days'}</option>
+                        </select>
+                    </div>
+                    <button className="btn btn-sm" onClick={regenerateToken}
+                        style={{ fontSize: 11, color: 'var(--text-muted)' }}
+                        title={lang === 'de' ? 'Neuen Token generieren (alte URLs werden ungültig)' : 'Regenerate token (old URLs will stop working)'}>
+                        <span className="mdi mdi-refresh" style={{ marginRight: 4 }} />
+                        {lang === 'de' ? 'Token erneuern' : 'Regenerate token'}
+                    </button>
+                </div>
+            </div>
+
+            {/* Import Section */}
+            <div style={{ padding: '12px 16px' }}>
+                <div className="card-title" style={{ marginBottom: 8 }}>
+                    <span className="mdi mdi-import" style={{ marginRight: 8, color: 'var(--accent-secondary)' }} />
+                    {lang === 'de' ? 'HA-Kalender importieren' : 'Import HA Calendars'}
+                </div>
+                <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 10 }}>
+                    {lang === 'de'
+                        ? 'Kalender aus Home Assistant in MindHome anzeigen (z.B. Google Calendar, CalDAV).'
+                        : 'Show Home Assistant calendars in MindHome (e.g., Google Calendar, CalDAV).'}
+                </p>
+                {loading ? (
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Laden...' : 'Loading...'}</div>
+                ) : sources.length === 0 ? (
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                        {lang === 'de'
+                            ? 'Keine Kalender in Home Assistant gefunden. Richte zuerst eine Kalender-Integration in HA ein (Google Calendar, CalDAV, etc.).'
+                            : 'No calendars found in Home Assistant. Set up a calendar integration in HA first (Google Calendar, CalDAV, etc.).'}
+                    </div>
+                ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        {sources.map(s => (
+                            <label key={s.entity_id} style={{
+                                display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px',
+                                borderRadius: 6, cursor: 'pointer', fontSize: 13,
+                                background: syncedIds.includes(s.entity_id) ? 'var(--accent-primary-dim)' : 'var(--bg-tertiary)',
+                                border: syncedIds.includes(s.entity_id) ? '1px solid var(--accent-primary)' : '1px solid var(--border-color)',
+                            }}>
+                                <input type="checkbox" checked={syncedIds.includes(s.entity_id)}
+                                    onChange={() => toggleSource(s.entity_id)} />
+                                <div>
+                                    <div style={{ fontWeight: 500 }}>{s.name}</div>
+                                    <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{s.entity_id}</div>
+                                </div>
+                            </label>
+                        ))}
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+};
+
+const ShiftCalendarSync = ({ lang, showToast }) => {
+    const [calendars, setCalendars] = useState([]);
+    const [config, setConfig] = useState({ enabled: false, calendar_entity: '', sync_days: 30 });
+    const [loading, setLoading] = useState(true);
+    const [saving, setSaving] = useState(false);
+    const [syncing, setSyncing] = useState(false);
+
+    useEffect(() => {
+        Promise.all([
+            api.get('calendar/ha-sources'),
+            api.get('calendar/shift-sync'),
+        ]).then(([sourcesR, configR]) => {
+            if (sourcesR?.sources) setCalendars(sourcesR.sources);
+            if (configR && !configR._error) setConfig(configR);
+            setLoading(false);
+        });
+    }, []);
+
+    const saveConfig = async (newConfig) => {
+        setSaving(true);
+        const r = await api.put('calendar/shift-sync', newConfig);
+        setSaving(false);
+        if (r?.success) {
+            setConfig(newConfig);
+            showToast(lang === 'de' ? 'Schicht-Sync gespeichert' : 'Shift sync saved', 'success');
+        } else {
+            showToast(r?.error || 'Error', 'error');
+        }
+    };
+
+    const runNow = async () => {
+        setSyncing(true);
+        const r = await api.post('calendar/shift-sync/run');
+        setSyncing(false);
+        if (r?.success) {
+            showToast(lang === 'de' ? 'Schichten synchronisiert' : 'Shifts synced', 'success');
+        } else {
+            showToast(r?.error || 'Error', 'error');
+        }
+    };
+
+    if (loading) return null;
+
+    return (
+        <div className="card animate-in" style={{ marginTop: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center' }}>
+                    <span className="mdi mdi-calendar-sync" style={{ marginRight: 8, color: 'var(--accent-primary)', fontSize: 20 }} />
+                    <span style={{ fontWeight: 600 }}>{lang === 'de' ? 'Schichten in HA-Kalender schreiben' : 'Sync Shifts to HA Calendar'}</span>
+                </div>
+                <label className="toggle">
+                    <input type="checkbox" checked={config.enabled}
+                        onChange={e => saveConfig({ ...config, enabled: e.target.checked })} />
+                    <span className="toggle-slider"></span>
+                </label>
+            </div>
+            <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: config.enabled ? 12 : 0 }}>
+                {lang === 'de'
+                    ? 'Schichtplan-Eintraege automatisch in deinen HA-Kalender (z.B. Google Calendar) schreiben. Laeuft alle 6 Stunden.'
+                    : 'Automatically write shift schedule entries to your HA calendar (e.g. Google Calendar). Runs every 6 hours.'}
+            </p>
+            {config.enabled && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    <div>
+                        <label className="input-label">{lang === 'de' ? 'Ziel-Kalender' : 'Target Calendar'}</label>
+                        {calendars.length === 0 ? (
+                            <div style={{ fontSize: 12, color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                                {lang === 'de' ? 'Keine Kalender gefunden.' : 'No calendars found.'}
+                            </div>
+                        ) : (
+                            <CustomSelect
+                                options={calendars.map(c => ({ value: c.entity_id, label: c.name || c.entity_id }))}
+                                value={config.calendar_entity}
+                                onChange={v => saveConfig({ ...config, calendar_entity: v })}
+                            />
+                        )}
+                    </div>
+                    <div>
+                        <label className="input-label">{lang === 'de' ? 'Tage im Voraus' : 'Days ahead'}</label>
+                        <CustomSelect
+                            options={[
+                                { value: '7', label: '7' }, { value: '14', label: '14' },
+                                { value: '30', label: '30' }, { value: '60', label: '60' },
+                                { value: '90', label: '90' },
+                            ]}
+                            value={String(config.sync_days)}
+                            onChange={v => saveConfig({ ...config, sync_days: parseInt(v) })}
+                        />
+                    </div>
+                    <button className="btn btn-secondary" onClick={runNow} disabled={syncing || !config.calendar_entity}>
+                        <span className="mdi mdi-sync" style={{ marginRight: 6 }} />
+                        {syncing
+                            ? (lang === 'de' ? 'Wird synchronisiert...' : 'Syncing...')
+                            : (lang === 'de' ? 'Jetzt synchronisieren' : 'Sync now')}
+                    </button>
+                </div>
+            )}
+        </div>
+    );
+};
+
+const CalendarEventCreator = ({ lang, showToast, syncedIds }) => {
+    const [calendars, setCalendars] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [creating, setCreating] = useState(false);
+    const [showForm, setShowForm] = useState(false);
+    const [form, setForm] = useState({
+        entity_id: '', summary: '', description: '', location: '',
+        start_date: '', start_time: '', end_date: '', end_time: '', all_day: false,
+    });
+
+    useEffect(() => {
+        api.get('calendar/ha-sources').then(r => {
+            if (r?.sources) setCalendars(r.sources.filter(s => s.synced));
+            setLoading(false);
+        });
+    }, [syncedIds]);
+
+    const resetForm = () => {
+        setForm({ entity_id: calendars[0]?.entity_id || '', summary: '', description: '', location: '',
+            start_date: '', start_time: '09:00', end_date: '', end_time: '10:00', all_day: false });
+    };
+
+    const handleCreate = async () => {
+        if (!form.entity_id || !form.summary || !form.start_date) {
+            showToast(lang === 'de' ? 'Kalender, Titel und Startdatum erforderlich' : 'Calendar, title and start date required', 'error');
+            return;
+        }
+        setCreating(true);
+        const endDate = form.end_date || form.start_date;
+        let start, end;
+        if (form.all_day) {
+            start = form.start_date;
+            // HA all-day end date is exclusive, add 1 day
+            const ed = new Date(endDate + 'T00:00:00');
+            ed.setDate(ed.getDate() + 1);
+            end = ed.toISOString().split('T')[0];
+        } else {
+            start = `${form.start_date}T${form.start_time || '09:00'}:00`;
+            end = `${endDate}T${form.end_time || '10:00'}:00`;
+        }
+        const r = await api.post('calendar/events', {
+            entity_id: form.entity_id, summary: form.summary.trim(),
+            start, end,
+            description: form.description.trim() || null,
+            location: form.location.trim() || null,
+        });
+        setCreating(false);
+        if (r?.success) {
+            showToast(lang === 'de' ? 'Termin erstellt' : 'Event created', 'success');
+            setShowForm(false);
+            resetForm();
+        } else {
+            showToast(r?.error || (lang === 'de' ? 'Fehler beim Erstellen' : 'Creation failed'), 'error');
+        }
+    };
+
+    if (loading || calendars.length === 0) return null;
+
+    return (
+        <div className="card animate-in" style={{ marginTop: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: showForm ? 16 : 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center' }}>
+                    <span className="mdi mdi-calendar-plus" style={{ marginRight: 8, color: 'var(--success)', fontSize: 20 }} />
+                    <span style={{ fontWeight: 600 }}>{lang === 'de' ? 'Termin in HA-Kalender erstellen' : 'Create Event in HA Calendar'}</span>
+                </div>
+                <button className="btn btn-primary btn-sm" onClick={() => { setShowForm(!showForm); if (!showForm) resetForm(); }}>
+                    <span className={`mdi ${showForm ? 'mdi-close' : 'mdi-plus'}`} style={{ marginRight: 4 }} />
+                    {showForm ? (lang === 'de' ? 'Abbrechen' : 'Cancel') : (lang === 'de' ? 'Neuer Termin' : 'New Event')}
+                </button>
+            </div>
+            {showForm && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    <div>
+                        <label className="input-label">{lang === 'de' ? 'Kalender' : 'Calendar'}</label>
+                        <CustomSelect
+                            options={calendars.map(c => ({ value: c.entity_id, label: c.name || c.entity_id }))}
+                            value={form.entity_id}
+                            onChange={v => setForm({ ...form, entity_id: v })}
+                        />
+                    </div>
+                    <div>
+                        <label className="input-label">{lang === 'de' ? 'Titel' : 'Title'}</label>
+                        <input className="form-input" value={form.summary}
+                            onChange={e => setForm({ ...form, summary: e.target.value })}
+                            placeholder={lang === 'de' ? 'z.B. Heizungswartung' : 'e.g. Heating maintenance'} />
+                    </div>
+                    <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                        <div style={{ flex: 1, minWidth: 140 }}>
+                            <label className="input-label">{lang === 'de' ? 'Startdatum' : 'Start Date'}</label>
+                            <input className="form-input" type="date" value={form.start_date}
+                                onChange={e => setForm({ ...form, start_date: e.target.value, end_date: form.end_date || e.target.value })} />
+                        </div>
+                        {!form.all_day && (
+                            <div style={{ flex: 1, minWidth: 100 }}>
+                                <label className="input-label">{lang === 'de' ? 'Startzeit' : 'Start Time'}</label>
+                                <input className="form-input" type="time" value={form.start_time}
+                                    onChange={e => setForm({ ...form, start_time: e.target.value })} />
+                            </div>
+                        )}
+                        <div style={{ flex: 1, minWidth: 140 }}>
+                            <label className="input-label">{lang === 'de' ? 'Enddatum' : 'End Date'}</label>
+                            <input className="form-input" type="date" value={form.end_date}
+                                onChange={e => setForm({ ...form, end_date: e.target.value })} />
+                        </div>
+                        {!form.all_day && (
+                            <div style={{ flex: 1, minWidth: 100 }}>
+                                <label className="input-label">{lang === 'de' ? 'Endzeit' : 'End Time'}</label>
+                                <input className="form-input" type="time" value={form.end_time}
+                                    onChange={e => setForm({ ...form, end_time: e.target.value })} />
+                            </div>
+                        )}
+                    </div>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
+                        <input type="checkbox" checked={form.all_day}
+                            onChange={e => setForm({ ...form, all_day: e.target.checked })} />
+                        {lang === 'de' ? 'Ganztaegig' : 'All day'}
+                    </label>
+                    <div>
+                        <label className="input-label">{lang === 'de' ? 'Beschreibung (optional)' : 'Description (optional)'}</label>
+                        <input className="form-input" value={form.description}
+                            onChange={e => setForm({ ...form, description: e.target.value })} />
+                    </div>
+                    <div>
+                        <label className="input-label">{lang === 'de' ? 'Ort (optional)' : 'Location (optional)'}</label>
+                        <input className="form-input" value={form.location}
+                            onChange={e => setForm({ ...form, location: e.target.value })} />
+                    </div>
+                    <button className="btn btn-primary" onClick={handleCreate} disabled={creating}>
+                        <span className="mdi mdi-calendar-check" style={{ marginRight: 6 }} />
+                        {creating
+                            ? (lang === 'de' ? 'Wird erstellt...' : 'Creating...')
+                            : (lang === 'de' ? 'Termin erstellen' : 'Create Event')}
+                    </button>
+                </div>
+            )}
+        </div>
+    );
+};
+
 const DeviceAnomalyConfig = ({ lang }) => {
     const { devices, rooms } = useApp();
     const [search, setSearch] = useState('');
@@ -3362,10 +4077,10 @@ const AnomalyAdvancedPanel = ({ lang, showToast }) => {
                     <label className="toggle" style={{ transform: 'scale(0.75)' }}><input type="checkbox" checked={config.seasonal_adjustment?.enabled !== false}
                         onChange={() => update('seasonal_adjustment', { enabled: !config.seasonal_adjustment?.enabled })} /><div className="toggle-slider" /></label>
                 </div>
-                {config.paused_until && new Date(config.paused_until) > new Date() && (
+                {config.paused_until && parseUTC(config.paused_until) > new Date() && (
                     <div style={{ fontSize: 11, color: 'var(--warning)', marginTop: 4 }}>
                         <span className="mdi mdi-pause-circle" style={{ marginRight: 4 }} />
-                        {lang === 'de' ? 'Pausiert bis' : 'Paused until'} {new Date(config.paused_until).toLocaleTimeString()}
+                        {lang === 'de' ? 'Pausiert bis' : 'Paused until'} {parseUTC(config.paused_until).toLocaleTimeString()}
                     </div>
                 )}
             </CollapsibleCard>
@@ -3482,7 +4197,7 @@ const ActivitiesPage = () => {
     const exportCSV = () => {
         const headers = ['Datum', 'Typ', 'Beschreibung', 'Gerät', 'Raum'];
         const rows = filtered.map(l => [
-            new Date(l.created_at).toLocaleString('de-DE'),
+            parseUTC(l.created_at).toLocaleString('de-DE'),
             l.action_type,
             (l.reason || '').replace(/,/g, ';'),
             getDeviceName(l.device_id),
@@ -3601,7 +4316,7 @@ const ActivitiesPage = () => {
                                     <div style={{ fontSize: 12, color: 'var(--accent-secondary)', marginTop: 2 }}>{attrParts.join(' · ')}</div>
                                 )}
                                 <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 3, display: 'flex', gap: 8 }}>
-                                    <span>{new Date(log.created_at).toLocaleString(lang === 'de' ? 'de-DE' : 'en-US')}</span>
+                                    <span>{parseUTC(log.created_at).toLocaleString(lang === 'de' ? 'de-DE' : 'en-US')}</span>
                                     {roomName && <span>· {roomName}</span>}
                                 </div>
                             </div>
@@ -3939,7 +4654,7 @@ const PatternsPage = () => {
                                 </div>
                                 {e.reason && <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{e.reason}</div>}
                             </div>
-                            <button className="btn btn-ghost" onClick={async () => { await api.delete(`pattern-exclusions/${e.id}`); await load(); }}>
+                            <button className="btn btn-ghost" onClick={async () => { if (!confirm(lang === 'de' ? 'Ausschluss wirklich löschen?' : 'Really delete exclusion?')) return; await api.delete(`pattern-exclusions/${e.id}`); await load(); }}>
                                 <span className="mdi mdi-delete" style={{ color: 'var(--danger)' }} />
                             </button>
                         </div>
@@ -4003,36 +4718,58 @@ const PatternsPage = () => {
                         <span className="mdi mdi-plus" style={{ marginRight: 4 }} />
                         {lang === 'de' ? 'Regel erstellen' : 'Create Rule'}
                     </button>
-                    {manualRules.length > 0 ? manualRules.map(r => (
-                        <div key={r.id} className="card" style={{ marginBottom: 8, padding: 14 }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                                <div>
-                                    <div style={{ fontSize: 14, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 6 }}>
-                                        {r.name}
-                                        <span className={`badge badge-${r.is_active ? 'success' : 'secondary'}`} style={{ fontSize: 10 }}>
-                                            {r.is_active ? (lang === 'de' ? 'Aktiv' : 'Active') : (lang === 'de' ? 'Pausiert' : 'Paused')}
-                                        </span>
+                    {manualRules.length > 0 ? (() => {
+                        const grouped = {};
+                        manualRules.forEach(r => {
+                            const key = `${r.trigger_entity}::${r.trigger_state}`;
+                            if (!grouped[key]) grouped[key] = [];
+                            grouped[key].push(r);
+                        });
+                        return Object.entries(grouped).map(([key, rules]) => {
+                            const [trigEntity, trigState] = key.split('::');
+                            const triggerDev = devices.find(d => d.ha_entity_id === trigEntity);
+                            return (
+                                <div key={key} className="card" style={{ marginBottom: 12, padding: 14 }}>
+                                    <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                                        <span className="mdi mdi-ray-start-arrow" style={{ color: 'var(--accent-primary)' }} />
+                                        {lang === 'de' ? 'Wenn' : 'If'} <strong>{triggerDev?.name || trigEntity}</strong> = {trigState}
                                     </div>
-                                    <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
-                                        {lang === 'de' ? 'Wenn' : 'If'} <strong>{r.trigger_entity}</strong> = {r.trigger_state}
-                                        → <strong>{r.action_entity}</strong> {r.action_service}
-                                        {r.delay_seconds > 0 && ` (${r.delay_seconds}s ${lang === 'de' ? 'Verzögerung' : 'delay'})`}
-                                    </div>
-                                    {r.execution_count > 0 && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
-                                        {r.execution_count}x {lang === 'de' ? 'ausgeführt' : 'executed'}
-                                    </div>}
+                                    {rules.map(r => (
+                                        <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0 6px 20px', borderBottom: '1px solid var(--border)' }}>
+                                            <div style={{ flex: 1 }}>
+                                                <div style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
+                                                    <span className="mdi mdi-arrow-right" style={{ color: 'var(--text-muted)', fontSize: 12 }} />
+                                                    <strong>{devices.find(d => d.ha_entity_id === r.action_entity)?.name || r.action_entity}</strong>
+                                                    <span style={{ color: 'var(--text-muted)' }}>{r.action_service === 'turn_on' ? (lang === 'de' ? 'ein' : 'on') : r.action_service === 'turn_off' ? (lang === 'de' ? 'aus' : 'off') : r.action_service}</span>
+                                                    {r.delay_seconds > 0 && <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>⏱ {r.delay_seconds}s</span>}
+                                                    <span className={`badge badge-${r.is_active ? 'success' : 'secondary'}`} style={{ fontSize: 9 }}>
+                                                        {r.is_active ? (lang === 'de' ? 'Aktiv' : 'Active') : (lang === 'de' ? 'Pausiert' : 'Paused')}
+                                                    </span>
+                                                </div>
+                                                {r.execution_count > 0 && <div style={{ fontSize: 10, color: 'var(--text-muted)', marginLeft: 22, marginTop: 1 }}>
+                                                    {r.execution_count}x {lang === 'de' ? 'ausgeführt' : 'executed'}
+                                                </div>}
+                                            </div>
+                                            <div style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
+                                                <button className="btn btn-ghost" style={{ padding: '4px 6px' }} onClick={async () => {
+                                                    await api.put(`manual-rules/${r.id}`, { is_active: !r.is_active }); await load();
+                                                }}><span className={`mdi ${r.is_active ? 'mdi-pause' : 'mdi-play'}`} style={{ fontSize: 14 }} /></button>
+                                                <button className="btn btn-ghost" style={{ padding: '4px 6px' }} onClick={async () => {
+                                                    if (!confirm(lang === 'de' ? 'Aktion wirklich löschen?' : 'Really delete action?')) return;
+                                                    await api.delete(`manual-rules/${r.id}`); await load();
+                                                }}><span className="mdi mdi-delete" style={{ fontSize: 14, color: 'var(--danger)' }} /></button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                    <button className="btn btn-ghost" style={{ fontSize: 11, marginTop: 6, padding: '4px 10px', color: 'var(--accent-primary)' }}
+                                        onClick={() => { setNewRule({ name: '', trigger_entity: trigEntity, trigger_state: trigState, action_entity: '', action_service: 'turn_on' }); setShowAddRule(true); }}>
+                                        <span className="mdi mdi-plus" style={{ marginRight: 4 }} />
+                                        {lang === 'de' ? 'Aktion hinzufügen' : 'Add action'}
+                                    </button>
                                 </div>
-                                <div style={{ display: 'flex', gap: 4 }}>
-                                    <button className="btn btn-ghost" onClick={async () => {
-                                        await api.put(`manual-rules/${r.id}`, { is_active: !r.is_active }); await load();
-                                    }}><span className={`mdi ${r.is_active ? 'mdi-pause' : 'mdi-play'}`} style={{ fontSize: 16 }} /></button>
-                                    <button className="btn btn-ghost" onClick={async () => {
-                                        await api.delete(`manual-rules/${r.id}`); await load();
-                                    }}><span className="mdi mdi-delete" style={{ fontSize: 16, color: 'var(--danger)' }} /></button>
-                                </div>
-                            </div>
-                        </div>
-                    )) : <div className="empty-state"><span className="mdi mdi-pencil-ruler" />
+                            );
+                        });
+                    })() : <div className="empty-state"><span className="mdi mdi-pencil-ruler" />
                         <h3>{lang === 'de' ? 'Keine eigenen Regeln' : 'No Manual Rules'}</h3>
                         <p>{lang === 'de' ? 'Erstelle eigene Wenn-Dann Regeln.' : 'Create your own If-Then rules.'}</p></div>}
 
@@ -4066,12 +4803,17 @@ const PatternsPage = () => {
                                     entities={devices.filter(d => d.ha_entity_id)}
                                     placeholder="light.hallway" />
                             </div>
-                            <div className="input-group">
+                            <div className="input-group" style={{ marginBottom: 12 }}>
                                 <Dropdown label={lang === 'de' ? 'Aktion' : 'Action'} value={newRule.action_service}
                                     onChange={v => setNewRule({ ...newRule, action_service: v })}
                                     options={[{ value: 'turn_on', label: lang === 'de' ? 'Einschalten' : 'Turn On' },
                                         { value: 'turn_off', label: lang === 'de' ? 'Ausschalten' : 'Turn Off' },
                                         { value: 'toggle', label: 'Toggle' }]} />
+                            </div>
+                            <div className="input-group">
+                                <label className="input-label">{lang === 'de' ? 'Verzögerung (Sekunden)' : 'Delay (seconds)'}</label>
+                                <input className="input" type="number" min="0" value={newRule.delay_seconds || 0}
+                                    onChange={e => setNewRule({ ...newRule, delay_seconds: parseInt(e.target.value) || 0 })} />
                             </div>
                         </Modal>
                     )}
@@ -4230,7 +4972,7 @@ const PatternsPage = () => {
                             <tbody>
                                 {stateHistory.map(ev => (
                                     <tr key={ev.id}>
-                                        <td style={{ whiteSpace: 'nowrap' }}>{ev.created_at ? new Date(ev.created_at).toLocaleTimeString() : '–'}</td>
+                                        <td style={{ whiteSpace: 'nowrap' }}>{ev.created_at ? parseUTC(ev.created_at).toLocaleTimeString() : '–'}</td>
                                         <td style={{ fontFamily: 'monospace', fontSize: 11 }}>{ev.entity_id}</td>
                                         <td>
                                             <span style={{ color: 'var(--text-muted)' }}>{ev.old_state || '?'}</span>
@@ -4299,19 +5041,22 @@ const PatternsPage = () => {
                                 {count} {lang === 'de' ? 'ausgewählt' : 'selected'}
                             </span>
                             <button className="btn btn-sm btn-ghost" onClick={async () => {
-                                setPatterns(prev => prev.filter(p => !selectedIds.includes(p.id)));
-                                for (const id of selectedIds) { await api.put(`patterns/reject/${id}`, { reason: 'bulk' }); }
-                                setBulkSelected({}); setBulkMode(false); await load();
-                                showToast(`${count} ${lang === 'de' ? 'Muster abgelehnt' : 'patterns rejected'}`, 'success');
+                                try {
+                                    for (const id of selectedIds) { await api.put(`patterns/reject/${id}`, { reason: 'bulk' }); }
+                                    setBulkSelected({}); setBulkMode(false); await load();
+                                    showToast(`${count} ${lang === 'de' ? 'Muster abgelehnt' : 'patterns rejected'}`, 'success');
+                                } catch (e) { showToast(lang === 'de' ? 'Fehler beim Ablehnen' : 'Error rejecting patterns', 'error'); await load(); }
                             }}>
                                 <span className="mdi mdi-close-circle" style={{ marginRight: 4, color: 'var(--warning)' }} />
                                 {lang === 'de' ? 'Alle ablehnen' : 'Reject all'}
                             </button>
                             <button className="btn btn-sm btn-ghost" onClick={async () => {
-                                setPatterns(prev => prev.filter(p => !selectedIds.includes(p.id)));
-                                for (const id of selectedIds) { await api.delete(`patterns/${id}`); }
-                                setBulkSelected({}); setBulkMode(false); await load();
-                                showToast(`${count} ${lang === 'de' ? 'Muster gelöscht' : 'patterns deleted'}`, 'success');
+                                if (!confirm(lang === 'de' ? `${count} Muster wirklich löschen?` : `Really delete ${count} patterns?`)) return;
+                                try {
+                                    for (const id of selectedIds) { await api.delete(`patterns/${id}`); }
+                                    setBulkSelected({}); setBulkMode(false); await load();
+                                    showToast(`${count} ${lang === 'de' ? 'Muster gelöscht' : 'patterns deleted'}`, 'success');
+                                } catch (e) { showToast(lang === 'de' ? 'Fehler beim Löschen' : 'Error deleting patterns', 'error'); await load(); }
                             }}>
                                 <span className="mdi mdi-delete" style={{ marginRight: 4, color: 'var(--danger)' }} />
                                 {lang === 'de' ? 'Alle löschen' : 'Delete all'}
@@ -4443,7 +5188,7 @@ const PatternsPage = () => {
                                             <div><span style={{ color: 'var(--text-muted)' }}>{lang === 'de' ? 'Verzögerung' : 'Delay'}:</span> {p.pattern_data.avg_delay_sec < 60 ? `${Math.round(p.pattern_data.avg_delay_sec)}s` : `${Math.round(p.pattern_data.avg_delay_sec/60)} min`}</div>
                                         )}
                                         <div><span style={{ color: 'var(--text-muted)' }}>{lang === 'de' ? 'Beobachtet' : 'Observed'}:</span> {p.pattern_data?.days_observed || 0} {lang === 'de' ? 'Tage' : 'days'}, {p.pattern_data?.occurrence_count || p.match_count || 0} {lang === 'de' ? 'Treffer' : 'matches'}</div>
-                                        <div><span style={{ color: 'var(--text-muted)' }}>{lang === 'de' ? 'Erstellt' : 'Created'}:</span> {p.created_at ? new Date(p.created_at).toLocaleDateString() : '–'}</div>
+                                        <div><span style={{ color: 'var(--text-muted)' }}>{lang === 'de' ? 'Erstellt' : 'Created'}:</span> {p.created_at ? parseUTC(p.created_at).toLocaleDateString() : '–'}</div>
                                         {/* #51 Confidence Explanation */}
                                         <div style={{ marginTop: 6, padding: '6px 10px', background: 'var(--bg-primary)', borderRadius: 6, fontSize: 11 }}>
                                             <span className="mdi mdi-information" style={{ marginRight: 4, color: 'var(--info)' }} />
@@ -4532,7 +5277,7 @@ const PatternsPage = () => {
 // ================================================================
 
 const NotificationsPage = () => {
-    const { lang, showToast, devices, users } = useApp();
+    const { lang, showToast, devices, users, rooms } = useApp();
     const [notifications, setNotifications] = useState([]);
     const [loading, setLoading] = useState(true);
     const [predictions, setPredictions] = useState([]);
@@ -4847,9 +5592,9 @@ const NotificationsPage = () => {
                             </div>
                         </CollapsibleCard>
 
-                        {/* Person Channel Assignment - Collapsible */}
+                        {/* Person Channel Assignment - Collapsible (admins + users only, no guests) */}
                         <CollapsibleCard title={lang === 'de' ? 'Personen-Zuordnung' : 'Person Assignment'} icon="mdi-account-group" defaultOpen={false}>
-                            {(users || []).map(u => (
+                            {(users || []).filter(u => u.role !== 'guest').map(u => (
                                 <div key={u.id} style={{ padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
                                     <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 4 }}>{u.name}</div>
                                     <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
@@ -4872,15 +5617,98 @@ const NotificationsPage = () => {
                         {/* TTS - Collapsible */}
                         {ttsDevices.length > 0 && (
                             <CollapsibleCard title={`${lang === 'de' ? 'Sprachausgabe (TTS)' : 'Text-to-Speech'} · ${ttsDevices.length}`} icon="mdi-bullhorn" defaultOpen={false}>
-                                {ttsDevices.map(d => (
-                                    <div key={d.entity_id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--border)' }}>
-                                        <span style={{ fontSize: 13 }}>{d.name}</span>
-                                        <button className="btn btn-sm btn-secondary" onClick={async () => {
-                                            await api.post('tts/announce', { message: lang === 'de' ? 'Dies ist ein Test von MindHome.' : 'This is a test from MindHome.', entity_id: d.entity_id });
-                                            showToast(lang === 'de' ? 'TTS gesendet' : 'TTS sent', 'success');
-                                        }} style={{ fontSize: 11 }}><span className="mdi mdi-play" style={{ marginRight: 2 }} />Test</button>
+                                {/* Global TTS Toggle */}
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--border)', marginBottom: 8 }}>
+                                    <span style={{ fontSize: 13, fontWeight: 600 }}>
+                                        <span className="mdi mdi-power" style={{ marginRight: 6, color: extSettings?.tts_enabled !== false ? 'var(--success)' : 'var(--text-muted)' }} />
+                                        {lang === 'de' ? 'TTS aktiviert' : 'TTS enabled'}
+                                    </span>
+                                    <label className="toggle"><input type="checkbox" checked={extSettings?.tts_enabled !== false}
+                                        onChange={async () => {
+                                            const newVal = !(extSettings?.tts_enabled !== false);
+                                            setExtSettings(prev => ({ ...prev, tts_enabled: newVal }));
+                                            await api.put('notification-settings/extended', { tts_enabled: newVal });
+                                            showToast(newVal ? (lang === 'de' ? 'TTS aktiviert' : 'TTS enabled') : (lang === 'de' ? 'TTS deaktiviert' : 'TTS disabled'), 'success');
+                                        }} /><div className="toggle-slider" /></label>
+                                </div>
+
+                                {/* Motion Mode Toggle */}
+                                <div style={{ padding: '8px 0', borderBottom: '1px solid var(--border)', marginBottom: 8, opacity: extSettings?.tts_enabled !== false ? 1 : 0.4 }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                        <span style={{ fontSize: 13 }}>
+                                            <span className="mdi mdi-motion-sensor" style={{ marginRight: 6, color: 'var(--accent-primary)' }} />
+                                            {lang === 'de' ? 'Nur im Raum mit Bewegung' : 'Only in room with motion'}
+                                        </span>
+                                        <label className="toggle"><input type="checkbox" checked={extSettings?.tts_motion_mode?.enabled || false}
+                                            onChange={async () => {
+                                                const mm = { ...(extSettings?.tts_motion_mode || {}), enabled: !extSettings?.tts_motion_mode?.enabled };
+                                                setExtSettings(prev => ({ ...prev, tts_motion_mode: mm }));
+                                                await api.put('notification-settings/extended', { tts_motion_mode: mm });
+                                            }} /><div className="toggle-slider" /></label>
                                     </div>
-                                ))}
+                                    {extSettings?.tts_motion_mode?.enabled && (
+                                        <div style={{ marginTop: 8, paddingLeft: 22 }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                                                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Timeout:' : 'Timeout:'}</span>
+                                                {[15, 30, 60].map(m => (
+                                                    <button key={m} className={`btn btn-sm ${(extSettings?.tts_motion_mode?.timeout_min || 30) === m ? 'btn-primary' : 'btn-ghost'}`}
+                                                        onClick={async () => { const mm = { ...extSettings.tts_motion_mode, timeout_min: m }; setExtSettings(prev => ({ ...prev, tts_motion_mode: mm })); await api.put('notification-settings/extended', { tts_motion_mode: mm }); }}
+                                                        style={{ fontSize: 10, padding: '2px 6px' }}>{m} min</button>
+                                                ))}
+                                            </div>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                                                    {lang === 'de' ? 'Fallback: alle Speaker wenn keine Bewegung' : 'Fallback: all speakers if no motion'}
+                                                </span>
+                                                <label className="toggle" style={{ transform: 'scale(0.8)' }}><input type="checkbox" checked={extSettings?.tts_motion_mode?.fallback_all || false}
+                                                    onChange={async () => { const mm = { ...extSettings.tts_motion_mode, fallback_all: !extSettings.tts_motion_mode.fallback_all }; setExtSettings(prev => ({ ...prev, tts_motion_mode: mm })); await api.put('notification-settings/extended', { tts_motion_mode: mm }); }} /><div className="toggle-slider" /></label>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+
+                                <p style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8 }}>
+                                    {lang === 'de' ? 'Weise jedem Lautsprecher einen Raum zu.' : 'Assign each speaker to a room.'}
+                                </p>
+                                {ttsDevices.map(d => {
+                                    const assignedRoom = extSettings?.tts_room_assignments?.[d.entity_id] || '';
+                                    const disabledSpeakers = extSettings?.tts_disabled_speakers || [];
+                                    const isEnabled = !disabledSpeakers.includes(d.entity_id);
+                                    return (
+                                        <div key={d.entity_id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', borderBottom: '1px solid var(--border)', opacity: (extSettings?.tts_enabled !== false && isEnabled) ? 1 : 0.4 }}>
+                                            <div style={{ flex: 1, minWidth: 0 }}>
+                                                <div style={{ fontSize: 13, fontWeight: 500 }}>{d.name}</div>
+                                                <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{d.entity_id}</div>
+                                            </div>
+                                            <select className="input" value={assignedRoom}
+                                                onChange={async (e) => {
+                                                    const roomId = e.target.value ? parseInt(e.target.value) : null;
+                                                    const assignments = { ...(extSettings?.tts_room_assignments || {}) };
+                                                    if (roomId) { assignments[d.entity_id] = roomId; } else { delete assignments[d.entity_id]; }
+                                                    setExtSettings(prev => ({ ...prev, tts_room_assignments: assignments }));
+                                                    await api.put('notification-settings/extended', { tts_room_assignments: assignments });
+                                                }}
+                                                style={{ width: 'auto', fontSize: 11, padding: '4px 8px', minWidth: 120 }}>
+                                                <option value="">{lang === 'de' ? '-- Kein Raum --' : '-- No Room --'}</option>
+                                                {(rooms || []).map(r => (
+                                                    <option key={r.id} value={r.id}>{r.name}</option>
+                                                ))}
+                                            </select>
+                                            <button className="btn btn-sm btn-secondary" onClick={async () => {
+                                                await api.post('tts/announce', { message: lang === 'de' ? 'Dies ist ein Test von MindHome.' : 'This is a test from MindHome.', entity_id: d.entity_id });
+                                                showToast(lang === 'de' ? 'TTS gesendet' : 'TTS sent', 'success');
+                                            }} style={{ fontSize: 11, flexShrink: 0 }}><span className="mdi mdi-play" style={{ marginRight: 2 }} />Test</button>
+                                            <label className="toggle" style={{ transform: 'scale(0.75)', flexShrink: 0 }}><input type="checkbox" checked={isEnabled}
+                                                onChange={async () => {
+                                                    const ds = [...(extSettings?.tts_disabled_speakers || [])];
+                                                    const idx = ds.indexOf(d.entity_id);
+                                                    if (idx >= 0) { ds.splice(idx, 1); } else { ds.push(d.entity_id); }
+                                                    setExtSettings(prev => ({ ...prev, tts_disabled_speakers: ds }));
+                                                    await api.put('notification-settings/extended', { tts_disabled_speakers: ds });
+                                                }} /><div className="toggle-slider" /></label>
+                                        </div>
+                                    );
+                                })}
                             </CollapsibleCard>
                         )}
 
@@ -4890,7 +5718,7 @@ const NotificationsPage = () => {
                                 <div key={m.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0' }}>
                                     <span style={{ fontSize: 13 }}>{devices.find(d => d.id === m.device_id)?.name || `#${m.device_id}`}</span>
                                     <button className="btn btn-ghost" style={{ fontSize: 11, color: 'var(--danger)' }}
-                                        onClick={async () => { await api.delete(`notification-settings/unmute-device/${m.id}`); await load(); }}>
+                                        onClick={async () => { if (!confirm(lang === 'de' ? 'Gerät wirklich entstummen?' : 'Really unmute device?')) return; await api.delete(`notification-settings/unmute-device/${m.id}`); await load(); }}>
                                         <span className="mdi mdi-volume-high" style={{ marginRight: 2 }} />{lang === 'de' ? 'Entstummen' : 'Unmute'}
                                     </button>
                                 </div>
@@ -4941,7 +5769,7 @@ const NotificationsPage = () => {
                         // Group by day for timeline
                         const grouped = {};
                         filteredPreds.forEach(pred => {
-                            const day = pred.created_at ? new Date(pred.created_at).toLocaleDateString(lang === 'de' ? 'de-DE' : 'en-US', { weekday: 'long', day: 'numeric', month: 'long' }) : (lang === 'de' ? 'Unbekannt' : 'Unknown');
+                            const day = pred.created_at ? parseUTC(pred.created_at).toLocaleDateString(lang === 'de' ? 'de-DE' : 'en-US', { weekday: 'long', day: 'numeric', month: 'long' }) : (lang === 'de' ? 'Unbekannt' : 'Unknown');
                             if (!grouped[day]) grouped[day] = [];
                             grouped[day].push(pred);
                         });
@@ -5033,7 +5861,7 @@ const NotificationsPage = () => {
                                 <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{n.message}</div>
                             </div>
                             <div style={{ fontSize: 11, color: 'var(--text-muted)', flexShrink: 0, whiteSpace: 'nowrap' }}>
-                                {n.created_at ? new Date(n.created_at).toLocaleString() : ''}
+                                {n.created_at ? parseUTC(n.created_at).toLocaleString() : ''}
                             </div>
                             {!n.was_read && <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--accent-primary)', flexShrink: 0 }} />}
                         </div>
@@ -5423,7 +6251,7 @@ const EnergyPage = () => {
         api.post('energy/standby-config', newStandby).then(() => { showToast(lang === 'de' ? 'Standby-Erkennung hinzugefuegt' : 'Standby detection added', 'success'); setShowAddStandby(false); setNewStandby({ entity_id: '', threshold_watts: 5, idle_minutes: 30, auto_off: false }); load(); });
     };
 
-    const deleteStandby = (id) => api.delete(`energy/standby-config/${id}`).then(() => load());
+    const deleteStandby = (id) => { if (!confirm(lang === 'de' ? 'Standby-Erkennung wirklich löschen?' : 'Really delete standby detection?')) return; api.delete(`energy/standby-config/${id}`).then(() => load()); };
     const updateStandby = (id, data) => api.put(`energy/standby-config/${id}`, data).then(() => load());
 
     const tabs = [
@@ -5505,7 +6333,7 @@ const EnergyPage = () => {
                                     <tbody>
                                         {readings.slice(0, 200).map(r => (
                                             <tr key={r.id}><td style={{ fontSize: 12 }}>{r.entity_id}</td><td>{r.power_w?.toFixed(1)}</td><td>{r.energy_kwh?.toFixed(3)}</td>
-                                            <td style={{ fontSize: 12 }}>{r.created_at ? new Date(r.created_at).toLocaleString() : '-'}</td></tr>
+                                            <td style={{ fontSize: 12 }}>{r.created_at ? parseUTC(r.created_at).toLocaleString() : '-'}</td></tr>
                                         ))}
                                     </tbody>
                                 </table>
@@ -5843,10 +6671,11 @@ const ScenesPage = () => {
 // ================================================================
 // Phase 3: Presence Calendar (Month View)
 // ================================================================
-const PresenceCalendar = ({ lang, showToast, schedules, holidays, shiftTemplates }) => {
+const PresenceCalendar = ({ lang, showToast, schedules, holidays, shiftTemplates, syncedEvents, onEventDeleted }) => {
     const [viewDate, setViewDate] = useState(new Date());
     const [editDay, setEditDay] = useState(null);
     const [dayShift, setDayShift] = useState('');
+    const [deletingUid, setDeletingUid] = useState(null);
 
     const year = viewDate.getFullYear();
     const month = viewDate.getMonth();
@@ -5904,6 +6733,22 @@ const PresenceCalendar = ({ lang, showToast, schedules, holidays, shiftTemplates
             }
         }
     });
+    // Synced calendar events
+    const eventsByDate = {};
+    (syncedEvents || []).forEach(ev => {
+        const d = (ev.start || '').substring(0, 10);
+        if (d) {
+            if (!eventsByDate[d]) eventsByDate[d] = [];
+            eventsByDate[d].push(ev);
+        }
+    });
+    Object.entries(eventsByDate).forEach(([ds, evts]) => {
+        if (!dateInfo[ds]) {
+            dateInfo[ds] = { type: 'event', name: evts[0].summary, color: '#2196F3', events: evts };
+        } else {
+            dateInfo[ds].events = evts;
+        }
+    });
 
     const handleDayClick = (day) => {
         if (!day) return;
@@ -5915,6 +6760,22 @@ const PresenceCalendar = ({ lang, showToast, schedules, holidays, shiftTemplates
     const handleSaveDay = () => {
         showToast(lang === 'de' ? 'Zuweisung gespeichert (Vorschau)' : 'Assignment saved (preview)', 'info');
         setEditDay(null);
+    };
+
+    const handleDeleteEvent = async (ev) => {
+        if (!ev.uid || !ev.calendar_entity) {
+            showToast(lang === 'de' ? 'Event kann nicht gelöscht werden (keine UID)' : 'Cannot delete event (no UID)', 'error');
+            return;
+        }
+        setDeletingUid(ev.uid);
+        const r = await api.delete('calendar/events', { entity_id: ev.calendar_entity, uid: ev.uid });
+        setDeletingUid(null);
+        if (r?.success) {
+            showToast(lang === 'de' ? 'Termin gelöscht' : 'Event deleted', 'success');
+            onEventDeleted?.();
+        } else {
+            showToast(r?.error || (lang === 'de' ? 'Fehler beim Löschen' : 'Delete failed'), 'error');
+        }
     };
 
     return (
@@ -5953,6 +6814,14 @@ const PresenceCalendar = ({ lang, showToast, schedules, holidays, shiftTemplates
                                         {info.type === 'shift' ? info.code : info.name}
                                     </div>
                                 )}
+                                {info?.events && (
+                                    <div style={{ display: 'flex', justifyContent: 'center', gap: 2, marginTop: 1 }}>
+                                        {info.events.slice(0, 3).map((ev, ei) => (
+                                            <span key={ei} style={{ width: 5, height: 5, borderRadius: '50%', background: '#2196F3', display: 'inline-block' }}
+                                                title={ev.summary} />
+                                        ))}
+                                    </div>
+                                )}
                             </div>
                         );
                     })}
@@ -5971,14 +6840,62 @@ const PresenceCalendar = ({ lang, showToast, schedules, holidays, shiftTemplates
                             <span>{lang === 'de' ? 'Feiertag' : 'Holiday'}</span>
                         </div>
                     )}
+                    {(syncedEvents || []).length > 0 && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11 }}>
+                            <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#2196F3', display: 'inline-block' }} />
+                            <span>{lang === 'de' ? 'Kalender-Event' : 'Calendar Event'}</span>
+                        </div>
+                    )}
                 </div>
             </div>
 
             {editDay && (
                 <Modal title={`${editDay}`} onClose={() => setEditDay(null)}
-                    actions={<><button className="btn btn-secondary" onClick={() => setEditDay(null)}>{lang === 'de' ? 'Abbrechen' : 'Cancel'}</button>
+                    actions={<><button className="btn btn-secondary" onClick={() => setEditDay(null)}>{lang === 'de' ? 'Schließen' : 'Close'}</button>
                         <button className="btn btn-primary" onClick={handleSaveDay}>{lang === 'de' ? 'Speichern' : 'Save'}</button></>}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                        {/* Calendar events for this day */}
+                        {dateInfo[editDay]?.events?.length > 0 && (
+                            <div>
+                                <label style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 6, display: 'block' }}>
+                                    {lang === 'de' ? 'Kalender-Termine' : 'Calendar Events'}
+                                </label>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                    {dateInfo[editDay].events.map((ev, i) => (
+                                        <div key={i} style={{
+                                            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                            padding: '8px 12px', borderRadius: 6,
+                                            background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)',
+                                        }}>
+                                            <div style={{ flex: 1, minWidth: 0 }}>
+                                                <div style={{ fontSize: 13, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                    <span className="mdi mdi-calendar" style={{ marginRight: 6, color: '#2196F3', fontSize: 14 }} />
+                                                    {ev.summary}
+                                                </div>
+                                                {ev.start && (
+                                                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                                                        {ev.all_day
+                                                            ? (lang === 'de' ? 'Ganztägig' : 'All day')
+                                                            : `${(ev.start || '').substring(11, 16)} - ${(ev.end || '').substring(11, 16)}`}
+                                                        {ev.location ? ` · ${ev.location}` : ''}
+                                                    </div>
+                                                )}
+                                            </div>
+                                            {ev.uid && (
+                                                <button className="btn btn-sm"
+                                                    disabled={deletingUid === ev.uid}
+                                                    onClick={() => handleDeleteEvent(ev)}
+                                                    style={{ marginLeft: 8, color: 'var(--danger)', flexShrink: 0 }}
+                                                    title={lang === 'de' ? 'Termin löschen' : 'Delete event'}>
+                                                    <span className={`mdi ${deletingUid === ev.uid ? 'mdi-loading mdi-spin' : 'mdi-delete-outline'}`} />
+                                                </button>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                        {/* Shift assignment */}
                         <label style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Schicht/Feiertag zuweisen' : 'Assign shift/holiday'}</label>
                         <CustomSelect
                             options={[
@@ -5989,7 +6906,7 @@ const PresenceCalendar = ({ lang, showToast, schedules, holidays, shiftTemplates
                             value={dayShift}
                             onChange={v => setDayShift(v)}
                         />
-                        {dateInfo[editDay] && (
+                        {dateInfo[editDay] && dateInfo[editDay].type !== 'event' && (
                             <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
                                 {lang === 'de' ? 'Aktuell:' : 'Current:'} <strong style={{ color: dateInfo[editDay].color }}>{dateInfo[editDay].name}</strong>
                             </div>
@@ -6050,6 +6967,16 @@ const PresencePage = () => {
     const [holidays, setHolidays] = useState([]);
     const [showAddHoliday, setShowAddHoliday] = useState(false);
     const [newHoliday, setNewHoliday] = useState({ name: '', date: '', is_recurring: false, region: 'AT' });
+    // Synced calendar events
+    const [syncedEvents, setSyncedEvents] = useState([]);
+    const reloadSyncedEvents = () => {
+        const now = new Date();
+        const start = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString();
+        const end = new Date(now.getFullYear(), now.getMonth() + 2, 0).toISOString();
+        api.get(`calendar/synced-events?start=${start}&end=${end}`).then(r => {
+            setSyncedEvents(r?.events || []);
+        });
+    };
     // Log
     const [logs, setLogs] = useState([]);
     const [logsHasMore, setLogsHasMore] = useState(false);
@@ -6089,14 +7016,14 @@ const PresencePage = () => {
         }
     }, [modes]);
 
-    // Auto-select first mode if none is active (run only once)
+    // Trigger auto-detect on startup if no mode is active yet (run only once)
     const autoSelectDone = useRef(false);
     useEffect(() => {
         if (autoSelectDone.current) return;
         if (modes.length > 0 && (!current || !current.id)) {
             autoSelectDone.current = true;
-            const zuhause = modes.find(m => m.name_de === 'Zuhause') || modes[0];
-            if (zuhause) activateMode(zuhause.id);
+            // Trigger HA-based auto-detection instead of hardcoding "Zuhause"
+            api.post('presence/auto-detect').then(() => load()).catch(() => {});
         }
     }, [modes, current]);
 
@@ -6184,7 +7111,7 @@ const PresencePage = () => {
                             <div className="card animate-in" style={{ marginBottom: 16, padding: 24, textAlign: 'center' }}>
                                 <span className={'mdi ' + (current.icon || 'mdi-home')} style={{ fontSize: 48, color: current.color || 'var(--accent-primary)' }} />
                                 <div style={{ fontSize: 22, fontWeight: 700, marginTop: 8 }}>{lang === 'de' ? current.name_de : current.name_en}</div>
-                                {current.since && <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>seit {new Date(current.since).toLocaleTimeString()}</div>}
+                                {current.since && <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>seit {parseUTC(current.since).toLocaleTimeString()}</div>}
                             </div>
                         )
                     )}
@@ -6569,10 +7496,13 @@ const PresencePage = () => {
                 </div>
             )}
 
-            {/* TAB: Calendar Triggers */}
+            {/* TAB: Calendar */}
             {tab === 'calendar' && (
                 <div>
-                    <PresenceCalendar lang={lang} showToast={showToast} schedules={schedules} holidays={holidays} shiftTemplates={shiftTemplates} />
+                    <PresenceCalendar lang={lang} showToast={showToast} schedules={schedules} holidays={holidays} shiftTemplates={shiftTemplates} syncedEvents={syncedEvents} onEventDeleted={reloadSyncedEvents} />
+                    <CalendarEventCreator lang={lang} showToast={showToast} syncedIds={syncedEvents} />
+                    <ShiftCalendarSync lang={lang} showToast={showToast} />
+                    <CalendarSyncConfig lang={lang} showToast={showToast} onEventsLoaded={setSyncedEvents} />
                     <CalendarTriggersConfig lang={lang} showToast={showToast} />
                 </div>
             )}
@@ -6588,7 +7518,7 @@ const PresencePage = () => {
                             {logs.map(l => (
                                 <div key={l.id} style={{ padding: '8px 16px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
                                     <div><strong>{l.mode_name}</strong>{l.trigger && <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--text-muted)' }}>{l.trigger}</span>}</div>
-                                    <span style={{ color: 'var(--text-muted)' }}>{l.created_at ? new Date(l.created_at).toLocaleString() : '-'}</span>
+                                    <span style={{ color: 'var(--text-muted)' }}>{l.created_at ? parseUTC(l.created_at).toLocaleString() : '-'}</span>
                                 </div>
                             ))}
                         </div>
@@ -6715,7 +7645,18 @@ const App = () => {
         const interval = setInterval(() => {
             api.get('system/status').then(s => { if (s) setStatus(s); });
         }, 60000);
-        return () => clearInterval(interval);
+
+        // Auto-refresh when tab becomes visible again (stale-data check)
+        let lastVisible = Date.now();
+        const onVisibility = () => {
+            if (document.visibilityState === 'visible' && Date.now() - lastVisible > 30000) {
+                refreshData();
+            }
+            if (document.visibilityState === 'visible') lastVisible = Date.now();
+        };
+        document.addEventListener('visibilitychange', onVisibility);
+
+        return () => { clearInterval(interval); document.removeEventListener('visibilitychange', onVisibility); };
     }, []);
 
     // Apply theme (only PUT on actual user change, not on initial load)

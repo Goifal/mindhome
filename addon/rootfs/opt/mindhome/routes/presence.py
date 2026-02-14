@@ -198,15 +198,8 @@ def api_current_presence_mode():
         current = _deps.get("automation_scheduler").presence_mgr.get_current_mode()
         if current:
             return jsonify(current)
-        # Fallback: ersten System-Modus laden statt "Unbekannt"
-        session = get_db()
-        try:
-            default = session.query(PresenceMode).filter_by(is_system=True, is_active=True).order_by(PresenceMode.priority.asc()).first()
-            if default:
-                return jsonify({"id": default.id, "name_de": default.name_de, "name_en": default.name_en, "icon": default.icon, "color": default.color, "since": None, "is_default": True})
-        finally:
-            session.close()
-        return jsonify({"name_de": "Kein Modus", "name_en": "No mode", "icon": "mdi-help-circle", "color": "#9E9E9E", "since": None, "is_default": True})
+        # Fallback: no log exists yet - return placeholder without auto-selecting
+        return jsonify({"name_de": "Erkennung laeuft...", "name_en": "Detecting...", "icon": "mdi-crosshairs-question", "color": "#9E9E9E", "since": None, "is_default": True})
     except Exception as e:
         return jsonify({"error": str(e)})
 
@@ -334,8 +327,9 @@ def api_presence_auto_detect():
         if current and current.mode_name == target_name:
             return jsonify({"changed": False, "mode": target_name, "home_count": home_count})
 
-        # Switch mode: write PresenceLog
+        # Switch mode: write PresenceLog with mode_id
         log_entry = PresenceLog(
+            mode_id=target_mode.id,
             mode_name=target_name,
             trigger="auto_detect",
         )
@@ -343,12 +337,11 @@ def api_presence_auto_detect():
 
         # Create notification for toast
         notification = NotificationLog(
-            title_de=f"Modus: {target_name}",
-            title_en=f"Mode: {target_mode.name_en}",
-            message_de=f"Automatisch erkannt: {home_count}/{total} Personen zuhause",
-            message_en=f"Auto-detected: {home_count}/{total} persons home",
-            notification_type="info",
-            is_read=False,
+            user_id=1,
+            title=f"Modus: {target_name}",
+            message=f"Automatisch erkannt: {home_count}/{total} Personen zuhause",
+            notification_type=NotificationType.INFO,
+            was_read=False,
         )
         session.add(notification)
         session.commit()
@@ -383,6 +376,18 @@ def api_presence_manual_override():
                 description_de="Manuelle Anwesenheits-Steuerung aktiv",
                 description_en="Manual presence control active",
             ))
+        # Store timestamp for auto-reset (4h)
+        ts_setting = session.query(SystemSetting).filter_by(key="presence_manual_override_ts").first()
+        ts_val = datetime.now(timezone.utc).isoformat() if enabled else ""
+        if ts_setting:
+            ts_setting.value = ts_val
+        else:
+            session.add(SystemSetting(
+                key="presence_manual_override_ts",
+                value=ts_val,
+                description_de="Zeitpunkt der manuellen Übersteuerung",
+                description_en="Manual override timestamp",
+            ))
         session.commit()
         return jsonify({"success": True, "manual_override": enabled})
     finally:
@@ -399,23 +404,39 @@ def api_seed_default_presence_modes():
     session = get_db()
     try:
         defaults = [
-            {"name_de": "Zuhause", "name_en": "Home", "icon": "mdi-home", "color": "#4CAF50", "priority": 1, "is_system": True, "trigger_type": "auto"},
-            {"name_de": "Abwesend", "name_en": "Away", "icon": "mdi-exit-run", "color": "#FF9800", "priority": 2, "is_system": True, "trigger_type": "auto"},
-            {"name_de": "Schlaf", "name_en": "Sleep", "icon": "mdi-sleep", "color": "#3F51B5", "priority": 3, "is_system": True, "trigger_type": "auto"},
-            {"name_de": "Urlaub", "name_en": "Vacation", "icon": "mdi-beach", "color": "#00BCD4", "priority": 4, "is_system": True, "trigger_type": "manual"},
+            {"name_de": "Zuhause", "name_en": "Home", "icon": "mdi-home", "color": "#4CAF50", "priority": 10, "is_system": True, "trigger_type": "auto", "auto_config": {"condition": "first_home"}},
+            {"name_de": "Besuch", "name_en": "Guests", "icon": "mdi-account-group", "color": "#9C27B0", "priority": 15, "is_system": True, "trigger_type": "auto", "auto_config": {"condition": "guests_home"}},
+            {"name_de": "Schlaf", "name_en": "Sleep", "icon": "mdi-sleep", "color": "#3F51B5", "priority": 20, "is_system": True, "trigger_type": "auto", "auto_config": {"condition": "all_home", "time_range": {"start": "22:00", "end": "06:00"}}},
+            {"name_de": "Abwesend", "name_en": "Away", "icon": "mdi-exit-run", "color": "#FF9800", "priority": 5, "is_system": True, "trigger_type": "auto", "auto_config": {"condition": "all_away"}},
+            {"name_de": "Urlaub", "name_en": "Vacation", "icon": "mdi-beach", "color": "#00BCD4", "priority": 25, "is_system": True, "trigger_type": "manual"},
         ]
         created = 0
+        updated = 0
         skipped = []
         for m in defaults:
             existing = session.query(PresenceMode).filter_by(name_de=m["name_de"]).first()
             if existing:
-                skipped.append(m["name_de"])
-                logger.info(f"Seed skip (exists): {m['name_de']}")
+                # Fix existing priorities, trigger_type and auto_config
+                changed = False
+                if existing.priority != m["priority"]:
+                    existing.priority = m["priority"]
+                    changed = True
+                if existing.trigger_type != m.get("trigger_type", "manual"):
+                    existing.trigger_type = m.get("trigger_type", "manual")
+                    changed = True
+                if m.get("auto_config") and existing.auto_config != m["auto_config"]:
+                    existing.auto_config = m["auto_config"]
+                    changed = True
+                if changed:
+                    updated += 1
+                    logger.info(f"Seed update: {m['name_de']} (prio={m['priority']}, trigger={m.get('trigger_type')})")
+                else:
+                    skipped.append(m["name_de"])
                 continue
             session.add(PresenceMode(**m, is_active=True))
             created += 1
         session.commit()
-        return jsonify({"success": True, "created": created, "skipped": skipped})
+        return jsonify({"success": True, "created": created, "updated": updated, "skipped": skipped})
     finally:
         session.close()
 

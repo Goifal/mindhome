@@ -76,6 +76,14 @@ init_database(engine)
 run_migrations(engine)
 init_db(engine)
 
+# Ensure new system domains exist in DB (for upgrades)
+try:
+    from init_db import create_default_domains
+    with get_db_session() as session:
+        create_default_domains(session)
+except Exception as e:
+    logger.warning(f"Domain seed check: {e}")
+
 # Fix: Auto-set is_controllable=False for sensor-type entities
 try:
     with get_db_session() as session:
@@ -101,71 +109,118 @@ DOMAIN_PLUGINS = {
     "light": {
         "ha_domain": "light",
         "attributes": ["brightness", "color_temp", "rgb_color", "effect"],
-        "controls": ["toggle", "brightness", "color_temp"],
-        "pattern_features": ["time_of_day", "brightness_level", "duration"],
+        "controls": [
+            {"service": "toggle", "label_de": "Ein/Aus", "label_en": "Toggle"},
+            {"service": "brightness", "label_de": "Helligkeit", "label_en": "Brightness"},
+            {"service": "color_temp", "label_de": "Farbtemperatur", "label_en": "Color temperature"},
+        ],
+        "pattern_features": [
+            {"key": "time_of_day", "label_de": "Tageszeit", "label_en": "Time of day"},
+            {"key": "brightness_level", "label_de": "Helligkeitsstufe", "label_en": "Brightness level"},
+            {"key": "duration", "label_de": "Dauer", "label_en": "Duration"},
+        ],
         "icon": "mdi:lightbulb",
     },
     "climate": {
         "ha_domain": "climate",
         "attributes": ["current_temperature", "temperature", "hvac_action", "humidity"],
-        "controls": ["set_temperature", "set_hvac_mode"],
-        "pattern_features": ["target_temp", "schedule", "comfort_profile"],
+        "controls": [
+            {"service": "set_temperature", "label_de": "Temperatur einstellen", "label_en": "Set temperature"},
+            {"service": "set_hvac_mode", "label_de": "Modus einstellen", "label_en": "Set HVAC mode"},
+        ],
+        "pattern_features": [
+            {"key": "target_temp", "label_de": "Zieltemperatur", "label_en": "Target temperature"},
+            {"key": "schedule", "label_de": "Zeitplan", "label_en": "Schedule"},
+            {"key": "comfort_profile", "label_de": "Komfortprofil", "label_en": "Comfort profile"},
+        ],
         "icon": "mdi:thermostat",
     },
     "cover": {
         "ha_domain": "cover",
         "attributes": ["current_position", "current_tilt_position"],
-        "controls": ["open", "close", "set_position"],
-        "pattern_features": ["position", "time_of_day", "sun_based"],
+        "controls": [
+            {"service": "open", "label_de": "Öffnen", "label_en": "Open"},
+            {"service": "close", "label_de": "Schließen", "label_en": "Close"},
+            {"service": "set_position", "label_de": "Position einstellen", "label_en": "Set position"},
+        ],
+        "pattern_features": [
+            {"key": "position", "label_de": "Position", "label_en": "Position"},
+            {"key": "time_of_day", "label_de": "Tageszeit", "label_en": "Time of day"},
+            {"key": "sun_based", "label_de": "Sonnenstandbasiert", "label_en": "Sun-based"},
+        ],
         "icon": "mdi:window-shutter",
     },
     "switch": {
         "ha_domain": "switch",
         "attributes": ["current_power_w", "today_energy_kwh"],
-        "controls": ["toggle"],
-        "pattern_features": ["time_of_day", "duration"],
+        "controls": [
+            {"service": "toggle", "label_de": "Ein/Aus", "label_en": "Toggle"},
+        ],
+        "pattern_features": [
+            {"key": "time_of_day", "label_de": "Tageszeit", "label_en": "Time of day"},
+            {"key": "duration", "label_de": "Dauer", "label_en": "Duration"},
+        ],
         "icon": "mdi:toggle-switch",
     },
     "sensor": {
         "ha_domain": "sensor",
         "attributes": ["unit_of_measurement", "device_class"],
         "controls": [],
-        "pattern_features": ["threshold", "trend"],
+        "pattern_features": [
+            {"key": "threshold", "label_de": "Schwellwert", "label_en": "Threshold"},
+            {"key": "trend", "label_de": "Trend", "label_en": "Trend"},
+        ],
         "icon": "mdi:eye",
     },
     "binary_sensor": {
         "ha_domain": "binary_sensor",
         "attributes": ["device_class"],
         "controls": [],
-        "pattern_features": ["trigger", "duration", "frequency"],
+        "pattern_features": [
+            {"key": "trigger", "label_de": "Auslöser", "label_en": "Trigger"},
+            {"key": "duration", "label_de": "Dauer", "label_en": "Duration"},
+            {"key": "frequency", "label_de": "Häufigkeit", "label_en": "Frequency"},
+        ],
         "icon": "mdi:checkbox-blank-circle-outline",
     },
     "media_player": {
         "ha_domain": "media_player",
         "attributes": ["media_title", "volume_level", "source"],
-        "controls": ["toggle", "volume", "source"],
-        "pattern_features": ["time_of_day", "source_preference"],
+        "controls": [
+            {"service": "toggle", "label_de": "Ein/Aus", "label_en": "Toggle"},
+            {"service": "volume", "label_de": "Lautstärke", "label_en": "Volume"},
+            {"service": "source", "label_de": "Quelle", "label_en": "Source"},
+        ],
+        "pattern_features": [
+            {"key": "time_of_day", "label_de": "Tageszeit", "label_en": "Time of day"},
+            {"key": "source_preference", "label_de": "Quellen-Präferenz", "label_en": "Source preference"},
+        ],
         "icon": "mdi:speaker",
     },
     "lock": {
         "ha_domain": "lock",
         "attributes": [],
-        "controls": ["lock", "unlock"],
-        "pattern_features": ["time_of_day", "presence"],
+        "controls": [
+            {"service": "lock", "label_de": "Abschließen", "label_en": "Lock"},
+            {"service": "unlock", "label_de": "Aufschließen", "label_en": "Unlock"},
+        ],
+        "pattern_features": [
+            {"key": "time_of_day", "label_de": "Tageszeit", "label_en": "Time of day"},
+            {"key": "presence", "label_de": "Anwesenheit", "label_en": "Presence"},
+        ],
         "icon": "mdi:lock",
-    },
-    "vacuum": {
-        "ha_domain": "vacuum",
-        "attributes": ["battery_level", "status"],
-        "controls": ["start", "stop", "return_to_base"],
-        "pattern_features": ["schedule", "presence"],
-        "icon": "mdi:robot-vacuum",
     },
     "fan": {
         "ha_domain": "fan",
         "attributes": ["percentage", "preset_mode"],
-        "controls": ["toggle", "set_percentage"],
-        "pattern_features": ["temperature_based", "time_of_day"],
+        "controls": [
+            {"service": "toggle", "label_de": "Ein/Aus", "label_en": "Toggle"},
+            {"service": "set_percentage", "label_de": "Stufe einstellen", "label_en": "Set speed"},
+        ],
+        "pattern_features": [
+            {"key": "temperature_based", "label_de": "Temperaturbasiert", "label_en": "Temperature-based"},
+            {"key": "time_of_day", "label_de": "Tageszeit", "label_en": "Time of day"},
+        ],
         "icon": "mdi:fan",
     },
     "motion": {
@@ -173,14 +228,24 @@ DOMAIN_PLUGINS = {
         "device_class": "motion",
         "attributes": ["device_class"],
         "controls": [],
-        "pattern_features": ["time_of_day", "frequency", "duration", "room_correlation"],
+        "pattern_features": [
+            {"key": "time_of_day", "label_de": "Tageszeit", "label_en": "Time of day"},
+            {"key": "frequency", "label_de": "Häufigkeit", "label_en": "Frequency"},
+            {"key": "duration", "label_de": "Dauer", "label_en": "Duration"},
+            {"key": "room_correlation", "label_de": "Raum-Korrelation", "label_en": "Room correlation"},
+        ],
         "icon": "mdi:motion-sensor",
     },
     "presence": {
         "ha_domain": "person",
         "attributes": ["source", "gps_accuracy"],
         "controls": [],
-        "pattern_features": ["arrival_time", "departure_time", "routine"],
+        "pattern_features": [
+            {"key": "arrival_time", "label_de": "Ankunftszeit", "label_en": "Arrival time"},
+            {"key": "departure_time", "label_de": "Abfahrtszeit", "label_en": "Departure time"},
+            {"key": "routine", "label_de": "Routine", "label_en": "Routine"},
+            {"key": "proximity", "label_de": "Proximität", "label_en": "Proximity"},
+        ],
         "icon": "mdi:account-multiple",
     },
     "door_window": {
@@ -188,7 +253,11 @@ DOMAIN_PLUGINS = {
         "device_class": "door",
         "attributes": ["device_class"],
         "controls": [],
-        "pattern_features": ["open_duration", "frequency", "time_of_day"],
+        "pattern_features": [
+            {"key": "open_duration", "label_de": "Öffnungsdauer", "label_en": "Open duration"},
+            {"key": "frequency", "label_de": "Häufigkeit", "label_en": "Frequency"},
+            {"key": "time_of_day", "label_de": "Tageszeit", "label_en": "Time of day"},
+        ],
         "icon": "mdi:door",
     },
     "energy": {
@@ -196,15 +265,109 @@ DOMAIN_PLUGINS = {
         "device_class": "energy",
         "attributes": ["unit_of_measurement", "state_class"],
         "controls": [],
-        "pattern_features": ["daily_usage", "peak_hours", "baseline"],
+        "pattern_features": [
+            {"key": "daily_usage", "label_de": "Tagesverbrauch", "label_en": "Daily usage"},
+            {"key": "peak_hours", "label_de": "Spitzenzeiten", "label_en": "Peak hours"},
+            {"key": "baseline", "label_de": "Grundlast", "label_en": "Baseline"},
+        ],
         "icon": "mdi:flash",
     },
     "weather": {
         "ha_domain": "weather",
         "attributes": ["temperature", "humidity", "forecast"],
         "controls": [],
-        "pattern_features": ["condition_correlation"],
+        "pattern_features": [
+            {"key": "condition_correlation", "label_de": "Wetter-Korrelation", "label_en": "Condition correlation"},
+        ],
         "icon": "mdi:weather-cloudy",
+    },
+    "bed_occupancy": {
+        "ha_domain": "binary_sensor",
+        "device_class": "occupancy",
+        "attributes": ["device_class"],
+        "controls": [],
+        "pattern_features": [
+            {"key": "sleep_start", "label_de": "Schlafbeginn", "label_en": "Sleep start"},
+            {"key": "sleep_end", "label_de": "Schlafende", "label_en": "Sleep end"},
+            {"key": "duration", "label_de": "Dauer", "label_en": "Duration"},
+        ],
+        "icon": "mdi:bed",
+    },
+    "seat_occupancy": {
+        "ha_domain": "binary_sensor",
+        "device_class": "occupancy",
+        "attributes": ["device_class"],
+        "controls": [],
+        "pattern_features": [
+            {"key": "occupied_duration", "label_de": "Belegungsdauer", "label_en": "Occupied duration"},
+            {"key": "frequency", "label_de": "Häufigkeit", "label_en": "Frequency"},
+        ],
+        "icon": "mdi:seat",
+    },
+    "vacuum": {
+        "ha_domain": "vacuum",
+        "attributes": ["battery_level", "status"],
+        "controls": [
+            {"service": "start", "label_de": "Starten", "label_en": "Start"},
+            {"service": "stop", "label_de": "Stoppen", "label_en": "Stop"},
+            {"service": "return_to_base", "label_de": "Zur Ladestation", "label_en": "Return to base"},
+        ],
+        "pattern_features": [
+            {"key": "schedule", "label_de": "Zeitplan", "label_en": "Schedule"},
+            {"key": "presence", "label_de": "Anwesenheit", "label_en": "Presence"},
+        ],
+        "icon": "mdi:robot-vacuum",
+    },
+    "system": {
+        "ha_domain": "sensor",
+        "device_class": "battery",
+        "attributes": ["device_class", "unit_of_measurement"],
+        "controls": [],
+        "pattern_features": [
+            {"key": "battery_trend", "label_de": "Akku-Trend", "label_en": "Battery trend"},
+            {"key": "connectivity", "label_de": "Verbindungsstatus", "label_en": "Connectivity"},
+        ],
+        "icon": "mdi:cellphone-link",
+    },
+    "motion_control": {
+        "ha_domain": "switch",
+        "device_class": "motion",
+        "attributes": ["device_class"],
+        "controls": [
+            {"service": "toggle", "label_de": "Ein/Aus", "label_en": "Toggle"},
+            {"service": "turn_on", "label_de": "Einschalten", "label_en": "Turn on"},
+            {"service": "turn_off", "label_de": "Ausschalten", "label_en": "Turn off"},
+        ],
+        "pattern_features": [
+            {"key": "quiet_hours", "label_de": "Ruhezeiten", "label_en": "Quiet hours"},
+            {"key": "presence_based", "label_de": "Anwesenheitsbasiert", "label_en": "Presence-based"},
+        ],
+        "icon": "mdi:motion-sensor-off",
+    },
+    "humidifier": {
+        "ha_domain": "humidifier",
+        "attributes": ["current_humidity", "target_humidity", "mode"],
+        "controls": [
+            {"service": "toggle", "label_de": "Ein/Aus", "label_en": "Toggle"},
+            {"service": "set_humidity", "label_de": "Feuchtigkeit einstellen", "label_en": "Set humidity"},
+            {"service": "set_mode", "label_de": "Modus einstellen", "label_en": "Set mode"},
+        ],
+        "pattern_features": [
+            {"key": "humidity_target", "label_de": "Ziel-Feuchtigkeit", "label_en": "Humidity target"},
+            {"key": "time_of_day", "label_de": "Tageszeit", "label_en": "Time of day"},
+            {"key": "air_quality_based", "label_de": "Luftqualitätsbasiert", "label_en": "Air quality-based"},
+        ],
+        "icon": "mdi:air-humidifier",
+    },
+    "camera": {
+        "ha_domain": "camera",
+        "attributes": ["brand", "model_name", "frontend_stream_type"],
+        "controls": [],
+        "pattern_features": [
+            {"key": "presence_based", "label_de": "Anwesenheitsbasiert", "label_en": "Presence-based"},
+            {"key": "recording", "label_de": "Aufnahme", "label_en": "Recording"},
+        ],
+        "icon": "mdi:cctv",
     },
 }
 
@@ -249,10 +412,12 @@ def on_state_changed(event):
         return  # Skip duplicate
     _recent_events[dedup_key] = now
 
-    # Cleanup dedup cache periodically (keep max 500)
+    # Cleanup dedup cache periodically (evict expired entries, keep max 500)
     if len(_recent_events) > 500:
         cutoff = now - _DEDUP_WINDOW * 2
-        _recent_events.clear()
+        expired = [k for k, v in _recent_events.items() if v < cutoff]
+        for k in expired:
+            del _recent_events[k]
 
     # Log to state_history via pattern engine
     try:
@@ -265,6 +430,20 @@ def on_state_changed(event):
 
     # Publish to new event bus
     event_bus.publish("state.changed", event_data, source="ha")
+
+    # Real-time presence detection: trigger on person/device_tracker changes
+    try:
+        new_val_p = new_state.get("state", "") if isinstance(new_state, dict) else ""
+        old_val_p = old_state.get("state", "") if isinstance(old_state, dict) else ""
+        if (entity_id.startswith("person.") or entity_id.startswith("device_tracker.")) and new_val_p != old_val_p:
+            if hasattr(automation_scheduler, 'presence_mgr'):
+                threading.Thread(
+                    target=automation_scheduler.presence_mgr.check_auto_transitions,
+                    daemon=True,
+                ).start()
+                logger.info(f"Presence check triggered by {entity_id}: {old_val_p} -> {new_val_p}")
+    except Exception as e:
+        logger.debug(f"Presence event trigger error: {e}")
 
     # Log tracked device state changes
     try:
@@ -486,13 +665,22 @@ def start_app():
     automation_scheduler.start()
     logger.info("  ✅ Automation Engine started")
 
+    # Register cleanup + DB maintenance tasks
+    from routes.system import run_cleanup, run_db_maintenance
+    task_scheduler.register("db_cleanup", run_cleanup,
+                            interval_seconds=24 * 3600,  # daily
+                            run_immediately=False)
+    task_scheduler.register("db_maintenance", run_db_maintenance,
+                            interval_seconds=7 * 24 * 3600,  # weekly
+                            run_immediately=False)
+
     # Register Phase 4 tasks
     from engines.data_retention import run_data_retention
     task_scheduler.register("data_retention", run_data_retention, interval_seconds=3600)
 
     # Start task scheduler
     task_scheduler.start()
-    logger.info("  ✅ Task Scheduler started")
+    logger.info("  ✅ Task Scheduler started (cleanup:24h, maintenance:7d)")
 
     logger.info(f"MindHome {vi['full']} started successfully!")
 

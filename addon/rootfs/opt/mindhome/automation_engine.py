@@ -20,7 +20,8 @@ from models import (
     RoomDomainState, LearningPhase, ActionLog, NotificationLog,
     NotificationType, NotificationSetting, SystemSetting, StateHistory,
     PresenceMode, PresenceLog, PluginSetting, QuietHoursConfig,
-    LearnedScene, DayPhase, PatternSettings, AnomalySetting
+    LearnedScene, DayPhase, PatternSettings, AnomalySetting,
+    PersonDevice, GuestDevice,
 )
 
 logger = logging.getLogger("mindhome.automation_engine")
@@ -1153,24 +1154,64 @@ class NotificationManager:
 
     def _send_via_push(self, session, title, message):
         """Send notification via configured push channel with fallback to persistent_notification."""
+        import json as _json
+        from helpers import get_setting
         sent = False
-        # Try push_channel from NotificationSettings for all users
+
+        # Load person-channel assignments: {user_id: [channel_id, ...]}
+        person_channels = {}
         try:
-            settings = session.query(NotificationSetting).filter(
+            raw = get_setting("notif_person_channels")
+            if raw:
+                person_channels = _json.loads(raw)
+        except Exception:
+            pass
+
+        # Load available channels for resolving channel_id → service_name
+        channels_by_id = {}
+        try:
+            from models import NotificationChannel
+            for ch in session.query(NotificationChannel).filter_by(is_enabled=True).all():
+                channels_by_id[ch.id] = ch.service_name
+        except Exception:
+            pass
+
+        # Try push_channel from NotificationSettings for all non-guest users
+        try:
+            from models import User, UserRole
+            settings = session.query(NotificationSetting).join(User).filter(
                 NotificationSetting.push_channel.isnot(None),
                 NotificationSetting.is_enabled == True,
+                User.role != UserRole.GUEST,
+                User.is_active == True,
             ).all()
             for setting in settings:
-                channel = setting.push_channel
-                if channel:
-                    try:
-                        self.ha.call_service("notify", channel, {
-                            "title": title,
-                            "message": message,
-                        })
-                        sent = True
-                    except Exception as e:
-                        logger.debug(f"Push to {channel} failed: {e}")
+                user_id_str = str(setting.user_id)
+                assigned = person_channels.get(user_id_str)
+
+                if assigned and channels_by_id:
+                    # Person has specific channel assignments → only send to those
+                    for ch_id in assigned:
+                        svc = channels_by_id.get(ch_id)
+                        if svc:
+                            try:
+                                self.ha.call_service("notify", svc.replace("notify.", ""), {
+                                    "title": title, "message": message,
+                                })
+                                sent = True
+                            except Exception as e:
+                                logger.debug(f"Push to {svc} for user {user_id_str} failed: {e}")
+                else:
+                    # No specific assignment → use legacy push_channel
+                    channel = setting.push_channel
+                    if channel:
+                        try:
+                            self.ha.call_service("notify", channel, {
+                                "title": title, "message": message,
+                            })
+                            sent = True
+                        except Exception as e:
+                            logger.debug(f"Push to {channel} failed: {e}")
         except Exception as e:
             logger.debug(f"Push channel query error: {e}")
 
@@ -1184,7 +1225,106 @@ class NotificationManager:
         except Exception as e:
             logger.debug(f"Persistent notification failed: {e}")
 
+        # TTS: send to assigned room speakers if configured and enabled
+        try:
+            tts_enabled = _json.loads(get_setting("notif_tts_enabled") or "true")
+            if not tts_enabled:
+                logger.debug("TTS globally disabled, skipping")
+            else:
+                tts_raw = get_setting("notif_tts_room_assignments")
+                if tts_raw:
+                    tts_assignments = _json.loads(tts_raw)
+                    # tts_assignments: {entity_id: room_id}
+                    motion_mode = _json.loads(get_setting("notif_tts_motion_mode") or '{"enabled": false}')
+
+                    # Filter out individually disabled speakers
+                    disabled_speakers = _json.loads(get_setting("notif_tts_disabled_speakers") or "[]")
+
+                    if motion_mode.get("enabled"):
+                        # Only announce on speaker in room with last motion
+                        target_speakers = self._get_motion_tts_speakers(tts_assignments, motion_mode)
+                    else:
+                        target_speakers = list(tts_assignments.keys())
+
+                    target_speakers = [s for s in target_speakers if s not in disabled_speakers]
+
+                    for entity_id in target_speakers:
+                        try:
+                            self.ha.announce_tts(message, media_player_entity=entity_id)
+                        except Exception as e:
+                            logger.debug(f"TTS to {entity_id} failed: {e}")
+        except Exception:
+            pass
+
         return sent
+
+    def _get_motion_tts_speakers(self, tts_assignments, motion_mode):
+        """Find TTS speakers in the room with the most recent motion."""
+        try:
+            timeout_min = motion_mode.get("timeout_min", 30)
+            fallback_all = motion_mode.get("fallback_all", False)
+
+            # Build reverse map: room_id → [speaker_entity_ids]
+            room_speakers = {}
+            for entity_id, room_id in tts_assignments.items():
+                rid = str(room_id)
+                if rid not in room_speakers:
+                    room_speakers[rid] = []
+                room_speakers[rid].append(entity_id)
+
+            # Find motion sensors with room assignments
+            session = self.Session()
+            try:
+                motion_devices = session.query(Device).filter(
+                    Device.ha_entity_id.like("binary_sensor.%"),
+                    Device.room_id.isnot(None),
+                ).all()
+
+                states = self.ha.get_states() or []
+                state_map = {s["entity_id"]: s for s in states}
+
+                # Find room with most recent motion
+                latest_room_id = None
+                latest_time = ""
+                now = datetime.now(timezone.utc)
+
+                for dev in motion_devices:
+                    s = state_map.get(dev.ha_entity_id, {})
+                    device_class = s.get("attributes", {}).get("device_class", "")
+                    if device_class not in ("motion", "occupancy"):
+                        continue
+                    last_changed = s.get("last_changed", "")
+                    if not last_changed:
+                        continue
+
+                    # Check timeout
+                    try:
+                        changed_dt = datetime.fromisoformat(last_changed.replace("Z", "+00:00"))
+                        if (now - changed_dt).total_seconds() > timeout_min * 60:
+                            continue
+                    except (ValueError, TypeError):
+                        pass
+
+                    if last_changed > latest_time:
+                        latest_time = last_changed
+                        latest_room_id = str(dev.room_id)
+            finally:
+                session.close()
+
+            if latest_room_id and latest_room_id in room_speakers:
+                logger.info(f"TTS motion mode: announcing in room {latest_room_id}")
+                return room_speakers[latest_room_id]
+
+            # Fallback
+            if fallback_all:
+                logger.info("TTS motion mode: no recent motion, fallback to all speakers")
+                return list(tts_assignments.keys())
+
+            logger.info("TTS motion mode: no recent motion, no fallback - skipping TTS")
+            return []
+        except Exception as e:
+            logger.warning(f"TTS motion mode error: {e}, falling back to all speakers")
+            return list(tts_assignments.keys())
 
     def notify_suggestion(self, prediction_id, lang="de"):
         """Send notification about a new suggestion."""
@@ -1352,13 +1492,24 @@ class PresenceModeManager:
             # Search recent PresenceLogs for a valid mode
             recent_logs = session.query(PresenceLog).order_by(PresenceLog.created_at.desc()).limit(10).all()
             for log_entry in recent_logs:
+                mode = None
                 if log_entry.mode_id:
                     mode = session.get(PresenceMode, log_entry.mode_id)
-                    if mode:
-                        return {
-                            "id": mode.id, "name_de": mode.name_de, "name_en": mode.name_en,
-                            "icon": mode.icon, "color": mode.color, "since": log_entry.created_at.isoformat(),
-                        }
+                elif log_entry.mode_name:
+                    # Fallback: lookup by name (for auto_detect logs without mode_id)
+                    mode = session.query(PresenceMode).filter_by(name_de=log_entry.mode_name).first()
+                    if mode and not log_entry.mode_id:
+                        # Back-fill mode_id for future lookups
+                        log_entry.mode_id = mode.id
+                        try:
+                            session.commit()
+                        except Exception:
+                            session.rollback()
+                if mode:
+                    return {
+                        "id": mode.id, "name_de": mode.name_de, "name_en": mode.name_en,
+                        "icon": mode.icon, "color": mode.color, "since": log_entry.created_at.isoformat(),
+                    }
             return None
         finally:
             session.close()
@@ -1411,48 +1562,132 @@ class PresenceModeManager:
             session.close()
 
     def check_auto_transitions(self):
-        """Check if presence mode should change based on person states."""
-        # Debounce: skip if last mode change was < 5 minutes ago
+        """Check if presence mode should change based on person states and PersonDevice entities."""
+        # Debounce: skip if last mode change was < 30 seconds ago
         now = datetime.now(timezone.utc)
         if hasattr(self, '_last_mode_change') and self._last_mode_change:
             elapsed = (now - self._last_mode_change).total_seconds()
-            if elapsed < 300:  # 5 minutes cooldown
+            if elapsed < 30:
                 return
 
         session = self.Session()
         try:
-            persons_home = self.ha.get_persons_home()
-            anyone_home = len(persons_home) > 0
+            # Check manual override
+            override = session.query(SystemSetting).filter_by(key="presence_manual_override").first()
+            if override and override.value == "true":
+                # Auto-reset manual override after 4 hours
+                override_ts = session.query(SystemSetting).filter_by(key="presence_manual_override_ts").first()
+                if override_ts:
+                    try:
+                        ts = datetime.fromisoformat(override_ts.value)
+                        if (now - ts).total_seconds() > 4 * 3600:
+                            override.value = "false"
+                            session.commit()
+                            logger.info("Manual presence override auto-reset after 4h")
+                        else:
+                            return  # Manual override still active
+                    except (ValueError, TypeError):
+                        return
+                else:
+                    return  # No timestamp, skip
 
+            # Primary: HA person entities
+            all_persons = self.ha.get_all_persons()
+
+            # Safety: skip if HA API is unreachable (don't false-switch to "Abwesend")
+            if all_persons is None or len(all_persons) == 0:
+                all_states_check = self.ha.get_states()
+                if not all_states_check:
+                    logger.debug("Presence check skipped: HA API unreachable")
+                    return
+
+            persons_home = self.ha.get_persons_home()
+            persons_home_set = set(p.get("entity_id", "") for p in persons_home)
+
+            # Secondary: PersonDevice device_tracker entities (complements HA persons)
+            person_devices = session.query(PersonDevice).filter_by(is_active=True).all()
+            all_states = self.ha.get_states() or []
+            state_map = {s["entity_id"]: s.get("state", "") for s in all_states}
+
+            for pd in person_devices:
+                tracker_state = state_map.get(pd.entity_id, "")
+                if tracker_state == "home":
+                    persons_home_set.add(pd.entity_id)
+
+            # GuestDevice: count guests with 'home' state
+            guest_devices = session.query(GuestDevice).all()
+            guests_home = 0
+            for gd in guest_devices:
+                if gd.entity_id and state_map.get(gd.entity_id, "") == "home":
+                    guests_home += 1
+                    # Update last_seen and visit_count
+                    if gd.last_seen is None or (now - gd.last_seen).total_seconds() > 3600:
+                        gd.visit_count = (gd.visit_count or 0) + 1
+                    gd.last_seen = now
+
+            anyone_home = len(persons_home_set) > 0 or guests_home > 0
+            all_home = all_persons and all(p["state"] == "home" for p in all_persons)
+
+            # Evaluate auto modes - highest priority first
             modes = session.query(PresenceMode).filter_by(
                 is_active=True, trigger_type="auto"
             ).order_by(PresenceMode.priority.desc()).all()
 
+            # Find the best matching mode
+            target_mode = None
             for mode in modes:
                 config = mode.auto_config or {}
                 condition = config.get("condition")
 
-                if condition == "all_away" and not anyone_home:
-                    if self._current_mode != mode.id:
-                        self.set_mode(mode.id, trigger="auto")
-                        self._last_mode_change = now
-                    return
+                # Time range check (e.g. Schlaf only between 22:00-06:00)
+                time_range = config.get("time_range")
+                if time_range and not self._in_time_range(time_range):
+                    continue
+
+                matched = False
+                if condition == "guests_home" and guests_home > 0:
+                    matched = True
+                elif condition == "all_home" and all_home:
+                    matched = True
                 elif condition == "first_home" and anyone_home:
-                    if self._current_mode != mode.id:
-                        self.set_mode(mode.id, trigger="auto")
-                        self._last_mode_change = now
-                    return
-                elif condition == "all_home":
-                    all_persons = self.ha.get_all_persons()
-                    if all_persons and all(p["state"] == "home" for p in all_persons):
-                        if self._current_mode != mode.id:
-                            self.set_mode(mode.id, trigger="auto")
-                            self._last_mode_change = now
-                        return
+                    matched = True
+                elif condition == "all_away" and not anyone_home:
+                    matched = True
+
+                if matched:
+                    target_mode = mode
+                    break  # Highest priority wins
+
+            if target_mode and self._current_mode != target_mode.id:
+                self.set_mode(target_mode.id, trigger="auto")
+                self._last_mode_change = now
+
+            session.commit()  # Save GuestDevice updates
         except Exception as e:
             logger.warning(f"Presence auto-transition error: {e}")
+            session.rollback()
         finally:
             session.close()
+
+    def _in_time_range(self, time_range):
+        """Check if current local time is within a time range like {'start': '22:00', 'end': '06:00'}."""
+        try:
+            from helpers import local_now
+            now = local_now()
+            current_minutes = now.hour * 60 + now.minute
+            start_parts = time_range.get("start", "00:00").split(":")
+            end_parts = time_range.get("end", "23:59").split(":")
+            start_min = int(start_parts[0]) * 60 + int(start_parts[1])
+            end_min = int(end_parts[0]) * 60 + int(end_parts[1])
+
+            if start_min <= end_min:
+                # Same-day range (e.g. 08:00-18:00)
+                return start_min <= current_minutes <= end_min
+            else:
+                # Overnight range (e.g. 22:00-06:00)
+                return current_minutes >= start_min or current_minutes <= end_min
+        except Exception:
+            return True
 
 
 # ==============================================================================
@@ -1662,9 +1897,9 @@ class AutomationScheduler:
         t4.start()
         self._threads.append(t4)
 
-        # Phase 3: Presence mode check: every 2 minutes
+        # Phase 3: Presence mode check: every 60 seconds (fallback to event-based)
         t6 = threading.Thread(target=self._run_periodic,
-                              args=(self.presence_mgr.check_auto_transitions, 120, "presence_check"),
+                              args=(self.presence_mgr.check_auto_transitions, 60, "presence_check"),
                               daemon=True)
         t6.start()
         self._threads.append(t6)
@@ -1676,7 +1911,21 @@ class AutomationScheduler:
         t7.start()
         self._threads.append(t7)
 
-        logger.info("Automation Scheduler started (exec:1min, suggest:4h, phase:12h, anomaly:15min, presence:2min, conflicts:5min)")
+        # Calendar trigger check: every 5 minutes
+        t8 = threading.Thread(target=self._run_periodic,
+                              args=(self._calendar_trigger_task, 300, "calendar_triggers"),
+                              daemon=True)
+        t8.start()
+        self._threads.append(t8)
+
+        # Shift-to-calendar sync: every 6 hours
+        t9 = threading.Thread(target=self._run_periodic,
+                              args=(self._shift_calendar_sync_task, 6 * 3600, "shift_cal_sync"),
+                              daemon=True)
+        t9.start()
+        self._threads.append(t9)
+
+        logger.info("Automation Scheduler started (exec:1min, suggest:4h, phase:12h, anomaly:15min, presence:2min, conflicts:5min, cal-triggers:5min, shift-sync:6h)")
 
         # #40 Watchdog: monitor thread health every 5 min
         t5 = threading.Thread(target=self._watchdog_task, daemon=True)
@@ -1696,6 +1945,240 @@ class AutomationScheduler:
             if alive < total:
                 logger.warning(f"Watchdog: {total - alive}/{total} threads dead")
             time.sleep(300)
+
+    def _calendar_trigger_task(self):
+        """Check calendar triggers against upcoming HA calendar events."""
+        try:
+            from helpers import get_setting
+            import json as _json
+
+            raw = get_setting("calendar_triggers")
+            if not raw:
+                return
+            triggers = _json.loads(raw)
+            active_triggers = [t for t in triggers if t.get("is_active", True)]
+            if not active_triggers:
+                return
+
+            # Get events from synced HA calendars for next 24 hours
+            synced_raw = get_setting("calendar_synced_sources") or "[]"
+            synced_ids = _json.loads(synced_raw)
+            if not synced_ids:
+                return
+
+            now = datetime.now(timezone.utc)
+            start = now.isoformat()
+            end = (now + timedelta(hours=1)).isoformat()
+
+            events = []
+            for eid in synced_ids:
+                try:
+                    cal_events = self.ha.get_calendar_events(eid, start, end)
+                    events.extend(cal_events)
+                except Exception:
+                    pass
+
+            # Match triggers to events
+            for trigger in active_triggers:
+                keyword = (trigger.get("keyword", "")).lower()
+                entity_id = trigger.get("entity_id")
+                service = trigger.get("service", "turn_on")
+                if not keyword or not entity_id:
+                    continue
+
+                for ev in events:
+                    summary = (ev.get("summary", "") or "").lower()
+                    if keyword in summary:
+                        # Execute the trigger action
+                        try:
+                            domain = entity_id.split(".")[0] if "." in entity_id else "homeassistant"
+                            self.ha.call_service(domain, service, {"entity_id": entity_id})
+                            logger.info(f"Calendar trigger fired: '{keyword}' → {entity_id}.{service}")
+                        except Exception as e:
+                            logger.warning(f"Calendar trigger exec error: {e}")
+                        break  # One match per trigger per cycle
+
+        except Exception as e:
+            logger.debug(f"Calendar trigger check error: {e}")
+
+    def _shift_calendar_sync_task(self, full_resync=False):
+        """Sync shift schedules to a configured HA calendar entity.
+
+        Reconciliation approach: reads actual HA calendar, compares with expected
+        shifts, deletes obsolete/duplicate events, creates missing ones.
+        Identifies own events via '[MH]' tag in summary (description not returned by HA API).
+        """
+        try:
+            from helpers import get_setting, set_setting, get_ha_timezone
+            from db import get_db
+            from models import PersonSchedule, ShiftTemplate, User
+
+            config_raw = get_setting("shift_calendar_sync")
+            if not config_raw:
+                return
+            import json as _json
+            config = _json.loads(config_raw)
+            if not config.get("enabled"):
+                return
+            target_calendar = config.get("calendar_entity", "")
+            sync_days = config.get("sync_days", 30)
+            if not target_calendar:
+                return
+
+            MH_TAG = "[MH]"  # Marker in summary to identify MindHome events
+
+            # Use HA's local timezone for correct date calculations
+            local_tz = get_ha_timezone()
+            now = datetime.now(local_tz)
+
+            # --- Step 1: Build expected events from current shift schedules ---
+            session = get_db()
+            try:
+                schedules = session.query(PersonSchedule).filter_by(
+                    is_active=True, schedule_type="shift").all()
+                templates = {t.short_code: t for t in
+                             session.query(ShiftTemplate).filter_by(is_active=True).all()}
+                users = {u.id: u.name for u in
+                         session.query(User).filter_by(is_active=True).all()}
+            finally:
+                session.close()
+
+            # expected_events: key = "YYYY-MM-DD|summary_without_tag" → event details
+            expected_events = {}
+
+            for sched in schedules:
+                sd = sched.shift_data if isinstance(sched.shift_data, dict) else {}
+                pattern = sd.get("rotation_pattern", [])
+                rotation_start = sd.get("rotation_start")
+                if not pattern or not rotation_start:
+                    continue
+                try:
+                    start_dt = datetime.strptime(rotation_start, "%Y-%m-%d").replace(tzinfo=local_tz)
+                except (ValueError, TypeError):
+                    continue
+
+                user_name = users.get(sched.user_id, "")
+
+                for day_offset in range(sync_days):
+                    day = now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=day_offset)
+                    diff = (day - start_dt).days
+                    if diff < 0:
+                        continue
+                    idx = diff % len(pattern)
+                    code = pattern[idx]
+                    tmpl = templates.get(code)
+                    # Skip free/off codes (X, F, -, FREI, and variants like "X (M)")
+                    code_base = code.split("(")[0].strip().upper()
+                    if not tmpl or code_base in ("X", "F", "-", "FREI", "OFF", "AUS"):
+                        continue
+
+                    day_str = day.strftime("%Y-%m-%d")
+                    base_summary = f"{tmpl.name}" + (f" ({user_name})" if user_name else "")
+                    blocks = tmpl.blocks if isinstance(tmpl.blocks, list) and tmpl.blocks else []
+                    start_time = ""
+                    end_time = ""
+                    if blocks:
+                        start_time = blocks[0].get("start", "") or ""
+                        end_time = blocks[-1].get("end", "") or ""
+                    if start_time and end_time:
+                        ev_start = f"{day_str}T{start_time}:00"
+                        ev_end = f"{day_str}T{end_time}:00"
+                    else:
+                        # All-day event for shifts without specific times
+                        ev_start = day_str
+                        ev_end = (day + timedelta(days=1)).strftime("%Y-%m-%d")
+
+                    key = f"{day_str}|{base_summary}"
+                    expected_events[key] = {
+                        "summary": f"{base_summary} {MH_TAG}",
+                        "start": ev_start, "end": ev_end,
+                        "description": f"MindHome Schicht: {code}",
+                    }
+
+            # --- Step 2: Read ALL events from HA calendar in sync range ---
+            query_start = now.replace(hour=0, minute=0, second=0, microsecond=0).strftime("%Y-%m-%dT00:00:00.000Z")
+            query_end = (now + timedelta(days=sync_days + 1)).strftime("%Y-%m-%dT23:59:59.000Z")
+            try:
+                existing = self.ha.get_calendar_events(target_calendar, query_start, query_end)
+            except Exception as e:
+                logger.warning(f"Shift sync: failed to read calendar: {e}")
+                existing = []
+
+            # Build map: identify MindHome events by [MH] tag in summary
+            # Also detect old events without [MH] tag but with "MindHome Schicht:" description
+            existing_mh = {}  # key → [ha_uid, ...]
+            for ev in existing:
+                ev_uid = ev.get("uid")
+                if not ev_uid:
+                    continue
+                ev_summary = (ev.get("summary") or "").strip()
+                ev_desc = (ev.get("description") or "").strip()
+
+                is_mh_event = False
+                if MH_TAG in ev_summary:
+                    is_mh_event = True
+                elif ev_desc.startswith("MindHome Schicht:"):
+                    is_mh_event = True  # Legacy event without [MH] tag
+
+                if not is_mh_event:
+                    continue
+
+                ev_start = ev.get("start", {})
+                ev_date = ev_start.get("date") or (ev_start.get("dateTime", "")[:10])
+                # Strip [MH] tag for matching
+                base = ev_summary.replace(MH_TAG, "").strip()
+                key = f"{ev_date}|{base}"
+                if key not in existing_mh:
+                    existing_mh[key] = []
+                existing_mh[key].append(ev_uid)
+
+            # --- Step 3: Delete events that shouldn't exist + duplicates ---
+            # Note: delete_event only works on local calendars, not Google Calendar
+            deleted = 0
+            is_local_calendar = not any(
+                uid.endswith("@google.com") for uids in existing_mh.values() for uid in uids
+            )
+            if is_local_calendar:
+                for key, ha_uids in existing_mh.items():
+                    if key in expected_events:
+                        for dup_uid in ha_uids[1:]:
+                            try:
+                                self.ha.delete_calendar_event(target_calendar, dup_uid)
+                                deleted += 1
+                            except Exception as e:
+                                logger.debug(f"Shift sync dedup error: {e}")
+                    else:
+                        for ha_uid in ha_uids:
+                            try:
+                                self.ha.delete_calendar_event(target_calendar, ha_uid)
+                                deleted += 1
+                            except Exception as e:
+                                logger.debug(f"Shift sync delete error: {e}")
+            else:
+                logger.debug(f"Shift sync: skipping delete on remote calendar {target_calendar}")
+
+            # --- Step 4: Create missing events ---
+            created = 0
+            for key, ev_data in expected_events.items():
+                if key in existing_mh and len(existing_mh[key]) >= 1:
+                    continue  # Already exists in HA
+                try:
+                    self.ha.create_calendar_event(
+                        entity_id=target_calendar,
+                        summary=ev_data["summary"],
+                        start=ev_data["start"],
+                        end=ev_data["end"],
+                        description=ev_data["description"],
+                    )
+                    created += 1
+                except Exception as e:
+                    logger.debug(f"Shift sync create error: {e}")
+
+            if created > 0 or deleted > 0:
+                logger.info(f"Shift calendar sync: +{created} -{deleted} in {target_calendar}")
+
+        except Exception as e:
+            logger.warning(f"Shift calendar sync error: {e}")
 
     def _run_periodic(self, task_func, interval_seconds, task_name):
         """Run a task periodically."""

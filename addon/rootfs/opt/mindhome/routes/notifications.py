@@ -373,6 +373,11 @@ def api_get_extended_notification_settings():
         # Spezial
         "battery_threshold": int(get_setting("notif_battery_threshold") or "20"),
         "device_thresholds": json.loads(get_setting("notif_device_thresholds") or '{}'),
+        # TTS
+        "tts_room_assignments": json.loads(get_setting("notif_tts_room_assignments") or '{}'),
+        "tts_enabled": json.loads(get_setting("notif_tts_enabled") or 'true'),
+        "tts_motion_mode": json.loads(get_setting("notif_tts_motion_mode") or '{"enabled": false, "fallback_all": false, "timeout_min": 30}'),
+        "tts_disabled_speakers": json.loads(get_setting("notif_tts_disabled_speakers") or '[]'),
     })
 
 
@@ -388,7 +393,8 @@ def api_update_extended_notification_settings():
         "type_sounds", "templates",
         "grouping", "rate_limits",
         "critical_override", "test_mode", "digest",
-        "device_thresholds",
+        "device_thresholds", "tts_room_assignments",
+        "tts_enabled", "tts_motion_mode", "tts_disabled_speakers",
     ]
     for key in setting_keys:
         if key in data:

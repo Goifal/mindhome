@@ -10,7 +10,7 @@ import logging
 from models import (
     init_database, get_engine, get_session,
     Domain, QuickAction, SystemSetting, UserRole, User,
-    NotificationSetting, NotificationType
+    NotificationSetting, NotificationType, PresenceMode,
 )
 
 logger = logging.getLogger("mindhome.init_db")
@@ -48,8 +48,8 @@ def create_default_domains(session):
             "display_name_de": "Anwesenheit",
             "display_name_en": "Presence",
             "icon": "mdi:home-account",
-            "description_de": "Wer ist zuhause? Handy-Tracking, BLE, Router",
-            "description_en": "Who is home? Phone tracking, BLE, router"
+            "description_de": "Wer ist zuhause? Handy-Tracking, BLE, Router, Proximität",
+            "description_en": "Who is home? Phone tracking, BLE, router, proximity"
         },
         {
             "name": "media",
@@ -131,14 +131,75 @@ def create_default_domains(session):
             "description_de": "Photovoltaik, Erzeugung, Eigenverbrauch, Einspeisung",
             "description_en": "Photovoltaics, generation, self-consumption, feed-in"
         },
+        {
+            "name": "bed_occupancy",
+            "display_name_de": "Bettbelegung",
+            "display_name_en": "Bed Occupancy",
+            "icon": "mdi:bed",
+            "description_de": "Bettbelegungssensoren, Schlaftracking",
+            "description_en": "Bed occupancy sensors, sleep tracking"
+        },
+        {
+            "name": "seat_occupancy",
+            "display_name_de": "Sitzbelegung",
+            "display_name_en": "Seat Occupancy",
+            "icon": "mdi:seat",
+            "description_de": "Sitzbelegungssensoren fuer Sofa, Stuhl, etc.",
+            "description_en": "Seat occupancy sensors for sofa, chair, etc."
+        },
+        {
+            "name": "vacuum",
+            "display_name_de": "Saugroboter",
+            "display_name_en": "Robot Vacuum",
+            "icon": "mdi:robot-vacuum",
+            "description_de": "Saugroboter, automatische Reinigung",
+            "description_en": "Robot vacuums, automatic cleaning"
+        },
+        {
+            "name": "system",
+            "display_name_de": "System",
+            "display_name_en": "System",
+            "icon": "mdi:cellphone-link",
+            "description_de": "Telefone, Rechner, Akkus, Netzwerk",
+            "description_en": "Phones, computers, batteries, network"
+        },
+        {
+            "name": "motion_control",
+            "display_name_de": "Bewegungsmelder Steuerung",
+            "display_name_en": "Motion Sensor Control",
+            "icon": "mdi:motion-sensor-off",
+            "description_de": "Bewegungsmelder ein-/ausschalten, Empfindlichkeit",
+            "description_en": "Toggle motion sensors on/off, sensitivity"
+        },
+        {
+            "name": "humidifier",
+            "display_name_de": "Luftbefeuchter",
+            "display_name_en": "Humidifier",
+            "icon": "mdi:air-humidifier",
+            "description_de": "Luftbefeuchter und Entfeuchter, Ziel-Luftfeuchtigkeit",
+            "description_en": "Humidifiers and dehumidifiers, target humidity"
+        },
+        {
+            "name": "camera",
+            "display_name_de": "Kamera",
+            "display_name_en": "Camera",
+            "icon": "mdi:cctv",
+            "description_de": "Überwachungskameras, Aufnahme, Live-Stream",
+            "description_en": "Security cameras, recording, live stream"
+        },
     ]
 
+    created = 0
     for domain_data in domains:
+        existing = session.query(Domain).filter_by(name=domain_data["name"]).first()
+        if existing:
+            continue
         domain = Domain(**domain_data)
         session.add(domain)
+        created += 1
 
     session.commit()
-    print(f"Created {len(domains)} domains.")
+    print(f"Created {created} domains ({len(domains) - created} already existed).")
 
 
 def create_default_quick_actions(session):
@@ -261,6 +322,26 @@ def create_default_settings(session):
     print(f"Created {len(settings)} system settings.")
 
 
+def create_default_presence_modes(session):
+    """Create default presence modes (Zuhause, Abwesend, Schlaf, Urlaub, Besuch)."""
+    defaults = [
+        {"name_de": "Zuhause", "name_en": "Home", "icon": "mdi-home", "color": "#4CAF50", "priority": 1, "is_system": True, "trigger_type": "auto", "auto_config": {"condition": "first_home"}},
+        {"name_de": "Abwesend", "name_en": "Away", "icon": "mdi-exit-run", "color": "#FF9800", "priority": 2, "is_system": True, "trigger_type": "auto", "auto_config": {"condition": "all_away"}},
+        {"name_de": "Schlaf", "name_en": "Sleep", "icon": "mdi-sleep", "color": "#3F51B5", "priority": 3, "is_system": True, "trigger_type": "auto", "auto_config": {"condition": "all_home", "time_range": {"start": "22:00", "end": "06:00"}}},
+        {"name_de": "Urlaub", "name_en": "Vacation", "icon": "mdi-beach", "color": "#00BCD4", "priority": 4, "is_system": True, "trigger_type": "manual"},
+        {"name_de": "Besuch", "name_en": "Guests", "icon": "mdi-account-group", "color": "#9C27B0", "priority": 5, "is_system": True, "trigger_type": "manual"},
+    ]
+    created = 0
+    for m in defaults:
+        existing = session.query(PresenceMode).filter_by(name_de=m["name_de"]).first()
+        if existing:
+            continue
+        session.add(PresenceMode(**m, is_active=True))
+        created += 1
+    session.commit()
+    print(f"Created {created} default presence modes ({len(defaults) - created} already existed).")
+
+
 def main():
     """Initialize the database with all defaults."""
     print("=" * 60)
@@ -277,6 +358,7 @@ def main():
         create_default_domains(session)
         create_default_quick_actions(session)
         create_default_settings(session)
+        create_default_presence_modes(session)
         print("=" * 60)
         print("Database initialization complete!")
         print("=" * 60)

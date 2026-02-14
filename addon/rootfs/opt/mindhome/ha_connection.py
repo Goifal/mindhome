@@ -79,7 +79,12 @@ class HAConnection:
                 status_code = e.response.status_code if e.response is not None else 0
                 # Don't retry client errors (4xx) — the request is wrong, retrying won't help
                 if 400 <= status_code < 500:
-                    logger.error(f"HA API client error for {endpoint}: {e}")
+                    body = ""
+                    try:
+                        body = e.response.text[:500] if e.response is not None else ""
+                    except Exception:
+                        pass
+                    logger.error(f"HA API client error for {endpoint}: {e} | payload={data} | response={body}")
                     self._is_online = True
                     return None
                 if attempt < attempts - 1:
@@ -204,6 +209,32 @@ class HAConnection:
             return result if isinstance(result, list) else []
         except Exception:
             return []
+
+    def create_calendar_event(self, entity_id, summary, start, end,
+                               description=None, location=None):
+        """Create event on a HA calendar entity via calendar.create_event service."""
+        data = {"summary": summary}
+        # Support both all-day (date) and timed (dateTime) events
+        if "T" in start:
+            # HA expects in_type: "datetime" with proper key names
+            data["start_date_time"] = start
+            data["end_date_time"] = end
+        else:
+            data["start_date"] = start
+            data["end_date"] = end
+        if description:
+            data["description"] = description
+        if location:
+            data["location"] = location
+        logger.debug(f"Calendar create_event: entity={entity_id} data={data}")
+        return self.call_service("calendar", "create_event", data, entity_id=entity_id)
+
+
+    def delete_calendar_event(self, entity_id, uid):
+        """Delete event from a HA calendar entity via calendar.delete_event service."""
+        return self.call_service("calendar", "delete_event", {
+            "uid": uid,
+        }, entity_id=entity_id)
 
     def get_upcoming_events(self, hours=24):
         calendars = self.get_calendars()

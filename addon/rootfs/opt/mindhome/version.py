@@ -5,12 +5,12 @@ Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
 VERSION = "0.7.0"
-BUILD = 20
+BUILD = 53
 BUILD_DATE = "2026-02-14"
 CODENAME = "Phase 4 - Smart Health"
 
 # Changelog
-# Build 20: v0.7.0 Phase 4 - Smart Health
+# Build 53: v0.7.0 Phase 4 - Smart Health
 #   - Infrastruktur: engines/ Modul-Struktur, Feature-Flags, Data Retention
 #   - Energie: Optimierung, PV-Lastmanagement, Standby-Killer, Prognose
 #   - Schlaf: Erkennung, Qualitaets-Tracker, Sanftes Wecken, Morgenroutine
@@ -18,6 +18,149 @@ CODENAME = "Phase 4 - Smart Health"
 #   - KI: Adaptive Reaktionszeit, Gewohnheits-Drift, Stimmungserkennung
 #   - UX: Favoriten, Kalender, Bildschirmzeit, Sanftes Eingreifen
 #   - Gesundheits-Dashboard mit Wochenbericht
+#
+# Build 52: v0.6.51 DB Cleanup, Indexes & Maintenance
+#   - DB Indexes: 7 neue Indexes auf learned_patterns + pattern_match_log
+#     (status+is_active, pattern_type+is_active, domain_id, room_id, confidence, last_matched_at, matched_at)
+#   - run_cleanup(): Intelligentes Aufraeumen implementiert (war vorher undefiniert/crashte)
+#     - Rejected Patterns nach 30 Tagen loeschen
+#     - Disabled Patterns (confidence < 0.1) nach 14 Tagen loeschen
+#     - StateHistory nach data_retention_days loeschen
+#     - PatternMatchLog nach 90 Tagen loeschen
+#     - ActionLog nach data_retention_days loeschen
+#     - NotificationLog nach 90 Tagen loeschen
+#     - AuditTrail nach 180 Tagen loeschen
+#   - Smart Eviction: Bei > 500 observed Patterns werden die mit niedrigster
+#     Confidence + aeltestem last_matched_at zuerst entfernt
+#   - DB Maintenance: Woechentliches VACUUM + ANALYZE (SQLite Optimierung)
+#   - Scheduler: Cleanup taeglich, Maintenance woechentlich
+#   - Migration v9: Indexes als DB-Migration fuer bestehende Installationen
+#
+# Build 51: v0.6.50 Presence Auto-Detection Fix
+#   - Event-basierte Erkennung: person.*/device_tracker.* loest sofort check aus
+#   - Kein falsches "Abwesend" mehr bei HA-API-Ausfall (502 Gateway)
+#   - Manual Override wird in check_auto_transitions geprueft
+#   - Manual Override auto-reset nach 4 Stunden
+#   - Debounce reduziert: 60s -> 30s
+#   - Polling-Fallback: 120s -> 60s
+#
+# Build 50: v0.6.49 TTS Speaker-Toggle rechts + UI Polish
+#   - Speaker Ein/Aus-Toggle nach ganz rechts verschoben
+#   - Layout: Name | Raum-Dropdown | Test | Toggle
+#
+# Build 49: v0.6.48 Einzelne TTS-Speaker ein/ausschaltbar
+#   - Toggle pro Speaker in der TTS-Sektion (ein/aus)
+#   - Deaktivierte Speaker werden im Backend gefiltert (tts_disabled_speakers)
+#   - Visuelles Dimming bei deaktivierten Speakern
+#
+# Build 48: v0.6.47 Gruppierte Regeln + TTS Motion-Routing
+#   - ManualRules gruppiert nach Trigger (1 Sensor → n Aktionen visuell)
+#   - "+ Aktion hinzufuegen" Button pro Trigger-Gruppe
+#   - Delay-Feld im Regel-Modal
+#   - TTS: Globaler Ein/Aus-Schalter
+#   - TTS: Bewegungs-Modus - nur Speaker im Raum mit letzter Bewegung spricht
+#   - TTS: Konfigurierbarer Timeout (15/30/60 min) + Fallback-Option
+#   - Backend: /api/tts/last-motion Endpoint fuer Bewegungs-Tracking
+#
+# Build 47: v0.6.46 Frontend-Fix bilingual Controls/Features
+#   - Fix: React Error #31 in DomainsPage (Objekte statt Strings gerendert)
+#   - Frontend liest jetzt label_de/label_en je nach Spracheinstellung
+#
+# Build 46: v0.6.45 Domains erweitert + Controls/Features zweisprachig
+#   - Neue Domains: humidifier (Luftbefeuchter), camera (Kamera)
+#   - Proximity von System-Domain nach Presence-Domain verschoben
+#   - alarm_control_panel entfernt (redundant mit Lock/Sicherheit)
+#   - DOMAIN_PLUGINS: controls + pattern_features jetzt bilingual (label_de/label_en)
+#   - Konsistente Zweisprachigkeit ueber alle 21 Domains
+#
+# Build 31: v0.6.30 Raum-Domain-Modus (Hierarchie)
+#   - Neues mode-Feld in RoomDomainState (global/suggest/auto/off)
+#   - API: PUT /api/phases/{room}/{domain}/mode
+#   - Frontend: Modus-Dropdown pro Domain auf Raum-Karte
+#   - Hierarchie: Global aus = immer aus, Raum kann verfeinern
+# Build 29: v0.6.28 Domain-Karten Layout verbessert
+#   - Control-Badges und Pattern-Badges als getrennte Gruppen mit Trennlinie
+#   - Domain-Icons: mdi: zu mdi- Konvertierung korrigiert
+#   - Plugin-Settings API liefert DEFAULT_SETTINGS aus allen Domain-Plugins
+# Build 28: v0.6.27 Domain-Steuerung anzeigen und bearbeitbar
+#   - Domain-Karten zeigen Plugin-Settings (Steuerung) unterhalb Trennstrich an
+#   - Bearbeiten-Button fuer ALLE Domains (nicht nur Custom)
+#   - MdiIconPicker im Edit- und Create-Dialog (statt Text-Input)
+#   - Steuerungs-Einstellungen editierbar (Mode, Helligkeit, Temperatur etc.)
+#   - Backend: Icon-Aenderung auch fuer System-Domains erlaubt
+#
+# Build 27: v0.6.26 UI: Domain-Karten an Raeume/Personen-Design angeglichen
+#   - Domain-Karten nutzen jetzt card/card-icon/card-title/card-subtitle Klassen
+#   - Rundes Icon mit Farbhintergrund statt flachem Icon
+#   - Einheitliches Grid (320px min) und Card-Layout wie Raeume und Personen
+#   - Linker Akzentbalken entfernt, konsistentes .card Design
+#   - Edit/Delete Buttons fuer Custom-Domains neben Toggle verschoben
+#
+# Build 26: v0.6.25 Schicht-Sync: [MH]-Tag Erkennung statt Description (Fix Duplikate)
+#   - Root-Cause: HA Calendar API gibt description nicht zurueck → Events nie als "eigene" erkannt
+#   - Fix: Events werden jetzt mit [MH]-Tag im Summary markiert (z.B. "Frueh (Max) [MH]")
+#   - Fix: Erkennung per Summary-Tag statt Description (funktioniert mit allen HA-Kalendern)
+#   - Fix: Legacy-Events ohne [MH] aber mit "MindHome Schicht:" Description werden auch erkannt
+#   - Fix: Alle Duplikate pro Tag werden bis auf 1 geloescht
+#   - Fix: Veraltete Events (Rotation geaendert) werden automatisch entfernt
+#
+# Build 25: v0.6.24 Kompletter Rewrite Schicht-Kalender-Sync (Duplikate + Loeschung)
+#   - Ablauf: 1) Erwartete Events berechnen, 2) HA-Kalender lesen, 3) Diff, 4) Loeschen/Erstellen
+#
+# Build 24: v0.6.23 Fix Schicht-Kalender Datum off-by-one + alte Events loeschen
+#   - Fix: Schicht-Startdatum wurde 1 Tag zu frueh in Kalender geschrieben (UTC vs Lokalzeit)
+#   - Fix: Kalender-Sync nutzt jetzt HA-Timezone statt UTC fuer Datumsberechnung
+#   - Fix: Alte Kalender-Eintraege werden jetzt bei Aenderung automatisch geloescht
+#   - Fix: iCal Export hatte gleichen Timezone-Bug (ebenfalls gefixt)
+#
+# Build 23: v0.6.22 Fix Anwesenheitserkennung (7 Bugs)
+#   - Fix: get_current_mode() ignorierte Logs ohne mode_id - mode_name Fallback + Backfill
+#   - Fix: auto_detect Endpoint schrieb kein mode_id in PresenceLog
+#   - Fix: API fallback waehlte immer "Zuhause" (priority.asc statt desc)
+#   - Fix: API fallback entfernt - zeigt "Erkennung laeuft..." statt falsches "Zuhause"
+#   - Fix: Frontend Auto-Select hardcoded "Zuhause" - jetzt HA-basierte Auto-Detection
+#   - Fix: Kaskadierende Fehler: kein mode_id → get_current_mode null → Fallback Zuhause
+#   - Fix: System blieb permanent auf "Zuhause" auch wenn niemand zuhause war
+#
+# Build 22: v0.6.21 Schicht-Auto-Sync in HA-Kalender
+#   - Kalender: Schichtplan automatisch in HA-Kalender schreiben (Google Calendar, etc.)
+#   - Kalender: Background-Task alle 6h, Duplikat-Erkennung via UID-Tracking
+#   - Kalender: Konfigurierbarer Ziel-Kalender und Vorlaufzeit (7-90 Tage)
+#   - Kalender: "Jetzt synchronisieren" Button fuer sofortigen Sync
+#   - Kalender: API GET/PUT /api/calendar/shift-sync + POST shift-sync/run
+#   - Kalender: Frontend ShiftCalendarSync Komponente mit Toggle
+#
+# Build 21: v0.6.20 Kalender-Schreiben (HA Calendar Events)
+#   - Kalender: Termine direkt in HA-Kalender erstellen (Google Calendar, CalDAV, etc.)
+#   - Kalender: calendar.create_event + calendar.delete_event Service-Aufrufe
+#   - Kalender: API-Routen POST/DELETE /api/calendar/events
+#   - Kalender: Frontend CalendarEventCreator mit Ganztags-/Zeitraum-Support
+#   - Kalender: Beschreibung und Ort optional
+#
+# Build 20: v0.6.19 Kalender-Sync, Presence-System, UX-Verbesserungen
+#   - Personen: Bearbeiten (Name, Rolle, HA-Person) + Geraete-Zuweisung (device_tracker)
+#   - Personen: Device-Tracker Live-State (home/away Punkt mit Farbindikator)
+#   - Kalender: iCal-Export mit Token-Schutz und Cache-Header
+#   - Kalender: HA-Kalender-Import (Google, CalDAV) mit Sync-Konfiguration
+#   - Kalender: Synced Events in Monatsansicht (blaue Punkte)
+#   - Kalender: Konfigurierbarer Schicht-Export-Zeitraum (14-365 Tage)
+#   - Kalender: Weekday/Homeoffice-Profile im iCal-Export (RRULE)
+#   - Kalender: Trigger Background-Loop (5min, Keyword-Match → HA-Service)
+#   - Kalender: HA-Offline Fallback fuer Calendar API
+#   - Presence: Default-Modi beim DB-Init (Zuhause, Abwesend, Schlaf, Urlaub, Besuch)
+#   - Presence: auto_config mit Conditions (first_home, all_away, all_home)
+#   - Presence: PersonDevice in Erkennung integriert
+#   - Presence: Gaeste in anyone_home Logik + GuestDevice Pflege
+#   - Presence: NotificationLog-Felder gefixed (title, user_id, was_read)
+#   - UX: Loesch-Bestaetigungen fuer alle 9 fehlenden Delete-Operationen
+#   - UX: Auto-Refresh bei Tab-Wechsel (>30s inaktiv)
+#   - UX: Bulk-Pattern-Ops Error-Handling (kein Optimistic Update mehr)
+#   - Data: SAMPLING_THRESHOLDS +13 device_classes (signal_strength, gas, etc.)
+#   - Data: ALWAYS_LOG_DOMAINS +12 Domains (vacuum, humidifier, valve, etc.)
+#   - Data: Fallback fuer unbekannte Sensoren (konservativer Schwellwert)
+#   - Data: Rate-Limit auf 600 erhoeht (Events + HTTP API)
+#   - Data: Dedup-Cache selektive Bereinigung statt clear()
+#   - Config: panel_admin: false (Zugang fuer alle HA-Benutzer)
 #
 # Build 19: v0.6.18 Rotation + TTS + Fixes
 #   - Fix Rotation: Speichern funktioniert (parseInt-Bug bei Person-ID gefixt)
