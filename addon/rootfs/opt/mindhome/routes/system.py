@@ -1758,6 +1758,10 @@ def api_tts_announce():
     entity = data.get("entity_id")
     if not message:
         return jsonify({"error": "No message"}), 400
+    # Check global TTS toggle
+    tts_enabled = json.loads(get_setting("notif_tts_enabled") or "true")
+    if not tts_enabled:
+        return jsonify({"success": False, "reason": "tts_disabled"})
     result = _ha().announce_tts(message, media_player_entity=entity)
     audit_log("tts_announce", {"message": message[:50], "entity": entity})
     return jsonify({"success": result is not None})
@@ -1771,6 +1775,60 @@ def api_tts_devices():
     players = [{"entity_id": s["entity_id"], "name": s.get("attributes", {}).get("friendly_name", s["entity_id"])}
                for s in states if s["entity_id"].startswith("media_player.")]
     return jsonify(players)
+
+
+@system_bp.route("/api/tts/last-motion", methods=["GET"])
+def api_tts_last_motion():
+    """Get last motion per room for TTS routing."""
+    session = get_db()
+    try:
+        # Find motion/occupancy binary_sensors with room assignments
+        motion_devices = session.query(Device).filter(
+            Device.ha_entity_id.like("binary_sensor.%"),
+            Device.room_id.isnot(None),
+        ).all()
+
+        # Check current states from HA
+        states = _ha().get_states() or []
+        state_map = {s["entity_id"]: s for s in states}
+
+        room_motion = {}
+        for dev in motion_devices:
+            s = state_map.get(dev.ha_entity_id, {})
+            device_class = s.get("attributes", {}).get("device_class", "")
+            if device_class not in ("motion", "occupancy"):
+                continue
+            last_changed = s.get("last_changed", "")
+            current_state = s.get("state", "off")
+            rid = str(dev.room_id)
+            existing = room_motion.get(rid)
+            if not existing or last_changed > existing.get("last_changed", ""):
+                room_name = ""
+                room = session.get(Room, dev.room_id)
+                if room:
+                    room_name = room.name
+                room_motion[rid] = {
+                    "room_id": dev.room_id,
+                    "room_name": room_name,
+                    "entity_id": dev.ha_entity_id,
+                    "state": current_state,
+                    "last_changed": last_changed,
+                }
+
+        # Find the most recently active room
+        latest_room = None
+        latest_time = ""
+        for rid, info in room_motion.items():
+            if info["last_changed"] > latest_time:
+                latest_time = info["last_changed"]
+                latest_room = info
+
+        return jsonify({
+            "rooms": room_motion,
+            "latest_active_room": latest_room,
+        })
+    finally:
+        session.close()
 
 
 

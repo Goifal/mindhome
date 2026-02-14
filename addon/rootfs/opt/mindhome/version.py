@@ -4,12 +4,21 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "0.6.46"
-BUILD = 47
+VERSION = "0.6.47"
+BUILD = 48
 BUILD_DATE = "2026-02-14"
 CODENAME = "Phase 3.5 - Kalender & Presence"
 
 # Changelog
+# Build 48: v0.6.47 Gruppierte Regeln + TTS Motion-Routing
+#   - ManualRules gruppiert nach Trigger (1 Sensor → n Aktionen visuell)
+#   - "+ Aktion hinzufuegen" Button pro Trigger-Gruppe
+#   - Delay-Feld im Regel-Modal
+#   - TTS: Globaler Ein/Aus-Schalter
+#   - TTS: Bewegungs-Modus - nur Speaker im Raum mit letzter Bewegung spricht
+#   - TTS: Konfigurierbarer Timeout (15/30/60 min) + Fallback-Option
+#   - Backend: /api/tts/last-motion Endpoint fuer Bewegungs-Tracking
+#
 # Build 47: v0.6.46 Frontend-Fix bilingual Controls/Features
 #   - Fix: React Error #31 in DomainsPage (Objekte statt Strings gerendert)
 #   - Frontend liest jetzt label_de/label_en je nach Spracheinstellung
