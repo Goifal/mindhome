@@ -4,12 +4,17 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "0.7.11"
-BUILD = 64
+VERSION = "0.7.12"
+BUILD = 65
 BUILD_DATE = "2026-02-14"
 CODENAME = "Phase 4 - Smart Health"
 
 # Changelog
+# Build 65: v0.7.12 Fix Korrelations-Regression (MAX_STATE_AGE 2h → 8h)
+#   - Fix: 0 Korrelationsmuster durch zu aggressiven Staleness-Filter (2h → 8h)
+#   - Viele Entities (person, Licht, Klima) halten State stundenlang
+#   - Debug-Logging fuer Zeitmuster-Erkennung (Diagnose 0 time patterns)
+#
 # Build 64: v0.7.11 Mustererkennung komplett ueberarbeitet (29 Fixes)
 #   KRITISCHE FIXES:
 #   - Fix: Cross-Room Confidence-Formel (Doppelbestrafung behoben, min_count wirkt korrekt)

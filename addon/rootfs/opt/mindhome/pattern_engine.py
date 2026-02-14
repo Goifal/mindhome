@@ -1058,6 +1058,9 @@ class PatternDetector:
                     "created_at": ev.created_at,
                 })
 
+        eligible_groups = {k: v for k, v in groups.items() if len(v) >= 4}
+        logger.debug(f"Time patterns: {len(groups)} entity/state groups, {len(eligible_groups)} with >=4 occurrences")
+
         for (entity_id, new_state), occurrences in groups.items():
             if len(occurrences) < 4:
                 continue
@@ -1160,7 +1163,10 @@ class PatternDetector:
                 )
                 if p:
                     patterns_found.append(p)
+                else:
+                    logger.debug(f"Time pattern skipped (rejected/disabled or duplicate): {entity_id} -> {new_state} at {avg_hour:02d}:{avg_minute:02d}")
 
+        logger.debug(f"Time patterns: {len(patterns_found)} new/updated, rest were rejected/disabled")
         return patterns_found
 
     # --------------------------------------------------------------------------
@@ -1419,8 +1425,10 @@ class PatternDetector:
         cooccurrences = defaultdict(lambda: defaultdict(int))
         # cooccurrences[(entity_a, state_a)][(entity_b, state_b)] = count
 
-        # Fix #9: Max staleness for correlated states (2 hours)
-        MAX_STATE_AGE_SECONDS = 7200
+        # Fix #9: Max staleness for correlated states (8 hours)
+        # Many entities (person, lights, climate) hold state for hours.
+        # 2h was too aggressive and filtered out most legitimate correlations.
+        MAX_STATE_AGE_SECONDS = 28800
 
         for ev in events:
             # Fix #7: Skip invalid states
