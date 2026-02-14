@@ -264,8 +264,8 @@ class CircadianLightManager:
             with self.get_session() as session:
                 lights = session.query(Device).filter(
                     Device.room_id == cfg.room_id,
-                    Device.entity_id.like("light.%"),
-                    Device.is_active == True
+                    Device.ha_entity_id.like("light.%"),
+                    Device.is_tracked == True
                 ).all()
 
                 brightness_val = int(brightness_pct * 255 / 100)
@@ -273,17 +273,17 @@ class CircadianLightManager:
                     try:
                         if brightness_val > 0:
                             self.ha.call_service("light", "turn_on", {
-                                "entity_id": light.entity_id,
+                                "entity_id": light.ha_entity_id,
                                 "brightness": brightness_val,
                                 "transition": transition_sec,
                             })
                         else:
                             self.ha.call_service("light", "turn_off", {
-                                "entity_id": light.entity_id,
+                                "entity_id": light.ha_entity_id,
                                 "transition": transition_sec,
                             })
                     except Exception as e:
-                        logger.debug(f"Circadian light control error {light.entity_id}: {e}")
+                        logger.debug(f"Circadian light control error {light.ha_entity_id}: {e}")
         except Exception as e:
             logger.error(f"_apply_brightness error: {e}")
 
@@ -294,14 +294,14 @@ class CircadianLightManager:
             with self.get_session() as session:
                 lights = session.query(Device).filter(
                     Device.room_id == cfg.room_id,
-                    Device.entity_id.like("light.%"),
-                    Device.is_active == True
+                    Device.ha_entity_id.like("light.%"),
+                    Device.is_tracked == True
                 ).all()
 
                 for light in lights:
                     try:
                         self.ha.call_service("light", "turn_on", {
-                            "entity_id": light.entity_id,
+                            "entity_id": light.ha_entity_id,
                             "color_temp_kelvin": kelvin,
                             "transition": 60,
                         })

@@ -185,7 +185,7 @@ class RoutineEngine:
                     return []
 
                 # Map entities to rooms
-                devices = {d.entity_id: d.room_id for d in session.query(Device).filter(Device.room_id.isnot(None)).all()}
+                devices = {d.ha_entity_id: d.room_id for d in session.query(Device).filter(Device.room_id.isnot(None)).all()}
                 rooms = {r.id: (r.name_de or r.name_en or f"Room {r.id}") for r in session.query(Room).all()}
 
                 # Build transition pairs
