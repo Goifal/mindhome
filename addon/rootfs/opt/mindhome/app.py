@@ -389,7 +389,9 @@ _start_time = 0
 # ==============================================================================
 
 # Dedup cache for state change events (#15)
+# Fix #12: Added threading lock for thread safety
 _recent_events = {}
+_recent_events_lock = threading.Lock()
 _DEDUP_WINDOW = 1.0  # seconds
 
 
@@ -404,20 +406,23 @@ def on_state_changed(event):
     old_state = event_data.get("old_state") or {}
 
     # #15: Deduplicate events (same entity+state within 1 second)
+    # Fix #12: Thread-safe dedup with lock
     now = time.time()
     new_val = new_state.get("state", "") if isinstance(new_state, dict) else ""
     dedup_key = f"{entity_id}:{new_val}"
-    last_seen = _recent_events.get(dedup_key, 0)
-    if now - last_seen < _DEDUP_WINDOW:
-        return  # Skip duplicate
-    _recent_events[dedup_key] = now
 
-    # Cleanup dedup cache periodically (evict expired entries, keep max 500)
-    if len(_recent_events) > 500:
-        cutoff = now - _DEDUP_WINDOW * 2
-        expired = [k for k, v in _recent_events.items() if v < cutoff]
-        for k in expired:
-            del _recent_events[k]
+    with _recent_events_lock:
+        last_seen = _recent_events.get(dedup_key, 0)
+        if now - last_seen < _DEDUP_WINDOW:
+            return  # Skip duplicate
+        _recent_events[dedup_key] = now
+
+        # Cleanup dedup cache periodically (evict expired entries, keep max 500)
+        if len(_recent_events) > 500:
+            cutoff = now - _DEDUP_WINDOW * 2
+            expired = [k for k, v in _recent_events.items() if v < cutoff]
+            for k in expired:
+                del _recent_events[k]
 
     # Log to state_history via pattern engine
     try:

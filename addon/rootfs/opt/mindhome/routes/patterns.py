@@ -142,11 +142,15 @@ def api_update_pattern(pattern_id):
 
         if "is_active" in data:
             pattern.is_active = data["is_active"]
-        if "status" in data and data["status"] in ("observed", "suggested", "active", "disabled"):
+        # Fix #14: Added "insight" and "rejected" to allowed status values
+        if "status" in data and data["status"] in ("observed", "suggested", "active", "disabled", "insight", "rejected"):
             pattern.status = data["status"]
-            if data["status"] == "disabled":
+            if data["status"] in ("disabled", "rejected"):
                 pattern.is_active = False
-            elif data["status"] in ("observed", "suggested", "active"):
+                if data["status"] == "rejected":
+                    pattern.rejected_at = datetime.now(timezone.utc)
+                    pattern.times_rejected = (pattern.times_rejected or 0) + 1
+            elif data["status"] in ("observed", "suggested", "active", "insight"):
                 pattern.is_active = True
 
         pattern.updated_at = datetime.now(timezone.utc)

@@ -1,4 +1,4 @@
-# MindHome ML/automation_engine v0.6.2 (2026-02-10) - ml/automation_engine.py
+# MindHome ML/automation_engine v0.7.0 (2026-02-14) - ml/automation_engine.py
 """
 MindHome - Automation Engine (Phase 2b + Phase 3)
 Suggestions, execution, undo, conflict detection, phase management.
@@ -295,20 +295,45 @@ class AutomationExecutor:
                 status="active", is_active=True
             ).all()
 
+            # Fix #10: Load exclusions for runtime filtering
+            from models import PatternExclusion
+            exclusions = session.query(PatternExclusion).all()
+            excluded_pairs = set()
+            for exc in exclusions:
+                excluded_pairs.add((exc.entity_a, exc.entity_b))
+                excluded_pairs.add((exc.entity_b, exc.entity_a))
+
             now = datetime.now(timezone.utc)
 
             for pattern in active_patterns:
                 trigger = pattern.trigger_conditions or {}
                 trigger_type = trigger.get("type")
 
+                # Fix #5: Check confidence against domain-specific thresholds
+                action = pattern.action_definition or {}
+                entity_id = action.get("entity_id", "")
+                ha_domain = entity_id.split(".")[0] if entity_id else "_default"
+                thresholds = DOMAIN_THRESHOLDS.get(ha_domain, DOMAIN_THRESHOLDS["_default"])
+                if pattern.confidence < thresholds["auto"]:
+                    logger.debug(
+                        f"Pattern {pattern.id}: confidence {pattern.confidence:.2f} "
+                        f"< threshold {thresholds['auto']} for {ha_domain}, skipping"
+                    )
+                    continue
+
+                # Fix #10: Check exclusions at runtime (not just at analysis time)
+                trigger_entity = trigger.get("trigger_entity") or trigger.get("condition_entity", "")
+                action_entity = entity_id
+                if (trigger_entity, action_entity) in excluded_pairs:
+                    logger.debug(f"Pattern {pattern.id}: excluded pair {trigger_entity} <-> {action_entity}")
+                    continue
+
                 # #23 Skip non-essential automations in vacation mode
                 # but #55 allow light toggles if simulation is on
                 if is_vacation and not simulate:
                     continue
                 if is_vacation and simulate:
-                    action = pattern.action_definition or {}
-                    entity = action.get("entity_id", "")
-                    if not entity.startswith("light."):
+                    if not entity_id.startswith("light."):
                         continue
 
                 if trigger_type == "time":
