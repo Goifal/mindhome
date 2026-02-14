@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.7.10 – Raum-Filter fuer Sequence-Patterns
+
+### Intelligentere Mustererkennung
+- **Cross-Room-Filter**: Sinnlose Raum-uebergreifende Muster (z.B. "Bewegungsmelder Wohnzimmer → Toiletten-Licht") werden jetzt herausgefiltert
+- Same-Room-Muster: normaler Schwellwert (min 7x in 14 Tagen, Confidence >= 0.45)
+- Cross-Room-Muster: deutlich strengerer Schwellwert (min 20x, Confidence >= 0.65, Timing-Varianz max 40%)
+- Neues `same_room` Flag in pattern_data zur Transparenz
+
+### Fixes
+- JSX-Fehler im EnergyPage Konfiguration-Tab behoben (Adjacent elements Fragment)
+
 ## 0.7.9 – Phase 4 Feature-Konfiguration
 
 ### Umfassende Feature-Einstellungen

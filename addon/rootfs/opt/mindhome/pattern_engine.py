@@ -1139,7 +1139,16 @@ class PatternDetector:
         patterns_found = []
         CHAIN_WINDOW = self._get_pattern_setting(session, "chain_window_seconds", 120)
 
-        # Build pairs: for each event, what happened within 5 min after?
+        # Pre-build entity→room_id lookup for room-aware filtering
+        all_entity_ids = {ev.entity_id for ev in events}
+        entity_room_map = {}
+        if all_entity_ids:
+            devs = session.query(Device).filter(
+                Device.ha_entity_id.in_(all_entity_ids)
+            ).all()
+            entity_room_map = {d.ha_entity_id: d.room_id for d in devs}
+
+        # Build pairs: for each event, what happened within the time window after?
         pairs = defaultdict(int)
         pair_examples = defaultdict(list)
 
@@ -1173,10 +1182,26 @@ class PatternDetector:
                         "context_b": ev_b.context,
                     })
 
-        # Filter: need minimum occurrences (configurable, default 7)
+        # Filter: need minimum occurrences — higher threshold for cross-room pairs
         min_seq_count = self._get_pattern_setting(session, "min_sequence_count", 7)
+        min_seq_count_cross = self._get_pattern_setting(session, "min_sequence_count_cross_room", 20)
+        min_confidence_base = self._get_pattern_setting(session, "min_confidence", 0.45)
+        min_confidence_cross = self._get_pattern_setting(session, "min_confidence_cross_room", 0.65)
+        cross_room_filtered = 0
+
         for (eid_a, state_a, eid_b, state_b), count in pairs.items():
-            if count < min_seq_count:
+            # Determine if same room or cross-room
+            room_a = entity_room_map.get(eid_a)
+            room_b = entity_room_map.get(eid_b)
+            same_room = (room_a is not None and room_b is not None and room_a == room_b)
+
+            # Apply room-aware thresholds
+            effective_min_count = min_seq_count if same_room else min_seq_count_cross
+            effective_min_conf = min_confidence_base if same_room else min_confidence_cross
+
+            if count < effective_min_count:
+                if not same_room and count >= min_seq_count:
+                    cross_room_filtered += 1
                 continue
 
             examples = pair_examples[(eid_a, state_a, eid_b, state_b)]
@@ -1186,17 +1211,19 @@ class PatternDetector:
             deltas = [e["delta_seconds"] for e in examples]
             delta_std = (sum((d - avg_delta)**2 for d in deltas) / len(deltas))**0.5
 
-            # Skip if timing is too variable (std > 60% of mean)
-            if delta_std > avg_delta * 0.6:
+            # Skip if timing is too variable (std > 60% of mean, stricter for cross-room)
+            max_variation = 0.6 if same_room else 0.4
+            if delta_std > avg_delta * max_variation:
+                if not same_room:
+                    cross_room_filtered += 1
                 continue
 
             # Check person context consistency
             contexts_a = [e.get("context_a", {}) for e in examples if e.get("context_a")]
             common_persons = self._find_common_persons(contexts_a)
 
-            confidence = min((count / (min_seq_count * 1.5)) * 0.8, 0.90)
-            min_confidence = self._get_pattern_setting(session, "min_confidence", 0.45)
-            if confidence < min_confidence:
+            confidence = min((count / (effective_min_count * 1.5)) * 0.8, 0.90)
+            if confidence < effective_min_conf:
                 continue
 
             pattern_data = {
@@ -1207,6 +1234,7 @@ class PatternDetector:
                 "avg_delay_seconds": round(avg_delta, 1),
                 "delay_std": round(delta_std, 1),
                 "occurrence_count": count,
+                "same_room": same_room,
             }
             if common_persons:
                 pattern_data["requires_persons"] = list(common_persons)
@@ -1243,6 +1271,9 @@ class PatternDetector:
             )
             if p:
                 patterns_found.append(p)
+
+        if cross_room_filtered:
+            logger.info(f"Filtered {cross_room_filtered} weak cross-room patterns")
 
         return patterns_found
 

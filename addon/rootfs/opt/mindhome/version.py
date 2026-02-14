@@ -4,12 +4,19 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "0.7.9"
-BUILD = 62
+VERSION = "0.7.10"
+BUILD = 63
 BUILD_DATE = "2026-02-14"
 CODENAME = "Phase 4 - Smart Health"
 
 # Changelog
+# Build 63: v0.7.10 Raum-Filter fuer Sequence-Patterns + JSX-Fix
+#   - Fix: Cross-Room-Patterns (z.B. Wohnzimmer-BWM → Toilette-Licht) werden jetzt gefiltert
+#     Same-Room: normaler Schwellwert (min 7 Vorkommen, Confidence 0.45)
+#     Cross-Room: deutlich hoeher (min 20 Vorkommen, Confidence 0.65, strengere Timing-Varianz)
+#   - entity→room_id Lookup vor Analyse, room-aware Thresholds in _detect_sequence_patterns()
+#   - Fix: JSX adjacent-elements Fehler im EnergyPage Config-Tab (Fragment-Wrapper)
+#
 # Build 62: v0.7.9 Phase 4 Feature-Konfiguration pro Seite
 #   - Neu: Umfassende Feature-Einstellungen fuer alle 20 Phase-4 Features
 #   - Konfiguration-Tab auf Klima-, Gesundheits-, Energie- und KI-Seite

@@ -6941,7 +6941,7 @@ const EnergyPage = () => {
                 </div>
             )}
 
-            {tab === 'config' && config && (
+            {tab === 'config' && config && (<>
                 <div className="card animate-in">
                     <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)', fontWeight: 600 }}>{lang === 'de' ? 'Energie-Einstellungen' : 'Energy Settings'}</div>
                     <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -6994,7 +6994,7 @@ const EnergyPage = () => {
                     </h3>
                     <FeatureSettingsPanel category="energy" lang={lang} showToast={showToast} />
                 </div>
-            )}
+            </>)}
 
             {showDiscover && (
                 <Modal title={lang === 'de' ? 'Gefundene Energie-Sensoren' : 'Discovered Energy Sensors'} onClose={() => setShowDiscover(false)}>
