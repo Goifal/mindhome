@@ -69,7 +69,7 @@ class SleepDetector:
                                 session, active_session.sleep_start, now, uid
                             )
                             self._sleep_active.pop(uid, None)
-                            self.event_bus.emit("wake_detected", {
+                            self.event_bus.emit("sleep.wake_detected", {
                                 "user_id": uid,
                                 "session_id": active_session.id,
                                 "duration_hours": round(duration_h, 1),
@@ -87,7 +87,7 @@ class SleepDetector:
                             session.add(ss)
                             session.flush()
                             self._sleep_active[uid] = ss.id
-                            self.event_bus.emit("sleep_detected", {
+                            self.event_bus.emit("sleep.detected", {
                                 "user_id": uid,
                                 "session_id": ss.id,
                             })
@@ -371,7 +371,7 @@ class WakeUpManager:
                 logger.debug(f"WakeUp climate {cfg.climate_entity} temp={target_temp:.1f}")
 
             if progress >= 1.0:
-                self.event_bus.emit("wakeup_complete", {"user_id": cfg.user_id, "config_id": cfg.id})
+                self.event_bus.emit("sleep.wakeup_complete", {"user_id": cfg.user_id, "config_id": cfg.id})
                 logger.info(f"WakeUp complete for user={cfg.user_id}")
 
         except Exception as e:

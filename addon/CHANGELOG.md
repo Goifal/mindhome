@@ -1,5 +1,43 @@
 # Changelog
 
+## 0.7.4 – Batch 3: Klima & Umgebung
+
+### Bugfixes
+- EventBus: `emit` als Alias fuer `publish` (Batch 2 Engines nutzten falschen Methodennamen)
+- Event-Namen auf Dot-Notation (`sleep.detected` statt `sleep_detected`)
+
+### Engines (5 Features)
+- **ComfortCalculator (#10)**: Komfort-Score pro Raum (Temp/Feuchtigkeit/CO2/Licht gewichtet 0-100)
+- **ComfortCalculator (#17)**: Raumklima-Ampel (gruen/gelb/rot pro Faktor + gesamt)
+- **VentilationMonitor (#18)**: Lueftungserinnerung (CO2-Schwellwert ODER Timer, Fenster-Tracking)
+- **CircadianLightManager (#27)**: Zirkadiane Beleuchtung mit 2 Modi (MindHome / Hybrid HCL)
+  - 3 Lampentypen: dim2warm, tunable_white, standard
+  - Event-Overrides: Schlaf, Aufwachen, Gaeste
+  - Brightness + Color-Temperature Interpolation auf konfigurierbarer Kurve
+- **WeatherAlertManager (#21)**: Wetter-Vorwarnung (Frost/Hitze/Regen/Sturm/Schnee)
+  - 2-12h Vorlaufzeit, Deduplizierung, 3 Severity-Level
+
+### API (10 neue Endpunkte)
+- GET /api/health/comfort, GET /api/health/comfort/:room_id/history
+- GET /api/health/climate-traffic-light
+- GET /api/health/ventilation, PUT /api/health/ventilation/:room_id
+- GET/POST /api/health/circadian, GET /api/health/circadian/status
+- PUT/DELETE /api/health/circadian/:id
+- GET /api/health/weather-alerts
+
+### Frontend: Neue "Klima" Seite
+- **Komfort-Tab**: Score-Kacheln pro Raum (farbcodiert), Faktor-Details, Ampel-Widget, Verlauf
+- **Lueftung-Tab**: Status-Karten (OK/Lueften!/Lueftet), CO2-Werte, Fenster-Tracking
+- **Zirkadian-Tab**: Status-Karten, Config CRUD (Modus/Lampentyp/Override), An/Aus Toggle
+- **Wetter-Tab**: Warnungs-Karten mit Severity-Badges, Icons, Zeitfenster
+
+### Scheduler
+- comfort_check (15 Min): Komfort-Berechnung + Zirkadian-Kurve
+- ventilation_check (10 Min): Lueftungs-Monitoring
+- weather_check (30 Min): Wetter-Forecast Analyse
+
+---
+
 ## 0.7.3 – Batch 2: Schlaf, Routinen & Anwesenheit
 
 ### Engines (7 Features)

@@ -149,6 +149,9 @@ class MindHomeEventBus:
             "history_size": len(self._history),
         }
 
+    # Alias for compatibility (engines use emit, event_bus uses publish)
+    emit = publish
+
     def clear(self):
         """Clear all subscriptions and history."""
         with self._lock:
