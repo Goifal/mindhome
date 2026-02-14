@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.7.7 – UI Polish: Klima & KI Seiten
+
+### ClimatePage Redesign
+- Tab-Bar auf MindHome-Standard (`btn btn-sm btn-primary/btn-ghost`) umgestellt
+- Page-Header `<h2>` mit Icon hinzugefuegt
+- Alle Cards auf `className="card animate-in"` Pattern
+- Alle Badges auf `className="badge badge-*"` Pattern
+- Empty-States mit zentrierter Card + Icon (statt rohem `<p>`)
+- Hardcoded Hex-Farben (`#4CAF50`, `#F44336`, etc.) durch CSS-Variablen ersetzt
+- Formular-Inputs mit `bg-tertiary` + `border-color` Theming
+- Buttons auf `btn btn-primary`, `btn btn-ghost` Klassen
+
+### AiPage Redesign
+- Tab-Bar auf MindHome-Standard umgestellt
+- Page-Header `<h2>` mit Icon
+- Alle Cards auf `card animate-in` Pattern
+- Mood-Statistiken als Grid mit `bg-tertiary` Kacheln + Sensor-Icons
+- Screen Time: Progress-Bar mit CSS-Variablen, Entity-Liste mit `border-color`
+- Drift/Adaptive: CSS-Variablen (`--warning`, `--info`) statt Hex-Farben
+- Saison-Tipps/Kalender: `badge badge-*` Klassen, `card animate-in`
+- Empty-States ueberall mit zentrierter Card + passendem Icon
+
+### CSS-Variablen Standardisierung
+- `var(--text-secondary)` → `var(--text-muted)` (konsistent mit Theme)
+- `var(--border)` → `var(--border-color)`
+- `var(--primary)` → `var(--accent-primary)`
+- `var(--card-bg)` → `className="card"` (Theme-aware)
+- `var(--primary-bg)` → `className="badge badge-info"`
+
+---
+
 ## 0.7.6 – Batch 5: Health Dashboard & Finalisierung
 
 ### Engines

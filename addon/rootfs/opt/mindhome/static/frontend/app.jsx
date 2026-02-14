@@ -7633,18 +7633,21 @@ const ClimatePage = () => {
         { id: 'weather', label: lang === 'de' ? 'Wetter' : 'Weather', icon: 'mdi-weather-lightning-rainy' },
     ];
 
-    const tlColor = (c) => c === 'green' ? '#4CAF50' : c === 'yellow' ? '#FFC107' : c === 'red' ? '#F44336' : '#999';
-    const severityColor = (s) => s === 'severe' ? '#F44336' : s === 'warning' ? '#FFC107' : '#2196F3';
+    const tlColor = (c) => c === 'green' ? 'var(--success)' : c === 'yellow' ? 'var(--warning)' : c === 'red' ? 'var(--danger)' : 'var(--text-muted)';
     const factorLabel = (f) => ({ temp: lang === 'de' ? 'Temperatur' : 'Temperature', humidity: lang === 'de' ? 'Feuchtigkeit' : 'Humidity', co2: 'CO2', light: lang === 'de' ? 'Licht' : 'Light' }[f] || f);
     const alertLabel = (t) => ({ frost: 'Frost', heat: lang === 'de' ? 'Hitze' : 'Heat', heavy_rain: lang === 'de' ? 'Starkregen' : 'Heavy Rain', storm: lang === 'de' ? 'Sturm' : 'Storm', snow: lang === 'de' ? 'Schnee' : 'Snow' }[t] || t);
 
     return (
         <div>
-            <div style={{display:'flex',gap:8,marginBottom:16,flexWrap:'wrap'}}>
+            <h2 style={{ marginBottom: 16 }}>
+                <span className="mdi mdi-home-thermometer" style={{ marginRight: 8 }} />
+                {lang === 'de' ? 'Klima & Umgebung' : 'Climate & Environment'}
+            </h2>
+
+            <div style={{ display: 'flex', gap: 4, marginBottom: 16, overflowX: 'auto', whiteSpace: 'nowrap', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none' }}>
                 {tabs.map(t => (
-                    <button key={t.id} onClick={() => setTab(t.id)}
-                        style={{padding:'8px 16px',borderRadius:8,border: tab===t.id ? '2px solid var(--primary)' : '1px solid var(--border)',background: tab===t.id ? 'var(--primary-bg)' : 'var(--card-bg)',cursor:'pointer',display:'flex',alignItems:'center',gap:6}}>
-                        <span className={`mdi ${t.icon}`} /> {t.label}
+                    <button key={t.id} className={`btn btn-sm ${tab === t.id ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setTab(t.id)} style={{ flexShrink: 0 }}>
+                        <span className={'mdi ' + t.icon} style={{ marginRight: 4 }} />{t.label}
                     </button>
                 ))}
             </div>
@@ -7652,21 +7655,25 @@ const ClimatePage = () => {
             {/* Comfort Tab */}
             {tab === 'comfort' && (
                 <div>
-                    <h3 style={{marginBottom:12}}><span className="mdi mdi-home-thermometer" /> {lang === 'de' ? 'Komfort-Score pro Raum' : 'Comfort Score per Room'}</h3>
-                    {comfortScores.length === 0 && <p style={{color:'var(--text-secondary)'}}>{lang === 'de' ? 'Noch keine Komfort-Daten. Scores werden alle 15 Min berechnet.' : 'No comfort data yet. Scores are calculated every 15 min.'}</p>}
-                    <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))',gap:12}}>
+                    {comfortScores.length === 0 && (
+                        <div className="card" style={{ padding: 32, textAlign: 'center', color: 'var(--text-muted)' }}>
+                            <span className="mdi mdi-home-thermometer-outline" style={{ fontSize: 36, display: 'block', marginBottom: 8 }} />
+                            {lang === 'de' ? 'Noch keine Komfort-Daten. Scores werden alle 15 Min berechnet.' : 'No comfort data yet. Scores are calculated every 15 min.'}
+                        </div>
+                    )}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 12 }}>
                         {comfortScores.map(s => (
-                            <div key={s.room_id} onClick={() => loadHistory(s.room_id)}
-                                style={{background:'var(--card-bg)',borderRadius:12,padding:16,border:'1px solid var(--border)',cursor:'pointer',borderLeft:`4px solid ${tlColor(s.traffic_light)}`}}>
-                                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
-                                    <strong>{s.room_name}</strong>
-                                    <span style={{fontSize:24,fontWeight:'bold',color:tlColor(s.traffic_light)}}>{s.score}</span>
+                            <div key={s.room_id} className="card animate-in" onClick={() => loadHistory(s.room_id)}
+                                style={{ padding: 16, cursor: 'pointer' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                                    <span style={{ fontWeight: 600, fontSize: 14 }}>{s.room_name}</span>
+                                    <span style={{ fontSize: 28, fontWeight: 700, color: tlColor(s.traffic_light) }}>{s.score}</span>
                                 </div>
-                                <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+                                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                                     {Object.entries(s.factors || {}).map(([k, v]) => (
-                                        <div key={k} style={{display:'flex',alignItems:'center',gap:4,fontSize:12}}>
-                                            <span style={{width:8,height:8,borderRadius:'50%',background:tlColor(s.factor_lights?.[k]),display:'inline-block'}} />
-                                            {factorLabel(k)}: {Math.round(v)}
+                                        <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12 }}>
+                                            <span style={{ width: 8, height: 8, borderRadius: '50%', background: tlColor(s.factor_lights?.[k]), display: 'inline-block' }} />
+                                            <span style={{ color: 'var(--text-muted)' }}>{factorLabel(k)}:</span> {Math.round(v)}
                                         </div>
                                     ))}
                                 </div>
@@ -7676,18 +7683,21 @@ const ClimatePage = () => {
 
                     {/* Traffic Light Overview */}
                     {trafficLights.length > 0 && (
-                        <div style={{marginTop:20}}>
-                            <h4><span className="mdi mdi-traffic-light" /> {lang === 'de' ? 'Raumklima-Ampel' : 'Climate Traffic Light'}</h4>
-                            <div style={{display:'flex',gap:12,flexWrap:'wrap',marginTop:8}}>
+                        <div className="card" style={{ marginTop: 16 }}>
+                            <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)', fontWeight: 600 }}>
+                                <span className="mdi mdi-traffic-light" style={{ marginRight: 6 }} />
+                                {lang === 'de' ? 'Raumklima-Ampel' : 'Climate Traffic Light'}
+                            </div>
+                            <div style={{ padding: 16, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 8 }}>
                                 {trafficLights.map(tl => (
-                                    <div key={tl.room_id} style={{background:'var(--card-bg)',borderRadius:8,padding:12,border:'1px solid var(--border)',minWidth:140,textAlign:'center'}}>
-                                        <div style={{fontWeight:'bold',marginBottom:8}}>{tl.room_name}</div>
-                                        <div style={{display:'flex',justifyContent:'center',gap:6}}>
+                                    <div key={tl.room_id} style={{ padding: 12, background: 'var(--bg-tertiary)', borderRadius: 8, textAlign: 'center' }}>
+                                        <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8 }}>{tl.room_name}</div>
+                                        <div style={{ display: 'flex', justifyContent: 'center', gap: 6 }}>
                                             {Object.entries(tl.factors || {}).map(([k, color]) => (
-                                                <div key={k} title={factorLabel(k)} style={{width:20,height:20,borderRadius:'50%',background:tlColor(color),border:'2px solid var(--border)'}} />
+                                                <div key={k} title={factorLabel(k)} style={{ width: 20, height: 20, borderRadius: '50%', background: tlColor(color), border: '2px solid var(--border-color)' }} />
                                             ))}
                                         </div>
-                                        <div style={{marginTop:4,fontSize:11,color:'var(--text-secondary)'}}>{tl.score}/100</div>
+                                        <div style={{ marginTop: 6, fontSize: 11, color: 'var(--text-muted)' }}>{tl.score}/100</div>
                                     </div>
                                 ))}
                             </div>
@@ -7696,13 +7706,17 @@ const ClimatePage = () => {
 
                     {/* History for selected room */}
                     {selectedRoom && comfortHistory.length > 0 && (
-                        <div style={{marginTop:20,background:'var(--card-bg)',borderRadius:12,padding:16,border:'1px solid var(--border)'}}>
-                            <h4>{lang === 'de' ? 'Verlauf' : 'History'} (7 {lang === 'de' ? 'Tage' : 'days'})</h4>
-                            <div style={{display:'flex',gap:4,alignItems:'flex-end',height:80,marginTop:8}}>
-                                {comfortHistory.slice(-48).map((h, i) => (
-                                    <div key={i} title={`${h.score} - ${h.created_at?.split('T')[0] || ''}`}
-                                        style={{flex:1,background:tlColor(h.score >= 80 ? 'green' : h.score >= 50 ? 'yellow' : 'red'),height:`${h.score}%`,borderRadius:2,minWidth:2}} />
-                                ))}
+                        <div className="card" style={{ marginTop: 16, overflow: 'hidden' }}>
+                            <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)', fontWeight: 600 }}>
+                                {lang === 'de' ? 'Verlauf' : 'History'} (7 {lang === 'de' ? 'Tage' : 'days'})
+                            </div>
+                            <div style={{ padding: 16 }}>
+                                <div style={{ display: 'flex', gap: 4, alignItems: 'flex-end', height: 80 }}>
+                                    {comfortHistory.slice(-48).map((h, i) => (
+                                        <div key={i} title={`${h.score} - ${h.created_at?.split('T')[0] || ''}`}
+                                            style={{ flex: 1, background: tlColor(h.score >= 80 ? 'green' : h.score >= 50 ? 'yellow' : 'red'), height: `${h.score}%`, borderRadius: 2, minWidth: 2, opacity: 0.85 }} />
+                                    ))}
+                                </div>
                             </div>
                         </div>
                     )}
@@ -7712,36 +7726,37 @@ const ClimatePage = () => {
             {/* Ventilation Tab */}
             {tab === 'ventilation' && (
                 <div>
-                    <h3 style={{marginBottom:12}}><span className="mdi mdi-air-filter" /> {lang === 'de' ? 'Lueftungsstatus' : 'Ventilation Status'}</h3>
-                    {ventilation.length === 0 && <p style={{color:'var(--text-secondary)'}}>{lang === 'de' ? 'Noch keine Daten. Wird alle 10 Min geprueft.' : 'No data yet. Checked every 10 min.'}</p>}
-                    <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(300px,1fr))',gap:12}}>
+                    {ventilation.length === 0 && (
+                        <div className="card" style={{ padding: 32, textAlign: 'center', color: 'var(--text-muted)' }}>
+                            <span className="mdi mdi-air-filter" style={{ fontSize: 36, display: 'block', marginBottom: 8 }} />
+                            {lang === 'de' ? 'Noch keine Daten. Wird alle 10 Min geprueft.' : 'No data yet. Checked every 10 min.'}
+                        </div>
+                    )}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 12 }}>
                         {ventilation.map(v => (
-                            <div key={v.room_id} style={{background:'var(--card-bg)',borderRadius:12,padding:16,border:'1px solid var(--border)',
-                                borderLeft: `4px solid ${v.window_open ? '#2196F3' : v.needs_ventilation ? '#F44336' : '#4CAF50'}`}}>
-                                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
-                                    <strong>{v.room_name}</strong>
-                                    <span style={{fontSize:12,padding:'2px 8px',borderRadius:12,
-                                        background: v.window_open ? '#E3F2FD' : v.needs_ventilation ? '#FFEBEE' : '#E8F5E9',
-                                        color: v.window_open ? '#1565C0' : v.needs_ventilation ? '#C62828' : '#2E7D32'}}>
+                            <div key={v.room_id} className="card animate-in" style={{ padding: 16 }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                                    <span style={{ fontWeight: 600 }}>{v.room_name}</span>
+                                    <span className={`badge ${v.window_open ? 'badge-info' : v.needs_ventilation ? 'badge-danger' : 'badge-success'}`} style={{ fontSize: 10 }}>
                                         {v.window_open ? (lang === 'de' ? 'Lueftet' : 'Ventilating') :
                                          v.needs_ventilation ? (lang === 'de' ? 'Lueften!' : 'Ventilate!') :
                                          'OK'}
                                     </span>
                                 </div>
                                 {v.co2_ppm !== null && (
-                                    <div style={{fontSize:13,marginBottom:4}}>
-                                        <span className="mdi mdi-molecule-co2" /> CO2: <strong>{v.co2_ppm} ppm</strong>
-                                        {v.co2_threshold && <span style={{color:'var(--text-secondary)'}}> / {v.co2_threshold}</span>}
+                                    <div style={{ fontSize: 13, marginBottom: 4 }}>
+                                        <span className="mdi mdi-molecule-co2" style={{ marginRight: 4 }} />CO2: <strong>{v.co2_ppm} ppm</strong>
+                                        {v.co2_threshold && <span style={{ color: 'var(--text-muted)' }}> / {v.co2_threshold}</span>}
                                     </div>
                                 )}
-                                {v.reason && <div style={{fontSize:12,color:'#F44336'}}>{v.reason}</div>}
+                                {v.reason && <div style={{ fontSize: 12, color: 'var(--danger)' }}>{v.reason}</div>}
                                 {v.last_ventilated && (
-                                    <div style={{fontSize:11,color:'var(--text-secondary)',marginTop:4}}>
+                                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
                                         {lang === 'de' ? 'Zuletzt gelueftet' : 'Last ventilated'}: {new Date(v.last_ventilated).toLocaleString()}
                                     </div>
                                 )}
-                                <div style={{display:'flex',gap:8,marginTop:8,fontSize:12}}>
-                                    <span>{lang === 'de' ? 'Intervall' : 'Interval'}: {v.reminder_interval_min || 120} min</span>
+                                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
+                                    {lang === 'de' ? 'Intervall' : 'Interval'}: {v.reminder_interval_min || 120} min
                                 </div>
                             </div>
                         ))}
@@ -7752,33 +7767,38 @@ const ClimatePage = () => {
             {/* Circadian Tab */}
             {tab === 'circadian' && (
                 <div>
-                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
-                        <h3><span className="mdi mdi-weather-sunset" /> {lang === 'de' ? 'Zirkadiane Beleuchtung' : 'Circadian Lighting'}</h3>
-                        <button onClick={() => setShowAddCircadian(true)} style={{padding:'6px 14px',borderRadius:8,border:'1px solid var(--primary)',background:'var(--primary)',color:'white',cursor:'pointer'}}>
-                            <span className="mdi mdi-plus" /> {lang === 'de' ? 'Neu' : 'New'}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                        <span style={{ fontWeight: 600, fontSize: 15 }}>
+                            <span className="mdi mdi-weather-sunset" style={{ marginRight: 6 }} />
+                            {lang === 'de' ? 'Zirkadiane Beleuchtung' : 'Circadian Lighting'}
+                        </span>
+                        <button className="btn btn-primary btn-sm" onClick={() => setShowAddCircadian(true)}>
+                            <span className="mdi mdi-plus" style={{ marginRight: 4 }} />{lang === 'de' ? 'Neu' : 'New'}
                         </button>
                     </div>
 
                     {/* Status cards */}
                     {circadianStatus.length > 0 && (
-                        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))',gap:12,marginBottom:16}}>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 12, marginBottom: 16 }}>
                             {circadianStatus.map(s => (
-                                <div key={s.room_id} style={{background:'var(--card-bg)',borderRadius:12,padding:16,border:'1px solid var(--border)',
-                                    borderLeft: `4px solid ${s.override_active ? '#FFC107' : '#4CAF50'}`}}>
-                                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
-                                        <strong>{s.room_name}</strong>
-                                        <span style={{fontSize:12,padding:'2px 8px',borderRadius:12,background:s.override_active ? '#FFF3E0' : '#E8F5E9',
-                                            color:s.override_active ? '#E65100' : '#2E7D32'}}>
+                                <div key={s.room_id} className="card animate-in" style={{ padding: 16 }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                                        <span style={{ fontWeight: 600 }}>{s.room_name}</span>
+                                        <span className={`badge ${s.override_active ? 'badge-warning' : 'badge-success'}`} style={{ fontSize: 10 }}>
                                             {s.override_active ? `Override: ${s.override_type}` : s.mode === 'hybrid_hcl' ? 'HCL' : 'Kurve'}
                                         </span>
                                     </div>
                                     {s.brightness_pct !== null && (
-                                        <div style={{marginBottom:4}}>
-                                            <span className="mdi mdi-brightness-6" /> {lang === 'de' ? 'Helligkeit' : 'Brightness'}: <strong>{s.brightness_pct}%</strong>
+                                        <div style={{ marginBottom: 4, fontSize: 13 }}>
+                                            <span className="mdi mdi-brightness-6" style={{ marginRight: 4 }} />{lang === 'de' ? 'Helligkeit' : 'Brightness'}: <strong>{s.brightness_pct}%</strong>
                                         </div>
                                     )}
-                                    {s.color_temp_kelvin && <div style={{fontSize:12}}><span className="mdi mdi-thermometer" /> {s.color_temp_kelvin}K</div>}
-                                    <div style={{fontSize:11,color:'var(--text-secondary)',marginTop:4}}>
+                                    {s.color_temp_kelvin && (
+                                        <div style={{ fontSize: 12 }}>
+                                            <span className="mdi mdi-thermometer" style={{ marginRight: 4 }} />{s.color_temp_kelvin}K
+                                        </div>
+                                    )}
+                                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
                                         {lang === 'de' ? 'Modus' : 'Mode'}: {s.mode} · {lang === 'de' ? 'Typ' : 'Type'}: {s.light_type}
                                     </div>
                                 </div>
@@ -7788,29 +7808,33 @@ const ClimatePage = () => {
 
                     {/* Config list */}
                     {circadianConfigs.length === 0 && !showAddCircadian && (
-                        <p style={{color:'var(--text-secondary)'}}>{lang === 'de' ? 'Noch keine Zirkadian-Konfiguration. Erstelle eine fuer deinen Raum.' : 'No circadian config yet. Create one for your room.'}</p>
+                        <div className="card" style={{ padding: 32, textAlign: 'center', color: 'var(--text-muted)' }}>
+                            <span className="mdi mdi-weather-sunset-up" style={{ fontSize: 36, display: 'block', marginBottom: 8 }} />
+                            {lang === 'de' ? 'Noch keine Zirkadian-Konfiguration. Erstelle eine fuer deinen Raum.' : 'No circadian config yet. Create one for your room.'}
+                        </div>
                     )}
                     {circadianConfigs.map(c => (
-                        <div key={c.id} style={{background:'var(--card-bg)',borderRadius:12,padding:16,border:'1px solid var(--border)',marginBottom:8}}>
-                            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                        <div key={c.id} className="card" style={{ padding: 16, marginBottom: 8 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                 <div>
-                                    <strong>{c.room_name || `Room ${c.room_id}`}</strong>
-                                    <span style={{marginLeft:8,fontSize:12,color:'var(--text-secondary)'}}>
+                                    <span style={{ fontWeight: 600 }}>{c.room_name || `Room ${c.room_id}`}</span>
+                                    <span style={{ marginLeft: 8, fontSize: 12, color: 'var(--text-muted)' }}>
                                         {c.control_mode} · {c.light_type}
                                     </span>
                                 </div>
-                                <div style={{display:'flex',gap:8}}>
-                                    <button onClick={() => { api.put(`health/circadian/${c.id}`, {enabled: !c.enabled}).then(() => { showToast(c.enabled ? 'Deaktiviert' : 'Aktiviert'); load(); }); }}
-                                        style={{padding:'4px 10px',borderRadius:6,border:'1px solid var(--border)',background:c.enabled ? '#E8F5E9' : '#FFEBEE',cursor:'pointer',fontSize:12}}>
+                                <div style={{ display: 'flex', gap: 6 }}>
+                                    <button className={`btn btn-sm ${c.enabled ? 'btn-ghost' : 'btn-ghost'}`}
+                                        onClick={() => { api.put(`health/circadian/${c.id}`, {enabled: !c.enabled}).then(() => { showToast(c.enabled ? 'Deaktiviert' : 'Aktiviert'); load(); }); }}
+                                        style={{ fontSize: 11, color: c.enabled ? 'var(--success)' : 'var(--danger)' }}>
                                         {c.enabled ? 'An' : 'Aus'}
                                     </button>
-                                    <button onClick={() => { api.delete(`health/circadian/${c.id}`).then(() => load()); }}
-                                        style={{padding:'4px 10px',borderRadius:6,border:'1px solid #F44336',color:'#F44336',background:'transparent',cursor:'pointer',fontSize:12}}>
+                                    <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }}
+                                        onClick={() => { if (confirm(lang === 'de' ? 'Wirklich loeschen?' : 'Really delete?')) api.delete(`health/circadian/${c.id}`).then(() => load()); }}>
                                         <span className="mdi mdi-delete" />
                                     </button>
                                 </div>
                             </div>
-                            <div style={{fontSize:12,marginTop:8,display:'flex',gap:16,flexWrap:'wrap',color:'var(--text-secondary)'}}>
+                            <div style={{ fontSize: 12, marginTop: 8, display: 'flex', gap: 16, flexWrap: 'wrap', color: 'var(--text-muted)' }}>
                                 <span>Sleep: {c.override_sleep}%</span>
                                 <span>Wakeup: {c.override_wakeup}%</span>
                                 <span>Guests: {c.override_guests}%</span>
@@ -7821,52 +7845,52 @@ const ClimatePage = () => {
 
                     {/* Add form */}
                     {showAddCircadian && (
-                        <div style={{background:'var(--card-bg)',borderRadius:12,padding:16,border:'1px solid var(--primary)',marginTop:12}}>
-                            <h4 style={{marginBottom:12}}>{lang === 'de' ? 'Neue Zirkadian-Konfiguration' : 'New Circadian Config'}</h4>
-                            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+                        <div className="card" style={{ padding: 16, marginTop: 12, border: '2px solid var(--accent-primary)' }}>
+                            <div style={{ fontWeight: 600, marginBottom: 12 }}>{lang === 'de' ? 'Neue Zirkadian-Konfiguration' : 'New Circadian Config'}</div>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                                 <div>
-                                    <label style={{fontSize:12}}>{lang === 'de' ? 'Raum' : 'Room'}</label>
+                                    <label style={{ fontSize: 12, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>{lang === 'de' ? 'Raum' : 'Room'}</label>
                                     <select value={newCircadian.room_id || ''} onChange={e => setNewCircadian({...newCircadian, room_id: parseInt(e.target.value)})}
-                                        style={{width:'100%',padding:6,borderRadius:6,border:'1px solid var(--border)'}}>
+                                        style={{ width: '100%', padding: 8, borderRadius: 6, border: '1px solid var(--border-color)', background: 'var(--bg-tertiary)', color: 'var(--text-primary)' }}>
                                         <option value="">--</option>
                                         {rooms.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
                                     </select>
                                 </div>
                                 <div>
-                                    <label style={{fontSize:12}}>{lang === 'de' ? 'Steuerungsmodus' : 'Control Mode'}</label>
+                                    <label style={{ fontSize: 12, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>{lang === 'de' ? 'Steuerungsmodus' : 'Control Mode'}</label>
                                     <select value={newCircadian.control_mode} onChange={e => setNewCircadian({...newCircadian, control_mode: e.target.value})}
-                                        style={{width:'100%',padding:6,borderRadius:6,border:'1px solid var(--border)'}}>
+                                        style={{ width: '100%', padding: 8, borderRadius: 6, border: '1px solid var(--border-color)', background: 'var(--bg-tertiary)', color: 'var(--text-primary)' }}>
                                         <option value="mindhome">MindHome</option>
                                         <option value="hybrid_hcl">Hybrid HCL (MDT AKD)</option>
                                     </select>
                                 </div>
                                 <div>
-                                    <label style={{fontSize:12}}>{lang === 'de' ? 'Lampentyp' : 'Light Type'}</label>
+                                    <label style={{ fontSize: 12, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>{lang === 'de' ? 'Lampentyp' : 'Light Type'}</label>
                                     <select value={newCircadian.light_type} onChange={e => setNewCircadian({...newCircadian, light_type: e.target.value})}
-                                        style={{width:'100%',padding:6,borderRadius:6,border:'1px solid var(--border)'}}>
+                                        style={{ width: '100%', padding: 8, borderRadius: 6, border: '1px solid var(--border-color)', background: 'var(--bg-tertiary)', color: 'var(--text-primary)' }}>
                                         <option value="dim2warm">Dim2Warm</option>
                                         <option value="tunable_white">Tunable White</option>
                                         <option value="standard">Standard</option>
                                     </select>
                                 </div>
                                 <div>
-                                    <label style={{fontSize:12}}>Override Sleep %</label>
+                                    <label style={{ fontSize: 12, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Override Sleep %</label>
                                     <input type="number" value={newCircadian.override_sleep} onChange={e => setNewCircadian({...newCircadian, override_sleep: parseInt(e.target.value) || 10})}
-                                        style={{width:'100%',padding:6,borderRadius:6,border:'1px solid var(--border)'}} min={0} max={100} />
+                                        style={{ width: '100%', padding: 8, borderRadius: 6, border: '1px solid var(--border-color)', background: 'var(--bg-tertiary)', color: 'var(--text-primary)' }} min={0} max={100} />
                                 </div>
                                 <div>
-                                    <label style={{fontSize:12}}>Override Wakeup %</label>
+                                    <label style={{ fontSize: 12, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Override Wakeup %</label>
                                     <input type="number" value={newCircadian.override_wakeup} onChange={e => setNewCircadian({...newCircadian, override_wakeup: parseInt(e.target.value) || 70})}
-                                        style={{width:'100%',padding:6,borderRadius:6,border:'1px solid var(--border)'}} min={0} max={100} />
+                                        style={{ width: '100%', padding: 8, borderRadius: 6, border: '1px solid var(--border-color)', background: 'var(--bg-tertiary)', color: 'var(--text-primary)' }} min={0} max={100} />
                                 </div>
                                 <div>
-                                    <label style={{fontSize:12}}>Override Guests %</label>
+                                    <label style={{ fontSize: 12, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Override Guests %</label>
                                     <input type="number" value={newCircadian.override_guests} onChange={e => setNewCircadian({...newCircadian, override_guests: parseInt(e.target.value) || 90})}
-                                        style={{width:'100%',padding:6,borderRadius:6,border:'1px solid var(--border)'}} min={0} max={100} />
+                                        style={{ width: '100%', padding: 8, borderRadius: 6, border: '1px solid var(--border-color)', background: 'var(--bg-tertiary)', color: 'var(--text-primary)' }} min={0} max={100} />
                                 </div>
                             </div>
-                            <div style={{display:'flex',gap:8,marginTop:12}}>
-                                <button onClick={() => {
+                            <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                                <button className="btn btn-primary" onClick={() => {
                                     if (!newCircadian.room_id) { showToast(lang === 'de' ? 'Raum waehlen' : 'Select room', 'error'); return; }
                                     api.post('health/circadian', newCircadian).then(() => {
                                         showToast(lang === 'de' ? 'Konfiguration erstellt' : 'Config created');
@@ -7874,11 +7898,10 @@ const ClimatePage = () => {
                                         setNewCircadian({ room_id: null, control_mode: 'mindhome', light_type: 'dim2warm', override_sleep: 10, override_wakeup: 70, override_guests: 90 });
                                         load();
                                     }).catch(() => showToast('Error', 'error'));
-                                }} style={{padding:'8px 16px',borderRadius:8,background:'var(--primary)',color:'white',border:'none',cursor:'pointer'}}>
+                                }}>
                                     {lang === 'de' ? 'Erstellen' : 'Create'}
                                 </button>
-                                <button onClick={() => setShowAddCircadian(false)}
-                                    style={{padding:'8px 16px',borderRadius:8,background:'transparent',border:'1px solid var(--border)',cursor:'pointer'}}>
+                                <button className="btn btn-ghost" onClick={() => setShowAddCircadian(false)}>
                                     {lang === 'de' ? 'Abbrechen' : 'Cancel'}
                                 </button>
                             </div>
@@ -7890,25 +7913,27 @@ const ClimatePage = () => {
             {/* Weather Tab */}
             {tab === 'weather' && (
                 <div>
-                    <h3 style={{marginBottom:12}}><span className="mdi mdi-weather-lightning-rainy" /> {lang === 'de' ? 'Wetter-Vorwarnungen' : 'Weather Alerts'}</h3>
-                    {weatherAlerts.length === 0 && <p style={{color:'var(--text-secondary)'}}>{lang === 'de' ? 'Keine aktiven Wetterwarnungen. Wird alle 30 Min geprueft.' : 'No active weather alerts. Checked every 30 min.'}</p>}
-                    <div style={{display:'grid',gap:12}}>
+                    {weatherAlerts.length === 0 && (
+                        <div className="card" style={{ padding: 32, textAlign: 'center', color: 'var(--text-muted)' }}>
+                            <span className="mdi mdi-weather-sunny" style={{ fontSize: 36, display: 'block', marginBottom: 8, color: 'var(--success)' }} />
+                            {lang === 'de' ? 'Keine aktiven Wetterwarnungen. Wird alle 30 Min geprueft.' : 'No active weather alerts. Checked every 30 min.'}
+                        </div>
+                    )}
+                    <div style={{ display: 'grid', gap: 12 }}>
                         {weatherAlerts.map(a => (
-                            <div key={a.id} style={{background:'var(--card-bg)',borderRadius:12,padding:16,border:'1px solid var(--border)',
-                                borderLeft: `4px solid ${severityColor(a.severity)}`}}>
-                                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
-                                    <strong style={{display:'flex',alignItems:'center',gap:6}}>
-                                        <span className={`mdi ${a.alert_type === 'frost' ? 'mdi-snowflake' : a.alert_type === 'heat' ? 'mdi-fire' : a.alert_type === 'storm' ? 'mdi-weather-windy' : a.alert_type === 'snow' ? 'mdi-weather-snowy-heavy' : 'mdi-weather-pouring'}`} />
+                            <div key={a.id} className="card animate-in" style={{ padding: 16 }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                                    <span style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
+                                        <span className={`mdi ${a.alert_type === 'frost' ? 'mdi-snowflake' : a.alert_type === 'heat' ? 'mdi-fire' : a.alert_type === 'storm' ? 'mdi-weather-windy' : a.alert_type === 'snow' ? 'mdi-weather-snowy-heavy' : 'mdi-weather-pouring'}`}
+                                            style={{ color: 'var(--accent-primary)' }} />
                                         {alertLabel(a.alert_type)}
-                                    </strong>
-                                    <span style={{fontSize:12,padding:'2px 8px',borderRadius:12,
-                                        background: a.severity === 'severe' ? '#FFEBEE' : a.severity === 'warning' ? '#FFF3E0' : '#E3F2FD',
-                                        color: severityColor(a.severity)}}>
+                                    </span>
+                                    <span className={`badge ${a.severity === 'severe' ? 'badge-danger' : a.severity === 'warning' ? 'badge-warning' : 'badge-info'}`} style={{ fontSize: 10 }}>
                                         {a.severity}
                                     </span>
                                 </div>
-                                <p style={{fontSize:13,marginBottom:4}}>{lang === 'de' ? a.message_de : a.message_en}</p>
-                                <div style={{fontSize:11,color:'var(--text-secondary)'}}>
+                                <div style={{ fontSize: 13, marginBottom: 4 }}>{lang === 'de' ? a.message_de : a.message_en}</div>
+                                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
                                     {a.valid_from && <span>{lang === 'de' ? 'Ab' : 'From'}: {new Date(a.valid_from).toLocaleString()}</span>}
                                     {a.valid_until && <span> — {lang === 'de' ? 'Bis' : 'Until'}: {new Date(a.valid_until).toLocaleString()}</span>}
                                 </div>
@@ -7957,16 +7982,20 @@ const AiPage = () => {
     ];
 
     const moodIcon = (m) => ({ relaxed: 'mdi-sofa', active: 'mdi-run', cozy: 'mdi-fireplace', quiet: 'mdi-volume-off', away: 'mdi-home-outline', focused: 'mdi-target', neutral: 'mdi-circle-outline', unknown: 'mdi-help-circle-outline' }[m] || 'mdi-help-circle-outline');
-    const moodLabel = (m) => ({ relaxed: lang==='de'?'Entspannt':'Relaxed', active: lang==='de'?'Aktiv':'Active', cozy: lang==='de'?'Gemuetlich':'Cozy', quiet: lang==='de'?'Ruhig':'Quiet', away: lang==='de'?'Abwesend':'Away', focused: lang==='de'?'Fokussiert':'Focused', neutral: 'Neutral', unknown: lang==='de'?'Unbekannt':'Unknown' }[m] || m);
-    const moodColor = (m) => ({ relaxed: '#4CAF50', active: '#FF9800', cozy: '#E91E63', quiet: '#9C27B0', away: '#607D8B', focused: '#2196F3', neutral: '#999', unknown: '#999' }[m] || '#999');
+    const moodLabel = (m) => ({ relaxed: lang === 'de' ? 'Entspannt' : 'Relaxed', active: lang === 'de' ? 'Aktiv' : 'Active', cozy: lang === 'de' ? 'Gemuetlich' : 'Cozy', quiet: lang === 'de' ? 'Ruhig' : 'Quiet', away: lang === 'de' ? 'Abwesend' : 'Away', focused: lang === 'de' ? 'Fokussiert' : 'Focused', neutral: 'Neutral', unknown: lang === 'de' ? 'Unbekannt' : 'Unknown' }[m] || m);
+    const moodColor = (m) => ({ relaxed: 'var(--success)', active: 'var(--warning)', cozy: 'var(--danger)', quiet: 'var(--accent-primary)', away: 'var(--text-muted)', focused: 'var(--info)', neutral: 'var(--text-muted)', unknown: 'var(--text-muted)' }[m] || 'var(--text-muted)');
 
     return (
         <div>
-            <div style={{display:'flex',gap:8,marginBottom:16,flexWrap:'wrap'}}>
+            <h2 style={{ marginBottom: 16 }}>
+                <span className="mdi mdi-brain" style={{ marginRight: 8 }} />
+                {lang === 'de' ? 'KI & Adaptive' : 'AI & Adaptive'}
+            </h2>
+
+            <div style={{ display: 'flex', gap: 4, marginBottom: 16, overflowX: 'auto', whiteSpace: 'nowrap', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none' }}>
                 {tabs.map(t => (
-                    <button key={t.id} onClick={() => setTab(t.id)}
-                        style={{padding:'8px 16px',borderRadius:8,border: tab===t.id ? '2px solid var(--primary)' : '1px solid var(--border)',background: tab===t.id ? 'var(--primary-bg)' : 'var(--card-bg)',cursor:'pointer',display:'flex',alignItems:'center',gap:6}}>
-                        <span className={`mdi ${t.icon}`} /> {t.label}
+                    <button key={t.id} className={`btn btn-sm ${tab === t.id ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setTab(t.id)} style={{ flexShrink: 0 }}>
+                        <span className={'mdi ' + t.icon} style={{ marginRight: 4 }} />{t.label}
                     </button>
                 ))}
             </div>
@@ -7974,93 +8003,116 @@ const AiPage = () => {
             {/* Mood Tab */}
             {tab === 'mood' && (
                 <div>
-                    <h3 style={{marginBottom:12}}><span className="mdi mdi-emoticon-outline" /> {lang === 'de' ? 'Stimmungserkennung' : 'Mood Estimation'}</h3>
-                    {mood && (
-                        <div style={{background:'var(--card-bg)',borderRadius:16,padding:24,border:'1px solid var(--border)',maxWidth:400,textAlign:'center'}}>
-                            <div style={{fontSize:48,marginBottom:8}}><span className={`mdi ${moodIcon(mood.mood)}`} style={{color:moodColor(mood.mood)}} /></div>
-                            <div style={{fontSize:24,fontWeight:'bold',color:moodColor(mood.mood),marginBottom:4}}>{moodLabel(mood.mood)}</div>
-                            <div style={{fontSize:13,color:'var(--text-secondary)',marginBottom:12}}>
+                    {mood ? (
+                        <div className="card animate-in" style={{ padding: 24, maxWidth: 400, textAlign: 'center' }}>
+                            <div style={{ fontSize: 48, marginBottom: 8 }}>
+                                <span className={`mdi ${moodIcon(mood.mood)}`} style={{ color: moodColor(mood.mood) }} />
+                            </div>
+                            <div style={{ fontSize: 24, fontWeight: 700, color: moodColor(mood.mood), marginBottom: 4 }}>{moodLabel(mood.mood)}</div>
+                            <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 12 }}>
                                 {lang === 'de' ? 'Konfidenz' : 'Confidence'}: {Math.round((mood.confidence || 0) * 100)}%
                             </div>
                             {mood.indicators && mood.indicators.length > 0 && (
-                                <div style={{display:'flex',gap:6,justifyContent:'center',flexWrap:'wrap'}}>
+                                <div style={{ display: 'flex', gap: 6, justifyContent: 'center', flexWrap: 'wrap' }}>
                                     {mood.indicators.map((ind, i) => (
-                                        <span key={i} style={{fontSize:11,padding:'2px 8px',borderRadius:12,background:'var(--primary-bg)',color:'var(--primary)'}}>{ind}</span>
+                                        <span key={i} className="badge badge-info" style={{ fontSize: 10 }}>{ind}</span>
                                     ))}
                                 </div>
                             )}
                             {mood.stats && (
-                                <div style={{marginTop:16,display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:8,fontSize:12}}>
-                                    <div>Media: <strong>{mood.stats.media_active}</strong></div>
-                                    <div>Lichter: <strong>{mood.stats.lights_on}</strong></div>
-                                    <div>Dim: <strong>{mood.stats.lights_dim}</strong></div>
-                                    <div>Motion: <strong>{mood.stats.motion_recent}</strong></div>
+                                <div style={{ marginTop: 16, display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
+                                    {[
+                                        { label: 'Media', value: mood.stats.media_active, icon: 'mdi-play-circle' },
+                                        { label: lang === 'de' ? 'Lichter' : 'Lights', value: mood.stats.lights_on, icon: 'mdi-lightbulb' },
+                                        { label: 'Dim', value: mood.stats.lights_dim, icon: 'mdi-lightbulb-outline' },
+                                        { label: 'Motion', value: mood.stats.motion_recent, icon: 'mdi-motion-sensor' },
+                                    ].map((s, i) => (
+                                        <div key={i} style={{ padding: 8, background: 'var(--bg-tertiary)', borderRadius: 8, textAlign: 'center' }}>
+                                            <span className={`mdi ${s.icon}`} style={{ fontSize: 14, color: 'var(--text-muted)', display: 'block', marginBottom: 2 }} />
+                                            <div style={{ fontSize: 16, fontWeight: 700 }}>{s.value}</div>
+                                            <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{s.label}</div>
+                                        </div>
+                                    ))}
                                 </div>
                             )}
                         </div>
+                    ) : (
+                        <div className="card" style={{ padding: 32, textAlign: 'center', color: 'var(--text-muted)' }}>
+                            <span className="mdi mdi-loading mdi-spin" style={{ fontSize: 24, display: 'block', marginBottom: 8 }} />
+                            {lang === 'de' ? 'Stimmung wird berechnet...' : 'Calculating mood...'}
+                        </div>
                     )}
-                    {!mood && <p style={{color:'var(--text-secondary)'}}>{lang === 'de' ? 'Stimmung wird berechnet...' : 'Calculating mood...'}</p>}
                 </div>
             )}
 
             {/* Screen Time Tab */}
             {tab === 'screen' && (
                 <div>
-                    <h3 style={{marginBottom:12}}><span className="mdi mdi-television" /> {lang === 'de' ? 'Bildschirmzeit' : 'Screen Time'}</h3>
-                    {screenTime.length === 0 && <p style={{color:'var(--text-secondary)'}}>{lang === 'de' ? 'Noch keine Daten. Wird alle 5 Min geprueft.' : 'No data yet. Checked every 5 min.'}</p>}
-                    {screenTime.map((st, i) => (
-                        <div key={i} style={{background:'var(--card-bg)',borderRadius:12,padding:16,border:'1px solid var(--border)',marginBottom:12}}>
-                            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
-                                <strong>{lang === 'de' ? `Benutzer ${st.user_id || ''}` : `User ${st.user_id || ''}`}</strong>
-                                <span style={{fontSize:24,fontWeight:'bold',color: st.today_minutes > (st.daily_limit_min || 180) ? '#F44336' : '#4CAF50'}}>
-                                    {st.today_minutes} min
-                                </span>
-                            </div>
-                            {/* Progress bar */}
-                            <div style={{background:'var(--border)',borderRadius:8,height:8,marginBottom:8}}>
-                                <div style={{background: st.today_minutes > (st.daily_limit_min || 180) ? '#F44336' : '#4CAF50',
-                                    height:'100%',borderRadius:8,width:`${Math.min(100, (st.today_minutes / (st.daily_limit_min || 180)) * 100)}%`,transition:'width 0.3s'}} />
-                            </div>
-                            <div style={{fontSize:12,color:'var(--text-secondary)'}}>
-                                {lang === 'de' ? 'Verbleibend' : 'Remaining'}: {st.remaining_minutes || 0} min · Limit: {st.daily_limit_min || 180} min
-                            </div>
-                            {st.sessions && st.sessions.length > 0 && (
-                                <div style={{marginTop:12}}>
-                                    {st.sessions.filter(s => s.minutes_today > 0 || s.is_active).map((s, j) => (
-                                        <div key={j} style={{display:'flex',justifyContent:'space-between',alignItems:'center',fontSize:12,padding:'4px 0',borderTop:'1px solid var(--border)'}}>
-                                            <span>{s.entity_id.split('.').pop()}</span>
-                                            <span style={{display:'flex',alignItems:'center',gap:4}}>
-                                                {s.is_active && <span style={{width:6,height:6,borderRadius:'50%',background:'#4CAF50',display:'inline-block'}} />}
-                                                {s.minutes_today} min
-                                            </span>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
+                    {screenTime.length === 0 && (
+                        <div className="card" style={{ padding: 32, textAlign: 'center', color: 'var(--text-muted)' }}>
+                            <span className="mdi mdi-television-off" style={{ fontSize: 36, display: 'block', marginBottom: 8 }} />
+                            {lang === 'de' ? 'Noch keine Daten. Wird alle 5 Min geprueft.' : 'No data yet. Checked every 5 min.'}
                         </div>
-                    ))}
+                    )}
+                    {screenTime.map((st, i) => {
+                        const overLimit = st.today_minutes > (st.daily_limit_min || 180);
+                        return (
+                            <div key={i} className="card animate-in" style={{ padding: 16, marginBottom: 12 }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                                    <span style={{ fontWeight: 600 }}>{lang === 'de' ? `Benutzer ${st.user_id || ''}` : `User ${st.user_id || ''}`}</span>
+                                    <span style={{ fontSize: 24, fontWeight: 700, color: overLimit ? 'var(--danger)' : 'var(--success)' }}>
+                                        {st.today_minutes} min
+                                    </span>
+                                </div>
+                                {/* Progress bar */}
+                                <div style={{ background: 'var(--bg-tertiary)', borderRadius: 8, height: 8, marginBottom: 8 }}>
+                                    <div style={{ background: overLimit ? 'var(--danger)' : 'var(--success)',
+                                        height: '100%', borderRadius: 8, width: `${Math.min(100, (st.today_minutes / (st.daily_limit_min || 180)) * 100)}%`, transition: 'width 0.3s' }} />
+                                </div>
+                                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                                    {lang === 'de' ? 'Verbleibend' : 'Remaining'}: {st.remaining_minutes || 0} min · Limit: {st.daily_limit_min || 180} min
+                                </div>
+                                {st.sessions && st.sessions.length > 0 && (
+                                    <div style={{ marginTop: 12 }}>
+                                        {st.sessions.filter(s => s.minutes_today > 0 || s.is_active).map((s, j) => (
+                                            <div key={j} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12, padding: '6px 0', borderTop: '1px solid var(--border-color)' }}>
+                                                <span style={{ color: 'var(--text-muted)' }}>{s.entity_id.split('.').pop()}</span>
+                                                <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                                    {s.is_active && <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--success)', display: 'inline-block' }} />}
+                                                    {s.minutes_today} min
+                                                </span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    })}
                 </div>
             )}
 
             {/* Habit Drift Tab */}
             {tab === 'drift' && (
                 <div>
-                    <h3 style={{marginBottom:12}}><span className="mdi mdi-trending-up" /> {lang === 'de' ? 'Gewohnheits-Drift' : 'Habit Drift'}</h3>
-                    {drifts.length === 0 && <p style={{color:'var(--text-secondary)'}}>{lang === 'de' ? 'Keine Veraenderungen erkannt. Analyse laeuft woechentlich.' : 'No changes detected. Analysis runs weekly.'}</p>}
+                    {drifts.length === 0 && (
+                        <div className="card" style={{ padding: 32, textAlign: 'center', color: 'var(--text-muted)' }}>
+                            <span className="mdi mdi-check-circle-outline" style={{ fontSize: 36, display: 'block', marginBottom: 8, color: 'var(--success)' }} />
+                            {lang === 'de' ? 'Keine Veraenderungen erkannt. Analyse laeuft woechentlich.' : 'No changes detected. Analysis runs weekly.'}
+                        </div>
+                    )}
                     {drifts.map((d, i) => (
-                        <div key={i} style={{background:'var(--card-bg)',borderRadius:12,padding:16,border:'1px solid var(--border)',marginBottom:8,
-                            borderLeft: `4px solid ${d.drift_minutes > 0 ? '#FF9800' : '#2196F3'}`}}>
-                            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
-                                <strong>{d.description || d.pattern_type}</strong>
-                                <span style={{fontSize:14,fontWeight:'bold',color: d.drift_minutes > 0 ? '#FF9800' : '#2196F3'}}>
+                        <div key={i} className="card animate-in" style={{ padding: 16, marginBottom: 8 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                                <span style={{ fontWeight: 600 }}>{d.description || d.pattern_type}</span>
+                                <span style={{ fontSize: 14, fontWeight: 700, color: d.drift_minutes > 0 ? 'var(--warning)' : 'var(--info)' }}>
                                     {d.drift_minutes > 0 ? '+' : ''}{d.drift_minutes} min
                                 </span>
                             </div>
-                            <div style={{fontSize:12,color:'var(--text-secondary)'}}>
-                                <span className="mdi mdi-clock-outline" /> {d.original_time}
+                            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                                <span className="mdi mdi-clock-outline" style={{ marginRight: 4 }} />{d.original_time}
                                 {d.entity_id && <span> · {d.entity_id.split('.').pop()}</span>}
                             </div>
-                            <div style={{fontSize:12,marginTop:4,color:d.drift_minutes > 0 ? '#FF9800' : '#2196F3'}}>
+                            <div style={{ fontSize: 12, marginTop: 4, color: d.drift_minutes > 0 ? 'var(--warning)' : 'var(--info)' }}>
                                 {lang === 'de' ? d.message_de : d.message_en}
                             </div>
                         </div>
@@ -8071,24 +8123,26 @@ const AiPage = () => {
             {/* Adaptive Timing Tab */}
             {tab === 'adaptive' && (
                 <div>
-                    <h3 style={{marginBottom:12}}><span className="mdi mdi-brain" /> {lang === 'de' ? 'Adaptive Zeiten' : 'Adaptive Timing'}</h3>
-                    {adaptations.length === 0 && <p style={{color:'var(--text-secondary)'}}>{lang === 'de' ? 'Noch keine Anpassungen. Das System lernt aus deinen manuellen Aktionen.' : 'No adaptations yet. The system learns from your manual actions.'}</p>}
+                    {adaptations.length === 0 && (
+                        <div className="card" style={{ padding: 32, textAlign: 'center', color: 'var(--text-muted)' }}>
+                            <span className="mdi mdi-brain" style={{ fontSize: 36, display: 'block', marginBottom: 8 }} />
+                            {lang === 'de' ? 'Noch keine Anpassungen. Das System lernt aus deinen manuellen Aktionen.' : 'No adaptations yet. The system learns from your manual actions.'}
+                        </div>
+                    )}
                     {adaptations.map((a, i) => (
-                        <div key={i} style={{background:'var(--card-bg)',borderRadius:12,padding:16,border:'1px solid var(--border)',marginBottom:8}}>
-                            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
-                                <strong>{a.description}</strong>
-                                <span style={{fontSize:13,padding:'2px 8px',borderRadius:12,background:'#E3F2FD',color:'#1565C0'}}>
-                                    {a.trigger_time}
-                                </span>
+                        <div key={i} className="card animate-in" style={{ padding: 16, marginBottom: 8 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                                <span style={{ fontWeight: 600 }}>{a.description}</span>
+                                <span className="badge badge-info" style={{ fontSize: 10 }}>{a.trigger_time}</span>
                             </div>
-                            {a.entity_id && <div style={{fontSize:12,color:'var(--text-secondary)'}}>Entity: {a.entity_id.split('.').pop()}</div>}
+                            {a.entity_id && <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Entity: {a.entity_id.split('.').pop()}</div>}
                             {a.adaptive_timing && (
-                                <div style={{marginTop:8,fontSize:12}}>
-                                    <span style={{color:'var(--text-secondary)'}}>Avg Offset: </span>
-                                    <strong style={{color: a.adaptive_timing.avg_offset_min > 0 ? '#FF9800' : '#2196F3'}}>
+                                <div style={{ marginTop: 8, fontSize: 12 }}>
+                                    <span style={{ color: 'var(--text-muted)' }}>Avg Offset: </span>
+                                    <strong style={{ color: a.adaptive_timing.avg_offset_min > 0 ? 'var(--warning)' : 'var(--info)' }}>
                                         {a.adaptive_timing.avg_offset_min > 0 ? '+' : ''}{a.adaptive_timing.avg_offset_min} min
                                     </strong>
-                                    <span style={{marginLeft:8,color:'var(--text-secondary)'}}>({a.adaptive_timing.sample_count} Samples)</span>
+                                    <span style={{ marginLeft: 8, color: 'var(--text-muted)' }}>({a.adaptive_timing.sample_count} Samples)</span>
                                 </div>
                             )}
                         </div>
@@ -8099,23 +8153,28 @@ const AiPage = () => {
             {/* Seasonal Tab */}
             {tab === 'seasonal' && (
                 <div>
-                    <h3 style={{marginBottom:12}}><span className="mdi mdi-weather-partly-cloudy" /> {lang === 'de' ? 'Saison-Tipps' : 'Seasonal Tips'}</h3>
-                    {seasonalTips && (
+                    {seasonalTips ? (
                         <div>
-                            <div style={{background:'var(--card-bg)',borderRadius:12,padding:16,border:'1px solid var(--border)',marginBottom:16,textAlign:'center'}}>
-                                <div style={{fontSize:18,fontWeight:'bold'}}>{seasonalTips.season_label}</div>
+                            <div className="card animate-in" style={{ padding: 16, marginBottom: 16, textAlign: 'center' }}>
+                                <span className="mdi mdi-weather-partly-cloudy" style={{ fontSize: 24, color: 'var(--accent-primary)', display: 'block', marginBottom: 4 }} />
+                                <div style={{ fontSize: 18, fontWeight: 700 }}>{seasonalTips.season_label}</div>
                             </div>
-                            <div style={{display:'grid',gap:8}}>
+                            <div style={{ display: 'grid', gap: 8 }}>
                                 {(seasonalTips.tips || []).map((t, i) => (
-                                    <div key={i} style={{background:'var(--card-bg)',borderRadius:12,padding:14,border:'1px solid var(--border)',display:'flex',gap:12,alignItems:'flex-start'}}>
-                                        <span className={`mdi ${t.icon}`} style={{fontSize:22,color:'var(--primary)',flexShrink:0}} />
+                                    <div key={i} className="card animate-in" style={{ padding: 14, display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+                                        <span className={`mdi ${t.icon}`} style={{ fontSize: 22, color: 'var(--accent-primary)', flexShrink: 0 }} />
                                         <div>
-                                            <div style={{fontSize:13}}>{t.tip}</div>
-                                            <span style={{fontSize:10,padding:'1px 6px',borderRadius:8,background:'var(--primary-bg)',color:'var(--primary)',marginTop:4,display:'inline-block'}}>{t.category}</span>
+                                            <div style={{ fontSize: 13 }}>{t.tip}</div>
+                                            <span className="badge badge-info" style={{ fontSize: 9, marginTop: 4, display: 'inline-block' }}>{t.category}</span>
                                         </div>
                                     </div>
                                 ))}
                             </div>
+                        </div>
+                    ) : (
+                        <div className="card" style={{ padding: 32, textAlign: 'center', color: 'var(--text-muted)' }}>
+                            <span className="mdi mdi-loading mdi-spin" style={{ fontSize: 24, display: 'block', marginBottom: 8 }} />
+                            {lang === 'de' ? 'Lade Tipps...' : 'Loading tips...'}
                         </div>
                     )}
                 </div>
@@ -8124,26 +8183,28 @@ const AiPage = () => {
             {/* Calendar Tab */}
             {tab === 'calendar' && (
                 <div>
-                    <h3 style={{marginBottom:12}}><span className="mdi mdi-calendar" /> {lang === 'de' ? 'Kalender-Events' : 'Calendar Events'}</h3>
                     {calendarEntities.length > 0 && (
-                        <div style={{fontSize:12,color:'var(--text-secondary)',marginBottom:12}}>
+                        <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 12 }}>
+                            <span className="mdi mdi-link" style={{ marginRight: 4 }} />
                             {lang === 'de' ? 'Verbundene Kalender' : 'Connected calendars'}: {calendarEntities.map(c => c.name).join(', ')}
                         </div>
                     )}
-                    {calendarEvents.length === 0 && <p style={{color:'var(--text-secondary)'}}>{lang === 'de' ? 'Keine Events in den naechsten 48h.' : 'No events in the next 48h.'}</p>}
-                    <div style={{display:'grid',gap:8}}>
+                    {calendarEvents.length === 0 && (
+                        <div className="card" style={{ padding: 32, textAlign: 'center', color: 'var(--text-muted)' }}>
+                            <span className="mdi mdi-calendar-blank" style={{ fontSize: 36, display: 'block', marginBottom: 8 }} />
+                            {lang === 'de' ? 'Keine Events in den naechsten 48h.' : 'No events in the next 48h.'}
+                        </div>
+                    )}
+                    <div style={{ display: 'grid', gap: 8 }}>
                         {calendarEvents.map((e, i) => (
-                            <div key={i} style={{background:'var(--card-bg)',borderRadius:12,padding:14,border:'1px solid var(--border)',
-                                borderLeft: `4px solid ${e.hours_until < 2 ? '#F44336' : e.hours_until < 6 ? '#FF9800' : '#4CAF50'}`}}>
-                                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-                                    <strong>{e.title || 'Event'}</strong>
-                                    <span style={{fontSize:12,padding:'2px 8px',borderRadius:12,
-                                        background: e.hours_until < 2 ? '#FFEBEE' : '#E8F5E9',
-                                        color: e.hours_until < 2 ? '#C62828' : '#2E7D32'}}>
+                            <div key={i} className="card animate-in" style={{ padding: 14 }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <span style={{ fontWeight: 600 }}>{e.title || 'Event'}</span>
+                                    <span className={`badge ${e.hours_until < 2 ? 'badge-danger' : e.hours_until < 6 ? 'badge-warning' : 'badge-success'}`} style={{ fontSize: 10 }}>
                                         {e.hours_until < 1 ? `${Math.round(e.hours_until * 60)} min` : `${e.hours_until}h`}
                                     </span>
                                 </div>
-                                <div style={{fontSize:12,color:'var(--text-secondary)',marginTop:4}}>
+                                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
                                     {e.start && new Date(e.start).toLocaleString()}
                                     {e.location && <span> · {e.location}</span>}
                                 </div>
