@@ -4,15 +4,19 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "0.7.16"
-BUILD = 69
+VERSION = "0.7.17"
+BUILD = 70
 BUILD_DATE = "2026-02-15"
 CODENAME = "Phase 4 - Smart Health"
 
 # Changelog
-# Build 69: v0.7.16 Korrelations-Qualitaetsfilter (4220 → ~30 Patterns)
-#   - Baseline-Filter: Entities die >85% der Zeit im gleichen State sind = triviale Korrelation
-#     (z.B. person.home=home 95% → jede Korrelation damit ist uninformativ)
+# Build 70: v0.7.17 Korrelations-Filter verschaerft (364 → ~30 Patterns)
+#   - Baseline verschaerft: 0.85 → 0.75 (mehr "immer gleich" Entities filtern)
+#   - Top-3 pro Trigger-Entity: Nur die 3 staerksten Korrelationen pro Trigger behalten
+#   - Count-Schwellwerte erhoeht: same 6→8, cross 10→14
+#
+# Build 69: v0.7.16 Korrelations-Qualitaetsfilter (4220 → 364 Patterns)
+#   - Baseline-Filter: Entities >85% der Zeit im gleichen State = trivial
 #   - Bidirektionale Dedup: A→B und B→A = nur die staerkere Richtung behalten
 #   - Hoehere Count-Schwellwerte: same-room 4→6, cross-room 7→10
 #   - Hoehere Confidence-Schwellwerte: same-room 0.3→0.4, cross-room 0.5→0.55
