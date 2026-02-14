@@ -6294,6 +6294,154 @@ const OnboardingWizard = ({ onComplete, refreshData }) => {
 // ================================================================
 
 // ================================================================
+// Reusable: Feature Settings Panel (used in config tabs)
+// ================================================================
+const FeatureSettingsPanel = ({ category, lang, showToast }) => {
+    const [data, setData] = useState(null);
+    const [dirty, setDirty] = useState({});
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        api.get(`system/phase4-feature-settings/${category}`).then(d => { setData(d || {}); setLoading(false); }).catch(() => setLoading(false));
+    }, [category]);
+
+    const featureLabels = {
+        'phase4.comfort_score': { de: 'Komfort-Score', en: 'Comfort Score', icon: 'mdi-thermometer' },
+        'phase4.ventilation_reminder': { de: 'Lueftungserinnerung', en: 'Ventilation Reminder', icon: 'mdi-air-filter' },
+        'phase4.circadian_lighting': { de: 'Zirkadiane Beleuchtung', en: 'Circadian Lighting', icon: 'mdi-weather-sunset' },
+        'phase4.weather_alerts': { de: 'Wetter-Alerts', en: 'Weather Alerts', icon: 'mdi-weather-lightning-rainy' },
+        'phase4.sleep_detection': { de: 'Schlaf-Erkennung', en: 'Sleep Detection', icon: 'mdi-sleep' },
+        'phase4.sleep_quality': { de: 'Schlaf-Qualitaet', en: 'Sleep Quality', icon: 'mdi-bed' },
+        'phase4.smart_wakeup': { de: 'Sanftes Wecken', en: 'Smart Wake-Up', icon: 'mdi-alarm' },
+        'phase4.screen_time': { de: 'Bildschirmzeit', en: 'Screen Time', icon: 'mdi-monitor' },
+        'phase4.room_transitions': { de: 'Raum-Uebergaenge', en: 'Room Transitions', icon: 'mdi-door-sliding-open' },
+        'phase4.visit_preparation': { de: 'Besuch-Vorbereitung', en: 'Visit Preparation', icon: 'mdi-account-plus' },
+        'phase4.vacation_detection': { de: 'Urlaubs-Erkennung', en: 'Vacation Detection', icon: 'mdi-airplane' },
+        'phase4.health_dashboard': { de: 'Gesundheits-Dashboard', en: 'Health Dashboard', icon: 'mdi-heart-pulse' },
+        'phase4.energy_optimization': { de: 'Energie-Optimierung', en: 'Energy Optimization', icon: 'mdi-lightning-bolt' },
+        'phase4.pv_management': { de: 'PV-Lastmanagement', en: 'PV Management', icon: 'mdi-solar-power' },
+        'phase4.standby_killer': { de: 'Standby-Killer', en: 'Standby Killer', icon: 'mdi-power-standby' },
+        'phase4.energy_forecast': { de: 'Energieprognose', en: 'Energy Forecast', icon: 'mdi-chart-timeline-variant' },
+        'phase4.mood_estimate': { de: 'Stimmungserkennung', en: 'Mood Estimate', icon: 'mdi-emoticon-outline' },
+        'phase4.habit_drift': { de: 'Gewohnheits-Drift', en: 'Habit Drift', icon: 'mdi-trending-up' },
+        'phase4.adaptive_timing': { de: 'Adaptives Timing', en: 'Adaptive Timing', icon: 'mdi-clock-fast' },
+        'phase4.calendar_integration': { de: 'Kalender-Integration', en: 'Calendar Integration', icon: 'mdi-calendar' },
+    };
+
+    const updateSetting = (featureKey, settingKey, value) => {
+        setData(prev => ({
+            ...prev,
+            [featureKey]: {
+                ...prev[featureKey],
+                settings_values: { ...prev[featureKey].settings_values, [settingKey]: String(value) }
+            }
+        }));
+        setDirty(prev => ({ ...prev, [featureKey]: true }));
+    };
+
+    const toggleFeature = async (featureKey, currentValue) => {
+        const next = currentValue === 'true' ? 'false' : currentValue === 'false' ? 'auto' : 'true';
+        const r = await api.put(`system/phase4-features/${featureKey}`, { value: next });
+        if (r?.success) {
+            setData(prev => ({ ...prev, [featureKey]: { ...prev[featureKey], value: next, enabled: r.enabled } }));
+            const vLabel = next === 'true' ? 'AN' : next === 'false' ? 'AUS' : 'Auto';
+            showToast(`${(featureLabels[featureKey] || {})[lang === 'de' ? 'de' : 'en'] || featureKey}: ${vLabel}`, 'info');
+        }
+    };
+
+    const saveFeature = async (featureKey) => {
+        const vals = data[featureKey]?.settings_values || {};
+        const r = await api.put(`system/phase4-feature-settings/${featureKey}`, vals);
+        if (r?.success) {
+            setDirty(prev => ({ ...prev, [featureKey]: false }));
+            showToast(lang === 'de' ? 'Gespeichert' : 'Saved', 'success');
+        }
+    };
+
+    const valueColor = (v) => v === 'true' ? 'var(--success)' : v === 'false' ? 'var(--danger)' : 'var(--warning)';
+
+    if (loading) return <Skeleton width="100%" height={200} />;
+    if (!data || Object.keys(data).length === 0) return <div className="card" style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)' }}>{lang === 'de' ? 'Keine konfigurierbaren Features.' : 'No configurable features.'}</div>;
+
+    return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {Object.entries(data).map(([fKey, fData]) => {
+                const lbl = featureLabels[fKey] || { de: fKey, en: fKey, icon: 'mdi-cog' };
+                const isEnabled = fData.enabled;
+                return (
+                    <div key={fKey} className="card animate-in">
+                        <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <span className={`mdi ${lbl.icon}`} style={{ fontSize: 18, color: isEnabled ? 'var(--accent-primary)' : 'var(--text-muted)' }} />
+                                <span style={{ fontWeight: 600, fontSize: 14 }}>{lang === 'de' ? lbl.de : lbl.en}</span>
+                            </div>
+                            <button className="btn btn-sm" onClick={() => toggleFeature(fKey, fData.value)}
+                                style={{ fontSize: 10, fontWeight: 700, background: valueColor(fData.value), color: '#fff', border: 'none', padding: '3px 10px', borderRadius: 12, cursor: 'pointer' }}>
+                                {fData.value === 'true' ? 'AN' : fData.value === 'false' ? 'AUS' : 'Auto'}
+                            </button>
+                        </div>
+                        <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 10, opacity: isEnabled ? 1 : 0.5 }}>
+                            {(fData.settings_def || []).map(s => {
+                                const val = (fData.settings_values || {})[s.key] ?? s.default;
+                                if (s.type === 'number') {
+                                    return (
+                                        <div key={s.key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+                                            <label style={{ fontSize: 12, color: 'var(--text-secondary)', flex: 1 }}>{lang === 'de' ? s.label_de : s.label_en}</label>
+                                            <input type="number" className="form-input" style={{ width: 90, textAlign: 'right' }}
+                                                value={val} min={s.min} max={s.max} step={s.step || 1}
+                                                onChange={e => updateSetting(fKey, s.key, e.target.value)} />
+                                        </div>
+                                    );
+                                }
+                                if (s.type === 'toggle') {
+                                    return (
+                                        <div key={s.key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+                                            <label style={{ fontSize: 12, color: 'var(--text-secondary)', flex: 1 }}>{lang === 'de' ? s.label_de : s.label_en}</label>
+                                            <label className="toggle" style={{ transform: 'scale(0.8)' }}>
+                                                <input type="checkbox" checked={val === 'true'}
+                                                    onChange={e => updateSetting(fKey, s.key, e.target.checked ? 'true' : 'false')} />
+                                                <span className="toggle-slider" />
+                                            </label>
+                                        </div>
+                                    );
+                                }
+                                if (s.type === 'select') {
+                                    const optLabels = lang === 'de' ? (s.options_de || s.options) : (s.options_en || s.options);
+                                    return (
+                                        <div key={s.key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+                                            <label style={{ fontSize: 12, color: 'var(--text-secondary)', flex: 1 }}>{lang === 'de' ? s.label_de : s.label_en}</label>
+                                            <select className="form-input" style={{ width: 140 }} value={val}
+                                                onChange={e => updateSetting(fKey, s.key, e.target.value)}>
+                                                {s.options.map((o, i) => <option key={o} value={o}>{optLabels[i] || o}</option>)}
+                                            </select>
+                                        </div>
+                                    );
+                                }
+                                if (s.type === 'time') {
+                                    return (
+                                        <div key={s.key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+                                            <label style={{ fontSize: 12, color: 'var(--text-secondary)', flex: 1 }}>{lang === 'de' ? s.label_de : s.label_en}</label>
+                                            <input type="time" className="form-input" style={{ width: 110 }} value={val}
+                                                onChange={e => updateSetting(fKey, s.key, e.target.value)} />
+                                        </div>
+                                    );
+                                }
+                                return null;
+                            })}
+                            {dirty[fKey] && (
+                                <button className="btn btn-primary btn-sm" onClick={() => saveFeature(fKey)} style={{ alignSelf: 'flex-end', marginTop: 4 }}>
+                                    <span className="mdi mdi-content-save" style={{ marginRight: 4 }} />{lang === 'de' ? 'Speichern' : 'Save'}
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                );
+            })}
+        </div>
+    );
+};
+
+// ================================================================
 // Phase 3: Energy Dashboard Page
 // ================================================================
 const EnergyPage = () => {
@@ -6839,6 +6987,13 @@ const EnergyPage = () => {
                         <button className="btn btn-primary" onClick={saveConfig} style={{ alignSelf: 'flex-start' }}>{lang === 'de' ? 'Speichern' : 'Save'}</button>
                     </div>
                 </div>
+                <div style={{ marginTop: 16 }}>
+                    <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span className="mdi mdi-tune" style={{ color: 'var(--accent-primary)' }} />
+                        {lang === 'de' ? 'Feature-Einstellungen' : 'Feature Settings'}
+                    </h3>
+                    <FeatureSettingsPanel category="energy" lang={lang} showToast={showToast} />
+                </div>
             )}
 
             {showDiscover && (
@@ -6911,6 +7066,7 @@ const HealthPage = () => {
         { id: 'routines', label: lang === 'de' ? 'Routinen' : 'Routines', icon: 'mdi-playlist-check' },
         { id: 'visit', label: lang === 'de' ? 'Besuch' : 'Visitors', icon: 'mdi-account-plus' },
         { id: 'vacation', label: lang === 'de' ? 'Urlaub' : 'Vacation', icon: 'mdi-airplane' },
+        { id: 'config', label: lang === 'de' ? 'Konfiguration' : 'Configuration', icon: 'mdi-cog' },
     ];
 
     return (
@@ -7590,6 +7746,13 @@ const HealthPage = () => {
                     </div>
                 </div>
             )}
+
+            {/* Config Tab */}
+            {tab === 'config' && (
+                <div className="animate-in">
+                    <FeatureSettingsPanel category="health" lang={lang} showToast={showToast} />
+                </div>
+            )}
         </div>
     );
 };
@@ -7631,6 +7794,7 @@ const ClimatePage = () => {
         { id: 'ventilation', label: lang === 'de' ? 'Lueftung' : 'Ventilation', icon: 'mdi-air-filter' },
         { id: 'circadian', label: lang === 'de' ? 'Zirkadian' : 'Circadian', icon: 'mdi-weather-sunset' },
         { id: 'weather', label: lang === 'de' ? 'Wetter' : 'Weather', icon: 'mdi-weather-lightning-rainy' },
+        { id: 'config', label: lang === 'de' ? 'Konfiguration' : 'Configuration', icon: 'mdi-cog' },
     ];
 
     const tlColor = (c) => c === 'green' ? 'var(--success)' : c === 'yellow' ? 'var(--warning)' : c === 'red' ? 'var(--danger)' : 'var(--text-muted)';
@@ -7942,6 +8106,13 @@ const ClimatePage = () => {
                     </div>
                 </div>
             )}
+
+            {/* Config Tab */}
+            {tab === 'config' && (
+                <div className="animate-in">
+                    <FeatureSettingsPanel category="climate" lang={lang} showToast={showToast} />
+                </div>
+            )}
         </div>
     );
 };
@@ -7979,6 +8150,7 @@ const AiPage = () => {
         { id: 'adaptive', label: lang === 'de' ? 'Adaptive' : 'Adaptive', icon: 'mdi-brain' },
         { id: 'seasonal', label: lang === 'de' ? 'Saison' : 'Seasonal', icon: 'mdi-weather-partly-cloudy' },
         { id: 'calendar', label: lang === 'de' ? 'Kalender' : 'Calendar', icon: 'mdi-calendar' },
+        { id: 'config', label: lang === 'de' ? 'Konfiguration' : 'Configuration', icon: 'mdi-cog' },
     ];
 
     const moodIcon = (m) => ({ relaxed: 'mdi-sofa', active: 'mdi-run', cozy: 'mdi-fireplace', quiet: 'mdi-volume-off', away: 'mdi-home-outline', focused: 'mdi-target', neutral: 'mdi-circle-outline', unknown: 'mdi-help-circle-outline' }[m] || 'mdi-help-circle-outline');
@@ -8211,6 +8383,13 @@ const AiPage = () => {
                             </div>
                         ))}
                     </div>
+                </div>
+            )}
+
+            {/* Config Tab */}
+            {tab === 'config' && (
+                <div className="animate-in">
+                    <FeatureSettingsPanel category="ai" lang={lang} showToast={showToast} />
                 </div>
             )}
         </div>

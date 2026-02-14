@@ -4,12 +4,20 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "0.7.8"
-BUILD = 61
+VERSION = "0.7.9"
+BUILD = 62
 BUILD_DATE = "2026-02-14"
 CODENAME = "Phase 4 - Smart Health"
 
 # Changelog
+# Build 62: v0.7.9 Phase 4 Feature-Konfiguration pro Seite
+#   - Neu: Umfassende Feature-Einstellungen fuer alle 20 Phase-4 Features
+#   - Konfiguration-Tab auf Klima-, Gesundheits-, Energie- und KI-Seite
+#   - Backend: PHASE4_FEATURE_SETTINGS mit GET/PUT per Category
+#   - Wiederverwendbare FeatureSettingsPanel-Komponente (Number/Toggle/Select/Time)
+#   - Pro Feature: An/Aus/Auto Toggle + detaillierte Parameter
+#   - Fix: Domain-Filter erweitert um RoomDomainState.mode='off'
+#
 # Build 61: v0.7.8 Bugfix - Muster-Ablehnung & Domain-Ausschluss
 #   - Fix: Abgelehnte Muster tauchten nach "Jetzt synchronisieren" wieder auf
 #     Root-Cause: _upsert_pattern() pruefte nur is_active=True, rejected/disabled Muster unsichtbar
