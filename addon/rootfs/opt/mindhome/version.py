@@ -4,12 +4,29 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "0.7.5"
-BUILD = 58
+VERSION = "0.7.6"
+BUILD = 59
 BUILD_DATE = "2026-02-14"
 CODENAME = "Phase 4 - Smart Health"
 
 # Changelog
+# Build 59: v0.7.6 Batch 5 - Health Dashboard & Finalisierung
+#   - HealthAggregator Engine: Aggregiert Daten aus allen Phase 4 Engines
+#   - HealthAggregator: Gesamt-Score (gewichtet: Schlaf 35%, Komfort 30%, Lueftung 20%, Bildschirmzeit 15%)
+#   - HealthAggregator: Stuendliche Metric-Snapshots in health_metrics Tabelle
+#   - HealthAggregator: Trend-Berechnung (improving/stable/declining) aus 2-Wochen-Vergleich
+#   - Wochenbericht: Automatische Empfehlungen (Schlaf, Komfort, Bildschirmzeit)
+#   - Wochenbericht: Woche-zu-Woche Vergleich mit Richtungsanzeige
+#   - API: GET /api/health/dashboard (Aggregiertes Dashboard)
+#   - API: GET /api/health/weekly-report (Wochenbericht mit Empfehlungen)
+#   - API: GET /api/health/metrics/:type/history (Historische Metriken)
+#   - Scheduler: health_aggregate (1h) - stuendliche Aggregation
+#   - Frontend: Gesundheitsseite neues Dashboard-Tab (6 Metrik-Kacheln + Ampel + Wetter-Alerts)
+#   - Frontend: Wochenbericht-Tab (4 Sektionen mit Vorwochen-Vergleich + Empfehlungen)
+#   - Fix: MoodEstimator brightness None-Vergleich
+#   - Fix: ComfortCalculator/VentilationMonitor Device.is_active → Device.is_tracked
+#   - Fix: ComfortCalculator/VentilationMonitor Device.entity_id → Device.ha_entity_id
+#
 # Build 58: v0.7.5 Batch 4 - KI, Kalender & UX
 #   - MoodEstimator (#15): Stimmungserkennung (Relaxed/Active/Cozy/Quiet/Away/Focused)
 #   - MoodEstimator: Heuristik aus Media/Licht/Motion/Klima Zustaenden

@@ -12,6 +12,7 @@ from engines.routines import RoutineEngine, MoodEstimator
 from engines.weather_alerts import WeatherAlertManager
 from engines.visit import VisitPreparationManager, VacationDetector
 from engines.adaptive import HabitDriftDetector, AdaptiveTimingManager, GradualTransitioner, SeasonalAdvisor, CalendarIntegration
+from engines.health_dashboard import HealthAggregator
 
 __all__ = [
     "SleepDetector",
@@ -33,4 +34,5 @@ __all__ = [
     "GradualTransitioner",
     "SeasonalAdvisor",
     "CalendarIntegration",
+    "HealthAggregator",
 ]

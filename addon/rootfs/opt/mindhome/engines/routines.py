@@ -272,7 +272,7 @@ class MoodEstimator:
 
                 if eid.startswith("light.") and st == "on":
                     lights_on += 1
-                    brightness = attrs.get("brightness", 255)
+                    brightness = attrs.get("brightness") or 255
                     if brightness < 102:  # < 40%
                         lights_dim += 1
 

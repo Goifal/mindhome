@@ -1,5 +1,40 @@
 # Changelog
 
+## 0.7.6 – Batch 5: Health Dashboard & Finalisierung
+
+### Engines
+- **HealthAggregator (#28)**: Aggregiert alle Gesundheitsdaten aus Phase 4 Engines
+  - Gesamt-Score (gewichtet: Schlaf 35%, Komfort 30%, Lueftung 20%, Bildschirmzeit 15%)
+  - Stuendliche Metric-Snapshots in health_metrics Tabelle
+  - Trend-Berechnung (improving/stable/declining) aus 2-Wochen-Vergleich
+- **Wochenbericht**: Automatische Empfehlungen basierend auf Metriken
+  - Woche-zu-Woche Vergleich mit Richtungsanzeige
+  - Kategorien: Schlaf, Komfort, Bildschirmzeit, Gesamt
+
+### API (3 neue Endpunkte)
+- GET /api/health/dashboard — Aggregiertes Health-Dashboard
+- GET /api/health/weekly-report — Wochenbericht mit Empfehlungen
+- GET /api/health/metrics/:type/history — Historische Metriken
+
+### Frontend: Health Dashboard
+- **Dashboard-Tab**: 6 Metrik-Kacheln (Schlaf, Komfort, Lueftung, Bildschirmzeit, Stimmung, Wetter)
+  - Gesamt-Score mit Farbcodierung (gruen/gelb/rot)
+  - Raumklima-Ampel Widget
+  - Wetter-Warnungen Preview
+- **Wochenbericht-Tab**: 4 Report-Sektionen mit Vorwochen-Vergleich
+  - Trend-Pfeile (steigend/fallend/stabil)
+  - Empfehlungs-Karten mit Icons
+
+### Bugfixes
+- MoodEstimator: brightness=None Vergleich behoben (`NoneType < int`)
+- ComfortCalculator/VentilationMonitor: `Device.is_active` → `Device.is_tracked`
+- ComfortCalculator/VentilationMonitor: `Device.entity_id` → `Device.ha_entity_id`
+
+### Scheduler
+- health_aggregate (1h): Stuendliche Dashboard-Aggregation + Metric-Snapshots
+
+---
+
 ## 0.7.5 – Batch 4: KI, Kalender & UX
 
 ### Engines (9 Features)

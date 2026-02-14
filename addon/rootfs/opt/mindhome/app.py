@@ -569,6 +569,7 @@ weather_alert_manager = WeatherAlertManager(ha, get_db_session, event_bus)
 from engines.comfort import ScreenTimeMonitor
 from engines.routines import MoodEstimator
 from engines.adaptive import HabitDriftDetector, AdaptiveTimingManager, GradualTransitioner, SeasonalAdvisor, CalendarIntegration
+from engines.health_dashboard import HealthAggregator
 mood_estimator = MoodEstimator(ha, get_db_session)
 screen_time_monitor = ScreenTimeMonitor(ha, get_db_session, event_bus)
 habit_drift_detector = HabitDriftDetector(ha, get_db_session, event_bus)
@@ -576,6 +577,17 @@ adaptive_timing_manager = AdaptiveTimingManager(ha, get_db_session, event_bus)
 gradual_transitioner = GradualTransitioner(ha)
 seasonal_advisor = SeasonalAdvisor(ha)
 calendar_integration = CalendarIntegration(ha)
+
+# Phase 4 Batch 5: Health Dashboard Aggregator
+health_aggregator = HealthAggregator(ha, get_db_session, event_bus, engines={
+    "sleep_detector": sleep_detector,
+    "comfort_calculator": comfort_calculator,
+    "ventilation_monitor": ventilation_monitor,
+    "screen_time_monitor": screen_time_monitor,
+    "mood_estimator": mood_estimator,
+    "weather_alert_manager": weather_alert_manager,
+    "energy_optimizer": energy_optimizer,
+})
 
 dependencies = {
     "ha": ha,
@@ -608,6 +620,7 @@ dependencies = {
     "gradual_transitioner": gradual_transitioner,
     "seasonal_advisor": seasonal_advisor,
     "calendar_integration": calendar_integration,
+    "health_aggregator": health_aggregator,
 }
 
 from routes import register_blueprints
@@ -648,7 +661,8 @@ def graceful_shutdown(signum=None, frame=None):
                           ("screen_time_monitor", screen_time_monitor),
                           ("habit_drift_detector", habit_drift_detector),
                           ("adaptive_timing_manager", adaptive_timing_manager),
-                          ("gradual_transitioner", gradual_transitioner)]:
+                          ("gradual_transitioner", gradual_transitioner),
+                          ("health_aggregator", health_aggregator)]:
         try:
             eng.stop()
         except Exception:
@@ -869,9 +883,20 @@ def start_app():
                             interval_seconds=7 * 24 * 3600,  # weekly
                             run_immediately=False)
 
+    # Phase 4 Batch 5: Health Dashboard scheduler
+    health_aggregator.start()
+
+    def run_health_aggregate():
+        """Hourly: aggregate health dashboard data + store metrics."""
+        health_aggregator.aggregate()
+
+    task_scheduler.register("health_aggregate", run_health_aggregate,
+                            interval_seconds=60 * 60,  # 1 hour
+                            run_immediately=False)
+
     # Start task scheduler
     task_scheduler.start()
-    logger.info("  ✅ Task Scheduler started (cleanup:24h, maintenance:7d, energy:5m, sleep:5m, visit:10m, comfort:15m, ventilation:10m, weather:30m, screen:5m, adaptive:15m, drift:7d)")
+    logger.info("  ✅ Task Scheduler started (cleanup:24h, maintenance:7d, energy:5m, sleep:5m, visit:10m, comfort:15m, ventilation:10m, weather:30m, screen:5m, adaptive:15m, drift:7d, health:1h)")
 
     logger.info(f"MindHome {vi['full']} started successfully!")
 

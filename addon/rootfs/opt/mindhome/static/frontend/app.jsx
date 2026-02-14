@@ -6870,7 +6870,9 @@ const EnergyPage = () => {
 // ================================================================
 const HealthPage = () => {
     const { lang, showToast, rooms, devices } = useApp();
-    const [tab, setTab] = useState('sleep');
+    const [tab, setTab] = useState('dashboard');
+    const [dashboardData, setDashboardData] = useState(null);
+    const [weeklyReport, setWeeklyReport] = useState(null);
     const [sleepData, setSleepData] = useState(null);
     const [wakeupConfigs, setWakeupConfigs] = useState([]);
     const [routines, setRoutines] = useState([]);
@@ -6885,6 +6887,8 @@ const HealthPage = () => {
     const [users, setUsers] = useState([]);
 
     const load = () => {
+        api.get('health/dashboard').then(d => setDashboardData(d || null)).catch(() => {});
+        api.get('health/weekly-report').then(d => setWeeklyReport(d || null)).catch(() => {});
         api.get('health/sleep-quality?days=14').then(d => setSleepData(d || null)).catch(() => {});
         api.get('health/wakeup').then(d => setWakeupConfigs(Array.isArray(d) ? d : [])).catch(() => {});
         api.get('health/routines').then(d => setRoutines(Array.isArray(d) ? d : [])).catch(() => {});
@@ -6895,7 +6899,13 @@ const HealthPage = () => {
     };
     useEffect(() => { load(); }, []);
 
+    const scoreColor = (v) => v >= 70 ? 'var(--success)' : v >= 50 ? 'var(--warning)' : 'var(--danger)';
+    const trendIcon = (t) => t === 'improving' ? 'mdi-trending-up' : t === 'declining' ? 'mdi-trending-down' : 'mdi-trending-neutral';
+    const trendColor = (t) => t === 'improving' ? 'var(--success)' : t === 'declining' ? 'var(--danger)' : 'var(--text-muted)';
+
     const tabs = [
+        { id: 'dashboard', label: 'Dashboard', icon: 'mdi-view-dashboard' },
+        { id: 'report', label: lang === 'de' ? 'Wochenbericht' : 'Weekly Report', icon: 'mdi-chart-box' },
         { id: 'sleep', label: lang === 'de' ? 'Schlaf' : 'Sleep', icon: 'mdi-sleep' },
         { id: 'wakeup', label: lang === 'de' ? 'Wecken' : 'Wake-Up', icon: 'mdi-alarm' },
         { id: 'routines', label: lang === 'de' ? 'Routinen' : 'Routines', icon: 'mdi-playlist-check' },
@@ -6917,6 +6927,274 @@ const HealthPage = () => {
                     </button>
                 ))}
             </div>
+
+            {/* ── Dashboard Tab ── */}
+            {tab === 'dashboard' && (
+                <div>
+                    {/* Overall Health Score */}
+                    {dashboardData && dashboardData.overall_score != null && (
+                        <div className="card animate-in" style={{ padding: 24, textAlign: 'center', marginBottom: 16, background: 'linear-gradient(135deg, var(--bg-card) 0%, var(--bg-tertiary) 100%)' }}>
+                            <div style={{ fontSize: 48, fontWeight: 700, color: scoreColor(dashboardData.overall_score) }}>
+                                {dashboardData.overall_score}
+                            </div>
+                            <div style={{ fontSize: 14, color: 'var(--text-muted)', marginTop: 4 }}>
+                                {lang === 'de' ? 'Gesundheits-Score' : 'Health Score'}
+                            </div>
+                            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                                {dashboardData.updated_at ? new Date(dashboardData.updated_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Metric Cards Grid */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 16 }}>
+                        {/* Sleep */}
+                        <div className="card animate-in" style={{ padding: 16 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                                <span className="mdi mdi-sleep" style={{ fontSize: 20, color: 'var(--accent-primary)' }} />
+                                <span style={{ fontWeight: 600, fontSize: 13 }}>{lang === 'de' ? 'Schlaf' : 'Sleep'}</span>
+                            </div>
+                            {dashboardData?.sleep ? (
+                                <div>
+                                    <div style={{ fontSize: 24, fontWeight: 700 }}>{dashboardData.sleep.avg_quality ?? '–'}</div>
+                                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Qualitaet (7T)' : 'Quality (7d)'}</div>
+                                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                                        {dashboardData.sleep.avg_duration ? `${dashboardData.sleep.avg_duration}h` : ''} | {dashboardData.sleep.nights_tracked || 0} {lang === 'de' ? 'Naechte' : 'nights'}
+                                    </div>
+                                    {dashboardData.sleep.trend && (
+                                        <span className={`mdi ${trendIcon(dashboardData.sleep.trend)}`} style={{ fontSize: 14, color: trendColor(dashboardData.sleep.trend), marginTop: 4, display: 'inline-block' }} />
+                                    )}
+                                </div>
+                            ) : <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Keine Daten' : 'No data'}</div>}
+                        </div>
+
+                        {/* Comfort */}
+                        <div className="card animate-in" style={{ padding: 16 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                                <span className="mdi mdi-home-thermometer" style={{ fontSize: 20, color: 'var(--info)' }} />
+                                <span style={{ fontWeight: 600, fontSize: 13 }}>{lang === 'de' ? 'Komfort' : 'Comfort'}</span>
+                            </div>
+                            {dashboardData?.comfort ? (
+                                <div>
+                                    <div style={{ fontSize: 24, fontWeight: 700 }}>{dashboardData.comfort.avg_score ?? '–'}</div>
+                                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Durchschnitt' : 'Average'} ({dashboardData.comfort.room_count} {lang === 'de' ? 'Raeume' : 'rooms'})</div>
+                                    {dashboardData.comfort.worst_room && (
+                                        <div style={{ fontSize: 10, color: 'var(--warning)', marginTop: 2 }}>
+                                            {lang === 'de' ? 'Niedrigster' : 'Lowest'}: {dashboardData.comfort.worst_room.name} ({dashboardData.comfort.worst_room.score})
+                                        </div>
+                                    )}
+                                    {dashboardData.comfort.trend && (
+                                        <span className={`mdi ${trendIcon(dashboardData.comfort.trend)}`} style={{ fontSize: 14, color: trendColor(dashboardData.comfort.trend), marginTop: 4, display: 'inline-block' }} />
+                                    )}
+                                </div>
+                            ) : <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Keine Daten' : 'No data'}</div>}
+                        </div>
+
+                        {/* Ventilation */}
+                        <div className="card animate-in" style={{ padding: 16 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                                <span className="mdi mdi-air-filter" style={{ fontSize: 20, color: 'var(--success)' }} />
+                                <span style={{ fontWeight: 600, fontSize: 13 }}>{lang === 'de' ? 'Lueftung' : 'Ventilation'}</span>
+                            </div>
+                            {dashboardData?.ventilation ? (
+                                <div>
+                                    <div style={{ fontSize: 24, fontWeight: 700 }}>
+                                        {dashboardData.ventilation.rooms_needing_ventilation === 0
+                                            ? <span style={{ color: 'var(--success)' }}>OK</span>
+                                            : <span style={{ color: 'var(--warning)' }}>{dashboardData.ventilation.rooms_needing_ventilation}</span>}
+                                    </div>
+                                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                                        {dashboardData.ventilation.rooms_needing_ventilation > 0
+                                            ? (lang === 'de' ? 'Raeume brauchen Lueftung' : 'rooms need ventilation')
+                                            : (lang === 'de' ? 'Alles gut belueftet' : 'All well ventilated')}
+                                    </div>
+                                </div>
+                            ) : <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Keine Daten' : 'No data'}</div>}
+                        </div>
+
+                        {/* Screen Time */}
+                        <div className="card animate-in" style={{ padding: 16 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                                <span className="mdi mdi-monitor-eye" style={{ fontSize: 20, color: 'var(--warning)' }} />
+                                <span style={{ fontWeight: 600, fontSize: 13 }}>{lang === 'de' ? 'Bildschirmzeit' : 'Screen Time'}</span>
+                            </div>
+                            {dashboardData?.screen_time ? (
+                                <div>
+                                    <div style={{ fontSize: 24, fontWeight: 700 }}>{Math.round(dashboardData.screen_time.total_today_min)}m</div>
+                                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Heute' : 'Today'} ({dashboardData.screen_time.entity_count} {lang === 'de' ? 'Geraete' : 'devices'})</div>
+                                    {dashboardData.screen_time.trend && (
+                                        <span className={`mdi ${trendIcon(dashboardData.screen_time.trend)}`} style={{ fontSize: 14, color: trendColor(dashboardData.screen_time.trend), marginTop: 4, display: 'inline-block' }} />
+                                    )}
+                                </div>
+                            ) : <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Keine Daten' : 'No data'}</div>}
+                        </div>
+
+                        {/* Mood */}
+                        <div className="card animate-in" style={{ padding: 16 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                                <span className="mdi mdi-emoticon" style={{ fontSize: 20, color: 'var(--accent-primary)' }} />
+                                <span style={{ fontWeight: 600, fontSize: 13 }}>{lang === 'de' ? 'Stimmung' : 'Mood'}</span>
+                            </div>
+                            {dashboardData?.mood && dashboardData.mood.mood !== 'unknown' ? (
+                                <div>
+                                    <div style={{ fontSize: 18, fontWeight: 700, textTransform: 'capitalize' }}>{dashboardData.mood.mood}</div>
+                                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                                        {lang === 'de' ? 'Konfidenz' : 'Confidence'}: {Math.round((dashboardData.mood.confidence || 0) * 100)}%
+                                    </div>
+                                </div>
+                            ) : <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Keine Daten' : 'No data'}</div>}
+                        </div>
+
+                        {/* Weather */}
+                        <div className="card animate-in" style={{ padding: 16 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                                <span className="mdi mdi-weather-cloudy-alert" style={{ fontSize: 20, color: 'var(--info)' }} />
+                                <span style={{ fontWeight: 600, fontSize: 13 }}>{lang === 'de' ? 'Wetter' : 'Weather'}</span>
+                            </div>
+                            {dashboardData?.weather ? (
+                                <div>
+                                    <div style={{ fontSize: 24, fontWeight: 700 }}>
+                                        {dashboardData.weather.active_alerts === 0
+                                            ? <span style={{ color: 'var(--success)' }}>OK</span>
+                                            : <span style={{ color: 'var(--warning)' }}>{dashboardData.weather.active_alerts}</span>}
+                                    </div>
+                                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                                        {dashboardData.weather.active_alerts > 0
+                                            ? (lang === 'de' ? 'Aktive Warnungen' : 'active alerts')
+                                            : (lang === 'de' ? 'Keine Warnungen' : 'No alerts')}
+                                    </div>
+                                </div>
+                            ) : <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Keine Daten' : 'No data'}</div>}
+                        </div>
+                    </div>
+
+                    {/* Traffic lights */}
+                    {dashboardData?.comfort?.traffic_lights?.length > 0 && (
+                        <div className="card" style={{ marginBottom: 16 }}>
+                            <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)', fontWeight: 600 }}>
+                                {lang === 'de' ? 'Raumklima-Ampel' : 'Room Climate Status'}
+                            </div>
+                            <div style={{ padding: 16, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 8 }}>
+                                {dashboardData.comfort.traffic_lights.map((tl, i) => {
+                                    const tlColor = tl.status === 'green' ? 'var(--success)' : tl.status === 'yellow' ? 'var(--warning)' : 'var(--danger)';
+                                    return (
+                                        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 8, borderRadius: 8, background: 'var(--bg-tertiary)' }}>
+                                            <span style={{ width: 12, height: 12, borderRadius: '50%', background: tlColor, flexShrink: 0 }} />
+                                            <div>
+                                                <div style={{ fontSize: 12, fontWeight: 600 }}>{tl.room_name || tl.room_id}</div>
+                                                <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{tl.score}</div>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Weather alerts preview */}
+                    {dashboardData?.weather?.alerts?.length > 0 && (
+                        <div className="card">
+                            <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)', fontWeight: 600 }}>
+                                {lang === 'de' ? 'Aktive Wetter-Warnungen' : 'Active Weather Alerts'}
+                            </div>
+                            {dashboardData.weather.alerts.map((a, i) => (
+                                <div key={i} style={{ padding: '10px 16px', borderBottom: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: 10 }}>
+                                    <span className={`badge ${a.severity === 'severe' ? 'badge-danger' : a.severity === 'warning' ? 'badge-warning' : 'badge-info'}`} style={{ fontSize: 10, flexShrink: 0 }}>
+                                        {a.severity}
+                                    </span>
+                                    <div style={{ fontSize: 12 }}>{lang === 'de' ? a.message_de : a.message_en}</div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+
+                    {!dashboardData && (
+                        <div className="card" style={{ padding: 32, textAlign: 'center', color: 'var(--text-muted)' }}>
+                            <span className="mdi mdi-loading mdi-spin" style={{ fontSize: 24, display: 'block', marginBottom: 8 }} />
+                            {lang === 'de' ? 'Dashboard wird geladen...' : 'Loading dashboard...'}
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* ── Weekly Report Tab ── */}
+            {tab === 'report' && (
+                <div>
+                    {weeklyReport && weeklyReport.period ? (
+                        <div>
+                            {/* Period header */}
+                            <div className="card animate-in" style={{ padding: 16, marginBottom: 16, textAlign: 'center' }}>
+                                <span className="mdi mdi-calendar-range" style={{ fontSize: 20, color: 'var(--accent-primary)', marginRight: 8 }} />
+                                <span style={{ fontWeight: 600 }}>
+                                    {weeklyReport.period.from} — {weeklyReport.period.to}
+                                </span>
+                                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                                    {weeklyReport.data_points} {lang === 'de' ? 'Datenpunkte' : 'data points'}
+                                </div>
+                            </div>
+
+                            {/* Report sections */}
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 16 }}>
+                                {[
+                                    { key: 'overall', label: lang === 'de' ? 'Gesamt-Score' : 'Overall Score', icon: 'mdi-heart-pulse', color: 'var(--accent-primary)' },
+                                    { key: 'sleep', label: lang === 'de' ? 'Schlaf' : 'Sleep', icon: 'mdi-sleep', color: 'var(--info)' },
+                                    { key: 'comfort', label: lang === 'de' ? 'Komfort' : 'Comfort', icon: 'mdi-home-thermometer', color: 'var(--success)' },
+                                    { key: 'screen_time', label: lang === 'de' ? 'Bildschirmzeit' : 'Screen Time', icon: 'mdi-monitor-eye', color: 'var(--warning)' },
+                                ].map(sec => {
+                                    const data = weeklyReport.sections?.[sec.key];
+                                    if (!data) return null;
+                                    const comp = data.comparison;
+                                    return (
+                                        <div key={sec.key} className="card animate-in" style={{ padding: 16 }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                                                <span className={`mdi ${sec.icon}`} style={{ fontSize: 18, color: sec.color }} />
+                                                <span style={{ fontWeight: 600, fontSize: 12 }}>{sec.label}</span>
+                                            </div>
+                                            <div style={{ fontSize: 28, fontWeight: 700 }}>
+                                                {data.value != null ? (sec.key === 'screen_time' ? `${Math.round(data.value)}m` : data.value) : '–'}
+                                            </div>
+                                            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                                                {data.unit === 'min/day' ? (lang === 'de' ? 'Min/Tag' : 'min/day') : data.unit}
+                                            </div>
+                                            {comp && comp.change != null && (
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 6 }}>
+                                                    <span className={`mdi ${trendIcon(comp.direction)}`} style={{ fontSize: 14, color: trendColor(comp.direction) }} />
+                                                    <span style={{ fontSize: 11, color: trendColor(comp.direction) }}>
+                                                        {comp.change > 0 ? '+' : ''}{comp.change} {lang === 'de' ? 'vs Vorwoche' : 'vs last week'}
+                                                    </span>
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+
+                            {/* Recommendations */}
+                            {weeklyReport.recommendations?.length > 0 && (
+                                <div className="card" style={{ marginBottom: 16 }}>
+                                    <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)', fontWeight: 600 }}>
+                                        <span className="mdi mdi-lightbulb-on" style={{ marginRight: 6 }} />
+                                        {lang === 'de' ? 'Empfehlungen' : 'Recommendations'}
+                                    </div>
+                                    {weeklyReport.recommendations.map((rec, i) => (
+                                        <div key={i} style={{ padding: '10px 16px', borderBottom: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: 10 }}>
+                                            <span className={`mdi ${rec.icon}`} style={{ fontSize: 18, color: 'var(--accent-primary)', flexShrink: 0 }} />
+                                            <span style={{ fontSize: 13 }}>{lang === 'de' ? rec.text_de : rec.text_en}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    ) : (
+                        <div className="card" style={{ padding: 32, textAlign: 'center', color: 'var(--text-muted)' }}>
+                            <span className="mdi mdi-chart-box-outline" style={{ fontSize: 36, display: 'block', marginBottom: 8 }} />
+                            {lang === 'de'
+                                ? 'Noch keine Berichtsdaten. Daten werden stuendlich gesammelt.'
+                                : 'No report data yet. Data is collected hourly.'}
+                        </div>
+                    )}
+                </div>
+            )}
 
             {/* ── Sleep Tab ── */}
             {tab === 'sleep' && (

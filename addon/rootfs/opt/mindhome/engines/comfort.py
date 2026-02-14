@@ -50,9 +50,9 @@ class ComfortCalculator:
                 for room in rooms:
                     devices = session.query(Device).filter(
                         Device.room_id == room.id,
-                        Device.is_active == True
+                        Device.is_tracked == True
                     ).all()
-                    entity_ids = {d.entity_id for d in devices}
+                    entity_ids = {d.ha_entity_id for d in devices}
 
                     factors = {}
                     weights = {}
@@ -352,9 +352,9 @@ class VentilationMonitor:
                 for room in rooms:
                     devices = session.query(Device).filter(
                         Device.room_id == room.id,
-                        Device.is_active == True
+                        Device.is_tracked == True
                     ).all()
-                    entity_ids = {d.entity_id for d in devices}
+                    entity_ids = {d.ha_entity_id for d in devices}
 
                     # Get or create VentilationReminder config
                     vr = session.query(VentilationReminder).filter(
