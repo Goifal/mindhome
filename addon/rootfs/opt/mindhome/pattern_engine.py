@@ -1524,10 +1524,11 @@ class PatternDetector:
         # Fix #8: Room-aware thresholds for correlations
         # v0.7.15: Fixed ratio calculation (was diluted across all entities)
         # v0.7.16: Added baseline filter + bidirectional dedup to reduce 4220→~30 patterns
-        min_corr_count_same = 6
-        min_corr_count_cross = 10
+        min_corr_count_same = 8
+        min_corr_count_cross = 14
         min_corr_ratio_same = 0.7
         min_corr_ratio_cross = 0.8
+        max_per_trigger_entity = 3  # Only keep top 3 strongest per trigger entity
 
         total_pairs = len(cooccurrences)
         pairs_too_few = 0
@@ -1566,11 +1567,11 @@ class PatternDetector:
                 entity_total = entity_totals.get(eid_b, 1)
                 ratio = count / entity_total
 
-                # Baseline filter: skip if entity_b is in state_b >85% of the time globally
+                # Baseline filter: skip if entity_b is in state_b >75% of the time globally
                 # This filters trivial correlations like "person.home is always home"
                 global_total = global_entity_counts.get(eid_b, 1)
                 baseline = global_state_counts.get((eid_b, state_b), 0) / global_total
-                if baseline > 0.85:
+                if baseline > 0.75:
                     pairs_trivial_baseline += 1
                     continue
 
@@ -1597,18 +1598,33 @@ class PatternDetector:
                     ratio, count, total, confidence, same_room
                 ))
 
+        # Top-N per trigger entity: keep only the strongest correlations per entity
+        # This prevents a single entity from flooding the UI with dozens of patterns
+        from collections import defaultdict
+        trigger_groups = defaultdict(list)
+        for cand in correlation_candidates:
+            trigger_groups[cand[0]].append(cand)  # group by eid_a
+
+        top_n_candidates = []
+        top_n_removed = 0
+        for eid, cands in trigger_groups.items():
+            sorted_cands = sorted(cands, key=lambda c: c[7], reverse=True)  # by confidence
+            top_n_candidates.extend(sorted_cands[:max_per_trigger_entity])
+            top_n_removed += max(0, len(sorted_cands) - max_per_trigger_entity)
+
         # Deduplicate bidirectional pairs: A→B and B→A → keep only the stronger one
         seen_pairs = {}
-        for cand in correlation_candidates:
+        for cand in top_n_candidates:
             eid_a, state_a, eid_b, state_b, ratio, count, total, confidence, same_room = cand
             pair_key = tuple(sorted([eid_a, eid_b]))
             existing = seen_pairs.get(pair_key)
             if existing is None or confidence > existing[7]:
                 seen_pairs[pair_key] = cand
 
-        dedup_removed = len(correlation_candidates) - len(seen_pairs)
+        dedup_removed = len(top_n_candidates) - len(seen_pairs)
         logger.info(
             f"Correlation filtering: {len(correlation_candidates)} candidates, "
+            f"{top_n_removed} beyond top-{max_per_trigger_entity}/trigger, "
             f"{dedup_removed} bidirectional duplicates removed, "
             f"{pairs_trivial_baseline} trivial baseline filtered"
         )

@@ -1,11 +1,18 @@
 # Changelog
 
-## 0.7.16 – Korrelations-Qualitaetsfilter (4220 → ~30 Patterns)
+## 0.7.17 – Korrelations-Filter verschaerft (364 → ~30 Patterns)
 
 ### Fix
-- **Baseline-Filter**: Entities die >85% der Zeit im gleichen State sind werden als triviale Korrelation uebersprungen (z.B. person.home=home 95% → uninformativ)
-- **Bidirektionale Dedup**: A→B und B→A erzeugen nicht mehr zwei Patterns — nur die staerkere Richtung wird behalten
-- **Hoehere Schwellwerte**: Count same-room 4→6, cross-room 7→10; Confidence same 0.3→0.4, cross 0.5→0.55
+- **Baseline verschaerft**: 0.85 → 0.75 — mehr "immer gleich" Entities werden als trivial gefiltert
+- **Top-3 pro Trigger-Entity**: Nur die 3 staerksten Korrelationen pro Trigger-Entity behalten, Rest verworfen
+- **Count erhoeht**: same-room 6→8, cross-room 10→14
+
+## 0.7.16 – Korrelations-Qualitaetsfilter (4220 → 364 Patterns)
+
+### Fix
+- **Baseline-Filter**: Entities >85% im gleichen State = trivial
+- **Bidirektionale Dedup**: A→B und B→A = nur staerkere Richtung
+- **Schwellwerte erhoeht**: Count same 4→6, cross 7→10; Confidence same 0.3→0.4, cross 0.5→0.55
 
 ## 0.7.15 – Fix Korrelations-Ratio Berechnung (kritischer Bug)
 
