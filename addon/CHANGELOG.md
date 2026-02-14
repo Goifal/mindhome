@@ -1,9 +1,11 @@
 # Changelog
 
-## 0.7.19 – Stale-Pattern-Cleanup vollstaendig
+## 0.7.19 – Stale-Pattern-Cleanup fuer observed + insight
 
 ### Fix
-- **Cleanup erweitert**: Entfernt jetzt alle auto-generierten stale Patterns (`observed`, `insight`, `suggested`), nicht nur `observed`. User-bestaetigte (`active`) und abgelehnte (`rejected`/`disabled`) bleiben erhalten
+- **Cleanup erweitert**: Entfernt jetzt `observed` + `insight` Patterns die im Analyse-Lauf nicht bestaetigt wurden
+- **suggested bleibt erhalten**: User soll vorgeschlagene Patterns selbst bestätigen/ablehnen
+- **Geschuetzt**: `active`, `rejected`, `disabled` werden nie automatisch geloescht
 - Ursache: 2.851 "insight"-Patterns blieben nach v0.7.18 in DB weil Cleanup nur `observed` filterte
 
 ## 0.7.18 – Stale-Pattern-Cleanup + defaultdict-Fix

@@ -10,9 +10,10 @@ BUILD_DATE = "2026-02-15"
 CODENAME = "Phase 4 - Smart Health"
 
 # Changelog
-# Build 72: v0.7.19 Cleanup erweitert auf alle auto-generierten Statuses
-#   - Cleanup entfernt jetzt auch insight/suggested Patterns (nicht nur observed)
-#   - User-bestaetigte (active) und abgelehnte (rejected/disabled) bleiben erhalten
+# Build 72: v0.7.19 Stale-Cleanup fuer observed + insight
+#   - Cleanup entfernt observed + insight Patterns die nicht bestaetigt wurden
+#   - suggested bleiben erhalten (User soll entscheiden)
+#   - active/rejected/disabled bleiben erhalten
 #
 # Build 71: v0.7.18 Stale-Pattern-Cleanup + defaultdict-Fix
 #   - FIX: "cannot access local variable 'defaultdict'" — doppelter Import entfernt
