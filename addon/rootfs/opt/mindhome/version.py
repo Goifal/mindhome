@@ -4,12 +4,30 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "0.7.6"
-BUILD = 59
+VERSION = "0.7.7"
+BUILD = 60
 BUILD_DATE = "2026-02-14"
 CODENAME = "Phase 4 - Smart Health"
 
 # Changelog
+# Build 60: v0.7.7 UI Polish - Klima & KI Seiten
+#   - ClimatePage: Hardcoded Hex-Farben ersetzt durch CSS-Variablen (--success, --warning, --danger, --info)
+#   - ClimatePage: Tab-Bar auf btn btn-sm btn-primary/btn-ghost Klassen umgestellt
+#   - ClimatePage: Cards auf className="card animate-in" Pattern umgestellt
+#   - ClimatePage: Badges auf className="badge badge-*" Pattern umgestellt
+#   - ClimatePage: Page-Header h2 mit Icon hinzugefuegt
+#   - ClimatePage: Empty-States mit zentrierter Card + Icon statt rohem <p>
+#   - ClimatePage: Formular-Inputs mit bg-tertiary + border-color Theming
+#   - AiPage: Hardcoded Hex-Farben ersetzt durch CSS-Variablen
+#   - AiPage: Tab-Bar auf btn btn-sm btn-primary/btn-ghost Klassen umgestellt
+#   - AiPage: Cards auf className="card animate-in" Pattern umgestellt
+#   - AiPage: Badges auf className="badge badge-*" Pattern umgestellt
+#   - AiPage: Page-Header h2 mit Icon hinzugefuegt
+#   - AiPage: Empty-States mit zentrierter Card + Icon
+#   - AiPage: Mood-Stats als Grid mit bg-tertiary Kacheln + Icons
+#   - var(--text-secondary) → var(--text-muted), var(--border) → var(--border-color)
+#   - var(--primary) → var(--accent-primary), var(--card-bg) → className="card"
+#
 # Build 59: v0.7.6 Batch 5 - Health Dashboard & Finalisierung
 #   - HealthAggregator Engine: Aggregiert Daten aus allen Phase 4 Engines
 #   - HealthAggregator: Gesamt-Score (gewichtet: Schlaf 35%, Komfort 30%, Lueftung 20%, Bildschirmzeit 15%)
