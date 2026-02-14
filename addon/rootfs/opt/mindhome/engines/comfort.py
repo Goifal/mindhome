@@ -514,6 +514,9 @@ class ScreenTimeMonitor:
         self.event_bus = event_bus
         self._is_running = False
         self._active_sessions = {}  # entity_id -> start_time
+        self._today_minutes = {}  # entity_id -> accumulated minutes today
+        self._last_reminder = {}  # user_id -> last reminder time
+        self._last_reset_date = None
 
     def start(self):
         self._is_running = True
@@ -524,12 +527,147 @@ class ScreenTimeMonitor:
         logger.info("ScreenTimeMonitor stopped")
 
     def check(self):
-        """Check screen time for all configured entities. Called by scheduler."""
+        """Check screen time for all configured entities. Called every 5 min by scheduler."""
         if not self._is_running:
             return
-        # TODO: Batch 4 — Implement screen time tracking
+        try:
+            from models import ScreenTimeConfig
+            from routes.health import is_feature_enabled
+
+            if not is_feature_enabled("phase4.screen_time"):
+                return
+
+            now = datetime.now(timezone.utc)
+
+            # Reset daily counters
+            today = now.date()
+            if self._last_reset_date != today:
+                self._today_minutes.clear()
+                self._last_reminder.clear()
+                self._last_reset_date = today
+
+            states = self.ha.get_states() or []
+            state_map = {s.get("entity_id"): s for s in states}
+
+            with self.get_session() as session:
+                configs = session.query(ScreenTimeConfig).filter(
+                    ScreenTimeConfig.is_active == True
+                ).all()
+
+                for cfg in configs:
+                    monitored = cfg.entity_ids or []
+                    if not monitored:
+                        # Auto-discover media_player entities
+                        monitored = [eid for eid in state_map if eid.startswith("media_player.")]
+
+                    for eid in monitored:
+                        s = state_map.get(eid)
+                        if not s:
+                            continue
+
+                        is_active = s.get("state") in ("playing", "on", "paused")
+
+                        if is_active:
+                            if eid not in self._active_sessions:
+                                self._active_sessions[eid] = now
+                            else:
+                                # Accumulate time
+                                elapsed = (now - self._active_sessions[eid]).total_seconds() / 60
+                                self._today_minutes[eid] = self._today_minutes.get(eid, 0) + elapsed
+                                self._active_sessions[eid] = now
+                        else:
+                            if eid in self._active_sessions:
+                                elapsed = (now - self._active_sessions[eid]).total_seconds() / 60
+                                self._today_minutes[eid] = self._today_minutes.get(eid, 0) + elapsed
+                                del self._active_sessions[eid]
+
+                    # Check if user exceeded limit
+                    total_mins = sum(self._today_minutes.get(eid, 0) for eid in monitored)
+                    if total_mins >= cfg.daily_limit_min:
+                        last_r = self._last_reminder.get(cfg.user_id)
+                        interval = cfg.reminder_interval_min or 60
+                        if not last_r or (now - last_r).total_seconds() > interval * 60:
+                            self._last_reminder[cfg.user_id] = now
+                            self.event_bus.emit("screen_time.limit_reached", {
+                                "user_id": cfg.user_id,
+                                "total_minutes": round(total_mins),
+                                "limit_minutes": cfg.daily_limit_min,
+                            })
+                            logger.info(f"Screen time limit: User {cfg.user_id} at {round(total_mins)} min (limit {cfg.daily_limit_min})")
+
+        except Exception as e:
+            logger.error(f"ScreenTimeMonitor check error: {e}")
 
     def get_usage(self, user_id=None):
         """Return current screen time data."""
-        # TODO: Batch 4
-        return {"today_minutes": 0, "sessions": []}
+        try:
+            from models import ScreenTimeConfig
+            with self.get_session() as session:
+                query = session.query(ScreenTimeConfig).filter(ScreenTimeConfig.is_active == True)
+                if user_id:
+                    query = query.filter(ScreenTimeConfig.user_id == user_id)
+                configs = query.all()
+
+                results = []
+                for cfg in configs:
+                    monitored = cfg.entity_ids or []
+                    sessions = []
+                    total = 0
+                    for eid in monitored:
+                        mins = round(self._today_minutes.get(eid, 0))
+                        total += mins
+                        is_active = eid in self._active_sessions
+                        sessions.append({
+                            "entity_id": eid,
+                            "minutes_today": mins,
+                            "is_active": is_active,
+                        })
+
+                    # Also check auto-discovered
+                    if not monitored:
+                        states = self.ha.get_states() or []
+                        for s in states:
+                            eid = s.get("entity_id", "")
+                            if eid.startswith("media_player."):
+                                mins = round(self._today_minutes.get(eid, 0))
+                                total += mins
+                                sessions.append({
+                                    "entity_id": eid,
+                                    "minutes_today": mins,
+                                    "is_active": eid in self._active_sessions,
+                                })
+
+                    results.append({
+                        "user_id": cfg.user_id,
+                        "today_minutes": round(total),
+                        "daily_limit_min": cfg.daily_limit_min,
+                        "remaining_minutes": max(0, cfg.daily_limit_min - round(total)),
+                        "sessions": sessions,
+                    })
+
+                return results if results else [{"today_minutes": 0, "sessions": [], "daily_limit_min": 180}]
+
+        except Exception as e:
+            logger.error(f"get_usage error: {e}")
+            return [{"today_minutes": 0, "sessions": []}]
+
+    def get_config(self, user_id=None):
+        """Return screen time configs."""
+        try:
+            from models import ScreenTimeConfig
+            with self.get_session() as session:
+                query = session.query(ScreenTimeConfig)
+                if user_id:
+                    query = query.filter(ScreenTimeConfig.user_id == user_id)
+                configs = query.all()
+                return [{
+                    "id": c.id,
+                    "user_id": c.user_id,
+                    "entity_ids": c.entity_ids,
+                    "daily_limit_min": c.daily_limit_min,
+                    "reminder_interval_min": c.reminder_interval_min,
+                    "is_active": c.is_active,
+                } for c in configs]
+        except Exception as e:
+            logger.error(f"get_config error: {e}")
+            return []

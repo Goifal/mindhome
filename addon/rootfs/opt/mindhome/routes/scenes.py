@@ -69,7 +69,7 @@ def _domain_manager():
 def api_get_scenes():
     session = get_db()
     try:
-        return jsonify([{"id":s.id,"room_id":s.room_id,"name_de":s.name_de,"name_en":s.name_en,"icon":s.icon,"states":s.states or [],"frequency":s.frequency,"status":s.status,"source":s.source,"is_active":s.is_active,"last_activated":s.last_activated.isoformat() if s.last_activated else None} for s in session.query(LearnedScene).order_by(LearnedScene.frequency.desc()).all()])
+        return jsonify([{"id":s.id,"room_id":s.room_id,"name_de":s.name_de,"name_en":s.name_en,"icon":s.icon,"states":s.states or [],"frequency":s.frequency,"status":s.status,"source":s.source,"is_active":s.is_active,"is_favorite":s.is_favorite,"favorite_sort":s.favorite_sort,"last_activated":s.last_activated.isoformat() if s.last_activated else None} for s in session.query(LearnedScene).order_by(LearnedScene.frequency.desc()).all()])
     finally:
         session.close()
 
@@ -130,6 +130,36 @@ def api_delete_scene(scene_id):
         scene = session.get(LearnedScene, scene_id)
         if scene: session.delete(scene); session.commit()
         return jsonify({"success": True})
+    finally:
+        session.close()
+
+
+@scenes_bp.route("/api/scenes/<int:scene_id>/favorite", methods=["PUT"])
+def api_toggle_scene_favorite(scene_id):
+    """Toggle favorite status for a scene (#20)."""
+    session = get_db()
+    try:
+        scene = session.get(LearnedScene, scene_id)
+        if not scene:
+            return jsonify({"error": "Not found"}), 404
+        scene.is_favorite = not scene.is_favorite
+        if not scene.is_favorite:
+            scene.favorite_sort = 0
+        session.commit()
+        return jsonify({"success": True, "is_favorite": scene.is_favorite})
+    finally:
+        session.close()
+
+
+@scenes_bp.route("/api/scenes/favorites", methods=["GET"])
+def api_get_favorite_scenes():
+    """Get favorite scenes sorted by favorite_sort (#20)."""
+    session = get_db()
+    try:
+        scenes = session.query(LearnedScene).filter(
+            LearnedScene.is_favorite == True
+        ).order_by(LearnedScene.favorite_sort).all()
+        return jsonify([{"id":s.id,"room_id":s.room_id,"name_de":s.name_de,"name_en":s.name_en,"icon":s.icon,"states":s.states or [],"is_favorite":True,"favorite_sort":s.favorite_sort,"last_activated":s.last_activated.isoformat() if s.last_activated else None} for s in scenes])
     finally:
         session.close()
 

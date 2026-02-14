@@ -11,6 +11,7 @@ from engines.comfort import ComfortCalculator, VentilationMonitor, ScreenTimeMon
 from engines.routines import RoutineEngine, MoodEstimator
 from engines.weather_alerts import WeatherAlertManager
 from engines.visit import VisitPreparationManager, VacationDetector
+from engines.adaptive import HabitDriftDetector, AdaptiveTimingManager, GradualTransitioner, SeasonalAdvisor, CalendarIntegration
 
 __all__ = [
     "SleepDetector",
@@ -27,4 +28,9 @@ __all__ = [
     "WeatherAlertManager",
     "VisitPreparationManager",
     "VacationDetector",
+    "HabitDriftDetector",
+    "AdaptiveTimingManager",
+    "GradualTransitioner",
+    "SeasonalAdvisor",
+    "CalendarIntegration",
 ]
