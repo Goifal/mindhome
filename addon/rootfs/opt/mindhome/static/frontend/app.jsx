@@ -5676,14 +5676,6 @@ const NotificationsPage = () => {
                                     const isEnabled = !disabledSpeakers.includes(d.entity_id);
                                     return (
                                         <div key={d.entity_id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', borderBottom: '1px solid var(--border)', opacity: (extSettings?.tts_enabled !== false && isEnabled) ? 1 : 0.4 }}>
-                                            <label className="toggle" style={{ transform: 'scale(0.75)', flexShrink: 0 }}><input type="checkbox" checked={isEnabled}
-                                                onChange={async () => {
-                                                    const ds = [...(extSettings?.tts_disabled_speakers || [])];
-                                                    const idx = ds.indexOf(d.entity_id);
-                                                    if (idx >= 0) { ds.splice(idx, 1); } else { ds.push(d.entity_id); }
-                                                    setExtSettings(prev => ({ ...prev, tts_disabled_speakers: ds }));
-                                                    await api.put('notification-settings/extended', { tts_disabled_speakers: ds });
-                                                }} /><div className="toggle-slider" /></label>
                                             <div style={{ flex: 1, minWidth: 0 }}>
                                                 <div style={{ fontSize: 13, fontWeight: 500 }}>{d.name}</div>
                                                 <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{d.entity_id}</div>
@@ -5706,6 +5698,14 @@ const NotificationsPage = () => {
                                                 await api.post('tts/announce', { message: lang === 'de' ? 'Dies ist ein Test von MindHome.' : 'This is a test from MindHome.', entity_id: d.entity_id });
                                                 showToast(lang === 'de' ? 'TTS gesendet' : 'TTS sent', 'success');
                                             }} style={{ fontSize: 11, flexShrink: 0 }}><span className="mdi mdi-play" style={{ marginRight: 2 }} />Test</button>
+                                            <label className="toggle" style={{ transform: 'scale(0.75)', flexShrink: 0 }}><input type="checkbox" checked={isEnabled}
+                                                onChange={async () => {
+                                                    const ds = [...(extSettings?.tts_disabled_speakers || [])];
+                                                    const idx = ds.indexOf(d.entity_id);
+                                                    if (idx >= 0) { ds.splice(idx, 1); } else { ds.push(d.entity_id); }
+                                                    setExtSettings(prev => ({ ...prev, tts_disabled_speakers: ds }));
+                                                    await api.put('notification-settings/extended', { tts_disabled_speakers: ds });
+                                                }} /><div className="toggle-slider" /></label>
                                         </div>
                                     );
                                 })}
