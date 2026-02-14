@@ -1,7 +1,7 @@
 # MindHome Phase 4 — Implementierungsplan
 # "Smart Features + Gesundheit" (29 Features)
 
-> **Stand:** 2026-02-13
+> **Stand:** 2026-02-14
 > **Branch:** `claude/plan-phase-4-SM8O7`
 > **Zielversion:** v0.7.0+
 > **Bereits fertig:** #7 Szenen-Generator, #8 Anomalieerkennung, #9 Korrelationsanalyse
@@ -31,7 +31,7 @@ Phase 4 wird in **9 Batches** implementiert, geordnet nach Abhängigkeiten:
 | `ComfortScore` | Komfort-Bewertung (#10) | room_id, score (0-100), factors (JSON: temp, humidity, light, air), timestamp |
 | `HealthMetric` | Gesundheits-Aggregation (#28) | user_id, metric_type, value, unit, context (JSON), timestamp |
 | `WakeUpConfig` | Weck-Konfiguration (#25) | user_id, enabled, wake_time, linked_to_schedule, light_entity, climate_entity, cover_entity, ramp_minutes, is_active |
-| `CircadianConfig` | Zirkadiane Beleuchtung (#27) | room_id, enabled, morning_kelvin, day_kelvin, evening_kelvin, night_kelvin, transition_minutes |
+| `CircadianConfig` | Zirkadiane Beleuchtung (#27) | room_id, enabled, control_mode ("mindhome" / "hybrid_hcl"), light_type ("dim2warm" / "standard" / "tunable_white"), brightness_curve (JSON), hcl_pause_ga (String, KNX GA), hcl_resume_ga (String, KNX GA), override_sleep (Int %), override_wakeup (Int %), override_guests (Int %), override_transition_sec (Int) |
 | `EnergyForecast` | Energieprognose (#26) | date, predicted_kwh, actual_kwh, weather_condition, day_type, model_version |
 | `VentilationReminder` | Lüftungserinnerung (#18) | room_id, last_ventilated, reminder_interval_min, co2_threshold, is_active |
 | `WeatherAlert` | Wetter-Vorwarnung (#21) | alert_type, severity, message_de, message_en, valid_from, valid_until, was_notified, forecast_data (JSON) |
@@ -235,22 +235,60 @@ Phase 4 wird in **9 Batches** implementiert, geordnet nach Abhängigkeiten:
   - API: `GET /api/health/ventilation` → Lüftungs-Status pro Raum
   - API: `PUT /api/health/ventilation/<room_id>` → Config
 
-### #27 Zirkadiane Beleuchtung
+### #27 Zirkadiane Beleuchtung (Dual-Mode: MindHome + MDT KNX HCL)
 **Dateien:** `automation_engine.py`, `routes/health.py`, `domains/light.py`
+
+Unterstützt drei **Lampentypen** und zwei **Steuerungsmodi**:
+
+- **Lampentypen:**
+  - `dim2warm` — Helligkeit steuert Farbtemperatur (z.B. Luxvenum 1800K-3000K über MDT AKD KNX Dimmer)
+  - `tunable_white` — Helligkeit + Farbtemperatur unabhängig steuerbar
+  - `standard` — Nur Helligkeit, keine Farbsteuerung
+
+- **Modus 1: "mindhome" — MindHome steuert komplett**
+  - MindHome fährt die Tageskurve selbst über brightness_pct
+  - Brightness-Kurve pro Raum konfigurierbar (JSON):
+    ```
+    Morgen  06:00 →  50% brightness → ~2400K (Dim2Warm)  ↗ 15 Min Transition
+    Tag     09:00 → 100% brightness → 3000K               ↗ 30 Min
+    Abend   19:00 →  60% brightness → ~2500K               ↗ 45 Min
+    Spät    21:30 →  30% brightness → ~2100K               ↗ 30 Min
+    Nacht   23:00 →  10% brightness → ~1800K               ↗ 15 Min
+    ```
+  - Nutzt HA `transition`-Parameter für sanftes Dimmen
+  - Nutzt DayPhase-System als Trigger
+  - Kein ETS-Eingriff nötig
+
+- **Modus 2: "hybrid_hcl" — MDT AKD HCL + MindHome Overrides**
+  - MDT AKD fährt die Basis-Tageskurve (HCL in ETS parametriert)
+  - MindHome beobachtet nur und greift bei Events ein:
+    - Pausiert HCL via KNX Gruppenadresse (knx.send)
+    - Setzt eigene brightness_pct
+    - Gibt HCL wieder frei wenn Event vorbei
+  - KNX-Integration über HA KNX-Integration (`knx.send` Service)
+  - Vorteil: Tageskurve läuft auch wenn HA/MindHome offline ist
+
+- **Smarte Overrides (beide Modi):**
+  - Schlaf erkannt → override_sleep (z.B. 10%)
+  - Aufwachen → override_wakeup (z.B. 70%, mit Rampe)
+  - Gäste da → override_guests (z.B. 90%)
+  - Szene aktiviert → Szenen-Helligkeit übernehmen
+  - Transition konfigurierbar (override_transition_sec)
 
 - **Backend:**
   - `CircadianLightManager`-Klasse
-  - Farbtemperatur-Kurve über den Tag:
-    - Morgen: 2700K (warm)
-    - Mittag: 5000K (neutral/kalt)
-    - Abend: 3000K (warm)
-    - Nacht: 2200K (sehr warm)
-  - Übergang: Sanft über `transition_minutes`
-  - Nutzt Day-Phases-System als Trigger
-  - Nur für Lichter die `color_temp` unterstützen
-  - Scheduler-Task: Alle 15 Min Farbtemperatur anpassen
+  - Scheduler-Task: Alle 15 Min Helligkeit prüfen/anpassen
+  - Event-Bus: Reagiert auf `sleep.detected`, `wake.detected`, `guests.arrived`
   - API: `GET/PUT /api/health/circadian` → Config pro Raum
-- **Frontend:** Farbtemperatur-Kurve visualisieren, Toggle pro Raum
+  - API: `GET /api/health/circadian/status` → aktueller Zustand pro Raum
+
+- **Frontend:**
+  - Toggle pro Raum (aktiv/inaktiv)
+  - Modus-Auswahl: "MindHome steuert" / "Hybrid (MDT HCL + MindHome)"
+  - Lampentyp-Auswahl: Dim2Warm / Tunable White / Standard
+  - Tageskurve als Balken visualisieren (Brightness + geschätzte Kelvin)
+  - Override-Einstellungen (Schlaf, Wakeup, Gäste)
+  - Bei Hybrid: KNX Gruppenadresse eingeben (Pause/Resume)
 
 ### #21 Wetter-Vorwarnung (Vervollständigung)
 **Dateien:** `domains/weather.py`, `automation_engine.py`
