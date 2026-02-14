@@ -4,12 +4,20 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "0.7.7"
-BUILD = 60
+VERSION = "0.7.8"
+BUILD = 61
 BUILD_DATE = "2026-02-14"
 CODENAME = "Phase 4 - Smart Health"
 
 # Changelog
+# Build 61: v0.7.8 Bugfix - Muster-Ablehnung & Domain-Ausschluss
+#   - Fix: Abgelehnte Muster tauchten nach "Jetzt synchronisieren" wieder auf
+#     Root-Cause: _upsert_pattern() pruefte nur is_active=True, rejected/disabled Muster unsichtbar
+#     Fix: Query findet jetzt auch rejected/disabled Muster und ueberspringt sie
+#   - Fix: Deaktivierte Domains (z.B. Klima, Licht) wurden bei Mustererkennung nicht beachtet
+#     Root-Cause: run_full_analysis() filterte Events nicht nach Domain-Status
+#     Fix: Events von deaktivierten Domains werden vor Analyse herausgefiltert
+#
 # Build 60: v0.7.7 UI Polish - Klima & KI Seiten
 #   - ClimatePage: Hardcoded Hex-Farben ersetzt durch CSS-Variablen (--success, --warning, --danger, --info)
 #   - ClimatePage: Tab-Bar auf btn btn-sm btn-primary/btn-ghost Klassen umgestellt

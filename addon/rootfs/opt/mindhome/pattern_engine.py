@@ -689,8 +689,25 @@ class PatternDetector:
             for e in exclusions:
                 excluded_pairs.add((e.entity_a, e.entity_b))
                 excluded_pairs.add((e.entity_b, e.entity_a))
+
+            # Filter out entities from disabled domains
+            disabled_domain_ids = {d.id for d in read_session.query(Domain).filter_by(is_enabled=False).all()}
+            disabled_entities = set()
+            if disabled_domain_ids:
+                disabled_devs = read_session.query(Device).filter(
+                    Device.domain_id.in_(disabled_domain_ids)
+                ).all()
+                disabled_entities = {d.ha_entity_id for d in disabled_devs}
         finally:
             read_session.close()
+
+        # Remove events from disabled domains before analysis
+        if disabled_entities:
+            before_count = len(events)
+            events = [ev for ev in events if ev.entity_id not in disabled_entities]
+            filtered = before_count - len(events)
+            if filtered:
+                logger.info(f"Filtered {filtered} events from disabled domains")
 
         logger.info(f"Analyzing {len(events)} events from last 14 days")
 
@@ -1453,19 +1470,25 @@ class PatternDetector:
     def _upsert_pattern(self, session, key_hint, pattern_type, pattern_data,
                         confidence, trigger_conditions, action_def,
                         desc_de, desc_en, device=None):
-        """Create or update a pattern. Avoid duplicates."""
+        """Create or update a pattern. Avoid duplicates.
+        Also checks rejected/disabled patterns to prevent re-creation."""
         # Find existing by type + entity combination
+        # Include rejected/disabled patterns so they don't get re-created
         if pattern_type == "time_based":
-            existing = session.query(LearnedPattern).filter_by(
-                pattern_type=pattern_type,
-                is_active=True,
+            existing = session.query(LearnedPattern).filter(
+                LearnedPattern.pattern_type == pattern_type,
+                or_(LearnedPattern.is_active == True, LearnedPattern.status.in_(["rejected", "disabled"])),
             ).all()
             for ep in existing:
                 if (ep.pattern_data and
                     ep.pattern_data.get("entity_id") == pattern_data.get("entity_id") and
                     ep.pattern_data.get("target_state") == pattern_data.get("target_state") and
                     abs(ep.pattern_data.get("avg_hour", -1) - pattern_data.get("avg_hour", -2)) <= 0.5):
-                    # Update existing
+                    # Skip rejected/disabled patterns — don't recreate or update
+                    if ep.status in ("rejected", "disabled"):
+                        logger.debug(f"Skipping {ep.status} pattern {ep.id}: {ep.description_de}")
+                        return None
+                    # Update existing active pattern
                     ep.pattern_data = pattern_data
                     ep.confidence = max(ep.confidence, confidence)
                     ep.trigger_conditions = trigger_conditions
@@ -1479,9 +1502,9 @@ class PatternDetector:
                     return ep
 
         elif pattern_type == "event_chain":
-            existing = session.query(LearnedPattern).filter_by(
-                pattern_type=pattern_type,
-                is_active=True,
+            existing = session.query(LearnedPattern).filter(
+                LearnedPattern.pattern_type == pattern_type,
+                or_(LearnedPattern.is_active == True, LearnedPattern.status.in_(["rejected", "disabled"])),
             ).all()
             for ep in existing:
                 if (ep.pattern_data and
@@ -1489,6 +1512,9 @@ class PatternDetector:
                     ep.pattern_data.get("action_entity") == pattern_data.get("action_entity") and
                     ep.pattern_data.get("trigger_state") == pattern_data.get("trigger_state") and
                     ep.pattern_data.get("action_state") == pattern_data.get("action_state")):
+                    if ep.status in ("rejected", "disabled"):
+                        logger.debug(f"Skipping {ep.status} pattern {ep.id}: {ep.description_de}")
+                        return None
                     ep.pattern_data = pattern_data
                     ep.confidence = max(ep.confidence, confidence)
                     ep.trigger_conditions = trigger_conditions
@@ -1502,9 +1528,9 @@ class PatternDetector:
                     return ep
 
         elif pattern_type == "correlation":
-            existing = session.query(LearnedPattern).filter_by(
-                pattern_type=pattern_type,
-                is_active=True,
+            existing = session.query(LearnedPattern).filter(
+                LearnedPattern.pattern_type == pattern_type,
+                or_(LearnedPattern.is_active == True, LearnedPattern.status.in_(["rejected", "disabled"])),
             ).all()
             for ep in existing:
                 if (ep.pattern_data and
@@ -1512,6 +1538,9 @@ class PatternDetector:
                     ep.pattern_data.get("correlated_entity") == pattern_data.get("correlated_entity") and
                     ep.pattern_data.get("condition_state") == pattern_data.get("condition_state") and
                     ep.pattern_data.get("correlated_state") == pattern_data.get("correlated_state")):
+                    if ep.status in ("rejected", "disabled"):
+                        logger.debug(f"Skipping {ep.status} pattern {ep.id}: {ep.description_de}")
+                        return None
                     ep.pattern_data = pattern_data
                     ep.confidence = max(ep.confidence, confidence)
                     ep.trigger_conditions = trigger_conditions
