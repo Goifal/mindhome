@@ -4,12 +4,21 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "0.6.18"
-BUILD = 19
-BUILD_DATE = "2026-02-11"
-CODENAME = "Phase 3.5 - Bugfix"
+VERSION = "0.7.0"
+BUILD = 20
+BUILD_DATE = "2026-02-14"
+CODENAME = "Phase 4 - Smart Health"
 
 # Changelog
+# Build 20: v0.7.0 Phase 4 - Smart Health
+#   - Infrastruktur: engines/ Modul-Struktur, Feature-Flags, Data Retention
+#   - Energie: Optimierung, PV-Lastmanagement, Standby-Killer, Prognose
+#   - Schlaf: Erkennung, Qualitaets-Tracker, Sanftes Wecken, Morgenroutine
+#   - Klima: Komfort-Score, Raumklima-Ampel, Lueftungserinnerung, Zirkadian
+#   - KI: Adaptive Reaktionszeit, Gewohnheits-Drift, Stimmungserkennung
+#   - UX: Favoriten, Kalender, Bildschirmzeit, Sanftes Eingreifen
+#   - Gesundheits-Dashboard mit Wochenbericht
+#
 # Build 19: v0.6.18 Rotation + TTS + Fixes
 #   - Fix Rotation: Speichern funktioniert (parseInt-Bug bei Person-ID gefixt)
 #   - Gespeicherte Rotationen: Anzeige, Bearbeiten, Loeschen im Schichtdienst-Tab
