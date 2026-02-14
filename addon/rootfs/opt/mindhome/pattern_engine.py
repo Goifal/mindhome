@@ -1130,11 +1130,15 @@ class PatternDetector:
 
                 # Calculate consistency (how many of the last 14 days had this?)
                 days_with_event = len(set(o["created_at"].date() for o in cluster))
-                expected_days = 10 if is_weekday_only else (4 if is_weekend_only else 14)
+                # expected_days: realistic expectations (people miss days, are away, etc.)
+                expected_days = 10 if is_weekday_only else (4 if is_weekend_only else 10)
                 consistency = min(days_with_event / max(expected_days, 1), 1.0)
 
-                # Confidence = frequency * consistency
-                confidence = min((len(cluster) / 14) * consistency, 0.95)
+                # Confidence = weighted average of frequency and consistency
+                # Old formula: (cluster/14) * consistency was too punishing (effectively squaring)
+                # Example: 6 events on 6 days → old: 0.18 (blocked), new: 0.51 (detected)
+                frequency = len(cluster) / 14
+                confidence = min(frequency * 0.5 + consistency * 0.5, 0.95)
 
                 if confidence < 0.3:
                     low_confidence_count += 1
@@ -1518,15 +1522,17 @@ class PatternDetector:
 
         # Find strong correlations
         # Fix #8: Room-aware thresholds for correlations
+        # v0.7.14: Relaxed from 0.7/0.8 to 0.55/0.7 — 22k pairs failed at old thresholds
         min_corr_count_same = 4
-        min_corr_count_cross = 10
-        min_corr_ratio_same = 0.7
-        min_corr_ratio_cross = 0.8
+        min_corr_count_cross = 7
+        min_corr_ratio_same = 0.55
+        min_corr_ratio_cross = 0.7
 
         total_pairs = len(cooccurrences)
         pairs_too_few = 0
         pairs_below_threshold = 0
         pairs_low_confidence = 0
+        near_miss_count = 0
 
         logger.info(f"Correlation patterns: {total_pairs} trigger entity/state combinations found")
 
@@ -1549,6 +1555,14 @@ class PatternDetector:
 
                 if ratio < min_ratio or count < min_count:
                     pairs_below_threshold += 1
+                    # Log near-misses (within 80% of thresholds) for diagnosis
+                    if near_miss_count < 5 and ratio >= min_ratio * 0.8 and count >= min_count * 0.8:
+                        near_miss_count += 1
+                        loc = "same-room" if same_room else "cross-room"
+                        logger.debug(
+                            f"Correlation near-miss ({loc}): {eid_a}={state_a} → {eid_b}={state_b} "
+                            f"ratio={ratio:.2f} (need {min_ratio}), count={count} (need {min_count})"
+                        )
                     continue
 
                 confidence = min(ratio * (count / 14), 0.85)
