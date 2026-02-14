@@ -540,6 +540,12 @@ def add_security_headers(response):
 # Register Blueprints
 # ==============================================================================
 
+# Phase 4 Batch 1: Energy engines
+from engines.energy import EnergyOptimizer, StandbyMonitor, EnergyForecaster
+energy_optimizer = EnergyOptimizer(ha, get_db_session)
+standby_monitor = StandbyMonitor(ha, get_db_session, event_bus)
+energy_forecaster = EnergyForecaster(ha, get_db_session)
+
 dependencies = {
     "ha": ha,
     "engine": engine,
@@ -552,6 +558,9 @@ dependencies = {
     "domain_plugins": DOMAIN_PLUGINS,
     "start_time": 0,
     "log_state_change": log_state_change,
+    "energy_optimizer": energy_optimizer,
+    "standby_monitor": standby_monitor,
+    "energy_forecaster": energy_forecaster,
 }
 
 from routes import register_blueprints
@@ -574,6 +583,15 @@ def graceful_shutdown(signum=None, frame=None):
             logger.error(f"Error stopping {name}: {e}")
 
     task_scheduler.stop()
+
+    # Stop Phase 4 engines
+    for eng_name, eng in [("energy_optimizer", energy_optimizer),
+                          ("standby_monitor", standby_monitor),
+                          ("energy_forecaster", energy_forecaster)]:
+        try:
+            eng.stop()
+        except Exception:
+            pass
 
     if domain_manager:
         try:
@@ -678,9 +696,31 @@ def start_app():
     from engines.data_retention import run_data_retention
     task_scheduler.register("data_retention", run_data_retention, interval_seconds=3600)
 
+    # Phase 4 Batch 1: Energy scheduler tasks
+    def run_energy_check():
+        """5-min check: standby detection + PV surplus management."""
+        standby_monitor.check()
+        energy_optimizer.check_pv_surplus()
+
+    def run_daily_batch():
+        """Daily batch: energy analysis + forecast generation."""
+        energy_optimizer.daily_analysis()
+        energy_forecaster.daily_forecast()
+
+    energy_optimizer.start()
+    standby_monitor.start()
+    energy_forecaster.start()
+
+    task_scheduler.register("energy_check", run_energy_check,
+                            interval_seconds=5 * 60,  # 5 min
+                            run_immediately=False)
+    task_scheduler.register("daily_batch", run_daily_batch,
+                            interval_seconds=24 * 3600,  # daily
+                            run_immediately=False)
+
     # Start task scheduler
     task_scheduler.start()
-    logger.info("  ✅ Task Scheduler started (cleanup:24h, maintenance:7d)")
+    logger.info("  ✅ Task Scheduler started (cleanup:24h, maintenance:7d, energy:5m, daily:24h)")
 
     logger.info(f"MindHome {vi['full']} started successfully!")
 

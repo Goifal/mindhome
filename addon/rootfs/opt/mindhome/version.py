@@ -4,12 +4,20 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "0.7.0"
-BUILD = 53
+VERSION = "0.7.1"
+BUILD = 54
 BUILD_DATE = "2026-02-14"
 CODENAME = "Phase 4 - Smart Health"
 
 # Changelog
+# Build 54: v0.7.1 Batch 1 - Energie & Solar
+#   - EnergyOptimizer: Verbrauchsmuster-Analyse, Spar-Empfehlungen, EUR-Schaetzung
+#   - EnergyForecaster: 7-Tage-Prognose (Wochentag + Wetter gewichtet)
+#   - PV-Lastmanagement: Ueberschuss-Erkennung, Prioritaetsliste, Auto-Verschiebung
+#   - StandbyMonitor: Standby-Erkennung mit Benachrichtigung oder Auto-Off
+#   - Neue API-Endpunkte: /api/energy/optimization, forecast, pv-status, standby-status
+#   - Scheduler: energy_check (5min), daily_batch (1x/Tag)
+#
 # Build 53: v0.7.0 Phase 4 - Smart Health
 #   - Infrastruktur: engines/ Modul-Struktur, Feature-Flags, Data Retention
 #   - Energie: Optimierung, PV-Lastmanagement, Standby-Killer, Prognose
