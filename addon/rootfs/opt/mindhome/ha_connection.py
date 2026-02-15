@@ -205,6 +205,7 @@ class HAConnection:
         if self._auto_cfg_cache is not None and (time.time() - self._auto_cfg_ts) < 600:
             return self._auto_cfg_cache
         try:
+            # Step 1: Get all automation entities (entity_id, friendly_name, state)
             automations = self.get_automations()
             configs = []
             for auto in automations:
@@ -215,52 +216,71 @@ class HAConnection:
                     "friendly_name": attrs.get("friendly_name", eid),
                     "state": auto.get("state", "off"),
                 })
-            logger.debug(f"Found {len(configs)} automation entities from REST API")
-            # Try to get detailed configs via WS
+            logger.info(f"Found {len(configs)} automation entities from REST states API")
+
+            # Step 2: Fetch detailed configs (triggers + actions) via REST config API
+            # HA exposes UI-created automations at GET /api/config/automation/config
+            detail_configs = None
             try:
-                ws_configs = self._ws_command("config/automation/config/list") or []
-                if isinstance(ws_configs, list) and ws_configs:
-                    logger.debug(f"Got {len(ws_configs)} automation configs from WebSocket")
-                    # Build lookup by friendly_name for matching (WS id is a UUID,
-                    # not the entity slug, so we cannot match via automation.{id})
-                    configs_by_name = {}
-                    configs_by_eid = {}
-                    for c in configs:
-                        fn = c.get("friendly_name", "").lower().strip()
-                        if fn:
-                            configs_by_name[fn] = c
-                        configs_by_eid[c["entity_id"]] = c
-                    matched = 0
-                    for cfg in ws_configs:
-                        actions = cfg.get("action", cfg.get("actions", []))
-                        triggers = cfg.get("trigger", cfg.get("triggers", []))
-                        # Try matching by alias (= friendly_name in HA)
-                        alias = (cfg.get("alias") or "").lower().strip()
-                        entry = configs_by_name.get(alias)
-                        if entry is None:
-                            # Fallback: try matching by id as entity suffix
-                            cfg_id = cfg.get("id")
-                            if cfg_id:
-                                entry = configs_by_eid.get(f"automation.{cfg_id}")
-                        if entry is not None:
-                            entry["actions"] = actions
-                            entry["triggers"] = triggers
-                            matched += 1
-                        else:
-                            # Unknown automation from WS, add it
-                            cfg_id = cfg.get("id", "unknown")
-                            configs.append({
-                                "entity_id": f"automation.{cfg_id}",
-                                "friendly_name": cfg.get("alias", cfg_id),
-                                "state": "unknown",
-                                "actions": actions,
-                                "triggers": triggers,
-                            })
-                    logger.info(f"Matched {matched}/{len(ws_configs)} WS automation configs to entities")
-                elif not ws_configs:
-                    logger.debug("WebSocket returned no automation configs")
+                detail_configs = self._api_request(
+                    "GET", "config/automation/config", retry=False
+                )
             except Exception as e:
-                logger.warning(f"Failed to fetch WS automation configs: {e}")
+                logger.warning(f"REST config/automation/config failed: {e}")
+
+            if isinstance(detail_configs, list) and detail_configs:
+                logger.info(
+                    f"Got {len(detail_configs)} automation configs from REST config API"
+                )
+                # Build lookups for matching detail configs to state entities
+                configs_by_name = {}
+                configs_by_eid = {}
+                for c in configs:
+                    fn = c.get("friendly_name", "").lower().strip()
+                    if fn:
+                        configs_by_name[fn] = c
+                    configs_by_eid[c["entity_id"]] = c
+
+                matched = 0
+                for cfg in detail_configs:
+                    # HA 2024.x+ uses "action" key, older uses "action" too (list)
+                    actions = cfg.get("action", cfg.get("actions", []))
+                    triggers = cfg.get("trigger", cfg.get("triggers", []))
+
+                    # Match by alias (= friendly_name in HA)
+                    alias = (cfg.get("alias") or "").lower().strip()
+                    entry = configs_by_name.get(alias)
+
+                    if entry is None:
+                        # Fallback: try matching by config id as entity suffix
+                        cfg_id = cfg.get("id")
+                        if cfg_id:
+                            entry = configs_by_eid.get(f"automation.{cfg_id}")
+
+                    if entry is not None:
+                        entry["actions"] = actions
+                        entry["triggers"] = triggers
+                        matched += 1
+                    else:
+                        # Config exists in store but not in states — add it anyway
+                        cfg_id = cfg.get("id", "unknown")
+                        configs.append({
+                            "entity_id": f"automation.{cfg_id}",
+                            "friendly_name": cfg.get("alias", cfg_id),
+                            "state": "unknown",
+                            "actions": actions,
+                            "triggers": triggers,
+                        })
+
+                logger.info(
+                    f"Matched {matched}/{len(detail_configs)} automation configs to entities"
+                )
+            else:
+                logger.info(
+                    "REST config API returned no automation configs "
+                    "(automations may be YAML-based)"
+                )
+
             self._auto_cfg_cache = configs
             self._auto_cfg_ts = time.time()
             return configs

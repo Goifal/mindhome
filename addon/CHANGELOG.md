@@ -1,16 +1,24 @@
 # Changelog
 
-## 0.7.23 – Fix HA-Automation-Erkennung (0 Entities Bug)
+## 0.7.24 – Fix HA-Automation-Erkennung (REST statt WS)
 
 ### Fix
-- **WS-Config-Matching**: Entity-IDs wurden als `automation.{UUID}` zusammengebaut — UUIDs matchen nie mit echten Entity-IDs. Jetzt Matching ueber `alias` ↔ `friendly_name` mit UUID-Fallback
+- **CRITICAL**: WebSocket-Command `config/automation/config/list` existiert nicht in HA — deshalb wurden **nie** Automation-Configs geladen und immer 0 Entities erkannt
+- **Fix**: Umstellung auf REST API `GET /api/config/automation/config` — liefert alle UI-Automationen mit vollstaendigen Trigger- und Action-Definitionen
+- Matching per `alias` (= `friendly_name`) mit Fallback auf `automation.{id}`
+
+### Verbesserungen
+- Info-Logging: "Found X automation entities from REST states API"
+- Info-Logging: "Got X automation configs from REST config API"
+- Info-Logging: "Matched X/Y automation configs to entities"
+- Hinweis wenn REST Config API keine Configs liefert (YAML-basierte Automationen)
+
+## 0.7.23 – _extract_actions_flat + action-Key Support
+
+### Fix
 - **Verschachtelte Actions**: HA-Automationen mit `choose`, `if/then/else`, `sequence`, `parallel`, `repeat` wurden komplett ignoriert. Neuer `_extract_actions_flat()` traversiert alle Verschachtelungen rekursiv
 - **HA 2024.x+ Kompatibilitaet**: Der neue `action`-Key (ersetzt `service`) wird jetzt erkannt
 - **Stumme WS-Fehler**: WebSocket-Exceptions wurden verschluckt (`except: pass`), jetzt Warning-Log
-
-### Verbesserungen
-- Diagnostic-Logging: "Matched X/Y WS automation configs to entities"
-- Debug-Logging: Anzahl REST-Automationen und WS-Config-Responses
 
 ## 0.7.22 – Fix PatternDetector ha_connection
 
