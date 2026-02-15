@@ -219,53 +219,33 @@ class HAConnection:
             logger.info(f"Found {len(configs)} automation entities from REST states API")
 
             # Step 2: Fetch detailed configs per entity via WS "automation/config"
-            # This works for ALL automations (UI + YAML) because it reads the
-            # entity's raw_config attribute, not just the storage collection.
+            # HA wraps the response: {"config": {"trigger": [...], "action": [...]}}
             fetched = 0
             failed = 0
-            first_raw = None
             for cfg in configs:
                 eid = cfg["entity_id"]
                 try:
                     raw = self._ws_command("automation/config", entity_id=eid)
                     if isinstance(raw, dict):
-                        if first_raw is None:
-                            first_raw = raw
-                        cfg["actions"] = raw.get("action", raw.get("actions", []))
-                        cfg["triggers"] = raw.get("trigger", raw.get("triggers", []))
-                        fetched += 1
+                        # Unwrap the "config" wrapper if present
+                        inner = raw.get("config", raw)
+                        if isinstance(inner, dict):
+                            cfg["actions"] = inner.get("action", inner.get("actions", []))
+                            cfg["triggers"] = inner.get("trigger", inner.get("triggers", []))
+                            fetched += 1
+                        else:
+                            failed += 1
                     else:
                         failed += 1
                 except Exception:
                     failed += 1
 
-            # Diagnostic: log raw response structure
-            if first_raw is not None:
-                logger.info(
-                    f"WS automation/config raw keys: {list(first_raw.keys())}"
-                )
-                # Log a sample with actual content (truncated)
-                sample_str = str(first_raw)[:500]
-                logger.info(f"WS automation/config sample: {sample_str}")
-
+            with_actions = sum(1 for c in configs if c.get("actions"))
             if fetched:
                 logger.info(
-                    f"Fetched {fetched}/{len(configs)} automation configs via WS"
-                    + (f" ({failed} failed)" if failed else "")
-                    + f", {with_actions} have actions"
+                    f"Fetched {fetched}/{len(configs)} automation configs via WS, "
+                    f"{with_actions} have actions"
                 )
-                if sample:
-                    logger.info(
-                        f"Sample automation '{sample.get('friendly_name', '?')}': "
-                        f"actions keys={[list(a.keys()) if isinstance(a, dict) else type(a).__name__ for a in sample['actions'][:3]]}"
-                    )
-                elif fetched and not with_actions:
-                    # Show raw keys from first successful fetch for debugging
-                    for c in configs:
-                        raw_keys = [k for k in c.keys() if k not in ('entity_id', 'friendly_name', 'state')]
-                        if raw_keys:
-                            logger.info(f"Sample config keys beyond base: {raw_keys}, actions={c.get('actions')!r}, triggers={c.get('triggers')!r}")
-                            break
             else:
                 logger.warning(
                     f"Could not fetch any automation configs via WS "
