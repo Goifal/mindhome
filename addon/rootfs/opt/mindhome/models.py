@@ -68,6 +68,10 @@ class SecurityEventType(enum.Enum):
     EMERGENCY = "emergency"
     MODE_ACTIVATED = "mode_activated"
     MODE_DEACTIVATED = "mode_deactivated"
+    FEATURE_TOGGLED = "feature_toggled"
+    ENTITY_ASSIGNED = "entity_assigned"
+    ENTITY_REMOVED = "entity_removed"
+    SETTING_CHANGED = "setting_changed"
 
 
 class SecuritySeverity(enum.Enum):

@@ -2897,6 +2897,16 @@ const SecurityPage = () => {
     const [modes, setModes] = useState({});
     const [showContactModal, setShowContactModal] = useState(false);
     const [newContact, setNewContact] = useState({ name: '', phone: '', email: '', notify_method: 'push', priority: 0 });
+    const [logEvents, setLogEvents] = useState([]);
+    const [logOffset, setLogOffset] = useState(0);
+    const [logHasMore, setLogHasMore] = useState(false);
+    const [logFilter, setLogFilter] = useState('');
+    const [expandedFeature, setExpandedFeature] = useState(null);
+    const [featureEntities, setFeatureEntities] = useState({});
+    const [suggestions, setSuggestions] = useState([]);
+    const [showAddEntity, setShowAddEntity] = useState(null);
+    const [newEntityId, setNewEntityId] = useState('');
+    const [newEntityRole, setNewEntityRole] = useState('');
 
     const load = () => {
         api.get('security/dashboard').then(d => setDashboard(d || null)).catch(() => {});
@@ -2919,6 +2929,67 @@ const SecurityPage = () => {
         api.get('security/geofence/status').then(d => setGeoStatus(Array.isArray(d) ? d : [])).catch(() => {});
     };
 
+    // Map phase5 setting keys to entity API short keys
+    const ENTITY_KEY_MAP = {
+        'phase5.fire_co_response': 'fire_co',
+        'phase5.water_leak_response': 'water_leak',
+        'phase5.camera_snapshots': 'camera',
+        'phase5.access_control': 'access',
+        'phase5.geo_fencing': 'geofence',
+        'phase5.party_mode': 'party',
+        'phase5.cinema_mode': 'cinema',
+        'phase5.home_office_mode': 'home_office',
+        'phase5.night_lockdown': 'night_lockdown',
+        'phase5.emergency_protocol': 'emergency',
+    };
+    const entityKey = (featureKey) => ENTITY_KEY_MAP[featureKey] || featureKey.replace('phase5.', '');
+
+    const loadLog = (reset = false) => {
+        const off = reset ? 0 : logOffset;
+        const typeParam = logFilter ? `&type=${logFilter}` : '';
+        api.get(`security/events?limit=50&offset=${off}${typeParam}`).then(d => {
+            const items = Array.isArray(d) ? d : [];
+            if (reset) { setLogEvents(items); setLogOffset(items.length); }
+            else { setLogEvents(prev => [...prev, ...items]); setLogOffset(off + items.length); }
+            setLogHasMore(items.length >= 50);
+        }).catch(() => {});
+    };
+
+    const loadFeatureEntities = (featureKey) => {
+        const sk = entityKey(featureKey);
+        api.get(`security/entities/${sk}`).then(d => {
+            setFeatureEntities(prev => ({...prev, [featureKey]: Array.isArray(d) ? d : []}));
+        }).catch(() => {});
+    };
+
+    const autoDetectEntities = (featureKey) => {
+        const sk = entityKey(featureKey);
+        api.post(`security/entities/${sk}/auto-detect`).then(d => {
+            setSuggestions(Array.isArray(d) ? d : []);
+        }).catch(() => {});
+    };
+
+    const addEntityToFeature = (featureKey, entityId, role) => {
+        const sk = entityKey(featureKey);
+        api.post(`security/entities/${sk}`, { entity_id: entityId, role: role }).then(() => {
+            showToast(lang === 'de' ? 'Gerät zugewiesen' : 'Entity assigned', 'success');
+            loadFeatureEntities(featureKey);
+            setShowAddEntity(null);
+            setNewEntityId('');
+            setNewEntityRole('');
+            setSuggestions([]);
+        });
+    };
+
+    const removeEntityFromFeature = (featureKey, assignmentId) => {
+        if (!confirm(lang === 'de' ? 'Zuweisung wirklich entfernen?' : 'Remove assignment?')) return;
+        const sk = entityKey(featureKey);
+        api.delete(`security/entities/${sk}/${assignmentId}`).then(() => {
+            showToast(lang === 'de' ? 'Entfernt' : 'Removed', 'success');
+            loadFeatureEntities(featureKey);
+        });
+    };
+
     const loadModes = () => {
         const modeTypes = ['party', 'cinema', 'home-office', 'night-lockdown'];
         modeTypes.forEach(m => {
@@ -2938,6 +3009,7 @@ const SecurityPage = () => {
         if (tab === 'cameras') loadCameras();
         if (tab === 'geofence') loadGeo();
         if (tab === 'modes') loadModes();
+        if (tab === 'log') loadLog(true);
     }, [tab]);
 
     const toggleFeature = (key) => {
@@ -3011,6 +3083,7 @@ const SecurityPage = () => {
         { id: 'cameras', label: lang === 'de' ? 'Kameras' : 'Cameras', icon: 'mdi-cctv' },
         { id: 'geofence', label: 'Geo-Fence', icon: 'mdi-map-marker-radius' },
         { id: 'modes', label: lang === 'de' ? 'Modi' : 'Modes', icon: 'mdi-toggle-switch' },
+        { id: 'log', label: lang === 'de' ? 'Protokoll' : 'Log', icon: 'mdi-clipboard-text-clock' },
         { id: 'settings', label: lang === 'de' ? 'Einstellungen' : 'Settings', icon: 'mdi-cog' },
     ];
 
@@ -3411,26 +3484,217 @@ const SecurityPage = () => {
                 </div>
             )}
 
+            {/* ── Log / Protokoll Tab ─────────────────────── */}
+            {tab === 'log' && (
+                <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                        <h3 style={{ margin: 0, fontSize: 16 }}>
+                            <span className="mdi mdi-clipboard-text-clock" style={{ marginRight: 4 }} />
+                            {lang === 'de' ? 'Sicherheits-Protokoll' : 'Security Log'}
+                        </h3>
+                        <select className="input" style={{ width: 'auto', fontSize: 11, padding: '4px 8px' }}
+                            value={logFilter} onChange={e => { setLogFilter(e.target.value); setTimeout(() => loadLog(true), 50); }}>
+                            <option value="">{lang === 'de' ? 'Alle Ereignisse' : 'All events'}</option>
+                            <option value="fire">{lang === 'de' ? 'Feuer' : 'Fire'}</option>
+                            <option value="co">CO</option>
+                            <option value="water_leak">{lang === 'de' ? 'Wasserleck' : 'Water Leak'}</option>
+                            <option value="access_unlock">{lang === 'de' ? 'Entriegelt' : 'Unlock'}</option>
+                            <option value="access_lock">{lang === 'de' ? 'Verriegelt' : 'Lock'}</option>
+                            <option value="panic">{lang === 'de' ? 'Panik' : 'Panic'}</option>
+                            <option value="emergency">{lang === 'de' ? 'Notfall' : 'Emergency'}</option>
+                            <option value="mode_activated">{lang === 'de' ? 'Modus aktiviert' : 'Mode activated'}</option>
+                            <option value="mode_deactivated">{lang === 'de' ? 'Modus deaktiviert' : 'Mode deactivated'}</option>
+                            <option value="feature_toggled">{lang === 'de' ? 'Feature geändert' : 'Feature toggled'}</option>
+                            <option value="entity_assigned">{lang === 'de' ? 'Gerät zugewiesen' : 'Entity assigned'}</option>
+                            <option value="entity_removed">{lang === 'de' ? 'Gerät entfernt' : 'Entity removed'}</option>
+                            <option value="setting_changed">{lang === 'de' ? 'Einstellung geändert' : 'Setting changed'}</option>
+                        </select>
+                    </div>
+
+                    {logEvents.map((evt, i) => (
+                        <div key={evt.id || i} className="card" style={{ padding: 10, marginBottom: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span className={`mdi ${severityIcon(evt.severity)}`} style={{ color: severityColor(evt.severity), fontSize: 18, flexShrink: 0 }} />
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ fontSize: 12, fontWeight: 500 }}>
+                                    {lang === 'de' ? (evt.message_de || evt.event_type) : (evt.message_en || evt.event_type)}
+                                </div>
+                                <div style={{ fontSize: 10, color: 'var(--text-muted)', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                                    <span style={{ padding: '1px 6px', borderRadius: 8, background: 'var(--bg-secondary)', whiteSpace: 'nowrap' }}>
+                                        {evt.event_type}
+                                    </span>
+                                    {evt.resolved_at && (
+                                        <span style={{ color: 'var(--success)' }}>
+                                            <span className="mdi mdi-check-circle" style={{ marginRight: 2 }} />
+                                            {lang === 'de' ? 'Gelöst' : 'Resolved'}
+                                        </span>
+                                    )}
+                                </div>
+                            </div>
+                            <div style={{ fontSize: 10, color: 'var(--text-muted)', whiteSpace: 'nowrap', textAlign: 'right', flexShrink: 0 }}>
+                                {evt.timestamp ? new Date(evt.timestamp).toLocaleString(lang === 'de' ? 'de-AT' : 'en') : ''}
+                            </div>
+                        </div>
+                    ))}
+
+                    {logEvents.length === 0 && (
+                        <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
+                            <span className="mdi mdi-clipboard-text-off" style={{ fontSize: 32, display: 'block', marginBottom: 8 }} />
+                            {lang === 'de' ? 'Keine Ereignisse vorhanden' : 'No events recorded'}
+                        </div>
+                    )}
+
+                    {logHasMore && (
+                        <button className="btn btn-sm btn-ghost" style={{ width: '100%', marginTop: 8 }}
+                            onClick={() => loadLog(false)}>
+                            <span className="mdi mdi-chevron-down" style={{ marginRight: 4 }} />
+                            {lang === 'de' ? 'Mehr laden' : 'Load more'}
+                        </button>
+                    )}
+                </div>
+            )}
+
             {/* ── Settings Tab ─────────────────────────────── */}
             {tab === 'settings' && (
                 <div>
                     <h3 style={{ margin: '0 0 12px', fontSize: 16 }}>{lang === 'de' ? 'Feature-Flags' : 'Feature Flags'}</h3>
-                    {Object.entries(features).map(([key, feat]) => (
-                        <div key={key} className="card" style={{ padding: 10, marginBottom: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <div>
-                                <div style={{ fontSize: 12, fontWeight: 600 }}>{key.replace('phase5.', '')}</div>
-                                {feat.requires && (
-                                    <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>
-                                        {lang === 'de' ? 'Benötigt' : 'Requires'}: {feat.requires}
+                    {Object.entries(features).map(([key, feat]) => {
+                        const isExpanded = expandedFeature === key;
+                        const entities = featureEntities[key] || [];
+                        const hasEntitySupport = !!ENTITY_KEY_MAP[key];
+                        return (
+                            <div key={key} className="card" style={{ marginBottom: 6, overflow: 'hidden' }}>
+                                <div style={{ padding: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <div style={{ flex: 1 }}>
+                                        <div style={{ fontSize: 12, fontWeight: 600 }}>{key.replace('phase5.', '')}</div>
+                                        {feat.requires && (
+                                            <div style={{ fontSize: 10, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                                                {lang === 'de' ? 'Benötigt' : 'Requires'}: {feat.requires}
+                                                {entities.length > 0 && (
+                                                    <span style={{ color: 'var(--success)', fontSize: 10 }}>
+                                                        <span className="mdi mdi-check-circle" style={{ marginRight: 2 }} />
+                                                        {entities.length} {lang === 'de' ? 'zugewiesen' : 'assigned'}
+                                                    </span>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                                        {hasEntitySupport && (
+                                            <button className="btn btn-sm btn-ghost" title={lang === 'de' ? 'Geräte verwalten' : 'Manage entities'}
+                                                onClick={() => {
+                                                    if (isExpanded) { setExpandedFeature(null); }
+                                                    else { setExpandedFeature(key); loadFeatureEntities(key); }
+                                                }}>
+                                                <span className={`mdi ${isExpanded ? 'mdi-chevron-up' : 'mdi-devices'}`} />
+                                            </button>
+                                        )}
+                                        <button className={`btn btn-sm ${feat.enabled ? 'btn-primary' : 'btn-ghost'}`}
+                                            onClick={() => toggleFeature(key)}>
+                                            {feat.enabled ? (lang === 'de' ? 'Aktiv' : 'Active') : (lang === 'de' ? 'Aus' : 'Off')}
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Expanded entity management */}
+                                {isExpanded && hasEntitySupport && (
+                                    <div style={{ padding: '0 10px 10px', borderTop: '1px solid var(--border)' }}>
+                                        <div style={{ fontSize: 11, fontWeight: 600, margin: '8px 0 6px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                            <span>
+                                                <span className="mdi mdi-link-variant" style={{ marginRight: 4 }} />
+                                                {lang === 'de' ? 'Zugewiesene Geräte' : 'Assigned Entities'}
+                                            </span>
+                                            <div style={{ display: 'flex', gap: 4 }}>
+                                                <button className="btn btn-sm btn-ghost" style={{ fontSize: 10, padding: '2px 6px' }}
+                                                    onClick={() => autoDetectEntities(key)}>
+                                                    <span className="mdi mdi-auto-fix" style={{ marginRight: 2 }} />
+                                                    {lang === 'de' ? 'Erkennen' : 'Detect'}
+                                                </button>
+                                                <button className="btn btn-sm btn-ghost" style={{ fontSize: 10, padding: '2px 6px' }}
+                                                    onClick={() => setShowAddEntity(showAddEntity === key ? null : key)}>
+                                                    <span className="mdi mdi-plus" style={{ marginRight: 2 }} />
+                                                    {lang === 'de' ? 'Hinzufügen' : 'Add'}
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        {/* Current entities */}
+                                        {entities.map(ent => (
+                                            <div key={ent.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 0', borderBottom: '1px solid var(--border)' }}>
+                                                <div>
+                                                    <div style={{ fontSize: 11, fontWeight: 500 }}>{ent.name || ent.entity_id}</div>
+                                                    <div style={{ fontSize: 9, color: 'var(--text-muted)' }}>
+                                                        {ent.entity_id} &middot; {lang === 'de' ? 'Rolle' : 'Role'}: {ent.role}
+                                                        {ent.state && <span> &middot; {ent.state}</span>}
+                                                    </div>
+                                                </div>
+                                                <button className="btn btn-sm btn-ghost" onClick={() => removeEntityFromFeature(key, ent.id)}>
+                                                    <span className="mdi mdi-delete" style={{ color: 'var(--danger)', fontSize: 14 }} />
+                                                </button>
+                                            </div>
+                                        ))}
+                                        {entities.length === 0 && (
+                                            <div style={{ fontSize: 10, color: 'var(--text-muted)', padding: '6px 0', textAlign: 'center' }}>
+                                                {lang === 'de' ? 'Keine Geräte zugewiesen' : 'No entities assigned'}
+                                            </div>
+                                        )}
+
+                                        {/* Auto-detect suggestions */}
+                                        {suggestions.length > 0 && (
+                                            <div style={{ marginTop: 8 }}>
+                                                <div style={{ fontSize: 10, fontWeight: 600, marginBottom: 4 }}>
+                                                    <span className="mdi mdi-lightbulb-on" style={{ marginRight: 4, color: 'var(--warning)' }} />
+                                                    {lang === 'de' ? 'Erkannte Geräte' : 'Detected Entities'}
+                                                </div>
+                                                {suggestions.map((s, i) => {
+                                                    const alreadyAdded = entities.some(e => e.entity_id === s.entity_id && e.role === s.role);
+                                                    return (
+                                                        <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '3px 0', fontSize: 10 }}>
+                                                            <div>
+                                                                <span style={{ fontWeight: 500 }}>{s.name}</span>
+                                                                <span style={{ color: 'var(--text-muted)', marginLeft: 4 }}>({s.role})</span>
+                                                            </div>
+                                                            {alreadyAdded ? (
+                                                                <span style={{ color: 'var(--success)', fontSize: 10 }}>
+                                                                    <span className="mdi mdi-check" />
+                                                                </span>
+                                                            ) : (
+                                                                <button className="btn btn-sm btn-ghost" style={{ fontSize: 10, padding: '1px 4px' }}
+                                                                    onClick={() => addEntityToFeature(key, s.entity_id, s.role)}>
+                                                                    <span className="mdi mdi-plus" />
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        )}
+
+                                        {/* Manual add form */}
+                                        {showAddEntity === key && (
+                                            <div style={{ marginTop: 8, padding: 8, background: 'var(--bg-secondary)', borderRadius: 8 }}>
+                                                <div style={{ fontSize: 10, fontWeight: 600, marginBottom: 6 }}>
+                                                    {lang === 'de' ? 'Manuell hinzufügen' : 'Add manually'}
+                                                </div>
+                                                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                                                    <input className="input" placeholder="entity_id (z.B. sensor.rauch)" value={newEntityId}
+                                                        onChange={e => setNewEntityId(e.target.value)}
+                                                        style={{ flex: 2, fontSize: 11, padding: '4px 8px', minWidth: 140 }} />
+                                                    <input className="input" placeholder={lang === 'de' ? 'Rolle (z.B. trigger)' : 'Role (e.g. trigger)'}
+                                                        value={newEntityRole} onChange={e => setNewEntityRole(e.target.value)}
+                                                        style={{ flex: 1, fontSize: 11, padding: '4px 8px', minWidth: 100 }} />
+                                                    <button className="btn btn-sm btn-primary" style={{ fontSize: 10 }}
+                                                        disabled={!newEntityId || !newEntityRole}
+                                                        onClick={() => addEntityToFeature(key, newEntityId, newEntityRole)}>
+                                                        <span className="mdi mdi-check" />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
                                 )}
                             </div>
-                            <button className={`btn btn-sm ${feat.enabled ? 'btn-primary' : 'btn-ghost'}`}
-                                onClick={() => toggleFeature(key)}>
-                                {feat.enabled ? (lang === 'de' ? 'Aktiv' : 'Active') : (lang === 'de' ? 'Aus' : 'Off')}
-                            </button>
-                        </div>
-                    ))}
+                        );
+                    })}
 
                     <h3 style={{ margin: '20px 0 12px', fontSize: 16 }}>{lang === 'de' ? 'Sicherheits-Einstellungen' : 'Security Settings'}</h3>
                     <GenericSettingsPanel category="security" lang={lang} showToast={showToast} />
