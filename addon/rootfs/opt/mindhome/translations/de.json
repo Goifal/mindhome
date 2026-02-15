@@ -15,7 +15,8 @@
         "notifications": "Benachrichtigungen",
         "data": "Datenschutz",
         "log": "KI-Log",
-        "settings": "Einstellungen"
+        "settings": "Einstellungen",
+        "security": "Sicherheit"
     },
     "dashboard": {
         "welcome": "Willkommen bei MindHome",

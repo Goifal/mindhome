@@ -1,4 +1,4 @@
-# MindHome Models v0.7.0 (2026-02-14) - models.py
+# MindHome Models v0.8.0 (2026-02-15) - models.py
 """
 MindHome - Database Models
 All persistent data structures for MindHome.
@@ -55,6 +55,28 @@ class NotificationPriority(enum.Enum):
     LOW = "low"
 
 
+# Phase 5 Enums
+class SecurityEventType(enum.Enum):
+    FIRE = "fire"
+    CO = "co"
+    WATER_LEAK = "water_leak"
+    ACCESS_UNLOCK = "access_unlock"
+    ACCESS_LOCK = "access_lock"
+    ACCESS_JAMMED = "access_jammed"
+    ACCESS_UNKNOWN = "access_unknown"
+    PANIC = "panic"
+    EMERGENCY = "emergency"
+    MODE_ACTIVATED = "mode_activated"
+    MODE_DEACTIVATED = "mode_deactivated"
+
+
+class SecuritySeverity(enum.Enum):
+    INFO = "info"
+    WARNING = "warning"
+    CRITICAL = "critical"
+    EMERGENCY = "emergency"
+
+
 # ==============================================================================
 # User & Permissions
 # ==============================================================================
@@ -73,6 +95,9 @@ class User(Base):
     profile_type = Column(String(20), default="adult")  # "adult", "child", "guest"
     tracking_enabled = Column(Boolean, default=True)
     history_enabled = Column(Boolean, default=True)
+    # Phase 5
+    emergency_contact = Column(String(255), nullable=True)
+    geo_tracking_enabled = Column(Boolean, default=False)
 
     created_at = Column(DateTime, default=_utcnow)
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
@@ -786,6 +811,8 @@ class NotificationLog(Base):
     # Phase 4
     context_data = Column(JSON, nullable=True)  # #24 {"room": "Wohnzimmer", "person": "Max", ...}
     room_id = Column(Integer, ForeignKey("rooms.id"), nullable=True)  # #24 Raum-Bezug
+    # Phase 5
+    security_event_id = Column(Integer, ForeignKey("security_events.id"), nullable=True)
     created_at = Column(DateTime, default=_utcnow)
 
 
@@ -1080,6 +1107,129 @@ class ScreenTimeConfig(Base):
     created_at = Column(DateTime, default=_utcnow)
 
     user = relationship("User")
+
+
+# ==============================================================================
+# Phase 5: Security & Special Modes Models
+# ==============================================================================
+
+class FeatureEntityAssignment(Base):
+    """Link HA entities to Phase 5 features with roles."""
+    __tablename__ = "feature_entity_assignments"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    feature_key = Column(String(50), nullable=False)  # fire_co, water_leak, camera, access, ...
+    entity_id = Column(String(255), nullable=False)
+    role = Column(String(50), nullable=False)  # trigger, emergency_light, valve, lock, ...
+    config = Column(JSON, nullable=True)  # role-specific config (brightness, temp, etc.)
+    sort_order = Column(Integer, default=0)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=_utcnow)
+
+
+class SecurityEvent(Base):
+    """Security event log for all Phase 5 events."""
+    __tablename__ = "security_events"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    event_type = Column(Enum(SecurityEventType), nullable=False)
+    severity = Column(Enum(SecuritySeverity), nullable=False)
+    device_id = Column(Integer, ForeignKey("devices.id"), nullable=True)
+    room_id = Column(Integer, ForeignKey("rooms.id"), nullable=True)
+    message_de = Column(Text, nullable=True)
+    message_en = Column(Text, nullable=True)
+    resolved_at = Column(DateTime, nullable=True)
+    resolved_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    snapshot_path = Column(String(500), nullable=True)
+    context = Column(JSON, nullable=True)
+    timestamp = Column(DateTime, default=_utcnow)
+
+
+class AccessCode(Base):
+    """Smart lock access codes (hashed)."""
+    __tablename__ = "access_codes"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    name = Column(String(100), nullable=False)
+    code_hash = Column(String(255), nullable=False)
+    lock_entity_ids = Column(JSON, nullable=True)  # ["lock.front_door", ...]
+    valid_from = Column(DateTime, nullable=True)
+    valid_until = Column(DateTime, nullable=True)
+    is_temporary = Column(Boolean, default=False)
+    max_uses = Column(Integer, nullable=True)
+    use_count = Column(Integer, default=0)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=_utcnow)
+
+    user = relationship("User")
+
+
+class AccessLog(Base):
+    """Lock/unlock event log."""
+    __tablename__ = "access_log"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    lock_entity_id = Column(String(255), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    access_code_id = Column(Integer, ForeignKey("access_codes.id"), nullable=True)
+    action = Column(String(20), nullable=False)  # lock, unlock, jammed, failed
+    method = Column(String(20), nullable=False)  # code, key, auto, remote, unknown
+    timestamp = Column(DateTime, default=_utcnow)
+
+
+class GeoFence(Base):
+    """Geo-fence zone definition."""
+    __tablename__ = "geo_fences"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(100), nullable=False)
+    latitude = Column(Float, nullable=False)
+    longitude = Column(Float, nullable=False)
+    radius_m = Column(Integer, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    action_on_enter = Column(JSON, nullable=True)
+    action_on_leave = Column(JSON, nullable=True)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=_utcnow)
+
+
+class SpecialModeConfig(Base):
+    """Persistent configuration for special modes."""
+    __tablename__ = "special_mode_configs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    mode_type = Column(String(30), nullable=False)  # party, cinema, home_office, night_lockdown, emergency
+    config = Column(JSON, nullable=True)
+    auto_deactivate_after_min = Column(Integer, nullable=True)
+    linked_presence_mode_id = Column(Integer, ForeignKey("presence_modes.id"), nullable=True)
+    is_active = Column(Boolean, default=True)
+
+
+class SpecialModeLog(Base):
+    """Log of special mode activations/deactivations."""
+    __tablename__ = "special_mode_log"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    mode_type = Column(String(30), nullable=False)
+    activated_at = Column(DateTime, nullable=False)
+    deactivated_at = Column(DateTime, nullable=True)
+    activated_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    reason = Column(String(100), nullable=True)
+    previous_states = Column(JSON, nullable=True)  # Snapshot of entity states before activation
+
+
+class EmergencyContact(Base):
+    """Emergency contact for notifications."""
+    __tablename__ = "emergency_contacts"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(100), nullable=False)
+    phone = Column(String(50), nullable=True)
+    email = Column(String(255), nullable=True)
+    notify_method = Column(String(20), default="push")  # push, email
+    priority = Column(Integer, default=0)
+    is_active = Column(Boolean, default=True)
 
 
 # ==============================================================================
@@ -1748,6 +1898,130 @@ MIGRATIONS = [
             "CREATE INDEX IF NOT EXISTS idx_learned_scenes_status ON learned_scenes(status, is_active)",
             # Fix #25: Domain — enabled filtering
             "CREATE INDEX IF NOT EXISTS idx_domain_enabled ON domains(is_enabled)",
+        ]
+    },
+    {
+        "version": 12,
+        "description": "Phase 5 - Security & Special Modes",
+        "sql": [
+            # --- New tables ---
+
+            # FeatureEntityAssignment
+            """CREATE TABLE IF NOT EXISTS feature_entity_assignments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                feature_key VARCHAR(50) NOT NULL,
+                entity_id VARCHAR(255) NOT NULL,
+                role VARCHAR(50) NOT NULL,
+                config JSON,
+                sort_order INTEGER DEFAULT 0,
+                is_active BOOLEAN DEFAULT 1,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_fea_feature_role ON feature_entity_assignments(feature_key, role, is_active)",
+            "CREATE INDEX IF NOT EXISTS idx_fea_entity ON feature_entity_assignments(entity_id)",
+
+            # SecurityEvent
+            """CREATE TABLE IF NOT EXISTS security_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_type VARCHAR(30) NOT NULL,
+                severity VARCHAR(20) NOT NULL,
+                device_id INTEGER REFERENCES devices(id),
+                room_id INTEGER REFERENCES rooms(id),
+                message_de TEXT,
+                message_en TEXT,
+                resolved_at DATETIME,
+                resolved_by INTEGER REFERENCES users(id),
+                snapshot_path VARCHAR(500),
+                context JSON,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_security_events_type ON security_events(event_type, timestamp DESC)",
+            "CREATE INDEX IF NOT EXISTS idx_security_events_severity ON security_events(severity, timestamp DESC)",
+
+            # AccessCode
+            """CREATE TABLE IF NOT EXISTS access_codes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER REFERENCES users(id),
+                name VARCHAR(100) NOT NULL,
+                code_hash VARCHAR(255) NOT NULL,
+                lock_entity_ids JSON,
+                valid_from DATETIME,
+                valid_until DATETIME,
+                is_temporary BOOLEAN DEFAULT 0,
+                max_uses INTEGER,
+                use_count INTEGER DEFAULT 0,
+                is_active BOOLEAN DEFAULT 1,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )""",
+
+            # AccessLog
+            """CREATE TABLE IF NOT EXISTS access_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                lock_entity_id VARCHAR(255) NOT NULL,
+                user_id INTEGER REFERENCES users(id),
+                access_code_id INTEGER REFERENCES access_codes(id),
+                action VARCHAR(20) NOT NULL,
+                method VARCHAR(20) NOT NULL,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_access_log_entity ON access_log(lock_entity_id, timestamp DESC)",
+            "CREATE INDEX IF NOT EXISTS idx_access_log_time ON access_log(timestamp DESC)",
+
+            # GeoFence
+            """CREATE TABLE IF NOT EXISTS geo_fences (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name VARCHAR(100) NOT NULL,
+                latitude FLOAT NOT NULL,
+                longitude FLOAT NOT NULL,
+                radius_m INTEGER NOT NULL,
+                user_id INTEGER REFERENCES users(id),
+                action_on_enter JSON,
+                action_on_leave JSON,
+                is_active BOOLEAN DEFAULT 1,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )""",
+
+            # SpecialModeConfig
+            """CREATE TABLE IF NOT EXISTS special_mode_configs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                mode_type VARCHAR(30) NOT NULL,
+                config JSON,
+                auto_deactivate_after_min INTEGER,
+                linked_presence_mode_id INTEGER REFERENCES presence_modes(id),
+                is_active BOOLEAN DEFAULT 1
+            )""",
+
+            # SpecialModeLog
+            """CREATE TABLE IF NOT EXISTS special_mode_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                mode_type VARCHAR(30) NOT NULL,
+                activated_at DATETIME NOT NULL,
+                deactivated_at DATETIME,
+                activated_by INTEGER REFERENCES users(id),
+                reason VARCHAR(100),
+                previous_states JSON
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_special_mode_log_type ON special_mode_log(mode_type, activated_at DESC)",
+
+            # EmergencyContact
+            """CREATE TABLE IF NOT EXISTS emergency_contacts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name VARCHAR(100) NOT NULL,
+                phone VARCHAR(50),
+                email VARCHAR(255),
+                notify_method VARCHAR(20) DEFAULT 'push',
+                priority INTEGER DEFAULT 0,
+                is_active BOOLEAN DEFAULT 1
+            )""",
+
+            # --- Alter existing tables ---
+
+            # User: Phase 5 extensions
+            "ALTER TABLE users ADD COLUMN emergency_contact VARCHAR(255)",
+            "ALTER TABLE users ADD COLUMN geo_tracking_enabled BOOLEAN DEFAULT 0",
+
+            # NotificationLog: security_event link
+            "ALTER TABLE notification_log ADD COLUMN security_event_id INTEGER REFERENCES security_events(id)",
         ]
     },
 ]
