@@ -4,16 +4,20 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "0.7.28"
-BUILD = 81
+VERSION = "0.7.29"
+BUILD = 82
 BUILD_DATE = "2026-02-15"
 CODENAME = "Phase 4 - Smart Health"
 
 # Changelog
-# Build 80: v0.7.27 Diagnostik - Automation Config Content Logging
-#   - Diagnostik: Loggt wie viele Configs actions haben + Sample Action-Keys
-#   - Hilft herauszufinden warum 80/80 fetched aber 0 coverage
+# Build 82: v0.7.29 Fix HA-Automation-Erkennung (config-Wrapper)
+#   - CRITICAL FIX: WS "automation/config" gibt {"config": {...}} zurueck,
+#     nicht direkt das Config-Dict. Fehlte: raw.get("config", raw) Unwrapping
+#   - Fix: with_actions NameError (Variable wurde in Diagnostik entfernt)
+#   - Diagnostik-Logging aufgeraeumt (nur noch with_actions Count)
 #
+# Build 81: v0.7.28 Diagnostik - Raw Response Keys
+# Build 80: v0.7.27 Diagnostik - Automation Config Content Logging
 # Build 79: v0.7.26 per-Entity WS-Abfrage (UI + YAML)
 # Build 78: v0.7.25 WS automation/config/list (leer bei YAML-Automationen)
 # Build 77: v0.7.24 REST-API Versuch (404 via Supervisor)

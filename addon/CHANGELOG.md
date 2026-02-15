@@ -1,12 +1,13 @@
 # Changelog
 
-## 0.7.26 – Fix HA-Automation-Erkennung (per-Entity WS-Abfrage)
+## 0.7.29 – Fix HA-Automation-Erkennung (config-Wrapper unwrapping)
 
 ### Fix
-- **CRITICAL**: `automation/config/list` liefert nur UI-Automationen — bei YAML-basierten Automationen kommt eine leere Liste zurueck
-- **Fix**: WS-Command `automation/config` mit `entity_id` Parameter pro Automation — liest `raw_config` vom Entity und funktioniert fuer ALLE Automationen (UI + YAML)
-- Kein alias/friendly_name Matching mehr noetig (direkte entity_id Zuordnung)
+- **CRITICAL**: WS `automation/config` gibt `{"config": {...}}` zurueck — nicht direkt das Config-Dict
+- Response muss mit `raw.get("config", raw)` unwrapped werden bevor `action`/`trigger` gelesen werden
+- Fix: `with_actions` NameError aus vorherigem Diagnostik-Refactoring
 
+## 0.7.26 – per-Entity WS-Abfrage (UI + YAML)
 ## 0.7.25 – WS automation/config/list (leer bei YAML)
 ## 0.7.24 – REST-API Versuch (404 via Supervisor)
 
