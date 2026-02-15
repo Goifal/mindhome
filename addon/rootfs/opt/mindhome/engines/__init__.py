@@ -20,6 +20,7 @@ from engines.fire_water import FireResponseManager, WaterLeakManager
 from engines.camera_security import SecurityCameraManager
 from engines.access_control import AccessControlManager, GeoFenceManager
 from engines.special_modes import PartyMode, CinemaMode, HomeOfficeMode, NightLockdown, EmergencyProtocol
+from engines.cover_control import CoverControlManager
 
 __all__ = [
     # Phase 4
@@ -54,4 +55,5 @@ __all__ = [
     "HomeOfficeMode",
     "NightLockdown",
     "EmergencyProtocol",
+    "CoverControlManager",
 ]

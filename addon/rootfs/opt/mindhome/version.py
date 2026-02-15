@@ -4,12 +4,36 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "0.8.0"
-BUILD = 83
+VERSION = "0.8.1"
+BUILD = 84
 BUILD_DATE = "2026-02-15"
-CODENAME = "Phase 5 - Security & Modes"
+CODENAME = "Phase 5 - Cover Control"
 
 # Changelog
+# Build 84: v0.8.1 Phase 5 - Cover/Shutter Control (Rollladensteuerung)
+#   - NEU: CoverControlManager Engine (engines/cover_control.py)
+#   - Sonnenschutz: Automatisch bei Hitze + Sonnenstand auf Fassade
+#   - Winter-Solargewinn: Rollläden öffnen für passive Wärme
+#   - Wetterschutz: Wind → Markisen einfahren, Regen → Dachfenster zu
+#   - Frostschutz: Nachts isolieren bei Frost
+#   - Privatsphäre: Automatisch schließen bei Dämmerung
+#   - Anwesenheitssimulation: Zufällige Bewegungen bei Abwesenheit
+#   - Komfort: Schlaf-/Aufwach-Integration
+#   - Manueller Override: Zeitbasiert (konfigurierbar)
+#   - Lernfunktion: Manuelle Aktionen werden analysiert
+#   - Gruppen: Logische Cover-Gruppen (CRUD)
+#   - Szenen: Vordefinierte Positionen (CRUD + Aktivierung)
+#   - Zeitpläne: Zeitbasierte Steuerung (CRUD, Tage, Anwesenheitsmodus)
+#   - Pro-Cover-Konfiguration: Fassade, Stockwerk, Typ (Rollladen/Jalousie/Markise/Dachfenster)
+#   - Prioritätssystem: Sicherheit > Wetter > Komfort > Energie > Zeitplan
+#   - 4 neue DB-Models: CoverConfig, CoverGroup, CoverScene, CoverSchedule
+#   - Migration v13: Cover-Tabellen
+#   - 16. Blueprint: routes/covers.py (30+ API-Endpunkte)
+#   - Frontend: CoverPage mit 6 Tabs (Übersicht, Gruppen, Zeitplan, Automatik, Szenen, Einstellungen)
+#   - Entity-Discovery: Automatische Erkennung von Covers + Sensoren aus HA
+#   - Feature-Flag: phase5.cover_control
+#   - 13+ Phase-5-Bugfixes (Special Modes, Access Control, Security Routes)
+#
 # Build 83: v0.8.0 Phase 5 - Security & Modes
 #   - 11 neue Features: Sicherheit (6) + Spezial-Modi (5)
 #   - Neue Engines: fire_water, access_control, camera_security, special_modes

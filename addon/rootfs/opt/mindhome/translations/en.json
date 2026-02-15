@@ -16,7 +16,8 @@
         "data": "Data Privacy",
         "log": "AI Log",
         "settings": "Settings",
-        "security": "Security"
+        "security": "Security",
+        "covers": "Covers"
     },
     "dashboard": {
         "welcome": "Welcome to MindHome",

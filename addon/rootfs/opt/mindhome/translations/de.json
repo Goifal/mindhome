@@ -16,7 +16,8 @@
         "data": "Datenschutz",
         "log": "KI-Log",
         "settings": "Einstellungen",
-        "security": "Sicherheit"
+        "security": "Sicherheit",
+        "covers": "Rollläden"
     },
     "dashboard": {
         "welcome": "Willkommen bei MindHome",
