@@ -196,6 +196,123 @@ class HAConnection:
         states = self.get_states()
         return [s for s in states if s.get("entity_id", "").startswith("automation.")] if states else []
 
+    def get_automation_configs(self):
+        """Fetch full automation configurations (triggers + actions) from HA."""
+        if not hasattr(self, '_auto_cfg_cache'):
+            self._auto_cfg_cache = None
+            self._auto_cfg_ts = 0
+        # Cache for 10 minutes
+        if self._auto_cfg_cache is not None and (time.time() - self._auto_cfg_ts) < 600:
+            return self._auto_cfg_cache
+        try:
+            automations = self.get_automations()
+            configs = []
+            for auto in automations:
+                eid = auto.get("entity_id", "")
+                attrs = auto.get("attributes", {})
+                # Extract action targets from automation attributes
+                # HA exposes action entities in the automation state attributes
+                configs.append({
+                    "entity_id": eid,
+                    "friendly_name": attrs.get("friendly_name", eid),
+                    "state": auto.get("state", "off"),
+                })
+            # Also try to get detailed configs via WS
+            try:
+                ws_configs = self._ws_command("config/automation/config/list") or []
+                if isinstance(ws_configs, list):
+                    for cfg in ws_configs:
+                        cfg_id = cfg.get("id")
+                        configs_by_id = {c["entity_id"]: c for c in configs}
+                        auto_eid = f"automation.{cfg_id}" if cfg_id else None
+                        entry = configs_by_id.get(auto_eid, {})
+                        entry["actions"] = cfg.get("action", cfg.get("actions", []))
+                        entry["triggers"] = cfg.get("trigger", cfg.get("triggers", []))
+                        if auto_eid and auto_eid not in configs_by_id:
+                            entry["entity_id"] = auto_eid
+                            entry["state"] = "unknown"
+                            configs.append(entry)
+            except Exception:
+                pass  # WS config not available, fall back to state-based extraction
+            self._auto_cfg_cache = configs
+            self._auto_cfg_ts = time.time()
+            return configs
+        except Exception as e:
+            logger.warning(f"Failed to fetch automation configs: {e}")
+            return self._auto_cfg_cache or []
+
+    def get_ha_automated_entities(self):
+        """Return set of (entity_id, target_state) pairs covered by HA automations.
+
+        Parses automation configs to find which entities are controlled by
+        existing HA automations, so MindHome can avoid duplicating them.
+        """
+        if not hasattr(self, '_ha_auto_entities_cache'):
+            self._ha_auto_entities_cache = None
+            self._ha_auto_entities_ts = 0
+        # Cache for 10 minutes
+        if self._ha_auto_entities_cache is not None and (time.time() - self._ha_auto_entities_ts) < 600:
+            return self._ha_auto_entities_cache
+
+        result = set()
+        # Set of entity_ids (without target_state) for broader matching
+        entity_only = set()
+        configs = self.get_automation_configs()
+        for cfg in configs:
+            # Only consider enabled automations
+            if cfg.get("state") == "off":
+                continue
+            actions = cfg.get("actions", [])
+            if not isinstance(actions, list):
+                actions = [actions] if actions else []
+            for action in actions:
+                if not isinstance(action, dict):
+                    continue
+                # HA automation actions can have service + entity_id or target
+                target = action.get("target", {}) or {}
+                entity_ids = target.get("entity_id", [])
+                if isinstance(entity_ids, str):
+                    entity_ids = [entity_ids]
+                # Also check direct entity_id on action
+                direct_eid = action.get("entity_id")
+                if direct_eid:
+                    if isinstance(direct_eid, str):
+                        entity_ids.append(direct_eid)
+                    elif isinstance(direct_eid, list):
+                        entity_ids.extend(direct_eid)
+                # Extract target state from service_data
+                svc_data = action.get("data", {}) or {}
+                service = action.get("service", "")
+                for eid in entity_ids:
+                    if not eid:
+                        continue
+                    entity_only.add(eid)
+                    # Infer target state from service name
+                    if service.endswith(".turn_on") or service == "turn_on":
+                        result.add((eid, "on"))
+                    elif service.endswith(".turn_off") or service == "turn_off":
+                        result.add((eid, "off"))
+                    elif service.endswith(".toggle") or service == "toggle":
+                        result.add((eid, "on"))
+                        result.add((eid, "off"))
+                    elif "brightness" in svc_data or "color_temp" in svc_data:
+                        result.add((eid, "on"))
+                    elif "temperature" in svc_data:
+                        result.add((eid, svc_data.get("hvac_mode", "on")))
+
+        self._ha_auto_entities_cache = result
+        self._ha_auto_entities_only = entity_only
+        self._ha_auto_entities_ts = time.time()
+        logger.info(f"HA automation coverage: {len(entity_only)} entities, {len(result)} entity/state pairs")
+        return result
+
+    def is_entity_ha_automated(self, entity_id, target_state=None):
+        """Check if an entity (optionally with target_state) is covered by a HA automation."""
+        ha_pairs = self.get_ha_automated_entities()
+        if target_state:
+            return (entity_id, target_state) in ha_pairs
+        return entity_id in getattr(self, '_ha_auto_entities_only', set())
+
     def get_calendars(self):
         return self._api_request("GET", "calendars") or []
 

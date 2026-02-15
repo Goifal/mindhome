@@ -4,12 +4,28 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "0.7.20"
-BUILD = 73
+VERSION = "0.7.21"
+BUILD = 74
 BUILD_DATE = "2026-02-15"
 CODENAME = "Phase 4 - Smart Health"
 
 # Changelog
+# Build 74: v0.7.21 HA-Automations-Erkennung + Duplikat-Vermeidung
+#   - NEU: MindHome erkennt bestehende HA-Automationen und vermeidet Duplikate
+#     ha_connection: get_automation_configs() laedt HA-Automation-Konfigurationen
+#     ha_connection: get_ha_automated_entities() extrahiert (entity_id, target_state) Paare
+#     ha_connection: is_entity_ha_automated() prueft ob Entity von HA gesteuert wird
+#     10-Minuten-Cache fuer HA-Automation-Abfragen (kein DB-Schema-Change)
+#   - NEU: Pattern-Engine annotiert neue Patterns mit ha_covered Flag
+#     _upsert_pattern() prueft bei Erstellung ob HA-Automation existiert
+#     pattern_data.ha_covered = true wenn Entity bereits von HA gesteuert
+#   - NEU: Automation-Executor ueberspringt HA-gesteuerte Entities
+#     check_and_execute() prueft vor Ausfuehrung gegen HA-Automation-Cache
+#     Log: "already automated by HA, skipping"
+#   - NEU: API /api/patterns liefert ha_covered Flag pro Pattern
+#     Frontend zeigt blauen "HA-Automation" Badge auf betroffenen Pattern-Karten
+#     Tooltip erklaert: "Diese Entity wird bereits von einer HA-Automation gesteuert"
+#
 # Build 73: v0.7.20 Fix Device-Loeschung + Muster-Konflikterkennung
 #   - FIX: Device-Loeschung crashte mit FOREIGN KEY constraint (500er)
 #     Root-Cause: 6 Tabellen referenzieren devices.id ohne CASCADE

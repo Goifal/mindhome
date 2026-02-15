@@ -5199,6 +5199,13 @@ const PatternsPage = () => {
                                         <span className={`badge badge-${statusColors[p.status]}`} style={{ fontSize: 11 }}>
                                             {statusLabels[p.status]}
                                         </span>
+                                        {p.ha_covered && (
+                                            <span className="badge badge-info" style={{ fontSize: 10 }}
+                                                  title={lang === 'de' ? 'Diese Entity wird bereits von einer HA-Automation gesteuert' : 'This entity is already controlled by a HA automation'}>
+                                                <span className="mdi mdi-robot" style={{ marginRight: 3 }} />
+                                                HA-Automation
+                                            </span>
+                                        )}
                                         <span style={{ color: 'var(--text-muted)' }}>
                                             {typeLabels[p.pattern_type]}
                                         </span>
