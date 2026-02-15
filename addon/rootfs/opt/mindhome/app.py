@@ -611,6 +611,10 @@ home_office_mode = HomeOfficeMode(ha, get_db_session, event_bus)
 night_lockdown = NightLockdown(ha, get_db_session, event_bus)
 emergency_protocol = EmergencyProtocol(ha, get_db_session, event_bus)
 
+# Phase 5: Cover Control
+from engines.cover_control import CoverControlManager
+cover_control_manager = CoverControlManager(ha, get_db_session, event_bus)
+
 dependencies = {
     "ha": ha,
     "engine": engine,
@@ -654,6 +658,7 @@ dependencies = {
     "home_office_mode": home_office_mode,
     "night_lockdown": night_lockdown,
     "emergency_protocol": emergency_protocol,
+    "cover_control_manager": cover_control_manager,
 }
 
 from routes import register_blueprints
@@ -706,7 +711,8 @@ def graceful_shutdown(signum=None, frame=None):
                           ("cinema_mode", cinema_mode),
                           ("home_office_mode", home_office_mode),
                           ("night_lockdown", night_lockdown),
-                          ("emergency_protocol", emergency_protocol)]:
+                          ("emergency_protocol", emergency_protocol),
+                          ("cover_control_manager", cover_control_manager)]:
         try:
             eng.stop()
         except Exception:
@@ -978,6 +984,31 @@ def start_app():
                             run_immediately=False)
     task_scheduler.register("camera_cleanup", run_camera_cleanup,
                             interval_seconds=24 * 3600,
+                            run_immediately=False)
+
+    # Phase 5: Cover Control
+    cover_control_manager.start()
+
+    def run_cover_check():
+        """5-min check: cover automation rules (sun, weather, comfort)."""
+        cover_control_manager.check()
+
+    def run_cover_schedules():
+        """1-min check: time-based cover schedules."""
+        cover_control_manager.check_schedules()
+
+    def run_cover_simulation():
+        """15-min check: presence simulation for covers."""
+        cover_control_manager.check_simulation()
+
+    task_scheduler.register("cover_check", run_cover_check,
+                            interval_seconds=5 * 60,
+                            run_immediately=False)
+    task_scheduler.register("cover_schedules", run_cover_schedules,
+                            interval_seconds=60,
+                            run_immediately=False)
+    task_scheduler.register("cover_simulation", run_cover_simulation,
+                            interval_seconds=15 * 60,
                             run_immediately=False)
 
     # Start task scheduler

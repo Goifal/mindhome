@@ -1233,6 +1233,65 @@ class EmergencyContact(Base):
 
 
 # ==============================================================================
+# Phase 5: Cover / Shutter Control Models
+# ==============================================================================
+
+class CoverConfig(Base):
+    """Per-cover entity metadata (facade direction, floor, type)."""
+    __tablename__ = "cover_configs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    entity_id = Column(String(255), nullable=False, unique=True)
+    facade = Column(String(5), nullable=True)  # "N", "NE", "E", "SE", "S", "SW", "W", "NW"
+    floor = Column(String(50), nullable=True)  # "EG", "OG1", "OG2", "DG", "KG"
+    cover_type = Column(String(30), default="shutter")  # "shutter", "blind", "awning", "roof_window"
+    group_ids = Column(JSON, default=list)  # [1, 3] — references CoverGroup.id
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+
+class CoverGroup(Base):
+    """Logical groups for covers (e.g. 'Erdgeschoss Süd', 'Schlafzimmer')."""
+    __tablename__ = "cover_groups"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(100), nullable=False)
+    entity_ids = Column(JSON, default=list)  # ["cover.wohnzimmer", "cover.kueche"]
+    icon = Column(String(50), default="mdi:blinds-horizontal")
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=_utcnow)
+
+
+class CoverScene(Base):
+    """Predefined cover positions (e.g. 'Lüften', 'Kinoabend', 'Nacht')."""
+    __tablename__ = "cover_scenes"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(100), nullable=False)
+    name_en = Column(String(100), nullable=True)
+    positions = Column(JSON, default=dict)  # {"cover.wz": 30, "cover.sz": {"position": 0, "tilt": 45}}
+    icon = Column(String(50), default="mdi:blinds")
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=_utcnow)
+
+
+class CoverSchedule(Base):
+    """Time-based cover schedules (per entity or group)."""
+    __tablename__ = "cover_schedules"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    entity_id = Column(String(255), nullable=True)  # null if group-based
+    group_id = Column(Integer, ForeignKey("cover_groups.id"), nullable=True)
+    time_str = Column(String(5), nullable=False)  # "08:00"
+    days = Column(JSON, default=list)  # [0,1,2,3,4,5,6] Mon=0
+    position = Column(Integer, default=100)  # 0=closed, 100=open
+    tilt = Column(Integer, nullable=True)  # tilt angle 0-100
+    presence_mode = Column(String(30), nullable=True)  # only execute in this mode
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=_utcnow)
+
+
+# ==============================================================================
 # Database Initialization
 # ==============================================================================
 
@@ -2022,6 +2081,60 @@ MIGRATIONS = [
 
             # NotificationLog: security_event link
             "ALTER TABLE notification_log ADD COLUMN security_event_id INTEGER REFERENCES security_events(id)",
+        ]
+    },
+    {
+        "version": 13,
+        "description": "Phase 5 - Cover/shutter control tables",
+        "sql": [
+            # CoverConfig
+            """CREATE TABLE IF NOT EXISTS cover_configs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                entity_id VARCHAR(255) NOT NULL UNIQUE,
+                facade VARCHAR(5),
+                floor VARCHAR(50),
+                cover_type VARCHAR(30) DEFAULT 'shutter',
+                group_ids JSON DEFAULT '[]',
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_cover_configs_entity ON cover_configs(entity_id)",
+
+            # CoverGroup
+            """CREATE TABLE IF NOT EXISTS cover_groups (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name VARCHAR(100) NOT NULL,
+                entity_ids JSON DEFAULT '[]',
+                icon VARCHAR(50) DEFAULT 'mdi:blinds-horizontal',
+                is_active BOOLEAN DEFAULT 1,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )""",
+
+            # CoverScene
+            """CREATE TABLE IF NOT EXISTS cover_scenes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name VARCHAR(100) NOT NULL,
+                name_en VARCHAR(100),
+                positions JSON DEFAULT '{}',
+                icon VARCHAR(50) DEFAULT 'mdi:blinds',
+                is_active BOOLEAN DEFAULT 1,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )""",
+
+            # CoverSchedule
+            """CREATE TABLE IF NOT EXISTS cover_schedules (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                entity_id VARCHAR(255),
+                group_id INTEGER REFERENCES cover_groups(id),
+                time_str VARCHAR(5) NOT NULL,
+                days JSON DEFAULT '[0,1,2,3,4,5,6]',
+                position INTEGER DEFAULT 100,
+                tilt INTEGER,
+                presence_mode VARCHAR(30),
+                is_active BOOLEAN DEFAULT 1,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_cover_schedules_time ON cover_schedules(time_str, is_active)",
         ]
     },
 ]

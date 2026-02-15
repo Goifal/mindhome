@@ -3438,6 +3438,691 @@ const SecurityPage = () => {
 };
 
 
+// ================================================================
+// Cover / Shutter Control Page (Rollladensteuerung)
+// ================================================================
+
+const CoverPage = () => {
+    const { lang, showToast } = useApp();
+    const t = (de, en) => lang === 'de' ? de : en;
+    const [tab, setTab] = useState('overview');
+    const [status, setStatus] = useState(null);
+    const [covers, setCovers] = useState([]);
+    const [groups, setGroups] = useState([]);
+    const [scenes, setScenes] = useState([]);
+    const [schedules, setSchedules] = useState([]);
+    const [settings, setSettings] = useState({});
+    const [featureEnabled, setFeatureEnabled] = useState(true);
+    const [entities, setEntities] = useState([]);
+    const [discovered, setDiscovered] = useState(null);
+    const [showAddEntity, setShowAddEntity] = useState(false);
+    const [showAddGroup, setShowAddGroup] = useState(false);
+    const [showAddScene, setShowAddScene] = useState(false);
+    const [showAddSchedule, setShowAddSchedule] = useState(false);
+    const [newGroup, setNewGroup] = useState({ name: '', entity_ids: [], icon: 'mdi:blinds-horizontal' });
+    const [newScene, setNewScene] = useState({ name: '', name_en: '', positions: {}, icon: 'mdi:blinds' });
+    const [newSchedule, setNewSchedule] = useState({ entity_id: '', group_id: '', time_str: '08:00', days: [0,1,2,3,4,5,6], position: 100, tilt: null, presence_mode: '' });
+    const [configs, setConfigs] = useState({});
+
+    const load = () => {
+        api.get('covers/status').then(d => { if (d) { setStatus(d); setCovers(d.covers || []); setSettings(d.config || {}); }});
+        api.get('covers/feature-flag').then(d => { if (d) setFeatureEnabled(d.enabled); });
+    };
+    const loadGroups = () => api.get('covers/groups').then(d => setGroups(Array.isArray(d) ? d : []));
+    const loadScenes = () => api.get('covers/scenes').then(d => setScenes(Array.isArray(d) ? d : []));
+    const loadSchedules = () => api.get('covers/schedules').then(d => setSchedules(Array.isArray(d) ? d : []));
+    const loadEntities = () => api.get('covers/entities').then(d => setEntities(Array.isArray(d) ? d : []));
+    const loadConfigs = () => api.get('covers/configs').then(d => setConfigs(d || {}));
+
+    useEffect(() => { load(); loadGroups(); loadScenes(); loadSchedules(); loadEntities(); loadConfigs(); }, []);
+
+    const setPosition = (entityId, pos) => {
+        api.post(`covers/${entityId}/position`, { position: pos }).then(d => {
+            if (d && d.success) { showToast(t('Position gesetzt', 'Position set')); load(); }
+        });
+    };
+
+    const toggleFeature = () => {
+        api.put('covers/feature-flag', { enabled: !featureEnabled }).then(() => {
+            setFeatureEnabled(!featureEnabled);
+            showToast(featureEnabled ? t('Deaktiviert', 'Disabled') : t('Aktiviert', 'Enabled'));
+        });
+    };
+
+    const saveSetting = (key, value) => {
+        const updated = { ...settings, [key]: value };
+        setSettings(updated);
+        api.put('covers/settings', { [key]: value });
+    };
+
+    const addEntity = (entityId, role) => {
+        api.post('covers/entities', { entity_id: entityId, role }).then(d => {
+            if (d && !d._error) { showToast(t('Hinzugefügt', 'Added')); loadEntities(); load(); setShowAddEntity(false); }
+        });
+    };
+
+    const removeEntity = (id) => {
+        api.delete(`covers/entities/${id}`).then(() => { loadEntities(); load(); });
+    };
+
+    const discover = () => {
+        api.get('covers/discover').then(d => setDiscovered(d));
+    };
+
+    const createGroup = () => {
+        if (!newGroup.name) return;
+        api.post('covers/groups', newGroup).then(d => {
+            if (d && d.id) { showToast(t('Gruppe erstellt', 'Group created')); loadGroups(); setShowAddGroup(false); setNewGroup({ name: '', entity_ids: [], icon: 'mdi:blinds-horizontal' }); }
+        });
+    };
+
+    const deleteGroup = (id) => {
+        api.delete(`covers/groups/${id}`).then(() => loadGroups());
+    };
+
+    const controlGroup = (groupId, pos) => {
+        api.post(`covers/groups/${groupId}/control`, { position: pos }).then(() => { showToast(t('Gruppe gesteuert', 'Group controlled')); load(); });
+    };
+
+    const createScene = () => {
+        if (!newScene.name) return;
+        // Build positions from current cover states
+        const positions = {};
+        covers.forEach(c => { if (c.position !== null) positions[c.entity_id] = c.position; });
+        api.post('covers/scenes', { ...newScene, positions }).then(d => {
+            if (d && d.id) { showToast(t('Szene erstellt', 'Scene created')); loadScenes(); setShowAddScene(false); }
+        });
+    };
+
+    const activateScene = (id) => {
+        api.post(`covers/scenes/${id}/activate`).then(d => {
+            if (d && d.success) showToast(t('Szene aktiviert', 'Scene activated'));
+            load();
+        });
+    };
+
+    const deleteScene = (id) => { api.delete(`covers/scenes/${id}`).then(() => loadScenes()); };
+
+    const createSchedule = () => {
+        if (!newSchedule.time_str) return;
+        const payload = { ...newSchedule };
+        if (!payload.entity_id) delete payload.entity_id;
+        if (!payload.group_id) delete payload.group_id;
+        if (!payload.tilt) delete payload.tilt;
+        if (!payload.presence_mode) delete payload.presence_mode;
+        api.post('covers/schedules', payload).then(d => {
+            if (d && d.id) { showToast(t('Zeitplan erstellt', 'Schedule created')); loadSchedules(); setShowAddSchedule(false); }
+        });
+    };
+
+    const deleteSchedule = (id) => { api.delete(`covers/schedules/${id}`).then(() => loadSchedules()); };
+
+    const setCoverConfig = (entityId, key, value) => {
+        const current = configs[entityId] || {};
+        api.put(`covers/${entityId}/config`, { ...current, [key]: value }).then(() => loadConfigs());
+    };
+
+    const dayLabels = lang === 'de'
+        ? ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So']
+        : ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+    const tabs = [
+        { id: 'overview', label: t('Übersicht', 'Overview'), icon: 'mdi-view-dashboard' },
+        { id: 'groups', label: t('Gruppen', 'Groups'), icon: 'mdi-group' },
+        { id: 'schedules', label: t('Zeitplan', 'Schedule'), icon: 'mdi-clock-outline' },
+        { id: 'automation', label: t('Automatik', 'Automation'), icon: 'mdi-robot' },
+        { id: 'scenes', label: t('Szenen', 'Scenes'), icon: 'mdi-palette' },
+        { id: 'settings', label: t('Einstellungen', 'Settings'), icon: 'mdi-cog' },
+    ];
+
+    return (
+        <div className="page-content">
+            <div style={{ display: 'flex', gap: 8, overflowX: 'auto', marginBottom: 16, borderBottom: '1px solid var(--border)' }}>
+                {tabs.map(tb => (
+                    <button key={tb.id}
+                        className={`btn btn-sm ${tab === tb.id ? 'btn-primary' : 'btn-ghost'}`}
+                        style={{ whiteSpace: 'nowrap', borderRadius: '8px 8px 0 0' }}
+                        onClick={() => setTab(tb.id)}>
+                        <span className={`mdi ${tb.icon}`} style={{ marginRight: 4 }} />{tb.label}
+                    </button>
+                ))}
+            </div>
+
+            {/* ── Übersicht Tab ── */}
+            {tab === 'overview' && (
+                <div>
+                    {/* Summary cards */}
+                    {status && (
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 12, marginBottom: 16 }}>
+                            <div className="card" style={{ padding: 12, textAlign: 'center' }}>
+                                <div style={{ fontSize: 24, fontWeight: 700 }}>{status.total}</div>
+                                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{t('Gesamt', 'Total')}</div>
+                            </div>
+                            <div className="card" style={{ padding: 12, textAlign: 'center' }}>
+                                <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--success)' }}>{status.open}</div>
+                                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{t('Offen', 'Open')}</div>
+                            </div>
+                            <div className="card" style={{ padding: 12, textAlign: 'center' }}>
+                                <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--warning)' }}>{status.closed}</div>
+                                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{t('Geschlossen', 'Closed')}</div>
+                            </div>
+                            <div className="card" style={{ padding: 12, textAlign: 'center' }}>
+                                <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--info)' }}>{status.overridden}</div>
+                                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{t('Manuell', 'Manual')}</div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Cover list with sliders */}
+                    {covers.length === 0 ? (
+                        <div className="card" style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)' }}>
+                            <span className="mdi mdi-blinds-horizontal" style={{ fontSize: 48 }} />
+                            <div style={{ marginTop: 8 }}>{t('Keine Rollläden konfiguriert', 'No covers configured')}</div>
+                            <button className="btn btn-primary btn-sm" style={{ marginTop: 12 }}
+                                onClick={() => setTab('settings')}>
+                                {t('Entitäten hinzufügen', 'Add entities')}
+                            </button>
+                        </div>
+                    ) : (
+                        covers.map(c => (
+                            <div key={c.entity_id} className="card" style={{ padding: 12, marginBottom: 8 }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                                    <div>
+                                        <div style={{ fontWeight: 600, fontSize: 14 }}>{c.name}</div>
+                                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                                            {c.entity_id}
+                                            {c.facade && ` · ${c.facade}`}
+                                            {c.floor && ` · ${c.floor}`}
+                                        </div>
+                                    </div>
+                                    <div style={{ display: 'flex', gap: 4 }}>
+                                        <button className="btn btn-ghost btn-sm" onClick={() => setPosition(c.entity_id, 100)}
+                                            title={t('Öffnen', 'Open')}>
+                                            <span className="mdi mdi-arrow-up" />
+                                        </button>
+                                        <button className="btn btn-ghost btn-sm" onClick={() => setPosition(c.entity_id, 50)}
+                                            title="50%">50%</button>
+                                        <button className="btn btn-ghost btn-sm" onClick={() => setPosition(c.entity_id, 0)}
+                                            title={t('Schließen', 'Close')}>
+                                            <span className="mdi mdi-arrow-down" />
+                                        </button>
+                                    </div>
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                    <span style={{ fontSize: 11, minWidth: 28 }}>{c.position ?? '?'}%</span>
+                                    <input type="range" min="0" max="100" value={c.position ?? 50}
+                                        style={{ flex: 1 }}
+                                        onChange={(e) => setPosition(c.entity_id, parseInt(e.target.value))} />
+                                    {c.manual_override_until && (
+                                        <span className="badge" style={{ background: 'var(--warning)', color: '#fff', fontSize: 10 }}>
+                                            {t('Manuell', 'Manual')}
+                                        </span>
+                                    )}
+                                </div>
+                            </div>
+                        ))
+                    )}
+                </div>
+            )}
+
+            {/* ── Gruppen Tab ── */}
+            {tab === 'groups' && (
+                <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
+                        <h3 style={{ margin: 0 }}>{t('Gruppen', 'Groups')}</h3>
+                        <button className="btn btn-primary btn-sm" onClick={() => setShowAddGroup(true)}>
+                            <span className="mdi mdi-plus" /> {t('Neue Gruppe', 'New Group')}
+                        </button>
+                    </div>
+                    {groups.length === 0 ? (
+                        <div className="card" style={{ padding: 16, textAlign: 'center', color: 'var(--text-muted)' }}>
+                            {t('Keine Gruppen vorhanden', 'No groups yet')}
+                        </div>
+                    ) : groups.map(g => (
+                        <div key={g.id} className="card" style={{ padding: 12, marginBottom: 8 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div>
+                                    <span className={`mdi ${g.icon || 'mdi-blinds-horizontal'}`} style={{ marginRight: 6 }} />
+                                    <strong>{g.name}</strong>
+                                    <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 8 }}>
+                                        {(g.entity_ids || []).length} {t('Rollläden', 'covers')}
+                                    </span>
+                                </div>
+                                <div style={{ display: 'flex', gap: 4 }}>
+                                    <button className="btn btn-ghost btn-sm" onClick={() => controlGroup(g.id, 100)}
+                                        title={t('Öffnen', 'Open')}><span className="mdi mdi-arrow-up" /></button>
+                                    <button className="btn btn-ghost btn-sm" onClick={() => controlGroup(g.id, 0)}
+                                        title={t('Schließen', 'Close')}><span className="mdi mdi-arrow-down" /></button>
+                                    <button className="btn btn-ghost btn-sm" onClick={() => deleteGroup(g.id)}
+                                        style={{ color: 'var(--danger)' }}><span className="mdi mdi-delete" /></button>
+                                </div>
+                            </div>
+                        </div>
+                    ))}
+                    {showAddGroup && (
+                        <div className="card" style={{ padding: 16, marginTop: 12, border: '2px solid var(--primary)' }}>
+                            <h4 style={{ margin: '0 0 12px 0' }}>{t('Neue Gruppe erstellen', 'Create New Group')}</h4>
+                            <input className="input" placeholder={t('Gruppenname', 'Group name')}
+                                value={newGroup.name} onChange={e => setNewGroup({ ...newGroup, name: e.target.value })} />
+                            <div style={{ fontSize: 12, margin: '8px 0', color: 'var(--text-muted)' }}>
+                                {t('Rollläden auswählen:', 'Select covers:')}
+                            </div>
+                            {covers.map(c => (
+                                <label key={c.entity_id} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4, fontSize: 13 }}>
+                                    <input type="checkbox"
+                                        checked={(newGroup.entity_ids || []).includes(c.entity_id)}
+                                        onChange={e => {
+                                            const ids = [...(newGroup.entity_ids || [])];
+                                            if (e.target.checked) ids.push(c.entity_id);
+                                            else ids.splice(ids.indexOf(c.entity_id), 1);
+                                            setNewGroup({ ...newGroup, entity_ids: ids });
+                                        }} />
+                                    {c.name}
+                                </label>
+                            ))}
+                            <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                                <button className="btn btn-primary btn-sm" onClick={createGroup}>{t('Erstellen', 'Create')}</button>
+                                <button className="btn btn-ghost btn-sm" onClick={() => setShowAddGroup(false)}>{t('Abbrechen', 'Cancel')}</button>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* ── Zeitplan Tab ── */}
+            {tab === 'schedules' && (
+                <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
+                        <h3 style={{ margin: 0 }}>{t('Zeitpläne', 'Schedules')}</h3>
+                        <button className="btn btn-primary btn-sm" onClick={() => setShowAddSchedule(true)}>
+                            <span className="mdi mdi-plus" /> {t('Neuer Zeitplan', 'New Schedule')}
+                        </button>
+                    </div>
+                    {schedules.length === 0 ? (
+                        <div className="card" style={{ padding: 16, textAlign: 'center', color: 'var(--text-muted)' }}>
+                            {t('Keine Zeitpläne vorhanden', 'No schedules yet')}
+                        </div>
+                    ) : schedules.map(s => (
+                        <div key={s.id} className="card" style={{ padding: 12, marginBottom: 8 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div>
+                                    <span className="mdi mdi-clock-outline" style={{ marginRight: 6 }} />
+                                    <strong>{s.time_str}</strong>
+                                    <span style={{ marginLeft: 8, fontSize: 12 }}>→ {s.position}%</span>
+                                    {s.tilt !== null && <span style={{ fontSize: 12 }}> ({t('Neigung', 'Tilt')}: {s.tilt}%)</span>}
+                                </div>
+                                <button className="btn btn-ghost btn-sm" onClick={() => deleteSchedule(s.id)}
+                                    style={{ color: 'var(--danger)' }}><span className="mdi mdi-delete" /></button>
+                            </div>
+                            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                                {s.entity_id || (s.group_id ? `${t('Gruppe', 'Group')} #${s.group_id}` : t('Alle', 'All'))}
+                                {' · '}
+                                {(s.days || []).map(d => dayLabels[d]).join(', ')}
+                                {s.presence_mode && ` · ${s.presence_mode}`}
+                            </div>
+                        </div>
+                    ))}
+                    {showAddSchedule && (
+                        <div className="card" style={{ padding: 16, marginTop: 12, border: '2px solid var(--primary)' }}>
+                            <h4 style={{ margin: '0 0 12px 0' }}>{t('Neuer Zeitplan', 'New Schedule')}</h4>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                                <div>
+                                    <label style={{ fontSize: 12 }}>{t('Uhrzeit', 'Time')}</label>
+                                    <input className="input" type="time" value={newSchedule.time_str}
+                                        onChange={e => setNewSchedule({ ...newSchedule, time_str: e.target.value })} />
+                                </div>
+                                <div>
+                                    <label style={{ fontSize: 12 }}>{t('Position', 'Position')} (%)</label>
+                                    <input className="input" type="number" min="0" max="100" value={newSchedule.position}
+                                        onChange={e => setNewSchedule({ ...newSchedule, position: parseInt(e.target.value) || 0 })} />
+                                </div>
+                            </div>
+                            <div style={{ margin: '8px 0' }}>
+                                <label style={{ fontSize: 12 }}>{t('Rollladen', 'Cover')}</label>
+                                <select className="input" value={newSchedule.entity_id}
+                                    onChange={e => setNewSchedule({ ...newSchedule, entity_id: e.target.value })}>
+                                    <option value="">{t('Alle / Gruppe wählen', 'All / Select group')}</option>
+                                    {covers.map(c => <option key={c.entity_id} value={c.entity_id}>{c.name}</option>)}
+                                </select>
+                            </div>
+                            <div style={{ margin: '8px 0' }}>
+                                <label style={{ fontSize: 12 }}>{t('Tage', 'Days')}</label>
+                                <div style={{ display: 'flex', gap: 4 }}>
+                                    {dayLabels.map((d, i) => (
+                                        <button key={i}
+                                            className={`btn btn-sm ${(newSchedule.days || []).includes(i) ? 'btn-primary' : 'btn-ghost'}`}
+                                            onClick={() => {
+                                                const days = [...(newSchedule.days || [])];
+                                                if (days.includes(i)) days.splice(days.indexOf(i), 1);
+                                                else days.push(i);
+                                                setNewSchedule({ ...newSchedule, days });
+                                            }}>{d}</button>
+                                    ))}
+                                </div>
+                            </div>
+                            <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                                <button className="btn btn-primary btn-sm" onClick={createSchedule}>{t('Erstellen', 'Create')}</button>
+                                <button className="btn btn-ghost btn-sm" onClick={() => setShowAddSchedule(false)}>{t('Abbrechen', 'Cancel')}</button>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* ── Automatik Tab ── */}
+            {tab === 'automation' && (
+                <div>
+                    <h3 style={{ margin: '0 0 12px 0' }}>{t('Automatik-Regeln', 'Automation Rules')}</h3>
+
+                    {/* Sun protection */}
+                    <div className="card" style={{ padding: 12, marginBottom: 8 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div><span className="mdi mdi-white-balance-sunny" style={{ marginRight: 6 }} /><strong>{t('Sonnenschutz', 'Sun Protection')}</strong></div>
+                            <button className={`btn btn-sm ${settings.sun_protection_enabled ? 'btn-primary' : 'btn-ghost'}`}
+                                onClick={() => saveSetting('sun_protection_enabled', !settings.sun_protection_enabled)}>
+                                {settings.sun_protection_enabled ? 'ON' : 'OFF'}
+                            </button>
+                        </div>
+                        {settings.sun_protection_enabled && (
+                            <div style={{ marginTop: 8, fontSize: 12 }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                                    <span>{t('Außentemperatur ab', 'Outdoor temp above')}:</span>
+                                    <span>{settings.sun_protection_outdoor_temp_c || 25}°C</span>
+                                </div>
+                                <input type="range" min="15" max="40" step="0.5"
+                                    value={settings.sun_protection_outdoor_temp_c || 25}
+                                    onChange={e => saveSetting('sun_protection_outdoor_temp_c', parseFloat(e.target.value))}
+                                    style={{ width: '100%' }} />
+                                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
+                                    <span>{t('Position bei Sonne', 'Position on sun')}:</span>
+                                    <span>{settings.sun_protection_position_pct || 20}%</span>
+                                </div>
+                                <input type="range" min="0" max="50"
+                                    value={settings.sun_protection_position_pct || 20}
+                                    onChange={e => saveSetting('sun_protection_position_pct', parseInt(e.target.value))}
+                                    style={{ width: '100%' }} />
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Winter solar gain */}
+                    <div className="card" style={{ padding: 12, marginBottom: 8 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div><span className="mdi mdi-snowflake" style={{ marginRight: 6 }} /><strong>{t('Winter-Solargewinn', 'Winter Solar Gain')}</strong></div>
+                            <button className={`btn btn-sm ${settings.winter_solar_gain_enabled ? 'btn-primary' : 'btn-ghost'}`}
+                                onClick={() => saveSetting('winter_solar_gain_enabled', !settings.winter_solar_gain_enabled)}>
+                                {settings.winter_solar_gain_enabled ? 'ON' : 'OFF'}
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Weather protection */}
+                    <div className="card" style={{ padding: 12, marginBottom: 8 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div><span className="mdi mdi-weather-windy" style={{ marginRight: 6 }} /><strong>{t('Wetterschutz', 'Weather Protection')}</strong></div>
+                            <button className={`btn btn-sm ${settings.weather_protection_enabled ? 'btn-primary' : 'btn-ghost'}`}
+                                onClick={() => saveSetting('weather_protection_enabled', !settings.weather_protection_enabled)}>
+                                {settings.weather_protection_enabled ? 'ON' : 'OFF'}
+                            </button>
+                        </div>
+                        {settings.weather_protection_enabled && (
+                            <div style={{ marginTop: 8, fontSize: 12 }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                    <span>{t('Wind-Schwelle', 'Wind threshold')}:</span>
+                                    <span>{settings.wind_threshold_kmh || 50} km/h</span>
+                                </div>
+                                <input type="range" min="20" max="100"
+                                    value={settings.wind_threshold_kmh || 50}
+                                    onChange={e => saveSetting('wind_threshold_kmh', parseInt(e.target.value))}
+                                    style={{ width: '100%' }} />
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Privacy */}
+                    <div className="card" style={{ padding: 12, marginBottom: 8 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div><span className="mdi mdi-eye-off" style={{ marginRight: 6 }} /><strong>{t('Privatsphäre / Dämmerung', 'Privacy / Dusk')}</strong></div>
+                            <button className={`btn btn-sm ${settings.privacy_mode_enabled ? 'btn-primary' : 'btn-ghost'}`}
+                                onClick={() => saveSetting('privacy_mode_enabled', !settings.privacy_mode_enabled)}>
+                                {settings.privacy_mode_enabled ? 'ON' : 'OFF'}
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Presence Simulation */}
+                    <div className="card" style={{ padding: 12, marginBottom: 8 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div><span className="mdi mdi-home-clock" style={{ marginRight: 6 }} /><strong>{t('Anwesenheitssimulation', 'Presence Simulation')}</strong></div>
+                            <button className={`btn btn-sm ${settings.presence_simulation_enabled ? 'btn-primary' : 'btn-ghost'}`}
+                                onClick={() => saveSetting('presence_simulation_enabled', !settings.presence_simulation_enabled)}>
+                                {settings.presence_simulation_enabled ? 'ON' : 'OFF'}
+                            </button>
+                        </div>
+                        {settings.presence_simulation_enabled && (
+                            <div style={{ marginTop: 8, fontSize: 12 }}>
+                                <span>{t('Zeitfenster', 'Window')}: {settings.simulation_start_hour || 17}:00 - {settings.simulation_end_hour || 23}:00</span>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Comfort */}
+                    <div className="card" style={{ padding: 12, marginBottom: 8 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div><span className="mdi mdi-bed" style={{ marginRight: 6 }} /><strong>{t('Komfort-Integration', 'Comfort Integration')}</strong></div>
+                        </div>
+                        <div style={{ marginTop: 8, fontSize: 12 }}>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                                <input type="checkbox" checked={settings.wakeup_integration_enabled !== false}
+                                    onChange={e => saveSetting('wakeup_integration_enabled', e.target.checked)} />
+                                {t('Aufwach-Öffnung', 'Wake-up open')}
+                            </label>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                                <input type="checkbox" checked={settings.sleep_close_enabled !== false}
+                                    onChange={e => saveSetting('sleep_close_enabled', e.target.checked)} />
+                                {t('Schlaf-Schließung', 'Sleep close')}
+                            </label>
+                        </div>
+                    </div>
+
+                    {/* Manual override */}
+                    <div className="card" style={{ padding: 12, marginBottom: 8 }}>
+                        <div><span className="mdi mdi-hand-back-right" style={{ marginRight: 6 }} /><strong>{t('Manueller Override', 'Manual Override')}</strong></div>
+                        <div style={{ marginTop: 8, fontSize: 12 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                <span>{t('Dauer (Minuten)', 'Duration (min)')}:</span>
+                                <span>{settings.manual_override_duration_min || 120}</span>
+                            </div>
+                            <input type="range" min="15" max="480" step="15"
+                                value={settings.manual_override_duration_min || 120}
+                                onChange={e => saveSetting('manual_override_duration_min', parseInt(e.target.value))}
+                                style={{ width: '100%' }} />
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ── Szenen Tab ── */}
+            {tab === 'scenes' && (
+                <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
+                        <h3 style={{ margin: 0 }}>{t('Szenen', 'Scenes')}</h3>
+                        <button className="btn btn-primary btn-sm" onClick={() => setShowAddScene(true)}>
+                            <span className="mdi mdi-plus" /> {t('Neue Szene', 'New Scene')}
+                        </button>
+                    </div>
+                    {scenes.length === 0 ? (
+                        <div className="card" style={{ padding: 16, textAlign: 'center', color: 'var(--text-muted)' }}>
+                            {t('Keine Szenen vorhanden', 'No scenes yet')}
+                        </div>
+                    ) : scenes.map(s => (
+                        <div key={s.id} className="card" style={{ padding: 12, marginBottom: 8 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div>
+                                    <span className={`mdi ${s.icon || 'mdi-blinds'}`} style={{ marginRight: 6 }} />
+                                    <strong>{lang === 'de' ? s.name : (s.name_en || s.name)}</strong>
+                                    <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 8 }}>
+                                        {Object.keys(s.positions || {}).length} {t('Positionen', 'positions')}
+                                    </span>
+                                </div>
+                                <div style={{ display: 'flex', gap: 4 }}>
+                                    <button className="btn btn-primary btn-sm" onClick={() => activateScene(s.id)}>
+                                        <span className="mdi mdi-play" /> {t('Aktivieren', 'Activate')}
+                                    </button>
+                                    <button className="btn btn-ghost btn-sm" onClick={() => deleteScene(s.id)}
+                                        style={{ color: 'var(--danger)' }}><span className="mdi mdi-delete" /></button>
+                                </div>
+                            </div>
+                        </div>
+                    ))}
+                    {showAddScene && (
+                        <div className="card" style={{ padding: 16, marginTop: 12, border: '2px solid var(--primary)' }}>
+                            <h4 style={{ margin: '0 0 12px 0' }}>{t('Neue Szene (aktuelle Positionen speichern)', 'New Scene (save current positions)')}</h4>
+                            <input className="input" placeholder={t('Name (DE)', 'Name (DE)')} style={{ marginBottom: 8 }}
+                                value={newScene.name} onChange={e => setNewScene({ ...newScene, name: e.target.value })} />
+                            <input className="input" placeholder={t('Name (EN, optional)', 'Name (EN, optional)')} style={{ marginBottom: 8 }}
+                                value={newScene.name_en} onChange={e => setNewScene({ ...newScene, name_en: e.target.value })} />
+                            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8 }}>
+                                {t('Die aktuellen Positionen aller Rollläden werden gespeichert.', 'Current positions of all covers will be saved.')}
+                            </div>
+                            <div style={{ display: 'flex', gap: 8 }}>
+                                <button className="btn btn-primary btn-sm" onClick={createScene}>{t('Erstellen', 'Create')}</button>
+                                <button className="btn btn-ghost btn-sm" onClick={() => setShowAddScene(false)}>{t('Abbrechen', 'Cancel')}</button>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* ── Einstellungen Tab ── */}
+            {tab === 'settings' && (
+                <div>
+                    {/* Feature flag */}
+                    <div className="card" style={{ padding: 12, marginBottom: 12 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div>
+                                <strong>{t('Rollladensteuerung', 'Cover Control')}</strong>
+                                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>phase5.cover_control</div>
+                            </div>
+                            <button className={`btn btn-sm ${featureEnabled ? 'btn-primary' : 'btn-ghost'}`}
+                                onClick={toggleFeature}>
+                                {featureEnabled ? t('Aktiv', 'Active') : t('Deaktiviert', 'Disabled')}
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Entity management */}
+                    <h4 style={{ margin: '16px 0 8px 0' }}>{t('Zugewiesene Entitäten', 'Assigned Entities')}</h4>
+                    {entities.map(e => (
+                        <div key={e.id} className="card" style={{ padding: 10, marginBottom: 6 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div>
+                                    <span style={{ fontWeight: 600, fontSize: 13 }}>{e.entity_id}</span>
+                                    <span className="badge" style={{ marginLeft: 8, fontSize: 10 }}>{e.role}</span>
+                                </div>
+                                <button className="btn btn-ghost btn-sm" onClick={() => removeEntity(e.id)}
+                                    style={{ color: 'var(--danger)' }}><span className="mdi mdi-close" /></button>
+                            </div>
+                        </div>
+                    ))}
+                    <button className="btn btn-primary btn-sm" style={{ marginTop: 8 }}
+                        onClick={() => { setShowAddEntity(true); discover(); }}>
+                        <span className="mdi mdi-plus" /> {t('Entität hinzufügen', 'Add Entity')}
+                    </button>
+
+                    {showAddEntity && discovered && (
+                        <div className="card" style={{ padding: 16, marginTop: 12, border: '2px solid var(--primary)', maxHeight: 400, overflowY: 'auto' }}>
+                            <h4 style={{ margin: '0 0 8px 0' }}>{t('Verfügbare Rollläden', 'Available Covers')}</h4>
+                            {(discovered.covers || []).map(c => (
+                                <div key={c.entity_id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--border)' }}>
+                                    <div>
+                                        <div style={{ fontWeight: 600, fontSize: 13 }}>{c.name}</div>
+                                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{c.entity_id}</div>
+                                    </div>
+                                    <button className="btn btn-primary btn-sm" onClick={() => addEntity(c.entity_id, 'cover')}>
+                                        <span className="mdi mdi-plus" />
+                                    </button>
+                                </div>
+                            ))}
+                            <h4 style={{ margin: '12px 0 8px 0' }}>{t('Verfügbare Sensoren', 'Available Sensors')}</h4>
+                            {(discovered.sensors || []).map(s => (
+                                <div key={s.entity_id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--border)' }}>
+                                    <div>
+                                        <div style={{ fontWeight: 600, fontSize: 13 }}>{s.name}</div>
+                                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{s.entity_id} · {s.suggested_role}</div>
+                                    </div>
+                                    <button className="btn btn-primary btn-sm" onClick={() => addEntity(s.entity_id, s.suggested_role)}>
+                                        <span className="mdi mdi-plus" />
+                                    </button>
+                                </div>
+                            ))}
+                            <button className="btn btn-ghost btn-sm" style={{ marginTop: 8 }}
+                                onClick={() => setShowAddEntity(false)}>{t('Schließen', 'Close')}</button>
+                        </div>
+                    )}
+
+                    {/* Per-cover config */}
+                    <h4 style={{ margin: '16px 0 8px 0' }}>{t('Rollladen-Konfiguration', 'Cover Configuration')}</h4>
+                    {covers.map(c => {
+                        const conf = configs[c.entity_id] || {};
+                        return (
+                            <div key={c.entity_id} className="card" style={{ padding: 10, marginBottom: 6 }}>
+                                <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 6 }}>{c.name}</div>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6 }}>
+                                    <div>
+                                        <label style={{ fontSize: 11 }}>{t('Fassade', 'Facade')}</label>
+                                        <select className="input" style={{ fontSize: 12 }}
+                                            value={conf.facade || ''} onChange={e => setCoverConfig(c.entity_id, 'facade', e.target.value)}>
+                                            <option value="">-</option>
+                                            {['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'].map(d => <option key={d} value={d}>{d}</option>)}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label style={{ fontSize: 11 }}>{t('Stockwerk', 'Floor')}</label>
+                                        <select className="input" style={{ fontSize: 12 }}
+                                            value={conf.floor || ''} onChange={e => setCoverConfig(c.entity_id, 'floor', e.target.value)}>
+                                            <option value="">-</option>
+                                            {['KG', 'EG', 'OG1', 'OG2', 'DG'].map(f => <option key={f} value={f}>{f}</option>)}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label style={{ fontSize: 11 }}>{t('Typ', 'Type')}</label>
+                                        <select className="input" style={{ fontSize: 12 }}
+                                            value={conf.cover_type || 'shutter'} onChange={e => setCoverConfig(c.entity_id, 'cover_type', e.target.value)}>
+                                            <option value="shutter">{t('Rollladen', 'Shutter')}</option>
+                                            <option value="blind">{t('Jalousie', 'Blind')}</option>
+                                            <option value="awning">{t('Markise', 'Awning')}</option>
+                                            <option value="roof_window">{t('Dachfenster', 'Roof Window')}</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })}
+
+                    {/* Learning toggle */}
+                    <div className="card" style={{ padding: 12, marginTop: 12 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div>
+                                <span className="mdi mdi-brain" style={{ marginRight: 6 }} />
+                                <strong>{t('Lernfunktion', 'Learning')}</strong>
+                            </div>
+                            <button className={`btn btn-sm ${settings.learning_enabled ? 'btn-primary' : 'btn-ghost'}`}
+                                onClick={() => saveSetting('learning_enabled', !settings.learning_enabled)}>
+                                {settings.learning_enabled ? 'ON' : 'OFF'}
+                            </button>
+                        </div>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                            {t('Manuelle Bedienungen werden analysiert, um Muster zu erkennen.', 'Manual operations are analyzed to detect patterns.')}
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
+
 const SettingsPage = () => {
     const { lang, setLang, theme, setTheme, viewMode, setViewMode, showToast, refreshData } = useApp();
     const [sysInfo, setSysInfo] = useState(null);
@@ -10232,6 +10917,7 @@ const App = () => {
         { id: 'presence', icon: 'mdi-account-multiple', label: lang === 'de' ? 'Anwesenheit' : 'Presence' },
         { id: 'notifications', icon: 'mdi-bell', label: lang === 'de' ? 'Benachrichtigungen' : 'Notifications' },
         { id: 'security', icon: 'mdi-shield-alert', label: lang === 'de' ? 'Sicherheit' : 'Security' },
+        { id: 'covers', icon: 'mdi-blinds-horizontal', label: lang === 'de' ? 'Rollläden' : 'Covers' },
         { id: 'settings', icon: 'mdi-cog', label: lang === 'de' ? 'Einstellungen' : 'Settings', adminOnly: true },
     ].filter(item => !item.adminOnly || isAdmin);
 
@@ -10251,6 +10937,7 @@ const App = () => {
         presence: PresencePage,
         notifications: NotificationsPage,
         security: SecurityPage,
+        covers: CoverPage,
         settings: SettingsPage,
     };
 
