@@ -4,12 +4,22 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "0.7.29"
-BUILD = 82
+VERSION = "0.8.0"
+BUILD = 83
 BUILD_DATE = "2026-02-15"
-CODENAME = "Phase 4 - Smart Health"
+CODENAME = "Phase 5 - Security & Modes"
 
 # Changelog
+# Build 83: v0.8.0 Phase 5 - Security & Modes
+#   - 11 neue Features: Sicherheit (6) + Spezial-Modi (5)
+#   - Neue Engines: fire_water, access_control, camera_security, special_modes
+#   - Neuer Blueprint: routes/security.py (15. Blueprint)
+#   - 8 neue DB-Models + 2 neue Enums + Migration v12
+#   - 11 Feature-Flags (phase5.*)
+#   - Security Dashboard mit 6 Tabs
+#   - Notfall-Protokoll mit Eskalationskette
+#   - Spezial-Modi: Party, Kino, Home-Office, Nacht-Sicherung
+#
 # Build 82: v0.7.29 Fix HA-Automation-Erkennung (config-Wrapper)
 #   - CRITICAL FIX: WS "automation/config" gibt {"config": {...}} zurueck,
 #     nicht direkt das Config-Dict. Fehlte: raw.get("config", raw) Unwrapping
