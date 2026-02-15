@@ -4,12 +4,19 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "0.7.21"
-BUILD = 74
+VERSION = "0.7.22"
+BUILD = 75
 BUILD_DATE = "2026-02-15"
 CODENAME = "Phase 4 - Smart Health"
 
 # Changelog
+# Build 75: v0.7.22 Fix PatternDetector ha_connection
+#   - FIX: PatternDetector hatte kein self.ha Attribut — AttributeError bei
+#     Pattern-Analyse in _upsert_or_update_pattern() wenn HA-Automation-Check
+#     ausgefuehrt wird
+#   - PatternDetector.__init__() akzeptiert jetzt ha_connection Parameter
+#   - PatternScheduler reicht ha_connection an PatternDetector durch
+#
 # Build 74: v0.7.21 HA-Automations-Erkennung + Duplikat-Vermeidung
 #   - NEU: MindHome erkennt bestehende HA-Automationen und vermeidet Duplikate
 #     ha_connection: get_automation_configs() laedt HA-Automation-Konfigurationen

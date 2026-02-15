@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.7.22 – Fix PatternDetector ha_connection
+
+### Fix
+- **Pattern-Analyse Crash**: `'PatternDetector' object has no attribute 'ha'` — PatternDetector bekam kein `ha_connection` uebergeben, dadurch schlug die HA-Automations-Erkennung aus v0.7.21 fehl
+- **PatternDetector**: Akzeptiert jetzt `ha_connection` Parameter und speichert ihn als `self.ha`
+- **PatternScheduler**: Reicht `ha_connection` an PatternDetector durch (analog zu StateLogger)
+- **build.yaml**: OCI-Image-Version war auf 0.7.19 stehen geblieben, jetzt synchronisiert
+
+## 0.7.21 – HA-Automations-Erkennung + Duplikat-Vermeidung
+
+### Features
+- MindHome erkennt bestehende HA-Automationen und vermeidet Duplikate
+- Pattern-Engine annotiert neue Patterns mit `ha_covered` Flag
+- Automation-Executor ueberspringt HA-gesteuerte Entities
+- API `/api/patterns` liefert `ha_covered` Flag pro Pattern
+
 ## 0.7.20 – Fix Device-Loeschung + Muster-Konflikterkennung
 
 ### Fix

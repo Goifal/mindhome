@@ -671,9 +671,10 @@ class PatternDetector:
     # Fix #11: Mutex to prevent concurrent analysis runs
     _analysis_lock = threading.Lock()
 
-    def __init__(self, engine):
+    def __init__(self, engine, ha_connection=None):
         self.engine = engine
         self.Session = sessionmaker(bind=engine)
+        self.ha = ha_connection
         self._device_cache = {}
 
     def run_full_analysis(self):
@@ -2070,7 +2071,7 @@ class PatternScheduler:
         self.engine = engine
         self.Session = sessionmaker(bind=engine)
         self.ha = ha_connection
-        self.detector = PatternDetector(engine)
+        self.detector = PatternDetector(engine, ha_connection)
         self.state_logger = StateLogger(engine, ha_connection)
         self._should_run = True
         self._threads = []
