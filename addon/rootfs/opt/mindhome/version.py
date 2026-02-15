@@ -4,19 +4,17 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "0.7.26"
-BUILD = 79
+VERSION = "0.7.27"
+BUILD = 80
 BUILD_DATE = "2026-02-15"
 CODENAME = "Phase 4 - Smart Health"
 
 # Changelog
-# Build 79: v0.7.26 Fix HA-Automation-Erkennung (per-Entity WS-Abfrage)
-#   - CRITICAL FIX: "automation/config/list" liefert nur UI-Automationen (leer bei YAML)
-#     Fix: WS "automation/config" mit entity_id pro Automation — funktioniert fuer
-#     ALLE Automationen (UI + YAML) weil es raw_config vom Entity liest
-#   - Kein Matching-Problem mehr (direkte entity_id Zuordnung)
-#   - Info-Logging: "Fetched X/Y automation configs via WS"
+# Build 80: v0.7.27 Diagnostik - Automation Config Content Logging
+#   - Diagnostik: Loggt wie viele Configs actions haben + Sample Action-Keys
+#   - Hilft herauszufinden warum 80/80 fetched aber 0 coverage
 #
+# Build 79: v0.7.26 per-Entity WS-Abfrage (UI + YAML)
 # Build 78: v0.7.25 WS automation/config/list (leer bei YAML-Automationen)
 # Build 77: v0.7.24 REST-API Versuch (404 via Supervisor)
 # Build 76: v0.7.23 _extract_actions_flat + action-Key Support

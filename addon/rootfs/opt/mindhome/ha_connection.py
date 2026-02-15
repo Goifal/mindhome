@@ -236,11 +236,32 @@ class HAConnection:
                 except Exception:
                     failed += 1
 
+            # Diagnostic: count configs with actual actions
+            with_actions = sum(1 for c in configs if c.get("actions"))
+            sample = None
+            for c in configs:
+                if c.get("actions"):
+                    sample = c
+                    break
+
             if fetched:
                 logger.info(
                     f"Fetched {fetched}/{len(configs)} automation configs via WS"
                     + (f" ({failed} failed)" if failed else "")
+                    + f", {with_actions} have actions"
                 )
+                if sample:
+                    logger.info(
+                        f"Sample automation '{sample.get('friendly_name', '?')}': "
+                        f"actions keys={[list(a.keys()) if isinstance(a, dict) else type(a).__name__ for a in sample['actions'][:3]]}"
+                    )
+                elif fetched and not with_actions:
+                    # Show raw keys from first successful fetch for debugging
+                    for c in configs:
+                        raw_keys = [k for k in c.keys() if k not in ('entity_id', 'friendly_name', 'state')]
+                        if raw_keys:
+                            logger.info(f"Sample config keys beyond base: {raw_keys}, actions={c.get('actions')!r}, triggers={c.get('triggers')!r}")
+                            break
             else:
                 logger.warning(
                     f"Could not fetch any automation configs via WS "
