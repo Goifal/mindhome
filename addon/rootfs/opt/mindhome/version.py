@@ -4,12 +4,30 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "0.8.3"
-BUILD = 86
+VERSION = "0.8.4"
+BUILD = 87
 BUILD_DATE = "2026-02-15"
-CODENAME = "Security Audit & Entity Management"
+CODENAME = "Unified Page Styling"
 
 # Changelog
+# Build 87: v0.8.4 Unified Page Styling
+#   - Einheitliches Seiten-Layout fuer alle 9 Feature-Seiten (Musterseite als Vorlage)
+#   - Alle h2 Seiten-Header entfernt (Sidebar zeigt aktive Seite)
+#   - Tab-Container standardisiert: gap:4, paddingBottom:4, scrollbarWidth:none,
+#     msOverflowStyle:none, WebkitOverflowScrolling:touch
+#   - Tab-Buttons standardisiert: btn (statt btn-sm), fontSize:13, padding:6px 14px,
+#     Icon marginRight:6
+#   - CoverPage: className="page-content" entfernt, borderBottom + borderRadius entfernt
+#   - SecurityPage: h2 Header entfernt, Tabs auf Standard-Format
+#   - NotificationsPage: Tab-Bereich vereinheitlicht, DND-Button in Tab-Leiste integriert
+#   - HealthPage: h2 Header entfernt, Tabs auf Standard-Format
+#   - ClimatePage: h2 Header entfernt, Tabs auf Standard-Format
+#   - AiPage: h2 Header entfernt, Tabs auf Standard-Format
+#   - EnergyPage: h2 Header entfernt, Discover-Button in Tab-Leiste integriert
+#   - ScenesPage: h2 Header entfernt, Create-Button in Tab-Leiste integriert,
+#     Tab-Icons hinzugefuegt (mdi-play-circle, mdi-lightbulb-on, mdi-camera)
+#   - PresencePage: h2 Header entfernt, Tabs auf Standard-Format
+#
 # Build 86: v0.8.3 Security Audit & Entity Management
 #   - NEU: Protokoll-Tab in Sicherheitsansicht (vollständiges Änderungsprotokoll)
 #     * Alle Sicherheitsereignisse chronologisch aufgelistet

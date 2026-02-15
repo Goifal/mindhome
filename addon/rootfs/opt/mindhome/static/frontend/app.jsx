@@ -3097,16 +3097,12 @@ const SecurityPage = () => {
 
     return (
         <div>
-            <h2 style={{ marginBottom: 16 }}>
-                <span className="mdi mdi-shield-alert" style={{ marginRight: 8 }} />
-                {lang === 'de' ? 'Sicherheit' : 'Security'}
-            </h2>
-
-            <div style={{ display: 'flex', gap: 4, marginBottom: 16, overflowX: 'auto' }}>
+            <div style={{ display: 'flex', gap: 4, marginBottom: 16, overflowX: 'auto', paddingBottom: 4, whiteSpace: 'nowrap', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
                 {tabs.map(t => (
-                    <button key={t.id} className={`btn btn-sm ${tab === t.id ? 'btn-primary' : 'btn-ghost'}`}
-                        onClick={() => setTab(t.id)} style={{ flexShrink: 0 }}>
-                        <span className={`mdi ${t.icon}`} style={{ marginRight: 4 }} />{t.label}
+                    <button key={t.id} className={`btn ${tab === t.id ? 'btn-primary' : 'btn-ghost'}`}
+                        style={{ fontSize: 13, whiteSpace: 'nowrap', padding: '6px 14px', flexShrink: 0 }}
+                        onClick={() => setTab(t.id)}>
+                        <span className={`mdi ${t.icon}`} style={{ marginRight: 6 }} />{t.label}
                     </button>
                 ))}
             </div>
@@ -3843,14 +3839,14 @@ const CoverPage = () => {
     ];
 
     return (
-        <div className="page-content">
-            <div style={{ display: 'flex', gap: 8, overflowX: 'auto', marginBottom: 16, borderBottom: '1px solid var(--border)' }}>
+        <div>
+            <div style={{ display: 'flex', gap: 4, marginBottom: 16, overflowX: 'auto', paddingBottom: 4, whiteSpace: 'nowrap', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
                 {tabs.map(tb => (
                     <button key={tb.id}
-                        className={`btn btn-sm ${tab === tb.id ? 'btn-primary' : 'btn-ghost'}`}
-                        style={{ whiteSpace: 'nowrap', borderRadius: '8px 8px 0 0' }}
+                        className={`btn ${tab === tb.id ? 'btn-primary' : 'btn-ghost'}`}
+                        style={{ fontSize: 13, whiteSpace: 'nowrap', padding: '6px 14px', flexShrink: 0 }}
                         onClick={() => setTab(tb.id)}>
-                        <span className={`mdi ${tb.icon}`} style={{ marginRight: 4 }} />{tb.label}
+                        <span className={`mdi ${tb.icon}`} style={{ marginRight: 6 }} />{tb.label}
                     </button>
                 ))}
             </div>
@@ -6995,20 +6991,17 @@ const NotificationsPage = () => {
 
     return (
         <div>
-            {/* Tab bar + DND */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
-                <div style={{ display: 'flex', gap: 4, overflowX: 'auto', whiteSpace: 'nowrap', scrollbarWidth: 'none' }}>
-                    {[{ id: 'inbox', label: lang === 'de' ? 'Posteingang' : 'Inbox', icon: 'mdi-bell' },
-                      { id: 'settings', label: lang === 'de' ? 'Einstellungen' : 'Settings', icon: 'mdi-cog' }].map(t => (
-                        <button key={t.id} className={`btn ${tab === t.id ? 'btn-primary' : 'btn-ghost'}`}
-                            style={{ fontSize: 13, padding: '6px 14px', flexShrink: 0 }} onClick={() => setTab(t.id)}>
-                            <span className={`mdi ${t.icon}`} style={{ marginRight: 6 }} />{t.label}
-                        </button>
-                    ))}
-                </div>
+            <div style={{ display: 'flex', gap: 4, marginBottom: 16, overflowX: 'auto', paddingBottom: 4, whiteSpace: 'nowrap', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
+                {[{ id: 'inbox', label: lang === 'de' ? 'Posteingang' : 'Inbox', icon: 'mdi-bell' },
+                  { id: 'settings', label: lang === 'de' ? 'Einstellungen' : 'Settings', icon: 'mdi-cog' }].map(t => (
+                    <button key={t.id} className={`btn ${tab === t.id ? 'btn-primary' : 'btn-ghost'}`}
+                        style={{ fontSize: 13, whiteSpace: 'nowrap', padding: '6px 14px', flexShrink: 0 }} onClick={() => setTab(t.id)}>
+                        <span className={`mdi ${t.icon}`} style={{ marginRight: 6 }} />{t.label}
+                    </button>
+                ))}
                 <button className={`btn ${notifSettings?.dnd_enabled ? 'btn-warning' : 'btn-ghost'}`}
-                    onClick={toggleDND} style={{ fontSize: 12, padding: '6px 12px' }}>
-                    <span className="mdi mdi-bell-off" style={{ marginRight: 4 }} />DND
+                    onClick={toggleDND} style={{ fontSize: 13, whiteSpace: 'nowrap', padding: '6px 14px', flexShrink: 0, marginLeft: 'auto' }}>
+                    <span className="mdi mdi-bell-off" style={{ marginRight: 6 }} />DND
                 </button>
             </div>
 
@@ -8146,21 +8139,19 @@ const EnergyPage = () => {
 
     return (
         <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-                <h2>{lang === 'de' ? 'Energie-Dashboard' : 'Energy Dashboard'}</h2>
-                <button className="btn btn-primary" onClick={discoverSensors} disabled={discovering}>
+            <div style={{ display: 'flex', gap: 4, marginBottom: 16, overflowX: 'auto', paddingBottom: 4, whiteSpace: 'nowrap', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
+                {tabs.map(t => (
+                    <button key={t.id} className={`btn ${tab === t.id ? 'btn-primary' : 'btn-ghost'}`}
+                        style={{ fontSize: 13, whiteSpace: 'nowrap', padding: '6px 14px', flexShrink: 0 }}
+                        onClick={() => setTab(t.id)}>
+                        <span className={'mdi ' + t.icon} style={{ marginRight: 6 }} />{t.label}
+                    </button>
+                ))}
+                <button className="btn btn-primary" onClick={discoverSensors} disabled={discovering}
+                    style={{ fontSize: 13, whiteSpace: 'nowrap', padding: '6px 14px', flexShrink: 0, marginLeft: 'auto' }}>
                     <span className="mdi mdi-magnify" style={{ marginRight: 6 }} />
                     {discovering ? '...' : (lang === 'de' ? 'Sensoren suchen' : 'Discover sensors')}
                 </button>
-            </div>
-
-            <div style={{ display: 'flex', gap: 4, marginBottom: 16, overflowX: 'auto', whiteSpace: 'nowrap', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
-                {tabs.map(t => (
-                    <button key={t.id} className={`btn btn-sm ${tab === t.id ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setTab(t.id)}
-                        style={{ flexShrink: 0 }}>
-                        <span className={'mdi ' + t.icon} style={{ marginRight: 4 }} />{t.label}
-                    </button>
-                ))}
             </div>
 
             {tab === 'overview' && (
@@ -8713,15 +8704,12 @@ const HealthPage = () => {
 
     return (
         <div>
-            <h2 style={{ marginBottom: 16 }}>
-                <span className="mdi mdi-heart-pulse" style={{ marginRight: 8 }} />
-                {lang === 'de' ? 'Gesundheit & Routinen' : 'Health & Routines'}
-            </h2>
-
-            <div style={{ display: 'flex', gap: 4, marginBottom: 16, overflowX: 'auto', whiteSpace: 'nowrap', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none' }}>
+            <div style={{ display: 'flex', gap: 4, marginBottom: 16, overflowX: 'auto', paddingBottom: 4, whiteSpace: 'nowrap', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
                 {tabs.map(t => (
-                    <button key={t.id} className={`btn btn-sm ${tab === t.id ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setTab(t.id)} style={{ flexShrink: 0 }}>
-                        <span className={'mdi ' + t.icon} style={{ marginRight: 4 }} />{t.label}
+                    <button key={t.id} className={`btn ${tab === t.id ? 'btn-primary' : 'btn-ghost'}`}
+                        style={{ fontSize: 13, whiteSpace: 'nowrap', padding: '6px 14px', flexShrink: 0 }}
+                        onClick={() => setTab(t.id)}>
+                        <span className={'mdi ' + t.icon} style={{ marginRight: 6 }} />{t.label}
                     </button>
                 ))}
             </div>
@@ -9445,15 +9433,12 @@ const ClimatePage = () => {
 
     return (
         <div>
-            <h2 style={{ marginBottom: 16 }}>
-                <span className="mdi mdi-home-thermometer" style={{ marginRight: 8 }} />
-                {lang === 'de' ? 'Klima & Umgebung' : 'Climate & Environment'}
-            </h2>
-
-            <div style={{ display: 'flex', gap: 4, marginBottom: 16, overflowX: 'auto', whiteSpace: 'nowrap', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none' }}>
+            <div style={{ display: 'flex', gap: 4, marginBottom: 16, overflowX: 'auto', paddingBottom: 4, whiteSpace: 'nowrap', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
                 {tabs.map(t => (
-                    <button key={t.id} className={`btn btn-sm ${tab === t.id ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setTab(t.id)} style={{ flexShrink: 0 }}>
-                        <span className={'mdi ' + t.icon} style={{ marginRight: 4 }} />{t.label}
+                    <button key={t.id} className={`btn ${tab === t.id ? 'btn-primary' : 'btn-ghost'}`}
+                        style={{ fontSize: 13, whiteSpace: 'nowrap', padding: '6px 14px', flexShrink: 0 }}
+                        onClick={() => setTab(t.id)}>
+                        <span className={'mdi ' + t.icon} style={{ marginRight: 6 }} />{t.label}
                     </button>
                 ))}
             </div>
@@ -9801,15 +9786,12 @@ const AiPage = () => {
 
     return (
         <div>
-            <h2 style={{ marginBottom: 16 }}>
-                <span className="mdi mdi-brain" style={{ marginRight: 8 }} />
-                {lang === 'de' ? 'KI & Adaptive' : 'AI & Adaptive'}
-            </h2>
-
-            <div style={{ display: 'flex', gap: 4, marginBottom: 16, overflowX: 'auto', whiteSpace: 'nowrap', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none' }}>
+            <div style={{ display: 'flex', gap: 4, marginBottom: 16, overflowX: 'auto', paddingBottom: 4, whiteSpace: 'nowrap', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
                 {tabs.map(t => (
-                    <button key={t.id} className={`btn btn-sm ${tab === t.id ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setTab(t.id)} style={{ flexShrink: 0 }}>
-                        <span className={'mdi ' + t.icon} style={{ marginRight: 4 }} />{t.label}
+                    <button key={t.id} className={`btn ${tab === t.id ? 'btn-primary' : 'btn-ghost'}`}
+                        style={{ fontSize: 13, whiteSpace: 'nowrap', padding: '6px 14px', flexShrink: 0 }}
+                        onClick={() => setTab(t.id)}>
+                        <span className={'mdi ' + t.icon} style={{ marginRight: 6 }} />{t.label}
                     </button>
                 ))}
             </div>
@@ -10086,20 +10068,25 @@ const ScenesPage = () => {
 
     return (
         <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-                <h2>{lang === 'de' ? 'Szenen' : 'Scenes'}</h2>
-                <button className="btn btn-primary" onClick={() => setShowCreate(true)}>
-                    <span className="mdi mdi-plus" style={{ marginRight: 4 }} />{lang === 'de' ? 'Szene erstellen' : 'Create scene'}
-                </button>
-            </div>
             <div className="card animate-in" style={{ padding: 16, marginBottom: 16, background: 'var(--bg-tertiary)', borderLeft: '3px solid var(--accent-primary)' }}>
                 <span className="mdi mdi-information" style={{ marginRight: 6, color: 'var(--accent-primary)' }} />
                 {lang === 'de' ? 'Szenen speichern den Zustand mehrerer Geraete und koennen mit einem Klick aktiviert werden. Erstelle Szenen manuell, mache einen Snapshot oder uebernimm erkannte Muster.' : 'Scenes save the state of multiple devices and can be activated with one click.'}
             </div>
-            <div style={{ display: 'flex', gap: 4, marginBottom: 16, overflowX: 'auto', whiteSpace: 'nowrap', scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
-                {[['active', lang === 'de' ? 'Aktiv' : 'Active', accepted.length], ['detected', lang === 'de' ? 'Erkannt' : 'Detected', detected.length], ['snapshot', 'Snapshot', '']].map(([id, label, count]) => (
-                    <button key={id} className={`btn btn-sm ${tab === id ? 'btn-primary' : 'btn-ghost'}`} style={{ flexShrink: 0 }} onClick={() => setTab(id)}>{label}{count !== '' ? ` (${count})` : ''}</button>
+            <div style={{ display: 'flex', gap: 4, marginBottom: 16, overflowX: 'auto', paddingBottom: 4, whiteSpace: 'nowrap', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
+                {[{ id: 'active', label: lang === 'de' ? 'Aktiv' : 'Active', icon: 'mdi-play-circle', count: accepted.length },
+                  { id: 'detected', label: lang === 'de' ? 'Erkannt' : 'Detected', icon: 'mdi-lightbulb-on', count: detected.length },
+                  { id: 'snapshot', label: 'Snapshot', icon: 'mdi-camera', count: '' }].map(t => (
+                    <button key={t.id} className={`btn ${tab === t.id ? 'btn-primary' : 'btn-ghost'}`}
+                        style={{ fontSize: 13, whiteSpace: 'nowrap', padding: '6px 14px', flexShrink: 0 }}
+                        onClick={() => setTab(t.id)}>
+                        <span className={`mdi ${t.icon}`} style={{ marginRight: 6 }} />
+                        {t.label}{t.count !== '' ? ` (${t.count})` : ''}
+                    </button>
                 ))}
+                <button className="btn btn-primary" onClick={() => setShowCreate(true)}
+                    style={{ fontSize: 13, whiteSpace: 'nowrap', padding: '6px 14px', flexShrink: 0, marginLeft: 'auto' }}>
+                    <span className="mdi mdi-plus" style={{ marginRight: 6 }} />{lang === 'de' ? 'Szene erstellen' : 'Create scene'}
+                </button>
             </div>
 
             {tab === 'active' && (
@@ -10659,12 +10646,12 @@ const PresencePage = () => {
 
     return (
         <div>
-            <h2 style={{ marginBottom: 16 }}>{lang === 'de' ? 'Anwesenheit' : 'Presence'}</h2>
-            <div style={{ display: 'flex', gap: 4, marginBottom: 16, overflowX: 'auto', whiteSpace: 'nowrap', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
+            <div style={{ display: 'flex', gap: 4, marginBottom: 16, overflowX: 'auto', paddingBottom: 4, whiteSpace: 'nowrap', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
                 {tabs.map(t => (
-                    <button key={t.id} className={`btn btn-sm ${tab === t.id ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setTab(t.id)}
-                        style={{ flexShrink: 0 }}>
-                        <span className={'mdi ' + t.icon} style={{ marginRight: 4 }} />{t.label}
+                    <button key={t.id} className={`btn ${tab === t.id ? 'btn-primary' : 'btn-ghost'}`}
+                        style={{ fontSize: 13, whiteSpace: 'nowrap', padding: '6px 14px', flexShrink: 0 }}
+                        onClick={() => setTab(t.id)}>
+                        <span className={'mdi ' + t.icon} style={{ marginRight: 6 }} />{t.label}
                     </button>
                 ))}
             </div>
