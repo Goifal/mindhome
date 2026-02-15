@@ -218,20 +218,28 @@ class HAConnection:
                 })
             logger.info(f"Found {len(configs)} automation entities from REST states API")
 
-            # Step 2: Fetch detailed configs (triggers + actions) via REST config API
-            # HA exposes UI-created automations at GET /api/config/automation/config
+            # Step 2: Fetch detailed configs (triggers + actions)
+            # HA storage collections register WS command "automation/config/list"
+            # (NOT "config/automation/config/list" — that doesn't exist)
             detail_configs = None
+
+            # Try WebSocket first (works for UI-created automations)
             try:
-                detail_configs = self._api_request(
-                    "GET", "config/automation/config", retry=False
-                )
+                ws_result = self._ws_command("automation/config/list")
+                if isinstance(ws_result, list):
+                    detail_configs = ws_result
+                    logger.info(
+                        f"Got {len(detail_configs)} automation configs from WebSocket"
+                    )
+                else:
+                    logger.debug(
+                        f"WS automation/config/list returned: "
+                        f"{type(ws_result).__name__}"
+                    )
             except Exception as e:
-                logger.warning(f"REST config/automation/config failed: {e}")
+                logger.warning(f"WS automation/config/list failed: {e}")
 
             if isinstance(detail_configs, list) and detail_configs:
-                logger.info(
-                    f"Got {len(detail_configs)} automation configs from REST config API"
-                )
                 # Build lookups for matching detail configs to state entities
                 configs_by_name = {}
                 configs_by_eid = {}
@@ -243,7 +251,7 @@ class HAConnection:
 
                 matched = 0
                 for cfg in detail_configs:
-                    # HA 2024.x+ uses "action" key, older uses "action" too (list)
+                    # HA uses "action" key (list of action dicts)
                     actions = cfg.get("action", cfg.get("actions", []))
                     triggers = cfg.get("trigger", cfg.get("triggers", []))
 
@@ -277,8 +285,8 @@ class HAConnection:
                 )
             else:
                 logger.info(
-                    "REST config API returned no automation configs "
-                    "(automations may be YAML-based)"
+                    "No detailed automation configs available "
+                    "(automations may be YAML-based or WS unavailable)"
                 )
 
             self._auto_cfg_cache = configs
