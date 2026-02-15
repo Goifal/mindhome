@@ -4,8 +4,8 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "0.7.27"
-BUILD = 80
+VERSION = "0.7.28"
+BUILD = 81
 BUILD_DATE = "2026-02-15"
 CODENAME = "Phase 4 - Smart Health"
 
