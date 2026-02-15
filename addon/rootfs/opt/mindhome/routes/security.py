@@ -96,8 +96,33 @@ def set_phase5_feature(key):
     value = data.get("value", "true")
     if value not in ("true", "false", "auto"):
         return jsonify({"error": "Value must be true, false, or auto"}), 400
+    old_value = get_setting(key) or PHASE5_FEATURES[key]["default"]
     set_setting(key, value)
+    # Log security event
+    _log_security_change("FEATURE_TOGGLED", key, f"{old_value} → {value}")
     return jsonify({"key": key, "value": value, "enabled": is_phase5_feature_enabled(key)})
+
+
+# ==============================================================================
+# Security Change Logging
+# ==============================================================================
+
+def _log_security_change(event_type_str, target, detail_text):
+    """Log a security-relevant change as SecurityEvent."""
+    try:
+        from models import SecurityEvent, SecurityEventType, SecuritySeverity
+        etype = SecurityEventType(event_type_str.lower())
+        with _get_session() as session:
+            evt = SecurityEvent(
+                event_type=etype,
+                severity=SecuritySeverity.INFO,
+                message_de=f"{target}: {detail_text}",
+                message_en=f"{target}: {detail_text}",
+                context={"target": target, "detail": detail_text},
+            )
+            session.add(evt)
+    except Exception as e:
+        logger.warning(f"Could not log security change: {e}")
 
 
 # ==============================================================================
@@ -155,6 +180,7 @@ def add_entity(feature_key):
             )
             session.add(a)
             session.flush()
+            _log_security_change("ENTITY_ASSIGNED", feature_key, f"{entity_id} ({role})")
             return jsonify({"id": a.id, "entity_id": entity_id, "role": role}), 201
     except Exception as e:
         logger.error(f"Add entity error: {e}")
@@ -189,7 +215,10 @@ def delete_entity(feature_key, assignment_id):
             a = session.query(FeatureEntityAssignment).get(assignment_id)
             if not a or a.feature_key != feature_key:
                 return jsonify({"error": "Not found"}), 404
+            eid = a.entity_id
+            role = a.role
             session.delete(a)
+            _log_security_change("ENTITY_REMOVED", feature_key, f"{eid} ({role})")
             return jsonify({"ok": True})
     except Exception as e:
         logger.error(f"Delete entity error: {e}")

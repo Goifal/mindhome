@@ -4,12 +4,31 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "0.8.2"
-BUILD = 85
+VERSION = "0.8.3"
+BUILD = 86
 BUILD_DATE = "2026-02-15"
-CODENAME = "Full Configurability"
+CODENAME = "Security Audit & Entity Management"
 
 # Changelog
+# Build 86: v0.8.3 Security Audit & Entity Management
+#   - NEU: Protokoll-Tab in Sicherheitsansicht (vollständiges Änderungsprotokoll)
+#     * Alle Sicherheitsereignisse chronologisch aufgelistet
+#     * Filterbar nach Typ (Feuer, Wasser, Zutritt, Modi, Feature-Änderungen, etc.)
+#     * Paginierung mit "Mehr laden" für große Protokolle
+#     * Severity-Indikatoren (Info/Warnung/Kritisch/Notfall) mit Farbcodes
+#   - NEU: Geräte-Zuweisung direkt bei Feature-Flags in Sicherheits-Einstellungen
+#     * "Benötigt: X" zeigt jetzt Anzahl zugewiesener Geräte
+#     * Geräte-Verwaltung aufklappbar pro Feature (Devices-Icon)
+#     * Auto-Erkennung: Passende HA-Entities automatisch vorschlagen
+#     * Manuelles Hinzufügen: entity_id + Rolle frei eingeben
+#     * Vorschläge mit Ein-Klick-Zuweisung (bereits zugewiesene markiert)
+#     * Geräte entfernen mit Bestätigungsdialog
+#   - NEU: Audit-Logging für Sicherheitsänderungen
+#     * Feature-Toggles werden als SecurityEvent protokolliert
+#     * Entity-Zuweisungen/-Entfernungen werden protokolliert
+#     * 4 neue SecurityEventType-Werte: feature_toggled, entity_assigned,
+#       entity_removed, setting_changed
+#
 # Build 85: v0.8.2 Full Configurability - Alle Phasen konfigurierbar
 #   - ALLE hardcoded Schwellwerte/Parameter über UI einstellbar
 #   - Core Engine Settings (Muster-Engine, Tageszeiten, Lernparameter)
