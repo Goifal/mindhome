@@ -264,6 +264,8 @@ class AutomationExecutor:
         self.ha = ha_connection
         self.Session = sessionmaker(bind=engine)
         self._emergency_stop = False
+        # Cached conflict winners from ConflictDetector (entity -> winning pattern id)
+        self._conflict_winners = {}
 
     def set_emergency_stop(self, active):
         """Emergency stop: halt all automations."""
@@ -305,6 +307,10 @@ class AutomationExecutor:
 
             now = datetime.now(timezone.utc)
 
+            # Build per-entity conflict map: entity -> [(pattern, target_state, confidence)]
+            entity_pattern_map = defaultdict(list)
+            eligible_patterns = []
+
             for pattern in active_patterns:
                 trigger = pattern.trigger_conditions or {}
                 trigger_type = trigger.get("type")
@@ -337,7 +343,40 @@ class AutomationExecutor:
                         continue
 
                 if trigger_type == "time":
-                    self._check_time_trigger(session, pattern, trigger, now)
+                    target_state = action.get("target_state")
+                    if entity_id and target_state:
+                        entity_pattern_map[entity_id].append({
+                            "pattern": pattern,
+                            "target_state": target_state,
+                            "confidence": pattern.confidence or 0.0,
+                        })
+                    eligible_patterns.append((pattern, trigger))
+
+            # Resolve conflicts: when multiple patterns target the same entity
+            # with different states, only the highest-confidence pattern wins
+            conflict_losers = set()
+            for entity_id, entries in entity_pattern_map.items():
+                states = set(e["target_state"] for e in entries)
+                if len(states) > 1:
+                    # Conflict detected — pick winner by confidence
+                    entries.sort(key=lambda e: e["confidence"], reverse=True)
+                    winner = entries[0]
+                    for loser in entries[1:]:
+                        if loser["target_state"] != winner["target_state"]:
+                            conflict_losers.add(loser["pattern"].id)
+                            logger.info(
+                                f"Conflict resolved: {entity_id} — "
+                                f"Pattern {winner['pattern'].id} ({winner['target_state']}, "
+                                f"conf={winner['confidence']:.2f}) wins over "
+                                f"Pattern {loser['pattern'].id} ({loser['target_state']}, "
+                                f"conf={loser['confidence']:.2f})"
+                            )
+
+            for pattern, trigger in eligible_patterns:
+                if pattern.id in conflict_losers:
+                    logger.debug(f"Pattern {pattern.id}: skipped (conflict loser)")
+                    continue
+                self._check_time_trigger(session, pattern, trigger, now)
 
             session.commit()
 
@@ -1936,6 +1975,13 @@ class AutomationScheduler:
         t7.start()
         self._threads.append(t7)
 
+        # Pattern conflict check: every 5 minutes
+        t_conflict = threading.Thread(target=self._run_periodic,
+                                      args=(self._pattern_conflict_task, 300, "pattern_conflicts"),
+                                      daemon=True)
+        t_conflict.start()
+        self._threads.append(t_conflict)
+
         # Calendar trigger check: every 5 minutes
         t8 = threading.Thread(target=self._run_periodic,
                               args=(self._calendar_trigger_task, 300, "calendar_triggers"),
@@ -1950,7 +1996,7 @@ class AutomationScheduler:
         t9.start()
         self._threads.append(t9)
 
-        logger.info("Automation Scheduler started (exec:1min, suggest:4h, phase:12h, anomaly:15min, presence:2min, conflicts:5min, cal-triggers:5min, shift-sync:6h)")
+        logger.info("Automation Scheduler started (exec:1min, suggest:4h, phase:12h, anomaly:15min, presence:2min, plugin-conflicts:5min, pattern-conflicts:5min, cal-triggers:5min, shift-sync:6h)")
 
         # #40 Watchdog: monitor thread health every 5 min
         t5 = threading.Thread(target=self._watchdog_task, daemon=True)
@@ -2261,3 +2307,32 @@ class AutomationScheduler:
                     })
         except Exception as e:
             logger.warning(f"Plugin conflict task error: {e}")
+
+    def _pattern_conflict_task(self):
+        """Check for conflicting patterns (same entity, different target states)."""
+        try:
+            conflicts = self.conflict_det.check_conflicts()
+            if conflicts:
+                logger.info(f"Pattern conflicts detected: {len(conflicts)}")
+                for c in conflicts[:5]:
+                    if not self.quiet_hours_mgr.is_quiet_time():
+                        entity = c.get("entity", "?")
+                        state_a = c.get("state_a", "?")
+                        state_b = c.get("state_b", "?")
+                        winner_id = c.get("winner")
+                        self.notification_mgr.notify_anomaly({
+                            "entity_id": entity,
+                            "reason_de": (
+                                f"Muster-Konflikt: {entity} soll gleichzeitig "
+                                f"'{state_a}' und '{state_b}' sein. "
+                                f"Pattern {winner_id} gewinnt (hoehere Confidence)."
+                            ),
+                            "reason_en": (
+                                f"Pattern conflict: {entity} should be both "
+                                f"'{state_a}' and '{state_b}'. "
+                                f"Pattern {winner_id} wins (higher confidence)."
+                            ),
+                            "type": "pattern_conflict",
+                        })
+        except Exception as e:
+            logger.warning(f"Pattern conflict task error: {e}")

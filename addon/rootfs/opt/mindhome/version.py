@@ -4,12 +4,24 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "0.7.19"
-BUILD = 72
+VERSION = "0.7.20"
+BUILD = 73
 BUILD_DATE = "2026-02-15"
 CODENAME = "Phase 4 - Smart Health"
 
 # Changelog
+# Build 73: v0.7.20 Fix Device-Loeschung + Muster-Konflikterkennung
+#   - FIX: Device-Loeschung crashte mit FOREIGN KEY constraint (500er)
+#     Root-Cause: 6 Tabellen referenzieren devices.id ohne CASCADE
+#     Fix: Abhaengige Records aufraemen (NULL setzen / loeschen) vor Device-Delete
+#     Betrifft: action_log, device_mutes, anomaly_settings, energy_readings, standby_config, state_history
+#   - FIX: Muster-Konflikte (z.B. Licht soll gleichzeitig on+off sein)
+#     Root-Cause: ConflictDetector war instanziiert aber nie periodisch aufgerufen
+#     Root-Cause: AutomationExecutor hatte keine Entity-Level-Deduplizierung
+#     Fix: ConflictDetector wird jetzt alle 5 Minuten ausgefuehrt, Konflikte gecacht
+#     Fix: Executor prueft vor Ausfuehrung ob gegenteiliges Pattern fuer gleiche Entity existiert
+#     Fix: Bei Konflikt gewinnt das Pattern mit hoeherer Confidence
+#
 # Build 72: v0.7.19 Stale-Cleanup fuer observed + insight
 #   - Cleanup entfernt observed + insight Patterns die nicht bestaetigt wurden
 #   - suggested bleiben erhalten (User soll entscheiden)
