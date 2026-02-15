@@ -372,7 +372,7 @@ class AccessControlManager:
             with self.get_session() as session:
                 session.add(SecurityEvent(
                     event_type=SecurityEventType.ACCESS_JAMMED,
-                    severity=SecuritySeverity.WARNING,
+                    severity=SecuritySeverity.CRITICAL,
                     message_de=f"Schloss blockiert: {entity_id}",
                     message_en=f"Lock jammed: {entity_id}",
                     context={"entity_id": entity_id},
@@ -408,6 +408,7 @@ class GeoFenceManager:
         self.event_bus = event_bus
         self._is_running = False
         self._person_zones = {}  # person_entity_id -> last_zone_id (or None)
+        self._all_away_published = False  # State guard to prevent repeated all_away events
 
     def start(self):
         self._is_running = True
@@ -653,12 +654,29 @@ class GeoFenceManager:
             }, source="geofence")
 
     def _check_all_away(self, config, zones):
-        """If all tracked persons are outside all zones → trigger all_away_action."""
-        all_away = all(z is None for z in self._person_zones.values()) if self._person_zones else False
-        if all_away:
+        """If all tracked persons are outside all zones → trigger all_away_action.
+        Uses state guard to prevent repeated events every check cycle."""
+        if not self._person_zones:
+            return
+        all_away = all(z is None for z in self._person_zones.values())
+        if all_away and not self._all_away_published:
+            self._all_away_published = True
             action = config.get("all_away_action", {})
             if action.get("presence_mode"):
                 self.event_bus.publish("presence.request_mode", {
                     "mode": action["presence_mode"],
                     "source": "geofence_all_away",
                 }, source="geofence")
+            logger.info("Geofence: all persons away")
+        elif not all_away and self._all_away_published:
+            # First person returned home
+            self._all_away_published = False
+            action = config.get("first_home_action", {})
+            if action.get("presence_mode"):
+                self.event_bus.publish("presence.request_mode", {
+                    "mode": action["presence_mode"],
+                    "source": "geofence_first_home",
+                }, source="geofence")
+            logger.info("Geofence: first person returned home")
+        elif not all_away:
+            self._all_away_published = False

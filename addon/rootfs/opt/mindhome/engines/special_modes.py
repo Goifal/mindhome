@@ -27,6 +27,7 @@ class SpecialModeBase:
     """
 
     mode_type = None  # Overridden by subclass
+    feature_flag = None  # Override if feature flag key differs from f"phase5.{mode_type}"
 
     def __init__(self, ha_connection, db_session_factory, event_bus):
         self.ha = ha_connection
@@ -39,6 +40,15 @@ class SpecialModeBase:
     @property
     def is_active(self):
         return self._active
+
+    def start(self):
+        """Start the mode engine. Override for event subscriptions."""
+        pass
+
+    def stop(self):
+        """Stop the mode engine. Deactivate if active."""
+        if self._active:
+            self.deactivate(reason="shutdown")
 
     def get_config(self):
         """Get mode configuration from SystemSettings."""
@@ -76,7 +86,8 @@ class SpecialModeBase:
             return False
 
         from routes.security import is_phase5_feature_enabled
-        if not is_phase5_feature_enabled(f"phase5.{self.mode_type}"):
+        flag_key = self.feature_flag or f"phase5.{self.mode_type}"
+        if not is_phase5_feature_enabled(flag_key):
             logger.info(f"{self.mode_type} feature disabled")
             return False
 
@@ -344,8 +355,10 @@ class SpecialModeBase:
 
 class PartyMode(SpecialModeBase):
     mode_type = "party"
+    feature_flag = "phase5.party_mode"
 
     DEFAULT_CONFIG = {
+        "light_scene": "party",
         "temperature_offset": -1.0,
         "volume_threshold": 70,
         "volume_warning_after": "22:00",
@@ -369,6 +382,7 @@ class PartyMode(SpecialModeBase):
 
 class CinemaMode(SpecialModeBase):
     mode_type = "cinema"
+    feature_flag = "phase5.cinema_mode"
 
     DEFAULT_CONFIG = {
         "dim_brightness": 5,
@@ -411,7 +425,7 @@ class CinemaMode(SpecialModeBase):
         """Handle media player pause/resume for lighting adjustments."""
         if not self._active:
             return
-        data = event if isinstance(event, dict) else {}
+        data = event.data if hasattr(event, 'data') else (event if isinstance(event, dict) else {})
         entity_id = data.get("entity_id", "")
         if not entity_id.startswith("media_player."):
             return
@@ -447,6 +461,7 @@ class CinemaMode(SpecialModeBase):
 
 class HomeOfficeMode(SpecialModeBase):
     mode_type = "home_office"
+    feature_flag = "phase5.home_office_mode"
 
     DEFAULT_CONFIG = {
         "room_id": None,
@@ -594,7 +609,7 @@ class NightLockdown(SpecialModeBase):
         config = self.get_config()
         if not config.get("motion_alerts_enabled"):
             return
-        data = event if isinstance(event, dict) else {}
+        data = event.data if hasattr(event, 'data') else (event if isinstance(event, dict) else {})
         entity_id = data.get("entity_id", "")
         new_state = data.get("new_state") or {}
         new_val = new_state.get("state", "") if isinstance(new_state, dict) else ""
@@ -626,6 +641,7 @@ class NightLockdown(SpecialModeBase):
 
 class EmergencyProtocol(SpecialModeBase):
     mode_type = "emergency"
+    feature_flag = "phase5.emergency_protocol"
 
     DEFAULT_CONFIG = {
         "escalation_step1_delay_sec": 30,
@@ -711,11 +727,18 @@ class EmergencyProtocol(SpecialModeBase):
         """React to emergency events from other engines (e.g., fire_water)."""
         if self._active:
             return  # Already in emergency mode
-        event_type = event.event_type if hasattr(event, 'event_type') else "unknown"
-        if "fire" in event_type:
+        event_type = event.event_type if hasattr(event, 'event_type') else ""
+        data = event.data if hasattr(event, 'data') else (event if isinstance(event, dict) else {})
+        alarm_type = data.get("alarm_type", "")
+        # Only react to actual alarm events, not our own escalation events
+        if event_type in ("emergency.notify_users", "emergency.notify_contacts"):
+            return
+        if alarm_type == "fire" or event_type == "emergency.fire":
             self.trigger("fire", source="fire_water")
-        elif "co" in event_type:
-            self.trigger("fire", source="fire_water")
+        elif alarm_type == "co" or event_type == "emergency.co":
+            self.trigger("co", source="fire_water")
+        elif event_type == "emergency.water_leak":
+            self.trigger("panic", source="water_leak")
 
     def _execute_immediate_actions(self, emergency_type, config):
         """Execute type-specific immediate actions."""
@@ -796,8 +819,31 @@ class EmergencyProtocol(SpecialModeBase):
         }, source="emergency_protocol")
 
     def _escalation_step_notify_contacts(self):
-        """Escalation: notify emergency contacts."""
+        """Escalation: notify emergency contacts from DB."""
         logger.info("Emergency escalation: notifying emergency contacts")
+        try:
+            from models import EmergencyContact, NotificationLog, NotificationType
+            with self.get_session() as session:
+                contacts = session.query(EmergencyContact).filter_by(
+                    is_active=True
+                ).order_by(EmergencyContact.priority).all()
+                for contact in contacts:
+                    session.add(NotificationLog(
+                        notification_type=NotificationType.CRITICAL,
+                        title="NOTFALL / EMERGENCY",
+                        message=f"Emergency ({self._emergency_type}). Contact: {contact.name}, Phone: {contact.phone or 'N/A'}",
+                        was_sent=True,
+                    ))
+                    try:
+                        self.ha.call_service("notify", "persistent_notification", {
+                            "title": f"NOTFALL: {contact.name}",
+                            "message": f"Emergency type: {self._emergency_type}. Contact {contact.name} at {contact.phone or contact.email or 'N/A'}",
+                        })
+                    except Exception:
+                        pass
+                logger.info(f"Notified {len(contacts)} emergency contacts")
+        except Exception as e:
+            logger.error(f"Emergency contact notification error: {e}")
         self.event_bus.publish("emergency.notify_contacts", {
             "type": self._emergency_type,
         }, source="emergency_protocol")

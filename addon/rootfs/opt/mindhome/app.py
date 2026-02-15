@@ -702,7 +702,9 @@ def graceful_shutdown(signum=None, frame=None):
                           ("camera_manager", camera_manager),
                           ("access_control_manager", access_control_manager),
                           ("geofence_manager", geofence_manager),
+                          ("party_mode", party_mode),
                           ("cinema_mode", cinema_mode),
+                          ("home_office_mode", home_office_mode),
                           ("night_lockdown", night_lockdown),
                           ("emergency_protocol", emergency_protocol)]:
         try:
@@ -942,7 +944,9 @@ def start_app():
     camera_manager.start()
     access_control_manager.start()
     geofence_manager.start()
+    party_mode.start()
     cinema_mode.start()
+    home_office_mode.start()
     night_lockdown.start()
     emergency_protocol.start()
 

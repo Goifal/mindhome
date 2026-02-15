@@ -205,31 +205,39 @@ def auto_detect_entities(feature_key):
         return jsonify(suggestions)
 
     # Domain hints per feature_key
+    # "device_classes" is a special filter key (not a role) for binary_sensor features
     DOMAIN_HINTS = {
-        "fire_co":        {"trigger": ["binary_sensor"], "device_classes": ["smoke", "gas", "co"]},
-        "water_leak":     {"trigger": ["binary_sensor"], "device_classes": ["moisture"]},
+        "fire_co":        {"trigger": ["binary_sensor"], "device_classes": ["smoke", "gas", "co"],
+                           "emergency_light": ["light"], "emergency_cover": ["cover"],
+                           "hvac": ["climate", "fan"], "emergency_lock": ["lock"], "tts_speaker": ["media_player"]},
+        "water_leak":     {"trigger": ["binary_sensor"], "device_classes": ["moisture"],
+                           "valve": ["valve", "switch"], "heating": ["climate"], "tts_speaker": ["media_player"]},
         "camera":         {"snapshot_camera": ["camera"]},
         "access":         {"lock": ["lock"]},
         "geofence":       {"person": ["person", "device_tracker"]},
-        "party":          {"light": ["light"], "media": ["media_player"]},
-        "cinema":         {"light": ["light"], "cover": ["cover"], "media": ["media_player"]},
-        "home_office":    {"light": ["light"], "climate": ["climate"]},
-        "night_lockdown": {"lock": ["lock"], "motion": ["binary_sensor"]},
-        "emergency":      {"siren": ["siren"], "light": ["light"], "lock": ["lock"], "tts_speaker": ["media_player"]},
+        "party":          {"light": ["light"], "media": ["media_player"], "climate": ["climate"]},
+        "cinema":         {"light": ["light"], "cover": ["cover"], "media": ["media_player"], "climate": ["climate"]},
+        "home_office":    {"light": ["light"], "climate": ["climate"], "motion": ["binary_sensor"], "tts_speaker": ["media_player"]},
+        "night_lockdown": {"lock": ["lock"], "motion": ["binary_sensor"], "night_light": ["light"],
+                           "media": ["media_player"], "climate": ["climate"], "window_sensor": ["binary_sensor"]},
+        "emergency":      {"siren": ["siren"], "light": ["light"], "lock": ["lock"],
+                           "tts_speaker": ["media_player"], "cover": ["cover"], "hvac": ["climate"]},
     }
 
     hints = DOMAIN_HINTS.get(feature_key, {})
+    device_classes_filter = hints.get("device_classes", [])
     try:
         all_states = ha.get_states() or []
         for role, domains in hints.items():
-            device_classes = hints.get("device_classes", [])
+            if role == "device_classes":
+                continue  # Skip metadata key
             for state_obj in all_states:
                 eid = state_obj.get("entity_id", "")
                 domain = eid.split(".")[0]
                 if domain in domains:
                     attrs = state_obj.get("attributes", {})
                     dc = attrs.get("device_class", "")
-                    if device_classes and dc not in device_classes:
+                    if device_classes_filter and dc not in device_classes_filter:
                         continue
                     suggestions.append({
                         "entity_id": eid,
@@ -321,6 +329,28 @@ def camera_snapshots():
     limit = request.args.get("limit", 50, type=int)
     offset = request.args.get("offset", 0, type=int)
     return jsonify(mgr.get_snapshots(limit=limit, offset=offset))
+
+
+@security_bp.route("/api/security/cameras/snapshots/<int:event_id>", methods=["GET"])
+def camera_snapshot_get(event_id):
+    """Get a single snapshot by security event ID."""
+    from flask import send_file
+    mgr = _deps.get("camera_manager")
+    if not mgr:
+        return jsonify({"error": "Not available"}), 503
+    from models import SecurityEvent
+    try:
+        with _get_session() as session:
+            evt = session.query(SecurityEvent).get(event_id)
+            if not evt or not evt.snapshot_path:
+                return jsonify({"error": "Snapshot not found"}), 404
+            import os
+            if not os.path.exists(evt.snapshot_path):
+                return jsonify({"error": "Snapshot file missing"}), 404
+            return send_file(evt.snapshot_path, mimetype="image/jpeg")
+    except Exception as e:
+        logger.error(f"Get snapshot error: {e}")
+        return jsonify({"error": str(e)}), 500
 
 
 @security_bp.route("/api/security/cameras/snapshots/<int:event_id>", methods=["DELETE"])
@@ -858,7 +888,12 @@ def security_events():
         with _get_session() as session:
             q = session.query(SecurityEvent).order_by(SecurityEvent.timestamp.desc())
             if event_type:
-                q = q.filter(SecurityEvent.event_type == event_type)
+                from models import SecurityEventType
+                try:
+                    event_type_enum = SecurityEventType(event_type)
+                    q = q.filter(SecurityEvent.event_type == event_type_enum)
+                except ValueError:
+                    q = q.filter(SecurityEvent.event_type == event_type)
             events = q.offset(offset).limit(limit).all()
             return jsonify([{
                 "id": evt.id,
