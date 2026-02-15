@@ -594,6 +594,23 @@ health_aggregator = HealthAggregator(ha, get_db_session, event_bus, engines={
     "energy_optimizer": energy_optimizer,
 })
 
+# Phase 5: Security & Special Modes engines
+from engines.fire_water import FireResponseManager, WaterLeakManager
+from engines.camera_security import SecurityCameraManager
+from engines.access_control import AccessControlManager, GeoFenceManager
+from engines.special_modes import PartyMode, CinemaMode, HomeOfficeMode, NightLockdown, EmergencyProtocol
+
+fire_response_manager = FireResponseManager(ha, get_db_session, event_bus)
+water_leak_manager = WaterLeakManager(ha, get_db_session, event_bus)
+camera_manager = SecurityCameraManager(ha, get_db_session, event_bus)
+access_control_manager = AccessControlManager(ha, get_db_session, event_bus)
+geofence_manager = GeoFenceManager(ha, get_db_session, event_bus)
+party_mode = PartyMode(ha, get_db_session, event_bus)
+cinema_mode = CinemaMode(ha, get_db_session, event_bus)
+home_office_mode = HomeOfficeMode(ha, get_db_session, event_bus)
+night_lockdown = NightLockdown(ha, get_db_session, event_bus)
+emergency_protocol = EmergencyProtocol(ha, get_db_session, event_bus)
+
 dependencies = {
     "ha": ha,
     "engine": engine,
@@ -626,6 +643,17 @@ dependencies = {
     "seasonal_advisor": seasonal_advisor,
     "calendar_integration": calendar_integration,
     "health_aggregator": health_aggregator,
+    # Phase 5
+    "fire_response_manager": fire_response_manager,
+    "water_leak_manager": water_leak_manager,
+    "camera_manager": camera_manager,
+    "access_control_manager": access_control_manager,
+    "geofence_manager": geofence_manager,
+    "party_mode": party_mode,
+    "cinema_mode": cinema_mode,
+    "home_office_mode": home_office_mode,
+    "night_lockdown": night_lockdown,
+    "emergency_protocol": emergency_protocol,
 }
 
 from routes import register_blueprints
@@ -649,7 +677,7 @@ def graceful_shutdown(signum=None, frame=None):
 
     task_scheduler.stop()
 
-    # Stop Phase 4 engines
+    # Stop Phase 4 + Phase 5 engines
     for eng_name, eng in [("energy_optimizer", energy_optimizer),
                           ("standby_monitor", standby_monitor),
                           ("energy_forecaster", energy_forecaster),
@@ -667,7 +695,16 @@ def graceful_shutdown(signum=None, frame=None):
                           ("habit_drift_detector", habit_drift_detector),
                           ("adaptive_timing_manager", adaptive_timing_manager),
                           ("gradual_transitioner", gradual_transitioner),
-                          ("health_aggregator", health_aggregator)]:
+                          ("health_aggregator", health_aggregator),
+                          # Phase 5
+                          ("fire_response_manager", fire_response_manager),
+                          ("water_leak_manager", water_leak_manager),
+                          ("camera_manager", camera_manager),
+                          ("access_control_manager", access_control_manager),
+                          ("geofence_manager", geofence_manager),
+                          ("cinema_mode", cinema_mode),
+                          ("night_lockdown", night_lockdown),
+                          ("emergency_protocol", emergency_protocol)]:
         try:
             eng.stop()
         except Exception:
@@ -897,6 +934,46 @@ def start_app():
 
     task_scheduler.register("health_aggregate", run_health_aggregate,
                             interval_seconds=60 * 60,  # 1 hour
+                            run_immediately=False)
+
+    # Phase 5: Security & Special Modes
+    fire_response_manager.start()
+    water_leak_manager.start()
+    camera_manager.start()
+    access_control_manager.start()
+    geofence_manager.start()
+    cinema_mode.start()
+    night_lockdown.start()
+    emergency_protocol.start()
+
+    def run_geofence_check():
+        """60s check: geo-fence zone enter/leave detection."""
+        geofence_manager.check()
+
+    def run_access_autolock():
+        """60s check: auto-lock expired unlocked doors."""
+        access_control_manager.check_auto_lock()
+
+    def run_special_mode_timeout():
+        """5-min check: auto-deactivate expired special modes."""
+        for mode in (party_mode, cinema_mode, home_office_mode, night_lockdown):
+            mode.check_timeout()
+
+    def run_camera_cleanup():
+        """Daily: remove old snapshots (retention policy)."""
+        camera_manager.cleanup_old_snapshots()
+
+    task_scheduler.register("geofence_check", run_geofence_check,
+                            interval_seconds=60,
+                            run_immediately=False)
+    task_scheduler.register("access_autolock", run_access_autolock,
+                            interval_seconds=60,
+                            run_immediately=False)
+    task_scheduler.register("special_mode_timeout", run_special_mode_timeout,
+                            interval_seconds=5 * 60,
+                            run_immediately=False)
+    task_scheduler.register("camera_cleanup", run_camera_cleanup,
+                            interval_seconds=24 * 3600,
                             run_immediately=False)
 
     # Start task scheduler
