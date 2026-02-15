@@ -2004,6 +2004,22 @@ class PatternDetector:
             if cond_is_sensor and corr_is_sensor:
                 initial_status = "insight"
 
+        # Check if entity+action is already covered by a HA automation
+        ha_covered = False
+        if self.ha and action_def:
+            try:
+                act_entity = action_def.get("entity_id", "")
+                act_state = action_def.get("target_state", "")
+                if act_entity and self.ha.is_entity_ha_automated(act_entity, act_state or None):
+                    ha_covered = True
+                    pattern_data["ha_covered"] = True
+                    logger.info(
+                        f"Pattern {pattern_type}: {act_entity} ({act_state}) "
+                        f"already covered by HA automation"
+                    )
+            except Exception as e:
+                logger.debug(f"HA coverage check failed: {e}")
+
         pattern = LearnedPattern(
             domain_id=domain_id or 1,
             room_id=room_id,

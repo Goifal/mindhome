@@ -334,6 +334,16 @@ class AutomationExecutor:
                     logger.debug(f"Pattern {pattern.id}: excluded pair {trigger_entity} <-> {action_entity}")
                     continue
 
+                # Skip entities already covered by HA automations (avoid duplicates)
+                if self.ha:
+                    target_state = action.get("target_state", "")
+                    if self.ha.is_entity_ha_automated(entity_id, target_state or None):
+                        logger.info(
+                            f"Pattern {pattern.id}: {entity_id} ({target_state}) "
+                            f"already automated by HA, skipping"
+                        )
+                        continue
+
                 # #23 Skip non-essential automations in vacation mode
                 # but #55 allow light toggles if simulation is on
                 if is_vacation and not simulate:

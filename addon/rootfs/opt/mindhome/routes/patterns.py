@@ -97,6 +97,32 @@ def api_get_patterns():
         offset = request.args.get("offset", 0, type=int)
         patterns = query.offset(offset).limit(limit).all()
 
+        # Check HA automation coverage for each pattern
+        ha = _ha()
+        ha_automated = set()
+        ha_automated_entities = set()
+        if ha:
+            try:
+                ha_automated = ha.get_ha_automated_entities()
+                ha_automated_entities = getattr(ha, '_ha_auto_entities_only', set())
+            except Exception:
+                pass
+
+        def _is_ha_covered(p):
+            """Check if pattern's action entity is covered by a HA automation."""
+            ad = p.action_definition or {}
+            eid = ad.get("entity_id", "")
+            ts = ad.get("target_state", "")
+            if not eid:
+                # Also check pattern_data for ha_covered flag (set at creation)
+                pd = p.pattern_data or {}
+                return pd.get("ha_covered", False)
+            if ts and (eid, ts) in ha_automated:
+                return True
+            if eid in ha_automated_entities:
+                return True
+            return False
+
         return jsonify({
             "items": [{
                 "id": p.id,
@@ -116,6 +142,7 @@ def api_get_patterns():
                 "trigger_conditions": p.trigger_conditions,
                 "action_definition": p.action_definition,
                 "pattern_data": p.pattern_data,
+                "ha_covered": _is_ha_covered(p),
                 "last_matched_at": utc_iso(p.last_matched_at),
                 "created_at": utc_iso(p.created_at),
                 "updated_at": utc_iso(p.updated_at),
