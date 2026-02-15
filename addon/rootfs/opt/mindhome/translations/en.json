@@ -15,7 +15,8 @@
         "notifications": "Notifications",
         "data": "Data Privacy",
         "log": "AI Log",
-        "settings": "Settings"
+        "settings": "Settings",
+        "security": "Security"
     },
     "dashboard": {
         "welcome": "Welcome to MindHome",

@@ -2878,6 +2878,566 @@ const Phase4FeaturesPanel = ({ lang, showToast }) => {
     );
 };
 
+// ==============================================================================
+// Security Page (Phase 5)
+// ==============================================================================
+
+const SecurityPage = () => {
+    const { lang, showToast } = useApp();
+    const [tab, setTab] = useState('dashboard');
+    const [dashboard, setDashboard] = useState(null);
+    const [events, setEvents] = useState([]);
+    const [features, setFeatures] = useState({});
+    const [locks, setLocks] = useState([]);
+    const [cameras, setCameras] = useState([]);
+    const [snapshots, setSnapshots] = useState([]);
+    const [zones, setZones] = useState([]);
+    const [geoStatus, setGeoStatus] = useState([]);
+    const [contacts, setContacts] = useState([]);
+    const [modes, setModes] = useState({});
+    const [showContactModal, setShowContactModal] = useState(false);
+    const [newContact, setNewContact] = useState({ name: '', phone: '', email: '', notify_method: 'push', priority: 0 });
+
+    const load = () => {
+        api.get('security/dashboard').then(d => setDashboard(d || null)).catch(() => {});
+        api.get('security/events?limit=20').then(d => setEvents(Array.isArray(d) ? d : [])).catch(() => {});
+        api.get('system/phase5-features').then(d => setFeatures(d || {})).catch(() => {});
+    };
+
+    const loadAccess = () => {
+        api.get('security/access/locks').then(d => setLocks(Array.isArray(d) ? d : [])).catch(() => {});
+        api.get('security/access/log?limit=20').then(d => d).catch(() => {});
+    };
+
+    const loadCameras = () => {
+        api.get('security/cameras').then(d => setCameras(Array.isArray(d) ? d : [])).catch(() => {});
+        api.get('security/cameras/snapshots?limit=20').then(d => setSnapshots(Array.isArray(d) ? d : [])).catch(() => {});
+    };
+
+    const loadGeo = () => {
+        api.get('security/geofence/zones').then(d => setZones(Array.isArray(d) ? d : [])).catch(() => {});
+        api.get('security/geofence/status').then(d => setGeoStatus(Array.isArray(d) ? d : [])).catch(() => {});
+    };
+
+    const loadModes = () => {
+        const modeTypes = ['party', 'cinema', 'home-office', 'night-lockdown'];
+        modeTypes.forEach(m => {
+            api.get(`security/modes/${m}/status`).then(d => {
+                if (d) setModes(prev => ({...prev, [m]: d}));
+            }).catch(() => {});
+        });
+        api.get('security/emergency/status').then(d => {
+            if (d) setModes(prev => ({...prev, emergency: d}));
+        }).catch(() => {});
+        api.get('security/emergency/contacts').then(d => setContacts(Array.isArray(d) ? d : [])).catch(() => {});
+    };
+
+    useEffect(() => { load(); }, []);
+    useEffect(() => {
+        if (tab === 'access') loadAccess();
+        if (tab === 'cameras') loadCameras();
+        if (tab === 'geofence') loadGeo();
+        if (tab === 'modes') loadModes();
+    }, [tab]);
+
+    const toggleFeature = (key) => {
+        const current = features[key];
+        const newVal = current?.enabled ? 'false' : 'true';
+        api.put(`system/phase5-features/${key}`, { value: newVal }).then(() => {
+            showToast(lang === 'de' ? 'Feature aktualisiert' : 'Feature updated', 'success');
+            load();
+        });
+    };
+
+    const lockEntity = (entityId) => {
+        api.post(`security/access/locks/${entityId}/lock`).then(() => {
+            showToast(lang === 'de' ? 'Verriegelt' : 'Locked', 'success');
+            loadAccess();
+        });
+    };
+
+    const unlockEntity = (entityId) => {
+        api.post(`security/access/locks/${entityId}/unlock`).then(() => {
+            showToast(lang === 'de' ? 'Entriegelt' : 'Unlocked', 'success');
+            loadAccess();
+        });
+    };
+
+    const lockAll = () => {
+        api.post('security/access/lock-all').then(() => {
+            showToast(lang === 'de' ? 'Alle verriegelt' : 'All locked', 'success');
+            loadAccess();
+        });
+    };
+
+    const activateMode = (modeType) => {
+        const endpoint = modeType === 'emergency'
+            ? 'security/emergency/trigger'
+            : `security/modes/${modeType}/activate`;
+        const body = modeType === 'emergency' ? { type: 'panic', source: 'manual' } : {};
+        api.post(endpoint, body).then(() => {
+            showToast(lang === 'de' ? 'Aktiviert' : 'Activated', 'success');
+            loadModes();
+        });
+    };
+
+    const deactivateMode = (modeType) => {
+        const endpoint = modeType === 'emergency'
+            ? 'security/emergency/cancel'
+            : `security/modes/${modeType}/deactivate`;
+        api.post(endpoint, {}).then(() => {
+            showToast(lang === 'de' ? 'Deaktiviert' : 'Deactivated', 'success');
+            loadModes();
+        });
+    };
+
+    const addContact = () => {
+        api.post('security/emergency/contacts', newContact).then(() => {
+            showToast(lang === 'de' ? 'Kontakt hinzugefügt' : 'Contact added', 'success');
+            setShowContactModal(false);
+            setNewContact({ name: '', phone: '', email: '', notify_method: 'push', priority: 0 });
+            loadModes();
+        });
+    };
+
+    const deleteContact = (id) => {
+        if (!confirm(lang === 'de' ? 'Kontakt wirklich löschen?' : 'Delete contact?')) return;
+        api.delete(`security/emergency/contacts/${id}`).then(() => { loadModes(); });
+    };
+
+    const tabs = [
+        { id: 'dashboard', label: 'Dashboard', icon: 'mdi-shield-home' },
+        { id: 'access', label: lang === 'de' ? 'Zutritt' : 'Access', icon: 'mdi-lock' },
+        { id: 'cameras', label: lang === 'de' ? 'Kameras' : 'Cameras', icon: 'mdi-cctv' },
+        { id: 'geofence', label: 'Geo-Fence', icon: 'mdi-map-marker-radius' },
+        { id: 'modes', label: lang === 'de' ? 'Modi' : 'Modes', icon: 'mdi-toggle-switch' },
+        { id: 'settings', label: lang === 'de' ? 'Einstellungen' : 'Settings', icon: 'mdi-cog' },
+    ];
+
+    const severityColor = (s) => ({
+        emergency: 'var(--danger)', critical: '#e67e22', warning: '#f1c40f', info: 'var(--text-muted)'
+    }[s] || 'var(--text-muted)');
+
+    const severityIcon = (s) => ({
+        emergency: 'mdi-alert-circle', critical: 'mdi-alert', warning: 'mdi-alert-outline', info: 'mdi-information'
+    }[s] || 'mdi-information');
+
+    return (
+        <div>
+            <h2 style={{ marginBottom: 16 }}>
+                <span className="mdi mdi-shield-alert" style={{ marginRight: 8 }} />
+                {lang === 'de' ? 'Sicherheit' : 'Security'}
+            </h2>
+
+            <div style={{ display: 'flex', gap: 4, marginBottom: 16, overflowX: 'auto' }}>
+                {tabs.map(t => (
+                    <button key={t.id} className={`btn btn-sm ${tab === t.id ? 'btn-primary' : 'btn-ghost'}`}
+                        onClick={() => setTab(t.id)} style={{ flexShrink: 0 }}>
+                        <span className={`mdi ${t.icon}`} style={{ marginRight: 4 }} />{t.label}
+                    </button>
+                ))}
+            </div>
+
+            {/* ── Dashboard Tab ─────────────────────────────── */}
+            {tab === 'dashboard' && (
+                <div>
+                    {/* Alarm Panel Status */}
+                    {dashboard?.alarm_status && (
+                        <div className="card" style={{ padding: 16, marginBottom: 16, borderLeft: '4px solid var(--primary)' }}>
+                            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>
+                                <span className="mdi mdi-shield-check" style={{ marginRight: 4 }} />
+                                HA Alarm Panel
+                            </div>
+                            <div style={{ fontSize: 18, fontWeight: 600 }}>
+                                {dashboard.alarm_status.state || 'unknown'}
+                            </div>
+                            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{dashboard.alarm_status.name}</div>
+                        </div>
+                    )}
+
+                    {/* Status Cards Grid */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 12, marginBottom: 16 }}>
+                        {/* Locks */}
+                        <div className="card" style={{ padding: 12 }}>
+                            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>
+                                <span className="mdi mdi-lock" style={{ marginRight: 4 }} />
+                                {lang === 'de' ? 'Schlösser' : 'Locks'}
+                            </div>
+                            <div style={{ fontSize: 20, fontWeight: 700 }}>
+                                {dashboard?.locks?.filter(l => l.state === 'locked').length || 0}/{dashboard?.locks?.length || 0}
+                            </div>
+                            <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{lang === 'de' ? 'verriegelt' : 'locked'}</div>
+                        </div>
+
+                        {/* Cameras */}
+                        <div className="card" style={{ padding: 12 }}>
+                            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>
+                                <span className="mdi mdi-cctv" style={{ marginRight: 4 }} />
+                                {lang === 'de' ? 'Kameras' : 'Cameras'}
+                            </div>
+                            <div style={{ fontSize: 20, fontWeight: 700 }}>
+                                {dashboard?.cameras?.length || 0}
+                            </div>
+                            <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>online</div>
+                        </div>
+
+                        {/* Fire/CO */}
+                        <div className="card" style={{ padding: 12 }}>
+                            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>
+                                <span className="mdi mdi-fire" style={{ marginRight: 4 }} />
+                                {lang === 'de' ? 'Rauch/CO' : 'Smoke/CO'}
+                            </div>
+                            <div style={{ fontSize: 20, fontWeight: 700, color: dashboard?.fire_co_status?.active_alarms ? 'var(--danger)' : 'var(--success)' }}>
+                                {dashboard?.fire_co_status?.active_alarms ? 'ALARM' : 'OK'}
+                            </div>
+                        </div>
+
+                        {/* Water */}
+                        <div className="card" style={{ padding: 12 }}>
+                            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>
+                                <span className="mdi mdi-water-alert" style={{ marginRight: 4 }} />
+                                {lang === 'de' ? 'Wasser' : 'Water'}
+                            </div>
+                            <div style={{ fontSize: 20, fontWeight: 700, color: dashboard?.water_leak_status?.active_leaks ? 'var(--danger)' : 'var(--success)' }}>
+                                {dashboard?.water_leak_status?.active_leaks ? 'LECK' : 'OK'}
+                            </div>
+                        </div>
+
+                        {/* Geo */}
+                        <div className="card" style={{ padding: 12 }}>
+                            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>
+                                <span className="mdi mdi-map-marker" style={{ marginRight: 4 }} />
+                                Geo-Fence
+                            </div>
+                            <div style={{ fontSize: 20, fontWeight: 700 }}>
+                                {dashboard?.geofence_persons?.filter(p => p.zone).length || 0}/{dashboard?.geofence_persons?.length || 0}
+                            </div>
+                            <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{lang === 'de' ? 'zuhause' : 'home'}</div>
+                        </div>
+                    </div>
+
+                    {/* Active Modes */}
+                    {dashboard?.active_modes?.length > 0 && (
+                        <div className="card" style={{ padding: 12, marginBottom: 16 }}>
+                            <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8 }}>
+                                <span className="mdi mdi-toggle-switch" style={{ marginRight: 4 }} />
+                                {lang === 'de' ? 'Aktive Modi' : 'Active Modes'}
+                            </div>
+                            {dashboard.active_modes.map((m, i) => (
+                                <span key={i} style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 12, background: 'var(--primary)', color: '#fff', fontSize: 11, marginRight: 6 }}>
+                                    {m.mode_type}
+                                </span>
+                            ))}
+                        </div>
+                    )}
+
+                    {/* Recent Events */}
+                    <div className="card" style={{ padding: 12 }}>
+                        <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8 }}>
+                            <span className="mdi mdi-history" style={{ marginRight: 4 }} />
+                            {lang === 'de' ? 'Letzte Ereignisse' : 'Recent Events'}
+                        </div>
+                        {(dashboard?.recent_events || []).slice(0, 10).map((evt, i) => (
+                            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', borderBottom: i < 9 ? '1px solid var(--border)' : 'none' }}>
+                                <span className={`mdi ${severityIcon(evt.severity)}`} style={{ color: severityColor(evt.severity), fontSize: 16 }} />
+                                <div style={{ flex: 1, fontSize: 12 }}>
+                                    {lang === 'de' ? evt.message_de : evt.message_en}
+                                </div>
+                                <div style={{ fontSize: 10, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                                    {evt.timestamp ? new Date(evt.timestamp).toLocaleString(lang === 'de' ? 'de-AT' : 'en') : ''}
+                                </div>
+                            </div>
+                        ))}
+                        {(!dashboard?.recent_events || dashboard.recent_events.length === 0) && (
+                            <div style={{ padding: 12, textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
+                                {lang === 'de' ? 'Keine Ereignisse' : 'No events'}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {/* ── Access Tab ───────────────────────────────── */}
+            {tab === 'access' && (
+                <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                        <h3 style={{ margin: 0, fontSize: 16 }}>{lang === 'de' ? 'Schlösser' : 'Locks'}</h3>
+                        <button className="btn btn-sm btn-primary" onClick={lockAll}>
+                            <span className="mdi mdi-lock" style={{ marginRight: 4 }} />
+                            {lang === 'de' ? 'Alle verriegeln' : 'Lock all'}
+                        </button>
+                    </div>
+                    {locks.map((lock, i) => (
+                        <div key={i} className="card" style={{ padding: 12, marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div>
+                                <div style={{ fontWeight: 600, fontSize: 13 }}>{lock.name}</div>
+                                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{lock.entity_id}</div>
+                                {lock.battery_level != null && (
+                                    <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+                                        <span className="mdi mdi-battery" style={{ marginRight: 2 }} />{lock.battery_level}%
+                                    </div>
+                                )}
+                            </div>
+                            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                                <span style={{ fontSize: 12, fontWeight: 600, color: lock.state === 'locked' ? 'var(--success)' : 'var(--warning)' }}>
+                                    {lock.state === 'locked' ? (lang === 'de' ? 'Verriegelt' : 'Locked') : (lang === 'de' ? 'Offen' : 'Unlocked')}
+                                </span>
+                                {lock.state === 'locked' ? (
+                                    <button className="btn btn-sm btn-ghost" onClick={() => unlockEntity(lock.entity_id)}>
+                                        <span className="mdi mdi-lock-open" />
+                                    </button>
+                                ) : (
+                                    <button className="btn btn-sm btn-primary" onClick={() => lockEntity(lock.entity_id)}>
+                                        <span className="mdi mdi-lock" />
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                    ))}
+                    {locks.length === 0 && (
+                        <div style={{ padding: 20, textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
+                            {lang === 'de' ? 'Keine Schlösser konfiguriert' : 'No locks configured'}
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* ── Cameras Tab ──────────────────────────────── */}
+            {tab === 'cameras' && (
+                <div>
+                    <h3 style={{ margin: '0 0 12px', fontSize: 16 }}>{lang === 'de' ? 'Kameras' : 'Cameras'}</h3>
+                    {cameras.map((cam, i) => (
+                        <div key={i} className="card" style={{ padding: 12, marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div>
+                                <div style={{ fontWeight: 600, fontSize: 13 }}>{cam.name}</div>
+                                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{cam.entity_id}</div>
+                            </div>
+                            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                                <span style={{ fontSize: 11, color: cam.state === 'idle' || cam.state === 'streaming' ? 'var(--success)' : 'var(--text-muted)' }}>
+                                    {cam.state}
+                                </span>
+                                <button className="btn btn-sm btn-ghost" onClick={() => {
+                                    api.post(`security/cameras/${cam.entity_id}/snapshot`).then(r => {
+                                        if (r?.ok) { showToast('Snapshot!', 'success'); loadCameras(); }
+                                        else showToast('Failed', 'error');
+                                    });
+                                }}>
+                                    <span className="mdi mdi-camera" />
+                                </button>
+                            </div>
+                        </div>
+                    ))}
+
+                    {snapshots.length > 0 && (
+                        <>
+                            <h3 style={{ margin: '16px 0 12px', fontSize: 16 }}>{lang === 'de' ? 'Snapshots' : 'Snapshots'}</h3>
+                            {snapshots.map((s, i) => (
+                                <div key={i} className="card" style={{ padding: 10, marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <div>
+                                        <div style={{ fontSize: 12 }}>
+                                            <span className={`mdi ${severityIcon(s.severity)}`} style={{ color: severityColor(s.severity), marginRight: 4 }} />
+                                            {s.event_type}
+                                        </div>
+                                        <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+                                            {s.timestamp ? new Date(s.timestamp).toLocaleString(lang === 'de' ? 'de-AT' : 'en') : ''}
+                                        </div>
+                                    </div>
+                                    <button className="btn btn-sm btn-ghost" onClick={() => {
+                                        api.delete(`security/cameras/snapshots/${s.id}`).then(() => loadCameras());
+                                    }}>
+                                        <span className="mdi mdi-delete" />
+                                    </button>
+                                </div>
+                            ))}
+                        </>
+                    )}
+
+                    {cameras.length === 0 && snapshots.length === 0 && (
+                        <div style={{ padding: 20, textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
+                            {lang === 'de' ? 'Keine Kameras konfiguriert' : 'No cameras configured'}
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* ── Geo-Fence Tab ────────────────────────────── */}
+            {tab === 'geofence' && (
+                <div>
+                    <h3 style={{ margin: '0 0 12px', fontSize: 16 }}>{lang === 'de' ? 'Personen-Status' : 'Person Status'}</h3>
+                    {geoStatus.map((p, i) => (
+                        <div key={i} className="card" style={{ padding: 10, marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div>
+                                <div style={{ fontWeight: 600, fontSize: 13 }}>{p.name}</div>
+                                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{p.entity_id}</div>
+                            </div>
+                            <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 12, background: p.zone ? 'var(--success)' : 'var(--bg-secondary)', color: p.zone ? '#fff' : 'var(--text-muted)' }}>
+                                {p.zone ? (lang === 'de' ? 'Zuhause' : 'Home') : (lang === 'de' ? 'Unterwegs' : 'Away')}
+                            </span>
+                        </div>
+                    ))}
+
+                    <h3 style={{ margin: '16px 0 12px', fontSize: 16 }}>{lang === 'de' ? 'Zonen' : 'Zones'}</h3>
+                    {zones.map((z, i) => (
+                        <div key={i} className="card" style={{ padding: 10, marginBottom: 8 }}>
+                            <div style={{ fontWeight: 600, fontSize: 13 }}>{z.name}</div>
+                            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                                {z.latitude?.toFixed(4)}, {z.longitude?.toFixed(4)} | {z.radius_m}m
+                            </div>
+                        </div>
+                    ))}
+                    {zones.length === 0 && geoStatus.length === 0 && (
+                        <div style={{ padding: 20, textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
+                            {lang === 'de' ? 'Kein Geo-Fencing konfiguriert' : 'No geo-fencing configured'}
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* ── Modes Tab ────────────────────────────────── */}
+            {tab === 'modes' && (
+                <div>
+                    <h3 style={{ margin: '0 0 12px', fontSize: 16 }}>{lang === 'de' ? 'Spezial-Modi' : 'Special Modes'}</h3>
+                    {[
+                        { key: 'party', icon: 'mdi-party-popper', label: lang === 'de' ? 'Party-Modus' : 'Party Mode' },
+                        { key: 'cinema', icon: 'mdi-filmstrip', label: lang === 'de' ? 'Kino-Modus' : 'Cinema Mode' },
+                        { key: 'home-office', icon: 'mdi-desk', label: 'Home-Office' },
+                        { key: 'night-lockdown', icon: 'mdi-weather-night', label: lang === 'de' ? 'Nacht-Sicherung' : 'Night Lockdown' },
+                    ].map(m => {
+                        const status = modes[m.key];
+                        const active = status?.is_active;
+                        return (
+                            <div key={m.key} className="card" style={{ padding: 12, marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                    <span className={`mdi ${m.icon}`} style={{ fontSize: 20, color: active ? 'var(--primary)' : 'var(--text-muted)' }} />
+                                    <div>
+                                        <div style={{ fontWeight: 600, fontSize: 13 }}>{m.label}</div>
+                                        <div style={{ fontSize: 10, color: active ? 'var(--primary)' : 'var(--text-muted)' }}>
+                                            {active ? (lang === 'de' ? 'Aktiv' : 'Active') : (lang === 'de' ? 'Inaktiv' : 'Inactive')}
+                                        </div>
+                                    </div>
+                                </div>
+                                <button className={`btn btn-sm ${active ? 'btn-ghost' : 'btn-primary'}`}
+                                    onClick={() => active ? deactivateMode(m.key) : activateMode(m.key)}>
+                                    {active ? (lang === 'de' ? 'Beenden' : 'Stop') : (lang === 'de' ? 'Starten' : 'Start')}
+                                </button>
+                            </div>
+                        );
+                    })}
+
+                    {/* Emergency Protocol */}
+                    <h3 style={{ margin: '16px 0 12px', fontSize: 16 }}>
+                        <span className="mdi mdi-alert-octagon" style={{ marginRight: 4, color: 'var(--danger)' }} />
+                        {lang === 'de' ? 'Notfall-Protokoll' : 'Emergency Protocol'}
+                    </h3>
+                    <div className="card" style={{ padding: 16, marginBottom: 16, borderLeft: '4px solid var(--danger)' }}>
+                        {modes.emergency?.is_active ? (
+                            <div>
+                                <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--danger)', marginBottom: 8 }}>
+                                    {lang === 'de' ? 'NOTFALL AKTIV' : 'EMERGENCY ACTIVE'}
+                                </div>
+                                <div style={{ fontSize: 12, marginBottom: 12 }}>
+                                    {lang === 'de' ? 'Typ' : 'Type'}: {modes.emergency.emergency_type || 'panic'}
+                                </div>
+                                <button className="btn btn-sm" style={{ background: 'var(--danger)', color: '#fff' }}
+                                    onClick={() => deactivateMode('emergency')}>
+                                    <span className="mdi mdi-close-circle" style={{ marginRight: 4 }} />
+                                    {lang === 'de' ? 'Notfall beenden' : 'Cancel Emergency'}
+                                </button>
+                            </div>
+                        ) : (
+                            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                                {[
+                                    { type: 'fire', label: lang === 'de' ? 'Feuer' : 'Fire', icon: 'mdi-fire' },
+                                    { type: 'medical', label: lang === 'de' ? 'Medizinisch' : 'Medical', icon: 'mdi-hospital-box' },
+                                    { type: 'panic', label: lang === 'de' ? 'Panik' : 'Panic', icon: 'mdi-alert' },
+                                ].map(e => (
+                                    <button key={e.type} className="btn btn-sm" style={{ background: 'var(--danger)', color: '#fff' }}
+                                        onClick={() => {
+                                            if (confirm(lang === 'de' ? `Notfall "${e.label}" wirklich auslösen?` : `Trigger "${e.label}" emergency?`)) {
+                                                api.post('security/emergency/trigger', { type: e.type, source: 'manual' }).then(() => loadModes());
+                                            }
+                                        }}>
+                                        <span className={`mdi ${e.icon}`} style={{ marginRight: 4 }} />{e.label}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Emergency Contacts */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                        <h3 style={{ margin: 0, fontSize: 14 }}>{lang === 'de' ? 'Notfallkontakte' : 'Emergency Contacts'}</h3>
+                        <button className="btn btn-sm btn-ghost" onClick={() => setShowContactModal(true)}>
+                            <span className="mdi mdi-plus" />
+                        </button>
+                    </div>
+                    {contacts.map((c, i) => (
+                        <div key={i} className="card" style={{ padding: 10, marginBottom: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div>
+                                <div style={{ fontWeight: 600, fontSize: 12 }}>{c.name}</div>
+                                <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{c.phone || c.email || '-'}</div>
+                            </div>
+                            <button className="btn btn-sm btn-ghost" onClick={() => deleteContact(c.id)}>
+                                <span className="mdi mdi-delete" style={{ color: 'var(--danger)' }} />
+                            </button>
+                        </div>
+                    ))}
+
+                    {/* Add Contact Modal */}
+                    {showContactModal && (
+                        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}
+                            onClick={(e) => { if (e.target === e.currentTarget) setShowContactModal(false); }}>
+                            <div className="card" style={{ padding: 20, minWidth: 300, maxWidth: '90vw' }}>
+                                <h3 style={{ margin: '0 0 16px', fontSize: 16 }}>{lang === 'de' ? 'Notfallkontakt hinzufügen' : 'Add Emergency Contact'}</h3>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                                    <input className="input" placeholder={lang === 'de' ? 'Name' : 'Name'} value={newContact.name}
+                                        onChange={e => setNewContact({...newContact, name: e.target.value})} />
+                                    <input className="input" placeholder={lang === 'de' ? 'Telefon' : 'Phone'} value={newContact.phone}
+                                        onChange={e => setNewContact({...newContact, phone: e.target.value})} />
+                                    <input className="input" placeholder="E-Mail" value={newContact.email}
+                                        onChange={e => setNewContact({...newContact, email: e.target.value})} />
+                                    <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                                        <button className="btn btn-sm btn-ghost" onClick={() => setShowContactModal(false)}>
+                                            {lang === 'de' ? 'Abbrechen' : 'Cancel'}
+                                        </button>
+                                        <button className="btn btn-sm btn-primary" onClick={addContact} disabled={!newContact.name}>
+                                            {lang === 'de' ? 'Hinzufügen' : 'Add'}
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* ── Settings Tab ─────────────────────────────── */}
+            {tab === 'settings' && (
+                <div>
+                    <h3 style={{ margin: '0 0 12px', fontSize: 16 }}>{lang === 'de' ? 'Feature-Flags' : 'Feature Flags'}</h3>
+                    {Object.entries(features).map(([key, feat]) => (
+                        <div key={key} className="card" style={{ padding: 10, marginBottom: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div>
+                                <div style={{ fontSize: 12, fontWeight: 600 }}>{key.replace('phase5.', '')}</div>
+                                {feat.requires && (
+                                    <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+                                        {lang === 'de' ? 'Benötigt' : 'Requires'}: {feat.requires}
+                                    </div>
+                                )}
+                            </div>
+                            <button className={`btn btn-sm ${feat.enabled ? 'btn-primary' : 'btn-ghost'}`}
+                                onClick={() => toggleFeature(key)}>
+                                {feat.enabled ? (lang === 'de' ? 'Aktiv' : 'Active') : (lang === 'de' ? 'Aus' : 'Off')}
+                            </button>
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+};
+
+
 const SettingsPage = () => {
     const { lang, setLang, theme, setTheme, viewMode, setViewMode, showToast, refreshData } = useApp();
     const [sysInfo, setSysInfo] = useState(null);
@@ -9671,6 +10231,7 @@ const App = () => {
         { id: 'scenes', icon: 'mdi-palette', label: lang === 'de' ? 'Szenen' : 'Scenes' },
         { id: 'presence', icon: 'mdi-account-multiple', label: lang === 'de' ? 'Anwesenheit' : 'Presence' },
         { id: 'notifications', icon: 'mdi-bell', label: lang === 'de' ? 'Benachrichtigungen' : 'Notifications' },
+        { id: 'security', icon: 'mdi-shield-alert', label: lang === 'de' ? 'Sicherheit' : 'Security' },
         { id: 'settings', icon: 'mdi-cog', label: lang === 'de' ? 'Einstellungen' : 'Settings', adminOnly: true },
     ].filter(item => !item.adminOnly || isAdmin);
 
@@ -9689,6 +10250,7 @@ const App = () => {
         scenes: ScenesPage,
         presence: PresencePage,
         notifications: NotificationsPage,
+        security: SecurityPage,
         settings: SettingsPage,
     };
 
