@@ -252,7 +252,7 @@ def fire_co_status():
     mgr = _deps.get("fire_response_manager")
     if not mgr:
         return jsonify({"error": "Not available"}), 503
-    return jsonify(mgr.get_sensor_status())
+    return jsonify(mgr.get_status())
 
 
 @security_bp.route("/api/security/fire-co/config", methods=["GET"])
@@ -281,7 +281,7 @@ def water_leak_status():
     mgr = _deps.get("water_leak_manager")
     if not mgr:
         return jsonify({"error": "Not available"}), 503
-    return jsonify(mgr.get_sensor_status())
+    return jsonify(mgr.get_status())
 
 
 @security_bp.route("/api/security/water-leak/config", methods=["GET"])
@@ -806,12 +806,12 @@ def security_dashboard():
     # Fire/CO
     mgr = _deps.get("fire_response_manager")
     if mgr:
-        dashboard["fire_co_status"] = mgr.get_sensor_status()
+        dashboard["fire_co_status"] = mgr.get_status()
 
     # Water leak
     mgr = _deps.get("water_leak_manager")
     if mgr:
-        dashboard["water_leak_status"] = mgr.get_sensor_status()
+        dashboard["water_leak_status"] = mgr.get_status()
 
     # Geofence
     mgr = _deps.get("geofence_manager")

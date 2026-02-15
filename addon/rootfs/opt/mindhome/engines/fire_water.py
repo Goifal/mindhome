@@ -205,7 +205,7 @@ class FireResponseManager:
         self._send_emergency_notification(alarm_type, entity_id, config)
 
         # 8. Emit event for other systems (camera snapshots, emergency protocol)
-        self.event_bus.emit(f"emergency.{alarm_type}", {
+        self.event_bus.publish(f"emergency.{alarm_type}", {
             "entity_id": entity_id,
             "alarm_type": alarm_type,
             "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -316,7 +316,7 @@ class FireResponseManager:
                 )
                 if resolved:
                     evt.resolved_at = datetime.now(timezone.utc)
-                    evt.resolved_by = "system"
+                    evt.resolved_by = None
                 session.add(evt)
         except Exception as e:
             logger.error(f"Security event log error: {e}")
@@ -519,7 +519,7 @@ class WaterLeakManager:
                 pass
 
         # 6. Emit event
-        self.event_bus.emit("emergency.water_leak", {
+        self.event_bus.publish("emergency.water_leak", {
             "entity_id": entity_id,
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }, source="water_leak")
@@ -537,7 +537,7 @@ class WaterLeakManager:
                     message_en=f"Water leak cleared: {entity_id}",
                     context={"entity_id": entity_id},
                     resolved_at=datetime.now(timezone.utc),
-                    resolved_by="system",
+                    resolved_by=None,
                 )
                 session.add(evt)
         except Exception as e:
