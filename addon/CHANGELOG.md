@@ -1,14 +1,13 @@
 # Changelog
 
-## 0.7.25 – Fix HA-Automation-Erkennung (korrekter WS-Command)
+## 0.7.26 – Fix HA-Automation-Erkennung (per-Entity WS-Abfrage)
 
 ### Fix
-- **CRITICAL**: WS-Command war `config/automation/config/list` — existiert nicht in HA
-- REST-Endpoint `/api/config/automation/config` gibt 404 via Supervisor-Proxy
-- **Fix**: Korrekter HA Storage Collection Command: `automation/config/list`
-- Liefert alle UI-Automationen mit vollstaendigen Action- und Trigger-Definitionen
-- Matching per `alias` (= `friendly_name`) mit Fallback auf `automation.{id}`
+- **CRITICAL**: `automation/config/list` liefert nur UI-Automationen — bei YAML-basierten Automationen kommt eine leere Liste zurueck
+- **Fix**: WS-Command `automation/config` mit `entity_id` Parameter pro Automation — liest `raw_config` vom Entity und funktioniert fuer ALLE Automationen (UI + YAML)
+- Kein alias/friendly_name Matching mehr noetig (direkte entity_id Zuordnung)
 
+## 0.7.25 – WS automation/config/list (leer bei YAML)
 ## 0.7.24 – REST-API Versuch (404 via Supervisor)
 
 ## 0.7.23 – _extract_actions_flat + action-Key Support

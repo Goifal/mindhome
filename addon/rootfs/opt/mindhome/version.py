@@ -4,20 +4,20 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "0.7.25"
-BUILD = 78
+VERSION = "0.7.26"
+BUILD = 79
 BUILD_DATE = "2026-02-15"
 CODENAME = "Phase 4 - Smart Health"
 
 # Changelog
-# Build 78: v0.7.25 Fix HA-Automation-Erkennung (korrekter WS-Command)
-#   - CRITICAL FIX: WS-Command war "config/automation/config/list" (existiert nicht)
-#     Korrekter HA-Command: "automation/config/list" (Storage Collection API)
-#     REST-Endpoint /api/config/automation/config gibt 404 via Supervisor-Proxy
-#   - WS "automation/config/list" liefert alle UI-Automationen mit actions+triggers
-#   - Matching per alias (friendly_name) + Fallback auf automation.{id}
-#   - Info-Logging: "Got X automation configs from WebSocket"
+# Build 79: v0.7.26 Fix HA-Automation-Erkennung (per-Entity WS-Abfrage)
+#   - CRITICAL FIX: "automation/config/list" liefert nur UI-Automationen (leer bei YAML)
+#     Fix: WS "automation/config" mit entity_id pro Automation — funktioniert fuer
+#     ALLE Automationen (UI + YAML) weil es raw_config vom Entity liest
+#   - Kein Matching-Problem mehr (direkte entity_id Zuordnung)
+#   - Info-Logging: "Fetched X/Y automation configs via WS"
 #
+# Build 78: v0.7.25 WS automation/config/list (leer bei YAML-Automationen)
 # Build 77: v0.7.24 REST-API Versuch (404 via Supervisor)
 # Build 76: v0.7.23 _extract_actions_flat + action-Key Support
 #   - NEU: Verschachtelte Actions (choose/if/sequence/parallel/repeat)

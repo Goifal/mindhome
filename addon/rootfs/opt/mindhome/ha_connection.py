@@ -218,75 +218,33 @@ class HAConnection:
                 })
             logger.info(f"Found {len(configs)} automation entities from REST states API")
 
-            # Step 2: Fetch detailed configs (triggers + actions)
-            # HA storage collections register WS command "automation/config/list"
-            # (NOT "config/automation/config/list" — that doesn't exist)
-            detail_configs = None
-
-            # Try WebSocket first (works for UI-created automations)
-            try:
-                ws_result = self._ws_command("automation/config/list")
-                if isinstance(ws_result, list):
-                    detail_configs = ws_result
-                    logger.info(
-                        f"Got {len(detail_configs)} automation configs from WebSocket"
-                    )
-                else:
-                    logger.debug(
-                        f"WS automation/config/list returned: "
-                        f"{type(ws_result).__name__}"
-                    )
-            except Exception as e:
-                logger.warning(f"WS automation/config/list failed: {e}")
-
-            if isinstance(detail_configs, list) and detail_configs:
-                # Build lookups for matching detail configs to state entities
-                configs_by_name = {}
-                configs_by_eid = {}
-                for c in configs:
-                    fn = c.get("friendly_name", "").lower().strip()
-                    if fn:
-                        configs_by_name[fn] = c
-                    configs_by_eid[c["entity_id"]] = c
-
-                matched = 0
-                for cfg in detail_configs:
-                    # HA uses "action" key (list of action dicts)
-                    actions = cfg.get("action", cfg.get("actions", []))
-                    triggers = cfg.get("trigger", cfg.get("triggers", []))
-
-                    # Match by alias (= friendly_name in HA)
-                    alias = (cfg.get("alias") or "").lower().strip()
-                    entry = configs_by_name.get(alias)
-
-                    if entry is None:
-                        # Fallback: try matching by config id as entity suffix
-                        cfg_id = cfg.get("id")
-                        if cfg_id:
-                            entry = configs_by_eid.get(f"automation.{cfg_id}")
-
-                    if entry is not None:
-                        entry["actions"] = actions
-                        entry["triggers"] = triggers
-                        matched += 1
+            # Step 2: Fetch detailed configs per entity via WS "automation/config"
+            # This works for ALL automations (UI + YAML) because it reads the
+            # entity's raw_config attribute, not just the storage collection.
+            fetched = 0
+            failed = 0
+            for cfg in configs:
+                eid = cfg["entity_id"]
+                try:
+                    raw = self._ws_command("automation/config", entity_id=eid)
+                    if isinstance(raw, dict):
+                        cfg["actions"] = raw.get("action", raw.get("actions", []))
+                        cfg["triggers"] = raw.get("trigger", raw.get("triggers", []))
+                        fetched += 1
                     else:
-                        # Config exists in store but not in states — add it anyway
-                        cfg_id = cfg.get("id", "unknown")
-                        configs.append({
-                            "entity_id": f"automation.{cfg_id}",
-                            "friendly_name": cfg.get("alias", cfg_id),
-                            "state": "unknown",
-                            "actions": actions,
-                            "triggers": triggers,
-                        })
+                        failed += 1
+                except Exception:
+                    failed += 1
 
+            if fetched:
                 logger.info(
-                    f"Matched {matched}/{len(detail_configs)} automation configs to entities"
+                    f"Fetched {fetched}/{len(configs)} automation configs via WS"
+                    + (f" ({failed} failed)" if failed else "")
                 )
             else:
-                logger.info(
-                    "No detailed automation configs available "
-                    "(automations may be YAML-based or WS unavailable)"
+                logger.warning(
+                    f"Could not fetch any automation configs via WS "
+                    f"({failed} failed, {len(configs)} total)"
                 )
 
             self._auto_cfg_cache = configs
