@@ -3431,6 +3431,9 @@ const SecurityPage = () => {
                             </button>
                         </div>
                     ))}
+
+                    <h3 style={{ margin: '20px 0 12px', fontSize: 16 }}>{lang === 'de' ? 'Sicherheits-Einstellungen' : 'Security Settings'}</h3>
+                    <GenericSettingsPanel category="security" lang={lang} showToast={showToast} />
                 </div>
             )}
         </div>
@@ -4598,8 +4601,14 @@ const SettingsPage = () => {
                 )}
             </div>
 
-            {/* Phase 4 Feature Flags */}
-            <Phase4FeaturesPanel lang={lang} showToast={showToast} />
+            {/* Core Engine Settings (Pattern Engine, Time Slots, Learning) */}
+            <div className="card" style={{ marginBottom: 16 }}>
+                <div className="card-title" style={{ marginBottom: 12 }}>
+                    <span className="mdi mdi-tune" style={{ marginRight: 8, color: 'var(--accent-primary)' }} />
+                    {lang === 'de' ? 'Kern-Engine Einstellungen' : 'Core Engine Settings'}
+                </div>
+                <GenericSettingsPanel category="core" lang={lang} showToast={showToast} />
+            </div>
 
             {/* #23 Vacation Mode + #42 Debug Mode + #49 Auto Theme + #63 Export + #68 Accessibility */}
             <div className="card" style={{ marginBottom: 16 }}>
@@ -7633,6 +7642,123 @@ const FeatureSettingsPanel = ({ category, lang, showToast }) => {
                             </button>
                         </div>
                         <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 10, opacity: isEnabled ? 1 : 0.5 }}>
+                            {(fData.settings_def || []).map(s => {
+                                const val = (fData.settings_values || {})[s.key] ?? s.default;
+                                if (s.type === 'number') {
+                                    return (
+                                        <div key={s.key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+                                            <label style={{ fontSize: 12, color: 'var(--text-secondary)', flex: 1 }}>{lang === 'de' ? s.label_de : s.label_en}</label>
+                                            <input type="number" className="form-input" style={{ width: 90, textAlign: 'right' }}
+                                                value={val} min={s.min} max={s.max} step={s.step || 1}
+                                                onChange={e => updateSetting(fKey, s.key, e.target.value)} />
+                                        </div>
+                                    );
+                                }
+                                if (s.type === 'toggle') {
+                                    return (
+                                        <div key={s.key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+                                            <label style={{ fontSize: 12, color: 'var(--text-secondary)', flex: 1 }}>{lang === 'de' ? s.label_de : s.label_en}</label>
+                                            <label className="toggle" style={{ transform: 'scale(0.8)' }}>
+                                                <input type="checkbox" checked={val === 'true'}
+                                                    onChange={e => updateSetting(fKey, s.key, e.target.checked ? 'true' : 'false')} />
+                                                <span className="toggle-slider" />
+                                            </label>
+                                        </div>
+                                    );
+                                }
+                                if (s.type === 'select') {
+                                    const optLabels = lang === 'de' ? (s.options_de || s.options) : (s.options_en || s.options);
+                                    return (
+                                        <div key={s.key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+                                            <label style={{ fontSize: 12, color: 'var(--text-secondary)', flex: 1 }}>{lang === 'de' ? s.label_de : s.label_en}</label>
+                                            <select className="form-input" style={{ width: 140 }} value={val}
+                                                onChange={e => updateSetting(fKey, s.key, e.target.value)}>
+                                                {s.options.map((o, i) => <option key={o} value={o}>{optLabels[i] || o}</option>)}
+                                            </select>
+                                        </div>
+                                    );
+                                }
+                                if (s.type === 'time') {
+                                    return (
+                                        <div key={s.key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+                                            <label style={{ fontSize: 12, color: 'var(--text-secondary)', flex: 1 }}>{lang === 'de' ? s.label_de : s.label_en}</label>
+                                            <input type="time" className="form-input" style={{ width: 110 }} value={val}
+                                                onChange={e => updateSetting(fKey, s.key, e.target.value)} />
+                                        </div>
+                                    );
+                                }
+                                return null;
+                            })}
+                            {dirty[fKey] && (
+                                <button className="btn btn-primary btn-sm" onClick={() => saveFeature(fKey)} style={{ alignSelf: 'flex-end', marginTop: 4 }}>
+                                    <span className="mdi mdi-content-save" style={{ marginRight: 4 }} />{lang === 'de' ? 'Speichern' : 'Save'}
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                );
+            })}
+        </div>
+    );
+};
+
+// ================================================================
+// Reusable: Generic Settings Panel (core / phase5 / any category)
+// ================================================================
+const GenericSettingsPanel = ({ category, lang, showToast }) => {
+    const [data, setData] = useState(null);
+    const [dirty, setDirty] = useState({});
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        api.get('system/all-settings').then(d => {
+            setData((d && d[category]) || {});
+            setLoading(false);
+        }).catch(() => setLoading(false));
+    }, [category]);
+
+    const featureLabels = {
+        'core.pattern_engine': { de: 'Muster-Engine', en: 'Pattern Engine', icon: 'mdi-brain' },
+        'core.time_slots': { de: 'Tageszeiten', en: 'Time Slots', icon: 'mdi-clock-outline' },
+        'core.learning': { de: 'Lernparameter', en: 'Learning Parameters', icon: 'mdi-school' },
+        'phase5.fire_co': { de: 'Brand / CO-Schutz', en: 'Fire / CO Protection', icon: 'mdi-fire' },
+        'phase5.geofence': { de: 'Geofencing', en: 'Geofencing', icon: 'mdi-map-marker-radius' },
+    };
+
+    const updateSetting = (featureKey, settingKey, value) => {
+        setData(prev => ({
+            ...prev,
+            [featureKey]: {
+                ...prev[featureKey],
+                settings_values: { ...prev[featureKey].settings_values, [settingKey]: String(value) }
+            }
+        }));
+        setDirty(prev => ({ ...prev, [featureKey]: true }));
+    };
+
+    const saveFeature = async (featureKey) => {
+        const vals = data[featureKey]?.settings_values || {};
+        const r = await api.put(`system/all-settings/${featureKey}`, vals);
+        if (r?.success) {
+            setDirty(prev => ({ ...prev, [featureKey]: false }));
+            showToast(lang === 'de' ? 'Gespeichert' : 'Saved', 'success');
+        }
+    };
+
+    if (loading) return <Skeleton width="100%" height={120} />;
+    if (!data || Object.keys(data).length === 0) return null;
+
+    return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {Object.entries(data).map(([fKey, fData]) => {
+                const lbl = featureLabels[fKey] || { de: fKey, en: fKey, icon: 'mdi-cog' };
+                return (
+                    <div key={fKey} className="card animate-in">
+                        <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span className={`mdi ${lbl.icon}`} style={{ fontSize: 18, color: 'var(--accent-primary)' }} />
+                            <span style={{ fontWeight: 600, fontSize: 14 }}>{lang === 'de' ? lbl.de : lbl.en}</span>
+                        </div>
+                        <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
                             {(fData.settings_def || []).map(s => {
                                 const val = (fData.settings_values || {})[s.key] ?? s.default;
                                 if (s.type === 'number') {

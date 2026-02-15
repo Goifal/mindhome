@@ -409,6 +409,7 @@ class GeoFenceManager:
         self._is_running = False
         self._person_zones = {}  # person_entity_id -> last_zone_id (or None)
         self._all_away_published = False  # State guard to prevent repeated all_away events
+        self._all_away_since = None  # timestamp when all-away first detected (for debounce)
 
     def start(self):
         self._is_running = True
@@ -660,7 +661,19 @@ class GeoFenceManager:
             return
         all_away = all(z is None for z in self._person_zones.values())
         if all_away and not self._all_away_published:
+            from helpers import get_setting
+            debounce_sec = int(get_setting("phase5.geofence.all_away_debounce_sec", "0") or "0")
+            now = datetime.now(timezone.utc)
+            if debounce_sec > 0:
+                if self._all_away_since is None:
+                    self._all_away_since = now
+                    logger.debug(f"Geofence: all-away debounce started ({debounce_sec}s)")
+                    return
+                elapsed = (now - self._all_away_since).total_seconds()
+                if elapsed < debounce_sec:
+                    return
             self._all_away_published = True
+            self._all_away_since = None
             action = config.get("all_away_action", {})
             if action.get("presence_mode"):
                 self.event_bus.publish("presence.request_mode", {
@@ -671,6 +684,7 @@ class GeoFenceManager:
         elif not all_away and self._all_away_published:
             # First person returned home
             self._all_away_published = False
+            self._all_away_since = None
             action = config.get("first_home_action", {})
             if action.get("presence_mode"):
                 self.event_bus.publish("presence.request_mode", {
@@ -680,3 +694,4 @@ class GeoFenceManager:
             logger.info("Geofence: first person returned home")
         elif not all_away:
             self._all_away_published = False
+            self._all_away_since = None

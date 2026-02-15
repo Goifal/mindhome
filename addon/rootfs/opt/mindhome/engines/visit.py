@@ -7,6 +7,8 @@ Features: #22 Besuchs-Vorbereitung, #29 Automatische Urlaubserkennung
 import logging
 from datetime import datetime, timezone, timedelta
 
+from helpers import get_setting
+
 logger = logging.getLogger("mindhome.engines.visit")
 
 
@@ -214,8 +216,13 @@ class VacationDetector:
         now = datetime.now(timezone.utc)
         hour = now.hour
 
-        # Only simulate 18:00-23:00
-        if hour < 18 or hour >= 23:
+        sim_start = int(get_setting("phase4.vacation_detection.sim_start_hour", "18"))
+        sim_end = int(get_setting("phase4.vacation_detection.sim_end_hour", "23"))
+        sim_brightness_min = int(get_setting("phase4.vacation_detection.sim_brightness_min", "80"))
+        sim_brightness_max = int(get_setting("phase4.vacation_detection.sim_brightness_max", "200"))
+
+        # Only simulate during configured hours
+        if hour < sim_start or hour >= sim_end:
             return
 
         # 10% chance per check (every 10 min) -> ~1x per ~100 min
@@ -232,7 +239,7 @@ class VacationDetector:
                 if target.get("state") == "on":
                     self.ha.call_service("light", "turn_off", {"entity_id": eid})
                 else:
-                    self.ha.call_service("light", "turn_on", {"entity_id": eid, "brightness": random.randint(80, 200)})
+                    self.ha.call_service("light", "turn_on", {"entity_id": eid, "brightness": random.randint(sim_brightness_min, sim_brightness_max)})
                 logger.debug(f"Presence simulation: toggled {eid}")
         except Exception as e:
             logger.debug(f"Presence simulation error: {e}")

@@ -112,6 +112,18 @@ PHASE4_FEATURE_SETTINGS = {
              "label_de": "Max. Farbtemperatur (K)", "label_en": "Max color temp (K)"},
             {"key": "night_brightness", "type": "number", "default": "5", "min": 1, "max": 30, "step": 1,
              "label_de": "Nacht-Helligkeit (%)", "label_en": "Night brightness (%)"},
+            {"key": "sleep_brightness", "type": "number", "default": "10", "min": 0, "max": 30, "step": 1,
+             "label_de": "Schlaf-Helligkeit (%)", "label_en": "Sleep brightness (%)"},
+            {"key": "wakeup_brightness", "type": "number", "default": "70", "min": 20, "max": 100, "step": 5,
+             "label_de": "Aufwach-Helligkeit (%)", "label_en": "Wakeup brightness (%)"},
+            {"key": "wakeup_duration_min", "type": "number", "default": "30", "min": 5, "max": 120, "step": 5,
+             "label_de": "Aufwach-Override Dauer (Min)", "label_en": "Wakeup override duration (min)"},
+            {"key": "guest_brightness", "type": "number", "default": "90", "min": 50, "max": 100, "step": 5,
+             "label_de": "Gäste-Helligkeit (%)", "label_en": "Guest brightness (%)"},
+            {"key": "guest_duration_hours", "type": "number", "default": "3", "min": 1, "max": 12, "step": 1,
+             "label_de": "Gäste-Override Dauer (Std)", "label_en": "Guest override duration (h)"},
+            {"key": "transition_sec", "type": "number", "default": "60", "min": 5, "max": 300, "step": 5,
+             "label_de": "Übergangszeit (Sek)", "label_en": "Transition time (sec)"},
         ],
     },
     "phase4.weather_alerts": {
@@ -128,7 +140,17 @@ PHASE4_FEATURE_SETTINGS = {
             {"key": "alert_heat", "type": "toggle", "default": "true",
              "label_de": "Hitze-Warnung", "label_en": "Heat alert"},
             {"key": "auto_close_covers", "type": "toggle", "default": "false",
-             "label_de": "Auto-Rolllaeden bei Sturm", "label_en": "Auto-close covers on storm"},
+             "label_de": "Auto-Rollläden bei Sturm", "label_en": "Auto-close covers on storm"},
+            {"key": "frost_threshold_c", "type": "number", "default": "0", "min": -10, "max": 5, "step": 0.5,
+             "label_de": "Frost-Schwelle (°C)", "label_en": "Frost threshold (°C)"},
+            {"key": "heat_threshold_c", "type": "number", "default": "33", "min": 25, "max": 45, "step": 1,
+             "label_de": "Hitze-Schwelle (°C)", "label_en": "Heat threshold (°C)"},
+            {"key": "rain_threshold_mmh", "type": "number", "default": "10", "min": 2, "max": 50, "step": 1,
+             "label_de": "Starkregen-Schwelle (mm/h)", "label_en": "Heavy rain threshold (mm/h)"},
+            {"key": "storm_threshold_kmh", "type": "number", "default": "60", "min": 30, "max": 120, "step": 5,
+             "label_de": "Sturm-Schwelle (km/h)", "label_en": "Storm threshold (km/h)"},
+            {"key": "snow_threshold_c", "type": "number", "default": "2", "min": -5, "max": 5, "step": 0.5,
+             "label_de": "Schnee-Schwelle (°C)", "label_en": "Snow threshold (°C)"},
         ],
     },
     # ── Health Page features ──
@@ -143,6 +165,10 @@ PHASE4_FEATURE_SETTINGS = {
              "label_de": "Min. Schlafdauer (Std)", "label_en": "Min sleep duration (h)"},
             {"key": "motion_timeout_min", "type": "number", "default": "15", "min": 5, "max": 60, "step": 5,
              "label_de": "Bewegungs-Timeout (Min)", "label_en": "Motion timeout (min)"},
+            {"key": "sleep_window_start", "type": "number", "default": "20", "min": 18, "max": 23, "step": 1,
+             "label_de": "Schlaffenster Start (Uhr)", "label_en": "Sleep window start (hour)"},
+            {"key": "sleep_window_end", "type": "number", "default": "11", "min": 6, "max": 14, "step": 1,
+             "label_de": "Schlaffenster Ende (Uhr)", "label_en": "Sleep window end (hour)"},
         ],
     },
     "phase4.sleep_quality": {
@@ -167,10 +193,14 @@ PHASE4_FEATURE_SETTINGS = {
              "label_de": "Aufwach-Rampe (Min)", "label_en": "Wake ramp (min)"},
             {"key": "max_brightness", "type": "number", "default": "80", "min": 10, "max": 100, "step": 5,
              "label_de": "Max. Helligkeit (%)", "label_en": "Max brightness (%)"},
+            {"key": "light_transition_sec", "type": "number", "default": "60", "min": 5, "max": 300, "step": 5,
+             "label_de": "Licht-Übergang (Sek)", "label_en": "Light transition (sec)"},
             {"key": "include_cover", "type": "toggle", "default": "true",
-             "label_de": "Rolllaeden oeffnen", "label_en": "Open covers"},
+             "label_de": "Rollläden öffnen", "label_en": "Open covers"},
             {"key": "include_climate", "type": "toggle", "default": "true",
-             "label_de": "Heizung vorwaermen", "label_en": "Pre-heat climate"},
+             "label_de": "Heizung vorwärmen", "label_en": "Pre-heat climate"},
+            {"key": "climate_target_temp", "type": "number", "default": "21", "min": 18, "max": 25, "step": 0.5,
+             "label_de": "Ziel-Temperatur (°C)", "label_en": "Target temperature (°C)"},
         ],
     },
     "phase4.screen_time": {
@@ -215,11 +245,23 @@ PHASE4_FEATURE_SETTINGS = {
              "label_de": "Urlaubs-Temperatur (°C)", "label_en": "Vacation temp (°C)"},
             {"key": "simulate_presence", "type": "toggle", "default": "false",
              "label_de": "Anwesenheit simulieren", "label_en": "Simulate presence"},
+            {"key": "sim_start_hour", "type": "number", "default": "18", "min": 14, "max": 22, "step": 1,
+             "label_de": "Simulation Start (Uhr)", "label_en": "Simulation start (hour)"},
+            {"key": "sim_end_hour", "type": "number", "default": "23", "min": 19, "max": 24, "step": 1,
+             "label_de": "Simulation Ende (Uhr)", "label_en": "Simulation end (hour)"},
         ],
     },
     "phase4.health_dashboard": {
         "category": "health",
         "settings": [
+            {"key": "weight_sleep", "type": "number", "default": "35", "min": 0, "max": 100, "step": 5,
+             "label_de": "Gewicht: Schlaf (%)", "label_en": "Weight: Sleep (%)"},
+            {"key": "weight_comfort", "type": "number", "default": "30", "min": 0, "max": 100, "step": 5,
+             "label_de": "Gewicht: Komfort (%)", "label_en": "Weight: Comfort (%)"},
+            {"key": "weight_ventilation", "type": "number", "default": "20", "min": 0, "max": 100, "step": 5,
+             "label_de": "Gewicht: Lüftung (%)", "label_en": "Weight: Ventilation (%)"},
+            {"key": "weight_screen_time", "type": "number", "default": "15", "min": 0, "max": 100, "step": 5,
+             "label_de": "Gewicht: Bildschirmzeit (%)", "label_en": "Weight: Screen time (%)"},
             {"key": "weekly_report_day", "type": "select", "default": "monday",
              "options": ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"],
              "options_de": ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"],
@@ -332,6 +374,116 @@ PHASE4_FEATURE_SETTINGS = {
         ],
     },
 }
+
+
+# ──────────────────────────────────────────────
+# Core / Phase 1 Settings
+# ──────────────────────────────────────────────
+
+CORE_SETTINGS = {
+    "core.pattern_engine": {
+        "category": "core",
+        "settings": [
+            {"key": "motion_debounce_sec", "type": "number", "default": "60", "min": 5, "max": 300, "step": 5,
+             "label_de": "Bewegungsmelder Entprellen (Sek)", "label_en": "Motion debounce (sec)"},
+            {"key": "max_events_per_minute", "type": "number", "default": "600", "min": 100, "max": 2000, "step": 50,
+             "label_de": "Max. Events pro Minute", "label_en": "Max events per minute"},
+        ],
+    },
+    "core.time_slots": {
+        "category": "core",
+        "settings": [
+            {"key": "morning_start", "type": "number", "default": "5", "min": 3, "max": 8, "step": 1,
+             "label_de": "Morgen ab (Uhr)", "label_en": "Morning from (hour)"},
+            {"key": "midday_start", "type": "number", "default": "9", "min": 8, "max": 12, "step": 1,
+             "label_de": "Mittag ab (Uhr)", "label_en": "Midday from (hour)"},
+            {"key": "afternoon_start", "type": "number", "default": "12", "min": 11, "max": 15, "step": 1,
+             "label_de": "Nachmittag ab (Uhr)", "label_en": "Afternoon from (hour)"},
+            {"key": "evening_start", "type": "number", "default": "17", "min": 15, "max": 20, "step": 1,
+             "label_de": "Abend ab (Uhr)", "label_en": "Evening from (hour)"},
+            {"key": "night_start", "type": "number", "default": "21", "min": 20, "max": 24, "step": 1,
+             "label_de": "Nacht ab (Uhr)", "label_en": "Night from (hour)"},
+        ],
+    },
+    "core.learning": {
+        "category": "core",
+        "settings": [
+            {"key": "events_needed", "type": "number", "default": "100", "min": 20, "max": 500, "step": 10,
+             "label_de": "Events für Beobachtungsphase", "label_en": "Events for observing phase"},
+            {"key": "patterns_needed", "type": "number", "default": "5", "min": 1, "max": 20, "step": 1,
+             "label_de": "Muster für autonome Phase", "label_en": "Patterns for autonomous phase"},
+        ],
+    },
+}
+
+
+# ──────────────────────────────────────────────
+# Phase 5 Settings (beyond special modes which have their own config)
+# ──────────────────────────────────────────────
+
+PHASE5_SETTINGS = {
+    "phase5.fire_co": {
+        "category": "security",
+        "settings": [
+            {"key": "emergency_brightness_pct", "type": "number", "default": "100", "min": 50, "max": 100, "step": 5,
+             "label_de": "Notfall-Helligkeit (%)", "label_en": "Emergency brightness (%)"},
+        ],
+    },
+    "phase5.geofence": {
+        "category": "security",
+        "settings": [
+            {"key": "all_away_debounce_sec", "type": "number", "default": "0", "min": 0, "max": 600, "step": 30,
+             "label_de": "Alle-Weg Verzögerung (Sek)", "label_en": "All-away debounce (sec)"},
+        ],
+    },
+}
+
+
+@health_bp.route("/api/system/all-settings", methods=["GET"])
+def api_get_all_settings():
+    """Get ALL configurable settings across all phases, grouped by category."""
+    all_defs = {}
+    all_defs.update(CORE_SETTINGS)
+    all_defs.update(PHASE4_FEATURE_SETTINGS)
+    all_defs.update(PHASE5_SETTINGS)
+
+    result = {}
+    for feature_key, fdef in all_defs.items():
+        cat = fdef["category"]
+        if cat not in result:
+            result[cat] = {}
+        settings_values = {}
+        for s in fdef["settings"]:
+            full_key = f"{feature_key}.{s['key']}"
+            settings_values[s["key"]] = get_setting(full_key, s["default"])
+        result[cat][feature_key] = {
+            "settings_def": fdef["settings"],
+            "settings_values": settings_values,
+        }
+    return jsonify(result)
+
+
+@health_bp.route("/api/system/all-settings/<path:feature_key>", methods=["PUT"])
+def api_set_all_settings(feature_key):
+    """Update settings for any feature key (core/phase4/phase5)."""
+    all_defs = {}
+    all_defs.update(CORE_SETTINGS)
+    all_defs.update(PHASE4_FEATURE_SETTINGS)
+    all_defs.update(PHASE5_SETTINGS)
+
+    fdef = all_defs.get(feature_key)
+    if not fdef:
+        return jsonify({"error": "Unknown feature"}), 404
+    data = request.json or {}
+    valid_keys = {s["key"] for s in fdef["settings"]}
+    updated = []
+    for key, value in data.items():
+        if key not in valid_keys:
+            continue
+        full_key = f"{feature_key}.{key}"
+        set_setting(full_key, str(value))
+        updated.append(key)
+    return jsonify({"success": True, "updated": updated})
 
 
 @health_bp.route("/api/system/phase4-feature-settings/<path:category>", methods=["GET"])

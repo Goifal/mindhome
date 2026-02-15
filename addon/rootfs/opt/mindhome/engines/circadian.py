@@ -114,14 +114,16 @@ class CircadianLightManager:
                 configs = session.query(CircadianConfig).filter(
                     CircadianConfig.enabled == True
                 ).all()
+                from helpers import get_setting
+                _sleep_brightness = int(get_setting("phase4.circadian_lighting.sleep_brightness", "10") or "10")
                 for cfg in configs:
                     self._active_overrides[cfg.room_id] = {
                         "type": "sleep",
-                        "brightness_pct": cfg.override_sleep or 10,
+                        "brightness_pct": cfg.override_sleep or _sleep_brightness,
                         "transition_sec": cfg.override_transition_sec or 300,
                         "until": None,  # until wake
                     }
-                    self._apply_brightness(cfg, cfg.override_sleep or 10, cfg.override_transition_sec or 300)
+                    self._apply_brightness(cfg, cfg.override_sleep or _sleep_brightness, cfg.override_transition_sec or 300)
             logger.info(f"Circadian sleep override applied to {len(configs)} rooms")
         except Exception as e:
             logger.error(f"Circadian _on_sleep error: {e}")
@@ -137,14 +139,17 @@ class CircadianLightManager:
                     CircadianConfig.enabled == True
                 ).all()
                 now = datetime.now(timezone.utc)
+                from helpers import get_setting
+                _wakeup_brightness = int(get_setting("phase4.circadian_lighting.wakeup_brightness", "70") or "70")
+                _wakeup_duration_min = int(get_setting("phase4.circadian_lighting.wakeup_duration_min", "30") or "30")
                 for cfg in configs:
                     self._active_overrides[cfg.room_id] = {
                         "type": "wakeup",
-                        "brightness_pct": cfg.override_wakeup or 70,
+                        "brightness_pct": cfg.override_wakeup or _wakeup_brightness,
                         "transition_sec": cfg.override_transition_sec or 300,
-                        "until": now + timedelta(minutes=30),  # override for 30 min, then resume curve
+                        "until": now + timedelta(minutes=_wakeup_duration_min),
                     }
-                    self._apply_brightness(cfg, cfg.override_wakeup or 70, cfg.override_transition_sec or 300)
+                    self._apply_brightness(cfg, cfg.override_wakeup or _wakeup_brightness, cfg.override_transition_sec or 300)
             logger.info("Circadian wakeup override applied")
         except Exception as e:
             logger.error(f"Circadian _on_wake error: {e}")
@@ -160,14 +165,17 @@ class CircadianLightManager:
                     CircadianConfig.enabled == True
                 ).all()
                 now = datetime.now(timezone.utc)
+                from helpers import get_setting
+                _guest_brightness = int(get_setting("phase4.circadian_lighting.guest_brightness", "90") or "90")
+                _guest_duration_hours = int(get_setting("phase4.circadian_lighting.guest_duration_hours", "3") or "3")
                 for cfg in configs:
                     self._active_overrides[cfg.room_id] = {
                         "type": "guests",
-                        "brightness_pct": cfg.override_guests or 90,
+                        "brightness_pct": cfg.override_guests or _guest_brightness,
                         "transition_sec": cfg.override_transition_sec or 300,
-                        "until": now + timedelta(hours=3),  # guest override for 3h
+                        "until": now + timedelta(hours=_guest_duration_hours),
                     }
-                    self._apply_brightness(cfg, cfg.override_guests or 90, cfg.override_transition_sec or 300)
+                    self._apply_brightness(cfg, cfg.override_guests or _guest_brightness, cfg.override_transition_sec or 300)
             logger.info("Circadian guest override applied")
         except Exception as e:
             logger.error(f"Circadian _on_guests error: {e}")
@@ -220,7 +228,9 @@ class CircadianLightManager:
                         target_pct = _interpolate_curve(curve, "pct", now.hour, now.minute)
                         target_pct = max(0, min(100, round(target_pct)))
 
-                        self._apply_brightness(cfg, target_pct, transition_sec=60)
+                        from helpers import get_setting
+                        _transition_sec = int(get_setting("phase4.circadian_lighting.transition_sec", "60") or "60")
+                        self._apply_brightness(cfg, target_pct, transition_sec=_transition_sec)
 
                         ct_kelvin = None
                         if cfg.light_type == "tunable_white":

@@ -23,6 +23,7 @@ from models import (
     LearnedScene, DayPhase, PatternSettings, AnomalySetting,
     PersonDevice, GuestDevice,
 )
+from helpers import get_setting
 
 logger = logging.getLogger("mindhome.automation_engine")
 
@@ -698,18 +699,34 @@ class ConflictDetector:
 class PhaseManager:
     """Manages learning phase transitions per room/domain."""
 
-    # E1: Thresholds for phase transitions
+    # E1: Thresholds for phase transitions (defaults; overridden dynamically)
     OBSERVE_TO_SUGGEST = {
         "min_days": 7,
-        "min_events": 50,
+        "min_events": 100,
         "min_patterns": 2,
         "min_avg_confidence": 0.4,
     }
     SUGGEST_TO_AUTONOMOUS = {
         "min_days": 14,
-        "min_confirmed": 3,
+        "min_confirmed": 5,
         "min_avg_confidence": 0.7,
     }
+
+    def _get_observe_thresholds(self):
+        t = dict(self.OBSERVE_TO_SUGGEST)
+        try:
+            t["min_events"] = int(get_setting("core.learning.events_needed", "100") or "100")
+        except Exception:
+            pass
+        return t
+
+    def _get_autonomous_thresholds(self):
+        t = dict(self.SUGGEST_TO_AUTONOMOUS)
+        try:
+            t["min_confirmed"] = int(get_setting("core.learning.patterns_needed", "5") or "5")
+        except Exception:
+            pass
+        return t
 
     def __init__(self, engine):
         self.engine = engine
@@ -763,7 +780,7 @@ class PhaseManager:
 
     def _check_observe_to_suggest(self, session, rds):
         """Can we move from observing to suggesting?"""
-        t = self.OBSERVE_TO_SUGGEST
+        t = self._get_observe_thresholds()
 
         # Days since phase started
         if rds.phase_started_at:
@@ -809,7 +826,7 @@ class PhaseManager:
 
     def _check_suggest_to_autonomous(self, session, rds):
         """Can we move from suggesting to autonomous?"""
-        t = self.SUGGEST_TO_AUTONOMOUS
+        t = self._get_autonomous_thresholds()
 
         if rds.phase_started_at:
             days = (datetime.utcnow().replace(tzinfo=None) - rds.phase_started_at.replace(tzinfo=None)).days

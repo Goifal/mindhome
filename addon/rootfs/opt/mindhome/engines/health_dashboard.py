@@ -8,6 +8,8 @@ Stores periodic HealthMetric snapshots and generates weekly reports.
 import logging
 from datetime import datetime, timezone, timedelta
 
+from helpers import get_setting
+
 logger = logging.getLogger("mindhome.engines.health_dashboard")
 
 
@@ -223,23 +225,28 @@ class HealthAggregator:
 
     def _calc_overall_score(self, sleep_data, comfort_data, screen_time_data, ventilation_data):
         """Calculate weighted overall health score (0-100)."""
+        w_sleep = float(get_setting("phase4.health_dashboard.weight_sleep", "35")) / 100.0
+        w_comfort = float(get_setting("phase4.health_dashboard.weight_comfort", "30")) / 100.0
+        w_screen = float(get_setting("phase4.health_dashboard.weight_screen_time", "15")) / 100.0
+        w_vent = float(get_setting("phase4.health_dashboard.weight_ventilation", "20")) / 100.0
+
         scores = []
         weights = []
 
         if sleep_data and sleep_data.get("avg_quality") is not None:
             scores.append(sleep_data["avg_quality"])
-            weights.append(0.35)
+            weights.append(w_sleep)
 
         if comfort_data and comfort_data.get("avg_score") is not None:
             scores.append(comfort_data["avg_score"])
-            weights.append(0.30)
+            weights.append(w_comfort)
 
         if screen_time_data and screen_time_data.get("total_today_min") is not None:
             # Score: 100 if <60min, decreasing linearly to 0 at 480min
             st_min = screen_time_data["total_today_min"]
             st_score = max(0, min(100, 100 - (st_min - 60) * (100 / 420)))
             scores.append(st_score)
-            weights.append(0.15)
+            weights.append(w_screen)
 
         if ventilation_data:
             total = ventilation_data.get("rooms_monitored", 0)
@@ -247,7 +254,7 @@ class HealthAggregator:
             if total > 0:
                 vent_score = round(((total - needing) / total) * 100, 1)
                 scores.append(vent_score)
-                weights.append(0.20)
+                weights.append(w_vent)
 
         if not scores:
             return None
