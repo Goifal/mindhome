@@ -4,21 +4,21 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "0.7.24"
-BUILD = 77
+VERSION = "0.7.25"
+BUILD = 78
 BUILD_DATE = "2026-02-15"
 CODENAME = "Phase 4 - Smart Health"
 
 # Changelog
-# Build 77: v0.7.24 Fix HA-Automation-Erkennung (REST statt WS)
-#   - CRITICAL FIX: WS-Command "config/automation/config/list" existiert nicht
-#     in HA — deshalb kamen immer 0 Automation-Configs zurueck
-#     Fix: REST API GET /api/config/automation/config statt WebSocket
-#   - REST Config API liefert alle UI-Automationen mit triggers + actions
+# Build 78: v0.7.25 Fix HA-Automation-Erkennung (korrekter WS-Command)
+#   - CRITICAL FIX: WS-Command war "config/automation/config/list" (existiert nicht)
+#     Korrekter HA-Command: "automation/config/list" (Storage Collection API)
+#     REST-Endpoint /api/config/automation/config gibt 404 via Supervisor-Proxy
+#   - WS "automation/config/list" liefert alle UI-Automationen mit actions+triggers
 #   - Matching per alias (friendly_name) + Fallback auf automation.{id}
-#   - Info-Logging: "Found X automation entities" + "Matched X/Y configs"
-#   - Hinweis im Log wenn keine Configs gefunden (YAML-basierte Automationen)
+#   - Info-Logging: "Got X automation configs from WebSocket"
 #
+# Build 77: v0.7.24 REST-API Versuch (404 via Supervisor)
 # Build 76: v0.7.23 _extract_actions_flat + action-Key Support
 #   - NEU: Verschachtelte Actions (choose/if/sequence/parallel/repeat)
 #     werden rekursiv traversiert via _extract_actions_flat()
