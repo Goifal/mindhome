@@ -1,67 +1,66 @@
 # MindHome Phase 5 — Implementierungsplan
-# "Sicherheit + Spezial-Modi" (13 Features)
+# "Sicherheit + Spezial-Modi" (11 Features)
 
 > **Stand:** 2026-02-15
 > **Branch:** `claude/plan-phase-5-yZBaB`
 > **Zielversion:** v0.8.0+
 > **Basis:** Phase 4 fertig (v0.7.29, Build 82, DB Migration v11)
-> **Zu implementieren:** 13 Features
+> **Zu implementieren:** 11 Features
+> **Hinweis:** Alarm-System / Einbruch-Erkennung wird **nicht** in MindHome implementiert —
+> das läuft über eine separate HA-Integration. MindHome kann den HA `alarm_control_panel`
+> State lesen (read-only im Dashboard), steuert aber keine Arm/Disarm-Logik.
 
 ---
 
 ## Strategie
 
-Phase 5 wird in **5 Batches** mit **~12 Commits** implementiert:
+Phase 5 wird in **4 Batches** mit **~10 Commits** implementiert:
 
 1. Zuerst die **Infrastruktur** (neue Engine-Module, DB-Migration, Feature-Flags)
-2. Dann Feature-Batches in logischer Reihenfolge: Alarm → Sensoren → Zugang → Modi → Dashboard
+2. Dann Feature-Batches in logischer Reihenfolge: Sensoren → Zugang → Modi → Dashboard
 3. Jeder Batch: Backend → Frontend → Tests
 4. Jedes Feature: Integration mit bestehenden Engines (Presence, Notifications, EventBus)
 5. Am Ende: Sicherheits-Dashboard, Version-Bump, README-Update, Changelog
 
-### Commit-Plan (~12 Commits)
+### Commit-Plan (~10 Commits)
 
 | # | Commit | Batch | Features |
 |---|--------|-------|----------|
 | 1 | `chore: Bump to v0.8.0` | 0 | version.py |
 | 2 | `feat: Add Phase 5 infrastructure` | 0 | engines/ Stubs, routes/security.py, Feature-Flags |
 | 3 | `feat: Add Phase 5 DB models + migration v12` | 0 | models.py + Migration + neue Enums |
-| 4 | `feat(security): Add alarm system + intrusion detection` | 1 | #1 |
-| 5 | `feat(security): Add fire/CO + water leak response` | 2 | #2, #3 |
-| 6 | `feat(security): Add camera snapshots on alert` | 2 | #4 |
-| 7 | `feat(security): Add access control + smart lock management` | 3 | #5 |
-| 8 | `feat(security): Add geo-fencing` | 3 | #6 |
-| 9 | `feat(modes): Add party + cinema + home-office modes` | 4 | #8, #9, #10 |
-| 10 | `feat(modes): Add child safety + night lockdown + emergency protocol` | 4 | #11, #12, #13 |
-| 11 | `feat(security): Add security dashboard` | 5 | #7 |
-| 12 | `docs: Finalize Phase 5` | 5 | README, Changelog, Translations |
+| 4 | `feat(security): Add fire/CO + water leak response` | 1 | #1, #2 |
+| 5 | `feat(security): Add camera snapshots on security events` | 1 | #3 |
+| 6 | `feat(security): Add access control + smart lock management` | 2 | #4 |
+| 7 | `feat(security): Add geo-fencing` | 2 | #5 |
+| 8 | `feat(modes): Add party + cinema + home-office modes` | 3 | #7, #8, #9 |
+| 9 | `feat(modes): Add night lockdown + emergency protocol` | 3 | #10, #11 |
+| 10 | `feat(security): Add security dashboard + finalize Phase 5` | 4 | #6 + Docs |
 
 ---
 
 ## Feature-Übersicht
 
-### Sicherheit (7 Features)
+### Sicherheit (6 Features)
 
 | # | Feature | Beschreibung |
 |---|---------|-------------|
-| 1 | Alarm-System & Einbruch-Erkennung | Arm/Disarm-Zustände, Sensor-Überwachung, Sirene/Alarm |
-| 2 | Rauch-/CO-Melder-Reaktion | Automatische Aktionen bei Feuer/Rauch/CO-Alarm |
-| 3 | Wassermelder-Reaktion | Leck-Erkennung, Ventil-Steuerung, Schutzmaßnahmen |
-| 4 | Kamera-Snapshots bei Alarm | Foto-Aufnahme bei Bewegung im Alarm-Zustand |
-| 5 | Zutrittskontrolle | Smart-Lock-Management, Codes, Zutrittsprotokoll |
-| 6 | Geo-Fencing | Standortbasiertes Arm/Disarm, Auto-Aktionen |
-| 7 | Sicherheits-Dashboard | Zentrale Sicherheitsübersicht, Ereignisprotokoll |
+| 1 | Rauch-/CO-Melder-Reaktion | Automatische Aktionen bei Feuer/Rauch/CO-Alarm |
+| 2 | Wassermelder-Reaktion | Leck-Erkennung, Ventil-Steuerung, Schutzmaßnahmen |
+| 3 | Kamera-Snapshots bei Sicherheitsereignissen | Foto-Aufnahme bei Notfall-Events |
+| 4 | Zutrittskontrolle | Smart-Lock-Management, Codes, Zutrittsprotokoll |
+| 5 | Geo-Fencing | Standortbasierte Aktionen, Auto-Presence |
+| 6 | Sicherheits-Dashboard | Zentrale Sicherheitsübersicht, Ereignisprotokoll |
 
-### Spezial-Modi (6 Features)
+### Spezial-Modi (5 Features)
 
 | # | Feature | Beschreibung |
 |---|---------|-------------|
-| 8 | Party-Modus | Musik, Beleuchtungsszenen, Lautstärke-Monitoring |
-| 9 | Kino-Modus | Licht dimmen, Rollläden schließen, Media-Sync |
-| 10 | Home-Office-Modus | Fokus-Beleuchtung, DnD, Klimakomfort |
-| 11 | Kinder-Sicherung | Geräte-Einschränkung, Schlafenszeit-Durchsetzung |
-| 12 | Nacht-Sicherungs-Modus | Auto-Lock, Bewegungs-Alerts, Minimal-Beleuchtung |
-| 13 | Notfall-Protokoll | Koordinierte Notfall-Reaktion, Eskalation |
+| 7 | Party-Modus | Musik, Beleuchtungsszenen, Lautstärke-Monitoring |
+| 8 | Kino-Modus | Licht dimmen, Rollläden schließen, Media-Sync |
+| 9 | Home-Office-Modus | Fokus-Beleuchtung, DnD, Klimakomfort |
+| 10 | Nacht-Sicherungs-Modus | Auto-Lock, Bewegungs-Alerts, Minimal-Beleuchtung |
+| 11 | Notfall-Protokoll | Koordinierte Notfall-Reaktion, Eskalation |
 
 ---
 
@@ -74,12 +73,11 @@ Phase 5 wird in **5 Batches** mit **~12 Commits** implementiert:
 ```
 engines/
 ├── ... (bestehende Phase 4 Module)
-├── security.py           # AlarmManager, IntrusionDetector (#1)
-├── fire_water.py         # FireResponseManager, WaterLeakManager (#2, #3)
-├── access_control.py     # AccessControlManager, GeoFenceManager (#5, #6)
-├── camera_security.py    # SecurityCameraManager (#4)
-└── special_modes.py      # PartyMode, CinemaMode, HomeOfficeMode, ChildSafety,
-                          # NightLockdown, EmergencyProtocol (#8-#13)
+├── fire_water.py         # FireResponseManager, WaterLeakManager (#1, #2)
+├── access_control.py     # AccessControlManager, GeoFenceManager (#4, #5)
+├── camera_security.py    # SecurityCameraManager (#3)
+└── special_modes.py      # PartyMode, CinemaMode, HomeOfficeMode,
+                          # NightLockdown, EmergencyProtocol (#7-#11)
 ```
 
 Bestehende Engine-Module bleiben unverändert. Neue Phase-5-Klassen kommen in eigene Module.
@@ -89,7 +87,7 @@ Bestehende Engine-Module bleiben unverändert. Neue Phase-5-Klassen kommen in ei
 ```
 routes/
 ├── ... (bestehende 14 Blueprints)
-└── security.py           # Security-Endpoints (Alarm, Zutritt, Kamera, Geo-Fence, Dashboard)
+└── security.py           # Security-Endpoints (Zutritt, Kamera, Geo-Fence, Modi, Dashboard)
 ```
 
 - `security_bp` in `routes/__init__.py` registrieren
@@ -100,7 +98,6 @@ routes/
 Wie Phase 4 über `SystemSettings`-Einträge:
 
 ```
-phase5.alarm_system         = true/false  (braucht: binary_sensor Tür/Fenster ODER motion)
 phase5.fire_co_response     = true/false  (braucht: smoke/CO-Sensor binary_sensor)
 phase5.water_leak_response  = true/false  (braucht: moisture binary_sensor)
 phase5.camera_snapshots     = true/false  (braucht: camera.* Entity)
@@ -110,7 +107,6 @@ phase5.security_dashboard   = true/false
 phase5.party_mode           = true/false
 phase5.cinema_mode          = true/false  (braucht: media_player Entity)
 phase5.home_office_mode     = true/false
-phase5.child_safety         = true/false  (braucht: profile_type="child" User)
 phase5.night_lockdown       = true/false  (braucht: lock.* Entity empfohlen)
 phase5.emergency_protocol   = true/false
 ```
@@ -125,45 +121,37 @@ phase5.emergency_protocol   = true/false
 
 | Feature | Voll-Sensorik | Fallback wenn fehlt |
 |---------|---------------|---------------------|
-| Alarm-System | Tür/Fenster + Motion + Sirene | Nur Notification, kein Sirenen-Trigger |
 | Rauch-/CO-Reaktion | smoke/CO binary_sensor | Feature auto-deaktiviert |
 | Wassermelder | moisture binary_sensor + Ventil | Notification ohne Auto-Ventil |
 | Kamera-Snapshots | camera.* Entity | Feature auto-deaktiviert |
-| Zutrittskontrolle | lock.* Entity | Nur Logging, kein Lock-Steuerung |
+| Zutrittskontrolle | lock.* Entity | Nur Logging, keine Lock-Steuerung |
 | Geo-Fencing | GPS device_tracker | Fallback: WiFi-Presence (home/away) |
 | Party-Modus | Licht + Media + Motion | Nur vorhandene Domains steuern |
 | Kino-Modus | Media + Licht + Cover | Nur vorhandene Domains steuern |
 | Home-Office | Licht + Klima | Nur vorhandene Domains steuern |
-| Kinder-Sicherung | Beliebig | Nur Zeitbegrenzung (ScreenTime) |
 | Nacht-Sicherung | Lock + Motion | Nur Notification ohne Lock |
 | Notfall | Alle | Eskalation: Notification → TTS → HA-Alert |
 
 ### 0e: Neue Enums
 
 ```python
-class AlarmState(enum.Enum):
-    DISARMED = "disarmed"
-    ARMED_HOME = "armed_home"      # Zu Hause, Perimeter bewacht
-    ARMED_AWAY = "armed_away"      # Abwesend, alles bewacht
-    ARMED_NIGHT = "armed_night"    # Nacht, Perimeter + Erdgeschoss
-    PENDING = "pending"            # Entschärfungs-Countdown
-    TRIGGERED = "triggered"        # Alarm ausgelöst
-
 class SecurityEventType(enum.Enum):
-    INTRUSION = "intrusion"
     FIRE = "fire"
     CO = "co"
     WATER_LEAK = "water_leak"
-    DOOR_FORCED = "door_forced"
+    ACCESS_UNLOCK = "access_unlock"
+    ACCESS_LOCK = "access_lock"
+    ACCESS_JAMMED = "access_jammed"
+    ACCESS_UNKNOWN = "access_unknown"
     PANIC = "panic"
-    TAMPER = "tamper"
-    ARM = "arm"
-    DISARM = "disarm"
+    EMERGENCY = "emergency"
+    MODE_ACTIVATED = "mode_activated"
+    MODE_DEACTIVATED = "mode_deactivated"
 
 class SecuritySeverity(enum.Enum):
-    INFO = "info"            # Arm/Disarm, Zutritt
-    WARNING = "warning"      # Verzögertes Event (Pending)
-    CRITICAL = "critical"    # Alarm ausgelöst
+    INFO = "info"            # Zutritt, Modus-Wechsel
+    WARNING = "warning"      # Unbekannter Zutritt, Fenster offen
+    CRITICAL = "critical"    # Wassermelder, Jammed Lock
     EMERGENCY = "emergency"  # Feuer, Gas, Panik
 ```
 
@@ -171,127 +159,37 @@ class SecuritySeverity(enum.Enum):
 
 | Model | Zweck | Felder |
 |-------|-------|--------|
-| `SecurityConfig` | Alarm-Konfiguration | arm_state (Enum), pin_code_hash, entry_delay_sec (30), exit_delay_sec (60), siren_entity, siren_duration_sec (300), auto_arm_away (Boolean), auto_arm_night (Boolean), auto_arm_delay_min (15), notify_on_arm (Boolean), notify_on_alarm (Boolean) |
-| `SecurityZone` | Zonen-Definition | name_de, name_en, zone_type ("perimeter"/"interior"/"fire"/"water"/"panic"), armed_states (JSON: welche AlarmStates diese Zone aktiv machen), entry_delay (Boolean), is_active |
-| `SecuritySensor` | Sensor→Zonen-Zuordnung | device_id (FK), zone_id (FK), sensor_role ("trigger"/"tamper"/"bypass"), is_bypassed |
-| `SecurityEvent` | Sicherheits-Ereignislog | event_type (Enum), severity (Enum), zone_id (FK), device_id (FK), message_de, message_en, alarm_state_before, alarm_state_after, resolved_at, resolved_by, snapshot_path, context (JSON) |
-| `AccessCode` | Smart-Lock-Codes | user_id (FK, nullable), name, code_hash, lock_entity_ids (JSON), valid_from (nullable), valid_until (nullable), is_temporary, max_uses (nullable), use_count, is_active |
+| `SecurityEvent` | Sicherheits-Ereignislog | event_type (Enum), severity (Enum), device_id (FK, nullable), room_id (FK, nullable), message_de, message_en, resolved_at, resolved_by, snapshot_path, context (JSON), timestamp |
+| `AccessCode` | Smart-Lock-Codes | user_id (FK, nullable), name, code_hash, lock_entity_ids (JSON), valid_from (nullable), valid_until (nullable), is_temporary, max_uses (nullable), use_count, is_active, created_at |
 | `AccessLog` | Zutrittsereignisse | lock_entity_id, user_id (FK, nullable), access_code_id (FK, nullable), action ("lock"/"unlock"/"jammed"/"failed"), method ("code"/"key"/"auto"/"remote"/"unknown"), timestamp |
-| `GeoFence` | Geo-Fence-Zone | name, latitude, longitude, radius_m, user_id (FK), action_on_enter (JSON), action_on_leave (JSON), linked_alarm_state (nullable), is_active |
-| `SpecialModeConfig` | Spezial-Modi Config | mode_type ("party"/"cinema"/"home_office"/"child_safety"/"night_lockdown"/"emergency"), config (JSON), auto_deactivate_after_min (nullable), linked_presence_mode_id (FK, nullable), is_active |
-| `SpecialModeLog` | Modi-Aktivierungslog | mode_type, activated_at, deactivated_at, activated_by (FK), reason |
-| `ChildRestriction` | Kinder-Einschränkungen | user_id (FK), restriction_type ("device_block"/"time_limit"/"bedtime"), target_entities (JSON), config (JSON: limit_min, bedtime, weekday_bedtime, weekend_bedtime), is_active |
-| `EmergencyContact` | Notfall-Kontakte | name, phone, email, notify_method ("push"/"sms"/"email"/"call"), priority, is_active |
+| `GeoFence` | Geo-Fence-Zone | name, latitude, longitude, radius_m, user_id (FK, nullable), action_on_enter (JSON), action_on_leave (JSON), is_active, created_at |
+| `SpecialModeConfig` | Spezial-Modi Config | mode_type ("party"/"cinema"/"home_office"/"night_lockdown"/"emergency"), config (JSON), auto_deactivate_after_min (nullable), linked_presence_mode_id (FK, nullable), is_active |
+| `SpecialModeLog` | Modi-Aktivierungslog | mode_type, activated_at, deactivated_at, activated_by (FK, nullable), reason, previous_states (JSON) |
+| `EmergencyContact` | Notfall-Kontakte | name, phone, email, notify_method ("push"/"email"), priority, is_active |
 
 ### Neue Spalten in bestehenden Models:
 
 | Model | Neue Spalte | Zweck |
 |-------|-------------|-------|
-| `Device` | `security_zone_id` (FK, nullable) | Zuordnung zu Sicherheitszone |
-| `Room` | `security_priority` (Integer, default=0) | Alarmpiorität (EG > OG) |
 | `User` | `emergency_contact` (String, nullable) | Notfall-Telefon |
 | `User` | `geo_tracking_enabled` (Boolean, default=False) | GPS-Tracking Opt-in |
 | `NotificationLog` | `security_event_id` (FK, nullable) | Verknüpfung mit Security-Event |
-| `PresenceMode` | `linked_alarm_state` (String, nullable) | Automatisches Arm/Disarm bei Moduswechsel |
 
 ### 0g: Migration v12
 
 - Alle `CREATE TABLE` Statements für neue Models
 - Alle `ALTER TABLE` Statements für neue Spalten
 - Feature-Flag Defaults in `SystemSettings` einfügen
-- Default-Sicherheitszonen anlegen (Perimeter, Innenraum, Feuer, Wasser)
 - `db_migration_version` auf 12 setzen
 
 ---
 
-## Batch 1: Alarm-System & Einbruch-Erkennung — Commit 4 (Feature #1)
+## Batch 1: Feuer/Wasser & Kamera — Commits 4-5 (Features #1, #2, #3)
 
-### #1 Alarm-System & Einbruch-Erkennung
-**Dateien:** `engines/security.py`, `routes/security.py`
-
-Das Herzstück von Phase 5. Ein flexibles Alarm-System mit 5 Zuständen.
-
-- **Zustands-Maschine:**
-  ```
-  DISARMED ──→ ARMED_HOME ──→ TRIGGERED
-       │            ↑              │
-       │            │              ↓
-       ├──→ ARMED_AWAY ──→ PENDING ──→ TRIGGERED
-       │            ↑
-       └──→ ARMED_NIGHT
-  ```
-  - `DISARMED → ARMED_*`: Exit-Delay (z.B. 60s zum Verlassen)
-  - `ARMED_* → PENDING`: Entry-Delay (z.B. 30s zum Entschärfen, nur bei Perimeter-Zone mit entry_delay=true)
-  - `PENDING → TRIGGERED`: Countdown abgelaufen ohne Entschärfung
-  - `TRIGGERED → DISARMED`: PIN-Code oder Fernsteuerung
-
-- **Backend:**
-  - `AlarmManager`-Klasse in `engines/security.py`
-    - `arm(state, pin)` → Startet Exit-Delay, dann Arm
-    - `disarm(pin)` → Entschärft sofort
-    - `trigger(zone, device, reason)` → Löst Alarm aus
-    - `handle_sensor_event(entity_id, new_state)` → Prüft ob Sensor in aktiver Zone
-  - `IntrusionDetector`-Klasse in `engines/security.py`
-    - Überwacht alle `SecuritySensor`-Einträge
-    - Bei Tür/Fenster öffnen im ARMED-State → prüft Zone
-    - Bei Bewegung im ARMED_AWAY/ARMED_NIGHT → prüft Interior-Zone
-    - Tamper-Erkennung: Sensor wird unavailable → Warnung
-  - Event-Bus Integration:
-    - Empfängt: `state_changed` Events für Sicherheits-Sensoren
-    - Sendet: `alarm.armed`, `alarm.triggered`, `alarm.disarmed`, `alarm.pending`
-  - Alarm-Aktionen bei TRIGGERED:
-    1. Siren Entity einschalten (für `siren_duration_sec`)
-    2. Alle Lichter an (100%)
-    3. Notification an alle Admins (CRITICAL)
-    4. `SecurityEvent` loggen mit Kontext
-    5. Optional: Kamera-Snapshot (→ Feature #4)
-  - Scheduler-Task: Nicht nötig — Event-basiert über EventBus (reagiert auf `state_changed`)
-  - Aber: Timer-Thread für Exit/Entry-Delay Countdowns
-  - API:
-    - `GET /api/security/alarm` → aktueller Status (State, aktive Zonen, letzte Events)
-    - `POST /api/security/alarm/arm` → Body: `{state, pin}`
-    - `POST /api/security/alarm/disarm` → Body: `{pin}`
-    - `POST /api/security/alarm/panic` → Sofortiger Alarm (kein PIN)
-    - `GET /api/security/zones` → Zonen-Übersicht
-    - `POST/PUT/DELETE /api/security/zones/<id>` → Zonen CRUD
-    - `GET /api/security/sensors` → Sensoren mit Zonenzuordnung
-    - `PUT /api/security/sensors/<device_id>` → Sensor zuordnen/bypass
-    - `PUT /api/security/config` → Alarm-Konfiguration
-
-- **Frontend:**
-  - Alarm-Panel oben auf der Sicherheits-Seite
-    - Großer Status-Indikator (Grün=Disarmed, Gelb=Armed, Rot=Triggered)
-    - Arm/Disarm Buttons mit PIN-Eingabe
-    - Panic-Button (Rot, groß)
-    - Exit/Entry-Countdown-Anzeige
-  - Zonen-Konfiguration
-    - Liste der Zonen mit Sensor-Zuordnung
-    - Drag & Drop von Geräten in Zonen
-    - Bypass-Toggle pro Sensor
-
-### Integration mit Presence-System
-
-Das Alarm-System arbeitet Hand in Hand mit dem bestehenden `PresenceModeManager`:
-
-| Presence-Modus | Auto-Alarm-Aktion | Bedingung |
-|----------------|-------------------|-----------|
-| Abwesend (Away) | → ARMED_AWAY | Wenn `auto_arm_away=true` + alle Personen weg |
-| Zuhause (Home) | → DISARMED | Wenn erste Person zurückkommt |
-| Schlaf (Sleep) | → ARMED_NIGHT | Wenn `auto_arm_night=true` |
-| Urlaub (Vacation) | → ARMED_AWAY | Immer |
-
-- `PresenceMode.linked_alarm_state` speichert die Zuordnung
-- `PresenceModeManager` feuert Event `presence.mode_changed`
-- `AlarmManager` lauscht auf dieses Event und wechselt Alarm-State
-
----
-
-## Batch 2: Feuer/Wasser & Kamera — Commits 5-6 (Features #2, #3, #4)
-
-### #2 Rauch-/CO-Melder-Reaktion
+### #1 Rauch-/CO-Melder-Reaktion
 **Dateien:** `engines/fire_water.py`, `routes/security.py`
 
-Automatische Reaktionen bei Feuer- oder CO-Alarm — zeitkritisch, immer aktiv (auch bei DISARMED).
+Automatische Reaktionen bei Feuer- oder CO-Alarm — zeitkritisch, immer aktiv.
 
 - **Backend:**
   - `FireResponseManager`-Klasse in `engines/fire_water.py`
@@ -320,7 +218,7 @@ Automatische Reaktionen bei Feuer- oder CO-Alarm — zeitkritisch, immer aktiv (
   - Sensor-Status pro Raum (OK / Warnung / Alarm)
   - Konfigurierbares Aktions-Set
 
-### #3 Wassermelder-Reaktion
+### #2 Wassermelder-Reaktion
 **Dateien:** `engines/fire_water.py`, `routes/security.py`
 
 Schützt vor Wasserschäden durch automatische Ventilsteuerung.
@@ -351,22 +249,22 @@ Schützt vor Wasserschäden durch automatische Ventilsteuerung.
   - Ventil-Status (offen/geschlossen) mit manuellem Toggle
   - Letzter Alarm mit Zeitstempel
 
-### #4 Kamera-Snapshots bei Alarm
+### #3 Kamera-Snapshots bei Sicherheitsereignissen
 **Dateien:** `engines/camera_security.py`, `routes/security.py`
 
 Automatische Foto-Aufnahme bei Sicherheitsereignissen.
 
 - **Backend:**
   - `SecurityCameraManager`-Klasse in `engines/camera_security.py`
-  - Überwacht Events: `alarm.triggered`, `alarm.pending`
-  - Bei Alarm:
+  - Überwacht Events: `emergency.fire`, `emergency.co`, `emergency.water_leak`, `emergency.triggered`, `access.unknown`
+  - Bei Sicherheitsereignis:
     1. Snapshot von allen konfigurierten Kameras via `camera.snapshot` Service
     2. Speichert Bilder unter `/config/mindhome/snapshots/<timestamp>_<camera>.jpg`
     3. Verknüpft Snapshot-Pfad mit `SecurityEvent.snapshot_path`
     4. Optional: Snapshot als Notification-Attachment senden (wenn supported)
   - **Konfiguration:**
     - `snapshot_cameras`: Liste von camera.* Entity-IDs
-    - `snapshot_on_events`: Welche Event-Typen triggern Snapshot (Default: intrusion, panic)
+    - `snapshot_on_events`: Welche Event-Typen triggern Snapshot (Default: fire, co, panic, access_unknown)
     - `retention_days`: Wie lange Snapshots behalten (Default: 30)
     - `max_snapshots_per_event`: Max. Bilder pro Ereignis (Default: 5)
   - Snapshot-Cleanup im bestehenden `data_retention`-Task integrieren
@@ -387,9 +285,9 @@ Automatische Foto-Aufnahme bei Sicherheitsereignissen.
 
 ---
 
-## Batch 3: Zutrittskontrolle & Geo-Fencing — Commits 7-8 (Features #5, #6)
+## Batch 2: Zutrittskontrolle & Geo-Fencing — Commits 6-7 (Features #4, #5)
 
-### #5 Zutrittskontrolle
+### #4 Zutrittskontrolle
 **Dateien:** `engines/access_control.py`, `routes/security.py`
 
 Smart-Lock-Management mit Code-Verwaltung und Zutrittsprotokoll.
@@ -411,7 +309,7 @@ Smart-Lock-Management mit Code-Verwaltung und Zutrittsprotokoll.
       1. Zeitgleiche Person-Arrival (±2 Min)
       2. Code-Erkennung (wenn Lock-Entity Attribut `last_code` liefert)
       3. Manuell (über App-Steuerung → User bekannt)
-    - Unbekannte Zutritte → Notification
+    - Unbekannte Zutritte → Notification + Kamera-Snapshot (→ Feature #3)
   - **Zutrittsprotokoll:**
     - Jeder Lock/Unlock wird in `AccessLog` gespeichert
     - Methode: code, key, auto, remote, unknown
@@ -430,11 +328,11 @@ Smart-Lock-Management mit Code-Verwaltung und Zutrittsprotokoll.
 
 - **Frontend:**
   - Zutritts-Tab auf Sicherheits-Seite
-  - Lock-Status pro Tür (🔒/🔓 + Batterie-Level wenn verfügbar)
+  - Lock-Status pro Tür (Locked/Unlocked + Batterie-Level wenn verfügbar)
   - Code-Verwaltung (CRUD, temporäre Codes mit Ablaufdatum)
   - Zutrittsprotokoll als Timeline
 
-### #6 Geo-Fencing
+### #5 Geo-Fencing
 **Dateien:** `engines/access_control.py`, `routes/security.py`
 
 Standortbasierte Automatisierungen — nutzt `device_tracker` / `person.*` Entities.
@@ -450,14 +348,14 @@ Standortbasierte Automatisierungen — nutzt `device_tracker` / `person.*` Entit
     - Haversine-Formel für Distanzberechnung
     - Hysterese: Enter bei < Radius, Leave bei > Radius + 50m (verhindert Flapping)
   - **Aktionen bei Enter/Leave:**
-    - Enter "Zuhause": Alarm disarm, Licht an, Heizung hoch
-    - Leave "Zuhause": Alarm arm_away, Alles aus, Heizung Eco
+    - Enter "Zuhause": Presence → Home, Licht an, Heizung hoch
+    - Leave "Zuhause": Presence → Away, Alles aus, Heizung Eco
     - Enter "Arbeit": Home-Office-Modus deaktivieren
     - Benutzerdefinierte Aktionen pro Zone (JSON Action-Set)
-  - **Verknüpfung mit Alarm:**
-    - `GeoFence.linked_alarm_state`: Welcher Alarm-State bei Enter/Leave
-    - Nur wenn alle Personen die Zone verlassen haben → Arm
-    - Erste Person betritt Zone → Disarm
+  - **Verknüpfung mit Presence-System:**
+    - Enter/Leave löst automatisch PresenceMode-Wechsel aus
+    - Nur wenn alle Personen die Zone verlassen haben → Away-Modus
+    - Erste Person betritt Zone → Home-Modus
   - **Datenschutz:**
     - `User.geo_tracking_enabled` muss opt-in sein
     - GPS-Koordinaten werden NICHT in DB gespeichert (nur Zone-Event)
@@ -479,7 +377,7 @@ Standortbasierte Automatisierungen — nutzt `device_tracker` / `person.*` Entit
 
 ---
 
-## Batch 4: Spezial-Modi — Commits 9-10 (Features #8-#13)
+## Batch 3: Spezial-Modi — Commits 8-9 (Features #7-#11)
 
 Alle Spezial-Modi folgen dem gleichen Pattern:
 1. **Aktivierung:** Manuell (Button), Automatisch (Trigger), oder API
@@ -508,11 +406,11 @@ class SpecialModeBase:
 
 **State-Restore-Mechanismus:**
 - Vor Modus-Aktivierung: Snapshot aller betroffenen Entity-States
-- Gespeichert in `SpecialModeLog.context` als JSON
+- Gespeichert in `SpecialModeLog.previous_states` als JSON
 - Bei Deaktivierung: States wiederherstellen
 - Timeout: Falls vergessen, deaktiviert sich Modus nach `auto_deactivate_after_min`
 
-### #8 Party-Modus
+### #7 Party-Modus
 **Dateien:** `engines/special_modes.py`, `routes/security.py`
 
 - **Aktionen bei Aktivierung:**
@@ -520,7 +418,6 @@ class SpecialModeBase:
   - Musik-Player starten (wenn konfiguriert)
   - Temperatur leicht senken (viele Personen → wärmer)
   - Quiet Hours deaktivieren (Party-Override)
-  - Alarm auf DISARMED (wenn armed)
 - **Intelligente Features:**
   - Lautstärke-Monitoring: Wenn Lautstärke über Schwellwert → Notification "Es ist spät, Nachbarn?"
   - Auto-Deaktivierung: Standard 4h, konfigurierbar
@@ -534,7 +431,7 @@ class SpecialModeBase:
   - `GET /api/security/modes/party/status`
   - `PUT /api/security/modes/party/config`
 
-### #9 Kino-Modus
+### #8 Kino-Modus
 **Dateien:** `engines/special_modes.py`, `routes/security.py`
 
 - **Aktionen bei Aktivierung:**
@@ -556,7 +453,7 @@ class SpecialModeBase:
   - `GET /api/security/modes/cinema/status`
   - `PUT /api/security/modes/cinema/config`
 
-### #10 Home-Office-Modus
+### #9 Home-Office-Modus
 **Dateien:** `engines/special_modes.py`, `routes/security.py`
 
 - **Aktionen bei Aktivierung:**
@@ -579,44 +476,18 @@ class SpecialModeBase:
   - `GET /api/security/modes/home-office/status`
   - `PUT /api/security/modes/home-office/config`
 
-### #11 Kinder-Sicherung
+### #10 Nacht-Sicherungs-Modus
 **Dateien:** `engines/special_modes.py`, `routes/security.py`
 
-Schutz für Kinder — kombiniert Gerätesperren, Zeitlimits und Schlafenszeit.
-
-- **Backend:**
-  - Pro Kind (User mit `profile_type="child"`):
-    - **Geräte-Sperre:** Bestimmte Entities nicht steuerbar (z.B. Herd, Ofen)
-    - **Zeitlimit:** Bildschirmzeit pro Tag (nutzt ScreenTimeMonitor aus Phase 4)
-    - **Schlafenszeit:** Ab Uhrzeit X: Medien aus, Licht gedimmt, Schlafmodus
-    - **Wochenend-Ausnahme:** Andere Zeiten für Freitag/Samstag
-  - Enforcement:
-    - Geräte-Sperre: Bei manuellem Toggle über MindHome → Aktion blockieren + Notification an Eltern
-    - Schlafenszeit: Automatische Aktionen (Medien aus, Licht auf Nacht-Level)
-    - Zeitlimit: Warnung bei 80%, Auto-Off bei 100% (sanft, mit Vorwarnung)
-  - Keine physische Gerätesperre (das kann MindHome nicht) — nur MindHome-seitige Kontrolle
-- **API:**
-  - `GET /api/security/child-safety/users` → Kinder-User mit Restrictions
-  - `POST/PUT /api/security/child-safety/restrictions` → Einschränkung CRUD
-  - `GET /api/security/child-safety/status` → Aktueller Status pro Kind
-
-- **Frontend:**
-  - Kinder-Tab auf Sicherheits-Seite
-  - Pro Kind: Geräte-Sperre, Zeitlimit, Schlafenszeit konfigurieren
-  - Status: Verbleibende Bildschirmzeit, nächste Schlafenszeit
-
-### #12 Nacht-Sicherungs-Modus
-**Dateien:** `engines/special_modes.py`, `routes/security.py`
-
-Automatische Absicherung für die Nacht — eng mit Alarm-System und Sleep-Detection verknüpft.
+Automatische Absicherung für die Nacht — eng mit Sleep-Detection verknüpft.
 
 - **Aktionen bei Aktivierung:**
   - Alle Türen verriegeln (Smart Locks)
-  - Alarm auf ARMED_NIGHT
   - Nacht-Beleuchtung: Orientierungslichter im Flur (5%, warmweiß)
   - Alle Medien aus
   - Heizung auf Nacht-Temperatur
   - Fenster-Check: Notification wenn Fenster offen (optional: nicht schließen)
+  - Optional: HA `alarm_control_panel` auf "armed_night" setzen (falls vorhanden)
 - **Intelligente Features:**
   - Auto-Aktivierung: Sleep Detection (aus Phase 4) + Abend-Phase
   - Auto-Deaktivierung: Morgen-Phase oder Wake-Up-Manager Start
@@ -631,40 +502,38 @@ Automatische Absicherung für die Nacht — eng mit Alarm-System und Sleep-Detec
   - `GET /api/security/modes/night-lockdown/status`
   - `PUT /api/security/modes/night-lockdown/config`
 
-### #13 Notfall-Protokoll
+### #11 Notfall-Protokoll
 **Dateien:** `engines/special_modes.py`, `routes/security.py`
 
 Koordinierte Notfall-Reaktion — der "rote Knopf".
 
 - **Notfall-Typen:**
-  - **Feuer:** (automatisch aus #2, oder manuell)
-  - **Einbruch:** (automatisch aus #1, oder manuell)
+  - **Feuer:** (automatisch aus #1, oder manuell)
   - **Medizinisch:** (nur manuell)
   - **Panik:** (manuell, unspezifisch)
 
 - **Eskalations-Kette:**
   ```
-  1. Sofort:    Alle Lichter an, Sirene (wenn vorhanden), TTS-Durchsage
+  1. Sofort:    Alle Lichter an, Sirene (wenn siren.* Entity vorhanden), TTS-Durchsage
   2. +30s:      Push-Notification an alle User
   3. +60s:      Notfallkontakte benachrichtigen (E-Mail/Push)
   4. +5min:     Zweite Benachrichtigung an Notfallkontakte
-  5. Fortlaufend: Alarm-Zustand bis manuell deaktiviert
+  5. Fortlaufend: Notfall-Zustand bis manuell deaktiviert
   ```
 
 - **Typ-spezifische Aktionen:**
   | Typ | Aktion |
   |-----|--------|
   | Feuer | Licht an, Rollläden hoch, Lüftung aus, Locks öffnen, TTS "Feueralarm" |
-  | Einbruch | Licht an, Sirene an, Locks zu, TTS "Alarm", Kamera-Snapshot |
   | Medizinisch | Licht an, Haustür öffnen (Rettungsdienst), TTS "Medizinischer Notfall" |
-  | Panik | Licht an, Sirene an, TTS "Alarm" |
+  | Panik | Licht an, Sirene an (wenn vorhanden), TTS "Alarm" |
 
 - **Backend:**
   - `EmergencyProtocol`-Klasse in `engines/special_modes.py`
   - `trigger(emergency_type, source="manual")` → Startet Eskalationskette
   - `cancel(pin)` → Bricht ab (braucht PIN)
   - Nutzt bestehenden NotificationManager für Eskalation
-  - Nutzt bestehenden AlarmManager für Sirene/Alarm-State
+  - Sirene direkt über HA `siren.*` Entity (kein eigenes Alarm-Management)
   - Timer-Thread für Eskalations-Schritte
 - **API:**
   - `POST /api/security/emergency/trigger` → Body: `{type, source}`
@@ -681,59 +550,61 @@ Koordinierte Notfall-Reaktion — der "rote Knopf".
 
 ---
 
-## Batch 5: Dashboard & Finalisierung — Commits 11-12 (Feature #7)
+## Batch 4: Dashboard & Finalisierung — Commit 10 (Feature #6)
 
-### #7 Sicherheits-Dashboard
+### #6 Sicherheits-Dashboard
 **Dateien:** `routes/security.py`, Frontend
 
 Zentrale Übersicht aller Sicherheits-Features.
 
 - **Backend:**
   - Aggregiert alle Security-Daten:
-    - Alarm-Status (aktueller State)
-    - Zonen-Status (alle Zonen mit Sensor-Count)
+    - HA-Alarm-Status (read-only, wenn `alarm_control_panel.*` Entity vorhanden)
     - Offene Fenster/Türen (binary_sensor)
     - Lock-Status (alle Schlösser)
     - Letzte Security-Events (Timeline)
     - Aktive Spezial-Modi
     - Kamera-Status (online/offline)
     - Geo-Fence Status (Personen in Zonen)
+    - Feuer/Wasser-Sensor Status
   - API: `GET /api/security/dashboard` → Aggregierte Übersicht
   - API: `GET /api/security/events` → Event-Log (paginiert, filterbar)
   - API: `GET /api/security/events/stats` → Statistiken (Events pro Woche/Typ)
 
 - **Frontend:**
-  - Neue Seite "Sicherheit" im Hauptmenü (🛡️ Icon)
-  - **7 Tabs:**
+  - Neue Seite "Sicherheit" im Hauptmenü
+  - **6 Tabs:**
     1. **Dashboard** — Übersicht aller Sicherheits-Features
-    2. **Alarm** — Arm/Disarm, Zonen, Sensoren (Feature #1)
-    3. **Zutritt** — Locks, Codes, Protokoll (Feature #5)
-    4. **Kameras** — Snapshots, Live-Status (Feature #4)
-    5. **Geo-Fence** — Zonen, Personen-Status (Feature #6)
-    6. **Spezial-Modi** — Alle 6 Modi aktivieren/konfigurieren (#8-#13)
-    7. **Einstellungen** — Feature-Flags, Notfallkontakte, Konfiguration
+    2. **Zutritt** — Locks, Codes, Protokoll (Feature #4)
+    3. **Kameras** — Snapshots, Live-Status (Feature #3)
+    4. **Geo-Fence** — Zonen, Personen-Status (Feature #5)
+    5. **Spezial-Modi** — Alle 5 Modi aktivieren/konfigurieren (#7-#11)
+    6. **Einstellungen** — Feature-Flags, Notfallkontakte, Konfiguration
 
   - **Dashboard-Tab Layout:**
     ```
     ┌──────────────────────────────────────────┐
-    │  🛡️ ALARM: DISARMED  [Arm Home] [Arm Away] │
+    │  HA-Alarm: armed_home (read-only)        │  ← nur wenn alarm_control_panel existiert
     ├────────────┬────────────┬────────────────┤
-    │ 🚪 Türen   │ 🔒 Schlösser │ 📹 Kameras    │
-    │ 2/5 offen  │ 3/3 zu      │ 2/2 online    │
+    │ Türen      │ Schlösser  │ Kameras        │
+    │ 2/5 offen  │ 3/3 zu    │ 2/2 online     │
+    ├────────────┼────────────┼────────────────┤
+    │ Rauch/CO   │ Wasser     │ Geo-Fence      │
+    │ alle OK    │ alle OK    │ 2/3 zuhause    │
     ├────────────┴────────────┴────────────────┤
-    │ 📋 Letzte Ereignisse                      │
-    │  10:30 🔓 Haustür entsperrt (Max, Code)  │
-    │  09:15 🛡️ Alarm scharf (Auto, Abwesend)   │
-    │  08:45 🔒 Alle Türen verriegelt (Auto)   │
+    │ Letzte Ereignisse                         │
+    │  10:30 Haustür entsperrt (Max, Code)     │
+    │  09:15 Nacht-Sicherung deaktiviert       │
+    │  08:45 Alle Türen verriegelt (Auto)      │
     ├──────────────────────────────────────────┤
-    │ 🎬 Aktive Modi: Keine                     │
+    │ Aktive Modi: Keine                        │
     └──────────────────────────────────────────┘
     ```
 
 ### Version & Dokumentation
 - `version.py`: VERSION = "0.8.0", CODENAME = "Phase 5 - Security & Modes"
-- `README.md`: Phase 5 auf "✅ Fertig" setzen, Feature-Liste aktualisieren
-- `CHANGELOG.md`: Alle 13 neuen Features dokumentieren
+- `README.md`: Phase 5 auf "fertig" setzen, Feature-Liste aktualisieren
+- `CHANGELOG.md`: Alle 11 neuen Features dokumentieren
 - Translations: `de.json` + `en.json` aktualisieren
 
 ### Neue Route-Registrierung
@@ -747,28 +618,26 @@ Das ist ein Unterschied zu Phase 4 — Sicherheit muss sofort reagieren, nicht a
 
 | Task | Intervall | Enthält | Features |
 |------|-----------|---------|----------|
-| `security_monitor` | Event-basiert | AlarmManager + IntrusionDetector + FireResponse + WaterLeak | #1, #2, #3 |
-| `geofence_check` | 60s | GeoFenceManager | #6 |
-| `access_autolock` | 60s | Auto-Lock Timer prüfen | #5 |
-| `special_mode_check` | 5 Min | Timeout-Check für aktive Modi | #8-#13 |
-| `child_safety_check` | 5 Min | Bildschirmzeit + Schlafenszeit | #11 |
-| `camera_cleanup` | 24h | Alte Snapshots löschen (Retention) | #4 |
+| `security_monitor` | Event-basiert | FireResponse + WaterLeak (state_changed Handler) | #1, #2 |
+| `geofence_check` | 60s | GeoFenceManager | #5 |
+| `access_autolock` | 60s | Auto-Lock Timer prüfen | #4 |
+| `special_mode_check` | 5 Min | Timeout-Check für aktive Modi | #7-#11 |
+| `camera_cleanup` | 24h | Alte Snapshots löschen (Retention) | #3 |
 
 ### EventBus-Registrierungen (neu)
 
 | Event | Sender | Empfänger |
 |-------|--------|-----------|
-| `state_changed` | StateLogger | AlarmManager, FireResponse, WaterLeak, AccessControl |
-| `alarm.armed` | AlarmManager | SecurityCameraManager, NotificationManager |
-| `alarm.triggered` | AlarmManager | SecurityCameraManager, EmergencyProtocol, NotificationManager |
-| `alarm.disarmed` | AlarmManager | — |
-| `alarm.pending` | AlarmManager | SecurityCameraManager |
-| `emergency.fire` | FireResponseManager | EmergencyProtocol |
-| `emergency.co` | FireResponseManager | EmergencyProtocol |
-| `emergency.water_leak` | WaterLeakManager | NotificationManager |
-| `access.unlocked` | AccessControlManager | AlarmManager (Disarm-Check) |
+| `state_changed` | StateLogger | FireResponse, WaterLeak, AccessControl |
+| `emergency.fire` | FireResponseManager | EmergencyProtocol, SecurityCameraManager |
+| `emergency.co` | FireResponseManager | EmergencyProtocol, SecurityCameraManager |
+| `emergency.water_leak` | WaterLeakManager | NotificationManager, SecurityCameraManager |
+| `emergency.triggered` | EmergencyProtocol | SecurityCameraManager, NotificationManager |
+| `access.unlocked` | AccessControlManager | SecurityEvent Logging |
+| `access.locked` | AccessControlManager | SecurityEvent Logging |
+| `access.unknown` | AccessControlManager | NotificationManager, SecurityCameraManager |
 | `access.jammed` | AccessControlManager | NotificationManager |
-| `presence.mode_changed` | PresenceModeManager | AlarmManager (Auto-Arm/Disarm) |
+| `presence.mode_changed` | PresenceModeManager | GeoFenceManager (Sync) |
 | `sleep.detected` | SleepDetector | NightLockdown (Auto-Aktivierung) |
 | `wake.detected` | WakeUpManager | NightLockdown (Auto-Deaktivierung) |
 | `mode.activated` | SpecialModeBase | NotificationManager, Dashboard |
@@ -780,22 +649,21 @@ Das ist ein Unterschied zu Phase 4 — Sicherheit muss sofort reagieren, nicht a
 
 | Batch | Features | Commits | Neue Dateien | Geänderte Dateien |
 |-------|----------|---------|-------------|-------------------|
-| 0 | Infrastruktur | 1-3 | engines/ (5 Dateien), routes/security.py | models.py, version.py |
-| 1 | #1 | 4 | — | engines/security.py, routes/security.py |
-| 2 | #2, #3, #4 | 5-6 | — | engines/fire_water.py, engines/camera_security.py, routes/security.py |
-| 3 | #5, #6 | 7-8 | — | engines/access_control.py, routes/security.py |
-| 4 | #8-#13 | 9-10 | — | engines/special_modes.py, routes/security.py |
-| 5 | #7 + Finalisierung | 11-12 | — | routes/security.py, app.jsx, version.py, README.md, de.json, en.json |
+| 0 | Infrastruktur | 1-3 | engines/ (4 Dateien), routes/security.py | models.py, version.py |
+| 1 | #1, #2, #3 | 4-5 | — | engines/fire_water.py, engines/camera_security.py, routes/security.py |
+| 2 | #4, #5 | 6-7 | — | engines/access_control.py, routes/security.py |
+| 3 | #7-#11 | 8-9 | — | engines/special_modes.py, routes/security.py |
+| 4 | #6 + Finalisierung | 10 | — | routes/security.py, app.jsx, version.py, README.md, de.json, en.json |
 
 **Geschätzte Änderungen:**
-- 6 neue Dateien: `engines/` (5 Module) + `routes/security.py`
-- ~10 neue DB-Models + ~6 neue Spalten + 3 neue Enums
-- ~13 Feature-Flags in SystemSettings
+- 5 neue Dateien: `engines/` (4 Module) + `routes/security.py`
+- 7 neue DB-Models + 3 neue Spalten + 2 neue Enums
+- 11 Feature-Flags in SystemSettings
 - ~10 bestehende Dateien modifiziert
-- ~40 neue API-Endpoints
+- ~30 neue API-Endpoints
 - 5 Scheduler-Tasks (+ Event-basierte Handler)
-- 1 neuer EventBus-basierter Security-Monitor
-- Frontend: 1 neue Seite "Sicherheit" mit 7 Tabs in app.jsx
+- Frontend: 1 neue Seite "Sicherheit" mit 6 Tabs in app.jsx
 - Graceful Degradation für alle Sensor-abhängigen Features
 - State-Restore-Mechanismus für Spezial-Modi
-- **5 Batches, ~12 Commits**
+- HA-Alarm read-only Integration (alarm_control_panel, falls vorhanden)
+- **4 Batches, ~10 Commits**
