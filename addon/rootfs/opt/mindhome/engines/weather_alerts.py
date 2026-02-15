@@ -10,6 +10,8 @@ Sends alerts 2-6 hours before event. Deduplicates via WeatherAlert model.
 import logging
 from datetime import datetime, timezone, timedelta
 
+from helpers import get_setting
+
 logger = logging.getLogger("mindhome.engines.weather_alerts")
 
 # Alert thresholds
@@ -61,6 +63,15 @@ class WeatherAlertManager:
         self._is_running = False
         logger.info("WeatherAlertManager stopped")
 
+    def _get_thresholds(self):
+        return {
+            "frost": float(get_setting("phase4.weather_alerts.frost_threshold_c", "0")),
+            "heat": float(get_setting("phase4.weather_alerts.heat_threshold_c", "33")),
+            "heavy_rain": float(get_setting("phase4.weather_alerts.rain_threshold_mmh", "10")),
+            "storm": float(get_setting("phase4.weather_alerts.storm_threshold_kmh", "60")),
+            "snow": float(get_setting("phase4.weather_alerts.snow_threshold_c", "2")),
+        }
+
     def check(self):
         """Check weather forecast for upcoming alerts. Called every 30 min by scheduler."""
         if not self._is_running:
@@ -87,6 +98,7 @@ class WeatherAlertManager:
             now = datetime.now(timezone.utc)
             forecast = weather_entity.get("attributes", {}).get("forecast", [])
             new_alerts = []
+            thresholds = self._get_thresholds()
 
             for fc in forecast:
                 fc_time_str = fc.get("datetime")
@@ -109,25 +121,25 @@ class WeatherAlertManager:
                 condition = (fc.get("condition") or "").lower()
 
                 # Check frost
-                if temp_low is not None and temp_low < THRESHOLDS["frost"]["temp_below"]:
+                if temp_low is not None and temp_low < thresholds["frost"]:
                     new_alerts.append(self._make_alert("frost", fc_time, fc, "warning"))
 
                 # Check heat
-                if temp is not None and temp > THRESHOLDS["heat"]["temp_above"]:
+                if temp is not None and temp > thresholds["heat"]:
                     new_alerts.append(self._make_alert("heat", fc_time, fc, "warning"))
 
                 # Check heavy rain
-                if precip and precip > THRESHOLDS["heavy_rain"]["precipitation_above"]:
+                if precip and precip > thresholds["heavy_rain"]:
                     new_alerts.append(self._make_alert("heavy_rain", fc_time, fc, "warning"))
 
                 # Check storm
-                if wind and wind > THRESHOLDS["storm"]["wind_above"]:
+                if wind and wind > thresholds["storm"]:
                     severity = "severe" if wind > 90 else "warning"
                     new_alerts.append(self._make_alert("storm", fc_time, fc, severity))
 
                 # Check snow
-                if (temp_low is not None and temp_low < THRESHOLDS["snow"]["temp_below"]
-                        and any(kw in condition for kw in THRESHOLDS["snow"]["condition_contains"])):
+                if (temp_low is not None and temp_low < thresholds["snow"]
+                        and any(kw in condition for kw in ["snow", "schnee"])):
                     new_alerts.append(self._make_alert("snow", fc_time, fc, "info"))
 
             # Deduplicate and store

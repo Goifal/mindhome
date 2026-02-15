@@ -179,7 +179,10 @@ class FireResponseManager:
         )
 
         # 2. Lights to 100% (emergency lighting)
-        self._activate_entities("fire_co", "emergency_light", "light", "turn_on", {"brightness": 255})
+        from helpers import get_setting
+        brightness = int(get_setting("phase5.fire_co.emergency_brightness_pct", "100") or "100")
+        brightness_val = int(brightness * 2.55)
+        self._activate_entities("fire_co", "emergency_light", "light", "turn_on", {"brightness": brightness_val})
 
         # 3. Covers open (escape routes)
         self._activate_entities("fire_co", "emergency_cover", "cover", "open_cover")

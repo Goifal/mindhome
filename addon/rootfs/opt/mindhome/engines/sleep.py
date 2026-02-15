@@ -7,6 +7,8 @@ Features: #4 Schlaf-Erkennung, #16 Schlafqualitaet, #25 Sanftes Wecken
 import logging
 from datetime import datetime, timezone, timedelta
 
+from helpers import get_setting
+
 logger = logging.getLogger("mindhome.engines.sleep")
 
 
@@ -48,8 +50,10 @@ class SleepDetector:
                 now = datetime.now(timezone.utc)
                 hour = now.hour
 
-                # Only check between 20:00 and 11:00 (plausible sleep window)
-                if 11 <= hour < 20:
+                # Only check during plausible sleep window (configurable)
+                sleep_start = int(get_setting("phase4.sleep_detection.sleep_window_start", "20"))
+                sleep_end = int(get_setting("phase4.sleep_detection.sleep_window_end", "11"))
+                if sleep_end <= hour < sleep_start:
                     return
 
                 users = session.query(User).all()
@@ -342,10 +346,11 @@ class WakeUpManager:
             if cfg.light_entity:
                 brightness = int(progress * 255)
                 if brightness > 0:
+                    transition = int(get_setting("phase4.smart_wakeup.light_transition_sec", "60"))
                     self.ha.call_service("light", "turn_on", {
                         "entity_id": cfg.light_entity,
                         "brightness": brightness,
-                        "transition": 60,  # 1 min transition
+                        "transition": transition,
                     })
                     logger.debug(f"WakeUp light {cfg.light_entity} brightness={brightness} ({progress:.0%})")
 

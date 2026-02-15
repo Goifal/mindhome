@@ -4,12 +4,33 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "0.8.1"
-BUILD = 84
+VERSION = "0.8.2"
+BUILD = 85
 BUILD_DATE = "2026-02-15"
-CODENAME = "Phase 5 - Cover Control"
+CODENAME = "Full Configurability"
 
 # Changelog
+# Build 85: v0.8.2 Full Configurability - Alle Phasen konfigurierbar
+#   - ALLE hardcoded Schwellwerte/Parameter über UI einstellbar
+#   - Core Engine Settings (Muster-Engine, Tageszeiten, Lernparameter)
+#   - Phase 4 Feature-Settings erweitert (+21 neue Einstellungen):
+#     * Circadian: Schlaf-/Aufwach-/Gäste-Helligkeit, Übergangszeiten
+#     * Wetter: Frost/Hitze/Regen/Sturm/Schnee Schwellwerte
+#     * Schlaf: Schlaffenster Start/Ende
+#     * Wecken: Licht-Übergang, Klima-Zieltemperatur
+#     * Gesundheit: Gewichtung Schlaf/Komfort/Lüftung/Bildschirmzeit
+#     * Urlaub: Simulations-Zeitfenster
+#   - Phase 5 Security Settings (Notfall-Helligkeit, Geofence-Verzögerung)
+#   - Engines aktualisiert: comfort.py, weather_alerts.py, health_dashboard.py,
+#     sleep.py, visit.py, circadian.py, fire_water.py, access_control.py,
+#     pattern_engine.py, automation_engine.py — alle lesen jetzt get_setting()
+#   - Neue API: GET/PUT /api/system/all-settings (phasenübergreifend)
+#   - Frontend: GenericSettingsPanel Komponente (wiederverwendbar)
+#   - Frontend: Core Engine Settings in Einstellungen-Seite
+#   - Frontend: Sicherheits-Einstellungen in Security-Seite
+#   - Phase 4 Feature-Toggles in jeweilige Seiten verschoben (Klima/Gesundheit/Energie/KI)
+#   - Phase 4 Feature-Panel aus Einstellungen entfernt (kein Duplikat mehr)
+#
 # Build 84: v0.8.1 Phase 5 - Cover/Shutter Control (Rollladensteuerung)
 #   - NEU: CoverControlManager Engine (engines/cover_control.py)
 #   - Sonnenschutz: Automatisch bei Hitze + Sonnenstand auf Fassade

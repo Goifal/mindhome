@@ -28,6 +28,7 @@ from models import (
     PresenceLog, SchoolVacation, PluginSetting, PatternSettings,
     ManualRule, ActionLog, PatternExclusion
 )
+from helpers import get_setting
 
 logger = logging.getLogger("mindhome.pattern_engine")
 
@@ -75,7 +76,14 @@ ALWAYS_LOG_DOMAINS = {
 }
 
 # Motion sensor debounce: only log first "on" and final "off" within window
-MOTION_DEBOUNCE_SECONDS = 60
+MOTION_DEBOUNCE_SECONDS = 60  # default, overridden at runtime via get_setting
+
+
+def _get_motion_debounce():
+    try:
+        return int(get_setting("core.pattern_engine.motion_debounce_sec", "60") or "60")
+    except Exception:
+        return MOTION_DEBOUNCE_SECONDS
 
 
 # ==============================================================================
@@ -108,13 +116,19 @@ class ContextBuilder:
             now = datetime.now()
         hour = now.hour
 
-        if 5 <= hour < 9:
+        _morning_start = int(get_setting("core.time_slots.morning_start", "5") or "5")
+        _morning_end = int(get_setting("core.time_slots.midday_start", "9") or "9")
+        _afternoon_start = int(get_setting("core.time_slots.afternoon_start", "12") or "12")
+        _evening_start = int(get_setting("core.time_slots.evening_start", "17") or "17")
+        _night_start = int(get_setting("core.time_slots.night_start", "21") or "21")
+
+        if _morning_start <= hour < _morning_end:
             time_slot = "morning"
-        elif 9 <= hour < 12:
+        elif _morning_end <= hour < _afternoon_start:
             time_slot = "midday"
-        elif 12 <= hour < 17:
+        elif _afternoon_start <= hour < _evening_start:
             time_slot = "afternoon"
-        elif 17 <= hour < 21:
+        elif _evening_start <= hour < _night_start:
             time_slot = "evening"
         else:
             time_slot = "night"
@@ -308,7 +322,7 @@ class StateLogger:
     """Logs significant state changes to state_history with context."""
 
     # Max events per minute (prevent DB flood from chatty devices)
-    MAX_EVENTS_PER_MINUTE = 600
+    MAX_EVENTS_PER_MINUTE = 600  # default, overridden by _get_max_events()
 
     def __init__(self, engine, ha_connection):
         self.engine = engine
@@ -346,14 +360,14 @@ class StateLogger:
                 now = datetime.now()
                 if new_state == "on":
                     last_on = self._motion_last_on.get(entity_id)
-                    if last_on and (now - last_on).total_seconds() < MOTION_DEBOUNCE_SECONDS:
+                    if last_on and (now - last_on).total_seconds() < _get_motion_debounce():
                         return False
                     self._motion_last_on[entity_id] = now
                 elif new_state == "off":
                     if not hasattr(self, '_motion_last_off'):
                         self._motion_last_off = {}
                     last_off = self._motion_last_off.get(entity_id)
-                    if last_off and (now - last_off).total_seconds() < MOTION_DEBOUNCE_SECONDS:
+                    if last_off and (now - last_off).total_seconds() < _get_motion_debounce():
                         return False
                     self._motion_last_off[entity_id] = now
             return True
@@ -455,9 +469,14 @@ class StateLogger:
         now = datetime.now(timezone.utc)
         cutoff = now - timedelta(seconds=60)
         self._event_timestamps = [t for t in self._event_timestamps if t > cutoff]
-        if len(self._event_timestamps) >= self.MAX_EVENTS_PER_MINUTE:
+        _max_epm = self.MAX_EVENTS_PER_MINUTE
+        try:
+            _max_epm = int(get_setting("core.pattern_engine.max_events_per_minute", "600") or "600")
+        except Exception:
+            pass
+        if len(self._event_timestamps) >= _max_epm:
             if not self._rate_limit_warned or (self._rate_limit_warn_time and (now - self._rate_limit_warn_time).total_seconds() > 300):
-                logger.warning(f"Rate limit reached ({self.MAX_EVENTS_PER_MINUTE}/min), dropping events")
+                logger.warning(f"Rate limit reached ({_max_epm}/min), dropping events")
                 self._rate_limit_warned = True
                 self._rate_limit_warn_time = now
             return

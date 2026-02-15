@@ -7,6 +7,8 @@ Features: #10 Komfort-Score, #17 Raumklima-Ampel, #18 Lueftungserinnerung, #19 B
 import logging
 from datetime import datetime, timezone, timedelta
 
+from helpers import get_setting
+
 logger = logging.getLogger("mindhome.engines.comfort")
 
 
@@ -57,38 +59,43 @@ class ComfortCalculator:
                     factors = {}
                     weights = {}
 
-                    # Temperature factor (weight 35%)
+                    w_temp = float(get_setting("phase4.comfort_score.weight_temperature", "35")) / 100.0
+                    w_hum = float(get_setting("phase4.comfort_score.weight_humidity", "25")) / 100.0
+                    w_co2 = float(get_setting("phase4.comfort_score.weight_co2", "25")) / 100.0
+                    w_light = float(get_setting("phase4.comfort_score.weight_light", "15")) / 100.0
+
+                    # Temperature factor
                     temp_score = self._score_temperature(state_map, entity_ids)
                     if temp_score is not None:
                         factors["temp"] = temp_score
-                        weights["temp"] = 0.35
+                        weights["temp"] = w_temp
                     else:
                         factors["temp"] = 50
                         weights["temp"] = 0.15
 
-                    # Humidity factor (weight 25%)
+                    # Humidity factor
                     hum_score = self._score_humidity(state_map, entity_ids)
                     if hum_score is not None:
                         factors["humidity"] = hum_score
-                        weights["humidity"] = 0.25
+                        weights["humidity"] = w_hum
                     else:
                         factors["humidity"] = 50
                         weights["humidity"] = 0.10
 
-                    # CO2 factor (weight 25%)
+                    # CO2 factor
                     co2_score = self._score_co2(state_map, entity_ids)
                     if co2_score is not None:
                         factors["co2"] = co2_score
-                        weights["co2"] = 0.25
+                        weights["co2"] = w_co2
                     else:
                         factors["co2"] = 50
                         weights["co2"] = 0.10
 
-                    # Light factor (weight 15%)
+                    # Light factor
                     light_score = self._score_light(state_map, entity_ids)
                     if light_score is not None:
                         factors["light"] = light_score
-                        weights["light"] = 0.15
+                        weights["light"] = w_light
                     else:
                         factors["light"] = 50
                         weights["light"] = 0.05
@@ -127,25 +134,29 @@ class ComfortCalculator:
             logger.error(f"ComfortCalculator calculate error: {e}")
 
     def _score_temperature(self, state_map, entity_ids):
-        """Score temperature 0-100. Optimal: 20-23°C."""
+        """Score temperature 0-100. Optimal range from settings target_temp +/-1.5."""
+        target_temp = float(get_setting("phase4.comfort_score.target_temp", "21.5"))
+        optimal_low = target_temp - 1.5
+        optimal_high = target_temp + 1.5
+        mid = target_temp
         for eid in entity_ids:
             if "temp" in eid.lower() and eid.startswith("sensor."):
                 s = state_map.get(eid)
                 if s:
                     try:
                         temp = float(s.get("state", ""))
-                        if 20 <= temp <= 23:
+                        if optimal_low <= temp <= optimal_high:
                             return 100
-                        elif 18 <= temp < 20:
-                            return 80 - (20 - temp) * 10
-                        elif 23 < temp <= 25:
-                            return 80 - (temp - 23) * 10
-                        elif 16 <= temp < 18:
+                        elif (optimal_low - 2) <= temp < optimal_low:
+                            return 80 - (optimal_low - temp) * 10
+                        elif optimal_high < temp <= (optimal_high + 2):
+                            return 80 - (temp - optimal_high) * 10
+                        elif (optimal_low - 4) <= temp < (optimal_low - 2):
                             return 40
-                        elif 25 < temp <= 28:
+                        elif (optimal_high + 2) < temp <= (optimal_high + 5):
                             return 40
                         else:
-                            return max(0, 20 - abs(temp - 21.5) * 2)
+                            return max(0, 20 - abs(temp - mid) * 2)
                     except (ValueError, TypeError):
                         pass
         # Try HA climate entities for room
@@ -155,9 +166,9 @@ class ComfortCalculator:
                 if s:
                     try:
                         temp = float(s.get("attributes", {}).get("current_temperature", ""))
-                        if 20 <= temp <= 23:
+                        if optimal_low <= temp <= optimal_high:
                             return 100
-                        elif 18 <= temp <= 25:
+                        elif (optimal_low - 2) <= temp <= (optimal_high + 2):
                             return 70
                         else:
                             return 30
@@ -190,16 +201,17 @@ class ComfortCalculator:
         return None
 
     def _score_co2(self, state_map, entity_ids):
-        """Score CO2 0-100. Optimal: <800ppm."""
+        """Score CO2 0-100. Optimal: below co2_good_max setting."""
+        co2_good_max = int(get_setting("phase4.comfort_score.co2_good_max", "800"))
         for eid in entity_ids:
             if "co2" in eid.lower() and eid.startswith("sensor."):
                 s = state_map.get(eid)
                 if s:
                     try:
                         co2 = float(s.get("state", ""))
-                        if co2 < 600:
+                        if co2 < (co2_good_max - 200):
                             return 100
-                        elif co2 < 800:
+                        elif co2 < co2_good_max:
                             return 90
                         elif co2 < 1000:
                             return 70
