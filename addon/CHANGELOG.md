@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.7.20 – Fix Device-Loeschung + Muster-Konflikterkennung
+
+### Fix
+- **Device-Loeschung (500er)**: Geraete konnten nicht geloescht werden (FOREIGN KEY constraint failed). 6 Tabellen referenzieren `devices.id` ohne CASCADE — abhaengige Eintraege werden jetzt vor dem Loeschen aufgeraeumt
+- **Muster-Konflikte**: Lichter (z.B. Kueche, Wohnzimmer) sollten gleichzeitig 'on' und 'off' sein. ConflictDetector war instanziiert aber nie periodisch aufgerufen; AutomationExecutor hatte keine Entity-Level-Deduplizierung
+
+### Engines
+- **ConflictDetector**: Wird jetzt alle 5 Minuten als Background-Task ausgefuehrt, Konflikte werden als Notification gemeldet
+- **AutomationExecutor**: Entity-Level-Deduplizierung — bei widersprüchlichen Patterns fuer die gleiche Entity gewinnt das Pattern mit hoeherer Confidence, das andere wird uebersprungen
+
 ## 0.7.19 – Stale-Pattern-Cleanup fuer observed + insight
 
 ### Fix

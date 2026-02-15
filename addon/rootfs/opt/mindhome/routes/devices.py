@@ -64,6 +64,29 @@ def _domain_manager():
     return _deps.get("domain_manager")
 
 
+def _cleanup_device_references(session, device_id):
+    """Remove or nullify all foreign key references to a device before deletion."""
+    # Nullable FKs: set to NULL (preserve historical data)
+    session.query(ActionLog).filter(ActionLog.device_id == device_id).update(
+        {"device_id": None}, synchronize_session=False
+    )
+    session.query(AnomalySetting).filter(AnomalySetting.device_id == device_id).update(
+        {"device_id": None}, synchronize_session=False
+    )
+    session.query(EnergyReading).filter(EnergyReading.device_id == device_id).update(
+        {"device_id": None}, synchronize_session=False
+    )
+    session.query(StandbyConfig).filter(StandbyConfig.device_id == device_id).update(
+        {"device_id": None}, synchronize_session=False
+    )
+    session.query(StateHistory).filter(StateHistory.device_id == device_id).update(
+        {"device_id": None}, synchronize_session=False
+    )
+    # Non-nullable FK: must delete
+    session.query(DeviceMute).filter(DeviceMute.device_id == device_id).delete(
+        synchronize_session=False
+    )
+
 
 @devices_bp.route("/api/devices", methods=["GET"])
 def api_get_devices():
@@ -185,11 +208,16 @@ def api_bulk_delete_devices():
         for did in device_ids:
             device = session.get(Device, did)
             if device:
+                _cleanup_device_references(session, did)
                 session.delete(device)
                 deleted += 1
 
         session.commit()
         return jsonify({"success": True, "deleted": deleted})
+    except Exception as e:
+        session.rollback()
+        logger.error(f"Bulk delete error: {e}")
+        return jsonify({"error": "Fehler beim Loeschen"}), 500
     finally:
         session.close()
 
@@ -203,9 +231,14 @@ def api_delete_device(device_id):
         device = session.get(Device, device_id)
         if not device:
             return jsonify({"error": "Device not found"}), 404
+        _cleanup_device_references(session, device_id)
         session.delete(device)
         session.commit()
         return jsonify({"success": True})
+    except Exception as e:
+        session.rollback()
+        logger.error(f"Delete device {device_id} error: {e}")
+        return jsonify({"error": "Fehler beim Loeschen"}), 500
     finally:
         session.close()
 
