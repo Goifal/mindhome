@@ -117,7 +117,50 @@ phase5.emergency_protocol   = true/false
 - API: `GET /api/system/phase5-features` → Liste mit Status + Sensor-Anforderungen
 - API: `PUT /api/system/phase5-features/<key>` → Feature ein/ausschalten
 
-### 0d: Graceful Degradation
+### 0d: Entity-Zuordnung & Steuerbarkeit
+
+**Prinzip:** Jedes Feature arbeitet mit HA-Entities. Der User kann **alle Entity-Zuordnungen
+selbst verwalten** — hinzufügen, entfernen, konfigurieren. Auto-Detection schlägt Entities
+vor, der User bestätigt/ändert. Nichts passiert automatisch ohne Bestätigung.
+
+**Generische Entity-Management API** (für alle Features einheitlich):
+- `GET /api/security/entities/<feature_key>` → Alle zugeordneten Entities + Rollen
+- `POST /api/security/entities/<feature_key>` → Entity zuordnen: `{entity_id, role, config}`
+- `PUT /api/security/entities/<feature_key>/<id>` → Zuordnung bearbeiten
+- `DELETE /api/security/entities/<feature_key>/<id>` → Zuordnung entfernen
+- `POST /api/security/entities/<feature_key>/auto-detect` → Vorschläge (nicht auto-speichern!)
+
+**Entity-Rollen pro Feature:**
+
+| Feature | `feature_key` | Verfügbare Rollen |
+|---------|---------------|-------------------|
+| #1 Rauch/CO | `fire_co` | `trigger` (smoke/co Sensoren), `emergency_light` (Lichter → 100%), `emergency_cover` (Rollläden → hoch), `hvac` (Lüftung stoppen/starten), `emergency_lock` (Locks → entriegeln), `tts_speaker` (TTS-Durchsage) |
+| #2 Wassermelder | `water_leak` | `trigger` (moisture Sensoren), `valve` (Hauptventil), `heating` (Heizung im Raum) |
+| #3 Kamera | `camera` | `snapshot_camera` (Kameras für Snapshots) |
+| #4 Zutrittskontrolle | `access` | `lock` (Smart Locks) |
+| #5 Geo-Fencing | `geofence` | `person` (person.*/device_tracker.* für GPS-Tracking) |
+| #7 Party | `party` | `light` (Party-Beleuchtung), `media` (Musik-Player), `climate` (Temperatur) |
+| #8 Kino | `cinema` | `light` (Dimm-Lichter), `cover` (Verdunklung), `media` (Haupt-Player), `climate` (Leise-Modus) |
+| #9 Home-Office | `home_office` | `light` (Fokus-Beleuchtung), `climate` (Komfort-Temp), `motion` (Pausen-Erkennung), `tts_speaker` (DnD-Ansage) |
+| #10 Nacht-Sicherung | `night_lockdown` | `lock` (Verriegelung), `motion` (EG-Überwachung), `night_light` (Orientierungslichter), `media` (→ aus), `climate` (Nacht-Temp), `window_sensor` (Fenster-Check), `alarm_panel` (HA alarm_control_panel) |
+| #11 Notfall | `emergency` | `siren` (Sirene), `light` (Alle Lichter an), `lock` (Typ-abhängig auf/zu), `tts_speaker` (Durchsage), `cover` (Rollläden), `hvac` (Lüftung) |
+
+**Jede Entity-Zuordnung hat optionale role-spezifische Config** (JSON), z.B.:
+- `light` + `{brightness: 100, color_temp: 4000}` — Zielhelligkeit + Farbtemperatur
+- `climate` + `{target_temp: 21.5}` — Zieltemperatur
+- `cover` + `{position: 100}` — Zielposition (100 = offen)
+- `night_light` + `{brightness: 5, color_temp: 2700}` — Gedimmtes Nachtlicht
+- `media` + `{volume: 0.8, source: "playlist_party"}` — Media-Konfiguration
+- `tts_speaker` + `{volume: 1.0}` — TTS-Lautstärke
+
+**Frontend: Entity-Zuordnungs-UI** (pro Feature im Einstellungen-Tab):
+- Liste aller zugeordneten Entities mit Rolle + Config
+- "Entity hinzufügen" Button → Entity-Picker (filtert nach passenden Domains)
+- "Auto-Erkennung" Button → zeigt Vorschläge an, User bestätigt einzeln
+- Inline-Edit für role-spezifische Config (Helligkeit, Temperatur, etc.)
+- Drag & Drop zum Umsortieren (Priorität)
+
+### 0e: Graceful Degradation
 
 | Feature | Voll-Sensorik | Fallback wenn fehlt |
 |---------|---------------|---------------------|
@@ -132,7 +175,7 @@ phase5.emergency_protocol   = true/false
 | Nacht-Sicherung | Lock + Motion | Nur Notification ohne Lock |
 | Notfall | Alle | Eskalation: Notification → TTS → HA-Alert |
 
-### 0e: Neue Enums
+### 0f: Neue Enums
 
 ```python
 class SecurityEventType(enum.Enum):
@@ -155,10 +198,11 @@ class SecuritySeverity(enum.Enum):
     EMERGENCY = "emergency"  # Feuer, Gas, Panik
 ```
 
-### 0f: Neue Models in `models.py`
+### 0g: Neue Models in `models.py`
 
 | Model | Zweck | Felder |
 |-------|-------|--------|
+| `FeatureEntityAssignment` | Entity↔Feature-Zuordnung | feature_key (String), entity_id (String), role (String), config (JSON, nullable), sort_order (Integer, default=0), is_active (Boolean, default=true), created_at |
 | `SecurityEvent` | Sicherheits-Ereignislog | event_type (Enum), severity (Enum), device_id (FK, nullable), room_id (FK, nullable), message_de, message_en, resolved_at, resolved_by, snapshot_path, context (JSON), timestamp |
 | `AccessCode` | Smart-Lock-Codes | user_id (FK, nullable), name, code_hash, lock_entity_ids (JSON), valid_from (nullable), valid_until (nullable), is_temporary, max_uses (nullable), use_count, is_active, created_at |
 | `AccessLog` | Zutrittsereignisse | lock_entity_id, user_id (FK, nullable), access_code_id (FK, nullable), action ("lock"/"unlock"/"jammed"/"failed"), method ("code"/"key"/"auto"/"remote"/"unknown"), timestamp |
@@ -175,7 +219,7 @@ class SecuritySeverity(enum.Enum):
 | `User` | `geo_tracking_enabled` (Boolean, default=False) | GPS-Tracking Opt-in |
 | `NotificationLog` | `security_event_id` (FK, nullable) | Verknüpfung mit Security-Event |
 
-### 0g: Migration v12
+### 0h: Migration v12
 
 - Alle `CREATE TABLE` Statements für neue Models
 - Alle `ALTER TABLE` Statements für neue Spalten
@@ -208,15 +252,28 @@ Automatische Reaktionen bei Feuer- oder CO-Alarm — zeitkritisch, immer aktiv.
   - Event-Bus: Reagiert auf `state_changed` für smoke/co Sensoren
   - Event-Bus sendet: `emergency.fire`, `emergency.co`
   - Kein separater Scheduler nötig — rein Event-basiert
+  - **Konfigurierbare Einstellungen** (`PUT /api/security/fire-co/config`):
+    - `unlock_on_fire`: Boolean — Locks bei Feuer entriegeln? (Default: true)
+    - `stop_hvac_on_fire`: Boolean — Lüftung bei Rauch stoppen? (Default: true)
+    - `start_hvac_on_co`: Boolean — Lüftung bei CO einschalten? (Default: true)
+    - `tts_message_fire_de`: String — TTS-Text bei Feuer (editierbar)
+    - `tts_message_fire_en`: String — TTS-Text bei Feuer EN
+    - `tts_message_co_de`: String — TTS-Text bei CO (editierbar)
+    - `tts_message_co_en`: String — TTS-Text bei CO EN
+    - `tts_volume`: Integer 0-100 — TTS-Lautstärke (Default: 100)
+    - `notification_users`: Liste von User-IDs — Wer wird benachrichtigt
+    - `notify_emergency_contacts`: Boolean — Notfallkontakte benachrichtigen? (Default: true)
+  - Entity-Zuordnung über generische API (siehe 0d): Sensoren, Lichter, Rollläden, Lüftung, Locks, TTS-Speaker einzeln hinzufügen/entfernen
   - API:
     - `GET /api/security/fire-co/status` → Sensor-Status
-    - `GET /api/security/fire-co/config` → Konfiguration
-    - `PUT /api/security/fire-co/config` → Aktionen konfigurieren
+    - `GET /api/security/fire-co/config` → Vollständige Konfiguration
+    - `PUT /api/security/fire-co/config` → Einstellungen ändern
 
 - **Frontend:**
   - Feuer/CO-Karte auf Sicherheits-Seite
   - Sensor-Status pro Raum (OK / Warnung / Alarm)
-  - Konfigurierbares Aktions-Set
+  - Konfigurations-Panel: Alle Einstellungen editierbar
+  - Entity-Zuordnung: Sensoren + Reaktions-Entities verwalten
 
 ### #2 Wassermelder-Reaktion
 **Dateien:** `engines/fire_water.py`, `routes/security.py`
@@ -232,21 +289,26 @@ Schützt vor Wasserschäden durch automatische Ventilsteuerung.
     3. Notification CRITICAL an alle Admins
     4. Betroffenen Raum identifizieren (über Device→Room Zuordnung)
     5. Optional: Heizung im Raum abschalten (Frostschutz beachten!)
-  - **Konfiguration:**
-    - `valve_entity`: HA-Entity für Haupt-Wasserventil
-    - `auto_shutoff`: Boolean — automatisch Ventil schließen?
-    - `frost_protection_temp`: Mindest-Temperatur bei Heizungs-Abschaltung (Default: 5°C)
+  - **Konfigurierbare Einstellungen** (`PUT /api/security/water-leak/config`):
+    - `auto_shutoff`: Boolean — automatisch Ventil schließen? (Default: true)
+    - `frost_protection_temp`: Float — Mindest-Temperatur bei Heizungs-Abschaltung (Default: 5.0°C)
+    - `shutoff_heating_on_leak`: Boolean — Heizung im Raum abschalten? (Default: true)
+    - `notification_users`: Liste von User-IDs
+    - `tts_enabled`: Boolean — TTS-Durchsage bei Leck? (Default: false)
+    - `tts_message_de/en`: String — TTS-Text (editierbar)
+  - Entity-Zuordnung über generische API (siehe 0d): Moisture-Sensoren, Ventil, Heizung einzeln zuweisen
   - Event-Bus: Reagiert auf `state_changed` für moisture Sensoren
   - Event-Bus sendet: `emergency.water_leak`
   - API:
-    - `GET /api/security/water-leak/status` → Sensor-Status
-    - `GET /api/security/water-leak/config` → Konfiguration
-    - `PUT /api/security/water-leak/config` → Ventil-Entity + Auto-Shutoff
+    - `GET /api/security/water-leak/status` → Sensor-Status + Ventil-Status
+    - `GET /api/security/water-leak/config` → Vollständige Konfiguration
+    - `PUT /api/security/water-leak/config` → Einstellungen ändern
 
 - **Frontend:**
   - Wassermelder-Karte auf Sicherheits-Seite
   - Sensor-Status pro Raum
   - Ventil-Status (offen/geschlossen) mit manuellem Toggle
+  - Konfigurations-Panel mit Entity-Zuordnung
   - Letzter Alarm mit Zeitstempel
 
 ### #3 Kamera-Snapshots bei Sicherheitsereignissen
@@ -262,11 +324,12 @@ Automatische Foto-Aufnahme bei Sicherheitsereignissen.
     2. Speichert Bilder unter `/config/mindhome/snapshots/<timestamp>_<camera>.jpg`
     3. Verknüpft Snapshot-Pfad mit `SecurityEvent.snapshot_path`
     4. Optional: Snapshot als Notification-Attachment senden (wenn supported)
-  - **Konfiguration:**
-    - `snapshot_cameras`: Liste von camera.* Entity-IDs
-    - `snapshot_on_events`: Welche Event-Typen triggern Snapshot (Default: fire, co, panic, access_unknown)
-    - `retention_days`: Wie lange Snapshots behalten (Default: 30)
-    - `max_snapshots_per_event`: Max. Bilder pro Ereignis (Default: 5)
+  - **Konfigurierbare Einstellungen** (`PUT /api/security/cameras/config`):
+    - `snapshot_on_events`: Liste — Welche Event-Typen triggern Snapshot (Default: [fire, co, panic, access_unknown]) — User kann Events hinzufügen/entfernen
+    - `retention_days`: Integer — Wie lange Snapshots behalten (Default: 30, editierbar)
+    - `max_snapshots_per_event`: Integer — Max. Bilder pro Ereignis (Default: 5)
+    - `attach_to_notification`: Boolean — Snapshot als Notification-Anhang? (Default: true)
+  - Kameras über generische Entity-API (siehe 0d) zuordnen — nicht auto-detect
   - Snapshot-Cleanup im bestehenden `data_retention`-Task integrieren
   - API:
     - `GET /api/security/cameras` → Kamera-Liste mit Status
@@ -313,9 +376,18 @@ Smart-Lock-Management mit Code-Verwaltung und Zutrittsprotokoll.
   - **Zutrittsprotokoll:**
     - Jeder Lock/Unlock wird in `AccessLog` gespeichert
     - Methode: code, key, auto, remote, unknown
+  - **Konfigurierbare Einstellungen** (`PUT /api/security/access/config`):
+    - `auto_lock_enabled`: Boolean — Auto-Lock nach Timeout? (Default: true)
+    - `auto_lock_delay_min`: Integer — Minuten bis Auto-Lock (Default: 5, editierbar)
+    - `jammed_notification`: Boolean — Benachrichtigung bei Jammed? (Default: true)
+    - `unknown_access_notification`: Boolean — Bei unbekanntem Zutritt? (Default: true)
+    - `unknown_access_snapshot`: Boolean — Kamera-Snapshot bei unbekanntem Zutritt? (Default: true)
+    - `person_match_window_min`: Integer — Zeitfenster für User-Zuordnung (Default: 2)
+    - `notification_users`: Liste von User-IDs
+  - Lock-Entities über generische Entity-API (siehe 0d) zuordnen
   - Event-Bus sendet: `access.unlocked`, `access.locked`, `access.unknown`, `access.jammed`
   - API:
-    - `GET /api/security/access/locks` → Lock-Status (alle Schlösser)
+    - `GET /api/security/access/locks` → Lock-Status (alle zugeordneten Schlösser)
     - `POST /api/security/access/locks/<entity_id>/lock` → Sperren
     - `POST /api/security/access/locks/<entity_id>/unlock` → Entsperren
     - `POST /api/security/access/lock-all` → Alle sperren
@@ -323,8 +395,9 @@ Smart-Lock-Management mit Code-Verwaltung und Zutrittsprotokoll.
     - `POST /api/security/access/codes` → Neuen Code anlegen
     - `PUT /api/security/access/codes/<id>` → Code bearbeiten
     - `DELETE /api/security/access/codes/<id>` → Code löschen
-    - `GET /api/security/access/log` → Zutrittsprotokoll (paginiert)
-    - `PUT /api/security/access/config` → Auto-Lock etc.
+    - `GET /api/security/access/log` → Zutrittsprotokoll (paginiert, filterbar)
+    - `GET /api/security/access/config` → Konfiguration
+    - `PUT /api/security/access/config` → Einstellungen ändern
 
 - **Frontend:**
   - Zutritts-Tab auf Sicherheits-Seite
@@ -360,13 +433,24 @@ Standortbasierte Automatisierungen — nutzt `device_tracker` / `person.*` Entit
     - `User.geo_tracking_enabled` muss opt-in sein
     - GPS-Koordinaten werden NICHT in DB gespeichert (nur Zone-Event)
     - Nur Zone-Wechsel werden geloggt, nicht kontinuierliche Position
-  - Scheduler-Task: `geofence_check` alle 60s — prüft Person-Entities gegen Zonen
+  - **Konfigurierbare Einstellungen** (`PUT /api/security/geofence/config`):
+    - `check_interval_sec`: Integer — Prüf-Intervall (Default: 60, editierbar)
+    - `hysteresis_m`: Integer — Leave-Hysterese in Metern (Default: 50)
+    - `all_away_action`: JSON — Was passiert wenn alle weg (Presence → Away, etc.)
+    - `first_home_action`: JSON — Was passiert wenn erste Person zurück
+    - `log_zone_events`: Boolean — Zone-Wechsel loggen? (Default: true)
+  - Person-/Device-Tracker-Entities über generische Entity-API (siehe 0d) zuordnen
+  - Zonen: Volle CRUD — User kann beliebig viele Zonen mit eigenen Aktionen definieren
+  - Pro Zone: `action_on_enter` + `action_on_leave` komplett konfigurierbar als JSON Action-Set
+  - Scheduler-Task: `geofence_check` alle `check_interval_sec` Sekunden
   - API:
-    - `GET /api/security/geofence/zones` → Zonen-Liste
-    - `POST/PUT/DELETE /api/security/geofence/zones/<id>` → Zonen CRUD
+    - `GET /api/security/geofence/zones` → Zonen-Liste mit Aktionen
+    - `POST /api/security/geofence/zones` → Neue Zone anlegen
+    - `PUT /api/security/geofence/zones/<id>` → Zone bearbeiten (Name, Koordinaten, Radius, Aktionen)
+    - `DELETE /api/security/geofence/zones/<id>` → Zone löschen
     - `GET /api/security/geofence/status` → Wer ist wo?
-    - `GET /api/security/geofence/config` → Global Config
-    - `PUT /api/security/geofence/config` → Config Update
+    - `GET /api/security/geofence/config` → Globale Konfiguration
+    - `PUT /api/security/geofence/config` → Einstellungen ändern
 
 - **Frontend:**
   - Geo-Fence-Tab auf Sicherheits-Seite
@@ -420,37 +504,64 @@ class SpecialModeBase:
   - Quiet Hours deaktivieren (Party-Override)
 - **Intelligente Features:**
   - Lautstärke-Monitoring: Wenn Lautstärke über Schwellwert → Notification "Es ist spät, Nachbarn?"
-  - Auto-Deaktivierung: Standard 4h, konfigurierbar
+  - Auto-Deaktivierung: konfigurierbar
   - Aufräum-Modus nach Party: Licht 100%, Lüftung an
+- **Konfigurierbare Einstellungen** (`PUT /api/security/modes/party/config`):
+  - `light_scene`: JSON — Licht-Konfiguration pro Entity (Farbe, Helligkeit, Effekt)
+  - `temperature_offset`: Float — Grad Celsius Absenkung (Default: -1.0)
+  - `volume_threshold`: Integer 0-100 — Lautstärke-Warnschwelle (Default: 70)
+  - `volume_warning_after`: String HH:MM — Ab wann Lautstärke-Warnung (Default: "22:00")
+  - `auto_deactivate_min`: Integer — Auto-Aus nach X Minuten (Default: 240)
+  - `cleanup_mode_enabled`: Boolean — Aufräum-Modus nach Party? (Default: true)
+  - `cleanup_duration_min`: Integer — Dauer Aufräum-Modus (Default: 30)
+  - `quiet_hours_override`: Boolean — Quiet Hours deaktivieren? (Default: true)
+  - `auto_trigger_enabled`: Boolean — Automatischer Trigger? (Default: false)
+  - `media_playlist`: String — Playlist/Source für Musik-Player (nullable)
+  - `media_volume`: Float 0-1 — Start-Lautstärke (Default: 0.5)
+- Entity-Zuordnung über generische API (siehe 0d): Lichter, Media-Player, Klima
 - **Trigger:**
   - Manuell: Button in App
-  - Auto: Gäste-Modus + Media-Player aktiv + abends
+  - Auto (wenn `auto_trigger_enabled`): Gäste-Modus + Media-Player aktiv + abends
 - **API:**
   - `POST /api/security/modes/party/activate`
   - `POST /api/security/modes/party/deactivate`
   - `GET /api/security/modes/party/status`
+  - `GET /api/security/modes/party/config`
   - `PUT /api/security/modes/party/config`
 
 ### #8 Kino-Modus
 **Dateien:** `engines/special_modes.py`, `routes/security.py`
 
 - **Aktionen bei Aktivierung:**
-  - Licht auf 5-10% dimmen (über Transition, sanft!)
+  - Licht dimmen (über Transition, sanft!)
   - Rollläden schließen (Verdunklung)
   - DnD-Modus: Notifications stumm (außer CRITICAL/EMERGENCY)
   - Optional: Klima-Anpassung (kein Fan-Geräusch, leise Lüftung)
 - **Intelligente Features:**
   - Auto-Aktivierung: Media-Player spielt Film (nicht Musik) + Abend
-  - Auto-Deaktivierung: Media-Player wird pausiert/gestoppt für > 5 Min
-  - Pause-Erkennung: Bei Media-Pause → Licht auf 30% (sanft), bei Resume → zurück auf 5%
+  - Auto-Deaktivierung: Media-Player wird pausiert/gestoppt
+  - Pause-Erkennung: Bei Media-Pause → Licht auf Pause-Level, bei Resume → zurück auf Dim-Level
   - Room-Aware: Nur der Raum mit dem aktiven Media-Player wird verdunkelt
+- **Konfigurierbare Einstellungen** (`PUT /api/security/modes/cinema/config`):
+  - `dim_brightness`: Integer 0-100 — Licht-Level beim Film (Default: 5)
+  - `pause_brightness`: Integer 0-100 — Licht-Level bei Pause (Default: 30)
+  - `transition_sec`: Integer — Dimm-Übergang in Sekunden (Default: 3)
+  - `close_covers`: Boolean — Rollläden schließen? (Default: true)
+  - `dnd_enabled`: Boolean — DnD-Modus aktivieren? (Default: true)
+  - `dnd_exceptions`: Liste — Welche Notification-Level durchlassen (Default: [critical, emergency])
+  - `climate_quiet_mode`: Boolean — Leise Lüftung? (Default: false)
+  - `auto_trigger_enabled`: Boolean — Automatischer Trigger? (Default: false)
+  - `auto_deactivate_pause_min`: Integer — Minuten Pause bis Auto-Aus (Default: 5)
+  - `room_id`: Integer — Standard-Raum (nullable, sonst Media-Player-Raum)
+- Entity-Zuordnung über generische API (siehe 0d): Lichter, Rollläden, Media-Player, Klima
 - **Trigger:**
   - Manuell: Button in App
-  - Auto: Media-Player "playing" + Content-Type "movie" (wenn verfügbar)
+  - Auto (wenn `auto_trigger_enabled`): Media-Player "playing" + Content-Type "movie"
 - **API:**
   - `POST /api/security/modes/cinema/activate` → Body: `{room_id}` (optional)
   - `POST /api/security/modes/cinema/deactivate`
   - `GET /api/security/modes/cinema/status`
+  - `GET /api/security/modes/cinema/config`
   - `PUT /api/security/modes/cinema/config`
 
 ### #9 Home-Office-Modus
@@ -458,22 +569,40 @@ class SpecialModeBase:
 
 - **Aktionen bei Aktivierung:**
   - Fokus-Beleuchtung: Kühles, helles Licht (hohe Farbtemperatur wenn tunable_white)
-  - Klima: Komfort-Temperatur (21-22°C)
+  - Klima: Komfort-Temperatur
   - DnD-Modus: Nur CRITICAL Notifications
   - Circadian Override: Büro-Beleuchtung statt Wohnraum-Kurve
   - Optional: "Bitte nicht stören" TTS wenn jemand den Raum betritt
 - **Intelligente Features:**
-  - Pausen-Erkennung: Keine Bewegung am Schreibtisch > 50 Min → "Mach mal Pause!"
-  - Auto-Aktivierung: Werktag + bestimmter Raum + Kalender "Home Office" Event
+  - Pausen-Erkennung: Keine Bewegung am Schreibtisch → "Mach mal Pause!"
+  - Auto-Aktivierung: Werktag + bestimmter Raum + Kalender-Event
   - Auto-Deaktivierung: Feierabend (aus Kalender oder nach X Stunden)
   - Raum-bezogen: Nur der konfigurierte Office-Raum wird angepasst
+- **Konfigurierbare Einstellungen** (`PUT /api/security/modes/home-office/config`):
+  - `room_id`: Integer — Office-Raum (Pflicht)
+  - `focus_brightness`: Integer 0-100 — Helligkeit (Default: 85)
+  - `focus_color_temp`: Integer — Farbtemperatur in Kelvin (Default: 5000)
+  - `comfort_temp`: Float — Zieltemperatur (Default: 21.5)
+  - `dnd_enabled`: Boolean — DnD-Modus? (Default: true)
+  - `dnd_exceptions`: Liste — Durchgelassene Level (Default: [critical, emergency])
+  - `circadian_override`: Boolean — Circadian-Kurve überschreiben? (Default: true)
+  - `break_reminder_enabled`: Boolean — Pausen-Erinnerung? (Default: true)
+  - `break_reminder_interval_min`: Integer — Minuten ohne Bewegung (Default: 50)
+  - `break_reminder_message_de/en`: String — Erinnerungstext (editierbar)
+  - `dnd_tts_enabled`: Boolean — TTS bei Raum-Betreten? (Default: false)
+  - `dnd_tts_message_de/en`: String — TTS-Text (editierbar)
+  - `auto_trigger_enabled`: Boolean — Automatischer Trigger? (Default: false)
+  - `auto_trigger_calendar_keywords`: Liste — Kalender-Keywords (Default: ["Home Office", "Homeoffice", "WFH"])
+  - `auto_deactivate_after_hours`: Float — Max. Dauer (Default: 9.0)
+- Entity-Zuordnung über generische API (siehe 0d): Lichter, Klima, Motion-Sensor, TTS-Speaker
 - **Trigger:**
   - Manuell: Button in App
-  - Auto: Kalender-Event "Home Office" / "Homeoffice" / "WFH"
+  - Auto (wenn `auto_trigger_enabled`): Kalender-Event mit passendem Keyword
 - **API:**
-  - `POST /api/security/modes/home-office/activate` → Body: `{room_id}`
+  - `POST /api/security/modes/home-office/activate` → Body: `{room_id}` (optional wenn konfiguriert)
   - `POST /api/security/modes/home-office/deactivate`
   - `GET /api/security/modes/home-office/status`
+  - `GET /api/security/modes/home-office/config`
   - `PUT /api/security/modes/home-office/config`
 
 ### #10 Nacht-Sicherungs-Modus
@@ -482,24 +611,41 @@ class SpecialModeBase:
 Automatische Absicherung für die Nacht — eng mit Sleep-Detection verknüpft.
 
 - **Aktionen bei Aktivierung:**
-  - Alle Türen verriegeln (Smart Locks)
-  - Nacht-Beleuchtung: Orientierungslichter im Flur (5%, warmweiß)
-  - Alle Medien aus
+  - Alle zugeordneten Türen verriegeln (Smart Locks)
+  - Nacht-Beleuchtung: Orientierungslichter (konfigurierbar)
+  - Alle zugeordneten Medien aus
   - Heizung auf Nacht-Temperatur
-  - Fenster-Check: Notification wenn Fenster offen (optional: nicht schließen)
-  - Optional: HA `alarm_control_panel` auf "armed_night" setzen (falls vorhanden)
+  - Fenster-Check: Notification wenn Fenster offen
+  - Optional: HA `alarm_control_panel` auf "armed_night" setzen
 - **Intelligente Features:**
   - Auto-Aktivierung: Sleep Detection (aus Phase 4) + Abend-Phase
   - Auto-Deaktivierung: Morgen-Phase oder Wake-Up-Manager Start
-  - Bewegungs-Alerts: Bewegung im EG während Nacht → leise Notification an Hauptschlafzimmer
-  - Nicht im Schlafzimmer: EG-Bewegungsmelder überwachen, nicht Schlafzimmer
+  - Bewegungs-Alerts: Bewegung im EG während Nacht → leise Notification
+  - Nur konfigurierte Bereiche überwachen (nicht Schlafzimmer)
+- **Konfigurierbare Einstellungen** (`PUT /api/security/modes/night-lockdown/config`):
+  - `night_temp`: Float — Nacht-Temperatur (Default: 18.0)
+  - `night_light_brightness`: Integer 0-100 — Orientierungslicht-Helligkeit (Default: 5)
+  - `night_light_color_temp`: Integer — Farbtemperatur (Default: 2700, warmweiß)
+  - `lock_doors`: Boolean — Türen verriegeln? (Default: true)
+  - `turn_off_media`: Boolean — Medien ausschalten? (Default: true)
+  - `window_check_enabled`: Boolean — Fenster-Check? (Default: true)
+  - `window_check_notify_only`: Boolean — Nur benachrichtigen, nicht blockieren (Default: true)
+  - `motion_alerts_enabled`: Boolean — Bewegungs-Alerts? (Default: true)
+  - `motion_alert_rooms`: Liste von Room-IDs — Welche Räume überwachen (Default: EG-Räume)
+  - `motion_alert_notification_target`: User-ID — Wer bekommt Alert (Default: Admin)
+  - `alarm_panel_enabled`: Boolean — HA alarm_control_panel setzen? (Default: false)
+  - `alarm_panel_entity`: String — Entity-ID des alarm_control_panel (nullable)
+  - `auto_trigger_enabled`: Boolean — Automatischer Trigger? (Default: true)
+  - `auto_trigger_time`: String HH:MM — Spätestens aktivieren um (Default: "23:00")
+- Entity-Zuordnung über generische API (siehe 0d): Locks, Motion-Sensoren, Nachtlichter, Medien, Klima, Fenstersensoren, alarm_panel
 - **Trigger:**
   - Manuell: Button in App
-  - Auto: Sleep-Detection Event + Konfigurierte Uhrzeit
+  - Auto (wenn `auto_trigger_enabled`): Sleep-Detection Event ODER `auto_trigger_time`
 - **API:**
   - `POST /api/security/modes/night-lockdown/activate`
   - `POST /api/security/modes/night-lockdown/deactivate`
   - `GET /api/security/modes/night-lockdown/status`
+  - `GET /api/security/modes/night-lockdown/config`
   - `PUT /api/security/modes/night-lockdown/config`
 
 ### #11 Notfall-Protokoll
@@ -528,10 +674,26 @@ Koordinierte Notfall-Reaktion — der "rote Knopf".
   | Medizinisch | Licht an, Haustür öffnen (Rettungsdienst), TTS "Medizinischer Notfall" |
   | Panik | Licht an, Sirene an (wenn vorhanden), TTS "Alarm" |
 
+- **Konfigurierbare Einstellungen** (`PUT /api/security/emergency/config`):
+  - `escalation_step1_delay_sec`: Integer — Verzögerung Schritt 2 (Default: 30)
+  - `escalation_step2_delay_sec`: Integer — Verzögerung Schritt 3 (Default: 60)
+  - `escalation_step3_delay_sec`: Integer — Verzögerung Schritt 4 (Default: 300)
+  - `siren_duration_sec`: Integer — Sirenen-Dauer (Default: 300)
+  - `tts_volume`: Integer 0-100 — TTS-Lautstärke (Default: 100)
+  - `tts_message_fire_de/en`: String — TTS-Text Feuer (editierbar)
+  - `tts_message_medical_de/en`: String — TTS-Text Medizinisch (editierbar)
+  - `tts_message_panic_de/en`: String — TTS-Text Panik (editierbar)
+  - `cancel_requires_pin`: Boolean — PIN zum Abbrechen? (Default: true)
+  - `notify_emergency_contacts`: Boolean — Notfallkontakte benachrichtigen? (Default: true)
+  - Per Notfall-Typ konfigurierbar welche Aktionen ausgeführt werden:
+    - `fire_actions`: JSON — z.B. `{lights: true, covers: "open", hvac: "off", locks: "unlock"}`
+    - `medical_actions`: JSON — z.B. `{lights: true, locks: "unlock_front"}`
+    - `panic_actions`: JSON — z.B. `{lights: true, siren: true, locks: "lock"}`
+- Entity-Zuordnung über generische API (siehe 0d): Sirene, Lichter, Locks, TTS-Speaker, Rollläden, Lüftung
 - **Backend:**
   - `EmergencyProtocol`-Klasse in `engines/special_modes.py`
   - `trigger(emergency_type, source="manual")` → Startet Eskalationskette
-  - `cancel(pin)` → Bricht ab (braucht PIN)
+  - `cancel(pin)` → Bricht ab (wenn `cancel_requires_pin`)
   - Nutzt bestehenden NotificationManager für Eskalation
   - Sirene direkt über HA `siren.*` Entity (kein eigenes Alarm-Management)
   - Timer-Thread für Eskalations-Schritte
@@ -539,8 +701,12 @@ Koordinierte Notfall-Reaktion — der "rote Knopf".
   - `POST /api/security/emergency/trigger` → Body: `{type, source}`
   - `POST /api/security/emergency/cancel` → Body: `{pin}`
   - `GET /api/security/emergency/status` → Aktiver Notfall?
+  - `GET /api/security/emergency/config` → Konfiguration
+  - `PUT /api/security/emergency/config` → Einstellungen ändern
   - `GET /api/security/emergency/contacts` → Notfallkontakte
-  - `POST/PUT/DELETE /api/security/emergency/contacts/<id>` → Kontakte CRUD
+  - `POST /api/security/emergency/contacts` → Kontakt hinzufügen
+  - `PUT /api/security/emergency/contacts/<id>` → Kontakt bearbeiten
+  - `DELETE /api/security/emergency/contacts/<id>` → Kontakt löschen
 
 - **Frontend:**
   - Notfall-Button auf Sicherheits-Seite (Rot, prominent)
@@ -657,12 +823,13 @@ Das ist ein Unterschied zu Phase 4 — Sicherheit muss sofort reagieren, nicht a
 
 **Geschätzte Änderungen:**
 - 5 neue Dateien: `engines/` (4 Module) + `routes/security.py`
-- 7 neue DB-Models + 3 neue Spalten + 2 neue Enums
+- 8 neue DB-Models (inkl. `FeatureEntityAssignment`) + 3 neue Spalten + 2 neue Enums
 - 11 Feature-Flags in SystemSettings
 - ~10 bestehende Dateien modifiziert
-- ~30 neue API-Endpoints
+- ~40 neue API-Endpoints (inkl. generische Entity-Management API)
 - 5 Scheduler-Tasks (+ Event-basierte Handler)
 - Frontend: 1 neue Seite "Sicherheit" mit 6 Tabs in app.jsx
+- **Vollständige User-Steuerbarkeit:** Alle Entity-Zuordnungen + Einstellungen per CRUD-API konfigurierbar
 - Graceful Degradation für alle Sensor-abhängigen Features
 - State-Restore-Mechanismus für Spezial-Modi
 - HA-Alarm read-only Integration (alarm_control_panel, falls vorhanden)
