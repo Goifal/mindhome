@@ -223,11 +223,14 @@ class HAConnection:
             # entity's raw_config attribute, not just the storage collection.
             fetched = 0
             failed = 0
+            first_raw = None
             for cfg in configs:
                 eid = cfg["entity_id"]
                 try:
                     raw = self._ws_command("automation/config", entity_id=eid)
                     if isinstance(raw, dict):
+                        if first_raw is None:
+                            first_raw = raw
                         cfg["actions"] = raw.get("action", raw.get("actions", []))
                         cfg["triggers"] = raw.get("trigger", raw.get("triggers", []))
                         fetched += 1
@@ -236,13 +239,14 @@ class HAConnection:
                 except Exception:
                     failed += 1
 
-            # Diagnostic: count configs with actual actions
-            with_actions = sum(1 for c in configs if c.get("actions"))
-            sample = None
-            for c in configs:
-                if c.get("actions"):
-                    sample = c
-                    break
+            # Diagnostic: log raw response structure
+            if first_raw is not None:
+                logger.info(
+                    f"WS automation/config raw keys: {list(first_raw.keys())}"
+                )
+                # Log a sample with actual content (truncated)
+                sample_str = str(first_raw)[:500]
+                logger.info(f"WS automation/config sample: {sample_str}")
 
             if fetched:
                 logger.info(
