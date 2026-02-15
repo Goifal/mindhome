@@ -210,36 +210,99 @@ class HAConnection:
             for auto in automations:
                 eid = auto.get("entity_id", "")
                 attrs = auto.get("attributes", {})
-                # Extract action targets from automation attributes
-                # HA exposes action entities in the automation state attributes
                 configs.append({
                     "entity_id": eid,
                     "friendly_name": attrs.get("friendly_name", eid),
                     "state": auto.get("state", "off"),
                 })
-            # Also try to get detailed configs via WS
+            logger.debug(f"Found {len(configs)} automation entities from REST API")
+            # Try to get detailed configs via WS
             try:
                 ws_configs = self._ws_command("config/automation/config/list") or []
-                if isinstance(ws_configs, list):
+                if isinstance(ws_configs, list) and ws_configs:
+                    logger.debug(f"Got {len(ws_configs)} automation configs from WebSocket")
+                    # Build lookup by friendly_name for matching (WS id is a UUID,
+                    # not the entity slug, so we cannot match via automation.{id})
+                    configs_by_name = {}
+                    configs_by_eid = {}
+                    for c in configs:
+                        fn = c.get("friendly_name", "").lower().strip()
+                        if fn:
+                            configs_by_name[fn] = c
+                        configs_by_eid[c["entity_id"]] = c
+                    matched = 0
                     for cfg in ws_configs:
-                        cfg_id = cfg.get("id")
-                        configs_by_id = {c["entity_id"]: c for c in configs}
-                        auto_eid = f"automation.{cfg_id}" if cfg_id else None
-                        entry = configs_by_id.get(auto_eid, {})
-                        entry["actions"] = cfg.get("action", cfg.get("actions", []))
-                        entry["triggers"] = cfg.get("trigger", cfg.get("triggers", []))
-                        if auto_eid and auto_eid not in configs_by_id:
-                            entry["entity_id"] = auto_eid
-                            entry["state"] = "unknown"
-                            configs.append(entry)
-            except Exception:
-                pass  # WS config not available, fall back to state-based extraction
+                        actions = cfg.get("action", cfg.get("actions", []))
+                        triggers = cfg.get("trigger", cfg.get("triggers", []))
+                        # Try matching by alias (= friendly_name in HA)
+                        alias = (cfg.get("alias") or "").lower().strip()
+                        entry = configs_by_name.get(alias)
+                        if entry is None:
+                            # Fallback: try matching by id as entity suffix
+                            cfg_id = cfg.get("id")
+                            if cfg_id:
+                                entry = configs_by_eid.get(f"automation.{cfg_id}")
+                        if entry is not None:
+                            entry["actions"] = actions
+                            entry["triggers"] = triggers
+                            matched += 1
+                        else:
+                            # Unknown automation from WS, add it
+                            cfg_id = cfg.get("id", "unknown")
+                            configs.append({
+                                "entity_id": f"automation.{cfg_id}",
+                                "friendly_name": cfg.get("alias", cfg_id),
+                                "state": "unknown",
+                                "actions": actions,
+                                "triggers": triggers,
+                            })
+                    logger.info(f"Matched {matched}/{len(ws_configs)} WS automation configs to entities")
+                elif not ws_configs:
+                    logger.debug("WebSocket returned no automation configs")
+            except Exception as e:
+                logger.warning(f"Failed to fetch WS automation configs: {e}")
             self._auto_cfg_cache = configs
             self._auto_cfg_ts = time.time()
             return configs
         except Exception as e:
             logger.warning(f"Failed to fetch automation configs: {e}")
             return self._auto_cfg_cache or []
+
+    def _extract_actions_flat(self, actions):
+        """Recursively flatten nested HA automation actions (choose/if/sequence)."""
+        if not actions:
+            return []
+        if not isinstance(actions, list):
+            actions = [actions]
+        flat = []
+        for action in actions:
+            if not isinstance(action, dict):
+                continue
+            # Direct service call
+            if action.get("service") or action.get("action"):
+                flat.append(action)
+            # Nested: sequence
+            if "sequence" in action:
+                flat.extend(self._extract_actions_flat(action["sequence"]))
+            # Nested: choose (each option has a sequence)
+            for option in action.get("choose", []) or []:
+                if isinstance(option, dict):
+                    flat.extend(self._extract_actions_flat(option.get("sequence", [])))
+            # choose default
+            if "default" in action:
+                flat.extend(self._extract_actions_flat(action["default"]))
+            # Nested: if/then/else
+            if "then" in action:
+                flat.extend(self._extract_actions_flat(action["then"]))
+            if "else" in action:
+                flat.extend(self._extract_actions_flat(action["else"]))
+            # Nested: repeat
+            if isinstance(action.get("repeat"), dict):
+                flat.extend(self._extract_actions_flat(action["repeat"].get("sequence", [])))
+            # Nested: parallel
+            if "parallel" in action:
+                flat.extend(self._extract_actions_flat(action["parallel"]))
+        return flat
 
     def get_ha_automated_entities(self):
         """Return set of (entity_id, target_state) pairs covered by HA automations.
@@ -255,24 +318,24 @@ class HAConnection:
             return self._ha_auto_entities_cache
 
         result = set()
-        # Set of entity_ids (without target_state) for broader matching
         entity_only = set()
         configs = self.get_automation_configs()
         for cfg in configs:
             # Only consider enabled automations
             if cfg.get("state") == "off":
                 continue
-            actions = cfg.get("actions", [])
-            if not isinstance(actions, list):
-                actions = [actions] if actions else []
+            raw_actions = cfg.get("actions", [])
+            actions = self._extract_actions_flat(raw_actions)
             for action in actions:
-                if not isinstance(action, dict):
-                    continue
+                # HA 2024.x+ uses "action" key instead of "service"
+                service = action.get("service") or action.get("action") or ""
                 # HA automation actions can have service + entity_id or target
                 target = action.get("target", {}) or {}
                 entity_ids = target.get("entity_id", [])
                 if isinstance(entity_ids, str):
                     entity_ids = [entity_ids]
+                else:
+                    entity_ids = list(entity_ids)
                 # Also check direct entity_id on action
                 direct_eid = action.get("entity_id")
                 if direct_eid:
@@ -282,7 +345,6 @@ class HAConnection:
                         entity_ids.extend(direct_eid)
                 # Extract target state from service_data
                 svc_data = action.get("data", {}) or {}
-                service = action.get("service", "")
                 for eid in entity_ids:
                     if not eid:
                         continue
@@ -299,11 +361,16 @@ class HAConnection:
                         result.add((eid, "on"))
                     elif "temperature" in svc_data:
                         result.add((eid, svc_data.get("hvac_mode", "on")))
+                    else:
+                        # Unknown service — still track the entity
+                        result.add((eid, "on"))
 
         self._ha_auto_entities_cache = result
         self._ha_auto_entities_only = entity_only
         self._ha_auto_entities_ts = time.time()
         logger.info(f"HA automation coverage: {len(entity_only)} entities, {len(result)} entity/state pairs")
+        if entity_only:
+            logger.debug(f"HA automated entities: {sorted(entity_only)}")
         return result
 
     def is_entity_ha_automated(self, entity_id, target_state=None):

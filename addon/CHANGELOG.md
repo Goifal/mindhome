@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.7.23 – Fix HA-Automation-Erkennung (0 Entities Bug)
+
+### Fix
+- **WS-Config-Matching**: Entity-IDs wurden als `automation.{UUID}` zusammengebaut — UUIDs matchen nie mit echten Entity-IDs. Jetzt Matching ueber `alias` ↔ `friendly_name` mit UUID-Fallback
+- **Verschachtelte Actions**: HA-Automationen mit `choose`, `if/then/else`, `sequence`, `parallel`, `repeat` wurden komplett ignoriert. Neuer `_extract_actions_flat()` traversiert alle Verschachtelungen rekursiv
+- **HA 2024.x+ Kompatibilitaet**: Der neue `action`-Key (ersetzt `service`) wird jetzt erkannt
+- **Stumme WS-Fehler**: WebSocket-Exceptions wurden verschluckt (`except: pass`), jetzt Warning-Log
+
+### Verbesserungen
+- Diagnostic-Logging: "Matched X/Y WS automation configs to entities"
+- Debug-Logging: Anzahl REST-Automationen und WS-Config-Responses
+
 ## 0.7.22 – Fix PatternDetector ha_connection
 
 ### Fix
