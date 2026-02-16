@@ -7,17 +7,20 @@
 ## Inhaltsverzeichnis
 
 1. [Vision](#vision)
-2. [Hardware-Setup](#hardware-setup)
-3. [Gesamtarchitektur](#gesamtarchitektur)
-4. [Phase 1: Fundament](#phase-1-fundament)
-5. [Engine Layer](#engine-layer)
-6. [Jarvis Layer (Sprach-KI)](#jarvis-layer-sprach-ki)
-7. [Proactive Layer](#proactive-layer)
-8. [Das Jarvis-Feeling](#das-jarvis-feeling)
-9. [Phase 2-7: Perfektion](#phase-2-7-perfektion)
-10. [Technische Details](#technische-details)
-11. [Autonomie-Level](#autonomie-level)
-12. [API-Referenz](#api-referenz)
+2. [Hardware-Setup (Split-Architektur)](#hardware-setup-split-architektur)
+3. [Jarvis-PC Setup Guide](#jarvis-pc-setup-guide)
+4. [LLM-Modell Empfehlung](#llm-modell-empfehlung)
+5. [Latenz-Analyse](#latenz-analyse)
+6. [Gesamtarchitektur](#gesamtarchitektur)
+7. [Phase 1: Fundament](#phase-1-fundament)
+8. [Engine Layer](#engine-layer)
+9. [Jarvis Layer (Sprach-KI)](#jarvis-layer-sprach-ki)
+10. [Proactive Layer](#proactive-layer)
+11. [Das Jarvis-Feeling](#das-jarvis-feeling)
+12. [Phase 2-7: Perfektion](#phase-2-7-perfektion)
+13. [Technische Details](#technische-details)
+14. [Autonomie-Level](#autonomie-level)
+15. [API-Referenz](#api-referenz)
 
 ---
 
@@ -37,105 +40,546 @@ Jarvis ist ein lokaler, privater Sprachassistent der:
 
 ---
 
-## Hardware-Setup
+## Hardware-Setup (Split-Architektur)
 
-### Intel NUC (empfohlen)
+### Warum zwei PCs?
 
-| Komponente | Minimum | Empfohlen |
-|-----------|---------|-----------|
-| CPU | Intel N100 (4C/4T) | Intel i5-1240P |
-| RAM | 16 GB DDR4 | 32 GB DDR5 |
-| Storage | 256 GB NVMe | 512 GB NVMe |
-| Preis | ~200 EUR | ~400 EUR |
+| Aspekt | Alles auf einem PC | Split (HAOS + Jarvis-PC) |
+|--------|-------------------|--------------------------|
+| **HAOS Stabilitaet** | LLM frisst CPU/RAM, HA langsamer | HA laeuft ungestoert |
+| **LLM Groesse** | Begrenzt durch HA-RAM | Ganzer PC nur fuer KI |
+| **GPU moeglich** | Nicht in HAOS | Ja! GPU = 10x schneller |
+| **Updates** | LLM-Update kann HA stoeren | Unabhaengig updaten |
+| **Ausfallsicherheit** | Alles faellt zusammen aus | HA + MindHome laufen ohne Jarvis |
+| **Netzwerk-Latenz** | 0 ms | <1 ms (LAN) - irrelevant |
 
-Der NUC laeuft neben Home Assistant und hostet alle KI-Komponenten lokal.
+### PC 1: HAOS (bestehendes System)
 
-### Verteilung auf dem NUC
+| Komponente | Detail |
+|-----------|--------|
+| **Geraet** | Intel NUC BXNUC10i7FNH2 |
+| **CPU** | Intel Core i7-10710U (6C/12T, bis 4.7 GHz) |
+| **RAM** | 32 GB DDR4 |
+| **Storage** | 500 GB NVMe + 500 GB SSD |
+| **OS** | Home Assistant OS |
+| **Aufgabe** | HA + MindHome + Whisper + Piper |
+
+### PC 2: Jarvis Server (separater PC)
+
+| Komponente | Aufgabe |
+|-----------|---------|
+| **OS** | Ubuntu Server 24.04 LTS |
+| **Ollama** | LLM Inference (Qwen 2.5) |
+| **Jarvis Service** | Context Builder, Personality, Action Planner |
+| **ChromaDB** | Langzeitgedaechtnis (Vektor-DB) |
+| **Redis** | Cache fuer schnelle Zugriffe |
+| **Optional** | GPU fuer schnellere Inference |
+
+### Netzwerk-Verteilung
 
 ```
-NUC Hardware (16-32 GB RAM)
+Lokales Netzwerk (LAN, <1ms Latenz)
 |
-+-- Home Assistant OS (oder Container)
-|   +-- MindHome Add-on (bestehendes System)
-|   +-- Whisper Add-on (STT)
-|   +-- Piper Add-on (TTS)
-|
-+-- Docker Container
-|   +-- Ollama (Mistral 7B - LLM)
-|   +-- ChromaDB (Vektor-Datenbank)
-|
-+-- Bestehende Dienste
-    +-- PostgreSQL
-    +-- InfluxDB
-    +-- Redis
+|  +--------------------------------------+
+|  | PC 1: Intel NUC (HAOS)               |
+|  |   i7-10710U / 32 GB / 500+500 GB     |
+|  |                                       |
+|  |   Home Assistant OS                   |
+|  |     +-- MindHome Add-on              |
+|  |     |    Alle 14 Engines             |
+|  |     |    Pattern Learning            |
+|  |     |    REST API (:8099)            |
+|  |     |    WebSocket Events            |
+|  |     +-- Whisper Add-on (STT)         |
+|  |     +-- Piper Add-on (TTS)           |
+|  |     +-- HA Core (:8123)              |
+|  +--------------------------------------+
+          |
+          |  REST API + WebSocket (<1ms)
+          |
+|  +--------------------------------------+
+|  | PC 2: Jarvis Server                   |
+|  |   Ubuntu Server 24.04 LTS             |
+|  |                                       |
+|  |   Docker                              |
+|  |     +-- Ollama (:11434)              |
+|  |     |    Qwen 2.5 3B  (schnell)      |
+|  |     |    Qwen 2.5 14B (schlau)       |
+|  |     +-- ChromaDB (:8100)             |
+|  |     +-- Redis (:6379)                |
+|  |                                       |
+|  |   Jarvis Service (:8200)              |
+|  |     +-- Context Builder              |
+|  |     +-- Personality Engine           |
+|  |     +-- Action Planner               |
+|  |     +-- Proactive Manager            |
+|  |     +-- Function Calling -> HA API   |
+|  |     +-- Memory Manager              |
+|  +--------------------------------------+
 ```
 
-### RAM-Verteilung
+### Datenfluss zwischen den PCs
 
-| Dienst | RAM |
-|--------|-----|
-| Home Assistant + MindHome | ~2 GB |
-| Ollama (Mistral 7B Q4) | ~6 GB |
-| Whisper (small/medium) | ~1-2 GB |
-| Piper TTS | ~0.2 GB |
-| ChromaDB | ~0.5 GB |
-| PostgreSQL + Redis | ~0.5 GB |
-| System + Reserve | ~2-4 GB |
-| **Gesamt** | **~12-15 GB** |
+```
+User spricht -> [Mikrofon]
+                    |
+         PC 1 (HAOS):
+                    |
+              [Whisper STT] -> Text
+                    |
+                    | HTTP POST (Text + Kontext-Anfrage)
+                    |
+         PC 2 (Jarvis):
+                    |
+              [Context Builder]
+                    | holt Daten von PC 1 via REST API (<1ms)
+              [Ollama/Qwen 2.5]
+                    | generiert Antwort + Function Calls
+              [Function Executor]
+                    | sendet Befehle an HA via REST API (<1ms)
+                    |
+                    | HTTP Response (Antwort-Text)
+                    |
+         PC 1 (HAOS):
+                    |
+              [Piper TTS] -> Sprache
+                    |
+              [Speaker] -> User hoert Antwort
+```
+
+---
+
+## Jarvis-PC Setup Guide
+
+### Schritt-fuer-Schritt: Vom leeren PC zum Jarvis Server
+
+#### Schritt 1: Ubuntu Server installieren
+
+**Was du brauchst:**
+- USB-Stick (mind. 4 GB)
+- Den Jarvis-PC mit leerem Datentraeger
+- Einen anderen PC fuer den Download
+
+**1.1 Ubuntu Server ISO herunterladen:**
+```
+https://ubuntu.com/download/server
+-> Ubuntu Server 24.04 LTS
+-> Datei: ubuntu-24.04-live-server-amd64.iso (~2.5 GB)
+```
+
+**1.2 Bootfaehigen USB-Stick erstellen:**
+```
+Windows: Rufus (https://rufus.ie) oder balenaEtcher
+Mac/Linux: balenaEtcher (https://etcher.balena.io)
+
+1. Programm starten
+2. ISO-Datei auswaehlen
+3. USB-Stick auswaehlen
+4. "Flash" klicken
+5. Warten bis fertig
+```
+
+**1.3 Vom USB-Stick booten:**
+```
+1. USB-Stick in Jarvis-PC stecken
+2. PC einschalten
+3. Beim Start F2/F10/F12/DEL druecken (je nach BIOS)
+4. Boot-Reihenfolge: USB zuerst
+5. Ubuntu Installer startet
+```
+
+**1.4 Ubuntu Server installieren:**
+```
+Sprache:           Deutsch
+Tastatur:          Deutsch
+Netzwerk:          DHCP (automatisch) - spaeter feste IP
+Storage:           Gesamte Festplatte verwenden
+Profil:
+  Name:            Jarvis
+  Servername:      jarvis-server
+  Benutzername:    jarvis
+  Passwort:        [dein sicheres Passwort]
+SSH:               OpenSSH Server INSTALLIEREN (wichtig!)
+Extras:            Nichts auswaehlen
+-> Installation starten, warten, neustarten
+-> USB-Stick entfernen wenn aufgefordert
+```
+
+#### Schritt 2: Feste IP-Adresse vergeben
+
+Nach dem ersten Login per Tastatur/Monitor:
+
+```bash
+# Netzwerk-Interface herausfinden
+ip addr show
+# -> z.B. "enp0s3" oder "eth0"
+
+# Netplan-Konfiguration bearbeiten
+sudo nano /etc/netplan/00-installer-config.yaml
+```
+
+Inhalt (anpassen an dein Netzwerk):
+```yaml
+network:
+  version: 2
+  ethernets:
+    enp0s3:              # <- dein Interface-Name
+      dhcp4: no
+      addresses:
+        - 192.168.1.200/24    # <- feste IP fuer Jarvis-PC
+      routes:
+        - to: default
+          via: 192.168.1.1    # <- dein Router
+      nameservers:
+        addresses:
+          - 192.168.1.1       # <- DNS (Router)
+          - 8.8.8.8           # <- Fallback DNS
+```
+
+```bash
+# Anwenden
+sudo netplan apply
+
+# Testen
+ping 192.168.1.1      # Router erreichbar?
+ping google.com       # Internet erreichbar?
+```
+
+**Ab jetzt kannst du per SSH vom Hauptrechner aus arbeiten:**
+```bash
+# Von deinem normalen PC:
+ssh jarvis@192.168.1.200
+```
+
+#### Schritt 3: System aktualisieren
+
+```bash
+sudo apt update && sudo apt upgrade -y
+sudo reboot
+```
+
+#### Schritt 4: Docker installieren
+
+```bash
+# Docker Repository hinzufuegen
+sudo apt install -y ca-certificates curl gnupg
+sudo install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | \
+  sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+echo "deb [arch=$(dpkg --print-architecture) \
+  signed-by=/etc/apt/keyrings/docker.gpg] \
+  https://download.docker.com/linux/ubuntu \
+  $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
+  sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+# Docker installieren
+sudo apt update
+sudo apt install -y docker-ce docker-ce-cli containerd.io \
+  docker-buildx-plugin docker-compose-plugin
+
+# User zur Docker-Gruppe hinzufuegen (kein sudo noetig)
+sudo usermod -aG docker jarvis
+newgrp docker
+
+# Testen
+docker run hello-world
+```
+
+#### Schritt 5: Ollama installieren
+
+```bash
+# Ollama installieren (nativ, nicht Docker - besser fuer CPU)
+curl -fsSL https://ollama.ai/install.sh | sh
+
+# Ollama als System-Service laeuft automatisch
+# Pruefen:
+sudo systemctl status ollama
+
+# Ollama von aussen erreichbar machen
+sudo systemctl edit ollama
+```
+
+Einfuegen:
+```ini
+[Service]
+Environment="OLLAMA_HOST=0.0.0.0"
+```
+
+```bash
+# Neustarten
+sudo systemctl restart ollama
+
+# Modelle herunterladen
+ollama pull qwen2.5:3b       # ~2 GB, fuer schnelle Befehle
+ollama pull qwen2.5:14b      # ~9 GB, fuer komplexe Fragen
+
+# Testen
+ollama run qwen2.5:3b "Sag Hallo auf Deutsch"
+# -> Sollte "Hallo!" oder aehnliches antworten
+# Mit CTRL+D beenden
+
+# Test von einem anderen PC im Netzwerk:
+curl http://192.168.1.200:11434/api/generate \
+  -d '{"model":"qwen2.5:3b","prompt":"Hallo","stream":false}'
+```
+
+#### Schritt 6: ChromaDB + Redis per Docker
+
+```bash
+# Verzeichnis fuer Jarvis erstellen
+mkdir -p ~/jarvis
+cd ~/jarvis
+
+# Docker Compose Datei erstellen
+cat > docker-compose.yml << 'EOF'
+services:
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: jarvis-chromadb
+    restart: unless-stopped
+    volumes:
+      - ./data/chroma:/chroma/chroma
+    ports:
+      - "8100:8000"
+    environment:
+      - ANONYMIZED_TELEMETRY=false
+      - IS_PERSISTENT=TRUE
+
+  redis:
+    image: redis:7-alpine
+    container_name: jarvis-redis
+    restart: unless-stopped
+    volumes:
+      - ./data/redis:/data
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+EOF
+
+# Starten
+docker compose up -d
+
+# Pruefen
+docker compose ps
+# -> Beide Container sollten "running" sein
+
+# Testen
+curl http://localhost:8100/api/v1/heartbeat
+# -> {"nanosecond heartbeat": ...}
+```
+
+#### Schritt 7: Verbindung zu Home Assistant testen
+
+```bash
+# HA Long-Lived Access Token erstellen:
+# 1. HA Dashboard oeffnen -> Profil (unten links)
+# 2. Ganz unten: "Langlebige Zugangstoken"
+# 3. Token erstellen, Name: "Jarvis"
+# 4. Token KOPIEREN und sicher speichern!
+
+# Testen ob HA erreichbar ist:
+curl -s -H "Authorization: Bearer DEIN_TOKEN_HIER" \
+  http://192.168.1.100:8123/api/ | head
+# -> {"message": "API running."}
+
+# MindHome API testen:
+curl -s http://192.168.1.100:8099/api/system/health | head
+# -> {"status": "ok", ...}
+```
+
+#### Schritt 8: Autostart einrichten
+
+```bash
+# Alles startet automatisch nach Reboot:
+# - Ollama: bereits als systemd Service
+# - Docker (ChromaDB + Redis): restart: unless-stopped
+# - Ubuntu: bootet automatisch ohne Monitor/Tastatur
+
+# Optional: Automatic Security Updates
+sudo apt install -y unattended-upgrades
+sudo dpkg-reconfigure -plow unattended-upgrades
+```
+
+#### Schritt 9: Firewall einrichten
+
+```bash
+sudo ufw enable
+sudo ufw allow ssh                 # SSH Zugang
+sudo ufw allow from 192.168.1.0/24 to any port 11434  # Ollama (nur LAN)
+sudo ufw allow from 192.168.1.0/24 to any port 8100   # ChromaDB (nur LAN)
+sudo ufw allow from 192.168.1.0/24 to any port 8200   # Jarvis API (nur LAN)
+sudo ufw allow from 192.168.1.0/24 to any port 6379   # Redis (nur LAN)
+sudo ufw status
+```
+
+### Checkliste: Ist alles bereit?
+
+```
+[ ] Ubuntu Server 24.04 LTS installiert
+[ ] Feste IP-Adresse vergeben (z.B. 192.168.1.200)
+[ ] SSH funktioniert
+[ ] Docker installiert und laeuft
+[ ] Ollama installiert und hoert auf 0.0.0.0:11434
+[ ] Qwen 2.5 3B heruntergeladen und getestet
+[ ] Qwen 2.5 14B heruntergeladen und getestet
+[ ] ChromaDB Container laeuft auf Port 8100
+[ ] Redis Container laeuft auf Port 6379
+[ ] HA API erreichbar von Jarvis-PC
+[ ] MindHome API erreichbar von Jarvis-PC
+[ ] Firewall konfiguriert
+[ ] Alles startet automatisch nach Reboot
+```
+
+---
+
+## LLM-Modell Empfehlung
+
+### Anforderungen fuer Jarvis
+
+Das LLM muss:
+- **Deutsch** gut koennen (Hauptsprache)
+- **Function Calling** nativ unterstuetzen
+- **Kurze Antworten** liefern (nicht labern)
+- **Schnell** auf CPU laufen
+- **Kontext verstehen** (Raum, Person, Situation)
+
+### Modell-Vergleich
+
+#### Tier 1: Beste Wahl (7-9B Parameter)
+
+| Modell | RAM (Q8) | Deutsch | Function Calling | Speed | Note |
+|--------|----------|---------|-----------------|-------|------|
+| **Qwen 2.5 7B** | ~9 GB | Exzellent | Nativ | Schnell | Bestes Deutsch |
+| Llama 3.1 8B | ~10 GB | Sehr gut | Nativ | Schnell | Guter Allrounder |
+| Mistral 7B v0.3 | ~9 GB | Gut | Nativ | Schnell | Antwortet manchmal Englisch |
+
+#### Tier 2: Premium (12-14B)
+
+| Modell | RAM (Q6) | Deutsch | Function Calling | Speed | Note |
+|--------|----------|---------|-----------------|-------|------|
+| **Qwen 2.5 14B** | ~13 GB | Exzellent | Nativ | Mittel | Beste Qualitaet |
+| Mistral Nemo 12B | ~11 GB | Sehr gut | Nativ | Mittel | Gute Alternative |
+
+#### Tier 3: Schnell (3-4B) fuer einfache Befehle
+
+| Modell | RAM (Q8) | Deutsch | Function Calling | Speed | Note |
+|--------|----------|---------|-----------------|-------|------|
+| **Qwen 2.5 3B** | ~4 GB | Gut | Nativ | Sehr schnell | Ideal fuer Geraete-Befehle |
+
+### Empfehlung: Dual-Modell Strategie
+
+```
+Qwen 2.5 3B   -> einfache Befehle  -> ~1.5-2.5s Antwort
+Qwen 2.5 14B  -> komplexe Fragen   -> ~4-7s Antwort
+
+Beide gleichzeitig in Ollama geladen.
+```
+
+**Routing-Logik** entscheidet automatisch welches Modell:
+
+```python
+class ModelRouter:
+    SIMPLE_KEYWORDS = [
+        "licht", "temperatur", "heizung", "rollladen",
+        "szene", "alarm", "tuer", "gute nacht",
+        "musik", "pause", "stopp", "leiser", "lauter"
+    ]
+
+    def select_model(self, text: str) -> str:
+        if any(word in text.lower() for word in self.SIMPLE_KEYWORDS):
+            return "qwen2.5:3b"     # Schnell
+        return "qwen2.5:14b"        # Schlau
+```
+
+### GPU-Upgrade Option (spaeter)
+
+Falls du eine GPU nachruesten willst:
+
+| GPU | VRAM | Modell | Speed | Preis (gebraucht) |
+|-----|------|--------|-------|-------------------|
+| RTX 3060 12GB | 12 GB | Qwen 2.5 14B Q4 | ~80 tok/s | ~180 EUR |
+| RTX 3090 24GB | 24 GB | Qwen 2.5 32B Q4 | ~50 tok/s | ~600 EUR |
+| RTX 4060 Ti 16GB | 16 GB | Qwen 2.5 14B Q8 | ~90 tok/s | ~350 EUR |
+
+Mit GPU waere Jarvis so schnell wie Alexa - aber komplett lokal.
+
+---
+
+## Latenz-Analyse
+
+### Szenarien auf dem Jarvis-PC (CPU only)
+
+| Szenario | Modell | Methode | Latenz |
+|----------|--------|---------|--------|
+| "Licht aus" | Qwen 3B | Fast-Route | **~2-2.5 s** |
+| "Gute Nacht" | Qwen 3B | Fast-Route + Multi-Action | **~2-3 s** |
+| "Mach es gemuetlich" | Qwen 14B | LLM (Szene waehlen) | **~4-6 s** |
+| "Zu kalt hier" | Qwen 14B | LLM (Kontext) | **~4-6 s** |
+| "Was steht morgen an?" | Qwen 14B | LLM (Kalender) | **~5-7 s** |
+| Morgen-Briefing | Qwen 14B | Proaktiv | egal (nicht zeitkritisch) |
+| Sicherheits-Alarm | - | Template, kein LLM | **~1-2 s** |
+
+### Mit GPU (Upgrade-Option)
+
+| Szenario | CPU only | Mit RTX 3060 |
+|----------|----------|-------------|
+| "Licht aus" | ~2-2.5 s | ~1.5 s |
+| "Mach es gemuetlich" | ~4-6 s | **~1.5-2.5 s** |
+| "Was steht morgen an?" | ~5-7 s | **~2-3 s** |
+
+### Netzwerk-Latenz zwischen den PCs
+
+```
+LLM Inference:     2000-5000 ms   (99.9% der Wartezeit)
+LAN API Call:           <1 ms   ( 0.1% der Wartezeit)
+                   ────────────
+Fazit: Split-Architektur kostet KEINE spuerbare Latenz
+```
 
 ---
 
 ## Gesamtarchitektur
 
+### Split-Architektur: Zwei PCs im LAN
+
 ```
-+------------------------------------------------------------------+
-|                        MindHome + Jarvis                          |
-|                                                                   |
-|  +------------------------------------------------------------+  |
-|  | JARVIS LAYER                                                |  |
-|  |                                                             |  |
-|  |  +--------+  +-----------+  +---------+  +-------+         |  |
-|  |  |Whisper |  |Personality|  | Mistral |  | Piper |         |  |
-|  |  |  STT   |->|  Engine   |->|   7B    |->|  TTS  |         |  |
-|  |  |        |  |(Prompt    |  |(Ollama) |  |       |         |  |
-|  |  |        |  | Builder)  |  |         |  |       |         |  |
-|  |  +--------+  +-----------+  +---------+  +-------+         |  |
-|  |      ^            ^            ^ |            |             |  |
-|  |      |      +-----------+  +--------+      Speaker         |  |
-|  |     Mic     | Context   |  | Action |                      |  |
-|  |             | Builder   |  | Planner|                      |  |
-|  |             | + Memory  |  |        |                      |  |
-|  |             |  Search   |  | Multi- |                      |  |
-|  |             |(ChromaDB) |  | Step   |                      |  |
-|  |             +-----------+  +--------+                      |  |
-|  +-------------------+---------------+-----------------------+   |
-|                      |               |                           |
-|  +-------------------v---------------v-----------------------+   |
-|  | PROACTIVE LAYER                                           |   |
-|  |  +----------+  +-----------+  +--------------------+      |   |
-|  |  | Activity |  | Feedback  |  | Daily Summarizer   |      |   |
-|  |  | Engine   |  | Loop      |  | (Nightly @03:00)   |      |   |
-|  |  +----------+  +-----------+  +--------------------+      |   |
-|  +-------------------+---------------------------------------+   |
-|                      |                                           |
-|  +-------------------v---------------------------------------+   |
-|  | ENGINE LAYER                                               |   |
-|  |                                                            |   |
-|  | Climate | Lighting | Presence | Security | Energy          |   |
-|  | Sleep   | Comfort  | Pattern  | Routine  | Activity        |   |
-|  | Circadian | Adaptive | Visit  | Weather  | Special Modes   |   |
-|  +-------------------+---------------------------------------+   |
-|                      |                                           |
-|  +-------------------v---------------------------------------+   |
-|  | HOME ASSISTANT  (WebSocket + REST API)                     |   |
-|  +------------------------------------------------------------+  |
-|                                                                   |
-|  +------------------------------------------------------------+  |
-|  | DATA LAYER                                                  |  |
-|  | PostgreSQL | ChromaDB | Redis | InfluxDB | SQLite           |  |
-|  | (Fakten)   |(Vektoren)|(Cache)|(Zeitreihen)|(MindHome)      |  |
-|  +------------------------------------------------------------+  |
-+------------------------------------------------------------------+
++----------------------------------+    +----------------------------------+
+| PC 1: HAOS (Intel NUC)          |    | PC 2: Jarvis Server              |
+| 192.168.1.100                    |    | 192.168.1.200                    |
+|                                  |    |                                  |
+| +------------------------------+|    |+-------------------------------+ |
+| | HOME ASSISTANT               ||    || JARVIS LAYER                  | |
+| |  +-- MindHome Add-on        ||    ||                               | |
+| |  |    REST API (:8099)       ||<---||  Context Builder              | |
+| |  |    WebSocket Events       ||    ||    | holt Daten via LAN API   | |
+| |  |                           ||    ||    v                          | |
+| |  +-- Whisper Add-on (STT)   ||    ||  Model Router                 | |
+| |  |    Wyoming Protocol      ||--->||    |                          | |
+| |  |                           ||    ||    +-> Qwen 2.5 3B  (schnell)| |
+| |  +-- Piper Add-on (TTS)     ||    ||    +-> Qwen 2.5 14B (schlau) | |
+| |  |    Wyoming Protocol      ||<---||    |   (via Ollama :11434)    | |
+| |  |                           ||    ||    v                          | |
+| |  +-- HA Core (:8123)        ||    ||  Action Planner               | |
+| |       REST API + WebSocket   ||<---||    | Function Calls -> HA API| |
+| +------------------------------+|    ||    v                          | |
+|                                  |    ||  Personality Engine          | |
+| +------------------------------+|    ||  Proactive Manager           | |
+| | ENGINE LAYER (in MindHome)   ||    ||  Feedback Loop               | |
+| |                               ||    |+-------------------------------+ |
+| | Climate | Lighting | Presence ||    |                                  |
+| | Security | Energy | Sleep     ||    |+-------------------------------+ |
+| | Comfort | Circadian | Pattern ||--->|| DATA LAYER                    | |
+| | Routine | Adaptive | Visit    || WS || ChromaDB (:8100) - Vektoren   | |
+| | Weather | Special Modes       ||    || Redis (:6379) - Cache          | |
+| +------------------------------+|    |+-------------------------------+ |
+|                                  |    |                                  |
+| +------------------------------+|    |                                  |
+| | DATA LAYER                   ||    |                                  |
+| | SQLite (MindHome-Daten)      ||    |                                  |
+| +------------------------------+|    |                                  |
++----------------------------------+    +----------------------------------+
+         |                                         |
+         +---------< LAN (<1ms) >------------------+
 ```
 
 ---
@@ -152,11 +596,11 @@ Phase 1 baut die Grundstruktur. Alles weitere baut darauf auf.
 - **Latenz**: 1-3 Sekunden
 - **Integration**: HA Wyoming-Protokoll
 
-#### 2. Ollama + Mistral 7B (LLM)
-- **Was**: Ollama als Docker-Container, Mistral 7B als Modell
-- **Quantisierung**: Q4_K_M (~4.4 GB RAM)
-- **API**: REST (`http://localhost:11434/api/chat`)
-- **Features**: Function Calling nativ unterstuetzt
+#### 2. Ollama + Qwen 2.5 (LLM) - auf Jarvis-PC
+- **Was**: Ollama nativ auf dem Jarvis-PC
+- **Modelle**: Qwen 2.5 3B (schnell) + Qwen 2.5 14B (schlau)
+- **API**: REST (`http://192.168.1.200:11434/api/chat`)
+- **Features**: Function Calling nativ, exzellentes Deutsch
 
 #### 3. Piper TTS (Text-to-Speech)
 - **Was**: Piper vom HA-Team, lokal
@@ -172,8 +616,9 @@ Phase 1 baut die Grundstruktur. Alles weitere baut darauf auf.
 
 #### 5. Function Calling
 - **Was**: LLM kann Funktionen aufrufen (Licht, Klima, Szenen, etc.)
-- **Wie**: Mistral Function Calling Format
+- **Wie**: Qwen 2.5 Function Calling Format (nativ unterstuetzt)
 - **Sicherheit**: Validation Layer prueft jeden Aufruf
+- **Netzwerk**: Jarvis-PC ruft HA API auf PC 1 auf (<1ms LAN)
 
 ### Phase 1 Datenfluss
 
@@ -192,10 +637,10 @@ User spricht "Mach das Licht im Wohnzimmer aus"
     - Aktuelle Zustaende (Licht Wohnzimmer: an, 80%)
     |
     v
-[System Prompt + Kontext + User-Text] --> Ollama/Mistral
+[System Prompt + Kontext + User-Text] --> Jarvis-PC --> Ollama/Qwen
     |
     v
-[Mistral Output]
+[Qwen Output]
     Gedanke: User will Wohnzimmer-Licht aus
     Function Call: set_light("wohnzimmer", state="off")
     Antwort: "Erledigt."
@@ -991,18 +1436,19 @@ etwa 290 Euro. Januar war am teuersten."
 
 ## Technische Details
 
-### Ollama API Integration
+### Ollama API Integration (Jarvis-PC -> Ollama)
 
 ```python
 import aiohttp
 
 class OllamaClient:
-    def __init__(self, base_url="http://localhost:11434"):
+    def __init__(self, base_url="http://192.168.1.200:11434"):
+        # Ollama laeuft auf dem Jarvis-PC
         self.base_url = base_url
 
-    async def chat(self, messages, functions=None):
+    async def chat(self, messages, model="qwen2.5:14b", functions=None):
         payload = {
-            "model": "mistral",
+            "model": model,  # "qwen2.5:3b" oder "qwen2.5:14b"
             "messages": messages,
             "stream": False,
             "options": {
@@ -1018,6 +1464,47 @@ class OllamaClient:
             async with session.post(
                 f"{self.base_url}/api/chat",
                 json=payload
+            ) as resp:
+                return await resp.json()
+```
+
+### MindHome API Client (Jarvis-PC -> HAOS)
+
+```python
+class MindHomeClient:
+    """Jarvis-PC greift auf MindHome + HA zu - ueber LAN."""
+
+    def __init__(self):
+        self.mindhome_url = "http://192.168.1.100:8099"  # MindHome auf HAOS
+        self.ha_url = "http://192.168.1.100:8123"        # HA direkt
+        self.ha_token = "DEIN_LONG_LIVED_TOKEN"
+
+    async def get_context(self):
+        """Holt den kompletten Haus-Status fuer Context Builder."""
+        data = {}
+        data["engines"] = await self._get_mindhome("/api/engines/status")
+        data["patterns"] = await self._get_mindhome("/api/patterns")
+        data["energy"] = await self._get_mindhome("/api/energy/current")
+        data["presence"] = await self._get_mindhome("/api/presence")
+        data["comfort"] = await self._get_mindhome("/api/comfort/status")
+        data["security"] = await self._get_mindhome("/api/security/status")
+        data["states"] = await self._get_ha("/api/states")
+        return data
+
+    async def execute_action(self, domain, service, data):
+        """Fuehrt Aktion ueber HA API aus."""
+        await self._post_ha(f"/api/services/{domain}/{service}", data)
+
+    async def _get_mindhome(self, path):
+        async with aiohttp.ClientSession() as session:
+            async with session.get(f"{self.mindhome_url}{path}") as resp:
+                return await resp.json()
+
+    async def _get_ha(self, path):
+        headers = {"Authorization": f"Bearer {self.ha_token}"}
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                f"{self.ha_url}{path}", headers=headers
             ) as resp:
                 return await resp.json()
 ```
@@ -1057,41 +1544,35 @@ class PiperTTS:
         )
 ```
 
-### Docker Compose (Zusatz-Dienste)
+### Docker Compose (auf Jarvis-PC)
 
 ```yaml
-# docker-compose.jarvis.yml
-
-version: "3.8"
+# ~/jarvis/docker-compose.yml
+# Laeuft auf dem Jarvis-PC (192.168.1.200)
+# Ollama laeuft nativ (nicht in Docker) fuer bessere Performance
 
 services:
-  ollama:
-    image: ollama/ollama:latest
-    container_name: mindhome-ollama
-    restart: unless-stopped
-    volumes:
-      - ollama_data:/root/.ollama
-    ports:
-      - "11434:11434"
-    deploy:
-      resources:
-        limits:
-          memory: 8G
-
   chromadb:
     image: chromadb/chroma:latest
-    container_name: mindhome-chromadb
+    container_name: jarvis-chromadb
     restart: unless-stopped
     volumes:
-      - chroma_data:/chroma/chroma
+      - ./data/chroma:/chroma/chroma
     ports:
       - "8100:8000"
     environment:
       - ANONYMIZED_TELEMETRY=false
+      - IS_PERSISTENT=TRUE
 
-volumes:
-  ollama_data:
-  chroma_data:
+  redis:
+    image: redis:7-alpine
+    container_name: jarvis-redis
+    restart: unless-stopped
+    volumes:
+      - ./data/redis:/data
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
 ```
 
 ---
