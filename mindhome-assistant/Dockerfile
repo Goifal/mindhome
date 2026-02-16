@@ -11,8 +11,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Jarvis Code
-COPY jarvis/ ./jarvis/
+# MindHome Assistant Code
+COPY assistant/ ./assistant/
 COPY config/ ./config/
 
 # Port
@@ -20,7 +20,7 @@ EXPOSE 8200
 
 # Health Check
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
-    CMD curl -f http://localhost:8200/api/jarvis/health || exit 1
+    CMD curl -f http://localhost:8200/api/assistant/health || exit 1
 
 # Start
-CMD ["python", "-m", "jarvis.main"]
+CMD ["python", "-m", "assistant.main"]

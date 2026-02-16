@@ -1,5 +1,5 @@
 """
-Memory Manager - Jarvis' Gedaechtnis.
+Memory Manager - Gedaechtnis des MindHome Assistants.
 Working Memory (Redis) + Episodic Memory (ChromaDB).
 """
 
@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 
 class MemoryManager:
-    """Verwaltet Jarvis' Kurz- und Langzeitgedaechtnis."""
+    """Verwaltet das Kurz- und Langzeitgedaechtnis des Assistenten."""
 
     def __init__(self):
         self.redis: Optional[redis.Redis] = None
@@ -45,10 +45,10 @@ class MemoryManager:
                 port=int(settings.chroma_url.split(":")[-1]),
             )
             self.chroma_collection = self._chroma_client.get_or_create_collection(
-                name="jarvis_conversations",
-                metadata={"description": "Jarvis Gespraeche und Erinnerungen"},
+                name="mha_conversations",
+                metadata={"description": "MindHome Assistant Gespraeche und Erinnerungen"},
             )
-            logger.info("ChromaDB verbunden, Collection: jarvis_conversations")
+            logger.info("ChromaDB verbunden, Collection: mha_conversations")
         except Exception as e:
             logger.warning("ChromaDB nicht verfuegbar: %s", e)
             self.chroma_collection = None
@@ -66,29 +66,29 @@ class MemoryManager:
             "timestamp": datetime.now().isoformat(),
         }
 
-        await self.redis.lpush("jarvis:conversations", json.dumps(entry))
+        await self.redis.lpush("mha:conversations", json.dumps(entry))
         # Nur die letzten 50 Nachrichten behalten
-        await self.redis.ltrim("jarvis:conversations", 0, 49)
+        await self.redis.ltrim("mha:conversations", 0, 49)
 
     async def get_recent_conversations(self, limit: int = 5) -> list[dict]:
         """Holt die letzten Gespraeche aus dem Working Memory."""
         if not self.redis:
             return []
 
-        entries = await self.redis.lrange("jarvis:conversations", 0, limit - 1)
+        entries = await self.redis.lrange("mha:conversations", 0, limit - 1)
         return [json.loads(e) for e in entries][::-1]  # Aelteste zuerst
 
     async def set_context(self, key: str, value: str, ttl: int = 3600):
         """Speichert einen Kontext-Wert mit TTL."""
         if not self.redis:
             return
-        await self.redis.setex(f"jarvis:context:{key}", ttl, value)
+        await self.redis.setex(f"mha:context:{key}", ttl, value)
 
     async def get_context(self, key: str) -> Optional[str]:
         """Holt einen Kontext-Wert."""
         if not self.redis:
             return None
-        return await self.redis.get(f"jarvis:context:{key}")
+        return await self.redis.get(f"mha:context:{key}")
 
     # ----- Episodic Memory (ChromaDB) -----
 
@@ -145,14 +145,14 @@ class MemoryManager:
         """Wann wurde dieser Event-Typ zuletzt gemeldet?"""
         if not self.redis:
             return None
-        return await self.redis.get(f"jarvis:notify:{event_type}")
+        return await self.redis.get(f"mha:notify:{event_type}")
 
     async def set_last_notification_time(self, event_type: str):
         """Markiert wann dieser Event-Typ gemeldet wurde."""
         if not self.redis:
             return
         await self.redis.setex(
-            f"jarvis:notify:{event_type}",
+            f"mha:notify:{event_type}",
             3600,  # 1 Stunde TTL
             datetime.now().isoformat(),
         )
@@ -163,7 +163,7 @@ class MemoryManager:
         """Holt den Feedback-Score fuer einen Event-Typ."""
         if not self.redis:
             return 0.5
-        score = await self.redis.get(f"jarvis:feedback:{event_type}")
+        score = await self.redis.get(f"mha:feedback:{event_type}")
         return float(score) if score else 0.5
 
     async def update_feedback_score(self, event_type: str, delta: float):
@@ -172,7 +172,7 @@ class MemoryManager:
             return
         current = await self.get_feedback_score(event_type)
         new_score = max(0.0, min(1.0, current + delta))
-        await self.redis.set(f"jarvis:feedback:{event_type}", str(new_score))
+        await self.redis.set(f"mha:feedback:{event_type}", str(new_score))
 
     async def close(self):
         """Schliesst Verbindungen."""

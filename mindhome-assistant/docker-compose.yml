@@ -1,27 +1,27 @@
 # ============================================================
-# Jarvis - Docker Compose
-# Startet alle Dienste: Jarvis + ChromaDB + Redis
+# MindHome Assistant - Docker Compose
+# Startet alle Dienste: Assistant + ChromaDB + Redis
 # Ollama laeuft NATIV (nicht in Docker) fuer bessere Performance
 # ============================================================
 #
 # Starten:   docker compose up -d
 # Stoppen:   docker compose down
-# Logs:      docker compose logs -f jarvis
+# Logs:      docker compose logs -f assistant
 # Status:    docker compose ps
 #
 
 services:
-  # --- Jarvis Service (das Gehirn) ---
-  jarvis:
+  # --- MindHome Assistant Service (das Gehirn) ---
+  assistant:
     build: .
-    container_name: jarvis
+    container_name: mindhome-assistant
     restart: unless-stopped
     env_file: .env
     ports:
       - "8200:8200"
     volumes:
       - ./config:/app/config:ro
-      - ./data/jarvis:/app/data
+      - ./data/assistant:/app/data
     depends_on:
       chromadb:
         condition: service_healthy
@@ -38,7 +38,7 @@ services:
   # --- ChromaDB (Langzeitgedaechtnis / Vektor-DB) ---
   chromadb:
     image: chromadb/chroma:latest
-    container_name: jarvis-chromadb
+    container_name: mha-chromadb
     restart: unless-stopped
     volumes:
       - ./data/chroma:/chroma/chroma
@@ -56,7 +56,7 @@ services:
   # --- Redis (Working Memory / Cache) ---
   redis:
     image: redis:7-alpine
-    container_name: jarvis-redis
+    container_name: mha-redis
     restart: unless-stopped
     volumes:
       - ./data/redis:/data

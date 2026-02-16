@@ -1,16 +1,16 @@
-# Jarvis - Lokaler KI-Sprachassistent
+# MindHome Assistant - Lokaler KI-Sprachassistent
 
-> "Jarvis ist kein Feature. Jarvis ist das Gefuehl, dass dein Haus dich kennt."
+> "Dein Zuhause denkt mit - und spricht mit dir."
 
-Jarvis ist ein **lokaler, privater Sprachassistent** der auf einem separaten Server laeuft und mit Home Assistant kommuniziert.
+MindHome Assistant ist ein **lokaler, privater Sprachassistent** der auf einem separaten Server laeuft und mit Home Assistant kommuniziert.
 
 ## Architektur
 
 ```
-PC 1: Home Assistant (NUC)       PC 2: Jarvis Server
+PC 1: Home Assistant (NUC)       PC 2: MindHome Assistant Server
 ┌─────────────────────┐          ┌─────────────────────┐
 │  Home Assistant      │          │  Ollama (LLM)       │
-│  MindHome Add-on     │◄── LAN──►│  Jarvis Service     │
+│  MindHome Add-on     │◄── LAN──►│  Assistant Service  │
 │  Whisper (STT)       │          │  ChromaDB (Memory)  │
 │  Piper (TTS)         │          │  Redis (Cache)      │
 └─────────────────────┘          └─────────────────────┘
@@ -19,7 +19,7 @@ PC 1: Home Assistant (NUC)       PC 2: Jarvis Server
 ## Features
 
 - **Sprachsteuerung**: Licht, Klima, Rollladen, Szenen, Alarm - alles per Sprache
-- **Persoenlichkeit**: Jarvis redet wie ein Butler - kurz, direkt, trocken humorvoll
+- **Persoenlichkeit**: Redet wie ein Butler - kurz, direkt, trocken humorvoll
 - **Kontext-Bewusstsein**: Weiss wer spricht, in welchem Raum, wie das Wetter ist
 - **Dual-Modell**: Schnelles Modell (3B) fuer Befehle, schlaues (14B) fuer Fragen
 - **Gedaechtnis**: Working Memory (Redis) + Langzeit-Memory (ChromaDB)
@@ -34,8 +34,8 @@ PC 1: Home Assistant (NUC)       PC 2: Jarvis Server
 ## Installation
 
 ```bash
-git clone https://github.com/Goifal/jarvis.git
-cd jarvis
+git clone https://github.com/Goifal/mindhome-assistant.git
+cd mindhome-assistant
 ./install.sh
 ```
 
@@ -43,14 +43,14 @@ Das Script installiert automatisch:
 - Docker (falls nicht vorhanden)
 - Ollama + Qwen 2.5 LLM-Modelle
 - ChromaDB + Redis Container
-- Jarvis Service
+- MindHome Assistant Service
 
 ## Manuelle Installation
 
 ```bash
 # 1. Repo klonen
-git clone https://github.com/Goifal/jarvis.git
-cd jarvis
+git clone https://github.com/Goifal/mindhome-assistant.git
+cd mindhome-assistant
 
 # 2. .env konfigurieren
 cp .env.example .env
@@ -70,16 +70,16 @@ docker compose up -d
 ### API
 
 ```bash
-# Chat mit Jarvis
-curl -X POST http://localhost:8200/api/jarvis/chat \
+# Chat
+curl -X POST http://localhost:8200/api/assistant/chat \
   -H 'Content-Type: application/json' \
   -d '{"text": "Mach das Licht im Wohnzimmer aus", "person": "Max"}'
 
 # Health Check
-curl http://localhost:8200/api/jarvis/health
+curl http://localhost:8200/api/assistant/health
 
 # Kontext anzeigen (Debug)
-curl http://localhost:8200/api/jarvis/context
+curl http://localhost:8200/api/assistant/context
 
 # API Docs (Swagger)
 # http://localhost:8200/docs
@@ -109,7 +109,7 @@ curl http://localhost:8200/api/jarvis/context
 ### config/settings.yaml
 
 Hier kannst du anpassen:
-- **Autonomie-Level** (1-5): Wie selbststaendig Jarvis handelt
+- **Autonomie-Level** (1-5): Wie selbststaendig der Assistent handelt
 - **Persoenlichkeit**: Stil je nach Tageszeit
 - **Modell-Routing**: Keywords fuer schnelles/schlaues Modell
 - **Sicherheit**: Temperatur-Grenzen, Bestaetigung fuer kritische Aktionen
@@ -127,15 +127,15 @@ Hier kannst du anpassen:
 ## Projektstruktur
 
 ```
-jarvis/
+mindhome-assistant/
 ├── install.sh              # Ein-Klick-Installation
 ├── docker-compose.yml      # Alle Container
-├── Dockerfile              # Jarvis Service Image
+├── Dockerfile              # Assistant Service Image
 ├── .env.example            # Konfiguration (Template)
 ├── requirements.txt        # Python Dependencies
 ├── config/
 │   └── settings.yaml       # Hauptkonfiguration
-└── jarvis/
+└── assistant/
     ├── main.py             # FastAPI Server
     ├── brain.py            # Zentrales Gehirn
     ├── config.py           # Settings laden
@@ -156,4 +156,4 @@ jarvis/
 
 ---
 
-*Jarvis - Lokal. Privat. Persoenlich.*
+*MindHome Assistant - Lokal. Privat. Persoenlich.*

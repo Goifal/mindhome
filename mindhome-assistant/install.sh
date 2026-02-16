@@ -1,7 +1,7 @@
 #!/bin/bash
 # ============================================================
-# Jarvis - Ein-Klick-Installation
-# Installiert alles auf dem Jarvis-PC (Ubuntu Server)
+# MindHome Assistant - Ein-Klick-Installation
+# Installiert alles auf dem Assistant-PC (Ubuntu Server)
 # ============================================================
 
 set -e
@@ -12,11 +12,11 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
-JARVIS_DIR="$(cd "$(dirname "$0")" && pwd)"
+MHA_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 echo ""
 echo -e "${BLUE}============================================================${NC}"
-echo -e "${BLUE}  JARVIS - Installation${NC}"
+echo -e "${BLUE}  MindHome Assistant - Installation${NC}"
 echo -e "${BLUE}  Lokaler KI-Sprachassistent${NC}"
 echo -e "${BLUE}============================================================${NC}"
 echo ""
@@ -124,7 +124,7 @@ fi
 echo ""
 echo -e "${YELLOW}[4/6] Konfiguration...${NC}"
 
-cd "$JARVIS_DIR"
+cd "$MHA_DIR"
 
 if [ ! -f .env ]; then
     cp .env.example .env
@@ -133,7 +133,7 @@ if [ ! -f .env ]; then
     echo -e "${YELLOW}  WICHTIG: .env Datei konfigurieren!${NC}"
     echo -e "${YELLOW}============================================================${NC}"
     echo ""
-    echo "  Bearbeite die Datei: $JARVIS_DIR/.env"
+    echo "  Bearbeite die Datei: $MHA_DIR/.env"
     echo ""
     echo "  Mindestens diese Werte anpassen:"
     echo "    HA_URL=http://DEINE-HA-IP:8123"
@@ -158,33 +158,33 @@ fi
 # --- Schritt 5: Daten-Verzeichnisse ---
 echo ""
 echo -e "${YELLOW}[5/6] Verzeichnisse erstellen...${NC}"
-mkdir -p data/chroma data/redis data/jarvis
+mkdir -p data/chroma data/redis data/assistant
 echo -e "${GREEN}Daten-Verzeichnisse: OK${NC}"
 
 # --- Schritt 6: Docker starten ---
 echo ""
-echo -e "${YELLOW}[6/6] Jarvis starten...${NC}"
+echo -e "${YELLOW}[6/6] MindHome Assistant starten...${NC}"
 
 docker compose build
 docker compose up -d
 
 echo ""
 echo -e "${GREEN}============================================================${NC}"
-echo -e "${GREEN}  JARVIS ist installiert und gestartet!${NC}"
+echo -e "${GREEN}  MindHome Assistant ist installiert und gestartet!${NC}"
 echo -e "${GREEN}============================================================${NC}"
 echo ""
 echo "  Status:     docker compose ps"
-echo "  Logs:       docker compose logs -f jarvis"
+echo "  Logs:       docker compose logs -f assistant"
 echo "  Stoppen:    docker compose down"
 echo "  Neustarten: docker compose restart"
 echo ""
 echo "  API:        http://$(hostname -I | awk '{print $1}'):8200"
 echo "  Docs:       http://$(hostname -I | awk '{print $1}'):8200/docs"
-echo "  Health:     http://$(hostname -I | awk '{print $1}'):8200/api/jarvis/health"
+echo "  Health:     http://$(hostname -I | awk '{print $1}'):8200/api/assistant/health"
 echo ""
 echo "  Test:"
-echo "    curl -X POST http://localhost:8200/api/jarvis/chat \\"
+echo "    curl -X POST http://localhost:8200/api/assistant/chat \\"
 echo "      -H 'Content-Type: application/json' \\"
-echo "      -d '{\"text\": \"Hallo Jarvis\", \"person\": \"Max\"}'"
+echo "      -d '{\"text\": \"Hallo\", \"person\": \"Max\"}'"
 echo ""
-echo -e "${BLUE}Viel Spass mit Jarvis!${NC}"
+echo -e "${BLUE}Viel Spass mit MindHome Assistant!${NC}"

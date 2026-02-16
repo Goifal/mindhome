@@ -24,9 +24,9 @@ class Settings(BaseSettings):
     model_fast: str = "qwen2.5:3b"
     model_smart: str = "qwen2.5:14b"
 
-    # Jarvis Server
-    jarvis_host: str = "0.0.0.0"
-    jarvis_port: int = 8200
+    # MindHome Assistant Server
+    assistant_host: str = "0.0.0.0"
+    assistant_port: int = 8200
 
     # Redis + ChromaDB
     redis_url: str = "redis://localhost:6379"

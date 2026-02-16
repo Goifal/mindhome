@@ -1,5 +1,5 @@
 """
-Jarvis Brain - Das zentrale Gehirn.
+MindHome Assistant Brain - Das zentrale Gehirn.
 Verbindet alle Komponenten: Context Builder, Model Router, Personality,
 Function Calling, Memory und Autonomy.
 """
@@ -11,7 +11,7 @@ from typing import Optional
 from .autonomy import AutonomyManager
 from .config import settings
 from .context_builder import ContextBuilder
-from .function_calling import JARVIS_TOOLS, FunctionExecutor
+from .function_calling import ASSISTANT_TOOLS, FunctionExecutor
 from .function_validator import FunctionValidator
 from .ha_client import HomeAssistantClient
 from .memory import MemoryManager
@@ -22,8 +22,8 @@ from .personality import PersonalityEngine
 logger = logging.getLogger(__name__)
 
 
-class JarvisBrain:
-    """Das zentrale Gehirn von Jarvis."""
+class AssistantBrain:
+    """Das zentrale Gehirn von MindHome Assistant."""
 
     def __init__(self):
         # Clients
@@ -42,7 +42,7 @@ class JarvisBrain:
     async def initialize(self):
         """Initialisiert alle Komponenten."""
         await self.memory.initialize()
-        logger.info("Jarvis Brain initialisiert")
+        logger.info("MindHome Assistant Brain initialisiert")
 
     async def process(self, text: str, person: Optional[str] = None) -> dict:
         """
@@ -79,7 +79,7 @@ class JarvisBrain:
         response = await self.ollama.chat(
             messages=messages,
             model=model,
-            tools=JARVIS_TOOLS,
+            tools=ASSISTANT_TOOLS,
         )
 
         if "error" in response:
@@ -152,7 +152,7 @@ class JarvisBrain:
 
         # 9. Episode speichern (Langzeitgedaechtnis)
         if len(text.split()) > 3:  # Nur bei substantiellen Gespraechen
-            episode = f"User: {text}\nJarvis: {response_text}"
+            episode = f"User: {text}\nAssistant: {response_text}"
             await self.memory.store_episode(episode, {
                 "person": person or "unknown",
                 "room": context.get("room", "unknown"),
@@ -188,6 +188,6 @@ class JarvisBrain:
         }
 
     async def shutdown(self):
-        """Faehrt Jarvis herunter."""
+        """Faehrt MindHome Assistant herunter."""
         await self.memory.close()
-        logger.info("Jarvis Brain heruntergefahren")
+        logger.info("MindHome Assistant heruntergefahren")

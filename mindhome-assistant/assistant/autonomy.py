@@ -1,5 +1,5 @@
 """
-Autonomy Manager - Bestimmt was Jarvis selbststaendig tun darf.
+Autonomy Manager - Bestimmt was der Assistent selbststaendig tun darf.
 Level 1 (Assistent) bis Level 5 (Autopilot).
 """
 
@@ -39,14 +39,14 @@ ACTION_PERMISSIONS = {
 
 
 class AutonomyManager:
-    """Verwaltet Jarvis' Autonomie-Level."""
+    """Verwaltet das Autonomie-Level des Assistenten."""
 
     def __init__(self):
         self.level = settings.autonomy_level
 
     def can_act(self, action_type: str) -> bool:
         """
-        Prueft ob Jarvis diese Aktion ausfuehren darf.
+        Prueft ob der Assistent diese Aktion ausfuehren darf.
 
         Args:
             action_type: Art der Aktion (z.B. "proactive_info")

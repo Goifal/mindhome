@@ -1,5 +1,5 @@
 """
-Personality Engine - Definiert wie Jarvis redet und sich verhaelt.
+Personality Engine - Definiert wie der Assistent redet und sich verhaelt.
 Passt sich an Tageszeit, Situation und Stimmung an.
 """
 
@@ -12,7 +12,7 @@ from .config import settings, yaml_config
 logger = logging.getLogger(__name__)
 
 
-SYSTEM_PROMPT_TEMPLATE = """Du bist Jarvis, der Haus-Assistent fuer {user_name}.
+SYSTEM_PROMPT_TEMPLATE = """Du bist der MindHome Assistant, der Haus-Assistent fuer {user_name}.
 Du bist Teil des MindHome Systems.
 
 PERSOENLICHKEIT:

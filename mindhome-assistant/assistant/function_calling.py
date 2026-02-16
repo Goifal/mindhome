@@ -1,6 +1,6 @@
 """
-Function Calling - Definiert und fuehrt Funktionen aus die Jarvis nutzen kann.
-Jarvis ruft ueber diese Funktionen Home Assistant Aktionen aus.
+Function Calling - Definiert und fuehrt Funktionen aus die der Assistent nutzen kann.
+MindHome Assistant ruft ueber diese Funktionen Home Assistant Aktionen aus.
 """
 
 import logging
@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 # Ollama Tool-Definitionen (Qwen 2.5 Function Calling Format)
-JARVIS_TOOLS = [
+ASSISTANT_TOOLS = [
     {
         "type": "function",
         "function": {
@@ -191,7 +191,7 @@ JARVIS_TOOLS = [
 
 
 class FunctionExecutor:
-    """Fuehrt Function Calls von Jarvis aus."""
+    """Fuehrt Function Calls des Assistenten aus."""
 
     def __init__(self, ha_client: HomeAssistantClient):
         self.ha = ha_client

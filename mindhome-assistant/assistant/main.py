@@ -1,6 +1,6 @@
 """
-Jarvis - Hauptanwendung (FastAPI Server)
-Startet den Jarvis REST API Server.
+MindHome Assistant - Hauptanwendung (FastAPI Server)
+Startet den MindHome Assistant REST API Server.
 """
 
 import logging
@@ -10,7 +10,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 
-from .brain import JarvisBrain
+from .brain import AssistantBrain
 from .config import settings
 
 # Logging
@@ -19,17 +19,17 @@ logging.basicConfig(
     format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
     datefmt="%H:%M:%S",
 )
-logger = logging.getLogger("jarvis")
+logger = logging.getLogger("mindhome-assistant")
 
 # Brain-Instanz
-brain = JarvisBrain()
+brain = AssistantBrain()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup und Shutdown."""
     logger.info("=" * 50)
-    logger.info("  JARVIS v0.1.0 startet...")
+    logger.info("  MindHome Assistant v0.1.0 startet...")
     logger.info("=" * 50)
     await brain.initialize()
 
@@ -42,17 +42,18 @@ async def lifespan(app: FastAPI):
                 health["autonomy"]["level"],
                 health["autonomy"]["name"])
     logger.info("=" * 50)
-    logger.info("  Jarvis bereit auf %s:%d", settings.jarvis_host, settings.jarvis_port)
+    logger.info("  MindHome Assistant bereit auf %s:%d",
+                settings.assistant_host, settings.assistant_port)
     logger.info("=" * 50)
 
     yield
 
     await brain.shutdown()
-    logger.info("Jarvis heruntergefahren.")
+    logger.info("MindHome Assistant heruntergefahren.")
 
 
 app = FastAPI(
-    title="Jarvis",
+    title="MindHome Assistant",
     description="Lokaler KI-Sprachassistent fuer Home Assistant",
     version="0.1.0",
     lifespan=lifespan,
@@ -79,19 +80,19 @@ class SettingsUpdate(BaseModel):
 
 # ----- API Endpoints -----
 
-@app.get("/api/jarvis/health")
+@app.get("/api/assistant/health")
 async def health():
-    """Jarvis Health Check - Status aller Komponenten."""
+    """Health Check - Status aller Komponenten."""
     return await brain.health_check()
 
 
-@app.post("/api/jarvis/chat", response_model=ChatResponse)
+@app.post("/api/assistant/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
     """
-    Hauptendpoint - Text an Jarvis senden.
+    Hauptendpoint - Text an den Assistenten senden.
 
     Beispiel:
-        POST /api/jarvis/chat
+        POST /api/assistant/chat
         {"text": "Mach das Licht im Wohnzimmer aus", "person": "Max"}
     """
     if not request.text.strip():
@@ -101,13 +102,13 @@ async def chat(request: ChatRequest):
     return ChatResponse(**result)
 
 
-@app.get("/api/jarvis/context")
+@app.get("/api/assistant/context")
 async def get_context():
     """Debug: Aktueller Kontext-Snapshot."""
     return await brain.context_builder.build()
 
 
-@app.get("/api/jarvis/memory/search")
+@app.get("/api/assistant/memory/search")
 async def search_memory(q: str):
     """Sucht im Langzeitgedaechtnis."""
     if not q.strip():
@@ -116,9 +117,9 @@ async def search_memory(q: str):
     return {"query": q, "results": results}
 
 
-@app.get("/api/jarvis/settings")
+@app.get("/api/assistant/settings")
 async def get_settings():
-    """Aktuelle Jarvis-Einstellungen."""
+    """Aktuelle Einstellungen."""
     return {
         "autonomy": brain.autonomy.get_level_info(),
         "models": brain.model_router.get_model_info(),
@@ -127,7 +128,7 @@ async def get_settings():
     }
 
 
-@app.put("/api/jarvis/settings")
+@app.put("/api/assistant/settings")
 async def update_settings(update: SettingsUpdate):
     """Einstellungen aktualisieren."""
     result = {}
@@ -143,7 +144,7 @@ async def update_settings(update: SettingsUpdate):
 async def root():
     """Startseite."""
     return {
-        "name": "Jarvis",
+        "name": "MindHome Assistant",
         "version": "0.1.0",
         "status": "running",
         "docs": "/docs",
@@ -155,9 +156,9 @@ def start():
     import uvicorn
 
     uvicorn.run(
-        "jarvis.main:app",
-        host=settings.jarvis_host,
-        port=settings.jarvis_port,
+        "assistant.main:app",
+        host=settings.assistant_host,
+        port=settings.assistant_port,
         reload=False,
         log_level="info",
     )

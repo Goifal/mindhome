@@ -1,9 +1,9 @@
 # ============================================================
-# Jarvis - Hauptkonfiguration
+# MindHome Assistant - Hauptkonfiguration
 # ============================================================
 
-jarvis:
-  name: "Jarvis"
+assistant:
+  name: "MindHome Assistant"
   version: "0.1.0"
   language: "de"
 
