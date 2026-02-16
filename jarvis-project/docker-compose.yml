@@ -1,0 +1,70 @@
+# ============================================================
+# Jarvis - Docker Compose
+# Startet alle Dienste: Jarvis + ChromaDB + Redis
+# Ollama laeuft NATIV (nicht in Docker) fuer bessere Performance
+# ============================================================
+#
+# Starten:   docker compose up -d
+# Stoppen:   docker compose down
+# Logs:      docker compose logs -f jarvis
+# Status:    docker compose ps
+#
+
+services:
+  # --- Jarvis Service (das Gehirn) ---
+  jarvis:
+    build: .
+    container_name: jarvis
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "8200:8200"
+    volumes:
+      - ./config:/app/config:ro
+      - ./data/jarvis:/app/data
+    depends_on:
+      chromadb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    # Ollama laeuft nativ auf dem Host
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      - OLLAMA_URL=http://host.docker.internal:11434
+      - REDIS_URL=redis://redis:6379
+      - CHROMA_URL=http://chromadb:8000
+
+  # --- ChromaDB (Langzeitgedaechtnis / Vektor-DB) ---
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: jarvis-chromadb
+    restart: unless-stopped
+    volumes:
+      - ./data/chroma:/chroma/chroma
+    ports:
+      - "8100:8000"
+    environment:
+      - ANONYMIZED_TELEMETRY=false
+      - IS_PERSISTENT=TRUE
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/heartbeat"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # --- Redis (Working Memory / Cache) ---
+  redis:
+    image: redis:7-alpine
+    container_name: jarvis-redis
+    restart: unless-stopped
+    volumes:
+      - ./data/redis:/data
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
