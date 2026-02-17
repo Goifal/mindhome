@@ -10,6 +10,8 @@ Phase 7: Routinen (Morning Briefing, Gute-Nacht, Gaeste-Modus,
 Phase 8: Gedaechtnis & Vorausdenken (Explizites Notizbuch, Intent-Routing,
          Was-waere-wenn, Anticipation, Intent-Tracking, Konversations-
          Kontinuitaet, Langzeit-Persoenlichkeitsanpassung).
+Phase 9: Stimme & Akustik (TTS Enhancement, Sound Design, Auto-Volume,
+         Narration Mode, Voice Emotion, Speaker Recognition).
 """
 
 import asyncio
@@ -36,8 +38,11 @@ from .proactive import ProactiveManager
 from .anticipation import AnticipationEngine
 from .intent_tracker import IntentTracker
 from .routine_engine import RoutineEngine
+from .sound_manager import SoundManager
+from .speaker_recognition import SpeakerRecognition
 from .summarizer import DailySummarizer
 from .time_awareness import TimeAwareness
+from .tts_enhancer import TTSEnhancer
 from .websocket import emit_thinking, emit_speaking, emit_action
 
 logger = logging.getLogger(__name__)
@@ -90,6 +95,11 @@ class AssistantBrain:
         self.anticipation = AnticipationEngine()
         self.intent_tracker = IntentTracker(self.ollama)
 
+        # Phase 9: Stimme & Akustik
+        self.tts_enhancer = TTSEnhancer()
+        self.sound_manager = SoundManager(self.ha)
+        self.speaker_recognition = SpeakerRecognition()
+
     async def initialize(self):
         """Initialisiert alle Komponenten."""
         await self.memory.initialize()
@@ -135,6 +145,9 @@ class AssistantBrain:
         await self.intent_tracker.initialize(redis_client=self.memory.redis)
         self.intent_tracker.set_notify_callback(self._handle_intent_reminder)
 
+        # Phase 9: Speaker Recognition initialisieren
+        await self.speaker_recognition.initialize(redis_client=self.memory.redis)
+
         await self.proactive.start()
         logger.info("Jarvis initialisiert (alle Systeme aktiv)")
 
@@ -151,6 +164,47 @@ class AssistantBrain:
             Dict mit response, actions, model_used
         """
         logger.info("Input: '%s' (Person: %s, Raum: %s)", text, person or "unbekannt", room or "unbekannt")
+
+        # Phase 9: Fluestermodus-Check
+        whisper_cmd = self.tts_enhancer.check_whisper_command(text)
+        if whisper_cmd == "activate":
+            response_text = "Verstanden. Ich fluester ab jetzt."
+            await self.memory.add_conversation("user", text)
+            await self.memory.add_conversation("assistant", response_text)
+            tts_data = self.tts_enhancer.enhance(response_text, message_type="confirmation")
+            await emit_speaking(response_text)
+            return {
+                "response": response_text,
+                "actions": [],
+                "model_used": "tts_enhancer",
+                "context_room": room or "unbekannt",
+                "tts": tts_data,
+            }
+        elif whisper_cmd == "deactivate":
+            response_text = "Normale Lautstaerke wiederhergestellt."
+            await self.memory.add_conversation("user", text)
+            await self.memory.add_conversation("assistant", response_text)
+            tts_data = self.tts_enhancer.enhance(response_text, message_type="confirmation")
+            await emit_speaking(response_text)
+            return {
+                "response": response_text,
+                "actions": [],
+                "model_used": "tts_enhancer",
+                "context_room": room or "unbekannt",
+                "tts": tts_data,
+            }
+
+        # Phase 9: Speaker Recognition — Person ermitteln wenn nicht angegeben
+        if person:
+            asyncio.create_task(
+                self.speaker_recognition.set_current_speaker(person.lower())
+            )
+        elif self.speaker_recognition.enabled:
+            identified = await self.speaker_recognition.identify()
+            if identified.get("person"):
+                person = identified["person"]
+                logger.info("Speaker erkannt: %s (Confidence: %.2f)",
+                            person, identified.get("confidence", 0))
 
         # Phase 7: Gute-Nacht-Intent (VOR allem anderen)
         if self.routines.is_goodnight_intent(text):
@@ -510,16 +564,37 @@ class AssistantBrain:
                 )
             )
 
+        # Phase 9: TTS Enhancement — SSML + Volume berechnen
+        tts_data = self.tts_enhancer.enhance(
+            response_text,
+            urgency="high" if executed_actions else "medium",
+        )
+
+        # Phase 9: Sound-Event bei bestaetigen Aktionen
+        if executed_actions:
+            all_success = all(
+                isinstance(a.get("result"), dict) and a["result"].get("success", False)
+                for a in executed_actions
+            )
+            if all_success:
+                asyncio.create_task(
+                    self.sound_manager.play_event_sound(
+                        "confirmed", room=room, volume=tts_data.get("volume")
+                    )
+                )
+
         result = {
             "response": response_text,
             "actions": executed_actions,
             "model_used": model,
             "context_room": context.get("room", "unbekannt"),
+            "tts": tts_data,
         }
         # WebSocket: Antwort senden
         await emit_speaking(response_text)
 
-        logger.info("Output: '%s' (Aktionen: %d)", response_text, len(executed_actions))
+        logger.info("Output: '%s' (Aktionen: %d, TTS: %s)", response_text,
+                     len(executed_actions), tts_data.get("message_type", ""))
         return result
 
     async def health_check(self) -> dict:
@@ -554,6 +629,9 @@ class AssistantBrain:
                 "guest_mode": "active" if guest_mode else "inactive",
                 "anticipation": "running" if self.anticipation._running else "stopped",
                 "intent_tracker": "running" if self.intent_tracker._running else "stopped",
+                "tts_enhancer": f"active (SSML: {self.tts_enhancer.ssml_enabled}, whisper: {self.tts_enhancer.is_whisper_mode})",
+                "sound_manager": "active" if self.sound_manager.enabled else "disabled",
+                "speaker_recognition": self.speaker_recognition.health_status(),
             },
             "models_available": models,
             "autonomy": self.autonomy.get_level_info(),

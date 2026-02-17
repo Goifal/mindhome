@@ -31,7 +31,7 @@ brain = AssistantBrain()
 async def lifespan(app: FastAPI):
     """Startup und Shutdown."""
     logger.info("=" * 50)
-    logger.info(" MindHome Assistant v0.8.0 startet...")
+    logger.info(" MindHome Assistant v1.0.0 startet...")
     logger.info("=" * 50)
     await brain.initialize()
 
@@ -57,7 +57,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="MindHome Assistant",
     description="Lokaler KI-Sprachassistent fuer Home Assistant",
-    version="0.7.0",
+    version="1.0.0",
     lifespan=lifespan,
 )
 
@@ -69,6 +69,16 @@ class ChatRequest(BaseModel):
     person: Optional[str] = None
     room: Optional[str] = None
     speaker_confidence: Optional[float] = None
+    # Phase 9: Voice-Metadaten von STT
+    voice_metadata: Optional[dict] = None
+
+
+class TTSInfo(BaseModel):
+    text: str = ""
+    ssml: str = ""
+    message_type: str = "casual"
+    speed: int = 100
+    volume: float = 0.8
 
 
 class ChatResponse(BaseModel):
@@ -76,6 +86,7 @@ class ChatResponse(BaseModel):
     actions: list = []
     model_used: str = ""
     context_room: str = ""
+    tts: Optional[TTSInfo] = None
 
 
 class FeedbackRequest(BaseModel):
@@ -108,7 +119,17 @@ async def chat(request: ChatRequest):
     if not request.text.strip():
         raise HTTPException(status_code=400, detail="Kein Text angegeben")
 
+    # Phase 9: Voice-Metadaten an MoodDetector weiterleiten
+    if request.voice_metadata:
+        brain.mood.analyze_voice_metadata(request.voice_metadata)
+
     result = await brain.process(request.text, request.person, request.room)
+
+    # TTS-Daten als TTSInfo-Modell wrappen
+    tts_raw = result.pop("tts", None)
+    if tts_raw and isinstance(tts_raw, dict):
+        result["tts"] = TTSInfo(**tts_raw)
+
     return ChatResponse(**result)
 
 
@@ -330,20 +351,78 @@ async def update_settings(update: SettingsUpdate):
     return result
 
 
+# ----- Phase 9: TTS & Sound Endpoints -----
+
+@app.get("/api/assistant/tts/status")
+async def tts_status():
+    """Phase 9: TTS-Status (SSML, Whisper-Mode, Volume)."""
+    return {
+        "ssml_enabled": brain.tts_enhancer.ssml_enabled,
+        "whisper_mode": brain.tts_enhancer.is_whisper_mode,
+        "sounds_enabled": brain.sound_manager.enabled,
+        "sounds": brain.sound_manager.get_sound_info(),
+    }
+
+
+@app.post("/api/assistant/tts/whisper")
+async def toggle_whisper(mode: str = "toggle"):
+    """Phase 9: Fluestermodus steuern (activate/deactivate/toggle)."""
+    if mode == "activate":
+        brain.tts_enhancer._whisper_mode = True
+    elif mode == "deactivate":
+        brain.tts_enhancer._whisper_mode = False
+    elif mode == "toggle":
+        brain.tts_enhancer._whisper_mode = not brain.tts_enhancer._whisper_mode
+    return {"whisper_mode": brain.tts_enhancer.is_whisper_mode}
+
+
+# ----- Phase 9: Speaker Recognition Endpoints -----
+
+@app.get("/api/assistant/speaker/profiles")
+async def get_speaker_profiles():
+    """Phase 9: Alle gespeicherten Stimm-Profile."""
+    return {
+        "enabled": brain.speaker_recognition.enabled,
+        "profiles": brain.speaker_recognition.get_profiles(),
+        "last_speaker": brain.speaker_recognition.get_last_speaker(),
+    }
+
+
+@app.post("/api/assistant/speaker/enroll")
+async def enroll_speaker(person_id: str, name: str):
+    """Phase 9: Neues Stimm-Profil anlegen."""
+    if not brain.speaker_recognition.enabled:
+        raise HTTPException(status_code=400, detail="Speaker Recognition ist deaktiviert")
+    success = await brain.speaker_recognition.enroll(person_id, name)
+    if not success:
+        raise HTTPException(status_code=400, detail="Enrollment fehlgeschlagen (max Profile erreicht?)")
+    return {"enrolled": True, "person_id": person_id, "name": name}
+
+
+@app.delete("/api/assistant/speaker/profiles/{person_id}")
+async def delete_speaker_profile(person_id: str):
+    """Phase 9: Stimm-Profil loeschen."""
+    success = await brain.speaker_recognition.remove_profile(person_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Profil nicht gefunden")
+    return {"deleted": person_id}
+
+
 @app.websocket("/api/assistant/ws")
 async def websocket_endpoint(websocket: WebSocket):
     """
     WebSocket fuer Echtzeit-Events.
 
     Events (Server -> Client):
-    assistant.speaking - Assistent spricht (Text)
+    assistant.speaking - Assistent spricht (Text + TTS-Metadaten)
     assistant.thinking - Assistent denkt nach
     assistant.action - Assistent fuehrt Aktion aus
     assistant.listening - Assistent hoert zu
     assistant.proactive - Proaktive Meldung
+    assistant.sound - Sound-Event (Phase 9)
 
     Events (Client -> Server):
-    assistant.text - Text-Eingabe
+    assistant.text - Text-Eingabe (+ optional voice_metadata)
     assistant.feedback - Feedback auf Meldung
     assistant.interrupt - Unterbrechung
     """
@@ -358,9 +437,14 @@ async def websocket_endpoint(websocket: WebSocket):
                 if event == "assistant.text":
                     text = message.get("data", {}).get("text", "")
                     person = message.get("data", {}).get("person")
+                    voice_meta = message.get("data", {}).get("voice_metadata")
                     if text:
+                        # Phase 9: Voice-Metadaten verarbeiten
+                        if voice_meta:
+                            brain.mood.analyze_voice_metadata(voice_meta)
                         result = await brain.process(text, person)
-                        await emit_speaking(result["response"])
+                        tts_data = result.get("tts")
+                        await emit_speaking(result["response"], tts_data=tts_data)
 
                 elif event == "assistant.feedback":
                     # Phase 5: Feedback ueber FeedbackTracker verarbeiten
@@ -388,7 +472,7 @@ async def root():
     """Startseite."""
     return {
         "name": "MindHome Assistant",
-        "version": "0.3.0",
+        "version": "1.0.0",
         "status": "running",
         "docs": "/docs",
     }

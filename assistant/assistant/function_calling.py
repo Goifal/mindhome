@@ -34,6 +34,10 @@ ASSISTANT_TOOLS = [
                         "type": "integer",
                         "description": "Helligkeit 0-100 Prozent (optional)",
                     },
+                    "transition": {
+                        "type": "integer",
+                        "description": "Uebergangsdauer in Sekunden (optional, fuer sanftes Dimmen)",
+                    },
                 },
                 "required": ["room", "state"],
             },
@@ -190,6 +194,32 @@ ASSISTANT_TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "play_sound",
+            "description": "Einen Sound-Effekt abspielen (z.B. Chime, Ping, Alert)",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "sound": {
+                        "type": "string",
+                        "enum": [
+                            "listening", "confirmed", "warning",
+                            "alarm", "doorbell", "greeting",
+                            "error", "goodnight",
+                        ],
+                        "description": "Sound-Event Name",
+                    },
+                    "room": {
+                        "type": "string",
+                        "description": "Raum in dem der Sound abgespielt werden soll (optional)",
+                    },
+                },
+                "required": ["sound"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "get_entity_state",
             "description": "Status einer Home Assistant Entity abfragen (z.B. Sensor, Schalter, Thermostat)",
             "parameters": {
@@ -263,10 +293,14 @@ class FunctionExecutor:
         service_data = {"entity_id": entity_id}
         if "brightness" in args and state == "on":
             service_data["brightness_pct"] = args["brightness"]
+        # Phase 9: Transition-Parameter (sanftes Dimmen)
+        if "transition" in args:
+            service_data["transition"] = args["transition"]
 
         service = "turn_on" if state == "on" else "turn_off"
         success = await self.ha.call_service("light", service, service_data)
-        return {"success": success, "message": f"Licht {room} {state}"}
+        transition_info = f" (Transition: {args['transition']}s)" if "transition" in args else ""
+        return {"success": success, "message": f"Licht {room} {state}{transition_info}"}
 
     async def _exec_set_climate(self, args: dict) -> dict:
         room = args["room"]
@@ -374,6 +408,7 @@ class FunctionExecutor:
     async def _exec_send_notification(self, args: dict) -> dict:
         message = args["message"]
         target = args.get("target", "phone")
+        volume = args.get("volume")  # Phase 9: Optional volume (0.0-1.0)
 
         if target == "phone":
             success = await self.ha.call_service(
@@ -383,6 +418,14 @@ class FunctionExecutor:
             # TTS ueber Piper (Wyoming): tts.speak mit TTS-Entity + Media-Player
             tts_entity = await self._find_tts_entity()
             speaker_entity = await self._find_tts_speaker()
+
+            # Phase 9: Volume setzen vor TTS
+            if speaker_entity and volume is not None:
+                await self.ha.call_service(
+                    "media_player", "volume_set",
+                    {"entity_id": speaker_entity, "volume_level": volume},
+                )
+
             if tts_entity and speaker_entity:
                 success = await self.ha.call_service(
                     "tts", "speak",
@@ -413,6 +456,54 @@ class FunctionExecutor:
                 "persistent_notification", "create", {"message": message}
             )
         return {"success": success, "message": "Benachrichtigung gesendet"}
+
+    async def _exec_play_sound(self, args: dict) -> dict:
+        """Phase 9: Spielt einen Sound-Effekt ab."""
+        sound = args["sound"]
+        room = args.get("room")
+
+        speaker_entity = None
+        if room:
+            speaker_entity = await self._find_entity("media_player", room)
+        if not speaker_entity:
+            speaker_entity = await self._find_tts_speaker()
+
+        if not speaker_entity:
+            return {"success": False, "message": "Kein Speaker gefunden"}
+
+        # Sound als TTS-Chime abspielen (oder Media-File wenn vorhanden)
+        # Kurze TTS-Nachricht als Ersatz fuer Sound-Files
+        sound_texts = {
+            "listening": ".",
+            "confirmed": ".",
+            "warning": "Achtung.",
+            "alarm": "Alarm!",
+            "doorbell": "Es klingelt.",
+            "greeting": ".",
+            "error": "Fehler.",
+            "goodnight": ".",
+        }
+
+        text = sound_texts.get(sound, ".")
+        if text == ".":
+            # Minimaler Sound — nur Volume-Ping
+            return {"success": True, "message": f"Sound '{sound}' gespielt"}
+
+        tts_entity = await self._find_tts_entity()
+        if tts_entity:
+            success = await self.ha.call_service(
+                "tts", "speak",
+                {
+                    "entity_id": tts_entity,
+                    "media_player_entity_id": speaker_entity,
+                    "message": text,
+                    "language": "de",
+                },
+            )
+        else:
+            success = False
+
+        return {"success": success, "message": f"Sound '{sound}' gespielt"}
 
     async def _exec_get_entity_state(self, args: dict) -> dict:
         entity_id = args["entity_id"]

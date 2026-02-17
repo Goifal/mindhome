@@ -6,7 +6,7 @@ assistant:
   # Name des Assistenten - so stellt er sich vor und so reagiert er
   # Aendere diesen Namen zu was du willst (z.B. "Jarvis", "Alfred", "Nova")
   name: "Jarvis"
-  version: "0.9.8"
+  version: "1.0.0"
   language: "de"
 
 # --- Personen und Anrede ---
@@ -350,3 +350,100 @@ conversation_continuity:
   resume_after_minutes: 10
   # Nach wie vielen Stunden verfaellt ein offenes Thema
   expire_hours: 24
+
+# --- Phase 9: Stimme & Akustik ---
+tts:
+  # SSML Enhancement: Natuerlichere Sprachausgabe
+  ssml_enabled: true
+  # Sprechgeschwindigkeit-Anpassung pro Nachrichtentyp
+  speed:
+    confirmation: 105     # Bestaetigung: etwas schneller (%)
+    warning: 85           # Warnung: langsamer
+    briefing: 95          # Briefing: etwas langsamer
+    greeting: 100         # Begruessung: normal
+    question: 100         # Frage: normal
+    casual: 100           # Normal: Standard
+  # Pausen in Millisekunden
+  pauses:
+    before_important: 300   # Pause vor wichtigen Infos
+    between_sentences: 200  # Pause zwischen Saetzen
+    after_greeting: 400     # Pause nach Begruessung
+  # Fluestermodus: "Psst" oder "Leise" → aktiviert bis Widerruf
+  whisper_triggers:
+    - "psst"
+    - "leise"
+    - "fluester"
+    - "whisper"
+  whisper_cancel_triggers:
+    - "normal"
+    - "laut"
+    - "normale lautstaerke"
+
+# Volume-Steuerung pro Aktivitaet (0.0 - 1.0)
+volume:
+  day: 0.8                # Tag normal
+  evening: 0.5            # Abend (>22:00)
+  night: 0.3              # Nacht (>0:00)
+  sleeping: 0.2           # Jemand schlaeft
+  emergency: 1.0          # Notfall immer laut
+  whisper: 0.15           # Fluestermodus
+  # Schwellen fuer Tageszeit-basierte Lautstaerke
+  evening_start: 22
+  night_start: 0
+  morning_start: 7
+
+# Sound Design: Akustische Identitaet
+sounds:
+  enabled: true
+  # Event-Sounds (werden via HA Media Player abgespielt)
+  events:
+    listening: "listening_chime"    # Jarvis hoert zu
+    confirmed: "confirm_ping"       # Befehl bestaetigt
+    warning: "warning_tone"         # Warnung
+    alarm: "alarm_urgent"           # Alarm/Notfall
+    doorbell: "doorbell_soft"       # Tuerklingel
+    greeting: "greeting_chime"      # Begruessung
+    error: "error_tone"             # Fehler
+    goodnight: "goodnight_tone"     # Gute Nacht
+  # Sounds bei Nacht leiser
+  night_volume_factor: 0.4
+
+# Narration Mode: Fliessende Uebergaenge bei Szenen
+narration:
+  enabled: true
+  # Standard-Transition-Dauer in Sekunden
+  default_transition: 3
+  # Szenen-spezifische Transitions
+  scene_transitions:
+    filmabend: 5          # Langsam dimmen
+    gute_nacht: 7         # Sehr langsam
+    aufwachen: 10         # Sanft aufhellen
+    gemuetlich: 4         # Mittel
+  # Pause zwischen Narration-Schritten in Sekunden
+  step_delay: 1.5
+  # Jarvis beschreibt was er tut
+  narrate_actions: true
+
+# Voice Analysis: Stimmungserkennung per Sprache
+voice_analysis:
+  enabled: true
+  # Sprechgeschwindigkeit-Schwellen (Woerter pro Minute)
+  wpm_fast: 180           # Darueber = gestresst
+  wpm_slow: 80            # Darunter = muede
+  wpm_normal: 130         # Standard
+  # Voice-Metadata-Quellen
+  use_whisper_metadata: true
+  # Gewichtung: Voice vs Text (0.0 = nur Text, 1.0 = nur Voice)
+  voice_weight: 0.3
+
+# Speaker Recognition: Personen-Erkennung per Stimme
+speaker_recognition:
+  enabled: false           # Standardmaessig aus (braucht GPU)
+  # Minimale Confidence fuer Erkennung (0.0 - 1.0)
+  min_confidence: 0.7
+  # Enrollment: Mindest-Sprachdauer in Sekunden
+  enrollment_duration: 30
+  # Fallback wenn nicht erkannt
+  fallback_ask: true       # "Wer spricht?"
+  # Maximale gespeicherte Voice-Prints
+  max_profiles: 10

@@ -117,7 +117,7 @@ Phase 7      ✅  Jarvis Routinen & Tagesstruktur (9 Features — v0.9.5-v0.9.6)
      │
 Phase 8      ✅  Jarvis Gedächtnis & Vorausdenken (7 Features — v0.9.7-v0.9.8)
      │
-Phase 9      🆕  Jarvis Stimme & Akustik (6 Features — Assistant)
+Phase 9      ✅  Jarvis Stimme & Akustik (6 Features — v0.9.9-v1.0.0)
      │
 Phase 10     🆕  Jarvis Multi-Room & Kommunikation (5 Features — Assistant + Add-on)
      │
