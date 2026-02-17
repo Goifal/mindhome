@@ -4,12 +4,24 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "0.8.4"
-BUILD = 87
-BUILD_DATE = "2026-02-15"
-CODENAME = "Unified Page Styling"
+VERSION = "1.1.0"
+BUILD = 88
+BUILD_DATE = "2026-02-17"
+CODENAME = "Jarvis Complete"
 
 # Changelog
+# Build 88: v1.1.0 Jarvis Complete — Einheitliche Version (Addon + Assistant + HA-Integration)
+#   - VEREINHEITLICHT: Eine Versionsnummer fuer das gesamte MindHome-Projekt
+#     Addon, Assistant (Phase 1-10) und HA Custom Component auf gleicher Version
+#   - Addon config.yaml, build.yaml, manifest.json, settings.yaml, main.py synchronisiert
+#   - Port-Mapping explizit: Addon intern 5000 → extern 8099 (fuer Assistant-Zugriff)
+#   - ha_client.py: Retry-Logik (3 Versuche, exponentieller Backoff), Error-Logging, Connection Pooling
+#   - brain.py: Activity-basiertes Volume (Silence-Matrix im Hauptchat), alle Sound-Events integriert
+#   - tts_enhancer.py: Activity-Parameter fuer kontextabhaengiges Volume
+#   - Multi-Room TTS: target_speaker in TTSInfo, room-basierte Speaker-Auswahl
+#   - mood_detector.py: rapid_follow_up Voice-Signal
+#   - conversation.py: Multi-Room TTS Support (target_speaker)
+#
 # Build 87: v0.8.4 Unified Page Styling
 #   - Einheitliches Seiten-Layout fuer alle 9 Feature-Seiten (Musterseite als Vorlage)
 #   - Alle h2 Seiten-Header entfernt (Sidebar zeigt aktive Seite)
