@@ -3,6 +3,7 @@ Context Builder - Sammelt alle relevanten Daten fuer den LLM-Prompt.
 Holt Daten von Home Assistant, MindHome und Semantic Memory via REST API.
 
 Phase 7: Raum-Profile und saisonale Anpassungen.
+Phase 10: Multi-Room Presence Tracking.
 """
 
 import logging
@@ -13,6 +14,7 @@ from typing import Optional
 
 import yaml
 
+from .config import yaml_config
 from .ha_client import HomeAssistantClient
 from .semantic_memory import SemanticMemory
 
@@ -112,6 +114,10 @@ class ContextBuilder:
 
         # Phase 7: Saisonale Daten
         context["seasonal"] = self._get_seasonal_context(states)
+
+        # Phase 10: Multi-Room Presence
+        if states:
+            context["room_presence"] = self._build_room_presence(states)
 
         # Warnungen
         context["alerts"] = self._extract_alerts(states or [])
@@ -337,6 +343,96 @@ class ContextBuilder:
     # ------------------------------------------------------------------
     # Phase 7: Saisonale Anpassungen
     # ------------------------------------------------------------------
+
+    # ------------------------------------------------------------------
+    # Phase 10: Multi-Room Presence
+    # ------------------------------------------------------------------
+
+    def _build_room_presence(self, states: list[dict]) -> dict:
+        """Baut ein Bild welche Personen in welchen Raeumen sind.
+
+        Nutzt Bewegungsmelder + Person-Entities + konfigurierte Mappings.
+
+        Returns:
+            Dict mit:
+                persons_by_room: {room: [person_names]}
+                active_rooms: [rooms_with_recent_motion]
+                speakers_by_room: {room: entity_id}
+        """
+        multi_room_cfg = yaml_config.get("multi_room", {})
+        if not multi_room_cfg.get("enabled", True):
+            return {}
+
+        timeout_minutes = multi_room_cfg.get("presence_timeout_minutes", 15)
+        room_sensors = multi_room_cfg.get("room_motion_sensors", {})
+        room_speakers = multi_room_cfg.get("room_speakers", {})
+        now = datetime.now()
+
+        # Aktive Raeume basierend auf Motion-Sensoren
+        active_rooms = []
+        for room_name, sensor_id in (room_sensors or {}).items():
+            for state in states:
+                if state.get("entity_id") == sensor_id:
+                    if state.get("state") == "on":
+                        active_rooms.append(room_name)
+                    elif state.get("last_changed"):
+                        try:
+                            changed = datetime.fromisoformat(
+                                state["last_changed"].replace("Z", "+00:00")
+                            ).replace(tzinfo=None)
+                            if (now - changed).total_seconds() / 60 < timeout_minutes:
+                                active_rooms.append(room_name)
+                        except (ValueError, TypeError):
+                            pass
+                    break
+
+        # Fallback: Motion-Sensoren aus HA States durchsuchen
+        if not active_rooms:
+            for state in states:
+                eid = state.get("entity_id", "")
+                if "motion" in eid and state.get("state") == "on":
+                    name = state.get("attributes", {}).get("friendly_name", eid)
+                    room = name.replace("Bewegung ", "").replace(" Motion", "").lower()
+                    if room not in active_rooms:
+                        active_rooms.append(room)
+
+        # Personen die zuhause sind
+        persons_home = []
+        for state in states:
+            if state.get("entity_id", "").startswith("person."):
+                if state.get("state") == "home":
+                    persons_home.append(
+                        state.get("attributes", {}).get("friendly_name", "User")
+                    )
+
+        # Einfache Zuordnung: Personen zum aktivsten Raum
+        persons_by_room = {}
+        if active_rooms and persons_home:
+            # Erste Naeherung: Alle Personen im zuletzt aktiven Raum
+            primary_room = active_rooms[0]
+            persons_by_room[primary_room] = persons_home
+
+        return {
+            "persons_by_room": persons_by_room,
+            "active_rooms": active_rooms,
+            "speakers_by_room": room_speakers or {},
+        }
+
+    def get_person_room(self, person_name: str, states: list[dict] = None) -> Optional[str]:
+        """Ermittelt in welchem Raum eine Person wahrscheinlich ist.
+
+        Fuer Phase 10.2: Delegations-Routing.
+        """
+        # Erst konfigurierte preferred_room pruefen
+        person_profiles = yaml_config.get("persons", {}).get("profiles", {})
+        person_key = person_name.lower()
+        if person_key in (person_profiles or {}):
+            return person_profiles[person_key].get("preferred_room")
+
+        # Fallback: Aktueller Raum (letzte Bewegung)
+        if states:
+            return self._guess_current_room(states)
+        return None
 
     def _get_seasonal_context(self, states: Optional[list]) -> dict:
         """Ermittelt saisonale Kontextdaten."""

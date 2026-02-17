@@ -31,7 +31,7 @@ brain = AssistantBrain()
 async def lifespan(app: FastAPI):
     """Startup und Shutdown."""
     logger.info("=" * 50)
-    logger.info(" MindHome Assistant v1.0.0 startet...")
+    logger.info(" MindHome Assistant v1.1.0 startet...")
     logger.info("=" * 50)
     await brain.initialize()
 
@@ -57,7 +57,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="MindHome Assistant",
     description="Lokaler KI-Sprachassistent fuer Home Assistant",
-    version="1.0.0",
+    version="1.1.0",
     lifespan=lifespan,
 )
 
@@ -408,6 +408,60 @@ async def delete_speaker_profile(person_id: str):
     return {"deleted": person_id}
 
 
+# ----- Phase 10: Diagnostik Endpoints -----
+
+@app.get("/api/assistant/diagnostics")
+async def diagnostics():
+    """Phase 10: System-Diagnostik — Prueft Entities auf Probleme."""
+    result = await brain.diagnostics.check_all()
+    return result
+
+
+@app.get("/api/assistant/diagnostics/status")
+async def diagnostics_status():
+    """Phase 10: Vollstaendiger System-Status-Report."""
+    return await brain.diagnostics.get_system_status()
+
+
+# ----- Phase 10: Wartungs-Assistent Endpoints -----
+
+@app.get("/api/assistant/maintenance")
+async def maintenance_tasks():
+    """Phase 10: Alle Wartungsaufgaben und faellige Tasks."""
+    tasks = brain.diagnostics.get_maintenance_tasks()
+    due = brain.diagnostics.check_maintenance()
+    return {"tasks": tasks, "due": due}
+
+
+@app.post("/api/assistant/maintenance/complete")
+async def complete_maintenance(task_name: str):
+    """Phase 10: Wartungsaufgabe als erledigt markieren."""
+    success = brain.diagnostics.complete_task(task_name)
+    if not success:
+        raise HTTPException(status_code=404, detail=f"Aufgabe '{task_name}' nicht gefunden")
+    return {"completed": task_name, "date": __import__("datetime").datetime.now().strftime("%Y-%m-%d")}
+
+
+# ----- Phase 10: Trust-Level Endpoints -----
+
+@app.get("/api/assistant/trust")
+async def trust_info():
+    """Phase 10: Trust-Level-Konfiguration aller Personen."""
+    return brain.autonomy.get_trust_info()
+
+
+@app.get("/api/assistant/trust/{person}")
+async def trust_person(person: str):
+    """Phase 10: Trust-Level einer bestimmten Person."""
+    trust_level = brain.autonomy.get_trust_level(person)
+    trust_names = {0: "Gast", 1: "Mitbewohner", 2: "Owner"}
+    return {
+        "person": person,
+        "trust_level": trust_level,
+        "trust_name": trust_names.get(trust_level, "Unbekannt"),
+    }
+
+
 @app.websocket("/api/assistant/ws")
 async def websocket_endpoint(websocket: WebSocket):
     """
@@ -472,7 +526,7 @@ async def root():
     """Startseite."""
     return {
         "name": "MindHome Assistant",
-        "version": "1.0.0",
+        "version": "1.1.0",
         "status": "running",
         "docs": "/docs",
     }

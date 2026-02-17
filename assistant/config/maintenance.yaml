@@ -1,0 +1,43 @@
+# ============================================================
+# MindHome Assistant - Wartungskalender (Phase 10.5)
+# ============================================================
+# Jarvis erinnert dich an faellige Wartungsaufgaben.
+# Meldungen kommen sanft (LOW Priority), nur wenn du entspannt bist.
+#
+# Felder:
+#   name: Name der Aufgabe
+#   interval_days: Intervall in Tagen
+#   last_done: Datum der letzten Durchfuehrung (YYYY-MM-DD oder null)
+#   priority: low / medium / high
+#   description: Optionale Beschreibung fuer Jarvis
+
+tasks:
+  - name: "Rauchmelder testen"
+    interval_days: 180
+    last_done: null
+    priority: medium
+    description: "Testknopf druecken und pruefen ob der Alarm ertönt"
+
+  - name: "Heizungsfilter wechseln"
+    interval_days: 90
+    last_done: null
+    priority: low
+    description: "Filter der Heizungsanlage austauschen"
+
+  - name: "Wasserfilter wechseln"
+    interval_days: 60
+    last_done: null
+    priority: low
+    description: "Wasserfilter in der Kueche ersetzen"
+
+  - name: "Fenster putzen"
+    interval_days: 90
+    last_done: null
+    priority: low
+    description: "Alle Fenster reinigen"
+
+  - name: "Rauchmelder Batterie pruefen"
+    interval_days: 365
+    last_done: null
+    priority: medium
+    description: "Batterien der Rauchmelder kontrollieren und ggf. tauschen"

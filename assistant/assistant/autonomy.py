@@ -1,11 +1,16 @@
 """
 Autonomy Manager - Bestimmt was der Assistent selbststaendig tun darf.
 Level 1 (Assistent) bis Level 5 (Autopilot).
+
+Phase 10: Person-basierte Vertrauensstufen.
+- 0 (Gast): Nur Licht, Klima, Medien im eigenen Raum
+- 1 (Mitbewohner): Alles ausser Sicherheit
+- 2 (Owner): Voller Zugriff
 """
 
 import logging
 
-from .config import settings
+from .config import settings, yaml_config
 
 logger = logging.getLogger(__name__)
 
@@ -37,12 +42,30 @@ ACTION_PERMISSIONS = {
     "modify_schedule": 5,
 }
 
+# Phase 10: Trust-Level Namen
+TRUST_LEVEL_NAMES = {
+    0: "Gast",
+    1: "Mitbewohner",
+    2: "Owner",
+}
+
 
 class AutonomyManager:
-    """Verwaltet das Autonomie-Level des Assistenten."""
+    """Verwaltet das Autonomie-Level des Assistenten und Trust-Levels pro Person."""
 
     def __init__(self):
         self.level = settings.autonomy_level
+
+        # Phase 10: Trust-Level Konfiguration laden
+        trust_cfg = yaml_config.get("trust_levels", {})
+        self._default_trust = trust_cfg.get("default", 0)
+        self._person_trust: dict[str, int] = trust_cfg.get("persons", {}) or {}
+        self._guest_actions = set(trust_cfg.get("guest_allowed_actions", [
+            "set_light", "set_climate", "play_media", "get_entity_state", "play_sound",
+        ]))
+        self._security_actions = set(trust_cfg.get("security_actions", [
+            "lock_door", "set_alarm", "set_presence_mode",
+        ]))
 
     def can_act(self, action_type: str) -> bool:
         """
@@ -96,4 +119,106 @@ class AutonomyManager:
                 action for action, req in ACTION_PERMISSIONS.items()
                 if self.level >= req
             ],
+        }
+
+    # ------------------------------------------------------------------
+    # Phase 10: Person-basierte Vertrauensstufen
+    # ------------------------------------------------------------------
+
+    def get_trust_level(self, person: str) -> int:
+        """Gibt das Trust-Level einer Person zurueck.
+
+        Args:
+            person: Name der Person (case-insensitive)
+
+        Returns:
+            Trust-Level: 0 (Gast), 1 (Mitbewohner), 2 (Owner)
+        """
+        if not person:
+            return self._default_trust
+
+        person_lower = person.lower()
+
+        # Hauptbenutzer ist immer Owner
+        if person_lower == settings.user_name.lower():
+            return 2
+
+        # Konfigurierte Trust-Levels
+        for name, level in self._person_trust.items():
+            if name.lower() == person_lower:
+                return level
+
+        return self._default_trust
+
+    def can_person_act(self, person: str, function_name: str) -> dict:
+        """Prueft ob eine Person eine bestimmte Funktion ausfuehren darf.
+
+        Args:
+            person: Name der Person
+            function_name: Name der Funktion (z.B. "lock_door")
+
+        Returns:
+            Dict mit:
+                allowed: bool
+                trust_level: int
+                trust_name: str
+                reason: str (wenn nicht erlaubt)
+        """
+        trust = self.get_trust_level(person)
+        trust_name = TRUST_LEVEL_NAMES.get(trust, "Unbekannt")
+
+        # Owner darf alles
+        if trust >= 2:
+            return {
+                "allowed": True,
+                "trust_level": trust,
+                "trust_name": trust_name,
+            }
+
+        # Sicherheits-Aktionen nur fuer Owner
+        if function_name in self._security_actions:
+            return {
+                "allowed": False,
+                "trust_level": trust,
+                "trust_name": trust_name,
+                "reason": f"Sicherheitsfunktion '{function_name}' erfordert Owner-Berechtigung",
+            }
+
+        # Gast: Nur erlaubte Aktionen
+        if trust == 0:
+            if function_name in self._guest_actions:
+                return {
+                    "allowed": True,
+                    "trust_level": trust,
+                    "trust_name": trust_name,
+                }
+            return {
+                "allowed": False,
+                "trust_level": trust,
+                "trust_name": trust_name,
+                "reason": f"Gaeste duerfen '{function_name}' nicht ausfuehren",
+            }
+
+        # Mitbewohner: Alles ausser Sicherheit (schon oben geprueft)
+        return {
+            "allowed": True,
+            "trust_level": trust,
+            "trust_name": trust_name,
+        }
+
+    def get_trust_info(self) -> dict:
+        """Gibt Info ueber alle Trust-Konfigurationen zurueck."""
+        persons = {}
+        for name, level in self._person_trust.items():
+            persons[name] = {
+                "level": level,
+                "name": TRUST_LEVEL_NAMES.get(level, "Unbekannt"),
+            }
+
+        return {
+            "default_trust": self._default_trust,
+            "default_name": TRUST_LEVEL_NAMES.get(self._default_trust, "Unbekannt"),
+            "persons": persons,
+            "guest_actions": list(self._guest_actions),
+            "security_actions": list(self._security_actions),
         }

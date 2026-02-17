@@ -12,11 +12,14 @@ Phase 8: Gedaechtnis & Vorausdenken (Explizites Notizbuch, Intent-Routing,
          Kontinuitaet, Langzeit-Persoenlichkeitsanpassung).
 Phase 9: Stimme & Akustik (TTS Enhancement, Sound Design, Auto-Volume,
          Narration Mode, Voice Emotion, Speaker Recognition).
+Phase 10: Multi-Room & Kommunikation (Room Presence, TTS Routing,
+          Person Delegation, Trust Levels, Diagnostik, Wartungs-Assistent).
 """
 
 import asyncio
 import json
 import logging
+import re
 from typing import Optional
 
 from .action_planner import ActionPlanner
@@ -24,6 +27,7 @@ from .activity import ActivityEngine
 from .autonomy import AutonomyManager
 from .config import settings
 from .context_builder import ContextBuilder
+from .diagnostics import DiagnosticsEngine
 from .feedback import FeedbackTracker
 from .function_calling import ASSISTANT_TOOLS, FunctionExecutor
 from .function_validator import FunctionValidator
@@ -99,6 +103,9 @@ class AssistantBrain:
         self.tts_enhancer = TTSEnhancer()
         self.sound_manager = SoundManager(self.ha)
         self.speaker_recognition = SpeakerRecognition()
+
+        # Phase 10: Diagnostik + Wartungs-Assistent
+        self.diagnostics = DiagnosticsEngine(self.ha)
 
     async def initialize(self):
         """Initialisiert alle Komponenten."""
@@ -357,6 +364,23 @@ class AssistantBrain:
         # Phase 8: Intent-Routing — Wissensfragen ohne Tools beantworten
         intent_type = self._classify_intent(text)
 
+        # Phase 10: Delegations-Intent → Nachricht an Person weiterleiten
+        if intent_type == "delegation":
+            logger.info("Delegations-Intent erkannt")
+            delegation_result = await self._handle_delegation(text, person or "")
+            if delegation_result:
+                await self.memory.add_conversation("user", text)
+                await self.memory.add_conversation("assistant", delegation_result)
+                tts_data = self.tts_enhancer.enhance(delegation_result, message_type="confirmation")
+                await emit_speaking(delegation_result)
+                return {
+                    "response": delegation_result,
+                    "actions": [],
+                    "model_used": "delegation",
+                    "context_room": room or "unbekannt",
+                    "tts": tts_data,
+                }
+
         # 6. Komplexe Anfragen ueber Action Planner routen
         if self.action_planner.is_complex_request(text):
             logger.info("Komplexe Anfrage erkannt -> Action Planner")
@@ -449,6 +473,21 @@ class AssistantBrain:
                                 "function": func_name,
                                 "args": func_args,
                                 "result": f"blocked: {validation.reason}",
+                            })
+                            continue
+
+                    # Phase 10: Trust-Level Pre-Check
+                    if person:
+                        trust_check = self.autonomy.can_person_act(person, func_name)
+                        if not trust_check["allowed"]:
+                            logger.warning(
+                                "Trust-Check fehlgeschlagen: %s darf '%s' nicht (%s)",
+                                person, func_name, trust_check.get("reason", ""),
+                            )
+                            executed_actions.append({
+                                "function": func_name,
+                                "args": func_args,
+                                "result": f"blocked: {trust_check.get('reason', 'Keine Berechtigung')}",
                             })
                             continue
 
@@ -632,9 +671,11 @@ class AssistantBrain:
                 "tts_enhancer": f"active (SSML: {self.tts_enhancer.ssml_enabled}, whisper: {self.tts_enhancer.is_whisper_mode})",
                 "sound_manager": "active" if self.sound_manager.enabled else "disabled",
                 "speaker_recognition": self.speaker_recognition.health_status(),
+                "diagnostics": self.diagnostics.health_status(),
             },
             "models_available": models,
             "autonomy": self.autonomy.get_level_info(),
+            "trust": self.autonomy.get_trust_info(),
             "personality": {
                 "sarcasm_level": self.personality.sarcasm_level,
                 "opinion_intensity": self.personality.opinion_intensity,
@@ -796,9 +837,23 @@ class AssistantBrain:
     def _classify_intent(self, text: str) -> str:
         """
         Klassifiziert den Intent einer Anfrage.
-        Returns: 'smart_home', 'knowledge', 'memory', 'general'
+        Returns: 'smart_home', 'knowledge', 'memory', 'delegation', 'general'
         """
         text_lower = text.lower().strip()
+
+        # Phase 10: Delegations-Intent erkennen
+        delegation_patterns = [
+            r"^sag\s+(\w+)\s+(dass|das)\s+",
+            r"^frag\s+(\w+)\s+(ob|mal|nach)\s+",
+            r"^teile?\s+(\w+)\s+mit\s+(dass|das)\s+",
+            r"^gib\s+(\w+)\s+bescheid\s+",
+            r"^richte?\s+(\w+)\s+aus\s+(dass|das)\s+",
+            r"^schick\s+(\w+)\s+eine?\s+nachricht",
+            r"^nachricht\s+an\s+(\w+)",
+        ]
+        for pattern in delegation_patterns:
+            if re.search(pattern, text_lower):
+                return "delegation"
 
         # Memory-Fragen
         memory_keywords = [
@@ -882,6 +937,60 @@ Der User stellt eine hypothetische Frage. Beantworte sie:
         except Exception as e:
             logger.debug("Fehler bei Konversations-Kontinuitaet: %s", e)
         return None
+
+    # ------------------------------------------------------------------
+    # Phase 10: Delegations-Handler
+    # ------------------------------------------------------------------
+
+    async def _handle_delegation(self, text: str, person: str) -> Optional[str]:
+        """Verarbeitet Delegations-Intents ('Sag Lisa dass...', 'Frag Max ob...')."""
+        text_lower = text.lower().strip()
+
+        # Muster: "Sag X dass Y" / "Frag X ob Y" / "Teile X mit dass Y" / etc.
+        patterns = [
+            (r"^sag\s+(\w+)\s+(?:dass|das)\s+(.+)", "sag"),
+            (r"^frag\s+(\w+)\s+(?:ob|mal|nach)\s+(.+)", "frag"),
+            (r"^teile?\s+(\w+)\s+mit\s+(?:dass|das)\s+(.+)", "teile_mit"),
+            (r"^gib\s+(\w+)\s+bescheid\s+(.+)", "bescheid"),
+            (r"^richte?\s+(\w+)\s+aus\s+(?:dass|das)\s+(.+)", "ausrichten"),
+            (r"^schick\s+(\w+)\s+eine?\s+nachricht:?\s*(.+)", "nachricht"),
+            (r"^nachricht\s+an\s+(\w+):?\s*(.+)", "nachricht"),
+        ]
+
+        target_person = None
+        message_content = None
+
+        for pattern, _ in patterns:
+            match = re.search(pattern, text_lower)
+            if match:
+                target_person = match.group(1).capitalize()
+                message_content = match.group(2).strip().rstrip(".")
+                break
+
+        if not target_person or not message_content:
+            return None
+
+        # Trust-Check: Darf der Sender Nachrichten senden?
+        if person:
+            trust_check = self.autonomy.can_person_act(person, "send_message_to_person")
+            if not trust_check["allowed"]:
+                return f"Entschuldigung, du darfst keine Nachrichten senden. {trust_check.get('reason', '')}"
+
+        # Nachricht senden ueber FunctionExecutor
+        result = await self.executor.execute("send_message_to_person", {
+            "person": target_person,
+            "message": message_content,
+            "urgency": "medium",
+        })
+
+        if result.get("success"):
+            delivery = result.get("delivery", "")
+            if delivery == "tts":
+                return f"Ich habe {target_person} die Nachricht durchgesagt."
+            else:
+                return f"Ich habe {target_person} eine Nachricht geschickt."
+        else:
+            return f"Die Nachricht an {target_person} konnte leider nicht zugestellt werden."
 
     # ------------------------------------------------------------------
     # Phase 8: Intent-Extraktion im Hintergrund
