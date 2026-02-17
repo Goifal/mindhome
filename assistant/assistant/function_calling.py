@@ -380,11 +380,23 @@ class FunctionExecutor:
                 "notify", "notify", {"message": message}
             )
         elif target == "speaker":
-            # TTS ueber media_player: Finde einen Speaker
+            # TTS ueber Piper (Wyoming): tts.speak mit TTS-Entity + Media-Player
+            tts_entity = await self._find_tts_entity()
             speaker_entity = await self._find_tts_speaker()
-            if speaker_entity:
+            if tts_entity and speaker_entity:
                 success = await self.ha.call_service(
-                    "tts", "google_translate_say",
+                    "tts", "speak",
+                    {
+                        "entity_id": tts_entity,
+                        "media_player_entity_id": speaker_entity,
+                        "message": message,
+                        "language": "de",
+                    },
+                )
+            elif speaker_entity:
+                # Fallback: Legacy TTS Service
+                success = await self.ha.call_service(
+                    "tts", "speak",
                     {
                         "entity_id": speaker_entity,
                         "message": message,
@@ -392,7 +404,7 @@ class FunctionExecutor:
                     },
                 )
             else:
-                # Fallback: persistent_notification
+                # Letzter Fallback: persistent_notification
                 success = await self.ha.call_service(
                     "persistent_notification", "create", {"message": message}
                 )
@@ -451,6 +463,22 @@ class FunctionExecutor:
                 {"entity_id": "input_boolean.zu_hause"},
             )
         return {"success": success, "message": f"Anwesenheit: {mode}"}
+
+    async def _find_tts_entity(self) -> Optional[str]:
+        """Findet die Piper TTS-Entity (tts.piper o.ae.)."""
+        states = await self.ha.get_states()
+        if not states:
+            return None
+        for state in states:
+            entity_id = state.get("entity_id", "")
+            if entity_id.startswith("tts.") and "piper" in entity_id:
+                return entity_id
+        # Fallback: Erste TTS-Entity
+        for state in states:
+            entity_id = state.get("entity_id", "")
+            if entity_id.startswith("tts."):
+                return entity_id
+        return None
 
     async def _find_tts_speaker(self) -> Optional[str]:
         """Findet einen Media-Player der als TTS-Speaker genutzt werden kann."""
