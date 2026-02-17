@@ -67,6 +67,8 @@ app = FastAPI(
 class ChatRequest(BaseModel):
     text: str
     person: Optional[str] = None
+    room: Optional[str] = None
+    speaker_confidence: Optional[float] = None
 
 
 class ChatResponse(BaseModel):
@@ -106,7 +108,7 @@ async def chat(request: ChatRequest):
     if not request.text.strip():
         raise HTTPException(status_code=400, detail="Kein Text angegeben")
 
-    result = await brain.process(request.text, request.person)
+    result = await brain.process(request.text, request.person, request.room)
     return ChatResponse(**result)
 
 

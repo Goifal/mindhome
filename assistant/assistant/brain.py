@@ -85,18 +85,19 @@ class AssistantBrain:
         await self.proactive.start()
         logger.info("Jarvis initialisiert (alle Systeme aktiv)")
 
-    async def process(self, text: str, person: Optional[str] = None) -> dict:
+    async def process(self, text: str, person: Optional[str] = None, room: Optional[str] = None) -> dict:
         """
         Verarbeitet eine User-Eingabe.
 
         Args:
             text: User-Text (z.B. "Mach das Licht aus")
             person: Name der Person (optional)
+            room: Raum aus dem die Anfrage kommt (optional)
 
         Returns:
             Dict mit response, actions, model_used
         """
-        logger.info("Input: '%s' (Person: %s)", text, person or "unbekannt")
+        logger.info("Input: '%s' (Person: %s, Raum: %s)", text, person or "unbekannt", room or "unbekannt")
 
         # WebSocket: Denk-Status senden
         await emit_thinking()
@@ -105,6 +106,8 @@ class AssistantBrain:
         context = await self.context_builder.build(
             trigger="voice", user_text=text, person=person or ""
         )
+        if room:
+            context["room"] = room
         if person:
             context.setdefault("person", {})["name"] = person
 

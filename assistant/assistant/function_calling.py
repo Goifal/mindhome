@@ -380,9 +380,22 @@ class FunctionExecutor:
                 "notify", "notify", {"message": message}
             )
         elif target == "speaker":
-            success = await self.ha.call_service(
-                "tts", "speak", {"message": message, "language": "de"}
-            )
+            # TTS ueber media_player: Finde einen Speaker
+            speaker_entity = await self._find_tts_speaker()
+            if speaker_entity:
+                success = await self.ha.call_service(
+                    "tts", "google_translate_say",
+                    {
+                        "entity_id": speaker_entity,
+                        "message": message,
+                        "language": "de",
+                    },
+                )
+            else:
+                # Fallback: persistent_notification
+                success = await self.ha.call_service(
+                    "persistent_notification", "create", {"message": message}
+                )
         else:
             success = await self.ha.call_service(
                 "persistent_notification", "create", {"message": message}
@@ -427,10 +440,9 @@ class FunctionExecutor:
             )
             return {"success": success, "message": f"Anwesenheit: {mode}"}
 
-        # Fallback: HA Event feuern, damit Automationen reagieren koennen
-        success = await self.ha.call_service(
-            "event", "fire",
-            {"event_type": "mindhome_presence_mode", "event_data": {"mode": mode}},
+        # Fallback: HA Event ueber REST API feuern
+        success = await self.ha.fire_event(
+            "mindhome_presence_mode", {"mode": mode}
         )
         if not success:
             # Letzter Fallback: Direkter Service-Call
@@ -439,6 +451,17 @@ class FunctionExecutor:
                 {"entity_id": "input_boolean.zu_hause"},
             )
         return {"success": success, "message": f"Anwesenheit: {mode}"}
+
+    async def _find_tts_speaker(self) -> Optional[str]:
+        """Findet einen Media-Player der als TTS-Speaker genutzt werden kann."""
+        states = await self.ha.get_states()
+        if not states:
+            return None
+        for state in states:
+            entity_id = state.get("entity_id", "")
+            if entity_id.startswith("media_player."):
+                return entity_id
+        return None
 
     async def _find_entity(self, domain: str, search: str) -> Optional[str]:
         """Findet eine Entity anhand von Domain und Suchbegriff."""
