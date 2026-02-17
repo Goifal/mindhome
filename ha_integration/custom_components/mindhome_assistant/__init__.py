@@ -1,4 +1,11 @@
-"""MindHome Assistant - Custom Integration fuer Home Assistant."""
+"""
+MindHome Assistant - Custom Integration fuer Home Assistant.
+
+Verbindet die HA Voice Pipeline (Whisper STT + Piper TTS)
+mit dem MindHome Assistant Server.
+
+Phase 9: Voice-Metadaten, TTS-Volume, SSML, Raumerkennung.
+"""
 
 import logging
 
@@ -20,7 +27,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     }
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-    _LOGGER.info("MindHome Assistant Integration geladen: %s", entry.data["url"])
+    _LOGGER.info(
+        "MindHome Assistant v1.0.0 geladen: %s", entry.data["url"]
+    )
     return True
 
 
