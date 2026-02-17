@@ -115,7 +115,7 @@ Phase 6      ✅  Jarvis Persönlichkeit (10 Features — v0.9.0-v0.9.4)
      │
 Phase 7      ✅  Jarvis Routinen & Tagesstruktur (9 Features — v0.9.5-v0.9.6)
      │
-Phase 8      🆕  Jarvis Gedächtnis & Vorausdenken (7 Features — Assistant)
+Phase 8      ✅  Jarvis Gedächtnis & Vorausdenken (7 Features — v0.9.7-v0.9.8)
      │
 Phase 9      🆕  Jarvis Stimme & Akustik (6 Features — Assistant)
      │
