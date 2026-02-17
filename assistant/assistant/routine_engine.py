@@ -175,26 +175,109 @@ class RoutineEngine:
         return f"Tag: {weekday}, {now.strftime('%d.%m.%Y')}, {now.strftime('%H:%M')} Uhr"
 
     async def _get_weather_briefing(self) -> str:
-        """Holt Wetter-Daten."""
+        """Holt Wetter-Daten.
+
+        Nutzt weather.get_forecasts Service (HA 2024.3+) mit Fallback
+        auf State-Attribute fuer aeltere HA-Versionen.
+        """
         states = await self.ha.get_states()
         if not states:
             return ""
+
+        # Weather-Entity finden
+        weather_entity = None
         for state in states:
             if state.get("entity_id", "").startswith("weather."):
-                attrs = state.get("attributes", {})
-                temp = attrs.get("temperature", "?")
-                condition = state.get("state", "?")
-                humidity = attrs.get("humidity", "?")
-                forecast = attrs.get("forecast", [])
-                result = f"Wetter: {temp}°C, {condition}, Luftfeuchtigkeit {humidity}%"
-                if forecast:
-                    today_fc = forecast[0] if forecast else {}
-                    high = today_fc.get("temperature", "?")
-                    low = today_fc.get("templow", "?")
-                    fc_cond = today_fc.get("condition", "")
-                    result += f". Heute: {low}-{high}°C, {fc_cond}"
-                return result
-        return ""
+                weather_entity = state
+                break
+
+        if not weather_entity:
+            return ""
+
+        entity_id = weather_entity.get("entity_id", "")
+        attrs = weather_entity.get("attributes", {})
+        temp = attrs.get("temperature", "?")
+        condition = weather_entity.get("state", "?")
+        humidity = attrs.get("humidity", "?")
+        wind_speed = attrs.get("wind_speed")
+
+        # Wetter-Zustand uebersetzen
+        condition_de = self._translate_weather(condition)
+        result = f"Wetter: {temp}°C, {condition_de}, Luftfeuchtigkeit {humidity}%"
+        if wind_speed:
+            result += f", Wind {wind_speed} km/h"
+
+        # Forecast holen via Service (HA 2024.3+)
+        forecast = await self._get_forecast_via_service(entity_id)
+
+        # Fallback: State-Attribute (aeltere HA-Versionen)
+        if not forecast:
+            forecast = attrs.get("forecast", [])
+
+        if forecast:
+            today_fc = forecast[0] if forecast else {}
+            high = today_fc.get("temperature", "?")
+            low = today_fc.get("templow", "?")
+            fc_cond = self._translate_weather(today_fc.get("condition", ""))
+            precipitation = today_fc.get("precipitation")
+            parts = [f"Heute: {low}-{high}°C, {fc_cond}"]
+            if precipitation and float(precipitation) > 0:
+                parts.append(f"{precipitation}mm Niederschlag")
+            result += ". " + ", ".join(parts)
+
+        return result
+
+    async def _get_forecast_via_service(self, entity_id: str) -> list:
+        """Holt Forecast ueber weather.get_forecasts Service (HA 2024.3+).
+
+        Returns:
+            Forecast-Liste oder leere Liste bei Fehler/alter HA-Version
+        """
+        try:
+            result = await self.ha.call_service_with_response(
+                "weather", "get_forecasts",
+                {"entity_id": entity_id, "type": "daily"},
+            )
+            if not result:
+                return []
+            # HA gibt verschiedene Formate zurueck je nach Version
+            # Format 1: [{entity_id: {forecast: [...]}}]
+            if isinstance(result, list):
+                for item in result:
+                    if isinstance(item, dict):
+                        for key, value in item.items():
+                            if isinstance(value, dict) and "forecast" in value:
+                                return value["forecast"]
+            # Format 2: {entity_id: {forecast: [...]}}
+            elif isinstance(result, dict):
+                for key, value in result.items():
+                    if isinstance(value, dict) and "forecast" in value:
+                        return value["forecast"]
+        except Exception as e:
+            logger.debug("weather.get_forecasts nicht verfuegbar (aeltere HA?): %s", e)
+        return []
+
+    @staticmethod
+    def _translate_weather(condition: str) -> str:
+        """Uebersetzt HA Weather-Zustaende ins Deutsche."""
+        translations = {
+            "sunny": "sonnig",
+            "clear-night": "klare Nacht",
+            "partlycloudy": "teilweise bewoelkt",
+            "cloudy": "bewoelkt",
+            "rainy": "Regen",
+            "pouring": "starker Regen",
+            "snowy": "Schnee",
+            "snowy-rainy": "Schneeregen",
+            "fog": "Nebel",
+            "hail": "Hagel",
+            "lightning": "Gewitter",
+            "lightning-rainy": "Gewitter mit Regen",
+            "windy": "windig",
+            "windy-variant": "windig und bewoelkt",
+            "exceptional": "Ausnahmezustand",
+        }
+        return translations.get(condition, condition)
 
     async def _get_calendar_briefing(self) -> str:
         """Holt Kalender-Daten."""
@@ -445,13 +528,22 @@ Keine Aufzaehlungszeichen. Fliesstext."""
         if states:
             for state in states:
                 if state.get("entity_id", "").startswith("weather."):
-                    forecast = state.get("attributes", {}).get("forecast", [])
+                    entity_id = state.get("entity_id", "")
+                    # Forecast via Service (HA 2024.3+)
+                    forecast = await self._get_forecast_via_service(entity_id)
+                    # Fallback: State-Attribute
+                    if not forecast:
+                        forecast = state.get("attributes", {}).get("forecast", [])
                     if len(forecast) >= 2:
                         tomorrow = forecast[1]
                         temp_high = tomorrow.get("temperature", "?")
                         temp_low = tomorrow.get("templow", "?")
-                        cond = tomorrow.get("condition", "?")
-                        parts.append(f"Morgen: {temp_low}-{temp_high}°C, {cond}")
+                        cond = self._translate_weather(tomorrow.get("condition", "?"))
+                        precipitation = tomorrow.get("precipitation")
+                        text = f"Morgen: {temp_low}-{temp_high}°C, {cond}"
+                        if precipitation and float(precipitation) > 0:
+                            text += f", {precipitation}mm Niederschlag"
+                        parts.append(text)
                     break
 
         # Kalender morgen

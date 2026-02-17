@@ -1,18 +1,16 @@
 """
-Speaker Recognition - Phase 9: Personen-Erkennung per Stimme.
+Speaker Recognition - Phase 9: Personen-Erkennung.
 
-Erkennt WER spricht anhand eines Voice-Print-Systems:
-- Enrollment: 30 Sekunden Sprache → Voice-Print speichern
-- Erkennung: Neue Sprache gegen gespeicherte Prints vergleichen
-- Fallback: "Wer spricht?" bei niedriger Confidence
+Identifiziert WER spricht ueber mehrere Methoden:
+1. Device-Mapping: Welches Geraet/Satellite sendet? → Person zuordnen
+2. Room-Mapping: Raum + Anwesenheit → wahrscheinlichste Person
+3. Voice-Profile: Einfache Audio-Features (WPM, Dauer) als Hint
+4. Manuell: person-Parameter via API (hoechste Prioritaet)
 
 Architektur:
-- Voice-Prints werden in Redis gespeichert
-- Erkennung basiert auf einfachen Audio-Features (MFCC-aehnlich)
-- Optional: pyannote-audio Integration fuer praezise Speaker Diarization
-
-Dieses Feature ist standardmaessig DEAKTIVIERT (braucht GPU).
-Aktivierung: speaker_recognition.enabled: true in settings.yaml
+- Device-zu-Person Mapping in settings.yaml konfigurierbar
+- Profiles werden in Redis gespeichert (Lerneffekt)
+- Fallback: "Wer spricht?" bei Mehrdeutigkeit
 """
 
 import json
@@ -23,12 +21,14 @@ from typing import Optional
 import redis.asyncio as aioredis
 
 from .config import yaml_config
+from .ha_client import HomeAssistantClient
 
 logger = logging.getLogger(__name__)
 
 # Redis Keys
 SPEAKER_PROFILES_KEY = "mha:speaker:profiles"
 SPEAKER_LAST_IDENTIFIED_KEY = "mha:speaker:last_identified"
+SPEAKER_HISTORY_KEY = "mha:speaker:history"
 
 
 class SpeakerProfile:
@@ -40,8 +40,12 @@ class SpeakerProfile:
         self.created_at: float = time.time()
         self.sample_count: int = 0
         self.last_identified: float = 0.0
-        # Feature-Vektor (Platzhalter — wird durch Audio-Modell ersetzt)
-        self.features: list[float] = []
+        # Audio-Feature-Durchschnitte (WPM, avg_duration, avg_volume)
+        self.avg_wpm: float = 0.0
+        self.avg_duration: float = 0.0
+        self.avg_volume: float = 0.0
+        # Geraete die dieser Person zugeordnet sind
+        self.devices: list[str] = []
 
     def to_dict(self) -> dict:
         return {
@@ -50,7 +54,10 @@ class SpeakerProfile:
             "created_at": self.created_at,
             "sample_count": self.sample_count,
             "last_identified": self.last_identified,
-            "features": self.features,
+            "avg_wpm": self.avg_wpm,
+            "avg_duration": self.avg_duration,
+            "avg_volume": self.avg_volume,
+            "devices": self.devices,
         }
 
     @classmethod
@@ -59,29 +66,57 @@ class SpeakerProfile:
         profile.created_at = data.get("created_at", time.time())
         profile.sample_count = data.get("sample_count", 0)
         profile.last_identified = data.get("last_identified", 0.0)
-        profile.features = data.get("features", [])
+        profile.avg_wpm = data.get("avg_wpm", 0.0)
+        profile.avg_duration = data.get("avg_duration", 0.0)
+        profile.avg_volume = data.get("avg_volume", 0.0)
+        profile.devices = data.get("devices", [])
         return profile
+
+    def update_voice_stats(self, wpm: float = 0, duration: float = 0, volume: float = 0):
+        """Aktualisiert Voice-Statistiken mit gleitendem Durchschnitt."""
+        n = self.sample_count
+        if n == 0:
+            self.avg_wpm = wpm
+            self.avg_duration = duration
+            self.avg_volume = volume
+        else:
+            # Exponentieller gleitender Durchschnitt (alpha=0.3)
+            alpha = 0.3
+            if wpm > 0:
+                self.avg_wpm = alpha * wpm + (1 - alpha) * self.avg_wpm
+            if duration > 0:
+                self.avg_duration = alpha * duration + (1 - alpha) * self.avg_duration
+            if volume > 0:
+                self.avg_volume = alpha * volume + (1 - alpha) * self.avg_volume
+        self.sample_count += 1
+        self.last_identified = time.time()
 
 
 class SpeakerRecognition:
     """
-    Erkennt Personen anhand ihrer Stimme.
+    Erkennt Personen ueber Device-Mapping, Raum-Praesenz und Voice-Features.
 
-    Standardmaessig deaktiviert. Aktivierung:
-    speaker_recognition:
-      enabled: true
+    Konfiguration in settings.yaml:
+      speaker_recognition:
+        enabled: true
+        device_mapping:
+          media_player.kueche_speaker: "max"
+          media_player.schlafzimmer_speaker: "lisa"
     """
 
-    def __init__(self):
+    def __init__(self, ha_client: Optional[HomeAssistantClient] = None):
+        self.ha = ha_client
         self.redis: Optional[aioredis.Redis] = None
 
         # Konfiguration
         sr_cfg = yaml_config.get("speaker_recognition", {})
         self.enabled = sr_cfg.get("enabled", False)
         self.min_confidence = sr_cfg.get("min_confidence", 0.7)
-        self.enrollment_duration = sr_cfg.get("enrollment_duration", 30)
         self.fallback_ask = sr_cfg.get("fallback_ask", True)
         self.max_profiles = sr_cfg.get("max_profiles", 10)
+
+        # Device-zu-Person Mapping (aus Config)
+        self._device_mapping: dict[str, str] = sr_cfg.get("device_mapping", {})
 
         # In-Memory Cache der Profile
         self._profiles: dict[str, SpeakerProfile] = {}
@@ -89,8 +124,8 @@ class SpeakerRecognition:
 
         if self.enabled:
             logger.info(
-                "SpeakerRecognition initialisiert (min_confidence: %.2f, max_profiles: %d)",
-                self.min_confidence, self.max_profiles,
+                "SpeakerRecognition initialisiert (devices: %d, min_confidence: %.2f)",
+                len(self._device_mapping), self.min_confidence,
             )
         else:
             logger.info("SpeakerRecognition deaktiviert (speaker_recognition.enabled = false)")
@@ -110,65 +145,219 @@ class SpeakerRecognition:
                     profiles_dict = json.loads(data)
                     for pid, pdata in profiles_dict.items():
                         self._profiles[pid] = SpeakerProfile.from_dict(pdata)
-                    logger.info(
-                        "Speaker-Profile geladen: %d", len(self._profiles)
-                    )
+                    logger.info("Speaker-Profile geladen: %d", len(self._profiles))
             except Exception as e:
                 logger.debug("Speaker-Profile laden fehlgeschlagen: %s", e)
 
-    async def identify(self, audio_metadata: Optional[dict] = None) -> dict:
+    async def identify(
+        self,
+        audio_metadata: Optional[dict] = None,
+        device_id: Optional[str] = None,
+        room: Optional[str] = None,
+    ) -> dict:
         """
         Identifiziert den aktuellen Sprecher.
 
+        Prioritaet:
+        1. Device-Mapping (hoechste Confidence)
+        2. Raum + einzige Person zuhause (hohe Confidence)
+        3. Voice-Feature-Matching (mittlere Confidence)
+        4. Letzter bekannter Sprecher (niedrige Confidence)
+
         Args:
-            audio_metadata: Optional Audio-Features (WPM, Dauer, etc.)
+            audio_metadata: Voice-Features (wpm, duration, volume)
+            device_id: ID des sendenden Geraets/Satellite
+            room: Raum aus dem die Anfrage kommt
 
         Returns:
-            Dict mit:
-                person: str - Erkannter Name (oder None)
-                confidence: float - Sicherheit (0.0-1.0)
-                fallback: bool - Ob gefragt werden soll
+            Dict mit person, confidence, fallback, method
         """
         if not self.enabled:
+            return {"person": None, "confidence": 0.0, "fallback": False, "method": "disabled"}
+
+        # 1. Device-Mapping: Geraet → Person
+        if device_id and device_id in self._device_mapping:
+            person_id = self._device_mapping[device_id]
+            profile = self._profiles.get(person_id)
+            name = profile.name if profile else person_id.capitalize()
+            self._last_speaker = person_id
+
+            # Voice-Stats aktualisieren wenn Audio-Metadata vorhanden
+            if profile and audio_metadata:
+                profile.update_voice_stats(
+                    wpm=audio_metadata.get("wpm", 0),
+                    duration=audio_metadata.get("duration", 0),
+                    volume=audio_metadata.get("volume", 0),
+                )
+                await self._save_profiles()
+
             return {
-                "person": None,
-                "confidence": 0.0,
+                "person": name,
+                "confidence": 0.95,
                 "fallback": False,
+                "method": "device_mapping",
             }
 
-        if not self._profiles:
-            return {
-                "person": None,
-                "confidence": 0.0,
-                "fallback": self.fallback_ask,
-            }
+        # 2. Raum + Anwesenheit: Wenn nur 1 Person im Raum
+        if room and self.ha:
+            room_person = await self._identify_by_room(room)
+            if room_person:
+                self._last_speaker = room_person.lower()
+                return {
+                    "person": room_person,
+                    "confidence": 0.8,
+                    "fallback": False,
+                    "method": "room_presence",
+                }
 
-        # Platzhalter-Erkennung: Ohne echtes Audio-Modell
-        # nutzen wir den zuletzt identifizierten Sprecher
-        # In Produktion: pyannote-audio oder resemblyzer hier einbauen
+        # 3. Nur 1 Person zuhause → muss die sein
+        if self.ha:
+            sole_person = await self._identify_sole_person()
+            if sole_person:
+                self._last_speaker = sole_person.lower()
+                return {
+                    "person": sole_person,
+                    "confidence": 0.85,
+                    "fallback": False,
+                    "method": "sole_person_home",
+                }
+
+        # 4. Voice-Feature-Matching (wenn Audio-Metadata und Profile vorhanden)
+        if audio_metadata and self._profiles:
+            match = self._match_voice_features(audio_metadata)
+            if match:
+                self._last_speaker = match["person_id"]
+                return {
+                    "person": match["name"],
+                    "confidence": match["confidence"],
+                    "fallback": match["confidence"] < self.min_confidence,
+                    "method": "voice_features",
+                }
+
+        # 5. Letzter bekannter Sprecher (Cache)
         if self._last_speaker and self._last_speaker in self._profiles:
             profile = self._profiles[self._last_speaker]
             return {
                 "person": profile.name,
-                "confidence": 0.5,  # Niedrig weil nur Cache
-                "fallback": False,
+                "confidence": 0.4,
+                "fallback": True,
+                "method": "cache",
             }
 
         return {
             "person": None,
             "confidence": 0.0,
             "fallback": self.fallback_ask,
+            "method": "unknown",
         }
 
+    async def _identify_by_room(self, room: str) -> Optional[str]:
+        """Identifiziert Person anhand des Raums (Motion + Person-Entities)."""
+        states = await self.ha.get_states()
+        if not states:
+            return None
+
+        # Personen die zuhause sind sammeln
+        persons_home = []
+        for state in states:
+            if state.get("entity_id", "").startswith("person.") and state.get("state") == "home":
+                persons_home.append(
+                    state.get("attributes", {}).get("friendly_name", "User")
+                )
+
+        # Wenn nur 1 Person zuhause → die ist es
+        if len(persons_home) == 1:
+            return persons_home[0]
+
+        # Mehrere Personen: Preferred-Room Matching
+        person_profiles = yaml_config.get("persons", {}).get("profiles", {})
+        room_lower = room.lower().replace(" ", "_")
+        for person_key, profile in (person_profiles or {}).items():
+            pref_room = (profile.get("preferred_room", "") or "").lower().replace(" ", "_")
+            if pref_room == room_lower:
+                # Pruefen ob die Person zuhause ist
+                for ph in persons_home:
+                    if ph.lower() == person_key:
+                        return ph
+
+        return None
+
+    async def _identify_sole_person(self) -> Optional[str]:
+        """Wenn nur eine Person zuhause ist, ist es die."""
+        states = await self.ha.get_states()
+        if not states:
+            return None
+
+        persons_home = []
+        for state in states:
+            if state.get("entity_id", "").startswith("person.") and state.get("state") == "home":
+                persons_home.append(
+                    state.get("attributes", {}).get("friendly_name", "User")
+                )
+
+        if len(persons_home) == 1:
+            return persons_home[0]
+        return None
+
+    def _match_voice_features(self, audio_metadata: dict) -> Optional[dict]:
+        """Vergleicht Audio-Features mit gespeicherten Profilen."""
+        wpm = audio_metadata.get("wpm", 0)
+        duration = audio_metadata.get("duration", 0)
+
+        if not wpm and not duration:
+            return None
+
+        best_match = None
+        best_score = 0.0
+
+        for pid, profile in self._profiles.items():
+            if profile.sample_count < 3:
+                continue  # Zu wenige Samples fuer Matching
+
+            score = 0.0
+            factors = 0
+
+            # WPM-Aehnlichkeit
+            if wpm > 0 and profile.avg_wpm > 0:
+                wpm_diff = abs(wpm - profile.avg_wpm) / max(profile.avg_wpm, 1)
+                wpm_score = max(0, 1.0 - wpm_diff)
+                score += wpm_score
+                factors += 1
+
+            # Dauer-Aehnlichkeit
+            if duration > 0 and profile.avg_duration > 0:
+                dur_diff = abs(duration - profile.avg_duration) / max(profile.avg_duration, 1)
+                dur_score = max(0, 1.0 - dur_diff)
+                score += dur_score
+                factors += 1
+
+            if factors > 0:
+                avg_score = score / factors
+                # Sample-Count Bonus (mehr Samples = zuverlaessiger)
+                sample_bonus = min(0.1, profile.sample_count * 0.01)
+                final_score = avg_score * 0.7 + sample_bonus
+
+                if final_score > best_score:
+                    best_score = final_score
+                    best_match = {
+                        "person_id": pid,
+                        "name": profile.name,
+                        "confidence": round(final_score, 2),
+                    }
+
+        return best_match
+
     async def enroll(self, person_id: str, name: str,
-                     audio_features: Optional[list[float]] = None) -> bool:
+                     audio_features: Optional[dict] = None,
+                     device_id: Optional[str] = None) -> bool:
         """
-        Erstellt oder aktualisiert ein Voice-Print fuer eine Person.
+        Erstellt oder aktualisiert ein Profil fuer eine Person.
 
         Args:
-            person_id: Eindeutige Person-ID
+            person_id: Eindeutige Person-ID (kleingeschrieben)
             name: Anzeigename
-            audio_features: Feature-Vektor (optional)
+            audio_features: Voice-Features (wpm, duration, volume)
+            device_id: Geraet das dieser Person zugeordnet wird
 
         Returns:
             True wenn erfolgreich
@@ -182,15 +371,26 @@ class SpeakerRecognition:
 
         if person_id in self._profiles:
             profile = self._profiles[person_id]
-            profile.sample_count += 1
             if audio_features:
-                profile.features = audio_features
+                profile.update_voice_stats(
+                    wpm=audio_features.get("wpm", 0),
+                    duration=audio_features.get("duration", 0),
+                    volume=audio_features.get("volume", 0),
+                )
         else:
             profile = SpeakerProfile(name, person_id)
-            profile.sample_count = 1
             if audio_features:
-                profile.features = audio_features
+                profile.update_voice_stats(
+                    wpm=audio_features.get("wpm", 0),
+                    duration=audio_features.get("duration", 0),
+                    volume=audio_features.get("volume", 0),
+                )
             self._profiles[person_id] = profile
+
+        # Device-Zuordnung
+        if device_id and device_id not in profile.devices:
+            profile.devices.append(device_id)
+            self._device_mapping[device_id] = person_id
 
         await self._save_profiles()
         logger.info("Speaker-Profil gespeichert: %s (%s)", name, person_id)
@@ -206,8 +406,12 @@ class SpeakerRecognition:
                 pass
 
     async def remove_profile(self, person_id: str) -> bool:
-        """Entfernt ein Voice-Print."""
+        """Entfernt ein Profil."""
         if person_id in self._profiles:
+            profile = self._profiles[person_id]
+            # Device-Mappings entfernen
+            for device in profile.devices:
+                self._device_mapping.pop(device, None)
             del self._profiles[person_id]
             await self._save_profiles()
             return True
@@ -237,4 +441,4 @@ class SpeakerRecognition:
         """Gibt den Status zurueck."""
         if not self.enabled:
             return "disabled"
-        return f"active ({len(self._profiles)} profiles)"
+        return f"active ({len(self._profiles)} profiles, {len(self._device_mapping)} devices)"

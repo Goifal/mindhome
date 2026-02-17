@@ -5,6 +5,10 @@ Verwaltet Event-Sounds und spielt sie ueber Home Assistant ab.
 Jedes Event hat einen zugeordneten Sound der automatisch
 bei passender Gelegenheit abgespielt wird.
 
+Sound-Quellen (Prioritaet):
+  1. Eigene Soundfiles: /config/sounds/{event}.mp3 (wenn vorhanden)
+  2. TTS-Chime: Kurze TTS-Nachricht als akustisches Signal
+
 Sound-Events:
   listening  - Soft chime (Jarvis hoert zu)
   confirmed  - Short ping (Befehl bestaetigt)
@@ -17,16 +21,28 @@ Sound-Events:
 """
 
 import logging
+import time
 from datetime import datetime
 from typing import Optional
 
-from .config import yaml_config
+from .config import yaml_config, settings
 from .ha_client import HomeAssistantClient
 
 logger = logging.getLogger(__name__)
 
-# Default Sound-URLs (lokale TTS-basierte Sounds als Fallback)
-# In Produktion: eigene WAV/MP3 in /config/sounds/ ablegen
+# TTS-Chime-Texte als Fallback wenn keine Soundfiles vorhanden
+# Kurze, praegnante Texte die als akustisches Signal dienen
+TTS_CHIME_TEXTS = {
+    "listening": "Hmm?",
+    "confirmed": "Erledigt.",
+    "warning": "Achtung.",
+    "alarm": "Alarm! Alarm!",
+    "doorbell": "Es klingelt.",
+    "greeting": "Guten Tag.",
+    "error": "Da stimmt etwas nicht.",
+    "goodnight": "Gute Nacht.",
+}
+
 DEFAULT_SOUND_DESCRIPTIONS = {
     "listening": "Kurzer sanfter Ton",
     "confirmed": "Kurzer Bestaetigungston",
@@ -50,6 +66,7 @@ class SoundManager:
         self.enabled = sound_cfg.get("enabled", True)
         self.event_sounds = sound_cfg.get("events", {})
         self.night_volume_factor = sound_cfg.get("night_volume_factor", 0.4)
+        self.sound_base_url = sound_cfg.get("sound_base_url", "/local/sounds")
 
         # Volume-Konfiguration
         vol_cfg = yaml_config.get("volume", {})
@@ -59,6 +76,9 @@ class SoundManager:
         # Letzte Sounds (Anti-Spam)
         self._last_sound_time: dict[str, float] = {}
         self._min_interval = 2.0  # Mindestens 2s zwischen gleichen Sounds
+
+        # Stille Events: Nur Volume-Ping, kein TTS (zu stoerend)
+        self._silent_events = {"listening", "confirmed", "greeting", "goodnight"}
 
         logger.info(
             "SoundManager initialisiert (enabled: %s, events: %d)",
@@ -86,28 +106,18 @@ class SoundManager:
             return False
 
         # Anti-Spam: Nicht denselben Sound doppelt abspielen
-        import time
         now = time.time()
         last = self._last_sound_time.get(event, 0)
         if now - last < self._min_interval:
             return False
         self._last_sound_time[event] = now
 
-        # Sound-Name aus Config
-        sound_name = self.event_sounds.get(event, event)
-        if not sound_name:
-            return False
-
         # Volume bestimmen
         if volume is None:
             volume = self._get_auto_volume(event)
 
-        # Speaker finden
-        speaker_entity = None
-        if room:
-            speaker_entity = await self._find_speaker(room)
-        if not speaker_entity:
-            speaker_entity = await self._find_default_speaker()
+        # Speaker finden (erst Config-Mapping, dann Raum-Match, dann Default)
+        speaker_entity = await self._resolve_speaker(room)
         if not speaker_entity:
             logger.debug("Kein Speaker fuer Sound '%s' gefunden", event)
             return False
@@ -121,9 +131,74 @@ class SoundManager:
         except Exception as e:
             logger.debug("Volume setzen fehlgeschlagen: %s", e)
 
-        logger.debug("Sound '%s' abspielen (Volume: %.2f, Speaker: %s)",
-                      event, volume, speaker_entity)
+        # 1. Versuch: Soundfile abspielen (media_player.play_media)
+        sound_played = await self._play_sound_file(event, speaker_entity)
+        if sound_played:
+            logger.debug("Sound '%s' als Datei abgespielt (Speaker: %s)", event, speaker_entity)
+            return True
+
+        # 2. Fallback: TTS-Chime (nur fuer nicht-stille Events)
+        if event not in self._silent_events:
+            tts_played = await self._play_tts_chime(event, speaker_entity)
+            if tts_played:
+                logger.debug("Sound '%s' als TTS abgespielt (Speaker: %s)", event, speaker_entity)
+                return True
+
+        logger.debug("Sound '%s' nur als Volume-Ping (Speaker: %s)", event, speaker_entity)
         return True
+
+    async def _play_sound_file(self, event: str, speaker_entity: str) -> bool:
+        """Versucht einen Soundfile via media_player.play_media abzuspielen."""
+        # Soundfile-URL: /local/sounds/{event}.mp3
+        sound_url = f"{self.sound_base_url}/{event}.mp3"
+        try:
+            success = await self.ha.call_service(
+                "media_player", "play_media",
+                {
+                    "entity_id": speaker_entity,
+                    "media_content_id": sound_url,
+                    "media_content_type": "music",
+                },
+            )
+            return success
+        except Exception as e:
+            logger.debug("Soundfile '%s' nicht abspielbar: %s", sound_url, e)
+            return False
+
+    async def _play_tts_chime(self, event: str, speaker_entity: str) -> bool:
+        """Spielt einen kurzen TTS-Text als akustisches Signal."""
+        chime_text = TTS_CHIME_TEXTS.get(event)
+        if not chime_text:
+            return False
+
+        # TTS-Entity finden (Piper bevorzugt)
+        tts_entity = await self._find_tts_entity()
+        if tts_entity:
+            try:
+                return await self.ha.call_service(
+                    "tts", "speak",
+                    {
+                        "entity_id": tts_entity,
+                        "media_player_entity_id": speaker_entity,
+                        "message": chime_text,
+                        "language": "de",
+                    },
+                )
+            except Exception as e:
+                logger.debug("TTS-Chime fehlgeschlagen: %s", e)
+
+        # Letzter Fallback: Legacy TTS
+        try:
+            return await self.ha.call_service(
+                "tts", "cloud_say",
+                {
+                    "entity_id": speaker_entity,
+                    "message": chime_text,
+                    "language": "de",
+                },
+            )
+        except Exception:
+            return False
 
     def _get_auto_volume(self, event: str) -> float:
         """Bestimmt die automatische Lautstaerke basierend auf Tageszeit und Event."""
@@ -149,8 +224,27 @@ class SoundManager:
 
         return round(min(1.0, base), 2)
 
+    async def _resolve_speaker(self, room: Optional[str] = None) -> Optional[str]:
+        """Findet den besten Speaker: Config-Mapping > Raum-Match > Default."""
+        # 1. Konfiguriertes Mapping pruefen
+        if room:
+            room_speakers = yaml_config.get("multi_room", {}).get("room_speakers", {})
+            room_lower = room.lower().replace(" ", "_")
+            for cfg_room, entity_id in (room_speakers or {}).items():
+                if cfg_room.lower() == room_lower:
+                    return entity_id
+
+        # 2. Entity-Name-Matching im Raum
+        if room:
+            speaker = await self._find_speaker(room)
+            if speaker:
+                return speaker
+
+        # 3. Standard-Speaker
+        return await self._find_default_speaker()
+
     async def _find_speaker(self, room: str) -> Optional[str]:
-        """Findet einen Speaker im angegebenen Raum."""
+        """Findet einen Speaker im angegebenen Raum per Entity-Name."""
         states = await self.ha.get_states()
         if not states:
             return None
@@ -172,6 +266,23 @@ class SoundManager:
                 return entity_id
         return None
 
+    async def _find_tts_entity(self) -> Optional[str]:
+        """Findet die TTS-Entity (Piper bevorzugt)."""
+        states = await self.ha.get_states()
+        if not states:
+            return None
+        # Piper bevorzugen
+        for state in states:
+            entity_id = state.get("entity_id", "")
+            if entity_id.startswith("tts.") and "piper" in entity_id:
+                return entity_id
+        # Fallback: Erste TTS-Entity
+        for state in states:
+            entity_id = state.get("entity_id", "")
+            if entity_id.startswith("tts."):
+                return entity_id
+        return None
+
     def get_sound_info(self) -> dict:
         """Gibt Infos ueber verfuegbare Sounds zurueck."""
         return {
@@ -179,4 +290,5 @@ class SoundManager:
             "events": self.event_sounds,
             "descriptions": DEFAULT_SOUND_DESCRIPTIONS,
             "night_volume_factor": self.night_volume_factor,
+            "sound_base_url": self.sound_base_url,
         }

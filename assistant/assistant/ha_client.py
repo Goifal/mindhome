@@ -86,6 +86,18 @@ class HomeAssistantClient:
         )
         return result is not None
 
+    async def call_service_with_response(
+        self, domain: str, service: str, data: Optional[dict] = None
+    ) -> Any:
+        """HA Service aufrufen und Response-Body zurueckgeben.
+
+        Manche HA-Services (z.B. weather.get_forecasts) geben Daten zurueck.
+        Im Gegensatz zu call_service() wird hier der volle Response zurueckgegeben.
+        """
+        return await self._post_ha(
+            f"/api/services/{domain}/{service}", data or {}
+        )
+
     async def fire_event(
         self, event_type: str, event_data: Optional[dict] = None
     ) -> bool:

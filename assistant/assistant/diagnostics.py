@@ -8,16 +8,23 @@ Feature 10.4: Sensor-Watchdog
 Feature 10.5: Wartungs-Assistent
 - Prueft faellige Wartungsaufgaben aus maintenance.yaml
 - Sanfte Erinnerungen (LOW Priority)
+
+Feature 10.6: Self-Diagnostik
+- System-Ressourcen: Disk, Memory, CPU
+- Netzwerk-Konnektivitaet: HA, Ollama, Redis, ChromaDB
+- Service-Health Aggregation
 """
 
 import logging
+import os
+import shutil
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
 import yaml
 
-from .config import yaml_config
+from .config import yaml_config, settings
 from .ha_client import HomeAssistantClient
 
 logger = logging.getLogger(__name__)
@@ -341,6 +348,201 @@ class DiagnosticsEngine:
                 yaml.dump(data, f, default_flow_style=False, allow_unicode=True)
         except Exception as e:
             logger.error("maintenance.yaml speichern fehlgeschlagen: %s", e)
+
+    # ------------------------------------------------------------------
+    # Feature 10.6: Self-Diagnostik
+    # ------------------------------------------------------------------
+
+    def check_system_resources(self) -> dict:
+        """Prueft lokale System-Ressourcen (Disk, Memory).
+
+        Returns:
+            Dict mit disk, memory Info und Warnungen
+        """
+        result = {"disk": {}, "memory": {}, "warnings": []}
+
+        # Disk-Space
+        try:
+            usage = shutil.disk_usage("/")
+            total_gb = usage.total / (1024 ** 3)
+            free_gb = usage.free / (1024 ** 3)
+            used_pct = (usage.used / usage.total) * 100
+            result["disk"] = {
+                "total_gb": round(total_gb, 1),
+                "free_gb": round(free_gb, 1),
+                "used_percent": round(used_pct, 1),
+            }
+            if used_pct > 90:
+                result["warnings"].append(
+                    f"Speicherplatz kritisch: {round(free_gb, 1)} GB frei ({round(used_pct)}% belegt)"
+                )
+            elif used_pct > 80:
+                result["warnings"].append(
+                    f"Speicherplatz niedrig: {round(free_gb, 1)} GB frei ({round(used_pct)}% belegt)"
+                )
+        except Exception as e:
+            result["disk"]["error"] = str(e)
+
+        # Memory via /proc/meminfo (Linux)
+        try:
+            meminfo_path = Path("/proc/meminfo")
+            if meminfo_path.exists():
+                meminfo = {}
+                with open(meminfo_path) as f:
+                    for line in f:
+                        parts = line.split(":")
+                        if len(parts) == 2:
+                            key = parts[0].strip()
+                            val = parts[1].strip().split()[0]  # kB-Wert
+                            meminfo[key] = int(val)
+
+                total_mb = meminfo.get("MemTotal", 0) / 1024
+                available_mb = meminfo.get("MemAvailable", 0) / 1024
+                used_mb = total_mb - available_mb
+                used_pct = (used_mb / max(total_mb, 1)) * 100
+
+                result["memory"] = {
+                    "total_mb": round(total_mb),
+                    "available_mb": round(available_mb),
+                    "used_percent": round(used_pct, 1),
+                }
+                if used_pct > 90:
+                    result["warnings"].append(
+                        f"RAM kritisch: {round(available_mb)} MB frei ({round(used_pct)}% belegt)"
+                    )
+                elif used_pct > 80:
+                    result["warnings"].append(
+                        f"RAM hoch: {round(available_mb)} MB frei ({round(used_pct)}% belegt)"
+                    )
+        except Exception as e:
+            result["memory"]["error"] = str(e)
+
+        return result
+
+    async def check_connectivity(self) -> dict:
+        """Prueft Netzwerk-Konnektivitaet zu allen Diensten.
+
+        Returns:
+            Dict mit Service-Erreichbarkeit
+        """
+        import aiohttp
+        import asyncio
+
+        results = {}
+
+        # Home Assistant
+        try:
+            ha_ok = await self.ha.is_available()
+            results["home_assistant"] = {
+                "url": settings.ha_url,
+                "status": "connected" if ha_ok else "disconnected",
+            }
+        except Exception as e:
+            results["home_assistant"] = {"url": settings.ha_url, "status": f"error: {e}"}
+
+        # Ollama
+        try:
+            timeout = aiohttp.ClientTimeout(total=5)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.get(f"{settings.ollama_url}/api/tags") as resp:
+                    results["ollama"] = {
+                        "url": settings.ollama_url,
+                        "status": "connected" if resp.status == 200 else f"HTTP {resp.status}",
+                    }
+        except Exception as e:
+            results["ollama"] = {"url": settings.ollama_url, "status": f"disconnected: {e}"}
+
+        # Redis
+        try:
+            import redis.asyncio as aioredis
+            r = aioredis.from_url(settings.redis_url, socket_timeout=3)
+            await r.ping()
+            await r.aclose()
+            results["redis"] = {"url": settings.redis_url, "status": "connected"}
+        except Exception as e:
+            results["redis"] = {"url": settings.redis_url, "status": f"disconnected: {e}"}
+
+        # ChromaDB
+        try:
+            timeout = aiohttp.ClientTimeout(total=5)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.get(f"{settings.chroma_url}/api/v1/heartbeat") as resp:
+                    results["chromadb"] = {
+                        "url": settings.chroma_url,
+                        "status": "connected" if resp.status == 200 else f"HTTP {resp.status}",
+                    }
+        except Exception as e:
+            results["chromadb"] = {"url": settings.chroma_url, "status": f"disconnected: {e}"}
+
+        # MindHome Addon
+        try:
+            mh_status = await self.ha._get_mindhome("/api/health")
+            results["mindhome_addon"] = {
+                "url": settings.mindhome_url,
+                "status": "connected" if mh_status else "disconnected",
+            }
+        except Exception as e:
+            results["mindhome_addon"] = {"url": settings.mindhome_url, "status": f"disconnected: {e}"}
+
+        return results
+
+    async def full_diagnostic(self) -> dict:
+        """Fuehrt kompletten Diagnostik-Lauf durch (Entities + System + Netzwerk).
+
+        Returns:
+            Umfassender Report aller Diagnose-Ergebnisse
+        """
+        report = {
+            "timestamp": datetime.now().isoformat(),
+            "entities": {},
+            "system": {},
+            "connectivity": {},
+            "maintenance": [],
+            "summary": {"total_warnings": 0, "status": "healthy"},
+        }
+
+        # Entity-Checks
+        issues = await self.check_entities()
+        report["entities"] = {
+            "issues": issues,
+            "issues_count": len(issues),
+        }
+
+        # System-Status
+        system_status = await self.get_system_status()
+        report["entities"]["overview"] = system_status
+
+        # System-Ressourcen
+        resources = self.check_system_resources()
+        report["system"] = resources
+
+        # Netzwerk-Konnektivitaet
+        connectivity = await self.check_connectivity()
+        report["connectivity"] = connectivity
+
+        # Wartung
+        maintenance = self.check_maintenance()
+        report["maintenance"] = maintenance
+
+        # Summary berechnen
+        total_warnings = len(issues) + len(resources.get("warnings", [])) + len(maintenance)
+        disconnected = sum(
+            1 for svc in connectivity.values()
+            if "disconnected" in str(svc.get("status", ""))
+        )
+        total_warnings += disconnected
+
+        if disconnected > 0 or any(i.get("severity") == "critical" for i in issues):
+            report["summary"]["status"] = "critical"
+        elif total_warnings > 3:
+            report["summary"]["status"] = "degraded"
+        elif total_warnings > 0:
+            report["summary"]["status"] = "warning"
+
+        report["summary"]["total_warnings"] = total_warnings
+        report["summary"]["disconnected_services"] = disconnected
+
+        return report
 
     def health_status(self) -> str:
         """Gibt den eigenen Status zurueck."""

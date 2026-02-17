@@ -30,10 +30,11 @@ persons:
 autonomy:
   level: 2
 
-# --- Modell-Routing ---
+# --- Modell-Routing (3 Stufen) ---
 models:
-  fast: "qwen2.5:3b"
-  smart: "qwen2.5:14b"
+  fast: "qwen2.5:3b"      # Einfache Befehle (Licht, Musik, Szene)
+  smart: "qwen2.5:14b"    # Fragen, Konversation, Standard
+  deep: "qwen2.5:32b"     # Komplexe Planung, Analyse, Reasoning
 
   # Keywords die das schnelle Modell triggern
   fast_keywords:
@@ -56,6 +57,49 @@ models:
     - "lauter"
     - "an"
     - "aus"
+
+  # Keywords die das Deep-Modell triggern (komplexe Anfragen)
+  deep_keywords:
+    - "erklaer"
+    - "erklaere"
+    - "warum genau"
+    - "im detail"
+    - "analysiere"
+    - "analyse"
+    - "vergleich"
+    - "vergleiche"
+    - "unterschied zwischen"
+    - "vor- und nachteile"
+    - "strategie"
+    - "plan"
+    - "plane"
+    - "planung"
+    - "optimier"
+    - "optimiere"
+    - "optimierung"
+    - "was waere wenn"
+    - "hypothetisch"
+    - "stell dir vor"
+    - "angenommen"
+    - "zusammenfassung"
+    - "zusammenfassen"
+    - "fasse zusammen"
+    - "berechne"
+    - "berechnung"
+    - "wie funktioniert"
+    - "wie genau"
+    - "schreib mir"
+    - "schreibe mir"
+    - "formuliere"
+    - "rezept"
+    - "anleitung"
+    - "tutorial"
+    - "pro und contra"
+    - "bewerte"
+    - "bewertung"
+
+  # Ab wie vielen Woertern automatisch Deep-Model nutzen
+  deep_min_words: 15
 
   # LLM Optionen
   options:

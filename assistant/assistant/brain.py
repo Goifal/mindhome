@@ -102,7 +102,7 @@ class AssistantBrain:
         # Phase 9: Stimme & Akustik
         self.tts_enhancer = TTSEnhancer()
         self.sound_manager = SoundManager(self.ha)
-        self.speaker_recognition = SpeakerRecognition()
+        self.speaker_recognition = SpeakerRecognition(ha_client=self.ha)
 
         # Phase 10: Diagnostik + Wartungs-Assistent
         self.diagnostics = DiagnosticsEngine(self.ha)
@@ -207,11 +207,12 @@ class AssistantBrain:
                 self.speaker_recognition.set_current_speaker(person.lower())
             )
         elif self.speaker_recognition.enabled:
-            identified = await self.speaker_recognition.identify()
-            if identified.get("person"):
+            identified = await self.speaker_recognition.identify(room=room)
+            if identified.get("person") and not identified.get("fallback"):
                 person = identified["person"]
-                logger.info("Speaker erkannt: %s (Confidence: %.2f)",
-                            person, identified.get("confidence", 0))
+                logger.info("Speaker erkannt: %s (Confidence: %.2f, Methode: %s)",
+                            person, identified.get("confidence", 0),
+                            identified.get("method", "unknown"))
 
         # Phase 7: Gute-Nacht-Intent (VOR allem anderen)
         if self.routines.is_goodnight_intent(text):
@@ -388,7 +389,8 @@ class AssistantBrain:
 
         # 6. Komplexe Anfragen ueber Action Planner routen
         if self.action_planner.is_complex_request(text):
-            logger.info("Komplexe Anfrage erkannt -> Action Planner")
+            logger.info("Komplexe Anfrage erkannt -> Action Planner (Deep: %s)",
+                         settings.model_deep)
             planner_result = await self.action_planner.plan_and_execute(
                 text=text,
                 system_prompt=system_prompt,
@@ -397,11 +399,12 @@ class AssistantBrain:
             )
             response_text = planner_result.get("response", "")
             executed_actions = planner_result.get("actions", [])
-            model = "qwen2.5:14b"
+            model = settings.model_deep
         elif intent_type == "knowledge":
-            # Phase 8: Wissensfragen direkt beantworten (ohne Tools)
-            logger.info("Wissensfrage erkannt -> LLM direkt (14B, keine Tools)")
-            model = settings.model_smart
+            # Phase 8: Wissensfragen -> Deep-Model fuer bessere Qualitaet
+            logger.info("Wissensfrage erkannt -> LLM direkt (Deep: %s, keine Tools)",
+                         settings.model_deep)
+            model = settings.model_deep
             response = await self.ollama.chat(
                 messages=messages,
                 model=model,
@@ -413,8 +416,8 @@ class AssistantBrain:
                 logger.error("LLM Fehler: %s", response["error"])
                 response_text = "Da bin ich mir nicht sicher."
         elif intent_type == "memory":
-            # Phase 8: Erinnerungsfrage -> Memory-Suche + LLM
-            logger.info("Erinnerungsfrage erkannt -> Memory-Suche + LLM")
+            # Phase 8: Erinnerungsfrage -> Memory-Suche + Deep-Model
+            logger.info("Erinnerungsfrage erkannt -> Memory-Suche + Deep-Model")
             memory_facts = await self.memory.semantic.search_by_topic(text, limit=5)
             if memory_facts:
                 facts_text = "\n".join(f"- {f['content']}" for f in memory_facts)
@@ -422,7 +425,7 @@ class AssistantBrain:
                 system_prompt += "\nBeantworte basierend auf diesen gespeicherten Fakten."
                 messages[0] = {"role": "system", "content": system_prompt}
 
-            model = settings.model_smart
+            model = settings.model_deep
             response = await self.ollama.chat(
                 messages=messages,
                 model=model,
@@ -453,6 +456,10 @@ class AssistantBrain:
             executed_actions = []
 
             # 8. Function Calls ausfuehren
+            # Tools die Daten zurueckgeben und eine LLM-formatierte Antwort brauchen
+            QUERY_TOOLS = {"get_entity_state", "send_message_to_person"}
+            has_query_results = False
+
             if tool_calls:
                 for tool_call in tool_calls:
                     func = tool_call.get("function", {})
@@ -504,6 +511,9 @@ class AssistantBrain:
                         "result": result,
                     })
 
+                    if func_name in QUERY_TOOLS:
+                        has_query_results = True
+
                     # WebSocket: Aktion melden
                     await emit_action(func_name, func_args, result)
 
@@ -516,7 +526,46 @@ class AssistantBrain:
                         else:
                             response_text = opinion
 
+            # 8b. Tool-Result Feedback Loop: Ergebnisse zurueck ans LLM
+            # Damit Jarvis natuerlich antwortet ("Im Buero sind es 22 Grad, Sir.")
+            # statt nur "Erledigt." bei Abfragen
+            if tool_calls and has_query_results and not response_text:
+                try:
+                    # Tool-Ergebnisse als Messages aufbauen
+                    feedback_messages = list(messages)
+                    # LLM-Antwort mit Tool-Calls anhaengen
+                    feedback_messages.append(message)
+                    # Tool-Results als "tool" Messages
+                    for action in executed_actions:
+                        result = action.get("result", {})
+                        result_text = ""
+                        if isinstance(result, dict):
+                            result_text = result.get("message", str(result))
+                        else:
+                            result_text = str(result)
+                        feedback_messages.append({
+                            "role": "tool",
+                            "content": result_text,
+                        })
+
+                    # Zweiter LLM-Call: Natuerliche Antwort generieren (ohne Tools)
+                    logger.debug("Tool-Feedback: %d Results -> LLM fuer natuerliche Antwort",
+                                 len(executed_actions))
+                    feedback_response = await self.ollama.chat(
+                        messages=feedback_messages,
+                        model=model,
+                        temperature=0.7,
+                        max_tokens=128,
+                    )
+                    if "error" not in feedback_response:
+                        feedback_text = feedback_response.get("message", {}).get("content", "")
+                        if feedback_text:
+                            response_text = feedback_text
+                except Exception as e:
+                    logger.debug("Tool-Feedback fehlgeschlagen: %s", e)
+
             # Phase 6: Variierte Bestaetigung statt immer "Erledigt."
+            # Nur fuer reine Action-Tools (set_light etc.), nicht fuer Query-Tools
             if executed_actions and not response_text:
                 all_success = all(
                     a["result"].get("success", False)
@@ -714,6 +763,7 @@ class AssistantBrain:
                 "diagnostics": self.diagnostics.health_status(),
             },
             "models_available": models,
+            "model_routing": self.model_router.get_model_info(),
             "autonomy": self.autonomy.get_level_info(),
             "trust": self.autonomy.get_trust_info(),
             "personality": {
