@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     ollama_url: str = "http://localhost:11434"
     model_fast: str = "qwen2.5:3b"
     model_smart: str = "qwen2.5:14b"
+    model_deep: str = "qwen2.5:32b"
 
     # MindHome Assistant Server
     assistant_host: str = "0.0.0.0"
@@ -56,8 +57,16 @@ def load_yaml_config() -> dict:
 settings = Settings()
 yaml_config = load_yaml_config()
 
-# settings.yaml ueberschreibt .env fuer assistant_name
-# (damit "Jarvis" in settings.yaml nicht durch Default ueberschrieben wird)
+# settings.yaml ueberschreibt .env fuer bestimmte Werte
 _yaml_name = yaml_config.get("assistant", {}).get("name")
 if _yaml_name:
     settings.assistant_name = _yaml_name
+
+# Modelle aus settings.yaml uebernehmen (wenn gesetzt)
+_models = yaml_config.get("models", {})
+if _models.get("fast"):
+    settings.model_fast = _models["fast"]
+if _models.get("smart"):
+    settings.model_smart = _models["smart"]
+if _models.get("deep"):
+    settings.model_deep = _models["deep"]

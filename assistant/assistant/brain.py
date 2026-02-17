@@ -389,7 +389,8 @@ class AssistantBrain:
 
         # 6. Komplexe Anfragen ueber Action Planner routen
         if self.action_planner.is_complex_request(text):
-            logger.info("Komplexe Anfrage erkannt -> Action Planner")
+            logger.info("Komplexe Anfrage erkannt -> Action Planner (Deep: %s)",
+                         settings.model_deep)
             planner_result = await self.action_planner.plan_and_execute(
                 text=text,
                 system_prompt=system_prompt,
@@ -398,11 +399,12 @@ class AssistantBrain:
             )
             response_text = planner_result.get("response", "")
             executed_actions = planner_result.get("actions", [])
-            model = "qwen2.5:14b"
+            model = settings.model_deep
         elif intent_type == "knowledge":
-            # Phase 8: Wissensfragen direkt beantworten (ohne Tools)
-            logger.info("Wissensfrage erkannt -> LLM direkt (14B, keine Tools)")
-            model = settings.model_smart
+            # Phase 8: Wissensfragen -> Deep-Model fuer bessere Qualitaet
+            logger.info("Wissensfrage erkannt -> LLM direkt (Deep: %s, keine Tools)",
+                         settings.model_deep)
+            model = settings.model_deep
             response = await self.ollama.chat(
                 messages=messages,
                 model=model,
@@ -414,8 +416,8 @@ class AssistantBrain:
                 logger.error("LLM Fehler: %s", response["error"])
                 response_text = "Da bin ich mir nicht sicher."
         elif intent_type == "memory":
-            # Phase 8: Erinnerungsfrage -> Memory-Suche + LLM
-            logger.info("Erinnerungsfrage erkannt -> Memory-Suche + LLM")
+            # Phase 8: Erinnerungsfrage -> Memory-Suche + Deep-Model
+            logger.info("Erinnerungsfrage erkannt -> Memory-Suche + Deep-Model")
             memory_facts = await self.memory.semantic.search_by_topic(text, limit=5)
             if memory_facts:
                 facts_text = "\n".join(f"- {f['content']}" for f in memory_facts)
@@ -423,7 +425,7 @@ class AssistantBrain:
                 system_prompt += "\nBeantworte basierend auf diesen gespeicherten Fakten."
                 messages[0] = {"role": "system", "content": system_prompt}
 
-            model = settings.model_smart
+            model = settings.model_deep
             response = await self.ollama.chat(
                 messages=messages,
                 model=model,
@@ -761,6 +763,7 @@ class AssistantBrain:
                 "diagnostics": self.diagnostics.health_status(),
             },
             "models_available": models,
+            "model_routing": self.model_router.get_model_info(),
             "autonomy": self.autonomy.get_level_info(),
             "trust": self.autonomy.get_trust_info(),
             "personality": {

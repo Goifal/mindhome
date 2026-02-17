@@ -28,7 +28,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Optional
 
-from .config import yaml_config
+from .config import settings, yaml_config
 from .function_calling import ASSISTANT_TOOLS, FunctionExecutor
 from .function_validator import FunctionValidator
 from .ollama_client import OllamaClient
@@ -177,10 +177,10 @@ class ActionPlanner:
 
             logger.info("Action Planner: Iteration %d", iteration + 1)
 
-            # LLM aufrufen (mit Tools + Kontext der bisherigen Ergebnisse)
+            # LLM aufrufen (Deep-Model fuer komplexe Planung)
             response = await self.ollama.chat(
                 messages=planner_messages,
-                model="qwen2.5:14b",  # Immer smart model fuer Planung
+                model=settings.model_deep,
                 tools=ASSISTANT_TOOLS,
                 max_tokens=512,
             )
