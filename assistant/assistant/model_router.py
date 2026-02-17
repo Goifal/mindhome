@@ -109,7 +109,7 @@ class ModelRouter:
 
         model_lower = model_name.lower()
         for available in self._available_models:
-            # Exakter Match oder Prefix-Match (qwen2.5:32b matched qwen2.5:32b-instruct)
+            # Exakter Match oder Prefix-Match (qwen3:32b matched qwen3:32b-instruct)
             if available == model_lower or available.startswith(model_lower):
                 return True
             # Auch umgekehrt: model_name koennte laenger sein

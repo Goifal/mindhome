@@ -96,28 +96,28 @@ for i in $(seq 1 10); do
     sleep 2
 done
 
-if ! ollama list 2>/dev/null | grep -q "qwen2.5:3b"; then
-    echo -e "${YELLOW}Lade Qwen 2.5 3B (schnelles Modell, ~2 GB)...${NC}"
-    ollama pull qwen2.5:3b
-    echo -e "${GREEN}Qwen 2.5 3B: OK${NC}"
+if ! ollama list 2>/dev/null | grep -q "qwen3:4b"; then
+    echo -e "${YELLOW}Lade Qwen 3 4B (schnelles Modell, ~3 GB)...${NC}"
+    ollama pull qwen3:4b
+    echo -e "${GREEN}Qwen 3 4B: OK${NC}"
 else
-    echo -e "${GREEN}Qwen 2.5 3B: bereits vorhanden${NC}"
+    echo -e "${GREEN}Qwen 3 4B: bereits vorhanden${NC}"
 fi
 
-if ! ollama list 2>/dev/null | grep -q "qwen2.5:14b"; then
+if ! ollama list 2>/dev/null | grep -q "qwen3:14b"; then
     echo ""
-    echo -e "${YELLOW}Moechtest du auch das schlaue Modell laden? (Qwen 2.5 14B, ~9 GB)${NC}"
+    echo -e "${YELLOW}Moechtest du auch das schlaue Modell laden? (Qwen 3 14B, ~9 GB)${NC}"
     echo -e "${YELLOW}Das braucht ~16 GB RAM, ist aber viel schlauer.${NC}"
     read -p "Herunterladen? (j/n): " -n 1 -r
     echo ""
     if [[ $REPLY =~ ^[Jj]$ ]]; then
-        ollama pull qwen2.5:14b
-        echo -e "${GREEN}Qwen 2.5 14B: OK${NC}"
+        ollama pull qwen3:14b
+        echo -e "${GREEN}Qwen 3 14B: OK${NC}"
     else
-        echo -e "${YELLOW}Uebersprungen. Kann spaeter mit 'ollama pull qwen2.5:14b' nachgeholt werden.${NC}"
+        echo -e "${YELLOW}Uebersprungen. Kann spaeter mit 'ollama pull qwen3:14b' nachgeholt werden.${NC}"
     fi
 else
-    echo -e "${GREEN}Qwen 2.5 14B: bereits vorhanden${NC}"
+    echo -e "${GREEN}Qwen 3 14B: bereits vorhanden${NC}"
 fi
 
 # --- Schritt 4: Konfiguration ---

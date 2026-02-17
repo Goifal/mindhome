@@ -126,7 +126,7 @@ class IntentTracker:
         try:
             response = await self.ollama.chat(
                 messages=[{"role": "user", "content": prompt}],
-                model="qwen2.5:3b",
+                model="qwen3:4b",
                 temperature=0.1,
                 max_tokens=512,
             )
