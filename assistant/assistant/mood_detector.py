@@ -1,11 +1,14 @@
 """
 Mood Detector - Phase 3: Stimmungs-, Stress- und Muedigkeitserkennung.
+Phase 9: Erweitert um Sprach-Metadaten-Analyse (Voice Emotion Detection).
 
 Analysiert User-Interaktionsmuster und erkennt:
 - Stimmung (gut, neutral, gestresst, frustriert, muede)
 - Stress (schnelle aufeinanderfolgende Befehle, ungeduldige Sprache)
 - Muedigkeit (spaete Uhrzeit + kurze Nachrichten + muede Keywords)
 - Frustration (Wiederholungen, negative Keywords, Ausrufezeichen)
+- Phase 9: Sprechgeschwindigkeit (schnell = Stress, langsam = Muedigkeit)
+- Phase 9: Lautstaerke-Level (laut = aufgeregt, leise = muede/unsicher)
 
 Nutzt Redis fuer die Interaktions-History und Pattern-Erkennung.
 """
@@ -87,6 +90,15 @@ class MoodDetector:
         self.tired_hour_end = mood_cfg.get("tired_hour_end", 5)
 
         self._last_decay_time = time.time()
+
+        # Phase 9: Voice Analysis Konfiguration
+        voice_cfg = yaml_config.get("voice_analysis", {})
+        self.voice_enabled = voice_cfg.get("enabled", True)
+        self.wpm_fast = voice_cfg.get("wpm_fast", 180)
+        self.wpm_slow = voice_cfg.get("wpm_slow", 80)
+        self.wpm_normal = voice_cfg.get("wpm_normal", 130)
+        self.voice_weight = voice_cfg.get("voice_weight", 0.3)
+        self._last_voice_signals: list[str] = []
 
     async def initialize(self, redis_client: Optional[redis.Redis] = None):
         """Initialisiert mit Redis."""
@@ -362,6 +374,79 @@ class MoodDetector:
                 hints.append("WARNUNG: 3x negativ hintereinander. Eskalation vermeiden.")
 
         return " ".join(hints)
+
+    # ------------------------------------------------------------------
+    # Phase 9: Voice Emotion Detection
+    # ------------------------------------------------------------------
+
+    def analyze_voice_metadata(self, metadata: dict) -> list[str]:
+        """
+        Phase 9: Analysiert Sprach-Metadaten fuer Stimmungserkennung.
+
+        Args:
+            metadata: Dict mit optionalen Feldern:
+                wpm: float - Woerter pro Minute (Sprechgeschwindigkeit)
+                volume: float - Lautstaerke (0.0-1.0)
+                duration: float - Dauer der Aufnahme in Sekunden
+                word_count: int - Anzahl erkannter Woerter
+
+        Returns:
+            Liste erkannter Voice-Signale
+        """
+        if not self.voice_enabled or not metadata:
+            return []
+
+        signals = []
+
+        # Sprechgeschwindigkeit
+        wpm = metadata.get("wpm")
+        if wpm is not None:
+            if wpm > self.wpm_fast:
+                # Schnelles Sprechen = Stress/Aufregung
+                stress_boost = (wpm - self.wpm_fast) / 100.0 * self.voice_weight
+                self._stress_level = min(1.0, self._stress_level + stress_boost)
+                signals.append("voice_fast")
+                logger.debug("Voice: schnell (%.0f WPM) -> Stress +%.2f", wpm, stress_boost)
+            elif wpm < self.wpm_slow:
+                # Langsames Sprechen = Muedigkeit
+                tired_boost = (self.wpm_slow - wpm) / 100.0 * self.voice_weight
+                self._tiredness_level = min(1.0, self._tiredness_level + tired_boost)
+                signals.append("voice_slow")
+                logger.debug("Voice: langsam (%.0f WPM) -> Muedigkeit +%.2f", wpm, tired_boost)
+
+        # Lautstaerke
+        volume = metadata.get("volume")
+        if volume is not None:
+            if volume > 0.8:
+                # Lautes Sprechen = aufgeregt/frustriert
+                self._stress_level = min(1.0, self._stress_level + 0.1 * self.voice_weight)
+                signals.append("voice_loud")
+            elif volume < 0.2:
+                # Leises Sprechen = muede/unsicher
+                self._tiredness_level = min(1.0, self._tiredness_level + 0.1 * self.voice_weight)
+                signals.append("voice_quiet")
+
+        # Sehr kurze Aufnahme mit wenig Woertern = knappe Befehle
+        duration = metadata.get("duration", 0)
+        word_count = metadata.get("word_count", 0)
+        if duration > 0 and word_count > 0:
+            if duration < 1.5 and word_count <= 3:
+                # Extrem knappe Befehle = ungeduldig
+                self._stress_level = min(1.0, self._stress_level + 0.05 * self.voice_weight)
+                signals.append("voice_curt")
+
+        # Schnelle Nachfrage (<5s nach letztem Befehl) = Ungeduld/Stress
+        if metadata.get("rapid_follow_up"):
+            self._stress_level = min(1.0, self._stress_level + 0.1 * self.voice_weight)
+            signals.append("rapid_follow_up")
+            logger.debug("Voice: schnelle Nachfrage -> Stress +%.2f", 0.1 * self.voice_weight)
+
+        self._last_voice_signals = signals
+        return signals
+
+    def get_voice_signals(self) -> list[str]:
+        """Gibt die letzten Voice-Signale zurueck."""
+        return self._last_voice_signals
 
     async def _save_state(self):
         """Speichert den aktuellen Zustand in Redis."""

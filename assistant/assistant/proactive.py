@@ -7,6 +7,10 @@ Phase 5: Vollstaendig mit FeedbackTracker integriert.
 - Adaptive Cooldowns basierend auf Feedback-Score
 - Auto-Timeout fuer unbeantwortete Meldungen
 - Intelligente Filterung pro Event-Typ und Urgency
+
+Phase 10: Diagnostik + Wartungs-Erinnerungen.
+- Periodische Entity-Checks (offline, low battery, stale)
+- Wartungskalender-Erinnerungen (sanft, LOW Priority)
 """
 
 import asyncio
@@ -37,6 +41,7 @@ class ProactiveManager:
     def __init__(self, brain):
         self.brain = brain
         self._task: Optional[asyncio.Task] = None
+        self._diag_task: Optional[asyncio.Task] = None
         self._running = False
 
         # Konfiguration
@@ -66,6 +71,12 @@ class ProactiveManager:
             "energy_price_low": (LOW, "Strom ist guenstig"),
             "weather_warning": (LOW, "Wetterwarnung"),
             "window_open_rain": (LOW, "Fenster offen bei Regen"),
+
+            # Phase 10: Diagnostik + Wartung
+            "entity_offline": (MEDIUM, "Entity offline"),
+            "low_battery": (MEDIUM, "Batterie niedrig"),
+            "stale_sensor": (LOW, "Sensor reagiert nicht"),
+            "maintenance_due": (LOW, "Wartungsaufgabe faellig"),
         }
 
     async def start(self):
@@ -76,7 +87,10 @@ class ProactiveManager:
 
         self._running = True
         self._task = asyncio.create_task(self._listen_ha_events())
-        logger.info("Proactive Manager gestartet (mit Feedback-Integration)")
+        # Phase 10: Periodische Diagnostik starten
+        if hasattr(self.brain, "diagnostics") and self.brain.diagnostics.enabled:
+            self._diag_task = asyncio.create_task(self._run_diagnostics_loop())
+        logger.info("Proactive Manager gestartet (mit Feedback-Integration + Diagnostik)")
 
     async def stop(self):
         """Stoppt den Event Listener."""
@@ -85,6 +99,12 @@ class ProactiveManager:
             self._task.cancel()
             try:
                 await self._task
+            except asyncio.CancelledError:
+                pass
+        if self._diag_task:
+            self._diag_task.cancel()
+            try:
+                await self._diag_task
             except asyncio.CancelledError:
                 pass
         logger.info("Proactive Manager gestoppt")
@@ -440,6 +460,52 @@ Beispiele:
 - "Sir, der Strom ist gerade guenstig. Guter Zeitpunkt fuer die Waschmaschine."
 """
 
+    # ------------------------------------------------------------------
+    # Phase 10: Periodische Diagnostik
+    # ------------------------------------------------------------------
+
+    async def _run_diagnostics_loop(self):
+        """Periodischer Diagnostik-Check (Entity-Watchdog + Wartungs-Erinnerungen)."""
+        # Initial 2 Minuten warten bis alles hochgefahren ist
+        await asyncio.sleep(120)
+
+        while self._running:
+            try:
+                diag = self.brain.diagnostics
+                result = await diag.check_all()
+
+                # Entity-Probleme melden
+                for issue in result.get("issues", []):
+                    issue_type = issue.get("issue_type", "unknown")
+                    event_type = {
+                        "offline": "entity_offline",
+                        "low_battery": "low_battery",
+                        "stale": "stale_sensor",
+                    }.get(issue_type, "entity_offline")
+
+                    severity = issue.get("severity", "warning")
+                    urgency = HIGH if severity == "critical" else MEDIUM if severity == "warning" else LOW
+
+                    await self._notify(event_type, urgency, {
+                        "entity": issue.get("entity_id", ""),
+                        "message": issue.get("message", ""),
+                    })
+
+                # Wartungs-Erinnerungen (nur LOW)
+                for task in result.get("maintenance_due", []):
+                    await self._notify("maintenance_due", LOW, {
+                        "task": task.get("name", ""),
+                        "days_overdue": task.get("days_overdue", 0),
+                        "description": task.get("description", ""),
+                    })
+
+            except Exception as e:
+                logger.error("Diagnostik-Check Fehler: %s", e)
+
+            # Warte bis zum naechsten Check
+            interval = self.brain.diagnostics.check_interval * 60
+            await asyncio.sleep(interval)
+
     def _build_notification_prompt(
         self, event_type: str, description: str, data: dict, urgency: str
     ) -> str:
@@ -468,6 +534,22 @@ Beispiele:
                 "Erwaehne KURZ ob alles gesichert ist (Fenster, Tueren, Alarm).",
                 "Max 2 Saetze. Deutsch. Butler-Stil.",
             ]
+            return "\n".join(parts)
+
+        # Phase 10: Wartungs-Erinnerungen sanft formulieren
+        if event_type == "maintenance_due":
+            task_name = data.get("task", "Wartungsaufgabe")
+            days = data.get("days_overdue", 0)
+            desc = data.get("description", "")
+            parts = [
+                f"Wartungserinnerung: '{task_name}' ist faellig.",
+            ]
+            if days > 0:
+                parts.append(f"Ueberfaellig seit {days} Tagen.")
+            if desc:
+                parts.append(f"Info: {desc}")
+            parts.append("Formuliere eine sanfte, beilaeufige Erinnerung. Nicht dringend.")
+            parts.append("Beispiel: 'Nebenbei, Sir: [Aufgabe] koennte mal erledigt werden.'")
             return "\n".join(parts)
 
         parts.append(f"Dringlichkeit: {urgency}")

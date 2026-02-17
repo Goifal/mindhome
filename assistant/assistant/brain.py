@@ -10,11 +10,16 @@ Phase 7: Routinen (Morning Briefing, Gute-Nacht, Gaeste-Modus,
 Phase 8: Gedaechtnis & Vorausdenken (Explizites Notizbuch, Intent-Routing,
          Was-waere-wenn, Anticipation, Intent-Tracking, Konversations-
          Kontinuitaet, Langzeit-Persoenlichkeitsanpassung).
+Phase 9: Stimme & Akustik (TTS Enhancement, Sound Design, Auto-Volume,
+         Narration Mode, Voice Emotion, Speaker Recognition).
+Phase 10: Multi-Room & Kommunikation (Room Presence, TTS Routing,
+          Person Delegation, Trust Levels, Diagnostik, Wartungs-Assistent).
 """
 
 import asyncio
 import json
 import logging
+import re
 from typing import Optional
 
 from .action_planner import ActionPlanner
@@ -22,6 +27,7 @@ from .activity import ActivityEngine
 from .autonomy import AutonomyManager
 from .config import settings
 from .context_builder import ContextBuilder
+from .diagnostics import DiagnosticsEngine
 from .feedback import FeedbackTracker
 from .function_calling import ASSISTANT_TOOLS, FunctionExecutor
 from .function_validator import FunctionValidator
@@ -36,8 +42,11 @@ from .proactive import ProactiveManager
 from .anticipation import AnticipationEngine
 from .intent_tracker import IntentTracker
 from .routine_engine import RoutineEngine
+from .sound_manager import SoundManager
+from .speaker_recognition import SpeakerRecognition
 from .summarizer import DailySummarizer
 from .time_awareness import TimeAwareness
+from .tts_enhancer import TTSEnhancer
 from .websocket import emit_thinking, emit_speaking, emit_action
 
 logger = logging.getLogger(__name__)
@@ -90,6 +99,14 @@ class AssistantBrain:
         self.anticipation = AnticipationEngine()
         self.intent_tracker = IntentTracker(self.ollama)
 
+        # Phase 9: Stimme & Akustik
+        self.tts_enhancer = TTSEnhancer()
+        self.sound_manager = SoundManager(self.ha)
+        self.speaker_recognition = SpeakerRecognition()
+
+        # Phase 10: Diagnostik + Wartungs-Assistent
+        self.diagnostics = DiagnosticsEngine(self.ha)
+
     async def initialize(self):
         """Initialisiert alle Komponenten."""
         await self.memory.initialize()
@@ -135,6 +152,9 @@ class AssistantBrain:
         await self.intent_tracker.initialize(redis_client=self.memory.redis)
         self.intent_tracker.set_notify_callback(self._handle_intent_reminder)
 
+        # Phase 9: Speaker Recognition initialisieren
+        await self.speaker_recognition.initialize(redis_client=self.memory.redis)
+
         await self.proactive.start()
         logger.info("Jarvis initialisiert (alle Systeme aktiv)")
 
@@ -151,6 +171,47 @@ class AssistantBrain:
             Dict mit response, actions, model_used
         """
         logger.info("Input: '%s' (Person: %s, Raum: %s)", text, person or "unbekannt", room or "unbekannt")
+
+        # Phase 9: Fluestermodus-Check
+        whisper_cmd = self.tts_enhancer.check_whisper_command(text)
+        if whisper_cmd == "activate":
+            response_text = "Verstanden. Ich fluester ab jetzt."
+            await self.memory.add_conversation("user", text)
+            await self.memory.add_conversation("assistant", response_text)
+            tts_data = self.tts_enhancer.enhance(response_text, message_type="confirmation")
+            await emit_speaking(response_text)
+            return {
+                "response": response_text,
+                "actions": [],
+                "model_used": "tts_enhancer",
+                "context_room": room or "unbekannt",
+                "tts": tts_data,
+            }
+        elif whisper_cmd == "deactivate":
+            response_text = "Normale Lautstaerke wiederhergestellt."
+            await self.memory.add_conversation("user", text)
+            await self.memory.add_conversation("assistant", response_text)
+            tts_data = self.tts_enhancer.enhance(response_text, message_type="confirmation")
+            await emit_speaking(response_text)
+            return {
+                "response": response_text,
+                "actions": [],
+                "model_used": "tts_enhancer",
+                "context_room": room or "unbekannt",
+                "tts": tts_data,
+            }
+
+        # Phase 9: Speaker Recognition — Person ermitteln wenn nicht angegeben
+        if person:
+            asyncio.create_task(
+                self.speaker_recognition.set_current_speaker(person.lower())
+            )
+        elif self.speaker_recognition.enabled:
+            identified = await self.speaker_recognition.identify()
+            if identified.get("person"):
+                person = identified["person"]
+                logger.info("Speaker erkannt: %s (Confidence: %.2f)",
+                            person, identified.get("confidence", 0))
 
         # Phase 7: Gute-Nacht-Intent (VOR allem anderen)
         if self.routines.is_goodnight_intent(text):
@@ -221,6 +282,11 @@ class AssistantBrain:
                 "model_used": "easter_egg",
                 "context_room": room or "unbekannt",
             }
+
+        # Phase 9: "listening" Sound abspielen wenn Verarbeitung startet
+        asyncio.create_task(
+            self.sound_manager.play_event_sound("listening", room=room)
+        )
 
         # Phase 6.9: Running Gag Check (VOR LLM)
         gag_response = await self.personality.check_running_gag(text)
@@ -302,6 +368,23 @@ class AssistantBrain:
 
         # Phase 8: Intent-Routing — Wissensfragen ohne Tools beantworten
         intent_type = self._classify_intent(text)
+
+        # Phase 10: Delegations-Intent → Nachricht an Person weiterleiten
+        if intent_type == "delegation":
+            logger.info("Delegations-Intent erkannt")
+            delegation_result = await self._handle_delegation(text, person or "")
+            if delegation_result:
+                await self.memory.add_conversation("user", text)
+                await self.memory.add_conversation("assistant", delegation_result)
+                tts_data = self.tts_enhancer.enhance(delegation_result, message_type="confirmation")
+                await emit_speaking(delegation_result)
+                return {
+                    "response": delegation_result,
+                    "actions": [],
+                    "model_used": "delegation",
+                    "context_room": room or "unbekannt",
+                    "tts": tts_data,
+                }
 
         # 6. Komplexe Anfragen ueber Action Planner routen
         if self.action_planner.is_complex_request(text):
@@ -398,6 +481,21 @@ class AssistantBrain:
                             })
                             continue
 
+                    # Phase 10: Trust-Level Pre-Check
+                    if person:
+                        trust_check = self.autonomy.can_person_act(person, func_name)
+                        if not trust_check["allowed"]:
+                            logger.warning(
+                                "Trust-Check fehlgeschlagen: %s darf '%s' nicht (%s)",
+                                person, func_name, trust_check.get("reason", ""),
+                            )
+                            executed_actions.append({
+                                "function": func_name,
+                                "args": func_args,
+                                "result": f"blocked: {trust_check.get('reason', 'Keine Berechtigung')}",
+                            })
+                            continue
+
                     # Ausfuehren
                     result = await self.executor.execute(func_name, func_args)
                     executed_actions.append({
@@ -458,6 +556,14 @@ class AssistantBrain:
                     sa.get("priority", "?"), sa.get("action", "?"), sa.get("reason", ""),
                 )
 
+        # Phase 9: Warning-Sound bei Warnungen im Response
+        if response_text and any(w in response_text.lower() for w in [
+            "warnung", "achtung", "vorsicht", "offen", "alarm", "offline",
+        ]):
+            asyncio.create_task(
+                self.sound_manager.play_event_sound("warning", room=room)
+            )
+
         # 9. Im Gedaechtnis speichern
         await self.memory.add_conversation("user", text)
         await self.memory.add_conversation("assistant", response_text)
@@ -510,16 +616,64 @@ class AssistantBrain:
                 )
             )
 
+        # Phase 9+10: Activity-basiertes Volume + Silence-Matrix
+        urgency = "high" if executed_actions else "medium"
+        activity_result = await self.activity.should_deliver(urgency)
+        current_activity = activity_result.get("activity", "relaxing")
+        activity_volume = activity_result.get("volume", 0.8)
+
+        # TTS Enhancement mit Activity-Kontext
+        tts_data = self.tts_enhancer.enhance(
+            response_text,
+            urgency=urgency,
+            activity=current_activity,
+        )
+
+        # Activity-Volume ueberschreibt TTS-Volume (ausser Whisper-Modus)
+        if not self.tts_enhancer.is_whisper_mode and urgency != "critical":
+            tts_data["volume"] = activity_volume
+
+        # Phase 10: Multi-Room TTS — Speaker anhand Raum bestimmen
+        if room:
+            room_speaker = await self.executor._find_speaker_in_room(room)
+            if room_speaker:
+                tts_data["target_speaker"] = room_speaker
+
+        # Phase 9: Sound-Events vollstaendig integrieren
+        if executed_actions:
+            all_success = all(
+                isinstance(a.get("result"), dict) and a["result"].get("success", False)
+                for a in executed_actions
+            )
+            any_failed = any(
+                isinstance(a.get("result"), dict) and not a["result"].get("success", False)
+                for a in executed_actions
+            )
+            if all_success:
+                asyncio.create_task(
+                    self.sound_manager.play_event_sound(
+                        "confirmed", room=room, volume=tts_data.get("volume")
+                    )
+                )
+            elif any_failed:
+                asyncio.create_task(
+                    self.sound_manager.play_event_sound(
+                        "error", room=room, volume=tts_data.get("volume")
+                    )
+                )
+
         result = {
             "response": response_text,
             "actions": executed_actions,
             "model_used": model,
             "context_room": context.get("room", "unbekannt"),
+            "tts": tts_data,
         }
         # WebSocket: Antwort senden
         await emit_speaking(response_text)
 
-        logger.info("Output: '%s' (Aktionen: %d)", response_text, len(executed_actions))
+        logger.info("Output: '%s' (Aktionen: %d, TTS: %s)", response_text,
+                     len(executed_actions), tts_data.get("message_type", ""))
         return result
 
     async def health_check(self) -> dict:
@@ -554,9 +708,14 @@ class AssistantBrain:
                 "guest_mode": "active" if guest_mode else "inactive",
                 "anticipation": "running" if self.anticipation._running else "stopped",
                 "intent_tracker": "running" if self.intent_tracker._running else "stopped",
+                "tts_enhancer": f"active (SSML: {self.tts_enhancer.ssml_enabled}, whisper: {self.tts_enhancer.is_whisper_mode})",
+                "sound_manager": "active" if self.sound_manager.enabled else "disabled",
+                "speaker_recognition": self.speaker_recognition.health_status(),
+                "diagnostics": self.diagnostics.health_status(),
             },
             "models_available": models,
             "autonomy": self.autonomy.get_level_info(),
+            "trust": self.autonomy.get_trust_info(),
             "personality": {
                 "sarcasm_level": self.personality.sarcasm_level,
                 "opinion_intensity": self.personality.opinion_intensity,
@@ -718,9 +877,23 @@ class AssistantBrain:
     def _classify_intent(self, text: str) -> str:
         """
         Klassifiziert den Intent einer Anfrage.
-        Returns: 'smart_home', 'knowledge', 'memory', 'general'
+        Returns: 'smart_home', 'knowledge', 'memory', 'delegation', 'general'
         """
         text_lower = text.lower().strip()
+
+        # Phase 10: Delegations-Intent erkennen
+        delegation_patterns = [
+            r"^sag\s+(\w+)\s+(dass|das)\s+",
+            r"^frag\s+(\w+)\s+(ob|mal|nach)\s+",
+            r"^teile?\s+(\w+)\s+mit\s+(dass|das)\s+",
+            r"^gib\s+(\w+)\s+bescheid\s+",
+            r"^richte?\s+(\w+)\s+aus\s+(dass|das)\s+",
+            r"^schick\s+(\w+)\s+eine?\s+nachricht",
+            r"^nachricht\s+an\s+(\w+)",
+        ]
+        for pattern in delegation_patterns:
+            if re.search(pattern, text_lower):
+                return "delegation"
 
         # Memory-Fragen
         memory_keywords = [
@@ -806,6 +979,60 @@ Der User stellt eine hypothetische Frage. Beantworte sie:
         return None
 
     # ------------------------------------------------------------------
+    # Phase 10: Delegations-Handler
+    # ------------------------------------------------------------------
+
+    async def _handle_delegation(self, text: str, person: str) -> Optional[str]:
+        """Verarbeitet Delegations-Intents ('Sag Lisa dass...', 'Frag Max ob...')."""
+        text_lower = text.lower().strip()
+
+        # Muster: "Sag X dass Y" / "Frag X ob Y" / "Teile X mit dass Y" / etc.
+        patterns = [
+            (r"^sag\s+(\w+)\s+(?:dass|das)\s+(.+)", "sag"),
+            (r"^frag\s+(\w+)\s+(?:ob|mal|nach)\s+(.+)", "frag"),
+            (r"^teile?\s+(\w+)\s+mit\s+(?:dass|das)\s+(.+)", "teile_mit"),
+            (r"^gib\s+(\w+)\s+bescheid\s+(.+)", "bescheid"),
+            (r"^richte?\s+(\w+)\s+aus\s+(?:dass|das)\s+(.+)", "ausrichten"),
+            (r"^schick\s+(\w+)\s+eine?\s+nachricht:?\s*(.+)", "nachricht"),
+            (r"^nachricht\s+an\s+(\w+):?\s*(.+)", "nachricht"),
+        ]
+
+        target_person = None
+        message_content = None
+
+        for pattern, _ in patterns:
+            match = re.search(pattern, text_lower)
+            if match:
+                target_person = match.group(1).capitalize()
+                message_content = match.group(2).strip().rstrip(".")
+                break
+
+        if not target_person or not message_content:
+            return None
+
+        # Trust-Check: Darf der Sender Nachrichten senden?
+        if person:
+            trust_check = self.autonomy.can_person_act(person, "send_message_to_person")
+            if not trust_check["allowed"]:
+                return f"Entschuldigung, du darfst keine Nachrichten senden. {trust_check.get('reason', '')}"
+
+        # Nachricht senden ueber FunctionExecutor
+        result = await self.executor.execute("send_message_to_person", {
+            "person": target_person,
+            "message": message_content,
+            "urgency": "medium",
+        })
+
+        if result.get("success"):
+            delivery = result.get("delivery", "")
+            if delivery == "tts":
+                return f"Ich habe {target_person} die Nachricht durchgesagt."
+            else:
+                return f"Ich habe {target_person} eine Nachricht geschickt."
+        else:
+            return f"Die Nachricht an {target_person} konnte leider nicht zugestellt werden."
+
+    # ------------------------------------------------------------------
     # Phase 8: Intent-Extraktion im Hintergrund
     # ------------------------------------------------------------------
 
@@ -860,4 +1087,5 @@ Der User stellt eine hypothetische Frage. Beantworte sie:
         await self.summarizer.stop()
         await self.feedback.stop()
         await self.memory.close()
+        await self.ha.close()
         logger.info("MindHome Assistant heruntergefahren")

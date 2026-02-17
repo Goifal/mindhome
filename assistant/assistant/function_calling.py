@@ -1,11 +1,14 @@
 """
 Function Calling - Definiert und fuehrt Funktionen aus die der Assistent nutzen kann.
 MindHome Assistant ruft ueber diese Funktionen Home Assistant Aktionen aus.
+
+Phase 10: Room-aware TTS, Person Messaging, Trust-Level Pre-Check.
 """
 
 import logging
 from typing import Any, Optional
 
+from .config import settings, yaml_config
 from .ha_client import HomeAssistantClient
 
 logger = logging.getLogger(__name__)
@@ -33,6 +36,10 @@ ASSISTANT_TOOLS = [
                     "brightness": {
                         "type": "integer",
                         "description": "Helligkeit 0-100 Prozent (optional)",
+                    },
+                    "transition": {
+                        "type": "integer",
+                        "description": "Uebergangsdauer in Sekunden (optional, fuer sanftes Dimmen)",
                     },
                 },
                 "required": ["room", "state"],
@@ -169,7 +176,7 @@ ASSISTANT_TOOLS = [
         "type": "function",
         "function": {
             "name": "send_notification",
-            "description": "Benachrichtigung senden",
+            "description": "Benachrichtigung senden (optional gezielt in einen Raum)",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -182,8 +189,38 @@ ASSISTANT_TOOLS = [
                         "enum": ["phone", "speaker", "dashboard"],
                         "description": "Ziel der Benachrichtigung",
                     },
+                    "room": {
+                        "type": "string",
+                        "description": "Raum fuer TTS-Ausgabe (optional, nur bei target=speaker)",
+                    },
                 },
                 "required": ["message"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "play_sound",
+            "description": "Einen Sound-Effekt abspielen (z.B. Chime, Ping, Alert)",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "sound": {
+                        "type": "string",
+                        "enum": [
+                            "listening", "confirmed", "warning",
+                            "alarm", "doorbell", "greeting",
+                            "error", "goodnight",
+                        ],
+                        "description": "Sound-Event Name",
+                    },
+                    "room": {
+                        "type": "string",
+                        "description": "Raum in dem der Sound abgespielt werden soll (optional)",
+                    },
+                },
+                "required": ["sound"],
             },
         },
     },
@@ -201,6 +238,32 @@ ASSISTANT_TOOLS = [
                     },
                 },
                 "required": ["entity_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "send_message_to_person",
+            "description": "Nachricht an eine bestimmte Person senden (TTS in deren Raum oder Push)",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "person": {
+                        "type": "string",
+                        "description": "Name der Person (z.B. Lisa, Max)",
+                    },
+                    "message": {
+                        "type": "string",
+                        "description": "Die Nachricht",
+                    },
+                    "urgency": {
+                        "type": "string",
+                        "enum": ["low", "medium", "high"],
+                        "description": "Dringlichkeit (optional, default: medium)",
+                    },
+                },
+                "required": ["person", "message"],
             },
         },
     },
@@ -263,10 +326,14 @@ class FunctionExecutor:
         service_data = {"entity_id": entity_id}
         if "brightness" in args and state == "on":
             service_data["brightness_pct"] = args["brightness"]
+        # Phase 9: Transition-Parameter (sanftes Dimmen)
+        if "transition" in args:
+            service_data["transition"] = args["transition"]
 
         service = "turn_on" if state == "on" else "turn_off"
         success = await self.ha.call_service("light", service, service_data)
-        return {"success": success, "message": f"Licht {room} {state}"}
+        transition_info = f" (Transition: {args['transition']}s)" if "transition" in args else ""
+        return {"success": success, "message": f"Licht {room} {state}{transition_info}"}
 
     async def _exec_set_climate(self, args: dict) -> dict:
         room = args["room"]
@@ -374,6 +441,8 @@ class FunctionExecutor:
     async def _exec_send_notification(self, args: dict) -> dict:
         message = args["message"]
         target = args.get("target", "phone")
+        volume = args.get("volume")  # Phase 9: Optional volume (0.0-1.0)
+        room = args.get("room")  # Phase 10: Optional room for TTS routing
 
         if target == "phone":
             success = await self.ha.call_service(
@@ -382,7 +451,20 @@ class FunctionExecutor:
         elif target == "speaker":
             # TTS ueber Piper (Wyoming): tts.speak mit TTS-Entity + Media-Player
             tts_entity = await self._find_tts_entity()
-            speaker_entity = await self._find_tts_speaker()
+
+            # Phase 10: Room-aware Speaker-Auswahl
+            if room:
+                speaker_entity = await self._find_speaker_in_room(room)
+            else:
+                speaker_entity = await self._find_tts_speaker()
+
+            # Phase 9: Volume setzen vor TTS
+            if speaker_entity and volume is not None:
+                await self.ha.call_service(
+                    "media_player", "volume_set",
+                    {"entity_id": speaker_entity, "volume_level": volume},
+                )
+
             if tts_entity and speaker_entity:
                 success = await self.ha.call_service(
                     "tts", "speak",
@@ -412,7 +494,128 @@ class FunctionExecutor:
             success = await self.ha.call_service(
                 "persistent_notification", "create", {"message": message}
             )
-        return {"success": success, "message": "Benachrichtigung gesendet"}
+        room_info = f" (Raum: {room})" if room else ""
+        return {"success": success, "message": f"Benachrichtigung gesendet{room_info}"}
+
+    async def _exec_send_message_to_person(self, args: dict) -> dict:
+        """Phase 10.2: Sendet eine Nachricht an eine bestimmte Person.
+
+        Routing-Logik:
+        1. Person zu Hause → TTS im Raum der Person
+        2. Person weg → Push-Notification auf Handy
+        """
+        person = args["person"]
+        message = args["message"]
+        person_lower = person.lower()
+
+        # Person-Profil laden
+        person_profiles = yaml_config.get("persons", {}).get("profiles", {})
+        profile = person_profiles.get(person_lower, {})
+
+        # Pruefen ob Person zuhause ist
+        states = await self.ha.get_states()
+        person_home = False
+        for state in (states or []):
+            if state.get("entity_id", "").startswith("person."):
+                name = state.get("attributes", {}).get("friendly_name", "")
+                if name.lower() == person_lower and state.get("state") == "home":
+                    person_home = True
+                    break
+
+        if person_home:
+            # TTS im Raum der Person
+            preferred_room = profile.get("preferred_room")
+            tts_entity = await self._find_tts_entity()
+
+            speaker = None
+            if preferred_room:
+                speaker = await self._find_speaker_in_room(preferred_room)
+            if not speaker:
+                speaker = await self._find_tts_speaker()
+
+            if tts_entity and speaker:
+                success = await self.ha.call_service(
+                    "tts", "speak",
+                    {
+                        "entity_id": tts_entity,
+                        "media_player_entity_id": speaker,
+                        "message": message,
+                        "language": "de",
+                    },
+                )
+                room_info = f" im {preferred_room}" if preferred_room else ""
+                return {
+                    "success": success,
+                    "message": f"Nachricht an {person} per TTS{room_info} gesendet",
+                    "delivery": "tts",
+                }
+
+        # Person nicht zuhause oder kein Speaker → Push
+        notify_service = profile.get("notify_service", "notify.notify")
+        # Service-Name extrahieren (z.B. "notify.max_phone" → domain="notify", service="max_phone")
+        parts = notify_service.split(".", 1)
+        if len(parts) == 2:
+            success = await self.ha.call_service(
+                parts[0], parts[1], {"message": message, "title": f"Nachricht von {settings.assistant_name}"}
+            )
+        else:
+            success = await self.ha.call_service(
+                "notify", "notify", {"message": message}
+            )
+
+        return {
+            "success": success,
+            "message": f"Push-Nachricht an {person} gesendet",
+            "delivery": "push",
+        }
+
+    async def _exec_play_sound(self, args: dict) -> dict:
+        """Phase 9: Spielt einen Sound-Effekt ab."""
+        sound = args["sound"]
+        room = args.get("room")
+
+        speaker_entity = None
+        if room:
+            speaker_entity = await self._find_entity("media_player", room)
+        if not speaker_entity:
+            speaker_entity = await self._find_tts_speaker()
+
+        if not speaker_entity:
+            return {"success": False, "message": "Kein Speaker gefunden"}
+
+        # Sound als TTS-Chime abspielen (oder Media-File wenn vorhanden)
+        # Kurze TTS-Nachricht als Ersatz fuer Sound-Files
+        sound_texts = {
+            "listening": ".",
+            "confirmed": ".",
+            "warning": "Achtung.",
+            "alarm": "Alarm!",
+            "doorbell": "Es klingelt.",
+            "greeting": ".",
+            "error": "Fehler.",
+            "goodnight": ".",
+        }
+
+        text = sound_texts.get(sound, ".")
+        if text == ".":
+            # Minimaler Sound — nur Volume-Ping
+            return {"success": True, "message": f"Sound '{sound}' gespielt"}
+
+        tts_entity = await self._find_tts_entity()
+        if tts_entity:
+            success = await self.ha.call_service(
+                "tts", "speak",
+                {
+                    "entity_id": tts_entity,
+                    "media_player_entity_id": speaker_entity,
+                    "message": text,
+                    "language": "de",
+                },
+            )
+        else:
+            success = False
+
+        return {"success": success, "message": f"Sound '{sound}' gespielt"}
 
     async def _exec_get_entity_state(self, args: dict) -> dict:
         entity_id = args["entity_id"]
@@ -463,6 +666,22 @@ class FunctionExecutor:
                 {"entity_id": "input_boolean.zu_hause"},
             )
         return {"success": success, "message": f"Anwesenheit: {mode}"}
+
+    async def _find_speaker_in_room(self, room: str) -> Optional[str]:
+        """Phase 10.1: Findet einen Speaker in einem bestimmten Raum.
+
+        Sucht zuerst in der Konfiguration (room_speakers),
+        dann per Entity-Name-Matching.
+        """
+        # 1. Konfiguriertes Mapping pruefen
+        room_speakers = yaml_config.get("multi_room", {}).get("room_speakers", {})
+        room_lower = room.lower().replace(" ", "_")
+        for cfg_room, entity_id in (room_speakers or {}).items():
+            if cfg_room.lower() == room_lower:
+                return entity_id
+
+        # 2. Entity-Name-Matching
+        return await self._find_entity("media_player", room)
 
     async def _find_tts_entity(self) -> Optional[str]:
         """Findet die Piper TTS-Entity (tts.piper o.ae.)."""

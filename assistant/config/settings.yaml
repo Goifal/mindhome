@@ -6,7 +6,7 @@ assistant:
   # Name des Assistenten - so stellt er sich vor und so reagiert er
   # Aendere diesen Namen zu was du willst (z.B. "Jarvis", "Alfred", "Nova")
   name: "Jarvis"
-  version: "0.9.8"
+  version: "1.1.0"
   language: "de"
 
 # --- Personen und Anrede ---
@@ -350,3 +350,172 @@ conversation_continuity:
   resume_after_minutes: 10
   # Nach wie vielen Stunden verfaellt ein offenes Thema
   expire_hours: 24
+
+# --- Phase 9: Stimme & Akustik ---
+tts:
+  # SSML Enhancement: Natuerlichere Sprachausgabe
+  ssml_enabled: true
+  # Sprechgeschwindigkeit-Anpassung pro Nachrichtentyp
+  speed:
+    confirmation: 105     # Bestaetigung: etwas schneller (%)
+    warning: 85           # Warnung: langsamer
+    briefing: 95          # Briefing: etwas langsamer
+    greeting: 100         # Begruessung: normal
+    question: 100         # Frage: normal
+    casual: 100           # Normal: Standard
+  # Pausen in Millisekunden
+  pauses:
+    before_important: 300   # Pause vor wichtigen Infos
+    between_sentences: 200  # Pause zwischen Saetzen
+    after_greeting: 400     # Pause nach Begruessung
+  # Fluestermodus: "Psst" oder "Leise" → aktiviert bis Widerruf
+  whisper_triggers:
+    - "psst"
+    - "leise"
+    - "fluester"
+    - "whisper"
+  whisper_cancel_triggers:
+    - "normal"
+    - "laut"
+    - "normale lautstaerke"
+
+# Volume-Steuerung pro Aktivitaet (0.0 - 1.0)
+volume:
+  day: 0.8                # Tag normal
+  evening: 0.5            # Abend (>22:00)
+  night: 0.3              # Nacht (>0:00)
+  sleeping: 0.2           # Jemand schlaeft
+  emergency: 1.0          # Notfall immer laut
+  whisper: 0.15           # Fluestermodus
+  # Schwellen fuer Tageszeit-basierte Lautstaerke
+  evening_start: 22
+  night_start: 0
+  morning_start: 7
+
+# Sound Design: Akustische Identitaet
+sounds:
+  enabled: true
+  # Event-Sounds (werden via HA Media Player abgespielt)
+  events:
+    listening: "listening_chime"    # Jarvis hoert zu
+    confirmed: "confirm_ping"       # Befehl bestaetigt
+    warning: "warning_tone"         # Warnung
+    alarm: "alarm_urgent"           # Alarm/Notfall
+    doorbell: "doorbell_soft"       # Tuerklingel
+    greeting: "greeting_chime"      # Begruessung
+    error: "error_tone"             # Fehler
+    goodnight: "goodnight_tone"     # Gute Nacht
+  # Sounds bei Nacht leiser
+  night_volume_factor: 0.4
+
+# Narration Mode: Fliessende Uebergaenge bei Szenen
+narration:
+  enabled: true
+  # Standard-Transition-Dauer in Sekunden
+  default_transition: 3
+  # Szenen-spezifische Transitions
+  scene_transitions:
+    filmabend: 5          # Langsam dimmen
+    gute_nacht: 7         # Sehr langsam
+    aufwachen: 10         # Sanft aufhellen
+    gemuetlich: 4         # Mittel
+  # Pause zwischen Narration-Schritten in Sekunden
+  step_delay: 1.5
+  # Jarvis beschreibt was er tut
+  narrate_actions: true
+
+# Voice Analysis: Stimmungserkennung per Sprache
+voice_analysis:
+  enabled: true
+  # Sprechgeschwindigkeit-Schwellen (Woerter pro Minute)
+  wpm_fast: 180           # Darueber = gestresst
+  wpm_slow: 80            # Darunter = muede
+  wpm_normal: 130         # Standard
+  # Voice-Metadata-Quellen
+  use_whisper_metadata: true
+  # Gewichtung: Voice vs Text (0.0 = nur Text, 1.0 = nur Voice)
+  voice_weight: 0.3
+
+# Speaker Recognition: Personen-Erkennung per Stimme
+speaker_recognition:
+  enabled: false           # Standardmaessig aus (braucht GPU)
+  # Minimale Confidence fuer Erkennung (0.0 - 1.0)
+  min_confidence: 0.7
+  # Enrollment: Mindest-Sprachdauer in Sekunden
+  enrollment_duration: 30
+  # Fallback wenn nicht erkannt
+  fallback_ask: true       # "Wer spricht?"
+  # Maximale gespeicherte Voice-Prints
+  max_profiles: 10
+
+# ============================================================
+# Phase 10: Multi-Room & Kommunikation
+# ============================================================
+
+# --- Multi-Room Presence (10.1) ---
+multi_room:
+  enabled: true
+  # Wie lange gilt eine Raum-Praesenz nach letzter Bewegung (Minuten)
+  presence_timeout_minutes: 15
+  # Speaker pro Raum (an deine Installation anpassen)
+  room_speakers:
+    # wohnzimmer: "media_player.wohnzimmer_speaker"
+    # schlafzimmer: "media_player.schlafzimmer_speaker"
+    # kueche: "media_player.kueche_speaker"
+    # buero: "media_player.buero_speaker"
+  # Bewegungsmelder pro Raum
+  room_motion_sensors:
+    # wohnzimmer: "binary_sensor.wohnzimmer_motion"
+    # schlafzimmer: "binary_sensor.schlafzimmer_motion"
+    # kueche: "binary_sensor.kueche_motion"
+
+# --- Personen-Profile (10.2) ---
+persons:
+  profiles:
+    # max:
+    #   notify_service: "notify.max_phone"
+    #   preferred_room: "buero"
+    # lisa:
+    #   notify_service: "notify.lisa_phone"
+    #   preferred_room: "schlafzimmer"
+
+# --- Vertrauensstufen (10.3) ---
+trust_levels:
+  # Standard-Trust fuer unbekannte Personen
+  default: 0  # 0=Gast, 1=Mitbewohner, 2=Owner
+  # Trust-Level pro Person
+  persons:
+    # max: 2     # Owner — voller Zugriff
+    # lisa: 1    # Mitbewohner — alles ausser Sicherheit
+  # Aktionen die Gaeste ausfuehren duerfen
+  guest_allowed_actions:
+    - set_light
+    - set_climate
+    - play_media
+    - get_entity_state
+    - play_sound
+  # Sicherheits-Aktionen (nur Owner)
+  security_actions:
+    - lock_door
+    - set_alarm
+    - set_presence_mode
+
+# --- Diagnostik (10.4) ---
+diagnostics:
+  enabled: true
+  # Pruef-Intervall in Minuten
+  check_interval_minutes: 30
+  # Ab wann Battery-Warnung (Prozent)
+  battery_warning_threshold: 20
+  # Ab wann ein Sensor als "stale" gilt (Minuten ohne Update)
+  stale_sensor_minutes: 120
+  # Ab wann Entity als "offline" gilt (Minuten "unavailable")
+  offline_threshold_minutes: 30
+  # Cooldown zwischen gleichen Warnungen (Minuten)
+  alert_cooldown_minutes: 60
+
+# --- Wartungs-Assistent (10.5) ---
+maintenance:
+  enabled: true
+  # Wartungsaufgaben-Datei
+  config_file: "config/maintenance.yaml"

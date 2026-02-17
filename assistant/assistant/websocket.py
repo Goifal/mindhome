@@ -74,9 +74,15 @@ async def emit_thinking():
     await ws_manager.broadcast("assistant.thinking", {"status": "processing"})
 
 
-async def emit_speaking(text: str):
-    """Signalisiert: Assistant spricht."""
-    await ws_manager.broadcast("assistant.speaking", {"text": text})
+async def emit_speaking(text: str, tts_data: dict = None):
+    """Signalisiert: Assistant spricht. Phase 9: Optional mit TTS-Metadaten."""
+    data = {"text": text}
+    if tts_data:
+        data["ssml"] = tts_data.get("ssml", text)
+        data["message_type"] = tts_data.get("message_type", "casual")
+        data["speed"] = tts_data.get("speed", 100)
+        data["volume"] = tts_data.get("volume", 0.8)
+    await ws_manager.broadcast("assistant.speaking", data)
 
 
 async def emit_action(function_name: str, args: dict, result: dict):
@@ -91,6 +97,14 @@ async def emit_action(function_name: str, args: dict, result: dict):
 async def emit_listening():
     """Signalisiert: Assistant hoert zu."""
     await ws_manager.broadcast("assistant.listening", {"status": "active"})
+
+
+async def emit_sound(sound_event: str, volume: float = 0.5):
+    """Phase 9: Signalisiert einen Sound-Event."""
+    await ws_manager.broadcast("assistant.sound", {
+        "sound": sound_event,
+        "volume": volume,
+    })
 
 
 async def emit_proactive(

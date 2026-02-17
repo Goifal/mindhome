@@ -1,5 +1,6 @@
 """
 Activity Engine + Silence Matrix - Phase 6: Perfektes Timing, nie stoeren.
+Phase 9: Volume-Level pro Aktivitaet + Tageszeit.
 
 Erkennt die aktuelle Aktivitaet des Benutzers anhand von HA-Sensoren
 und entscheidet WIE eine Meldung zugestellt werden soll.
@@ -89,6 +90,53 @@ SILENCE_MATRIX = {
         "high": SUPPRESS,
         "medium": SUPPRESS,
         "low": SUPPRESS,
+    },
+}
+
+# Phase 9: Volume-Levels pro Aktivitaet (0.0 - 1.0)
+# Format: {activity: {urgency: volume}}
+VOLUME_MATRIX = {
+    SLEEPING: {
+        "critical": 0.6,
+        "high": 0.2,
+        "medium": 0.15,
+        "low": 0.1,
+    },
+    IN_CALL: {
+        "critical": 0.3,
+        "high": 0.2,
+        "medium": 0.0,
+        "low": 0.0,
+    },
+    WATCHING: {
+        "critical": 0.7,
+        "high": 0.4,
+        "medium": 0.3,
+        "low": 0.2,
+    },
+    FOCUSED: {
+        "critical": 0.8,
+        "high": 0.5,
+        "medium": 0.4,
+        "low": 0.3,
+    },
+    GUESTS: {
+        "critical": 0.8,
+        "high": 0.5,
+        "medium": 0.4,
+        "low": 0.3,
+    },
+    RELAXING: {
+        "critical": 1.0,
+        "high": 0.8,
+        "medium": 0.7,
+        "low": 0.5,
+    },
+    AWAY: {
+        "critical": 1.0,
+        "high": 0.0,
+        "medium": 0.0,
+        "low": 0.0,
     },
 }
 
@@ -195,6 +243,32 @@ class ActivityEngine:
         activity_row = SILENCE_MATRIX.get(activity, SILENCE_MATRIX[RELAXING])
         return activity_row.get(urgency, TTS_LOUD)
 
+    def get_volume_level(self, activity: str, urgency: str) -> float:
+        """
+        Phase 9: Bestimmt die Volume-Level basierend auf Aktivitaet und Urgency.
+
+        Args:
+            activity: Erkannte Aktivitaet
+            urgency: Dringlichkeit (critical, high, medium, low)
+
+        Returns:
+            Volume-Level 0.0 - 1.0
+        """
+        activity_row = VOLUME_MATRIX.get(activity, VOLUME_MATRIX[RELAXING])
+        base_volume = activity_row.get(urgency, 0.7)
+
+        # Tageszeit-Faktor: Abends/Nachts leiser
+        hour = datetime.now().hour
+        if self.night_start <= hour < self.night_end:
+            # Nacht: Volume reduzieren (ausser Critical)
+            if urgency != "critical":
+                base_volume = min(base_volume, 0.3)
+        elif hour >= self.night_start - 1:  # 1h vor Nacht = Abend
+            if urgency not in ("critical", "high"):
+                base_volume = min(base_volume, 0.5)
+
+        return round(base_volume, 2)
+
     async def should_deliver(self, urgency: str) -> dict:
         """
         Kombinierte Methode: Erkennt Aktivitaet und bestimmt Zustellmethode.
@@ -205,10 +279,12 @@ class ActivityEngine:
                 delivery: str - Zustellmethode
                 suppress: bool - Soll die Meldung unterdrueckt werden?
                 confidence: float - Sicherheit der Erkennung
+                volume: float - Empfohlene Lautstaerke (Phase 9)
         """
         detection = await self.detect_activity()
         activity = detection["activity"]
         delivery = self.get_delivery_method(activity, urgency)
+        volume = self.get_volume_level(activity, urgency)
 
         return {
             "activity": activity,
@@ -216,6 +292,7 @@ class ActivityEngine:
             "suppress": delivery == SUPPRESS,
             "confidence": detection["confidence"],
             "signals": detection["signals"],
+            "volume": volume,
         }
 
     # ----- Signal-Erkennung -----

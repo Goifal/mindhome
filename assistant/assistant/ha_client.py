@@ -1,15 +1,21 @@
 """
 Home Assistant API Client - Kommunikation mit HA und MindHome
 
-FIX: API-Endpoints an die tatsaechlichen MindHome Add-on Routes angepasst:
+Features:
+  - Retry-Logik mit exponentiellem Backoff (3 Versuche)
+  - Detailliertes Error-Logging mit Status-Codes und Response-Body
+  - Connection Pooling via shared aiohttp.ClientSession
+  - Konfigurierbare Timeouts
+
+API-Endpoints an die tatsaechlichen MindHome Add-on Routes angepasst:
   /api/system/health  -> /api/health
-  /api/engines/status  -> entfernt (existiert nicht als einzelner Endpoint)
   /api/presence        -> /api/persons
   /api/energy/current  -> /api/energy/summary
   /api/comfort/status  -> /api/health/comfort
   /api/security/status -> /api/security/dashboard
 """
 
+import asyncio
 import logging
 from typing import Any, Optional
 
@@ -19,9 +25,13 @@ from .config import settings
 
 logger = logging.getLogger(__name__)
 
+# Retry-Konfiguration
+MAX_RETRIES = 3
+RETRY_BACKOFF_BASE = 1.5  # Sekunden: 1.5, 3.0, 4.5
+
 
 class HomeAssistantClient:
-    """Client fuer Home Assistant + MindHome REST API."""
+    """Client fuer Home Assistant + MindHome REST API mit Retry und Connection Pooling."""
 
     def __init__(self):
         self.ha_url = settings.ha_url.rstrip("/")
@@ -31,6 +41,21 @@ class HomeAssistantClient:
             "Authorization": f"Bearer {self.ha_token}",
             "Content-Type": "application/json",
         }
+        # Shared Session (wird lazy initialisiert)
+        self._session: Optional[aiohttp.ClientSession] = None
+
+    async def _get_session(self) -> aiohttp.ClientSession:
+        """Gibt die shared aiohttp Session zurueck (lazy init)."""
+        if self._session is None or self._session.closed:
+            timeout = aiohttp.ClientTimeout(total=10)
+            self._session = aiohttp.ClientSession(timeout=timeout)
+        return self._session
+
+    async def close(self):
+        """Schliesst die HTTP Session."""
+        if self._session and not self._session.closed:
+            await self._session.close()
+            self._session = None
 
     # ----- Home Assistant API -----
 
@@ -121,50 +146,147 @@ class HomeAssistantClient:
         """Tagesphasen von MindHome."""
         return await self._get_mindhome("/api/day-phases")
 
-    # ----- Interne HTTP Methoden -----
+    # ----- Interne HTTP Methoden mit Retry -----
 
     async def _get_ha(self, path: str) -> Any:
-        try:
-            async with aiohttp.ClientSession() as session:
+        """GET-Request an Home Assistant mit Retry."""
+        session = await self._get_session()
+        last_error = None
+
+        for attempt in range(MAX_RETRIES):
+            try:
                 async with session.get(
                     f"{self.ha_url}{path}",
                     headers=self._ha_headers,
-                    timeout=aiohttp.ClientTimeout(total=10),
                 ) as resp:
                     if resp.status == 200:
                         return await resp.json()
-                    logger.warning("HA GET %s -> %d", path, resp.status)
-                    return None
-        except aiohttp.ClientError as e:
-            logger.error("HA nicht erreichbar: %s", e)
-            return None
+                    # Client-Fehler: nicht retrien
+                    if 400 <= resp.status < 500:
+                        body = await resp.text()
+                        logger.warning(
+                            "HA GET %s -> %d (Client-Fehler): %s",
+                            path, resp.status, body[:200],
+                        )
+                        return None
+                    # Server-Fehler: retrien
+                    body = await resp.text()
+                    logger.warning(
+                        "HA GET %s -> %d (Versuch %d/%d): %s",
+                        path, resp.status, attempt + 1, MAX_RETRIES, body[:200],
+                    )
+                    last_error = f"HTTP {resp.status}"
+            except aiohttp.ClientError as e:
+                last_error = str(e)
+                logger.warning(
+                    "HA GET %s fehlgeschlagen (Versuch %d/%d): %s",
+                    path, attempt + 1, MAX_RETRIES, e,
+                )
+            except asyncio.TimeoutError:
+                last_error = "Timeout"
+                logger.warning(
+                    "HA GET %s Timeout (Versuch %d/%d)",
+                    path, attempt + 1, MAX_RETRIES,
+                )
+
+            if attempt < MAX_RETRIES - 1:
+                wait = RETRY_BACKOFF_BASE * (attempt + 1)
+                await asyncio.sleep(wait)
+
+        logger.error("HA GET %s endgueltig fehlgeschlagen: %s", path, last_error)
+        return None
 
     async def _post_ha(self, path: str, data: dict) -> Any:
-        try:
-            async with aiohttp.ClientSession() as session:
+        """POST-Request an Home Assistant mit Retry."""
+        session = await self._get_session()
+        last_error = None
+
+        for attempt in range(MAX_RETRIES):
+            try:
                 async with session.post(
                     f"{self.ha_url}{path}",
                     headers=self._ha_headers,
                     json=data,
-                    timeout=aiohttp.ClientTimeout(total=10),
                 ) as resp:
                     if resp.status in (200, 201):
                         return await resp.json()
-                    logger.warning("HA POST %s -> %d", path, resp.status)
-                    return None
-        except aiohttp.ClientError as e:
-            logger.error("HA nicht erreichbar: %s", e)
-            return None
+                    if 400 <= resp.status < 500:
+                        body = await resp.text()
+                        logger.warning(
+                            "HA POST %s -> %d (Client-Fehler): %s",
+                            path, resp.status, body[:200],
+                        )
+                        return None
+                    body = await resp.text()
+                    logger.warning(
+                        "HA POST %s -> %d (Versuch %d/%d): %s",
+                        path, resp.status, attempt + 1, MAX_RETRIES, body[:200],
+                    )
+                    last_error = f"HTTP {resp.status}"
+            except aiohttp.ClientError as e:
+                last_error = str(e)
+                logger.warning(
+                    "HA POST %s fehlgeschlagen (Versuch %d/%d): %s",
+                    path, attempt + 1, MAX_RETRIES, e,
+                )
+            except asyncio.TimeoutError:
+                last_error = "Timeout"
+                logger.warning(
+                    "HA POST %s Timeout (Versuch %d/%d)",
+                    path, attempt + 1, MAX_RETRIES,
+                )
+
+            if attempt < MAX_RETRIES - 1:
+                wait = RETRY_BACKOFF_BASE * (attempt + 1)
+                await asyncio.sleep(wait)
+
+        logger.error("HA POST %s endgueltig fehlgeschlagen: %s", path, last_error)
+        return None
 
     async def _get_mindhome(self, path: str) -> Any:
-        try:
-            async with aiohttp.ClientSession() as session:
+        """GET-Request an MindHome Add-on mit Retry und Logging."""
+        session = await self._get_session()
+        last_error = None
+
+        for attempt in range(MAX_RETRIES):
+            try:
                 async with session.get(
                     f"{self.mindhome_url}{path}",
-                    timeout=aiohttp.ClientTimeout(total=10),
                 ) as resp:
                     if resp.status == 200:
                         return await resp.json()
-                    return None
-        except aiohttp.ClientError:
-            return None
+                    if 400 <= resp.status < 500:
+                        body = await resp.text()
+                        logger.warning(
+                            "MindHome GET %s -> %d (Client-Fehler): %s",
+                            path, resp.status, body[:200],
+                        )
+                        return None
+                    body = await resp.text()
+                    logger.warning(
+                        "MindHome GET %s -> %d (Versuch %d/%d): %s",
+                        path, resp.status, attempt + 1, MAX_RETRIES, body[:200],
+                    )
+                    last_error = f"HTTP {resp.status}"
+            except aiohttp.ClientError as e:
+                last_error = str(e)
+                logger.warning(
+                    "MindHome GET %s fehlgeschlagen (Versuch %d/%d): %s",
+                    path, attempt + 1, MAX_RETRIES, e,
+                )
+            except asyncio.TimeoutError:
+                last_error = "Timeout"
+                logger.warning(
+                    "MindHome GET %s Timeout (Versuch %d/%d)",
+                    path, attempt + 1, MAX_RETRIES,
+                )
+
+            if attempt < MAX_RETRIES - 1:
+                wait = RETRY_BACKOFF_BASE * (attempt + 1)
+                await asyncio.sleep(wait)
+
+        logger.error(
+            "MindHome GET %s endgueltig fehlgeschlagen nach %d Versuchen: %s",
+            path, MAX_RETRIES, last_error,
+        )
+        return None

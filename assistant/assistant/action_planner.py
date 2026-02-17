@@ -1,9 +1,15 @@
 """
 Action Planner (Phase 4) - Plant und fuehrt komplexe Multi-Step Aktionen aus.
+Phase 9: Narration Mode — Fliessende Uebergaenge bei Szenen.
 
 Erkennt komplexe Anfragen die mehrere Schritte brauchen und fuehrt sie
 iterativ aus: LLM plant -> Aktionen ausfuehren -> Ergebnisse zurueck an LLM
 -> weiter planen -> bis fertig.
+
+Narration Mode (Phase 9):
+- Transition-Dauern fuer Licht-Aenderungen (sanftes Dimmen)
+- Pausen zwischen Aktionsschritten fuer natuerlichen Ablauf
+- Jarvis kann beschreiben was er gerade tut
 
 Beispiele:
   "Mach alles fertig fuer morgen frueh"
@@ -11,6 +17,9 @@ Beispiele:
 
   "Ich gehe fuer 3 Tage weg"
   -> Away-Modus, Heizung runter, Rolllaeden zu, Alarm scharf
+
+  "Filmabend" (mit Narration)
+  -> "Licht dimmt langsam..." (5s) -> Rolladen -> TV -> "Viel Spass."
 """
 
 import asyncio
@@ -19,10 +28,11 @@ import logging
 from dataclasses import dataclass, field
 from typing import Optional
 
+from .config import yaml_config
 from .function_calling import ASSISTANT_TOOLS, FunctionExecutor
 from .function_validator import FunctionValidator
 from .ollama_client import OllamaClient
-from .websocket import emit_action
+from .websocket import emit_action, emit_speaking
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +61,10 @@ REGELN:
 - Ergebnisse vorheriger Schritte nutzen um naechste Schritte zu planen.
 - Am Ende: Kurze Zusammenfassung auf Deutsch (max 2-3 Saetze).
 - Antworte IMMER auf Deutsch.
-- Sei knapp. Butler-Stil. Kein Geschwafel."""
+- Sei knapp. Butler-Stil. Kein Geschwafel.
+- Bei Szenen und Stimmungen: Nutze den 'transition' Parameter bei set_light
+  fuer sanfte Uebergaenge (z.B. transition=5 fuer 5 Sekunden Dimmen).
+- Bei Filmabend/Romantik/etc: Langsame Transitions (5-10s) fuer Atmosphaere."""
 
 
 @dataclass
@@ -93,7 +106,7 @@ class ActionPlan:
 
 
 class ActionPlanner:
-    """Plant und fuehrt komplexe Multi-Step Aktionen aus."""
+    """Plant und fuehrt komplexe Multi-Step Aktionen aus. Phase 9: mit Narration."""
 
     def __init__(
         self,
@@ -105,6 +118,14 @@ class ActionPlanner:
         self.executor = executor
         self.validator = validator
         self._last_plan: Optional[ActionPlan] = None
+
+        # Phase 9: Narration Mode Konfiguration
+        narr_cfg = yaml_config.get("narration", {})
+        self.narration_enabled = narr_cfg.get("enabled", True)
+        self.default_transition = narr_cfg.get("default_transition", 3)
+        self.scene_transitions = narr_cfg.get("scene_transitions", {})
+        self.step_delay = narr_cfg.get("step_delay", 1.5)
+        self.narrate_actions = narr_cfg.get("narrate_actions", True)
 
     def is_complex_request(self, text: str) -> bool:
         """
@@ -213,6 +234,15 @@ class ActionPlanner:
                     })
                     continue
 
+                # Phase 9: Narration — Transition bei Licht-Aktionen injizieren
+                if self.narration_enabled and func_name == "set_light":
+                    if "transition" not in func_args:
+                        func_args["transition"] = self._get_transition(text)
+
+                # Phase 9: Narration — Kurze Pause zwischen Schritten
+                if self.narration_enabled and len(plan.steps) > 0 and self.step_delay > 0:
+                    await asyncio.sleep(self.step_delay)
+
                 # Ausfuehren
                 step.status = "running"
                 result = await self.executor.execute(func_name, func_args)
@@ -228,6 +258,12 @@ class ActionPlanner:
 
                 # WebSocket: Aktion melden
                 await emit_action(func_name, func_args, result)
+
+                # Phase 9: Narration — beschreiben was passiert
+                if self.narration_enabled and self.narrate_actions and result.get("success"):
+                    narration = self._get_narration_text(func_name, func_args)
+                    if narration:
+                        await emit_speaking(narration)
 
                 tool_results.append(
                     f"{func_name}: {result.get('message', 'OK')}"
@@ -276,3 +312,42 @@ class ActionPlanner:
         if self._last_plan:
             return self._last_plan.to_dict()
         return None
+
+    # ------------------------------------------------------------------
+    # Phase 9: Narration Mode Hilfsmethoden
+    # ------------------------------------------------------------------
+
+    def _get_transition(self, request_text: str) -> int:
+        """Bestimmt die Transition-Dauer basierend auf der Anfrage."""
+        text_lower = request_text.lower()
+
+        # Szenen-spezifische Transitions pruefen
+        for scene, duration in self.scene_transitions.items():
+            if scene in text_lower:
+                return duration
+
+        return self.default_transition
+
+    @staticmethod
+    def _get_narration_text(func_name: str, func_args: dict) -> str:
+        """Generiert einen kurzen Narrations-Text fuer eine Aktion."""
+        narrations = {
+            "set_light": lambda a: (
+                f"Licht {a.get('room', '')} dimmt..."
+                if a.get("state") == "on" and a.get("brightness", 100) < 50
+                else ""
+            ),
+            "set_cover": lambda a: (
+                f"Rolladen {a.get('room', '')} faehrt..."
+                if a.get("position", 50) != 50
+                else ""
+            ),
+            "set_climate": lambda a: "",  # Leise, keine Narration
+            "activate_scene": lambda a: "",  # Wird vom LLM zusammengefasst
+            "play_media": lambda a: "",
+        }
+
+        generator = narrations.get(func_name)
+        if generator:
+            return generator(func_args)
+        return ""
