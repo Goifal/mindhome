@@ -5,6 +5,8 @@ Function Calling, Memory, Autonomy, Memory Extractor und Action Planner.
 
 Phase 6: Easter Eggs, Opinion Engine, Antwort-Varianz, Formality Score,
          Zeitgefuehl, Emotionale Intelligenz, Running Gags.
+Phase 7: Routinen (Morning Briefing, Gute-Nacht, Gaeste-Modus,
+         Szenen-Intelligenz, Raum-Profile, Saisonale Anpassung).
 """
 
 import asyncio
@@ -28,11 +30,31 @@ from .mood_detector import MoodDetector
 from .ollama_client import OllamaClient
 from .personality import PersonalityEngine
 from .proactive import ProactiveManager
+from .routine_engine import RoutineEngine
 from .summarizer import DailySummarizer
 from .time_awareness import TimeAwareness
 from .websocket import emit_thinking, emit_speaking, emit_action
 
 logger = logging.getLogger(__name__)
+
+# Phase 7.5: Szenen-Intelligenz — Prompt fuer natuerliches Situationsverstaendnis
+SCENE_INTELLIGENCE_PROMPT = """
+
+SZENEN-INTELLIGENZ:
+Verstehe natuerliche Situationsbeschreibungen und reagiere mit passenden Aktionen:
+- "Mir ist kalt" → Heizung im aktuellen Raum um 2°C erhoehen
+- "Mir ist warm" → Heizung runter ODER Fenster-Empfehlung
+- "Zu hell" → Rolladen runter ODER Licht dimmen (je nach Tageszeit)
+- "Zu dunkel" → Licht an oder heller
+- "Zu laut" → Musik leiser oder Fenster-Empfehlung
+- "Romantischer Abend" → Licht 20%, warmweiss, leise Musik vorschlagen
+- "Ich bin krank" → Temperatur 23°C, sanftes Licht, weniger Meldungen
+- "Filmabend" → Licht dimmen, Rolladen runter, TV vorbereiten
+- "Ich arbeite" → Helles Tageslicht, 21°C, Benachrichtigungen reduzieren
+- "Party" → Musik an, Lichter bunt/hell, Gaeste-WLAN
+
+Nutze den aktuellen Raum-Kontext fuer die richtige Aktion.
+Frage nur bei Mehrdeutigkeit nach (z.B. "Welchen Raum?")."""
 
 
 class AssistantBrain:
@@ -59,6 +81,7 @@ class AssistantBrain:
         self.mood = MoodDetector()
         self.action_planner = ActionPlanner(self.ollama, self.executor, self.validator)
         self.time_awareness = TimeAwareness(self.ha)
+        self.routines = RoutineEngine(self.ha, self.ollama)
 
     async def initialize(self):
         """Initialisiert alle Komponenten."""
@@ -95,6 +118,10 @@ class AssistantBrain:
         self.time_awareness.set_notify_callback(self._handle_time_alert)
         await self.time_awareness.start()
 
+        # Phase 7: RoutineEngine initialisieren
+        await self.routines.initialize(redis_client=self.memory.redis)
+        self.routines.set_executor(self.executor)
+
         await self.proactive.start()
         logger.info("Jarvis initialisiert (alle Systeme aktiv)")
 
@@ -111,6 +138,49 @@ class AssistantBrain:
             Dict mit response, actions, model_used
         """
         logger.info("Input: '%s' (Person: %s, Raum: %s)", text, person or "unbekannt", room or "unbekannt")
+
+        # Phase 7: Gute-Nacht-Intent (VOR allem anderen)
+        if self.routines.is_goodnight_intent(text):
+            logger.info("Gute-Nacht-Intent erkannt")
+            result = await self.routines.execute_goodnight(person or "")
+            await self.memory.add_conversation("user", text)
+            await self.memory.add_conversation("assistant", result["text"])
+            await emit_speaking(result["text"])
+            return {
+                "response": result["text"],
+                "actions": result["actions"],
+                "model_used": "routine_engine",
+                "context_room": room or "unbekannt",
+            }
+
+        # Phase 7: Gaeste-Modus Trigger
+        if self.routines.is_guest_trigger(text):
+            logger.info("Gaeste-Modus Trigger erkannt")
+            response_text = await self.routines.activate_guest_mode()
+            await self.memory.add_conversation("user", text)
+            await self.memory.add_conversation("assistant", response_text)
+            await emit_speaking(response_text)
+            return {
+                "response": response_text,
+                "actions": [],
+                "model_used": "routine_engine",
+                "context_room": room or "unbekannt",
+            }
+
+        # Phase 7: Gaeste-Modus Deaktivierung
+        guest_off_triggers = ["gaeste sind weg", "besuch ist weg", "normalbetrieb", "gaeste modus aus"]
+        if any(t in text.lower() for t in guest_off_triggers):
+            if await self.routines.is_guest_mode_active():
+                response_text = await self.routines.deactivate_guest_mode()
+                await self.memory.add_conversation("user", text)
+                await self.memory.add_conversation("assistant", response_text)
+                await emit_speaking(response_text)
+                return {
+                    "response": response_text,
+                    "actions": [],
+                    "model_used": "routine_engine",
+                    "context_room": room or "unbekannt",
+                }
 
         # Phase 6: Easter-Egg-Check (VOR dem LLM — spart Latenz)
         egg_response = self.personality.check_easter_egg(text)
@@ -165,6 +235,13 @@ class AssistantBrain:
         time_hints = await self.time_awareness.get_context_hints()
         if time_hints:
             system_prompt += "\n\nZEITGEFUEHL:\n" + "\n".join(f"- {h}" for h in time_hints)
+
+        # Phase 7: Gaeste-Modus Prompt-Erweiterung
+        if await self.routines.is_guest_mode_active():
+            system_prompt += "\n\n" + self.routines.get_guest_mode_prompt()
+
+        # Phase 7.5: Szenen-Intelligenz — erweiterte Prompt-Anweisung
+        system_prompt += SCENE_INTELLIGENCE_PROMPT
 
         # Semantische Erinnerungen zum System Prompt hinzufuegen
         memories = context.get("memories", {})
@@ -350,6 +427,8 @@ class AssistantBrain:
 
         # Phase 6: Formality Score im Health Check
         formality = await self.personality.get_formality_score()
+        # Phase 7: Guest Mode Status
+        guest_mode = await self.routines.is_guest_mode_active()
 
         return {
             "status": "ok" if (ollama_ok and ha_ok) else "degraded",
@@ -367,6 +446,8 @@ class AssistantBrain:
                 "summarizer": "running" if self.summarizer._running else "stopped",
                 "proactive": "running" if self.proactive._running else "stopped",
                 "time_awareness": "running" if self.time_awareness._running else "stopped",
+                "routine_engine": "active",
+                "guest_mode": "active" if guest_mode else "inactive",
             },
             "models_available": models,
             "autonomy": self.autonomy.get_level_info(),

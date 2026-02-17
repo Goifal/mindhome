@@ -192,19 +192,30 @@ class ProactiveManager:
                 "entity": entity_id,
             })
 
-        # Person tracker
+        # Person tracker (Phase 7: erweitert mit Abschied + Abwesenheits-Summary)
         elif entity_id.startswith("person."):
             name = new_state.get("attributes", {}).get("friendly_name", entity_id)
             if new_val == "home" and old_val != "home":
-                # Status-Bericht bei Ankunft generieren
+                # Phase 7.4: Willkommen + Abwesenheits-Summary
                 status = await self._build_arrival_status(name)
+
+                # Phase 7.8: Abwesenheits-Zusammenfassung
+                absence_summary = ""
+                if hasattr(self.brain, "routines"):
+                    absence_summary = await self.brain.routines.get_absence_summary()
+                if absence_summary:
+                    status["absence_summary"] = absence_summary
+
                 await self._notify("person_arrived", MEDIUM, {
                     "person": name,
                     "status_report": status,
                 })
+
             elif old_val == "home" and new_val != "home":
+                # Phase 7.4: Abschied mit Sicherheits-Hinweis
                 await self._notify("person_left", MEDIUM, {
                     "person": name,
+                    "departure_check": True,
                 })
 
         # Waschmaschine/Trockner (Power-Sensor faellt unter Schwellwert)
@@ -440,7 +451,24 @@ Beispiele:
             parts.append(f"Entity: {data['entity']}")
         if "status_report" in data:
             status = data["status_report"]
-            return self._build_status_report_prompt(status)
+            prompt = self._build_status_report_prompt(status)
+            # Phase 7.8: Abwesenheits-Summary anhaengen
+            if "absence_summary" in status:
+                prompt += f"\n\nWaehrend der Abwesenheit: {status['absence_summary']}"
+                prompt += "\nErwaehne kurz was waehrend der Abwesenheit passiert ist."
+            return prompt
+
+        # Phase 7.4: Abschied mit Sicherheits-Check
+        if data.get("departure_check"):
+            person = data.get("person", "User")
+            title = self._get_person_title(person)
+            parts = [
+                f"{person} (Anrede: \"{title}\") verlaesst gerade das Haus.",
+                f"Formuliere einen kurzen Abschied. Sprich mit \"{title}\" an.",
+                "Erwaehne KURZ ob alles gesichert ist (Fenster, Tueren, Alarm).",
+                "Max 2 Saetze. Deutsch. Butler-Stil.",
+            ]
+            return "\n".join(parts)
 
         parts.append(f"Dringlichkeit: {urgency}")
 
