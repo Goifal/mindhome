@@ -45,6 +45,14 @@ Gespraech:
 
 Fakten (JSON-Array):"""
 
+# Phase 8: Erweiterter Prompt mit Intent-Erkennung
+INTENT_EXTRACTION_HINT = """
+Zusaetzlich zu Fakten: Suche nach ABSICHTEN und PLAENEN mit Zeitangaben.
+Wenn der User etwas plant (Besuch, Reise, Termin, Vorhaben), extrahiere das als:
+{"content": "Eltern kommen naechstes Wochenende zu Besuch", "category": "intent", "person": "Max"}
+
+Nur echte Plaene mit erkennbarer Zeitangabe. Keine Vermutungen."""
+
 # Minimale Konversationslaenge fuer Extraktion
 MIN_CONVERSATION_WORDS = 5
 # Maximale Konversationslaenge fuer Extraktion (Token-Limit)
@@ -168,7 +176,9 @@ class MemoryExtractor:
 
     async def _call_llm(self, conversation: str) -> list[dict]:
         """Ruft das LLM auf um Fakten zu extrahieren."""
+        # Phase 8: Intent-Erkennung anhaengen
         prompt = EXTRACTION_PROMPT.replace("{conversation}", conversation)
+        prompt = prompt.rstrip() + "\n" + INTENT_EXTRACTION_HINT
 
         try:
             response = await self.ollama.chat(

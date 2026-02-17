@@ -22,6 +22,7 @@ FACT_CATEGORIES = [
     "habit",        # "Max steht um 7 Uhr auf"
     "health",       # "Max hat eine Haselnuss-Allergie"
     "work",         # "Max arbeitet an Projekt Aurora"
+    "intent",       # Phase 8: "Eltern kommen naechstes WE"
     "general",      # Sonstige Fakten
 ]
 
@@ -346,6 +347,131 @@ class SemanticMemory:
                 logger.error("Fehler beim Loeschen aus Redis: %s", e)
 
         return False
+
+    # ------------------------------------------------------------------
+    # Phase 8: Explizites Wissens-Notizbuch
+    # ------------------------------------------------------------------
+
+    async def store_explicit(
+        self, content: str, category: str = "general", person: str = "unknown"
+    ) -> bool:
+        """
+        Speichert einen explizit genannten Fakt ('Merk dir: ...').
+        Confidence ist 1.0 da der User es direkt gesagt hat.
+        """
+        fact = SemanticFact(
+            content=content,
+            category=category if category in FACT_CATEGORIES else "general",
+            person=person,
+            confidence=1.0,
+            source_conversation="explicit",
+        )
+        success = await self.store_fact(fact)
+        if success:
+            logger.info("Expliziter Fakt gespeichert: %s", content)
+        return success
+
+    async def search_by_topic(
+        self, topic: str, limit: int = 10
+    ) -> list[dict]:
+        """
+        Sucht alle Fakten zu einem Thema (semantisch).
+        Gibt auch niedrig-relevante Treffer zurueck.
+        """
+        if not self.chroma_collection:
+            return []
+
+        try:
+            results = self.chroma_collection.query(
+                query_texts=[topic],
+                n_results=limit,
+            )
+
+            facts = []
+            if results and results.get("documents"):
+                for i, doc in enumerate(results["documents"][0]):
+                    meta = results["metadatas"][0][i] if results.get("metadatas") else {}
+                    distance = (
+                        results["distances"][0][i] if results.get("distances") else 1.0
+                    )
+                    # Grosszuegigerer Filter als search_facts
+                    if distance < 1.5:
+                        facts.append({
+                            "content": doc,
+                            "category": meta.get("category", "general"),
+                            "person": meta.get("person", "unknown"),
+                            "confidence": float(meta.get("confidence", 0.5)),
+                            "times_confirmed": int(meta.get("times_confirmed", 1)),
+                            "relevance": 1.0 - min(distance, 1.0),
+                            "source": meta.get("source_conversation", ""),
+                            "created_at": meta.get("created_at", ""),
+                        })
+            return facts
+        except Exception as e:
+            logger.error("Fehler bei Themen-Suche: %s", e)
+            return []
+
+    async def forget(self, topic: str) -> int:
+        """
+        Loescht alle Fakten die zu einem Thema passen.
+        Gibt die Anzahl geloeschter Fakten zurueck.
+        """
+        # Erst suchen, dann loeschen
+        matching = await self.search_by_topic(topic, limit=20)
+        deleted = 0
+
+        for fact in matching:
+            if fact.get("relevance", 0) < 0.4:
+                continue  # Nur hoch-relevante loeschen
+
+            # Fakt-ID finden
+            fact_id = None
+            if self.chroma_collection:
+                try:
+                    results = self.chroma_collection.query(
+                        query_texts=[fact["content"]],
+                        n_results=1,
+                    )
+                    if results and results.get("ids") and results["ids"][0]:
+                        fact_id = results["ids"][0][0]
+                except Exception:
+                    pass
+
+            if fact_id:
+                success = await self.delete_fact(fact_id)
+                if success:
+                    deleted += 1
+
+        if deleted:
+            logger.info("'%s' vergessen: %d Fakt(en) geloescht", topic, deleted)
+        return deleted
+
+    async def get_todays_learnings(self) -> list[dict]:
+        """Gibt alle heute gelernten Fakten zurueck."""
+        today = datetime.now().strftime("%Y-%m-%d")
+
+        if not self.redis:
+            return []
+
+        try:
+            fact_ids = await self.redis.smembers("mha:facts:all")
+            todays = []
+            for fact_id in fact_ids:
+                data = await self.redis.hgetall(f"mha:fact:{fact_id}")
+                if data:
+                    created = data.get("created_at", "")
+                    if created.startswith(today):
+                        todays.append({
+                            "content": data.get("content", ""),
+                            "category": data.get("category", "general"),
+                            "person": data.get("person", "unknown"),
+                            "confidence": float(data.get("confidence", 0.5)),
+                            "source": data.get("source_conversation", ""),
+                        })
+            return todays
+        except Exception as e:
+            logger.error("Fehler bei heutigen Learnings: %s", e)
+            return []
 
     async def get_stats(self) -> dict:
         if not self.redis:

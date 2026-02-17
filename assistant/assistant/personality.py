@@ -570,6 +570,95 @@ class PersonalityEngine:
         return None
 
     # ------------------------------------------------------------------
+    # Phase 8: Langzeit-Persoenlichkeitsanpassung
+    # ------------------------------------------------------------------
+
+    async def track_interaction_metrics(
+        self, mood: str = "neutral", response_accepted: bool = True
+    ):
+        """Trackt Interaktions-Metriken fuer Langzeit-Anpassung."""
+        if not self._redis:
+            return
+
+        try:
+            today = datetime.now().strftime("%Y-%m-%d")
+
+            # Gesamt-Interaktionen inkrementieren
+            await self._redis.incr("mha:personality:total_interactions")
+
+            # Tages-Interaktionen
+            day_key = f"mha:personality:interactions:{today}"
+            await self._redis.incr(day_key)
+            await self._redis.expire(day_key, 90 * 86400)  # 90 Tage
+
+            # Positive Reaktionen
+            if response_accepted:
+                await self._redis.incr("mha:personality:positive_reactions")
+
+            # Stimmungs-Tracking (gleitender Durchschnitt)
+            mood_scores = {"good": 1.0, "neutral": 0.5, "tired": 0.3,
+                           "stressed": 0.2, "frustrated": 0.1}
+            mood_val = mood_scores.get(mood, 0.5)
+            await self._redis.lpush("mha:personality:mood_history", str(mood_val))
+            await self._redis.ltrim("mha:personality:mood_history", 0, 99)
+
+            # Formality Decay (einmal pro Tag)
+            decay_key = f"mha:personality:decay_done:{today}"
+            if not await self._redis.get(decay_key):
+                await self.decay_formality()
+                await self._redis.setex(decay_key, 86400, "1")
+
+        except Exception as e:
+            logger.debug("Fehler bei Personality-Metrics: %s", e)
+
+    async def get_personality_evolution(self) -> dict:
+        """Gibt den aktuellen Stand der Persoenlichkeits-Entwicklung zurueck."""
+        if not self._redis:
+            return {}
+
+        try:
+            total = await self._redis.get("mha:personality:total_interactions")
+            positive = await self._redis.get("mha:personality:positive_reactions")
+            formality = await self.get_formality_score()
+
+            # Durchschnittliche Stimmung
+            mood_history = await self._redis.lrange("mha:personality:mood_history", 0, 99)
+            avg_mood = 0.5
+            if mood_history:
+                values = [float(v) for v in mood_history]
+                avg_mood = sum(values) / len(values)
+
+            total_int = int(total or 0)
+            positive_int = int(positive or 0)
+            acceptance_rate = positive_int / max(1, total_int)
+
+            return {
+                "total_interactions": total_int,
+                "positive_reactions": positive_int,
+                "acceptance_rate": round(acceptance_rate, 2),
+                "avg_mood": round(avg_mood, 2),
+                "formality_score": formality,
+                "personality_stage": self._get_personality_stage(total_int, formality),
+            }
+        except Exception as e:
+            logger.error("Fehler bei Personality-Evolution: %s", e)
+            return {}
+
+    @staticmethod
+    def _get_personality_stage(interactions: int, formality: int) -> str:
+        """Bestimmt die aktuelle Persoenlichkeits-Stufe."""
+        if interactions < 50:
+            return "kennenlernphase"
+        elif interactions < 200:
+            return "vertraut_werdend"
+        elif formality > 50:
+            return "professionell_persoenlich"
+        elif formality > 30:
+            return "eingespielt"
+        else:
+            return "alter_freund"
+
+    # ------------------------------------------------------------------
     # System Prompt Builder
     # ------------------------------------------------------------------
 
