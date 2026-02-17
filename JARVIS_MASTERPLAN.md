@@ -111,9 +111,9 @@ Aus unserer 47-Feature-Liste sind folgende **wirklich neu**:
 Phase 1-5    ✅  Add-on FERTIG (156 Features)
 Assistant    ✅  Basis FERTIG (14 Module, voll funktional)
      │
-Phase 6      🆕  Jarvis Persönlichkeit (10 Features — Assistant)
+Phase 6      ✅  Jarvis Persönlichkeit (10 Features — v0.9.0-v0.9.4)
      │
-Phase 7      🆕  Jarvis Routinen & Tagesstruktur (9 Features — Assistant)
+Phase 7      ✅  Jarvis Routinen & Tagesstruktur (9 Features — v0.9.5-v0.9.6)
      │
 Phase 8      🆕  Jarvis Gedächtnis & Vorausdenken (7 Features — Assistant)
      │

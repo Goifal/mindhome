@@ -1,16 +1,37 @@
 """
 Context Builder - Sammelt alle relevanten Daten fuer den LLM-Prompt.
 Holt Daten von Home Assistant, MindHome und Semantic Memory via REST API.
+
+Phase 7: Raum-Profile und saisonale Anpassungen.
 """
 
 import logging
+import math
 from datetime import datetime
+from pathlib import Path
 from typing import Optional
+
+import yaml
 
 from .ha_client import HomeAssistantClient
 from .semantic_memory import SemanticMemory
 
 logger = logging.getLogger(__name__)
+
+# Raum-Profile laden
+_ROOM_PROFILES = {}
+_SEASONAL_CONFIG = {}
+_config_dir = Path(__file__).parent.parent / "config"
+try:
+    _room_file = _config_dir / "room_profiles.yaml"
+    if _room_file.exists():
+        with open(_room_file) as f:
+            _rp = yaml.safe_load(f)
+            _ROOM_PROFILES = _rp.get("rooms", {})
+            _SEASONAL_CONFIG = _rp.get("seasonal", {})
+        logger.info("Raum-Profile geladen: %d Raeume", len(_ROOM_PROFILES))
+except Exception as e:
+    logger.warning("room_profiles.yaml nicht geladen: %s", e)
 
 # Relevante Entity-Typen fuer den Kontext
 RELEVANT_DOMAINS = [
@@ -82,6 +103,15 @@ class ContextBuilder:
                 }
             except Exception as e:
                 logger.debug("Activity Engine Fehler: %s", e)
+
+        # Phase 7: Raum-Profil zum Kontext hinzufuegen
+        current_room = context.get("room", "")
+        room_profile = self._get_room_profile(current_room)
+        if room_profile:
+            context["room_profile"] = room_profile
+
+        # Phase 7: Saisonale Daten
+        context["seasonal"] = self._get_seasonal_context(states)
 
         # Warnungen
         context["alerts"] = self._extract_alerts(states or [])
@@ -283,3 +313,72 @@ class ContextBuilder:
             "Freitag", "Samstag", "Sonntag",
         ]
         return days[weekday]
+
+    # ------------------------------------------------------------------
+    # Phase 7: Raum-Profile
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _get_room_profile(room_name: str) -> Optional[dict]:
+        """Holt das Raum-Profil fuer den aktuellen Raum."""
+        if not room_name or not _ROOM_PROFILES:
+            return None
+
+        room_lower = room_name.lower().replace(" ", "_")
+        # Direkte Suche
+        if room_lower in _ROOM_PROFILES:
+            return _ROOM_PROFILES[room_lower]
+        # Fuzzy: Teilwort-Match
+        for key, profile in _ROOM_PROFILES.items():
+            if key in room_lower or room_lower in key:
+                return profile
+        return None
+
+    # ------------------------------------------------------------------
+    # Phase 7: Saisonale Anpassungen
+    # ------------------------------------------------------------------
+
+    def _get_seasonal_context(self, states: Optional[list]) -> dict:
+        """Ermittelt saisonale Kontextdaten."""
+        now = datetime.now()
+        month = now.month
+
+        # Jahreszeit bestimmen
+        if month in (3, 4, 5):
+            season = "spring"
+        elif month in (6, 7, 8):
+            season = "summer"
+        elif month in (9, 10, 11):
+            season = "autumn"
+        else:
+            season = "winter"
+
+        # Tageslaenge (vereinfacht fuer Mitteleuropa)
+        day_of_year = now.timetuple().tm_yday
+        sunrise_hour = 7 - 2 * math.cos(2 * math.pi * (day_of_year - 172) / 365)
+        sunset_hour = 17 + 2 * math.cos(2 * math.pi * (day_of_year - 172) / 365)
+        daylight_hours = sunset_hour - sunrise_hour
+
+        seasonal_data = {
+            "season": season,
+            "daylight_hours": round(daylight_hours, 1),
+            "sunrise_approx": f"{int(sunrise_hour)}:{int((sunrise_hour % 1) * 60):02d}",
+            "sunset_approx": f"{int(sunset_hour)}:{int((sunset_hour % 1) * 60):02d}",
+        }
+
+        # Saisonale Config anhaengen
+        if season in _SEASONAL_CONFIG:
+            sc = _SEASONAL_CONFIG[season]
+            seasonal_data["temp_offset"] = sc.get("temp_offset", 0)
+            seasonal_data["briefing_extras"] = sc.get("briefing_extras", [])
+            seasonal_data["ventilation_hint"] = sc.get("ventilation", "")
+            seasonal_data["cover_hint"] = sc.get("cover_hint", "")
+
+        # Aussentemperatur
+        if states:
+            for state in states:
+                if state.get("entity_id", "").startswith("weather."):
+                    seasonal_data["outside_temp"] = state.get("attributes", {}).get("temperature")
+                    break
+
+        return seasonal_data
