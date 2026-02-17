@@ -102,7 +102,7 @@ class AssistantBrain:
         # Phase 9: Stimme & Akustik
         self.tts_enhancer = TTSEnhancer()
         self.sound_manager = SoundManager(self.ha)
-        self.speaker_recognition = SpeakerRecognition()
+        self.speaker_recognition = SpeakerRecognition(ha_client=self.ha)
 
         # Phase 10: Diagnostik + Wartungs-Assistent
         self.diagnostics = DiagnosticsEngine(self.ha)
@@ -207,11 +207,12 @@ class AssistantBrain:
                 self.speaker_recognition.set_current_speaker(person.lower())
             )
         elif self.speaker_recognition.enabled:
-            identified = await self.speaker_recognition.identify()
-            if identified.get("person"):
+            identified = await self.speaker_recognition.identify(room=room)
+            if identified.get("person") and not identified.get("fallback"):
                 person = identified["person"]
-                logger.info("Speaker erkannt: %s (Confidence: %.2f)",
-                            person, identified.get("confidence", 0))
+                logger.info("Speaker erkannt: %s (Confidence: %.2f, Methode: %s)",
+                            person, identified.get("confidence", 0),
+                            identified.get("method", "unknown"))
 
         # Phase 7: Gute-Nacht-Intent (VOR allem anderen)
         if self.routines.is_goodnight_intent(text):
