@@ -6,7 +6,7 @@ assistant:
   # Name des Assistenten - so stellt er sich vor und so reagiert er
   # Aendere diesen Namen zu was du willst (z.B. "Jarvis", "Alfred", "Nova")
   name: "Jarvis"
-  version: "0.9.1"
+  version: "0.9.2"
   language: "de"
 
 # --- Personen und Anrede ---

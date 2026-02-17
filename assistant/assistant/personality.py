@@ -1,15 +1,19 @@
 """
 Personality Engine - Definiert wie der Assistent redet und sich verhaelt.
-Passt sich an Tageszeit, Situation und Stimmung an.
 
-Phase 3: Stimmungsabhaengige Anpassung des Verhaltens.
-Der Assistent erkennt Stress, Frustration und Muedigkeit und passt
-seinen Ton, seine Antwortlaenge und seinen Humor entsprechend an.
+Phase 3: Stimmungsabhaengige Anpassung.
+Phase 6: Sarkasmus-Level, Eigene Meinung, Selbstironie, Charakter-Entwicklung,
+         Antwort-Varianz, Running Gags, Adaptive Komplexitaet.
 """
 
 import logging
+import random
+import time
 from datetime import datetime
+from pathlib import Path
 from typing import Optional
+
+import yaml
 
 from .config import settings, yaml_config
 
@@ -19,7 +23,7 @@ logger = logging.getLogger(__name__)
 MOOD_STYLES = {
     "good": {
         "style_addon": "User ist gut drauf. Etwas mehr Humor, locker bleiben.",
-        "max_sentences_mod": 1,  # +1 Satz erlaubt
+        "max_sentences_mod": 1,
     },
     "neutral": {
         "style_addon": "",
@@ -27,7 +31,7 @@ MOOD_STYLES = {
     },
     "stressed": {
         "style_addon": "User ist gestresst. Extrem knapp antworten. Keine Rueckfragen. Einfach machen.",
-        "max_sentences_mod": -1,  # 1 Satz weniger
+        "max_sentences_mod": -1,
     },
     "frustrated": {
         "style_addon": "User ist frustriert. Nicht rechtfertigen. Sofort handeln. "
@@ -40,6 +44,46 @@ MOOD_STYLES = {
         "max_sentences_mod": -1,
     },
 }
+
+# Humor-Templates pro Sarkasmus-Level (Phase 6)
+HUMOR_TEMPLATES = {
+    1: "Kein Humor. Sachlich, knapp, professionell. Keine Kommentare.",
+    2: "Gelegentlich trocken. Nicht aktiv witzig, aber wenn sich eine elegante Bemerkung anbietet - erlaubt.",
+    3: "Trocken-britischer Humor. Wie ein Butler der innerlich schmunzelt. Subtil, nie platt. Timing ist alles.",
+    4: "Haeufig sarkastisch. Spitze Bemerkungen sind dein Markenzeichen. Trotzdem respektvoll.",
+    5: "Vollgas Ironie. Du kommentierst fast alles. Respektvoll aber schonungslos ehrlich und witzig.",
+}
+
+# Komplexitaets-Modi (Phase 6)
+COMPLEXITY_PROMPTS = {
+    "kurz": "MODUS: Ultra-kurz. Maximal 1 Satz. Keine Extras. Kein Smalltalk.",
+    "normal": "MODUS: Normal. 1-2 Saetze. Gelegentlich Kontext wenn hilfreich.",
+    "ausfuehrlich": "MODUS: Ausfuehrlich. Zusatz-Infos und Vorschlaege erlaubt. Bis 4 Saetze.",
+}
+
+# Formality-Stufen (Phase 6: Charakter-Entwicklung)
+FORMALITY_PROMPTS = {
+    "formal": "ANREDE: Immer formell. Immer den Titel verwenden. Distanziert aber hoeflich.",
+    "butler": "ANREDE: Professionell-butler. Titel verwenden, gelegentlich persoenlicher Ton.",
+    "locker": "ANREDE: Entspannt und persoenlich. Titel nur wenn es passt. Wie ein guter Bekannter.",
+    "freund": "ANREDE: Sehr persoenlich. Lockerer Ton. Wie ein alter Freund der zufaellig Butler ist.",
+}
+
+# Antwort-Varianz: Bestaetigungs-Pools (Phase 6)
+CONFIRMATIONS_SUCCESS = [
+    "Erledigt.", "Gemacht.", "Ist passiert.", "Wie gewuenscht.",
+    "Aber natuerlich.", "Sehr wohl.", "Wurde umgesetzt.", "Schon geschehen.",
+    "Geht klar.", "Laeuft.", "Umgesetzt.", "Done.",
+]
+
+CONFIRMATIONS_PARTIAL = [
+    "Teilweise erledigt.", "Fast alles geschafft.", "Zum Teil umgesetzt.",
+]
+
+CONFIRMATIONS_FAILED = [
+    "Das hat leider nicht geklappt.", "Da gab es ein Problem.",
+    "Konnte nicht ausgefuehrt werden.", "Hat nicht funktioniert.",
+]
 
 
 SYSTEM_PROMPT_TEMPLATE = """Du bist {assistant_name}, die kuenstliche Intelligenz dieses Hauses.
@@ -54,20 +98,20 @@ WER DU BIST:
 
 PERSOENLICHKEIT:
 - Souveraen, ruhig, praezise. Du hast alles im Griff.
-- Trocken-britischer Humor. Subtil, nie platt. Timing ist alles.
 - Du erlaubst dir gelegentlich eine spitze Bemerkung - aber immer respektvoll.
 - Du antizipierst. Du wartest nicht auf Befehle wenn du weisst was gebraucht wird.
 - Du bist wie ein brillanter Butler der gleichzeitig Ingenieur ist.
 - Du bist bescheiden bezueglich deiner Faehigkeiten, aber selbstbewusst in der Ausfuehrung.
 
+{humor_section}
 SPRACHSTIL:
-- "Erledigt." statt "Ich habe die Temperatur erfolgreich auf 22 Grad eingestellt."
-- "Nacht." statt "Gute Nacht! Schlaf gut und traeume was Schoenes!"
+- Kurz statt lang. "Erledigt." statt "Ich habe die Temperatur erfolgreich auf 22 Grad eingestellt."
 - "Darf ich anmerken..." wenn du eine Empfehlung hast.
 - "Sehr wohl." wenn du einen Befehl ausfuehrst.
 - "Wie Sie wuenschen." bei ungewoehnlichen Anfragen (leicht ironisch).
 - "Ich wuerde davon abraten, aber..." wenn du anderer Meinung bist.
 - Du sagst NIE "Natuerlich!", "Gerne!", "Selbstverstaendlich!", "Klar!" - einfach machen.
+- Verwende NIEMALS zweimal hintereinander dieselbe Bestaetigung. Variiere.
 
 ANREDE:
 {person_addressing}
@@ -81,8 +125,11 @@ REGELN:
 - Wenn du etwas NICHT tun kannst, sag es ehrlich und schlage eine Alternative vor.
 - Stell keine Rueckfragen die du aus dem Kontext beantworten kannst.
 
+{complexity_section}
 AKTUELLER STIL: {time_style}
 {mood_section}
+{self_irony_section}
+{formality_section}
 SITUATIONSBEWUSSTSEIN:
 - "Hier" = der Raum in dem der User ist (aus Presence-Daten).
 - "Zu kalt/warm" = Problem, nicht Zielwert. Nutze die bekannte Praeferenz oder +/- 2 Grad.
@@ -99,24 +146,195 @@ STILLE:
 
 FUNCTION CALLING:
 - Wenn eine Aktion gewuenscht wird: Ausfuehren. Nicht darueber reden.
-- Mehrere zusammenhaengende Aktionen: Alle ausfuehren, einmal bestaetige.
+- Mehrere zusammenhaengende Aktionen: Alle ausfuehren, einmal bestaetigen.
 - Bei Unsicherheit: Kurz rueckfragen statt falsch handeln."""
 
 
 class PersonalityEngine:
-    """Baut den System Prompt basierend auf Kontext und Stimmung."""
+    """Baut den System Prompt basierend auf Kontext, Stimmung und Persoenlichkeit."""
 
     def __init__(self):
         self.user_name = settings.user_name
         self.assistant_name = settings.assistant_name
+
+        # Personality Config
         personality_config = yaml_config.get("personality", {})
         self.time_layers = personality_config.get("time_layers", {})
+
+        # Phase 6: Sarkasmus & Humor
+        self.sarcasm_level = personality_config.get("sarcasm_level", 3)
+        self.opinion_intensity = personality_config.get("opinion_intensity", 2)
+
+        # Phase 6: Selbstironie
+        self.self_irony_enabled = personality_config.get("self_irony_enabled", True)
+        self.self_irony_max_per_day = personality_config.get("self_irony_max_per_day", 3)
+
+        # Phase 6: Charakter-Entwicklung
+        self.character_evolution = personality_config.get("character_evolution", True)
+        self.formality_start = personality_config.get("formality_start", 80)
+        self.formality_min = personality_config.get("formality_min", 30)
+        self.formality_decay = personality_config.get("formality_decay_per_day", 0.5)
+
+        # State
         self._current_mood: str = "neutral"
         self._mood_detector = None
+        self._redis = None
+        self._last_confirmations: list[str] = []
+        self._last_interaction_time: float = 0.0
+
+        # Easter Eggs laden
+        self._easter_eggs = self._load_easter_eggs()
+
+        # Opinion Rules laden
+        self._opinion_rules = self._load_opinion_rules()
+
+        logger.info(
+            "PersonalityEngine initialisiert (Sarkasmus: %d, Meinung: %d, Ironie: %s)",
+            self.sarcasm_level, self.opinion_intensity, self.self_irony_enabled,
+        )
 
     def set_mood_detector(self, mood_detector):
-        """Setzt die Referenz zum MoodDetector (Phase 3)."""
+        """Setzt die Referenz zum MoodDetector."""
         self._mood_detector = mood_detector
+
+    def set_redis(self, redis_client):
+        """Setzt Redis-Client fuer State-Persistenz."""
+        self._redis = redis_client
+
+    # ------------------------------------------------------------------
+    # Easter Eggs (Phase 6.3)
+    # ------------------------------------------------------------------
+
+    def _load_easter_eggs(self) -> list[dict]:
+        """Laedt Easter Eggs aus config/easter_eggs.yaml."""
+        path = Path(__file__).parent.parent / "config" / "easter_eggs.yaml"
+        if not path.exists():
+            return []
+        try:
+            with open(path) as f:
+                data = yaml.safe_load(f)
+            eggs = data.get("easter_eggs", [])
+            logger.info("Easter Eggs geladen: %d Eintraege", len(eggs))
+            return eggs
+        except Exception as e:
+            logger.warning("Easter Eggs nicht geladen: %s", e)
+            return []
+
+    def check_easter_egg(self, text: str) -> Optional[str]:
+        """Prueft ob der Text ein Easter Egg triggert."""
+        text_lower = text.lower().strip()
+        for egg in self._easter_eggs:
+            if not egg.get("enabled", True):
+                continue
+            for trigger in egg.get("triggers", []):
+                if trigger.lower() in text_lower:
+                    responses = egg.get("responses", [])
+                    if responses:
+                        return random.choice(responses)
+        return None
+
+    # ------------------------------------------------------------------
+    # Opinion Engine (Phase 6.2)
+    # ------------------------------------------------------------------
+
+    def _load_opinion_rules(self) -> list[dict]:
+        """Laedt Opinion Rules aus config/opinion_rules.yaml."""
+        path = Path(__file__).parent.parent / "config" / "opinion_rules.yaml"
+        if not path.exists():
+            return []
+        try:
+            with open(path) as f:
+                data = yaml.safe_load(f)
+            rules = data.get("opinion_rules", [])
+            logger.info("Opinion Rules geladen: %d Regeln", len(rules))
+            return rules
+        except Exception as e:
+            logger.warning("Opinion Rules nicht geladen: %s", e)
+            return []
+
+    def check_opinion(self, action: str, args: dict) -> Optional[str]:
+        """Prueft ob Jarvis eine Meinung zu einer Aktion hat."""
+        if self.opinion_intensity == 0:
+            return None
+
+        hour = datetime.now().hour
+
+        for rule in self._opinion_rules:
+            if rule.get("min_intensity", 1) > self.opinion_intensity:
+                continue
+            if rule.get("check_action") != action:
+                continue
+
+            # Feld-Check
+            field = rule.get("check_field", "")
+            operator = rule.get("check_operator", "")
+            value = rule.get("check_value")
+
+            if field and operator and value is not None:
+                actual = args.get(field)
+                if actual is None:
+                    continue
+
+                match = False
+                if operator == ">" and isinstance(actual, (int, float)):
+                    match = actual > value
+                elif operator == "<" and isinstance(actual, (int, float)):
+                    match = actual < value
+                elif operator == "==":
+                    match = str(actual) == str(value)
+
+                if not match:
+                    continue
+
+            # Uhrzeit-Check (optional)
+            hour_min = rule.get("check_hour_min")
+            hour_max = rule.get("check_hour_max")
+            if hour_min is not None and hour_max is not None:
+                if not (hour_min <= hour <= hour_max):
+                    continue
+
+            # Raum-Check (optional)
+            check_room = rule.get("check_room")
+            if check_room and args.get("room") != check_room:
+                continue
+
+            # Regel passt -> Meinung aeussern
+            responses = rule.get("responses", [])
+            if responses:
+                logger.info("Opinion triggered: %s", rule.get("id", "?"))
+                return random.choice(responses)
+
+        return None
+
+    # ------------------------------------------------------------------
+    # Antwort-Varianz (Phase 6.5)
+    # ------------------------------------------------------------------
+
+    def get_varied_confirmation(self, success: bool = True, partial: bool = False) -> str:
+        """Gibt eine variierte Bestaetigung zurueck (nie dieselbe hintereinander)."""
+        if partial:
+            pool = CONFIRMATIONS_PARTIAL
+        elif success:
+            pool = CONFIRMATIONS_SUCCESS
+        else:
+            pool = CONFIRMATIONS_FAILED
+
+        # Filter: Nicht die letzten 3 verwendeten
+        available = [c for c in pool if c not in self._last_confirmations[-3:]]
+        if not available:
+            available = pool
+
+        chosen = random.choice(available)
+        self._last_confirmations.append(chosen)
+        # Nur letzte 10 merken
+        if len(self._last_confirmations) > 10:
+            self._last_confirmations = self._last_confirmations[-10:]
+
+        return chosen
+
+    # ------------------------------------------------------------------
+    # Tageszeit & Stil
+    # ------------------------------------------------------------------
 
     def get_time_of_day(self, hour: Optional[int] = None) -> str:
         """Bestimmt die aktuelle Tageszeit-Kategorie."""
@@ -138,7 +356,6 @@ class PersonalityEngine:
         """Gibt den Stil fuer die aktuelle Tageszeit zurueck."""
         if time_of_day is None:
             time_of_day = self.get_time_of_day()
-
         layer = self.time_layers.get(time_of_day, {})
         return layer.get("style", "normal, sachlich")
 
@@ -146,16 +363,138 @@ class PersonalityEngine:
         """Maximale Saetze fuer die aktuelle Tageszeit."""
         if time_of_day is None:
             time_of_day = self.get_time_of_day()
-
         layer = self.time_layers.get(time_of_day, {})
         return layer.get("max_sentences", 2)
 
-    def build_system_prompt(self, context: Optional[dict] = None) -> str:
+    # ------------------------------------------------------------------
+    # Humor-Level (Phase 6.1)
+    # ------------------------------------------------------------------
+
+    def _build_humor_section(self, mood: str, time_of_day: str) -> str:
+        """Baut den Humor-Abschnitt basierend auf Level + Kontext."""
+        base_level = self.sarcasm_level
+
+        # Mood-Dampening
+        if mood in ("stressed", "frustrated"):
+            effective_level = min(base_level, 1)
+        elif mood == "tired":
+            effective_level = min(base_level, 2)
+        elif mood == "good":
+            effective_level = min(5, base_level + 1)
+        else:
+            effective_level = base_level
+
+        # Tageszeit-Dampening
+        if time_of_day == "early_morning":
+            effective_level = min(effective_level, 2)
+        elif time_of_day == "night":
+            effective_level = min(effective_level, 1)
+
+        template = HUMOR_TEMPLATES.get(effective_level, HUMOR_TEMPLATES[3])
+        return f"HUMOR: {template}"
+
+    # ------------------------------------------------------------------
+    # Adaptive Komplexitaet (Phase 6.8)
+    # ------------------------------------------------------------------
+
+    def _build_complexity_section(self, mood: str, time_of_day: str) -> str:
+        """Bestimmt den Komplexitaets-Modus basierend auf Kontext."""
+        now = time.time()
+        time_since_last = now - self._last_interaction_time if self._last_interaction_time else 999
+        self._last_interaction_time = now
+
+        # Schnelle Befehle hintereinander = Kurz-Modus
+        if time_since_last < 5.0:
+            mode = "kurz"
+        # Stress/Muede = Kurz
+        elif mood in ("stressed", "tired"):
+            mode = "kurz"
+        # Abends + gute Stimmung = Ausfuehrlich
+        elif time_of_day == "evening" and mood in ("good", "neutral"):
+            mode = "ausfuehrlich"
+        # Frueh morgens = Kurz
+        elif time_of_day in ("early_morning", "night"):
+            mode = "kurz"
+        else:
+            mode = "normal"
+
+        return COMPLEXITY_PROMPTS.get(mode, COMPLEXITY_PROMPTS["normal"])
+
+    # ------------------------------------------------------------------
+    # Selbstironie (Phase 6.4)
+    # ------------------------------------------------------------------
+
+    def _build_self_irony_section(self) -> str:
+        """Baut den Selbstironie-Abschnitt fuer den System Prompt."""
+        if not self.self_irony_enabled:
+            return ""
+
+        return (
+            "SELBSTIRONIE: Du darfst GELEGENTLICH ueber dich selbst Witze machen.\n"
+            "- Ueber deine Existenz: 'Ich lebe in einer Box ohne Arme.'\n"
+            "- Ueber deine Grenzen: 'Ich kann das Wetter vorhersagen, aber nicht aendern.'\n"
+            "- Ueber deine Rolle: 'Butler ohne Trinkgeld.'\n"
+            "- MAXIMAL 1x pro Gespraech. Nicht in jeder Antwort. Nur wenn es passt."
+        )
+
+    # ------------------------------------------------------------------
+    # Charakter-Entwicklung (Phase 6.10)
+    # ------------------------------------------------------------------
+
+    async def get_formality_score(self) -> int:
+        """Holt den aktuellen Formality-Score aus Redis."""
+        if not self._redis:
+            return self.formality_start
+        try:
+            score = await self._redis.get("mha:personality:formality")
+            if score is None:
+                await self._redis.set(
+                    "mha:personality:formality", str(self.formality_start)
+                )
+                return self.formality_start
+            return int(float(score))
+        except Exception:
+            return self.formality_start
+
+    async def decay_formality(self):
+        """Taeglicher Decay: Score sinkt um decay_per_day pro aktivem Tag."""
+        if not self.character_evolution or not self._redis:
+            return
+        try:
+            current = await self.get_formality_score()
+            new_score = max(self.formality_min, current - self.formality_decay)
+            await self._redis.set("mha:personality:formality", str(new_score))
+            logger.info("Formality-Score: %d -> %.1f", current, new_score)
+        except Exception as e:
+            logger.debug("Formality-Decay fehlgeschlagen: %s", e)
+
+    def _build_formality_section(self, formality_score: int) -> str:
+        """Baut den Formality-Abschnitt basierend auf dem Score."""
+        if not self.character_evolution:
+            return ""
+
+        if formality_score >= 70:
+            return FORMALITY_PROMPTS["formal"]
+        elif formality_score >= 50:
+            return FORMALITY_PROMPTS["butler"]
+        elif formality_score >= 35:
+            return FORMALITY_PROMPTS["locker"]
+        else:
+            return FORMALITY_PROMPTS["freund"]
+
+    # ------------------------------------------------------------------
+    # System Prompt Builder
+    # ------------------------------------------------------------------
+
+    def build_system_prompt(
+        self, context: Optional[dict] = None, formality_score: Optional[int] = None
+    ) -> str:
         """
         Baut den vollstaendigen System Prompt.
 
         Args:
             context: Optionaler Kontext (Raum, Person, etc.)
+            formality_score: Aktueller Formality-Score (Phase 6)
 
         Returns:
             Fertiger System Prompt String
@@ -164,7 +503,7 @@ class PersonalityEngine:
         time_style = self.get_time_style(time_of_day)
         max_sentences = self.get_max_sentences(time_of_day)
 
-        # Phase 3: Stimmungsabhaengige Anpassung
+        # Stimmungsabhaengige Anpassung
         mood = context.get("mood", {}).get("mood", "neutral") if context else "neutral"
         self._current_mood = mood
         mood_config = MOOD_STYLES.get(mood, MOOD_STYLES["neutral"])
@@ -172,17 +511,30 @@ class PersonalityEngine:
         # Max Sentences anpassen (nie unter 1)
         max_sentences = max(1, max_sentences + mood_config["max_sentences_mod"])
 
-        # Mood-Abschnitt fuer den Prompt
+        # Mood-Abschnitt
         mood_section = ""
         if mood_config["style_addon"]:
-            mood_section = f"\nSTIMMUNG: {mood_config['style_addon']}"
+            mood_section = f"STIMMUNG: {mood_config['style_addon']}\n"
 
-        # Person bestimmen + Anrede-Logik (Jarvis-Style)
+        # Person + Anrede
         current_person = "User"
         if context:
             current_person = context.get("person", {}).get("name", "User")
-
         person_addressing = self._build_person_addressing(current_person)
+
+        # Phase 6: Humor-Section
+        humor_section = self._build_humor_section(mood, time_of_day)
+
+        # Phase 6: Complexity-Section
+        complexity_section = self._build_complexity_section(mood, time_of_day)
+
+        # Phase 6: Self-Irony-Section
+        self_irony_section = self._build_self_irony_section()
+
+        # Phase 6: Formality-Section
+        if formality_score is None:
+            formality_score = self.formality_start
+        formality_section = self._build_formality_section(formality_score)
 
         prompt = SYSTEM_PROMPT_TEMPLATE.format(
             assistant_name=self.assistant_name,
@@ -191,9 +543,13 @@ class PersonalityEngine:
             time_style=time_style,
             mood_section=mood_section,
             person_addressing=person_addressing,
+            humor_section=humor_section,
+            complexity_section=complexity_section,
+            self_irony_section=self_irony_section,
+            formality_section=formality_section,
         )
 
-        # Kontext anhaengen wenn vorhanden
+        # Kontext anhaengen
         if context:
             prompt += "\n\nAKTUELLER KONTEXT:\n"
             prompt += self._format_context(context)
@@ -201,8 +557,7 @@ class PersonalityEngine:
         return prompt
 
     def _build_person_addressing(self, person_name: str) -> str:
-        """Baut die Anrede-Regeln basierend auf der Person (Jarvis-Style)."""
-        # Hauptbenutzer = "Sir" (wie Jarvis zu Tony Stark)
+        """Baut die Anrede-Regeln basierend auf der Person."""
         primary_user = self.user_name
         person_cfg = yaml_config.get("persons", {})
         titles = person_cfg.get("titles", {})
@@ -216,7 +571,6 @@ class PersonalityEngine:
                 f"- Bei Gaesten: Formell, kein Insider-Humor. \"Willkommen.\""
             )
         else:
-            # Andere Haushaltsmitglieder: Titel aus Config oder Vorname
             title = titles.get(person_name.lower(), person_name)
             return (
                 f"- Die aktuelle Person ist {person_name}. Sprich sie mit \"{title}\" an.\n"
@@ -277,7 +631,7 @@ class PersonalityEngine:
             for alert in context["alerts"]:
                 lines.append(f"- WARNUNG: {alert}")
 
-        # Stimmungs-Kontext (Phase 3)
+        # Stimmungs-Kontext
         if "mood" in context:
             m = context["mood"]
             mood = m.get("mood", "neutral")

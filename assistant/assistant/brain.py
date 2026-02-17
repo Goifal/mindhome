@@ -2,6 +2,8 @@
 MindHome Assistant Brain - Das zentrale Gehirn.
 Verbindet alle Komponenten: Context Builder, Model Router, Personality,
 Function Calling, Memory, Autonomy, Memory Extractor und Action Planner.
+
+Phase 6: Easter Eggs, Opinion Engine, Antwort-Varianz, Formality Score.
 """
 
 import asyncio
@@ -62,20 +64,23 @@ class AssistantBrain:
         # Semantic Memory mit Context Builder verbinden
         self.context_builder.set_semantic_memory(self.memory.semantic)
 
-        # Activity Engine mit Context Builder verbinden (Phase 6)
+        # Activity Engine mit Context Builder verbinden
         self.context_builder.set_activity_engine(self.activity)
 
-        # Mood Detector initialisieren (Phase 3)
+        # Mood Detector initialisieren
         await self.mood.initialize(redis_client=self.memory.redis)
         self.personality.set_mood_detector(self.mood)
+
+        # Phase 6: Redis fuer Personality Engine (Formality Score, Counter)
+        self.personality.set_redis(self.memory.redis)
 
         # Memory Extractor initialisieren
         self.memory_extractor = MemoryExtractor(self.ollama, self.memory.semantic)
 
-        # Feedback Tracker initialisieren (Phase 5)
+        # Feedback Tracker initialisieren
         await self.feedback.initialize(redis_client=self.memory.redis)
 
-        # Daily Summarizer initialisieren (Phase 7)
+        # Daily Summarizer initialisieren
         self.summarizer.memory = self.memory
         await self.summarizer.initialize(
             redis_client=self.memory.redis,
@@ -99,6 +104,20 @@ class AssistantBrain:
         """
         logger.info("Input: '%s' (Person: %s, Raum: %s)", text, person or "unbekannt", room or "unbekannt")
 
+        # Phase 6: Easter-Egg-Check (VOR dem LLM — spart Latenz)
+        egg_response = self.personality.check_easter_egg(text)
+        if egg_response:
+            logger.info("Easter Egg getriggert: '%s'", egg_response)
+            await self.memory.add_conversation("user", text)
+            await self.memory.add_conversation("assistant", egg_response)
+            await emit_speaking(egg_response)
+            return {
+                "response": egg_response,
+                "actions": [],
+                "model_used": "easter_egg",
+                "context_room": room or "unbekannt",
+            }
+
         # WebSocket: Denk-Status senden
         await emit_thinking()
 
@@ -111,15 +130,20 @@ class AssistantBrain:
         if person:
             context.setdefault("person", {})["name"] = person
 
-        # 2. Stimmungsanalyse (Phase 3)
+        # 2. Stimmungsanalyse
         mood_result = await self.mood.analyze(text, person or "")
         context["mood"] = mood_result
 
         # 3. Modell waehlen
         model = self.model_router.select_model(text)
 
-        # 4. System Prompt bauen (mit semantischen Erinnerungen + Stimmung)
-        system_prompt = self.personality.build_system_prompt(context)
+        # Phase 6: Formality Score laden
+        formality_score = await self.personality.get_formality_score()
+
+        # 4. System Prompt bauen (mit Phase 6 Erweiterungen)
+        system_prompt = self.personality.build_system_prompt(
+            context, formality_score=formality_score
+        )
 
         # Semantische Erinnerungen zum System Prompt hinzufuegen
         memories = context.get("memories", {})
@@ -127,7 +151,7 @@ class AssistantBrain:
         if memory_context:
             system_prompt += memory_context
 
-        # Langzeit-Summaries bei Fragen ueber die Vergangenheit (Phase 7)
+        # Langzeit-Summaries bei Fragen ueber die Vergangenheit
         summary_context = await self._get_summary_context(text)
         if summary_context:
             system_prompt += summary_context
@@ -150,7 +174,7 @@ class AssistantBrain:
             )
             response_text = planner_result.get("response", "")
             executed_actions = planner_result.get("actions", [])
-            model = "qwen2.5:14b"  # Planner nutzt immer smart model
+            model = "qwen2.5:14b"
         else:
             # 6b. Einfache Anfragen: Direkt LLM aufrufen
             response = await self.ollama.chat(
@@ -214,24 +238,48 @@ class AssistantBrain:
                     # WebSocket: Aktion melden
                     await emit_action(func_name, func_args, result)
 
-            # Wenn Aktionen, aber keine Text-Antwort: Standard-Bestaetigung
+                    # Phase 6: Opinion Check — Jarvis kommentiert Aktionen
+                    opinion = self.personality.check_opinion(func_name, func_args)
+                    if opinion:
+                        logger.info("Jarvis Meinung: '%s'", opinion)
+                        if response_text:
+                            response_text = f"{response_text} {opinion}"
+                        else:
+                            response_text = opinion
+
+            # Phase 6: Variierte Bestaetigung statt immer "Erledigt."
             if executed_actions and not response_text:
-                if all(a["result"].get("success", False) for a in executed_actions if isinstance(a["result"], dict)):
-                    response_text = "Erledigt."
-                else:
+                all_success = all(
+                    a["result"].get("success", False)
+                    for a in executed_actions
+                    if isinstance(a["result"], dict)
+                )
+                any_failed = any(
+                    isinstance(a["result"], dict) and not a["result"].get("success", False)
+                    for a in executed_actions
+                )
+
+                if all_success:
+                    response_text = self.personality.get_varied_confirmation(success=True)
+                elif any_failed:
                     failed = [
                         a["result"].get("message", "")
                         for a in executed_actions
                         if isinstance(a["result"], dict) and not a["result"].get("success", False)
                     ]
-                    response_text = f"Problem: {', '.join(failed)}" if failed else "Teilweise erledigt."
+                    if failed:
+                        response_text = f"Problem: {', '.join(failed)}"
+                    else:
+                        response_text = self.personality.get_varied_confirmation(partial=True)
+                else:
+                    response_text = self.personality.get_varied_confirmation(success=True)
 
-        # 8. Im Gedaechtnis speichern
+        # 9. Im Gedaechtnis speichern
         await self.memory.add_conversation("user", text)
         await self.memory.add_conversation("assistant", response_text)
 
-        # 9. Episode speichern (Langzeitgedaechtnis)
-        if len(text.split()) > 3:  # Nur bei substantiellen Gespraechen
+        # 10. Episode speichern (Langzeitgedaechtnis)
+        if len(text.split()) > 3:
             episode = f"User: {text}\nAssistant: {response_text}"
             await self.memory.store_episode(episode, {
                 "person": person or "unknown",
@@ -239,7 +287,7 @@ class AssistantBrain:
                 "actions": json.dumps([a["function"] for a in executed_actions]),
             })
 
-        # 10. Fakten extrahieren (async im Hintergrund - blockiert nicht)
+        # 11. Fakten extrahieren (async im Hintergrund)
         if self.memory_extractor and len(text.split()) > 3:
             asyncio.create_task(
                 self._extract_facts_background(
@@ -266,6 +314,9 @@ class AssistantBrain:
 
         models = await self.ollama.list_models() if ollama_ok else []
 
+        # Phase 6: Formality Score im Health Check
+        formality = await self.personality.get_formality_score()
+
         return {
             "status": "ok" if (ollama_ok and ha_ok) else "degraded",
             "components": {
@@ -284,6 +335,13 @@ class AssistantBrain:
             },
             "models_available": models,
             "autonomy": self.autonomy.get_level_info(),
+            "personality": {
+                "sarcasm_level": self.personality.sarcasm_level,
+                "opinion_intensity": self.personality.opinion_intensity,
+                "formality_score": formality,
+                "easter_eggs": len(self.personality._easter_eggs),
+                "opinion_rules": len(self.personality._opinion_rules),
+            },
         }
 
     def _build_memory_context(self, memories: dict) -> str:
@@ -311,7 +369,6 @@ class AssistantBrain:
 
     async def _get_summary_context(self, text: str) -> str:
         """Holt relevante Langzeit-Summaries wenn die Frage die Vergangenheit betrifft."""
-        # Keywords die auf Vergangenheits-Fragen hindeuten
         past_keywords = [
             "gestern", "letzte woche", "letzten monat", "letztes jahr",
             "vor ", "frueher", "damals", "wann war", "wie war",
