@@ -1,0 +1,123 @@
+# ============================================================
+# MindHome Assistant - Raum-Profile
+# Phase 7: Raum-Intelligenz
+# ============================================================
+# Jeder Raum hat ein Profil mit Defaults und Alerts.
+# Diese Werte werden vom Context Builder genutzt um
+# raumspezifische Empfehlungen zu geben.
+#
+# type: living, bedroom, kitchen, office, bathroom, hallway, outdoor
+# default_temp: Standard-Temperatur in Grad Celsius
+# default_light: warmweiss, neutralweiss, tageslicht, gedimmt
+# default_brightness: 0-100 Prozent
+# alerts: Liste von raumspezifischen Warnungen
+# purpose: Kurzbeschreibung fuer LLM-Kontext
+
+rooms:
+  wohnzimmer:
+    type: "living"
+    purpose: "Hauptwohnraum. Entspannung, TV, Gaeste."
+    default_temp: 22
+    default_light: "warmweiss"
+    default_brightness: 70
+    night_brightness: 20
+    alerts: []
+    scenes:
+      - "gemuetlich"
+      - "filmabend"
+      - "hell"
+
+  schlafzimmer:
+    type: "bedroom"
+    purpose: "Schlafen. Ruhig, dunkel, kuehl."
+    default_temp: 18
+    default_light: "warmweiss"
+    default_brightness: 30
+    night_brightness: 5
+    alerts:
+      - "co2_hoch"
+    scenes:
+      - "schlafen"
+      - "aufwachen"
+      - "lesen"
+
+  kueche:
+    type: "kitchen"
+    purpose: "Kochen, Essen. Hell, funktional."
+    default_temp: 20
+    default_light: "neutralweiss"
+    default_brightness: 100
+    night_brightness: 30
+    alerts:
+      - "ofen_lange_an"
+      - "herd_an"
+    scenes:
+      - "kochen"
+      - "essen"
+
+  buero:
+    type: "office"
+    purpose: "Arbeit, Konzentration. Tageslicht, produktiv."
+    default_temp: 21
+    default_light: "tageslicht"
+    default_brightness: 80
+    night_brightness: 40
+    alerts:
+      - "keine_pause_3h"
+    scenes:
+      - "arbeiten"
+      - "meeting"
+
+  bad:
+    type: "bathroom"
+    purpose: "Bad. Warm, hell zum Fertigmachen."
+    default_temp: 23
+    default_light: "warmweiss"
+    default_brightness: 60
+    night_brightness: 10
+    alerts: []
+    scenes:
+      - "morgens"
+      - "abends"
+
+  flur:
+    type: "hallway"
+    purpose: "Durchgangsbereich. Kurzes Licht."
+    default_temp: 19
+    default_light: "neutralweiss"
+    default_brightness: 50
+    night_brightness: 10
+    alerts: []
+    scenes: []
+
+# Saisonale Anpassungen (Phase 7.9)
+seasonal:
+  summer:
+    temp_offset: -1          # 1 Grad kuehler als Default
+    briefing_extras:
+      - "UV-Index"
+      - "Pollenflug"
+    cover_hint: "Rolladen bei direkter Sonne schliessen"
+    ventilation: "Morgens und abends lueften, tagsueber geschlossen"
+
+  winter:
+    temp_offset: 1           # 1 Grad waermer als Default
+    briefing_extras:
+      - "Glatteis-Warnung"
+      - "Heizkosten"
+    cover_hint: "Rolladen bei Sonne oeffnen (solare Gewinne)"
+    ventilation: "Kurz stosslueften, max 5 Minuten"
+
+  spring:
+    temp_offset: 0
+    briefing_extras:
+      - "Pollenflug"
+    cover_hint: ""
+    ventilation: "Regelmaessig lueften"
+
+  autumn:
+    temp_offset: 0
+    briefing_extras:
+      - "Nebel/Frost"
+    cover_hint: "Frueh schliessen bei kurzem Tag"
+    ventilation: "Tagsueber lueften wenn trocken"

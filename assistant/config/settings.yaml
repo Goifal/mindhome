@@ -6,7 +6,7 @@ assistant:
   # Name des Assistenten - so stellt er sich vor und so reagiert er
   # Aendere diesen Namen zu was du willst (z.B. "Jarvis", "Alfred", "Nova")
   name: "Jarvis"
-  version: "0.9.4"
+  version: "0.9.5"
   language: "de"
 
 # --- Personen und Anrede ---
@@ -246,6 +246,66 @@ security:
   climate_limits:
     min: 15
     max: 28
+
+# --- Phase 7: Routinen & Tagesstruktur ---
+routines:
+  morning_briefing:
+    enabled: true
+    # Trigger: Erste Bewegung nach Nacht-Modus
+    trigger: "first_motion_after_night"
+    # Welche Bausteine im Briefing (Reihenfolge zählt)
+    modules:
+      - greeting      # Kontextuelle Begruassung
+      - weather       # Wetter-Vorhersage
+      - calendar      # Naechste Termine
+      - energy        # Energie-Hinweise (Solar, Strompreis)
+      - house_status  # Fenster, Lichter, Temperatur
+    weekday_style: "kurz"        # Wochentags: 2-3 Saetze
+    weekend_style: "ausfuehrlich" # Wochenende: mehr Details
+    # Begleit-Aktionen beim Morning Briefing
+    morning_actions:
+      covers_up: true      # Rolladen hoch
+      lights_soft: true    # Licht sanft an (30%)
+
+  good_night:
+    enabled: true
+    # Trigger-Phrasen (werden in brain.py als Intent erkannt)
+    triggers:
+      - "gute nacht"
+      - "ich gehe schlafen"
+      - "schlaf gut"
+      - "ab ins bett"
+      - "gehe ins bett"
+      - "feierabend"
+    # Sicherheits-Checks vor dem Herunterfahren
+    checks:
+      - windows     # Offene Fenster melden
+      - doors       # Offene Tueren melden
+      - alarm       # Alarm-Status pruefen
+      - lights      # Welche Lichter noch an
+      - appliances  # Herd, Buegeleisen etc.
+    # Aktionen beim Herunterfahren
+    actions:
+      lights_off: true        # Alle Lichter aus
+      heating_night: true     # Heizung Nacht-Modus
+      covers_down: true       # Rolladen runter
+      alarm_arm_home: true    # Alarm scharf (Home)
+
+  # Gaeste-Modus
+  guest_mode:
+    # Trigger-Phrasen
+    triggers:
+      - "ich habe besuch"
+      - "ich hab besuch"
+      - "gaeste kommen"
+      - "besuch kommt"
+      - "wir haben gaeste"
+    # Was eingeschraenkt wird
+    restrictions:
+      hide_personal_info: true    # Keine persoenlichen Infos
+      formal_tone: true            # Formeller Ton
+      restrict_security: true      # Kein Alarm/Schloss-Zugriff
+      suggest_guest_wifi: true     # Gaeste-WLAN vorschlagen
 
 # --- Phase 6: Zeitgefuehl ---
 time_awareness:
