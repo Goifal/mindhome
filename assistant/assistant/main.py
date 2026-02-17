@@ -79,6 +79,7 @@ class TTSInfo(BaseModel):
     message_type: str = "casual"
     speed: int = 100
     volume: float = 0.8
+    target_speaker: Optional[str] = None
 
 
 class ChatResponse(BaseModel):

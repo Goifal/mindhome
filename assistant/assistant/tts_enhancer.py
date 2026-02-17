@@ -125,7 +125,7 @@ class TTSEnhancer:
         return "casual"
 
     def enhance(self, text: str, message_type: Optional[str] = None,
-                urgency: str = "medium") -> dict:
+                urgency: str = "medium", activity: str = "") -> dict:
         """
         Verbessert einen Text fuer TTS-Ausgabe.
 
@@ -133,6 +133,7 @@ class TTSEnhancer:
             text: Originaltext
             message_type: Optional manueller Typ (sonst auto-detect)
             urgency: Dringlichkeit (critical, high, medium, low)
+            activity: Aktuelle Aktivitaet des Users (sleeping, focused, etc.)
 
         Returns:
             Dict mit:
@@ -146,7 +147,7 @@ class TTSEnhancer:
             message_type = self.classify_message(text)
 
         speed = self.speed_map.get(message_type, 100)
-        volume = self.get_volume(message_type=message_type, urgency=urgency)
+        volume = self.get_volume(activity=activity, message_type=message_type, urgency=urgency)
 
         if self.ssml_enabled:
             ssml = self._generate_ssml(text, message_type, speed)

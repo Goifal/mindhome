@@ -283,6 +283,11 @@ class AssistantBrain:
                 "context_room": room or "unbekannt",
             }
 
+        # Phase 9: "listening" Sound abspielen wenn Verarbeitung startet
+        asyncio.create_task(
+            self.sound_manager.play_event_sound("listening", room=room)
+        )
+
         # Phase 6.9: Running Gag Check (VOR LLM)
         gag_response = await self.personality.check_running_gag(text)
 
@@ -551,6 +556,14 @@ class AssistantBrain:
                     sa.get("priority", "?"), sa.get("action", "?"), sa.get("reason", ""),
                 )
 
+        # Phase 9: Warning-Sound bei Warnungen im Response
+        if response_text and any(w in response_text.lower() for w in [
+            "warnung", "achtung", "vorsicht", "offen", "alarm", "offline",
+        ]):
+            asyncio.create_task(
+                self.sound_manager.play_event_sound("warning", room=room)
+            )
+
         # 9. Im Gedaechtnis speichern
         await self.memory.add_conversation("user", text)
         await self.memory.add_conversation("assistant", response_text)
@@ -603,22 +616,49 @@ class AssistantBrain:
                 )
             )
 
-        # Phase 9: TTS Enhancement — SSML + Volume berechnen
+        # Phase 9+10: Activity-basiertes Volume + Silence-Matrix
+        urgency = "high" if executed_actions else "medium"
+        activity_result = await self.activity.should_deliver(urgency)
+        current_activity = activity_result.get("activity", "relaxing")
+        activity_volume = activity_result.get("volume", 0.8)
+
+        # TTS Enhancement mit Activity-Kontext
         tts_data = self.tts_enhancer.enhance(
             response_text,
-            urgency="high" if executed_actions else "medium",
+            urgency=urgency,
+            activity=current_activity,
         )
 
-        # Phase 9: Sound-Event bei bestaetigen Aktionen
+        # Activity-Volume ueberschreibt TTS-Volume (ausser Whisper-Modus)
+        if not self.tts_enhancer.is_whisper_mode and urgency != "critical":
+            tts_data["volume"] = activity_volume
+
+        # Phase 10: Multi-Room TTS — Speaker anhand Raum bestimmen
+        if room:
+            room_speaker = await self.executor._find_speaker_in_room(room)
+            if room_speaker:
+                tts_data["target_speaker"] = room_speaker
+
+        # Phase 9: Sound-Events vollstaendig integrieren
         if executed_actions:
             all_success = all(
                 isinstance(a.get("result"), dict) and a["result"].get("success", False)
+                for a in executed_actions
+            )
+            any_failed = any(
+                isinstance(a.get("result"), dict) and not a["result"].get("success", False)
                 for a in executed_actions
             )
             if all_success:
                 asyncio.create_task(
                     self.sound_manager.play_event_sound(
                         "confirmed", room=room, volume=tts_data.get("volume")
+                    )
+                )
+            elif any_failed:
+                asyncio.create_task(
+                    self.sound_manager.play_event_sound(
+                        "error", room=room, volume=tts_data.get("volume")
                     )
                 )
 
@@ -1047,4 +1087,5 @@ Der User stellt eine hypothetische Frage. Beantworte sie:
         await self.summarizer.stop()
         await self.feedback.stop()
         await self.memory.close()
+        await self.ha.close()
         logger.info("MindHome Assistant heruntergefahren")

@@ -206,13 +206,16 @@ class MindHomeAssistantAgent(ConversationEntity):
     async def _handle_tts(self, tts_data: dict, plain_text: str) -> str:
         """Verarbeitet TTS-Daten aus der Assistant-Antwort.
 
-        1. Setzt Volume auf dem TTS-Speaker
+        1. Setzt Volume auf dem TTS-Speaker (ggf. Raum-spezifisch)
         2. Gibt SSML zurueck wenn verfuegbar (sonst Plaintext)
         """
+        # Phase 10: Raum-spezifischen Speaker nutzen falls vorhanden
+        target_speaker = tts_data.get("target_speaker")
+
         # Volume setzen vor TTS-Ausgabe
         volume = tts_data.get("volume")
         if volume is not None:
-            await self._set_tts_volume(volume)
+            await self._set_tts_volume(volume, target_speaker=target_speaker)
 
         # SSML verwenden wenn verfuegbar und gueltig
         ssml = tts_data.get("ssml", "")
@@ -221,13 +224,15 @@ class MindHomeAssistantAgent(ConversationEntity):
 
         return plain_text
 
-    async def _set_tts_volume(self, volume: float):
+    async def _set_tts_volume(self, volume: float, target_speaker: str | None = None):
         """Setzt die Lautstaerke des TTS-Speakers vor der Ausgabe.
 
         Wird aufgerufen BEVOR die Pipeline den Text an Piper TTS
         weitergibt, sodass die Lautstaerke schon korrekt ist.
+
+        Phase 10: Nutzt target_speaker fuer Multi-Room-TTS-Routing.
         """
-        speaker = await self._find_tts_speaker()
+        speaker = target_speaker or await self._find_tts_speaker()
         if not speaker:
             _LOGGER.debug("Kein TTS-Speaker gefunden fuer Volume-Steuerung")
             return

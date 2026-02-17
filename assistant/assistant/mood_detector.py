@@ -435,6 +435,12 @@ class MoodDetector:
                 self._stress_level = min(1.0, self._stress_level + 0.05 * self.voice_weight)
                 signals.append("voice_curt")
 
+        # Schnelle Nachfrage (<5s nach letztem Befehl) = Ungeduld/Stress
+        if metadata.get("rapid_follow_up"):
+            self._stress_level = min(1.0, self._stress_level + 0.1 * self.voice_weight)
+            signals.append("rapid_follow_up")
+            logger.debug("Voice: schnelle Nachfrage -> Stress +%.2f", 0.1 * self.voice_weight)
+
         self._last_voice_signals = signals
         return signals
 
