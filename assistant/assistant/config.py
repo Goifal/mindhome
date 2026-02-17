@@ -38,7 +38,7 @@ class Settings(BaseSettings):
     language: str = "de"
 
     # Assistent-Identitaet
-    assistant_name: str = "MindHome Assistant"
+    assistant_name: str = "Jarvis"
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
@@ -55,3 +55,9 @@ def load_yaml_config() -> dict:
 # Globale Instanzen
 settings = Settings()
 yaml_config = load_yaml_config()
+
+# settings.yaml ueberschreibt .env fuer assistant_name
+# (damit "Jarvis" in settings.yaml nicht durch Default ueberschrieben wird)
+_yaml_name = yaml_config.get("assistant", {}).get("name")
+if _yaml_name:
+    settings.assistant_name = _yaml_name

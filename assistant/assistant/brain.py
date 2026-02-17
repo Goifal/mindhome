@@ -454,6 +454,10 @@ class AssistantBrain:
             executed_actions = []
 
             # 8. Function Calls ausfuehren
+            # Tools die Daten zurueckgeben und eine LLM-formatierte Antwort brauchen
+            QUERY_TOOLS = {"get_entity_state", "send_message_to_person"}
+            has_query_results = False
+
             if tool_calls:
                 for tool_call in tool_calls:
                     func = tool_call.get("function", {})
@@ -505,6 +509,9 @@ class AssistantBrain:
                         "result": result,
                     })
 
+                    if func_name in QUERY_TOOLS:
+                        has_query_results = True
+
                     # WebSocket: Aktion melden
                     await emit_action(func_name, func_args, result)
 
@@ -517,7 +524,46 @@ class AssistantBrain:
                         else:
                             response_text = opinion
 
+            # 8b. Tool-Result Feedback Loop: Ergebnisse zurueck ans LLM
+            # Damit Jarvis natuerlich antwortet ("Im Buero sind es 22 Grad, Sir.")
+            # statt nur "Erledigt." bei Abfragen
+            if tool_calls and has_query_results and not response_text:
+                try:
+                    # Tool-Ergebnisse als Messages aufbauen
+                    feedback_messages = list(messages)
+                    # LLM-Antwort mit Tool-Calls anhaengen
+                    feedback_messages.append(message)
+                    # Tool-Results als "tool" Messages
+                    for action in executed_actions:
+                        result = action.get("result", {})
+                        result_text = ""
+                        if isinstance(result, dict):
+                            result_text = result.get("message", str(result))
+                        else:
+                            result_text = str(result)
+                        feedback_messages.append({
+                            "role": "tool",
+                            "content": result_text,
+                        })
+
+                    # Zweiter LLM-Call: Natuerliche Antwort generieren (ohne Tools)
+                    logger.debug("Tool-Feedback: %d Results -> LLM fuer natuerliche Antwort",
+                                 len(executed_actions))
+                    feedback_response = await self.ollama.chat(
+                        messages=feedback_messages,
+                        model=model,
+                        temperature=0.7,
+                        max_tokens=128,
+                    )
+                    if "error" not in feedback_response:
+                        feedback_text = feedback_response.get("message", {}).get("content", "")
+                        if feedback_text:
+                            response_text = feedback_text
+                except Exception as e:
+                    logger.debug("Tool-Feedback fehlgeschlagen: %s", e)
+
             # Phase 6: Variierte Bestaetigung statt immer "Erledigt."
+            # Nur fuer reine Action-Tools (set_light etc.), nicht fuer Query-Tools
             if executed_actions and not response_text:
                 all_success = all(
                     a["result"].get("success", False)
