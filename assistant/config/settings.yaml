@@ -6,7 +6,7 @@ assistant:
   # Name des Assistenten - so stellt er sich vor und so reagiert er
   # Aendere diesen Namen zu was du willst (z.B. "Jarvis", "Alfred", "Nova")
   name: "Jarvis"
-  version: "0.9.6"
+  version: "0.9.7"
   language: "de"
 
 # --- Personen und Anrede ---
@@ -321,3 +321,32 @@ time_awareness:
   # Tages-Zaehler fuer Geraete
   counters:
     coffee_machine: true      # "Das ist dein dritter Kaffee"
+
+# --- Phase 8: Gedaechtnis & Vorausdenken ---
+anticipation:
+  enabled: true
+  # Wie viele Tage History fuer Pattern-Erkennung
+  history_days: 30
+  # Minimale Confidence fuer Vorschlaege
+  min_confidence: 0.6
+  # Check-Intervall in Minuten
+  check_interval_minutes: 15
+  # Confidence-Schwellen fuer Aktionen
+  thresholds:
+    ask: 0.6         # "Soll ich...?"
+    suggest: 0.8     # "Ich bereite vor?"
+    auto: 0.95       # Automatisch + informieren (nur Level >= 4)
+
+intent_tracking:
+  enabled: true
+  # Wie oft auf faellige Intents pruefen (Minuten)
+  check_interval_minutes: 60
+  # Wie viele Stunden vor Deadline erinnern
+  remind_hours_before: 12
+
+conversation_continuity:
+  enabled: true
+  # Nach wie vielen Minuten Pause das Thema anbieten
+  resume_after_minutes: 10
+  # Nach wie vielen Stunden verfaellt ein offenes Thema
+  expire_hours: 24
