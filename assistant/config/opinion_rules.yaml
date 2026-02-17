@@ -1,0 +1,75 @@
+# ============================================================
+# MindHome Assistant - Opinion Rules
+# Wann Jarvis seine Meinung aeussert
+# ============================================================
+# Regeln werden NACH einer Aktion geprueft.
+# Nur aktiv wenn opinion_intensity > 0 in settings.yaml
+#
+# Verfuegbare Variablen in conditions:
+#   action: Name der ausgefuehrten Funktion (z.B. "set_climate")
+#   args: Dict der Argumente
+#   hour: Aktuelle Stunde (0-23)
+#   context: Dict mit Haus-Kontext
+
+opinion_rules:
+  # --- Energie-Verschwendung ---
+  - id: "high_temp"
+    description: "Heizung ueber 25 Grad"
+    check_action: "set_climate"
+    check_field: "temperature"
+    check_operator: ">"
+    check_value: 25
+    responses:
+      - "25 Grad? Das wird ein teurer Monat."
+      - "Sicher? Das ist fast Sauna-Niveau."
+    min_intensity: 1
+
+  - id: "very_high_temp"
+    description: "Heizung ueber 28 Grad"
+    check_action: "set_climate"
+    check_field: "temperature"
+    check_operator: ">"
+    check_value: 28
+    responses:
+      - "28 Grad. Da schmilzt sogar der Energieberater."
+    min_intensity: 1
+
+  # --- Ungewoehnliche Zeiten ---
+  - id: "alarm_disarm_night"
+    description: "Alarm deaktivieren nachts"
+    check_action: "set_alarm"
+    check_field: "mode"
+    check_operator: "=="
+    check_value: "disarm"
+    check_hour_min: 0
+    check_hour_max: 5
+    responses:
+      - "Alarm deaktivieren um diese Uhrzeit? Alles in Ordnung?"
+    min_intensity: 1
+
+  - id: "lights_on_night"
+    description: "Alle Lichter an nachts"
+    check_action: "set_light"
+    check_field: "state"
+    check_operator: "=="
+    check_value: "on"
+    check_hour_min: 1
+    check_hour_max: 4
+    check_room: "all"
+    responses:
+      - "Alle Lichter an um diese Zeit? Schlafprobleme?"
+    min_intensity: 2
+
+  # --- Widersprueche ---
+  - id: "cover_down_sunny"
+    description: "Rolladen runter bei Sonnenschein mittags"
+    check_action: "set_cover"
+    check_field: "position"
+    check_operator: "<"
+    check_value: 30
+    check_hour_min: 10
+    check_hour_max: 16
+    responses:
+      - "Es ist noch hell draussen - bewusst?"
+      - "Rolladen runter um diese Zeit? Filmabend?"
+    min_intensity: 2
