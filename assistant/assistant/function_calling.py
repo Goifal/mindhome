@@ -380,9 +380,34 @@ class FunctionExecutor:
                 "notify", "notify", {"message": message}
             )
         elif target == "speaker":
-            success = await self.ha.call_service(
-                "tts", "speak", {"message": message, "language": "de"}
-            )
+            # TTS ueber Piper (Wyoming): tts.speak mit TTS-Entity + Media-Player
+            tts_entity = await self._find_tts_entity()
+            speaker_entity = await self._find_tts_speaker()
+            if tts_entity and speaker_entity:
+                success = await self.ha.call_service(
+                    "tts", "speak",
+                    {
+                        "entity_id": tts_entity,
+                        "media_player_entity_id": speaker_entity,
+                        "message": message,
+                        "language": "de",
+                    },
+                )
+            elif speaker_entity:
+                # Fallback: Legacy TTS Service
+                success = await self.ha.call_service(
+                    "tts", "speak",
+                    {
+                        "entity_id": speaker_entity,
+                        "message": message,
+                        "language": "de",
+                    },
+                )
+            else:
+                # Letzter Fallback: persistent_notification
+                success = await self.ha.call_service(
+                    "persistent_notification", "create", {"message": message}
+                )
         else:
             success = await self.ha.call_service(
                 "persistent_notification", "create", {"message": message}
@@ -427,10 +452,9 @@ class FunctionExecutor:
             )
             return {"success": success, "message": f"Anwesenheit: {mode}"}
 
-        # Fallback: HA Event feuern, damit Automationen reagieren koennen
-        success = await self.ha.call_service(
-            "event", "fire",
-            {"event_type": "mindhome_presence_mode", "event_data": {"mode": mode}},
+        # Fallback: HA Event ueber REST API feuern
+        success = await self.ha.fire_event(
+            "mindhome_presence_mode", {"mode": mode}
         )
         if not success:
             # Letzter Fallback: Direkter Service-Call
@@ -439,6 +463,33 @@ class FunctionExecutor:
                 {"entity_id": "input_boolean.zu_hause"},
             )
         return {"success": success, "message": f"Anwesenheit: {mode}"}
+
+    async def _find_tts_entity(self) -> Optional[str]:
+        """Findet die Piper TTS-Entity (tts.piper o.ae.)."""
+        states = await self.ha.get_states()
+        if not states:
+            return None
+        for state in states:
+            entity_id = state.get("entity_id", "")
+            if entity_id.startswith("tts.") and "piper" in entity_id:
+                return entity_id
+        # Fallback: Erste TTS-Entity
+        for state in states:
+            entity_id = state.get("entity_id", "")
+            if entity_id.startswith("tts."):
+                return entity_id
+        return None
+
+    async def _find_tts_speaker(self) -> Optional[str]:
+        """Findet einen Media-Player der als TTS-Speaker genutzt werden kann."""
+        states = await self.ha.get_states()
+        if not states:
+            return None
+        for state in states:
+            entity_id = state.get("entity_id", "")
+            if entity_id.startswith("media_player."):
+                return entity_id
+        return None
 
     async def _find_entity(self, domain: str, search: str) -> Optional[str]:
         """Findet eine Entity anhand von Domain und Suchbegriff."""

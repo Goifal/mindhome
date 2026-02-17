@@ -61,6 +61,24 @@ class HomeAssistantClient:
         )
         return result is not None
 
+    async def fire_event(
+        self, event_type: str, event_data: Optional[dict] = None
+    ) -> bool:
+        """
+        HA Event ueber REST API feuern.
+
+        Args:
+            event_type: z.B. "mindhome_presence_mode"
+            event_data: Event-Daten
+
+        Returns:
+            True bei Erfolg
+        """
+        result = await self._post_ha(
+            f"/api/events/{event_type}", event_data or {}
+        )
+        return result is not None
+
     async def is_available(self) -> bool:
         """Prueft ob HA erreichbar ist."""
         try:
