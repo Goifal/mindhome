@@ -108,6 +108,8 @@ class DailySummarizer:
                 # Monats-Summary am 1. des Monats
                 if datetime.now().day == 1:
                     await self.summarize_month()
+                    # Phase 8: Personality-Evolution Summary
+                    await self._store_personality_snapshot()
 
             except asyncio.CancelledError:
                 break
@@ -427,3 +429,55 @@ Format: Fliesstext, kurze Saetze."""
         parts.append("Maximal 200 Woerter.")
 
         return "\n".join(parts)
+
+    # ----- Phase 8: Personality-Evolution Snapshot -----
+
+    async def _store_personality_snapshot(self):
+        """Speichert einen monatlichen Personality-Snapshot."""
+        if not self.redis:
+            return
+
+        try:
+            month = (datetime.now() - timedelta(days=1)).strftime("%Y-%m")
+
+            # Personality-Daten sammeln
+            total = int(await self.redis.get("mha:personality:total_interactions") or 0)
+            positive = int(await self.redis.get("mha:personality:positive_reactions") or 0)
+            formality = int(float(await self.redis.get("mha:personality:formality") or 80))
+
+            mood_history = await self.redis.lrange("mha:personality:mood_history", 0, 99)
+            avg_mood = 0.5
+            if mood_history:
+                values = [float(v) for v in mood_history]
+                avg_mood = round(sum(values) / len(values), 2)
+
+            snapshot = {
+                "month": month,
+                "total_interactions": total,
+                "positive_reactions": positive,
+                "acceptance_rate": round(positive / max(1, total), 2),
+                "avg_mood": avg_mood,
+                "formality_score": formality,
+            }
+
+            # In Redis speichern
+            key = f"mha:personality:snapshot:{month}"
+            await self.redis.set(key, json.dumps(snapshot))
+            await self.redis.expire(key, 365 * 86400)
+
+            # Optional: In Summary integrieren
+            existing_summary = await self._get_summary(month, MONTHLY)
+            if existing_summary:
+                evo_text = (
+                    f"\n[Personality-Evolution {month}]: "
+                    f"{total} Interaktionen, "
+                    f"Akzeptanzrate {snapshot['acceptance_rate']:.0%}, "
+                    f"Stimmung ∅ {avg_mood:.1f}/1.0, "
+                    f"Formality: {formality}/100."
+                )
+                updated = existing_summary + evo_text
+                await self._store_summary(month, MONTHLY, updated)
+
+            logger.info("Personality-Snapshot fuer %s gespeichert", month)
+        except Exception as e:
+            logger.error("Fehler bei Personality-Snapshot: %s", e)

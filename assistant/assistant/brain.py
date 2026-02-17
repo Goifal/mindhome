@@ -7,6 +7,9 @@ Phase 6: Easter Eggs, Opinion Engine, Antwort-Varianz, Formality Score,
          Zeitgefuehl, Emotionale Intelligenz, Running Gags.
 Phase 7: Routinen (Morning Briefing, Gute-Nacht, Gaeste-Modus,
          Szenen-Intelligenz, Raum-Profile, Saisonale Anpassung).
+Phase 8: Gedaechtnis & Vorausdenken (Explizites Notizbuch, Intent-Routing,
+         Was-waere-wenn, Anticipation, Intent-Tracking, Konversations-
+         Kontinuitaet, Langzeit-Persoenlichkeitsanpassung).
 """
 
 import asyncio
@@ -30,6 +33,8 @@ from .mood_detector import MoodDetector
 from .ollama_client import OllamaClient
 from .personality import PersonalityEngine
 from .proactive import ProactiveManager
+from .anticipation import AnticipationEngine
+from .intent_tracker import IntentTracker
 from .routine_engine import RoutineEngine
 from .summarizer import DailySummarizer
 from .time_awareness import TimeAwareness
@@ -82,6 +87,8 @@ class AssistantBrain:
         self.action_planner = ActionPlanner(self.ollama, self.executor, self.validator)
         self.time_awareness = TimeAwareness(self.ha)
         self.routines = RoutineEngine(self.ha, self.ollama)
+        self.anticipation = AnticipationEngine()
+        self.intent_tracker = IntentTracker(self.ollama)
 
     async def initialize(self):
         """Initialisiert alle Komponenten."""
@@ -121,6 +128,12 @@ class AssistantBrain:
         # Phase 7: RoutineEngine initialisieren
         await self.routines.initialize(redis_client=self.memory.redis)
         self.routines.set_executor(self.executor)
+
+        # Phase 8: Anticipation Engine + Intent Tracker
+        await self.anticipation.initialize(redis_client=self.memory.redis)
+        self.anticipation.set_notify_callback(self._handle_anticipation_suggestion)
+        await self.intent_tracker.initialize(redis_client=self.memory.redis)
+        self.intent_tracker.set_notify_callback(self._handle_intent_reminder)
 
         await self.proactive.start()
         logger.info("Jarvis initialisiert (alle Systeme aktiv)")
@@ -182,6 +195,19 @@ class AssistantBrain:
                     "context_room": room or "unbekannt",
                 }
 
+        # Phase 8: Explizites Notizbuch — Memory-Befehle (VOR allem anderen)
+        memory_result = await self._handle_memory_command(text, person or "")
+        if memory_result:
+            await self.memory.add_conversation("user", text)
+            await self.memory.add_conversation("assistant", memory_result)
+            await emit_speaking(memory_result)
+            return {
+                "response": memory_result,
+                "actions": [],
+                "model_used": "memory_direct",
+                "context_room": room or "unbekannt",
+            }
+
         # Phase 6: Easter-Egg-Check (VOR dem LLM — spart Latenz)
         egg_response = self.personality.check_easter_egg(text)
         if egg_response:
@@ -198,6 +224,9 @@ class AssistantBrain:
 
         # Phase 6.9: Running Gag Check (VOR LLM)
         gag_response = await self.personality.check_running_gag(text)
+
+        # Phase 8: Konversations-Kontinuitaet — offene Themen anbieten
+        continuity_hint = await self._check_conversation_continuity()
 
         # WebSocket: Denk-Status senden
         await emit_thinking()
@@ -254,12 +283,25 @@ class AssistantBrain:
         if summary_context:
             system_prompt += summary_context
 
+        # Phase 8: Konversations-Kontinuitaet in Prompt einbauen
+        if continuity_hint:
+            system_prompt += f"\n\nOFFENES THEMA: {continuity_hint}"
+            system_prompt += "\nErwaehne kurz das offene Thema, z.B.: 'Wir waren vorhin bei [Thema] — noch relevant?'"
+
+        # Phase 8: Was-waere-wenn Erkennung
+        whatif_prompt = self._get_whatif_prompt(text)
+        if whatif_prompt:
+            system_prompt += whatif_prompt
+
         # 5. Letzte Gespraeche laden (Working Memory)
         recent = await self.memory.get_recent_conversations(limit=5)
         messages = [{"role": "system", "content": system_prompt}]
         for conv in recent:
             messages.append({"role": conv["role"], "content": conv["content"]})
         messages.append({"role": "user", "content": text})
+
+        # Phase 8: Intent-Routing — Wissensfragen ohne Tools beantworten
+        intent_type = self._classify_intent(text)
 
         # 6. Komplexe Anfragen ueber Action Planner routen
         if self.action_planner.is_complex_request(text):
@@ -273,6 +315,37 @@ class AssistantBrain:
             response_text = planner_result.get("response", "")
             executed_actions = planner_result.get("actions", [])
             model = "qwen2.5:14b"
+        elif intent_type == "knowledge":
+            # Phase 8: Wissensfragen direkt beantworten (ohne Tools)
+            logger.info("Wissensfrage erkannt -> LLM direkt (14B, keine Tools)")
+            model = settings.model_smart
+            response = await self.ollama.chat(
+                messages=messages,
+                model=model,
+            )
+            response_text = response.get("message", {}).get("content", "")
+            executed_actions = []
+
+            if "error" in response:
+                logger.error("LLM Fehler: %s", response["error"])
+                response_text = "Da bin ich mir nicht sicher."
+        elif intent_type == "memory":
+            # Phase 8: Erinnerungsfrage -> Memory-Suche + LLM
+            logger.info("Erinnerungsfrage erkannt -> Memory-Suche + LLM")
+            memory_facts = await self.memory.semantic.search_by_topic(text, limit=5)
+            if memory_facts:
+                facts_text = "\n".join(f"- {f['content']}" for f in memory_facts)
+                system_prompt += f"\n\nGESPEICHERTE FAKTEN ZU DIESER FRAGE:\n{facts_text}"
+                system_prompt += "\nBeantworte basierend auf diesen gespeicherten Fakten."
+                messages[0] = {"role": "system", "content": system_prompt}
+
+            model = settings.model_smart
+            response = await self.ollama.chat(
+                messages=messages,
+                model=model,
+            )
+            response_text = response.get("message", {}).get("content", "")
+            executed_actions = []
         else:
             # 6b. Einfache Anfragen: Direkt LLM aufrufen
             response = await self.ollama.chat(
@@ -406,6 +479,37 @@ class AssistantBrain:
                 )
             )
 
+        # Phase 8: Action-Logging fuer Anticipation Engine
+        for action in executed_actions:
+            if isinstance(action.get("result"), dict) and action["result"].get("success"):
+                asyncio.create_task(
+                    self.anticipation.log_action(
+                        action["function"], action.get("args", {}), person or ""
+                    )
+                )
+
+        # Phase 8: Intent-Extraktion im Hintergrund
+        if len(text.split()) > 5:
+            asyncio.create_task(
+                self._extract_intents_background(text, person or "")
+            )
+
+        # Phase 8: Personality-Metrics tracken
+        asyncio.create_task(
+            self.personality.track_interaction_metrics(
+                mood=mood_result.get("mood", "neutral"),
+                response_accepted=True,
+            )
+        )
+
+        # Phase 8: Offenes Thema markieren (wenn Frage ohne klare Antwort)
+        if text.endswith("?") and len(text.split()) > 5:
+            asyncio.create_task(
+                self.memory.mark_conversation_pending(
+                    topic=text[:100], context=response_text[:200], person=person or ""
+                )
+            )
+
         result = {
             "response": response_text,
             "actions": executed_actions,
@@ -448,6 +552,8 @@ class AssistantBrain:
                 "time_awareness": "running" if self.time_awareness._running else "stopped",
                 "routine_engine": "active",
                 "guest_mode": "active" if guest_mode else "inactive",
+                "anticipation": "running" if self.anticipation._running else "stopped",
+                "intent_tracker": "running" if self.intent_tracker._running else "stopped",
             },
             "models_available": models,
             "autonomy": self.autonomy.get_level_info(),
@@ -545,8 +651,210 @@ class AssistantBrain:
             await emit_speaking(message)
             logger.info("TimeAwareness -> Proaktive Meldung: %s", message)
 
+    # ------------------------------------------------------------------
+    # Phase 8: Memory-Befehle
+    # ------------------------------------------------------------------
+
+    async def _handle_memory_command(self, text: str, person: str) -> Optional[str]:
+        """Erkennt und verarbeitet explizite Memory-Befehle."""
+        text_lower = text.lower().strip()
+
+        # "Merk dir: ..."
+        for trigger in ["merk dir ", "merke dir ", "speichere ", "remember "]:
+            if text_lower.startswith(trigger):
+                content = text[len(trigger):].strip().rstrip(".")
+                if len(content) > 3:
+                    success = await self.memory.semantic.store_explicit(
+                        content=content, person=person
+                    )
+                    if success:
+                        return f"Notiert: \"{content}\""
+                    return "Das konnte ich leider nicht speichern."
+
+        # "Was weisst du ueber ...?"
+        for trigger in ["was weisst du ueber ", "was weißt du über ",
+                        "was weisst du zu ", "kennst du "]:
+            if text_lower.startswith(trigger):
+                topic = text[len(trigger):].strip().rstrip("?").rstrip(".")
+                if len(topic) > 1:
+                    facts = await self.memory.semantic.search_by_topic(topic, limit=10)
+                    if facts:
+                        lines = [f"Was ich ueber \"{topic}\" weiss:"]
+                        for f in facts:
+                            conf = f.get("confidence", 0)
+                            src = " (von dir)" if f.get("source") == "explicit" else ""
+                            lines.append(f"- {f['content']}{src}")
+                        return "\n".join(lines)
+                    return f"Zu \"{topic}\" habe ich leider nichts gespeichert."
+
+        # "Vergiss ..."
+        for trigger in ["vergiss ", "loesche ", "vergesse "]:
+            if text_lower.startswith(trigger):
+                topic = text[len(trigger):].strip().rstrip(".")
+                if len(topic) > 1:
+                    deleted = await self.memory.semantic.forget(topic)
+                    if deleted > 0:
+                        return f"Erledigt. {deleted} Eintrag/Eintraege zu \"{topic}\" vergessen."
+                    return f"Zu \"{topic}\" hatte ich ohnehin nichts gespeichert."
+
+        # "Was hast du heute gelernt?"
+        if any(kw in text_lower for kw in ["was hast du heute gelernt",
+                                            "was hast du gelernt",
+                                            "neue fakten"]):
+            facts = await self.memory.semantic.get_todays_learnings()
+            if facts:
+                lines = [f"Heute habe ich {len(facts)} neue(s) gelernt:"]
+                for f in facts:
+                    lines.append(f"- {f['content']} [{f['category']}]")
+                return "\n".join(lines)
+            return "Heute habe ich noch nichts Neues gelernt."
+
+        return None
+
+    # ------------------------------------------------------------------
+    # Phase 8: Intent-Routing (Wissen vs Smart-Home vs Memory)
+    # ------------------------------------------------------------------
+
+    def _classify_intent(self, text: str) -> str:
+        """
+        Klassifiziert den Intent einer Anfrage.
+        Returns: 'smart_home', 'knowledge', 'memory', 'general'
+        """
+        text_lower = text.lower().strip()
+
+        # Memory-Fragen
+        memory_keywords = [
+            "erinnerst du dich", "weisst du noch", "was weisst du",
+            "habe ich dir", "hab ich gesagt", "was war",
+        ]
+        if any(kw in text_lower for kw in memory_keywords):
+            return "memory"
+
+        # Wissensfragen (allgemeine Fragen die KEINE Smart-Home-Steuerung brauchen)
+        knowledge_patterns = [
+            "wie lange", "wie viel", "wie viele", "was ist",
+            "was sind", "was bedeutet", "erklaer mir", "erklaere",
+            "warum ist", "wer ist", "wer war", "was passiert wenn",
+            "wie funktioniert", "wie macht man", "wie kocht man",
+            "rezept fuer", "definition von", "unterschied zwischen",
+        ]
+
+        # Nur als Wissensfrage wenn KEIN Smart-Home-Keyword dabei
+        smart_home_keywords = [
+            "licht", "lampe", "heizung", "temperatur", "rollladen",
+            "jalousie", "szene", "alarm", "tuer", "fenster",
+            "musik", "tv", "fernseher", "kamera", "sensor",
+        ]
+
+        is_knowledge = any(text_lower.startswith(kw) or f" {kw}" in text_lower
+                          for kw in knowledge_patterns)
+        has_smart_home = any(kw in text_lower for kw in smart_home_keywords)
+
+        if is_knowledge and not has_smart_home:
+            return "knowledge"
+
+        return "general"
+
+    # ------------------------------------------------------------------
+    # Phase 8: Was-waere-wenn Simulation
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _get_whatif_prompt(text: str) -> str:
+        """Erkennt Was-waere-wenn-Fragen und gibt erweiterten Prompt zurueck."""
+        text_lower = text.lower()
+        whatif_triggers = [
+            "was waere wenn", "was wäre wenn", "was passiert wenn",
+            "was kostet es wenn", "was kostet", "was wuerde passieren",
+            "stell dir vor", "angenommen", "hypothetisch",
+            "wenn ich 2 wochen", "wenn ich eine woche", "wenn ich verreise",
+        ]
+
+        if not any(t in text_lower for t in whatif_triggers):
+            return ""
+
+        return """
+
+WAS-WAERE-WENN SIMULATION:
+Der User stellt eine hypothetische Frage. Beantworte sie:
+- Nutze den aktuellen Haus-Kontext (Temperaturen, Verbrauch, Geraete)
+- Bei Energiefragen: Schaetze basierend auf typischen Werten
+- Bei Abwesenheit: Gib eine Checkliste (Heizung, Alarm, Fenster, Pflanzen, Simulation)
+- Bei Kosten: Schaetze realistisch (Strompreis ~0.30 EUR/kWh, Gas ~0.08 EUR/kWh)
+- Sei ehrlich wenn du schaetzen musst: "Grob geschaetzt..."
+- Maximal 5 Punkte, klar strukturiert."""
+
+    # ------------------------------------------------------------------
+    # Phase 8: Konversations-Kontinuitaet
+    # ------------------------------------------------------------------
+
+    async def _check_conversation_continuity(self) -> Optional[str]:
+        """Prueft ob es ein offenes Gespraechsthema gibt."""
+        try:
+            pending = await self.memory.get_pending_conversations()
+            if pending:
+                # Aeltestes offenes Thema nehmen
+                oldest = pending[0]
+                topic = oldest.get("topic", "")
+                age = oldest.get("age_minutes", 0)
+                if topic and age >= 10:
+                    # Thema als erledigt markieren (wird nur 1x angeboten)
+                    await self.memory.resolve_conversation(topic)
+                    return topic
+        except Exception as e:
+            logger.debug("Fehler bei Konversations-Kontinuitaet: %s", e)
+        return None
+
+    # ------------------------------------------------------------------
+    # Phase 8: Intent-Extraktion im Hintergrund
+    # ------------------------------------------------------------------
+
+    async def _extract_intents_background(self, text: str, person: str):
+        """Extrahiert und speichert Intents im Hintergrund."""
+        try:
+            intents = await self.intent_tracker.extract_intents(text, person)
+            for intent in intents:
+                await self.intent_tracker.track_intent(intent)
+        except Exception as e:
+            logger.debug("Fehler bei Intent-Extraktion: %s", e)
+
+    # ------------------------------------------------------------------
+    # Phase 8: Anticipation + Intent Callbacks
+    # ------------------------------------------------------------------
+
+    async def _handle_anticipation_suggestion(self, suggestion: dict):
+        """Callback fuer Anticipation-Vorschlaege."""
+        mode = suggestion.get("mode", "ask")
+        desc = suggestion.get("description", "")
+        action = suggestion.get("action", "")
+
+        if mode == "auto" and self.autonomy.level >= 4:
+            # Automatisch ausfuehren + informieren
+            args = suggestion.get("args", {})
+            result = await self.executor.execute(action, args)
+            text = f"Ich habe {desc} automatisch ausgefuehrt."
+            await emit_speaking(text)
+            logger.info("Anticipation auto-execute: %s", desc)
+        else:
+            # Vorschlagen
+            if mode == "suggest":
+                text = f"Darf ich anmerken: {desc}. Soll ich?"
+            else:
+                text = f"Muster erkannt: {desc}. Soll ich das ausfuehren?"
+            await emit_speaking(text)
+            logger.info("Anticipation suggestion: %s (%s)", desc, mode)
+
+    async def _handle_intent_reminder(self, reminder: dict):
+        """Callback fuer Intent-Erinnerungen."""
+        text = reminder.get("text", "")
+        if text:
+            await emit_speaking(text)
+            logger.info("Intent-Erinnerung: %s", text)
+
     async def shutdown(self):
         """Faehrt MindHome Assistant herunter."""
+        await self.anticipation.stop()
+        await self.intent_tracker.stop()
         await self.time_awareness.stop()
         await self.proactive.stop()
         await self.summarizer.stop()

@@ -166,6 +166,65 @@ class MemoryManager:
             logger.error("Fehler bei Memory-Suche: %s", e)
             return []
 
+    # ----- Phase 8: Konversations-Kontinuitaet -----
+
+    async def mark_conversation_pending(
+        self, topic: str, context: str = "", person: str = ""
+    ):
+        """Markiert ein offenes Gespraechsthema das spaeter fortgesetzt werden soll."""
+        if not self.redis:
+            return
+
+        try:
+            entry = json.dumps({
+                "topic": topic,
+                "context": context,
+                "person": person,
+                "timestamp": datetime.now().isoformat(),
+            })
+            await self.redis.hset("mha:pending_topics", topic, entry)
+            # 24h TTL auf das gesamte Hash
+            await self.redis.expire("mha:pending_topics", 86400)
+            logger.info("Offenes Thema markiert: %s", topic)
+        except Exception as e:
+            logger.error("Fehler beim Markieren des Themas: %s", e)
+
+    async def get_pending_conversations(self) -> list[dict]:
+        """Holt alle offenen Gespraechsthemen."""
+        if not self.redis:
+            return []
+
+        try:
+            all_topics = await self.redis.hgetall("mha:pending_topics")
+            pending = []
+            now = datetime.now()
+
+            for topic_key, entry_json in all_topics.items():
+                entry = json.loads(entry_json)
+                ts = datetime.fromisoformat(entry.get("timestamp", ""))
+                age_minutes = (now - ts).total_seconds() / 60
+
+                # Nur Themen die aelter als 10 Min sind (User war weg)
+                # und juenger als 24h
+                if 10 <= age_minutes <= 1440:
+                    entry["age_minutes"] = round(age_minutes)
+                    pending.append(entry)
+
+            return pending
+        except Exception as e:
+            logger.error("Fehler beim Laden offener Themen: %s", e)
+            return []
+
+    async def resolve_conversation(self, topic: str):
+        """Markiert ein offenes Thema als erledigt."""
+        if not self.redis:
+            return
+        try:
+            await self.redis.hdel("mha:pending_topics", topic)
+            logger.info("Thema erledigt: %s", topic)
+        except Exception as e:
+            logger.error("Fehler beim Erledigen des Themas: %s", e)
+
     # ----- Proaktive Meldungen -----
 
     async def get_last_notification_time(self, event_type: str) -> Optional[str]:
