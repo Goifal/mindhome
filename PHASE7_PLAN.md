@@ -1,11 +1,10 @@
 # MindHome Phase 7 — Implementierungsplan
-# "Jarvis Routinen & Tagesstruktur" (9 Features)
+# "Jarvis Routinen & Tagesstruktur" (9 Features) — ABGESCHLOSSEN
 
 > **Stand:** 2026-02-17
-> **Zielversion:** v0.9.5 → v1.0.0
+> **Version:** v0.9.5 → v0.9.6
 > **Basis:** Assistant v0.9.4 (Phase 6 fertig)
-> **Betroffene Seite:** Nur Assistant-Server (PC 2)
-> **Zu implementieren:** 9 Features
+> **Status:** ALLE 9 FEATURES IMPLEMENTIERT
 
 ---
 
