@@ -27,6 +27,7 @@ from .activity import ActivityEngine
 from .autonomy import AutonomyManager
 from .config import settings
 from .context_builder import ContextBuilder
+from .cooking_assistant import CookingAssistant
 from .diagnostics import DiagnosticsEngine
 from .feedback import FeedbackTracker
 from .function_calling import ASSISTANT_TOOLS, FunctionExecutor
@@ -107,9 +108,21 @@ class AssistantBrain:
         # Phase 10: Diagnostik + Wartungs-Assistent
         self.diagnostics = DiagnosticsEngine(self.ha)
 
+        # Phase 11: Koch-Assistent
+        self.cooking = CookingAssistant(self.ollama)
+
     async def initialize(self):
         """Initialisiert alle Komponenten."""
         await self.memory.initialize()
+
+        # Model-Router: Verfuegbare Modelle von Ollama holen und pruefen
+        try:
+            available_models = await self.ollama.list_models()
+            await self.model_router.initialize(available_models)
+            logger.info("Modell-Erkennung: %d Modelle verfuegbar, bestes: %s",
+                        len(available_models), self.model_router.get_best_available())
+        except Exception as e:
+            logger.warning("Modell-Erkennung fehlgeschlagen: %s (alle Modelle angenommen)", e)
 
         # Semantic Memory mit Context Builder verbinden
         self.context_builder.set_semantic_memory(self.memory.semantic)
@@ -154,6 +167,10 @@ class AssistantBrain:
 
         # Phase 9: Speaker Recognition initialisieren
         await self.speaker_recognition.initialize(redis_client=self.memory.redis)
+
+        # Phase 11: Koch-Assistent mit Semantic Memory verbinden
+        self.cooking.semantic_memory = self.memory.semantic
+        self.cooking.set_notify_callback(self._handle_cooking_timer)
 
         await self.proactive.start()
         logger.info("Jarvis initialisiert (alle Systeme aktiv)")
@@ -268,6 +285,41 @@ class AssistantBrain:
                 "actions": [],
                 "model_used": "memory_direct",
                 "context_room": room or "unbekannt",
+            }
+
+        # Phase 11: Koch-Navigation — aktive Session hat Vorrang
+        if self.cooking.is_cooking_navigation(text):
+            logger.info("Koch-Navigation: '%s'", text)
+            cooking_response = await self.cooking.handle_navigation(text)
+            await self.memory.add_conversation("user", text)
+            await self.memory.add_conversation("assistant", cooking_response)
+            tts_data = self.tts_enhancer.enhance(cooking_response, message_type="casual")
+            await emit_speaking(cooking_response)
+            return {
+                "response": cooking_response,
+                "actions": [],
+                "model_used": "cooking_assistant",
+                "context_room": room or "unbekannt",
+                "tts": tts_data,
+            }
+
+        # Phase 11: Koch-Intent — neue Koch-Session starten
+        if self.cooking.is_cooking_intent(text):
+            logger.info("Koch-Intent erkannt: '%s'", text)
+            cooking_model = self.model_router.get_best_available()
+            cooking_response = await self.cooking.start_cooking(
+                text, person or "", cooking_model
+            )
+            await self.memory.add_conversation("user", text)
+            await self.memory.add_conversation("assistant", cooking_response)
+            tts_data = self.tts_enhancer.enhance(cooking_response, message_type="casual")
+            await emit_speaking(cooking_response)
+            return {
+                "response": cooking_response,
+                "actions": [],
+                "model_used": f"cooking_assistant ({cooking_model})",
+                "context_room": room or "unbekannt",
+                "tts": tts_data,
             }
 
         # Phase 6: Easter-Egg-Check (VOR dem LLM — spart Latenz)
@@ -761,6 +813,7 @@ class AssistantBrain:
                 "sound_manager": "active" if self.sound_manager.enabled else "disabled",
                 "speaker_recognition": self.speaker_recognition.health_status(),
                 "diagnostics": self.diagnostics.health_status(),
+                "cooking_assistant": f"active (session: {'ja' if self.cooking.has_active_session else 'nein'})",
             },
             "models_available": models,
             "model_routing": self.model_router.get_model_info(),
@@ -852,6 +905,13 @@ class AssistantBrain:
                 )
         except Exception as e:
             logger.error("Fehler bei Hintergrund-Fakten-Extraktion: %s", e)
+
+    async def _handle_cooking_timer(self, alert: dict):
+        """Callback fuer Koch-Timer — meldet wenn Timer abgelaufen ist."""
+        message = alert.get("message", "")
+        if message:
+            await emit_speaking(message)
+            logger.info("Koch-Timer -> Meldung: %s", message)
 
     async def _handle_time_alert(self, alert: dict):
         """Callback fuer TimeAwareness-Alerts — leitet an proaktive Meldung weiter."""
@@ -959,7 +1019,7 @@ class AssistantBrain:
             "was sind", "was bedeutet", "erklaer mir", "erklaere",
             "warum ist", "wer ist", "wer war", "was passiert wenn",
             "wie funktioniert", "wie macht man", "wie kocht man",
-            "rezept fuer", "definition von", "unterschied zwischen",
+            "rezept fuer", "rezept für", "definition von", "unterschied zwischen",
         ]
 
         # Nur als Wissensfrage wenn KEIN Smart-Home-Keyword dabei

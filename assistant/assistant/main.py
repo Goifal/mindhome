@@ -443,6 +443,44 @@ async def complete_maintenance(task_name: str):
     return {"completed": task_name, "date": __import__("datetime").datetime.now().strftime("%Y-%m-%d")}
 
 
+# ----- Phase 11: Koch-Assistent Endpoints -----
+
+@app.get("/api/assistant/cooking/status")
+async def cooking_status():
+    """Phase 11: Status der Koch-Session."""
+    if not brain.cooking.has_active_session:
+        return {"active": False, "session": None}
+
+    session = brain.cooking.session
+    current_step = session.get_current_step()
+    active_timers = [
+        {"label": t.label, "remaining": t.format_remaining(), "done": t.is_done}
+        for t in session.timers
+    ]
+
+    return {
+        "active": True,
+        "session": {
+            "dish": session.dish,
+            "portions": session.portions,
+            "total_steps": session.total_steps,
+            "current_step": session.current_step,
+            "current_instruction": current_step.instruction if current_step else None,
+            "ingredients": session.ingredients,
+            "timers": active_timers,
+        },
+    }
+
+
+@app.post("/api/assistant/cooking/stop")
+async def cooking_stop():
+    """Phase 11: Koch-Session beenden."""
+    if not brain.cooking.has_active_session:
+        return {"stopped": False, "message": "Keine aktive Koch-Session."}
+    result = brain.cooking._stop_session()
+    return {"stopped": True, "message": result}
+
+
 # ----- Phase 10: Trust-Level Endpoints -----
 
 @app.get("/api/assistant/trust")
