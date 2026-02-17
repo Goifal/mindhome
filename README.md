@@ -72,12 +72,61 @@ MindHome ist ein KI-basiertes Home Assistant Add-on, das deine Gewohnheiten lern
 - Infrastruktur-Module (db.py, event_bus.py, task_scheduler.py, helpers.py, version.py)
 - Systematische Bug-Fixes & Code-Qualität
 
+## MindHome Assistant (KI-Sprachassistent)
+
+MindHome Assistant ist ein separater, lokaler KI-Sprachassistent der auf einem zweiten PC laeuft und MindHome eine Stimme gibt.
+
+| Komponente | PC | Technologie | Port |
+|---|---|---|---|
+| **MindHome Add-on** | PC 1 (HAOS) | Flask, SQLite | 8099 |
+| **MindHome Assistant** | PC 2 (Ubuntu) | FastAPI, Ollama, ChromaDB, Redis | 8200 |
+
+### Features
+- Lokale LLM-Inference (Qwen 2.5 via Ollama)
+- Function Calling (Licht, Klima, Szenen, Alarme, Schloesser)
+- 3-Schichten-Gedaechtnis (Working + Episodic + Semantic)
+- Proaktive Meldungen (Morgen-Briefing, Ankunft, Warnungen)
+- Stimmungserkennung & adaptives Verhalten
+- Butler-Persoenlichkeit mit Tageszeit-Anpassung
+- Autonomie-Level 1-5 (Assistent bis Autopilot)
+
+### Installation (Assistant-PC)
+```bash
+cd assistant/
+chmod +x install.sh
+./install.sh
+```
+
+Siehe [docs/PROJECT_MINDHOME_ASSISTANT.md](docs/PROJECT_MINDHOME_ASSISTANT.md) fuer die vollstaendige Dokumentation.
+
+---
+
 ## Architektur
 
 ```
 mindhome/
 ├── repository.yaml              # HA Add-on Store
 ├── README.md
+├── shared/                      # Gemeinsame Schemas & Konstanten
+│   ├── constants.py
+│   └── schemas/
+│       ├── chat_request.py
+│       ├── chat_response.py
+│       └── events.py
+├── assistant/                   # MindHome Assistant (PC 2)
+│   ├── Dockerfile
+│   ├── docker-compose.yml
+│   ├── requirements.txt
+│   ├── install.sh
+│   ├── .env.example
+│   ├── config/settings.yaml
+│   └── assistant/               # Python-Package (22 Module)
+│       ├── main.py              # FastAPI Server
+│       ├── brain.py             # Orchestrator
+│       ├── personality.py       # Persoenlichkeits-Engine
+│       ├── function_calling.py  # 10 HA-Tools
+│       ├── memory.py            # 3-Schichten-Gedaechtnis
+│       └── ...                  # 17 weitere Module
 ├── addon/
 │   ├── config.yaml              # Add-on Konfiguration
 │   ├── build.yaml               # Docker Build
@@ -229,6 +278,26 @@ MindHome is an AI-powered Home Assistant add-on that learns your habits and inte
 - Modular Blueprint architecture (13 route modules)
 - Infrastructure modules (db.py, event_bus.py, task_scheduler.py, helpers.py, version.py)
 - Systematic bug fixes & code quality
+
+## MindHome Assistant (AI Voice Assistant)
+
+MindHome Assistant is a separate, local AI voice assistant running on a second PC that gives MindHome a voice.
+
+| Component | PC | Technology | Port |
+|---|---|---|---|
+| **MindHome Add-on** | PC 1 (HAOS) | Flask, SQLite | 8099 |
+| **MindHome Assistant** | PC 2 (Ubuntu) | FastAPI, Ollama, ChromaDB, Redis | 8200 |
+
+### Installation (Assistant PC)
+```bash
+cd assistant/
+chmod +x install.sh
+./install.sh
+```
+
+See [docs/PROJECT_MINDHOME_ASSISTANT.md](docs/PROJECT_MINDHOME_ASSISTANT.md) for full documentation.
+
+---
 
 ## Installation
 

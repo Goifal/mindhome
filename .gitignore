@@ -1,3 +1,12 @@
 __pycache__/
 *.pyc
 *.pyo
+
+# MindHome Assistant
+assistant/.env
+assistant/data/
+assistant/data/**
+
+# OS
+.DS_Store
+Thumbs.db
