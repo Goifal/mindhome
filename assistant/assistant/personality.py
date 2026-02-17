@@ -483,6 +483,93 @@ class PersonalityEngine:
             return FORMALITY_PROMPTS["freund"]
 
     # ------------------------------------------------------------------
+    # Running Gags (Phase 6.9)
+    # ------------------------------------------------------------------
+
+    async def check_running_gag(self, text: str, context: dict = None) -> Optional[str]:
+        """
+        Prueft ob ein Running Gag ausgeloest werden soll.
+        Running Gags basieren auf wiederholten Mustern die Jarvis sich merkt.
+        """
+        if not self._redis:
+            return None
+
+        text_lower = text.lower().strip()
+
+        # Gag 1: User fragt zum x-ten Mal die gleiche Sache
+        gag = await self._check_repeated_question_gag(text_lower)
+        if gag:
+            return gag
+
+        # Gag 2: User stellt Temperatur immer wieder um
+        gag = await self._check_thermostat_war_gag(text_lower)
+        if gag:
+            return gag
+
+        # Gag 3: "Vergesslichkeits-Gag" — User fragt etwas das er gerade gefragt hat
+        gag = await self._check_short_memory_gag(text_lower)
+        if gag:
+            return gag
+
+        return None
+
+    async def _check_repeated_question_gag(self, text: str) -> Optional[str]:
+        """Erkennt wenn User die gleiche Frage oft stellt."""
+        key = f"mha:gag:repeat:{hash(text) % 10000}"
+        count = await self._redis.incr(key)
+        await self._redis.expire(key, 86400)  # 24h
+
+        gags = {
+            3: "Das hatten wir heute schon mal. Aber gerne nochmal.",
+            5: "Fuenftes Mal heute. Ich fuehre Buch.",
+            7: "Sie wissen, dass Sie das schon sieben Mal gefragt haben? Ich sage nichts.",
+            10: "Zehntes Mal. Ich ueberlege eine Taste nur fuer diese Frage einzurichten.",
+        }
+        return gags.get(int(count))
+
+    async def _check_thermostat_war_gag(self, text: str) -> Optional[str]:
+        """Erkennt den klassischen Thermostat-Krieg."""
+        temp_keywords = ["temperatur", "heizung", "grad", "waermer", "kaelter", "zu kalt", "zu warm"]
+        if not any(kw in text for kw in temp_keywords):
+            return None
+
+        key = "mha:gag:thermostat_changes"
+        count = await self._redis.incr(key)
+        await self._redis.expire(key, 3600)  # 1h Fenster
+
+        gags = {
+            4: "Die vierte Temperatur-Aenderung in einer Stunde. Der Thermostat bittet um Gnade.",
+            6: "Sechste Aenderung. Ich nenne das intern den 'Thermostat-Krieg'.",
+            8: "Achte Aenderung. Darf ich einen Kompromiss vorschlagen?",
+        }
+        return gags.get(int(count))
+
+    async def _check_short_memory_gag(self, text: str) -> Optional[str]:
+        """Erkennt wenn User innerhalb von 2 Minuten das gleiche fragt."""
+        key = "mha:gag:last_questions"
+        now = datetime.now().timestamp()
+
+        # Letzte Fragen holen
+        recent = await self._redis.lrange(key, 0, 4)
+
+        for item in (recent or []):
+            try:
+                parts = item.split("|", 1)
+                ts = float(parts[0])
+                prev_text = parts[1] if len(parts) > 1 else ""
+                if now - ts < 120 and prev_text == text:
+                    return "Das hatten wir gerade eben erst. Wort fuer Wort."
+            except (ValueError, IndexError):
+                continue
+
+        # Aktuelle Frage speichern
+        await self._redis.lpush(key, f"{now}|{text}")
+        await self._redis.ltrim(key, 0, 9)
+        await self._redis.expire(key, 300)
+
+        return None
+
+    # ------------------------------------------------------------------
     # System Prompt Builder
     # ------------------------------------------------------------------
 

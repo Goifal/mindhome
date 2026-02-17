@@ -265,6 +265,104 @@ class MoodDetector:
                 self._positive_count = max(0, self._positive_count - 1)
             self._last_decay_time = now
 
+    # ------------------------------------------------------------------
+    # Emotionale Intelligenz (Phase 6.7)
+    # ------------------------------------------------------------------
+
+    def get_suggested_actions(self) -> list[dict]:
+        """
+        Gibt kontextbezogene Aktions-Vorschlaege basierend auf Stimmung zurueck.
+
+        Returns:
+            Liste von Aktions-Vorschlaegen mit:
+                action: str - HA-Service oder Szene
+                reason: str - Warum diese Aktion vorgeschlagen wird
+                priority: str - low/medium/high
+        """
+        suggestions = []
+        hour = datetime.now().hour
+
+        if self._current_mood == MOOD_STRESSED:
+            suggestions.append({
+                "action": "scene.entspannung",
+                "reason": "User wirkt gestresst - Entspannungs-Szene koennte helfen",
+                "priority": "medium",
+            })
+            if self._stress_level >= 0.7:
+                suggestions.append({
+                    "action": "light.dimmen",
+                    "reason": "Hoher Stress - gedimmtes Licht wirkt beruhigend",
+                    "priority": "medium",
+                    "params": {"brightness_pct": 40},
+                })
+
+        elif self._current_mood == MOOD_FRUSTRATED:
+            suggestions.append({
+                "action": "simplify_responses",
+                "reason": "User ist frustriert - kuerzere Antworten, direkt handeln",
+                "priority": "high",
+            })
+            if self._frustration_count >= 4:
+                suggestions.append({
+                    "action": "offer_help",
+                    "reason": "Anhaltende Frustration - proaktiv Hilfe anbieten",
+                    "priority": "high",
+                })
+
+        elif self._current_mood == MOOD_TIRED:
+            if hour >= 22 or hour < 5:
+                suggestions.append({
+                    "action": "scene.gute_nacht",
+                    "reason": "User ist muede und es ist spaet - Gute-Nacht-Routine vorschlagen",
+                    "priority": "medium",
+                })
+            suggestions.append({
+                "action": "reduce_notifications",
+                "reason": "User ist muede - weniger proaktive Meldungen",
+                "priority": "medium",
+            })
+
+        elif self._current_mood == MOOD_GOOD:
+            if 18 <= hour <= 21:
+                suggestions.append({
+                    "action": "scene.gemuetlich",
+                    "reason": "Gute Stimmung am Abend - Gemuetlichkeit verstaerken",
+                    "priority": "low",
+                })
+
+        return suggestions
+
+    def get_mood_prompt_hint(self) -> str:
+        """
+        Gibt einen Prompt-Hinweis basierend auf emotionalem Kontext zurueck.
+        Wird in den System Prompt eingebaut fuer kontextsensitive Antworten.
+        """
+        hints = []
+
+        if self._current_mood == MOOD_STRESSED:
+            hints.append("User ist unter Stress. Antworte ruhig und effizient.")
+            if self._stress_level >= 0.7:
+                hints.append("Stress-Level sehr hoch. Schlage bei Gelegenheit eine Pause vor.")
+
+        elif self._current_mood == MOOD_FRUSTRATED:
+            hints.append("User ist frustriert. Nicht rechtfertigen, sondern loesen.")
+            if self._frustration_count >= 4:
+                hints.append("Anhaltende Frustration. Frage ob du anders helfen kannst.")
+
+        elif self._current_mood == MOOD_TIRED:
+            hints.append("User ist muede. Minimal antworten. Kein Humor.")
+
+        elif self._current_mood == MOOD_GOOD:
+            hints.append("User ist gut drauf. Etwas mehr Persoenlichkeit zeigen.")
+
+        # Stress-Trend
+        if len(self._interaction_sentiments) >= 3:
+            recent = list(self._interaction_sentiments)[-3:]
+            if all(s == "negative" for s in recent):
+                hints.append("WARNUNG: 3x negativ hintereinander. Eskalation vermeiden.")
+
+        return " ".join(hints)
+
     async def _save_state(self):
         """Speichert den aktuellen Zustand in Redis."""
         if not self.redis:

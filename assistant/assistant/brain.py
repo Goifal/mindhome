@@ -3,7 +3,8 @@ MindHome Assistant Brain - Das zentrale Gehirn.
 Verbindet alle Komponenten: Context Builder, Model Router, Personality,
 Function Calling, Memory, Autonomy, Memory Extractor und Action Planner.
 
-Phase 6: Easter Eggs, Opinion Engine, Antwort-Varianz, Formality Score.
+Phase 6: Easter Eggs, Opinion Engine, Antwort-Varianz, Formality Score,
+         Zeitgefuehl, Emotionale Intelligenz, Running Gags.
 """
 
 import asyncio
@@ -28,6 +29,7 @@ from .ollama_client import OllamaClient
 from .personality import PersonalityEngine
 from .proactive import ProactiveManager
 from .summarizer import DailySummarizer
+from .time_awareness import TimeAwareness
 from .websocket import emit_thinking, emit_speaking, emit_action
 
 logger = logging.getLogger(__name__)
@@ -56,6 +58,7 @@ class AssistantBrain:
         self.memory_extractor: Optional[MemoryExtractor] = None
         self.mood = MoodDetector()
         self.action_planner = ActionPlanner(self.ollama, self.executor, self.validator)
+        self.time_awareness = TimeAwareness(self.ha)
 
     async def initialize(self):
         """Initialisiert alle Komponenten."""
@@ -86,6 +89,11 @@ class AssistantBrain:
             redis_client=self.memory.redis,
             chroma_collection=self.memory.chroma_collection,
         )
+
+        # Phase 6: TimeAwareness initialisieren und starten
+        await self.time_awareness.initialize(redis_client=self.memory.redis)
+        self.time_awareness.set_notify_callback(self._handle_time_alert)
+        await self.time_awareness.start()
 
         await self.proactive.start()
         logger.info("Jarvis initialisiert (alle Systeme aktiv)")
@@ -118,6 +126,9 @@ class AssistantBrain:
                 "context_room": room or "unbekannt",
             }
 
+        # Phase 6.9: Running Gag Check (VOR LLM)
+        gag_response = await self.personality.check_running_gag(text)
+
         # WebSocket: Denk-Status senden
         await emit_thinking()
 
@@ -144,6 +155,16 @@ class AssistantBrain:
         system_prompt = self.personality.build_system_prompt(
             context, formality_score=formality_score
         )
+
+        # Phase 6.7: Emotionale Intelligenz — Mood-Hint in System Prompt
+        mood_hint = self.mood.get_mood_prompt_hint()
+        if mood_hint:
+            system_prompt += f"\n\nEMOTIONALE LAGE: {mood_hint}"
+
+        # Phase 6.6: Zeitgefuehl — Hinweise in System Prompt
+        time_hints = await self.time_awareness.get_context_hints()
+        if time_hints:
+            system_prompt += "\n\nZEITGEFUEHL:\n" + "\n".join(f"- {h}" for h in time_hints)
 
         # Semantische Erinnerungen zum System Prompt hinzufuegen
         memories = context.get("memories", {})
@@ -274,6 +295,19 @@ class AssistantBrain:
                 else:
                     response_text = self.personality.get_varied_confirmation(success=True)
 
+        # Phase 6.9: Running Gag an Antwort anhaengen
+        if gag_response and response_text:
+            response_text = f"{response_text} {gag_response}"
+
+        # Phase 6.7: Emotionale Intelligenz — Aktions-Vorschlaege loggen
+        suggested_actions = self.mood.get_suggested_actions()
+        if suggested_actions:
+            for sa in suggested_actions:
+                logger.info(
+                    "Mood-Vorschlag [%s]: %s (%s)",
+                    sa.get("priority", "?"), sa.get("action", "?"), sa.get("reason", ""),
+                )
+
         # 9. Im Gedaechtnis speichern
         await self.memory.add_conversation("user", text)
         await self.memory.add_conversation("assistant", response_text)
@@ -332,6 +366,7 @@ class AssistantBrain:
                 "activity_engine": "active",
                 "summarizer": "running" if self.summarizer._running else "stopped",
                 "proactive": "running" if self.proactive._running else "stopped",
+                "time_awareness": "running" if self.time_awareness._running else "stopped",
             },
             "models_available": models,
             "autonomy": self.autonomy.get_level_info(),
@@ -422,8 +457,16 @@ class AssistantBrain:
         except Exception as e:
             logger.error("Fehler bei Hintergrund-Fakten-Extraktion: %s", e)
 
+    async def _handle_time_alert(self, alert: dict):
+        """Callback fuer TimeAwareness-Alerts — leitet an proaktive Meldung weiter."""
+        message = alert.get("message", "")
+        if message:
+            await emit_speaking(message)
+            logger.info("TimeAwareness -> Proaktive Meldung: %s", message)
+
     async def shutdown(self):
         """Faehrt MindHome Assistant herunter."""
+        await self.time_awareness.stop()
         await self.proactive.stop()
         await self.summarizer.stop()
         await self.feedback.stop()
