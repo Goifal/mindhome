@@ -1,0 +1,227 @@
+# ============================================================
+# MindHome Assistant - Hauptkonfiguration
+# ============================================================
+
+assistant:
+  # Name des Assistenten - so stellt er sich vor und so reagiert er
+  # Aendere diesen Namen zu was du willst (z.B. "Jarvis", "Alfred", "Nova")
+  name: "Jarvis"
+  version: "0.8.0"
+  language: "de"
+
+# --- Personen und Anrede ---
+# Wie Jarvis die Hausbewohner anspricht
+# Hauptbenutzer (user_name in .env) = "Sir" (Standard)
+# Andere Personen: Name oder Titel
+persons:
+  titles:
+    # key = vorname (kleingeschrieben), value = Anrede
+    # Der Hauptbenutzer (USER_NAME in .env) wird automatisch "Sir"
+    # Weitere Personen hier hinzufuegen:
+    # lisa: "Ms. Lisa"
+    # thomas: "Thomas"
+
+# --- Autonomie-Level ---
+# 1 = Assistent (nur auf Befehle reagieren)
+# 2 = Butler (+ proaktive Infos)
+# 3 = Mitbewohner (+ kleine Aenderungen selbst)
+# 4 = Vertrauter (+ Routinen anpassen)
+# 5 = Autopilot (+ Automationen erstellen)
+autonomy:
+  level: 2
+
+# --- Modell-Routing ---
+models:
+  fast: "qwen2.5:3b"
+  smart: "qwen2.5:14b"
+
+  # Keywords die das schnelle Modell triggern
+  fast_keywords:
+    - "licht"
+    - "lampe"
+    - "temperatur"
+    - "heizung"
+    - "rollladen"
+    - "jalousie"
+    - "szene"
+    - "alarm"
+    - "tuer"
+    - "gute nacht"
+    - "guten morgen"
+    - "musik"
+    - "pause"
+    - "stopp"
+    - "stop"
+    - "leiser"
+    - "lauter"
+    - "an"
+    - "aus"
+
+  # LLM Optionen
+  options:
+    temperature: 0.7
+    max_tokens: 256
+
+# --- Persoenlichkeit ---
+personality:
+  style: "butler"  # butler, minimal, freundlich
+
+  time_layers:
+    early_morning:  # 05:00-08:00
+      style: "ruhig, minimal, kein Humor. Kurzes Briefing wenn gefragt."
+      max_sentences: 1
+    morning:  # 08:00-12:00
+      style: "sachlich, effizient. Gelegentlich trocken. Produktiv-Modus."
+      max_sentences: 2
+    afternoon:  # 12:00-18:00
+      style: "normal, souveraen. Trockener Humor erlaubt."
+      max_sentences: 2
+    evening:  # 18:00-22:00
+      style: "entspannter, mehr Humor. Darf spitze Bemerkungen machen."
+      max_sentences: 3
+    night:  # 22:00-05:00
+      style: "nur Notfaelle, absolute Stille. Fluestern wenn ueberhaupt."
+      max_sentences: 1
+
+# --- Proaktive Meldungen ---
+proactive:
+  enabled: true
+  cooldown_seconds: 300  # Minimum 5 Minuten zwischen Meldungen
+
+  # Wann NICHT melden (ausser Critical)
+  silence_scenes:
+    - "filmabend"
+    - "kino"
+    - "schlafen"
+    - "meditation"
+
+# --- Semantisches Gedaechtnis (Phase 2) ---
+memory:
+  # Fakten-Extraktion nach Gespraechen
+  extraction_enabled: true
+  # Minimale Wortanzahl fuer Extraktion
+  extraction_min_words: 5
+  # Modell fuer Fakten-Extraktion (schnelles reicht)
+  extraction_model: "qwen2.5:3b"
+  # Maximale Fakten pro Person im Kontext
+  max_person_facts_in_context: 5
+  # Maximale relevante Fakten im Kontext
+  max_relevant_facts_in_context: 3
+  # Minimale Confidence fuer Kontext-Einblendung
+  min_confidence_for_context: 0.6
+  # Duplikat-Schwelle (0.0 = exakt gleich, 1.0 = komplett anders)
+  duplicate_threshold: 0.15
+
+# --- Action Planner (Phase 4) ---
+planner:
+  # Maximale Iterationen (LLM-Runden) pro Plan
+  max_iterations: 5
+  # Modell fuer Planung (immer smart)
+  model: "qwen2.5:14b"
+  # Keywords die komplexe Anfragen erkennen
+  complex_keywords:
+    - "alles"
+    - "fertig machen"
+    - "vorbereiten"
+    - "gehe weg"
+    - "fahre weg"
+    - "verreise"
+    - "urlaub"
+    - "routine"
+    - "morgenroutine"
+    - "abendroutine"
+    - "wenn ich"
+    - "falls ich"
+    - "bevor ich"
+    - "zuerst"
+    - "danach"
+    - "und dann"
+    - "ausserdem"
+    - "komplett"
+    - "ueberall"
+    - "in allen"
+    - "party"
+    - "besuch kommt"
+    - "gaeste"
+
+# --- Mood Detector (Phase 3) ---
+mood:
+  # Sekunden zwischen Befehlen = "schnelle Befehle" (Stress-Signal)
+  rapid_command_seconds: 5
+  # Wie schnell Stress abklingt (in Sekunden fuer vollen Abbau)
+  stress_decay_seconds: 300
+  # Ab wie vielen negativen Signalen = "frustriert"
+  frustration_threshold: 3
+  # Ab welcher Uhrzeit gilt "spaet" (muede-Erkennung)
+  tired_hour_start: 23
+  tired_hour_end: 5
+
+# --- Activity Engine + Silence Matrix (Phase 6) ---
+activity:
+  # Entity-IDs (an deine Installation anpassen)
+  entities:
+    media_players:
+      - "media_player.wohnzimmer"
+      - "media_player.fernseher"
+      - "media_player.tv"
+    mic_sensors:
+      - "binary_sensor.mic_active"
+      - "binary_sensor.microphone"
+    bed_sensors:
+      - "binary_sensor.bed_occupancy"
+      - "binary_sensor.bett"
+    pc_sensors:
+      - "binary_sensor.pc_active"
+      - "binary_sensor.computer"
+      - "switch.pc"
+
+  # Schwellwerte fuer Erkennung
+  thresholds:
+    night_start: 22        # Ab wann gilt "Nacht"
+    night_end: 7           # Bis wann gilt "Nacht"
+    guest_person_count: 2  # Ab wie vielen Personen = "Gaeste"
+    focus_min_minutes: 30  # Wie lange PC aktiv fuer "fokussiert"
+
+# --- Feedback Loop (Phase 5) ---
+feedback:
+  # Auto-Timeout: Sekunden ohne Reaktion = "ignored"
+  auto_timeout_seconds: 120
+  # Basis-Cooldown in Sekunden (wird adaptiv angepasst)
+  base_cooldown_seconds: 300
+  # Score-Grenzen fuer Entscheidungen
+  score_suppress: 0.15    # Darunter: nicht mehr senden
+  score_reduce: 0.30      # Darunter: laengerer Cooldown
+  score_normal: 0.50      # Normaler Cooldown
+  score_boost: 0.70       # Darueber: kuerzerer Cooldown
+
+# --- Daily Summarizer + Langzeitgedaechtnis (Phase 7) ---
+summarizer:
+  # Wann laeuft der naechtliche Summary-Job
+  run_hour: 3
+  run_minute: 0
+  # Modell fuer Zusammenfassungen (smart fuer bessere Qualitaet)
+  model: "qwen2.5:14b"
+  # Maximale Token pro Zusammenfassung
+  max_tokens_daily: 512
+  max_tokens_weekly: 384
+  max_tokens_monthly: 512
+
+# --- Context Builder ---
+context:
+  # Wie viele letzte Gespraeche im Working Memory
+  recent_conversations: 5
+  # Timeout fuer API-Calls in Sekunden
+  api_timeout: 5
+
+# --- Sicherheit ---
+security:
+  # Aktionen die Bestaetigung brauchen
+  require_confirmation:
+    - "lock_door:unlock"
+    - "set_alarm:disarm"
+    - "set_climate:off"
+
+  # Temperatur-Grenzen
+  climate_limits:
+    min: 15
+    max: 28
