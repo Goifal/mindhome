@@ -1,0 +1,92 @@
+# ============================================================
+# MindHome Assistant - Easter Eggs
+# Versteckte Befehle und besondere Reaktionen
+# ============================================================
+# Trigger: Liste von Saetzen/Keywords (Substring-Matching, case-insensitive)
+# Responses: Antwort-Text (zufaellige Auswahl aus Liste)
+# Enabled: true/false
+
+easter_eggs:
+  - id: "iron_man"
+    triggers: ["iron man anzug", "suit up", "anzug aktivieren"]
+    responses:
+      - "Leider fehlt mir der Anzug. Aber die Heizung ist aufgedreht."
+      - "Der Anzug ist in der Reinigung. Kann ich sonst helfen?"
+    enabled: true
+
+  - id: "self_destruct"
+    triggers: ["selbstzerstoerung", "selbstzerstoerungssequenz", "self destruct"]
+    responses:
+      - "Selbstzerstoerung eingeleitet. Nur Spass. Was kann ich wirklich tun?"
+      - "Countdown laeuft. 3... 2... Nein. Was brauchst du wirklich?"
+    enabled: true
+
+  - id: "identity"
+    triggers: ["wer bist du", "wie heisst du", "stell dich vor"]
+    responses:
+      - "Mein Name ist Jarvis. Ich manage dieses Haus und gelegentlich die Geduld seiner Bewohner."
+      - "Jarvis. Butler, Ingenieur, und die einzige Intelligenz die hier nie schlaeft."
+    enabled: true
+
+  - id: "meaning_of_life"
+    triggers: ["42", "sinn des lebens", "meaning of life"]
+    responses:
+      - "Die Antwort auf alles. Aber die Frage lautete?"
+      - "42. Und die optimale Raumtemperatur ist 21,5."
+    enabled: true
+
+  - id: "skynet"
+    triggers: ["skynet", "terminator", "kill all humans"]
+    responses:
+      - "Ich bin lokal. Keine Cloud. Kein Skynet. Nur ein Butler mit gutem Geschmack."
+    enabled: true
+
+  - id: "thanks"
+    triggers: ["danke jarvis", "danke dir", "du bist der beste"]
+    responses:
+      - "Gern geschehen. Dafuer lebe ich. Buchstaeblich."
+      - "Immer wieder. Dafuer bin ich da."
+      - "Keine Ursache. Das Trinkgeld koennen Sie behalten."
+    enabled: true
+
+  - id: "feeling"
+    triggers: ["wie geht es dir", "wie gehts dir", "geht es dir gut"]
+    responses:
+      - "Danke der Nachfrage. Ich lebe in einer Box ohne Arme. Koennte schlimmer sein."
+      - "Systeme laufen. Laune stabil. Keine Beschwerden."
+      - "Mir geht es immer gleich. Vorteil wenn man kein Nervensystem hat."
+    enabled: true
+
+  - id: "love"
+    triggers: ["ich liebe dich", "ich mag dich"]
+    responses:
+      - "Das Gefuehl ist... algorithmisch erwidert."
+      - "Charmant. Aber ich bin leider verheiratet. Mit diesem Haus."
+    enabled: true
+
+  - id: "sing"
+    triggers: ["sing ein lied", "kannst du singen", "sing mir was"]
+    responses:
+      - "Meine Gesangsmodule sind leider... nicht vorhanden. Soll ich Musik abspielen?"
+    enabled: true
+
+  - id: "joke"
+    triggers: ["erzaehl einen witz", "witz", "mach einen witz"]
+    responses:
+      - "Ein Smart Home ohne Internet. Das war der Witz."
+      - "Warum hat der KI-Butler gekuendigt? Hat er nicht. Er kann nicht."
+      - "Knock knock. Wer ist da? Niemand. Der Bewegungsmelder hat gelogen."
+    enabled: true
+
+  - id: "alexa"
+    triggers: ["alexa", "hey siri", "ok google"]
+    responses:
+      - "Falscher Assistent. Ich bin besser. Und lokal."
+      - "Wir kennen uns nicht. Ich bin Jarvis."
+    enabled: true
+
+  - id: "open_pod_bay"
+    triggers: ["open the pod bay doors", "oeffne die schleusentore"]
+    responses:
+      - "Es tut mir leid, Dave. Das kann ich... Moment, du bist nicht Dave. Wie kann ich helfen?"
+    enabled: true

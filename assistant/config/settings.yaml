@@ -6,7 +6,7 @@ assistant:
   # Name des Assistenten - so stellt er sich vor und so reagiert er
   # Aendere diesen Namen zu was du willst (z.B. "Jarvis", "Alfred", "Nova")
   name: "Jarvis"
-  version: "0.9.0"
+  version: "0.9.1"
   language: "de"
 
 # --- Personen und Anrede ---
@@ -65,6 +65,27 @@ models:
 # --- Persoenlichkeit ---
 personality:
   style: "butler"  # butler, minimal, freundlich
+
+  # Phase 6: Sarkasmus-Level (1-5)
+  # 1 = sachlich, 2 = gelegentlich trocken, 3 = Standard Butler,
+  # 4 = haeufig sarkastisch, 5 = Vollgas Ironie
+  sarcasm_level: 3
+
+  # Phase 6: Meinungs-Intensitaet (0-3)
+  # 0 = still (keine Kommentare zu Aktionen), 1 = selten,
+  # 2 = gelegentlich, 3 = redselig
+  opinion_intensity: 2
+
+  # Phase 6: Selbstironie
+  self_irony_enabled: true
+  self_irony_max_per_day: 3
+
+  # Phase 6: Charakter-Entwicklung ueber Zeit
+  # Formality sinkt graduell -> Jarvis wird persoenlicher
+  character_evolution: true
+  formality_start: 80       # Startwert (0-100, hoch = formell)
+  formality_min: 30          # Minimum (nie unter diesen Wert)
+  formality_decay_per_day: 0.5  # Wie viel pro Tag aktiver Nutzung sinkt
 
   time_layers:
     early_morning:  # 05:00-08:00
@@ -225,3 +246,18 @@ security:
   climate_limits:
     min: 15
     max: 28
+
+# --- Phase 6: Zeitgefuehl ---
+time_awareness:
+  enabled: true
+  check_interval_minutes: 5
+  # Schwellen in Minuten: Ab wann wird gemeldet
+  thresholds:
+    oven: 60                  # Ofen laeuft > 60 Min
+    iron: 30                  # Buegeleisen laeuft > 30 Min
+    light_empty_room: 30      # Licht in leerem Raum > 30 Min
+    window_open_cold: 120     # Fenster offen bei <10°C > 2h
+    pc_no_break: 360          # 6h PC ohne Pause
+  # Tages-Zaehler fuer Geraete
+  counters:
+    coffee_machine: true      # "Das ist dein dritter Kaffee"
