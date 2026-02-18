@@ -1302,13 +1302,14 @@ class AssistantBrain:
             result = await self.self_automation.confirm_automation(pending_id)
             return result.get("message", "")
 
-        # Einfache Bestaetigung: "Ja, erstellen" / "Ja erstellen" / "Ja mach das"
+        # Einfache Bestaetigung: "Ja" / "Ja, erstellen" / "Mach das"
         confirm_triggers = [
+            "ja", "jo", "jap", "klar", "genau", "passt",
             "ja, erstellen", "ja erstellen", "ja mach das",
             "ja, aktivieren", "ja aktivieren", "erstellen",
-            "aktivieren", "ja bitte", "mach das",
+            "aktivieren", "ja bitte", "mach das", "bitte",
         ]
-        if any(text_lower == t or text_lower.startswith(t) for t in confirm_triggers):
+        if any(text_lower == t or text_lower.startswith(t + " ") or text_lower.startswith(t + ",") for t in confirm_triggers):
             # Letztes Pending nehmen
             pending_ids = list(self.self_automation._pending.keys())
             if pending_ids:
