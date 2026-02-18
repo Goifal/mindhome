@@ -1666,18 +1666,18 @@ HA holt die Daten aus dem Internet → exponiert sie als Entities → Jarvis lie
 - Jarvis liest HA-Entities die von HA-Integrationen befuellt werden:
   | HA-Integration | HA-Entity | Was Jarvis damit macht |
   |---------------|-----------|----------------------|
-  | DWD Weather Warnings | `sensor.dwd_weather_warnings_*` | "Gewitter in 2 Stunden. Fenster." |
-  | DWD Pollenflug | `sensor.dwd_pollen_*` | "Birke hoch heute. Fenster besser zu." |
-  | HA Weather | `weather.home` (existiert bereits) | Temperatur, Regen, Prognose |
+  | Met.no Weather | `weather.home` (existiert bereits) | Temperatur, Regen, Prognose |
+  | Met.no Forecast | `weather.home` → Forecast-Attribute | "Regen in 2 Stunden. Waesche reinholen." |
   | Sun Integration | `sun.sun` (existiert bereits) | Sonnenauf-/-untergang |
 - Proaktive Meldungen nur bei Relevanz (nicht jede halbe Stunde Wetter)
 - Kein eigener HTTP-Call, kein eigener API-Zugang — nur HA State API (lokal)
+- Met.no liefert: Temperatur, Niederschlag, Wind, Luftdruck, Forecast (48h)
 
 **Umsetzung:**
-- `context_builder.py`: Wetter/Pollen/Sun-Entities in Kontext einbeziehen
-- `proactive.py`: Wetter-Warnungen als proaktive Meldung (triggered by HA Entity Change)
+- `context_builder.py`: Weather/Sun-Entities in Kontext einbeziehen
+- `proactive.py`: Wetter-Aenderungen als proaktive Meldung (triggered by HA Entity Change)
 - Config in `settings.yaml`: Welche HA-Entities als Kontext-Quellen dienen
-- **Voraussetzung:** DWD-Integrationen in HA installiert (User-Aufgabe, einmalig)
+- **Voraussetzung:** Met.no Integration in HA (Standard-Integration, bereits vorhanden)
 
 **Aufwand:** ~3-4 Stunden (einfacher, weil HA die Arbeit macht)
 **Wirkung:** HOCH — "Es regnet in 20 Minuten. Waesche haengt draussen." Das ist Jarvis.
