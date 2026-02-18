@@ -5,6 +5,34 @@
 > **Aktueller Status:** v0.8.4 (Phase 5 abgeschlossen, Build 87)
 > **Architektur:** PC 1 (HAOS Add-on v0.8.4) + PC 2 (Assistant Server)
 > **Prinzip:** 100% lokal, kein Cloud, Privacy-first
+> **GRUNDREGEL: Jarvis hat KEINEN Internetzugang.**
+
+---
+
+## Offline-Prinzip (Eiserne Regel)
+
+Jarvis laeuft ohne Internet. Sobald das System steht, wird der Internetzugang gekappt.
+
+**Was das bedeutet:**
+- Jarvis macht KEINE eigenen HTTP-Calls ins Internet. Niemals.
+- Alle externen Daten (Wetter, Pollen, Kalender) kommen ueber **Home Assistant Entities**.
+  HA holt die Daten → exponiert sie als Entities → Jarvis liest die Entities lokal.
+- Alle Modelle (LLM, STT, TTS, Vision) laufen lokal via Ollama/Piper/Whisper.
+- Alle Datenbanken (ChromaDB, Redis) laufen lokal.
+- Sound-Dateien sind lokal gespeichert, kein Streaming.
+- Frontend-Libraries (React, Babel) werden beim Docker-Build einmalig heruntergeladen
+  und danach ins Image gebacken — zur Laufzeit kein CDN-Zugriff.
+
+**Erlaubte Netzwerk-Kommunikation (nur lokal):**
+| Service | URL | Zweck |
+|---------|-----|-------|
+| Home Assistant | `http://supervisor/core` | Smart-Home Steuerung + Entities |
+| Ollama | `http://localhost:11434` | LLM (Qwen) |
+| ChromaDB | `http://localhost:8100` | Semantic Memory |
+| Redis | `redis://localhost:6379` | Cache, Queues, State |
+| Assistant | `http://192.168.1.100:8200` | MindHome Assistant Server |
+
+**Code-Audit (2026-02-18): Bestanden.** Keine externen Internet-Calls im bestehenden Code.
 
 ---
 
@@ -1593,7 +1621,8 @@ self_modification:
 
 > **Ziel:** Jarvis weiss mehr als nur Smart-Home. Er kennt Rezepte, Verkehr, Wetter-Warnungen,
 > deinen Kalender — und er lernt aus seinen Fehlern.
-> **Prinzip:** Lokale Wissensbasis + externe Datenquellen. Kein Cloud-LLM, aber mehr Kontext.
+> **Prinzip:** 100% offline. Jarvis hat KEINEN Internetzugang. Alle externen Daten
+> kommen ueber Home Assistant Entities (HA holt, Jarvis liest). Kein Cloud-LLM.
 
 ---
 
@@ -1624,29 +1653,33 @@ halluziniert aber bei spezifischen Fragen (Kochzeiten, Bedienungsanleitungen, lo
 
 ---
 
-### Feature 11.2: Externer Kontext (Welt ausserhalb des Hauses)
+### Feature 11.2: Externer Kontext via HA (Welt ausserhalb des Hauses)
 
 **Ist-Zustand:** Jarvis kennt nur den Haus-Status. Er weiss nicht was draussen passiert
 (ausser Wetter via HA Weather Entity).
 
+**WICHTIG: Jarvis hat KEINEN Internetzugang.**
+Alle externen Daten kommen ueber Home Assistant Integrationen.
+HA holt die Daten aus dem Internet → exponiert sie als Entities → Jarvis liest die Entities.
+
 **Soll-Zustand:**
-- Regelmaeßiger Abruf externer Datenquellen (lokal, kein Cloud):
-  | Quelle | Intervall | Was Jarvis damit macht |
-  |--------|-----------|----------------------|
-  | Wetter-Warnung (DWD API) | 30 Min | "Gewitter in 2 Stunden. Fenster." |
-  | Verkehr (optional) | Bei Abfahrt | "A1 Stau. 20 Minuten laenger." |
-  | Pollenflug (DWD) | Taeglich | "Birke hoch heute. Fenster besser zu." |
-  | Sonnenauf-/-untergang | Taeglich | Bereits via Add-on, aber proaktiver nutzen |
+- Jarvis liest HA-Entities die von HA-Integrationen befuellt werden:
+  | HA-Integration | HA-Entity | Was Jarvis damit macht |
+  |---------------|-----------|----------------------|
+  | DWD Weather Warnings | `sensor.dwd_weather_warnings_*` | "Gewitter in 2 Stunden. Fenster." |
+  | DWD Pollenflug | `sensor.dwd_pollen_*` | "Birke hoch heute. Fenster besser zu." |
+  | HA Weather | `weather.home` (existiert bereits) | Temperatur, Regen, Prognose |
+  | Sun Integration | `sun.sun` (existiert bereits) | Sonnenauf-/-untergang |
 - Proaktive Meldungen nur bei Relevanz (nicht jede halbe Stunde Wetter)
-- Privacy: Nur oeffentliche APIs, kein Tracking, kein Login
+- Kein eigener HTTP-Call, kein eigener API-Zugang — nur HA State API (lokal)
 
 **Umsetzung:**
-- NEU: `external_context.py` — Abruf + Caching externer Daten
-- `context_builder.py`: Externe Daten in Kontext einbeziehen
-- `proactive.py`: Wetter-Warnungen als proaktive Meldung
-- Config in `settings.yaml`: Welche Quellen aktiv, Standort-Koordinaten
+- `context_builder.py`: Wetter/Pollen/Sun-Entities in Kontext einbeziehen
+- `proactive.py`: Wetter-Warnungen als proaktive Meldung (triggered by HA Entity Change)
+- Config in `settings.yaml`: Welche HA-Entities als Kontext-Quellen dienen
+- **Voraussetzung:** DWD-Integrationen in HA installiert (User-Aufgabe, einmalig)
 
-**Aufwand:** ~4-6 Stunden
+**Aufwand:** ~3-4 Stunden (einfacher, weil HA die Arbeit macht)
 **Wirkung:** HOCH — "Es regnet in 20 Minuten. Waesche haengt draussen." Das ist Jarvis.
 
 ---
@@ -1715,7 +1748,7 @@ wird die Korrektur nicht gespeichert. Naechstes Mal gleicher Fehler.
 | `proactive.py` | Wetter-Warnungen, Kalender-Reminders |
 | `memory.py` | Korrektur-Memories (Confidence 1.0) |
 | NEU: `knowledge_ingester.py` | PDF/YAML → ChromaDB Pipeline |
-| NEU: `external_context.py` | DWD Wetter, Pollen, Verkehr |
+| `context_builder.py` | Wetter/Pollen/Sun HA-Entities einbeziehen |
 
 **Geschaetzter Aufwand:** ~14-21 Stunden, ~6 Commits
 
@@ -1808,7 +1841,7 @@ Aber: Keine atmosphaerische Audio-Gestaltung.
 
 **Umsetzung:**
 - NEU: `ambient.py` — Sound-Auswahl basierend auf Kontext + Tageszeit + Wetter
-- `config/ambient_sounds/` — Sound-Dateien (oder URLs zu lokalen Streams)
+- `config/ambient_sounds/` — Lokale Sound-Dateien (kein Streaming, kein Internet)
 - `function_calling.py`: Tool `set_ambient(mood)` / `stop_ambient()`
 - Integration mit `activity.py`: Pausiert bei Interaktion
 
