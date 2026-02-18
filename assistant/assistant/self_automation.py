@@ -205,10 +205,8 @@ class SelfAutomation:
             "preview": preview,
             "yaml_preview": yaml_preview,
             "message": (
-                f"Ich wuerde folgende Automation erstellen:\n\n"
-                f"{preview}\n\n"
-                f"Soll ich das aktivieren? "
-                f"(Sage 'Ja, erstellen' oder 'Automation {pending_id} bestaetigen')"
+                f"Ich wuerde Folgendes einrichten: {preview}. "
+                f"Soll ich das aktivieren?"
             ),
         }
 
@@ -242,13 +240,11 @@ class SelfAutomation:
             if result:
                 self._increment_daily_count()
                 self._audit("deployed", description, person, automation, automation_id=automation_id)
+                alias = automation.get("alias", description)
                 return {
                     "success": True,
                     "automation_id": automation_id,
-                    "message": (
-                        f"Automation '{automation.get('alias', description)}' "
-                        f"ist aktiv (ID: {automation_id})."
-                    ),
+                    "message": f"Eingerichtet. '{alias}' ist ab sofort aktiv.",
                 }
             else:
                 self._audit("deploy_failed", description, person, automation)
@@ -555,60 +551,155 @@ REGELN:
     # ------------------------------------------------------------------
 
     def _build_preview(self, automation: dict, description: str) -> str:
-        """Erstellt eine leserliche Vorschau der Automation."""
-        lines = [f"Name: {automation.get('alias', description)}"]
-
-        # Trigger
+        """Erstellt eine natuerlichsprachliche Vorschau der Automation (Jarvis-Stil)."""
+        # Trigger natuerlich formulieren
+        trigger_parts = []
         for t in automation.get("trigger", []):
-            platform = t.get("platform", "?")
+            platform = t.get("platform", "")
             if platform == "state":
-                entity = t.get("entity_id", "?")
-                to_state = t.get("to", "?")
-                lines.append(f"Trigger: {entity} wechselt zu '{to_state}'")
+                entity = t.get("entity_id", "")
+                to_state = t.get("to", "")
+                trigger_parts.append(self._humanize_state_trigger(entity, to_state))
             elif platform == "time":
                 at = t.get("at", "?")
-                lines.append(f"Trigger: Taeglich um {at}")
+                trigger_parts.append(f"taeglich um {at} Uhr")
             elif platform == "sun":
-                event = t.get("event", "?")
+                event = t.get("event", "sunset")
                 offset = t.get("offset", "")
-                lines.append(f"Trigger: Sonnen{event}{f' ({offset})' if offset else ''}")
+                word = "Sonnenuntergang" if event == "sunset" else "Sonnenaufgang"
+                if offset:
+                    trigger_parts.append(f"bei {word} ({offset})")
+                else:
+                    trigger_parts.append(f"bei {word}")
             elif platform == "numeric_state":
-                entity = t.get("entity_id", "?")
+                entity = t.get("entity_id", "")
+                name = self._humanize_entity(entity)
                 above = t.get("above")
                 below = t.get("below")
-                cond = ""
                 if above is not None:
-                    cond += f" > {above}"
-                if below is not None:
-                    cond += f" < {below}"
-                lines.append(f"Trigger: {entity}{cond}")
+                    trigger_parts.append(f"wenn {name} ueber {above} steigt")
+                elif below is not None:
+                    trigger_parts.append(f"wenn {name} unter {below} faellt")
             elif platform == "zone":
-                entity = t.get("entity_id", "?")
-                zone = t.get("zone", "?")
                 event = t.get("event", "enter")
-                lines.append(f"Trigger: {entity} {'betritt' if event == 'enter' else 'verlaesst'} {zone}")
-            else:
-                lines.append(f"Trigger: {platform}")
+                zone = t.get("zone", "")
+                zone_name = self._humanize_entity(zone)
+                verb = "ankommt" if event == "enter" else "weggeht"
+                trigger_parts.append(f"wenn jemand {zone_name} {verb}")
 
-        # Conditions
-        for c in automation.get("condition", []):
-            cond_type = c.get("condition", "?")
-            lines.append(f"Bedingung: {cond_type}")
-
-        # Actions
+        # Actions natuerlich formulieren
+        action_parts = []
         for a in automation.get("action", []):
-            service = a.get("service", "?")
-            target = a.get("target", {})
-            entity = target.get("entity_id", "")
-            data = a.get("data", {})
-            detail = ""
-            if entity:
-                detail += f" -> {entity}"
-            if data:
-                detail += f" ({', '.join(f'{k}={v}' for k, v in data.items())})"
-            lines.append(f"Aktion: {service}{detail}")
+            action_parts.append(self._humanize_action(a))
 
-        return "\n".join(lines)
+        # Zusammenbauen
+        trigger_text = " und ".join(trigger_parts) if trigger_parts else description
+        action_text = " und ".join(action_parts) if action_parts else "die entsprechende Aktion ausfuehren"
+
+        return f"{trigger_text} — {action_text}"
+
+    @staticmethod
+    def _humanize_entity(entity_id: str) -> str:
+        """Macht eine Entity-ID menschenlesbar: 'light.wohnzimmer' -> 'Wohnzimmer-Licht'."""
+        if not entity_id or "." not in entity_id:
+            return entity_id
+
+        domain, name = entity_id.split(".", 1)
+        name_clean = name.replace("_", " ").title()
+
+        domain_labels = {
+            "light": "Licht",
+            "switch": "Schalter",
+            "climate": "Thermostat",
+            "cover": "Rolladen",
+            "media_player": "Player",
+            "sensor": "Sensor",
+            "binary_sensor": "Sensor",
+            "person": "",
+            "scene": "Szene",
+        }
+        label = domain_labels.get(domain, "")
+        if domain == "person":
+            return name_clean
+        if label:
+            return f"{name_clean}-{label}"
+        return name_clean
+
+    @staticmethod
+    def _humanize_state_trigger(entity_id: str, to_state: str) -> str:
+        """Formuliert einen State-Trigger natuerlich."""
+        if not entity_id:
+            return "bei Zustandsaenderung"
+
+        domain = entity_id.split(".")[0] if "." in entity_id else ""
+        name = entity_id.split(".", 1)[1].replace("_", " ").title() if "." in entity_id else entity_id
+
+        if domain == "person":
+            if to_state == "home":
+                return f"wenn {name} nach Hause kommt"
+            elif to_state == "not_home":
+                return f"wenn {name} das Haus verlaesst"
+            return f"wenn {name} Status '{to_state}' hat"
+        elif domain == "binary_sensor":
+            if to_state == "on":
+                return f"wenn {name} ausloest"
+            return f"wenn {name} zuruecksetzt"
+
+        return f"wenn {entity_id} zu '{to_state}' wechselt"
+
+    @staticmethod
+    def _humanize_action(action: dict) -> str:
+        """Formuliert eine Action natuerlich."""
+        service = action.get("service", "")
+        target = action.get("target", {})
+        entity = target.get("entity_id", "")
+        data = action.get("data", {})
+
+        # Entity-Name extrahieren
+        if entity and entity != "all":
+            entity_name = entity.split(".", 1)[1].replace("_", " ").title() if "." in entity else entity
+        elif entity == "all":
+            entity_name = "alle"
+        else:
+            entity_name = ""
+
+        # Service natuerlich formulieren
+        service_map = {
+            "light.turn_on": f"{entity_name}-Licht einschalten",
+            "light.turn_off": f"{entity_name}-Licht ausschalten",
+            "light.toggle": f"{entity_name}-Licht umschalten",
+            "switch.turn_on": f"{entity_name} einschalten",
+            "switch.turn_off": f"{entity_name} ausschalten",
+            "climate.set_temperature": f"{entity_name}-Thermostat",
+            "climate.set_hvac_mode": f"{entity_name}-Heizmodus aendern",
+            "cover.open_cover": f"{entity_name}-Rolladen hochfahren",
+            "cover.close_cover": f"{entity_name}-Rolladen runterfahren",
+            "cover.set_cover_position": f"{entity_name}-Rolladen positionieren",
+            "media_player.media_play": f"Wiedergabe starten ({entity_name})",
+            "media_player.media_pause": f"Wiedergabe pausieren ({entity_name})",
+            "media_player.media_stop": f"Wiedergabe stoppen ({entity_name})",
+            "scene.turn_on": f"Szene '{entity_name}' aktivieren",
+            "notify.notify": "Benachrichtigung senden",
+        }
+
+        text = service_map.get(service, f"{service}")
+        if entity == "all":
+            text = text.replace("alle-Licht", "alle Lichter")
+            text = text.replace("alle-Rolladen", "alle Rolladen")
+
+        # Zusatzinfos aus Data
+        if "temperature" in data:
+            text += f" auf {data['temperature']}°C"
+        if "brightness_pct" in data:
+            text += f" ({data['brightness_pct']}%)"
+        if "color_temp_kelvin" in data:
+            kelvin = data["color_temp_kelvin"]
+            if kelvin <= 3000:
+                text += " (warmweiss)"
+            elif kelvin >= 5500:
+                text += " (kaltweiss)"
+
+        return text
 
     def _get_entity_examples(self, states: list[dict], max_per_domain: int = 5) -> str:
         """Erstellt eine kompakte Entity-Liste fuer den LLM-Kontext."""
