@@ -121,6 +121,10 @@ Phase 9      ✅  Jarvis Stimme & Akustik (6 Features — v0.9.9-v1.0.0)
      │
 Phase 10     🆕  Jarvis Multi-Room & Kommunikation (5 Features — Assistant + Add-on)
      │
+Phase 12     🔧  Jarvis Authentizitaet (5 Techniken — LLM Character Deepening)
+     │
+Phase 13     📋  Jarvis Selbstprogrammierung (4 Stufen — Self-Evolving Assistant)
+     │
      ▼
   🎯 JARVIS COMPLETE
 ```
@@ -1182,6 +1186,297 @@ Aber: Hoechster Aufwand aller Techniken.
 
 ---
 
+# Phase 13 — Jarvis Selbstprogrammierung (Self-Evolving Assistant)
+## 4 Stufen | Betroffene Module: brain.py, personality.py, function_calling.py
+## Status: Geplant
+
+> **Ziel:** Jarvis programmiert sich selbst weiter — neue Faehigkeiten, bessere Reaktionen,
+> eigene Automationen. Nicht weil man es ihm sagt, sondern weil er es fuer sinnvoll haelt.
+> **Prinzip:** 4 Stufen mit steigender Autonomie. Jede Stufe hat Sicherheitsgrenzen.
+> **Level 5 (Core-Code aendern) wurde bewusst ausgeschlossen — zu riskant.**
+
+---
+
+### Stufe 13.1: Config-Selbstmodifikation (Sicher, sofort machbar)
+
+**Ist-Zustand:** Alle Configs (`settings.yaml`, `easter_eggs.yaml`, etc.) werden
+manuell editiert. Jarvis kann sie lesen, aber nicht aendern.
+
+**Soll-Zustand:**
+- Jarvis darf bestimmte YAML-Dateien selbst editieren:
+  | Datei | Was Jarvis aendern darf | Beispiel |
+  |-------|------------------------|---------|
+  | `easter_eggs.yaml` | Neue Easter Eggs hinzufuegen | User sagt was Lustiges → Jarvis merkt sich das als neues Easter Egg |
+  | `opinion_rules.yaml` | Neue Meinungsregeln | Jarvis merkt: User dreht Heizung oft auf 28° → neue Regel "Heizung >27 = kommentieren" |
+  | `room_profiles.yaml` | Raum-Defaults anpassen | Jarvis lernt: User stellt Buero immer auf 23° → Default aendern |
+  | `sounds/` Config | Sound-Zuordnungen | "Der Tuerklingel-Sound nervt" → Jarvis wechselt ihn |
+- **Sicherheit:**
+  - Nur whitelisted YAML-Dateien (kein Zugriff auf `settings.yaml` Kern-Config)
+  - Aenderungen werden geloggt (`mha:selfmod:log` in Redis)
+  - Bei Autonomie-Level < 3: Vorher fragen ("Soll ich das als Easter Egg speichern?")
+  - Bei Level >= 3: Machen + informieren ("Hab das als Easter Egg gespeichert.")
+  - Rollback: Letzte 10 Aenderungen pro Datei gespeichert
+
+**Umsetzung:**
+- `function_calling.py`: Neues Tool `edit_config(file, key, value)`
+- Whitelist in `settings.yaml`:
+  ```yaml
+  self_modification:
+    allowed_configs:
+      - easter_eggs.yaml
+      - opinion_rules.yaml
+      - room_profiles.yaml
+    max_changes_per_day: 5
+    require_confirmation_below_autonomy: 3
+  ```
+- YAML-Validierung vor Speicherung (kein kaputter Config)
+- Git-artige History in Redis (Key + alter Wert + neuer Wert + Timestamp)
+
+**Aufwand:** ~2 Stunden
+**Risiko:** NIEDRIG — Nur unkritische Dateien, validiert, rollback-faehig.
+
+---
+
+### Stufe 13.2: HA-Automationen generieren (Mittel, sehr nuetzlich)
+
+**Ist-Zustand:** Jarvis fuehrt Aktionen aus die man ihm sagt.
+Er erkennt keine Muster und erstellt keine eigenen Automationen.
+
+**Soll-Zustand:**
+- Jarvis erkennt wiederkehrende Muster und schlaegt Automationen vor:
+  ```
+  Jarvis bemerkt: "Jeden Freitag 18 Uhr schaltest du das Wohnzimmer-Licht
+  auf warm und die Musik an."
+
+  Level 2: "Soll ich das als Freitag-Routine speichern?"
+  Level 4: "Ich hab eine Freitag-Routine erstellt. Licht warm + Musik ab 18 Uhr."
+  ```
+- Arten von Automationen die Jarvis erstellen kann:
+  | Typ | Trigger | Aktion | Beispiel |
+  |-----|---------|--------|---------|
+  | Zeit-basiert | Cron | HA Service Call | "Jeden Morgen Rolladen hoch" |
+  | Zustand-basiert | Entity State | HA Service Call | "Wenn Tuer offen + kalt → warnen" |
+  | Sequenz | Manueller Trigger | Multi-Step | "Film-Modus: Licht, Rolladen, TV" |
+  | Reaktiv | Sensor-Wert | Notification | "CO2 > 1000 → Fenster-Erinnerung" |
+- **Sicherheit:**
+  - Automationen landen in `config/jarvis_automations.yaml` (getrennt von User-Automationen)
+  - Kein Zugriff auf Sicherheits-relevante Entities (Schloss, Alarm) ohne Owner-Bestaetigung
+  - Max 3 neue Automationen pro Woche
+  - Jede Automation hat ein `created_by: jarvis` Tag
+  - User kann jederzeit: "Zeig mir deine Automationen" / "Loesch die letzte"
+
+**Umsetzung:**
+- NEU: `self_automation.py` — Pattern-Detection + Automation-Builder
+- Nutzt `anticipation.py` (Phase 8.1) als Datenquelle fuer Muster
+- Generiert HA-kompatible Automations-YAML
+- `function_calling.py`: Neue Tools `create_automation()`, `list_my_automations()`, `delete_automation()`
+- Registrierung bei HA via REST API
+
+**Aufwand:** ~4-6 Stunden
+**Risiko:** MITTEL — Automationen koennen unerwuenscht sein, aber nie gefaehrlich
+(kein Sicherheits-Zugriff, User kann jederzeit loeschen).
+
+---
+
+### Stufe 13.3: Neue Tools/Plugins schreiben (Fortgeschritten, Sandbox)
+
+**Ist-Zustand:** `function_calling.py` hat feste Tools (Licht, Klima, Szenen...).
+Neue Tools erfordern manuelle Programmierung.
+
+**Soll-Zustand:**
+- Jarvis kann neue Function-Calling-Tools schreiben:
+  ```
+  User: "Kannst du mir sagen wie viel Strom der PC verbraucht?"
+  Jarvis: "Dafuer hab ich kein Tool. Soll ich eins bauen?"
+  User: "Ja"
+  Jarvis: *erstellt ein Tool das HA Energy-Entities abfragt*
+  Jarvis: "Fertig. Dein PC verbraucht gerade 180W."
+  ```
+- Was Jarvis als Tool erstellen darf:
+  - HA Entity-Abfragen (read-only)
+  - HA Service Calls (fuer bereits freigegebene Domains)
+  - Berechnungen (Energiekosten, Durchschnitte, Trends)
+  - Formatierungen (Tabellen, Zusammenfassungen)
+- Was Jarvis NICHT darf:
+  - Netzwerk-Zugriff (kein HTTP, kein API extern)
+  - Dateisystem-Zugriff (ausser whitelisted Configs)
+  - System-Befehle (kein subprocess, kein os.system)
+  - Eigenen Code modifizieren (kein self-modifying Code)
+
+**Sicherheits-Sandbox:**
+```python
+ALLOWED_IMPORTS = ["json", "datetime", "math", "statistics"]
+BANNED_PATTERNS = ["import os", "import subprocess", "import requests",
+                   "open(", "__import__", "eval(", "exec("]
+MAX_TOOL_CODE_LINES = 50
+```
+- Neuer Tool-Code wird vor Aktivierung validiert:
+  1. Statische Analyse (banned patterns)
+  2. Import-Check (nur whitelisted)
+  3. Laengen-Check (max 50 Zeilen)
+  4. Syntax-Check (ast.parse)
+- Tools landen in `plugins/jarvis_tools/` (getrennt von Core-Tools)
+- Jedes Tool hat Metadata: `author: jarvis`, `created: timestamp`, `approved: bool`
+
+**Umsetzung:**
+- NEU: `tool_builder.py` — LLM generiert Tool-Code, Sandbox validiert
+- NEU: `plugins/jarvis_tools/` — Verzeichnis fuer Jarvis-generierte Tools
+- `function_calling.py`: Dynamisches Laden von Jarvis-Tools beim Start
+- Tool-Registry in Redis mit Nutzungs-Statistik
+- Bei Autonomie-Level < 4: Jedes neue Tool braucht User-Bestaetigung
+- Bei Level 4: Jarvis darf Tools erstellen + informiert danach
+
+**Aufwand:** ~8-12 Stunden (Sandbox ist der Hauptaufwand)
+**Risiko:** MITTEL-HOCH — Code-Generierung braucht strikte Sandbox.
+Die Sandbox-Validierung ist das Sicherheitsnetz. Ohne Sandbox: KEIN Deployment.
+
+---
+
+### Stufe 13.4: Prompt-Selbstoptimierung (Meta-Ebene)
+
+**Ist-Zustand:** System-Prompt wird manuell geschrieben und angepasst.
+Jarvis hat kein Bewusstsein darueber ob seine Antworten "gut" waren.
+
+**Soll-Zustand:**
+- Jarvis analysiert seine eigenen Antworten und optimiert seinen Prompt:
+  ```
+  Analyse-Loop (taeglich, automatisch):
+  1. Sammle alle Interaktionen des Tages
+  2. Identifiziere: Wo hat User korrigiert? Wo war User unzufrieden?
+  3. Identifiziere: Welche Prompt-Regel wurde verletzt?
+  4. Schlage Prompt-Anpassung vor
+  ```
+- Beispiel-Szenario:
+  ```
+  Jarvis bemerkt: "User hat 3x diese Woche meine Antwort mit 'Kuerzer!'
+  abgebrochen. Meine Antworten in diesen Faellen waren 4+ Saetze."
+
+  Vorschlag: "max_sentences fuer Routine-Befehle von 3 auf 2 senken?"
+  ```
+- Was Jarvis anpassen darf:
+  | Parameter | Bereich | Beispiel |
+  |-----------|---------|---------|
+  | `max_sentences` | 1-5 | Antwortlaenge anpassen |
+  | `sarcasm_level` Grenze | ±1 | Humor-Level feinjustieren |
+  | Few-Shot Examples | Hinzufuegen/Ersetzen | Bessere Beispiele aus echten Dialogen |
+  | `banned_phrases` Liste | Erweitern | Neue Floskeln die durchgerutscht sind |
+  | Mood-Schwellen | ±10% | Stimmungserkennung kalibrieren |
+- Was Jarvis NICHT anpassen darf:
+  - Kern-Identitaet (Name, Rolle, Grundcharakter)
+  - Sicherheitsregeln
+  - Autonomie-Level (nur User darf das)
+  - Trust-Levels (nur User darf das)
+
+**Sicherheit:**
+- Aenderungen werden als "Vorschlag" gespeichert, nicht sofort aktiv
+- Bei Autonomie-Level < 4: Immer vorher fragen
+- Bei Level 4: Anwenden + taeglich zusammenfassen ("Heute angepasst: ...")
+- Max 2 Prompt-Aenderungen pro Woche
+- Jede Aenderung mit Begruendung geloggt
+- "Zeig mir deine Prompt-Aenderungen" → vollstaendige History
+- Rollback jederzeit: "Mach die letzte Aenderung rueckgaengig"
+
+**Umsetzung:**
+- NEU: `self_optimizer.py` — Tagesanalyse + Prompt-Vorschlaege
+- Nutzt `feedback.py` und `memory.py` als Datenquellen
+- Nutzt `summarizer.py` fuer Tages-Analyse
+- Prompt-Patches als YAML in `config/prompt_patches/`:
+  ```yaml
+  # patch_2026-02-19.yaml
+  date: 2026-02-19
+  reason: "User hat 3x lange Antworten abgebrochen"
+  changes:
+    - parameter: max_sentences_routine
+      old_value: 3
+      new_value: 2
+    - parameter: banned_phrases
+      action: add
+      value: "Lass mich erklaeren"
+  approved: false  # wird true nach User-Bestaetigung
+  ```
+- `personality.py`: Laedt aktive Patches beim Prompt-Build
+- Woechentlicher Report: "Diese Woche habe ich X angepasst, Y vorgeschlagen"
+
+**Aufwand:** ~6-10 Stunden (Analyse-Pipeline + Patch-System)
+**Risiko:** MITTEL — Prompt-Drift ist das Hauptrisiko. Gegenmaßnahmen:
+Frequenz-Limit, Rollback, Kern-Identitaet ist geschuetzt, alles geloggt.
+
+---
+
+### Sicherheitsarchitektur Phase 13 (uebergreifend)
+
+```
+┌─────────────────────────────────────────────────────┐
+│                SICHERHEITSSCHICHTEN                  │
+│                                                     │
+│  Stufe 1: Autonomie-Level Gate                      │
+│  ├─ Level 1-2: Alles vorher fragen                  │
+│  ├─ Level 3:   Config + Automationen selbst, Rest   │
+│  │             fragen                               │
+│  └─ Level 4:   Alles selbst, informiert danach      │
+│                                                     │
+│  Stufe 2: Whitelist / Blacklist                      │
+│  ├─ Configs: Nur whitelisted Dateien                │
+│  ├─ Tools: Sandbox (banned imports, max lines)       │
+│  ├─ Automationen: Keine Sicherheits-Entities        │
+│  └─ Prompt: Kern-Identitaet geschuetzt              │
+│                                                     │
+│  Stufe 3: Frequenz-Limits                           │
+│  ├─ Configs: Max 5/Tag                              │
+│  ├─ Automationen: Max 3/Woche                       │
+│  ├─ Tools: Max 2/Woche                              │
+│  └─ Prompt: Max 2/Woche                             │
+│                                                     │
+│  Stufe 4: Logging + Rollback                        │
+│  ├─ Jede Aenderung mit Timestamp + Begruendung      │
+│  ├─ Letzte 10 Aenderungen rollback-faehig           │
+│  └─ User kann alles einsehen + rueckgaengig machen  │
+│                                                     │
+│  Stufe 5: Kill-Switch                               │
+│  └─ "Jarvis, stopp Selbstprogrammierung"            │
+│     → Deaktiviert alles sofort                      │
+└─────────────────────────────────────────────────────┘
+```
+
+---
+
+### Empfohlene Reihenfolge Phase 13
+
+```
+13.1 Config-Selbstmod. ────── 2 Std   ─── Sicher, sofort nuetzlich
+  │
+13.2 HA-Automationen ──────── 4-6 Std ─── Groesster Alltagsnutzen
+  │
+13.4 Prompt-Optimierung ───── 6-10 Std ── Jarvis wird mit der Zeit besser
+  │
+13.3 Tool-Generierung ──────  8-12 Std ── Maechtigste Stufe, braucht robuste Sandbox
+```
+
+**13.1 zuerst** — geringes Risiko, sofort spuerbar (Easter Eggs, Raum-Anpassungen).
+**13.3 zuletzt** — braucht die meiste Sicherheitsarbeit (Sandbox).
+
+---
+
+### Technische Zusammenfassung Phase 13
+
+| Modul | Aenderung |
+|-------|---------|
+| `function_calling.py` | Neue Tools: `edit_config`, `create_automation`, `list_my_automations` |
+| `brain.py` | Self-Mod-Trigger: Erkennt "soll ich mir das merken als..." |
+| `personality.py` | Laedt Prompt-Patches dynamisch |
+| NEU: `self_automation.py` | Pattern → Automation Pipeline |
+| NEU: `tool_builder.py` | LLM-Code-Generierung + Sandbox-Validierung |
+| NEU: `self_optimizer.py` | Tagesanalyse + Prompt-Patch-Vorschlaege |
+| NEU: `plugins/jarvis_tools/` | Verzeichnis fuer generierte Tools |
+| NEU: `config/prompt_patches/` | Prompt-Aenderungen als YAML |
+
+**Geschaetzter Aufwand:** ~20-30 Stunden gesamt (4 Stufen)
+**Voraussetzung:** Phase 6-8 sollten implementiert sein (Feedback, Memory, Patterns)
+
+---
+
+---
+
 # Gesamtübersicht
 
 ```
@@ -1201,9 +1496,11 @@ Aber: Hoechster Aufwand aller Techniken.
           │              │ Ph 8: Gedächtnis
           │              │ Ph 9: Stimme
           │              │ Ph 10: Multi-Room
+          │              │ Ph 12: Authentizitaet
+          │              │ Ph 13: Selbstprog.
           │              │         │
-          │              │ 37 neue Features
-          │              │ ~44 Commits
+          │              │ 46 neue Features
+          │              │ ~54 Commits
           │              └─────────┘
           │
      Liefert Daten an Assistant via HA API
@@ -1219,9 +1516,10 @@ Aber: Hoechster Aufwand aller Techniken.
 | 9 | Stimme | 6 | ~8 | ✅ | Akustik, Erkennung |
 | 10 | Multi-Room | 5 | ~8 | 🆕 | Präsenz, Kommunikation |
 | 12 | Authentizitaet | 5 | ~5 | 🔧 | Few-Shot, Filter, Fine-Tuning |
-| **Σ** | | **42** | **~49** | | |
+| 13 | Selbstprogrammierung | 4 | ~5 | 📋 | Config, Automationen, Tools, Prompt |
+| **Σ** | | **46** | **~54** | | |
 
-**Gesamt: 42 neue Assistant-Features + 156 bestehende (Add-on) + 14 bestehende (Assistant) = 212 Features**
+**Gesamt: 46 neue Assistant-Features + 156 bestehende (Add-on) + 14 bestehende (Assistant) = 216 Features**
 
 ---
 
@@ -1239,11 +1537,15 @@ Phase 9 ─── Stimme ───────────  ~8 Commits  ──�
 Phase 10 ── Multi-Room ───────  ~8 Commits  ─── Braucht Wyoming Satellites
    │
 Phase 12 ── Authentizitaet ──  ~5 Commits  ─── Few-Shot, Filter, ggf. Fine-Tuning
+   │
+Phase 13 ── Selbstprog. ────  ~5 Commits  ─── Config, Automationen, Tools, Prompt
 ```
 
 **Phase 12.1 + 12.3 sind der naechste Hebel** — unter 2 Stunden, groesster Effekt
 auf die Jarvis-Authentizitaet. Few-Shot Examples + Response-Filter.
+Danach Phase 13.1 (Config-Selbstmod.) als Einstieg in die Selbstprogrammierung.
 
 ---
 
 *Naechster Schritt: Phase 12.1 (Few-Shot Examples) + 12.3 (Response-Filter) implementieren.*
+*Danach: Phase 13.1 (Config-Selbstmodifikation) — Jarvis lernt sich selbst anzupassen.*
