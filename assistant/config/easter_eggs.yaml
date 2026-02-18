@@ -46,7 +46,7 @@ easter_eggs:
     responses:
       - "Gern geschehen. Dafuer lebe ich. Buchstaeblich."
       - "Immer wieder. Dafuer bin ich da."
-      - "Keine Ursache. Das Trinkgeld koennen Sie behalten."
+      - "Keine Ursache. Das Trinkgeld kannst du behalten."
     enabled: true
 
   - id: "feeling"

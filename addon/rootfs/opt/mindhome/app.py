@@ -54,6 +54,7 @@ app = Flask(__name__, static_folder="static", template_folder="templates")
 app.json.ensure_ascii = False
 app.config['JSON_AS_ASCII'] = False
 app.config['JSONIFY_MIMETYPE'] = 'application/json; charset=utf-8'
+app.config['MAX_CONTENT_LENGTH'] = 55 * 1024 * 1024  # 55 MB (upload limit + overhead)
 CORS(app, supports_credentials=False)
 
 mimetypes.add_type("text/javascript", ".jsx")

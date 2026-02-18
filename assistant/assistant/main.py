@@ -6,13 +6,19 @@ Startet den MindHome Assistant REST API Server.
 import json
 import logging
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from typing import Optional
 
 from .brain import AssistantBrain
 from .config import settings
+from .file_handler import (
+    allowed_file, ensure_upload_dir,
+    get_file_path, save_upload, MAX_FILE_SIZE,
+)
 from .websocket import ws_manager, emit_speaking
 
 # Logging
@@ -441,6 +447,114 @@ async def complete_maintenance(task_name: str):
     if not success:
         raise HTTPException(status_code=404, detail=f"Aufgabe '{task_name}' nicht gefunden")
     return {"completed": task_name, "date": __import__("datetime").datetime.now().strftime("%Y-%m-%d")}
+
+
+# ----- Phase 11: Koch-Assistent Endpoints -----
+
+@app.get("/api/assistant/cooking/status")
+async def cooking_status():
+    """Phase 11: Status der Koch-Session."""
+    if not brain.cooking.has_active_session:
+        return {"active": False, "session": None}
+
+    session = brain.cooking.session
+    current_step = session.get_current_step()
+    active_timers = [
+        {"label": t.label, "remaining": t.format_remaining(), "done": t.is_done}
+        for t in session.timers
+    ]
+
+    return {
+        "active": True,
+        "session": {
+            "dish": session.dish,
+            "portions": session.portions,
+            "total_steps": session.total_steps,
+            "current_step": session.current_step,
+            "current_instruction": current_step.instruction if current_step else None,
+            "ingredients": session.ingredients,
+            "timers": active_timers,
+        },
+    }
+
+
+@app.post("/api/assistant/cooking/stop")
+async def cooking_stop():
+    """Phase 11: Koch-Session beenden."""
+    if not brain.cooking.has_active_session:
+        return {"stopped": False, "message": "Keine aktive Koch-Session."}
+    result = brain.cooking._stop_session()
+    return {"stopped": True, "message": result}
+
+
+# ----- Phase 12: Datei-Upload im Chat -----
+
+@app.post("/api/assistant/chat/upload")
+async def chat_upload(
+    file: UploadFile = File(...),
+    caption: str = Form(""),
+    person: str = Form(""),
+):
+    """
+    Datei hochladen und im Chat-Kontext verarbeiten.
+
+    Speichert die Datei, extrahiert Text aus Dokumenten und
+    sendet den Inhalt zusammen mit der optionalen Beschreibung
+    an das Brain zur Verarbeitung.
+    """
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="Keine Datei ausgewaehlt")
+
+    if not allowed_file(file.filename):
+        raise HTTPException(status_code=400, detail="Dateityp nicht erlaubt")
+
+    content = await file.read()
+    if len(content) > MAX_FILE_SIZE:
+        mb = MAX_FILE_SIZE // (1024 * 1024)
+        raise HTTPException(status_code=413, detail=f"Datei zu gross (max {mb} MB)")
+
+    # Save file and extract text
+    file_info = save_upload(file.filename, content)
+
+    text = caption.strip() if caption.strip() else (
+        f"Ich habe eine Datei geschickt: {file_info['name']}"
+    )
+
+    # Process through brain with file context
+    result = await brain.process(
+        text=text,
+        person=person or None,
+        room=None,
+        files=[file_info],
+    )
+
+    # TTS wrapping
+    tts_raw = result.pop("tts", None)
+    if tts_raw and isinstance(tts_raw, dict):
+        result["tts"] = TTSInfo(**tts_raw)
+
+    return {
+        "file": {
+            "name": file_info["name"],
+            "url": file_info["url"],
+            "type": file_info["type"],
+            "size": file_info["size"],
+            "ext": file_info["ext"],
+        },
+        "response": result.get("response", ""),
+        "actions": result.get("actions", []),
+        "model_used": result.get("model_used", ""),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+@app.get("/api/assistant/chat/files/{filename:path}")
+async def chat_serve_file(filename: str):
+    """Gespeicherte Chat-Datei ausliefern."""
+    path = get_file_path(filename)
+    if not path:
+        raise HTTPException(status_code=404, detail="Datei nicht gefunden")
+    return FileResponse(path, filename=path.name)
 
 
 # ----- Phase 10: Trust-Level Endpoints -----

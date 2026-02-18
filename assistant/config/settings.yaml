@@ -32,9 +32,9 @@ autonomy:
 
 # --- Modell-Routing (3 Stufen) ---
 models:
-  fast: "qwen2.5:3b"      # Einfache Befehle (Licht, Musik, Szene)
-  smart: "qwen2.5:14b"    # Fragen, Konversation, Standard
-  deep: "qwen2.5:32b"     # Komplexe Planung, Analyse, Reasoning
+  fast: "qwen3:4b"        # Einfache Befehle (Licht, Musik, Szene)
+  smart: "qwen3:14b"      # Fragen, Konversation, Standard
+  deep: "qwen3:32b"       # Komplexe Planung, Analyse, Reasoning
 
   # Keywords die das schnelle Modell triggern
   fast_keywords:
@@ -97,6 +97,15 @@ models:
     - "pro und contra"
     - "bewerte"
     - "bewertung"
+
+  # Koch-Keywords (triggern Deep-Model oder Koch-Assistent)
+  cooking_keywords:
+    - "kochen"
+    - "backen"
+    - "rezept"
+    - "zubereiten"
+    - "braten"
+    - "grillen"
 
   # Ab wie vielen Woertern automatisch Deep-Model nutzen
   deep_min_words: 15
@@ -167,7 +176,7 @@ memory:
   # Minimale Wortanzahl fuer Extraktion
   extraction_min_words: 5
   # Modell fuer Fakten-Extraktion (schnelles reicht)
-  extraction_model: "qwen2.5:3b"
+  extraction_model: "qwen3:4b"
   # Maximale Fakten pro Person im Kontext
   max_person_facts_in_context: 5
   # Maximale relevante Fakten im Kontext
@@ -182,7 +191,7 @@ planner:
   # Maximale Iterationen (LLM-Runden) pro Plan
   max_iterations: 5
   # Modell fuer Planung (immer smart)
-  model: "qwen2.5:14b"
+  model: "qwen3:14b"
   # Keywords die komplexe Anfragen erkennen
   complex_keywords:
     - "alles"
@@ -265,7 +274,7 @@ summarizer:
   run_hour: 3
   run_minute: 0
   # Modell fuer Zusammenfassungen (smart fuer bessere Qualitaet)
-  model: "qwen2.5:14b"
+  model: "qwen3:14b"
   # Maximale Token pro Zusammenfassung
   max_tokens_daily: 512
   max_tokens_weekly: 384
@@ -557,6 +566,20 @@ diagnostics:
   offline_threshold_minutes: 30
   # Cooldown zwischen gleichen Warnungen (Minuten)
   alert_cooldown_minutes: 60
+
+# --- Phase 11: Koch-Assistent ---
+cooking:
+  enabled: true
+  # Sprache fuer Rezepte
+  language: "de"
+  # Standard-Portionen wenn nicht angegeben
+  default_portions: 2
+  # Maximale Schritte pro Rezept
+  max_steps: 12
+  # Maximale Tokens fuer Rezept-Generierung
+  max_tokens: 1024
+  # Timer-Benachrichtigung via TTS
+  timer_notify_tts: true
 
 # --- Wartungs-Assistent (10.5) ---
 maintenance:

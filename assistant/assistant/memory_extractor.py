@@ -65,7 +65,7 @@ class MemoryExtractor:
     def __init__(self, ollama: OllamaClient, semantic_memory: SemanticMemory):
         self.ollama = ollama
         self.semantic = semantic_memory
-        self._extraction_model = "qwen2.5:3b"  # Schnelles Modell reicht
+        self._extraction_model = "qwen3:4b"  # Schnelles Modell reicht
 
     async def extract_and_store(
         self,

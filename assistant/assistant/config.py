@@ -21,9 +21,9 @@ class Settings(BaseSettings):
 
     # Ollama
     ollama_url: str = "http://localhost:11434"
-    model_fast: str = "qwen2.5:3b"
-    model_smart: str = "qwen2.5:14b"
-    model_deep: str = "qwen2.5:32b"
+    model_fast: str = "qwen3:4b"
+    model_smart: str = "qwen3:14b"
+    model_deep: str = "qwen3:32b"
 
     # MindHome Assistant Server
     assistant_host: str = "0.0.0.0"

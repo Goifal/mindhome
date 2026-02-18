@@ -9746,6 +9746,599 @@ const ClimatePage = () => {
 
 
 // ================================================================
+// Jarvis Chat Page
+// ================================================================
+const JarvisChatPage = () => {
+    const { lang, showToast } = useApp();
+    const [messages, setMessages] = useState([]);
+    const [input, setInput] = useState('');
+    const [sending, setSending] = useState(false);
+    const [connected, setConnected] = useState(null);
+    const [showSettings, setShowSettings] = useState(false);
+    const [assistantUrl, setAssistantUrl] = useState('');
+    const [pendingFile, setPendingFile] = useState(null); // { file, preview, type }
+    const [uploading, setUploading] = useState(false);
+    const [uploadProgress, setUploadProgress] = useState(0);
+    const messagesEndRef = useRef(null);
+    const inputRef = useRef(null);
+    const fileInputRef = useRef(null);
+
+    const MAX_FILE_MB = 50;
+
+    const scrollToBottom = () => {
+        if (messagesEndRef.current) {
+            messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+        }
+    };
+
+    useEffect(() => { scrollToBottom(); }, [messages]);
+
+    // Load history and check status on mount
+    useEffect(() => {
+        api.get('chat/history?limit=50').then(d => {
+            if (d && d.messages) setMessages(d.messages);
+        });
+        api.get('chat/status').then(d => {
+            if (d) {
+                setConnected(d.connected);
+                setAssistantUrl(d.assistant_url || '');
+            }
+        });
+    }, []);
+
+    // Cleanup preview URL on unmount or file change
+    useEffect(() => {
+        return () => { if (pendingFile?.preview) URL.revokeObjectURL(pendingFile.preview); };
+    }, [pendingFile]);
+
+    const fileTypeFromName = (name) => {
+        const ext = (name || '').split('.').pop().toLowerCase();
+        const map = {
+            jpg: 'image', jpeg: 'image', png: 'image', gif: 'image', webp: 'image', svg: 'image', bmp: 'image',
+            mp4: 'video', webm: 'video', mov: 'video', avi: 'video',
+            mp3: 'audio', wav: 'audio', ogg: 'audio', m4a: 'audio',
+        };
+        return map[ext] || 'document';
+    };
+
+    const formatFileSize = (bytes) => {
+        if (bytes < 1024) return bytes + ' B';
+        if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+        return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    };
+
+    const handleFileSelect = (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        if (file.size > MAX_FILE_MB * 1024 * 1024) {
+            showToast(lang === 'de' ? `Datei zu groß (max ${MAX_FILE_MB} MB)` : `File too large (max ${MAX_FILE_MB} MB)`, 'error');
+            e.target.value = '';
+            return;
+        }
+        const type = fileTypeFromName(file.name);
+        const preview = (type === 'image' || type === 'video' || type === 'audio') ? URL.createObjectURL(file) : null;
+        setPendingFile({ file, preview, type });
+        e.target.value = '';
+    };
+
+    const cancelFile = () => {
+        if (pendingFile?.preview) URL.revokeObjectURL(pendingFile.preview);
+        setPendingFile(null);
+    };
+
+    const uploadFile = async () => {
+        if (!pendingFile || uploading) return;
+        setUploading(true);
+        setUploadProgress(0);
+
+        const formData = new FormData();
+        formData.append('file', pendingFile.file);
+        const caption = input.trim();
+        if (caption) formData.append('caption', caption);
+
+        // Optimistic: show user message with local preview
+        const optimisticMsg = {
+            role: 'user',
+            text: caption,
+            timestamp: new Date().toISOString(),
+            file: {
+                name: pendingFile.file.name,
+                type: pendingFile.type,
+                size: pendingFile.file.size,
+                url: pendingFile.preview || null,
+                _local: true,
+            },
+        };
+        setMessages(prev => [...prev, optimisticMsg]);
+        setInput('');
+
+        try {
+            const basePath = API_BASE;
+            const xhr = new XMLHttpRequest();
+            const result = await new Promise((resolve, reject) => {
+                xhr.open('POST', basePath + '/api/chat/upload');
+                xhr.upload.onprogress = (e) => {
+                    if (e.lengthComputable) setUploadProgress(Math.round((e.loaded / e.total) * 100));
+                };
+                xhr.onload = () => {
+                    try { resolve(JSON.parse(xhr.responseText)); }
+                    catch { reject(new Error('Invalid response')); }
+                };
+                xhr.onerror = () => reject(new Error('Upload failed'));
+                xhr.send(formData);
+            });
+
+            if (result && result.error) {
+                // Server returned an error (502, 503, etc.)
+                setMessages(prev => [...prev, {
+                    role: 'error',
+                    text: result.error,
+                    timestamp: new Date().toISOString(),
+                }]);
+            } else if (result && result.file) {
+                // Replace optimistic message's local URL with server URL
+                setMessages(prev => {
+                    const updated = [...prev];
+                    for (let i = updated.length - 1; i >= 0; i--) {
+                        if (updated[i].file?._local && updated[i].file?.name === pendingFile.file.name) {
+                            updated[i] = { ...updated[i], file: result.file, timestamp: result.timestamp || updated[i].timestamp };
+                            break;
+                        }
+                    }
+                    // Add Jarvis response if the assistant processed the file
+                    if (result.response) {
+                        updated.push({
+                            role: 'assistant',
+                            text: result.response,
+                            actions: result.actions || [],
+                            timestamp: new Date().toISOString(),
+                        });
+                    }
+                    return updated;
+                });
+            }
+        } catch (err) {
+            setMessages(prev => [...prev, {
+                role: 'error',
+                text: lang === 'de' ? 'Upload fehlgeschlagen: ' + err.message : 'Upload failed: ' + err.message,
+                timestamp: new Date().toISOString(),
+            }]);
+        }
+
+        setPendingFile(null);
+        setUploading(false);
+        setUploadProgress(0);
+        if (inputRef.current) inputRef.current.focus();
+    };
+
+    const sendMessage = async () => {
+        // If a file is pending, upload it instead of sending text
+        if (pendingFile) { uploadFile(); return; }
+
+        const text = input.trim();
+        if (!text || sending) return;
+
+        setInput('');
+        setSending(true);
+
+        const userMsg = { role: 'user', text, timestamp: new Date().toISOString() };
+        setMessages(prev => [...prev, userMsg]);
+
+        const result = await api.post('chat/send', { text });
+
+        if (result && !result._error && result.response) {
+            const assistantMsg = {
+                role: 'assistant',
+                text: result.response,
+                actions: result.actions || [],
+                timestamp: result.timestamp || new Date().toISOString(),
+            };
+            setMessages(prev => [...prev, assistantMsg]);
+        } else {
+            const errorMsg = {
+                role: 'error',
+                text: result?.error || (lang === 'de' ? 'Verbindung fehlgeschlagen' : 'Connection failed'),
+                timestamp: new Date().toISOString(),
+            };
+            setMessages(prev => [...prev, errorMsg]);
+        }
+        setSending(false);
+        if (inputRef.current) inputRef.current.focus();
+    };
+
+    const handleKeyDown = (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            sendMessage();
+        }
+    };
+
+    const clearHistory = async () => {
+        await api.post('chat/clear');
+        setMessages([]);
+        showToast(lang === 'de' ? 'Verlauf gelöscht' : 'History cleared', 'success');
+    };
+
+    const saveAssistantUrl = async () => {
+        await api.put('system/settings/assistant_url', { value: assistantUrl });
+        showToast(lang === 'de' ? 'Gespeichert' : 'Saved', 'success');
+        setShowSettings(false);
+        api.invalidate('chat/status');
+        setTimeout(() => {
+            api.get('chat/status').then(d => { if (d) setConnected(d.connected); });
+        }, 500);
+    };
+
+    const formatTime = (ts) => {
+        if (!ts) return '';
+        const d = parseUTC(ts);
+        if (!d || isNaN(d.getTime())) return '';
+        return d.toLocaleTimeString(lang === 'de' ? 'de-DE' : 'en-US', { hour: '2-digit', minute: '2-digit' });
+    };
+
+    const renderActions = (actions) => {
+        if (!actions || actions.length === 0) return null;
+        return (
+            React.createElement('div', { style: { marginTop: 6, display: 'flex', gap: 4, flexWrap: 'wrap' } },
+                actions.map((a, i) => (
+                    React.createElement('span', {
+                        key: i,
+                        className: 'badge badge-success',
+                        style: { fontSize: 10 }
+                    }, React.createElement('span', { className: 'mdi mdi-flash', style: { marginRight: 2 } }), a.function || a.action || JSON.stringify(a))
+                ))
+            )
+        );
+    };
+
+    // Render file attachment inside a chat bubble
+    const renderFile = (file, isUser) => {
+        if (!file) return null;
+        const basePath = API_BASE;
+        const fileUrl = file._local ? file.url : (basePath + '/' + file.url);
+        const textColor = isUser ? 'rgba(255,255,255,0.85)' : 'var(--text-muted)';
+
+        const fileIcon = { image: 'mdi-image', video: 'mdi-video', audio: 'mdi-music', document: 'mdi-file-document-outline' }[file.type] || 'mdi-file';
+
+        // Image
+        if (file.type === 'image' && fileUrl) {
+            return React.createElement('div', { style: { marginBottom: 6 } },
+                React.createElement('img', {
+                    src: fileUrl,
+                    alt: file.name,
+                    style: { maxWidth: '100%', maxHeight: 280, borderRadius: 8, display: 'block', cursor: 'pointer' },
+                    onClick: () => window.open(fileUrl, '_blank'),
+                })
+            );
+        }
+
+        // Video
+        if (file.type === 'video' && fileUrl) {
+            return React.createElement('div', { style: { marginBottom: 6 } },
+                React.createElement('video', {
+                    src: fileUrl,
+                    controls: true,
+                    style: { maxWidth: '100%', maxHeight: 280, borderRadius: 8, display: 'block' },
+                })
+            );
+        }
+
+        // Audio
+        if (file.type === 'audio' && fileUrl) {
+            return React.createElement('div', { style: { marginBottom: 6 } },
+                React.createElement('audio', {
+                    src: fileUrl,
+                    controls: true,
+                    style: { width: '100%', maxWidth: 300 },
+                })
+            );
+        }
+
+        // Document / fallback
+        return React.createElement('a', {
+            href: fileUrl || '#',
+            target: '_blank',
+            rel: 'noopener noreferrer',
+            style: {
+                display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px',
+                background: isUser ? 'rgba(255,255,255,0.15)' : 'var(--bg-tertiary)',
+                borderRadius: 8, marginBottom: 6, textDecoration: 'none', color: 'inherit',
+            }
+        },
+            React.createElement('span', { className: 'mdi ' + fileIcon, style: { fontSize: 24, color: textColor } }),
+            React.createElement('div', { style: { flex: 1, minWidth: 0 } },
+                React.createElement('div', { style: { fontSize: 13, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, file.name),
+                React.createElement('div', { style: { fontSize: 11, color: textColor } },
+                    file.ext ? file.ext.toUpperCase() : '', file.size ? ' · ' + formatFileSize(file.size) : ''
+                )
+            ),
+            React.createElement('span', { className: 'mdi mdi-download', style: { fontSize: 18, color: textColor } })
+        );
+    };
+
+    return (
+        React.createElement('div', { style: { display: 'flex', flexDirection: 'column', height: 'calc(100vh - 120px)', maxHeight: 'calc(100vh - 120px)' } },
+
+            // Header bar
+            React.createElement('div', {
+                style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexShrink: 0 }
+            },
+                React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: 8 } },
+                    React.createElement('span', { className: 'mdi mdi-robot-excited', style: { fontSize: 24, color: 'var(--accent-primary)' } }),
+                    React.createElement('span', { style: { fontWeight: 700, fontSize: 18 } }, 'Jarvis'),
+                    React.createElement('span', {
+                        style: {
+                            width: 8, height: 8, borderRadius: '50%',
+                            background: connected === true ? 'var(--success)' : connected === false ? 'var(--danger)' : 'var(--text-muted)',
+                            display: 'inline-block', marginLeft: 4,
+                        }
+                    })
+                ),
+                React.createElement('div', { style: { display: 'flex', gap: 4 } },
+                    React.createElement('button', {
+                        className: 'btn btn-ghost btn-icon',
+                        onClick: clearHistory,
+                        title: lang === 'de' ? 'Verlauf löschen' : 'Clear history',
+                    }, React.createElement('span', { className: 'mdi mdi-delete-outline', style: { fontSize: 18 } })),
+                    React.createElement('button', {
+                        className: 'btn btn-ghost btn-icon',
+                        onClick: () => setShowSettings(!showSettings),
+                        title: lang === 'de' ? 'Einstellungen' : 'Settings',
+                    }, React.createElement('span', { className: 'mdi mdi-cog-outline', style: { fontSize: 18 } }))
+                )
+            ),
+
+            // Settings panel (collapsible)
+            showSettings && React.createElement('div', {
+                className: 'card animate-in',
+                style: { padding: 16, marginBottom: 12, flexShrink: 0 }
+            },
+                React.createElement('div', { style: { marginBottom: 8, fontWeight: 600, fontSize: 13 } },
+                    lang === 'de' ? 'Assistant URL (PC 2)' : 'Assistant URL (PC 2)'
+                ),
+                React.createElement('div', { style: { display: 'flex', gap: 8 } },
+                    React.createElement('input', {
+                        className: 'input',
+                        value: assistantUrl,
+                        onChange: (e) => setAssistantUrl(e.target.value),
+                        placeholder: 'http://192.168.1.100:8200',
+                        style: { flex: 1 },
+                    }),
+                    React.createElement('button', {
+                        className: 'btn btn-primary',
+                        onClick: saveAssistantUrl,
+                    }, lang === 'de' ? 'Speichern' : 'Save')
+                ),
+                React.createElement('div', {
+                    style: { marginTop: 8, fontSize: 11, color: 'var(--text-muted)' }
+                }, lang === 'de'
+                    ? 'IP-Adresse und Port des MindHome Assistant Servers'
+                    : 'IP address and port of the MindHome Assistant server'
+                )
+            ),
+
+            // Connection warning
+            connected === false && !showSettings && React.createElement('div', {
+                className: 'card',
+                style: { padding: 12, marginBottom: 12, background: 'var(--danger-bg, rgba(239,68,68,0.1))', border: '1px solid var(--danger)', flexShrink: 0 }
+            },
+                React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 } },
+                    React.createElement('span', { className: 'mdi mdi-alert-circle', style: { color: 'var(--danger)', fontSize: 18 } }),
+                    React.createElement('span', null,
+                        lang === 'de'
+                            ? 'Jarvis ist nicht erreichbar. Prüfe die Verbindung oder klicke auf ⚙️ für Einstellungen.'
+                            : 'Jarvis is not reachable. Check the connection or click ⚙️ for settings.'
+                    )
+                )
+            ),
+
+            // Messages area
+            React.createElement('div', {
+                style: {
+                    flex: 1, overflowY: 'auto', padding: '8px 0',
+                    display: 'flex', flexDirection: 'column', gap: 8,
+                    minHeight: 0,
+                }
+            },
+                messages.length === 0 && React.createElement('div', {
+                    style: { flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', textAlign: 'center', padding: 32 }
+                },
+                    React.createElement('span', { className: 'mdi mdi-robot-excited-outline', style: { fontSize: 48, display: 'block', marginBottom: 12, opacity: 0.5 } }),
+                    React.createElement('div', { style: { fontSize: 16, fontWeight: 600, marginBottom: 4 } },
+                        lang === 'de' ? 'Schreib Jarvis eine Nachricht' : 'Send Jarvis a message'
+                    ),
+                    React.createElement('div', { style: { fontSize: 13 } },
+                        lang === 'de'
+                            ? 'z.B. "Mach das Licht im Wohnzimmer an" oder "Wie wird das Wetter?"'
+                            : 'e.g. "Turn on the living room lights" or "What\'s the weather like?"'
+                    )
+                ),
+
+                messages.map((msg, i) => (
+                    React.createElement('div', {
+                        key: i,
+                        className: 'animate-in',
+                        style: {
+                            display: 'flex',
+                            justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start',
+                            paddingLeft: msg.role === 'user' ? 48 : 0,
+                            paddingRight: msg.role === 'user' ? 0 : 48,
+                        }
+                    },
+                        React.createElement('div', {
+                            style: {
+                                maxWidth: '85%',
+                                padding: '10px 14px',
+                                borderRadius: msg.role === 'user' ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
+                                background: msg.role === 'user'
+                                    ? 'var(--accent-primary)'
+                                    : msg.role === 'error'
+                                        ? 'rgba(239,68,68,0.15)'
+                                        : 'var(--bg-secondary)',
+                                color: msg.role === 'user' ? '#fff' : msg.role === 'error' ? 'var(--danger)' : 'var(--text-primary)',
+                                fontSize: 14, lineHeight: 1.5,
+                                wordBreak: 'break-word',
+                            }
+                        },
+                            msg.role !== 'user' && msg.role !== 'error' && React.createElement('div', {
+                                style: { fontSize: 11, fontWeight: 700, color: 'var(--accent-primary)', marginBottom: 2 }
+                            }, 'Jarvis'),
+                            msg.role === 'error' && React.createElement('span', {
+                                className: 'mdi mdi-alert-circle',
+                                style: { marginRight: 4 }
+                            }),
+                            // Render file attachment if present
+                            msg.file && renderFile(msg.file, msg.role === 'user'),
+                            // Text content
+                            msg.text && React.createElement('div', {
+                                style: { whiteSpace: 'pre-wrap' }
+                            }, msg.text),
+                            msg.role === 'assistant' && renderActions(msg.actions),
+                            React.createElement('div', {
+                                style: {
+                                    fontSize: 10, marginTop: 4,
+                                    color: msg.role === 'user' ? 'rgba(255,255,255,0.7)' : 'var(--text-muted)',
+                                    textAlign: msg.role === 'user' ? 'right' : 'left',
+                                }
+                            }, formatTime(msg.timestamp))
+                        )
+                    )
+                )),
+
+                // Typing indicator
+                sending && React.createElement('div', {
+                    style: { display: 'flex', justifyContent: 'flex-start' }
+                },
+                    React.createElement('div', {
+                        style: {
+                            padding: '10px 14px', borderRadius: '16px 16px 16px 4px',
+                            background: 'var(--bg-secondary)', display: 'flex', alignItems: 'center', gap: 4,
+                        }
+                    },
+                        React.createElement('span', { className: 'mdi mdi-loading mdi-spin', style: { fontSize: 14, color: 'var(--accent-primary)' } }),
+                        React.createElement('span', { style: { fontSize: 13, color: 'var(--text-muted)' } },
+                            lang === 'de' ? 'Jarvis denkt nach...' : 'Jarvis is thinking...'
+                        )
+                    )
+                ),
+
+                React.createElement('div', { ref: messagesEndRef })
+            ),
+
+            // File preview bar (shown when a file is selected)
+            pendingFile && React.createElement('div', {
+                className: 'animate-in',
+                style: {
+                    display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px',
+                    background: 'var(--bg-secondary)', borderRadius: '12px 12px 0 0',
+                    borderTop: '1px solid var(--border-color)', flexShrink: 0,
+                }
+            },
+                // Thumbnail or icon
+                pendingFile.type === 'image' && pendingFile.preview
+                    ? React.createElement('img', {
+                        src: pendingFile.preview,
+                        style: { width: 48, height: 48, borderRadius: 6, objectFit: 'cover' }
+                    })
+                    : React.createElement('span', {
+                        className: 'mdi ' + ({ video: 'mdi-video', audio: 'mdi-music', document: 'mdi-file-document-outline' }[pendingFile.type] || 'mdi-file'),
+                        style: { fontSize: 32, color: 'var(--accent-primary)' }
+                    }),
+                // File info
+                React.createElement('div', { style: { flex: 1, minWidth: 0 } },
+                    React.createElement('div', { style: { fontSize: 13, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } },
+                        pendingFile.file.name
+                    ),
+                    React.createElement('div', { style: { fontSize: 11, color: 'var(--text-muted)' } },
+                        formatFileSize(pendingFile.file.size)
+                    ),
+                    // Upload progress bar
+                    uploading && React.createElement('div', {
+                        style: { marginTop: 4, background: 'var(--bg-tertiary)', borderRadius: 4, height: 4, overflow: 'hidden' }
+                    },
+                        React.createElement('div', {
+                            style: { height: '100%', background: 'var(--accent-primary)', borderRadius: 4, width: uploadProgress + '%', transition: 'width 0.2s' }
+                        })
+                    )
+                ),
+                // Cancel button
+                !uploading && React.createElement('button', {
+                    className: 'btn btn-ghost btn-icon',
+                    onClick: cancelFile,
+                    title: lang === 'de' ? 'Abbrechen' : 'Cancel',
+                    style: { flexShrink: 0 }
+                }, React.createElement('span', { className: 'mdi mdi-close', style: { fontSize: 18 } }))
+            ),
+
+            // Input area
+            React.createElement('div', {
+                style: {
+                    display: 'flex', gap: 8, alignItems: 'flex-end',
+                    paddingTop: pendingFile ? 0 : 12,
+                    borderTop: pendingFile ? 'none' : '1px solid var(--border-color)',
+                    flexShrink: 0,
+                }
+            },
+                // Hidden file input
+                React.createElement('input', {
+                    ref: fileInputRef,
+                    type: 'file',
+                    accept: 'image/*,video/*,audio/*,.pdf,.txt,.csv,.json,.xml,.doc,.docx,.xls,.xlsx,.pptx',
+                    style: { display: 'none' },
+                    onChange: handleFileSelect,
+                }),
+                // Paperclip button
+                React.createElement('button', {
+                    className: 'btn btn-ghost btn-icon',
+                    onClick: () => fileInputRef.current?.click(),
+                    disabled: uploading,
+                    title: lang === 'de' ? 'Datei anhängen' : 'Attach file',
+                    style: {
+                        width: 42, height: 42, borderRadius: '50%', padding: 0,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        flexShrink: 0,
+                    },
+                },
+                    React.createElement('span', { className: 'mdi mdi-paperclip', style: { fontSize: 20 } })
+                ),
+                React.createElement('textarea', {
+                    ref: inputRef,
+                    className: 'input',
+                    value: input,
+                    onChange: (e) => setInput(e.target.value),
+                    onKeyDown: handleKeyDown,
+                    placeholder: pendingFile
+                        ? (lang === 'de' ? 'Beschreibung (optional)...' : 'Caption (optional)...')
+                        : (lang === 'de' ? 'Schreib Jarvis eine Nachricht...' : 'Type a message to Jarvis...'),
+                    rows: 1,
+                    style: {
+                        flex: 1, resize: 'none', minHeight: 42, maxHeight: 120,
+                        borderRadius: 21, padding: '10px 16px', fontSize: 14,
+                        lineHeight: 1.4,
+                    },
+                }),
+                React.createElement('button', {
+                    className: 'btn btn-primary',
+                    onClick: sendMessage,
+                    disabled: (!input.trim() && !pendingFile) || sending || uploading,
+                    style: {
+                        width: 42, height: 42, borderRadius: '50%', padding: 0,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        flexShrink: 0,
+                    },
+                },
+                    React.createElement('span', {
+                        className: (sending || uploading) ? 'mdi mdi-loading mdi-spin' : pendingFile ? 'mdi mdi-upload' : 'mdi mdi-send',
+                        style: { fontSize: 18 }
+                    })
+                )
+            )
+        )
+    );
+};
+
+
+// ================================================================
 // Phase 4 Batch 4: KI & Adaptive Page
 // ================================================================
 const AiPage = () => {
@@ -11278,6 +11871,7 @@ const App = () => {
     const navItems = [
         { section: lang === 'de' ? 'Übersicht' : 'Overview' },
         { id: 'dashboard', icon: 'mdi-view-dashboard', label: 'Dashboard' },
+        { id: 'chat', icon: 'mdi-robot-excited', label: 'Jarvis Chat' },
         { section: lang === 'de' ? 'Konfiguration' : 'Configuration', adminOnly: true },
         { id: 'domains', icon: 'mdi-puzzle', label: 'Domains', adminOnly: true },
         { id: 'rooms', icon: 'mdi-door', label: lang === 'de' ? 'Räume' : 'Rooms' },
@@ -11300,6 +11894,7 @@ const App = () => {
 
     const pages = {
         dashboard: DashboardPage,
+        chat: JarvisChatPage,
         domains: DomainsPage,
         devices: DevicesPage,
         rooms: RoomsPage,

@@ -38,6 +38,7 @@ def register_blueprints(app, dependencies):
     from routes.health import health_bp, init_health
     from routes.security import security_bp, init_security
     from routes.covers import covers_bp, init_covers
+    from routes.chat import chat_bp, init_chat
 
     # Initialize each module with dependencies
     init_system(dependencies)
@@ -56,6 +57,7 @@ def register_blueprints(app, dependencies):
     init_health(dependencies)
     init_security(dependencies)
     init_covers(dependencies)
+    init_chat(dependencies)
 
     # Register blueprints
     app.register_blueprint(system_bp)
@@ -74,3 +76,4 @@ def register_blueprints(app, dependencies):
     app.register_blueprint(health_bp)
     app.register_blueprint(security_bp)
     app.register_blueprint(covers_bp)
+    app.register_blueprint(chat_bp)
