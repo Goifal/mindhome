@@ -41,6 +41,8 @@ from .memory_extractor import MemoryExtractor
 from .model_router import ModelRouter
 from .mood_detector import MoodDetector
 from .ollama_client import OllamaClient
+from .ambient_audio import AmbientAudioClassifier
+from .conflict_resolver import ConflictResolver
 from .personality import PersonalityEngine
 from .proactive import ProactiveManager
 from .anticipation import AnticipationEngine
@@ -110,6 +112,12 @@ class AssistantBrain:
 
         # Phase 10: Diagnostik + Wartungs-Assistent
         self.diagnostics = DiagnosticsEngine(self.ha)
+
+        # Phase 14.3: Ambient Audio (Umgebungsgeraeusch-Erkennung)
+        self.ambient_audio = AmbientAudioClassifier(self.ha)
+
+        # Phase 16.1: Multi-User Konfliktloesung
+        self.conflict_resolver = ConflictResolver(self.autonomy, self.ollama)
 
         # Phase 15.1: Gesundheits-Monitor
         self.health_monitor = HealthMonitor(self.ha)
@@ -189,6 +197,14 @@ class AssistantBrain:
 
         # Phase 15.2: Inventory Manager initialisieren
         await self.inventory.initialize(redis_client=self.memory.redis)
+
+        # Phase 14.3: Ambient Audio initialisieren und starten
+        await self.ambient_audio.initialize(redis_client=self.memory.redis)
+        self.ambient_audio.set_notify_callback(self._handle_ambient_audio_event)
+        await self.ambient_audio.start()
+
+        # Phase 16.1: Conflict Resolver initialisieren
+        await self.conflict_resolver.initialize(redis_client=self.memory.redis)
 
         # Phase 15.1: Health Monitor initialisieren und starten
         await self.health_monitor.initialize(redis_client=self.memory.redis)
@@ -603,19 +619,55 @@ class AssistantBrain:
                             })
                             continue
 
+                    # Phase 16.1: Konflikt-Check (Multi-User)
+                    final_args = func_args
+                    conflict_msg = None
+                    if person and self.conflict_resolver.enabled:
+                        conflict = await self.conflict_resolver.check_conflict(
+                            person=person,
+                            function_name=func_name,
+                            function_args=func_args,
+                            room=room,
+                        )
+                        if conflict and conflict.get("conflict"):
+                            conflict_msg = conflict.get("message", "")
+                            # Modifizierte Args verwenden (Kompromiss/Gewinner)
+                            if conflict.get("modified_args"):
+                                final_args = conflict["modified_args"]
+                                logger.info(
+                                    "Konflikt geloest (%s): Args modifiziert %s -> %s",
+                                    conflict.get("strategy"), func_args, final_args,
+                                )
+
                     # Ausfuehren
-                    result = await self.executor.execute(func_name, func_args)
+                    result = await self.executor.execute(func_name, final_args)
                     executed_actions.append({
                         "function": func_name,
-                        "args": func_args,
+                        "args": final_args,
                         "result": result,
                     })
+
+                    # Befehl fuer Konflikt-Tracking aufzeichnen
+                    if person:
+                        self.conflict_resolver.record_command(
+                            person=person,
+                            function_name=func_name,
+                            function_args=final_args,
+                            room=room,
+                        )
+
+                    # Konflikt-Nachricht an Response anhaengen
+                    if conflict_msg:
+                        if response_text:
+                            response_text = f"{response_text} {conflict_msg}"
+                        else:
+                            response_text = conflict_msg
 
                     if func_name in QUERY_TOOLS:
                         has_query_results = True
 
                     # WebSocket: Aktion melden
-                    await emit_action(func_name, func_args, result)
+                    await emit_action(func_name, final_args, result)
 
                     # Phase 6: Opinion Check — Jarvis kommentiert Aktionen
                     opinion = self.personality.check_opinion(func_name, func_args)
@@ -967,6 +1019,8 @@ class AssistantBrain:
                 "diagnostics": self.diagnostics.health_status(),
                 "cooking_assistant": f"active (session: {'ja' if self.cooking.has_active_session else 'nein'})",
                 "knowledge_base": f"active ({self.knowledge_base.chroma_collection.count() if self.knowledge_base.chroma_collection else 0} chunks)" if self.knowledge_base.chroma_collection else "disabled",
+                "ambient_audio": self.ambient_audio.health_status(),
+                "conflict_resolver": self.conflict_resolver.health_status(),
             },
             "models_available": models,
             "model_routing": self.model_router.get_model_info(),
@@ -1104,6 +1158,50 @@ class AssistantBrain:
         if message:
             await emit_speaking(message)
             logger.info("Health Monitor [%s/%s]: %s", alert_type, urgency, message)
+
+    # ------------------------------------------------------------------
+    # Phase 14.3: Ambient Audio Callback
+    # ------------------------------------------------------------------
+
+    async def _handle_ambient_audio_event(
+        self,
+        event_type: str,
+        message: str,
+        severity: str,
+        room: Optional[str] = None,
+        actions: Optional[list] = None,
+    ):
+        """Callback fuer Ambient Audio Events — reagiert auf Umgebungsgeraeusche."""
+        if not message:
+            return
+
+        logger.info(
+            "Ambient Audio [%s/%s]: %s (Raum: %s)",
+            event_type, severity, message, room or "?",
+        )
+
+        # Sound-Alarm abspielen (wenn konfiguriert)
+        sound_event = None
+        from .ambient_audio import DEFAULT_EVENT_REACTIONS
+        reaction = DEFAULT_EVENT_REACTIONS.get(event_type, {})
+        sound_event = reaction.get("sound_event")
+        if sound_event and self.sound_manager.enabled:
+            await self.sound_manager.play_event_sound(sound_event, room=room)
+
+        # HA-Aktionen ausfuehren
+        if actions:
+            if "lights_on" in actions and room:
+                try:
+                    await self.executor.execute("set_light", {
+                        "room": room,
+                        "state": "on",
+                        "brightness": 100,
+                    })
+                except Exception as e:
+                    logger.debug("Ambient Audio lights_on fehlgeschlagen: %s", e)
+
+        # Nachricht via WebSocket senden
+        await emit_speaking(message)
 
     # ------------------------------------------------------------------
     # Phase 16.2: Tutorial-Modus
@@ -1586,6 +1684,7 @@ Der User stellt eine hypothetische Frage. Beantworte sie:
 
     async def shutdown(self):
         """Faehrt MindHome Assistant herunter."""
+        await self.ambient_audio.stop()
         await self.anticipation.stop()
         await self.intent_tracker.stop()
         await self.time_awareness.stop()

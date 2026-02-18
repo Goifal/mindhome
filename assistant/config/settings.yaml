@@ -762,6 +762,85 @@ health_monitor:
   # Cooldown (Minuten) bevor gleicher Alert erneut kommt
   alert_cooldown_minutes: 60
 
+# --- Phase 14.3: Ambient Audio (Umgebungsgeraeusch-Erkennung) ---
+ambient_audio:
+  enabled: true
+  # Minimale Confidence fuer Erkennung (0.0-1.0)
+  min_confidence: 0.6
+  # Sensor-Polling Intervall in Sekunden
+  poll_interval_seconds: 5
+  # Sensor-Mappings: HA entity_id -> Event-Typ
+  # Passe diese an deine Installation an (ESPHome, Zigbee-Sensoren etc.)
+  sensor_mappings:
+    # binary_sensor.kueche_smoke: "smoke_alarm"
+    # binary_sensor.wohnzimmer_glass: "glass_break"
+    # binary_sensor.flur_co: "co_alarm"
+    # binary_sensor.eingang_doorbell: "doorbell"
+    # binary_sensor.keller_water: "water_alarm"
+  # Cooldowns: Wie lange nach einem Event kein erneutes Event desselben Typs
+  cooldowns:
+    default_seconds: 30
+    per_event:
+      smoke_alarm: 60       # Rauchmelder: 1 Min Cooldown
+      glass_break: 120      # Glasbruch: 2 Min
+      dog_bark: 10           # Hundegebell: 10 Sek
+      baby_cry: 15           # Baby: 15 Sek
+      doorbell: 5            # Klingel: 5 Sek
+  # Events die deaktiviert sind (z.B. wenn kein Hund/Baby vorhanden)
+  disabled_events:
+    # - dog_bark
+    # - baby_cry
+  # Nachtmodus: Strengere Reaktionen zwischen night_start und night_end
+  night_mode:
+    start_hour: 22
+    end_hour: 7
+    # Severity nachts automatisch hochstufen (info->high, high->critical)
+    escalate_severity: true
+  # Reaktions-Overrides (ueberschreibt Standard-Reaktionen)
+  reaction_overrides:
+    # Beispiel: Eigene Nachricht fuer Glasbruch
+    # glass_break:
+    #   message_de: "ACHTUNG: Glasbruch in {room}! Kamera pruefen!"
+    #   actions: ["lights_on", "notify_all", "camera_snapshot"]
+
+# --- Phase 16.1: Multi-User Konfliktloesung ---
+conflict_resolution:
+  enabled: true
+  # Zeitfenster in Sekunden: Befehle innerhalb dieses Fensters gelten als potenziell konfligierend
+  conflict_window_seconds: 300
+  # Maximale gespeicherte Befehle pro Person (Ring-Buffer)
+  max_commands_per_person: 20
+  # Trust-Level Prioritaet: Hoeher = Vorrang bei Konflikten
+  # (nutzt trust_levels aus der bestehenden Konfiguration)
+  use_trust_priority: true
+  # Mediation: LLM-basierte Kompromissvorschlaege
+  mediation:
+    enabled: true
+    # Modell fuer Mediations-Vorschlaege (smart fuer gute Qualitaet)
+    model: "qwen3:14b"
+    max_tokens: 256
+    temperature: 0.7
+  # Konflikt-Domains: Welche Bereiche koennen konfligieren
+  conflict_domains:
+    climate:
+      # Maximale Differenz bevor es als Konflikt gilt (Grad Celsius)
+      threshold: 3
+      # Kompromiss-Strategie: "average", "trust_priority", "mediate"
+      strategy: "average"
+    light:
+      # Helligkeits-Differenz in Prozent
+      threshold: 50
+      strategy: "trust_priority"
+    media:
+      # Medien-Konflikte: Immer mediieren
+      strategy: "mediate"
+    cover:
+      # Rolladen: Position-Differenz in Prozent
+      threshold: 40
+      strategy: "trust_priority"
+  # Cooldown: Nach Konfliktloesung nicht sofort wieder melden (Sekunden)
+  resolution_cooldown_seconds: 120
+
 # --- Wartungs-Assistent (10.5) ---
 maintenance:
   enabled: true

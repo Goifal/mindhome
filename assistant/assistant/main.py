@@ -495,6 +495,52 @@ async def complete_maintenance(task_name: str, token: str = ""):
     return {"completed": task_name, "date": __import__("datetime").datetime.now().strftime("%Y-%m-%d")}
 
 
+# ----- Phase 14.3: Ambient Audio Endpoints -----
+
+@app.get("/api/assistant/ambient-audio")
+async def ambient_audio_info():
+    """Phase 14.3: Ambient Audio Status und Konfiguration."""
+    return brain.ambient_audio.get_info()
+
+
+@app.get("/api/assistant/ambient-audio/events")
+async def ambient_audio_events(limit: int = 20):
+    """Phase 14.3: Letzte erkannte Audio-Events."""
+    return {"events": brain.ambient_audio.get_recent_events(limit)}
+
+
+@app.post("/api/assistant/ambient-audio/event")
+async def ambient_audio_webhook(
+    event_type: str,
+    room: Optional[str] = None,
+    confidence: float = 1.0,
+):
+    """Phase 14.3: Webhook fuer externe Audio-Klassifizierer (ESPHome, Frigate etc.)."""
+    result = await brain.ambient_audio.process_event(
+        event_type=event_type,
+        room=room,
+        confidence=confidence,
+        source="webhook",
+    )
+    if result:
+        return {"processed": True, "event": result}
+    return {"processed": False, "reason": "Event unterdrueckt (Cooldown, Confidence oder deaktiviert)"}
+
+
+# ----- Phase 16.1: Conflict Resolver Endpoints -----
+
+@app.get("/api/assistant/conflicts")
+async def conflict_info():
+    """Phase 16.1: Conflict Resolver Status und Info."""
+    return brain.conflict_resolver.get_info()
+
+
+@app.get("/api/assistant/conflicts/history")
+async def conflict_history(limit: int = 20):
+    """Phase 16.1: Letzte Konflikte und ihre Loesungen."""
+    return {"conflicts": brain.conflict_resolver.get_recent_conflicts(limit)}
+
+
 # ----- Phase 11: Koch-Assistent Endpoints -----
 
 @app.get("/api/assistant/cooking/status")
