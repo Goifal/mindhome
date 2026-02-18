@@ -5,16 +5,21 @@ Startet den MindHome Assistant REST API Server.
 
 import json
 import logging
+import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from typing import Optional
 
+import yaml
+
 from .brain import AssistantBrain
-from .config import settings
+from .config import settings, yaml_config, load_yaml_config
 from .file_handler import (
     allowed_file, ensure_upload_dir,
     get_file_path, save_upload, MAX_FILE_SIZE,
@@ -347,8 +352,9 @@ async def get_settings():
 
 
 @app.put("/api/assistant/settings")
-async def update_settings(update: SettingsUpdate):
-    """Einstellungen aktualisieren."""
+async def update_settings(update: SettingsUpdate, token: str = ""):
+    """Einstellungen aktualisieren (PIN-geschuetzt)."""
+    _check_token(token)
     result = {}
     if update.autonomy_level is not None:
         success = brain.autonomy.set_level(update.autonomy_level)
@@ -441,8 +447,9 @@ async def maintenance_tasks():
 
 
 @app.post("/api/assistant/maintenance/complete")
-async def complete_maintenance(task_name: str):
-    """Phase 10: Wartungsaufgabe als erledigt markieren."""
+async def complete_maintenance(task_name: str, token: str = ""):
+    """Phase 10: Wartungsaufgabe als erledigt markieren (PIN-geschuetzt)."""
+    _check_token(token)
     success = brain.diagnostics.complete_task(task_name)
     if not success:
         raise HTTPException(status_code=404, detail=f"Aufgabe '{task_name}' nicht gefunden")
@@ -636,6 +643,361 @@ async def websocket_endpoint(websocket: WebSocket):
         ws_manager.disconnect(websocket)
 
 
+# ============================================================
+# Jarvis Dashboard — UI + Settings API
+# ============================================================
+
+import hashlib
+import secrets
+
+# Settings-YAML Pfad
+SETTINGS_YAML_PATH = Path(__file__).parent.parent / "config" / "settings.yaml"
+
+# Session-Token mit Ablaufzeit (4 Stunden)
+_TOKEN_EXPIRY_SECONDS = 4 * 60 * 60  # 4 Stunden
+_active_tokens: dict[str, float] = {}  # token -> timestamp
+
+
+def _get_dashboard_config() -> dict:
+    """Liest die aktuelle Dashboard-Konfiguration aus settings.yaml."""
+    try:
+        with open(SETTINGS_YAML_PATH) as f:
+            config = yaml.safe_load(f) or {}
+        return config.get("dashboard", {})
+    except Exception:
+        return {}
+
+
+def _get_current_pin() -> str:
+    """Gibt den aktuellen PIN zurueck (Env > YAML)."""
+    env_pin = os.environ.get("JARVIS_UI_PIN")
+    if env_pin:
+        return env_pin
+    return _get_dashboard_config().get("pin_hash", "")
+
+
+def _is_setup_complete() -> bool:
+    """Prueft ob das initiale Setup abgeschlossen ist."""
+    dc = _get_dashboard_config()
+    return dc.get("setup_complete", False)
+
+
+def _hash_value(value: str) -> str:
+    """Hasht einen Wert mit SHA-256."""
+    return hashlib.sha256(value.encode()).hexdigest()
+
+
+def _save_dashboard_config(pin_hash: str, recovery_hash: str, setup_complete: bool = True):
+    """Speichert Dashboard-Konfiguration in settings.yaml."""
+    try:
+        with open(SETTINGS_YAML_PATH) as f:
+            config = yaml.safe_load(f) or {}
+        if "dashboard" not in config:
+            config["dashboard"] = {}
+        config["dashboard"]["pin_hash"] = pin_hash
+        config["dashboard"]["recovery_key_hash"] = recovery_hash
+        config["dashboard"]["setup_complete"] = setup_complete
+        # Alten Klartext-PIN entfernen falls vorhanden
+        config["dashboard"].pop("pin", None)
+        with open(SETTINGS_YAML_PATH, "w") as f:
+            yaml.dump(config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+        # Config im Speicher aktualisieren
+        import assistant.config as cfg
+        cfg.yaml_config = load_yaml_config()
+    except Exception as e:
+        logger.error("Dashboard-Config speichern fehlgeschlagen: %s", e)
+        raise
+
+
+class PinRequest(BaseModel):
+    pin: str
+
+
+class SetupRequest(BaseModel):
+    pin: str
+    pin_confirm: str
+
+
+class ResetPinRequest(BaseModel):
+    recovery_key: str
+    new_pin: str
+    new_pin_confirm: str
+
+
+class SettingsUpdateFull(BaseModel):
+    settings: dict
+
+
+@app.get("/api/ui/setup-status")
+async def ui_setup_status():
+    """Prueft ob das initiale Setup abgeschlossen ist (kein Auth noetig)."""
+    return {"setup_complete": _is_setup_complete()}
+
+
+@app.post("/api/ui/setup")
+async def ui_setup(req: SetupRequest):
+    """Erstmaliges Setup: PIN setzen + Recovery-Key generieren."""
+    if _is_setup_complete():
+        raise HTTPException(status_code=400, detail="Setup bereits abgeschlossen")
+
+    if req.pin != req.pin_confirm:
+        raise HTTPException(status_code=400, detail="PINs stimmen nicht ueberein")
+
+    if len(req.pin) < 4:
+        raise HTTPException(status_code=400, detail="PIN muss mindestens 4 Zeichen haben")
+
+    # Recovery-Key generieren (12 Zeichen, alphanumerisch)
+    recovery_key = secrets.token_urlsafe(16)[:12].upper()
+
+    # PIN + Recovery-Key gehasht speichern
+    pin_hash = _hash_value(req.pin)
+    recovery_hash = _hash_value(recovery_key)
+    _save_dashboard_config(pin_hash, recovery_hash, setup_complete=True)
+
+    logger.info("Dashboard: Erstmaliges Setup abgeschlossen")
+
+    # Recovery-Key dem User anzeigen (nur dieses eine Mal!)
+    return {
+        "success": True,
+        "recovery_key": recovery_key,
+        "message": "PIN gesetzt. Recovery-Key sicher aufbewahren!",
+    }
+
+
+@app.post("/api/ui/auth")
+async def ui_auth(req: PinRequest):
+    """PIN-Authentifizierung fuer das Jarvis Dashboard."""
+    if not _is_setup_complete():
+        raise HTTPException(status_code=400, detail="Setup noch nicht abgeschlossen")
+
+    # Vergleich: Env-PIN (Klartext) oder gehashter PIN aus YAML
+    env_pin = os.environ.get("JARVIS_UI_PIN")
+    if env_pin:
+        valid = (req.pin == env_pin)
+    else:
+        stored_hash = _get_dashboard_config().get("pin_hash", "")
+        valid = (stored_hash and _hash_value(req.pin) == stored_hash)
+
+    if not valid:
+        raise HTTPException(status_code=401, detail="Falscher PIN")
+
+    token = hashlib.sha256(f"{req.pin}{datetime.now().isoformat()}{secrets.token_hex(8)}".encode()).hexdigest()[:32]
+    _active_tokens[token] = datetime.now(timezone.utc).timestamp()
+    # Abgelaufene Tokens aufraumen
+    _cleanup_expired_tokens()
+    return {"token": token}
+
+
+@app.post("/api/ui/reset-pin")
+async def ui_reset_pin(req: ResetPinRequest):
+    """PIN zuruecksetzen mit Recovery-Key."""
+    if not _is_setup_complete():
+        raise HTTPException(status_code=400, detail="Setup noch nicht abgeschlossen")
+
+    if req.new_pin != req.new_pin_confirm:
+        raise HTTPException(status_code=400, detail="PINs stimmen nicht ueberein")
+
+    if len(req.new_pin) < 4:
+        raise HTTPException(status_code=400, detail="PIN muss mindestens 4 Zeichen haben")
+
+    # Recovery-Key pruefen
+    stored_recovery_hash = _get_dashboard_config().get("recovery_key_hash", "")
+    if not stored_recovery_hash or _hash_value(req.recovery_key) != stored_recovery_hash:
+        raise HTTPException(status_code=401, detail="Falscher Recovery-Key")
+
+    # Neuen Recovery-Key generieren
+    new_recovery_key = secrets.token_urlsafe(16)[:12].upper()
+    pin_hash = _hash_value(req.new_pin)
+    recovery_hash = _hash_value(new_recovery_key)
+    _save_dashboard_config(pin_hash, recovery_hash, setup_complete=True)
+
+    # Alle bestehenden Sessions ungueltig machen
+    _active_tokens.clear()
+
+    logger.info("Dashboard: PIN zurueckgesetzt via Recovery-Key")
+
+    return {
+        "success": True,
+        "recovery_key": new_recovery_key,
+        "message": "Neuer PIN gesetzt. Neuen Recovery-Key sicher aufbewahren!",
+    }
+
+
+def _cleanup_expired_tokens():
+    """Entfernt abgelaufene Tokens."""
+    now = datetime.now(timezone.utc).timestamp()
+    expired = [t for t, ts in _active_tokens.items() if now - ts > _TOKEN_EXPIRY_SECONDS]
+    for t in expired:
+        del _active_tokens[t]
+
+
+def _check_token(token: str):
+    """Prueft ob ein UI-Token gueltig ist und nicht abgelaufen."""
+    if token not in _active_tokens:
+        raise HTTPException(status_code=401, detail="Nicht autorisiert")
+    # Ablaufzeit pruefen
+    created = _active_tokens[token]
+    now = datetime.now(timezone.utc).timestamp()
+    if now - created > _TOKEN_EXPIRY_SECONDS:
+        del _active_tokens[token]
+        raise HTTPException(status_code=401, detail="Sitzung abgelaufen. Bitte erneut anmelden.")
+
+
+@app.get("/api/ui/settings")
+async def ui_get_settings(token: str = ""):
+    """Alle Settings aus settings.yaml als JSON."""
+    _check_token(token)
+    try:
+        with open(SETTINGS_YAML_PATH) as f:
+            config = yaml.safe_load(f) or {}
+        return config
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
+@app.put("/api/ui/settings")
+async def ui_update_settings(req: SettingsUpdateFull, token: str = ""):
+    """Settings in settings.yaml aktualisieren (Merge, nicht ersetzen)."""
+    _check_token(token)
+    try:
+        # Aktuelle Config laden
+        with open(SETTINGS_YAML_PATH) as f:
+            config = yaml.safe_load(f) or {}
+
+        # Deep Merge
+        _deep_merge(config, req.settings)
+
+        # Zurueckschreiben
+        with open(SETTINGS_YAML_PATH, "w") as f:
+            yaml.dump(config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+
+        # yaml_config im Speicher aktualisieren
+        import assistant.config as cfg
+        cfg.yaml_config = load_yaml_config()
+
+        return {"success": True, "message": "Settings gespeichert"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
+@app.get("/api/ui/entities")
+async def ui_get_entities(token: str = "", domain: str = ""):
+    """Alle HA-Entities holen (optional nach Domain filtern)."""
+    _check_token(token)
+    try:
+        states = await brain.ha.get_states()
+        entities = []
+        for s in (states or []):
+            eid = s.get("entity_id", "")
+            if domain and not eid.startswith(f"{domain}."):
+                continue
+            entities.append({
+                "entity_id": eid,
+                "state": s.get("state", "unknown"),
+                "name": s.get("attributes", {}).get("friendly_name", eid),
+                "domain": eid.split(".")[0] if "." in eid else "",
+            })
+        entities.sort(key=lambda e: (e["domain"], e["name"]))
+        return {"entities": entities, "total": len(entities)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
+@app.get("/api/ui/stats")
+async def ui_get_stats(token: str = ""):
+    """Kombinierte Statistiken fuer das Dashboard."""
+    _check_token(token)
+    try:
+        semantic_stats = await brain.memory.semantic.get_stats()
+        kb_stats = await brain.knowledge_base.get_stats()
+        episodic_count = 0
+        if brain.memory.chroma_collection:
+            try:
+                episodic_count = brain.memory.chroma_collection.count()
+            except Exception:
+                pass
+
+        return {
+            "memory": {
+                "semantic": semantic_stats,
+                "episodic_count": episodic_count,
+                "redis_connected": brain.memory.redis is not None,
+            },
+            "knowledge_base": kb_stats,
+            "components": (await brain.health_check()).get("components", {}),
+            "autonomy": brain.autonomy.get_level_info(),
+            "mood": brain.mood.get_current_mood(),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
+@app.get("/api/ui/knowledge")
+async def ui_knowledge_info(token: str = ""):
+    """Knowledge Base Statistiken und Dateiliste."""
+    _check_token(token)
+    stats = await brain.knowledge_base.get_stats()
+    # Dateien im Knowledge-Verzeichnis auflisten
+    kb_dir = Path(__file__).parent.parent / "config" / "knowledge"
+    files = []
+    if kb_dir.exists():
+        for f in sorted(kb_dir.iterdir()):
+            if f.is_file() and f.suffix in {".txt", ".md", ".yaml", ".yml", ".csv"}:
+                files.append({
+                    "name": f.name,
+                    "size": f.stat().st_size,
+                    "modified": datetime.fromtimestamp(f.stat().st_mtime).isoformat(),
+                })
+    return {"stats": stats, "files": files}
+
+
+@app.post("/api/ui/knowledge/ingest")
+async def ui_knowledge_ingest(token: str = ""):
+    """Knowledge Base neu einlesen (alle Dateien)."""
+    _check_token(token)
+    count = await brain.knowledge_base.ingest_all()
+    stats = await brain.knowledge_base.get_stats()
+    return {"new_chunks": count, "stats": stats}
+
+
+@app.get("/api/ui/logs")
+async def ui_get_logs(token: str = "", limit: int = 50):
+    """Letzte Konversationen aus dem Working Memory."""
+    _check_token(token)
+    conversations = await brain.memory.get_recent_conversations(min(limit, 200))
+    return {"conversations": conversations, "total": len(conversations)}
+
+
+# Statische UI-Dateien ausliefern
+_ui_static_dir = Path(__file__).parent.parent / "static" / "ui"
+_ui_static_dir.mkdir(parents=True, exist_ok=True)
+
+
+@app.get("/ui/{path:path}")
+async def ui_serve(path: str = ""):
+    """Jarvis Dashboard — Single-Page App."""
+    index_path = _ui_static_dir / "index.html"
+    if index_path.exists():
+        return FileResponse(index_path, media_type="text/html")
+    return HTMLResponse("<h1>Jarvis Dashboard — index.html nicht gefunden</h1>", status_code=404)
+
+
+@app.get("/ui")
+async def ui_redirect():
+    """Redirect /ui zu /ui/."""
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse("/ui/")
+
+
+def _deep_merge(base: dict, override: dict):
+    """Tiefer Merge von override in base (in-place)."""
+    for key, value in override.items():
+        if key in base and isinstance(base[key], dict) and isinstance(value, dict):
+            _deep_merge(base[key], value)
+        else:
+            base[key] = value
+
+
 @app.get("/")
 async def root():
     """Startseite."""
@@ -644,6 +1006,7 @@ async def root():
         "version": "1.1.0",
         "status": "running",
         "docs": "/docs",
+        "dashboard": "/ui/",
     }
 
 

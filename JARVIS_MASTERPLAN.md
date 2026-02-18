@@ -86,6 +86,10 @@ fokussiert sich auf den **Assistant** — dort passiert die Jarvis-Transformatio
 | Smart Model Routing (3B/14B) | `model_router.py` | ✅ |
 | Ankunfts-Briefing | `proactive.py` | ✅ |
 | Mood-adaptive Antwortlänge | `personality.py` | ✅ |
+| RAG/Wissensdatenbank | `knowledge_base.py` | ✅ |
+| Kalender-Tools (Lesen + Erstellen) | `function_calling.py` | ✅ |
+| Korrektur-Lernen | `brain.py` | ✅ |
+| Jarvis Dashboard (Web-UI) | `main.py` + `static/ui/` | ✅ |
 
 ---
 

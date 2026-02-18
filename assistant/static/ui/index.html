@@ -1,0 +1,1266 @@
+<!DOCTYPE html>
+<html lang="de" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Jarvis — MindHome Dashboard</title>
+<style>
+/* ============================================================
+   MindHome Design System — Jarvis Dashboard v2
+   Dark futuristic, amber accents, Outfit font
+   ============================================================ */
+/* Offline-Fonts: System-Fonts statt Google CDN (Offline-Prinzip) */
+@font-face {
+  font-family: 'Outfit';
+  font-style: normal;
+  font-weight: 300 700;
+  font-display: swap;
+  src: local('Outfit'), local('Inter'), local('Segoe UI');
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400 500;
+  font-display: swap;
+  src: local('JetBrains Mono'), local('SF Mono'), local('Consolas'), local('Menlo');
+}
+
+:root {
+  --bg-primary: #0a0e17;
+  --bg-secondary: #111827;
+  --bg-card: #1a2035;
+  --bg-card-hover: #1f2847;
+  --bg-input: #151d30;
+  --bg-overlay: rgba(10, 14, 23, 0.85);
+  --text-primary: #e8ecf4;
+  --text-secondary: #8892a8;
+  --text-muted: #5a6478;
+  --accent: #f59e0b;
+  --accent-dim: rgba(245, 158, 11, 0.15);
+  --accent-glow: rgba(245, 158, 11, 0.3);
+  --blue: #3b82f6;
+  --blue-dim: rgba(59, 130, 246, 0.15);
+  --success: #10b981;
+  --success-dim: rgba(16, 185, 129, 0.15);
+  --danger: #ef4444;
+  --danger-dim: rgba(239, 68, 68, 0.15);
+  --border: rgba(255, 255, 255, 0.06);
+  --border-hover: rgba(255, 255, 255, 0.12);
+  --border-accent: rgba(245, 158, 11, 0.3);
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.3);
+  --shadow-md: 0 4px 16px rgba(0,0,0,0.4);
+  --shadow-lg: 0 8px 32px rgba(0,0,0,0.5);
+  --shadow-glow: 0 0 20px rgba(245, 158, 11, 0.15);
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --font: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
+  --mono: 'JetBrains Mono', 'SF Mono', monospace;
+  --sidebar-w: 220px;
+  --header-h: 56px;
+  --fast: 0.15s ease;
+  --normal: 0.25s ease;
+}
+
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:var(--font); background:var(--bg-primary); color:var(--text-primary); min-height:100vh; overflow-x:hidden; }
+
+/* ---- Login ---- */
+.login-screen { display:flex; align-items:center; justify-content:center; min-height:100vh; }
+.login-box { background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius-lg); padding:48px 40px; width:360px; text-align:center; box-shadow:var(--shadow-lg); }
+.login-box h1 { font-size:28px; font-weight:600; margin-bottom:8px; color:var(--accent); }
+.login-box p { color:var(--text-secondary); margin-bottom:32px; font-size:14px; }
+.login-box input { width:100%; padding:14px 16px; background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius-sm); color:var(--text-primary); font-family:var(--mono); font-size:24px; text-align:center; letter-spacing:12px; outline:none; }
+.login-box input:focus { border-color:var(--accent); }
+.login-box input::placeholder { letter-spacing:4px; font-size:14px; color:var(--text-muted); }
+.login-box button { width:100%; margin-top:20px; padding:14px; background:var(--accent); color:#0a0e17; border:none; border-radius:var(--radius-sm); font-family:var(--font); font-size:16px; font-weight:600; cursor:pointer; }
+.login-box button:hover { opacity:0.9; }
+.login-error { color:var(--danger); font-size:13px; margin-top:12px; min-height:20px; }
+
+/* ---- App ---- */
+.app { display:none; }
+.app.active { display:flex; min-height:100vh; }
+
+/* Sidebar */
+.sidebar { width:var(--sidebar-w); background:var(--bg-secondary); border-right:1px solid var(--border); display:flex; flex-direction:column; position:fixed; top:0; left:0; bottom:0; z-index:100; }
+.sidebar-logo { padding:18px 20px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:12px; }
+.sidebar-logo .logo-icon { width:34px; height:34px; background:var(--accent-dim); border-radius:var(--radius-sm); display:flex; align-items:center; justify-content:center; font-size:18px; }
+.sidebar-logo h2 { font-size:17px; font-weight:600; }
+.sidebar-logo span { font-size:10px; color:var(--text-muted); display:block; }
+.sidebar-nav { padding:12px 8px; flex:1; overflow-y:auto; }
+.nav-item { display:flex; align-items:center; gap:10px; padding:10px 14px; border-radius:var(--radius-sm); color:var(--text-secondary); cursor:pointer; font-size:13px; font-weight:500; margin-bottom:2px; transition:all var(--fast); }
+.nav-item:hover { background:var(--bg-card); color:var(--text-primary); }
+.nav-item.active { background:var(--accent-dim); color:var(--accent); }
+.nav-item .nav-icon { width:18px; text-align:center; font-size:15px; }
+.sidebar-footer { padding:12px; border-top:1px solid var(--border); font-size:11px; color:var(--text-muted); text-align:center; }
+
+/* Main */
+.main { margin-left:var(--sidebar-w); flex:1; min-height:100vh; }
+.main-header { height:var(--header-h); border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; padding:0 28px; background:var(--bg-secondary); position:sticky; top:0; z-index:50; }
+.main-header h1 { font-size:17px; font-weight:600; }
+.main-content { padding:28px; }
+
+/* Responsive */
+@media (max-width:900px) {
+  .sidebar { transform:translateX(-100%); transition:transform var(--normal); }
+  .sidebar.open { transform:translateX(0); }
+  .main { margin-left:0; }
+  .mobile-toggle { display:flex !important; }
+}
+
+/* Pages */
+.page { display:none; }
+.page.active { display:block; }
+
+/* Grid */
+.grid { display:grid; gap:16px; }
+.grid-2 { grid-template-columns:repeat(2,1fr); }
+.grid-3 { grid-template-columns:repeat(3,1fr); }
+.grid-4 { grid-template-columns:repeat(4,1fr); }
+@media (max-width:1200px) { .grid-4 { grid-template-columns:repeat(2,1fr); } }
+@media (max-width:900px) { .grid-2,.grid-3,.grid-4 { grid-template-columns:1fr; } }
+
+/* Card */
+.card { background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius-md); padding:20px; margin-bottom:16px; }
+.card:hover { border-color:var(--border-hover); }
+.card-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; }
+.card-header h3 { font-size:15px; font-weight:600; }
+
+/* Stat */
+.stat-card { background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius-md); padding:18px 20px; }
+.stat-card:hover { border-color:var(--border-hover); box-shadow:var(--shadow-md); }
+.stat-label { font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px; }
+.stat-value { font-size:26px; font-weight:700; font-family:var(--mono); }
+.stat-sub { font-size:11px; color:var(--text-secondary); margin-top:4px; }
+
+/* Form */
+.form-group { margin-bottom:16px; }
+.form-group label { display:block; font-size:13px; font-weight:500; color:var(--text-secondary); margin-bottom:6px; }
+.form-group .hint { font-size:11px; color:var(--text-muted); margin-top:3px; }
+input[type="text"],input[type="number"],select,textarea { width:100%; padding:9px 12px; background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius-sm); color:var(--text-primary); font-family:var(--font); font-size:13px; outline:none; }
+input:focus,select:focus,textarea:focus { border-color:var(--accent); }
+select { cursor:pointer; }
+textarea { resize:vertical; min-height:70px; font-family:var(--mono); font-size:12px; }
+
+/* Range */
+.range-group { display:flex; align-items:center; gap:14px; }
+.range-group input[type="range"] { flex:1; -webkit-appearance:none; height:5px; background:var(--bg-input); border-radius:3px; border:none; outline:none; }
+.range-group input[type="range"]::-webkit-slider-thumb { -webkit-appearance:none; width:18px; height:18px; border-radius:50%; background:var(--accent); cursor:pointer; box-shadow:0 0 8px var(--accent-glow); }
+.range-value { min-width:40px; text-align:center; font-family:var(--mono); font-size:14px; font-weight:600; color:var(--accent); }
+
+/* Toggle */
+.toggle-group { display:flex; align-items:center; justify-content:space-between; }
+.toggle { position:relative; width:42px; height:22px; cursor:pointer; }
+.toggle input { display:none; }
+.toggle-track { position:absolute; inset:0; background:var(--bg-input); border:1px solid var(--border); border-radius:11px; transition:all var(--fast); }
+.toggle input:checked + .toggle-track { background:var(--accent-dim); border-color:var(--accent); }
+.toggle-thumb { position:absolute; top:3px; left:3px; width:16px; height:16px; border-radius:50%; background:var(--text-muted); transition:all var(--fast); }
+.toggle input:checked ~ .toggle-thumb { left:23px; background:var(--accent); }
+
+/* Buttons */
+.btn { display:inline-flex; align-items:center; gap:8px; padding:9px 18px; border:none; border-radius:var(--radius-sm); font-family:var(--font); font-size:13px; font-weight:500; cursor:pointer; transition:all var(--fast); }
+.btn-primary { background:var(--accent); color:#0a0e17; }
+.btn-primary:hover { opacity:0.9; box-shadow:var(--shadow-glow); }
+.btn-secondary { background:var(--bg-input); color:var(--text-primary); border:1px solid var(--border); }
+.btn-secondary:hover { border-color:var(--border-hover); }
+.btn-danger { background:var(--danger-dim); color:var(--danger); }
+.btn-sm { padding:5px 12px; font-size:12px; }
+
+/* Tab Bar */
+.tab-bar { display:flex; gap:2px; background:var(--bg-input); padding:3px; border-radius:var(--radius-sm); margin-bottom:20px; flex-wrap:wrap; }
+.tab-item { padding:7px 14px; border-radius:6px; font-size:12px; font-weight:500; color:var(--text-secondary); cursor:pointer; transition:all var(--fast); white-space:nowrap; }
+.tab-item:hover { color:var(--text-primary); }
+.tab-item.active { background:var(--bg-card); color:var(--accent); box-shadow:var(--shadow-sm); }
+
+/* Settings Section (collapsible) */
+.s-section { border:1px solid var(--border); border-radius:var(--radius-md); margin-bottom:14px; overflow:hidden; }
+.s-section-hdr { display:flex; align-items:center; justify-content:space-between; padding:14px 18px; background:var(--bg-card); cursor:pointer; transition:background var(--fast); }
+.s-section-hdr:hover { background:var(--bg-card-hover); }
+.s-section-hdr h3 { font-size:14px; font-weight:600; display:flex; align-items:center; gap:8px; }
+.s-section-hdr .arrow { transition:transform var(--fast); color:var(--text-muted); font-size:12px; }
+.s-section-hdr.open .arrow { transform:rotate(180deg); }
+.s-section-body { padding:0 18px; max-height:0; overflow:hidden; transition:max-height 0.3s ease,padding 0.3s ease; }
+.s-section-body.open { padding:18px; max-height:5000px; }
+
+/* Entity */
+.entity-picker { background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius-md); padding:14px; margin-bottom:14px; }
+.entity-search { padding:8px 12px; background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius-sm); color:var(--text-primary); font-size:13px; width:100%; margin-bottom:10px; outline:none; font-family:var(--font); }
+.entity-search:focus { border-color:var(--accent); }
+.entity-list { max-height:400px; overflow-y:auto; border:1px solid var(--border); border-radius:var(--radius-sm); }
+.entity-item { display:flex; align-items:center; gap:10px; padding:8px 12px; cursor:pointer; font-size:13px; border-bottom:1px solid var(--border); transition:background var(--fast); }
+.entity-item:last-child { border-bottom:none; }
+.entity-item:hover { background:var(--bg-card-hover); }
+.entity-item .eid { color:var(--text-muted); font-family:var(--mono); font-size:11px; }
+.entity-item .ename { flex:1; }
+.selected-entities { display:flex; flex-wrap:wrap; gap:5px; margin-top:6px; }
+.entity-tag { display:inline-flex; align-items:center; gap:5px; padding:3px 9px; background:var(--accent-dim); border:1px solid var(--border-accent); border-radius:16px; font-size:11px; color:var(--accent); font-family:var(--mono); }
+.entity-tag .remove { cursor:pointer; opacity:0.6; font-size:13px; }
+.entity-tag .remove:hover { opacity:1; }
+
+/* Logs */
+.log-entry { display:flex; gap:14px; padding:10px 14px; border-bottom:1px solid var(--border); font-size:12px; }
+.log-entry:hover { background:var(--bg-card-hover); }
+.log-time { color:var(--text-muted); font-family:var(--mono); font-size:11px; min-width:70px; }
+.log-role { min-width:55px; font-weight:600; font-size:11px; text-transform:uppercase; }
+.log-role.user { color:var(--blue); }
+.log-role.assistant { color:var(--accent); }
+.log-content { flex:1; color:var(--text-primary); line-height:1.5; }
+
+/* Section Header */
+.section-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:20px; }
+.section-header h2 { font-size:18px; font-weight:600; }
+.section-header p { font-size:12px; color:var(--text-secondary); margin-top:3px; }
+
+/* Knowledge Files */
+.file-item { display:flex; align-items:center; gap:12px; padding:10px 14px; border-bottom:1px solid var(--border); font-size:12px; }
+.file-name { flex:1; font-weight:500; }
+.file-size { color:var(--text-muted); font-family:var(--mono); font-size:11px; }
+
+/* Badge */
+.badge { padding:3px 10px; border-radius:16px; font-size:11px; font-weight:500; }
+.badge-ok { background:var(--success-dim); color:var(--success); }
+.badge-warn { background:rgba(245,158,11,0.15); color:var(--accent); }
+.badge-err { background:var(--danger-dim); color:var(--danger); }
+
+/* Mobile */
+.mobile-toggle { display:none; align-items:center; justify-content:center; width:34px; height:34px; border-radius:var(--radius-sm); background:var(--bg-card); border:1px solid var(--border); cursor:pointer; font-size:16px; }
+
+/* Toast */
+.toast { position:fixed; bottom:20px; right:20px; padding:12px 22px; border-radius:var(--radius-sm); font-size:13px; font-weight:500; box-shadow:var(--shadow-lg); z-index:9999; transform:translateY(80px); opacity:0; transition:all 0.3s ease; }
+.toast.show { transform:translateY(0); opacity:1; }
+.toast-success { background:var(--success); color:white; }
+.toast-error { background:var(--danger); color:white; }
+.toast-info { background:var(--blue); color:white; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width:5px; }
+::-webkit-scrollbar-track { background:transparent; }
+::-webkit-scrollbar-thumb { background:var(--border-hover); border-radius:3px; }
+::-webkit-scrollbar-thumb:hover { background:var(--text-muted); }
+
+/* Loading */
+.spinner { width:28px; height:28px; border:3px solid var(--border); border-top-color:var(--accent); border-radius:50%; animation:spin 0.8s linear infinite; display:inline-block; margin-right:10px; }
+@keyframes spin { to { transform:rotate(360deg); } }
+
+/* Keyword tags editor */
+.kw-editor { display:flex; flex-wrap:wrap; gap:4px; padding:8px; background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius-sm); min-height:36px; cursor:text; }
+.kw-tag { display:inline-flex; align-items:center; gap:4px; padding:2px 8px; background:var(--accent-dim); border:1px solid var(--border-accent); border-radius:12px; font-size:11px; color:var(--accent); font-family:var(--mono); }
+.kw-tag .kw-rm { cursor:pointer; opacity:0.6; }
+.kw-tag .kw-rm:hover { opacity:1; }
+.kw-input { border:none; background:transparent; color:var(--text-primary); font-family:var(--font); font-size:12px; outline:none; min-width:80px; flex:1; }
+</style>
+</head>
+<body>
+
+<!-- SETUP (erstmaliger Aufruf) -->
+<div id="setupScreen" class="login-screen" style="display:none;">
+  <div class="login-box">
+    <div style="font-size:44px;margin-bottom:14px;">&#9881;</div>
+    <h1>JARVIS</h1>
+    <p>Ersteinrichtung — PIN festlegen</p>
+    <input type="password" id="setupPin" maxlength="16" placeholder="PIN waehlen" style="margin-bottom:12px;"
+           onkeydown="if(event.key==='Enter')document.getElementById('setupPinConfirm').focus()">
+    <input type="password" id="setupPinConfirm" maxlength="16" placeholder="PIN bestaetigen"
+           onkeydown="if(event.key==='Enter')doSetup()">
+    <button onclick="doSetup()">PIN setzen</button>
+    <div id="setupError" class="login-error"></div>
+  </div>
+</div>
+
+<!-- RECOVERY KEY anzeigen (nach Setup) -->
+<div id="recoveryScreen" class="login-screen" style="display:none;">
+  <div class="login-box">
+    <div style="font-size:44px;margin-bottom:14px;">&#128273;</div>
+    <h1>Recovery-Key</h1>
+    <p style="color:var(--accent);font-weight:600;margin-bottom:16px;">Diesen Schluessel sicher aufbewahren!</p>
+    <p style="margin-bottom:20px;font-size:13px;">Falls du deinen PIN vergisst, kannst du ihn nur mit diesem Key zuruecksetzen. Er wird nur einmal angezeigt.</p>
+    <div id="recoveryKeyDisplay" style="background:var(--bg-input);border:2px solid var(--accent);border-radius:var(--radius-sm);padding:18px;font-family:var(--mono);font-size:22px;letter-spacing:4px;color:var(--accent);margin-bottom:20px;user-select:all;"></div>
+    <button onclick="recoveryAcknowledged()">Ich habe den Key gespeichert</button>
+  </div>
+</div>
+
+<!-- LOGIN -->
+<div id="loginScreen" class="login-screen" style="display:none;">
+  <div class="login-box">
+    <div style="font-size:44px;margin-bottom:14px;">&#9881;</div>
+    <h1>JARVIS</h1>
+    <p>MindHome Dashboard</p>
+    <input type="password" id="pinInput" maxlength="16" placeholder="PIN" autofocus
+           onkeydown="if(event.key==='Enter')doLogin()">
+    <button onclick="doLogin()">Anmelden</button>
+    <div id="loginError" class="login-error"></div>
+    <div style="margin-top:20px;">
+      <a href="#" onclick="showResetScreen();return false;" style="color:var(--text-muted);font-size:12px;text-decoration:none;">PIN vergessen?</a>
+    </div>
+  </div>
+</div>
+
+<!-- PIN RESET -->
+<div id="resetScreen" class="login-screen" style="display:none;">
+  <div class="login-box">
+    <div style="font-size:44px;margin-bottom:14px;">&#128273;</div>
+    <h1>PIN zuruecksetzen</h1>
+    <p>Recovery-Key eingeben</p>
+    <input type="text" id="resetRecoveryKey" maxlength="16" placeholder="Recovery-Key" style="margin-bottom:12px;letter-spacing:2px;text-transform:uppercase;"
+           onkeydown="if(event.key==='Enter')document.getElementById('resetNewPin').focus()">
+    <input type="password" id="resetNewPin" maxlength="16" placeholder="Neuer PIN" style="margin-bottom:12px;"
+           onkeydown="if(event.key==='Enter')document.getElementById('resetNewPinConfirm').focus()">
+    <input type="password" id="resetNewPinConfirm" maxlength="16" placeholder="Neuer PIN bestaetigen"
+           onkeydown="if(event.key==='Enter')doResetPin()">
+    <button onclick="doResetPin()">PIN zuruecksetzen</button>
+    <div id="resetError" class="login-error"></div>
+    <div style="margin-top:16px;">
+      <a href="#" onclick="showLoginScreen();return false;" style="color:var(--text-muted);font-size:12px;text-decoration:none;">Zurueck zur Anmeldung</a>
+    </div>
+  </div>
+</div>
+
+<!-- NEUER RECOVERY KEY (nach Reset) -->
+<div id="newRecoveryScreen" class="login-screen" style="display:none;">
+  <div class="login-box">
+    <div style="font-size:44px;margin-bottom:14px;">&#128273;</div>
+    <h1>Neuer Recovery-Key</h1>
+    <p style="color:var(--accent);font-weight:600;margin-bottom:16px;">Neuen Schluessel sicher aufbewahren!</p>
+    <p style="margin-bottom:20px;font-size:13px;">Der alte Recovery-Key ist ungueltig. Dieser neue Key wird nur einmal angezeigt.</p>
+    <div id="newRecoveryKeyDisplay" style="background:var(--bg-input);border:2px solid var(--accent);border-radius:var(--radius-sm);padding:18px;font-family:var(--mono);font-size:22px;letter-spacing:4px;color:var(--accent);margin-bottom:20px;user-select:all;"></div>
+    <button onclick="newRecoveryAcknowledged()">Ich habe den Key gespeichert</button>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="app" class="app">
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-logo">
+      <div class="logo-icon">&#9881;</div>
+      <div><h2>JARVIS</h2><span>MindHome Dashboard</span></div>
+    </div>
+    <nav class="sidebar-nav">
+      <div class="nav-item active" data-page="dashboard"><span class="nav-icon">&#9632;</span>Dashboard</div>
+      <div class="nav-item" data-page="settings"><span class="nav-icon">&#9881;</span>Einstellungen</div>
+      <div class="nav-item" data-page="entities"><span class="nav-icon">&#8801;</span>Entities</div>
+      <div class="nav-item" data-page="knowledge"><span class="nav-icon">&#128218;</span>Wissen</div>
+      <div class="nav-item" data-page="logs"><span class="nav-icon">&#9776;</span>Logs</div>
+    </nav>
+    <div class="sidebar-footer">MindHome Assistant v1.1.0</div>
+  </aside>
+
+  <div class="main">
+    <header class="main-header">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <div class="mobile-toggle" onclick="document.getElementById('sidebar').classList.toggle('open')">&#9776;</div>
+        <h1 id="pageTitle">Dashboard</h1>
+      </div>
+      <div style="display:flex;gap:10px;align-items:center;">
+        <span id="statusBadge" class="badge badge-ok">Online</span>
+        <button class="btn btn-sm btn-secondary" onclick="doLogout()">Abmelden</button>
+      </div>
+    </header>
+
+    <div class="main-content">
+      <!-- ============ DASHBOARD ============ -->
+      <div id="page-dashboard" class="page active">
+        <div id="dashStats" class="grid grid-4"></div>
+        <div class="grid grid-2" style="margin-top:16px;">
+          <div class="card"><div class="card-header"><h3>Komponenten</h3></div><div id="compList"></div></div>
+          <div class="card"><div class="card-header"><h3>Status</h3></div><div id="moodInfo"></div></div>
+        </div>
+      </div>
+
+      <!-- ============ SETTINGS ============ -->
+      <div id="page-settings" class="page">
+        <div class="section-header">
+          <div><h2>Einstellungen</h2><p>Alle Konfigurationen aus settings.yaml</p></div>
+          <button class="btn btn-primary" onclick="saveAllSettings()">Speichern</button>
+        </div>
+        <!-- 8 Tabs -->
+        <div class="tab-bar" id="settingsTabBar">
+          <div class="tab-item active" data-tab="tab-general">Allgemein</div>
+          <div class="tab-item" data-tab="tab-personality">Persoenlichkeit</div>
+          <div class="tab-item" data-tab="tab-memory">Gedaechtnis</div>
+          <div class="tab-item" data-tab="tab-mood">Stimmung</div>
+          <div class="tab-item" data-tab="tab-rooms">Raeume</div>
+          <div class="tab-item" data-tab="tab-voice">Stimme</div>
+          <div class="tab-item" data-tab="tab-routines">Routinen</div>
+          <div class="tab-item" data-tab="tab-security">Sicherheit</div>
+        </div>
+        <div id="settingsContent"></div>
+      </div>
+
+      <!-- ============ ENTITIES ============ -->
+      <div id="page-entities" class="page">
+        <div class="section-header">
+          <div><h2>Home Assistant Entities</h2><p>Alle Entities — klicke zum Kopieren</p></div>
+          <button class="btn btn-secondary" onclick="loadEntities()">Aktualisieren</button>
+        </div>
+        <div class="grid grid-2" style="margin-bottom:14px;">
+          <div class="form-group" style="margin-bottom:0;">
+            <select id="entityDomainFilter" onchange="filterEntities()"><option value="">Alle Domains</option></select>
+          </div>
+          <div class="form-group" style="margin-bottom:0;">
+            <input type="text" id="entitySearchInput" placeholder="Entity suchen..." oninput="filterEntities()">
+          </div>
+        </div>
+        <div class="card" style="padding:0;"><div id="entityBrowser" class="entity-list" style="max-height:500px;"></div></div>
+      </div>
+
+      <!-- ============ KNOWLEDGE ============ -->
+      <div id="page-knowledge" class="page">
+        <div class="section-header">
+          <div><h2>Wissensdatenbank</h2><p>Dateien in config/knowledge/ — RAG-Quelle</p></div>
+          <button class="btn btn-primary" onclick="ingestKnowledge()">Neu einlesen</button>
+        </div>
+        <div id="kbStats" class="grid grid-3" style="margin-bottom:16px;"></div>
+        <div class="card"><div class="card-header"><h3>Dateien</h3></div><div id="kbFiles"></div></div>
+      </div>
+
+      <!-- ============ LOGS ============ -->
+      <div id="page-logs" class="page">
+        <div class="section-header">
+          <div><h2>Gespraeche</h2><p>Letzte Interaktionen mit Jarvis</p></div>
+          <button class="btn btn-secondary" onclick="loadLogs()">Aktualisieren</button>
+        </div>
+        <div class="card" style="padding:0;"><div id="logsContainer"></div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script>
+/* ============================================================
+   Jarvis Dashboard v2 — JavaScript
+   8 Settings Tabs: Allgemein, Persoenlichkeit, Gedaechtnis,
+   Stimmung, Raeume, Stimme, Routinen, Sicherheit
+   ============================================================ */
+
+let TOKEN = '';
+let S = {};  // Settings cache
+let ALL_ENTITIES = [];
+const API = '';
+
+// ---- Screens ausblenden ----
+function hideAllScreens() {
+  ['setupScreen','recoveryScreen','loginScreen','resetScreen','newRecoveryScreen'].forEach(id => {
+    document.getElementById(id).style.display = 'none';
+  });
+  document.getElementById('app').classList.remove('active');
+}
+
+// ---- Setup-Status pruefen und richtigen Screen zeigen ----
+async function checkSetupAndShow() {
+  try {
+    const r = await fetch(`${API}/api/ui/setup-status`);
+    const d = await r.json();
+    hideAllScreens();
+    if (!d.setup_complete) {
+      // Erster Aufruf: Setup-Screen
+      document.getElementById('setupScreen').style.display = 'flex';
+      document.getElementById('setupPin').focus();
+    } else {
+      // Setup fertig: Token pruefen oder Login zeigen
+      const t = sessionStorage.getItem('jt');
+      if (t) {
+        TOKEN = t;
+        try {
+          const sr = await fetch(`${API}/api/ui/stats?token=${TOKEN}`);
+          if (sr.ok) { showApp(); return; }
+        } catch(e) {}
+      }
+      showLoginScreen();
+    }
+  } catch(e) {
+    // Fallback: Login zeigen
+    showLoginScreen();
+  }
+}
+
+// ---- Setup: PIN setzen ----
+async function doSetup() {
+  const pin = document.getElementById('setupPin').value;
+  const confirm = document.getElementById('setupPinConfirm').value;
+  const err = document.getElementById('setupError');
+  err.textContent = '';
+
+  if (pin.length < 4) { err.textContent = 'PIN muss mindestens 4 Zeichen haben'; return; }
+  if (pin !== confirm) { err.textContent = 'PINs stimmen nicht ueberein'; return; }
+
+  try {
+    const r = await fetch(`${API}/api/ui/setup`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({pin, pin_confirm: confirm})
+    });
+    const d = await r.json();
+    if (!r.ok) { err.textContent = d.detail || 'Fehler'; return; }
+
+    // Recovery-Key anzeigen
+    hideAllScreens();
+    document.getElementById('recoveryKeyDisplay').textContent = d.recovery_key;
+    document.getElementById('recoveryScreen').style.display = 'flex';
+  } catch(e) { err.textContent = 'Verbindung fehlgeschlagen'; }
+}
+
+function recoveryAcknowledged() {
+  hideAllScreens();
+  showLoginScreen();
+}
+
+// ---- Login ----
+function showLoginScreen() {
+  hideAllScreens();
+  document.getElementById('loginScreen').style.display = 'flex';
+  document.getElementById('pinInput').value = '';
+  document.getElementById('loginError').textContent = '';
+  document.getElementById('pinInput').focus();
+}
+
+async function doLogin() {
+  const pin = document.getElementById('pinInput').value;
+  const err = document.getElementById('loginError');
+  err.textContent = '';
+
+  if (!pin) { err.textContent = 'PIN eingeben'; return; }
+
+  try {
+    const r = await fetch(`${API}/api/ui/auth`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({pin})
+    });
+    if (!r.ok) { err.textContent = 'Falscher PIN'; return; }
+    const d = await r.json();
+    TOKEN = d.token;
+    sessionStorage.setItem('jt', TOKEN);
+    showApp();
+  } catch(e) { err.textContent = 'Verbindung fehlgeschlagen'; }
+}
+
+function doLogout() {
+  TOKEN = '';
+  sessionStorage.removeItem('jt');
+  hideAllScreens();
+  showLoginScreen();
+}
+
+function showApp() {
+  hideAllScreens();
+  document.getElementById('app').classList.add('active');
+  loadDashboard();
+}
+
+// ---- PIN Reset ----
+function showResetScreen() {
+  hideAllScreens();
+  document.getElementById('resetScreen').style.display = 'flex';
+  document.getElementById('resetRecoveryKey').value = '';
+  document.getElementById('resetNewPin').value = '';
+  document.getElementById('resetNewPinConfirm').value = '';
+  document.getElementById('resetError').textContent = '';
+  document.getElementById('resetRecoveryKey').focus();
+}
+
+async function doResetPin() {
+  const recovery_key = document.getElementById('resetRecoveryKey').value.trim().toUpperCase();
+  const new_pin = document.getElementById('resetNewPin').value;
+  const new_pin_confirm = document.getElementById('resetNewPinConfirm').value;
+  const err = document.getElementById('resetError');
+  err.textContent = '';
+
+  if (!recovery_key) { err.textContent = 'Recovery-Key eingeben'; return; }
+  if (new_pin.length < 4) { err.textContent = 'PIN muss mindestens 4 Zeichen haben'; return; }
+  if (new_pin !== new_pin_confirm) { err.textContent = 'PINs stimmen nicht ueberein'; return; }
+
+  try {
+    const r = await fetch(`${API}/api/ui/reset-pin`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({recovery_key, new_pin, new_pin_confirm})
+    });
+    const d = await r.json();
+    if (!r.ok) { err.textContent = d.detail || 'Falscher Recovery-Key'; return; }
+
+    // Neuen Recovery-Key anzeigen
+    hideAllScreens();
+    document.getElementById('newRecoveryKeyDisplay').textContent = d.recovery_key;
+    document.getElementById('newRecoveryScreen').style.display = 'flex';
+  } catch(e) { err.textContent = 'Verbindung fehlgeschlagen'; }
+}
+
+function newRecoveryAcknowledged() {
+  hideAllScreens();
+  showLoginScreen();
+}
+
+// ---- Init: Setup-Status pruefen ----
+checkSetupAndShow();
+
+// ---- API ----
+async function api(path, method='GET', body=null) {
+  const sep = path.includes('?') ? '&' : '?';
+  const url = `${API}${path}${sep}token=${TOKEN}`;
+  const opts = {method, headers:{'Content-Type':'application/json'}};
+  if (body) opts.body = JSON.stringify(body);
+  const r = await fetch(url, opts);
+  if (r.status === 401) { doLogout(); throw new Error('Auth'); }
+  return r.json();
+}
+
+// ---- Navigation ----
+document.querySelectorAll('.nav-item').forEach(item => {
+  item.addEventListener('click', () => {
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    item.classList.add('active');
+    const pg = item.dataset.page;
+    document.getElementById(`page-${pg}`).classList.add('active');
+    document.getElementById('pageTitle').textContent = item.textContent.trim();
+    if (pg==='dashboard') loadDashboard();
+    else if (pg==='settings') loadSettings();
+    else if (pg==='entities') loadEntities();
+    else if (pg==='knowledge') loadKnowledge();
+    else if (pg==='logs') loadLogs();
+    document.getElementById('sidebar').classList.remove('open');
+  });
+});
+
+// ---- Toast ----
+function toast(msg, type='success') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = `toast toast-${type} show`;
+  setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+// ---- Helpers ----
+function esc(s) { const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
+function fmtBytes(b) { if(b<1024) return b+' B'; if(b<1048576) return (b/1024).toFixed(1)+' KB'; return (b/1048576).toFixed(1)+' MB'; }
+function getPath(obj,path) { return path.split('.').reduce((o,k)=>o?.[k], obj); }
+function setPath(obj,path,val) {
+  const parts=path.split('.'); let cur=obj;
+  for(let i=0;i<parts.length-1;i++) { if(!cur[parts[i]]) cur[parts[i]]={}; cur=cur[parts[i]]; }
+  cur[parts[parts.length-1]]=val;
+}
+
+// ---- Dashboard ----
+async function loadDashboard() {
+  try {
+    const d = await api('/api/ui/stats');
+    const mem=d.memory||{}, sem=mem.semantic||{}, kb=d.knowledge_base||{}, auto=d.autonomy||{};
+    document.getElementById('dashStats').innerHTML = `
+      <div class="stat-card"><div class="stat-label">Fakten</div><div class="stat-value">${sem.total_facts||0}</div>
+        <div class="stat-sub">${(sem.persons||[]).length} Personen</div></div>
+      <div class="stat-card"><div class="stat-label">Wissensbasis</div><div class="stat-value">${kb.total_chunks||0}</div>
+        <div class="stat-sub">${(kb.sources||[]).length} Quellen</div></div>
+      <div class="stat-card"><div class="stat-label">Episoden</div><div class="stat-value">${mem.episodic_count||0}</div>
+        <div class="stat-sub">Langzeitgedaechtnis</div></div>
+      <div class="stat-card"><div class="stat-label">Autonomie</div><div class="stat-value" style="color:var(--accent);">${auto.level||'?'}/5</div>
+        <div class="stat-sub">${auto.name||''}</div></div>`;
+    const comps=d.components||{};
+    let ch='';
+    for(const [n,s] of Object.entries(comps)) {
+      const ok=s==='connected'||String(s).includes('active');
+      ch+=`<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);">
+        <span style="font-size:12px;">${n}</span>
+        <span style="font-size:11px;color:${ok?'var(--success)':'var(--danger)'};font-family:var(--mono);">${s}</span></div>`;
+    }
+    document.getElementById('compList').innerHTML=ch;
+    const mood=d.mood||{};
+    document.getElementById('moodInfo').innerHTML=`
+      <div style="padding:8px 0;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;">
+        <span style="font-size:12px;">Stimmung</span><span style="font-size:12px;color:var(--accent);font-weight:600;">${mood.mood||'neutral'}</span></div>
+      <div style="padding:8px 0;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;">
+        <span style="font-size:12px;">Stress</span><span style="font-size:12px;font-family:var(--mono);">${(mood.stress_level||0).toFixed(2)}</span></div>
+      <div style="padding:8px 0;display:flex;justify-content:space-between;">
+        <span style="font-size:12px;">Redis</span><span style="font-size:11px;color:${mem.redis_connected?'var(--success)':'var(--danger)'};">${mem.redis_connected?'Verbunden':'Getrennt'}</span></div>`;
+  } catch(e) { console.error('Dashboard fail:', e); }
+}
+
+// ============================================================
+//  SETTINGS - 8 Tabs
+// ============================================================
+
+let currentTab = 'tab-general';
+
+// Tab switching
+document.getElementById('settingsTabBar').addEventListener('click', e => {
+  const tab = e.target.closest('.tab-item');
+  if (!tab) return;
+  document.querySelectorAll('#settingsTabBar .tab-item').forEach(t => t.classList.remove('active'));
+  tab.classList.add('active');
+  currentTab = tab.dataset.tab;
+  renderCurrentTab();
+});
+
+async function loadSettings() {
+  try {
+    S = await api('/api/ui/settings');
+    renderCurrentTab();
+  } catch(e) { console.error('Settings fail:', e); }
+}
+
+function renderCurrentTab() {
+  const c = document.getElementById('settingsContent');
+  switch(currentTab) {
+    case 'tab-general': c.innerHTML = renderGeneral(); break;
+    case 'tab-personality': c.innerHTML = renderPersonality(); break;
+    case 'tab-memory': c.innerHTML = renderMemory(); break;
+    case 'tab-mood': c.innerHTML = renderMood(); break;
+    case 'tab-rooms': c.innerHTML = renderRooms(); break;
+    case 'tab-voice': c.innerHTML = renderVoice(); break;
+    case 'tab-routines': c.innerHTML = renderRoutines(); break;
+    case 'tab-security': c.innerHTML = renderSecurity(); break;
+  }
+  bindFormEvents();
+}
+
+// ---- Form field generators ----
+function fText(path, label, hint='', ro=false) {
+  const v = getPath(S,path) ?? '';
+  return `<div class="form-group"><label>${label}</label>
+    <input type="text" data-path="${path}" value="${esc(String(v))}" ${ro?'readonly':''}>${hint?`<div class="hint">${hint}</div>`:''}</div>`;
+}
+function fNum(path, label, min='', max='', step='1', hint='') {
+  const v = getPath(S,path) ?? '';
+  return `<div class="form-group"><label>${label}</label>
+    <input type="number" data-path="${path}" value="${v}" min="${min}" max="${max}" step="${step}">${hint?`<div class="hint">${hint}</div>`:''}</div>`;
+}
+function fRange(path, label, min, max, step, labels=null) {
+  const v = getPath(S,path) ?? min;
+  const lbl = labels ? (labels[v]||v) : v;
+  return `<div class="form-group"><label>${label}</label>
+    <div class="range-group"><input type="range" data-path="${path}" min="${min}" max="${max}" step="${step}" value="${v}"
+      oninput="updRange(this)"><span class="range-value" id="rv_${path.replace(/\./g,'_')}">${lbl}</span></div></div>`;
+}
+function fToggle(path, label) {
+  const v = getPath(S,path);
+  return `<div class="form-group"><div class="toggle-group"><label>${label}</label>
+    <label class="toggle"><input type="checkbox" data-path="${path}" ${v?'checked':''}><span class="toggle-track"></span><span class="toggle-thumb"></span></label></div></div>`;
+}
+function fSelect(path, label, opts) {
+  const v = getPath(S,path) ?? '';
+  let h = `<div class="form-group"><label>${label}</label><select data-path="${path}">`;
+  for(const o of opts) h += `<option value="${o.v}" ${v===o.v?'selected':''}>${o.l}</option>`;
+  return h + `</select></div>`;
+}
+function fKeywords(path, label) {
+  const arr = getPath(S,path) || [];
+  let tags = arr.map(k => `<span class="kw-tag">${esc(k)}<span class="kw-rm" onclick="rmKw(this,'${path}')">&#10005;</span></span>`).join('');
+  return `<div class="form-group"><label>${label}</label>
+    <div class="kw-editor" data-path="${path}" onclick="this.querySelector('input').focus()">
+      ${tags}<input class="kw-input" placeholder="+ hinzufuegen..." onkeydown="addKw(event,this,'${path}')">
+    </div></div>`;
+}
+function fTextarea(path, label, hint='') {
+  const v = getPath(S,path);
+  const txt = Array.isArray(v) ? v.join('\n') : (typeof v === 'object' ? JSON.stringify(v,null,2) : String(v??''));
+  return `<div class="form-group"><label>${label}</label>
+    <textarea data-path="${path}" data-type="${Array.isArray(v)?'array':'text'}">${esc(txt)}</textarea>${hint?`<div class="hint">${hint}</div>`:''}</div>`;
+}
+
+function sectionWrap(icon, title, content) {
+  return `<div class="s-section"><div class="s-section-hdr" onclick="toggleSec(this)">
+    <h3>${icon} ${title}</h3><span class="arrow">&#9660;</span></div>
+    <div class="s-section-body">${content}</div></div>`;
+}
+
+function updRange(el) {
+  const path = el.dataset.path;
+  document.getElementById('rv_'+path.replace(/\./g,'_')).textContent = el.value;
+}
+function toggleSec(hdr) { hdr.classList.toggle('open'); hdr.nextElementSibling.classList.toggle('open'); }
+
+function addKw(e, input, path) {
+  if (e.key !== 'Enter' || !input.value.trim()) return;
+  e.preventDefault();
+  const arr = getPath(S, path) || [];
+  const val = input.value.trim();
+  if (!arr.includes(val)) {
+    arr.push(val);
+    setPath(S, path, arr);
+    renderCurrentTab();
+  }
+}
+function rmKw(el, path) {
+  const tag = el.parentElement;
+  const word = tag.textContent.replace('✕','').trim();
+  const arr = (getPath(S, path) || []).filter(k => k !== word);
+  setPath(S, path, arr);
+  renderCurrentTab();
+}
+
+function bindFormEvents() {
+  // no-op: we collect on save
+}
+
+// ---- Tab 1: Allgemein ----
+function renderGeneral() {
+  return sectionWrap('&#9881;', 'Assistent',
+    fText('assistant.name', 'Name', 'So stellt er sich vor') +
+    fText('assistant.version', 'Version', '', true) +
+    fSelect('assistant.language', 'Sprache', [{v:'de',l:'Deutsch'},{v:'en',l:'English'}])
+  ) +
+  sectionWrap('&#9889;', 'Autonomie',
+    fRange('autonomy.level', 'Autonomie-Level', 1, 5, 1, {1:'Assistent',2:'Butler',3:'Mitbewohner',4:'Vertrauter',5:'Autopilot'})
+  ) +
+  sectionWrap('&#129302;', 'Modell-Routing',
+    fText('models.fast', 'Fast Model', 'Einfache Befehle') +
+    fText('models.smart', 'Smart Model', 'Konversation, Standard') +
+    fText('models.deep', 'Deep Model', 'Komplexe Analyse') +
+    fNum('models.deep_min_words', 'Deep ab Woertern', 5, 50) +
+    fNum('models.options.temperature', 'Temperatur', 0, 2, '0.1') +
+    fNum('models.options.max_tokens', 'Max Tokens', 64, 4096) +
+    fKeywords('models.fast_keywords', 'Fast-Keywords') +
+    fKeywords('models.deep_keywords', 'Deep-Keywords') +
+    fKeywords('models.cooking_keywords', 'Koch-Keywords')
+  ) +
+  sectionWrap('&#128274;', 'Dashboard',
+    '<div class="form-group"><label>PIN-Schutz</label>' +
+    '<p style="font-size:12px;color:var(--success);margin-bottom:8px;">PIN ist gesetzt und aktiv</p>' +
+    '<p style="font-size:11px;color:var(--text-muted);">PIN aendern: "PIN vergessen?" auf dem Login-Screen nutzen (Recovery-Key erforderlich).<br>' +
+    'Alternativ: JARVIS_UI_PIN Umgebungsvariable ueberschreibt den gespeicherten PIN.</p></div>'
+  );
+}
+
+// ---- Tab 2: Persoenlichkeit ----
+function renderPersonality() {
+  return sectionWrap('&#127917;', 'Stil & Charakter',
+    fSelect('personality.style', 'Stil', [{v:'butler',l:'Butler'},{v:'minimal',l:'Minimal'},{v:'freundlich',l:'Freundlich'}]) +
+    fRange('personality.sarcasm_level', 'Sarkasmus-Level', 1, 5, 1, {1:'Sachlich',2:'Gelegentl. trocken',3:'Standard Butler',4:'Haeufig',5:'Vollgas Ironie'}) +
+    fRange('personality.opinion_intensity', 'Meinungs-Intensitaet', 0, 3, 1, {0:'Still',1:'Selten',2:'Gelegentlich',3:'Redselig'}) +
+    fToggle('personality.self_irony_enabled', 'Selbstironie') +
+    fNum('personality.self_irony_max_per_day', 'Max. Selbstironie/Tag', 0, 20)
+  ) +
+  sectionWrap('&#128200;', 'Charakter-Entwicklung',
+    fToggle('personality.character_evolution', 'Charakter-Entwicklung') +
+    fRange('personality.formality_start', 'Formalitaet Start', 0, 100, 5) +
+    fRange('personality.formality_min', 'Formalitaet Minimum', 0, 100, 5) +
+    fNum('personality.formality_decay_per_day', 'Formalitaet-Abbau/Tag', 0, 5, '0.1')
+  ) +
+  sectionWrap('&#128336;', 'Tageszeit-Stile',
+    fText('personality.time_layers.early_morning.style', 'Fruehmorgens (05-08) Stil') +
+    fNum('personality.time_layers.early_morning.max_sentences', 'Fruehmorgens Max Saetze', 1, 10) +
+    fText('personality.time_layers.morning.style', 'Morgens (08-12) Stil') +
+    fNum('personality.time_layers.morning.max_sentences', 'Morgens Max Saetze', 1, 10) +
+    fText('personality.time_layers.afternoon.style', 'Nachmittags (12-18) Stil') +
+    fNum('personality.time_layers.afternoon.max_sentences', 'Nachmittags Max Saetze', 1, 10) +
+    fText('personality.time_layers.evening.style', 'Abends (18-22) Stil') +
+    fNum('personality.time_layers.evening.max_sentences', 'Abends Max Saetze', 1, 10) +
+    fText('personality.time_layers.night.style', 'Nachts (22-05) Stil') +
+    fNum('personality.time_layers.night.max_sentences', 'Nachts Max Saetze', 1, 10)
+  );
+}
+
+// ---- Tab 3: Gedaechtnis ----
+function renderMemory() {
+  return sectionWrap('&#128065;', 'Semantisches Gedaechtnis',
+    fToggle('memory.extraction_enabled', 'Fakten-Extraktion') +
+    fNum('memory.extraction_min_words', 'Min. Woerter fuer Extraktion', 1, 20) +
+    fText('memory.extraction_model', 'Extraktions-Modell') +
+    fNum('memory.extraction_temperature', 'Extraktions-Temperatur', 0, 2, '0.1') +
+    fNum('memory.extraction_max_tokens', 'Extraktions Max Tokens', 64, 2048) +
+    fNum('memory.max_person_facts_in_context', 'Max Personen-Fakten im Kontext', 1, 20) +
+    fNum('memory.max_relevant_facts_in_context', 'Max relevante Fakten im Kontext', 1, 10) +
+    fRange('memory.min_confidence_for_context', 'Min. Confidence', 0, 1, 0.05) +
+    fRange('memory.duplicate_threshold', 'Duplikat-Schwelle', 0, 1, 0.05) +
+    fNum('memory.episode_min_words', 'Min. Woerter Episode', 1, 20) +
+    fRange('memory.default_confidence', 'Default Confidence', 0, 1, 0.05)
+  ) +
+  sectionWrap('&#128218;', 'Wissensdatenbank (RAG)',
+    fToggle('knowledge_base.enabled', 'Aktiviert') +
+    fToggle('knowledge_base.auto_ingest', 'Auto-Einlesen beim Start') +
+    fNum('knowledge_base.chunk_size', 'Chunk-Groesse (Zeichen)', 100, 2000) +
+    fNum('knowledge_base.chunk_overlap', 'Chunk-Ueberlappung', 0, 500) +
+    fRange('knowledge_base.max_distance', 'Max. Distanz', 0.5, 2, 0.1) +
+    fNum('knowledge_base.search_limit', 'Treffer-Limit', 1, 10) +
+    fKeywords('knowledge_base.supported_extensions', 'Datei-Endungen')
+  ) +
+  sectionWrap('&#128221;', 'Korrektur-Lernen',
+    fRange('correction.confidence', 'Korrektur-Confidence', 0, 1, 0.05) +
+    fText('correction.model', 'Korrektur-Modell') +
+    fNum('correction.temperature', 'Korrektur-Temperatur', 0, 2, '0.1')
+  ) +
+  sectionWrap('&#128197;', 'Tages-Zusammenfassung',
+    fNum('summarizer.run_hour', 'Uhrzeit (Stunde)', 0, 23) +
+    fNum('summarizer.run_minute', 'Uhrzeit (Minute)', 0, 59) +
+    fText('summarizer.model', 'Modell') +
+    fNum('summarizer.max_tokens_daily', 'Max Tokens Taeglich', 128, 2048) +
+    fNum('summarizer.max_tokens_weekly', 'Max Tokens Woechentlich', 128, 2048) +
+    fNum('summarizer.max_tokens_monthly', 'Max Tokens Monatlich', 128, 2048)
+  ) +
+  sectionWrap('&#128172;', 'Kontext',
+    fNum('context.recent_conversations', 'Letzte Gespraeche', 1, 20) +
+    fNum('context.api_timeout', 'API-Timeout (Sek.)', 1, 30)
+  );
+}
+
+// ---- Tab 4: Stimmung ----
+function renderMood() {
+  return sectionWrap('&#128578;', 'Stimmungserkennung',
+    fNum('mood.rapid_command_seconds', 'Schnelle Befehle (Sek.)', 1, 30) +
+    fNum('mood.stress_decay_seconds', 'Stress-Abbau (Sek.)', 60, 600) +
+    fNum('mood.frustration_threshold', 'Frustrations-Schwelle', 1, 10) +
+    fNum('mood.tired_hour_start', 'Muede ab Uhrzeit', 0, 23) +
+    fNum('mood.tired_hour_end', 'Muede bis Uhrzeit', 0, 23)
+  ) +
+  sectionWrap('&#9889;', 'Stress-Boost Werte',
+    fRange('mood.rapid_command_stress_boost', 'Schnelle Befehle', 0, 0.5, 0.05) +
+    fRange('mood.positive_stress_reduction', 'Positive Reduktion', 0, 0.5, 0.05) +
+    fRange('mood.negative_stress_boost', 'Negative Erhoehung', 0, 0.5, 0.05) +
+    fRange('mood.impatient_stress_boost', 'Ungeduld Erhoehung', 0, 0.5, 0.05) +
+    fRange('mood.tired_boost', 'Muedigkeits-Boost', 0, 0.5, 0.05) +
+    fRange('mood.repetition_stress_boost', 'Wiederholungs-Boost', 0, 0.5, 0.05)
+  ) +
+  sectionWrap('&#128172;', 'Stimmungs-Keywords',
+    fKeywords('mood.positive_keywords', 'Positive Keywords') +
+    fKeywords('mood.negative_keywords', 'Negative Keywords') +
+    fKeywords('mood.impatient_keywords', 'Ungeduld-Keywords') +
+    fKeywords('mood.tired_keywords', 'Muedigkeits-Keywords')
+  ) +
+  sectionWrap('&#127908;', 'Voice-Analyse',
+    fToggle('voice_analysis.enabled', 'Aktiviert') +
+    fNum('voice_analysis.wpm_fast', 'WPM Schnell', 100, 300) +
+    fNum('voice_analysis.wpm_slow', 'WPM Langsam', 30, 150) +
+    fNum('voice_analysis.wpm_normal', 'WPM Normal', 50, 200) +
+    fToggle('voice_analysis.use_whisper_metadata', 'Whisper-Metadaten nutzen') +
+    fRange('voice_analysis.voice_weight', 'Voice-Gewichtung', 0, 1, 0.05)
+  );
+}
+
+// ---- Tab 5: Raeume ----
+function renderRooms() {
+  return sectionWrap('&#127968;', 'Multi-Room Presence',
+    fToggle('multi_room.enabled', 'Aktiviert') +
+    fNum('multi_room.presence_timeout_minutes', 'Praesenz-Timeout (Min.)', 1, 60)
+  ) +
+  sectionWrap('&#128266;', 'Raum-Speaker',
+    '<p style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;">Format: raum: media_player.entity_id (ein Eintrag pro Zeile)</p>' +
+    fTextarea('multi_room.room_speakers', 'Speaker pro Raum', 'YAML-Map: wohnzimmer: media_player.speaker')
+  ) +
+  sectionWrap('&#128694;', 'Raum-Bewegungsmelder',
+    fTextarea('multi_room.room_motion_sensors', 'Bewegungsmelder pro Raum', 'YAML-Map: wohnzimmer: binary_sensor.motion')
+  ) +
+  sectionWrap('&#127916;', 'Aktivitaets-Entities',
+    fKeywords('activity.entities.media_players', 'Media Players') +
+    fKeywords('activity.entities.mic_sensors', 'Mikrofon-Sensoren') +
+    fKeywords('activity.entities.bed_sensors', 'Bett-Sensoren') +
+    fKeywords('activity.entities.pc_sensors', 'PC-Sensoren')
+  ) +
+  sectionWrap('&#9200;', 'Aktivitaets-Schwellen',
+    fNum('activity.thresholds.night_start', 'Nacht ab Uhrzeit', 0, 23) +
+    fNum('activity.thresholds.night_end', 'Nacht bis Uhrzeit', 0, 23) +
+    fNum('activity.thresholds.guest_person_count', 'Gaeste ab Personen', 1, 10) +
+    fNum('activity.thresholds.focus_min_minutes', 'Fokus ab Minuten', 5, 120)
+  ) +
+  sectionWrap('&#128101;', 'Personen-Profile',
+    '<p style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;">Personen und deren Einstellungen</p>' +
+    fTextarea('persons.profiles', 'Profile', 'YAML-Map: name: {notify_service: ..., preferred_room: ...}')
+  );
+}
+
+// ---- Tab 6: Stimme ----
+function renderVoice() {
+  return sectionWrap('&#128266;', 'TTS (Text-to-Speech)',
+    fToggle('tts.ssml_enabled', 'SSML Enhancement') +
+    fNum('tts.speed.confirmation', 'Speed: Bestaetigung (%)', 50, 200) +
+    fNum('tts.speed.warning', 'Speed: Warnung (%)', 50, 200) +
+    fNum('tts.speed.briefing', 'Speed: Briefing (%)', 50, 200) +
+    fNum('tts.speed.greeting', 'Speed: Begruessung (%)', 50, 200) +
+    fNum('tts.speed.question', 'Speed: Frage (%)', 50, 200) +
+    fNum('tts.speed.casual', 'Speed: Normal (%)', 50, 200) +
+    fNum('tts.pauses.before_important', 'Pause: Vor wichtigem (ms)', 0, 1000) +
+    fNum('tts.pauses.between_sentences', 'Pause: Zwischen Saetzen (ms)', 0, 1000) +
+    fNum('tts.pauses.after_greeting', 'Pause: Nach Begruessung (ms)', 0, 1000) +
+    fKeywords('tts.whisper_triggers', 'Fluestern-Trigger') +
+    fKeywords('tts.whisper_cancel_triggers', 'Fluestern-Abbruch-Trigger')
+  ) +
+  sectionWrap('&#128264;', 'Lautstaerke',
+    fRange('volume.day', 'Tag', 0, 1, 0.05) +
+    fRange('volume.evening', 'Abend', 0, 1, 0.05) +
+    fRange('volume.night', 'Nacht', 0, 1, 0.05) +
+    fRange('volume.sleeping', 'Schlafen', 0, 1, 0.05) +
+    fRange('volume.emergency', 'Notfall', 0, 1, 0.05) +
+    fRange('volume.whisper', 'Fluestern', 0, 1, 0.05) +
+    fNum('volume.evening_start', 'Abend ab Uhrzeit', 0, 23) +
+    fNum('volume.night_start', 'Nacht ab Uhrzeit', 0, 23) +
+    fNum('volume.morning_start', 'Morgen ab Uhrzeit', 0, 23)
+  ) +
+  sectionWrap('&#127925;', 'Sound Design',
+    fToggle('sounds.enabled', 'Aktiviert') +
+    fText('sounds.events.listening', 'Sound: Zuhoeren') +
+    fText('sounds.events.confirmed', 'Sound: Bestaetigt') +
+    fText('sounds.events.warning', 'Sound: Warnung') +
+    fText('sounds.events.alarm', 'Sound: Alarm') +
+    fText('sounds.events.doorbell', 'Sound: Tuerklingel') +
+    fText('sounds.events.greeting', 'Sound: Begruessung') +
+    fText('sounds.events.error', 'Sound: Fehler') +
+    fText('sounds.events.goodnight', 'Sound: Gute Nacht') +
+    fRange('sounds.night_volume_factor', 'Nacht-Volume-Faktor', 0, 1, 0.1)
+  ) +
+  sectionWrap('&#127916;', 'Narration',
+    fToggle('narration.enabled', 'Aktiviert') +
+    fNum('narration.default_transition', 'Standard-Transition (Sek.)', 1, 20) +
+    fNum('narration.scene_transitions.filmabend', 'Filmabend (Sek.)', 1, 30) +
+    fNum('narration.scene_transitions.gute_nacht', 'Gute Nacht (Sek.)', 1, 30) +
+    fNum('narration.scene_transitions.aufwachen', 'Aufwachen (Sek.)', 1, 30) +
+    fNum('narration.scene_transitions.gemuetlich', 'Gemuetlich (Sek.)', 1, 30) +
+    fNum('narration.step_delay', 'Schritt-Verzögerung (Sek.)', 0, 10, '0.5') +
+    fToggle('narration.narrate_actions', 'Aktionen beschreiben')
+  ) +
+  sectionWrap('&#128100;', 'Sprecher-Erkennung',
+    fToggle('speaker_recognition.enabled', 'Aktiviert') +
+    fRange('speaker_recognition.min_confidence', 'Min. Confidence', 0, 1, 0.05) +
+    fNum('speaker_recognition.enrollment_duration', 'Enrollment-Dauer (Sek.)', 5, 120) +
+    fToggle('speaker_recognition.fallback_ask', 'Nachfragen bei Unsicherheit') +
+    fNum('speaker_recognition.max_profiles', 'Max. Profile', 1, 50)
+  );
+}
+
+// ---- Tab 7: Routinen ----
+function renderRoutines() {
+  return sectionWrap('&#127748;', 'Morgen-Briefing',
+    fToggle('routines.morning_briefing.enabled', 'Aktiviert') +
+    fText('routines.morning_briefing.trigger', 'Trigger') +
+    fKeywords('routines.morning_briefing.modules', 'Briefing-Module') +
+    fText('routines.morning_briefing.weekday_style', 'Wochentag-Stil') +
+    fText('routines.morning_briefing.weekend_style', 'Wochenend-Stil') +
+    fToggle('routines.morning_briefing.morning_actions.covers_up', 'Rolladen hoch') +
+    fToggle('routines.morning_briefing.morning_actions.lights_soft', 'Licht sanft an')
+  ) +
+  sectionWrap('&#127769;', 'Gute-Nacht-Routine',
+    fToggle('routines.good_night.enabled', 'Aktiviert') +
+    fKeywords('routines.good_night.triggers', 'Trigger-Phrasen') +
+    fKeywords('routines.good_night.checks', 'Sicherheits-Checks') +
+    fToggle('routines.good_night.actions.lights_off', 'Lichter aus') +
+    fToggle('routines.good_night.actions.heating_night', 'Heizung Nacht') +
+    fToggle('routines.good_night.actions.covers_down', 'Rolladen runter') +
+    fToggle('routines.good_night.actions.alarm_arm_home', 'Alarm scharf')
+  ) +
+  sectionWrap('&#128101;', 'Gaeste-Modus',
+    fKeywords('routines.guest_mode.triggers', 'Trigger-Phrasen') +
+    fToggle('routines.guest_mode.restrictions.hide_personal_info', 'Persoenliche Infos verstecken') +
+    fToggle('routines.guest_mode.restrictions.formal_tone', 'Formeller Ton') +
+    fToggle('routines.guest_mode.restrictions.restrict_security', 'Sicherheit einschraenken') +
+    fToggle('routines.guest_mode.restrictions.suggest_guest_wifi', 'Gaeste-WLAN vorschlagen')
+  ) +
+  sectionWrap('&#128276;', 'Proaktive Meldungen',
+    fToggle('proactive.enabled', 'Aktiviert') +
+    fNum('proactive.cooldown_seconds', 'Cooldown (Sek.)', 60, 3600) +
+    fNum('proactive.music_follow_cooldown_minutes', 'Musik-Follow Cooldown (Min.)', 1, 30) +
+    fNum('proactive.min_autonomy_level', 'Min. Autonomie-Level', 1, 5) +
+    fKeywords('proactive.silence_scenes', 'Stille-Szenen')
+  ) +
+  sectionWrap('&#9200;', 'Zeitgefuehl',
+    fToggle('time_awareness.enabled', 'Aktiviert') +
+    fNum('time_awareness.check_interval_minutes', 'Check-Intervall (Min.)', 1, 30) +
+    fNum('time_awareness.thresholds.oven', 'Ofen-Warnung (Min.)', 10, 180) +
+    fNum('time_awareness.thresholds.iron', 'Buegeleisen-Warnung (Min.)', 5, 120) +
+    fNum('time_awareness.thresholds.light_empty_room', 'Licht leerer Raum (Min.)', 5, 120) +
+    fNum('time_awareness.thresholds.window_open_cold', 'Fenster offen kalt (Min.)', 30, 600) +
+    fNum('time_awareness.thresholds.pc_no_break', 'PC ohne Pause (Min.)', 60, 720) +
+    fToggle('time_awareness.counters.coffee_machine', 'Kaffee-Zaehler')
+  ) +
+  sectionWrap('&#128300;', 'Vorausdenken',
+    fToggle('anticipation.enabled', 'Aktiviert') +
+    fNum('anticipation.history_days', 'History (Tage)', 7, 90) +
+    fRange('anticipation.min_confidence', 'Min. Confidence', 0, 1, 0.05) +
+    fNum('anticipation.check_interval_minutes', 'Check-Intervall (Min.)', 5, 60) +
+    fRange('anticipation.thresholds.ask', 'Schwelle: Fragen', 0, 1, 0.05) +
+    fRange('anticipation.thresholds.suggest', 'Schwelle: Vorschlagen', 0, 1, 0.05) +
+    fRange('anticipation.thresholds.auto', 'Schwelle: Automatisch', 0, 1, 0.05)
+  ) +
+  sectionWrap('&#128203;', 'Intent-Tracking',
+    fToggle('intent_tracking.enabled', 'Aktiviert') +
+    fNum('intent_tracking.check_interval_minutes', 'Check-Intervall (Min.)', 10, 240) +
+    fNum('intent_tracking.remind_hours_before', 'Erinnerung Stunden vorher', 1, 48)
+  ) +
+  sectionWrap('&#128172;', 'Gespraechs-Fortfuehrung',
+    fToggle('conversation_continuity.enabled', 'Aktiviert') +
+    fNum('conversation_continuity.resume_after_minutes', 'Fortsetzen nach (Min.)', 1, 60) +
+    fNum('conversation_continuity.expire_hours', 'Verfall nach (Stunden)', 1, 72)
+  );
+}
+
+// ---- Tab 8: Sicherheit & Erweitert ----
+function renderSecurity() {
+  return sectionWrap('&#128274;', 'Sicherheit',
+    fKeywords('security.require_confirmation', 'Bestaetigung erforderlich') +
+    fNum('security.climate_limits.min', 'Temperatur Min (°C)', 5, 25) +
+    fNum('security.climate_limits.max', 'Temperatur Max (°C)', 20, 35)
+  ) +
+  sectionWrap('&#128272;', 'Vertrauensstufen',
+    fNum('trust_levels.default', 'Standard-Trust', 0, 2) +
+    fKeywords('trust_levels.guest_allowed_actions', 'Gast-Aktionen') +
+    fKeywords('trust_levels.security_actions', 'Sicherheits-Aktionen (nur Owner)')
+  ) +
+  sectionWrap('&#128295;', 'Diagnostik',
+    fToggle('diagnostics.enabled', 'Aktiviert') +
+    fNum('diagnostics.check_interval_minutes', 'Pruef-Intervall (Min.)', 5, 120) +
+    fNum('diagnostics.battery_warning_threshold', 'Batterie-Warnung (%)', 5, 50) +
+    fNum('diagnostics.stale_sensor_minutes', 'Stale-Sensor (Min.)', 30, 600) +
+    fNum('diagnostics.offline_threshold_minutes', 'Offline-Schwelle (Min.)', 10, 120) +
+    fNum('diagnostics.alert_cooldown_minutes', 'Alert-Cooldown (Min.)', 10, 240)
+  ) +
+  sectionWrap('&#128200;', 'Feedback-Loop',
+    fNum('feedback.auto_timeout_seconds', 'Auto-Timeout (Sek.)', 30, 600) +
+    fNum('feedback.base_cooldown_seconds', 'Basis-Cooldown (Sek.)', 60, 1800) +
+    fRange('feedback.score_suppress', 'Score: Unterdruecken', 0, 1, 0.05) +
+    fRange('feedback.score_reduce', 'Score: Reduzieren', 0, 1, 0.05) +
+    fRange('feedback.score_normal', 'Score: Normal', 0, 1, 0.05) +
+    fRange('feedback.score_boost', 'Score: Boost', 0, 1, 0.05)
+  ) +
+  sectionWrap('&#128683;', 'Response-Filter',
+    fToggle('response_filter.enabled', 'Aktiviert') +
+    fNum('response_filter.max_response_sentences', 'Max. Saetze (0=kein Limit)', 0, 20) +
+    fKeywords('response_filter.banned_phrases', 'Verbotene Phrasen') +
+    fKeywords('response_filter.banned_starters', 'Verbotene Satzanfaenge')
+  ) +
+  sectionWrap('&#127859;', 'Koch-Assistent',
+    fToggle('cooking.enabled', 'Aktiviert') +
+    fSelect('cooking.language', 'Sprache', [{v:'de',l:'Deutsch'},{v:'en',l:'English'}]) +
+    fNum('cooking.default_portions', 'Standard-Portionen', 1, 12) +
+    fNum('cooking.max_steps', 'Max. Schritte', 3, 30) +
+    fNum('cooking.max_tokens', 'Max Tokens', 256, 4096) +
+    fToggle('cooking.timer_notify_tts', 'Timer-TTS')
+  ) +
+  sectionWrap('&#128295;', 'Wartung',
+    fToggle('maintenance.enabled', 'Aktiviert') +
+    fText('maintenance.config_file', 'Config-Datei')
+  ) +
+  sectionWrap('&#128101;', 'Personen-Anrede',
+    '<p style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;">Der Hauptbenutzer wird automatisch als "Sir" angesprochen.</p>' +
+    fTextarea('persons.titles', 'Titel-Zuordnung', 'YAML-Map: name: "Anrede"')
+  );
+}
+
+// ---- Collect + Save ----
+function collectSettings() {
+  const updates = {};
+  // Text, number, select
+  document.querySelectorAll('#settingsContent [data-path]').forEach(el => {
+    const path = el.dataset.path;
+    const tag = el.tagName.toLowerCase();
+    if (tag === 'div') return; // kw-editor handled separately
+    let val;
+    if (el.type === 'checkbox') {
+      val = el.checked;
+    } else if (el.type === 'number' || el.type === 'range') {
+      val = parseFloat(el.value);
+      if (Number.isInteger(val) && !el.step?.includes('.') && el.step !== '0.1' && el.step !== '0.05' && el.step !== '0.5') val = parseInt(el.value);
+    } else if (tag === 'textarea') {
+      const raw = el.value.trim();
+      if (el.dataset.type === 'array') {
+        val = raw.split('\n').map(l=>l.trim()).filter(Boolean);
+      } else {
+        // Try YAML-like map parsing
+        try {
+          const lines = raw.split('\n').filter(l=>l.trim());
+          const isMap = lines.every(l => l.includes(':'));
+          if (isMap && lines.length > 0) {
+            val = {};
+            for (const line of lines) {
+              const [k,...rest] = line.split(':');
+              val[k.trim()] = rest.join(':').trim().replace(/^["']|["']$/g,'');
+            }
+          } else {
+            val = raw;
+          }
+        } catch(e) { val = raw; }
+      }
+    } else {
+      val = el.value;
+    }
+    setPath(updates, path, val);
+  });
+  // Keywords (kw-editor divs) - already maintained in S
+  document.querySelectorAll('#settingsContent .kw-editor[data-path]').forEach(el => {
+    const path = el.dataset.path;
+    const arr = getPath(S, path) || [];
+    setPath(updates, path, arr);
+  });
+  return updates;
+}
+
+async function saveAllSettings() {
+  const updates = collectSettings();
+  try {
+    await api('/api/ui/settings', 'PUT', {settings: updates});
+    // Also update local cache
+    Object.assign(S, JSON.parse(JSON.stringify(updates)));
+    toast('Einstellungen gespeichert');
+  } catch(e) {
+    toast('Fehler beim Speichern', 'error');
+  }
+}
+
+// ---- Entities ----
+async function loadEntities() {
+  try {
+    const data = await api('/api/ui/entities');
+    ALL_ENTITIES = data.entities || [];
+    const domains = [...new Set(ALL_ENTITIES.map(e => e.domain))].sort();
+    const sel = document.getElementById('entityDomainFilter');
+    sel.innerHTML = `<option value="">Alle Domains (${ALL_ENTITIES.length})</option>`;
+    for (const d of domains) {
+      const c = ALL_ENTITIES.filter(e => e.domain === d).length;
+      sel.innerHTML += `<option value="${d}">${d} (${c})</option>`;
+    }
+    filterEntities();
+  } catch(e) { console.error('Entities fail:', e); }
+}
+
+function filterEntities() {
+  const domain = document.getElementById('entityDomainFilter').value;
+  const search = document.getElementById('entitySearchInput').value.toLowerCase();
+  let filtered = ALL_ENTITIES;
+  if (domain) filtered = filtered.filter(e => e.domain === domain);
+  if (search) filtered = filtered.filter(e => e.entity_id.toLowerCase().includes(search) || e.name.toLowerCase().includes(search));
+  const show = filtered.slice(0, 100);
+  const c = document.getElementById('entityBrowser');
+  c.innerHTML = show.map(e => `
+    <div class="entity-item" onclick="navigator.clipboard?.writeText('${e.entity_id}');toast('${e.entity_id} kopiert')">
+      <span class="ename">${esc(e.name)}</span>
+      <span class="eid">${e.entity_id}</span>
+      <span style="color:var(--text-muted);font-size:11px;">${esc(e.state)}</span>
+    </div>`).join('');
+  if (filtered.length > 100) c.innerHTML += `<div style="padding:10px;text-align:center;color:var(--text-muted);font-size:11px;">...und ${filtered.length-100} weitere</div>`;
+}
+
+// ---- Knowledge ----
+async function loadKnowledge() {
+  try {
+    const d = await api('/api/ui/knowledge');
+    const st = d.stats || {}, fi = d.files || [];
+    document.getElementById('kbStats').innerHTML = `
+      <div class="stat-card"><div class="stat-label">Status</div>
+        <div class="stat-value" style="font-size:18px;color:${st.enabled?'var(--success)':'var(--danger)'};">${st.enabled?'Aktiv':'Aus'}</div></div>
+      <div class="stat-card"><div class="stat-label">Chunks</div><div class="stat-value">${st.total_chunks||0}</div></div>
+      <div class="stat-card"><div class="stat-label">Quellen</div><div class="stat-value">${(st.sources||[]).length}</div>
+        <div class="stat-sub">${(st.sources||[]).join(', ')||'keine'}</div></div>`;
+    document.getElementById('kbFiles').innerHTML = fi.length === 0
+      ? '<div style="padding:16px;text-align:center;color:var(--text-muted);">Keine Dateien</div>'
+      : fi.map(f => `<div class="file-item"><span style="font-size:16px;">&#128196;</span><span class="file-name">${esc(f.name)}</span><span class="file-size">${fmtBytes(f.size)}</span></div>`).join('');
+  } catch(e) { console.error('KB fail:', e); }
+}
+async function ingestKnowledge() {
+  try {
+    const d = await api('/api/ui/knowledge/ingest', 'POST');
+    toast(`${d.new_chunks} neue Chunks eingelesen`);
+    loadKnowledge();
+  } catch(e) { toast('Fehler beim Einlesen', 'error'); }
+}
+
+// ---- Logs ----
+async function loadLogs() {
+  try {
+    const d = await api('/api/ui/logs');
+    const convs = d.conversations || [];
+    const c = document.getElementById('logsContainer');
+    if (convs.length === 0) { c.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text-muted);">Keine Gespraeche</div>'; return; }
+    c.innerHTML = convs.map(cv => {
+      const t = cv.timestamp ? new Date(cv.timestamp).toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'}) : '';
+      const role = cv.role || 'system';
+      return `<div class="log-entry"><span class="log-time">${t}</span><span class="log-role ${role}">${role}</span><span class="log-content">${esc(cv.content||'')}</span></div>`;
+    }).join('');
+  } catch(e) { console.error('Logs fail:', e); }
+}
+</script>
+</body>
+</html>

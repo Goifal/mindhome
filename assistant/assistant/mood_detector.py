@@ -32,30 +32,32 @@ MOOD_STRESSED = "stressed"
 MOOD_FRUSTRATED = "frustrated"
 MOOD_TIRED = "tired"
 
-# Keywords für Stimmungserkennung
-POSITIVE_KEYWORDS = [
+# Keywords fuer Stimmungserkennung (Defaults, ueberschrieben durch settings.yaml)
+_mood_cfg = yaml_config.get("mood", {})
+
+POSITIVE_KEYWORDS = _mood_cfg.get("positive_keywords", [
     "danke", "super", "perfekt", "toll", "geil", "nice", "cool", "genau",
     "klasse", "wunderbar", "prima", "top", "gut gemacht", "laeuft",
     "haha", "lol", "witzig", "lustig", "freut mich", "ja gerne",
-]
+])
 
-NEGATIVE_KEYWORDS = [
+NEGATIVE_KEYWORDS = _mood_cfg.get("negative_keywords", [
     "nein", "falsch", "nicht das", "stimmt nicht", "geht nicht",
     "funktioniert nicht", "kaputt", "nervig", "nervt", "schlecht",
     "mist", "verdammt", "scheisse", "bloed", "egal",
-]
+])
 
-IMPATIENT_KEYWORDS = [
+IMPATIENT_KEYWORDS = _mood_cfg.get("impatient_keywords", [
     "schnell", "sofort", "jetzt", "los", "mach schon", "beeil dich",
     "endlich", "nochmal", "schon wieder", "hab ich doch gesagt",
     "zum dritten mal", "wie oft noch", "kapierst du",
-]
+])
 
-TIRED_KEYWORDS = [
+TIRED_KEYWORDS = _mood_cfg.get("tired_keywords", [
     "muede", "schlafen", "bett", "gute nacht", "nacht",
     "gaehn", "erschoepft", "fertig", "genug fuer heute",
     "schluss fuer heute", "feierabend", "ins bett",
-]
+])
 
 FRUSTRATED_PREFIXES = [
     "nein ", "nein!", "nein,", "falsch!", "nicht!", "stopp!",
@@ -88,6 +90,14 @@ class MoodDetector:
         self.frustration_threshold = mood_cfg.get("frustration_threshold", 3)
         self.tired_hour_start = mood_cfg.get("tired_hour_start", 23)
         self.tired_hour_end = mood_cfg.get("tired_hour_end", 5)
+
+        # Stress-Boost Werte (konfigurierbar via settings.yaml)
+        self.rapid_command_stress_boost = mood_cfg.get("rapid_command_stress_boost", 0.15)
+        self.positive_stress_reduction = mood_cfg.get("positive_stress_reduction", 0.1)
+        self.negative_stress_boost = mood_cfg.get("negative_stress_boost", 0.1)
+        self.impatient_stress_boost = mood_cfg.get("impatient_stress_boost", 0.2)
+        self.tired_boost = mood_cfg.get("tired_boost", 0.3)
+        self.repetition_stress_boost = mood_cfg.get("repetition_stress_boost", 0.15)
 
         self._last_decay_time = time.time()
 
@@ -137,7 +147,7 @@ class MoodDetector:
         if self._interaction_times:
             time_since_last = now - self._interaction_times[-1]
             if time_since_last < self.rapid_command_threshold:
-                self._stress_level = min(1.0, self._stress_level + 0.15)
+                self._stress_level = min(1.0, self._stress_level + self.rapid_command_stress_boost)
                 signals.append("rapid_commands")
 
         # 2. Text-Analyse
@@ -147,31 +157,31 @@ class MoodDetector:
         # Positive Signale
         if any(kw in text_lower for kw in POSITIVE_KEYWORDS):
             self._positive_count += 1
-            self._stress_level = max(0.0, self._stress_level - 0.1)
+            self._stress_level = max(0.0, self._stress_level - self.positive_stress_reduction)
             self._frustration_count = max(0, self._frustration_count - 1)
             signals.append("positive_language")
 
         # Negative/frustrierte Signale
         if any(kw in text_lower for kw in NEGATIVE_KEYWORDS):
             self._frustration_count += 1
-            self._stress_level = min(1.0, self._stress_level + 0.1)
+            self._stress_level = min(1.0, self._stress_level + self.negative_stress_boost)
             signals.append("negative_language")
 
         # Ungeduldige Signale
         if any(kw in text_lower for kw in IMPATIENT_KEYWORDS):
-            self._stress_level = min(1.0, self._stress_level + 0.2)
+            self._stress_level = min(1.0, self._stress_level + self.impatient_stress_boost)
             self._frustration_count += 1
             signals.append("impatient_language")
 
         # Muedigkeits-Keywords
         if any(kw in text_lower for kw in TIRED_KEYWORDS):
-            self._tiredness_level = min(1.0, self._tiredness_level + 0.3)
+            self._tiredness_level = min(1.0, self._tiredness_level + self.tired_boost)
             signals.append("tired_keywords")
 
         # Frustrierte Wiederholung (gleicher/aehnlicher Text wie vorher)
         if self._last_texts and self._is_repetition(text_lower):
             self._frustration_count += 2
-            self._stress_level = min(1.0, self._stress_level + 0.15)
+            self._stress_level = min(1.0, self._stress_level + self.repetition_stress_boost)
             signals.append("repetition")
 
         # Ausrufezeichen = Ungeduld/Frustration

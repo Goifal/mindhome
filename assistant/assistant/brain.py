@@ -1158,6 +1158,48 @@ class AssistantBrain:
                 return "\n".join(lines)
             return "Heute habe ich noch nichts Neues gelernt."
 
+        # Phase 16.2: "Was kannst du?" — Faehigkeiten auflisten
+        if any(kw in text_lower for kw in [
+            "was kannst du", "was koennen sie", "was koenntest du",
+            "hilfe", "help", "funktionen", "faehigkeiten",
+            "was sind deine", "zeig mir was du",
+        ]):
+            result = await self.executor.execute("list_capabilities", {})
+            return result.get("message", "Ich kann vieles. Frag einfach.")
+
+        # Phase 15.2: "Was steht auf der Einkaufsliste?"
+        if any(kw in text_lower for kw in [
+            "einkaufsliste", "shopping list", "was muss ich einkaufen",
+            "was brauchen wir", "einkaufszettel",
+        ]):
+            # "Setz X auf die Einkaufsliste"
+            for trigger in ["setz ", "setze ", "pack ", "tu ", "schreib "]:
+                if text_lower.startswith(trigger):
+                    # Extrahiere den Artikel
+                    rest = text[len(trigger):].strip()
+                    # "X auf die Einkaufsliste"
+                    for sep in [" auf die einkaufsliste", " auf den einkaufszettel",
+                                " auf die liste"]:
+                        if sep in rest.lower():
+                            item = rest[:rest.lower().index(sep)].strip()
+                            if item:
+                                result = await self.executor.execute(
+                                    "manage_shopping_list", {"action": "add", "item": item}
+                                )
+                                return result.get("message", f"'{item}' hinzugefuegt.")
+                    # Fallback: ganzer Rest als Item
+                    result = await self.executor.execute(
+                        "manage_shopping_list", {"action": "add", "item": rest}
+                    )
+                    return result.get("message", f"'{rest}' hinzugefuegt.")
+
+            # "Zeig die Einkaufsliste" / "Was steht auf der Einkaufsliste"
+            if any(kw in text_lower for kw in ["zeig", "was steht", "was muss", "was brauchen"]):
+                result = await self.executor.execute(
+                    "manage_shopping_list", {"action": "list"}
+                )
+                return result.get("message", "Einkaufsliste nicht verfuegbar.")
+
         return None
 
     # ------------------------------------------------------------------
