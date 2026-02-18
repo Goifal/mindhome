@@ -87,6 +87,7 @@ class SelfAutomation:
 
         # Pending Automations (warten auf Bestaetigung)
         self._pending: dict[str, dict] = {}
+        self._pending_ttl_seconds = 300  # 5 Minuten Timeout
 
         # Audit-Log (In-Memory + Redis wenn verfuegbar)
         self._audit_log: list[dict] = []
@@ -216,11 +217,12 @@ class SelfAutomation:
         Returns:
             Dict mit success, message, automation_id
         """
+        self._cleanup_expired_pending()
         pending = self._pending.pop(pending_id, None)
         if not pending:
             return {
                 "success": False,
-                "message": f"Keine ausstehende Automation mit ID '{pending_id}' gefunden.",
+                "message": "Der Vorschlag ist abgelaufen. Beschreib nochmal was du brauchst.",
             }
 
         automation = pending["automation"]
@@ -362,8 +364,25 @@ class SelfAutomation:
         }
 
     def get_pending_count(self) -> int:
-        """Gibt die Anzahl ausstehender Automationen zurueck."""
+        """Gibt die Anzahl ausstehender (nicht abgelaufener) Automationen zurueck."""
+        self._cleanup_expired_pending()
         return len(self._pending)
+
+    def _cleanup_expired_pending(self):
+        """Entfernt abgelaufene Pending-Automationen (TTL ueberschritten)."""
+        now = datetime.now()
+        expired = [
+            pid for pid, data in self._pending.items()
+            if (now - datetime.fromisoformat(data["created"])).total_seconds()
+            > self._pending_ttl_seconds
+        ]
+        for pid in expired:
+            desc = self._pending[pid].get("description", "?")
+            self._audit("expired", desc, "", {}, f"TTL {self._pending_ttl_seconds}s")
+            del self._pending[pid]
+        if expired:
+            logger.info("%d Pending-Automation(en) abgelaufen (TTL: %ds)",
+                        len(expired), self._pending_ttl_seconds)
 
     def health_status(self) -> str:
         """Status-String fuer Health-Check."""
