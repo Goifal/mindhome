@@ -1,18 +1,15 @@
 # MindHome - routes/chat.py | see version.py for version info
 """
 MindHome API Routes - Jarvis Chat
-Proxies chat messages to the MindHome Assistant (PC 2) and stores conversation history.
-Supports file uploads (images, videos, documents) in chat.
+Proxies chat messages and file uploads to the MindHome Assistant (PC 2).
+Files are stored on the Assistant server, not locally.
 """
 
 import logging
-import os
 import time
-import uuid
 import requests
 from datetime import datetime, timezone
-from flask import Blueprint, request, jsonify, send_from_directory
-from werkzeug.utils import secure_filename
+from flask import Blueprint, request, jsonify, Response
 
 from helpers import get_setting, set_setting
 
@@ -27,18 +24,13 @@ _deps = {}
 _conversation_history = []
 MAX_HISTORY = 200
 
-# Upload configuration
-UPLOAD_DIR = "/data/mindhome/uploads"
+# File validation (checked before forwarding to assistant)
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 50 MB
 ALLOWED_EXTENSIONS = {
-    # Images
     "jpg", "jpeg", "png", "gif", "webp", "svg", "bmp",
-    # Videos
     "mp4", "webm", "mov", "avi",
-    # Documents
     "pdf", "txt", "csv", "json", "xml",
     "doc", "docx", "xls", "xlsx", "pptx",
-    # Audio
     "mp3", "wav", "ogg", "m4a",
 }
 FILE_TYPE_MAP = {
@@ -57,15 +49,10 @@ def _allowed_file(filename):
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
 
 
-def _ensure_upload_dir():
-    os.makedirs(UPLOAD_DIR, exist_ok=True)
-
-
 def init_chat(dependencies):
     """Initialize chat routes with shared dependencies."""
     global _deps
     _deps = dependencies
-    _ensure_upload_dir()
 
 
 def _get_assistant_url():
@@ -207,7 +194,7 @@ def api_chat_status():
 
 
 # ------------------------------------------------------------------
-# File upload & serving
+# File upload & serving — forwarded to Assistant (PC 2)
 # ------------------------------------------------------------------
 
 @chat_bp.route("/api/chat/upload", methods=["POST"])
@@ -215,9 +202,9 @@ def api_chat_upload():
     """
     Upload a file in the chat.
 
-    Accepts multipart/form-data with field 'file'.
-    Stores in /data/mindhome/uploads/ with a unique name.
-    Returns file metadata + URL for display.
+    Validates the file locally, then forwards it to the Assistant (PC 2)
+    for storage, text extraction, and LLM processing.
+    Returns file metadata + Jarvis response.
     """
     if "file" not in request.files:
         return jsonify({"error": "Keine Datei angegeben"}), 400
@@ -229,7 +216,7 @@ def api_chat_upload():
     if not _allowed_file(file.filename):
         return jsonify({"error": "Dateityp nicht erlaubt"}), 400
 
-    # Check file size (read into memory, enforce limit)
+    # Check file size
     file.seek(0, 2)
     size = file.tell()
     file.seek(0)
@@ -237,52 +224,106 @@ def api_chat_upload():
         mb = MAX_FILE_SIZE // (1024 * 1024)
         return jsonify({"error": f"Datei zu groß (max {mb} MB)"}), 413
 
-    # Generate unique filename
-    orig = secure_filename(file.filename)
-    ext = orig.rsplit(".", 1)[1].lower() if "." in orig else ""
-    unique_name = f"{uuid.uuid4().hex[:12]}_{orig}"
-
-    _ensure_upload_dir()
-    dest = os.path.join(UPLOAD_DIR, unique_name)
-    file.save(dest)
-
-    file_type = FILE_TYPE_MAP.get(ext, "document")
-    url = f"api/chat/files/{unique_name}"
-
-    # Store as chat message
     person = request.form.get("person", get_setting("primary_user", "Max"))
     caption = request.form.get("caption", "").strip()
 
-    user_msg = {
-        "role": "user",
-        "text": caption,
-        "person": person,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "file": {
-            "name": orig,
-            "url": url,
-            "type": file_type,
-            "size": size,
-            "ext": ext,
-        },
-    }
-    _conversation_history.append(user_msg)
+    # Forward to Assistant (PC 2)
+    assistant_url = _get_assistant_url()
+    try:
+        resp = requests.post(
+            f"{assistant_url}/api/assistant/chat/upload",
+            files={"file": (file.filename, file.stream, file.content_type or "application/octet-stream")},
+            data={"caption": caption, "person": person},
+            timeout=60,
+        )
 
-    while len(_conversation_history) > MAX_HISTORY:
-        _conversation_history.pop(0)
+        if resp.status_code == 200:
+            result = resp.json()
+            file_info = result.get("file", {})
 
-    logger.info("Chat file uploaded: %s (%s, %d bytes)", orig, file_type, size)
+            # Rewrite URL: assistant URL -> addon proxy URL
+            if file_info.get("url"):
+                file_info["url"] = file_info["url"].replace(
+                    "api/assistant/chat/files/", "api/chat/files/"
+                )
 
-    return jsonify({
-        "file": user_msg["file"],
-        "timestamp": user_msg["timestamp"],
-    })
+            # Store user message with file
+            user_msg = {
+                "role": "user",
+                "text": caption,
+                "person": person,
+                "timestamp": result.get("timestamp", datetime.now(timezone.utc).isoformat()),
+                "file": file_info,
+            }
+            _conversation_history.append(user_msg)
+
+            # Store assistant response (from LLM processing)
+            if result.get("response"):
+                assistant_msg = {
+                    "role": "assistant",
+                    "text": result["response"],
+                    "actions": result.get("actions", []),
+                    "model_used": result.get("model_used", ""),
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                }
+                _conversation_history.append(assistant_msg)
+
+            while len(_conversation_history) > MAX_HISTORY:
+                _conversation_history.pop(0)
+
+            logger.info("Chat file uploaded to assistant: %s", file_info.get("name", "?"))
+
+            return jsonify({
+                "file": file_info,
+                "response": result.get("response", ""),
+                "actions": result.get("actions", []),
+                "timestamp": user_msg["timestamp"],
+            })
+        else:
+            detail = ""
+            try:
+                detail = resp.json().get("detail", "")
+            except Exception:
+                pass
+            error_msg = f"Assistant returned {resp.status_code}: {detail}"
+            logger.warning("Chat upload proxy error: %s", error_msg)
+            return jsonify({"error": error_msg}), 502
+
+    except requests.ConnectionError:
+        logger.warning("Cannot reach assistant at %s for upload", assistant_url)
+        return jsonify({
+            "error": "Assistant nicht erreichbar. Prüfe die Verbindung zu PC 2.",
+        }), 503
+    except requests.Timeout:
+        logger.warning("Assistant upload timeout at %s", assistant_url)
+        return jsonify({
+            "error": "Upload-Timeout. Datei zu groß oder Assistant überlastet.",
+        }), 504
+    except Exception as e:
+        logger.error("Chat upload proxy exception: %s", e)
+        return jsonify({"error": str(e)}), 500
 
 
 @chat_bp.route("/api/chat/files/<path:filename>", methods=["GET"])
 def api_chat_serve_file(filename):
-    """Serve an uploaded chat file."""
-    safe = secure_filename(filename)
-    if not safe or not os.path.isfile(os.path.join(UPLOAD_DIR, safe)):
+    """Proxy file serving from the Assistant (PC 2)."""
+    assistant_url = _get_assistant_url()
+    try:
+        resp = requests.get(
+            f"{assistant_url}/api/assistant/chat/files/{filename}",
+            timeout=30,
+            stream=True,
+        )
+        if resp.status_code == 200:
+            return Response(
+                resp.iter_content(chunk_size=8192),
+                content_type=resp.headers.get("content-type", "application/octet-stream"),
+                headers={
+                    "Content-Disposition": resp.headers.get("content-disposition", ""),
+                    "Cache-Control": "public, max-age=86400",
+                },
+            )
         return jsonify({"error": "Datei nicht gefunden"}), 404
-    return send_from_directory(UPLOAD_DIR, safe)
+    except Exception as e:
+        logger.warning("File proxy error: %s", e)
+        return jsonify({"error": "Datei konnte nicht geladen werden"}), 502

@@ -175,7 +175,7 @@ class AssistantBrain:
         await self.proactive.start()
         logger.info("Jarvis initialisiert (alle Systeme aktiv)")
 
-    async def process(self, text: str, person: Optional[str] = None, room: Optional[str] = None) -> dict:
+    async def process(self, text: str, person: Optional[str] = None, room: Optional[str] = None, files: Optional[list] = None) -> dict:
         """
         Verarbeitet eine User-Eingabe.
 
@@ -183,6 +183,7 @@ class AssistantBrain:
             text: User-Text (z.B. "Mach das Licht aus")
             person: Name der Person (optional)
             room: Raum aus dem die Anfrage kommt (optional)
+            files: Liste von Datei-Metadaten aus file_handler.save_upload() (optional)
 
         Returns:
             Dict mit response, actions, model_used
@@ -401,6 +402,13 @@ class AssistantBrain:
         summary_context = await self._get_summary_context(text)
         if summary_context:
             system_prompt += summary_context
+
+        # Phase 12: Datei-Kontext in Prompt einbauen
+        if files:
+            from .file_handler import build_file_context
+            file_context = build_file_context(files)
+            if file_context:
+                system_prompt += "\n" + file_context
 
         # Phase 8: Konversations-Kontinuitaet in Prompt einbauen
         if continuity_hint:

@@ -7,12 +7,17 @@ import json
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from typing import Optional
 
 from .brain import AssistantBrain
 from .config import settings
+from .file_handler import (
+    allowed_file, build_file_context, ensure_upload_dir,
+    get_file_path, save_upload, MAX_FILE_SIZE,
+)
 from .websocket import ws_manager, emit_speaking
 
 # Logging
@@ -479,6 +484,80 @@ async def cooking_stop():
         return {"stopped": False, "message": "Keine aktive Koch-Session."}
     result = brain.cooking._stop_session()
     return {"stopped": True, "message": result}
+
+
+# ----- Phase 12: Datei-Upload im Chat -----
+
+@app.post("/api/assistant/chat/upload")
+async def chat_upload(
+    file: UploadFile = File(...),
+    caption: str = Form(""),
+    person: str = Form(""),
+):
+    """
+    Datei hochladen und im Chat-Kontext verarbeiten.
+
+    Speichert die Datei, extrahiert Text aus Dokumenten und
+    sendet den Inhalt zusammen mit der optionalen Beschreibung
+    an das Brain zur Verarbeitung.
+    """
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="Keine Datei ausgewaehlt")
+
+    if not allowed_file(file.filename):
+        raise HTTPException(status_code=400, detail="Dateityp nicht erlaubt")
+
+    content = await file.read()
+    if len(content) > MAX_FILE_SIZE:
+        mb = MAX_FILE_SIZE // (1024 * 1024)
+        raise HTTPException(status_code=413, detail=f"Datei zu gross (max {mb} MB)")
+
+    # Save file and extract text
+    file_info = save_upload(file.filename, content)
+
+    # Build a message for the brain that includes file context
+    file_context = build_file_context([file_info])
+    text = caption.strip() if caption.strip() else (
+        f"Ich habe eine Datei geschickt: {file_info['name']}"
+    )
+
+    # Process through brain with file context
+    result = await brain.process(
+        text=text,
+        person=person or None,
+        room=None,
+        files=[file_info],
+    )
+
+    # TTS wrapping
+    tts_raw = result.pop("tts", None)
+    if tts_raw and isinstance(tts_raw, dict):
+        result["tts"] = TTSInfo(**tts_raw)
+
+    return {
+        "file": {
+            "name": file_info["name"],
+            "url": file_info["url"],
+            "type": file_info["type"],
+            "size": file_info["size"],
+            "ext": file_info["ext"],
+        },
+        "response": result.get("response", ""),
+        "actions": result.get("actions", []),
+        "model_used": result.get("model_used", ""),
+        "timestamp": __import__("datetime").datetime.now(
+            __import__("datetime").timezone.utc
+        ).isoformat(),
+    }
+
+
+@app.get("/api/assistant/chat/files/{filename:path}")
+async def chat_serve_file(filename: str):
+    """Gespeicherte Chat-Datei ausliefern."""
+    path = get_file_path(filename)
+    if not path:
+        raise HTTPException(status_code=404, detail="Datei nicht gefunden")
+    return FileResponse(path, filename=path.name)
 
 
 # ----- Phase 10: Trust-Level Endpoints -----

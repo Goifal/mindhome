@@ -9878,6 +9878,15 @@ const JarvisChatPage = () => {
                             break;
                         }
                     }
+                    // Add Jarvis response if the assistant processed the file
+                    if (result.response) {
+                        updated.push({
+                            role: 'assistant',
+                            text: result.response,
+                            actions: result.actions || [],
+                            timestamp: new Date().toISOString(),
+                        });
+                    }
                     return updated;
                 });
             }

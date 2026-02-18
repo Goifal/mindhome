@@ -22,6 +22,7 @@ services:
     volumes:
       - ./config:/app/config:ro
       - ./data/assistant:/app/data
+      - ./data/uploads:/app/data/uploads
     depends_on:
       chromadb:
         condition: service_healthy
