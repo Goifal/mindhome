@@ -238,16 +238,78 @@ textarea { resize:vertical; min-height:70px; font-family:var(--mono); font-size:
 </head>
 <body>
 
+<!-- SETUP (erstmaliger Aufruf) -->
+<div id="setupScreen" class="login-screen" style="display:none;">
+  <div class="login-box">
+    <div style="font-size:44px;margin-bottom:14px;">&#9881;</div>
+    <h1>JARVIS</h1>
+    <p>Ersteinrichtung — PIN festlegen</p>
+    <input type="password" id="setupPin" maxlength="16" placeholder="PIN waehlen" style="margin-bottom:12px;"
+           onkeydown="if(event.key==='Enter')document.getElementById('setupPinConfirm').focus()">
+    <input type="password" id="setupPinConfirm" maxlength="16" placeholder="PIN bestaetigen"
+           onkeydown="if(event.key==='Enter')doSetup()">
+    <button onclick="doSetup()">PIN setzen</button>
+    <div id="setupError" class="login-error"></div>
+  </div>
+</div>
+
+<!-- RECOVERY KEY anzeigen (nach Setup) -->
+<div id="recoveryScreen" class="login-screen" style="display:none;">
+  <div class="login-box">
+    <div style="font-size:44px;margin-bottom:14px;">&#128273;</div>
+    <h1>Recovery-Key</h1>
+    <p style="color:var(--accent);font-weight:600;margin-bottom:16px;">Diesen Schluessel sicher aufbewahren!</p>
+    <p style="margin-bottom:20px;font-size:13px;">Falls du deinen PIN vergisst, kannst du ihn nur mit diesem Key zuruecksetzen. Er wird nur einmal angezeigt.</p>
+    <div id="recoveryKeyDisplay" style="background:var(--bg-input);border:2px solid var(--accent);border-radius:var(--radius-sm);padding:18px;font-family:var(--mono);font-size:22px;letter-spacing:4px;color:var(--accent);margin-bottom:20px;user-select:all;"></div>
+    <button onclick="recoveryAcknowledged()">Ich habe den Key gespeichert</button>
+  </div>
+</div>
+
 <!-- LOGIN -->
-<div id="loginScreen" class="login-screen">
+<div id="loginScreen" class="login-screen" style="display:none;">
   <div class="login-box">
     <div style="font-size:44px;margin-bottom:14px;">&#9881;</div>
     <h1>JARVIS</h1>
     <p>MindHome Dashboard</p>
-    <input type="password" id="pinInput" maxlength="8" placeholder="PIN" autofocus
+    <input type="password" id="pinInput" maxlength="16" placeholder="PIN" autofocus
            onkeydown="if(event.key==='Enter')doLogin()">
     <button onclick="doLogin()">Anmelden</button>
     <div id="loginError" class="login-error"></div>
+    <div style="margin-top:20px;">
+      <a href="#" onclick="showResetScreen();return false;" style="color:var(--text-muted);font-size:12px;text-decoration:none;">PIN vergessen?</a>
+    </div>
+  </div>
+</div>
+
+<!-- PIN RESET -->
+<div id="resetScreen" class="login-screen" style="display:none;">
+  <div class="login-box">
+    <div style="font-size:44px;margin-bottom:14px;">&#128273;</div>
+    <h1>PIN zuruecksetzen</h1>
+    <p>Recovery-Key eingeben</p>
+    <input type="text" id="resetRecoveryKey" maxlength="16" placeholder="Recovery-Key" style="margin-bottom:12px;letter-spacing:2px;text-transform:uppercase;"
+           onkeydown="if(event.key==='Enter')document.getElementById('resetNewPin').focus()">
+    <input type="password" id="resetNewPin" maxlength="16" placeholder="Neuer PIN" style="margin-bottom:12px;"
+           onkeydown="if(event.key==='Enter')document.getElementById('resetNewPinConfirm').focus()">
+    <input type="password" id="resetNewPinConfirm" maxlength="16" placeholder="Neuer PIN bestaetigen"
+           onkeydown="if(event.key==='Enter')doResetPin()">
+    <button onclick="doResetPin()">PIN zuruecksetzen</button>
+    <div id="resetError" class="login-error"></div>
+    <div style="margin-top:16px;">
+      <a href="#" onclick="showLoginScreen();return false;" style="color:var(--text-muted);font-size:12px;text-decoration:none;">Zurueck zur Anmeldung</a>
+    </div>
+  </div>
+</div>
+
+<!-- NEUER RECOVERY KEY (nach Reset) -->
+<div id="newRecoveryScreen" class="login-screen" style="display:none;">
+  <div class="login-box">
+    <div style="font-size:44px;margin-bottom:14px;">&#128273;</div>
+    <h1>Neuer Recovery-Key</h1>
+    <p style="color:var(--accent);font-weight:600;margin-bottom:16px;">Neuen Schluessel sicher aufbewahren!</p>
+    <p style="margin-bottom:20px;font-size:13px;">Der alte Recovery-Key ist ungueltig. Dieser neue Key wird nur einmal angezeigt.</p>
+    <div id="newRecoveryKeyDisplay" style="background:var(--bg-input);border:2px solid var(--accent);border-radius:var(--radius-sm);padding:18px;font-family:var(--mono);font-size:22px;letter-spacing:4px;color:var(--accent);margin-bottom:20px;user-select:all;"></div>
+    <button onclick="newRecoveryAcknowledged()">Ich habe den Key gespeichert</button>
   </div>
 </div>
 
@@ -363,13 +425,93 @@ let S = {};  // Settings cache
 let ALL_ENTITIES = [];
 const API = '';
 
-// ---- Auth ----
+// ---- Screens ausblenden ----
+function hideAllScreens() {
+  ['setupScreen','recoveryScreen','loginScreen','resetScreen','newRecoveryScreen'].forEach(id => {
+    document.getElementById(id).style.display = 'none';
+  });
+  document.getElementById('app').classList.remove('active');
+}
+
+// ---- Setup-Status pruefen und richtigen Screen zeigen ----
+async function checkSetupAndShow() {
+  try {
+    const r = await fetch(`${API}/api/ui/setup-status`);
+    const d = await r.json();
+    hideAllScreens();
+    if (!d.setup_complete) {
+      // Erster Aufruf: Setup-Screen
+      document.getElementById('setupScreen').style.display = 'flex';
+      document.getElementById('setupPin').focus();
+    } else {
+      // Setup fertig: Token pruefen oder Login zeigen
+      const t = sessionStorage.getItem('jt');
+      if (t) {
+        TOKEN = t;
+        try {
+          const sr = await fetch(`${API}/api/ui/stats?token=${TOKEN}`);
+          if (sr.ok) { showApp(); return; }
+        } catch(e) {}
+      }
+      showLoginScreen();
+    }
+  } catch(e) {
+    // Fallback: Login zeigen
+    showLoginScreen();
+  }
+}
+
+// ---- Setup: PIN setzen ----
+async function doSetup() {
+  const pin = document.getElementById('setupPin').value;
+  const confirm = document.getElementById('setupPinConfirm').value;
+  const err = document.getElementById('setupError');
+  err.textContent = '';
+
+  if (pin.length < 4) { err.textContent = 'PIN muss mindestens 4 Zeichen haben'; return; }
+  if (pin !== confirm) { err.textContent = 'PINs stimmen nicht ueberein'; return; }
+
+  try {
+    const r = await fetch(`${API}/api/ui/setup`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({pin, pin_confirm: confirm})
+    });
+    const d = await r.json();
+    if (!r.ok) { err.textContent = d.detail || 'Fehler'; return; }
+
+    // Recovery-Key anzeigen
+    hideAllScreens();
+    document.getElementById('recoveryKeyDisplay').textContent = d.recovery_key;
+    document.getElementById('recoveryScreen').style.display = 'flex';
+  } catch(e) { err.textContent = 'Verbindung fehlgeschlagen'; }
+}
+
+function recoveryAcknowledged() {
+  hideAllScreens();
+  showLoginScreen();
+}
+
+// ---- Login ----
+function showLoginScreen() {
+  hideAllScreens();
+  document.getElementById('loginScreen').style.display = 'flex';
+  document.getElementById('pinInput').value = '';
+  document.getElementById('loginError').textContent = '';
+  document.getElementById('pinInput').focus();
+}
+
 async function doLogin() {
   const pin = document.getElementById('pinInput').value;
   const err = document.getElementById('loginError');
   err.textContent = '';
+
+  if (!pin) { err.textContent = 'PIN eingeben'; return; }
+
   try {
-    const r = await fetch(`${API}/api/ui/auth`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({pin})});
+    const r = await fetch(`${API}/api/ui/auth`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({pin})
+    });
     if (!r.ok) { err.textContent = 'Falscher PIN'; return; }
     const d = await r.json();
     TOKEN = d.token;
@@ -377,22 +519,64 @@ async function doLogin() {
     showApp();
   } catch(e) { err.textContent = 'Verbindung fehlgeschlagen'; }
 }
+
 function doLogout() {
   TOKEN = '';
   sessionStorage.removeItem('jt');
-  document.getElementById('app').classList.remove('active');
-  document.getElementById('loginScreen').style.display = 'flex';
-  document.getElementById('pinInput').value = '';
+  hideAllScreens();
+  showLoginScreen();
 }
+
 function showApp() {
-  document.getElementById('loginScreen').style.display = 'none';
+  hideAllScreens();
   document.getElementById('app').classList.add('active');
   loadDashboard();
 }
-(function(){
-  const t = sessionStorage.getItem('jt');
-  if (t) { TOKEN = t; fetch(`${API}/api/ui/stats?token=${TOKEN}`).then(r => r.ok ? showApp() : doLogout()).catch(doLogout); }
-})();
+
+// ---- PIN Reset ----
+function showResetScreen() {
+  hideAllScreens();
+  document.getElementById('resetScreen').style.display = 'flex';
+  document.getElementById('resetRecoveryKey').value = '';
+  document.getElementById('resetNewPin').value = '';
+  document.getElementById('resetNewPinConfirm').value = '';
+  document.getElementById('resetError').textContent = '';
+  document.getElementById('resetRecoveryKey').focus();
+}
+
+async function doResetPin() {
+  const recovery_key = document.getElementById('resetRecoveryKey').value.trim().toUpperCase();
+  const new_pin = document.getElementById('resetNewPin').value;
+  const new_pin_confirm = document.getElementById('resetNewPinConfirm').value;
+  const err = document.getElementById('resetError');
+  err.textContent = '';
+
+  if (!recovery_key) { err.textContent = 'Recovery-Key eingeben'; return; }
+  if (new_pin.length < 4) { err.textContent = 'PIN muss mindestens 4 Zeichen haben'; return; }
+  if (new_pin !== new_pin_confirm) { err.textContent = 'PINs stimmen nicht ueberein'; return; }
+
+  try {
+    const r = await fetch(`${API}/api/ui/reset-pin`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({recovery_key, new_pin, new_pin_confirm})
+    });
+    const d = await r.json();
+    if (!r.ok) { err.textContent = d.detail || 'Falscher Recovery-Key'; return; }
+
+    // Neuen Recovery-Key anzeigen
+    hideAllScreens();
+    document.getElementById('newRecoveryKeyDisplay').textContent = d.recovery_key;
+    document.getElementById('newRecoveryScreen').style.display = 'flex';
+  } catch(e) { err.textContent = 'Verbindung fehlgeschlagen'; }
+}
+
+function newRecoveryAcknowledged() {
+  hideAllScreens();
+  showLoginScreen();
+}
+
+// ---- Init: Setup-Status pruefen ----
+checkSetupAndShow();
 
 // ---- API ----
 async function api(path, method='GET', body=null) {
@@ -614,7 +798,10 @@ function renderGeneral() {
     fKeywords('models.cooking_keywords', 'Koch-Keywords')
   ) +
   sectionWrap('&#128274;', 'Dashboard',
-    fText('dashboard.pin', 'Dashboard-PIN', 'Oder JARVIS_UI_PIN Umgebungsvariable')
+    '<div class="form-group"><label>PIN-Schutz</label>' +
+    '<p style="font-size:12px;color:var(--success);margin-bottom:8px;">PIN ist gesetzt und aktiv</p>' +
+    '<p style="font-size:11px;color:var(--text-muted);">PIN aendern: "PIN vergessen?" auf dem Login-Screen nutzen (Recovery-Key erforderlich).<br>' +
+    'Alternativ: JARVIS_UI_PIN Umgebungsvariable ueberschreibt den gespeicherten PIN.</p></div>'
   );
 }
 

@@ -647,36 +647,177 @@ async def websocket_endpoint(websocket: WebSocket):
 # Jarvis Dashboard — UI + Settings API
 # ============================================================
 
+import hashlib
+import secrets
+
 # Settings-YAML Pfad
 SETTINGS_YAML_PATH = Path(__file__).parent.parent / "config" / "settings.yaml"
 
-# PIN: Umgebungsvariable > settings.yaml > Default
-UI_PIN = os.environ.get(
-    "JARVIS_UI_PIN",
-    yaml_config.get("dashboard", {}).get("pin", "1234"),
-)
-
 # Session-Token (einfach, kein JWT noetig fuer lokales Netz)
 _active_tokens: set[str] = set()
+
+
+def _get_dashboard_config() -> dict:
+    """Liest die aktuelle Dashboard-Konfiguration aus settings.yaml."""
+    try:
+        with open(SETTINGS_YAML_PATH) as f:
+            config = yaml.safe_load(f) or {}
+        return config.get("dashboard", {})
+    except Exception:
+        return {}
+
+
+def _get_current_pin() -> str:
+    """Gibt den aktuellen PIN zurueck (Env > YAML)."""
+    env_pin = os.environ.get("JARVIS_UI_PIN")
+    if env_pin:
+        return env_pin
+    return _get_dashboard_config().get("pin_hash", "")
+
+
+def _is_setup_complete() -> bool:
+    """Prueft ob das initiale Setup abgeschlossen ist."""
+    dc = _get_dashboard_config()
+    return dc.get("setup_complete", False)
+
+
+def _hash_value(value: str) -> str:
+    """Hasht einen Wert mit SHA-256."""
+    return hashlib.sha256(value.encode()).hexdigest()
+
+
+def _save_dashboard_config(pin_hash: str, recovery_hash: str, setup_complete: bool = True):
+    """Speichert Dashboard-Konfiguration in settings.yaml."""
+    try:
+        with open(SETTINGS_YAML_PATH) as f:
+            config = yaml.safe_load(f) or {}
+        if "dashboard" not in config:
+            config["dashboard"] = {}
+        config["dashboard"]["pin_hash"] = pin_hash
+        config["dashboard"]["recovery_key_hash"] = recovery_hash
+        config["dashboard"]["setup_complete"] = setup_complete
+        # Alten Klartext-PIN entfernen falls vorhanden
+        config["dashboard"].pop("pin", None)
+        with open(SETTINGS_YAML_PATH, "w") as f:
+            yaml.dump(config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+        # Config im Speicher aktualisieren
+        import assistant.config as cfg
+        cfg.yaml_config = load_yaml_config()
+    except Exception as e:
+        logger.error("Dashboard-Config speichern fehlgeschlagen: %s", e)
+        raise
 
 
 class PinRequest(BaseModel):
     pin: str
 
 
+class SetupRequest(BaseModel):
+    pin: str
+    pin_confirm: str
+
+
+class ResetPinRequest(BaseModel):
+    recovery_key: str
+    new_pin: str
+    new_pin_confirm: str
+
+
 class SettingsUpdateFull(BaseModel):
     settings: dict
+
+
+@app.get("/api/ui/setup-status")
+async def ui_setup_status():
+    """Prueft ob das initiale Setup abgeschlossen ist (kein Auth noetig)."""
+    return {"setup_complete": _is_setup_complete()}
+
+
+@app.post("/api/ui/setup")
+async def ui_setup(req: SetupRequest):
+    """Erstmaliges Setup: PIN setzen + Recovery-Key generieren."""
+    if _is_setup_complete():
+        raise HTTPException(status_code=400, detail="Setup bereits abgeschlossen")
+
+    if req.pin != req.pin_confirm:
+        raise HTTPException(status_code=400, detail="PINs stimmen nicht ueberein")
+
+    if len(req.pin) < 4:
+        raise HTTPException(status_code=400, detail="PIN muss mindestens 4 Zeichen haben")
+
+    # Recovery-Key generieren (12 Zeichen, alphanumerisch)
+    recovery_key = secrets.token_urlsafe(16)[:12].upper()
+
+    # PIN + Recovery-Key gehasht speichern
+    pin_hash = _hash_value(req.pin)
+    recovery_hash = _hash_value(recovery_key)
+    _save_dashboard_config(pin_hash, recovery_hash, setup_complete=True)
+
+    logger.info("Dashboard: Erstmaliges Setup abgeschlossen")
+
+    # Recovery-Key dem User anzeigen (nur dieses eine Mal!)
+    return {
+        "success": True,
+        "recovery_key": recovery_key,
+        "message": "PIN gesetzt. Recovery-Key sicher aufbewahren!",
+    }
 
 
 @app.post("/api/ui/auth")
 async def ui_auth(req: PinRequest):
     """PIN-Authentifizierung fuer das Jarvis Dashboard."""
-    if req.pin != UI_PIN:
+    if not _is_setup_complete():
+        raise HTTPException(status_code=400, detail="Setup noch nicht abgeschlossen")
+
+    # Vergleich: Env-PIN (Klartext) oder gehashter PIN aus YAML
+    env_pin = os.environ.get("JARVIS_UI_PIN")
+    if env_pin:
+        valid = (req.pin == env_pin)
+    else:
+        stored_hash = _get_dashboard_config().get("pin_hash", "")
+        valid = (stored_hash and _hash_value(req.pin) == stored_hash)
+
+    if not valid:
         raise HTTPException(status_code=401, detail="Falscher PIN")
-    import hashlib
-    token = hashlib.sha256(f"{req.pin}{datetime.now().isoformat()}".encode()).hexdigest()[:32]
+
+    token = hashlib.sha256(f"{req.pin}{datetime.now().isoformat()}{secrets.token_hex(8)}".encode()).hexdigest()[:32]
     _active_tokens.add(token)
     return {"token": token}
+
+
+@app.post("/api/ui/reset-pin")
+async def ui_reset_pin(req: ResetPinRequest):
+    """PIN zuruecksetzen mit Recovery-Key."""
+    if not _is_setup_complete():
+        raise HTTPException(status_code=400, detail="Setup noch nicht abgeschlossen")
+
+    if req.new_pin != req.new_pin_confirm:
+        raise HTTPException(status_code=400, detail="PINs stimmen nicht ueberein")
+
+    if len(req.new_pin) < 4:
+        raise HTTPException(status_code=400, detail="PIN muss mindestens 4 Zeichen haben")
+
+    # Recovery-Key pruefen
+    stored_recovery_hash = _get_dashboard_config().get("recovery_key_hash", "")
+    if not stored_recovery_hash or _hash_value(req.recovery_key) != stored_recovery_hash:
+        raise HTTPException(status_code=401, detail="Falscher Recovery-Key")
+
+    # Neuen Recovery-Key generieren
+    new_recovery_key = secrets.token_urlsafe(16)[:12].upper()
+    pin_hash = _hash_value(req.new_pin)
+    recovery_hash = _hash_value(new_recovery_key)
+    _save_dashboard_config(pin_hash, recovery_hash, setup_complete=True)
+
+    # Alle bestehenden Sessions ungueltig machen
+    _active_tokens.clear()
+
+    logger.info("Dashboard: PIN zurueckgesetzt via Recovery-Key")
+
+    return {
+        "success": True,
+        "recovery_key": new_recovery_key,
+        "message": "Neuer PIN gesetzt. Neuen Recovery-Key sicher aufbewahren!",
+    }
 
 
 def _check_token(token: str):

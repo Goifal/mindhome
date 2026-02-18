@@ -726,9 +726,10 @@ correction:
   temperature: 0.1
 
 # --- Jarvis Dashboard (Web-UI) ---
+# Beim ersten Aufruf wird ein PIN + Recovery-Key gesetzt.
+# Alternativ: JARVIS_UI_PIN Umgebungsvariable (ueberschreibt gespeicherten PIN)
 dashboard:
-  # PIN fuer Zugang (aendern!). Alternativ: JARVIS_UI_PIN Umgebungsvariable
-  pin: "1234"
+  setup_complete: false
 
 # --- Wartungs-Assistent (10.5) ---
 maintenance:
