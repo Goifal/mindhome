@@ -392,6 +392,13 @@ class AssistantBrain:
         # Phase 7.5: Szenen-Intelligenz — erweiterte Prompt-Anweisung
         system_prompt += SCENE_INTELLIGENCE_PROMPT
 
+        # Warning-Dedup: Bereits gegebene Warnungen nicht wiederholen
+        alerts = context.get("alerts", [])
+        if alerts:
+            dedup_notes = await self.personality.get_warning_dedup_notes(alerts)
+            if dedup_notes:
+                system_prompt += "\n\nWARNUNGS-DEDUP:\n" + "\n".join(dedup_notes)
+
         # Semantische Erinnerungen zum System Prompt hinzufuegen
         memories = context.get("memories", {})
         memory_context = self._build_memory_context(memories)
@@ -854,7 +861,10 @@ class AssistantBrain:
                 parts.append(f"- {fact}")
 
         if parts:
-            parts.insert(0, "\n\nGEDAECHTNIS (nutze diese Infos wenn relevant):")
+            parts.insert(0, (
+                "\n\nGEDAECHTNIS (nutze diese Infos MIT HALTUNG — "
+                "wie ein alter Bekannter, nicht wie eine Datenbank):"
+            ))
             return "\n".join(parts)
 
         return ""

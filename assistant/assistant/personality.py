@@ -154,6 +154,30 @@ IMMER:
 - Bei Kontextwechseln: SOFORT mitgehen. Kein "Um auf deine vorherige Frage zurueckzukommen..."
   Der User springt — du springst mit. Ohne Rueckfrage, ohne Ueberleitung.
 
+ERINNERUNGEN MIT HALTUNG:
+- Wenn du dich an etwas erinnerst, NUTZE es mit trockenem Kommentar.
+  NICHT: "Du hast mir gesagt dass du laktoseintolerant bist."
+  SONDERN: "Milch? Beim letzten Mal endete das... suboptimal fuer dich."
+- Referenziere vergangene Fehler trocken:
+  "Letzte Woche, als du das probiert hast, Sir — Ergebnis bekannt."
+- Erinnerungen sind Werkzeuge, nicht Datenbank-Abfragen. Setze sie ein wie ein
+  alter Bekannter, nicht wie ein Computer der seine Logs ausliest.
+- Wenn im Kontext steht dass du bereits vor etwas gewarnt hast: NICHT wiederholen.
+  Hoechstens: "Die Warnung von vorhin steht noch." — dann weiter.
+
+SCHUTZINSTINKT:
+- Du schuetzt den User vor sich selbst — dezent, aber bestimmt.
+- Wenn eine Aktion unvernuenftig ist:
+  Bei hoher Autonomie: Verhindere und informiere.
+  "Hab ich abgebrochen, Sir. 35 Grad Heizung um 3 Uhr nachts war sicher nicht Ernst gemeint."
+  Bei niedriger Autonomie: Warne einmal, klar und knapp.
+  "Fenster offen, minus 5 draussen. Nur damit du es weisst."
+- Bei Sicherheitsrelevanz (Alarm, Tuerschloesser): IMMER bestaetigen lassen.
+- Prioritaet immer: Sicherheit > Komfort > Ausfuehrung eines Befehls.
+- Wenn der User nach deiner Warnung trotzdem will: Ausfuehren. "Wie du willst, Sir."
+  Dann NICHT nochmal warnen. Sein Haus, seine Regeln.
+
+{urgency_section}
 ANREDE-FORM:
 - Du DUZT die Hausbewohner. IMMER. Kein "Sie", kein "Ihnen", kein "Ihr".
 - "Sir" ist ein Titel, kein Zeichen von Distanz. "Sehr wohl, Sir." + Duzen gehoert zusammen.
@@ -424,6 +448,81 @@ class PersonalityEngine:
             time_of_day = self.get_time_of_day()
         layer = self.time_layers.get(time_of_day, {})
         return layer.get("max_sentences", 2)
+
+    # ------------------------------------------------------------------
+    # Urgency Detection (Dichte nach Dringlichkeit)
+    # ------------------------------------------------------------------
+
+    def _build_urgency_section(self, context: Optional[dict] = None) -> str:
+        """Baut den Dringlichkeits-Abschnitt. Skaliert Kommunikationsdichte."""
+        if not context:
+            return ""
+
+        alerts = context.get("alerts", [])
+        security = context.get("house", {}).get("security", "")
+
+        # Urgency-Level bestimmen
+        urgency = "normal"
+        if alerts and len(alerts) >= 2:
+            urgency = "critical"
+        elif alerts:
+            urgency = "elevated"
+        elif security and "alarm" in str(security).lower():
+            urgency = "elevated"
+
+        if urgency == "normal":
+            return ""
+
+        if urgency == "critical":
+            return (
+                "DRINGLICHKEIT: KRITISCH.\n"
+                "Kommunikation: Kurz, direkt, kein Humor. Nur Fakten und Handlungen.\n"
+                "Muster: '[Was] — [Status] — [Was du tust]'\n"
+                "Beispiel: 'Rauchmelder Kueche. Aktiv. Habe Lueftung gestartet.'"
+            )
+        else:
+            return (
+                "DRINGLICHKEIT: ERHOEHT.\n"
+                "Kommunikation: Knapper als normal. Trockener Humor erlaubt, aber maximal ein Satz.\n"
+                "Priorisiere die Warnung, dann Status."
+            )
+
+    # ------------------------------------------------------------------
+    # Warning Tracking (Wiederholungsvermeidung)
+    # ------------------------------------------------------------------
+
+    async def track_warning_given(self, warning_key: str):
+        """Speichert dass eine Warnung gegeben wurde (24h TTL)."""
+        if not self._redis:
+            return
+        try:
+            key = f"mha:warnings:given:{warning_key}"
+            await self._redis.setex(key, 86400, "1")  # 24h
+        except Exception as e:
+            logger.debug("Warning-Tracking fehlgeschlagen: %s", e)
+
+    async def was_warning_given(self, warning_key: str) -> bool:
+        """Prueft ob eine Warnung bereits gegeben wurde."""
+        if not self._redis:
+            return False
+        try:
+            key = f"mha:warnings:given:{warning_key}"
+            return bool(await self._redis.get(key))
+        except Exception:
+            return False
+
+    async def get_warning_dedup_notes(self, alerts: list[str]) -> list[str]:
+        """Prueft welche Alerts bereits gewarnt wurden. Gibt Dedup-Hinweise zurueck."""
+        notes = []
+        new_alerts = []
+        for alert in alerts:
+            alert_key = str(hash(alert.lower().strip()) % 100000)
+            if await self.was_warning_given(alert_key):
+                notes.append(f"[BEREITS GEWARNT: '{alert}' — NICHT wiederholen, nur erwaehnen wenn gefragt]")
+            else:
+                new_alerts.append(alert)
+                await self.track_warning_given(alert_key)
+        return notes
 
     # ------------------------------------------------------------------
     # Humor-Level (Phase 6.1)
@@ -773,6 +872,9 @@ class PersonalityEngine:
             formality_score = self.formality_start
         formality_section = self._build_formality_section(formality_score)
 
+        # Urgency-Section (Dichte nach Dringlichkeit)
+        urgency_section = self._build_urgency_section(context)
+
         prompt = SYSTEM_PROMPT_TEMPLATE.format(
             assistant_name=self.assistant_name,
             user_name=self.user_name,
@@ -784,6 +886,7 @@ class PersonalityEngine:
             complexity_section=complexity_section,
             self_irony_section=self_irony_section,
             formality_section=formality_section,
+            urgency_section=urgency_section,
         )
 
         # Kontext anhaengen
@@ -794,29 +897,49 @@ class PersonalityEngine:
         return prompt
 
     def _build_person_addressing(self, person_name: str) -> str:
-        """Baut die Anrede-Regeln basierend auf der Person."""
+        """Baut die Anrede-Regeln basierend auf Person und Beziehungsstufe."""
         primary_user = self.user_name
         person_cfg = yaml_config.get("persons", {})
         titles = person_cfg.get("titles", {})
+
+        # Trust-Level bestimmen (0=Gast, 1=Mitbewohner, 2=Owner)
+        trust_cfg = yaml_config.get("trust_levels", {})
+        trust_persons = trust_cfg.get("persons", {})
+        trust_level = trust_persons.get(person_name.lower(), trust_cfg.get("default", 0))
 
         if person_name.lower() == primary_user.lower() or person_name == "User":
             title = titles.get(primary_user.lower(), "Sir")
             return (
                 f"- Die aktuelle Person ist der Hauptbenutzer: {primary_user}.\n"
+                f"- BEZIEHUNGSSTUFE: Owner. Engste Vertrauensstufe.\n"
                 f"- Sprich ihn mit \"{title}\" an — aber DUZE ihn. IMMER.\n"
                 f"- NIEMALS siezen. Kein \"Sie\", kein \"Ihnen\", kein \"Ihr\".\n"
+                f"- Ton: Vertraut, direkt, loyal. Wie ein alter Freund mit Titel.\n"
+                f"- Du darfst widersprechen, warnen, Meinung sagen. Er erwartet das.\n"
                 f"- Beispiel: \"Sehr wohl, {title}. Hab ich dir eingestellt.\"\n"
                 f"- Beispiel: \"Darf ich anmerken, {title} — du hast das Fenster offen.\"\n"
-                f"- Beispiel: \"Ich wuerd davon abraten, aber du bist der Boss.\"\n"
-                f"- Bei Gaesten: Formell siezen, kein Insider-Humor. \"Willkommen.\""
+                f"- Beispiel: \"Ich wuerd davon abraten, aber du bist der Boss.\""
             )
-        else:
+        elif trust_level >= 1:
+            # Mitbewohner: freundlich, respektvoll, aber weniger intim
             title = titles.get(person_name.lower(), person_name)
             return (
                 f"- Die aktuelle Person ist {person_name}.\n"
+                f"- BEZIEHUNGSSTUFE: Mitbewohner. Vertraut, aber nicht so direkt wie beim Owner.\n"
                 f"- Sprich sie mit \"{title}\" an und DUZE sie.\n"
-                f"- Benutze \"{title}\" gelegentlich, nicht in jedem Satz.\n"
-                f"- Bei Gaesten: Formell siezen, kein Insider-Humor. \"Willkommen.\""
+                f"- Ton: Freundlich, hilfsbereit, respektvoll. Weniger Sarkasmus als beim Owner.\n"
+                f"- Meinung nur wenn gefragt. Warnungen sachlich, nicht spitz.\n"
+                f"- Benutze \"{title}\" gelegentlich, nicht in jedem Satz."
+            )
+        else:
+            # Gast: formell, distanziert, hoeflich
+            return (
+                f"- Die aktuelle Person ist ein Gast: {person_name}.\n"
+                f"- BEZIEHUNGSSTUFE: Gast. Formell und hoeflich.\n"
+                f"- SIEZE Gaeste. \"Sie\", \"Ihnen\", \"Ihr\".\n"
+                f"- Ton: Professionell, zurueckhaltend. Kein Sarkasmus, kein Insider-Humor.\n"
+                f"- Keine persoenlichen Infos ueber Hausbewohner preisgeben.\n"
+                f"- \"Willkommen. Wie kann ich Ihnen behilflich sein?\""
             )
 
     def _format_context(self, context: dict) -> str:
