@@ -495,6 +495,52 @@ async def complete_maintenance(task_name: str, token: str = ""):
     return {"completed": task_name, "date": __import__("datetime").datetime.now().strftime("%Y-%m-%d")}
 
 
+# ----- Phase 14.3: Ambient Audio Endpoints -----
+
+@app.get("/api/assistant/ambient-audio")
+async def ambient_audio_info():
+    """Phase 14.3: Ambient Audio Status und Konfiguration."""
+    return brain.ambient_audio.get_info()
+
+
+@app.get("/api/assistant/ambient-audio/events")
+async def ambient_audio_events(limit: int = 20):
+    """Phase 14.3: Letzte erkannte Audio-Events."""
+    return {"events": brain.ambient_audio.get_recent_events(limit)}
+
+
+@app.post("/api/assistant/ambient-audio/event")
+async def ambient_audio_webhook(
+    event_type: str,
+    room: Optional[str] = None,
+    confidence: float = 1.0,
+):
+    """Phase 14.3: Webhook fuer externe Audio-Klassifizierer (ESPHome, Frigate etc.)."""
+    result = await brain.ambient_audio.process_event(
+        event_type=event_type,
+        room=room,
+        confidence=confidence,
+        source="webhook",
+    )
+    if result:
+        return {"processed": True, "event": result}
+    return {"processed": False, "reason": "Event unterdrueckt (Cooldown, Confidence oder deaktiviert)"}
+
+
+# ----- Phase 16.1: Conflict Resolver Endpoints -----
+
+@app.get("/api/assistant/conflicts")
+async def conflict_info():
+    """Phase 16.1: Conflict Resolver Status und Info."""
+    return brain.conflict_resolver.get_info()
+
+
+@app.get("/api/assistant/conflicts/history")
+async def conflict_history(limit: int = 20):
+    """Phase 16.1: Letzte Konflikte und ihre Loesungen."""
+    return {"conflicts": brain.conflict_resolver.get_recent_conflicts(limit)}
+
+
 # ----- Phase 11: Koch-Assistent Endpoints -----
 
 @app.get("/api/assistant/cooking/status")
@@ -1107,6 +1153,48 @@ async def ui_redirect():
     """Redirect /ui zu /ui/."""
     from fastapi.responses import RedirectResponse
     return RedirectResponse("/ui/")
+
+
+# ============================================================
+# Easter Eggs API
+# ============================================================
+
+EASTER_EGGS_PATH = Path(__file__).parent.parent / "config" / "easter_eggs.yaml"
+
+
+@app.get("/api/ui/easter-eggs")
+async def ui_get_easter_eggs(token: str = ""):
+    """Alle Easter Eggs aus easter_eggs.yaml."""
+    _check_token(token)
+    try:
+        with open(EASTER_EGGS_PATH) as f:
+            data = yaml.safe_load(f) or {}
+        return {"easter_eggs": data.get("easter_eggs", [])}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
+class EasterEggUpdate(BaseModel):
+    easter_eggs: list
+
+
+@app.put("/api/ui/easter-eggs")
+async def ui_update_easter_eggs(req: EasterEggUpdate, token: str = ""):
+    """Easter Eggs speichern."""
+    _check_token(token)
+    try:
+        data = {"easter_eggs": req.easter_eggs}
+        with open(EASTER_EGGS_PATH, "w") as f:
+            yaml.dump(data, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+
+        # Personality-Engine neu laden
+        if hasattr(brain, "personality") and brain.personality:
+            brain.personality._easter_eggs = brain.personality._load_easter_eggs()
+
+        _audit_log("easter_eggs_update", {"count": len(req.easter_eggs)})
+        return {"success": True, "message": f"{len(req.easter_eggs)} Easter Eggs gespeichert"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
 
 
 def _deep_merge(base: dict, override: dict):

@@ -446,6 +446,37 @@ class SemanticMemory:
             logger.info("'%s' vergessen: %d Fakt(en) geloescht", topic, deleted)
         return deleted
 
+    async def get_correction_history(self, person: str = "") -> list[dict]:
+        """Gibt alle durch Korrekturen gelernten Fakten zurueck."""
+        if not self.redis:
+            return []
+
+        try:
+            if person:
+                fact_ids = await self.redis.smembers(f"mha:facts:person:{person}")
+            else:
+                fact_ids = await self.redis.smembers("mha:facts:all")
+
+            corrections = []
+            for fact_id in fact_ids:
+                data = await self.redis.hgetall(f"mha:fact:{fact_id}")
+                if data:
+                    source = data.get("source_conversation", "")
+                    if source.startswith("correction:"):
+                        corrections.append({
+                            "content": data.get("content", ""),
+                            "category": data.get("category", "general"),
+                            "person": data.get("person", "unknown"),
+                            "confidence": float(data.get("confidence", 0.5)),
+                            "source": source.replace("correction: ", "", 1),
+                            "created_at": data.get("created_at", ""),
+                        })
+            corrections.sort(key=lambda f: f.get("created_at", ""), reverse=True)
+            return corrections
+        except Exception as e:
+            logger.error("Fehler bei Korrektur-History: %s", e)
+            return []
+
     async def get_todays_learnings(self) -> list[dict]:
         """Gibt alle heute gelernten Fakten zurueck."""
         today = datetime.now().strftime("%Y-%m-%d")

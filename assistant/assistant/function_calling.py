@@ -432,6 +432,42 @@ ASSISTANT_TOOLS = [
             },
         },
     },
+    # --- Phase 15.2: Vorrats-Tracking ---
+    {
+        "type": "function",
+        "function": {
+            "name": "manage_inventory",
+            "description": "Vorratsmanagement: Artikel mit Ablaufdatum hinzufuegen, entfernen, auflisten, Menge aendern. Warnt bei bald ablaufenden Artikeln.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["add", "remove", "list", "update_quantity", "check_expiring"],
+                        "description": "Aktion: hinzufuegen, entfernen, auflisten, Menge aendern, Ablauf pruefen",
+                    },
+                    "item": {
+                        "type": "string",
+                        "description": "Artikelname",
+                    },
+                    "quantity": {
+                        "type": "integer",
+                        "description": "Menge (Default: 1)",
+                    },
+                    "expiry_date": {
+                        "type": "string",
+                        "description": "Ablaufdatum im Format YYYY-MM-DD (optional)",
+                    },
+                    "category": {
+                        "type": "string",
+                        "enum": ["kuehlschrank", "gefrier", "vorrat", "sonstiges"],
+                        "description": "Lagerort/Kategorie",
+                    },
+                },
+                "required": ["action"],
+            },
+        },
+    },
     # --- Phase 16.2: Was kann Jarvis? ---
     {
         "type": "function",
@@ -1275,6 +1311,8 @@ class FunctionExecutor:
             ],
             "haushalt": [
                 "Einkaufsliste verwalten (hinzufuegen, anzeigen, abhaken)",
+                "Vorrats-Tracking mit Ablaufdaten (Kuehlschrank, Gefrier, Vorrat)",
+                "Raumklima-Monitor (CO2, Feuchte, Temperatur, Trink-Erinnerung)",
                 "Zeitgefuehl (Ofen zu lange an, PC-Pause, etc.)",
                 "Wartungs-Erinnerungen (Rauchmelder, Filter, etc.)",
                 "System-Diagnostik (Sensoren, Batterien, Netzwerk)",
@@ -1337,3 +1375,56 @@ class FunctionExecutor:
                 return entity_id
 
         return None
+
+    # ------------------------------------------------------------------
+    # Phase 15.2: Vorrats-Tracking
+    # ------------------------------------------------------------------
+
+    async def _exec_manage_inventory(self, args: dict) -> dict:
+        """Verwaltet den Vorrat."""
+        # Inventory Manager aus dem brain holen
+        from .brain import AssistantBrain
+        import assistant.main as main_module
+        brain = main_module.brain
+        inventory = brain.inventory
+
+        action = args["action"]
+        item = args.get("item", "")
+        quantity = args.get("quantity", 1)
+        expiry = args.get("expiry_date", "")
+        category = args.get("category", "sonstiges")
+
+        if action == "add":
+            if not item:
+                return {"success": False, "message": "Kein Artikel angegeben."}
+            return await inventory.add_item(item, quantity, expiry, category)
+
+        elif action == "remove":
+            if not item:
+                return {"success": False, "message": "Kein Artikel angegeben."}
+            return await inventory.remove_item(item)
+
+        elif action == "list":
+            return await inventory.list_items(category if category != "sonstiges" else "")
+
+        elif action == "update_quantity":
+            if not item:
+                return {"success": False, "message": "Kein Artikel angegeben."}
+            return await inventory.update_quantity(item, quantity)
+
+        elif action == "check_expiring":
+            expiring = await inventory.check_expiring(days_ahead=3)
+            if not expiring:
+                return {"success": True, "message": "Keine Artikel laufen in den naechsten 3 Tagen ab."}
+            lines = [f"{len(expiring)} Artikel laufen bald ab:"]
+            for item_data in expiring:
+                days = item_data["days_left"]
+                if days < 0:
+                    lines.append(f"- {item_data['name']}: ABGELAUFEN seit {abs(days)} Tag(en)!")
+                elif days == 0:
+                    lines.append(f"- {item_data['name']}: laeuft HEUTE ab!")
+                else:
+                    lines.append(f"- {item_data['name']}: noch {days} Tag(e)")
+            return {"success": True, "message": "\n".join(lines)}
+
+        return {"success": False, "message": f"Unbekannte Aktion: {action}"}

@@ -29,16 +29,20 @@ from .config import settings, yaml_config
 from .context_builder import ContextBuilder
 from .cooking_assistant import CookingAssistant
 from .diagnostics import DiagnosticsEngine
+from .health_monitor import HealthMonitor
 from .feedback import FeedbackTracker
 from .function_calling import ASSISTANT_TOOLS, FunctionExecutor
 from .function_validator import FunctionValidator
 from .ha_client import HomeAssistantClient
+from .inventory import InventoryManager
 from .knowledge_base import KnowledgeBase
 from .memory import MemoryManager
 from .memory_extractor import MemoryExtractor
 from .model_router import ModelRouter
 from .mood_detector import MoodDetector
 from .ollama_client import OllamaClient
+from .ambient_audio import AmbientAudioClassifier
+from .conflict_resolver import ConflictResolver
 from .personality import PersonalityEngine
 from .proactive import ProactiveManager
 from .anticipation import AnticipationEngine
@@ -109,6 +113,18 @@ class AssistantBrain:
         # Phase 10: Diagnostik + Wartungs-Assistent
         self.diagnostics = DiagnosticsEngine(self.ha)
 
+        # Phase 14.3: Ambient Audio (Umgebungsgeraeusch-Erkennung)
+        self.ambient_audio = AmbientAudioClassifier(self.ha)
+
+        # Phase 16.1: Multi-User Konfliktloesung
+        self.conflict_resolver = ConflictResolver(self.autonomy, self.ollama)
+
+        # Phase 15.1: Gesundheits-Monitor
+        self.health_monitor = HealthMonitor(self.ha)
+
+        # Phase 15.2: Vorrats-Tracking
+        self.inventory = InventoryManager(self.ha)
+
         # Phase 11: Koch-Assistent
         self.cooking = CookingAssistant(self.ollama)
 
@@ -178,6 +194,22 @@ class AssistantBrain:
 
         # Phase 11.1: Knowledge Base initialisieren
         await self.knowledge_base.initialize()
+
+        # Phase 15.2: Inventory Manager initialisieren
+        await self.inventory.initialize(redis_client=self.memory.redis)
+
+        # Phase 14.3: Ambient Audio initialisieren und starten
+        await self.ambient_audio.initialize(redis_client=self.memory.redis)
+        self.ambient_audio.set_notify_callback(self._handle_ambient_audio_event)
+        await self.ambient_audio.start()
+
+        # Phase 16.1: Conflict Resolver initialisieren
+        await self.conflict_resolver.initialize(redis_client=self.memory.redis)
+
+        # Phase 15.1: Health Monitor initialisieren und starten
+        await self.health_monitor.initialize(redis_client=self.memory.redis)
+        self.health_monitor.set_notify_callback(self._handle_health_alert)
+        await self.health_monitor.start()
 
         await self.proactive.start()
         logger.info("Jarvis initialisiert (alle Systeme aktiv)")
@@ -399,6 +431,11 @@ class AssistantBrain:
         # Phase 7.5: Szenen-Intelligenz — erweiterte Prompt-Anweisung
         system_prompt += SCENE_INTELLIGENCE_PROMPT
 
+        # Phase 16.2: Tutorial-Modus fuer neue User
+        tutorial_hint = await self._get_tutorial_hint(person or "unknown")
+        if tutorial_hint:
+            system_prompt += tutorial_hint
+
         # Warning-Dedup: Bereits gegebene Warnungen nicht wiederholen
         alerts = context.get("alerts", [])
         if alerts:
@@ -582,19 +619,55 @@ class AssistantBrain:
                             })
                             continue
 
+                    # Phase 16.1: Konflikt-Check (Multi-User)
+                    final_args = func_args
+                    conflict_msg = None
+                    if person and self.conflict_resolver.enabled:
+                        conflict = await self.conflict_resolver.check_conflict(
+                            person=person,
+                            function_name=func_name,
+                            function_args=func_args,
+                            room=room,
+                        )
+                        if conflict and conflict.get("conflict"):
+                            conflict_msg = conflict.get("message", "")
+                            # Modifizierte Args verwenden (Kompromiss/Gewinner)
+                            if conflict.get("modified_args"):
+                                final_args = conflict["modified_args"]
+                                logger.info(
+                                    "Konflikt geloest (%s): Args modifiziert %s -> %s",
+                                    conflict.get("strategy"), func_args, final_args,
+                                )
+
                     # Ausfuehren
-                    result = await self.executor.execute(func_name, func_args)
+                    result = await self.executor.execute(func_name, final_args)
                     executed_actions.append({
                         "function": func_name,
-                        "args": func_args,
+                        "args": final_args,
                         "result": result,
                     })
+
+                    # Befehl fuer Konflikt-Tracking aufzeichnen
+                    if person:
+                        self.conflict_resolver.record_command(
+                            person=person,
+                            function_name=func_name,
+                            function_args=final_args,
+                            room=room,
+                        )
+
+                    # Konflikt-Nachricht an Response anhaengen
+                    if conflict_msg:
+                        if response_text:
+                            response_text = f"{response_text} {conflict_msg}"
+                        else:
+                            response_text = conflict_msg
 
                     if func_name in QUERY_TOOLS:
                         has_query_results = True
 
                     # WebSocket: Aktion melden
-                    await emit_action(func_name, func_args, result)
+                    await emit_action(func_name, final_args, result)
 
                     # Phase 6: Opinion Check — Jarvis kommentiert Aktionen
                     opinion = self.personality.check_opinion(func_name, func_args)
@@ -946,6 +1019,8 @@ class AssistantBrain:
                 "diagnostics": self.diagnostics.health_status(),
                 "cooking_assistant": f"active (session: {'ja' if self.cooking.has_active_session else 'nein'})",
                 "knowledge_base": f"active ({self.knowledge_base.chroma_collection.count() if self.knowledge_base.chroma_collection else 0} chunks)" if self.knowledge_base.chroma_collection else "disabled",
+                "ambient_audio": self.ambient_audio.health_status(),
+                "conflict_resolver": self.conflict_resolver.health_status(),
             },
             "models_available": models,
             "model_routing": self.model_router.get_model_info(),
@@ -1078,6 +1153,102 @@ class AssistantBrain:
             await emit_speaking(message)
             logger.info("TimeAwareness -> Proaktive Meldung: %s", message)
 
+    async def _handle_health_alert(self, alert_type: str, urgency: str, message: str):
+        """Callback fuer Health Monitor — leitet an proaktive Meldung weiter."""
+        if message:
+            await emit_speaking(message)
+            logger.info("Health Monitor [%s/%s]: %s", alert_type, urgency, message)
+
+    # ------------------------------------------------------------------
+    # Phase 14.3: Ambient Audio Callback
+    # ------------------------------------------------------------------
+
+    async def _handle_ambient_audio_event(
+        self,
+        event_type: str,
+        message: str,
+        severity: str,
+        room: Optional[str] = None,
+        actions: Optional[list] = None,
+    ):
+        """Callback fuer Ambient Audio Events — reagiert auf Umgebungsgeraeusche."""
+        if not message:
+            return
+
+        logger.info(
+            "Ambient Audio [%s/%s]: %s (Raum: %s)",
+            event_type, severity, message, room or "?",
+        )
+
+        # Sound-Alarm abspielen (wenn konfiguriert)
+        sound_event = None
+        from .ambient_audio import DEFAULT_EVENT_REACTIONS
+        reaction = DEFAULT_EVENT_REACTIONS.get(event_type, {})
+        sound_event = reaction.get("sound_event")
+        if sound_event and self.sound_manager.enabled:
+            await self.sound_manager.play_event_sound(sound_event, room=room)
+
+        # HA-Aktionen ausfuehren
+        if actions:
+            if "lights_on" in actions and room:
+                try:
+                    await self.executor.execute("set_light", {
+                        "room": room,
+                        "state": "on",
+                        "brightness": 100,
+                    })
+                except Exception as e:
+                    logger.debug("Ambient Audio lights_on fehlgeschlagen: %s", e)
+
+        # Nachricht via WebSocket senden
+        await emit_speaking(message)
+
+    # ------------------------------------------------------------------
+    # Phase 16.2: Tutorial-Modus
+    # ------------------------------------------------------------------
+
+    async def _get_tutorial_hint(self, person: str) -> Optional[str]:
+        """Gibt Tutorial-Hinweise fuer neue User zurueck (erste 10 Interaktionen)."""
+        tutorial_cfg = yaml_config.get("tutorial", {})
+        if not tutorial_cfg.get("enabled", True):
+            return None
+
+        max_interactions = tutorial_cfg.get("max_interactions", 10)
+
+        if not self.memory.redis:
+            return None
+
+        try:
+            key = f"mha:tutorial:count:{person}"
+            count = await self.memory.redis.incr(key)
+            # Expire nach 30 Tagen (danach kein Tutorial mehr)
+            if count == 1:
+                await self.memory.redis.expire(key, 30 * 24 * 3600)
+
+            if count > max_interactions:
+                return None
+
+            # Verschiedene Tipps je nach Interaktions-Nummer
+            tips = [
+                "Tipp: Du kannst mich fragen 'Was kannst du?' fuer eine Uebersicht aller Funktionen.",
+                "Tipp: Sag 'Merk dir [etwas]' und ich speichere es fuer dich. 'Was weisst du?' zeigt alles an.",
+                "Tipp: Ich kann Licht, Heizung und Rolllaeden steuern. Sag einfach was du brauchst.",
+                "Tipp: Ich habe Easter Eggs. Probier mal 'Wer bist du?' oder '42'.",
+                "Tipp: Sag 'Gute Nacht' fuer einen Sicherheits-Check und die Nacht-Routine.",
+                "Tipp: 'Setz Milch auf die Einkaufsliste' funktioniert auch per Sprache.",
+                "Tipp: Ich lerne aus Korrekturen. Sag einfach 'Nein, ich meinte...'",
+                "Tipp: Im Dashboard (Web-UI) kannst du alles konfigurieren — Sarkasmus, Stimme, Easter Eggs.",
+                "Tipp: Ich kann kochen! Sag 'Rezept fuer Spaghetti Carbonara'.",
+                "Tipp: Frag 'Was hast du von mir gelernt?' um deine Korrekturen zu sehen.",
+            ]
+
+            tip_index = (count - 1) % len(tips)
+            return f"\n\nTUTORIAL-MODUS (Interaktion {count}/{max_interactions}):\n{tips[tip_index]}\nFuege diesen Tipp KURZ am Ende deiner Antwort an, z.B.: '...Uebrigens: [Tipp]'"
+
+        except Exception as e:
+            logger.debug("Tutorial-Check Fehler: %s", e)
+            return None
+
     # ------------------------------------------------------------------
     # Phase 8: Memory-Befehle
     # ------------------------------------------------------------------
@@ -1146,6 +1317,21 @@ class AssistantBrain:
                 )
             return "Die Wissensdatenbank ist noch leer. Leg Textdateien in config/knowledge/ ab."
 
+        # "Was hast du von mir gelernt?" — Korrektur-History
+        if any(kw in text_lower for kw in ["was hast du von mir gelernt",
+                                            "was hast du gelernt von mir",
+                                            "korrektur history",
+                                            "korrektur-history",
+                                            "was habe ich dir beigebracht",
+                                            "meine korrekturen"]):
+            corrections = await self.memory.semantic.get_correction_history(person)
+            if corrections:
+                lines = [f"Von dir habe ich {len(corrections)} Korrektur(en) gelernt:"]
+                for f in corrections:
+                    lines.append(f"- {f['content']}")
+                return "\n".join(lines)
+            return "Von dir habe ich noch keine Korrekturen gelernt."
+
         # "Was hast du heute gelernt?"
         if any(kw in text_lower for kw in ["was hast du heute gelernt",
                                             "was hast du gelernt",
@@ -1199,6 +1385,22 @@ class AssistantBrain:
                     "manage_shopping_list", {"action": "list"}
                 )
                 return result.get("message", "Einkaufsliste nicht verfuegbar.")
+
+        # Phase 15.2: Vorrats-Tracking
+        if any(kw in text_lower for kw in [
+            "vorrat", "vorraete", "inventory", "was haben wir",
+            "was ist im kuehlschrank", "was ist im gefrier",
+            "laeuft ab", "ablaufdatum", "haltbarkeit",
+        ]):
+            # "Zeig den Vorrat"
+            if any(kw in text_lower for kw in ["zeig", "was haben", "was ist", "vorrat anzeigen", "liste"]):
+                result = await self.executor.execute("manage_inventory", {"action": "list"})
+                return result.get("message", "Vorrat nicht verfuegbar.")
+
+            # "Was laeuft ab?"
+            if any(kw in text_lower for kw in ["laeuft ab", "ablauf", "haltbar"]):
+                result = await self.executor.execute("manage_inventory", {"action": "check_expiring"})
+                return result.get("message", "Keine Ablauf-Infos.")
 
         return None
 
@@ -1482,9 +1684,11 @@ Der User stellt eine hypothetische Frage. Beantworte sie:
 
     async def shutdown(self):
         """Faehrt MindHome Assistant herunter."""
+        await self.ambient_audio.stop()
         await self.anticipation.stop()
         await self.intent_tracker.stop()
         await self.time_awareness.stop()
+        await self.health_monitor.stop()
         await self.proactive.stop()
         await self.summarizer.stop()
         await self.feedback.stop()
