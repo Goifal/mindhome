@@ -9868,7 +9868,14 @@ const JarvisChatPage = () => {
                 xhr.send(formData);
             });
 
-            if (result && result.file) {
+            if (result && result.error) {
+                // Server returned an error (502, 503, etc.)
+                setMessages(prev => [...prev, {
+                    role: 'error',
+                    text: result.error,
+                    timestamp: new Date().toISOString(),
+                }]);
+            } else if (result && result.file) {
                 // Replace optimistic message's local URL with server URL
                 setMessages(prev => {
                     const updated = [...prev];

@@ -6,12 +6,11 @@ Files are stored on the Assistant server, not locally.
 """
 
 import logging
-import time
 import requests
 from datetime import datetime, timezone
 from flask import Blueprint, request, jsonify, Response
 
-from helpers import get_setting, set_setting
+from helpers import get_setting
 
 logger = logging.getLogger("mindhome.routes.chat")
 
@@ -33,18 +32,6 @@ ALLOWED_EXTENSIONS = {
     "doc", "docx", "xls", "xlsx", "pptx",
     "mp3", "wav", "ogg", "m4a",
 }
-FILE_TYPE_MAP = {
-    "jpg": "image", "jpeg": "image", "png": "image", "gif": "image",
-    "webp": "image", "svg": "image", "bmp": "image",
-    "mp4": "video", "webm": "video", "mov": "video", "avi": "video",
-    "mp3": "audio", "wav": "audio", "ogg": "audio", "m4a": "audio",
-    "pdf": "document", "txt": "document", "csv": "document",
-    "json": "document", "xml": "document",
-    "doc": "document", "docx": "document",
-    "xls": "document", "xlsx": "document", "pptx": "document",
-}
-
-
 def _allowed_file(filename):
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
 

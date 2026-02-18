@@ -6,6 +6,7 @@ Startet den MindHome Assistant REST API Server.
 import json
 import logging
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
@@ -15,7 +16,7 @@ from typing import Optional
 from .brain import AssistantBrain
 from .config import settings
 from .file_handler import (
-    allowed_file, build_file_context, ensure_upload_dir,
+    allowed_file, ensure_upload_dir,
     get_file_path, save_upload, MAX_FILE_SIZE,
 )
 from .websocket import ws_manager, emit_speaking
@@ -515,8 +516,6 @@ async def chat_upload(
     # Save file and extract text
     file_info = save_upload(file.filename, content)
 
-    # Build a message for the brain that includes file context
-    file_context = build_file_context([file_info])
     text = caption.strip() if caption.strip() else (
         f"Ich habe eine Datei geschickt: {file_info['name']}"
     )
@@ -545,9 +544,7 @@ async def chat_upload(
         "response": result.get("response", ""),
         "actions": result.get("actions", []),
         "model_used": result.get("model_used", ""),
-        "timestamp": __import__("datetime").datetime.now(
-            __import__("datetime").timezone.utc
-        ).isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
 
