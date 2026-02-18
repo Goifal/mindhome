@@ -1126,6 +1126,136 @@ async def ui_get_stats(token: str = ""):
         raise HTTPException(status_code=500, detail=f"Fehler: {e}")
 
 
+# ----- Phase 16.3: Live-Status WebSocket Broadcast -----
+
+@app.get("/api/ui/live-status")
+async def ui_live_status(token: str = ""):
+    """Phase 16.3: Live-Status aller Systeme fuer Dashboard-Polling."""
+    _check_token(token)
+    try:
+        health = await brain.health_check()
+        mood = brain.mood.get_current_mood()
+        health_status = await brain.health_monitor.get_status() if hasattr(brain, "health_monitor") else {}
+        autonomy = brain.autonomy.get_level_info()
+        whisper = brain.tts_enhancer.is_whisper_mode
+
+        return {
+            "timestamp": datetime.now().isoformat(),
+            "system_health": health,
+            "mood": mood,
+            "room_health": health_status,
+            "autonomy": autonomy,
+            "whisper_mode": whisper,
+            "components_ok": all(
+                v != "error" for v in health.get("components", {}).values()
+            ),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
+# ----- Phase 15.4: Notification Kanal-Wahl -----
+
+@app.get("/api/ui/notification-channels")
+async def ui_notification_channels(token: str = ""):
+    """Phase 15.4: Verfuegbare Benachrichtigungs-Kanaele und deren Status."""
+    _check_token(token)
+    channels = {
+        "websocket": {
+            "enabled": True,
+            "description": "Browser/Dashboard Push",
+            "connected_clients": len(ws_manager.active_connections) if hasattr(ws_manager, "active_connections") else 0,
+        },
+        "tts": {
+            "enabled": brain.sound_manager.enabled if hasattr(brain, "sound_manager") else False,
+            "description": "Sprachausgabe ueber Lautsprecher",
+        },
+        "ha_notify": {
+            "enabled": True,
+            "description": "Home Assistant Notifications (App/Handy)",
+        },
+    }
+
+    # Kanal-Praeferenzen aus Config
+    notify_cfg = yaml_config.get("notifications", {})
+    channel_prefs = notify_cfg.get("channels", {})
+    for ch_name, ch_cfg in (channel_prefs or {}).items():
+        if ch_name in channels:
+            channels[ch_name]["preferred"] = ch_cfg.get("preferred", False)
+            channels[ch_name]["quiet_hours"] = ch_cfg.get("quiet_hours", [])
+            channels[ch_name]["urgency_min"] = ch_cfg.get("urgency_min", "low")
+
+    return {"channels": channels}
+
+
+@app.put("/api/ui/notification-channels")
+async def ui_update_notification_channels(
+    updates: dict, token: str = "",
+):
+    """Phase 15.4: Kanal-Praeferenzen aktualisieren."""
+    _check_token(token)
+    # In settings.yaml speichern
+    try:
+        config_path = Path(__file__).parent.parent / "config" / "settings.yaml"
+        if config_path.exists():
+            with open(config_path) as f:
+                cfg = yaml.safe_load(f) or {}
+        else:
+            cfg = {}
+
+        cfg.setdefault("notifications", {})["channels"] = updates
+        with open(config_path, "w") as f:
+            yaml.dump(cfg, f, allow_unicode=True, default_flow_style=False)
+
+        return {"success": True, "channels": updates}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
+# ----- Phase 15.1: Gesundheits-Trend-Dashboard -----
+
+@app.get("/api/ui/health-trends")
+async def ui_health_trends(token: str = "", hours: int = 24):
+    """Phase 15.1: Trend-Daten fuer Raumklima (CO2, Temp, Humidity)."""
+    _check_token(token)
+    hours = min(hours, 168)  # Max 7 Tage
+
+    # Aktueller Status
+    current = await brain.health_monitor.get_status() if hasattr(brain, "health_monitor") else {}
+
+    # Trend-Daten aus Redis (stuendliche Snapshots)
+    trends = {"co2": [], "temperature": [], "humidity": []}
+    if brain.memory.redis:
+        try:
+            now = datetime.now()
+            for h in range(hours):
+                ts = now - timedelta(hours=h)
+                key = f"mha:health:snapshot:{ts.strftime('%Y-%m-%d:%H')}"
+                data = await brain.memory.redis.get(key)
+                if data:
+                    import json as _json
+                    snapshot = _json.loads(data)
+                    time_str = ts.strftime("%Y-%m-%d %H:00")
+                    for sensor_type in ("co2", "temperature", "humidity"):
+                        if sensor_type in snapshot:
+                            trends[sensor_type].append({
+                                "time": time_str,
+                                "value": snapshot[sensor_type],
+                            })
+        except Exception as e:
+            logger.debug("Health-Trends laden fehlgeschlagen: %s", e)
+
+    # Trends chronologisch sortieren
+    for key in trends:
+        trends[key].reverse()
+
+    return {
+        "current": current,
+        "trends": trends,
+        "hours_requested": hours,
+    }
+
+
 @app.get("/api/ui/knowledge")
 async def ui_knowledge_info(token: str = ""):
     """Knowledge Base Statistiken und Dateiliste."""
@@ -1136,7 +1266,7 @@ async def ui_knowledge_info(token: str = ""):
     files = []
     if kb_dir.exists():
         for f in sorted(kb_dir.iterdir()):
-            if f.is_file() and f.suffix in {".txt", ".md", ".yaml", ".yml", ".csv"}:
+            if f.is_file() and f.suffix in {".txt", ".md", ".yaml", ".yml", ".csv", ".pdf"}:
                 files.append({
                     "name": f.name,
                     "size": f.stat().st_size,

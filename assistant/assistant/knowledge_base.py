@@ -20,7 +20,7 @@ from .config import settings, yaml_config
 logger = logging.getLogger(__name__)
 
 # Unterstuetzte Dateitypen
-SUPPORTED_EXTENSIONS = {".txt", ".md", ".yaml", ".yml", ".csv", ".log"}
+SUPPORTED_EXTENSIONS = {".txt", ".md", ".yaml", ".yml", ".csv", ".log", ".pdf"}
 
 # Chunk-Einstellungen
 DEFAULT_CHUNK_SIZE = 500
@@ -111,11 +111,15 @@ class KnowledgeBase:
         if not self.chroma_collection:
             return 0
 
-        try:
-            content = filepath.read_text(encoding="utf-8", errors="ignore")
-        except Exception as e:
-            logger.warning("Fehler beim Lesen von %s: %s", filepath.name, e)
-            return 0
+        # Phase 11.1: PDF-Support
+        if filepath.suffix.lower() == ".pdf":
+            content = self._extract_pdf_text(filepath)
+        else:
+            try:
+                content = filepath.read_text(encoding="utf-8", errors="ignore")
+            except Exception as e:
+                logger.warning("Fehler beim Lesen von %s: %s", filepath.name, e)
+                return 0
 
         if not content.strip():
             return 0
@@ -283,6 +287,75 @@ class KnowledgeBase:
         except Exception as e:
             logger.error("Fehler beim Loeschen der Knowledge Base: %s", e)
             return False
+
+    @staticmethod
+    def _extract_pdf_text(filepath: Path) -> str:
+        """Phase 11.1: Extrahiert Text aus einer PDF-Datei.
+
+        Versucht mehrere Bibliotheken in Reihenfolge:
+        1. PyMuPDF (fitz) - schnell, gute Extraktion
+        2. pdfplumber - gut fuer Tabellen
+        3. PyPDF2 - weit verbreitet, Fallback
+        """
+        # 1. PyMuPDF (fitz)
+        try:
+            import fitz  # PyMuPDF
+            doc = fitz.open(str(filepath))
+            pages = []
+            for page in doc:
+                pages.append(page.get_text())
+            doc.close()
+            text = "\n\n".join(pages)
+            if text.strip():
+                logger.info("PDF gelesen via PyMuPDF: %s (%d Seiten)", filepath.name, len(pages))
+                return text
+        except ImportError:
+            pass
+        except Exception as e:
+            logger.debug("PyMuPDF Fehler bei %s: %s", filepath.name, e)
+
+        # 2. pdfplumber
+        try:
+            import pdfplumber
+            pages = []
+            with pdfplumber.open(filepath) as pdf:
+                for page in pdf.pages:
+                    page_text = page.extract_text()
+                    if page_text:
+                        pages.append(page_text)
+            text = "\n\n".join(pages)
+            if text.strip():
+                logger.info("PDF gelesen via pdfplumber: %s (%d Seiten)", filepath.name, len(pages))
+                return text
+        except ImportError:
+            pass
+        except Exception as e:
+            logger.debug("pdfplumber Fehler bei %s: %s", filepath.name, e)
+
+        # 3. PyPDF2
+        try:
+            from PyPDF2 import PdfReader
+            reader = PdfReader(str(filepath))
+            pages = []
+            for page in reader.pages:
+                page_text = page.extract_text()
+                if page_text:
+                    pages.append(page_text)
+            text = "\n\n".join(pages)
+            if text.strip():
+                logger.info("PDF gelesen via PyPDF2: %s (%d Seiten)", filepath.name, len(pages))
+                return text
+        except ImportError:
+            pass
+        except Exception as e:
+            logger.debug("PyPDF2 Fehler bei %s: %s", filepath.name, e)
+
+        logger.warning(
+            "PDF %s konnte nicht gelesen werden. "
+            "Installiere: pip install PyMuPDF oder pdfplumber oder PyPDF2",
+            filepath.name,
+        )
+        return ""
 
     @staticmethod
     def _split_text(

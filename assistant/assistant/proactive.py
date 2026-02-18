@@ -88,6 +88,10 @@ class ProactiveManager:
 
             # Phase 10.1: Musik-Follow
             "music_follow": (LOW, "Musik folgen"),
+
+            # Phase 7.4: Geo-Fence
+            "person_approaching": (LOW, "Person naehert sich"),
+            "person_arriving": (MEDIUM, "Person gleich zuhause"),
         }
 
     async def start(self):
@@ -258,6 +262,10 @@ class ProactiveManager:
                     "departure_check": True,
                 })
 
+        # Phase 7.4: Geo-Fence Proximity (proximity.home Entity)
+        elif entity_id.startswith("proximity.") or entity_id.startswith("sensor.") and "distance" in entity_id:
+            await self._check_geo_fence(entity_id, new_val, old_val, new_state)
+
         # Phase 10.1: Musik-Follow bei Raumwechsel
         elif entity_id.startswith("binary_sensor.") and "motion" in entity_id and new_val == "on":
             await self._check_music_follow(entity_id)
@@ -317,14 +325,85 @@ class ProactiveManager:
                 if datetime.now() - last_dt < timedelta(minutes=5):
                     return
 
+            # Phase 10.1: Auto-Follow bei hohem Autonomie-Level
+            auto_follow = multi_room_cfg.get("auto_follow", False)
+            if auto_follow and self.brain.autonomy.level >= 4:
+                # Automatisch Musik transferieren
+                target_speaker = multi_room_cfg.get("room_speakers", {}).get(new_room)
+                if target_speaker:
+                    try:
+                        await self.brain.ha.call_service(
+                            "media_player", "join",
+                            {"entity_id": target_speaker, "group_members": [playing_entity]},
+                        )
+                        logger.info("Auto-Follow: Musik von %s nach %s transferiert",
+                                    playing_room, new_room)
+                    except Exception as e:
+                        logger.debug("Auto-Follow Transfer fehlgeschlagen: %s", e)
+
             await self._notify("music_follow", LOW, {
                 "from_room": playing_room,
                 "to_room": new_room,
                 "player_entity": playing_entity,
+                "auto_followed": auto_follow and self.brain.autonomy.level >= 4,
             })
 
         except Exception as e:
             logger.debug("Music-Follow Check fehlgeschlagen: %s", e)
+
+    async def _check_geo_fence(self, entity_id: str, new_val: str, old_val: str, state: dict):
+        """Phase 7.4: Geo-Fence Proximity — erkennt Annaeherung ans Zuhause.
+
+        Nutzt proximity.home oder distance-Sensoren um zu erkennen wenn jemand
+        sich dem Zuhause naehert (< threshold km) und bereitet den Empfang vor.
+        """
+        try:
+            new_distance = float(new_val)
+        except (ValueError, TypeError):
+            return
+
+        try:
+            old_distance = float(old_val) if old_val else new_distance + 1
+        except (ValueError, TypeError):
+            old_distance = new_distance + 1
+
+        # Konfigurierter Schwellwert (Standard: 2km)
+        geo_cfg = yaml_config.get("geo_fence", {})
+        threshold_near = geo_cfg.get("approaching_km", 2.0)
+        threshold_close = geo_cfg.get("arriving_km", 0.5)
+
+        # Annaeherung erkennen: Distanz faellt unter Schwellwert
+        person_name = state.get("attributes", {}).get("friendly_name", "Jemand")
+
+        # "Naehert sich" — unter 2km und kommt naeher
+        if old_distance > threshold_near >= new_distance > threshold_close:
+            cooldown_key = f"geo_approaching:{entity_id}"
+            last = await self.brain.memory.get_last_notification_time(cooldown_key)
+            if last:
+                last_dt = datetime.fromisoformat(last)
+                if datetime.now() - last_dt < timedelta(minutes=15):
+                    return
+            await self.brain.memory.set_last_notification_time(cooldown_key)
+            await self._notify("person_approaching", LOW, {
+                "person": person_name,
+                "distance_km": round(new_distance, 1),
+                "entity": entity_id,
+            })
+
+        # "Gleich da" — unter 0.5km
+        elif old_distance > threshold_close >= new_distance:
+            cooldown_key = f"geo_arriving:{entity_id}"
+            last = await self.brain.memory.get_last_notification_time(cooldown_key)
+            if last:
+                last_dt = datetime.fromisoformat(last)
+                if datetime.now() - last_dt < timedelta(minutes=10):
+                    return
+            await self.brain.memory.set_last_notification_time(cooldown_key)
+            await self._notify("person_arriving", MEDIUM, {
+                "person": person_name,
+                "distance_km": round(new_distance, 1),
+                "entity": entity_id,
+            })
 
     async def _handle_mindhome_event(self, data: dict):
         """Verarbeitet MindHome-spezifische Events."""

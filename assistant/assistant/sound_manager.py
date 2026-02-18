@@ -148,22 +148,45 @@ class SoundManager:
         return True
 
     async def _play_sound_file(self, event: str, speaker_entity: str) -> bool:
-        """Versucht einen Soundfile via media_player.play_media abzuspielen."""
-        # Soundfile-URL: /local/sounds/{event}.mp3
-        sound_url = f"{self.sound_base_url}/{event}.mp3"
-        try:
-            success = await self.ha.call_service(
-                "media_player", "play_media",
-                {
-                    "entity_id": speaker_entity,
-                    "media_content_id": sound_url,
-                    "media_content_type": "music",
-                },
-            )
-            return success
-        except Exception as e:
-            logger.debug("Soundfile '%s' nicht abspielbar: %s", sound_url, e)
-            return False
+        """Versucht einen Soundfile via media_player.play_media abzuspielen.
+
+        Phase 9.2: Sucht konfigurierte Mappings und mehrere Formate.
+        """
+        # 1. Konfiguriertes Mapping (custom URL aus settings.yaml)
+        if event in self.event_sounds:
+            custom_url = self.event_sounds[event]
+            try:
+                success = await self.ha.call_service(
+                    "media_player", "play_media",
+                    {
+                        "entity_id": speaker_entity,
+                        "media_content_id": custom_url,
+                        "media_content_type": "music",
+                    },
+                )
+                if success:
+                    return True
+            except Exception:
+                pass
+
+        # 2. Standard-Pfad mit mehreren Formaten (mp3, wav, ogg, flac)
+        for ext in (".mp3", ".wav", ".ogg", ".flac"):
+            sound_url = f"{self.sound_base_url}/{event}{ext}"
+            try:
+                success = await self.ha.call_service(
+                    "media_player", "play_media",
+                    {
+                        "entity_id": speaker_entity,
+                        "media_content_id": sound_url,
+                        "media_content_type": "music",
+                    },
+                )
+                if success:
+                    return True
+            except Exception:
+                continue
+
+        return False
 
     async def _play_tts_chime(self, event: str, speaker_entity: str) -> bool:
         """Spielt einen kurzen TTS-Text als akustisches Signal."""

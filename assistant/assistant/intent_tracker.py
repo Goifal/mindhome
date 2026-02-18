@@ -52,6 +52,77 @@ Text:
 Absichten (JSON-Array):"""
 
 
+def parse_relative_date(text: str, reference: datetime = None) -> Optional[str]:
+    """Parst relative Zeitangaben in ein ISO-Datum.
+
+    Unterstuetzt: morgen, uebermorgen, naechsten Montag, in X Tagen,
+    naechstes Wochenende, naechste Woche, ende der Woche.
+
+    Returns:
+        ISO-Datum string (YYYY-MM-DD) oder None
+    """
+    if not reference:
+        reference = datetime.now()
+
+    text_lower = text.lower().strip()
+
+    # "heute"
+    if "heute" in text_lower:
+        return reference.strftime("%Y-%m-%d")
+
+    # "morgen"
+    if "morgen" in text_lower and "uebermorgen" not in text_lower:
+        return (reference + timedelta(days=1)).strftime("%Y-%m-%d")
+
+    # "uebermorgen"
+    if "uebermorgen" in text_lower:
+        return (reference + timedelta(days=2)).strftime("%Y-%m-%d")
+
+    # "in X Tagen/Wochen"
+    import re
+    m = re.search(r"in\s+(\d+)\s+(tag|tagen|woche|wochen)", text_lower)
+    if m:
+        num = int(m.group(1))
+        unit = m.group(2)
+        if "woche" in unit:
+            return (reference + timedelta(weeks=num)).strftime("%Y-%m-%d")
+        return (reference + timedelta(days=num)).strftime("%Y-%m-%d")
+
+    # "naechsten/am Montag/Dienstag/..."
+    weekday_map = {
+        "montag": 0, "dienstag": 1, "mittwoch": 2, "donnerstag": 3,
+        "freitag": 4, "samstag": 5, "sonntag": 6,
+    }
+    for day_name, day_num in weekday_map.items():
+        if day_name in text_lower:
+            current_wd = reference.weekday()
+            days_ahead = day_num - current_wd
+            if days_ahead <= 0:
+                days_ahead += 7
+            return (reference + timedelta(days=days_ahead)).strftime("%Y-%m-%d")
+
+    # "naechstes wochenende"
+    if "wochenende" in text_lower:
+        current_wd = reference.weekday()
+        days_to_saturday = 5 - current_wd
+        if days_to_saturday <= 0:
+            days_to_saturday += 7
+        return (reference + timedelta(days=days_to_saturday)).strftime("%Y-%m-%d")
+
+    # "naechste woche"
+    if "naechste woche" in text_lower or "naechster woche" in text_lower:
+        return (reference + timedelta(weeks=1)).strftime("%Y-%m-%d")
+
+    # "ende der woche" / "ende woche"
+    if "ende" in text_lower and "woche" in text_lower:
+        days_to_friday = 4 - reference.weekday()
+        if days_to_friday <= 0:
+            days_to_friday += 7
+        return (reference + timedelta(days=days_to_friday)).strftime("%Y-%m-%d")
+
+    return None
+
+
 class IntentTracker:
     """Verfolgt erkannte Absichten mit Deadline."""
 
@@ -117,11 +188,18 @@ class IntentTracker:
         weekdays = ["Montag", "Dienstag", "Mittwoch", "Donnerstag",
                      "Freitag", "Samstag", "Sonntag"]
 
+        # Phase 8.5: Relative Datumsangaben vorab parsen und als Hint mitgeben
+        parsed_date = parse_relative_date(text)
+        date_hint = ""
+        if parsed_date:
+            date_hint = f"\nHinweis: Die relative Zeitangabe im Text ergibt das Datum {parsed_date}."
+
         prompt = INTENT_EXTRACTION_PROMPT.format(
             today=now.strftime("%Y-%m-%d"),
             weekday=weekdays[now.weekday()],
             text=text,
         )
+        prompt += date_hint
 
         try:
             response = await self.ollama.chat(

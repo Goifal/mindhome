@@ -103,10 +103,46 @@ class HealthMonitor:
                 if hydration:
                     await self._send_alert(hydration)
 
+                # Phase 15.1: Stuendlichen Snapshot fuer Trend-Dashboard speichern
+                await self._save_trend_snapshot()
+
             except Exception as e:
                 logger.error("Health Monitor Check Fehler: %s", e)
 
             await asyncio.sleep(self.check_interval * 60)
+
+    async def _save_trend_snapshot(self):
+        """Phase 15.1: Speichert stuendlichen Snapshot der Sensorwerte in Redis."""
+        if not self.redis:
+            return
+
+        try:
+            import json
+            status = await self.get_status()
+            if not status.get("sensors"):
+                return
+
+            # Durchschnittswerte pro Typ
+            type_values = {}
+            for sensor in status["sensors"]:
+                s_type = sensor.get("type", "")
+                value = sensor.get("value", 0)
+                if s_type:
+                    type_values.setdefault(s_type, []).append(value)
+
+            snapshot = {}
+            for s_type, values in type_values.items():
+                snapshot[s_type] = round(sum(values) / len(values), 1)
+            snapshot["score"] = status.get("score", 0)
+
+            # In Redis mit Stunden-Key speichern
+            now = datetime.now()
+            key = f"mha:health:snapshot:{now.strftime('%Y-%m-%d:%H')}"
+            await self.redis.set(key, json.dumps(snapshot))
+            await self.redis.expire(key, 168 * 3600)  # 7 Tage
+
+        except Exception as e:
+            logger.debug("Health-Snapshot Fehler: %s", e)
 
     async def check_all(self) -> list[dict]:
         """Prueft alle relevanten Sensoren und gibt Warnungen zurueck."""

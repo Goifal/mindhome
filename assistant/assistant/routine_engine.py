@@ -333,21 +333,59 @@ class RoutineEngine:
         return ""
 
     async def _get_energy_briefing(self) -> str:
-        """Holt Energie-Daten vom MindHome Add-on."""
+        """Holt Energie-Daten: HA-Sensoren + MindHome Add-on Fallback."""
+        parts = []
+
+        # 1. Echte HA-Sensoren abfragen (Stromzaehler, Solar, Preis)
         try:
-            energy = await self.ha.get_energy()
-            if energy:
-                solar = energy.get("solar_forecast", "")
-                price = energy.get("current_price", "")
-                parts = []
-                if solar:
-                    parts.append(f"Solar: {solar}")
-                if price:
-                    parts.append(f"Strompreis: {price}")
-                return ", ".join(parts) if parts else ""
-        except Exception:
-            pass
-        return ""
+            states = await self.ha.get_states()
+            if states:
+                for state in states:
+                    eid = state.get("entity_id", "")
+                    attrs = state.get("attributes", {})
+                    device_class = attrs.get("device_class", "")
+                    value_str = state.get("state", "")
+                    name = attrs.get("friendly_name", eid)
+                    unit = attrs.get("unit_of_measurement", "")
+
+                    try:
+                        value = float(value_str)
+                    except (ValueError, TypeError):
+                        continue
+
+                    # Gesamt-Stromverbrauch heute
+                    if device_class == "energy" and "daily" in eid.lower():
+                        parts.append(f"Verbrauch heute: {value:.1f} {unit}")
+
+                    # Solar-Ertrag
+                    elif "solar" in eid.lower() and device_class in ("energy", "power"):
+                        if device_class == "power":
+                            parts.append(f"Solar aktuell: {value:.0f} {unit}")
+                        else:
+                            parts.append(f"Solar-Ertrag: {value:.1f} {unit}")
+
+                    # Strompreis (z.B. Tibber, aWATTar)
+                    elif "price" in eid.lower() or "tarif" in eid.lower():
+                        if "electricity" in eid.lower() or "strom" in eid.lower():
+                            parts.append(f"Strompreis: {value:.2f} {unit}")
+        except Exception as e:
+            logger.debug("Energie-Sensoren Fehler: %s", e)
+
+        # 2. Fallback: MindHome Add-on Daten
+        if not parts:
+            try:
+                energy = await self.ha.get_energy()
+                if energy:
+                    solar = energy.get("solar_forecast", "")
+                    price = energy.get("current_price", "")
+                    if solar:
+                        parts.append(f"Solar: {solar}")
+                    if price:
+                        parts.append(f"Strompreis: {price}")
+            except Exception:
+                pass
+
+        return "Energie: " + ", ".join(parts) if parts else ""
 
     async def _get_house_status_briefing(self) -> str:
         """Holt den Haus-Status."""
@@ -821,6 +859,33 @@ Keine Aufzaehlungszeichen. Fliesstext."""
                     "description": parts[2],
                 })
 
+        if not events:
+            return ""
+
+        # Phase 7.8: Relevanz-Filter — unwichtige Events herausfiltern
+        irrelevant_types = {"motion_idle", "sensor_update", "heartbeat", "ping"}
+        noise_keywords = ["unavailable", "unknown", "idle", "standby"]
+        filtered = []
+        for e in events:
+            # Typ-basierter Filter
+            if e["type"] in irrelevant_types:
+                continue
+            # Keyword-basierter Noise-Filter
+            desc_lower = e["description"].lower()
+            if any(kw in desc_lower for kw in noise_keywords):
+                continue
+            filtered.append(e)
+
+        # Deduplizierung: Gleiche Events zusammenfassen
+        seen_descs = set()
+        deduplicated = []
+        for e in filtered:
+            desc_key = e["type"] + ":" + e["description"][:50]
+            if desc_key not in seen_descs:
+                seen_descs.add(desc_key)
+                deduplicated.append(e)
+
+        events = deduplicated
         if not events:
             return ""
 
