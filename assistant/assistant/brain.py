@@ -1292,7 +1292,7 @@ class AssistantBrain:
         if not self.self_automation.get_pending_count():
             return None
 
-        text_lower = text.lower().strip()
+        text_lower = text.lower().strip().rstrip("!?.")
 
         # Direkte Bestaetigung per ID: "Automation abc12345 bestaetigen"
         import re

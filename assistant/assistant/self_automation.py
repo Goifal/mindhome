@@ -658,6 +658,9 @@ REGELN:
                 trigger_parts.append(self._humanize_state_trigger(entity, to_state))
             elif platform == "time":
                 at = t.get("at", "?")
+                # Sekunden aus Zeitangabe entfernen (07:00:00 -> 07:00)
+                if isinstance(at, str) and at.count(":") == 2:
+                    at = at.rsplit(":", 1)[0]
                 trigger_parts.append(f"taeglich um {at} Uhr")
             elif platform == "sun":
                 event = t.get("event", "sunset")
