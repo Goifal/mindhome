@@ -389,6 +389,45 @@ async def toggle_whisper(mode: str = "toggle"):
     return {"whisper_mode": brain.tts_enhancer.is_whisper_mode}
 
 
+class VoiceRequest(BaseModel):
+    text: str
+    room: Optional[str] = None
+
+
+@app.post("/api/assistant/voice")
+async def voice_output(request: VoiceRequest):
+    """
+    Foundation F.1: TTS-Only Endpoint — Text direkt als Sprache ausgeben (kein Chat).
+
+    Beispiel:
+    POST /api/assistant/voice
+    {"text": "Das Essen ist fertig!", "room": "kueche"}
+    """
+    if not request.text.strip():
+        raise HTTPException(status_code=400, detail="Kein Text angegeben")
+
+    # TTS-Enhancer fuer SSML/Speed/Volume nutzen
+    tts_data = brain.tts_enhancer.enhance(request.text, message_type="announcement")
+
+    # WebSocket-Event senden (assistant.audio)
+    from .websocket import ws_manager
+    await ws_manager.broadcast("assistant.audio", {
+        "text": request.text,
+        "ssml": tts_data.get("ssml", request.text),
+        "message_type": "announcement",
+        "speed": tts_data.get("speed", 100),
+        "volume": tts_data.get("volume", 0.8),
+        "room": request.room,
+    })
+
+    return {
+        "success": True,
+        "text": request.text,
+        "tts": tts_data,
+        "room": request.room,
+    }
+
+
 # ----- Phase 9: Speaker Recognition Endpoints -----
 
 @app.get("/api/assistant/speaker/profiles")
@@ -584,6 +623,41 @@ async def trust_person(person: str):
     }
 
 
+class ProactiveTriggerRequest(BaseModel):
+    event_type: str  # z.B. "reminder", "check_in", "status_report"
+    urgency: Optional[str] = "medium"  # low, medium, high, critical
+    data: Optional[dict] = None
+
+
+@app.post("/api/assistant/proactive/trigger")
+async def proactive_trigger(request: ProactiveTriggerRequest):
+    """
+    Foundation F.2: Manueller Trigger fuer proaktive Aktionen.
+
+    Kann von HA-Automationen aufgerufen werden, z.B.:
+    POST /api/assistant/proactive/trigger
+    {"event_type": "status_report", "urgency": "medium"}
+    """
+    data = request.data or {}
+    data["event_type"] = request.event_type
+    data["urgency"] = request.urgency
+    data["triggered_by"] = "api"
+
+    # Status-Report als Spezialfall
+    if request.event_type == "status_report":
+        report = await brain.proactive.generate_status_report()
+        return {"success": True, "event_type": "status_report", "report": report}
+
+    # Generischer Trigger: Event an ProactiveManager weiterleiten
+    await brain.proactive._handle_mindhome_event(data)
+
+    return {
+        "success": True,
+        "event_type": request.event_type,
+        "urgency": request.urgency,
+    }
+
+
 @app.websocket("/api/assistant/ws")
 async def websocket_endpoint(websocket: WebSocket):
     """
@@ -596,6 +670,7 @@ async def websocket_endpoint(websocket: WebSocket):
     assistant.listening - Assistent hoert zu
     assistant.proactive - Proaktive Meldung
     assistant.sound - Sound-Event (Phase 9)
+    assistant.audio - TTS-Audio-Daten (Foundation F.3, via /api/assistant/voice)
 
     Events (Client -> Server):
     assistant.text - Text-Eingabe (+ optional voice_metadata)
@@ -779,12 +854,14 @@ async def ui_auth(req: PinRequest):
         valid = (stored_hash and _hash_value(req.pin) == stored_hash)
 
     if not valid:
+        _audit_log("login", {"success": False})
         raise HTTPException(status_code=401, detail="Falscher PIN")
 
     token = hashlib.sha256(f"{req.pin}{datetime.now().isoformat()}{secrets.token_hex(8)}".encode()).hexdigest()[:32]
     _active_tokens[token] = datetime.now(timezone.utc).timestamp()
     # Abgelaufene Tokens aufraumen
     _cleanup_expired_tokens()
+    _audit_log("login", {"success": True})
     return {"token": token}
 
 
@@ -815,12 +892,32 @@ async def ui_reset_pin(req: ResetPinRequest):
     _active_tokens.clear()
 
     logger.info("Dashboard: PIN zurueckgesetzt via Recovery-Key")
+    _audit_log("pin_reset", {"via": "recovery_key"})
 
     return {
         "success": True,
         "recovery_key": new_recovery_key,
         "message": "Neuer PIN gesetzt. Neuen Recovery-Key sicher aufbewahren!",
     }
+
+
+# ---- Audit-Logging: Dashboard-Aenderungen protokollieren ----
+_AUDIT_LOG_PATH = Path(__file__).parent.parent / "logs" / "audit.jsonl"
+
+
+def _audit_log(action: str, details: dict = None):
+    """Schreibt einen Eintrag ins Audit-Log (JSON-Lines)."""
+    try:
+        _AUDIT_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        entry = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "action": action,
+            "details": details or {},
+        }
+        with open(_AUDIT_LOG_PATH, "a") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    except Exception as exc:
+        logger.warning("Audit-Log Fehler: %s", exc)
 
 
 def _cleanup_expired_tokens():
@@ -874,6 +971,10 @@ async def ui_update_settings(req: SettingsUpdateFull, token: str = ""):
         # yaml_config im Speicher aktualisieren
         import assistant.config as cfg
         cfg.yaml_config = load_yaml_config()
+
+        # Audit-Log
+        changed_keys = list(req.settings.keys()) if isinstance(req.settings, dict) else []
+        _audit_log("settings_update", {"changed_sections": changed_keys})
 
         return {"success": True, "message": "Settings gespeichert"}
     except Exception as e:
@@ -966,6 +1067,25 @@ async def ui_get_logs(token: str = "", limit: int = 50):
     _check_token(token)
     conversations = await brain.memory.get_recent_conversations(min(limit, 200))
     return {"conversations": conversations, "total": len(conversations)}
+
+
+@app.get("/api/ui/audit")
+async def ui_get_audit(token: str = "", limit: int = 50):
+    """Audit-Log: Letzte Dashboard-Aenderungen und Auth-Events."""
+    _check_token(token)
+    entries = []
+    if _AUDIT_LOG_PATH.exists():
+        with open(_AUDIT_LOG_PATH) as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    try:
+                        entries.append(json.loads(line))
+                    except json.JSONDecodeError:
+                        pass
+    # Neueste zuerst, limitiert
+    entries.reverse()
+    return {"entries": entries[:min(limit, 200)], "total": len(entries)}
 
 
 # Statische UI-Dateien ausliefern

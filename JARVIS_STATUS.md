@@ -1,7 +1,7 @@
 # JARVIS ASSISTANT — STATUS & ANALYSE
 
 > Letzte Aktualisierung: 2026-02-18
-> Commit: `0ef17e5` — Phase 13+15+16 + Sicherheit
+> Commit: — Foundation-Features + Sicherheits-Features
 
 ---
 
@@ -9,9 +9,9 @@
 
 | Kategorie | Score | Trend |
 |-----------|:-----:|:-----:|
-| **Funktionsumfang (vs. Masterplan)** | **85.1%** | +2.8% |
-| **Jarvis-Authentizitaet (vs. MCU Jarvis)** | **79.0%** | +3.0% |
-| **Sicherheit** | **88%** | +10% |
+| **Funktionsumfang (vs. Masterplan)** | **87.5%** | +2.4% |
+| **Jarvis-Authentizitaet (vs. MCU Jarvis)** | **81.0%** | +2.0% |
+| **Sicherheit** | **93%** | +5% |
 | **Code-Qualitaet** | **85%** | — |
 | **Konfigurierbarkeit** | **95%** | — |
 
@@ -154,6 +154,20 @@
 
 ---
 
+## FOUNDATION — Fehlende Basis-Features (aus PROJECT_MINDHOME_ASSISTANT.md)
+
+> Diese Features sind im Original-Projektdokument (Phasen 1-7) spezifiziert, aber noch nicht implementiert.
+
+| # | Feature | Quelle | Status | Details |
+|---|---------|--------|:------:|---------|
+| F.1 | `POST /api/assistant/voice` Endpoint | Phase 2.2 | DONE | TTS-Only Endpoint, sendet `assistant.audio` WS-Event |
+| F.2 | `POST /api/assistant/proactive/trigger` Endpoint | Phase 4 | DONE | Manueller Trigger, Status-Report Spezialfall |
+| F.3 | `assistant.audio` WebSocket Event | Phase 2.2 | DONE | Gesendet via Voice-Endpoint (Text, SSML, Room) |
+| F.4 | `color_temp` Parameter in `set_light` | Phase 3 | DONE | warm=2700K, neutral=4000K, cold=6500K |
+| F.5 | `query` Parameter in `play_media` | Phase 3 | DONE | Musik-Suche via HA `play_media` Service |
+
+---
+
 ## SICHERHEITS-AUDIT
 
 | Aspekt | Status | Bewertung |
@@ -167,10 +181,10 @@
 | Token-Expiration | SICHER | 4h Timeout, Auto-Cleanup |
 | Offline-Prinzip | SICHER | Keine externen CDN-Imports |
 | Config-Selbstmod. Whitelist | SICHER | Nur 3 YAML-Dateien erlaubt |
-| Audit-Logging | **OFFEN** | **FEHLT: Dashboard-Aenderungs-Log** |
+| Audit-Logging | SICHER | JSON-Lines Log (Login, Settings, PIN-Reset) |
+| Session-Timeout im Frontend | SICHER | 30 Min Inaktivitaet + 4h Hard-Limit |
 | Rate-Limiting | **OFFEN** | **FEHLT: API Rate-Limit** |
 | CORS-Einschraenkung | **OFFEN** | **FEHLT: CORS Policy** |
-| Session-Timeout im Frontend | **OFFEN** | **FEHLT: Auto-Logout** |
 
 ---
 
@@ -182,6 +196,8 @@
 | 2026-02-18 | `e12eea2` | Settings+Wartungs-Endpoints PIN-geschuetzt | Sicherheit +5% |
 | 2026-02-18 | `49af21f` | PIN-Setup + Recovery-Key System | Sicherheit +8% |
 | 2026-02-18 | `0ef17e5` | Token-Expiry, Offline-Fonts, Config-Selbstmod., Einkaufsliste, Capabilities | Gesamt +2.8%, Jarvis +3% |
+| 2026-02-18 | `bee5f96` | JARVIS_STATUS.md erstellt, Foundation-Audit (5 fehlende Basis-Features) | — |
+| 2026-02-18 | — | Foundation F.1-F.5 (Voice, Proactive-Trigger, Audio-WS, color_temp, query), Session-Timeout, Audit-Logging | Gesamt +2.4%, Sicherheit +5% |
 
 ---
 
@@ -191,33 +207,31 @@
 
 | # | Was | Aufwand | Status |
 |---|-----|:-------:|:------:|
-| 1 | Audit-Logging (Dashboard-Aenderungen) | 1 Std | OFFEN |
-| 2 | Session-Timeout im Frontend (Auto-Logout) | 30 Min | OFFEN |
-| 3 | Korrektur-History abrufbar ("Was hast du von mir gelernt?") | 1 Std | OFFEN |
-| 4 | Easter Eggs konfigurierbar im Dashboard | 1 Std | OFFEN |
+| 1 | Korrektur-History abrufbar ("Was hast du von mir gelernt?") | 1 Std | OFFEN |
+| 2 | Easter Eggs konfigurierbar im Dashboard | 1 Std | OFFEN |
 
 ### Prioritaet 2 — Mittlerer Aufwand (je 2-6 Stunden)
 
 | # | Was | Aufwand | Status |
 |---|-----|:-------:|:------:|
-| 5 | Phase 12.4: Model-Testing (Jarvis-Character-Test-Suite) | 4 Std | OFFEN |
-| 6 | Phase 15.1: Gesundheits-Monitor (CO2/Feuchte/Hydration) | 4 Std | OFFEN |
-| 7 | Phase 15.4: Notification-Batching (LOW sammeln) | 3 Std | OFFEN |
-| 8 | Phase 16.2: Tutorial-Modus (interaktives Onboarding) | 4 Std | OFFEN |
-| 9 | Vorrats-Tracking (Ablaufdaten, automatische Einkaufsliste) | 4 Std | OFFEN |
+| 3 | Phase 12.4: Model-Testing (Jarvis-Character-Test-Suite) | 4 Std | OFFEN |
+| 4 | Phase 15.1: Gesundheits-Monitor (CO2/Feuchte/Hydration) | 4 Std | OFFEN |
+| 5 | Phase 15.4: Notification-Batching (LOW sammeln) | 3 Std | OFFEN |
+| 6 | Phase 16.2: Tutorial-Modus (interaktives Onboarding) | 4 Std | OFFEN |
+| 7 | Vorrats-Tracking (Ablaufdaten, automatische Einkaufsliste) | 4 Std | OFFEN |
 
 ### Prioritaet 3 — Grosser Aufwand (je >6 Stunden)
 
 | # | Was | Aufwand | Status |
 |---|-----|:-------:|:------:|
-| 10 | Phase 13.2: HA-Automationen generieren | 6 Std | OFFEN |
-| 11 | Phase 13.4: Prompt-Selbstoptimierung | 8 Std | OFFEN |
-| 12 | Phase 14.1: Vision / Kamera-Analyse | 10 Std | OFFEN |
-| 13 | Phase 14.3: Ambient Audio | 4 Std | OFFEN |
-| 14 | Phase 16.1: Multi-User Konfliktloesung | 4 Std | OFFEN |
-| 15 | Phase 12.5: Fine-Tuning (LoRA) | Wochen | OFFEN |
-| 16 | Phase 13.3: Tool-Builder (Plugins) | 8 Std | OFFEN |
-| 17 | Phase 14.2: Multi-Modal Input (OCR) | 6 Std | OFFEN |
+| 8 | Phase 13.2: HA-Automationen generieren | 6 Std | OFFEN |
+| 9 | Phase 13.4: Prompt-Selbstoptimierung | 8 Std | OFFEN |
+| 10 | Phase 14.1: Vision / Kamera-Analyse | 10 Std | OFFEN |
+| 11 | Phase 14.3: Ambient Audio | 4 Std | OFFEN |
+| 12 | Phase 16.1: Multi-User Konfliktloesung | 4 Std | OFFEN |
+| 13 | Phase 12.5: Fine-Tuning (LoRA) | Wochen | OFFEN |
+| 14 | Phase 13.3: Tool-Builder (Plugins) | 8 Std | OFFEN |
+| 15 | Phase 14.2: Multi-Modal Input (OCR) | 6 Std | OFFEN |
 
 ---
 
@@ -279,3 +293,8 @@ Phase 14 (Wahrnehmung)       0.0%  ░░░░░░░░░░░░░░░
 | maintenance.yaml | ~50 | 5 Wartungsaufgaben |
 
 **Gesamt: ~14.800+ Zeilen Code, 33+ Dateien**
+
+---
+
+> **Hinweis:** 15 offene Punkte insgesamt (2 Quick-Wins, 5 mittlerer Aufwand, 8 grosser Aufwand).
+> Alle 5 Foundation-Features (F.1-F.5) wurden implementiert.

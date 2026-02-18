@@ -439,6 +439,21 @@ let S = {};  // Settings cache
 let ALL_ENTITIES = [];
 const API = '';
 
+// ---- Session-Timeout: Auto-Logout bei Inaktivitaet (30 Min) ----
+const SESSION_TIMEOUT_MS = 30 * 60 * 1000;  // 30 Minuten
+let _sessionTimer = null;
+function resetSessionTimer() {
+  if (_sessionTimer) clearTimeout(_sessionTimer);
+  if (!TOKEN) return;
+  _sessionTimer = setTimeout(() => {
+    doLogout();
+    alert('Sitzung abgelaufen (30 Min Inaktivitaet). Bitte erneut anmelden.');
+  }, SESSION_TIMEOUT_MS);
+}
+['click','keydown','scroll','mousemove','touchstart'].forEach(evt =>
+  document.addEventListener(evt, resetSessionTimer, {passive: true})
+);
+
 // ---- Screens ausblenden ----
 function hideAllScreens() {
   ['setupScreen','recoveryScreen','loginScreen','resetScreen','newRecoveryScreen'].forEach(id => {
@@ -461,11 +476,18 @@ async function checkSetupAndShow() {
       // Setup fertig: Token pruefen oder Login zeigen
       const t = sessionStorage.getItem('jt');
       if (t) {
-        TOKEN = t;
-        try {
-          const sr = await fetch(`${API}/api/ui/stats?token=${TOKEN}`);
-          if (sr.ok) { showApp(); return; }
-        } catch(e) {}
+        // Pruefen ob Token aelter als 4h (Backend-Timeout)
+        const ts = parseInt(sessionStorage.getItem('jt_ts') || '0');
+        if (Date.now() - ts > 4 * 60 * 60 * 1000) {
+          sessionStorage.removeItem('jt');
+          sessionStorage.removeItem('jt_ts');
+        } else {
+          TOKEN = t;
+          try {
+            const sr = await fetch(`${API}/api/ui/stats?token=${TOKEN}`);
+            if (sr.ok) { resetSessionTimer(); showApp(); return; }
+          } catch(e) {}
+        }
       }
       showLoginScreen();
     }
@@ -530,6 +552,8 @@ async function doLogin() {
     const d = await r.json();
     TOKEN = d.token;
     sessionStorage.setItem('jt', TOKEN);
+    sessionStorage.setItem('jt_ts', Date.now().toString());
+    resetSessionTimer();
     showApp();
   } catch(e) { err.textContent = 'Verbindung fehlgeschlagen'; }
 }
@@ -537,6 +561,8 @@ async function doLogin() {
 function doLogout() {
   TOKEN = '';
   sessionStorage.removeItem('jt');
+  sessionStorage.removeItem('jt_ts');
+  if (_sessionTimer) { clearTimeout(_sessionTimer); _sessionTimer = null; }
   hideAllScreens();
   showLoginScreen();
 }
