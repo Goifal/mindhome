@@ -77,6 +77,9 @@ class ProactiveManager:
             "low_battery": (MEDIUM, "Batterie niedrig"),
             "stale_sensor": (LOW, "Sensor reagiert nicht"),
             "maintenance_due": (LOW, "Wartungsaufgabe faellig"),
+
+            # Phase 10.1: Musik-Follow
+            "music_follow": (LOW, "Musik folgen"),
         }
 
     async def start(self):
@@ -238,11 +241,73 @@ class ProactiveManager:
                     "departure_check": True,
                 })
 
+        # Phase 10.1: Musik-Follow bei Raumwechsel
+        elif entity_id.startswith("binary_sensor.") and "motion" in entity_id and new_val == "on":
+            await self._check_music_follow(entity_id)
+
         # Waschmaschine/Trockner (Power-Sensor faellt unter Schwellwert)
         elif "washer" in entity_id or "waschmaschine" in entity_id:
             if entity_id.startswith("sensor.") and new_val.replace(".", "").isdigit():
                 if float(old_val or "0") > 10 and float(new_val) < 5:
                     await self._notify("washer_done", MEDIUM, {})
+
+    async def _check_music_follow(self, motion_entity: str):
+        """Phase 10.1: Prueft ob Musik dem User in einen neuen Raum folgen soll."""
+        try:
+            multi_room_cfg = yaml_config.get("multi_room", {})
+            if not multi_room_cfg.get("enabled"):
+                return
+
+            # Raum des Bewegungsmelders ermitteln
+            motion_sensors = multi_room_cfg.get("room_motion_sensors", {})
+            new_room = None
+            for room_name, sensor_id in (motion_sensors or {}).items():
+                if sensor_id == motion_entity:
+                    new_room = room_name
+                    break
+
+            if not new_room:
+                return
+
+            # Aktiven Media Player finden (der gerade spielt)
+            states = await self.brain.ha.get_states()
+            playing_entity = None
+            playing_room = None
+            for s in (states or []):
+                eid = s.get("entity_id", "")
+                if eid.startswith("media_player.") and s.get("state") == "playing":
+                    playing_entity = eid
+                    # Raum des Players ermitteln
+                    room_speakers = multi_room_cfg.get("room_speakers", {})
+                    for room_name, speaker_id in (room_speakers or {}).items():
+                        if speaker_id == eid:
+                            playing_room = room_name
+                            break
+                    break
+
+            if not playing_entity or not playing_room:
+                return
+
+            # Nur melden wenn der neue Raum NICHT der Raum ist in dem Musik laeuft
+            if new_room.lower() == playing_room.lower():
+                return
+
+            # Cooldown: Nicht staendig fragen (1x pro 5 Minuten)
+            cooldown_key = "music_follow"
+            last_time = await self.brain.memory.get_last_notification_time(cooldown_key)
+            if last_time:
+                last_dt = datetime.fromisoformat(last_time)
+                if datetime.now() - last_dt < timedelta(minutes=5):
+                    return
+
+            await self._notify("music_follow", LOW, {
+                "from_room": playing_room,
+                "to_room": new_room,
+                "player_entity": playing_entity,
+            })
+
+        except Exception as e:
+            logger.debug("Music-Follow Check fehlgeschlagen: %s", e)
 
     async def _handle_mindhome_event(self, data: dict):
         """Verarbeitet MindHome-spezifische Events."""
@@ -535,6 +600,17 @@ Beispiele:
                 "Max 2 Saetze. Deutsch. Butler-Stil.",
             ]
             return "\n".join(parts)
+
+        # Phase 10.1: Musik-Follow Vorschlag
+        if event_type == "music_follow":
+            from_room = data.get("from_room", "")
+            to_room = data.get("to_room", "")
+            return (
+                f"Musik laeuft gerade in {from_room}. Bewegung erkannt in {to_room}.\n"
+                f"Frage kurz ob die Musik mitkommen soll.\n"
+                f"Beispiel: 'Musik laeuft noch in {from_room}. Soll sie mitkommen?'\n"
+                f"Max 1 Satz. Deutsch. Butler-Stil."
+            )
 
         # Phase 10: Wartungs-Erinnerungen sanft formulieren
         if event_type == "maintenance_due":

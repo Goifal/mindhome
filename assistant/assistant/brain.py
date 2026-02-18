@@ -25,7 +25,7 @@ from typing import Optional
 from .action_planner import ActionPlanner
 from .activity import ActivityEngine
 from .autonomy import AutonomyManager
-from .config import settings
+from .config import settings, yaml_config
 from .context_builder import ContextBuilder
 from .cooking_assistant import CookingAssistant
 from .diagnostics import DiagnosticsEngine
@@ -33,6 +33,7 @@ from .feedback import FeedbackTracker
 from .function_calling import ASSISTANT_TOOLS, FunctionExecutor
 from .function_validator import FunctionValidator
 from .ha_client import HomeAssistantClient
+from .knowledge_base import KnowledgeBase
 from .memory import MemoryManager
 from .memory_extractor import MemoryExtractor
 from .model_router import ModelRouter
@@ -111,6 +112,9 @@ class AssistantBrain:
         # Phase 11: Koch-Assistent
         self.cooking = CookingAssistant(self.ollama)
 
+        # Phase 11.1: Knowledge Base (RAG)
+        self.knowledge_base = KnowledgeBase()
+
     async def initialize(self):
         """Initialisiert alle Komponenten."""
         await self.memory.initialize()
@@ -171,6 +175,9 @@ class AssistantBrain:
         # Phase 11: Koch-Assistent mit Semantic Memory verbinden
         self.cooking.semantic_memory = self.memory.semantic
         self.cooking.set_notify_callback(self._handle_cooking_timer)
+
+        # Phase 11.1: Knowledge Base initialisieren
+        await self.knowledge_base.initialize()
 
         await self.proactive.start()
         logger.info("Jarvis initialisiert (alle Systeme aktiv)")
@@ -410,6 +417,11 @@ class AssistantBrain:
         if summary_context:
             system_prompt += summary_context
 
+        # Phase 11.1: RAG Knowledge Base — Wissen aus Dokumenten
+        rag_context = await self._get_rag_context(text)
+        if rag_context:
+            system_prompt += rag_context
+
         # Phase 12: Datei-Kontext in Prompt einbauen
         if files:
             from .file_handler import build_file_context
@@ -476,7 +488,7 @@ class AssistantBrain:
                 messages=messages,
                 model=model,
             )
-            response_text = response.get("message", {}).get("content", "")
+            response_text = self._filter_response(response.get("message", {}).get("content", ""))
             executed_actions = []
 
             if "error" in response:
@@ -497,7 +509,7 @@ class AssistantBrain:
                 messages=messages,
                 model=model,
             )
-            response_text = response.get("message", {}).get("content", "")
+            response_text = self._filter_response(response.get("message", {}).get("content", ""))
             executed_actions = []
         else:
             # 6b. Einfache Anfragen: Direkt LLM aufrufen
@@ -524,7 +536,7 @@ class AssistantBrain:
 
             # 8. Function Calls ausfuehren
             # Tools die Daten zurueckgeben und eine LLM-formatierte Antwort brauchen
-            QUERY_TOOLS = {"get_entity_state", "send_message_to_person"}
+            QUERY_TOOLS = {"get_entity_state", "send_message_to_person", "get_calendar_events"}
             has_query_results = False
 
             if tool_calls:
@@ -627,7 +639,7 @@ class AssistantBrain:
                     if "error" not in feedback_response:
                         feedback_text = feedback_response.get("message", {}).get("content", "")
                         if feedback_text:
-                            response_text = feedback_text
+                            response_text = self._filter_response(feedback_text)
                 except Exception as e:
                     logger.debug("Tool-Feedback fehlgeschlagen: %s", e)
 
@@ -658,6 +670,9 @@ class AssistantBrain:
                         response_text = self.personality.get_varied_confirmation(partial=True)
                 else:
                     response_text = self.personality.get_varied_confirmation(success=True)
+
+        # Phase 12: Response-Filter (Post-Processing) — Floskeln entfernen
+        response_text = self._filter_response(response_text)
 
         # Phase 6.9: Running Gag an Antwort anhaengen
         if gag_response and response_text:
@@ -699,6 +714,12 @@ class AssistantBrain:
                 self._extract_facts_background(
                     text, response_text, person or "unknown", context
                 )
+            )
+
+        # Phase 11.4: Korrektur-Lernen — erkennt Korrekturen und speichert sie
+        if self._is_correction(text):
+            asyncio.create_task(
+                self._handle_correction(text, response_text, person or "unknown")
             )
 
         # Phase 8: Action-Logging fuer Anticipation Engine
@@ -792,6 +813,101 @@ class AssistantBrain:
                      len(executed_actions), tts_data.get("message_type", ""))
         return result
 
+    # ------------------------------------------------------------------
+    # Phase 12: Response-Filter (Post-Processing)
+    # ------------------------------------------------------------------
+
+    def _filter_response(self, text: str) -> str:
+        """
+        Filtert LLM-Floskeln und unerwuenschte Muster aus der Antwort.
+        Wird nach jedem LLM-Response aufgerufen, vor Speicherung und TTS.
+        """
+        if not text:
+            return text
+
+        filter_config = yaml_config.get("response_filter", {})
+        if not filter_config.get("enabled", True):
+            return text
+
+        original = text
+
+        # 1. Banned Phrases komplett entfernen
+        banned_phrases = filter_config.get("banned_phrases", [
+            "Natürlich!", "Natuerlich!", "Gerne!", "Selbstverständlich!",
+            "Selbstverstaendlich!", "Klar!", "Gern geschehen!",
+            "Kann ich sonst noch etwas für dich tun?",
+            "Kann ich sonst noch etwas fuer dich tun?",
+            "Kann ich dir sonst noch helfen?",
+            "Wenn du noch etwas brauchst",
+            "Sag einfach Bescheid",
+            "Ich bin froh, dass",
+            "Es freut mich",
+            "Es ist mir eine Freude",
+            "Als KI", "Als künstliche Intelligenz",
+            "Als kuenstliche Intelligenz",
+            "Ich bin nur ein Programm",
+            "Lass mich mal schauen",
+            "Lass mich kurz schauen",
+            "Das klingt frustrierend",
+            "Ich verstehe, wie du dich fuehlst",
+            "Ich verstehe, wie du dich fühlst",
+            "Das klingt wirklich",
+        ])
+        for phrase in banned_phrases:
+            # Case-insensitive Entfernung
+            idx = text.lower().find(phrase.lower())
+            while idx != -1:
+                text = text[:idx] + text[idx + len(phrase):]
+                idx = text.lower().find(phrase.lower())
+
+        # 2. Banned Starters am Satzanfang entfernen
+        banned_starters = filter_config.get("banned_starters", [
+            "Also,", "Also ", "Grundsätzlich", "Grundsaetzlich",
+            "Im Prinzip", "Nun,", "Nun ", "Sozusagen",
+            "Quasi", "Eigentlich", "Im Grunde genommen",
+            "Tatsächlich,", "Tatsaechlich,",
+        ])
+        for starter in banned_starters:
+            if text.lstrip().lower().startswith(starter.lower()):
+                text = text.lstrip()[len(starter):].lstrip()
+                # Ersten Buchstaben gross machen
+                if text:
+                    text = text[0].upper() + text[1:]
+
+        # 3. "Es tut mir leid" Varianten durch Fakt ersetzen
+        sorry_patterns = [
+            "es tut mir leid,", "es tut mir leid.", "es tut mir leid ",
+            "leider ", "entschuldigung,", "entschuldigung.",
+            "ich entschuldige mich,", "tut mir leid,", "tut mir leid.",
+        ]
+        for pattern in sorry_patterns:
+            idx = text.lower().find(pattern)
+            if idx != -1:
+                text = text[:idx] + text[idx + len(pattern):].lstrip()
+                if text:
+                    text = text[0].upper() + text[1:]
+
+        # 4. Mehrere Leerzeichen / fuehrende Leerzeichen bereinigen
+        text = re.sub(r"  +", " ", text).strip()
+
+        # 5. Leere Saetze entfernen (". ." oder ". , .")
+        text = re.sub(r"\.\s*\.", ".", text)
+        text = re.sub(r"!\s*!", "!", text)
+
+        # 6. Max Sentences begrenzen
+        max_sentences = filter_config.get("max_response_sentences", 0)
+        if max_sentences > 0:
+            sentences = re.split(r"(?<=[.!?])\s+", text)
+            if len(sentences) > max_sentences:
+                text = " ".join(sentences[:max_sentences])
+
+        text = text.strip()
+
+        if text != original:
+            logger.debug("Response-Filter: '%s' -> '%s'", original[:80], text[:80])
+
+        return text if text else original
+
     async def health_check(self) -> dict:
         """Prueft den Zustand aller Komponenten."""
         ollama_ok = await self.ollama.is_available()
@@ -829,6 +945,7 @@ class AssistantBrain:
                 "speaker_recognition": self.speaker_recognition.health_status(),
                 "diagnostics": self.diagnostics.health_status(),
                 "cooking_assistant": f"active (session: {'ja' if self.cooking.has_active_session else 'nein'})",
+                "knowledge_base": f"active ({self.knowledge_base.chroma_collection.count() if self.knowledge_base.chroma_collection else 0} chunks)" if self.knowledge_base.chroma_collection else "disabled",
             },
             "models_available": models,
             "model_routing": self.model_router.get_model_info(),
@@ -900,6 +1017,29 @@ class AssistantBrain:
             return "\n".join(parts)
         except Exception as e:
             logger.debug("Fehler bei Summary-Kontext: %s", e)
+            return ""
+
+    async def _get_rag_context(self, text: str) -> str:
+        """Durchsucht die Knowledge Base nach relevantem Wissen (RAG)."""
+        if not self.knowledge_base.chroma_collection:
+            return ""
+
+        try:
+            hits = await self.knowledge_base.search(text, limit=3)
+            if not hits:
+                return ""
+
+            parts = ["\n\nWISSENSBASIS (relevante Dokumente):"]
+            for hit in hits:
+                source = hit.get("source", "")
+                content = hit.get("content", "")
+                source_hint = f" [Quelle: {source}]" if source else ""
+                parts.append(f"- {content}{source_hint}")
+
+            parts.append("Nutze dieses Wissen falls relevant fuer die Antwort.")
+            return "\n".join(parts)
+        except Exception as e:
+            logger.debug("RAG-Suche fehlgeschlagen: %s", e)
             return ""
 
     async def _extract_facts_background(
@@ -983,6 +1123,28 @@ class AssistantBrain:
                     if deleted > 0:
                         return f"Erledigt. {deleted} Eintrag/Eintraege zu \"{topic}\" vergessen."
                     return f"Zu \"{topic}\" hatte ich ohnehin nichts gespeichert."
+
+        # Phase 11.1: "Wissen hinzufuegen: ..." / "Neues Wissen: ..."
+        for trigger in ["wissen hinzufuegen ", "neues wissen ", "wissen speichern "]:
+            if text_lower.startswith(trigger):
+                content = text[len(trigger):].strip().rstrip(".")
+                if len(content) > 10:
+                    chunks = await self.knowledge_base.ingest_text(content, source="voice")
+                    if chunks > 0:
+                        return f"Wissen gespeichert: {chunks} Eintrag/Eintraege in der Wissensdatenbank."
+                    return "Das konnte ich leider nicht in die Wissensdatenbank aufnehmen."
+
+        # Phase 11.1: "Was steht in der Wissensdatenbank?" / "Wissen Status"
+        if any(kw in text_lower for kw in ["wissensdatenbank status", "wissen status",
+                                            "was steht in der wissensdatenbank"]):
+            stats = await self.knowledge_base.get_stats()
+            if stats.get("total_chunks", 0) > 0:
+                sources = ", ".join(stats["sources"][:10]) if stats.get("sources") else "keine"
+                return (
+                    f"Wissensdatenbank: {stats['total_chunks']} Eintraege "
+                    f"aus {len(stats.get('sources', []))} Quellen ({sources})."
+                )
+            return "Die Wissensdatenbank ist noch leer. Leg Textdateien in config/knowledge/ ab."
 
         # "Was hast du heute gelernt?"
         if any(kw in text_lower for kw in ["was hast du heute gelernt",
@@ -1163,6 +1325,76 @@ Der User stellt eine hypothetische Frage. Beantworte sie:
     # ------------------------------------------------------------------
     # Phase 8: Intent-Extraktion im Hintergrund
     # ------------------------------------------------------------------
+
+    # ------------------------------------------------------------------
+    # Phase 11.4: Korrektur-Lernen
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _is_correction(text: str) -> bool:
+        """Erkennt ob der User eine Korrektur macht."""
+        text_lower = text.lower().strip()
+        correction_patterns = [
+            "nein, ich mein",
+            "nein ich mein",
+            "das stimmt nicht",
+            "das ist falsch",
+            "nicht richtig",
+            "ich meinte",
+            "ich meine",
+            "falsch, ich",
+            "nein, das ist",
+            "quatsch",
+            "unsinn",
+            "das habe ich nicht gesagt",
+            "das hab ich nicht gesagt",
+            "ich habe gesagt",
+            "ich hab gesagt",
+            "korrektur:",
+            "richtigstellung:",
+            "nein,",  # "Nein, XYZ" als einfachstes Muster
+        ]
+        return any(text_lower.startswith(p) or p in text_lower for p in correction_patterns)
+
+    async def _handle_correction(self, text: str, response: str, person: str):
+        """Verarbeitet eine Korrektur und speichert sie als hochkonfidenten Fakt."""
+        try:
+            # LLM extrahiert den korrigierten Fakt
+            extraction_prompt = (
+                "Der User hat eine Korrektur gemacht. "
+                "Extrahiere den korrekten Fakt als einen einzigen, klaren Satz. "
+                "Nur den Fakt, keine Erklaerung.\n\n"
+                f"User: {text}\n"
+                f"Assistent-Antwort: {response}\n\n"
+                "Korrekter Fakt:"
+            )
+
+            model = self.model_router.select_model("korrektur extrahieren")
+            result = await self.ollama.chat(
+                messages=[
+                    {"role": "system", "content": "Du extrahierst Fakten. Antworte mit einem einzigen Satz."},
+                    {"role": "user", "content": extraction_prompt},
+                ],
+                model=model,
+                temperature=0.1,
+                max_tokens=64,
+            )
+
+            fact_text = result.get("message", {}).get("content", "").strip()
+            if fact_text and len(fact_text) > 5:
+                # Fakt mit hoher Confidence speichern (User hat korrigiert = sicher)
+                from .semantic_memory import SemanticFact
+                fact = SemanticFact(
+                    content=fact_text,
+                    category="general",
+                    person=person,
+                    confidence=0.95,
+                    source_conversation=f"correction: {text[:100]}",
+                )
+                await self.memory.semantic.store_fact(fact)
+                logger.info("Korrektur-Lernen: '%s' gespeichert (Person: %s)", fact_text, person)
+        except Exception as e:
+            logger.debug("Fehler bei Korrektur-Lernen: %s", e)
 
     async def _extract_intents_background(self, text: str, person: str):
         """Extrahiert und speichert Intents im Hintergrund."""
