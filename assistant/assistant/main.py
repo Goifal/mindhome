@@ -352,8 +352,9 @@ async def get_settings():
 
 
 @app.put("/api/assistant/settings")
-async def update_settings(update: SettingsUpdate):
-    """Einstellungen aktualisieren."""
+async def update_settings(update: SettingsUpdate, token: str = ""):
+    """Einstellungen aktualisieren (PIN-geschuetzt)."""
+    _check_token(token)
     result = {}
     if update.autonomy_level is not None:
         success = brain.autonomy.set_level(update.autonomy_level)
@@ -446,8 +447,9 @@ async def maintenance_tasks():
 
 
 @app.post("/api/assistant/maintenance/complete")
-async def complete_maintenance(task_name: str):
-    """Phase 10: Wartungsaufgabe als erledigt markieren."""
+async def complete_maintenance(task_name: str, token: str = ""):
+    """Phase 10: Wartungsaufgabe als erledigt markieren (PIN-geschuetzt)."""
+    _check_token(token)
     success = brain.diagnostics.complete_task(task_name)
     if not success:
         raise HTTPException(status_code=404, detail=f"Aufgabe '{task_name}' nicht gefunden")
