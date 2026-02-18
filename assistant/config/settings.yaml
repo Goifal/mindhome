@@ -581,6 +581,18 @@ cooking:
   # Timer-Benachrichtigung via TTS
   timer_notify_tts: true
 
+# --- Phase 11.1: Wissensdatenbank (RAG) ---
+knowledge_base:
+  enabled: true
+  # Automatisch alle Dateien in config/knowledge/ einlesen beim Start
+  auto_ingest: true
+  # Chunk-Groesse in Zeichen (kleinere Chunks = praezisere Suche)
+  chunk_size: 500
+  # Ueberlappung zwischen Chunks in Zeichen
+  chunk_overlap: 50
+  # Maximale Distanz fuer Treffer (kleiner = strenger)
+  max_distance: 1.2
+
 # --- Phase 12: Response-Filter (Post-Processing) ---
 # Entfernt LLM-Floskeln und typische Chatbot-Muster aus Antworten.
 # Sicherheitsnetz: Faengt alles ab was der Prompt nicht verhindert.

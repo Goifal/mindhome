@@ -149,7 +149,7 @@ Phase 9      ✅  Jarvis Stimme & Akustik (6 Features — v0.9.9-v1.0.0)
      │
 Phase 10     🆕  Jarvis Multi-Room & Kommunikation (5 Features — Assistant + Add-on)
      │
-Phase 11     📋  Jarvis Wissen & Kontext (4 Features — RAG, Kalender, Korrekturen)
+Phase 11     ✅  Jarvis Wissen & Kontext (4 Features — RAG, Kalender, Korrekturen)
      │
 Phase 12     🔧  Jarvis Authentizitaet (5 Techniken — LLM Character Deepening)
      │
@@ -1617,7 +1617,7 @@ self_modification:
 
 # Phase 11 — Jarvis Wissen & Kontext (Beyond Smart Home)
 ## 4 Features | Betroffene Module: brain.py, semantic_memory.py, context_builder.py
-## Status: Geplant
+## Status: IMPLEMENTIERT (2026-02-18)
 
 > **Ziel:** Jarvis weiss mehr als nur Smart-Home. Er kennt Rezepte, Verkehr, Wetter-Warnungen,
 > deinen Kalender — und er lernt aus seinen Fehlern.
@@ -1739,18 +1739,17 @@ wird die Korrektur nicht gespeichert. Naechstes Mal gleicher Fehler.
 
 ### Technische Zusammenfassung Phase 11
 
-| Modul | Aenderung |
-|-------|---------|
-| `brain.py` | RAG-Pipeline, Kalender-Intent, Korrektur-Erkennung |
-| `semantic_memory.py` | Knowledge-Base Collection |
-| `context_builder.py` | Externe Daten einbeziehen |
-| `function_calling.py` | Kalender-Tools (create/modify/list events) |
-| `proactive.py` | Wetter-Warnungen, Kalender-Reminders |
-| `memory.py` | Korrektur-Memories (Confidence 1.0) |
-| NEU: `knowledge_ingester.py` | PDF/YAML → ChromaDB Pipeline |
-| `context_builder.py` | Wetter/Pollen/Sun HA-Entities einbeziehen |
+| Modul | Aenderung | Status |
+|-------|---------|--------|
+| `brain.py` | RAG-Pipeline (_get_rag_context), Korrektur-Erkennung (_is_correction/_handle_correction), KB-Sprachbefehle | ✅ |
+| NEU: `knowledge_base.py` | ChromaDB Collection mha_knowledge_base, Chunking, Ingestion, Suche | ✅ |
+| `context_builder.py` | Met.no Wetter-Details (Wind, Druck, Forecast), sun.sun (Sunrise/Sunset), echte Sonnenzeiten | ✅ |
+| `function_calling.py` | get_calendar_events, create_calendar_event (HA Calendar Service) | ✅ |
+| `brain.py` | get_calendar_events in QUERY_TOOLS (Feedback-Loop) | ✅ |
+| `settings.yaml` | knowledge_base Config (chunk_size, overlap, max_distance) | ✅ |
+| `config/knowledge/` | Wissens-Verzeichnis fuer Textdateien | ✅ |
 
-**Geschaetzter Aufwand:** ~14-21 Stunden, ~6 Commits
+**Implementiert:** 2026-02-18, 1 Commit
 
 ---
 

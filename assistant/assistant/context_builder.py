@@ -206,12 +206,36 @@ class ContextBuilder:
                 else:
                     house["presence"]["away"].append(name)
 
-            # Wetter
+            # Wetter (Met.no via HA Integration)
             elif domain == "weather" and not house["weather"]:
                 house["weather"] = {
                     "temp": attrs.get("temperature"),
                     "condition": s,
                     "humidity": attrs.get("humidity"),
+                    "wind_speed": attrs.get("wind_speed"),
+                    "wind_bearing": attrs.get("wind_bearing"),
+                    "pressure": attrs.get("pressure"),
+                }
+                # Forecast (naechste Stunden falls vorhanden)
+                forecast = attrs.get("forecast", [])
+                if forecast:
+                    upcoming = []
+                    for entry in forecast[:4]:
+                        upcoming.append({
+                            "time": entry.get("datetime", ""),
+                            "temp": entry.get("temperature"),
+                            "condition": entry.get("condition", ""),
+                            "precipitation": entry.get("precipitation"),
+                        })
+                    house["weather"]["forecast"] = upcoming
+
+            # Sun Entity (sun.sun — exakte Sonnenauf-/-untergangszeiten)
+            elif entity_id == "sun.sun":
+                house["sun"] = {
+                    "state": s,  # "above_horizon" / "below_horizon"
+                    "sunrise": attrs.get("next_rising", ""),
+                    "sunset": attrs.get("next_setting", ""),
+                    "elevation": attrs.get("elevation"),
                 }
 
             # Alarm
@@ -470,11 +494,29 @@ class ContextBuilder:
             seasonal_data["ventilation_hint"] = sc.get("ventilation", "")
             seasonal_data["cover_hint"] = sc.get("cover_hint", "")
 
-        # Aussentemperatur
+        # Daten aus HA-Entities uebernehmen (echte Werte statt Berechnungen)
         if states:
             for state in states:
-                if state.get("entity_id", "").startswith("weather."):
+                eid = state.get("entity_id", "")
+                # Aussentemperatur vom Wetter-Entity
+                if eid.startswith("weather."):
                     seasonal_data["outside_temp"] = state.get("attributes", {}).get("temperature")
-                    break
+                # Echte Sonnenzeiten von sun.sun
+                elif eid == "sun.sun":
+                    sun_attrs = state.get("attributes", {})
+                    rising = sun_attrs.get("next_rising", "")
+                    setting = sun_attrs.get("next_setting", "")
+                    if rising:
+                        try:
+                            r = datetime.fromisoformat(rising.replace("Z", "+00:00"))
+                            seasonal_data["sunrise_approx"] = r.strftime("%H:%M")
+                        except (ValueError, TypeError):
+                            pass
+                    if setting:
+                        try:
+                            s_time = datetime.fromisoformat(setting.replace("Z", "+00:00"))
+                            seasonal_data["sunset_approx"] = s_time.strftime("%H:%M")
+                        except (ValueError, TypeError):
+                            pass
 
         return seasonal_data

@@ -291,6 +291,57 @@ ASSISTANT_TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "get_calendar_events",
+            "description": "Kalender-Termine abrufen (heute, morgen oder bestimmtes Datum)",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "timeframe": {
+                        "type": "string",
+                        "enum": ["today", "tomorrow", "week"],
+                        "description": "Zeitraum: heute, morgen oder diese Woche",
+                    },
+                },
+                "required": ["timeframe"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_calendar_event",
+            "description": "Einen neuen Kalender-Termin erstellen",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": {
+                        "type": "string",
+                        "description": "Titel des Termins",
+                    },
+                    "date": {
+                        "type": "string",
+                        "description": "Datum im Format YYYY-MM-DD",
+                    },
+                    "start_time": {
+                        "type": "string",
+                        "description": "Startzeit im Format HH:MM (optional, ganztaegig wenn leer)",
+                    },
+                    "end_time": {
+                        "type": "string",
+                        "description": "Endzeit im Format HH:MM (optional, +1h wenn leer)",
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Beschreibung (optional)",
+                    },
+                },
+                "required": ["title", "date"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "set_presence_mode",
             "description": "Anwesenheitsmodus des Hauses setzen",
             "parameters": {
@@ -736,6 +787,148 @@ class FunctionExecutor:
             display += f" {unit}"
 
         return {"success": True, "message": display, "state": current, "attributes": attrs}
+
+    async def _exec_get_calendar_events(self, args: dict) -> dict:
+        """Phase 11.3: Kalender-Termine abrufen via HA Calendar Entity."""
+        from datetime import datetime, timedelta
+
+        timeframe = args.get("timeframe", "today")
+        now = datetime.now()
+
+        if timeframe == "today":
+            start = now.replace(hour=0, minute=0, second=0)
+            end = now.replace(hour=23, minute=59, second=59)
+        elif timeframe == "tomorrow":
+            tomorrow = now + timedelta(days=1)
+            start = tomorrow.replace(hour=0, minute=0, second=0)
+            end = tomorrow.replace(hour=23, minute=59, second=59)
+        else:  # week
+            start = now.replace(hour=0, minute=0, second=0)
+            end = (now + timedelta(days=7)).replace(hour=23, minute=59, second=59)
+
+        # Kalender-Entity finden
+        states = await self.ha.get_states()
+        calendar_entity = None
+        for s in (states or []):
+            eid = s.get("entity_id", "")
+            if eid.startswith("calendar."):
+                calendar_entity = eid
+                break
+
+        if not calendar_entity:
+            return {"success": False, "message": "Kein Kalender in Home Assistant gefunden"}
+
+        # HA Calendar Service: get_events
+        try:
+            result = await self.ha.call_service_with_response(
+                "calendar", "get_events",
+                {
+                    "entity_id": calendar_entity,
+                    "start_date_time": start.isoformat(),
+                    "end_date_time": end.isoformat(),
+                },
+            )
+
+            events = []
+            if isinstance(result, dict):
+                # Response-Format: {entity_id: {"events": [...]}}
+                for entity_data in result.values():
+                    if isinstance(entity_data, dict):
+                        events.extend(entity_data.get("events", []))
+                    elif isinstance(entity_data, list):
+                        events.extend(entity_data)
+
+            if not events:
+                label = {"today": "heute", "tomorrow": "morgen", "week": "diese Woche"}.get(timeframe, timeframe)
+                return {"success": True, "message": f"Keine Termine {label}."}
+
+            lines = []
+            for ev in events[:10]:
+                summary = ev.get("summary", "Kein Titel")
+                ev_start = ev.get("start", "")
+                ev_end = ev.get("end", "")
+                # Zeit formatieren
+                if "T" in str(ev_start):
+                    try:
+                        dt = datetime.fromisoformat(str(ev_start).replace("Z", "+00:00"))
+                        time_str = dt.strftime("%H:%M")
+                    except (ValueError, TypeError):
+                        time_str = str(ev_start)
+                else:
+                    time_str = "ganztaegig"
+                lines.append(f"{time_str}: {summary}")
+
+            return {
+                "success": True,
+                "message": "\n".join(lines),
+                "events": events[:10],
+            }
+        except Exception as e:
+            logger.error("Kalender-Abfrage fehlgeschlagen: %s", e)
+            return {"success": False, "message": f"Kalender-Fehler: {e}"}
+
+    async def _exec_create_calendar_event(self, args: dict) -> dict:
+        """Phase 11.3: Neuen Kalender-Termin erstellen via HA."""
+        from datetime import datetime, timedelta
+
+        title = args["title"]
+        date_str = args["date"]
+        start_time = args.get("start_time", "")
+        end_time = args.get("end_time", "")
+        description = args.get("description", "")
+
+        # Kalender-Entity finden
+        states = await self.ha.get_states()
+        calendar_entity = None
+        for s in (states or []):
+            eid = s.get("entity_id", "")
+            if eid.startswith("calendar."):
+                calendar_entity = eid
+                break
+
+        if not calendar_entity:
+            return {"success": False, "message": "Kein Kalender in Home Assistant gefunden"}
+
+        service_data = {
+            "entity_id": calendar_entity,
+            "summary": title,
+        }
+
+        if start_time:
+            # Termin mit Uhrzeit
+            service_data["start_date_time"] = f"{date_str} {start_time}:00"
+            if end_time:
+                service_data["end_date_time"] = f"{date_str} {end_time}:00"
+            else:
+                # Standard: +1 Stunde
+                try:
+                    start_dt = datetime.strptime(f"{date_str} {start_time}", "%Y-%m-%d %H:%M")
+                    end_dt = start_dt + timedelta(hours=1)
+                    service_data["end_date_time"] = end_dt.strftime("%Y-%m-%d %H:%M:%S")
+                except ValueError:
+                    service_data["end_date_time"] = f"{date_str} {start_time}:00"
+        else:
+            # Ganztaegiger Termin
+            service_data["start_date"] = date_str
+            try:
+                end_date = datetime.strptime(date_str, "%Y-%m-%d") + timedelta(days=1)
+                service_data["end_date"] = end_date.strftime("%Y-%m-%d")
+            except ValueError:
+                service_data["end_date"] = date_str
+
+        if description:
+            service_data["description"] = description
+
+        success = await self.ha.call_service(
+            "calendar", "create_event", service_data
+        )
+
+        time_info = f" um {start_time}" if start_time else " (ganztaegig)"
+        return {
+            "success": success,
+            "message": f"Termin '{title}' am {date_str}{time_info} erstellt" if success
+                       else f"Termin konnte nicht erstellt werden",
+        }
 
     async def _exec_set_presence_mode(self, args: dict) -> dict:
         mode = args["mode"]
