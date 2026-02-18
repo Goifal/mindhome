@@ -1,7 +1,7 @@
 # MindHome — JARVIS Masterplan
 # "Von Smart Assistant zu echtem Jarvis"
 
-> **Stand:** 2026-02-17
+> **Stand:** 2026-02-18
 > **Aktueller Status:** v0.8.4 (Phase 5 abgeschlossen, Build 87)
 > **Architektur:** PC 1 (HAOS Add-on v0.8.4) + PC 2 (Assistant Server)
 > **Prinzip:** 100% lokal, kein Cloud, Privacy-first
@@ -950,6 +950,238 @@ Aber: Keine automatische Lautstärke-Anpassung.
 
 ---
 
+# Phase 12 — Jarvis Authentizitaet (LLM Character Deepening)
+## 5 Techniken | Betroffene Module: personality.py, brain.py
+## Status: Teilweise implementiert (2026-02-18)
+
+> **Ziel:** Das LLM soll Jarvis nicht nur spielen — es soll Jarvis SEIN.
+> **Problem:** Regeln im System-Prompt sagen dem LLM WAS es tun soll.
+> Aber Beispiele zeigen HOW. LLMs lernen besser durch Demonstration als durch Instruktion.
+
+---
+
+### Was bereits implementiert wurde (2026-02-18)
+
+| Feature | Status | Beschreibung |
+|---------|:------:|-------------|
+| JARVIS-CODEX | ✅ | 14 Verhaltensregeln (8 NIEMALS + 6 IMMER) im System-Prompt |
+| Humor unter Druck | ✅ | Stress/Frustration erlaubt trockenen Humor statt ihn zu killen |
+| Erinnerungen mit Haltung | ✅ | Prompt-Anweisung: Memories wie ein alter Bekannter nutzen |
+| Schutzinstinkt | ✅ | Schutzregeln nach Autonomie-Level im Prompt |
+| Dichte nach Dringlichkeit | ✅ | Urgency-Detection skaliert Kommunikationsdichte (normal/erhoeht/kritisch) |
+| Warning-Dedup | ✅ | Redis-basiert, 24h TTL, verhindert Wiederholung gleicher Warnungen |
+| Beziehungsstufen | ✅ | Owner/Mitbewohner/Gast mit unterschiedlichem Ton und Sarkasmus-Level |
+| CONFIRMATIONS_FAILED | ✅ | Entschuldigende Sprache ("leider") durch Jarvis-Stil ersetzt |
+
+**Was noch fehlt:** Die bisherigen Aenderungen sind REGELN. Sie sagen dem LLM
+"sag nicht X, sag Y". Das funktioniert zu ~70%. Fuer die letzten 30% braucht
+es Demonstration (Few-Shot), Filterung (Post-Processing) und ggf. Training.
+
+---
+
+### Technik 12.1: Few-Shot Examples (Jarvis-Dialoge im Prompt)
+
+**Ist-Zustand:** System-Prompt hat Regeln und einzelne Beispiel-Saetze.
+Kein vollstaendiger Dialog als Vorbild.
+
+**Soll-Zustand:**
+- 8-10 komplette Beispiel-Dialoge im System-Prompt (User → Jarvis)
+- Decken verschiedene Situationen ab:
+
+  | Situation | User | Jarvis (RICHTIG) |
+  |-----------|------|------------------|
+  | Routine-Befehl | "Mach das Licht an" | "Erledigt." |
+  | Dumme Idee | "Stell die Heizung auf 30" | "Natuerlich, Sir. ...Sir." |
+  | Fehler passiert | "Warum geht das Licht nicht?" | "Sensor Flur reagiert nicht. Pruefe Stromversorgung." |
+  | User frustriert | "Nichts funktioniert heute!" | "Drei Systeme laufen einwandfrei. Welches macht Probleme?" |
+  | User kommt heim | (Ankunft) | "21 Grad. Post war da. Deine Mutter hat angerufen." |
+  | User beeindruckt | "Krass, das hat geklappt!" | "War zu erwarten." |
+  | Erinnerung nutzen | "Bestell nochmal die Pizza" | "Die vom letzten Mal? Die mit dem... kreativen Belag?" |
+  | Sicherheitswarnung | (Fenster offen, -5°C) | "Fenster Kueche. Minus fuenf. Nur zur Info." |
+
+- Explizit auch FALSCH-Beispiele (was ein Chatbot sagen wuerde vs. was Jarvis sagt)
+
+**Umsetzung:**
+- `personality.py`: Neuer Abschnitt `BEISPIEL-DIALOGE` im `SYSTEM_PROMPT_TEMPLATE`
+- Alternativ: Eigene YAML-Datei `config/jarvis_examples.yaml` fuer Flexibilitaet
+- Limit: Max ~800 Token fuer Examples (Prompt-Budget beachten)
+
+**Aufwand:** ~30 Min Dialoge schreiben, ~10 Min Code
+**Wirkung:** HOCH — LLMs lernen am besten durch Beispiele, nicht durch Regeln.
+
+---
+
+### Technik 12.2: Negative Examples (Anti-Patterns)
+
+**Ist-Zustand:** JARVIS-CODEX hat einige FALSCH/RICHTIG-Paare.
+Aber nur fuer einzelne Saetze, nicht fuer Dialog-Muster.
+
+**Soll-Zustand:**
+- Erweiterte Anti-Pattern-Liste mit vollstaendigen Dialog-Kontrasten:
+  ```
+  CHATBOT (FALSCH):
+  User: "Mach das Licht an"
+  Bot: "Natuerlich! Ich habe das Licht im Wohnzimmer fuer dich eingeschaltet.
+        Kann ich sonst noch etwas fuer dich tun?"
+
+  JARVIS (RICHTIG):
+  User: "Mach das Licht an"
+  Jarvis: "Erledigt."
+  ```
+- Fokus auf die haeufigsten LLM-Suenden:
+  - Ueber-Erklaerung (was man getan hat)
+  - Ueber-Freundlichkeit ("Gerne!", "Natuerlich!")
+  - Rueckfragen die keiner braucht ("Kann ich sonst noch helfen?")
+  - Emotions-Validierung ("Ich verstehe wie du dich fuehlst")
+  - Meta-Kommentare ("Lass mich mal schauen...")
+
+**Umsetzung:**
+- Erweiterung des JARVIS-CODEX in `personality.py`
+- Kann mit 12.1 kombiniert werden (RICHTIG/FALSCH pro Situation)
+
+**Aufwand:** ~20 Min (teilweise schon vorhanden)
+**Wirkung:** MITTEL — Verstaerkt bestehende Regeln durch Kontrast.
+
+---
+
+### Technik 12.3: Response-Filter (Post-Processing)
+
+**Ist-Zustand:** LLM-Antwort geht direkt zum User. Kein Filter.
+Wenn das LLM trotz Prompt eine Floskel benutzt, kommt sie durch.
+
+**Soll-Zustand:**
+- Post-Processing-Pipeline in `brain.py` nach LLM-Response:
+  1. **Floskel-Filter:** Entfernt typische LLM-Floskeln
+     - "Natuerlich!" → entfernen
+     - "Gerne!" → entfernen
+     - "Ich habe ... fuer dich ..." → kuerzen
+     - "Kann ich sonst noch helfen?" → entfernen
+     - "Es tut mir leid" → durch Fakt ersetzen
+     - "Als KI..." → durch Jarvis-Formulierung ersetzen
+  2. **Laengen-Filter:** Kuerzt uebermaessig lange Antworten
+     - Wenn max_sentences ueberschritten → letzte Saetze abschneiden
+  3. **Wiederholungs-Filter:** Prueft ob gleiche Bestaetigung wie letzte Antwort
+  4. **Filler-Filter:** Entfernt "Also", "Grundsaetzlich", "Im Prinzip" am Satzanfang
+
+**Umsetzung:**
+- `brain.py`: Neue Methode `_filter_response(text: str) -> str`
+- Aufgerufen nach jedem LLM-Response, vor Speicherung und TTS
+- Regex-basiert + einfache String-Operationen
+- Konfigurierbar in `settings.yaml`:
+  ```yaml
+  response_filter:
+    enabled: true
+    banned_phrases:
+      - "Natuerlich!"
+      - "Gerne!"
+      - "Kann ich sonst noch"
+      - "Es tut mir leid"
+      - "Als KI"
+      - "Als kuenstliche Intelligenz"
+    banned_starters:
+      - "Also,"
+      - "Grundsaetzlich"
+      - "Im Prinzip"
+      - "Nun,"
+    max_response_sentences: 4
+  ```
+
+**Aufwand:** ~1 Stunde Code + Tests
+**Wirkung:** HOCH — Faengt alles ab was der Prompt nicht verhindert. Sicherheitsnetz.
+
+---
+
+### Technik 12.4: Model-Wahl & Testing
+
+**Ist-Zustand:** Qwen3 4B/14B/32B via Ollama. Kein systematischer
+Test welches Modell Jarvis am besten spielt.
+
+**Soll-Zustand:**
+- Systematischer Vergleich verschiedener Modelle fuer Jarvis-Charakter:
+  - Qwen3 14B (aktuell)
+  - Llama 3.x 8B/70B (gut im Rollenspiel)
+  - Mistral/Mixtral (bekannt fuer Charakter-Konsistenz)
+  - Command R+ (gute Instruction-Following)
+- Test-Suite: 20 Standard-Eingaben, Bewertung nach:
+  - Haelt Jarvis-Charakter (0-10)
+  - Antwortet kurz genug (0-10)
+  - Kein LLM-Floskel-Durchbruch (0-10)
+  - Humor-Qualitaet (0-10)
+  - Deutsche Sprach-Qualitaet (0-10)
+
+**Umsetzung:**
+- Script `tests/jarvis_character_test.py`
+- Laeuft alle Modelle gegen die 20 Test-Eingaben
+- Manuelle Bewertung oder LLM-as-Judge
+
+**Aufwand:** Stunden (Testen, Vergleichen). Kein neuer Code noetig.
+**Wirkung:** VARIABEL — Kann alles aendern. Manche Modelle spielen
+Rollen deutlich besser als andere.
+
+---
+
+### Technik 12.5: Fine-Tuning (Langfrist)
+
+**Ist-Zustand:** Standard-Modell mit System-Prompt.
+
+**Soll-Zustand:**
+- Ein Modell das JARVIS IST, nicht "Jarvis spielt":
+  1. **Training-Daten sammeln:** 500-1000 Jarvis-Dialoge
+     - Aus echten Interaktionen (redacted)
+     - Aus geschriebenen Beispiel-Dialogen
+     - Aus MCU-Film-Transkripten (adaptiert auf Smart Home)
+  2. **LoRA Fine-Tuning** auf Basis-Modell (z.B. Llama 3.x 8B)
+  3. **Evaluation:** A/B-Test gegen Basis + Prompt
+  4. **Iteration:** Schwachstellen identifizieren, Daten ergaenzen
+
+**Umsetzung:**
+- Training-Daten: `data/jarvis_training.jsonl` (User/Assistant Paare)
+- LoRA-Training via `unsloth` oder `axolotl` auf PC2 GPU
+- Ollama Modelfile fuer das Fine-Tuned-Modell
+- A/B-Testing ueber `model_router.py`
+
+**Voraussetzung:** GPU (mindestens 8GB VRAM fuer LoRA auf 8B)
+**Aufwand:** Tage bis Wochen (Daten + Training + Iteration)
+**Wirkung:** SEHR HOCH — Das Modell internalisiert Jarvis. Kein Prompt noetig.
+Aber: Hoechster Aufwand aller Techniken.
+
+---
+
+### Empfohlene Reihenfolge Phase 12
+
+```
+12.1 Few-Shot Examples ────── 40 Min  ─── Groesster Hebel, geringstes Risiko
+  │
+12.3 Response-Filter ──────── 1 Std   ─── Sicherheitsnetz fuer alles was durchrutscht
+  │
+12.2 Negative Examples ────── 20 Min  ─── Verstaerkt 12.1
+  │
+12.4 Model-Testing ─────────  Stunden ─── Kann ueberraschende Verbesserungen bringen
+  │
+12.5 Fine-Tuning ───────────  Wochen  ─── Endgame. Wenn alles andere nicht reicht.
+```
+
+**12.1 + 12.3 zuerst.** Unter 2 Stunden, groesster Effekt.
+12.4 parallel wenn Zeit. 12.5 nur wenn 12.1-12.4 nicht reichen.
+
+### Technische Zusammenfassung Phase 12
+
+| Modul | Aenderung |
+|-------|---------|
+| `personality.py` | Few-Shot Examples, Negative Examples im System-Prompt |
+| `brain.py` | Response-Filter (_filter_response) nach LLM-Call |
+| `settings.yaml` | response_filter Config (banned phrases, max sentences) |
+| NEU: `tests/jarvis_character_test.py` | Model-Comparison-Suite |
+| NEU: `data/jarvis_training.jsonl` | Training-Daten fuer Fine-Tuning (spaeter) |
+
+**Geschaetzter Aufwand (12.1-12.3):** ~2 Stunden, 2-3 Commits
+**Geschaetzter Aufwand (12.4):** ~4-6 Stunden, kein Code
+**Geschaetzter Aufwand (12.5):** Tage-Wochen, braucht GPU
+
+---
+
+---
+
 # Gesamtübersicht
 
 ```
@@ -979,16 +1211,17 @@ Aber: Keine automatische Lautstärke-Anpassung.
 
 ## Feature-Count
 
-| Phase | Name | Features | Commits | Fokus |
-|:-----:|------|:--------:|:-------:|-------|
-| 6 | Persönlichkeit | 10 | ~8 | Charakter, Humor, Meinung |
-| 7 | Routinen | 9 | ~10 | Tagesstruktur, Szenen |
-| 8 | Gedächtnis | 7 | ~10 | Vorausdenken, Wissen |
-| 9 | Stimme | 6 | ~8 | Akustik, Erkennung |
-| 10 | Multi-Room | 5 | ~8 | Präsenz, Kommunikation |
-| **Σ** | | **37** | **~44** | |
+| Phase | Name | Features | Commits | Status | Fokus |
+|:-----:|------|:--------:|:-------:|:------:|-------|
+| 6 | Persönlichkeit | 10 | ~8 | ✅ | Charakter, Humor, Meinung |
+| 7 | Routinen | 9 | ~10 | ✅ | Tagesstruktur, Szenen |
+| 8 | Gedächtnis | 7 | ~10 | ✅ | Vorausdenken, Wissen |
+| 9 | Stimme | 6 | ~8 | ✅ | Akustik, Erkennung |
+| 10 | Multi-Room | 5 | ~8 | 🆕 | Präsenz, Kommunikation |
+| 12 | Authentizitaet | 5 | ~5 | 🔧 | Few-Shot, Filter, Fine-Tuning |
+| **Σ** | | **42** | **~49** | | |
 
-**Gesamt: 37 neue Assistant-Features + 156 bestehende (Add-on) + 14 bestehende (Assistant) = 207 Features**
+**Gesamt: 42 neue Assistant-Features + 156 bestehende (Add-on) + 14 bestehende (Assistant) = 212 Features**
 
 ---
 
@@ -1004,11 +1237,13 @@ Phase 8 ─── Gedächtnis ───────  ~10 Commits ─── 2 neu
 Phase 9 ─── Stimme ───────────  ~8 Commits  ─── Braucht GPU
    │
 Phase 10 ── Multi-Room ───────  ~8 Commits  ─── Braucht Wyoming Satellites
+   │
+Phase 12 ── Authentizitaet ──  ~5 Commits  ─── Few-Shot, Filter, ggf. Fine-Tuning
 ```
 
-**Phase 6 ist der beste Startpunkt** — größter Wow-Effekt bei geringstem Aufwand
-(hauptsächlich Prompt Engineering, keine neue Hardware nötig).
+**Phase 12.1 + 12.3 sind der naechste Hebel** — unter 2 Stunden, groesster Effekt
+auf die Jarvis-Authentizitaet. Few-Shot Examples + Response-Filter.
 
 ---
 
-*Nächster Schritt: Phase 6 implementieren.*
+*Naechster Schritt: Phase 12.1 (Few-Shot Examples) + 12.3 (Response-Filter) implementieren.*
