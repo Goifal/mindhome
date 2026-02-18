@@ -9746,6 +9746,329 @@ const ClimatePage = () => {
 
 
 // ================================================================
+// Jarvis Chat Page
+// ================================================================
+const JarvisChatPage = () => {
+    const { lang, showToast } = useApp();
+    const [messages, setMessages] = useState([]);
+    const [input, setInput] = useState('');
+    const [sending, setSending] = useState(false);
+    const [connected, setConnected] = useState(null);
+    const [showSettings, setShowSettings] = useState(false);
+    const [assistantUrl, setAssistantUrl] = useState('');
+    const messagesEndRef = useRef(null);
+    const inputRef = useRef(null);
+
+    const scrollToBottom = () => {
+        if (messagesEndRef.current) {
+            messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+        }
+    };
+
+    useEffect(() => { scrollToBottom(); }, [messages]);
+
+    // Load history and check status on mount
+    useEffect(() => {
+        api.get('chat/history?limit=50').then(d => {
+            if (d && d.messages) setMessages(d.messages);
+        });
+        api.get('chat/status').then(d => {
+            if (d) {
+                setConnected(d.connected);
+                setAssistantUrl(d.assistant_url || '');
+            }
+        });
+    }, []);
+
+    const sendMessage = async () => {
+        const text = input.trim();
+        if (!text || sending) return;
+
+        setInput('');
+        setSending(true);
+
+        // Optimistic: show user message immediately
+        const userMsg = { role: 'user', text, timestamp: new Date().toISOString() };
+        setMessages(prev => [...prev, userMsg]);
+
+        const result = await api.post('chat/send', { text });
+
+        if (result && !result._error && result.response) {
+            const assistantMsg = {
+                role: 'assistant',
+                text: result.response,
+                actions: result.actions || [],
+                timestamp: result.timestamp || new Date().toISOString(),
+            };
+            setMessages(prev => [...prev, assistantMsg]);
+        } else {
+            const errorMsg = {
+                role: 'error',
+                text: result?.error || (lang === 'de' ? 'Verbindung fehlgeschlagen' : 'Connection failed'),
+                timestamp: new Date().toISOString(),
+            };
+            setMessages(prev => [...prev, errorMsg]);
+        }
+        setSending(false);
+        if (inputRef.current) inputRef.current.focus();
+    };
+
+    const handleKeyDown = (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            sendMessage();
+        }
+    };
+
+    const clearHistory = async () => {
+        await api.post('chat/clear');
+        setMessages([]);
+        showToast(lang === 'de' ? 'Verlauf gelöscht' : 'History cleared', 'success');
+    };
+
+    const saveAssistantUrl = async () => {
+        await api.put('system/settings/assistant_url', { value: assistantUrl });
+        showToast(lang === 'de' ? 'Gespeichert' : 'Saved', 'success');
+        setShowSettings(false);
+        // Re-check connection with cache bust
+        api.invalidate('chat/status');
+        setTimeout(() => {
+            api.get('chat/status').then(d => { if (d) setConnected(d.connected); });
+        }, 500);
+    };
+
+    const formatTime = (ts) => {
+        if (!ts) return '';
+        const d = parseUTC(ts);
+        if (!d || isNaN(d.getTime())) return '';
+        return d.toLocaleTimeString(lang === 'de' ? 'de-DE' : 'en-US', { hour: '2-digit', minute: '2-digit' });
+    };
+
+    const renderActions = (actions) => {
+        if (!actions || actions.length === 0) return null;
+        return (
+            React.createElement('div', { style: { marginTop: 6, display: 'flex', gap: 4, flexWrap: 'wrap' } },
+                actions.map((a, i) => (
+                    React.createElement('span', {
+                        key: i,
+                        className: 'badge badge-success',
+                        style: { fontSize: 10 }
+                    }, React.createElement('span', { className: 'mdi mdi-flash', style: { marginRight: 2 } }), a.function || a.action || JSON.stringify(a))
+                ))
+            )
+        );
+    };
+
+    return (
+        React.createElement('div', { style: { display: 'flex', flexDirection: 'column', height: 'calc(100vh - 120px)', maxHeight: 'calc(100vh - 120px)' } },
+
+            // Header bar
+            React.createElement('div', {
+                style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexShrink: 0 }
+            },
+                React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: 8 } },
+                    React.createElement('span', { className: 'mdi mdi-robot-excited', style: { fontSize: 24, color: 'var(--accent-primary)' } }),
+                    React.createElement('span', { style: { fontWeight: 700, fontSize: 18 } }, 'Jarvis'),
+                    React.createElement('span', {
+                        style: {
+                            width: 8, height: 8, borderRadius: '50%',
+                            background: connected === true ? 'var(--success)' : connected === false ? 'var(--danger)' : 'var(--text-muted)',
+                            display: 'inline-block', marginLeft: 4,
+                        }
+                    })
+                ),
+                React.createElement('div', { style: { display: 'flex', gap: 4 } },
+                    React.createElement('button', {
+                        className: 'btn btn-ghost btn-icon',
+                        onClick: clearHistory,
+                        title: lang === 'de' ? 'Verlauf löschen' : 'Clear history',
+                    }, React.createElement('span', { className: 'mdi mdi-delete-outline', style: { fontSize: 18 } })),
+                    React.createElement('button', {
+                        className: 'btn btn-ghost btn-icon',
+                        onClick: () => setShowSettings(!showSettings),
+                        title: lang === 'de' ? 'Einstellungen' : 'Settings',
+                    }, React.createElement('span', { className: 'mdi mdi-cog-outline', style: { fontSize: 18 } }))
+                )
+            ),
+
+            // Settings panel (collapsible)
+            showSettings && React.createElement('div', {
+                className: 'card animate-in',
+                style: { padding: 16, marginBottom: 12, flexShrink: 0 }
+            },
+                React.createElement('div', { style: { marginBottom: 8, fontWeight: 600, fontSize: 13 } },
+                    lang === 'de' ? 'Assistant URL (PC 2)' : 'Assistant URL (PC 2)'
+                ),
+                React.createElement('div', { style: { display: 'flex', gap: 8 } },
+                    React.createElement('input', {
+                        className: 'input',
+                        value: assistantUrl,
+                        onChange: (e) => setAssistantUrl(e.target.value),
+                        placeholder: 'http://192.168.1.100:8200',
+                        style: { flex: 1 },
+                    }),
+                    React.createElement('button', {
+                        className: 'btn btn-primary',
+                        onClick: saveAssistantUrl,
+                    }, lang === 'de' ? 'Speichern' : 'Save')
+                ),
+                React.createElement('div', {
+                    style: { marginTop: 8, fontSize: 11, color: 'var(--text-muted)' }
+                }, lang === 'de'
+                    ? 'IP-Adresse und Port des MindHome Assistant Servers'
+                    : 'IP address and port of the MindHome Assistant server'
+                )
+            ),
+
+            // Connection warning
+            connected === false && !showSettings && React.createElement('div', {
+                className: 'card',
+                style: { padding: 12, marginBottom: 12, background: 'var(--danger-bg, rgba(239,68,68,0.1))', border: '1px solid var(--danger)', flexShrink: 0 }
+            },
+                React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 } },
+                    React.createElement('span', { className: 'mdi mdi-alert-circle', style: { color: 'var(--danger)', fontSize: 18 } }),
+                    React.createElement('span', null,
+                        lang === 'de'
+                            ? 'Jarvis ist nicht erreichbar. Prüfe die Verbindung oder klicke auf ⚙️ für Einstellungen.'
+                            : 'Jarvis is not reachable. Check the connection or click ⚙️ for settings.'
+                    )
+                )
+            ),
+
+            // Messages area
+            React.createElement('div', {
+                style: {
+                    flex: 1, overflowY: 'auto', padding: '8px 0',
+                    display: 'flex', flexDirection: 'column', gap: 8,
+                    minHeight: 0,
+                }
+            },
+                messages.length === 0 && React.createElement('div', {
+                    style: { flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', textAlign: 'center', padding: 32 }
+                },
+                    React.createElement('span', { className: 'mdi mdi-robot-excited-outline', style: { fontSize: 48, display: 'block', marginBottom: 12, opacity: 0.5 } }),
+                    React.createElement('div', { style: { fontSize: 16, fontWeight: 600, marginBottom: 4 } },
+                        lang === 'de' ? 'Schreib Jarvis eine Nachricht' : 'Send Jarvis a message'
+                    ),
+                    React.createElement('div', { style: { fontSize: 13 } },
+                        lang === 'de'
+                            ? 'z.B. "Mach das Licht im Wohnzimmer an" oder "Wie wird das Wetter?"'
+                            : 'e.g. "Turn on the living room lights" or "What\'s the weather like?"'
+                    )
+                ),
+
+                messages.map((msg, i) => (
+                    React.createElement('div', {
+                        key: i,
+                        className: 'animate-in',
+                        style: {
+                            display: 'flex',
+                            justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start',
+                            paddingLeft: msg.role === 'user' ? 48 : 0,
+                            paddingRight: msg.role === 'user' ? 0 : 48,
+                        }
+                    },
+                        React.createElement('div', {
+                            style: {
+                                maxWidth: '85%',
+                                padding: '10px 14px',
+                                borderRadius: msg.role === 'user' ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
+                                background: msg.role === 'user'
+                                    ? 'var(--accent-primary)'
+                                    : msg.role === 'error'
+                                        ? 'rgba(239,68,68,0.15)'
+                                        : 'var(--bg-secondary)',
+                                color: msg.role === 'user' ? '#fff' : msg.role === 'error' ? 'var(--danger)' : 'var(--text-primary)',
+                                fontSize: 14, lineHeight: 1.5,
+                                wordBreak: 'break-word',
+                            }
+                        },
+                            msg.role !== 'user' && msg.role !== 'error' && React.createElement('div', {
+                                style: { fontSize: 11, fontWeight: 700, color: 'var(--accent-primary)', marginBottom: 2 }
+                            }, 'Jarvis'),
+                            msg.role === 'error' && React.createElement('span', {
+                                className: 'mdi mdi-alert-circle',
+                                style: { marginRight: 4 }
+                            }),
+                            React.createElement('div', {
+                                style: { whiteSpace: 'pre-wrap' }
+                            }, msg.text),
+                            msg.role === 'assistant' && renderActions(msg.actions),
+                            React.createElement('div', {
+                                style: {
+                                    fontSize: 10, marginTop: 4,
+                                    color: msg.role === 'user' ? 'rgba(255,255,255,0.7)' : 'var(--text-muted)',
+                                    textAlign: msg.role === 'user' ? 'right' : 'left',
+                                }
+                            }, formatTime(msg.timestamp))
+                        )
+                    )
+                )),
+
+                // Typing indicator
+                sending && React.createElement('div', {
+                    style: { display: 'flex', justifyContent: 'flex-start' }
+                },
+                    React.createElement('div', {
+                        style: {
+                            padding: '10px 14px', borderRadius: '16px 16px 16px 4px',
+                            background: 'var(--bg-secondary)', display: 'flex', alignItems: 'center', gap: 4,
+                        }
+                    },
+                        React.createElement('span', { className: 'mdi mdi-loading mdi-spin', style: { fontSize: 14, color: 'var(--accent-primary)' } }),
+                        React.createElement('span', { style: { fontSize: 13, color: 'var(--text-muted)' } },
+                            lang === 'de' ? 'Jarvis denkt nach...' : 'Jarvis is thinking...'
+                        )
+                    )
+                ),
+
+                React.createElement('div', { ref: messagesEndRef })
+            ),
+
+            // Input area
+            React.createElement('div', {
+                style: {
+                    display: 'flex', gap: 8, alignItems: 'flex-end',
+                    paddingTop: 12, borderTop: '1px solid var(--border-color)',
+                    flexShrink: 0,
+                }
+            },
+                React.createElement('textarea', {
+                    ref: inputRef,
+                    className: 'input',
+                    value: input,
+                    onChange: (e) => setInput(e.target.value),
+                    onKeyDown: handleKeyDown,
+                    placeholder: lang === 'de' ? 'Schreib Jarvis eine Nachricht...' : 'Type a message to Jarvis...',
+                    rows: 1,
+                    style: {
+                        flex: 1, resize: 'none', minHeight: 42, maxHeight: 120,
+                        borderRadius: 21, padding: '10px 16px', fontSize: 14,
+                        lineHeight: 1.4,
+                    },
+                }),
+                React.createElement('button', {
+                    className: 'btn btn-primary',
+                    onClick: sendMessage,
+                    disabled: !input.trim() || sending,
+                    style: {
+                        width: 42, height: 42, borderRadius: '50%', padding: 0,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        flexShrink: 0,
+                    },
+                },
+                    React.createElement('span', {
+                        className: sending ? 'mdi mdi-loading mdi-spin' : 'mdi mdi-send',
+                        style: { fontSize: 18 }
+                    })
+                )
+            )
+        )
+    );
+};
+
+
+// ================================================================
 // Phase 4 Batch 4: KI & Adaptive Page
 // ================================================================
 const AiPage = () => {
@@ -11278,6 +11601,7 @@ const App = () => {
     const navItems = [
         { section: lang === 'de' ? 'Übersicht' : 'Overview' },
         { id: 'dashboard', icon: 'mdi-view-dashboard', label: 'Dashboard' },
+        { id: 'chat', icon: 'mdi-robot-excited', label: 'Jarvis Chat' },
         { section: lang === 'de' ? 'Konfiguration' : 'Configuration', adminOnly: true },
         { id: 'domains', icon: 'mdi-puzzle', label: 'Domains', adminOnly: true },
         { id: 'rooms', icon: 'mdi-door', label: lang === 'de' ? 'Räume' : 'Rooms' },
@@ -11300,6 +11624,7 @@ const App = () => {
 
     const pages = {
         dashboard: DashboardPage,
+        chat: JarvisChatPage,
         domains: DomainsPage,
         devices: DevicesPage,
         rooms: RoomsPage,
