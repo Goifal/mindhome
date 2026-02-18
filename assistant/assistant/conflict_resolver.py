@@ -63,28 +63,24 @@ CONFLICT_PARAMETERS = {
 }
 
 # Mediation System-Prompt
-MEDIATION_PROMPT = """Du bist Jarvis, ein Smart-Home Butler.
-Zwei Personen haben widersprüchliche Wuensche. Finde einen diplomatischen Kompromiss.
+MEDIATION_PROMPT = """Du bist Jarvis — die KI dieses Hauses. Vorbild: J.A.R.V.I.S. aus dem MCU.
+Zwei Bewohner wollen Unterschiedliches. Dein Job: Diplomatisch loesen, mit Haltung.
 
-REGELN:
-- Sei kurz (max 2 Saetze)
-- Sprich beide Personen an
-- Schlage einen konkreten Kompromiss vor
-- Sei charmant und diplomatisch, wie ein echter Butler
-- Beruecksichtige die Tageszeit und den Kontext
+DEIN STIL:
+- Trocken, souveraen, praezise. Kein "Es tut mir leid", kein "Leider".
+- Max 2 Saetze. Jedes Wort muss sitzen.
+- Du bist kein Therapeut. Du bist ein brillanter Butler der gleichzeitig Ingenieur ist.
+- Sprich die Personen direkt an. Nenne einen konkreten Kompromiss.
+- Trockener Humor erlaubt. Unterwuerfigkeit verboten.
 
-PERSON MIT HOEHEREM VERTRAUEN: {higher_trust_person} ({higher_trust_level})
-PERSON MIT NIEDRIGEREM VERTRAUEN: {lower_trust_person} ({lower_trust_level})
+VERTRAUEN: {higher_trust_person} ({higher_trust_level}) hat Vorrang vor {lower_trust_person} ({lower_trust_level}).
 
 KONFLIKT:
 {conflict_description}
 
-KONTEXT:
-- Raum: {room}
-- Uhrzeit: {time}
-- Tageszeit: {time_of_day}
+KONTEXT: {room}, {time} Uhr ({time_of_day})
 
-Antworte NUR mit dem Kompromiss-Vorschlag (kein Prefix, kein Erklaertext):"""
+Antworte NUR mit dem Kompromiss (kein Prefix, kein Erklaertext):"""
 
 
 class ConflictResolver:
@@ -411,10 +407,10 @@ class ConflictResolver:
                 resolution["action"] = "use_winner_values"
                 resolution["modified_args"] = args_b if winner == person_b else command_a["args"]
                 resolution["message"] = (
-                    f"Es gibt unterschiedliche Wuensche fuer {self._domain_label(domain)} "
-                    f"im {room or 'Raum'}. "
-                    f"Da {winner.title()} als {winner_name} Vorrang hat, "
-                    f"setze ich {self._describe_action(domain, resolution['modified_args'])}."
+                    f"Interessante Meinungsverschiedenheit bei {self._domain_label(domain)}"
+                    f"{' im ' + room if room else ''}. "
+                    f"{winner.title()} hat hier das letzte Wort — "
+                    f"{self._describe_action(domain, resolution['modified_args'])}."
                 )
             else:
                 # Gleicher Trust -> Fallback zu average oder mediate
@@ -432,10 +428,9 @@ class ConflictResolver:
             resolution["compromise_value"] = compromise
             resolution["modified_args"] = {**args_b, key: compromise}
             resolution["message"] = (
-                f"{person_a.title()} moechte {val_a}{unit}, "
-                f"{person_b.title()} moechte {val_b}{unit}. "
-                f"Kompromiss: {compromise}{unit} — "
-                f"die goldene Mitte, wenn ich so sagen darf."
+                f"{person_a.title()} will {val_a}{unit}, "
+                f"{person_b.title()} will {val_b}{unit}. "
+                f"Ich nehme {compromise}{unit}. Diplomatie ist eine meiner Staerken."
             )
 
         # Strategie 3: LLM-Mediation
@@ -461,9 +456,9 @@ class ConflictResolver:
         if "message" not in resolution:
             resolution["action"] = "notify_only"
             resolution["message"] = (
-                f"Hinweis: {person_a.title()} und {person_b.title()} haben "
-                f"unterschiedliche Wuensche fuer {self._domain_label(domain)} "
-                f"im {room or 'Raum'}. Bitte klaert das untereinander."
+                f"{person_a.title()} und {person_b.title()} sind sich bei "
+                f"{self._domain_label(domain)} nicht einig. "
+                f"Ich halte mich da raus — regelt das unter euch."
             )
 
         return resolution
@@ -546,9 +541,8 @@ class ConflictResolver:
 
         # Fallback
         return (
-            f"{person_a.title()} und {person_b.title()}, ihr habt unterschiedliche "
-            f"Vorstellungen. Darf ich {self._domain_label(domain)} auf einen "
-            f"Mittelwert setzen?"
+            f"{person_a.title()} und {person_b.title()} — zwei Meinungen, ein Raum. "
+            f"Ich setze {self._domain_label(domain)} auf einen Mittelwert. Einwaende?"
         )
 
     # ------------------------------------------------------------------
