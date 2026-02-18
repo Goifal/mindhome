@@ -150,12 +150,13 @@ class AutonomyManager:
 
         return self._default_trust
 
-    def can_person_act(self, person: str, function_name: str) -> dict:
+    def can_person_act(self, person: str, function_name: str, room: str = "") -> dict:
         """Prueft ob eine Person eine bestimmte Funktion ausfuehren darf.
 
         Args:
             person: Name der Person
             function_name: Name der Funktion (z.B. "lock_door")
+            room: Raum in dem die Aktion ausgefuehrt wird (fuer Raum-Scoping)
 
         Returns:
             Dict mit:
@@ -184,19 +185,29 @@ class AutonomyManager:
                 "reason": f"Sicherheitsfunktion '{function_name}' erfordert Owner-Berechtigung",
             }
 
-        # Gast: Nur erlaubte Aktionen
+        # Gast: Nur erlaubte Aktionen + Raum-Scoping
         if trust == 0:
-            if function_name in self._guest_actions:
+            if function_name not in self._guest_actions:
                 return {
-                    "allowed": True,
+                    "allowed": False,
                     "trust_level": trust,
                     "trust_name": trust_name,
+                    "reason": f"Gaeste duerfen '{function_name}' nicht ausfuehren",
                 }
+            # Raum-Scoping: Gast darf nur in zugewiesenen Raeumen handeln
+            if room:
+                allowed_rooms = self._get_allowed_rooms(person)
+                if allowed_rooms and room.lower() not in allowed_rooms:
+                    return {
+                        "allowed": False,
+                        "trust_level": trust,
+                        "trust_name": trust_name,
+                        "reason": f"Zugriff nur in: {', '.join(allowed_rooms)}",
+                    }
             return {
-                "allowed": False,
+                "allowed": True,
                 "trust_level": trust,
                 "trust_name": trust_name,
-                "reason": f"Gaeste duerfen '{function_name}' nicht ausfuehren",
             }
 
         # Mitbewohner: Alles ausser Sicherheit (schon oben geprueft)
@@ -205,6 +216,16 @@ class AutonomyManager:
             "trust_level": trust,
             "trust_name": trust_name,
         }
+
+    def _get_allowed_rooms(self, person: str) -> list[str]:
+        """Gibt die erlaubten Raeume fuer eine Person zurueck (Raum-Scoping).
+
+        Konfiguriert in settings.yaml unter trust_levels.room_restrictions.
+        Leere Liste = keine Einschraenkung.
+        """
+        rooms_cfg = yaml_config.get("trust_levels", {}).get("room_restrictions", {})
+        rooms = rooms_cfg.get(person.lower(), [])
+        return [r.lower() for r in rooms]
 
     def get_trust_info(self) -> dict:
         """Gibt Info ueber alle Trust-Konfigurationen zurueck."""

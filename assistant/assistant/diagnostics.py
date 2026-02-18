@@ -302,7 +302,7 @@ class DiagnosticsEngine:
         return due
 
     def complete_task(self, task_name: str) -> bool:
-        """Markiert eine Wartungsaufgabe als erledigt.
+        """Markiert eine Wartungsaufgabe als erledigt und fuehrt History.
 
         Args:
             task_name: Name der Aufgabe
@@ -315,7 +315,13 @@ class DiagnosticsEngine:
 
         for task in tasks:
             if task.get("name", "").lower() == task_name.lower():
-                task["last_done"] = datetime.now().strftime("%Y-%m-%d")
+                today = datetime.now().strftime("%Y-%m-%d")
+                # Completion-History fuehren (max 10 Eintraege)
+                history = task.get("history", [])
+                history.append(today)
+                task["history"] = history[-10:]
+                task["last_done"] = today
+                task["completion_count"] = len(task.get("history", [today]))
                 found = True
                 break
 
@@ -324,6 +330,14 @@ class DiagnosticsEngine:
             logger.info("Wartungsaufgabe erledigt: %s", task_name)
 
         return found
+
+    def get_task_history(self, task_name: str) -> list[str]:
+        """Gibt die Completion-History einer Wartungsaufgabe zurueck."""
+        tasks = self._load_maintenance_tasks()
+        for task in tasks:
+            if task.get("name", "").lower() == task_name.lower():
+                return task.get("history", [])
+        return []
 
     def get_maintenance_tasks(self) -> list[dict]:
         """Gibt alle Wartungsaufgaben zurueck."""

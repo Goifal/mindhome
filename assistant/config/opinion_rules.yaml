@@ -12,7 +12,10 @@
 #   context: Dict mit Haus-Kontext
 
 opinion_rules:
-  # --- Energie-Verschwendung ---
+  # ==========================================================
+  # KLIMA / HEIZUNG
+  # ==========================================================
+
   - id: "high_temp"
     description: "Heizung ueber 25 Grad"
     check_action: "set_climate"
@@ -34,18 +37,44 @@ opinion_rules:
       - "28 Grad. Da schmilzt sogar der Energieberater."
     min_intensity: 1
 
-  # --- Ungewoehnliche Zeiten ---
-  - id: "alarm_disarm_night"
-    description: "Alarm deaktivieren nachts"
-    check_action: "set_alarm"
-    check_field: "mode"
-    check_operator: "=="
-    check_value: "disarm"
-    check_hour_min: 0
+  - id: "low_temp"
+    description: "Heizung unter 15 Grad"
+    check_action: "set_climate"
+    check_field: "temperature"
+    check_operator: "<"
+    check_value: 15
+    responses:
+      - "14 Grad? Sparsamkeit in Ehren, aber das grenzt an Selbstkasteiung."
+      - "Unter 15 Grad. Da kondensiert bald die Atemluft."
+    min_intensity: 2
+
+  - id: "heating_night"
+    description: "Heizung nachts hochdrehen"
+    check_action: "set_climate"
+    check_field: "temperature"
+    check_operator: ">"
+    check_value: 22
+    check_hour_min: 23
     check_hour_max: 5
     responses:
-      - "Alarm deaktivieren um diese Uhrzeit? Alles in Ordnung?"
-    min_intensity: 1
+      - "Die Heizung nachts hochdrehen ist selten die Loesung. Aber ich frage nicht."
+    min_intensity: 2
+
+  - id: "heating_bedroom_high"
+    description: "Schlafzimmer ueber 22 Grad"
+    check_action: "set_climate"
+    check_field: "temperature"
+    check_operator: ">"
+    check_value: 22
+    check_room: "schlafzimmer"
+    responses:
+      - "Schlafmediziner empfehlen 16-18 Grad. Aber ich bin kein Arzt."
+      - "Tropische Naechte, hausgemacht."
+    min_intensity: 2
+
+  # ==========================================================
+  # LICHT
+  # ==========================================================
 
   - id: "lights_on_night"
     description: "Alle Lichter an nachts"
@@ -60,7 +89,48 @@ opinion_rules:
       - "Alle Lichter an um diese Zeit? Schlafprobleme?"
     min_intensity: 2
 
-  # --- Widersprueche ---
+  - id: "lights_full_brightness_morning"
+    description: "Volle Helligkeit frueh morgens"
+    check_action: "set_light"
+    check_field: "brightness"
+    check_operator: ">"
+    check_value: 90
+    check_hour_min: 5
+    check_hour_max: 7
+    responses:
+      - "100% Helligkeit um diese Zeit. Die Netzhaut bedankt sich."
+      - "Sanftes Aufwachen war wohl nicht gewuenscht."
+    min_intensity: 2
+
+  - id: "lights_off_evening_early"
+    description: "Alle Lichter aus frueh am Abend"
+    check_action: "set_light"
+    check_field: "state"
+    check_operator: "=="
+    check_value: "off"
+    check_hour_min: 18
+    check_hour_max: 20
+    check_room: "all"
+    responses:
+      - "Alle Lichter aus um 19 Uhr? Romantischer Abend oder Energiesparprogramm?"
+    min_intensity: 3
+
+  - id: "light_100_percent"
+    description: "Licht auf 100% am Abend"
+    check_action: "set_light"
+    check_field: "brightness"
+    check_operator: ">"
+    check_value: 95
+    check_hour_min: 20
+    check_hour_max: 23
+    responses:
+      - "Volle Beleuchtung nach 20 Uhr. Das Melatonin laesst gruessen."
+    min_intensity: 3
+
+  # ==========================================================
+  # ROLLADEN / COVER
+  # ==========================================================
+
   - id: "cover_down_sunny"
     description: "Rolladen runter bei Sonnenschein mittags"
     check_action: "set_cover"
@@ -72,4 +142,163 @@ opinion_rules:
     responses:
       - "Es ist noch hell draussen - bewusst?"
       - "Rolladen runter um diese Zeit? Filmabend?"
+    min_intensity: 2
+
+  - id: "cover_up_night"
+    description: "Rolladen hoch mitten in der Nacht"
+    check_action: "set_cover"
+    check_field: "position"
+    check_operator: ">"
+    check_value: 70
+    check_hour_min: 0
+    check_hour_max: 5
+    responses:
+      - "Rolladen hoch um diese Uhrzeit. Die Nachbarn werden sich freuen."
+    min_intensity: 2
+
+  - id: "cover_up_early_weekend"
+    description: "Rolladen hoch sehr frueh am Wochenende"
+    check_action: "set_cover"
+    check_field: "position"
+    check_operator: ">"
+    check_value: 50
+    check_hour_min: 5
+    check_hour_max: 7
+    responses:
+      - "Frueh aufstehen am Wochenende. Respektabel, wenn auch ungewoehnlich."
+    min_intensity: 3
+
+  # ==========================================================
+  # ALARM / SICHERHEIT
+  # ==========================================================
+
+  - id: "alarm_disarm_night"
+    description: "Alarm deaktivieren nachts"
+    check_action: "set_alarm"
+    check_field: "mode"
+    check_operator: "=="
+    check_value: "disarm"
+    check_hour_min: 0
+    check_hour_max: 5
+    responses:
+      - "Alarm deaktivieren um diese Uhrzeit? Alles in Ordnung?"
+    min_intensity: 1
+
+  - id: "alarm_disarm_away"
+    description: "Alarm deaktivieren wenn niemand daheim"
+    check_action: "set_alarm"
+    check_field: "mode"
+    check_operator: "=="
+    check_value: "disarm"
+    responses:
+      - "Zur Kenntnis genommen. Der Alarm ist jetzt deaktiviert."
+    min_intensity: 1
+
+  # ==========================================================
+  # MEDIEN
+  # ==========================================================
+
+  - id: "media_loud_night"
+    description: "Medien laut nachts abspielen"
+    check_action: "play_media"
+    check_field: "volume"
+    check_operator: ">"
+    check_value: 60
+    check_hour_min: 22
+    check_hour_max: 6
+    responses:
+      - "Lautstaerke {volume}% nach 22 Uhr. Die Nachbarn haben bestimmt Verstaendnis."
+      - "Spaete Musiksession auf voller Lautstaerke. Ich sage den Waenden Bescheid."
+    min_intensity: 1
+
+  - id: "media_very_loud"
+    description: "Medien ueber 90% Lautstaerke"
+    check_action: "play_media"
+    check_field: "volume"
+    check_operator: ">"
+    check_value: 90
+    responses:
+      - "Volle Lautstaerke. Die Fenster vibrieren schon."
+    min_intensity: 3
+
+  # ==========================================================
+  # TUERSCHLOSS
+  # ==========================================================
+
+  - id: "unlock_door_night"
+    description: "Tuer entriegeln nachts"
+    check_action: "lock_door"
+    check_field: "action"
+    check_operator: "=="
+    check_value: "unlock"
+    check_hour_min: 0
+    check_hour_max: 5
+    responses:
+      - "Die Haustuer wird nachts entriegelt. Erwartest du jemanden?"
+    min_intensity: 1
+
+  - id: "unlock_away"
+    description: "Tuer entriegeln bei Abwesenheit"
+    check_action: "lock_door"
+    check_field: "action"
+    check_operator: "=="
+    check_value: "unlock"
+    responses:
+      - "Tuer entriegelt. Ich behalte die Sensoren im Auge."
+    min_intensity: 1
+
+  # ==========================================================
+  # GERAETE / APPLIANCES
+  # ==========================================================
+
+  - id: "all_lights_on"
+    description: "Alle Lichter im ganzen Haus an"
+    check_action: "set_light"
+    check_field: "state"
+    check_operator: "=="
+    check_value: "on"
+    check_room: "all"
+    responses:
+      - "Das ganze Haus erleuchtet. Die Stromrechnung steht stramm."
+      - "Jeder Raum? Wird gefeiert oder gesucht?"
+    min_intensity: 2
+
+  - id: "everything_off"
+    description: "Alles aus — radikaler Shutdown"
+    check_action: "set_light"
+    check_field: "state"
+    check_operator: "=="
+    check_value: "off"
+    check_room: "all"
+    check_hour_min: 18
+    check_hour_max: 22
+    responses:
+      - "Kompletter Blackout? Puenktlich zum Abend."
+    min_intensity: 3
+
+  # ==========================================================
+  # KOMFORT-WIDERSPRUECHE
+  # ==========================================================
+
+  - id: "heating_bathroom_low"
+    description: "Badezimmer unter 20 Grad"
+    check_action: "set_climate"
+    check_field: "temperature"
+    check_operator: "<"
+    check_value: 20
+    check_room: "bad"
+    responses:
+      - "Unter 20 Grad im Bad. Das wird eine erfrischende Dusche."
+      - "Badezimmer auf Keller-Niveau. Abhaertung?"
+    min_intensity: 2
+
+  - id: "heating_bathroom_low_alt"
+    description: "Badezimmer unter 20 Grad (badezimmer)"
+    check_action: "set_climate"
+    check_field: "temperature"
+    check_operator: "<"
+    check_value: 20
+    check_room: "badezimmer"
+    responses:
+      - "Unter 20 Grad im Bad. Das wird eine erfrischende Dusche."
     min_intensity: 2

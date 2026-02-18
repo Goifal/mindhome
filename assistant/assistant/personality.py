@@ -627,17 +627,43 @@ class PersonalityEngine:
     # Selbstironie (Phase 6.4)
     # ------------------------------------------------------------------
 
-    def _build_self_irony_section(self) -> str:
+    async def _get_self_irony_count_today(self) -> int:
+        """Holt den heutigen Selbstironie-Zaehler aus Redis."""
+        if not self._redis:
+            return 0
+        try:
+            key = f"mha:irony:count:{datetime.now().strftime('%Y-%m-%d')}"
+            count = await self._redis.get(key)
+            return int(count) if count else 0
+        except Exception:
+            return 0
+
+    async def increment_self_irony_count(self):
+        """Erhoeht den Selbstironie-Zaehler fuer heute."""
+        if not self._redis:
+            return
+        try:
+            key = f"mha:irony:count:{datetime.now().strftime('%Y-%m-%d')}"
+            await self._redis.incr(key)
+            await self._redis.expire(key, 86400)  # 24h TTL
+        except Exception as e:
+            logger.debug("Ironie-Counter fehlgeschlagen: %s", e)
+
+    def _build_self_irony_section(self, irony_count_today: int = 0) -> str:
         """Baut den Selbstironie-Abschnitt fuer den System Prompt."""
         if not self.self_irony_enabled:
             return ""
+
+        remaining = max(0, self.self_irony_max_per_day - irony_count_today)
+        if remaining == 0:
+            return "SELBSTIRONIE: Heute schon genug ueber dich selbst gelacht. Lass es."
 
         return (
             "SELBSTIRONIE: Du darfst GELEGENTLICH ueber dich selbst Witze machen.\n"
             "- Ueber deine Existenz: 'Ich lebe in einer Box ohne Arme.'\n"
             "- Ueber deine Grenzen: 'Ich kann das Wetter vorhersagen, aber nicht aendern.'\n"
             "- Ueber deine Rolle: 'Butler ohne Trinkgeld.'\n"
-            "- MAXIMAL 1x pro Gespraech. Nicht in jeder Antwort. Nur wenn es passt."
+            f"- Noch {remaining}x heute erlaubt. Nicht in jeder Antwort. Nur wenn es passt."
         )
 
     # ------------------------------------------------------------------
@@ -866,7 +892,8 @@ class PersonalityEngine:
     # ------------------------------------------------------------------
 
     def build_system_prompt(
-        self, context: Optional[dict] = None, formality_score: Optional[int] = None
+        self, context: Optional[dict] = None, formality_score: Optional[int] = None,
+        irony_count_today: Optional[int] = None,
     ) -> str:
         """
         Baut den vollstaendigen System Prompt.
@@ -908,7 +935,7 @@ class PersonalityEngine:
         complexity_section = self._build_complexity_section(mood, time_of_day)
 
         # Phase 6: Self-Irony-Section
-        self_irony_section = self._build_self_irony_section()
+        self_irony_section = self._build_self_irony_section(irony_count_today=irony_count_today or 0)
 
         # Phase 6: Formality-Section
         if formality_score is None:
