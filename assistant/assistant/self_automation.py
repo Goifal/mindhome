@@ -264,12 +264,19 @@ class SelfAutomation:
 
             for state in (states or []):
                 entity_id = state.get("entity_id", "")
-                if not entity_id.startswith("automation.jarvis_"):
+                if not entity_id.startswith("automation."):
                     continue
 
+                # HA generiert entity_id aus dem Alias, NICHT aus der Config-ID.
+                # Die Config-ID (jarvis_*) ist im Attribut "id" gespeichert.
                 attrs = state.get("attributes", {})
+                config_id = attrs.get("id", "")
+                if not config_id.startswith("jarvis_"):
+                    continue
+
                 jarvis_automations.append({
                     "entity_id": entity_id,
+                    "config_id": config_id,
                     "alias": attrs.get("friendly_name", entity_id),
                     "state": state.get("state", "unknown"),
                     "last_triggered": attrs.get("last_triggered", "nie"),
@@ -287,7 +294,7 @@ class SelfAutomation:
                 status = "aktiv" if auto["state"] == "on" else "deaktiviert"
                 lines.append(
                     f"- {auto['alias']} [{status}] "
-                    f"(zuletzt: {auto['last_triggered']})"
+                    f"(ID: {auto['config_id']}, zuletzt: {auto['last_triggered']})"
                 )
 
             return {
@@ -331,7 +338,11 @@ class SelfAutomation:
 
         for state in (states or []):
             entity_id = state.get("entity_id", "")
-            if entity_id.startswith("automation.jarvis_") and state.get("state") == "on":
+            if not entity_id.startswith("automation."):
+                continue
+            # Config-ID pruefen (nicht entity_id — HA generiert entity_id aus dem Alias)
+            config_id = state.get("attributes", {}).get("id", "")
+            if config_id.startswith("jarvis_") and state.get("state") == "on":
                 success = await self.ha.call_service(
                     "automation", "turn_off", {"entity_id": entity_id}
                 )
