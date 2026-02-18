@@ -42,6 +42,7 @@ class ProactiveManager:
         self.brain = brain
         self._task: Optional[asyncio.Task] = None
         self._diag_task: Optional[asyncio.Task] = None
+        self._batch_task: Optional[asyncio.Task] = None
         self._running = False
 
         # Konfiguration
@@ -49,6 +50,13 @@ class ProactiveManager:
         self.enabled = proactive_cfg.get("enabled", True)
         self.cooldown = proactive_cfg.get("cooldown_seconds", 300)
         self.silence_scenes = set(proactive_cfg.get("silence_scenes", []))
+
+        # Phase 15.4: Notification Batching (LOW sammeln)
+        batch_cfg = proactive_cfg.get("batching", {})
+        self.batch_enabled = batch_cfg.get("enabled", True)
+        self.batch_interval = batch_cfg.get("interval_minutes", 30)
+        self.batch_max_items = batch_cfg.get("max_items", 10)
+        self._batch_queue: list[dict] = []
 
         # Event-Mapping: HA Event -> Prioritaet + Beschreibung
         self.event_handlers = {
@@ -93,7 +101,10 @@ class ProactiveManager:
         # Phase 10: Periodische Diagnostik starten
         if hasattr(self.brain, "diagnostics") and self.brain.diagnostics.enabled:
             self._diag_task = asyncio.create_task(self._run_diagnostics_loop())
-        logger.info("Proactive Manager gestartet (mit Feedback-Integration + Diagnostik)")
+        # Phase 15.4: Batch-Loop starten
+        if self.batch_enabled:
+            self._batch_task = asyncio.create_task(self._run_batch_loop())
+        logger.info("Proactive Manager gestartet (Feedback + Diagnostik + Batching)")
 
     async def stop(self):
         """Stoppt den Event Listener."""
@@ -108,6 +119,12 @@ class ProactiveManager:
             self._diag_task.cancel()
             try:
                 await self._diag_task
+            except asyncio.CancelledError:
+                pass
+        if self._batch_task:
+            self._batch_task.cancel()
+            try:
+                await self._batch_task
             except asyncio.CancelledError:
                 pass
         logger.info("Proactive Manager gestoppt")
@@ -345,6 +362,22 @@ class ProactiveManager:
                 last_dt = datetime.fromisoformat(last_time)
                 if datetime.now() - last_dt < timedelta(seconds=effective_cooldown):
                     return
+
+        # Phase 15.4: LOW-Meldungen batchen statt sofort senden
+        if urgency == LOW and self.batch_enabled:
+            description = self.event_handlers.get(event_type, (MEDIUM, event_type))[1]
+            self._batch_queue.append({
+                "event_type": event_type,
+                "description": description,
+                "data": data,
+                "time": datetime.now().isoformat(),
+            })
+            if len(self._batch_queue) >= self.batch_max_items:
+                # Queue voll — sofort senden
+                asyncio.create_task(self._flush_batch())
+            logger.debug("LOW-Meldung gequeued [%s]: %s (%d in Queue)",
+                         event_type, description, len(self._batch_queue))
+            return
 
         # Phase 6: Activity Engine + Silence Matrix
         activity_result = await self.brain.activity.should_deliver(urgency)
@@ -634,3 +667,72 @@ Beispiele:
         parts.append("Formuliere eine kurze Meldung. Sprich die Bewohner mit Namen an wenn passend.")
 
         return "\n".join(parts)
+
+    # ------------------------------------------------------------------
+    # Phase 15.4: Notification Batching
+    # ------------------------------------------------------------------
+
+    async def _run_batch_loop(self):
+        """Periodisch gesammelte LOW-Meldungen als Zusammenfassung senden."""
+        await asyncio.sleep(60)  # 1 Min. warten
+
+        while self._running:
+            try:
+                if self._batch_queue:
+                    await self._flush_batch()
+            except Exception as e:
+                logger.error("Batch-Flush Fehler: %s", e)
+
+            await asyncio.sleep(self.batch_interval * 60)
+
+    async def _flush_batch(self):
+        """Sendet alle gesammelten LOW-Meldungen als eine Zusammenfassung."""
+        if not self._batch_queue:
+            return
+
+        # Queue leeren (atomar)
+        items = self._batch_queue[:self.batch_max_items]
+        self._batch_queue = self._batch_queue[self.batch_max_items:]
+
+        # Activity-Check: Nicht bei Schlaf/Call
+        activity_result = await self.brain.activity.should_deliver(LOW)
+        if activity_result["suppress"]:
+            logger.info("Batch unterdrueckt: Aktivitaet=%s", activity_result["activity"])
+            return
+
+        # Zusammenfassung generieren
+        summary_parts = []
+        for item in items:
+            summary_parts.append(f"- {item['description']}")
+            if "message" in item.get("data", {}):
+                summary_parts.append(f"  ({item['data']['message']})")
+
+        prompt = (
+            f"Du hast {len(items)} nebensaechliche Meldung(en) gesammelt. "
+            f"Fasse sie in 1-3 kurzen Saetzen zusammen. Beilaeufig, Butler-Stil.\n\n"
+            + "\n".join(summary_parts)
+            + "\n\nBeispiel: 'Nebenbei, Sir: Der Strom war guenstig, "
+            "ein Sensor haengt, und die Wartung ruft.'"
+        )
+
+        try:
+            response = await self.brain.ollama.chat(
+                messages=[
+                    {"role": "system", "content": self._get_notification_system_prompt()},
+                    {"role": "user", "content": prompt},
+                ],
+                model=settings.model_fast,
+            )
+
+            text = response.get("message", {}).get("content", "")
+            if text:
+                notification_id = f"notif_{uuid.uuid4().hex[:12]}"
+                await emit_proactive(text, "batch_summary", LOW, notification_id)
+                await self.brain.feedback.track_notification(notification_id, "batch_summary")
+                logger.info(
+                    "Batch-Summary gesendet (%d Items, id: %s): %s",
+                    len(items), notification_id, text,
+                )
+
+        except Exception as e:
+            logger.error("Batch-Summary Fehler: %s", e)

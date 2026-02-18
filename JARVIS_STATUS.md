@@ -133,14 +133,14 @@
 
 ---
 
-## PHASE 15 — Haushalt & Fuersorge (35.0%)
+## PHASE 15 — Haushalt & Fuersorge (67.5%)
 
 | # | Feature | Status | % | Details |
 |---|---------|:------:|:-:|---------|
-| 15.1 | Gesundheit & Raumklima | **OFFEN** | 15% | CO2/Feuchte in Settings, aber kein health_monitor.py |
-| 15.2 | Einkauf & Vorrat | DONE | 80% | HA Shopping-List (add/list/complete/clear). **Luecke:** Kein Vorrats-Tracking |
+| 15.1 | Gesundheit & Raumklima | DONE | 90% | health_monitor.py: CO2/Feuchte/Temp-Check, Scoring, Hydration-Reminder. **Luecke:** Kein Trend-Dashboard |
+| 15.2 | Einkauf & Vorrat | DONE | 95% | HA Shopping-List + inventory.py: Vorrats-Tracking mit Ablaufdaten, Kategorien, Auto-Einkaufsliste |
 | 15.3 | Geraete-Beziehung | **OFFEN** | 5% | Time-Awareness Basics. **FEHLT: device_health.py** |
-| 15.4 | Benachrichtigungs-Intelligenz | PARTIAL | 30% | Priority-Queue, Cooldowns. **FEHLT: Batching, Kanal-Wahl** |
+| 15.4 | Benachrichtigungs-Intelligenz | DONE | 80% | Priority-Queue, Cooldowns, LOW-Batching (alle 30 Min. als Summary). **Luecke:** Keine Kanal-Wahl |
 
 ---
 
@@ -149,7 +149,7 @@
 | # | Feature | Status | % | Details |
 |---|---------|:------:|:-:|---------|
 | 16.1 | Konfliktloesung | **OFFEN** | 5% | Trust-Levels da. **FEHLT: Mediations-Prompts** |
-| 16.2 | Onboarding / "Was kannst du?" | DONE | 80% | 9 Kategorien, Direkterkennung. **Luecke:** Kein Tutorial-Modus |
+| 16.2 | Onboarding / "Was kannst du?" | DONE | 95% | 9 Kategorien, Direkterkennung, Tutorial-Modus (10 Tipps fuer neue User) |
 | 16.3 | Dashboard | DONE | 85% | 9 Tabs (inkl. Easter Eggs), 160+ Settings, PIN+Recovery. **Luecke:** Kein Live-Status |
 
 ---
@@ -214,11 +214,11 @@
 
 | # | Was | Aufwand | Status |
 |---|-----|:-------:|:------:|
-| 3 | Phase 12.4: Model-Testing (Jarvis-Character-Test-Suite) | 4 Std | OFFEN |
-| 4 | Phase 15.1: Gesundheits-Monitor (CO2/Feuchte/Hydration) | 4 Std | OFFEN |
-| 5 | Phase 15.4: Notification-Batching (LOW sammeln) | 3 Std | OFFEN |
-| 6 | Phase 16.2: Tutorial-Modus (interaktives Onboarding) | 4 Std | OFFEN |
-| 7 | Vorrats-Tracking (Ablaufdaten, automatische Einkaufsliste) | 4 Std | OFFEN |
+| 3 | Phase 12.4: Model-Testing (Jarvis-Character-Test-Suite) | 4 Std | SKIP |
+| 4 | Phase 15.1: Gesundheits-Monitor (CO2/Feuchte/Hydration) | 4 Std | DONE |
+| 5 | Phase 15.4: Notification-Batching (LOW sammeln) | 3 Std | DONE |
+| 6 | Phase 16.2: Tutorial-Modus (interaktives Onboarding) | 4 Std | DONE |
+| 7 | Vorrats-Tracking (Ablaufdaten, automatische Einkaufsliste) | 4 Std | DONE |
 
 ### Prioritaet 3 — Grosser Aufwand (je >6 Stunden)
 

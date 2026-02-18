@@ -171,6 +171,11 @@ proactive:
     - "kino"
     - "schlafen"
     - "meditation"
+  # Phase 15.4: Notification Batching (LOW-Meldungen sammeln)
+  batching:
+    enabled: true
+    interval_minutes: 30       # Alle 30 Min. zusammengefasst senden
+    max_items: 10              # Max. Items pro Batch (bei Ueberlauf sofort senden)
 
 # --- Semantisches Gedaechtnis (Phase 2) ---
 memory:
@@ -730,6 +735,32 @@ correction:
 # Alternativ: JARVIS_UI_PIN Umgebungsvariable (ueberschreibt gespeicherten PIN)
 dashboard:
   setup_complete: false
+
+# --- Tutorial-Modus (16.2) ---
+tutorial:
+  enabled: true
+  # Anzahl Interaktionen mit Tutorial-Tipps pro Person
+  max_interactions: 10
+
+# --- Gesundheits-Monitor (15.1) ---
+health_monitor:
+  enabled: true
+  check_interval_minutes: 10
+  # CO2-Schwellwerte (ppm)
+  co2_warn: 1000
+  co2_critical: 1500
+  # Luftfeuchtigkeit (%)
+  humidity_low: 30
+  humidity_high: 70
+  # Raumtemperatur (°C)
+  temp_low: 16
+  temp_high: 27
+  # Trink-Erinnerung
+  hydration_interval_hours: 2
+  hydration_start_hour: 8
+  hydration_end_hour: 22
+  # Cooldown (Minuten) bevor gleicher Alert erneut kommt
+  alert_cooldown_minutes: 60
 
 # --- Wartungs-Assistent (10.5) ---
 maintenance:

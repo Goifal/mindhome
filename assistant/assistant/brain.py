@@ -29,10 +29,12 @@ from .config import settings, yaml_config
 from .context_builder import ContextBuilder
 from .cooking_assistant import CookingAssistant
 from .diagnostics import DiagnosticsEngine
+from .health_monitor import HealthMonitor
 from .feedback import FeedbackTracker
 from .function_calling import ASSISTANT_TOOLS, FunctionExecutor
 from .function_validator import FunctionValidator
 from .ha_client import HomeAssistantClient
+from .inventory import InventoryManager
 from .knowledge_base import KnowledgeBase
 from .memory import MemoryManager
 from .memory_extractor import MemoryExtractor
@@ -109,6 +111,12 @@ class AssistantBrain:
         # Phase 10: Diagnostik + Wartungs-Assistent
         self.diagnostics = DiagnosticsEngine(self.ha)
 
+        # Phase 15.1: Gesundheits-Monitor
+        self.health_monitor = HealthMonitor(self.ha)
+
+        # Phase 15.2: Vorrats-Tracking
+        self.inventory = InventoryManager(self.ha)
+
         # Phase 11: Koch-Assistent
         self.cooking = CookingAssistant(self.ollama)
 
@@ -178,6 +186,14 @@ class AssistantBrain:
 
         # Phase 11.1: Knowledge Base initialisieren
         await self.knowledge_base.initialize()
+
+        # Phase 15.2: Inventory Manager initialisieren
+        await self.inventory.initialize(redis_client=self.memory.redis)
+
+        # Phase 15.1: Health Monitor initialisieren und starten
+        await self.health_monitor.initialize(redis_client=self.memory.redis)
+        self.health_monitor.set_notify_callback(self._handle_health_alert)
+        await self.health_monitor.start()
 
         await self.proactive.start()
         logger.info("Jarvis initialisiert (alle Systeme aktiv)")
@@ -398,6 +414,11 @@ class AssistantBrain:
 
         # Phase 7.5: Szenen-Intelligenz — erweiterte Prompt-Anweisung
         system_prompt += SCENE_INTELLIGENCE_PROMPT
+
+        # Phase 16.2: Tutorial-Modus fuer neue User
+        tutorial_hint = await self._get_tutorial_hint(person or "unknown")
+        if tutorial_hint:
+            system_prompt += tutorial_hint
 
         # Warning-Dedup: Bereits gegebene Warnungen nicht wiederholen
         alerts = context.get("alerts", [])
@@ -1078,6 +1099,58 @@ class AssistantBrain:
             await emit_speaking(message)
             logger.info("TimeAwareness -> Proaktive Meldung: %s", message)
 
+    async def _handle_health_alert(self, alert_type: str, urgency: str, message: str):
+        """Callback fuer Health Monitor — leitet an proaktive Meldung weiter."""
+        if message:
+            await emit_speaking(message)
+            logger.info("Health Monitor [%s/%s]: %s", alert_type, urgency, message)
+
+    # ------------------------------------------------------------------
+    # Phase 16.2: Tutorial-Modus
+    # ------------------------------------------------------------------
+
+    async def _get_tutorial_hint(self, person: str) -> Optional[str]:
+        """Gibt Tutorial-Hinweise fuer neue User zurueck (erste 10 Interaktionen)."""
+        tutorial_cfg = yaml_config.get("tutorial", {})
+        if not tutorial_cfg.get("enabled", True):
+            return None
+
+        max_interactions = tutorial_cfg.get("max_interactions", 10)
+
+        if not self.memory.redis:
+            return None
+
+        try:
+            key = f"mha:tutorial:count:{person}"
+            count = await self.memory.redis.incr(key)
+            # Expire nach 30 Tagen (danach kein Tutorial mehr)
+            if count == 1:
+                await self.memory.redis.expire(key, 30 * 24 * 3600)
+
+            if count > max_interactions:
+                return None
+
+            # Verschiedene Tipps je nach Interaktions-Nummer
+            tips = [
+                "Tipp: Du kannst mich fragen 'Was kannst du?' fuer eine Uebersicht aller Funktionen.",
+                "Tipp: Sag 'Merk dir [etwas]' und ich speichere es fuer dich. 'Was weisst du?' zeigt alles an.",
+                "Tipp: Ich kann Licht, Heizung und Rolllaeden steuern. Sag einfach was du brauchst.",
+                "Tipp: Ich habe Easter Eggs. Probier mal 'Wer bist du?' oder '42'.",
+                "Tipp: Sag 'Gute Nacht' fuer einen Sicherheits-Check und die Nacht-Routine.",
+                "Tipp: 'Setz Milch auf die Einkaufsliste' funktioniert auch per Sprache.",
+                "Tipp: Ich lerne aus Korrekturen. Sag einfach 'Nein, ich meinte...'",
+                "Tipp: Im Dashboard (Web-UI) kannst du alles konfigurieren — Sarkasmus, Stimme, Easter Eggs.",
+                "Tipp: Ich kann kochen! Sag 'Rezept fuer Spaghetti Carbonara'.",
+                "Tipp: Frag 'Was hast du von mir gelernt?' um deine Korrekturen zu sehen.",
+            ]
+
+            tip_index = (count - 1) % len(tips)
+            return f"\n\nTUTORIAL-MODUS (Interaktion {count}/{max_interactions}):\n{tips[tip_index]}\nFuege diesen Tipp KURZ am Ende deiner Antwort an, z.B.: '...Uebrigens: [Tipp]'"
+
+        except Exception as e:
+            logger.debug("Tutorial-Check Fehler: %s", e)
+            return None
+
     # ------------------------------------------------------------------
     # Phase 8: Memory-Befehle
     # ------------------------------------------------------------------
@@ -1214,6 +1287,22 @@ class AssistantBrain:
                     "manage_shopping_list", {"action": "list"}
                 )
                 return result.get("message", "Einkaufsliste nicht verfuegbar.")
+
+        # Phase 15.2: Vorrats-Tracking
+        if any(kw in text_lower for kw in [
+            "vorrat", "vorraete", "inventory", "was haben wir",
+            "was ist im kuehlschrank", "was ist im gefrier",
+            "laeuft ab", "ablaufdatum", "haltbarkeit",
+        ]):
+            # "Zeig den Vorrat"
+            if any(kw in text_lower for kw in ["zeig", "was haben", "was ist", "vorrat anzeigen", "liste"]):
+                result = await self.executor.execute("manage_inventory", {"action": "list"})
+                return result.get("message", "Vorrat nicht verfuegbar.")
+
+            # "Was laeuft ab?"
+            if any(kw in text_lower for kw in ["laeuft ab", "ablauf", "haltbar"]):
+                result = await self.executor.execute("manage_inventory", {"action": "check_expiring"})
+                return result.get("message", "Keine Ablauf-Infos.")
 
         return None
 
@@ -1500,6 +1589,7 @@ Der User stellt eine hypothetische Frage. Beantworte sie:
         await self.anticipation.stop()
         await self.intent_tracker.stop()
         await self.time_awareness.stop()
+        await self.health_monitor.stop()
         await self.proactive.stop()
         await self.summarizer.stop()
         await self.feedback.stop()
