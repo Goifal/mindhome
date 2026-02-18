@@ -1,0 +1,221 @@
+# ============================================================
+# MindHome Assistant - Automation Templates & Security
+# Phase 13.2: Self Automation
+# ============================================================
+
+# --- Sicherheits-Konfiguration ---
+security:
+  # Erlaubte Services (Whitelist) — NUR diese duerfen in Automationen verwendet werden
+  allowed_services:
+    # Licht
+    - "light.turn_on"
+    - "light.turn_off"
+    - "light.toggle"
+    # Schalter
+    - "switch.turn_on"
+    - "switch.turn_off"
+    - "switch.toggle"
+    # Klima
+    - "climate.set_temperature"
+    - "climate.set_hvac_mode"
+    # Rolllaeden
+    - "cover.open_cover"
+    - "cover.close_cover"
+    - "cover.set_cover_position"
+    # Medien
+    - "media_player.media_play"
+    - "media_player.media_pause"
+    - "media_player.media_stop"
+    - "media_player.volume_set"
+    # Szenen
+    - "scene.turn_on"
+    # Benachrichtigungen
+    - "notify.notify"
+    # Helfer
+    - "input_boolean.turn_on"
+    - "input_boolean.turn_off"
+    - "input_boolean.toggle"
+    - "input_number.set_value"
+    - "input_select.select_option"
+
+  # Explizit gesperrte Services (Blacklist) — NIEMALS erlaubt
+  blocked_services:
+    - "shell_command"
+    - "script"
+    - "python_script"
+    - "rest_command"
+    - "homeassistant.restart"
+    - "homeassistant.stop"
+    - "homeassistant.reload_all"
+    - "automation.turn_off"
+    - "automation.turn_on"
+    - "automation.trigger"
+    - "automation.reload"
+    - "lock.unlock"       # Schloesser nie automatisch oeffnen
+
+  # Erlaubte Trigger-Plattformen
+  allowed_trigger_platforms:
+    - "state"             # Entity-Zustandswechsel
+    - "time"              # Feste Uhrzeit
+    - "sun"               # Sonnenauf-/untergang
+    - "zone"              # Geofencing (Person betritt/verlaesst Zone)
+    - "numeric_state"     # Zahlenwert ueber/unter Schwelle
+    - "template"          # Template-basiert
+    - "homeassistant"     # HA Start/Stop
+
+# --- Automation Templates ---
+# Vordefinierte Muster fuer haeufige Automationen.
+# match_keywords: Alle muessen im User-Text vorkommen (AND-Verknuepfung).
+templates:
+  # --- Anwesenheitsbasiert ---
+  licht_an_heimkommen:
+    match_keywords: ["nach hause", "licht"]
+    alias: "Licht an bei Heimkommen"
+    trigger:
+      - platform: state
+        entity_id: person.PLACEHOLDER
+        to: "home"
+    condition: []
+    action:
+      - service: light.turn_on
+        target:
+          entity_id: light.wohnzimmer
+
+  licht_aus_verlassen:
+    match_keywords: ["verlasse", "licht", "aus"]
+    alias: "Licht aus beim Verlassen"
+    trigger:
+      - platform: state
+        entity_id: person.PLACEHOLDER
+        to: "not_home"
+    condition: []
+    action:
+      - service: light.turn_off
+        target:
+          entity_id: all
+
+  # --- Zeitbasiert ---
+  rolladen_morgens:
+    match_keywords: ["morgens", "rolladen", "hoch"]
+    alias: "Rolladen morgens hoch"
+    trigger:
+      - platform: time
+        at: "07:00:00"
+    condition: []
+    action:
+      - service: cover.open_cover
+        target:
+          entity_id: all
+
+  rolladen_abends:
+    match_keywords: ["abends", "rolladen", "runter"]
+    alias: "Rolladen abends runter"
+    trigger:
+      - platform: sun
+        event: sunset
+        offset: "+00:30:00"
+    condition: []
+    action:
+      - service: cover.close_cover
+        target:
+          entity_id: all
+
+  # --- Sonnenbasiert ---
+  licht_sonnenuntergang:
+    match_keywords: ["sonnenuntergang", "licht"]
+    alias: "Licht an bei Sonnenuntergang"
+    trigger:
+      - platform: sun
+        event: sunset
+    condition:
+      - condition: state
+        entity_id: person.PLACEHOLDER
+        state: "home"
+    action:
+      - service: light.turn_on
+        target:
+          entity_id: light.wohnzimmer
+        data:
+          brightness_pct: 60
+          color_temp_kelvin: 2700
+
+  # --- Temperaturbasiert ---
+  heizung_kalt:
+    match_keywords: ["temperatur", "unter", "heizung"]
+    alias: "Heizung an bei Kaelte"
+    trigger:
+      - platform: numeric_state
+        entity_id: sensor.PLACEHOLDER
+        below: 18
+    condition: []
+    action:
+      - service: climate.set_temperature
+        target:
+          entity_id: climate.PLACEHOLDER
+        data:
+          temperature: 21
+
+  # --- Bewegungsbasiert ---
+  licht_bewegung:
+    match_keywords: ["bewegung", "licht"]
+    alias: "Licht bei Bewegung"
+    trigger:
+      - platform: state
+        entity_id: binary_sensor.PLACEHOLDER
+        to: "on"
+    condition: []
+    action:
+      - service: light.turn_on
+        target:
+          entity_id: light.PLACEHOLDER
+
+  # --- Medien ---
+  tv_abends:
+    match_keywords: ["abends", "fernseher"]
+    alias: "TV-Modus abends"
+    trigger:
+      - platform: time
+        at: "20:00:00"
+    condition:
+      - condition: state
+        entity_id: person.PLACEHOLDER
+        state: "home"
+    action:
+      - service: light.turn_on
+        target:
+          entity_id: light.wohnzimmer
+        data:
+          brightness_pct: 20
+          color_temp_kelvin: 2700
+
+  # --- Nacht ---
+  alles_aus_mitternacht:
+    match_keywords: ["mitternacht", "alles", "aus"]
+    alias: "Alles aus um Mitternacht"
+    trigger:
+      - platform: time
+        at: "00:00:00"
+    condition: []
+    action:
+      - service: light.turn_off
+        target:
+          entity_id: all
+      - service: media_player.media_stop
+        target:
+          entity_id: all
+
+  # --- Fenster ---
+  heizung_fenster_offen:
+    match_keywords: ["fenster", "offen", "heizung"]
+    alias: "Heizung aus bei offenem Fenster"
+    trigger:
+      - platform: state
+        entity_id: binary_sensor.PLACEHOLDER
+        to: "on"
+    condition: []
+    action:
+      - service: climate.set_hvac_mode
+        target:
+          entity_id: climate.PLACEHOLDER
+        data:
+          hvac_mode: "off"
