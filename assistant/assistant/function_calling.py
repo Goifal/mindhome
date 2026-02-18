@@ -270,6 +270,27 @@ ASSISTANT_TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "transfer_playback",
+            "description": "Musik-Wiedergabe von einem Raum in einen anderen uebertragen",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "from_room": {
+                        "type": "string",
+                        "description": "Quell-Raum (wo die Musik gerade laeuft)",
+                    },
+                    "to_room": {
+                        "type": "string",
+                        "description": "Ziel-Raum (wohin die Musik soll)",
+                    },
+                },
+                "required": ["to_room"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "set_presence_mode",
             "description": "Anwesenheitsmodus des Hauses setzen",
             "parameters": {
@@ -402,6 +423,88 @@ class FunctionExecutor:
             "media_player", service, {"entity_id": entity_id}
         )
         return {"success": success, "message": f"Medien: {action}"}
+
+    async def _exec_transfer_playback(self, args: dict) -> dict:
+        """Phase 10.1: Uebertraegt Musik-Wiedergabe von einem Raum zum anderen."""
+        from_room = args.get("from_room")
+        to_room = args["to_room"]
+
+        to_entity = await self._find_entity("media_player", to_room)
+        if not to_entity:
+            return {"success": False, "message": f"Kein Media Player in '{to_room}' gefunden"}
+
+        # Quell-Player finden (explizit oder aktiven suchen)
+        from_entity = None
+        if from_room:
+            from_entity = await self._find_entity("media_player", from_room)
+        else:
+            # Aktiven Player finden
+            states = await self.ha.get_states()
+            for s in (states or []):
+                eid = s.get("entity_id", "")
+                if eid.startswith("media_player.") and s.get("state") == "playing":
+                    from_entity = eid
+                    from_room = s.get("attributes", {}).get("friendly_name", eid)
+                    break
+
+        if not from_entity:
+            return {"success": False, "message": "Keine aktive Wiedergabe gefunden"}
+
+        if from_entity == to_entity:
+            return {"success": True, "message": "Musik laeuft bereits in diesem Raum"}
+
+        # Aktuellen Zustand vom Quell-Player holen
+        states = await self.ha.get_states()
+        source_state = None
+        for s in (states or []):
+            if s.get("entity_id") == from_entity:
+                source_state = s
+                break
+
+        if not source_state or source_state.get("state") != "playing":
+            return {"success": False, "message": f"In '{from_room}' laeuft nichts"}
+
+        attrs = source_state.get("attributes", {})
+        media_content_id = attrs.get("media_content_id", "")
+        media_content_type = attrs.get("media_content_type", "music")
+        volume = attrs.get("volume_level", 0.5)
+
+        # 1. Volume auf Ziel-Player setzen
+        await self.ha.call_service(
+            "media_player", "volume_set",
+            {"entity_id": to_entity, "volume_level": volume},
+        )
+
+        # 2. Wiedergabe auf Ziel-Player starten
+        success = False
+        if media_content_id:
+            success = await self.ha.call_service(
+                "media_player", "play_media",
+                {
+                    "entity_id": to_entity,
+                    "media_content_id": media_content_id,
+                    "media_content_type": media_content_type,
+                },
+            )
+        else:
+            # Fallback: Join/Unjoin wenn kein Content-ID (z.B. Gruppen-Streaming)
+            success = await self.ha.call_service(
+                "media_player", "join",
+                {"entity_id": from_entity, "group_members": [to_entity]},
+            )
+
+        # 3. Quell-Player stoppen
+        if success:
+            await self.ha.call_service(
+                "media_player", "media_stop",
+                {"entity_id": from_entity},
+            )
+
+        return {
+            "success": success,
+            "message": f"Musik von {from_room} nach {to_room} uebertragen" if success
+                       else f"Transfer nach {to_room} fehlgeschlagen",
+        }
 
     async def _exec_set_alarm(self, args: dict) -> dict:
         mode = args["mode"]
