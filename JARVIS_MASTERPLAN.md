@@ -1412,22 +1412,20 @@ gilt ein **3-Schritt-Autorisierungsprotokoll**. Jarvis fragt nicht wie ein Chatb
 er fragt wie ein Butler der weiss, dass er gerade etwas Ungewoehnliches vorhat.
 
 **Schritt 1 — Ankuendigung + Code-Abfrage:**
-Jarvis erkennt eine Gelegenheit zur Selbstmodifikation und wendet sich an den
-Hausbesitzer / die Hausbesitzerin.
+Jarvis stellt fest was er beobachtet hat. Sachlich, knapp. Dann fragt er nach dem Code —
+als waere es eine Formalitaet die halt sein muss.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │ JARVIS:                                                         │
-│ "Sir, ich haette da eine Idee. Freitags schalten Sie            │
-│  regelmaeßig das Wohnzimmer auf warm. Dafuer braeuchte ich      │
-│  allerdings eine Freigabe. Autorisierungscode?"                 │
+│ "Jeden Freitag, 18 Uhr, Wohnzimmer auf warm. Zum dritten Mal.  │
+│  Ich koennte das uebernehmen. Code."                            │
 │                                                                 │
-│ Alternativ (je nach Kontext):                                   │
-│ "Sir, mir ist aufgefallen dass meine Antworten zu lang sind.    │
-│  Ich wuerde gerne etwas anpassen. Code?"                        │
+│ "Meine Antworten waren dreimal zu lang diese Woche.             │
+│  Wuerde ich gern korrigieren. Code."                            │
 │                                                                 │
-│ "Ma'am, ich koennte ein Tool bauen das Ihren Stromverbrauch     │
-│  auswertet. Dazu braeuchte ich Ihre Freigabe. Code, bitte."     │
+│ "Stromverbrauch PC — dafuer fehlt mir ein Werkzeug.             │
+│  Koennte eins bauen. Code."                                     │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -1438,16 +1436,15 @@ Der Hausbesitzer nennt den vorab vergebenen Sicherheitscode.
 ┌─────────────────────────────────────────────────────────────────┐
 │ USER:  "7749"                                                   │
 │                                                                 │
-│ JARVIS (Code korrekt):                                          │
-│ "Bestaetigt."                                                   │
+│ JARVIS (korrekt):  "Danke."                                     │
 │                                                                 │
-│ JARVIS (Code falsch):                                           │
-│ "Negativ. Zugriff verweigert."                                  │
-│ → Abbruch. Wird geloggt. Nach 3 Fehlversuchen: 15 Min Sperre.  │
+│ JARVIS (falsch):   "Nein."                                      │
+│ → Abbruch. Wird geloggt. Nach 3 Fehlversuchen:                 │
 │                                                                 │
-│ JARVIS (kein Code konfiguriert):                                │
-│ Warnung an Owner: "Kein Sicherheitscode gesetzt.                │
-│ Selbstprogrammierung deaktiviert bis Code vergeben."            │
+│ JARVIS (3. Fehlversuch): "Gesperrt. Fuenfzehn Minuten."        │
+│                                                                 │
+│ JARVIS (kein Code gesetzt):                                     │
+│ "Kein Code hinterlegt. Selbstprogrammierung bleibt aus."        │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -1458,20 +1455,18 @@ ein letztes Mal.
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │ JARVIS:                                                         │
-│ "Ich wuerde eine Freitag-Routine anlegen: 18 Uhr, Wohnzimmer   │
-│  warm, Musik an. Darf ich?"                                     │
+│ "Freitag-Routine. 18 Uhr, Licht warm, Musik. Freigabe?"        │
 │                                                                 │
-│ Alternativ:                                                     │
-│ "Konkret: max_sentences von 3 auf 2 senken. Erlaubnis?"        │
+│ "Antwortlaenge von drei auf zwei Saetze. Freigabe?"             │
 │                                                                 │
-│ "Das Tool wuerde die Energy-Entities von Home Assistant lesen.  │
-│  Kein Schreibzugriff. Soll ich?"                                │
+│ "Read-only auf die Energy-Entities. Kein Schreibzugriff.        │
+│  Freigabe?"                                                     │
 │                                                                 │
-│ USER: "Ja" / "Mach" / "Erlaubt"                                │
-│ JARVIS: "Verstanden. Wird umgesetzt."                           │
+│ USER: "Ja" / "Mach"                                             │
+│ JARVIS: "Erledigt."                                             │
 │                                                                 │
 │ USER: "Nein" / "Lass"                                           │
-│ JARVIS: "Verstanden. Belassen wir es."                          │
+│ JARVIS: "Gut."                                                  │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
