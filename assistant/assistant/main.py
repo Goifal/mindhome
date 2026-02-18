@@ -5,16 +5,21 @@ Startet den MindHome Assistant REST API Server.
 
 import json
 import logging
+import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from typing import Optional
 
+import yaml
+
 from .brain import AssistantBrain
-from .config import settings
+from .config import settings, yaml_config, load_yaml_config
 from .file_handler import (
     allowed_file, ensure_upload_dir,
     get_file_path, save_upload, MAX_FILE_SIZE,
@@ -636,6 +641,203 @@ async def websocket_endpoint(websocket: WebSocket):
         ws_manager.disconnect(websocket)
 
 
+# ============================================================
+# Jarvis Dashboard — UI + Settings API
+# ============================================================
+
+# Settings-YAML Pfad
+SETTINGS_YAML_PATH = Path(__file__).parent.parent / "config" / "settings.yaml"
+
+# PIN: Umgebungsvariable > settings.yaml > Default
+UI_PIN = os.environ.get(
+    "JARVIS_UI_PIN",
+    yaml_config.get("dashboard", {}).get("pin", "1234"),
+)
+
+# Session-Token (einfach, kein JWT noetig fuer lokales Netz)
+_active_tokens: set[str] = set()
+
+
+class PinRequest(BaseModel):
+    pin: str
+
+
+class SettingsUpdateFull(BaseModel):
+    settings: dict
+
+
+@app.post("/api/ui/auth")
+async def ui_auth(req: PinRequest):
+    """PIN-Authentifizierung fuer das Jarvis Dashboard."""
+    if req.pin != UI_PIN:
+        raise HTTPException(status_code=401, detail="Falscher PIN")
+    import hashlib
+    token = hashlib.sha256(f"{req.pin}{datetime.now().isoformat()}".encode()).hexdigest()[:32]
+    _active_tokens.add(token)
+    return {"token": token}
+
+
+def _check_token(token: str):
+    """Prueft ob ein UI-Token gueltig ist."""
+    if token not in _active_tokens:
+        raise HTTPException(status_code=401, detail="Nicht autorisiert")
+
+
+@app.get("/api/ui/settings")
+async def ui_get_settings(token: str = ""):
+    """Alle Settings aus settings.yaml als JSON."""
+    _check_token(token)
+    try:
+        with open(SETTINGS_YAML_PATH) as f:
+            config = yaml.safe_load(f) or {}
+        return config
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
+@app.put("/api/ui/settings")
+async def ui_update_settings(req: SettingsUpdateFull, token: str = ""):
+    """Settings in settings.yaml aktualisieren (Merge, nicht ersetzen)."""
+    _check_token(token)
+    try:
+        # Aktuelle Config laden
+        with open(SETTINGS_YAML_PATH) as f:
+            config = yaml.safe_load(f) or {}
+
+        # Deep Merge
+        _deep_merge(config, req.settings)
+
+        # Zurueckschreiben
+        with open(SETTINGS_YAML_PATH, "w") as f:
+            yaml.dump(config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+
+        # yaml_config im Speicher aktualisieren
+        import assistant.config as cfg
+        cfg.yaml_config = load_yaml_config()
+
+        return {"success": True, "message": "Settings gespeichert"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
+@app.get("/api/ui/entities")
+async def ui_get_entities(token: str = "", domain: str = ""):
+    """Alle HA-Entities holen (optional nach Domain filtern)."""
+    _check_token(token)
+    try:
+        states = await brain.ha.get_states()
+        entities = []
+        for s in (states or []):
+            eid = s.get("entity_id", "")
+            if domain and not eid.startswith(f"{domain}."):
+                continue
+            entities.append({
+                "entity_id": eid,
+                "state": s.get("state", "unknown"),
+                "name": s.get("attributes", {}).get("friendly_name", eid),
+                "domain": eid.split(".")[0] if "." in eid else "",
+            })
+        entities.sort(key=lambda e: (e["domain"], e["name"]))
+        return {"entities": entities, "total": len(entities)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
+@app.get("/api/ui/stats")
+async def ui_get_stats(token: str = ""):
+    """Kombinierte Statistiken fuer das Dashboard."""
+    _check_token(token)
+    try:
+        semantic_stats = await brain.memory.semantic.get_stats()
+        kb_stats = await brain.knowledge_base.get_stats()
+        episodic_count = 0
+        if brain.memory.chroma_collection:
+            try:
+                episodic_count = brain.memory.chroma_collection.count()
+            except Exception:
+                pass
+
+        return {
+            "memory": {
+                "semantic": semantic_stats,
+                "episodic_count": episodic_count,
+                "redis_connected": brain.memory.redis is not None,
+            },
+            "knowledge_base": kb_stats,
+            "components": (await brain.health_check()).get("components", {}),
+            "autonomy": brain.autonomy.get_level_info(),
+            "mood": brain.mood.get_current_mood(),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
+@app.get("/api/ui/knowledge")
+async def ui_knowledge_info(token: str = ""):
+    """Knowledge Base Statistiken und Dateiliste."""
+    _check_token(token)
+    stats = await brain.knowledge_base.get_stats()
+    # Dateien im Knowledge-Verzeichnis auflisten
+    kb_dir = Path(__file__).parent.parent / "config" / "knowledge"
+    files = []
+    if kb_dir.exists():
+        for f in sorted(kb_dir.iterdir()):
+            if f.is_file() and f.suffix in {".txt", ".md", ".yaml", ".yml", ".csv"}:
+                files.append({
+                    "name": f.name,
+                    "size": f.stat().st_size,
+                    "modified": datetime.fromtimestamp(f.stat().st_mtime).isoformat(),
+                })
+    return {"stats": stats, "files": files}
+
+
+@app.post("/api/ui/knowledge/ingest")
+async def ui_knowledge_ingest(token: str = ""):
+    """Knowledge Base neu einlesen (alle Dateien)."""
+    _check_token(token)
+    count = await brain.knowledge_base.ingest_all()
+    stats = await brain.knowledge_base.get_stats()
+    return {"new_chunks": count, "stats": stats}
+
+
+@app.get("/api/ui/logs")
+async def ui_get_logs(token: str = "", limit: int = 50):
+    """Letzte Konversationen aus dem Working Memory."""
+    _check_token(token)
+    conversations = await brain.memory.get_recent_conversations(min(limit, 200))
+    return {"conversations": conversations, "total": len(conversations)}
+
+
+# Statische UI-Dateien ausliefern
+_ui_static_dir = Path(__file__).parent.parent / "static" / "ui"
+_ui_static_dir.mkdir(parents=True, exist_ok=True)
+
+
+@app.get("/ui/{path:path}")
+async def ui_serve(path: str = ""):
+    """Jarvis Dashboard — Single-Page App."""
+    index_path = _ui_static_dir / "index.html"
+    if index_path.exists():
+        return FileResponse(index_path, media_type="text/html")
+    return HTMLResponse("<h1>Jarvis Dashboard — index.html nicht gefunden</h1>", status_code=404)
+
+
+@app.get("/ui")
+async def ui_redirect():
+    """Redirect /ui zu /ui/."""
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse("/ui/")
+
+
+def _deep_merge(base: dict, override: dict):
+    """Tiefer Merge von override in base (in-place)."""
+    for key, value in override.items():
+        if key in base and isinstance(base[key], dict) and isinstance(value, dict):
+            _deep_merge(base[key], value)
+        else:
+            base[key] = value
+
+
 @app.get("/")
 async def root():
     """Startseite."""
@@ -644,6 +846,7 @@ async def root():
         "version": "1.1.0",
         "status": "running",
         "docs": "/docs",
+        "dashboard": "/ui/",
     }
 
 

@@ -643,6 +643,11 @@ response_filter:
   # 0 = kein Limit (nur Tageszeit-Max aus Personality gilt)
   max_response_sentences: 0
 
+# --- Jarvis Dashboard (Web-UI) ---
+dashboard:
+  # PIN fuer Zugang (aendern!). Alternativ: JARVIS_UI_PIN Umgebungsvariable
+  pin: "1234"
+
 # --- Wartungs-Assistent (10.5) ---
 maintenance:
   enabled: true

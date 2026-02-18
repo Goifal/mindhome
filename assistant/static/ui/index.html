@@ -1,0 +1,1551 @@
+<!DOCTYPE html>
+<html lang="de" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Jarvis — MindHome Dashboard</title>
+<style>
+/* ============================================================
+   MindHome Design System — Jarvis Dashboard
+   Refined dark futuristic, amber accents
+   ============================================================ */
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+:root {
+  --bg-primary: #0a0e17;
+  --bg-secondary: #111827;
+  --bg-card: #1a2035;
+  --bg-card-hover: #1f2847;
+  --bg-input: #151d30;
+  --bg-overlay: rgba(10, 14, 23, 0.85);
+  --text-primary: #e8ecf4;
+  --text-secondary: #8892a8;
+  --text-muted: #5a6478;
+  --accent-primary: #f59e0b;
+  --accent-primary-dim: rgba(245, 158, 11, 0.15);
+  --accent-primary-glow: rgba(245, 158, 11, 0.3);
+  --accent-secondary: #3b82f6;
+  --accent-secondary-dim: rgba(59, 130, 246, 0.15);
+  --success: #10b981;
+  --success-dim: rgba(16, 185, 129, 0.15);
+  --warning: #f59e0b;
+  --warning-dim: rgba(245, 158, 11, 0.15);
+  --danger: #ef4444;
+  --danger-dim: rgba(239, 68, 68, 0.15);
+  --info: #3b82f6;
+  --info-dim: rgba(59, 130, 246, 0.15);
+  --border: rgba(255, 255, 255, 0.06);
+  --border-hover: rgba(255, 255, 255, 0.12);
+  --border-accent: rgba(245, 158, 11, 0.3);
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.3);
+  --shadow-md: 0 4px 16px rgba(0,0,0,0.4);
+  --shadow-lg: 0 8px 32px rgba(0,0,0,0.5);
+  --shadow-glow: 0 0 20px rgba(245, 158, 11, 0.15);
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --font-display: 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', 'Menlo', monospace;
+  --sidebar-width: 240px;
+  --header-height: 56px;
+  --transition-fast: 0.15s ease;
+  --transition-normal: 0.25s ease;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: var(--font-display);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* ---- Login Screen ---- */
+.login-screen {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  background: var(--bg-primary);
+}
+.login-box {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 48px 40px;
+  width: 360px;
+  text-align: center;
+  box-shadow: var(--shadow-lg);
+}
+.login-box h1 {
+  font-size: 28px;
+  font-weight: 600;
+  margin-bottom: 8px;
+  color: var(--accent-primary);
+}
+.login-box p {
+  color: var(--text-secondary);
+  margin-bottom: 32px;
+  font-size: 14px;
+}
+.login-box input {
+  width: 100%;
+  padding: 14px 16px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 24px;
+  text-align: center;
+  letter-spacing: 12px;
+  outline: none;
+  transition: border-color var(--transition-fast);
+}
+.login-box input:focus {
+  border-color: var(--accent-primary);
+}
+.login-box input::placeholder {
+  letter-spacing: 4px;
+  font-size: 14px;
+  color: var(--text-muted);
+}
+.login-box button {
+  width: 100%;
+  margin-top: 20px;
+  padding: 14px;
+  background: var(--accent-primary);
+  color: #0a0e17;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+.login-box button:hover { opacity: 0.9; transform: translateY(-1px); }
+.login-error {
+  color: var(--danger);
+  font-size: 13px;
+  margin-top: 12px;
+  min-height: 20px;
+}
+
+/* ---- App Layout ---- */
+.app { display: none; }
+.app.active { display: flex; min-height: 100vh; }
+
+/* Sidebar */
+.sidebar {
+  width: var(--sidebar-width);
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  z-index: 100;
+  transition: transform var(--transition-normal);
+}
+.sidebar-logo {
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.sidebar-logo .logo-icon {
+  width: 36px;
+  height: 36px;
+  background: var(--accent-primary-dim);
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+}
+.sidebar-logo h2 {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.sidebar-logo span {
+  font-size: 11px;
+  color: var(--text-muted);
+  display: block;
+}
+
+.sidebar-nav { padding: 16px 12px; flex: 1; }
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  font-size: 14px;
+  font-weight: 500;
+  margin-bottom: 2px;
+}
+.nav-item:hover {
+  background: var(--bg-card);
+  color: var(--text-primary);
+}
+.nav-item.active {
+  background: var(--accent-primary-dim);
+  color: var(--accent-primary);
+}
+.nav-item .nav-icon {
+  width: 20px;
+  text-align: center;
+  font-size: 16px;
+}
+
+.sidebar-footer {
+  padding: 16px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+/* Main Content */
+.main {
+  margin-left: var(--sidebar-width);
+  flex: 1;
+  min-height: 100vh;
+}
+.main-header {
+  height: var(--header-height);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 32px;
+  background: var(--bg-secondary);
+  position: sticky;
+  top: 0;
+  z-index: 50;
+}
+.main-header h1 { font-size: 18px; font-weight: 600; }
+.main-header .header-actions { display: flex; gap: 12px; align-items: center; }
+.header-badge {
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 500;
+}
+.badge-success { background: var(--success-dim); color: var(--success); }
+.badge-warning { background: var(--warning-dim); color: var(--warning); }
+.badge-info { background: var(--info-dim); color: var(--info); }
+
+.main-content { padding: 32px; }
+
+/* ---- Page (hidden by default) ---- */
+.page { display: none; }
+.page.active { display: block; }
+
+/* ---- Cards ---- */
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 24px;
+  margin-bottom: 20px;
+  transition: border-color var(--transition-fast);
+}
+.card:hover { border-color: var(--border-hover); }
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+.card-header h3 {
+  font-size: 16px;
+  font-weight: 600;
+}
+.card-header .card-badge {
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-weight: 500;
+}
+
+/* ---- Grid ---- */
+.grid { display: grid; gap: 20px; }
+.grid-2 { grid-template-columns: repeat(2, 1fr); }
+.grid-3 { grid-template-columns: repeat(3, 1fr); }
+.grid-4 { grid-template-columns: repeat(4, 1fr); }
+@media (max-width: 1200px) { .grid-4 { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 900px) {
+  .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
+  .sidebar { transform: translateX(-100%); }
+  .sidebar.open { transform: translateX(0); }
+  .main { margin-left: 0; }
+  .mobile-toggle { display: flex !important; }
+}
+
+/* ---- Stat Card ---- */
+.stat-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 20px 24px;
+  transition: all var(--transition-fast);
+}
+.stat-card:hover {
+  border-color: var(--border-hover);
+  box-shadow: var(--shadow-md);
+}
+.stat-label {
+  font-size: 12px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+}
+.stat-value {
+  font-size: 28px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+}
+.stat-sub {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 4px;
+}
+
+/* ---- Form Controls ---- */
+.form-group {
+  margin-bottom: 20px;
+}
+.form-group label {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+.form-group .hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+input[type="text"], input[type="number"], select, textarea {
+  width: 100%;
+  padding: 10px 14px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-family: var(--font-display);
+  font-size: 14px;
+  outline: none;
+  transition: border-color var(--transition-fast);
+}
+input:focus, select:focus, textarea:focus { border-color: var(--accent-primary); }
+select { cursor: pointer; }
+textarea { resize: vertical; min-height: 80px; font-family: var(--font-mono); font-size: 13px; }
+
+/* Range Slider */
+.range-group { display: flex; align-items: center; gap: 16px; }
+.range-group input[type="range"] {
+  flex: 1;
+  -webkit-appearance: none;
+  height: 6px;
+  background: var(--bg-input);
+  border-radius: 3px;
+  border: none;
+  outline: none;
+}
+.range-group input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--accent-primary);
+  cursor: pointer;
+  box-shadow: 0 0 8px var(--accent-primary-glow);
+}
+.range-value {
+  min-width: 36px;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--accent-primary);
+}
+
+/* Toggle Switch */
+.toggle-group { display: flex; align-items: center; justify-content: space-between; }
+.toggle {
+  position: relative;
+  width: 44px;
+  height: 24px;
+  cursor: pointer;
+}
+.toggle input { display: none; }
+.toggle-track {
+  position: absolute;
+  inset: 0;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  transition: all var(--transition-fast);
+}
+.toggle input:checked + .toggle-track {
+  background: var(--accent-primary-dim);
+  border-color: var(--accent-primary);
+}
+.toggle-thumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  transition: all var(--transition-fast);
+}
+.toggle input:checked ~ .toggle-thumb {
+  left: 23px;
+  background: var(--accent-primary);
+}
+
+/* Buttons */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+.btn-primary {
+  background: var(--accent-primary);
+  color: #0a0e17;
+}
+.btn-primary:hover { opacity: 0.9; box-shadow: var(--shadow-glow); }
+.btn-secondary {
+  background: var(--bg-input);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+}
+.btn-secondary:hover { border-color: var(--border-hover); background: var(--bg-card-hover); }
+.btn-danger { background: var(--danger-dim); color: var(--danger); }
+.btn-danger:hover { background: var(--danger); color: white; }
+.btn-sm { padding: 6px 14px; font-size: 13px; }
+
+/* ---- Entity Picker ---- */
+.entity-picker {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  margin-bottom: 16px;
+}
+.entity-picker-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 12px;
+}
+.entity-picker-header h4 { font-size: 14px; font-weight: 500; }
+.entity-search {
+  padding: 8px 12px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: 13px;
+  width: 100%;
+  margin-bottom: 10px;
+  outline: none;
+  font-family: var(--font-display);
+}
+.entity-search:focus { border-color: var(--accent-primary); }
+.entity-list {
+  max-height: 200px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.entity-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: background var(--transition-fast);
+  border-bottom: 1px solid var(--border);
+}
+.entity-item:last-child { border-bottom: none; }
+.entity-item:hover { background: var(--bg-card-hover); }
+.entity-item.selected { background: var(--accent-primary-dim); color: var(--accent-primary); }
+.entity-item .entity-id { color: var(--text-muted); font-family: var(--font-mono); font-size: 11px; }
+.entity-item .entity-name { flex: 1; }
+
+.selected-entities {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.entity-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: var(--accent-primary-dim);
+  border: 1px solid var(--border-accent);
+  border-radius: 20px;
+  font-size: 12px;
+  color: var(--accent-primary);
+  font-family: var(--font-mono);
+}
+.entity-tag .remove {
+  cursor: pointer;
+  opacity: 0.6;
+  font-size: 14px;
+}
+.entity-tag .remove:hover { opacity: 1; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border-hover); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+/* ---- Toast ---- */
+.toast {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  padding: 14px 24px;
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  font-weight: 500;
+  box-shadow: var(--shadow-lg);
+  z-index: 9999;
+  transform: translateY(80px);
+  opacity: 0;
+  transition: all 0.3s ease;
+}
+.toast.show { transform: translateY(0); opacity: 1; }
+.toast-success { background: var(--success); color: white; }
+.toast-error { background: var(--danger); color: white; }
+.toast-info { background: var(--accent-secondary); color: white; }
+
+/* ---- Logs ---- */
+.log-entry {
+  display: flex;
+  gap: 16px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+.log-entry:hover { background: var(--bg-card-hover); }
+.log-time {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  min-width: 80px;
+}
+.log-role {
+  min-width: 60px;
+  font-weight: 600;
+  font-size: 12px;
+  text-transform: uppercase;
+}
+.log-role.user { color: var(--accent-secondary); }
+.log-role.assistant { color: var(--accent-primary); }
+.log-content { flex: 1; color: var(--text-primary); line-height: 1.5; }
+
+/* ---- Section Header ---- */
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 24px;
+}
+.section-header h2 {
+  font-size: 20px;
+  font-weight: 600;
+}
+.section-header p {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-top: 4px;
+}
+
+/* ---- Knowledge Files ---- */
+.file-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+.file-icon { font-size: 18px; }
+.file-name { flex: 1; font-weight: 500; }
+.file-size { color: var(--text-muted); font-family: var(--font-mono); font-size: 12px; }
+
+/* ---- Mobile Toggle ---- */
+.mobile-toggle {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  font-size: 18px;
+}
+
+/* ---- Tab Bar ---- */
+.tab-bar {
+  display: flex;
+  gap: 2px;
+  background: var(--bg-input);
+  padding: 3px;
+  border-radius: var(--radius-sm);
+  margin-bottom: 24px;
+}
+.tab-item {
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+.tab-item:hover { color: var(--text-primary); }
+.tab-item.active {
+  background: var(--bg-card);
+  color: var(--accent-primary);
+  box-shadow: var(--shadow-sm);
+}
+
+/* ---- Settings Sections ---- */
+.settings-section {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  margin-bottom: 20px;
+  overflow: hidden;
+}
+.settings-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  background: var(--bg-card);
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+.settings-section-header:hover { background: var(--bg-card-hover); }
+.settings-section-header h3 {
+  font-size: 15px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.settings-section-header .arrow {
+  transition: transform var(--transition-fast);
+  color: var(--text-muted);
+}
+.settings-section-header.open .arrow { transform: rotate(180deg); }
+.settings-section-body {
+  padding: 0 20px;
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.3s ease, padding 0.3s ease;
+}
+.settings-section-body.open {
+  padding: 20px;
+  max-height: 3000px;
+}
+
+/* Loading */
+.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 60px;
+  color: var(--text-muted);
+}
+.spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent-primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin-right: 12px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<!-- ============================================================
+     LOGIN SCREEN
+     ============================================================ -->
+<div id="loginScreen" class="login-screen">
+  <div class="login-box">
+    <div style="font-size: 48px; margin-bottom: 16px;">&#9881;</div>
+    <h1>JARVIS</h1>
+    <p>MindHome Dashboard</p>
+    <input type="password" id="pinInput" maxlength="8" placeholder="PIN" autofocus
+           onkeydown="if(event.key==='Enter')doLogin()">
+    <button onclick="doLogin()">Anmelden</button>
+    <div id="loginError" class="login-error"></div>
+  </div>
+</div>
+
+<!-- ============================================================
+     APP
+     ============================================================ -->
+<div id="app" class="app">
+  <!-- Sidebar -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-logo">
+      <div class="logo-icon">&#9881;</div>
+      <div>
+        <h2>JARVIS</h2>
+        <span>MindHome Dashboard</span>
+      </div>
+    </div>
+    <nav class="sidebar-nav">
+      <div class="nav-item active" data-page="dashboard">
+        <span class="nav-icon">&#9632;</span> Dashboard
+      </div>
+      <div class="nav-item" data-page="settings">
+        <span class="nav-icon">&#9881;</span> Settings
+      </div>
+      <div class="nav-item" data-page="entities">
+        <span class="nav-icon">&#8801;</span> Entities
+      </div>
+      <div class="nav-item" data-page="knowledge">
+        <span class="nav-icon">&#128218;</span> Wissen
+      </div>
+      <div class="nav-item" data-page="logs">
+        <span class="nav-icon">&#9776;</span> Logs
+      </div>
+    </nav>
+    <div class="sidebar-footer">
+      MindHome Assistant v1.1.0
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <div class="main">
+    <header class="main-header">
+      <div style="display:flex;align-items:center;gap:12px;">
+        <div class="mobile-toggle" onclick="document.getElementById('sidebar').classList.toggle('open')">&#9776;</div>
+        <h1 id="pageTitle">Dashboard</h1>
+      </div>
+      <div class="header-actions">
+        <span id="statusBadge" class="header-badge badge-success">Online</span>
+        <button class="btn btn-sm btn-secondary" onclick="doLogout()">Abmelden</button>
+      </div>
+    </header>
+
+    <div class="main-content">
+      <!-- ============ DASHBOARD ============ -->
+      <div id="page-dashboard" class="page active">
+        <div id="dashboardStats" class="grid grid-4"></div>
+        <div class="grid grid-2" style="margin-top:20px;">
+          <div class="card" id="dashboardComponents">
+            <div class="card-header"><h3>Komponenten</h3></div>
+            <div id="componentsList"></div>
+          </div>
+          <div class="card" id="dashboardMood">
+            <div class="card-header"><h3>Status</h3></div>
+            <div id="moodInfo"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ SETTINGS ============ -->
+      <div id="page-settings" class="page">
+        <div class="section-header">
+          <div>
+            <h2>Jarvis Einstellungen</h2>
+            <p>Alle Einstellungen aus settings.yaml — aenderbar per Klick</p>
+          </div>
+          <button class="btn btn-primary" onclick="saveSettings()">Speichern</button>
+        </div>
+        <div id="settingsContainer"></div>
+      </div>
+
+      <!-- ============ ENTITIES ============ -->
+      <div id="page-entities" class="page">
+        <div class="section-header">
+          <div>
+            <h2>Home Assistant Entities</h2>
+            <p>Alle verfuegbaren Entities — waehle Entities fuer die Jarvis-Konfiguration</p>
+          </div>
+          <button class="btn btn-secondary" onclick="loadEntities()">Aktualisieren</button>
+        </div>
+        <div class="form-group">
+          <label>Domain-Filter</label>
+          <select id="entityDomainFilter" onchange="filterEntities()">
+            <option value="">Alle Domains</option>
+          </select>
+        </div>
+        <input type="text" id="entitySearchInput" class="entity-search"
+               placeholder="Entity suchen..." oninput="filterEntities()"
+               style="margin-bottom: 16px;">
+        <div class="card">
+          <div id="entityBrowser" class="entity-list" style="max-height:500px;"></div>
+        </div>
+        <div style="margin-top:20px;">
+          <h3 style="margin-bottom:16px;">Entity-Zuordnungen in Settings</h3>
+          <div id="entityAssignments"></div>
+        </div>
+      </div>
+
+      <!-- ============ KNOWLEDGE ============ -->
+      <div id="page-knowledge" class="page">
+        <div class="section-header">
+          <div>
+            <h2>Wissensdatenbank</h2>
+            <p>Dateien in config/knowledge/ — Jarvis nutzt diese als RAG-Quelle</p>
+          </div>
+          <button class="btn btn-primary" onclick="ingestKnowledge()">Neu einlesen</button>
+        </div>
+        <div id="knowledgeStats" class="grid grid-3" style="margin-bottom:20px;"></div>
+        <div class="card">
+          <div class="card-header"><h3>Dateien</h3></div>
+          <div id="knowledgeFiles"></div>
+        </div>
+      </div>
+
+      <!-- ============ LOGS ============ -->
+      <div id="page-logs" class="page">
+        <div class="section-header">
+          <div>
+            <h2>Gespraeche</h2>
+            <p>Letzte Interaktionen mit Jarvis</p>
+          </div>
+          <button class="btn btn-secondary" onclick="loadLogs()">Aktualisieren</button>
+        </div>
+        <div class="card" style="padding:0;">
+          <div id="logsContainer"></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script>
+/* ============================================================
+   Jarvis Dashboard — JavaScript
+   ============================================================ */
+
+let TOKEN = '';
+let SETTINGS = {};
+let ALL_ENTITIES = [];
+const API = '';  // Same origin
+
+// ---- Auth ----
+async function doLogin() {
+  const pin = document.getElementById('pinInput').value;
+  const errEl = document.getElementById('loginError');
+  errEl.textContent = '';
+
+  try {
+    const res = await fetch(`${API}/api/ui/auth`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({pin})
+    });
+    if (!res.ok) {
+      errEl.textContent = 'Falscher PIN';
+      return;
+    }
+    const data = await res.json();
+    TOKEN = data.token;
+    sessionStorage.setItem('jarvis_token', TOKEN);
+    showApp();
+  } catch (e) {
+    errEl.textContent = 'Verbindung fehlgeschlagen';
+  }
+}
+
+function doLogout() {
+  TOKEN = '';
+  sessionStorage.removeItem('jarvis_token');
+  document.getElementById('app').classList.remove('active');
+  document.getElementById('loginScreen').style.display = 'flex';
+  document.getElementById('pinInput').value = '';
+}
+
+function showApp() {
+  document.getElementById('loginScreen').style.display = 'none';
+  document.getElementById('app').classList.add('active');
+  loadDashboard();
+}
+
+// Auto-login if token exists
+(function() {
+  const t = sessionStorage.getItem('jarvis_token');
+  if (t) {
+    TOKEN = t;
+    // Verify token still works
+    fetch(`${API}/api/ui/stats?token=${TOKEN}`).then(r => {
+      if (r.ok) showApp();
+      else doLogout();
+    }).catch(() => doLogout());
+  }
+})();
+
+// ---- API Helper ----
+async function api(path, method = 'GET', body = null) {
+  const sep = path.includes('?') ? '&' : '?';
+  const url = `${API}${path}${sep}token=${TOKEN}`;
+  const opts = {method, headers: {'Content-Type': 'application/json'}};
+  if (body) opts.body = JSON.stringify(body);
+  const res = await fetch(url, opts);
+  if (res.status === 401) { doLogout(); throw new Error('Auth expired'); }
+  return res.json();
+}
+
+// ---- Navigation ----
+document.querySelectorAll('.nav-item').forEach(item => {
+  item.addEventListener('click', () => {
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    item.classList.add('active');
+    const page = item.dataset.page;
+    document.getElementById(`page-${page}`).classList.add('active');
+    document.getElementById('pageTitle').textContent = item.textContent.trim();
+    // Load page data
+    if (page === 'dashboard') loadDashboard();
+    else if (page === 'settings') loadSettings();
+    else if (page === 'entities') loadEntities();
+    else if (page === 'knowledge') loadKnowledge();
+    else if (page === 'logs') loadLogs();
+    // Close mobile sidebar
+    document.getElementById('sidebar').classList.remove('open');
+  });
+});
+
+// ---- Toast ----
+function toast(msg, type = 'success') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = `toast toast-${type} show`;
+  setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+// ---- Dashboard ----
+async function loadDashboard() {
+  try {
+    const data = await api('/api/ui/stats');
+
+    // Stat cards
+    const mem = data.memory || {};
+    const sem = mem.semantic || {};
+    const kb = data.knowledge_base || {};
+    const auto = data.autonomy || {};
+
+    document.getElementById('dashboardStats').innerHTML = `
+      <div class="stat-card">
+        <div class="stat-label">Fakten</div>
+        <div class="stat-value">${sem.total_facts || 0}</div>
+        <div class="stat-sub">${(sem.persons || []).length} Personen, ${Object.keys(sem.categories || {}).length} Kategorien</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Wissensbasis</div>
+        <div class="stat-value">${kb.total_chunks || 0}</div>
+        <div class="stat-sub">${(kb.sources || []).length} Quellen</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Episoden</div>
+        <div class="stat-value">${mem.episodic_count || 0}</div>
+        <div class="stat-sub">Langzeitgedaechtnis</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Autonomie</div>
+        <div class="stat-value" style="color:var(--accent-primary);">${auto.level || '?'}/5</div>
+        <div class="stat-sub">${auto.name || ''}</div>
+      </div>
+    `;
+
+    // Components
+    const comps = data.components || {};
+    let compHtml = '';
+    for (const [name, status] of Object.entries(comps)) {
+      const isOk = status === 'connected' || status.includes('active');
+      const color = isOk ? 'var(--success)' : 'var(--danger)';
+      compHtml += `<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border);">
+        <span style="font-size:13px;">${name}</span>
+        <span style="font-size:12px;color:${color};font-family:var(--font-mono);">${status}</span>
+      </div>`;
+    }
+    document.getElementById('componentsList').innerHTML = compHtml;
+
+    // Mood
+    const mood = data.mood || {};
+    document.getElementById('moodInfo').innerHTML = `
+      <div style="padding:10px 0;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;">
+        <span style="font-size:13px;">Stimmung</span>
+        <span style="font-size:13px;color:var(--accent-primary);font-weight:600;">${mood.mood || 'neutral'}</span>
+      </div>
+      <div style="padding:10px 0;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;">
+        <span style="font-size:13px;">Stress-Level</span>
+        <span style="font-size:13px;font-family:var(--font-mono);">${(mood.stress_level || 0).toFixed(2)}</span>
+      </div>
+      <div style="padding:10px 0;display:flex;justify-content:space-between;">
+        <span style="font-size:13px;">Redis</span>
+        <span style="font-size:12px;color:${mem.redis_connected ? 'var(--success)' : 'var(--danger)'};">
+          ${mem.redis_connected ? 'Verbunden' : 'Getrennt'}</span>
+      </div>
+    `;
+  } catch (e) {
+    console.error('Dashboard load failed:', e);
+  }
+}
+
+// ---- Settings ----
+const SETTINGS_SCHEMA = [
+  {
+    key: 'assistant', title: 'Assistent', icon: '&#9881;',
+    fields: [
+      {key: 'name', label: 'Name', type: 'text', hint: 'So stellt er sich vor'},
+      {key: 'version', label: 'Version', type: 'text', readonly: true},
+      {key: 'language', label: 'Sprache', type: 'select', options: [{v:'de',l:'Deutsch'},{v:'en',l:'English'}]},
+    ]
+  },
+  {
+    key: 'autonomy', title: 'Autonomie', icon: '&#9889;',
+    fields: [
+      {key: 'level', label: 'Autonomie-Level', type: 'range', min: 1, max: 5, step: 1,
+       labels: ['','Assistent','Butler','Mitbewohner','Vertrauter','Autopilot']},
+    ]
+  },
+  {
+    key: 'models', title: 'Modell-Routing', icon: '&#129302;',
+    fields: [
+      {key: 'fast', label: 'Fast Model', type: 'text', hint: 'Einfache Befehle'},
+      {key: 'smart', label: 'Smart Model', type: 'text', hint: 'Konversation, Standard'},
+      {key: 'deep', label: 'Deep Model', type: 'text', hint: 'Komplexe Analyse'},
+      {key: 'deep_min_words', label: 'Deep ab Woertern', type: 'number', min: 5, max: 50},
+    ]
+  },
+  {
+    key: 'personality', title: 'Persoenlichkeit', icon: '&#127917;',
+    fields: [
+      {key: 'style', label: 'Stil', type: 'select', options: [{v:'butler',l:'Butler'},{v:'minimal',l:'Minimal'},{v:'freundlich',l:'Freundlich'}]},
+      {key: 'sarcasm_level', label: 'Sarkasmus', type: 'range', min: 1, max: 5, step: 1,
+       labels: ['','Sachlich','Gelegentl. trocken','Standard Butler','Haeufig','Vollgas Ironie']},
+      {key: 'opinion_intensity', label: 'Meinungs-Intensitaet', type: 'range', min: 0, max: 3, step: 1,
+       labels: ['Still','Selten','Gelegentlich','Redselig']},
+      {key: 'self_irony_enabled', label: 'Selbstironie', type: 'toggle'},
+      {key: 'character_evolution', label: 'Charakter-Entwicklung', type: 'toggle'},
+      {key: 'formality_start', label: 'Formalitaet Start', type: 'range', min: 0, max: 100, step: 5},
+      {key: 'formality_min', label: 'Formalitaet Minimum', type: 'range', min: 0, max: 100, step: 5},
+    ]
+  },
+  {
+    key: 'memory', title: 'Gedaechtnis', icon: '&#128065;',
+    fields: [
+      {key: 'extraction_enabled', label: 'Fakten-Extraktion', type: 'toggle'},
+      {key: 'extraction_min_words', label: 'Min. Woerter fuer Extraktion', type: 'number', min: 1, max: 20},
+      {key: 'max_person_facts_in_context', label: 'Max. Personen-Fakten im Kontext', type: 'number', min: 1, max: 20},
+      {key: 'max_relevant_facts_in_context', label: 'Max. relevante Fakten im Kontext', type: 'number', min: 1, max: 10},
+      {key: 'min_confidence_for_context', label: 'Min. Confidence', type: 'range', min: 0, max: 1, step: 0.05},
+      {key: 'duplicate_threshold', label: 'Duplikat-Schwelle', type: 'range', min: 0, max: 1, step: 0.05},
+    ]
+  },
+  {
+    key: 'proactive', title: 'Proaktive Meldungen', icon: '&#128276;',
+    fields: [
+      {key: 'enabled', label: 'Aktiviert', type: 'toggle'},
+      {key: 'cooldown_seconds', label: 'Cooldown (Sekunden)', type: 'number', min: 60, max: 3600},
+    ]
+  },
+  {
+    key: 'tts', title: 'Sprache & TTS', icon: '&#128266;',
+    fields: [
+      {key: 'ssml_enabled', label: 'SSML Enhancement', type: 'toggle'},
+    ]
+  },
+  {
+    key: 'volume', title: 'Lautstaerke', icon: '&#128264;',
+    fields: [
+      {key: 'day', label: 'Tag', type: 'range', min: 0, max: 1, step: 0.05},
+      {key: 'evening', label: 'Abend', type: 'range', min: 0, max: 1, step: 0.05},
+      {key: 'night', label: 'Nacht', type: 'range', min: 0, max: 1, step: 0.05},
+      {key: 'sleeping', label: 'Schlafen', type: 'range', min: 0, max: 1, step: 0.05},
+      {key: 'whisper', label: 'Fluestern', type: 'range', min: 0, max: 1, step: 0.05},
+      {key: 'emergency', label: 'Notfall', type: 'range', min: 0, max: 1, step: 0.05},
+    ]
+  },
+  {
+    key: 'knowledge_base', title: 'Wissensdatenbank', icon: '&#128218;',
+    fields: [
+      {key: 'enabled', label: 'Aktiviert', type: 'toggle'},
+      {key: 'auto_ingest', label: 'Auto-Einlesen beim Start', type: 'toggle'},
+      {key: 'chunk_size', label: 'Chunk-Groesse (Zeichen)', type: 'number', min: 100, max: 2000},
+      {key: 'chunk_overlap', label: 'Chunk-Ueberlappung', type: 'number', min: 0, max: 200},
+      {key: 'max_distance', label: 'Max. Distanz (Relevanz)', type: 'range', min: 0.5, max: 2, step: 0.1},
+    ]
+  },
+  {
+    key: 'cooking', title: 'Koch-Assistent', icon: '&#127859;',
+    fields: [
+      {key: 'enabled', label: 'Aktiviert', type: 'toggle'},
+      {key: 'default_portions', label: 'Standard-Portionen', type: 'number', min: 1, max: 12},
+      {key: 'max_steps', label: 'Max. Schritte', type: 'number', min: 3, max: 30},
+      {key: 'timer_notify_tts', label: 'Timer-TTS', type: 'toggle'},
+    ]
+  },
+  {
+    key: 'mood', title: 'Stimmungserkennung', icon: '&#128578;',
+    fields: [
+      {key: 'rapid_command_seconds', label: 'Schnelle Befehle (Sek.)', type: 'number', min: 1, max: 30},
+      {key: 'stress_decay_seconds', label: 'Stress-Abbau (Sek.)', type: 'number', min: 60, max: 600},
+      {key: 'frustration_threshold', label: 'Frustrations-Schwelle', type: 'number', min: 1, max: 10},
+    ]
+  },
+  {
+    key: 'feedback', title: 'Feedback-Loop', icon: '&#128200;',
+    fields: [
+      {key: 'auto_timeout_seconds', label: 'Auto-Timeout (Sek.)', type: 'number', min: 30, max: 600},
+      {key: 'base_cooldown_seconds', label: 'Basis-Cooldown (Sek.)', type: 'number', min: 60, max: 1800},
+      {key: 'score_suppress', label: 'Score: Unterdruecken', type: 'range', min: 0, max: 1, step: 0.05},
+      {key: 'score_reduce', label: 'Score: Reduzieren', type: 'range', min: 0, max: 1, step: 0.05},
+      {key: 'score_normal', label: 'Score: Normal', type: 'range', min: 0, max: 1, step: 0.05},
+      {key: 'score_boost', label: 'Score: Boost', type: 'range', min: 0, max: 1, step: 0.05},
+    ]
+  },
+  {
+    key: 'diagnostics', title: 'Diagnostik', icon: '&#128295;',
+    fields: [
+      {key: 'enabled', label: 'Aktiviert', type: 'toggle'},
+      {key: 'check_interval_minutes', label: 'Pruef-Intervall (Min.)', type: 'number', min: 5, max: 120},
+      {key: 'battery_warning_threshold', label: 'Batterie-Warnung (%)', type: 'number', min: 5, max: 50},
+      {key: 'stale_sensor_minutes', label: 'Stale-Sensor (Min.)', type: 'number', min: 30, max: 600},
+    ]
+  },
+  {
+    key: 'multi_room', title: 'Multi-Room', icon: '&#127968;',
+    fields: [
+      {key: 'enabled', label: 'Aktiviert', type: 'toggle'},
+      {key: 'presence_timeout_minutes', label: 'Praesenz-Timeout (Min.)', type: 'number', min: 1, max: 60},
+    ]
+  },
+  {
+    key: 'response_filter', title: 'Response-Filter', icon: '&#128683;',
+    fields: [
+      {key: 'enabled', label: 'Aktiviert', type: 'toggle'},
+      {key: 'max_response_sentences', label: 'Max. Saetze (0=kein Limit)', type: 'number', min: 0, max: 10},
+    ]
+  },
+];
+
+// Entity-basierte Settings (fuer Entity-Picker)
+const ENTITY_SETTINGS = [
+  {path: 'activity.entities.media_players', label: 'Media Players', domain: 'media_player', multi: true},
+  {path: 'activity.entities.mic_sensors', label: 'Mikrofon-Sensoren', domain: 'binary_sensor', multi: true},
+  {path: 'activity.entities.bed_sensors', label: 'Bett-Sensoren', domain: 'binary_sensor', multi: true},
+  {path: 'activity.entities.pc_sensors', label: 'PC-Sensoren', domain: '', multi: true},
+  {path: 'multi_room.room_speakers', label: 'Raum-Speaker (pro Raum)', domain: 'media_player', multi: false, isMap: true},
+  {path: 'multi_room.room_motion_sensors', label: 'Raum-Bewegungsmelder (pro Raum)', domain: 'binary_sensor', multi: false, isMap: true},
+];
+
+async function loadSettings() {
+  try {
+    SETTINGS = await api('/api/ui/settings');
+    renderSettings();
+  } catch (e) {
+    console.error('Settings load failed:', e);
+  }
+}
+
+function renderSettings() {
+  const container = document.getElementById('settingsContainer');
+  let html = '';
+
+  for (const section of SETTINGS_SCHEMA) {
+    const sectionData = SETTINGS[section.key] || {};
+    html += `<div class="settings-section">
+      <div class="settings-section-header" onclick="toggleSection(this)">
+        <h3>${section.icon} ${section.title}</h3>
+        <span class="arrow">&#9660;</span>
+      </div>
+      <div class="settings-section-body">`;
+
+    for (const field of section.fields) {
+      const value = sectionData[field.key];
+      const id = `set_${section.key}_${field.key}`;
+      html += `<div class="form-group">`;
+
+      if (field.type === 'toggle') {
+        html += `<div class="toggle-group">
+          <label>${field.label}</label>
+          <label class="toggle">
+            <input type="checkbox" id="${id}" data-section="${section.key}" data-key="${field.key}"
+                   ${value ? 'checked' : ''} onchange="markDirty()">
+            <span class="toggle-track"></span>
+            <span class="toggle-thumb"></span>
+          </label>
+        </div>`;
+      } else if (field.type === 'range') {
+        const v = value !== undefined ? value : field.min;
+        const labelText = field.labels ? (field.labels[v] || v) : v;
+        html += `<label>${field.label}</label>
+          <div class="range-group">
+            <input type="range" id="${id}" min="${field.min}" max="${field.max}" step="${field.step}"
+                   value="${v}" data-section="${section.key}" data-key="${field.key}"
+                   oninput="updateRangeLabel(this)" onchange="markDirty()">
+            <span class="range-value" id="${id}_val">${labelText}</span>
+          </div>`;
+      } else if (field.type === 'select') {
+        html += `<label>${field.label}</label>
+          <select id="${id}" data-section="${section.key}" data-key="${field.key}" onchange="markDirty()">`;
+        for (const opt of field.options) {
+          html += `<option value="${opt.v}" ${value === opt.v ? 'selected' : ''}>${opt.l}</option>`;
+        }
+        html += `</select>`;
+      } else if (field.type === 'number') {
+        html += `<label>${field.label}</label>
+          <input type="number" id="${id}" value="${value !== undefined ? value : ''}"
+                 min="${field.min || ''}" max="${field.max || ''}"
+                 data-section="${section.key}" data-key="${field.key}"
+                 onchange="markDirty()" ${field.readonly ? 'readonly' : ''}>`;
+      } else {
+        html += `<label>${field.label}</label>
+          <input type="text" id="${id}" value="${value !== undefined ? value : ''}"
+                 data-section="${section.key}" data-key="${field.key}"
+                 onchange="markDirty()" ${field.readonly ? 'readonly' : ''}>`;
+      }
+
+      if (field.hint) html += `<div class="hint">${field.hint}</div>`;
+      html += `</div>`;
+    }
+
+    html += `</div></div>`;
+  }
+
+  container.innerHTML = html;
+}
+
+function toggleSection(header) {
+  header.classList.toggle('open');
+  header.nextElementSibling.classList.toggle('open');
+}
+
+function updateRangeLabel(input) {
+  const section = SETTINGS_SCHEMA.find(s => s.key === input.dataset.section);
+  const field = section?.fields.find(f => f.key === input.dataset.key);
+  const val = parseFloat(input.value);
+  const label = field?.labels ? (field.labels[val] || val) : val;
+  document.getElementById(`${input.id}_val`).textContent = label;
+}
+
+let _dirty = false;
+function markDirty() { _dirty = true; }
+
+async function saveSettings() {
+  const updates = {};
+
+  for (const section of SETTINGS_SCHEMA) {
+    for (const field of section.fields) {
+      const id = `set_${section.key}_${field.key}`;
+      const el = document.getElementById(id);
+      if (!el) continue;
+
+      let val;
+      if (field.type === 'toggle') val = el.checked;
+      else if (field.type === 'number' || field.type === 'range') {
+        val = parseFloat(el.value);
+        if (field.step && field.step >= 1) val = parseInt(el.value);
+      } else val = el.value;
+
+      if (!updates[section.key]) updates[section.key] = {};
+      updates[section.key][field.key] = val;
+    }
+  }
+
+  try {
+    await api('/api/ui/settings', 'PUT', {settings: updates});
+    toast('Settings gespeichert');
+    _dirty = false;
+  } catch (e) {
+    toast('Fehler beim Speichern', 'error');
+  }
+}
+
+// ---- Entities ----
+async function loadEntities() {
+  try {
+    const data = await api('/api/ui/entities');
+    ALL_ENTITIES = data.entities || [];
+    // Build domain filter
+    const domains = [...new Set(ALL_ENTITIES.map(e => e.domain))].sort();
+    const select = document.getElementById('entityDomainFilter');
+    select.innerHTML = '<option value="">Alle Domains (' + ALL_ENTITIES.length + ')</option>';
+    for (const d of domains) {
+      const count = ALL_ENTITIES.filter(e => e.domain === d).length;
+      select.innerHTML += `<option value="${d}">${d} (${count})</option>`;
+    }
+    filterEntities();
+    renderEntityAssignments();
+  } catch (e) {
+    console.error('Entities load failed:', e);
+  }
+}
+
+function filterEntities() {
+  const domain = document.getElementById('entityDomainFilter').value;
+  const search = document.getElementById('entitySearchInput').value.toLowerCase();
+  const container = document.getElementById('entityBrowser');
+
+  let filtered = ALL_ENTITIES;
+  if (domain) filtered = filtered.filter(e => e.domain === domain);
+  if (search) filtered = filtered.filter(e =>
+    e.entity_id.toLowerCase().includes(search) ||
+    e.name.toLowerCase().includes(search)
+  );
+
+  // Limit to 100 for performance
+  const show = filtered.slice(0, 100);
+  container.innerHTML = show.map(e => `
+    <div class="entity-item" data-eid="${e.entity_id}" onclick="copyEntityId('${e.entity_id}')">
+      <span class="entity-name">${e.name}</span>
+      <span class="entity-id">${e.entity_id}</span>
+      <span style="color:var(--text-muted);font-size:12px;">${e.state}</span>
+    </div>
+  `).join('');
+
+  if (filtered.length > 100) {
+    container.innerHTML += `<div style="padding:12px;text-align:center;color:var(--text-muted);font-size:12px;">
+      ...und ${filtered.length - 100} weitere
+    </div>`;
+  }
+}
+
+function copyEntityId(eid) {
+  navigator.clipboard?.writeText(eid);
+  toast(`${eid} kopiert`);
+}
+
+function renderEntityAssignments() {
+  const container = document.getElementById('entityAssignments');
+  let html = '';
+
+  for (const es of ENTITY_SETTINGS) {
+    const parts = es.path.split('.');
+    let current = SETTINGS;
+    for (const p of parts) { current = current?.[p]; }
+    const currentValue = current;
+
+    html += `<div class="entity-picker">
+      <div class="entity-picker-header">
+        <h4>${es.label}</h4>
+        <span style="font-size:12px;color:var(--text-muted);">${es.path}</span>
+      </div>`;
+
+    if (es.isMap && typeof currentValue === 'object' && currentValue) {
+      // Map: room -> entity_id
+      for (const [room, eid] of Object.entries(currentValue)) {
+        html += `<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+          <span style="min-width:100px;font-size:13px;color:var(--text-secondary);">${room}:</span>
+          <span class="entity-tag">${eid}</span>
+        </div>`;
+      }
+    } else if (Array.isArray(currentValue)) {
+      html += `<div class="selected-entities">`;
+      for (const eid of currentValue) {
+        html += `<span class="entity-tag">${eid}
+          <span class="remove" onclick="removeEntityFromSetting('${es.path}', '${eid}')">&#10005;</span>
+        </span>`;
+      }
+      html += `</div>`;
+    } else {
+      html += `<span style="font-size:13px;color:var(--text-muted);">Nicht konfiguriert</span>`;
+    }
+
+    // Add Entity Dropdown
+    const filteredEntities = es.domain
+      ? ALL_ENTITIES.filter(e => e.domain === es.domain)
+      : ALL_ENTITIES;
+
+    html += `<div style="margin-top:10px;">
+      <select class="entity-search" style="margin-bottom:0;" onchange="addEntityToSetting('${es.path}', this.value); this.value='';">
+        <option value="">+ Entity hinzufuegen...</option>`;
+    for (const e of filteredEntities.slice(0, 50)) {
+      html += `<option value="${e.entity_id}">${e.name} (${e.entity_id})</option>`;
+    }
+    html += `</select></div></div>`;
+  }
+
+  container.innerHTML = html;
+}
+
+async function addEntityToSetting(path, entityId) {
+  if (!entityId) return;
+  const parts = path.split('.');
+  let current = SETTINGS;
+  for (let i = 0; i < parts.length - 1; i++) {
+    if (!current[parts[i]]) current[parts[i]] = {};
+    current = current[parts[i]];
+  }
+  const key = parts[parts.length - 1];
+  if (!Array.isArray(current[key])) current[key] = [];
+  if (!current[key].includes(entityId)) {
+    current[key].push(entityId);
+    // Save immediately
+    const update = {};
+    let ref = update;
+    for (let i = 0; i < parts.length - 1; i++) {
+      ref[parts[i]] = {};
+      ref = ref[parts[i]];
+    }
+    ref[key] = current[key];
+    try {
+      await api('/api/ui/settings', 'PUT', {settings: update});
+      toast(`${entityId} hinzugefuegt`);
+      renderEntityAssignments();
+    } catch (e) { toast('Fehler', 'error'); }
+  }
+}
+
+async function removeEntityFromSetting(path, entityId) {
+  const parts = path.split('.');
+  let current = SETTINGS;
+  for (let i = 0; i < parts.length - 1; i++) {
+    current = current?.[parts[i]];
+  }
+  const key = parts[parts.length - 1];
+  if (Array.isArray(current?.[key])) {
+    current[key] = current[key].filter(e => e !== entityId);
+    const update = {};
+    let ref = update;
+    for (let i = 0; i < parts.length - 1; i++) {
+      ref[parts[i]] = {};
+      ref = ref[parts[i]];
+    }
+    ref[key] = current[key];
+    try {
+      await api('/api/ui/settings', 'PUT', {settings: update});
+      toast(`${entityId} entfernt`);
+      renderEntityAssignments();
+    } catch (e) { toast('Fehler', 'error'); }
+  }
+}
+
+// ---- Knowledge Base ----
+async function loadKnowledge() {
+  try {
+    const data = await api('/api/ui/knowledge');
+    const stats = data.stats || {};
+    const files = data.files || [];
+
+    document.getElementById('knowledgeStats').innerHTML = `
+      <div class="stat-card">
+        <div class="stat-label">Status</div>
+        <div class="stat-value" style="font-size:20px;color:${stats.enabled ? 'var(--success)' : 'var(--danger)'};">
+          ${stats.enabled ? 'Aktiv' : 'Deaktiviert'}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Chunks</div>
+        <div class="stat-value">${stats.total_chunks || 0}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Quellen</div>
+        <div class="stat-value">${(stats.sources || []).length}</div>
+        <div class="stat-sub">${(stats.sources || []).join(', ') || 'keine'}</div>
+      </div>
+    `;
+
+    if (files.length === 0) {
+      document.getElementById('knowledgeFiles').innerHTML =
+        '<div style="padding:20px;text-align:center;color:var(--text-muted);">Keine Dateien in config/knowledge/</div>';
+    } else {
+      document.getElementById('knowledgeFiles').innerHTML = files.map(f => `
+        <div class="file-item">
+          <span class="file-icon">&#128196;</span>
+          <span class="file-name">${f.name}</span>
+          <span class="file-size">${formatBytes(f.size)}</span>
+        </div>
+      `).join('');
+    }
+  } catch (e) {
+    console.error('Knowledge load failed:', e);
+  }
+}
+
+async function ingestKnowledge() {
+  try {
+    const data = await api('/api/ui/knowledge/ingest', 'POST');
+    toast(`${data.new_chunks} neue Chunks eingelesen`);
+    loadKnowledge();
+  } catch (e) {
+    toast('Fehler beim Einlesen', 'error');
+  }
+}
+
+function formatBytes(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
+// ---- Logs ----
+async function loadLogs() {
+  try {
+    const data = await api('/api/ui/logs');
+    const conversations = data.conversations || [];
+    const container = document.getElementById('logsContainer');
+
+    if (conversations.length === 0) {
+      container.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted);">Keine Gespraeche</div>';
+      return;
+    }
+
+    container.innerHTML = conversations.map(c => {
+      const time = c.timestamp ? new Date(c.timestamp).toLocaleTimeString('de-DE', {hour:'2-digit',minute:'2-digit'}) : '';
+      const role = c.role || 'system';
+      return `<div class="log-entry">
+        <span class="log-time">${time}</span>
+        <span class="log-role ${role}">${role}</span>
+        <span class="log-content">${escapeHtml(c.content || '')}</span>
+      </div>`;
+    }).join('');
+  } catch (e) {
+    console.error('Logs load failed:', e);
+  }
+}
+
+function escapeHtml(text) {
+  const d = document.createElement('div');
+  d.textContent = text;
+  return d.innerHTML;
+}
+</script>
+</body>
+</html>
