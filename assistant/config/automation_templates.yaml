@@ -66,6 +66,14 @@ security:
 # --- Automation Templates ---
 # Vordefinierte Muster fuer haeufige Automationen.
 # match_keywords: Alle muessen im User-Text vorkommen (AND-Verknuepfung).
+#
+# PLACEHOLDER wird automatisch mit echten Entities aus der HA-Installation aufgeloest:
+# - person.PLACEHOLDER -> Hauptperson (USER_NAME aus .env)
+# - light.PLACEHOLDER -> Erste passende Lampe (Raum wird aus Beschreibung extrahiert)
+# - binary_sensor.PLACEHOLDER -> Erster passender Sensor
+# - climate.PLACEHOLDER -> Erstes passendes Thermostat
+# - sensor.PLACEHOLDER -> Erster passender Sensor
+# Falls ein PLACEHOLDER nicht aufgeloest werden kann, wird stattdessen LLM-Generierung genutzt.
 templates:
   # --- Anwesenheitsbasiert ---
   licht_an_heimkommen:

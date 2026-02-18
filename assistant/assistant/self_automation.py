@@ -30,10 +30,6 @@ logger = logging.getLogger(__name__)
 _CONFIG_DIR = Path(__file__).parent.parent / "config"
 _TEMPLATES_PATH = _CONFIG_DIR / "automation_templates.yaml"
 
-# Label das alle Jarvis-Automationen markiert
-JARVIS_LABEL = "jarvis_created"
-
-
 def _load_templates() -> dict:
     """Laedt die Automation-Templates und Security-Config."""
     if _TEMPLATES_PATH.exists():
@@ -145,7 +141,7 @@ class SelfAutomation:
             }
 
         # Template-Match versuchen (schnell, ohne LLM)
-        template_match = self._match_template(description)
+        template_match = await self._match_template(description)
         if template_match:
             automation = template_match
             generation_method = "template"
@@ -177,10 +173,10 @@ class SelfAutomation:
             f"Erstellt von {settings.assistant_name}: {description}"
         )
         automation.setdefault("mode", "single")
-        # Label fuer Kill-Switch
-        automation.setdefault("labels", [])
-        if JARVIS_LABEL not in automation.get("labels", []):
-            automation["labels"].append(JARVIS_LABEL)
+        # Kill-Switch Identifikation: Alle Jarvis-Automationen beginnen mit "jarvis_"
+        # im automation_id (-> entity_id: automation.jarvis_*).
+        # HA REST API unterstuetzt kein "labels"-Feld in der Automation-Config,
+        # daher nutzen wir den Prefix-Ansatz.
 
         # Vorschau erstellen
         preview = self._build_preview(automation, description)
@@ -450,7 +446,7 @@ REGELN:
     # Template-Matching
     # ------------------------------------------------------------------
 
-    def _match_template(self, description: str) -> Optional[dict]:
+    async def _match_template(self, description: str) -> Optional[dict]:
         """Versucht die Beschreibung auf ein vordefiniertes Template zu matchen."""
         desc_lower = description.lower()
 
@@ -461,17 +457,136 @@ REGELN:
 
             # Alle Keywords muessen vorkommen
             if all(kw.lower() in desc_lower for kw in triggers):
-                # Template klonen und anpassen
+                # Template klonen (deep copy um Original nicht zu aendern)
+                import copy
                 automation = {
                     "alias": template.get("alias", description[:60]),
-                    "trigger": template.get("trigger", []),
-                    "condition": template.get("condition", []),
-                    "action": template.get("action", []),
+                    "trigger": copy.deepcopy(template.get("trigger", [])),
+                    "condition": copy.deepcopy(template.get("condition", [])),
+                    "action": copy.deepcopy(template.get("action", [])),
                 }
+
+                # PLACEHOLDERs mit echten Entities aufloesen
+                resolved = await self._resolve_placeholders(automation, desc_lower)
+                if not resolved:
+                    logger.warning(
+                        "Template '%s' gematcht, aber PLACEHOLDERs konnten nicht aufgeloest werden",
+                        template_id,
+                    )
+                    # Fallback auf LLM-Generierung
+                    return None
+
                 logger.info("Template-Match: '%s' -> %s", description, template_id)
                 return automation
 
         return None
+
+    async def _resolve_placeholders(self, automation: dict, description: str) -> bool:
+        """Loest PLACEHOLDER in einem Template mit echten HA-Entities auf.
+
+        Sucht passende Entities aus der HA-Installation anhand des Kontexts.
+        Gibt False zurueck wenn ein Pflicht-Placeholder nicht aufgeloest werden konnte.
+        """
+        states = await self.ha.get_states()
+        if not states:
+            return False
+
+        # Entity-Index aufbauen: domain -> [entity_id, ...]
+        entity_index: dict[str, list[str]] = {}
+        for s in states:
+            eid = s.get("entity_id", "")
+            domain = eid.split(".")[0] if "." in eid else ""
+            entity_index.setdefault(domain, []).append(eid)
+
+        # Hauptperson aus Config
+        main_person = settings.user_name.lower()
+        main_person_entity = None
+        for eid in entity_index.get("person", []):
+            if main_person in eid.lower():
+                main_person_entity = eid
+                break
+        # Fallback: Erste Person
+        if not main_person_entity and entity_index.get("person"):
+            main_person_entity = entity_index["person"][0]
+
+        # Raumname aus Beschreibung extrahieren (einfache Keyword-Suche)
+        room_hint = self._extract_room_hint(description)
+
+        def resolve_entity(placeholder_entity: str) -> Optional[str]:
+            """Loest eine einzelne entity_id mit PLACEHOLDER auf."""
+            if "PLACEHOLDER" not in str(placeholder_entity):
+                return placeholder_entity
+
+            domain = placeholder_entity.split(".")[0] if "." in placeholder_entity else ""
+
+            # person.PLACEHOLDER -> Hauptperson
+            if domain == "person":
+                return main_person_entity
+
+            # Andere Domains: Raum-basierte Suche
+            candidates = entity_index.get(domain, [])
+            if not candidates:
+                return None
+
+            # Raum-Hint verwenden wenn vorhanden
+            if room_hint:
+                for eid in candidates:
+                    if room_hint in eid.lower():
+                        return eid
+
+            # Fallback: Erste Entity der Domain
+            return candidates[0] if candidates else None
+
+        # Alle PLACEHOLDERs in trigger/condition/action aufloesen
+        unresolved = False
+
+        for section in ("trigger", "condition", "action"):
+            for item in automation.get(section, []):
+                for key, value in list(item.items()):
+                    if isinstance(value, str) and "PLACEHOLDER" in value:
+                        resolved = resolve_entity(value)
+                        if resolved:
+                            item[key] = resolved
+                        else:
+                            unresolved = True
+                    # Auch in verschachtelten dicts (target, data)
+                    elif isinstance(value, dict):
+                        for sub_key, sub_value in list(value.items()):
+                            if isinstance(sub_value, str) and "PLACEHOLDER" in sub_value:
+                                resolved = resolve_entity(sub_value)
+                                if resolved:
+                                    value[sub_key] = resolved
+                                else:
+                                    unresolved = True
+
+        return not unresolved
+
+    @staticmethod
+    def _extract_room_hint(description: str) -> str:
+        """Extrahiert einen Raumnamen aus der Beschreibung."""
+        room_keywords = {
+            "wohnzimmer": "wohnzimmer",
+            "schlafzimmer": "schlafzimmer",
+            "kueche": "kueche",
+            "küche": "kueche",
+            "bad": "bad",
+            "badezimmer": "bad",
+            "buero": "buero",
+            "büro": "buero",
+            "flur": "flur",
+            "kinderzimmer": "kinderzimmer",
+            "keller": "keller",
+            "garage": "garage",
+            "garten": "garten",
+            "terrasse": "terrasse",
+            "balkon": "balkon",
+            "esszimmer": "esszimmer",
+        }
+        desc_lower = description.lower()
+        for keyword, room_id in room_keywords.items():
+            if keyword in desc_lower:
+                return room_id
+        return ""
 
     # ------------------------------------------------------------------
     # Sicherheits-Validierung
