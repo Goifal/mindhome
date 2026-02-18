@@ -437,6 +437,98 @@ class SpeakerRecognition:
         except Exception as e:
             logger.debug("Speaker-Profile speichern fehlgeschlagen: %s", e)
 
+    async def identify_by_embedding(self, embedding: list[float]) -> Optional[dict]:
+        """Phase 9.6: Identifiziert Sprecher ueber Voice-Embedding (Cosinus-Aehnlichkeit).
+
+        Args:
+            embedding: Float-Vektor (z.B. 192 oder 256 Dimensionen)
+
+        Returns:
+            Dict mit person, confidence, method oder None
+        """
+        if not embedding or not self._profiles:
+            return None
+
+        best_match = None
+        best_similarity = 0.0
+
+        for pid, profile in self._profiles.items():
+            # Embedding aus Redis laden
+            stored = None
+            if self.redis:
+                try:
+                    data = await self.redis.get(f"mha:speaker:embedding:{pid}")
+                    if data:
+                        stored = json.loads(data)
+                except Exception:
+                    pass
+
+            if not stored or len(stored) != len(embedding):
+                continue
+
+            # Cosinus-Aehnlichkeit
+            dot = sum(a * b for a, b in zip(embedding, stored))
+            norm_a = sum(a * a for a in embedding) ** 0.5
+            norm_b = sum(b * b for b in stored) ** 0.5
+            if norm_a == 0 or norm_b == 0:
+                continue
+            similarity = dot / (norm_a * norm_b)
+
+            if similarity > best_similarity:
+                best_similarity = similarity
+                best_match = {
+                    "person": profile.name,
+                    "person_id": pid,
+                    "confidence": round(similarity, 3),
+                    "method": "voice_embedding",
+                }
+
+        if best_match and best_match["confidence"] >= self.min_confidence:
+            self._last_speaker = best_match["person_id"]
+            return best_match
+        return None
+
+    async def store_embedding(self, person_id: str, embedding: list[float]) -> bool:
+        """Phase 9.6: Speichert ein Voice-Embedding (mit EMA-Verschmelzung).
+
+        Args:
+            person_id: Person-ID
+            embedding: Float-Vektor
+
+        Returns:
+            True wenn erfolgreich
+        """
+        if not self.enabled or person_id not in self._profiles:
+            return False
+
+        # Bestehendes Embedding laden und verschmelzen (EMA alpha=0.3)
+        merged = embedding
+        if self.redis:
+            try:
+                data = await self.redis.get(f"mha:speaker:embedding:{person_id}")
+                if data:
+                    stored = json.loads(data)
+                    if len(stored) == len(embedding):
+                        alpha = 0.3
+                        merged = [alpha * e + (1 - alpha) * s
+                                  for e, s in zip(embedding, stored)]
+            except Exception:
+                pass
+
+        # Speichern
+        if self.redis:
+            try:
+                await self.redis.set(
+                    f"mha:speaker:embedding:{person_id}",
+                    json.dumps(merged),
+                )
+                await self.redis.expire(f"mha:speaker:embedding:{person_id}", 365 * 86400)
+            except Exception as e:
+                logger.debug("Embedding speichern fehlgeschlagen: %s", e)
+
+        logger.info("Voice-Embedding gespeichert: %s (%d Dim.)", person_id, len(embedding))
+        return True
+
     def health_status(self) -> str:
         """Gibt den Status zurueck."""
         if not self.enabled:

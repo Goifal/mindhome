@@ -71,6 +71,17 @@ class TTSEnhancer:
             "casual": speed_cfg.get("casual", 100),
         }
 
+        # Pitch pro Typ (Phase 9.1)
+        pitch_cfg = tts_cfg.get("pitch", {})
+        self.pitch_map = {
+            "confirmation": pitch_cfg.get("confirmation", "+5%"),
+            "warning": pitch_cfg.get("warning", "-10%"),
+            "briefing": pitch_cfg.get("briefing", "0%"),
+            "greeting": pitch_cfg.get("greeting", "+5%"),
+            "question": pitch_cfg.get("question", "+10%"),
+            "casual": pitch_cfg.get("casual", "0%"),
+        }
+
         # Pausen
         pause_cfg = tts_cfg.get("pauses", {})
         self.pause_important = pause_cfg.get("before_important", 300)
@@ -152,10 +163,11 @@ class TTSEnhancer:
             message_type = self.classify_message(text)
 
         speed = self.speed_map.get(message_type, 100)
+        pitch = self.pitch_map.get(message_type, "0%")
         volume = self.get_volume(activity=activity, message_type=message_type, urgency=urgency)
 
         if self.ssml_enabled:
-            ssml = self._generate_ssml(text, message_type, speed)
+            ssml = self._generate_ssml(text, message_type, speed, pitch)
         else:
             ssml = text
 
@@ -164,6 +176,7 @@ class TTSEnhancer:
             "ssml": ssml,
             "message_type": message_type,
             "speed": speed,
+            "pitch": pitch,
             "volume": volume,
         }
 
@@ -234,23 +247,26 @@ class TTSEnhancer:
             return hour >= self.auto_whisper_start or hour < self.auto_whisper_end
         return self.auto_whisper_start <= hour < self.auto_whisper_end
 
-    def _generate_ssml(self, text: str, message_type: str, speed: int) -> str:
+    def _generate_ssml(self, text: str, message_type: str, speed: int,
+                        pitch: str = "0%") -> str:
         """
         Generiert SSML aus Text und Nachrichtentyp.
 
         Piper TTS unterstuetzt einen Teil von SSML:
         - <break> fuer Pausen
-        - <prosody rate="..."> fuer Geschwindigkeit
+        - <prosody rate="..." pitch="..."> fuer Geschwindigkeit + Tonhoehe
         - <emphasis> fuer Betonung
         """
         parts = []
 
-        # Sprechgeschwindigkeit
-        rate_attr = ""
+        # Sprechgeschwindigkeit + Pitch
+        prosody_attrs = ""
         if speed != 100:
-            rate_attr = f' rate="{speed}%"'
+            prosody_attrs += f' rate="{speed}%"'
+        if pitch and pitch != "0%":
+            prosody_attrs += f' pitch="{pitch}"'
 
-        parts.append(f'<speak><prosody{rate_attr}>')
+        parts.append(f'<speak><prosody{prosody_attrs}>')
 
         # Text in Saetze aufteilen
         sentences = self._split_sentences(text)
@@ -310,3 +326,78 @@ class TTSEnhancer:
         # Einfaches Splitting an Satzzeichen
         sentences = re.split(r'(?<=[.!?])\s+', text)
         return [s for s in sentences if s.strip()]
+
+    # ------------------------------------------------------------------
+    # Phase 9.4: Narration Delays + Fade
+    # ------------------------------------------------------------------
+
+    def enhance_narration(self, segments: list[dict]) -> dict:
+        """Erzeugt eine SSML-Narration mit Delays und Fade-Effekten.
+
+        Args:
+            segments: Liste von Segmenten mit:
+                text: str - Sprechtext
+                pause_before_ms: int - Pause vor dem Segment (optional)
+                pause_after_ms: int - Pause nach dem Segment (optional)
+                speed: int - Geschwindigkeit % (optional)
+                pitch: str - Tonhoehe (optional)
+                volume: str - Lautstaerke soft/medium/loud/x-loud (optional)
+                emphasis: str - Betonungslevel moderate/strong (optional)
+
+        Returns:
+            Dict mit ssml, total_estimated_duration_ms
+        """
+        parts = ['<speak>']
+        total_duration = 0
+
+        for seg in segments:
+            text = seg.get("text", "")
+            if not text:
+                continue
+
+            # Pause vor dem Segment (Delay)
+            pause_before = seg.get("pause_before_ms", 0)
+            if pause_before > 0:
+                parts.append(f'<break time="{pause_before}ms"/>')
+                total_duration += pause_before
+
+            # Prosody-Attribute
+            prosody_attrs = ""
+            seg_speed = seg.get("speed")
+            seg_pitch = seg.get("pitch")
+            seg_volume = seg.get("volume")
+            if seg_speed and seg_speed != 100:
+                prosody_attrs += f' rate="{seg_speed}%"'
+            if seg_pitch:
+                prosody_attrs += f' pitch="{seg_pitch}"'
+            if seg_volume:
+                prosody_attrs += f' volume="{seg_volume}"'
+
+            # Emphasis
+            emphasis = seg.get("emphasis")
+            inner_text = text
+            if emphasis:
+                inner_text = f'<emphasis level="{emphasis}">{text}</emphasis>'
+
+            if prosody_attrs:
+                parts.append(f'<prosody{prosody_attrs}>{inner_text}</prosody>')
+            else:
+                parts.append(inner_text)
+
+            # Geschaetzte Sprechdauer: ~150 WPM = 2.5 Woerter/Sek
+            word_count = len(text.split())
+            effective_speed = (seg_speed or 100) / 100.0
+            speak_ms = int(word_count / (2.5 * effective_speed) * 1000)
+            total_duration += speak_ms
+
+            # Pause nach dem Segment (Fade-Effekt simulieren)
+            pause_after = seg.get("pause_after_ms", 0)
+            if pause_after > 0:
+                parts.append(f'<break time="{pause_after}ms"/>')
+                total_duration += pause_after
+
+        parts.append('</speak>')
+        return {
+            "ssml": "".join(parts),
+            "total_estimated_duration_ms": total_duration,
+        }

@@ -132,6 +132,10 @@ class AnticipationEngine:
             seq_patterns = self._detect_sequence_patterns(entries)
             patterns.extend(seq_patterns)
 
+            # 3. Kontext-Muster erkennen (Wetter, Tageszeit, Anwesenheit)
+            ctx_patterns = self._detect_context_patterns(entries)
+            patterns.extend(ctx_patterns)
+
             return patterns
 
         except Exception as e:
@@ -243,6 +247,68 @@ class AnticipationEngine:
 
         return patterns
 
+    def _detect_context_patterns(self, entries: list[dict]) -> list[dict]:
+        """Erkennt kontextbasierte Muster (Wetter, Tageszeit-Kombination).
+
+        Sucht nach Aktionen die immer unter bestimmten Kontextbedingungen
+        stattfinden, z.B. "Rolladen runter wenn Abend + Sommer".
+        """
+        patterns = []
+
+        # Gruppiere Aktionen nach Tageszeit-Cluster (morgen/mittag/abend/nacht)
+        time_clusters = {"morning": [], "afternoon": [], "evening": [], "night": []}
+        for entry in entries:
+            hour = entry.get("hour", 12)
+            action = entry.get("action", "")
+            if not action:
+                continue
+            if 5 <= hour < 12:
+                time_clusters["morning"].append(entry)
+            elif 12 <= hour < 17:
+                time_clusters["afternoon"].append(entry)
+            elif 17 <= hour < 22:
+                time_clusters["evening"].append(entry)
+            else:
+                time_clusters["night"].append(entry)
+
+        cluster_labels = {
+            "morning": "morgens",
+            "afternoon": "nachmittags",
+            "evening": "abends",
+            "night": "nachts",
+        }
+
+        # Finde Aktionen die in einem Cluster dominant sind (>70% aller Vorkommen)
+        action_total = Counter(e.get("action", "") for e in entries if e.get("action"))
+        for cluster_name, cluster_entries in time_clusters.items():
+            if len(cluster_entries) < 5:
+                continue
+
+            cluster_actions = Counter(e.get("action", "") for e in cluster_entries)
+            for action, cluster_count in cluster_actions.items():
+                total = action_total.get(action, 0)
+                if total < 5:
+                    continue
+                ratio = cluster_count / total
+                if ratio >= 0.7:
+                    # Typische Args
+                    args_counter = Counter(
+                        e.get("args", "{}") for e in cluster_entries if e.get("action") == action
+                    )
+                    typical_args = args_counter.most_common(1)[0][0]
+
+                    patterns.append({
+                        "type": "context",
+                        "context": f"time_cluster:{cluster_name}",
+                        "action": action,
+                        "args": json.loads(typical_args),
+                        "confidence": round(min(1.0, ratio * (cluster_count / 10)), 2),
+                        "occurrences": cluster_count,
+                        "description": f"{action} wird zu {ratio*100:.0f}% {cluster_labels[cluster_name]} ausgefuehrt",
+                    })
+
+        return patterns
+
     # ------------------------------------------------------------------
     # Proaktive Vorschlaege
     # ------------------------------------------------------------------
@@ -297,7 +363,28 @@ class AnticipationEngine:
                                 "confidence": pattern["confidence"],
                                 "description": pattern["description"],
                             }
-                            break
+
+            elif pattern["type"] == "context":
+                # Kontext-Muster: Passt der aktuelle Tageszeit-Cluster?
+                ctx = pattern.get("context", "")
+                if ctx.startswith("time_cluster:"):
+                    cluster = ctx.split(":")[1]
+                    hour = now.hour
+                    current_cluster = (
+                        "morning" if 5 <= hour < 12
+                        else "afternoon" if 12 <= hour < 17
+                        else "evening" if 17 <= hour < 22
+                        else "night"
+                    )
+                    if cluster == current_cluster:
+                        suggestion = {
+                            "pattern": pattern,
+                            "action": pattern["action"],
+                            "args": pattern["args"],
+                            "confidence": pattern["confidence"],
+                            "description": pattern["description"],
+                        }
+                        break
 
             if suggestion:
                 # Bestimme Delivery-Modus

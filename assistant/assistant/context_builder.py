@@ -447,6 +447,134 @@ class ContextBuilder:
     # ------------------------------------------------------------------
 
     # ------------------------------------------------------------------
+    # Phase 7.7: Lernfaehiges Override
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def get_room_override(room_name: str, override_type: str) -> Optional[dict]:
+        """Prueft ob ein gelerntes Override fuer den Raum existiert.
+
+        Override-Typen: temperature, light, cover, scene.
+        Overrides werden in room_profiles.yaml unter rooms.{room}.overrides gespeichert
+        und koennen durch User-Feedback gelernt werden.
+        """
+        if not room_name or not _ROOM_PROFILES:
+            return None
+
+        room_lower = room_name.lower().replace(" ", "_")
+        profile = _ROOM_PROFILES.get(room_lower)
+        if not profile:
+            # Fuzzy match
+            for key, p in _ROOM_PROFILES.items():
+                if key in room_lower or room_lower in key:
+                    profile = p
+                    break
+        if not profile:
+            return None
+
+        overrides = profile.get("overrides", {})
+        if override_type in overrides:
+            override = overrides[override_type]
+            # Zeitbasiert: Pruefen ob Override gerade aktiv
+            now = datetime.now()
+            if "active_hours" in override:
+                start_h, end_h = override["active_hours"]
+                if not (start_h <= now.hour < end_h):
+                    return None
+            return override
+        return None
+
+    @staticmethod
+    def learn_room_override(room_name: str, override_type: str, value: dict):
+        """Speichert ein gelerntes Override fuer einen Raum in die YAML-Datei.
+
+        Wird aufgerufen wenn der User eine Einstellung korrigiert und Jarvis
+        sich die Aenderung fuer diesen Raum merken soll.
+        """
+        room_lower = room_name.lower().replace(" ", "_")
+        if room_lower not in _ROOM_PROFILES:
+            _ROOM_PROFILES[room_lower] = {"name": room_name}
+
+        profile = _ROOM_PROFILES[room_lower]
+        if "overrides" not in profile:
+            profile["overrides"] = {}
+        profile["overrides"][override_type] = {
+            **value,
+            "learned_at": datetime.now().isoformat(),
+        }
+
+        # In YAML schreiben
+        try:
+            room_file = Path(__file__).parent.parent / "config" / "room_profiles.yaml"
+            if room_file.exists():
+                with open(room_file) as f:
+                    data = yaml.safe_load(f) or {}
+            else:
+                data = {}
+            data.setdefault("rooms", {})[room_lower] = profile
+            with open(room_file, "w") as f:
+                yaml.dump(data, f, allow_unicode=True, default_flow_style=False)
+            logger.info("Raum-Override gelernt: %s.%s = %s", room_lower, override_type, value)
+        except Exception as e:
+            logger.error("Fehler beim Speichern des Raum-Overrides: %s", e)
+
+    # ------------------------------------------------------------------
+    # Phase 7.9: Saisonale Rolladen-Steuerung
+    # ------------------------------------------------------------------
+
+    def get_cover_timing(self, states: Optional[list] = None) -> dict:
+        """Berechnet optimale Rolladen-Zeiten basierend auf Saison + Sonnenstand.
+
+        Returns:
+            Dict mit open_time, close_time, reason
+        """
+        seasonal = self._get_seasonal_context(states)
+        sunrise = seasonal.get("sunrise_approx", "07:00")
+        sunset = seasonal.get("sunset_approx", "19:00")
+        season = seasonal.get("season", "summer")
+        outside_temp = seasonal.get("outside_temp")
+
+        # Rolladen-Oeffnung: 30 Min nach Sonnenaufgang (im Sommer frueher)
+        try:
+            sr_parts = sunrise.split(":")
+            sr_hour, sr_min = int(sr_parts[0]), int(sr_parts[1])
+        except (ValueError, IndexError):
+            sr_hour, sr_min = 7, 0
+
+        offset_open = 30 if season == "summer" else 15
+        open_min = sr_hour * 60 + sr_min + offset_open
+        open_time = f"{open_min // 60:02d}:{open_min % 60:02d}"
+
+        # Rolladen-Schliessung: Bei Sonnenuntergang (im Sommer spaeter wegen Hitze)
+        try:
+            ss_parts = sunset.split(":")
+            ss_hour, ss_min = int(ss_parts[0]), int(ss_parts[1])
+        except (ValueError, IndexError):
+            ss_hour, ss_min = 19, 0
+
+        # Hitze-Schutz: Im Sommer bei hohen Temperaturen frueher schliessen
+        offset_close = 0
+        reason = "Standard-Timing nach Sonnenstand"
+        if season == "summer" and outside_temp and outside_temp > 28:
+            offset_close = -60  # 1h frueher bei Hitze
+            reason = f"Hitzeschutz (Aussen: {outside_temp}°C)"
+        elif season == "winter":
+            offset_close = -15  # Im Winter etwas frueher
+            reason = "Winter: Frueher schliessen fuer Isolierung"
+
+        close_min = ss_hour * 60 + ss_min + offset_close
+        close_time = f"{close_min // 60:02d}:{close_min % 60:02d}"
+
+        return {
+            "open_time": open_time,
+            "close_time": close_time,
+            "season": season,
+            "reason": reason,
+            "sunrise": sunrise,
+            "sunset": sunset,
+        }
+
+    # ------------------------------------------------------------------
     # Phase 10: Multi-Room Presence
     # ------------------------------------------------------------------
 

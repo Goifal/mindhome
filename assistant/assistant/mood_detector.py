@@ -506,6 +506,119 @@ class MoodDetector:
         self._last_voice_signals = signals
         return signals
 
+    def detect_audio_emotion(self, metadata: dict) -> dict:
+        """Phase 9.5: Erkennt Emotionen aus Audio-Metadaten.
+
+        Kombiniert WPM, Lautstaerke, Pause-Muster und Tonhoehe zu einer
+        Emotions-Einschaetzung.
+
+        Args:
+            metadata: Dict mit wpm, volume, duration, pitch_mean, pitch_variance,
+                      pause_ratio, energy_rms
+
+        Returns:
+            Dict mit emotion, confidence, signals, scores
+        """
+        if not metadata:
+            return {"emotion": "neutral", "confidence": 0.0, "signals": []}
+
+        signals = []
+        scores = {"happy": 0.0, "sad": 0.0, "angry": 0.0, "anxious": 0.0,
+                  "tired": 0.0, "neutral": 0.3}
+
+        wpm = metadata.get("wpm", 0)
+        volume = metadata.get("volume", 0.5)
+        pitch_mean = metadata.get("pitch_mean")
+        pitch_variance = metadata.get("pitch_variance")
+        pause_ratio = metadata.get("pause_ratio", 0)
+        energy_rms = metadata.get("energy_rms")
+
+        # Sprechgeschwindigkeit
+        if wpm > 0:
+            if wpm > 180:
+                scores["anxious"] += 0.3
+                scores["angry"] += 0.2
+                signals.append("speech_fast")
+            elif wpm > 150:
+                scores["happy"] += 0.2
+                signals.append("speech_moderate_fast")
+            elif wpm < 80:
+                scores["sad"] += 0.3
+                scores["tired"] += 0.3
+                signals.append("speech_slow")
+
+        # Lautstaerke
+        if volume > 0.8:
+            scores["angry"] += 0.3
+            scores["happy"] += 0.15
+            signals.append("voice_loud")
+        elif volume < 0.2:
+            scores["sad"] += 0.2
+            scores["tired"] += 0.2
+            signals.append("voice_quiet")
+
+        # Tonhoehe
+        if pitch_mean is not None:
+            if pitch_mean > 200:
+                scores["anxious"] += 0.2
+                scores["happy"] += 0.15
+                signals.append("pitch_high")
+            elif pitch_mean < 100:
+                scores["sad"] += 0.15
+                scores["tired"] += 0.1
+                signals.append("pitch_low")
+
+        if pitch_variance is not None:
+            if pitch_variance > 50:
+                scores["happy"] += 0.2
+                scores["angry"] += 0.1
+                signals.append("pitch_dynamic")
+            elif pitch_variance < 10:
+                scores["sad"] += 0.2
+                scores["tired"] += 0.15
+                signals.append("pitch_monotone")
+
+        # Pausen-Muster
+        if pause_ratio > 0.4:
+            scores["tired"] += 0.2
+            scores["sad"] += 0.1
+            signals.append("many_pauses")
+
+        # Energie
+        if energy_rms is not None:
+            if energy_rms > 0.7:
+                scores["angry"] += 0.15
+                signals.append("high_energy")
+            elif energy_rms < 0.2:
+                scores["tired"] += 0.15
+                signals.append("low_energy")
+
+        # Hoechste Emotion
+        best_emotion = max(scores, key=scores.get)
+        confidence = min(1.0, scores[best_emotion])
+
+        # In Mood-State uebernehmen
+        emotion_mood_map = {
+            "happy": (-0.1, 0.0),
+            "sad": (0.0, 0.1),
+            "angry": (0.2, 0.0),
+            "anxious": (0.15, 0.0),
+            "tired": (0.0, 0.2),
+        }
+        if best_emotion in emotion_mood_map and confidence > 0.4:
+            stress_d, tired_d = emotion_mood_map[best_emotion]
+            self._stress_level = min(1.0, max(0.0,
+                self._stress_level + stress_d * self.voice_weight))
+            self._tiredness_level = min(1.0, max(0.0,
+                self._tiredness_level + tired_d * self.voice_weight))
+
+        return {
+            "emotion": best_emotion,
+            "confidence": round(confidence, 2),
+            "signals": signals,
+            "scores": {k: round(v, 2) for k, v in scores.items() if v > 0},
+        }
+
     def get_voice_signals(self) -> list[str]:
         """Gibt die letzten Voice-Signale zurueck."""
         return self._last_voice_signals

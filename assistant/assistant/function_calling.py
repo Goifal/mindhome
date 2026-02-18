@@ -362,6 +362,60 @@ ASSISTANT_TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "delete_calendar_event",
+            "description": "Einen Kalender-Termin loeschen",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": {
+                        "type": "string",
+                        "description": "Titel des Termins (oder Teil davon)",
+                    },
+                    "date": {
+                        "type": "string",
+                        "description": "Datum des Termins im Format YYYY-MM-DD",
+                    },
+                },
+                "required": ["title", "date"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "reschedule_calendar_event",
+            "description": "Einen Kalender-Termin verschieben (neues Datum/Uhrzeit)",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": {
+                        "type": "string",
+                        "description": "Titel des bestehenden Termins",
+                    },
+                    "old_date": {
+                        "type": "string",
+                        "description": "Bisheriges Datum im Format YYYY-MM-DD",
+                    },
+                    "new_date": {
+                        "type": "string",
+                        "description": "Neues Datum im Format YYYY-MM-DD",
+                    },
+                    "new_start_time": {
+                        "type": "string",
+                        "description": "Neue Startzeit HH:MM (optional)",
+                    },
+                    "new_end_time": {
+                        "type": "string",
+                        "description": "Neue Endzeit HH:MM (optional)",
+                    },
+                },
+                "required": ["title", "old_date", "new_date"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "set_presence_mode",
             "description": "Anwesenheitsmodus des Hauses setzen",
             "parameters": {
@@ -1075,6 +1129,122 @@ class FunctionExecutor:
             "success": success,
             "message": f"Termin '{title}' am {date_str}{time_info} erstellt" if success
                        else f"Termin konnte nicht erstellt werden",
+        }
+
+    async def _exec_delete_calendar_event(self, args: dict) -> dict:
+        """Phase 11.3: Kalender-Termin loeschen.
+
+        Sucht den Termin per Titel+Datum und loescht ihn via calendar.delete_event.
+        """
+        from datetime import datetime, timedelta
+
+        title = args["title"]
+        date_str = args["date"]
+
+        # Kalender-Entity finden
+        states = await self.ha.get_states()
+        calendar_entity = None
+        for s in (states or []):
+            if s.get("entity_id", "").startswith("calendar."):
+                calendar_entity = s.get("entity_id")
+                break
+
+        if not calendar_entity:
+            return {"success": False, "message": "Kein Kalender in Home Assistant gefunden"}
+
+        # Events fuer den Tag abrufen um das richtige Event zu finden
+        try:
+            start = f"{date_str}T00:00:00"
+            end_date = datetime.strptime(date_str, "%Y-%m-%d") + timedelta(days=1)
+            end = end_date.strftime("%Y-%m-%dT00:00:00")
+
+            result = await self.ha.call_service_with_response(
+                "calendar", "get_events",
+                {"entity_id": calendar_entity, "start_date_time": start, "end_date_time": end},
+            )
+
+            # Event per Titel suchen
+            events = []
+            if isinstance(result, dict):
+                for key, val in result.items():
+                    if isinstance(val, dict):
+                        events = val.get("events", [])
+                        break
+
+            target_event = None
+            title_lower = title.lower()
+            for event in events:
+                if title_lower in event.get("summary", "").lower():
+                    target_event = event
+                    break
+
+            if not target_event:
+                return {"success": False, "message": f"Termin '{title}' am {date_str} nicht gefunden"}
+
+            # Event loeschen
+            uid = target_event.get("uid", "")
+            if uid:
+                success = await self.ha.call_service(
+                    "calendar", "delete_event",
+                    {"entity_id": calendar_entity, "uid": uid},
+                )
+            else:
+                # Fallback: Ohne UID loeschen (Startzeit nutzen)
+                success = await self.ha.call_service(
+                    "calendar", "delete_event",
+                    {
+                        "entity_id": calendar_entity,
+                        "start_date_time": target_event.get("start", {}).get("dateTime", start),
+                        "end_date_time": target_event.get("end", {}).get("dateTime", end),
+                        "summary": target_event.get("summary", title),
+                    },
+                )
+
+            return {
+                "success": success,
+                "message": f"Termin '{title}' am {date_str} geloescht" if success
+                           else "Termin konnte nicht geloescht werden",
+            }
+        except Exception as e:
+            logger.error("Kalender-Delete Fehler: %s", e)
+            return {"success": False, "message": f"Fehler: {e}"}
+
+    async def _exec_reschedule_calendar_event(self, args: dict) -> dict:
+        """Phase 11.3: Kalender-Termin verschieben (Delete + Re-Create)."""
+        title = args["title"]
+        old_date = args["old_date"]
+        new_date = args["new_date"]
+        new_start = args.get("new_start_time", "")
+        new_end = args.get("new_end_time", "")
+
+        # 1. Alten Termin loeschen
+        delete_result = await self._exec_delete_calendar_event({
+            "title": title,
+            "date": old_date,
+        })
+
+        if not delete_result.get("success"):
+            return {
+                "success": False,
+                "message": f"Verschieben fehlgeschlagen: {delete_result.get('message', '')}",
+            }
+
+        # 2. Neuen Termin erstellen
+        create_result = await self._exec_create_calendar_event({
+            "title": title,
+            "date": new_date,
+            "start_time": new_start,
+            "end_time": new_end,
+        })
+
+        if create_result.get("success"):
+            return {
+                "success": True,
+                "message": f"Termin '{title}' verschoben von {old_date} nach {new_date}",
+            }
+        return {
+            "success": False,
+            "message": f"Alter Termin geloescht, aber neuer konnte nicht erstellt werden",
         }
 
     async def _exec_set_presence_mode(self, args: dict) -> dict:
