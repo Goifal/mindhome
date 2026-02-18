@@ -119,6 +119,11 @@ class ContextBuilder:
         if states:
             context["room_presence"] = self._build_room_presence(states)
 
+        # Wetter-Warnungen
+        weather_warnings = self._check_weather_warnings(states or [])
+        if weather_warnings:
+            context.setdefault("weather_warnings", []).extend(weather_warnings)
+
         # Warnungen
         context["alerts"] = self._extract_alerts(states or [])
 
@@ -283,6 +288,79 @@ class ContextBuilder:
                     latest_room = name.replace("Bewegung ", "").replace(" Motion", "")
 
         return latest_room
+
+    def _check_weather_warnings(self, states: list[dict]) -> list[str]:
+        """Prueft Wetter-Daten auf Warnwuerdiges."""
+        warnings = []
+        weather_cfg = yaml_config.get("weather_warnings", {})
+        if not weather_cfg.get("enabled", True):
+            return warnings
+
+        temp_warn_high = weather_cfg.get("temp_high", 35)
+        temp_warn_low = weather_cfg.get("temp_low", -5)
+        wind_warn = weather_cfg.get("wind_speed_high", 60)
+        warn_conditions = weather_cfg.get("warn_conditions", [
+            "lightning", "lightning-rainy", "hail", "exceptional",
+        ])
+
+        for state in states:
+            if not state.get("entity_id", "").startswith("weather."):
+                continue
+
+            attrs = state.get("attributes", {})
+            condition = state.get("state", "")
+            temp = attrs.get("temperature")
+            wind = attrs.get("wind_speed")
+
+            # Extreme Temperatur
+            if temp is not None:
+                try:
+                    t = float(temp)
+                    if t >= temp_warn_high:
+                        warnings.append(f"Hitzewarnung: {t}°C Aussentemperatur")
+                    elif t <= temp_warn_low:
+                        warnings.append(f"Kaeltewarnung: {t}°C Aussentemperatur")
+                except (ValueError, TypeError):
+                    pass
+
+            # Starker Wind
+            if wind is not None:
+                try:
+                    w = float(wind)
+                    if w >= wind_warn:
+                        warnings.append(f"Sturmwarnung: Wind {w} km/h")
+                except (ValueError, TypeError):
+                    pass
+
+            # Gefaehrliche Wetterbedingungen
+            if condition in warn_conditions:
+                label = self._translate_weather_warning(condition)
+                warnings.append(f"Wetterwarnung: {label}")
+
+            # Forecast-Check: Kommt was Extremes?
+            forecast = attrs.get("forecast", [])
+            for fc in forecast[:3]:
+                fc_cond = fc.get("condition", "")
+                if fc_cond in warn_conditions:
+                    fc_time = fc.get("datetime", "bald")
+                    label = self._translate_weather_warning(fc_cond)
+                    warnings.append(f"Wettervorwarnung: {label} erwartet ({fc_time[:16]})")
+                    break  # Nur eine Vorwarnung
+
+            break  # Nur erste Weather-Entity
+
+        return warnings
+
+    @staticmethod
+    def _translate_weather_warning(condition: str) -> str:
+        """Uebersetzt gefaehrliche Wetterbedingungen."""
+        translations = {
+            "lightning": "Gewitter",
+            "lightning-rainy": "Gewitter mit Regen",
+            "hail": "Hagel",
+            "exceptional": "Extreme Wetterlage",
+        }
+        return translations.get(condition, condition)
 
     def _extract_alerts(self, states: list[dict]) -> list[str]:
         """Extrahiert aktive Warnungen."""

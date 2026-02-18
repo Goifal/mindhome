@@ -413,8 +413,28 @@ class ConflictResolver:
                     f"{self._describe_action(domain, resolution['modified_args'])}."
                 )
             else:
-                # Gleicher Trust -> Fallback zu average oder mediate
-                strategy = "average" if conflict_detail["type"] == "numeric" else "mediate"
+                # Gleicher Trust -> Raum-Scoping: Wer ist im Raum?
+                room_winner = self._resolve_by_room_presence(
+                    person_a, person_b, room,
+                )
+                if room_winner:
+                    winner = room_winner
+                    loser = person_b if room_winner == person_a else person_a
+                    resolution["winner"] = winner
+                    resolution["loser"] = loser
+                    resolution["action"] = "use_winner_values"
+                    resolution["modified_args"] = (
+                        command_a["args"] if winner == person_a else args_b
+                    )
+                    resolution["message"] = (
+                        f"Gleiches Vertrauenslevel, aber {winner.title()} ist gerade "
+                        f"{'im ' + room if room else 'naeher dran'}. "
+                        f"Entscheidung: {self._describe_action(domain, resolution['modified_args'])}."
+                    )
+                    resolution["strategy"] = "room_presence"
+                else:
+                    # Kein Raum-Vorteil -> Fallback zu average oder mediate
+                    strategy = "average" if conflict_detail["type"] == "numeric" else "mediate"
 
         # Strategie 2: Durchschnitt (nur numerisch)
         if strategy == "average" and conflict_detail["type"] == "numeric":
@@ -592,6 +612,56 @@ class ConflictResolver:
             position = args.get("position")
             return f"die Rolladen auf {position}%" if position else "die Rolladen entsprechend"
         return "es entsprechend"
+
+    def _resolve_by_room_presence(
+        self,
+        person_a: str,
+        person_b: str,
+        room: Optional[str],
+    ) -> Optional[str]:
+        """Versucht bei gleicher Trust-Stufe ueber Raum-Naehe zu entscheiden.
+
+        Prueft wer zuletzt im betroffenen Raum einen Befehl gegeben hat —
+        wer im Raum ist, hat Vorrang.
+
+        Returns:
+            Name des Gewinners oder None (kein Entscheid moeglich)
+        """
+        if not room:
+            return None
+
+        room_lower = room.lower()
+        now = time.time()
+
+        # Letzten Befehl im selben Raum pro Person finden
+        last_in_room_a = None
+        last_in_room_b = None
+
+        for cmd in reversed(self._recent_commands.get(person_a.lower(), [])):
+            cmd_room = cmd.get("room") or cmd.get("args", {}).get("room", "")
+            if cmd_room and cmd_room.lower() == room_lower:
+                last_in_room_a = cmd["timestamp"]
+                break
+
+        for cmd in reversed(self._recent_commands.get(person_b.lower(), [])):
+            cmd_room = cmd.get("room") or cmd.get("args", {}).get("room", "")
+            if cmd_room and cmd_room.lower() == room_lower:
+                last_in_room_b = cmd["timestamp"]
+                break
+
+        # Wer zuletzt im Raum aktiv war, hat Vorrang
+        if last_in_room_a and not last_in_room_b:
+            return person_a
+        if last_in_room_b and not last_in_room_a:
+            return person_b
+        if last_in_room_a and last_in_room_b:
+            # Wer aktueller ist = wahrscheinlich im Raum
+            if last_in_room_a > last_in_room_b:
+                return person_a
+            elif last_in_room_b > last_in_room_a:
+                return person_b
+
+        return None  # Kein Entscheid moeglich
 
     async def _save_history(self):
         """Speichert Konflikt-History in Redis."""

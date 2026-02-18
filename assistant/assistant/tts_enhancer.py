@@ -97,6 +97,11 @@ class TTSEnhancer:
         self.night_start = vol_cfg.get("night_start", 0)
         self.morning_start = vol_cfg.get("morning_start", 7)
 
+        # Auto-Nacht-Whisper: Automatisch Fluestern zwischen bestimmten Uhrzeiten
+        self.auto_night_whisper = tts_cfg.get("auto_night_whisper", True)
+        self.auto_whisper_start = vol_cfg.get("auto_whisper_start", 23)
+        self.auto_whisper_end = vol_cfg.get("auto_whisper_end", 6)
+
         # Zustand
         self._whisper_mode = False
 
@@ -173,8 +178,8 @@ class TTSEnhancer:
         if urgency == "critical":
             return self.vol_emergency
 
-        # Fluestermodus
-        if self._whisper_mode:
+        # Fluestermodus (manuell oder Auto-Nacht)
+        if self._whisper_mode or self._is_auto_night_whisper():
             return self.vol_whisper
 
         # Aktivitaetsbasiert
@@ -216,8 +221,18 @@ class TTSEnhancer:
 
     @property
     def is_whisper_mode(self) -> bool:
-        """Gibt zurueck ob Fluestermodus aktiv ist."""
-        return self._whisper_mode
+        """Gibt zurueck ob Fluestermodus aktiv ist (manuell oder Auto-Nacht)."""
+        return self._whisper_mode or self._is_auto_night_whisper()
+
+    def _is_auto_night_whisper(self) -> bool:
+        """Prueft ob Auto-Nacht-Whisper aktiv sein sollte."""
+        if not self.auto_night_whisper:
+            return False
+        hour = datetime.now().hour
+        if self.auto_whisper_start > self.auto_whisper_end:
+            # Ueber Mitternacht: z.B. 23-6
+            return hour >= self.auto_whisper_start or hour < self.auto_whisper_end
+        return self.auto_whisper_start <= hour < self.auto_whisper_end
 
     def _generate_ssml(self, text: str, message_type: str, speed: int) -> str:
         """

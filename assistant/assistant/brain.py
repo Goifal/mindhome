@@ -409,9 +409,13 @@ class AssistantBrain:
         # Phase 6: Formality Score laden
         formality_score = await self.personality.get_formality_score()
 
+        # Phase 6: Selbstironie-Zaehler aus Redis
+        irony_count = await self.personality._get_self_irony_count_today()
+
         # 4. System Prompt bauen (mit Phase 6 Erweiterungen)
         system_prompt = self.personality.build_system_prompt(
-            context, formality_score=formality_score
+            context, formality_score=formality_score,
+            irony_count_today=irony_count,
         )
 
         # Phase 6.7: Emotionale Intelligenz — Mood-Hint in System Prompt
@@ -468,8 +472,15 @@ class AssistantBrain:
 
         # Phase 8: Konversations-Kontinuitaet in Prompt einbauen
         if continuity_hint:
-            system_prompt += f"\n\nOFFENES THEMA: {continuity_hint}"
-            system_prompt += "\nErwaehne kurz das offene Thema, z.B.: 'Wir waren vorhin bei [Thema] — noch relevant?'"
+            if " | " in continuity_hint:
+                topics = continuity_hint.split(" | ")
+                system_prompt += f"\n\nOFFENE THEMEN ({len(topics)}):\n"
+                for t in topics:
+                    system_prompt += f"- {t}\n"
+                system_prompt += "Erwaehne kurz die offenen Themen: 'Wir hatten noch ein paar offene Punkte — [Topics]. Noch relevant?'"
+            else:
+                system_prompt += f"\n\nOFFENES THEMA: {continuity_hint}"
+                system_prompt += "\nErwaehne kurz das offene Thema, z.B.: 'Wir waren vorhin bei [Thema] — noch relevant?'"
 
         # Phase 8: Was-waere-wenn Erkennung
         whatif_prompt = self._get_whatif_prompt(text)
@@ -604,9 +615,10 @@ class AssistantBrain:
                             })
                             continue
 
-                    # Phase 10: Trust-Level Pre-Check
+                    # Phase 10: Trust-Level Pre-Check (mit Raum-Scoping)
                     if person:
-                        trust_check = self.autonomy.can_person_act(person, func_name)
+                        action_room = func_args.get("room", "") if isinstance(func_args, dict) else ""
+                        trust_check = self.autonomy.can_person_act(person, func_name, room=action_room)
                         if not trust_check["allowed"]:
                             logger.warning(
                                 "Trust-Check fehlgeschlagen: %s darf '%s' nicht (%s)",
@@ -1496,18 +1508,36 @@ Der User stellt eine hypothetische Frage. Beantworte sie:
     # ------------------------------------------------------------------
 
     async def _check_conversation_continuity(self) -> Optional[str]:
-        """Prueft ob es ein offenes Gespraechsthema gibt."""
+        """Prueft ob es offene Gespraechsthemen gibt.
+
+        Unterstuetzt mehrere Topics — gibt bis zu 3 als kombinierten
+        Hinweis zurueck, statt nur das aelteste.
+        """
         try:
             pending = await self.memory.get_pending_conversations()
-            if pending:
-                # Aeltestes offenes Thema nehmen
-                oldest = pending[0]
-                topic = oldest.get("topic", "")
-                age = oldest.get("age_minutes", 0)
+            if not pending:
+                return None
+
+            ready_topics = []
+            for item in pending:
+                topic = item.get("topic", "")
+                age = item.get("age_minutes", 0)
                 if topic and age >= 10:
-                    # Thema als erledigt markieren (wird nur 1x angeboten)
-                    await self.memory.resolve_conversation(topic)
-                    return topic
+                    ready_topics.append(topic)
+
+            if not ready_topics:
+                return None
+
+            # Bis zu 3 Topics anbieten, alle als erledigt markieren
+            topics_to_show = ready_topics[:3]
+            for topic in topics_to_show:
+                await self.memory.resolve_conversation(topic)
+
+            if len(topics_to_show) == 1:
+                return topics_to_show[0]
+
+            # Mehrere Topics: als Liste formatieren
+            return " | ".join(topics_to_show)
         except Exception as e:
             logger.debug("Fehler bei Konversations-Kontinuitaet: %s", e)
         return None

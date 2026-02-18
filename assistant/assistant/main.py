@@ -10,7 +10,8 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -71,6 +72,52 @@ app = FastAPI(
     version="1.1.0",
     lifespan=lifespan,
 )
+
+# ----- CORS Policy -----
+# Nur lokale Zugriffe erlauben (HA Add-on + lokale Clients)
+_cors_origins = os.getenv("CORS_ORIGINS", "").strip()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_cors_origins.split(",") if _cors_origins else [
+        "http://localhost",
+        "http://localhost:8123",
+        "http://homeassistant.local:8123",
+        f"http://localhost:{settings.assistant_port}",
+    ],
+    allow_credentials=True,
+    allow_methods=["GET", "POST"],
+    allow_headers=["*"],
+)
+
+# ----- Rate-Limiting (in-memory, pro IP) -----
+import time as _time
+from collections import defaultdict as _defaultdict
+
+_rate_limits: dict[str, list[float]] = _defaultdict(list)
+_RATE_WINDOW = 60        # Sekunden
+_RATE_MAX_REQUESTS = 60  # Max Requests pro Fenster
+
+
+@app.middleware("http")
+async def rate_limit_middleware(request: Request, call_next):
+    """Einfaches Rate-Limiting pro Client-IP."""
+    client_ip = request.client.host if request.client else "unknown"
+    now = _time.time()
+
+    # Alte Eintraege bereinigen
+    _rate_limits[client_ip] = [
+        t for t in _rate_limits[client_ip] if now - t < _RATE_WINDOW
+    ]
+
+    if len(_rate_limits[client_ip]) >= _RATE_MAX_REQUESTS:
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            status_code=429,
+            content={"detail": "Zu viele Anfragen. Bitte warten."},
+        )
+
+    _rate_limits[client_ip].append(now)
+    return await call_next(request)
 
 
 # ----- Request/Response Modelle -----

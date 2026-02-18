@@ -354,6 +354,58 @@ class MoodDetector:
 
         return suggestions
 
+    async def execute_suggested_actions(self, executor) -> list[dict]:
+        """
+        Fuehrt die vorgeschlagenen Stimmungs-Aktionen tatsaechlich aus.
+
+        Args:
+            executor: FunctionExecutor-Instanz
+
+        Returns:
+            Liste der ausgefuehrten Aktionen mit Ergebnis
+        """
+        if not executor:
+            return []
+
+        suggestions = self.get_suggested_actions()
+        executed = []
+
+        for suggestion in suggestions:
+            action = suggestion.get("action", "")
+            priority = suggestion.get("priority", "low")
+
+            # Nur interne Marker (kein HA-Service)
+            if action in ("simplify_responses", "reduce_notifications", "offer_help"):
+                continue
+
+            # Szenen und Licht-Aktionen ausfuehren
+            try:
+                if action.startswith("scene."):
+                    scene_name = action.split(".", 1)[1]
+                    result = await executor.execute("activate_scene", {"scene": scene_name})
+                    executed.append({
+                        "action": action,
+                        "reason": suggestion["reason"],
+                        "result": result,
+                    })
+                elif action == "light.dimmen":
+                    params = suggestion.get("params", {})
+                    result = await executor.execute("set_light", {
+                        "room": "wohnzimmer",
+                        "brightness": params.get("brightness_pct", 40),
+                    })
+                    executed.append({
+                        "action": action,
+                        "reason": suggestion["reason"],
+                        "result": result,
+                    })
+            except Exception as e:
+                logger.warning("Mood-Aktion '%s' fehlgeschlagen: %s", action, e)
+
+        if executed:
+            logger.info("Mood-Aktionen ausgefuehrt: %d", len(executed))
+        return executed
+
     def get_mood_prompt_hint(self) -> str:
         """
         Gibt einen Prompt-Hinweis basierend auf emotionalem Kontext zurueck.

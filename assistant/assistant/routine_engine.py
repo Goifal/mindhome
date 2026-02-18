@@ -169,10 +169,45 @@ class RoutineEngine:
         return ""
 
     async def _get_greeting_context(self, person: str) -> str:
-        """Kontextdaten fuer die Begrueassung."""
+        """Kontextdaten fuer die Begruessung, inkl. Geburtstags-Check."""
         now = datetime.now()
         weekday = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"][now.weekday()]
-        return f"Tag: {weekday}, {now.strftime('%d.%m.%Y')}, {now.strftime('%H:%M')} Uhr"
+        context = f"Tag: {weekday}, {now.strftime('%d.%m.%Y')}, {now.strftime('%H:%M')} Uhr"
+
+        # Geburtstags-Check
+        birthday = self._check_birthday(person, now)
+        if birthday:
+            context += f". {birthday}"
+
+        return context
+
+    def _check_birthday(self, person: str, now: datetime) -> str:
+        """Prueft ob heute jemand Geburtstag hat.
+
+        Konfiguriert in settings.yaml unter persons.birthdays.
+        """
+        persons_cfg = yaml_config.get("persons", {})
+        birthdays = persons_cfg.get("birthdays", {})
+
+        today = now.strftime("%m-%d")
+        messages = []
+
+        for name, date_str in birthdays.items():
+            # Format: "YYYY-MM-DD" oder "MM-DD"
+            bday = date_str[-5:] if len(date_str) > 5 else date_str
+            if bday == today:
+                if name.lower() == (person or "").lower():
+                    try:
+                        birth_year = int(date_str[:4]) if len(date_str) == 10 else None
+                        age = now.year - birth_year if birth_year else None
+                        age_text = f" ({age}. Geburtstag)" if age else ""
+                        messages.append(f"GEBURTSTAG: {name} hat heute Geburtstag{age_text}")
+                    except (ValueError, TypeError):
+                        messages.append(f"GEBURTSTAG: {name} hat heute Geburtstag")
+                else:
+                    messages.append(f"GEBURTSTAG: {name} hat heute Geburtstag")
+
+        return ". ".join(messages)
 
     async def _get_weather_briefing(self) -> str:
         """Holt Wetter-Daten.
@@ -658,9 +693,73 @@ Keine Aufzaehlungszeichen. Fliesstext."""
         logger.info("Gaeste-Modus aktiviert")
 
         parts = ["Gaeste-Modus aktiviert."]
-        if self.guest_restrictions.get("suggest_guest_wifi"):
+
+        # Gaeste-WLAN automatisch aktivieren wenn konfiguriert
+        wifi_cfg = self.guest_restrictions.get("guest_wifi", {})
+        if wifi_cfg.get("auto_enable", False) and self._executor:
+            try:
+                wifi_entity = wifi_cfg.get("switch_entity", "switch.guest_wifi")
+                result = await self._executor.execute("call_service", {
+                    "domain": "switch",
+                    "service": "turn_on",
+                    "entity_id": wifi_entity,
+                })
+                ssid = wifi_cfg.get("ssid", "Gast")
+                password = wifi_cfg.get("password", "")
+                parts.append(f"Gaeste-WLAN '{ssid}' ist aktiv.")
+                if password:
+                    parts.append(f"Passwort: {password}")
+                logger.info("Gaeste-WLAN aktiviert: %s", wifi_entity)
+            except Exception as e:
+                logger.warning("Gaeste-WLAN konnte nicht aktiviert werden: %s", e)
+                parts.append("Gaeste-WLAN konnte ich nicht aktivieren.")
+        elif self.guest_restrictions.get("suggest_guest_wifi"):
             parts.append("Soll ich das Gaeste-WLAN aktivieren?")
+
         return " ".join(parts)
+
+    async def activate_guest_wifi(self) -> str:
+        """Aktiviert das Gaeste-WLAN explizit (auf User-Befehl)."""
+        wifi_cfg = self.guest_restrictions.get("guest_wifi", {})
+        wifi_entity = wifi_cfg.get("switch_entity", "switch.guest_wifi")
+
+        if not self._executor:
+            return "Kein Executor verfuegbar."
+
+        try:
+            await self._executor.execute("call_service", {
+                "domain": "switch",
+                "service": "turn_on",
+                "entity_id": wifi_entity,
+            })
+            ssid = wifi_cfg.get("ssid", "Gast")
+            password = wifi_cfg.get("password", "")
+            msg = f"Gaeste-WLAN '{ssid}' ist jetzt aktiv."
+            if password:
+                msg += f" Passwort: {password}"
+            return msg
+        except Exception as e:
+            logger.error("Gaeste-WLAN Fehler: %s", e)
+            return "Das Gaeste-WLAN konnte nicht aktiviert werden."
+
+    async def deactivate_guest_wifi(self) -> str:
+        """Deaktiviert das Gaeste-WLAN."""
+        wifi_cfg = self.guest_restrictions.get("guest_wifi", {})
+        wifi_entity = wifi_cfg.get("switch_entity", "switch.guest_wifi")
+
+        if not self._executor:
+            return "Kein Executor verfuegbar."
+
+        try:
+            await self._executor.execute("call_service", {
+                "domain": "switch",
+                "service": "turn_off",
+                "entity_id": wifi_entity,
+            })
+            return "Gaeste-WLAN deaktiviert."
+        except Exception as e:
+            logger.error("Gaeste-WLAN Fehler: %s", e)
+            return "Das Gaeste-WLAN konnte nicht deaktiviert werden."
 
     async def deactivate_guest_mode(self) -> str:
         """Deaktiviert den Gaeste-Modus."""

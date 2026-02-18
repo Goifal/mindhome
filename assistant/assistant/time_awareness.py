@@ -54,6 +54,9 @@ class TimeAwareness:
         self.threshold_light_empty = thresholds.get("light_empty_room", 30)
         self.threshold_window_cold = thresholds.get("window_open_cold", 120)
         self.threshold_pc_no_break = thresholds.get("pc_no_break", 360)
+        self.threshold_washer = thresholds.get("washer", 180)
+        self.threshold_dryer = thresholds.get("dryer", 150)
+        self.threshold_dishwasher = thresholds.get("dishwasher", 180)
 
         # Welche Zaehler aktiv sind
         counters_cfg = ta_cfg.get("counters", {})
@@ -132,6 +135,36 @@ class TimeAwareness:
             states, ["switch.iron", "switch.buegeleisen"],
             self.threshold_iron, "iron",
             "Das Buegeleisen laeuft seit {minutes} Minuten. Noch in Benutzung?"
+        )
+        if alert:
+            alerts.append(alert)
+
+        # 2b. Waschmaschine
+        alert = await self._check_appliance(
+            states,
+            ["switch.washer", "switch.waschmaschine", "sensor.waschmaschine_status"],
+            self.threshold_washer, "washer",
+            "Die Waschmaschine laeuft seit {minutes} Minuten. Waesche duerfte fertig sein."
+        )
+        if alert:
+            alerts.append(alert)
+
+        # 2c. Trockner
+        alert = await self._check_appliance(
+            states,
+            ["switch.dryer", "switch.trockner", "sensor.trockner_status"],
+            self.threshold_dryer, "dryer",
+            "Der Trockner laeuft seit {minutes} Minuten. Zeitnah ausraeumen spart Buegeln."
+        )
+        if alert:
+            alerts.append(alert)
+
+        # 2d. Geschirrspueler
+        alert = await self._check_appliance(
+            states,
+            ["switch.dishwasher", "switch.geschirrspueler", "sensor.geschirrspueler_status"],
+            self.threshold_dishwasher, "dishwasher",
+            "Der Geschirrspueler laeuft seit {minutes} Minuten. Duerfte durchgelaufen sein."
         )
         if alert:
             alerts.append(alert)
