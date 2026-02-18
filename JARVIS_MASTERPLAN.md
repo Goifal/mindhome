@@ -1405,34 +1405,140 @@ Frequenz-Limit, Rollback, Kern-Identitaet ist geschuetzt, alles geloggt.
 
 ### Sicherheitsarchitektur Phase 13 (uebergreifend)
 
+#### Autorisierungsprotokoll (ab Stufe 13.2+)
+
+Fuer alle Selbstprogrammierungs-Aktionen ab Level 2 (Automationen, Tools, Prompt)
+gilt ein **3-Schritt-Autorisierungsprotokoll**. Jarvis fragt nicht wie ein Chatbot —
+er fragt wie ein Butler der weiss, dass er gerade etwas Ungewoehnliches vorhat.
+
+**Schritt 1 — Ankuendigung + Code-Abfrage:**
+Jarvis erkennt eine Gelegenheit zur Selbstmodifikation und wendet sich an den
+Hausbesitzer / die Hausbesitzerin.
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ JARVIS:                                                         │
+│ "Sir, ich haette da eine Idee. Freitags schalten Sie            │
+│  regelmaeßig das Wohnzimmer auf warm. Dafuer braeuchte ich      │
+│  allerdings eine Freigabe. Autorisierungscode?"                 │
+│                                                                 │
+│ Alternativ (je nach Kontext):                                   │
+│ "Sir, mir ist aufgefallen dass meine Antworten zu lang sind.    │
+│  Ich wuerde gerne etwas anpassen. Code?"                        │
+│                                                                 │
+│ "Ma'am, ich koennte ein Tool bauen das Ihren Stromverbrauch     │
+│  auswertet. Dazu braeuchte ich Ihre Freigabe. Code, bitte."     │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Schritt 2 — Code-Verifizierung:**
+Der Hausbesitzer nennt den vorab vergebenen Sicherheitscode.
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ USER:  "7749"                                                   │
+│                                                                 │
+│ JARVIS (Code korrekt):                                          │
+│ "Bestaetigt."                                                   │
+│                                                                 │
+│ JARVIS (Code falsch):                                           │
+│ "Negativ. Zugriff verweigert."                                  │
+│ → Abbruch. Wird geloggt. Nach 3 Fehlversuchen: 15 Min Sperre.  │
+│                                                                 │
+│ JARVIS (kein Code konfiguriert):                                │
+│ Warnung an Owner: "Kein Sicherheitscode gesetzt.                │
+│ Selbstprogrammierung deaktiviert bis Code vergeben."            │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Schritt 3 — Explizite Programmier-Erlaubnis:**
+Nach Code-Bestaetigung beschreibt Jarvis KONKRET was er tun will und fragt
+ein letztes Mal.
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ JARVIS:                                                         │
+│ "Ich wuerde eine Freitag-Routine anlegen: 18 Uhr, Wohnzimmer   │
+│  warm, Musik an. Darf ich?"                                     │
+│                                                                 │
+│ Alternativ:                                                     │
+│ "Konkret: max_sentences von 3 auf 2 senken. Erlaubnis?"        │
+│                                                                 │
+│ "Das Tool wuerde die Energy-Entities von Home Assistant lesen.  │
+│  Kein Schreibzugriff. Soll ich?"                                │
+│                                                                 │
+│ USER: "Ja" / "Mach" / "Erlaubt"                                │
+│ JARVIS: "Verstanden. Wird umgesetzt."                           │
+│                                                                 │
+│ USER: "Nein" / "Lass"                                           │
+│ JARVIS: "Verstanden. Belassen wir es."                          │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Wann gilt das Protokoll?**
+
+| Stufe | Protokoll | Begruendung |
+|:-----:|:---------:|-------------|
+| 13.1 Config (unkritisch) | Nur Schritt 3 (fragen ob ok) | Easter Eggs sind harmlos, kein Code noetig |
+| 13.2 Automationen | Voll (Schritt 1-3) | Automationen steuern echte Geraete |
+| 13.3 Tool-Generierung | Voll (Schritt 1-3) | Code-Generierung braucht maximale Kontrolle |
+| 13.4 Prompt-Optimierung | Voll (Schritt 1-3) | Aendert Jarvis' eigenes Verhalten |
+
+**Konfiguration in `settings.yaml`:**
+```yaml
+self_modification:
+  security_code_hash: "sha256:..."   # Vorab gesetzt vom Owner
+  max_failed_attempts: 3              # Danach 15 Min Sperre
+  lockout_minutes: 15
+  require_code_for:
+    - automations       # 13.2
+    - tools             # 13.3
+    - prompt_patches    # 13.4
+  # 13.1 (Config) braucht nur bestaetigung, keinen Code
+```
+
+**Umsetzung:**
+- NEU: `self_auth.py` — Autorisierungsprotokoll (Code-Hash-Vergleich, Lockout, Logging)
+- `brain.py`: Vor jeder Self-Mod-Aktion → `self_auth.authorize()` aufrufen
+- `personality.py`: Jarvis-Stil-Templates fuer Autorisierungs-Dialoge
+- Fehlversuche in Redis: `mha:selfmod:failed_attempts` (TTL 15 Min)
+- Audit-Log in Redis: `mha:selfmod:auth_log` (wer, wann, was, genehmigt/abgelehnt)
+
+---
+
+#### Sicherheitsschichten (ergaenzend zum Autorisierungsprotokoll)
+
 ```
 ┌─────────────────────────────────────────────────────┐
 │                SICHERHEITSSCHICHTEN                  │
 │                                                     │
-│  Stufe 1: Autonomie-Level Gate                      │
-│  ├─ Level 1-2: Alles vorher fragen                  │
-│  ├─ Level 3:   Config + Automationen selbst, Rest   │
-│  │             fragen                               │
-│  └─ Level 4:   Alles selbst, informiert danach      │
+│  Stufe 1: Autorisierungsprotokoll (NEU)             │
+│  ├─ 13.1: Einfache Bestaetigung                    │
+│  └─ 13.2-13.4: Code + Beschreibung + Bestaetigung  │
 │                                                     │
-│  Stufe 2: Whitelist / Blacklist                      │
+│  Stufe 2: Owner-Identifikation                      │
+│  ├─ Nur Owner/Hausbesitzer darf autorisieren        │
+│  ├─ Speaker Recognition (Phase 9.6) oder            │
+│  └─ Explizite Person-Angabe bei Text-Input          │
+│                                                     │
+│  Stufe 3: Whitelist / Blacklist                      │
 │  ├─ Configs: Nur whitelisted Dateien                │
 │  ├─ Tools: Sandbox (banned imports, max lines)       │
 │  ├─ Automationen: Keine Sicherheits-Entities        │
 │  └─ Prompt: Kern-Identitaet geschuetzt              │
 │                                                     │
-│  Stufe 3: Frequenz-Limits                           │
+│  Stufe 4: Frequenz-Limits                           │
 │  ├─ Configs: Max 5/Tag                              │
 │  ├─ Automationen: Max 3/Woche                       │
 │  ├─ Tools: Max 2/Woche                              │
 │  └─ Prompt: Max 2/Woche                             │
 │                                                     │
-│  Stufe 4: Logging + Rollback                        │
+│  Stufe 5: Logging + Rollback                        │
 │  ├─ Jede Aenderung mit Timestamp + Begruendung      │
 │  ├─ Letzte 10 Aenderungen rollback-faehig           │
 │  └─ User kann alles einsehen + rueckgaengig machen  │
 │                                                     │
-│  Stufe 5: Kill-Switch                               │
+│  Stufe 6: Kill-Switch                               │
 │  └─ "Jarvis, stopp Selbstprogrammierung"            │
 │     → Deaktiviert alles sofort                      │
 └─────────────────────────────────────────────────────┘
@@ -1462,8 +1568,9 @@ Frequenz-Limit, Rollback, Kern-Identitaet ist geschuetzt, alles geloggt.
 | Modul | Aenderung |
 |-------|---------|
 | `function_calling.py` | Neue Tools: `edit_config`, `create_automation`, `list_my_automations` |
-| `brain.py` | Self-Mod-Trigger: Erkennt "soll ich mir das merken als..." |
-| `personality.py` | Laedt Prompt-Patches dynamisch |
+| `brain.py` | Self-Mod-Trigger + Autorisierungsprotokoll vor jeder Aenderung |
+| `personality.py` | Laedt Prompt-Patches dynamisch + Autorisierungs-Dialog-Templates |
+| NEU: `self_auth.py` | 3-Schritt-Autorisierung (Code-Abfrage, Verifizierung, Erlaubnis) |
 | NEU: `self_automation.py` | Pattern → Automation Pipeline |
 | NEU: `tool_builder.py` | LLM-Code-Generierung + Sandbox-Validierung |
 | NEU: `self_optimizer.py` | Tagesanalyse + Prompt-Patch-Vorschlaege |
