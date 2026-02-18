@@ -48,6 +48,7 @@ from .proactive import ProactiveManager
 from .anticipation import AnticipationEngine
 from .intent_tracker import IntentTracker
 from .routine_engine import RoutineEngine
+from .self_automation import SelfAutomation
 from .sound_manager import SoundManager
 from .speaker_recognition import SpeakerRecognition
 from .summarizer import DailySummarizer
@@ -125,6 +126,9 @@ class AssistantBrain:
         # Phase 15.2: Vorrats-Tracking
         self.inventory = InventoryManager(self.ha)
 
+        # Phase 13.2: Self Automation (Automationen aus natuerlicher Sprache)
+        self.self_automation = SelfAutomation(self.ha, self.ollama)
+
         # Phase 11: Koch-Assistent
         self.cooking = CookingAssistant(self.ollama)
 
@@ -197,6 +201,9 @@ class AssistantBrain:
 
         # Phase 15.2: Inventory Manager initialisieren
         await self.inventory.initialize(redis_client=self.memory.redis)
+
+        # Phase 13.2: Self Automation initialisieren
+        await self.self_automation.initialize(redis_client=self.memory.redis)
 
         # Phase 14.3: Ambient Audio initialisieren und starten
         await self.ambient_audio.initialize(redis_client=self.memory.redis)
@@ -313,6 +320,19 @@ class AssistantBrain:
                     "model_used": "routine_engine",
                     "context_room": room or "unbekannt",
                 }
+
+        # Phase 13.2: Automation-Bestaetigung (VOR allem anderen)
+        automation_result = await self._handle_automation_confirmation(text)
+        if automation_result:
+            await self.memory.add_conversation("user", text)
+            await self.memory.add_conversation("assistant", automation_result)
+            await emit_speaking(automation_result)
+            return {
+                "response": automation_result,
+                "actions": [],
+                "model_used": "self_automation",
+                "context_room": room or "unbekannt",
+            }
 
         # Phase 8: Explizites Notizbuch — Memory-Befehle (VOR allem anderen)
         memory_result = await self._handle_memory_command(text, person or "")
@@ -584,7 +604,8 @@ class AssistantBrain:
 
             # 8. Function Calls ausfuehren
             # Tools die Daten zurueckgeben und eine LLM-formatierte Antwort brauchen
-            QUERY_TOOLS = {"get_entity_state", "send_message_to_person", "get_calendar_events"}
+            QUERY_TOOLS = {"get_entity_state", "send_message_to_person", "get_calendar_events",
+                          "create_automation", "list_jarvis_automations"}
             has_query_results = False
 
             if tool_calls:
@@ -1033,6 +1054,7 @@ class AssistantBrain:
                 "knowledge_base": f"active ({self.knowledge_base.chroma_collection.count() if self.knowledge_base.chroma_collection else 0} chunks)" if self.knowledge_base.chroma_collection else "disabled",
                 "ambient_audio": self.ambient_audio.health_status(),
                 "conflict_resolver": self.conflict_resolver.health_status(),
+                "self_automation": self.self_automation.health_status(),
             },
             "models_available": models,
             "model_routing": self.model_router.get_model_info(),
@@ -1260,6 +1282,50 @@ class AssistantBrain:
         except Exception as e:
             logger.debug("Tutorial-Check Fehler: %s", e)
             return None
+
+    # ------------------------------------------------------------------
+    # Phase 13.2: Automation-Bestaetigung
+    # ------------------------------------------------------------------
+
+    async def _handle_automation_confirmation(self, text: str) -> Optional[str]:
+        """Erkennt Automation-Bestaetigungen und fuehrt sie aus."""
+        if not self.self_automation.get_pending_count():
+            return None
+
+        text_lower = text.lower().strip().rstrip("!?.")
+
+        # Direkte Bestaetigung per ID: "Automation abc12345 bestaetigen"
+        import re
+        id_match = re.search(r"automation\s+([a-f0-9]{8})\s+bestaetig", text_lower)
+        if id_match:
+            pending_id = id_match.group(1)
+            result = await self.self_automation.confirm_automation(pending_id)
+            return result.get("message", "")
+
+        # Einfache Bestaetigung: "Ja" / "Ja, erstellen" / "Mach das"
+        confirm_triggers = [
+            "ja", "jo", "jap", "klar", "genau", "passt",
+            "ja, erstellen", "ja erstellen", "ja mach das",
+            "ja, aktivieren", "ja aktivieren", "erstellen",
+            "aktivieren", "ja bitte", "mach das", "bitte",
+        ]
+        if any(text_lower == t or text_lower.startswith(t + " ") or text_lower.startswith(t + ",") for t in confirm_triggers):
+            # Letztes Pending nehmen
+            pending_ids = list(self.self_automation._pending.keys())
+            if pending_ids:
+                result = await self.self_automation.confirm_automation(pending_ids[-1])
+                return result.get("message", "")
+
+        # Ablehnung
+        reject_triggers = [
+            "nein", "abbrechen", "cancel", "nicht erstellen", "doch nicht",
+        ]
+        if any(text_lower == t or text_lower.startswith(t) for t in reject_triggers):
+            if self.self_automation._pending:
+                self.self_automation._pending.clear()
+                return "Automation verworfen."
+
+        return None
 
     # ------------------------------------------------------------------
     # Phase 8: Memory-Befehle

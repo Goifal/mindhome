@@ -535,6 +535,70 @@ ASSISTANT_TOOLS = [
             },
         },
     },
+    # --- Phase 13.2: Self Automation ---
+    {
+        "type": "function",
+        "function": {
+            "name": "create_automation",
+            "description": "Erstellt eine neue Home Assistant Automation aus natuerlicher Sprache. Der User beschreibt was passieren soll, Jarvis generiert die Automation und fragt nach Bestaetigung.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "description": {
+                        "type": "string",
+                        "description": "Natuerlichsprachliche Beschreibung der Automation (z.B. 'Wenn ich nach Hause komme, mach das Licht an')",
+                    },
+                },
+                "required": ["description"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "confirm_automation",
+            "description": "Bestaetigt eine vorgeschlagene Automation und aktiviert sie in Home Assistant.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "pending_id": {
+                        "type": "string",
+                        "description": "ID der ausstehenden Automation (wird bei create_automation zurueckgegeben)",
+                    },
+                },
+                "required": ["pending_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_jarvis_automations",
+            "description": "Zeigt alle von Jarvis erstellten Automationen an.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "delete_jarvis_automation",
+            "description": "Loescht eine von Jarvis erstellte Automation.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "automation_id": {
+                        "type": "string",
+                        "description": "ID der Automation (z.B. jarvis_abc12345_20260218)",
+                    },
+                },
+                "required": ["automation_id"],
+            },
+        },
+    },
 ]
 
 
@@ -1506,6 +1570,13 @@ class FunctionExecutor:
                 "Eigene Config anpassen (Easter Eggs, Meinungen, Raeume)",
                 "Feedback-basierte Optimierung proaktiver Meldungen",
             ],
+            "automationen": [
+                "Automationen aus natuerlicher Sprache erstellen ('Wenn ich nach Hause komme, Licht an')",
+                "Sicherheits-Whitelist (nur erlaubte Services)",
+                "Vorschau + Bestaetigung vor Aktivierung",
+                "Jarvis-Automationen auflisten und loeschen",
+                "Kill-Switch: Alle Jarvis-Automationen deaktivieren",
+            ],
         }
 
         lines = ["Das kann ich fuer dich tun:\n"]
@@ -1517,6 +1588,51 @@ class FunctionExecutor:
             lines.append("")
 
         return {"success": True, "message": "\n".join(lines)}
+
+    # ------------------------------------------------------------------
+    # Phase 13.2: Self Automation
+    # ------------------------------------------------------------------
+
+    async def _exec_create_automation(self, args: dict) -> dict:
+        """Phase 13.2: Erstellt eine Automation aus natuerlicher Sprache."""
+        import assistant.main as main_module
+        brain = main_module.brain
+        self_auto = brain.self_automation
+
+        description = args.get("description", "")
+        if not description:
+            return {"success": False, "message": "Keine Beschreibung angegeben."}
+
+        return await self_auto.generate_automation(description)
+
+    async def _exec_confirm_automation(self, args: dict) -> dict:
+        """Phase 13.2: Bestaetigt eine ausstehende Automation."""
+        import assistant.main as main_module
+        brain = main_module.brain
+        self_auto = brain.self_automation
+
+        pending_id = args.get("pending_id", "")
+        if not pending_id:
+            return {"success": False, "message": "Keine Pending-ID angegeben."}
+
+        return await self_auto.confirm_automation(pending_id)
+
+    async def _exec_list_jarvis_automations(self, args: dict) -> dict:
+        """Phase 13.2: Listet alle Jarvis-Automationen auf."""
+        import assistant.main as main_module
+        brain = main_module.brain
+        return await brain.self_automation.list_jarvis_automations()
+
+    async def _exec_delete_jarvis_automation(self, args: dict) -> dict:
+        """Phase 13.2: Loescht eine Jarvis-Automation."""
+        import assistant.main as main_module
+        brain = main_module.brain
+
+        automation_id = args.get("automation_id", "")
+        if not automation_id:
+            return {"success": False, "message": "Keine Automation-ID angegeben."}
+
+        return await brain.self_automation.delete_jarvis_automation(automation_id)
 
     async def _find_entity(self, domain: str, search: str) -> Optional[str]:
         """Findet eine Entity anhand von Domain und Suchbegriff."""

@@ -846,3 +846,14 @@ maintenance:
   enabled: true
   # Wartungsaufgaben-Datei
   config_file: "config/maintenance.yaml"
+
+# --- Phase 13.2: Self Automation ---
+# Jarvis erstellt HA-Automationen aus natuerlicher Sprache
+self_automation:
+  enabled: true
+  # Maximale Automationen pro Tag (Rate-Limit)
+  max_per_day: 5
+  # Modell fuer Automation-Generierung (smart fuer gute Qualitaet)
+  model: "qwen3:14b"
+  # Templates-Datei (vordefinierte Automation-Muster)
+  templates_file: "config/automation_templates.yaml"

@@ -259,6 +259,131 @@ class HomeAssistantClient:
         logger.error("HA POST %s endgueltig fehlgeschlagen: %s", path, last_error)
         return None
 
+    async def _put_ha(self, path: str, data: dict) -> Any:
+        """PUT-Request an Home Assistant mit Retry."""
+        session = await self._get_session()
+        last_error = None
+
+        for attempt in range(MAX_RETRIES):
+            try:
+                async with session.put(
+                    f"{self.ha_url}{path}",
+                    headers=self._ha_headers,
+                    json=data,
+                ) as resp:
+                    if resp.status in (200, 201):
+                        return await resp.json()
+                    if 400 <= resp.status < 500:
+                        body = await resp.text()
+                        logger.warning(
+                            "HA PUT %s -> %d (Client-Fehler): %s",
+                            path, resp.status, body[:200],
+                        )
+                        return None
+                    body = await resp.text()
+                    logger.warning(
+                        "HA PUT %s -> %d (Versuch %d/%d): %s",
+                        path, resp.status, attempt + 1, MAX_RETRIES, body[:200],
+                    )
+                    last_error = f"HTTP {resp.status}"
+            except aiohttp.ClientError as e:
+                last_error = str(e)
+                logger.warning(
+                    "HA PUT %s fehlgeschlagen (Versuch %d/%d): %s",
+                    path, attempt + 1, MAX_RETRIES, e,
+                )
+            except asyncio.TimeoutError:
+                last_error = "Timeout"
+                logger.warning(
+                    "HA PUT %s Timeout (Versuch %d/%d)",
+                    path, attempt + 1, MAX_RETRIES,
+                )
+
+            if attempt < MAX_RETRIES - 1:
+                wait = RETRY_BACKOFF_BASE * (attempt + 1)
+                await asyncio.sleep(wait)
+
+        logger.error("HA PUT %s endgueltig fehlgeschlagen: %s", path, last_error)
+        return None
+
+    async def _delete_ha(self, path: str) -> bool:
+        """DELETE-Request an Home Assistant mit Retry."""
+        session = await self._get_session()
+        last_error = None
+
+        for attempt in range(MAX_RETRIES):
+            try:
+                async with session.delete(
+                    f"{self.ha_url}{path}",
+                    headers=self._ha_headers,
+                ) as resp:
+                    if resp.status in (200, 204):
+                        return True
+                    if 400 <= resp.status < 500:
+                        body = await resp.text()
+                        logger.warning(
+                            "HA DELETE %s -> %d (Client-Fehler): %s",
+                            path, resp.status, body[:200],
+                        )
+                        return False
+                    body = await resp.text()
+                    logger.warning(
+                        "HA DELETE %s -> %d (Versuch %d/%d): %s",
+                        path, resp.status, attempt + 1, MAX_RETRIES, body[:200],
+                    )
+                    last_error = f"HTTP {resp.status}"
+            except aiohttp.ClientError as e:
+                last_error = str(e)
+                logger.warning(
+                    "HA DELETE %s fehlgeschlagen (Versuch %d/%d): %s",
+                    path, attempt + 1, MAX_RETRIES, e,
+                )
+            except asyncio.TimeoutError:
+                last_error = "Timeout"
+                logger.warning(
+                    "HA DELETE %s Timeout (Versuch %d/%d)",
+                    path, attempt + 1, MAX_RETRIES,
+                )
+
+            if attempt < MAX_RETRIES - 1:
+                wait = RETRY_BACKOFF_BASE * (attempt + 1)
+                await asyncio.sleep(wait)
+
+        logger.error("HA DELETE %s endgueltig fehlgeschlagen: %s", path, last_error)
+        return False
+
+    # --- Oeffentliche Config-Methoden (fuer Automation, Script, etc.) ---
+
+    async def put_config(self, config_type: str, config_id: str, data: dict) -> bool:
+        """Erstellt/aktualisiert eine HA-Config (Automation, Script, etc.).
+
+        Args:
+            config_type: z.B. "automation", "script", "scene"
+            config_id: Eindeutige ID
+            data: Config-Daten
+
+        Returns:
+            True bei Erfolg
+        """
+        result = await self._put_ha(
+            f"/api/config/{config_type}/config/{config_id}", data
+        )
+        return result is not None
+
+    async def delete_config(self, config_type: str, config_id: str) -> bool:
+        """Loescht eine HA-Config (Automation, Script, etc.).
+
+        Args:
+            config_type: z.B. "automation", "script", "scene"
+            config_id: Eindeutige ID
+
+        Returns:
+            True bei Erfolg
+        """
+        return await self._delete_ha(
+            f"/api/config/{config_type}/config/{config_id}"
+        )
+
     async def _get_mindhome(self, path: str) -> Any:
         """GET-Request an MindHome Add-on mit Retry und Logging."""
         session = await self._get_session()
