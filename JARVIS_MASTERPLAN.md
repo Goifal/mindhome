@@ -1418,11 +1418,11 @@ als waere es eine Formalitaet die halt sein muss.
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │ JARVIS:                                                         │
-│ "Jeden Freitag, 18 Uhr, Wohnzimmer auf warm. Zum dritten Mal.  │
-│  Ich koennte das uebernehmen. Code."                            │
+│ "Sir. Jeden Freitag, 18 Uhr, Wohnzimmer auf warm. Zum dritten  │
+│  Mal. Ich koennte das uebernehmen. Code."                       │
 │                                                                 │
 │ "Meine Antworten waren dreimal zu lang diese Woche.             │
-│  Wuerde ich gern korrigieren. Code."                            │
+│  Wuerde ich gern korrigieren, Sir. Code."                       │
 │                                                                 │
 │ "Stromverbrauch PC — dafuer fehlt mir ein Werkzeug.             │
 │  Koennte eins bauen. Code."                                     │
@@ -1436,7 +1436,7 @@ Der Hausbesitzer nennt den vorab vergebenen Sicherheitscode.
 ┌─────────────────────────────────────────────────────────────────┐
 │ USER:  "7749"                                                   │
 │                                                                 │
-│ JARVIS (korrekt):  "Danke."                                     │
+│ JARVIS (korrekt):  "Danke, Sir."                                 │
 │                                                                 │
 │ JARVIS (falsch):   "Nein."                                      │
 │ → Abbruch. Wird geloggt. Nach 3 Fehlversuchen:                 │
@@ -1455,7 +1455,7 @@ ein letztes Mal.
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │ JARVIS:                                                         │
-│ "Freitag-Routine. 18 Uhr, Licht warm, Musik. Freigabe?"        │
+│ "Freitag-Routine. 18 Uhr, Licht warm, Musik. Freigabe, Sir?"    │
 │                                                                 │
 │ "Antwortlaenge von drei auf zwei Saetze. Freigabe?"             │
 │                                                                 │
@@ -1463,10 +1463,10 @@ ein letztes Mal.
 │  Freigabe?"                                                     │
 │                                                                 │
 │ USER: "Ja" / "Mach"                                             │
-│ JARVIS: "Erledigt."                                             │
+│ JARVIS: "Erledigt, Sir."                                        │
 │                                                                 │
 │ USER: "Nein" / "Lass"                                           │
-│ JARVIS: "Gut."                                                  │
+│ JARVIS: "Gut, Sir."                                             │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
