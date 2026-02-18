@@ -161,7 +161,10 @@ personality:
 proactive:
   enabled: true
   cooldown_seconds: 300  # Minimum 5 Minuten zwischen Meldungen
-
+  # Musik-Follow Cooldown (Minuten) bei Raumwechsel
+  music_follow_cooldown_minutes: 5
+  # Minimales Autonomie-Level fuer proaktive Meldungen
+  min_autonomy_level: 2
   # Wann NICHT melden (ausser Critical)
   silence_scenes:
     - "filmabend"
@@ -177,6 +180,10 @@ memory:
   extraction_min_words: 5
   # Modell fuer Fakten-Extraktion (schnelles reicht)
   extraction_model: "qwen3:4b"
+  # Temperatur fuer Fakten-Extraktion
+  extraction_temperature: 0.1
+  # Max Tokens fuer Fakten-Extraktion
+  extraction_max_tokens: 512
   # Maximale Fakten pro Person im Kontext
   max_person_facts_in_context: 5
   # Maximale relevante Fakten im Kontext
@@ -185,6 +192,10 @@ memory:
   min_confidence_for_context: 0.6
   # Duplikat-Schwelle (0.0 = exakt gleich, 1.0 = komplett anders)
   duplicate_threshold: 0.15
+  # Minimale Woerter um eine Episode zu speichern
+  episode_min_words: 3
+  # Default-Confidence fuer extrahierte Fakten
+  default_confidence: 0.7
 
 # --- Action Planner (Phase 4) ---
 planner:
@@ -192,6 +203,8 @@ planner:
   max_iterations: 5
   # Modell fuer Planung (immer smart)
   model: "qwen3:14b"
+  # Max Tokens fuer Planungs-Antwort
+  max_tokens: 512
   # Keywords die komplexe Anfragen erkennen
   complex_keywords:
     - "alles"
@@ -229,6 +242,56 @@ mood:
   # Ab welcher Uhrzeit gilt "spaet" (muede-Erkennung)
   tired_hour_start: 23
   tired_hour_end: 5
+  # Stress-Boost Werte (wie stark einzelne Signale wirken)
+  rapid_command_stress_boost: 0.15
+  positive_stress_reduction: 0.1
+  negative_stress_boost: 0.1
+  impatient_stress_boost: 0.2
+  tired_boost: 0.3
+  repetition_stress_boost: 0.15
+  # Keywords fuer Stimmungserkennung (koennen angepasst werden)
+  positive_keywords:
+    - "danke"
+    - "super"
+    - "toll"
+    - "perfekt"
+    - "gut"
+    - "prima"
+    - "klasse"
+    - "wunderbar"
+    - "genau"
+    - "richtig"
+  negative_keywords:
+    - "schlecht"
+    - "falsch"
+    - "nein"
+    - "nicht"
+    - "fehler"
+    - "mist"
+    - "nervig"
+    - "geht nicht"
+    - "kaputt"
+    - "problem"
+  impatient_keywords:
+    - "schnell"
+    - "sofort"
+    - "jetzt"
+    - "beeil"
+    - "hurry"
+    - "komm"
+    - "mach schon"
+    - "endlich"
+    - "wann"
+    - "noch nicht"
+  tired_keywords:
+    - "muede"
+    - "erschoepft"
+    - "kaputt"
+    - "fertig"
+    - "schlafen"
+    - "bett"
+    - "gaehn"
+    - "nacht"
 
 # --- Activity Engine + Silence Matrix (Phase 6) ---
 activity:
@@ -592,6 +655,16 @@ knowledge_base:
   chunk_overlap: 50
   # Maximale Distanz fuer Treffer (kleiner = strenger)
   max_distance: 1.2
+  # Wie viele RAG-Treffer im Kontext einbinden
+  search_limit: 3
+  # Unterstuetzte Datei-Endungen
+  supported_extensions:
+    - ".txt"
+    - ".md"
+    - ".yaml"
+    - ".yml"
+    - ".csv"
+    - ".log"
 
 # --- Phase 12: Response-Filter (Post-Processing) ---
 # Entfernt LLM-Floskeln und typische Chatbot-Muster aus Antworten.
@@ -642,6 +715,15 @@ response_filter:
     - "Tatsaechlich,"
   # 0 = kein Limit (nur Tageszeit-Max aus Personality gilt)
   max_response_sentences: 0
+
+# --- Korrektur-Lernen ---
+correction:
+  # Confidence fuer korrigierte Fakten (User hat korrigiert = sicher)
+  confidence: 0.95
+  # Modell fuer Korrektur-Extraktion (schnelles reicht)
+  model: "qwen3:4b"
+  # Temperatur fuer Korrektur-Extraktion
+  temperature: 0.1
 
 # --- Jarvis Dashboard (Web-UI) ---
 dashboard:
