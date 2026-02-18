@@ -52,6 +52,11 @@ ASSISTANT_TOOLS = [
                         "type": "integer",
                         "description": "Uebergangsdauer in Sekunden (optional, fuer sanftes Dimmen)",
                     },
+                    "color_temp": {
+                        "type": "string",
+                        "enum": ["warm", "neutral", "cold"],
+                        "description": "Farbtemperatur: warm (2700K), neutral (4000K), cold (6500K)",
+                    },
                 },
                 "required": ["room", "state"],
             },
@@ -125,7 +130,7 @@ ASSISTANT_TOOLS = [
         "type": "function",
         "function": {
             "name": "play_media",
-            "description": "Musik oder Medien steuern",
+            "description": "Musik oder Medien steuern, optional mit Suchanfrage",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -137,6 +142,10 @@ ASSISTANT_TOOLS = [
                         "type": "string",
                         "enum": ["play", "pause", "stop", "next", "previous"],
                         "description": "Medien-Aktion",
+                    },
+                    "query": {
+                        "type": "string",
+                        "description": "Suchanfrage fuer Musik (z.B. 'Jazz', 'Beethoven', 'Chill Playlist')",
                     },
                 },
                 "required": ["action"],
@@ -480,11 +489,21 @@ class FunctionExecutor:
         # Phase 9: Transition-Parameter (sanftes Dimmen)
         if "transition" in args:
             service_data["transition"] = args["transition"]
+        # Foundation F.4: Farbtemperatur (warm/neutral/cold)
+        _COLOR_TEMP_MAP = {"warm": 2700, "neutral": 4000, "cold": 6500}
+        if "color_temp" in args and state == "on":
+            kelvin = _COLOR_TEMP_MAP.get(args["color_temp"], 4000)
+            service_data["color_temp_kelvin"] = kelvin
 
         service = "turn_on" if state == "on" else "turn_off"
         success = await self.ha.call_service("light", service, service_data)
-        transition_info = f" (Transition: {args['transition']}s)" if "transition" in args else ""
-        return {"success": success, "message": f"Licht {room} {state}{transition_info}"}
+        extras = []
+        if "transition" in args:
+            extras.append(f"Transition: {args['transition']}s")
+        if "color_temp" in args:
+            extras.append(f"Farbtemperatur: {args['color_temp']}")
+        extra_str = f" ({', '.join(extras)})" if extras else ""
+        return {"success": success, "message": f"Licht {room} {state}{extra_str}"}
 
     async def _exec_set_climate(self, args: dict) -> dict:
         room = args["room"]
@@ -540,6 +559,19 @@ class FunctionExecutor:
 
         if not entity_id:
             return {"success": False, "message": "Kein Media Player gefunden"}
+
+        # Foundation F.5: Musik-Suche via query
+        query = args.get("query")
+        if query and action == "play":
+            success = await self.ha.call_service(
+                "media_player", "play_media",
+                {
+                    "entity_id": entity_id,
+                    "media_content_id": query,
+                    "media_content_type": "music",
+                },
+            )
+            return {"success": success, "message": f"Suche '{query}' wird abgespielt"}
 
         service_map = {
             "play": "media_play",
