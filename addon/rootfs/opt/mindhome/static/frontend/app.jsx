@@ -9853,7 +9853,7 @@ const JarvisChatPage = () => {
         setInput('');
 
         try {
-            const basePath = window.__mindhome_base || '';
+            const basePath = API_BASE;
             const xhr = new XMLHttpRequest();
             const result = await new Promise((resolve, reject) => {
                 xhr.open('POST', basePath + '/api/chat/upload');
@@ -9994,8 +9994,8 @@ const JarvisChatPage = () => {
     // Render file attachment inside a chat bubble
     const renderFile = (file, isUser) => {
         if (!file) return null;
-        const basePath = window.__mindhome_base || '';
-        const fileUrl = file._local ? file.url : (basePath + '/api/' + file.url);
+        const basePath = API_BASE;
+        const fileUrl = file._local ? file.url : (basePath + '/' + file.url);
         const textColor = isUser ? 'rgba(255,255,255,0.85)' : 'var(--text-muted)';
 
         const fileIcon = { image: 'mdi-image', video: 'mdi-video', audio: 'mdi-music', document: 'mdi-file-document-outline' }[file.type] || 'mdi-file';
