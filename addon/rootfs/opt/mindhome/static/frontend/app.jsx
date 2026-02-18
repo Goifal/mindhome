@@ -9756,8 +9756,14 @@ const JarvisChatPage = () => {
     const [connected, setConnected] = useState(null);
     const [showSettings, setShowSettings] = useState(false);
     const [assistantUrl, setAssistantUrl] = useState('');
+    const [pendingFile, setPendingFile] = useState(null); // { file, preview, type }
+    const [uploading, setUploading] = useState(false);
+    const [uploadProgress, setUploadProgress] = useState(0);
     const messagesEndRef = useRef(null);
     const inputRef = useRef(null);
+    const fileInputRef = useRef(null);
+
+    const MAX_FILE_MB = 50;
 
     const scrollToBottom = () => {
         if (messagesEndRef.current) {
@@ -9780,14 +9786,125 @@ const JarvisChatPage = () => {
         });
     }, []);
 
+    // Cleanup preview URL on unmount or file change
+    useEffect(() => {
+        return () => { if (pendingFile?.preview) URL.revokeObjectURL(pendingFile.preview); };
+    }, [pendingFile]);
+
+    const fileTypeFromName = (name) => {
+        const ext = (name || '').split('.').pop().toLowerCase();
+        const map = {
+            jpg: 'image', jpeg: 'image', png: 'image', gif: 'image', webp: 'image', svg: 'image', bmp: 'image',
+            mp4: 'video', webm: 'video', mov: 'video', avi: 'video',
+            mp3: 'audio', wav: 'audio', ogg: 'audio', m4a: 'audio',
+        };
+        return map[ext] || 'document';
+    };
+
+    const formatFileSize = (bytes) => {
+        if (bytes < 1024) return bytes + ' B';
+        if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+        return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    };
+
+    const handleFileSelect = (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        if (file.size > MAX_FILE_MB * 1024 * 1024) {
+            showToast(lang === 'de' ? `Datei zu groß (max ${MAX_FILE_MB} MB)` : `File too large (max ${MAX_FILE_MB} MB)`, 'error');
+            e.target.value = '';
+            return;
+        }
+        const type = fileTypeFromName(file.name);
+        const preview = (type === 'image' || type === 'video' || type === 'audio') ? URL.createObjectURL(file) : null;
+        setPendingFile({ file, preview, type });
+        e.target.value = '';
+    };
+
+    const cancelFile = () => {
+        if (pendingFile?.preview) URL.revokeObjectURL(pendingFile.preview);
+        setPendingFile(null);
+    };
+
+    const uploadFile = async () => {
+        if (!pendingFile || uploading) return;
+        setUploading(true);
+        setUploadProgress(0);
+
+        const formData = new FormData();
+        formData.append('file', pendingFile.file);
+        const caption = input.trim();
+        if (caption) formData.append('caption', caption);
+
+        // Optimistic: show user message with local preview
+        const optimisticMsg = {
+            role: 'user',
+            text: caption,
+            timestamp: new Date().toISOString(),
+            file: {
+                name: pendingFile.file.name,
+                type: pendingFile.type,
+                size: pendingFile.file.size,
+                url: pendingFile.preview || null,
+                _local: true,
+            },
+        };
+        setMessages(prev => [...prev, optimisticMsg]);
+        setInput('');
+
+        try {
+            const basePath = window.__mindhome_base || '';
+            const xhr = new XMLHttpRequest();
+            const result = await new Promise((resolve, reject) => {
+                xhr.open('POST', basePath + '/api/chat/upload');
+                xhr.upload.onprogress = (e) => {
+                    if (e.lengthComputable) setUploadProgress(Math.round((e.loaded / e.total) * 100));
+                };
+                xhr.onload = () => {
+                    try { resolve(JSON.parse(xhr.responseText)); }
+                    catch { reject(new Error('Invalid response')); }
+                };
+                xhr.onerror = () => reject(new Error('Upload failed'));
+                xhr.send(formData);
+            });
+
+            if (result && result.file) {
+                // Replace optimistic message's local URL with server URL
+                setMessages(prev => {
+                    const updated = [...prev];
+                    for (let i = updated.length - 1; i >= 0; i--) {
+                        if (updated[i].file?._local && updated[i].file?.name === pendingFile.file.name) {
+                            updated[i] = { ...updated[i], file: result.file, timestamp: result.timestamp || updated[i].timestamp };
+                            break;
+                        }
+                    }
+                    return updated;
+                });
+            }
+        } catch (err) {
+            setMessages(prev => [...prev, {
+                role: 'error',
+                text: lang === 'de' ? 'Upload fehlgeschlagen: ' + err.message : 'Upload failed: ' + err.message,
+                timestamp: new Date().toISOString(),
+            }]);
+        }
+
+        setPendingFile(null);
+        setUploading(false);
+        setUploadProgress(0);
+        if (inputRef.current) inputRef.current.focus();
+    };
+
     const sendMessage = async () => {
+        // If a file is pending, upload it instead of sending text
+        if (pendingFile) { uploadFile(); return; }
+
         const text = input.trim();
         if (!text || sending) return;
 
         setInput('');
         setSending(true);
 
-        // Optimistic: show user message immediately
         const userMsg = { role: 'user', text, timestamp: new Date().toISOString() };
         setMessages(prev => [...prev, userMsg]);
 
@@ -9830,7 +9947,6 @@ const JarvisChatPage = () => {
         await api.put('system/settings/assistant_url', { value: assistantUrl });
         showToast(lang === 'de' ? 'Gespeichert' : 'Saved', 'success');
         setShowSettings(false);
-        // Re-check connection with cache bust
         api.invalidate('chat/status');
         setTimeout(() => {
             api.get('chat/status').then(d => { if (d) setConnected(d.connected); });
@@ -9856,6 +9972,71 @@ const JarvisChatPage = () => {
                     }, React.createElement('span', { className: 'mdi mdi-flash', style: { marginRight: 2 } }), a.function || a.action || JSON.stringify(a))
                 ))
             )
+        );
+    };
+
+    // Render file attachment inside a chat bubble
+    const renderFile = (file, isUser) => {
+        if (!file) return null;
+        const basePath = window.__mindhome_base || '';
+        const fileUrl = file._local ? file.url : (basePath + '/api/' + file.url);
+        const textColor = isUser ? 'rgba(255,255,255,0.85)' : 'var(--text-muted)';
+
+        const fileIcon = { image: 'mdi-image', video: 'mdi-video', audio: 'mdi-music', document: 'mdi-file-document-outline' }[file.type] || 'mdi-file';
+
+        // Image
+        if (file.type === 'image' && fileUrl) {
+            return React.createElement('div', { style: { marginBottom: 6 } },
+                React.createElement('img', {
+                    src: fileUrl,
+                    alt: file.name,
+                    style: { maxWidth: '100%', maxHeight: 280, borderRadius: 8, display: 'block', cursor: 'pointer' },
+                    onClick: () => window.open(fileUrl, '_blank'),
+                })
+            );
+        }
+
+        // Video
+        if (file.type === 'video' && fileUrl) {
+            return React.createElement('div', { style: { marginBottom: 6 } },
+                React.createElement('video', {
+                    src: fileUrl,
+                    controls: true,
+                    style: { maxWidth: '100%', maxHeight: 280, borderRadius: 8, display: 'block' },
+                })
+            );
+        }
+
+        // Audio
+        if (file.type === 'audio' && fileUrl) {
+            return React.createElement('div', { style: { marginBottom: 6 } },
+                React.createElement('audio', {
+                    src: fileUrl,
+                    controls: true,
+                    style: { width: '100%', maxWidth: 300 },
+                })
+            );
+        }
+
+        // Document / fallback
+        return React.createElement('a', {
+            href: fileUrl || '#',
+            target: '_blank',
+            rel: 'noopener noreferrer',
+            style: {
+                display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px',
+                background: isUser ? 'rgba(255,255,255,0.15)' : 'var(--bg-tertiary)',
+                borderRadius: 8, marginBottom: 6, textDecoration: 'none', color: 'inherit',
+            }
+        },
+            React.createElement('span', { className: 'mdi ' + fileIcon, style: { fontSize: 24, color: textColor } }),
+            React.createElement('div', { style: { flex: 1, minWidth: 0 } },
+                React.createElement('div', { style: { fontSize: 13, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, file.name),
+                React.createElement('div', { style: { fontSize: 11, color: textColor } },
+                    file.ext ? file.ext.toUpperCase() : '', file.size ? ' · ' + formatFileSize(file.size) : ''
+                )
+            ),
+            React.createElement('span', { className: 'mdi mdi-download', style: { fontSize: 18, color: textColor } })
         );
     };
 
@@ -9990,7 +10171,10 @@ const JarvisChatPage = () => {
                                 className: 'mdi mdi-alert-circle',
                                 style: { marginRight: 4 }
                             }),
-                            React.createElement('div', {
+                            // Render file attachment if present
+                            msg.file && renderFile(msg.file, msg.role === 'user'),
+                            // Text content
+                            msg.text && React.createElement('div', {
                                 style: { whiteSpace: 'pre-wrap' }
                             }, msg.text),
                             msg.role === 'assistant' && renderActions(msg.actions),
@@ -10025,21 +10209,91 @@ const JarvisChatPage = () => {
                 React.createElement('div', { ref: messagesEndRef })
             ),
 
+            // File preview bar (shown when a file is selected)
+            pendingFile && React.createElement('div', {
+                className: 'animate-in',
+                style: {
+                    display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px',
+                    background: 'var(--bg-secondary)', borderRadius: '12px 12px 0 0',
+                    borderTop: '1px solid var(--border-color)', flexShrink: 0,
+                }
+            },
+                // Thumbnail or icon
+                pendingFile.type === 'image' && pendingFile.preview
+                    ? React.createElement('img', {
+                        src: pendingFile.preview,
+                        style: { width: 48, height: 48, borderRadius: 6, objectFit: 'cover' }
+                    })
+                    : React.createElement('span', {
+                        className: 'mdi ' + ({ video: 'mdi-video', audio: 'mdi-music', document: 'mdi-file-document-outline' }[pendingFile.type] || 'mdi-file'),
+                        style: { fontSize: 32, color: 'var(--accent-primary)' }
+                    }),
+                // File info
+                React.createElement('div', { style: { flex: 1, minWidth: 0 } },
+                    React.createElement('div', { style: { fontSize: 13, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } },
+                        pendingFile.file.name
+                    ),
+                    React.createElement('div', { style: { fontSize: 11, color: 'var(--text-muted)' } },
+                        formatFileSize(pendingFile.file.size)
+                    ),
+                    // Upload progress bar
+                    uploading && React.createElement('div', {
+                        style: { marginTop: 4, background: 'var(--bg-tertiary)', borderRadius: 4, height: 4, overflow: 'hidden' }
+                    },
+                        React.createElement('div', {
+                            style: { height: '100%', background: 'var(--accent-primary)', borderRadius: 4, width: uploadProgress + '%', transition: 'width 0.2s' }
+                        })
+                    )
+                ),
+                // Cancel button
+                !uploading && React.createElement('button', {
+                    className: 'btn btn-ghost btn-icon',
+                    onClick: cancelFile,
+                    title: lang === 'de' ? 'Abbrechen' : 'Cancel',
+                    style: { flexShrink: 0 }
+                }, React.createElement('span', { className: 'mdi mdi-close', style: { fontSize: 18 } }))
+            ),
+
             // Input area
             React.createElement('div', {
                 style: {
                     display: 'flex', gap: 8, alignItems: 'flex-end',
-                    paddingTop: 12, borderTop: '1px solid var(--border-color)',
+                    paddingTop: pendingFile ? 0 : 12,
+                    borderTop: pendingFile ? 'none' : '1px solid var(--border-color)',
                     flexShrink: 0,
                 }
             },
+                // Hidden file input
+                React.createElement('input', {
+                    ref: fileInputRef,
+                    type: 'file',
+                    accept: 'image/*,video/*,audio/*,.pdf,.txt,.csv,.json,.xml,.doc,.docx,.xls,.xlsx,.pptx',
+                    style: { display: 'none' },
+                    onChange: handleFileSelect,
+                }),
+                // Paperclip button
+                React.createElement('button', {
+                    className: 'btn btn-ghost btn-icon',
+                    onClick: () => fileInputRef.current?.click(),
+                    disabled: uploading,
+                    title: lang === 'de' ? 'Datei anhängen' : 'Attach file',
+                    style: {
+                        width: 42, height: 42, borderRadius: '50%', padding: 0,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        flexShrink: 0,
+                    },
+                },
+                    React.createElement('span', { className: 'mdi mdi-paperclip', style: { fontSize: 20 } })
+                ),
                 React.createElement('textarea', {
                     ref: inputRef,
                     className: 'input',
                     value: input,
                     onChange: (e) => setInput(e.target.value),
                     onKeyDown: handleKeyDown,
-                    placeholder: lang === 'de' ? 'Schreib Jarvis eine Nachricht...' : 'Type a message to Jarvis...',
+                    placeholder: pendingFile
+                        ? (lang === 'de' ? 'Beschreibung (optional)...' : 'Caption (optional)...')
+                        : (lang === 'de' ? 'Schreib Jarvis eine Nachricht...' : 'Type a message to Jarvis...'),
                     rows: 1,
                     style: {
                         flex: 1, resize: 'none', minHeight: 42, maxHeight: 120,
@@ -10050,7 +10304,7 @@ const JarvisChatPage = () => {
                 React.createElement('button', {
                     className: 'btn btn-primary',
                     onClick: sendMessage,
-                    disabled: !input.trim() || sending,
+                    disabled: (!input.trim() && !pendingFile) || sending || uploading,
                     style: {
                         width: 42, height: 42, borderRadius: '50%', padding: 0,
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -10058,7 +10312,7 @@ const JarvisChatPage = () => {
                     },
                 },
                     React.createElement('span', {
-                        className: sending ? 'mdi mdi-loading mdi-spin' : 'mdi mdi-send',
+                        className: (sending || uploading) ? 'mdi mdi-loading mdi-spin' : pendingFile ? 'mdi mdi-upload' : 'mdi mdi-send',
                         style: { fontSize: 18 }
                     })
                 )

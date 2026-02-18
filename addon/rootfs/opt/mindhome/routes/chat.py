@@ -2,13 +2,17 @@
 """
 MindHome API Routes - Jarvis Chat
 Proxies chat messages to the MindHome Assistant (PC 2) and stores conversation history.
+Supports file uploads (images, videos, documents) in chat.
 """
 
 import logging
+import os
 import time
+import uuid
 import requests
 from datetime import datetime, timezone
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, send_from_directory
+from werkzeug.utils import secure_filename
 
 from helpers import get_setting, set_setting
 
@@ -23,11 +27,45 @@ _deps = {}
 _conversation_history = []
 MAX_HISTORY = 200
 
+# Upload configuration
+UPLOAD_DIR = "/data/mindhome/uploads"
+MAX_FILE_SIZE = 50 * 1024 * 1024  # 50 MB
+ALLOWED_EXTENSIONS = {
+    # Images
+    "jpg", "jpeg", "png", "gif", "webp", "svg", "bmp",
+    # Videos
+    "mp4", "webm", "mov", "avi",
+    # Documents
+    "pdf", "txt", "csv", "json", "xml",
+    "doc", "docx", "xls", "xlsx", "pptx",
+    # Audio
+    "mp3", "wav", "ogg", "m4a",
+}
+FILE_TYPE_MAP = {
+    "jpg": "image", "jpeg": "image", "png": "image", "gif": "image",
+    "webp": "image", "svg": "image", "bmp": "image",
+    "mp4": "video", "webm": "video", "mov": "video", "avi": "video",
+    "mp3": "audio", "wav": "audio", "ogg": "audio", "m4a": "audio",
+    "pdf": "document", "txt": "document", "csv": "document",
+    "json": "document", "xml": "document",
+    "doc": "document", "docx": "document",
+    "xls": "document", "xlsx": "document", "pptx": "document",
+}
+
+
+def _allowed_file(filename):
+    return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
+
+
+def _ensure_upload_dir():
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
+
 
 def init_chat(dependencies):
     """Initialize chat routes with shared dependencies."""
     global _deps
     _deps = dependencies
+    _ensure_upload_dir()
 
 
 def _get_assistant_url():
@@ -166,3 +204,85 @@ def api_chat_status():
         return jsonify({"connected": False, "assistant_url": assistant_url, "error": f"Status {resp.status_code}"})
     except Exception as e:
         return jsonify({"connected": False, "assistant_url": assistant_url, "error": str(e)})
+
+
+# ------------------------------------------------------------------
+# File upload & serving
+# ------------------------------------------------------------------
+
+@chat_bp.route("/api/chat/upload", methods=["POST"])
+def api_chat_upload():
+    """
+    Upload a file in the chat.
+
+    Accepts multipart/form-data with field 'file'.
+    Stores in /data/mindhome/uploads/ with a unique name.
+    Returns file metadata + URL for display.
+    """
+    if "file" not in request.files:
+        return jsonify({"error": "Keine Datei angegeben"}), 400
+
+    file = request.files["file"]
+    if not file or not file.filename:
+        return jsonify({"error": "Keine Datei ausgewählt"}), 400
+
+    if not _allowed_file(file.filename):
+        return jsonify({"error": "Dateityp nicht erlaubt"}), 400
+
+    # Check file size (read into memory, enforce limit)
+    file.seek(0, 2)
+    size = file.tell()
+    file.seek(0)
+    if size > MAX_FILE_SIZE:
+        mb = MAX_FILE_SIZE // (1024 * 1024)
+        return jsonify({"error": f"Datei zu groß (max {mb} MB)"}), 413
+
+    # Generate unique filename
+    orig = secure_filename(file.filename)
+    ext = orig.rsplit(".", 1)[1].lower() if "." in orig else ""
+    unique_name = f"{uuid.uuid4().hex[:12]}_{orig}"
+
+    _ensure_upload_dir()
+    dest = os.path.join(UPLOAD_DIR, unique_name)
+    file.save(dest)
+
+    file_type = FILE_TYPE_MAP.get(ext, "document")
+    url = f"api/chat/files/{unique_name}"
+
+    # Store as chat message
+    person = request.form.get("person", get_setting("primary_user", "Max"))
+    caption = request.form.get("caption", "").strip()
+
+    user_msg = {
+        "role": "user",
+        "text": caption,
+        "person": person,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "file": {
+            "name": orig,
+            "url": url,
+            "type": file_type,
+            "size": size,
+            "ext": ext,
+        },
+    }
+    _conversation_history.append(user_msg)
+
+    while len(_conversation_history) > MAX_HISTORY:
+        _conversation_history.pop(0)
+
+    logger.info("Chat file uploaded: %s (%s, %d bytes)", orig, file_type, size)
+
+    return jsonify({
+        "file": user_msg["file"],
+        "timestamp": user_msg["timestamp"],
+    })
+
+
+@chat_bp.route("/api/chat/files/<path:filename>", methods=["GET"])
+def api_chat_serve_file(filename):
+    """Serve an uploaded chat file."""
+    safe = secure_filename(filename)
+    if not safe or not os.path.isfile(os.path.join(UPLOAD_DIR, safe)):
+        return jsonify({"error": "Datei nicht gefunden"}), 404
+    return send_from_directory(UPLOAD_DIR, safe)

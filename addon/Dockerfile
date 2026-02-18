@@ -31,7 +31,8 @@ RUN mkdir -p /opt/mindhome/static/frontend/lib \
 RUN mkdir -p /data/mindhome/db \
     && mkdir -p /data/mindhome/models \
     && mkdir -p /data/mindhome/backups \
-    && mkdir -p /data/mindhome/logs
+    && mkdir -p /data/mindhome/logs \
+    && mkdir -p /data/mindhome/uploads
 
 # Set permissions
 RUN chmod a+x /opt/mindhome/run.sh
