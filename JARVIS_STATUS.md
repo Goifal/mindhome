@@ -1,7 +1,7 @@
 # JARVIS ASSISTANT — STATUS & ANALYSE
 
 > Letzte Aktualisierung: 2026-02-18
-> Commit: — Foundation-Features + Sicherheits-Features
+> Commit: — Ambient Audio + Conflict Resolution
 
 ---
 
@@ -9,11 +9,11 @@
 
 | Kategorie | Score | Trend |
 |-----------|:-----:|:-----:|
-| **Funktionsumfang (vs. Masterplan)** | **87.5%** | +2.4% |
-| **Jarvis-Authentizitaet (vs. MCU Jarvis)** | **81.0%** | +2.0% |
-| **Sicherheit** | **93%** | +5% |
+| **Funktionsumfang (vs. Masterplan)** | **90.2%** | +2.7% |
+| **Jarvis-Authentizitaet (vs. MCU Jarvis)** | **83.0%** | +2.0% |
+| **Sicherheit** | **93%** | — |
 | **Code-Qualitaet** | **85%** | — |
-| **Konfigurierbarkeit** | **95%** | — |
+| **Konfigurierbarkeit** | **96%** | +1% |
 
 ---
 
@@ -123,13 +123,13 @@
 
 ---
 
-## PHASE 14 — Wahrnehmung & Sinne (0.0%)
+## PHASE 14 — Wahrnehmung & Sinne (30.0%)
 
 | # | Feature | Status | % | Details |
 |---|---------|:------:|:-:|---------|
 | 14.1 | Vision / Kamera | **OFFEN** | 0% | **FEHLT: vision.py, YOLO/LLaVA** |
 | 14.2 | Multi-Modal Input | **OFFEN** | 0% | **FEHLT: Foto-Upload, OCR** |
-| 14.3 | Ambient Audio | **OFFEN** | 0% | **FEHLT: ambient.py** |
+| 14.3 | Ambient Audio | DONE | 90% | ambient_audio.py: 9 Event-Typen, HA-Sensor-Polling, Webhook-API, Nachtmodus, Cooldowns. **Luecke:** Kein Audio-Stream-Klassifizierer (nur Sensoren) |
 
 ---
 
@@ -144,11 +144,11 @@
 
 ---
 
-## PHASE 16 — Jarvis fuer Alle (50.0%)
+## PHASE 16 — Jarvis fuer Alle (90.0%)
 
 | # | Feature | Status | % | Details |
 |---|---------|:------:|:-:|---------|
-| 16.1 | Konfliktloesung | **OFFEN** | 5% | Trust-Levels da. **FEHLT: Mediations-Prompts** |
+| 16.1 | Konfliktloesung | DONE | 90% | conflict_resolver.py: 3 Strategien (trust_priority, average, LLM-Mediation), 4 Domains (Klima/Licht/Medien/Cover), Jarvis-Personality im Mediations-Prompt. **Luecke:** Kein Raum-Scoping bei Gleichrang |
 | 16.2 | Onboarding / "Was kannst du?" | DONE | 95% | 9 Kategorien, Direkterkennung, Tutorial-Modus (10 Tipps fuer neue User) |
 | 16.3 | Dashboard | DONE | 85% | 9 Tabs (inkl. Easter Eggs), 160+ Settings, PIN+Recovery. **Luecke:** Kein Live-Status |
 
@@ -197,6 +197,7 @@
 | 2026-02-18 | `49af21f` | PIN-Setup + Recovery-Key System | Sicherheit +8% |
 | 2026-02-18 | `0ef17e5` | Token-Expiry, Offline-Fonts, Config-Selbstmod., Einkaufsliste, Capabilities | Gesamt +2.8%, Jarvis +3% |
 | 2026-02-18 | `bee5f96` | JARVIS_STATUS.md erstellt, Foundation-Audit (5 fehlende Basis-Features) | — |
+| 2026-02-18 | `a6e63b8` | Phase 14.3 Ambient Audio (9 Events, Sensor-Polling, Webhook, Nachtmodus) + Phase 16.1 Konfliktloesung (3 Strategien, LLM-Mediation, Jarvis-Ton) | Gesamt +2.7%, Phase 14: 0→30%, Phase 16: 50→90% |
 | 2026-02-18 | — | Foundation F.1-F.5 (Voice, Proactive-Trigger, Audio-WS, color_temp, query), Session-Timeout, Audit-Logging | Gesamt +2.4%, Sicherheit +5% |
 
 ---
@@ -227,8 +228,8 @@
 | 8 | Phase 13.2: HA-Automationen generieren | 6 Std | OFFEN |
 | 9 | Phase 13.4: Prompt-Selbstoptimierung | 8 Std | OFFEN |
 | 10 | Phase 14.1: Vision / Kamera-Analyse | 10 Std | OFFEN |
-| 11 | Phase 14.3: Ambient Audio | 4 Std | OFFEN |
-| 12 | Phase 16.1: Multi-User Konfliktloesung | 4 Std | OFFEN |
+| 11 | Phase 14.3: Ambient Audio | 4 Std | DONE |
+| 12 | Phase 16.1: Multi-User Konfliktloesung | 4 Std | DONE |
 | 13 | Phase 12.5: Fine-Tuning (LoRA) | Wochen | OFFEN |
 | 14 | Phase 13.3: Tool-Builder (Plugins) | 8 Std | OFFEN |
 | 15 | Phase 14.2: Multi-Modal Input (OCR) | 6 Std | OFFEN |
@@ -239,16 +240,16 @@
 
 ```
 Phase  6 (Persoenlichkeit)  93.5%  ███████████████████▓░
+Phase 16 (fuer Alle)        90.0%  ██████████████████░░░
 Phase  7 (Routinen)         86.1%  █████████████████▓░░░
 Phase 11 (Wissen)           85.0%  █████████████████░░░░
 Phase  8 (Gedaechtnis)      84.3%  █████████████████░░░░
 Phase 10 (Multi-Room)       84.0%  █████████████████░░░░
 Phase  9 (Stimme)           76.7%  ███████████████▓░░░░░
+Phase 15 (Haushalt)         67.5%  █████████████▓░░░░░░░
 Phase 12 (Authentizitaet)   58.0%  ████████████░░░░░░░░░
-Phase 16 (fuer Alle)        50.0%  ██████████░░░░░░░░░░░
-Phase 15 (Haushalt)         35.0%  ███████░░░░░░░░░░░░░░
+Phase 14 (Wahrnehmung)      30.0%  ██████░░░░░░░░░░░░░░░
 Phase 13 (Selbstprog.)      25.0%  █████░░░░░░░░░░░░░░░░
-Phase 14 (Wahrnehmung)       0.0%  ░░░░░░░░░░░░░░░░░░░░░
 ```
 
 ---
@@ -276,6 +277,8 @@ Phase 14 (Wahrnehmung)       0.0%  ░░░░░░░░░░░░░░░
 | intent_tracker.py | ~340 | Intent-Extraktion, Deadline-Erinnerungen |
 | speaker_recognition.py | ~445 | Personen-Erkennung, Profile |
 | sound_manager.py | ~295 | Event-Sounds, Nacht-Volume |
+| ambient_audio.py | ~380 | Umgebungsgeraeusch-Erkennung, 9 Event-Typen |
+| conflict_resolver.py | ~480 | Multi-User Konfliktloesung, 3 Strategien |
 | autonomy.py | ~225 | Autonomie-Level, Trust-System |
 | activity.py | ~200 | Aktivitaets-Erkennung, Silence-Matrix |
 | feedback.py | ~250 | Feedback-Tracking, Score-basierte Cooldowns |
@@ -286,15 +289,15 @@ Phase 14 (Wahrnehmung)       0.0%  ░░░░░░░░░░░░░░░
 | websocket.py | ~100 | WebSocket Event-Emitter |
 | file_handler.py | ~150 | Datei-Upload, Text-Extraktion |
 | index.html | ~2500 | Dashboard SPA (8 Tabs, Auth, Settings) |
-| settings.yaml | ~740 | Hauptkonfiguration (25+ Sektionen) |
+| settings.yaml | ~850 | Hauptkonfiguration (27+ Sektionen) |
 | easter_eggs.yaml | ~80 | 12 Easter Eggs |
 | opinion_rules.yaml | ~120 | 76 Meinungsregeln |
 | room_profiles.yaml | ~200 | 6 Raeume + Saisonal |
 | maintenance.yaml | ~50 | 5 Wartungsaufgaben |
 
-**Gesamt: ~14.800+ Zeilen Code, 33+ Dateien**
+**Gesamt: ~15.600+ Zeilen Code, 35+ Dateien**
 
 ---
 
-> **Hinweis:** 15 offene Punkte insgesamt (2 Quick-Wins, 5 mittlerer Aufwand, 8 grosser Aufwand).
+> **Hinweis:** 13 offene Punkte verbleibend (6 grosser Aufwand). 2 Quick-Wins + 5 mittlerer Aufwand + 2 Phase-14/16 erledigt.
 > Alle 5 Foundation-Features (F.1-F.5) wurden implementiert.
