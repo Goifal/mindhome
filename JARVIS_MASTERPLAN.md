@@ -121,9 +121,17 @@ Phase 9      ✅  Jarvis Stimme & Akustik (6 Features — v0.9.9-v1.0.0)
      │
 Phase 10     🆕  Jarvis Multi-Room & Kommunikation (5 Features — Assistant + Add-on)
      │
+Phase 11     📋  Jarvis Wissen & Kontext (4 Features — RAG, Kalender, Korrekturen)
+     │
 Phase 12     🔧  Jarvis Authentizitaet (5 Techniken — LLM Character Deepening)
      │
 Phase 13     📋  Jarvis Selbstprogrammierung (4 Stufen — Self-Evolving Assistant)
+     │
+Phase 14     📋  Jarvis Wahrnehmung & Sinne (3 Features — Vision, Multi-Modal, Ambient)
+     │
+Phase 15     📋  Jarvis Haushalt & Fuersorge (4 Features — Gesundheit, Einkauf, Geraete)
+     │
+Phase 16     📋  Jarvis fuer Alle (3 Features — Konflikte, Onboarding, Dashboard)
      │
      ▼
   🎯 JARVIS COMPLETE
@@ -1579,6 +1587,501 @@ self_modification:
 
 ---
 
+# Phase 11 — Jarvis Wissen & Kontext (Beyond Smart Home)
+## 4 Features | Betroffene Module: brain.py, semantic_memory.py, context_builder.py
+## Status: Geplant
+
+> **Ziel:** Jarvis weiss mehr als nur Smart-Home. Er kennt Rezepte, Verkehr, Wetter-Warnungen,
+> deinen Kalender — und er lernt aus seinen Fehlern.
+> **Prinzip:** Lokale Wissensbasis + externe Datenquellen. Kein Cloud-LLM, aber mehr Kontext.
+
+---
+
+### Feature 11.1: Wissensdatenbank / RAG (Retrieval Augmented Generation)
+
+**Ist-Zustand:** Wissensfragen gehen direkt an Qwen. Das Modell weiss vieles,
+halluziniert aber bei spezifischen Fragen (Kochzeiten, Bedienungsanleitungen, lokale Infos).
+
+**Soll-Zustand:**
+- Lokale Wissensbasis in ChromaDB (bereits vorhanden fuer Memories):
+  | Wissensbereich | Quelle | Beispiel |
+  |---------------|--------|---------|
+  | Kochen | Rezept-Sammlung (YAML/JSON) | "Spargel: 12-15 Min, abhaengig von Dicke" |
+  | Geraete | Bedienungsanleitungen (PDF → Text) | "Waschmaschine Eco-Modus: 60°, 2:40h" |
+  | Haushalt | Alltagswissen-Sammlung | "Fenster putzen: Essig + Zeitungspapier" |
+  | Persoenlich | User-eingetragene Notizen | "Allergien: Erdnuesse, Penicillin" |
+- Ablauf: Frage → Semantische Suche in ChromaDB → Relevante Chunks + Frage an LLM
+- Ehrlichkeit: "Dazu hab ich nichts gespeichert." statt halluzinieren
+
+**Umsetzung:**
+- `brain.py`: RAG-Pipeline vor LLM-Call (wenn Intent = Wissensfrage)
+- `semantic_memory.py`: Neue Collection `knowledge_base` (getrennt von Personal Memories)
+- NEU: `knowledge_ingester.py` — PDF/YAML/Text → Chunks → ChromaDB
+- CLI-Tool: `python -m assistant.ingest /pfad/zu/docs/`
+
+**Aufwand:** ~4-6 Stunden
+**Wirkung:** HOCH — Jarvis wird vom Smart-Home-Butler zum Wissensassistenten.
+
+---
+
+### Feature 11.2: Externer Kontext (Welt ausserhalb des Hauses)
+
+**Ist-Zustand:** Jarvis kennt nur den Haus-Status. Er weiss nicht was draussen passiert
+(ausser Wetter via HA Weather Entity).
+
+**Soll-Zustand:**
+- Regelmaeßiger Abruf externer Datenquellen (lokal, kein Cloud):
+  | Quelle | Intervall | Was Jarvis damit macht |
+  |--------|-----------|----------------------|
+  | Wetter-Warnung (DWD API) | 30 Min | "Gewitter in 2 Stunden. Fenster." |
+  | Verkehr (optional) | Bei Abfahrt | "A1 Stau. 20 Minuten laenger." |
+  | Pollenflug (DWD) | Taeglich | "Birke hoch heute. Fenster besser zu." |
+  | Sonnenauf-/-untergang | Taeglich | Bereits via Add-on, aber proaktiver nutzen |
+- Proaktive Meldungen nur bei Relevanz (nicht jede halbe Stunde Wetter)
+- Privacy: Nur oeffentliche APIs, kein Tracking, kein Login
+
+**Umsetzung:**
+- NEU: `external_context.py` — Abruf + Caching externer Daten
+- `context_builder.py`: Externe Daten in Kontext einbeziehen
+- `proactive.py`: Wetter-Warnungen als proaktive Meldung
+- Config in `settings.yaml`: Welche Quellen aktiv, Standort-Koordinaten
+
+**Aufwand:** ~4-6 Stunden
+**Wirkung:** HOCH — "Es regnet in 20 Minuten. Waesche haengt draussen." Das ist Jarvis.
+
+---
+
+### Feature 11.3: Kalender-Tiefenintegration
+
+**Ist-Zustand:** Morning Briefing (Phase 7.1) liest Kalender-Eintraege via HA.
+Aber: Nur lesen, kein Verwalten, keine Konflikterkennung.
+
+**Soll-Zustand:**
+- Kalender-Management via Sprache:
+  | Aktion | Beispiel |
+  |--------|---------|
+  | Termin erstellen | "Freitag 15 Uhr Zahnarzt" → HA Calendar Event |
+  | Termin verschieben | "Verschieb den Zahnarzt auf Montag" |
+  | Erinnerung setzen | "Erinner mich morgen an Paket abholen" |
+  | Konflikte erkennen | "Da hast du schon was um 15 Uhr." |
+  | Tagesplanung | "Was steht morgen an?" → Strukturierte Uebersicht |
+- Integration mit HA Calendar Entities (CalDAV, Google, Local)
+- Erinnerungen via `proactive.py` (30 Min vorher, konfigurierbar)
+
+**Umsetzung:**
+- `function_calling.py`: Neue Tools `create_event()`, `modify_event()`, `list_events()`
+- `brain.py`: Kalender-Intent-Erkennung
+- `proactive.py`: Reminder-Pipeline fuer anstehende Termine
+
+**Aufwand:** ~4-6 Stunden
+**Wirkung:** MITTEL-HOCH — Jarvis wird zum persoenlichen Assistenten, nicht nur Haustechnik.
+
+---
+
+### Feature 11.4: Korrektur-Lernen
+
+**Ist-Zustand:** Wenn User Jarvis korrigiert ("Nein, das andere Licht!"),
+wird die Korrektur nicht gespeichert. Naechstes Mal gleicher Fehler.
+
+**Soll-Zustand:**
+- Korrektur-Erkennung in der Antwort-Pipeline:
+  | Trigger | Was Jarvis lernt | Speicher |
+  |---------|-----------------|---------|
+  | "Nein, das andere" | Entity-Praeferenz pro Raum/Kontext | Redis |
+  | "Kuerzer!" | Antwortlaenge-Praeferenz | Personality Config |
+  | "So nicht, eher..." | Formulierungs-Praeferenz | Few-Shot Update |
+  | "Das ist falsch" | Fakten-Korrektur | Semantic Memory |
+- Confirmation: "Verstanden. Wohnzimmer-Licht meint ab jetzt die Deckenlampe."
+- Korrektur-History abrufbar: "Was hast du von mir gelernt?"
+
+**Umsetzung:**
+- `brain.py`: Korrektur-Intent erkennen (Negation + neue Info)
+- `memory.py`: Korrektur als hochprioritaere Memory speichern (Confidence 1.0)
+- `personality.py`: Korrektur-bezogene Praeferenzen anwenden
+
+**Aufwand:** ~2-3 Stunden
+**Wirkung:** SEHR HOCH — Jarvis macht keinen Fehler zweimal. Das definiert einen guten Butler.
+
+---
+
+### Technische Zusammenfassung Phase 11
+
+| Modul | Aenderung |
+|-------|---------|
+| `brain.py` | RAG-Pipeline, Kalender-Intent, Korrektur-Erkennung |
+| `semantic_memory.py` | Knowledge-Base Collection |
+| `context_builder.py` | Externe Daten einbeziehen |
+| `function_calling.py` | Kalender-Tools (create/modify/list events) |
+| `proactive.py` | Wetter-Warnungen, Kalender-Reminders |
+| `memory.py` | Korrektur-Memories (Confidence 1.0) |
+| NEU: `knowledge_ingester.py` | PDF/YAML → ChromaDB Pipeline |
+| NEU: `external_context.py` | DWD Wetter, Pollen, Verkehr |
+
+**Geschaetzter Aufwand:** ~14-21 Stunden, ~6 Commits
+
+---
+
+---
+
+# Phase 14 — Jarvis Wahrnehmung & Sinne
+## 3 Features | Betroffene Module: brain.py, function_calling.py
+## Status: Geplant
+
+> **Ziel:** Jarvis kann SEHEN und HOEREN — nicht nur Text verarbeiten.
+> **Hardware:** Kamera (Tuerklingel, Indoor), GPU empfohlen fuer Bildanalyse.
+> **Prinzip:** 100% lokal. Kein Bild verlaesst das Netzwerk.
+
+---
+
+### Feature 14.1: Vision / Kamera-Integration
+
+**Ist-Zustand:** Jarvis hat keine Augen. Kamera-Bilder liegen in HA,
+werden aber nicht analysiert.
+
+**Soll-Zustand:**
+- Jarvis kann Kamera-Bilder analysieren:
+  | Trigger | Was Jarvis sieht | Aktion |
+  |---------|-----------------|--------|
+  | Tuerklingel | Person erkannt / Paket / Unbekannter | "Paketbote. Paket abgestellt." |
+  | Bewegung Garten | Tier / Person / Fahrzeug | "Katze im Garten. Wieder." |
+  | Auf Anfrage | "Was siehst du vor der Tuer?" | Bildbeschreibung |
+  | Zeitgesteuert | Morgens: Wetter-Check via Kamera | "Nebel. Vorsicht beim Fahren." |
+- Object Detection: YOLO oder aehnliches Modell, lokal auf GPU
+- Bildbeschreibung: Vision-LLM (LLaVA, Qwen-VL) fuer natuerliche Beschreibungen
+
+**Umsetzung:**
+- NEU: `vision.py` — Kamera-Snapshot + Object Detection + Vision-LLM
+- `function_calling.py`: Neues Tool `get_camera_snapshot(camera_entity)`
+- `proactive.py`: Trigger bei Tuerklingel-Event → Bild analysieren → Melden
+- `model_router.py`: Vision-Modell neben Text-Modell verwalten
+- HA Integration: `camera.snapshot` Service fuer Bild-Abruf
+
+**Hardware:** GPU empfohlen (YOLO + Vision-LLM). CPU-Fallback moeglich aber langsam.
+**Aufwand:** ~8-12 Stunden
+**Wirkung:** SEHR HOCH — Jarvis kann SEHEN. Das aendert alles.
+
+---
+
+### Feature 14.2: Multi-Modal Input (Fotos & Dokumente)
+
+**Ist-Zustand:** Jarvis versteht nur Text (Sprache via Whisper → Text).
+
+**Soll-Zustand:**
+- User kann Jarvis Bilder schicken (via Companion App oder Web-Interface):
+  | Was User schickt | Was Jarvis tut | Beispiel |
+  |-----------------|---------------|---------|
+  | Foto von Pflanze | Identifizieren | "Monstera. Alle 7 Tage giessen." |
+  | Foto von Rezept | Text extrahieren + speichern | "Gespeichert unter 'Omas Gulasch'." |
+  | Foto von Fehlermeldung | Diagnose | "Error 403. Zugriff verweigert. Router neustarten." |
+  | Foto von Einkaufszettel | Liste erstellen | "8 Positionen erkannt. Einkaufsliste aktualisiert." |
+- OCR fuer Text-Erkennung (Tesseract, lokal)
+- Vision-LLM fuer Bildbeschreibung (gleich wie 14.1)
+
+**Umsetzung:**
+- `brain.py`: Multi-Modal Input Handler (Bild + Text zusammen an Vision-LLM)
+- NEU: `ocr.py` — Tesseract-Integration fuer Text-aus-Bild
+- API-Endpunkt: `/api/chat` akzeptiert `image` Parameter (Base64)
+- Companion App: Foto-Upload-Button
+
+**Aufwand:** ~6-8 Stunden
+**Wirkung:** HOCH — Jarvis versteht die Welt, nicht nur Worte.
+
+---
+
+### Feature 14.3: Ambient Audio (Atmosphaere)
+
+**Ist-Zustand:** Jarvis kann Musik abspielen und TTS ausgeben.
+Aber: Keine atmosphaerische Audio-Gestaltung.
+
+**Soll-Zustand:**
+- Kontextuelle Hintergrund-Sounds ueber HA Media Player:
+  | Kontext | Sound | Trigger |
+  |---------|-------|---------|
+  | Morgens | Vogelgezwitscher (leise) | Morning Briefing |
+  | Regen draussen | Regengeraeusch drinnen | Wetter-Entity |
+  | Gewitter | Kaminknistern | Wetter + Abend |
+  | Einschlafen | White Noise / Naturgeraeusche | Gute-Nacht-Routine |
+  | Fokus-Arbeit | Lo-Fi / Brown Noise | "Ich muss mich konzentrieren" |
+- Lautstaerke: Immer unter Gespraechs-Lautstaerke (max 15%)
+- Automatisch aus bei Gespraech (Jarvis hoert zu → Sound pausiert)
+- Deaktivierbar: "Jarvis, Stille." / Konfigurierbar in Settings
+
+**Umsetzung:**
+- NEU: `ambient.py` — Sound-Auswahl basierend auf Kontext + Tageszeit + Wetter
+- `config/ambient_sounds/` — Sound-Dateien (oder URLs zu lokalen Streams)
+- `function_calling.py`: Tool `set_ambient(mood)` / `stop_ambient()`
+- Integration mit `activity.py`: Pausiert bei Interaktion
+
+**Aufwand:** ~4-6 Stunden
+**Wirkung:** MITTEL — Das Haus hat eine Seele, nicht nur Funktionen.
+
+---
+
+### Technische Zusammenfassung Phase 14
+
+| Modul | Aenderung |
+|-------|---------|
+| `brain.py` | Multi-Modal Input Handler |
+| `function_calling.py` | camera_snapshot, set_ambient Tools |
+| `proactive.py` | Tuerklingel → Vision → Meldung |
+| `model_router.py` | Vision-Modell verwalten |
+| NEU: `vision.py` | Object Detection + Vision-LLM |
+| NEU: `ocr.py` | Tesseract OCR |
+| NEU: `ambient.py` | Kontextuelle Hintergrund-Sounds |
+
+**Hardware:** GPU stark empfohlen, Kamera(s), Mikrofon
+**Geschaetzter Aufwand:** ~18-26 Stunden, ~5 Commits
+
+---
+
+---
+
+# Phase 15 — Jarvis Haushalt & Fuersorge
+## 4 Features | Betroffene Module: proactive.py, context_builder.py, function_calling.py
+## Status: Geplant
+
+> **Ziel:** Jarvis kuemmert sich — um das Haus, die Geraete, die Gesundheit der Bewohner.
+> **Prinzip:** Proaktiv aber nicht nervig. Beobachtet, meldet wenn noetig, schweigt wenn nicht.
+
+---
+
+### Feature 15.1: Gesundheit & Raumklima
+
+**Ist-Zustand:** Sensoren messen CO2, Temperatur, Luftfeuchtigkeit.
+Add-on hat Comfort-Score. Aber: Keine proaktiven Gesundheits-Tipps.
+
+**Soll-Zustand:**
+- Proaktive Gesundheits-Meldungen:
+  | Sensor | Schwelle | Jarvis sagt |
+  |--------|---------|-------------|
+  | CO2 | > 1000 ppm | "CO2 Buero. Fenster." |
+  | Luftfeuchtigkeit | > 70% | "Feuchtigkeit Bad hoch. Schimmelrisiko." |
+  | Luftfeuchtigkeit | < 30% | "Luft trocken. Luftbefeuchter?" |
+  | Temperatur | > 26°C Schlafzimmer | "Schlafzimmer warm. Fenster auf?" |
+  | Sitzzeit | > 3h ohne Bewegung | "Drei Stunden. Kurze Pause." |
+  | Hydration | Alle 2h bei Hitze | "Trink was." |
+- Meldungen respektieren Stille-Matrix (nicht waehrend Meeting, nicht nachts)
+- Frequenz-Limit: Max 1 Gesundheits-Tipp pro Stunde
+
+**Umsetzung:**
+- NEU: `health_monitor.py` — Schwellen-Ueberwachung + Hydration-Timer
+- `proactive.py`: Health-Alerts in Notification-Pipeline
+- `context_builder.py`: Raumklima-Daten fuer LLM-Kontext
+- Schwellen konfigurierbar in `settings.yaml`
+
+**Aufwand:** ~4-6 Stunden
+
+---
+
+### Feature 15.2: Einkauf & Vorrat
+
+**Ist-Zustand:** Kein Vorrats-Tracking. Keine Einkaufsliste.
+
+**Soll-Zustand:**
+- Einkaufslisten-Management per Sprache:
+  | Aktion | Beispiel |
+  |--------|---------|
+  | Hinzufuegen | "Milch auf die Liste" |
+  | Entfernen | "Milch hab ich" |
+  | Abfragen | "Was brauchen wir?" |
+  | Teilen | Push an Companion App beim Einkaufen |
+- Vorrats-Tracking (optional, manuell):
+  - "Milch ist fast leer" → Automatisch auf Liste
+  - Ablaufdaten: "Joghurt laeuft morgen ab."
+- Rezept-Vorschlaege basierend auf Vorrat (wenn RAG-Wissensbasis Rezepte hat)
+
+**Umsetzung:**
+- `function_calling.py`: Tools `add_to_list()`, `remove_from_list()`, `get_list()`
+- HA Shopping List Integration (bereits vorhanden als Entity)
+- `semantic_memory.py`: Vorrats-Collection (optional)
+- `proactive.py`: Ablauf-Erinnerungen
+
+**Aufwand:** ~3-4 Stunden (HA Shopping List existiert bereits)
+
+---
+
+### Feature 15.3: Geraete-Beziehung (Verschleiss & Zustand)
+
+**Ist-Zustand:** Jarvis kennt Geraete-Zustaende (an/aus/Wert).
+Kein Bewusstsein fuer Verschleiss, Alterung, ungewoehnliches Verhalten.
+
+**Soll-Zustand:**
+- Jarvis "kennt" seine Geraete und bemerkt Auffaelligkeiten:
+  | Beobachtung | Jarvis sagt |
+  |-------------|-------------|
+  | Waschmaschine braucht laenger als ueblich | "Waschmaschine braucht 20 Min laenger als sonst." |
+  | Heizung erreicht Zieltemperatur nicht | "Heizung Buero. Seit 2 Stunden auf 22 eingestellt, nur 19 erreicht." |
+  | Sensor seit Tagen gleicher Wert | "Bewegungsmelder Flur. Seit 3 Tagen nichts. Batterie?" |
+  | Stromverbrauch eines Geraets steigt | "Kuehlschrank verbraucht 30% mehr als letzten Monat." |
+- Basiert auf historischen Durchschnittswerten (gleitender Mittelwert)
+- Nicht jede Abweichung melden — nur signifikante (> 2x Standardabweichung)
+
+**Umsetzung:**
+- NEU: `device_health.py` — Geraete-Baselines berechnen + Anomalie-Erkennung
+- `proactive.py`: Geraete-Anomalie als LOW-Priority-Meldung
+- Redis: Baseline-Werte pro Entity (`mha:device:baseline:{entity_id}`)
+- Taegliche Neuberechnung der Baselines
+
+**Aufwand:** ~6-8 Stunden
+
+---
+
+### Feature 15.4: Benachrichtigungs-Intelligenz
+
+**Ist-Zustand:** Jede proaktive Meldung wird einzeln ausgeliefert.
+Niedrige und hohe Prioritaet werden gleich behandelt.
+
+**Soll-Zustand:**
+- Intelligente Notification-Pipeline:
+  | Prioritaet | Verhalten | Beispiel |
+  |-----------|-----------|---------|
+  | KRITISCH | Sofort, laut, ggf. wiederholen | Rauchmelder, Wasseralarm |
+  | HOCH | Sofort, normale Lautstaerke | Fenster offen bei Regen |
+  | MITTEL | Naechste Interaktion oder in 15 Min | "Waschmaschine fertig" |
+  | NIEDRIG | Batchen — gesammelt beim naechsten Briefing | Geraete-Anomalie, Wartung |
+- Batching: Niedrige Meldungen sammeln sich → "Drei Sachen: ..." beim naechsten Kontakt
+- Kanal-Wahl:
+  - Zu Hause → TTS im richtigen Raum
+  - Unterwegs → Push-Notification (kurz)
+  - Schlafen → Nur KRITISCH, Rest morgens
+- Duplikat-Erkennung: Gleiche Meldung nicht zweimal (nutzt Warning-Dedup)
+
+**Umsetzung:**
+- NEU: `notification_queue.py` — Priority-Queue + Batching-Logik
+- `proactive.py`: Alle Meldungen durch Queue statt direkte Auslieferung
+- `activity.py`: Liefert Kontext (zu Hause, schlaeft, unterwegs)
+- Redis: `mha:notifications:queue` (sortiert nach Prioritaet + Timestamp)
+
+**Aufwand:** ~3-4 Stunden
+
+---
+
+### Technische Zusammenfassung Phase 15
+
+| Modul | Aenderung |
+|-------|---------|
+| `proactive.py` | Alle Meldungen durch Notification-Queue |
+| `context_builder.py` | Raumklima-Daten erweitert |
+| `function_calling.py` | Shopping-List-Tools |
+| NEU: `health_monitor.py` | Raumklima + Hydration + Pausen |
+| NEU: `device_health.py` | Geraete-Baselines + Anomalie-Erkennung |
+| NEU: `notification_queue.py` | Priority-Queue + Batching |
+
+**Geschaetzter Aufwand:** ~16-22 Stunden, ~6 Commits
+
+---
+
+---
+
+# Phase 16 — Jarvis fuer Alle (Multi-User & Interface)
+## 3 Features | Betroffene Module: personality.py, brain.py, Frontend
+## Status: Geplant
+
+> **Ziel:** Jarvis funktioniert nicht nur fuer den Technik-Nerd der ihn gebaut hat.
+> Er erklaert sich selbst, loest Konflikte, und hat ein Gesicht.
+> **Prinzip:** Jarvis ist fuer den ganzen Haushalt da.
+
+---
+
+### Feature 16.1: Konfliktloesung (Multi-User)
+
+**Ist-Zustand:** Jarvis fuehrt Befehle aus — egal von wem.
+Wenn zwei Personen verschiedene Temperaturen wollen, gewinnt der Letzte.
+
+**Soll-Zustand:**
+- Konflikterkennung + Mediation:
+  | Konflikt | Jarvis | Loesung |
+  |----------|--------|---------|
+  | Person A: 22°, Person B: 20° | "21 Grad als Kompromiss?" | Mittelwert vorschlagen |
+  | Person A: Musik laut, Person B: Ruhe | "Musik nur im Wohnzimmer. Buero bleibt still." | Raum-Isolation |
+  | Person A: Licht hell, Person B: dunkel | "Stehlampe fuer dich, Decke aus fuer sie." | Zonen-Loesung |
+- Praeferenz-Ranking: Owner > Mitbewohner > Gast (aus Trust-Levels)
+- Bei gleichem Trust-Level: Kompromiss vorschlagen oder fragen
+
+**Umsetzung:**
+- `brain.py`: Konflikt-Detection (aktuelle Einstellung vs. neue Anfrage vs. andere Person)
+- `personality.py`: Mediations-Prompts
+- Nutzt Trust-Levels (bereits implementiert) fuer Priorisierung
+
+**Aufwand:** ~3-4 Stunden
+
+---
+
+### Feature 16.2: Onboarding / Lernmodus
+
+**Ist-Zustand:** Neuer Nutzer steht vor Jarvis und weiss nicht was er kann.
+Kein Hilfesystem, keine Einfuehrung.
+
+**Soll-Zustand:**
+- Automatisches Onboarding fuer neue Personen:
+  ```
+  Neue Person erkannt (Speaker Recognition oder manuell):
+
+  Jarvis: "Ich bin Jarvis. Ich kuemmere mich um das Haus.
+  Licht, Heizung, Musik — sag einfach was du brauchst.
+  Fuer den Anfang: 'Mach das Licht an.' Probier's."
+  ```
+- Auf Anfrage: "Was kannst du?" → Kurzuebersicht der Faehigkeiten
+- Tutorial-Modus: Jarvis erklaert bei den ersten 5 Interaktionen zusaetzlich was er tut
+- "Hilfe" → Kontext-sensitive Hilfe (was geht gerade im aktuellen Raum)
+- Fuer Gaeste: Vereinfachte Version ohne technische Details
+
+**Umsetzung:**
+- `personality.py`: Onboarding-Prompt-Erweiterung (erste N Interaktionen ausfuehrlicher)
+- `memory.py`: Flag `first_interactions_count` pro Person
+- `function_calling.py`: Tool `get_capabilities()` → Strukturierte Faehigkeiten-Liste
+- Gaeste-Variante: Nur Basics, kein "Was kannst du alles"
+
+**Aufwand:** ~4-6 Stunden
+
+---
+
+### Feature 16.3: Dashboard (Jarvis hat ein Gesicht)
+
+**Ist-Zustand:** Jarvis existiert nur als Stimme / Text. Kein visuelles Interface
+das zeigt was er denkt, tut, oder weiss.
+
+**Soll-Zustand:**
+- Web-Dashboard (React, auf vorhandenem Frontend aufbauend):
+  | Bereich | Inhalt |
+  |---------|--------|
+  | Live-Status | Haus-Uebersicht: Temp, Licht, Anwesenheit, Energie |
+  | Jarvis-Log | Letzte Entscheidungen, Aktionen, Warnungen |
+  | Persoenlichkeit | Aktueller Mood, Humor-Level, Formality-Score |
+  | Automationen | Von Jarvis erstellte Automationen (Phase 13.2) |
+  | Wissen | Was Jarvis gelernt hat (Korrekturen, Fakten, Praeferenzen) |
+  | Einstellungen | Autonomie-Level, Sarkasmus, Benachrichtigungen |
+- Responsive: Tablet an der Wand / Handy / Desktop
+- Optional: E-Ink Display im Flur (nur Status, minimalistisch)
+
+**Umsetzung:**
+- Add-on Frontend (React): Neue Route `/jarvis`
+- API-Endpunkte: `/api/jarvis/status`, `/api/jarvis/log`, `/api/jarvis/knowledge`
+- `brain.py`: Logging aller Entscheidungen fuer Dashboard
+- WebSocket: Live-Updates fuer Status-Aenderungen
+
+**Aufwand:** ~10-15 Stunden (Frontend ist Hauptaufwand)
+**Wirkung:** HOCH — Jarvis wird greifbar. Man kann sehen was er denkt.
+
+---
+
+### Technische Zusammenfassung Phase 16
+
+| Modul | Aenderung |
+|-------|---------|
+| `brain.py` | Konflikt-Detection, Entscheidungs-Logging |
+| `personality.py` | Mediations-Prompts, Onboarding-Modus |
+| `memory.py` | First-Interaction-Counter pro Person |
+| `function_calling.py` | get_capabilities() Tool |
+| Add-on Frontend | Dashboard Route `/jarvis` |
+| Add-on API | Status/Log/Knowledge Endpunkte |
+
+**Geschaetzter Aufwand:** ~17-25 Stunden, ~5 Commits
+
+---
+
+---
+
 # Gesamtübersicht
 
 ```
@@ -1598,11 +2101,15 @@ self_modification:
           │              │ Ph 8: Gedächtnis
           │              │ Ph 9: Stimme
           │              │ Ph 10: Multi-Room
+          │              │ Ph 11: Wissen
           │              │ Ph 12: Authentizitaet
           │              │ Ph 13: Selbstprog.
+          │              │ Ph 14: Wahrnehmung
+          │              │ Ph 15: Fuersorge
+          │              │ Ph 16: fuer Alle
           │              │         │
-          │              │ 46 neue Features
-          │              │ ~54 Commits
+          │              │ 60 neue Features
+          │              │ ~76 Commits
           │              └─────────┘
           │
      Liefert Daten an Assistant via HA API
@@ -1616,12 +2123,16 @@ self_modification:
 | 7 | Routinen | 9 | ~10 | ✅ | Tagesstruktur, Szenen |
 | 8 | Gedächtnis | 7 | ~10 | ✅ | Vorausdenken, Wissen |
 | 9 | Stimme | 6 | ~8 | ✅ | Akustik, Erkennung |
-| 10 | Multi-Room | 5 | ~8 | 🆕 | Präsenz, Kommunikation |
+| 10 | Multi-Room | 5 | ~8 | 🆕 | Praesenz, Kommunikation |
+| 11 | Wissen & Kontext | 4 | ~6 | 📋 | RAG, Kalender, Korrekturen, Extern |
 | 12 | Authentizitaet | 5 | ~5 | 🔧 | Few-Shot, Filter, Fine-Tuning |
 | 13 | Selbstprogrammierung | 4 | ~5 | 📋 | Config, Automationen, Tools, Prompt |
-| **Σ** | | **46** | **~54** | | |
+| 14 | Wahrnehmung | 3 | ~5 | 📋 | Vision, Multi-Modal, Ambient Audio |
+| 15 | Haushalt & Fuersorge | 4 | ~6 | 📋 | Gesundheit, Einkauf, Geraete, Notifications |
+| 16 | fuer Alle | 3 | ~5 | 📋 | Konflikte, Onboarding, Dashboard |
+| **Σ** | | **60** | **~76** | | |
 
-**Gesamt: 46 neue Assistant-Features + 156 bestehende (Add-on) + 14 bestehende (Assistant) = 216 Features**
+**Gesamt: 60 neue Assistant-Features + 156 bestehende (Add-on) + 14 bestehende (Assistant) = 230 Features**
 
 ---
 
@@ -1638,16 +2149,22 @@ Phase 9 ─── Stimme ───────────  ~8 Commits  ──�
    │
 Phase 10 ── Multi-Room ───────  ~8 Commits  ─── Braucht Wyoming Satellites
    │
+Phase 11 ── Wissen ─────────  ~6 Commits  ─── RAG, Kalender, Korrekturen
+   │
 Phase 12 ── Authentizitaet ──  ~5 Commits  ─── Few-Shot, Filter, ggf. Fine-Tuning
    │
 Phase 13 ── Selbstprog. ────  ~5 Commits  ─── Config, Automationen, Tools, Prompt
+   │
+Phase 14 ── Wahrnehmung ────  ~5 Commits  ─── Vision, Multi-Modal (braucht GPU)
+   │
+Phase 15 ── Fuersorge ──────  ~6 Commits  ─── Gesundheit, Einkauf, Geraete
+   │
+Phase 16 ── fuer Alle ──────  ~5 Commits  ─── Konflikte, Onboarding, Dashboard
 ```
 
 **Phase 12.1 + 12.3 sind der naechste Hebel** — unter 2 Stunden, groesster Effekt
 auf die Jarvis-Authentizitaet. Few-Shot Examples + Response-Filter.
-Danach Phase 13.1 (Config-Selbstmod.) als Einstieg in die Selbstprogrammierung.
 
 ---
 
 *Naechster Schritt: Phase 12.1 (Few-Shot Examples) + 12.3 (Response-Filter) implementieren.*
-*Danach: Phase 13.1 (Config-Selbstmodifikation) — Jarvis lernt sich selbst anzupassen.*
