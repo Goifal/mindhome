@@ -96,7 +96,7 @@
 | 11.1 | Wissensdatenbank/RAG | DONE | 85% | ChromaDB, Chunking, 5 Formate. **Luecke:** Kein PDF |
 | 11.2 | Externer Kontext (HA) | DONE | 85% | Wetter, Sun, Saisonal. **Luecke:** Keine Wetter-Warnungen |
 | 11.3 | Kalender-Integration | DONE | 80% | get+create Events. **Luecke:** Kein Delete/Verschieben |
-| 11.4 | Korrektur-Lernen | DONE | 90% | 16 Patterns, LLM-Extraktion. **Luecke:** Keine History abrufbar |
+| 11.4 | Korrektur-Lernen | DONE | 100% | 16 Patterns, LLM-Extraktion, History abrufbar |
 
 ---
 
@@ -150,7 +150,7 @@
 |---|---------|:------:|:-:|---------|
 | 16.1 | Konfliktloesung | **OFFEN** | 5% | Trust-Levels da. **FEHLT: Mediations-Prompts** |
 | 16.2 | Onboarding / "Was kannst du?" | DONE | 80% | 9 Kategorien, Direkterkennung. **Luecke:** Kein Tutorial-Modus |
-| 16.3 | Dashboard | DONE | 80% | 8 Tabs, 160+ Settings, PIN+Recovery. **Luecke:** Kein Live-Status |
+| 16.3 | Dashboard | DONE | 85% | 9 Tabs (inkl. Easter Eggs), 160+ Settings, PIN+Recovery. **Luecke:** Kein Live-Status |
 
 ---
 
@@ -207,8 +207,8 @@
 
 | # | Was | Aufwand | Status |
 |---|-----|:-------:|:------:|
-| 1 | Korrektur-History abrufbar ("Was hast du von mir gelernt?") | 1 Std | OFFEN |
-| 2 | Easter Eggs konfigurierbar im Dashboard | 1 Std | OFFEN |
+| 1 | Korrektur-History abrufbar ("Was hast du von mir gelernt?") | 1 Std | DONE |
+| 2 | Easter Eggs konfigurierbar im Dashboard | 1 Std | DONE |
 
 ### Prioritaet 2 — Mittlerer Aufwand (je 2-6 Stunden)
 

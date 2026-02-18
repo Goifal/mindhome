@@ -1146,6 +1146,21 @@ class AssistantBrain:
                 )
             return "Die Wissensdatenbank ist noch leer. Leg Textdateien in config/knowledge/ ab."
 
+        # "Was hast du von mir gelernt?" — Korrektur-History
+        if any(kw in text_lower for kw in ["was hast du von mir gelernt",
+                                            "was hast du gelernt von mir",
+                                            "korrektur history",
+                                            "korrektur-history",
+                                            "was habe ich dir beigebracht",
+                                            "meine korrekturen"]):
+            corrections = await self.memory.semantic.get_correction_history(person)
+            if corrections:
+                lines = [f"Von dir habe ich {len(corrections)} Korrektur(en) gelernt:"]
+                for f in corrections:
+                    lines.append(f"- {f['content']}")
+                return "\n".join(lines)
+            return "Von dir habe ich noch keine Korrekturen gelernt."
+
         # "Was hast du heute gelernt?"
         if any(kw in text_lower for kw in ["was hast du heute gelernt",
                                             "was hast du gelernt",

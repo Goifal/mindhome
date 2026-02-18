@@ -1109,6 +1109,48 @@ async def ui_redirect():
     return RedirectResponse("/ui/")
 
 
+# ============================================================
+# Easter Eggs API
+# ============================================================
+
+EASTER_EGGS_PATH = Path(__file__).parent.parent / "config" / "easter_eggs.yaml"
+
+
+@app.get("/api/ui/easter-eggs")
+async def ui_get_easter_eggs(token: str = ""):
+    """Alle Easter Eggs aus easter_eggs.yaml."""
+    _check_token(token)
+    try:
+        with open(EASTER_EGGS_PATH) as f:
+            data = yaml.safe_load(f) or {}
+        return {"easter_eggs": data.get("easter_eggs", [])}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
+class EasterEggUpdate(BaseModel):
+    easter_eggs: list
+
+
+@app.put("/api/ui/easter-eggs")
+async def ui_update_easter_eggs(req: EasterEggUpdate, token: str = ""):
+    """Easter Eggs speichern."""
+    _check_token(token)
+    try:
+        data = {"easter_eggs": req.easter_eggs}
+        with open(EASTER_EGGS_PATH, "w") as f:
+            yaml.dump(data, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+
+        # Personality-Engine neu laden
+        if hasattr(brain, "personality") and brain.personality:
+            brain.personality._easter_eggs = brain.personality._load_easter_eggs()
+
+        _audit_log("easter_eggs_update", {"count": len(req.easter_eggs)})
+        return {"success": True, "message": f"{len(req.easter_eggs)} Easter Eggs gespeichert"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
 def _deep_merge(base: dict, override: dict):
     """Tiefer Merge von override in base (in-place)."""
     for key, value in override.items():
