@@ -6,10 +6,21 @@ Phase 10: Room-aware TTS, Person Messaging, Trust-Level Pre-Check.
 """
 
 import logging
+from pathlib import Path
 from typing import Any, Optional
+
+import yaml
 
 from .config import settings, yaml_config
 from .ha_client import HomeAssistantClient
+
+# Config-Pfade fuer Phase 13.1 (Whitelist — nur diese darf Jarvis aendern)
+_CONFIG_DIR = Path(__file__).parent.parent / "config"
+_EDITABLE_CONFIGS = {
+    "easter_eggs": _CONFIG_DIR / "easter_eggs.yaml",
+    "opinion_rules": _CONFIG_DIR / "opinion_rules.yaml",
+    "room_profiles": _CONFIG_DIR / "room_profiles.yaml",
+}
 
 logger = logging.getLogger(__name__)
 
@@ -354,6 +365,74 @@ ASSISTANT_TOOLS = [
                     },
                 },
                 "required": ["mode"],
+            },
+        },
+    },
+    # --- Phase 13.1: Config-Selbstmodifikation ---
+    {
+        "type": "function",
+        "function": {
+            "name": "edit_config",
+            "description": "Eigene Konfiguration anpassen (Easter Eggs, Meinungen, Raum-Profile). Nutze dies um dich selbst zu verbessern.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "config_file": {
+                        "type": "string",
+                        "enum": ["easter_eggs", "opinion_rules", "room_profiles"],
+                        "description": "Welche Konfiguration aendern (easter_eggs, opinion_rules, room_profiles)",
+                    },
+                    "action": {
+                        "type": "string",
+                        "enum": ["add", "remove", "update"],
+                        "description": "Aktion: hinzufuegen, entfernen oder aktualisieren",
+                    },
+                    "key": {
+                        "type": "string",
+                        "description": "Schluessel/Name des Eintrags (z.B. 'star_wars' fuer Easter Egg, 'high_temp' fuer Opinion)",
+                    },
+                    "data": {
+                        "type": "object",
+                        "description": "Die Daten des Eintrags (z.B. {trigger: 'möge die macht', response: 'Immer, Sir.', enabled: true})",
+                    },
+                },
+                "required": ["config_file", "action", "key"],
+            },
+        },
+    },
+    # --- Phase 15.2: Einkaufsliste ---
+    {
+        "type": "function",
+        "function": {
+            "name": "manage_shopping_list",
+            "description": "Einkaufsliste verwalten (Artikel hinzufuegen, anzeigen, abhaken, entfernen)",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["add", "list", "complete", "clear_completed"],
+                        "description": "Aktion: hinzufuegen, auflisten, abhaken, abgehakte entfernen",
+                    },
+                    "item": {
+                        "type": "string",
+                        "description": "Artikelname (fuer add/complete)",
+                    },
+                },
+                "required": ["action"],
+            },
+        },
+    },
+    # --- Phase 16.2: Was kann Jarvis? ---
+    {
+        "type": "function",
+        "function": {
+            "name": "list_capabilities",
+            "description": "Zeigt was der Assistent alles kann. Nutze dies wenn der User fragt was du kannst.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
             },
         },
     },
@@ -1005,6 +1084,199 @@ class FunctionExecutor:
             if entity_id.startswith("media_player."):
                 return entity_id
         return None
+
+    # ------------------------------------------------------------------
+    # Phase 13.1: Config-Selbstmodifikation
+    # ------------------------------------------------------------------
+
+    async def _exec_edit_config(self, args: dict) -> dict:
+        """Phase 13.1: Jarvis passt eigene Config-Dateien an (Whitelist-geschuetzt)."""
+        config_file = args["config_file"]
+        action = args["action"]
+        key = args["key"]
+        data = args.get("data", {})
+
+        yaml_path = _EDITABLE_CONFIGS.get(config_file)
+        if not yaml_path:
+            return {"success": False, "message": f"Config '{config_file}' ist nicht editierbar"}
+
+        try:
+            # Config laden
+            if yaml_path.exists():
+                with open(yaml_path) as f:
+                    config = yaml.safe_load(f) or {}
+            else:
+                config = {}
+
+            # Aktion ausfuehren
+            if action == "add":
+                if not data:
+                    return {"success": False, "message": "Keine Daten zum Hinzufuegen angegeben"}
+                if key in config:
+                    return {"success": False, "message": f"'{key}' existiert bereits. Nutze 'update' stattdessen."}
+                config[key] = data
+                msg = f"'{key}' zu {config_file} hinzugefuegt"
+
+            elif action == "update":
+                if key not in config:
+                    return {"success": False, "message": f"'{key}' nicht in {config_file} gefunden"}
+                if isinstance(config[key], dict) and isinstance(data, dict):
+                    config[key].update(data)
+                else:
+                    config[key] = data
+                msg = f"'{key}' in {config_file} aktualisiert"
+
+            elif action == "remove":
+                if key not in config:
+                    return {"success": False, "message": f"'{key}' nicht in {config_file} gefunden"}
+                del config[key]
+                msg = f"'{key}' aus {config_file} entfernt"
+            else:
+                return {"success": False, "message": f"Unbekannte Aktion: {action}"}
+
+            # Zurueckschreiben
+            with open(yaml_path, "w") as f:
+                yaml.dump(config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+
+            logger.info("Config-Selbstmodifikation: %s (%s -> %s)", config_file, action, key)
+            return {"success": True, "message": msg}
+
+        except Exception as e:
+            logger.error("Config-Edit fehlgeschlagen: %s", e)
+            return {"success": False, "message": f"Fehler: {e}"}
+
+    # ------------------------------------------------------------------
+    # Phase 15.2: Einkaufsliste (via HA Shopping List oder lokal)
+    # ------------------------------------------------------------------
+
+    async def _exec_manage_shopping_list(self, args: dict) -> dict:
+        """Phase 15.2: Einkaufsliste verwalten ueber Home Assistant."""
+        action = args["action"]
+        item = args.get("item", "")
+
+        if action == "add":
+            if not item:
+                return {"success": False, "message": "Kein Artikel angegeben"}
+            success = await self.ha.call_service(
+                "shopping_list", "add_item", {"name": item}
+            )
+            return {"success": success, "message": f"'{item}' auf die Einkaufsliste gesetzt" if success
+                    else "Einkaufsliste nicht verfuegbar"}
+
+        elif action == "list":
+            # Shopping List ueber HA API abrufen
+            try:
+                items = await self.ha.api_get("/api/shopping_list")
+                if not items:
+                    return {"success": True, "message": "Die Einkaufsliste ist leer."}
+                open_items = [i["name"] for i in items if not i.get("complete")]
+                done_items = [i["name"] for i in items if i.get("complete")]
+                parts = []
+                if open_items:
+                    parts.append("Einkaufsliste:\n" + "\n".join(f"- {i}" for i in open_items))
+                if done_items:
+                    parts.append(f"Erledigt: {', '.join(done_items)}")
+                if not open_items and not done_items:
+                    return {"success": True, "message": "Die Einkaufsliste ist leer."}
+                return {"success": True, "message": "\n".join(parts)}
+            except Exception:
+                return {"success": False, "message": "Einkaufsliste nicht verfuegbar"}
+
+        elif action == "complete":
+            if not item:
+                return {"success": False, "message": "Kein Artikel zum Abhaken angegeben"}
+            success = await self.ha.call_service(
+                "shopping_list", "complete_item", {"name": item}
+            )
+            return {"success": success, "message": f"'{item}' abgehakt" if success
+                    else "Artikel nicht gefunden"}
+
+        elif action == "clear_completed":
+            success = await self.ha.call_service(
+                "shopping_list", "complete_all", {}
+            )
+            return {"success": success, "message": "Abgehakte Artikel entfernt" if success
+                    else "Fehler beim Aufraumen"}
+
+        return {"success": False, "message": f"Unbekannte Aktion: {action}"}
+
+    # ------------------------------------------------------------------
+    # Phase 16.2: Capabilities — Was kann Jarvis?
+    # ------------------------------------------------------------------
+
+    async def _exec_list_capabilities(self, args: dict) -> dict:
+        """Phase 16.2: Listet alle Faehigkeiten des Assistenten."""
+        capabilities = {
+            "smart_home": [
+                "Licht steuern (an/aus/dimmen, pro Raum)",
+                "Heizung/Klima regeln (Temperatur, Modus)",
+                "Rolllaeden steuern",
+                "Szenen aktivieren (Filmabend, Gute Nacht, etc.)",
+                "Alarmanlage steuern",
+                "Tueren ver-/entriegeln",
+                "Anwesenheitsmodus setzen (Home/Away/Sleep/Vacation)",
+            ],
+            "medien": [
+                "Musik abspielen/pausieren/stoppen",
+                "Naechster/vorheriger Titel",
+                "Musik zwischen Raeumen uebertragen",
+                "Sound-Effekte abspielen",
+            ],
+            "kommunikation": [
+                "Nachrichten an Personen senden (TTS oder Push)",
+                "Benachrichtigungen (Handy, Speaker, Dashboard)",
+                "Proaktive Meldungen (Alarm, Tuerklingel, Waschmaschine, etc.)",
+            ],
+            "gedaechtnis": [
+                "'Merk dir X' — Fakten speichern",
+                "'Was weisst du ueber X?' — Wissen abrufen",
+                "'Vergiss X' — Fakten loeschen",
+                "Automatische Fakten-Extraktion aus Gespraechen",
+                "Langzeit-Erinnerungen und Tages-Zusammenfassungen",
+            ],
+            "wissen": [
+                "Allgemeine Wissensfragen beantworten",
+                "Kalender-Termine anzeigen und erstellen",
+                "'Was waere wenn'-Simulationen",
+                "Wissensdatenbank (Dokumente, RAG)",
+                "Kochen mit Schritt-fuer-Schritt-Anleitung + Timer",
+            ],
+            "haushalt": [
+                "Einkaufsliste verwalten (hinzufuegen, anzeigen, abhaken)",
+                "Zeitgefuehl (Ofen zu lange an, PC-Pause, etc.)",
+                "Wartungs-Erinnerungen (Rauchmelder, Filter, etc.)",
+                "System-Diagnostik (Sensoren, Batterien, Netzwerk)",
+            ],
+            "persoenlichkeit": [
+                "Anpassbarer Sarkasmus-Level (1-5)",
+                "Eigene Meinungen zu Aktionen",
+                "Easter Eggs (z.B. 'Ich bin Iron Man')",
+                "Running Gags und Selbstironie",
+                "Charakter-Entwicklung (wird vertrauter mit der Zeit)",
+                "Stimmungserkennung und emotionale Reaktionen",
+            ],
+            "sicherheit": [
+                "Gaeste-Modus (versteckt persoenliche Infos)",
+                "Vertrauensstufen pro Person (Gast/Mitbewohner/Owner)",
+                "PIN-geschuetztes Dashboard",
+                "Nacht-Routinen mit Sicherheits-Check",
+            ],
+            "selbstverbesserung": [
+                "Korrektur-Lernen ('Nein, ich meinte...')",
+                "Eigene Config anpassen (Easter Eggs, Meinungen, Raeume)",
+                "Feedback-basierte Optimierung proaktiver Meldungen",
+            ],
+        }
+
+        lines = ["Das kann ich fuer dich tun:\n"]
+        for category, items in capabilities.items():
+            label = category.replace("_", " ").title()
+            lines.append(f"{label}:")
+            for item in items:
+                lines.append(f"  - {item}")
+            lines.append("")
+
+        return {"success": True, "message": "\n".join(lines)}
 
     async def _find_entity(self, domain: str, search: str) -> Optional[str]:
         """Findet eine Entity anhand von Domain und Suchbegriff."""

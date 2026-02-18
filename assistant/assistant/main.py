@@ -653,8 +653,9 @@ import secrets
 # Settings-YAML Pfad
 SETTINGS_YAML_PATH = Path(__file__).parent.parent / "config" / "settings.yaml"
 
-# Session-Token (einfach, kein JWT noetig fuer lokales Netz)
-_active_tokens: set[str] = set()
+# Session-Token mit Ablaufzeit (4 Stunden)
+_TOKEN_EXPIRY_SECONDS = 4 * 60 * 60  # 4 Stunden
+_active_tokens: dict[str, float] = {}  # token -> timestamp
 
 
 def _get_dashboard_config() -> dict:
@@ -781,7 +782,9 @@ async def ui_auth(req: PinRequest):
         raise HTTPException(status_code=401, detail="Falscher PIN")
 
     token = hashlib.sha256(f"{req.pin}{datetime.now().isoformat()}{secrets.token_hex(8)}".encode()).hexdigest()[:32]
-    _active_tokens.add(token)
+    _active_tokens[token] = datetime.now(timezone.utc).timestamp()
+    # Abgelaufene Tokens aufraumen
+    _cleanup_expired_tokens()
     return {"token": token}
 
 
@@ -820,10 +823,24 @@ async def ui_reset_pin(req: ResetPinRequest):
     }
 
 
+def _cleanup_expired_tokens():
+    """Entfernt abgelaufene Tokens."""
+    now = datetime.now(timezone.utc).timestamp()
+    expired = [t for t, ts in _active_tokens.items() if now - ts > _TOKEN_EXPIRY_SECONDS]
+    for t in expired:
+        del _active_tokens[t]
+
+
 def _check_token(token: str):
-    """Prueft ob ein UI-Token gueltig ist."""
+    """Prueft ob ein UI-Token gueltig ist und nicht abgelaufen."""
     if token not in _active_tokens:
         raise HTTPException(status_code=401, detail="Nicht autorisiert")
+    # Ablaufzeit pruefen
+    created = _active_tokens[token]
+    now = datetime.now(timezone.utc).timestamp()
+    if now - created > _TOKEN_EXPIRY_SECONDS:
+        del _active_tokens[token]
+        raise HTTPException(status_code=401, detail="Sitzung abgelaufen. Bitte erneut anmelden.")
 
 
 @app.get("/api/ui/settings")

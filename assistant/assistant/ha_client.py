@@ -67,6 +67,10 @@ class HomeAssistantClient:
         """State einer einzelnen Entity."""
         return await self._get_ha(f"/api/states/{entity_id}")
 
+    async def api_get(self, path: str) -> Any:
+        """Generischer GET auf die HA REST API (z.B. /api/shopping_list)."""
+        return await self._get_ha(path)
+
     async def call_service(
         self, domain: str, service: str, data: Optional[dict] = None
     ) -> bool:

@@ -9,7 +9,21 @@
    MindHome Design System — Jarvis Dashboard v2
    Dark futuristic, amber accents, Outfit font
    ============================================================ */
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+/* Offline-Fonts: System-Fonts statt Google CDN (Offline-Prinzip) */
+@font-face {
+  font-family: 'Outfit';
+  font-style: normal;
+  font-weight: 300 700;
+  font-display: swap;
+  src: local('Outfit'), local('Inter'), local('Segoe UI');
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400 500;
+  font-display: swap;
+  src: local('JetBrains Mono'), local('SF Mono'), local('Consolas'), local('Menlo');
+}
 
 :root {
   --bg-primary: #0a0e17;
