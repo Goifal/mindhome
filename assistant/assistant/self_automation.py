@@ -309,21 +309,17 @@ class SelfAutomation:
             }
 
         try:
-            session = await self.ha._get_session()
-            url = f"{self.ha.ha_url}/api/config/automation/config/{automation_id}"
-            async with session.delete(url, headers=self.ha._ha_headers) as resp:
-                if resp.status in (200, 204):
-                    self._audit("deleted", automation_id, "", {})
-                    return {
-                        "success": True,
-                        "message": f"Automation '{automation_id}' geloescht.",
-                    }
-                body = await resp.text()
-                logger.warning("Automation loeschen: %d — %s", resp.status, body[:200])
+            success = await self.ha.delete_config("automation", automation_id)
+            if success:
+                self._audit("deleted", automation_id, "", {})
                 return {
-                    "success": False,
-                    "message": f"Loeschen fehlgeschlagen (HTTP {resp.status}).",
+                    "success": True,
+                    "message": f"Automation '{automation_id}' geloescht.",
                 }
+            return {
+                "success": False,
+                "message": "Loeschen fehlgeschlagen.",
+            }
         except Exception as e:
             logger.error("Automation loeschen fehlgeschlagen: %s", e)
             return {"success": False, "message": f"Fehler: {e}"}
@@ -638,28 +634,13 @@ REGELN:
     # ------------------------------------------------------------------
 
     async def _deploy_to_ha(self, automation_id: str, automation: dict) -> bool:
-        """Erstellt eine Automation in HA via REST API."""
-        session = await self.ha._get_session()
-        url = f"{self.ha.ha_url}/api/config/automation/config/{automation_id}"
-
-        try:
-            async with session.put(
-                url,
-                headers=self.ha._ha_headers,
-                json=automation,
-            ) as resp:
-                if resp.status in (200, 201):
-                    logger.info("Automation '%s' deployed: %s", automation_id, automation.get("alias"))
-                    return True
-                body = await resp.text()
-                logger.error(
-                    "Automation deploy fehlgeschlagen: %d — %s",
-                    resp.status, body[:300],
-                )
-                return False
-        except Exception as e:
-            logger.error("Automation deploy Fehler: %s", e)
-            return False
+        """Erstellt eine Automation in HA via REST API (mit Retry)."""
+        success = await self.ha.put_config("automation", automation_id, automation)
+        if success:
+            logger.info("Automation '%s' deployed: %s", automation_id, automation.get("alias"))
+        else:
+            logger.error("Automation '%s' deploy fehlgeschlagen", automation_id)
+        return success
 
     # ------------------------------------------------------------------
     # Hilfsfunktionen
