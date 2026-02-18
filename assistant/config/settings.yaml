@@ -581,6 +581,56 @@ cooking:
   # Timer-Benachrichtigung via TTS
   timer_notify_tts: true
 
+# --- Phase 12: Response-Filter (Post-Processing) ---
+# Entfernt LLM-Floskeln und typische Chatbot-Muster aus Antworten.
+# Sicherheitsnetz: Faengt alles ab was der Prompt nicht verhindert.
+response_filter:
+  enabled: true
+  # Phrasen die komplett entfernt werden (case-insensitive)
+  banned_phrases:
+    - "Natürlich!"
+    - "Natuerlich!"
+    - "Gerne!"
+    - "Selbstverständlich!"
+    - "Selbstverstaendlich!"
+    - "Klar!"
+    - "Gern geschehen!"
+    - "Kann ich sonst noch etwas für dich tun?"
+    - "Kann ich sonst noch etwas fuer dich tun?"
+    - "Kann ich dir sonst noch helfen?"
+    - "Wenn du noch etwas brauchst"
+    - "Sag einfach Bescheid"
+    - "Ich bin froh, dass"
+    - "Es freut mich"
+    - "Es ist mir eine Freude"
+    - "Als KI"
+    - "Als künstliche Intelligenz"
+    - "Als kuenstliche Intelligenz"
+    - "Ich bin nur ein Programm"
+    - "Lass mich mal schauen"
+    - "Lass mich kurz schauen"
+    - "Das klingt frustrierend"
+    - "Ich verstehe, wie du dich fühlst"
+    - "Ich verstehe, wie du dich fuehlst"
+    - "Das klingt wirklich"
+  # Fuellwoerter am Satzanfang entfernen
+  banned_starters:
+    - "Also,"
+    - "Also "
+    - "Grundsätzlich"
+    - "Grundsaetzlich"
+    - "Im Prinzip"
+    - "Nun,"
+    - "Nun "
+    - "Sozusagen"
+    - "Quasi"
+    - "Eigentlich"
+    - "Im Grunde genommen"
+    - "Tatsächlich,"
+    - "Tatsaechlich,"
+  # 0 = kein Limit (nur Tageszeit-Max aus Personality gilt)
+  max_response_sentences: 0
+
 # --- Wartungs-Assistent (10.5) ---
 maintenance:
   enabled: true

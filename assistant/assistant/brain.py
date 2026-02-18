@@ -25,7 +25,7 @@ from typing import Optional
 from .action_planner import ActionPlanner
 from .activity import ActivityEngine
 from .autonomy import AutonomyManager
-from .config import settings
+from .config import settings, yaml_config
 from .context_builder import ContextBuilder
 from .cooking_assistant import CookingAssistant
 from .diagnostics import DiagnosticsEngine
@@ -476,7 +476,7 @@ class AssistantBrain:
                 messages=messages,
                 model=model,
             )
-            response_text = response.get("message", {}).get("content", "")
+            response_text = self._filter_response(response.get("message", {}).get("content", ""))
             executed_actions = []
 
             if "error" in response:
@@ -497,7 +497,7 @@ class AssistantBrain:
                 messages=messages,
                 model=model,
             )
-            response_text = response.get("message", {}).get("content", "")
+            response_text = self._filter_response(response.get("message", {}).get("content", ""))
             executed_actions = []
         else:
             # 6b. Einfache Anfragen: Direkt LLM aufrufen
@@ -627,7 +627,7 @@ class AssistantBrain:
                     if "error" not in feedback_response:
                         feedback_text = feedback_response.get("message", {}).get("content", "")
                         if feedback_text:
-                            response_text = feedback_text
+                            response_text = self._filter_response(feedback_text)
                 except Exception as e:
                     logger.debug("Tool-Feedback fehlgeschlagen: %s", e)
 
@@ -658,6 +658,9 @@ class AssistantBrain:
                         response_text = self.personality.get_varied_confirmation(partial=True)
                 else:
                     response_text = self.personality.get_varied_confirmation(success=True)
+
+        # Phase 12: Response-Filter (Post-Processing) — Floskeln entfernen
+        response_text = self._filter_response(response_text)
 
         # Phase 6.9: Running Gag an Antwort anhaengen
         if gag_response and response_text:
@@ -791,6 +794,101 @@ class AssistantBrain:
         logger.info("Output: '%s' (Aktionen: %d, TTS: %s)", response_text,
                      len(executed_actions), tts_data.get("message_type", ""))
         return result
+
+    # ------------------------------------------------------------------
+    # Phase 12: Response-Filter (Post-Processing)
+    # ------------------------------------------------------------------
+
+    def _filter_response(self, text: str) -> str:
+        """
+        Filtert LLM-Floskeln und unerwuenschte Muster aus der Antwort.
+        Wird nach jedem LLM-Response aufgerufen, vor Speicherung und TTS.
+        """
+        if not text:
+            return text
+
+        filter_config = yaml_config.get("response_filter", {})
+        if not filter_config.get("enabled", True):
+            return text
+
+        original = text
+
+        # 1. Banned Phrases komplett entfernen
+        banned_phrases = filter_config.get("banned_phrases", [
+            "Natürlich!", "Natuerlich!", "Gerne!", "Selbstverständlich!",
+            "Selbstverstaendlich!", "Klar!", "Gern geschehen!",
+            "Kann ich sonst noch etwas für dich tun?",
+            "Kann ich sonst noch etwas fuer dich tun?",
+            "Kann ich dir sonst noch helfen?",
+            "Wenn du noch etwas brauchst",
+            "Sag einfach Bescheid",
+            "Ich bin froh, dass",
+            "Es freut mich",
+            "Es ist mir eine Freude",
+            "Als KI", "Als künstliche Intelligenz",
+            "Als kuenstliche Intelligenz",
+            "Ich bin nur ein Programm",
+            "Lass mich mal schauen",
+            "Lass mich kurz schauen",
+            "Das klingt frustrierend",
+            "Ich verstehe, wie du dich fuehlst",
+            "Ich verstehe, wie du dich fühlst",
+            "Das klingt wirklich",
+        ])
+        for phrase in banned_phrases:
+            # Case-insensitive Entfernung
+            idx = text.lower().find(phrase.lower())
+            while idx != -1:
+                text = text[:idx] + text[idx + len(phrase):]
+                idx = text.lower().find(phrase.lower())
+
+        # 2. Banned Starters am Satzanfang entfernen
+        banned_starters = filter_config.get("banned_starters", [
+            "Also,", "Also ", "Grundsätzlich", "Grundsaetzlich",
+            "Im Prinzip", "Nun,", "Nun ", "Sozusagen",
+            "Quasi", "Eigentlich", "Im Grunde genommen",
+            "Tatsächlich,", "Tatsaechlich,",
+        ])
+        for starter in banned_starters:
+            if text.lstrip().lower().startswith(starter.lower()):
+                text = text.lstrip()[len(starter):].lstrip()
+                # Ersten Buchstaben gross machen
+                if text:
+                    text = text[0].upper() + text[1:]
+
+        # 3. "Es tut mir leid" Varianten durch Fakt ersetzen
+        sorry_patterns = [
+            "es tut mir leid,", "es tut mir leid.", "es tut mir leid ",
+            "leider ", "entschuldigung,", "entschuldigung.",
+            "ich entschuldige mich,", "tut mir leid,", "tut mir leid.",
+        ]
+        for pattern in sorry_patterns:
+            idx = text.lower().find(pattern)
+            if idx != -1:
+                text = text[:idx] + text[idx + len(pattern):].lstrip()
+                if text:
+                    text = text[0].upper() + text[1:]
+
+        # 4. Mehrere Leerzeichen / fuehrende Leerzeichen bereinigen
+        text = re.sub(r"  +", " ", text).strip()
+
+        # 5. Leere Saetze entfernen (". ." oder ". , .")
+        text = re.sub(r"\.\s*\.", ".", text)
+        text = re.sub(r"!\s*!", "!", text)
+
+        # 6. Max Sentences begrenzen
+        max_sentences = filter_config.get("max_response_sentences", 0)
+        if max_sentences > 0:
+            sentences = re.split(r"(?<=[.!?])\s+", text)
+            if len(sentences) > max_sentences:
+                text = " ".join(sentences[:max_sentences])
+
+        text = text.strip()
+
+        if text != original:
+            logger.debug("Response-Filter: '%s' -> '%s'", original[:80], text[:80])
+
+        return text if text else original
 
     async def health_check(self) -> dict:
         """Prueft den Zustand aller Komponenten."""
