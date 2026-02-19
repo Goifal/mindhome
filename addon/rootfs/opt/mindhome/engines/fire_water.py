@@ -569,26 +569,50 @@ class WaterLeakManager:
         """Shut off heating in the room where the leak was detected."""
         try:
             from models import FeatureEntityAssignment, Device
+            from helpers import get_setting
+            heating_mode = get_setting("heating_mode", "room_thermostat")
+
             with self.get_session() as session:
                 # Find room of leak sensor
                 leak_device = session.query(Device).filter_by(ha_entity_id=leak_entity_id).first()
                 if not leak_device or not leak_device.room_id:
                     return
 
-                # Find heating entities in that room assigned to water_leak
-                heating = session.query(FeatureEntityAssignment).filter_by(
-                    feature_key="water_leak", role="heating", is_active=True
-                ).all()
-                for h in heating:
-                    try:
-                        # Set to frost protection temperature instead of off
-                        self.ha.call_service("climate", "set_temperature", {
-                            "entity_id": h.entity_id,
-                            "temperature": frost_temp,
-                        })
-                        logger.info(f"Heating set to frost protection ({frost_temp}C): {h.entity_id}")
-                    except Exception as e:
-                        logger.error(f"Heating shutoff failed for {h.entity_id}: {e}")
+                if heating_mode == "heating_curve":
+                    # Heizkurven-Modus: Offset auf Minimum setzen
+                    curve_entity = get_setting("heating_curve_entity", "")
+                    offset_min = float(get_setting("heating_curve_offset_min", "-5"))
+                    if curve_entity:
+                        try:
+                            states = self.ha.get_states() or []
+                            for s in states:
+                                if s.get("entity_id") == curve_entity:
+                                    current = s.get("attributes", {}).get("temperature")
+                                    if current is not None:
+                                        base_temp = float(current)
+                                        new_temp = base_temp + offset_min
+                                        self.ha.call_service("climate", "set_temperature", {
+                                            "entity_id": curve_entity,
+                                            "temperature": round(new_temp, 1),
+                                        })
+                                        logger.info(f"Heating curve set to min offset ({offset_min}): {curve_entity}")
+                                    break
+                        except Exception as e:
+                            logger.error(f"Heating curve shutoff failed: {e}")
+                else:
+                    # Raumthermostat-Modus: Frostschutz-Temperatur setzen
+                    heating = session.query(FeatureEntityAssignment).filter_by(
+                        feature_key="water_leak", role="heating", is_active=True
+                    ).all()
+                    for h in heating:
+                        try:
+                            self.ha.call_service("climate", "set_temperature", {
+                                "entity_id": h.entity_id,
+                                "temperature": frost_temp,
+                            })
+                            logger.info(f"Heating set to frost protection ({frost_temp}C): {h.entity_id}")
+                        except Exception as e:
+                            logger.error(f"Heating shutoff failed for {h.entity_id}: {e}")
         except Exception as e:
             logger.error(f"Heating shutoff error: {e}")
 

@@ -586,8 +586,12 @@ class ConflictResolver:
 
     def _domain_label(self, domain: str) -> str:
         """Gibt ein deutsches Label fuer eine Domain zurueck."""
+        if domain == "climate":
+            mode = yaml_config.get("heating", {}).get("mode", "room_thermostat")
+            if mode == "heating_curve":
+                return "den Heizungs-Offset"
+            return "die Temperatur"
         labels = {
-            "climate": "die Temperatur",
             "light": "das Licht",
             "media": "die Musik",
             "cover": "die Rolladen",
@@ -597,6 +601,12 @@ class ConflictResolver:
     def _describe_action(self, domain: str, args: dict) -> str:
         """Beschreibt eine Aktion kurz auf Deutsch."""
         if domain == "climate":
+            mode = yaml_config.get("heating", {}).get("mode", "room_thermostat")
+            if mode == "heating_curve":
+                offset = args.get("offset")
+                if offset is not None:
+                    return f"den Offset auf {offset}°C"
+                return "den Offset entsprechend"
             temp = args.get("temperature")
             if temp:
                 return f"die Temperatur auf {temp}°C"

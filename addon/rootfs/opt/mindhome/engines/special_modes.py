@@ -326,11 +326,29 @@ class SpecialModeBase:
                         "entity_id": entity_id, "position": pos
                     })
             elif domain == "climate":
-                temp = role_config.get("target_temp")
-                if temp is not None:
-                    self.ha.call_service("climate", "set_temperature", {
-                        "entity_id": entity_id, "temperature": temp
-                    })
+                from helpers import get_setting
+                heating_mode = get_setting("heating_mode", "room_thermostat")
+                if heating_mode == "heating_curve":
+                    # Heizkurven-Modus: target_temp als Offset interpretieren
+                    offset = role_config.get("temperature_offset", role_config.get("target_temp"))
+                    if offset is not None:
+                        curve_entity = get_setting("heating_curve_entity", entity_id)
+                        states = self.ha.get_states() or []
+                        for s in states:
+                            if s.get("entity_id") == curve_entity:
+                                current = s.get("attributes", {}).get("temperature")
+                                if current is not None:
+                                    new_temp = float(current) + float(offset)
+                                    self.ha.call_service("climate", "set_temperature", {
+                                        "entity_id": curve_entity, "temperature": round(new_temp, 1)
+                                    })
+                                break
+                else:
+                    temp = role_config.get("target_temp")
+                    if temp is not None:
+                        self.ha.call_service("climate", "set_temperature", {
+                            "entity_id": entity_id, "temperature": temp
+                        })
             elif domain == "media_player":
                 vol = role_config.get("volume")
                 if vol is not None:

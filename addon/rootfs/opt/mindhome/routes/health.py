@@ -200,7 +200,8 @@ PHASE4_FEATURE_SETTINGS = {
             {"key": "include_climate", "type": "toggle", "default": "true",
              "label_de": "Heizung vorwärmen", "label_en": "Pre-heat climate"},
             {"key": "climate_target_temp", "type": "number", "default": "21", "min": 18, "max": 25, "step": 0.5,
-             "label_de": "Ziel-Temperatur (°C)", "label_en": "Target temperature (°C)"},
+             "label_de": "Ziel-Temperatur (°C)", "label_en": "Target temperature (°C)",
+             "label_de_curve": "Aufwach-Offset (°C)", "label_en_curve": "Wake-up offset (°C)"},
         ],
     },
     "phase4.screen_time": {
@@ -227,7 +228,8 @@ PHASE4_FEATURE_SETTINGS = {
         "category": "health",
         "settings": [
             {"key": "default_guest_temp", "type": "number", "default": "22", "min": 18, "max": 26, "step": 0.5,
-             "label_de": "Standard Gaeste-Temp (°C)", "label_en": "Default guest temp (°C)"},
+             "label_de": "Standard Gaeste-Temp (°C)", "label_en": "Default guest temp (°C)",
+             "label_de_curve": "Gaeste-Offset (°C)", "label_en_curve": "Guest offset (°C)"},
             {"key": "preheat_minutes", "type": "number", "default": "30", "min": 10, "max": 120, "step": 10,
              "label_de": "Vorheizen (Min)", "label_en": "Pre-heat (min)"},
             {"key": "auto_lighting", "type": "toggle", "default": "true",
@@ -242,7 +244,8 @@ PHASE4_FEATURE_SETTINGS = {
             {"key": "reduce_heating", "type": "toggle", "default": "true",
              "label_de": "Heizung reduzieren", "label_en": "Reduce heating"},
             {"key": "vacation_temp", "type": "number", "default": "16", "min": 10, "max": 20, "step": 0.5,
-             "label_de": "Urlaubs-Temperatur (°C)", "label_en": "Vacation temp (°C)"},
+             "label_de": "Urlaubs-Temperatur (°C)", "label_en": "Vacation temp (°C)",
+             "label_de_curve": "Urlaubs-Offset (°C)", "label_en_curve": "Vacation offset (°C)"},
             {"key": "simulate_presence", "type": "toggle", "default": "false",
              "label_de": "Anwesenheit simulieren", "label_en": "Simulate presence"},
             {"key": "sim_start_hour", "type": "number", "default": "18", "min": 14, "max": 22, "step": 1,
@@ -489,19 +492,29 @@ def api_set_all_settings(feature_key):
 @health_bp.route("/api/system/phase4-feature-settings/<path:category>", methods=["GET"])
 def api_get_feature_settings_by_category(category):
     """Get all feature settings for a category (climate/health/energy/ai)."""
+    heating_mode = get_setting("heating_mode", "room_thermostat")
     result = {}
     for feature_key, fdef in PHASE4_FEATURE_SETTINGS.items():
         if fdef["category"] != category:
             continue
         stored_status = get_setting(feature_key, PHASE4_FEATURES.get(feature_key, {}).get("default", "auto"))
         settings_values = {}
+        # Resolve labels based on heating mode
+        resolved_settings = []
         for s in fdef["settings"]:
             full_key = f"{feature_key}.{s['key']}"
             settings_values[s["key"]] = get_setting(full_key, s["default"])
+            resolved = dict(s)
+            if heating_mode == "heating_curve":
+                if "label_de_curve" in s:
+                    resolved["label_de"] = s["label_de_curve"]
+                if "label_en_curve" in s:
+                    resolved["label_en"] = s["label_en_curve"]
+            resolved_settings.append(resolved)
         result[feature_key] = {
             "enabled": _resolve_feature_status(stored_status),
             "value": stored_status,
-            "settings_def": fdef["settings"],
+            "settings_def": resolved_settings,
             "settings_values": settings_values,
         }
     return jsonify(result)

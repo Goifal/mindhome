@@ -1174,8 +1174,8 @@ const DomainsPage = () => {
         enabled: { de: 'Aktiviert', en: 'Enabled' },
         dim_brightness_pct: { de: 'Dim-Helligkeit (%)', en: 'Dim Brightness (%)' },
         dusk_brightness_pct: { de: 'Dämmerung-Helligkeit (%)', en: 'Dusk Brightness (%)' },
-        away_temp: { de: 'Abwesend-Temp. (°C)', en: 'Away Temp (°C)' },
-        night_temp: { de: 'Nacht-Temp. (°C)', en: 'Night Temp (°C)' },
+        away_temp: { de: 'Abwesend-Temp. (°C)', en: 'Away Temp (°C)', de_curve: 'Abwesend-Offset (°C)', en_curve: 'Away Offset (°C)' },
+        night_temp: { de: 'Nacht-Temp. (°C)', en: 'Night Temp (°C)', de_curve: 'Nacht-Offset (°C)', en_curve: 'Night Offset (°C)' },
         preheat_minutes: { de: 'Vorheizen (Min.)', en: 'Preheat (min)' },
         sun_elevation_threshold: { de: 'Sonnen-Elevation (°)', en: 'Sun Elevation (°)' },
         night_volume_pct: { de: 'Nacht-Lautstärke (%)', en: 'Night Volume (%)' },
@@ -1264,7 +1264,14 @@ const DomainsPage = () => {
 
     const getSettingLabel = (key) => {
         const l = settingLabels[key];
-        return l ? (lang === 'de' ? l.de : l.en) : key;
+        if (!l) return key;
+        // Heating-curve-aware labels
+        const hm = (pluginSettings?.climate || {}).heating_mode;
+        if (hm === 'heating_curve') {
+            const curveLabel = lang === 'de' ? l.de_curve : l.en_curve;
+            if (curveLabel) return curveLabel;
+        }
+        return lang === 'de' ? l.de : l.en;
     };
 
     const getSettingDisplayValue = (key, value) => {
@@ -9756,9 +9763,14 @@ const JarvisChatPage = () => {
     const [connected, setConnected] = useState(null);
     const [showSettings, setShowSettings] = useState(false);
     const [assistantUrl, setAssistantUrl] = useState('');
+    const [voiceSettings, setVoiceSettings] = useState({ stt_entity: '', tts_entity: '', available_stt: [], available_tts: [] });
     const [pendingFile, setPendingFile] = useState(null); // { file, preview, type }
     const [uploading, setUploading] = useState(false);
     const [uploadProgress, setUploadProgress] = useState(0);
+    const [recording, setRecording] = useState(false);
+    const [voiceProcessing, setVoiceProcessing] = useState(false);
+    const mediaRecorderRef = useRef(null);
+    const audioChunksRef = useRef([]);
     const messagesEndRef = useRef(null);
     const inputRef = useRef(null);
     const fileInputRef = useRef(null);
@@ -9783,6 +9795,9 @@ const JarvisChatPage = () => {
                 setConnected(d.connected);
                 setAssistantUrl(d.assistant_url || '');
             }
+        });
+        api.get('chat/voice/settings').then(d => {
+            if (d) setVoiceSettings(d);
         });
     }, []);
 
@@ -9946,6 +9961,115 @@ const JarvisChatPage = () => {
         if (inputRef.current) inputRef.current.focus();
     };
 
+    // --- Voice recording ---
+    const startRecording = async () => {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+            audioChunksRef.current = [];
+            mediaRecorder.ondataavailable = (e) => {
+                if (e.data.size > 0) audioChunksRef.current.push(e.data);
+            };
+            mediaRecorder.onstop = async () => {
+                stream.getTracks().forEach(t => t.stop());
+                const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+                if (audioBlob.size < 500) return; // Too short
+                await sendVoiceMessage(audioBlob);
+            };
+            mediaRecorderRef.current = mediaRecorder;
+            mediaRecorder.start();
+            setRecording(true);
+        } catch (err) {
+            showToast(
+                lang === 'de'
+                    ? 'Mikrofon-Zugriff verweigert. Bitte erlaube den Zugriff in den Browser-Einstellungen.'
+                    : 'Microphone access denied. Please allow access in browser settings.',
+                'error'
+            );
+        }
+    };
+
+    const stopRecording = () => {
+        if (mediaRecorderRef.current && recording) {
+            mediaRecorderRef.current.stop();
+            setRecording(false);
+        }
+    };
+
+    const sendVoiceMessage = async (audioBlob) => {
+        setVoiceProcessing(true);
+        const userMsg = {
+            role: 'user',
+            text: lang === 'de' ? '🎤 Sprachnachricht...' : '🎤 Voice message...',
+            input_mode: 'voice',
+            timestamp: new Date().toISOString(),
+        };
+        setMessages(prev => [...prev, userMsg]);
+
+        try {
+            const formData = new FormData();
+            formData.append('audio', audioBlob, 'voice.webm');
+
+            const resp = await fetch('/api/chat/voice', { method: 'POST', body: formData });
+            const result = await resp.json();
+
+            if (resp.ok && result.transcribed_text) {
+                // Update the user message with transcribed text
+                setMessages(prev => {
+                    const updated = [...prev];
+                    const lastUser = updated.length - 1;
+                    if (updated[lastUser]?.input_mode === 'voice') {
+                        updated[lastUser] = { ...updated[lastUser], text: '🎤 ' + result.transcribed_text };
+                    }
+                    return updated;
+                });
+
+                if (result.response) {
+                    const assistantMsg = {
+                        role: 'assistant',
+                        text: result.response,
+                        actions: result.actions || [],
+                        timestamp: result.timestamp || new Date().toISOString(),
+                    };
+                    setMessages(prev => [...prev, assistantMsg]);
+
+                    // Play TTS audio if available
+                    if (result.tts_audio) {
+                        try {
+                            const audioBytes = atob(result.tts_audio);
+                            const audioArray = new Uint8Array(audioBytes.length);
+                            for (let i = 0; i < audioBytes.length; i++) audioArray[i] = audioBytes.charCodeAt(i);
+                            const audioPlayBlob = new Blob([audioArray], { type: 'audio/mp3' });
+                            const audioUrl = URL.createObjectURL(audioPlayBlob);
+                            const audio = new Audio(audioUrl);
+                            audio.onended = () => URL.revokeObjectURL(audioUrl);
+                            audio.play().catch(() => {});
+                        } catch (audioErr) {
+                            console.warn('TTS playback failed:', audioErr);
+                        }
+                    }
+                }
+            } else {
+                const errorText = result.error || (lang === 'de' ? 'Sprache nicht erkannt' : 'Speech not recognized');
+                setMessages(prev => {
+                    const updated = [...prev];
+                    const lastUser = updated.length - 1;
+                    if (updated[lastUser]?.input_mode === 'voice') {
+                        updated[lastUser] = { ...updated[lastUser], text: '🎤 ' + errorText };
+                    }
+                    return updated;
+                });
+            }
+        } catch (err) {
+            setMessages(prev => [...prev, {
+                role: 'error',
+                text: lang === 'de' ? 'Spracherkennung fehlgeschlagen' : 'Voice recognition failed',
+                timestamp: new Date().toISOString(),
+            }]);
+        }
+        setVoiceProcessing(false);
+    };
+
     const handleKeyDown = (e) => {
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
@@ -9967,6 +10091,12 @@ const JarvisChatPage = () => {
         setTimeout(() => {
             api.get('chat/status').then(d => { if (d) setConnected(d.connected); });
         }, 500);
+    };
+
+    const saveVoiceSettings = async (key, value) => {
+        const updated = { ...voiceSettings, [key]: value };
+        setVoiceSettings(updated);
+        await api.put('chat/voice/settings', { [key]: value });
     };
 
     const formatTime = (ts) => {
@@ -10114,6 +10244,47 @@ const JarvisChatPage = () => {
                 }, lang === 'de'
                     ? 'IP-Adresse und Port des MindHome Assistant Servers'
                     : 'IP address and port of the MindHome Assistant server'
+                ),
+
+                // Voice settings
+                React.createElement('div', { style: { marginTop: 16, borderTop: '1px solid var(--border-color)', paddingTop: 12 } },
+                    React.createElement('div', { style: { marginBottom: 8, fontWeight: 600, fontSize: 13 } },
+                        lang === 'de' ? '🎤 Spracheingabe / Sprachausgabe' : '🎤 Voice Input / Output'
+                    ),
+                    React.createElement('div', { style: { display: 'flex', gap: 8, marginBottom: 6, alignItems: 'center' } },
+                        React.createElement('span', { style: { fontSize: 12, minWidth: 40 } }, 'STT:'),
+                        React.createElement('select', {
+                            className: 'input',
+                            value: voiceSettings.stt_entity || '',
+                            onChange: (e) => saveVoiceSettings('stt_entity', e.target.value),
+                            style: { flex: 1, fontSize: 12 },
+                        },
+                            React.createElement('option', { value: '' }, lang === 'de' ? '(Auto-Erkennung)' : '(Auto-detect)'),
+                            ...(voiceSettings.available_stt || []).map(e =>
+                                React.createElement('option', { key: e, value: e }, e)
+                            )
+                        )
+                    ),
+                    React.createElement('div', { style: { display: 'flex', gap: 8, alignItems: 'center' } },
+                        React.createElement('span', { style: { fontSize: 12, minWidth: 40 } }, 'TTS:'),
+                        React.createElement('select', {
+                            className: 'input',
+                            value: voiceSettings.tts_entity || '',
+                            onChange: (e) => saveVoiceSettings('tts_entity', e.target.value),
+                            style: { flex: 1, fontSize: 12 },
+                        },
+                            React.createElement('option', { value: '' }, lang === 'de' ? '(Auto-Erkennung)' : '(Auto-detect)'),
+                            ...(voiceSettings.available_tts || []).map(e =>
+                                React.createElement('option', { key: e, value: e }, e)
+                            )
+                        )
+                    ),
+                    React.createElement('div', {
+                        style: { marginTop: 6, fontSize: 11, color: 'var(--text-muted)' }
+                    }, lang === 'de'
+                        ? 'Whisper (STT) und Piper (TTS) Entities aus Home Assistant'
+                        : 'Whisper (STT) and Piper (TTS) entities from Home Assistant'
+                    )
                 )
             ),
 
@@ -10317,6 +10488,26 @@ const JarvisChatPage = () => {
                         lineHeight: 1.4,
                     },
                 }),
+                // Microphone button
+                React.createElement('button', {
+                    className: recording ? 'btn btn-danger' : 'btn btn-ghost btn-icon',
+                    onClick: recording ? stopRecording : startRecording,
+                    disabled: sending || uploading || voiceProcessing,
+                    title: recording
+                        ? (lang === 'de' ? 'Aufnahme stoppen' : 'Stop recording')
+                        : (lang === 'de' ? 'Sprachnachricht' : 'Voice message'),
+                    style: {
+                        width: 42, height: 42, borderRadius: '50%', padding: 0,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        flexShrink: 0,
+                        ...(recording ? { animation: 'pulse 1.5s infinite' } : {}),
+                    },
+                },
+                    React.createElement('span', {
+                        className: voiceProcessing ? 'mdi mdi-loading mdi-spin' : recording ? 'mdi mdi-stop' : 'mdi mdi-microphone',
+                        style: { fontSize: 20 }
+                    })
+                ),
                 React.createElement('button', {
                     className: 'btn btn-primary',
                     onClick: sendMessage,
@@ -12048,6 +12239,13 @@ const App = () => {
             50% { opacity: 0.8; }
         }
         .skeleton-pulse { animation: pulse 1.5s ease-in-out infinite; }
+
+        /* Voice recording pulse */
+        @keyframes recording-pulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+            50% { box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); }
+        }
+        .btn-danger { animation: recording-pulse 1.5s infinite !important; }
 
         /* #50 Smooth transitions */
         .card { transition: transform 0.15s, box-shadow 0.15s; }
