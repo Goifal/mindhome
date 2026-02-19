@@ -29,7 +29,7 @@ services:
       - ${DATA_DIR:-./data}/uploads:/app/data/uploads
     depends_on:
       chromadb:
-        condition: service_started
+        condition: service_healthy
       redis:
         condition: service_healthy
     # Ollama laeuft nativ auf dem Host
@@ -43,7 +43,7 @@ services:
   # --- ChromaDB (Langzeitgedaechtnis / Vektor-DB) ---
   # Nur ueber Docker-Netzwerk erreichbar (kein externer Zugriff noetig)
   chromadb:
-    image: chromadb/chroma:latest
+    image: chromadb/chroma:0.5.23
     container_name: mha-chromadb
     restart: unless-stopped
     volumes:
@@ -53,9 +53,12 @@ services:
     environment:
       - ANONYMIZED_TELEMETRY=false
       - IS_PERSISTENT=TRUE
-    # Healthcheck entfernt — chromadb/chroma:latest hat weder curl noch
-    # funktionierendes python CLI. ChromaDB startet zuverlaessig,
-    # Assistant nutzt service_started + eigene Retry-Logik.
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/heartbeat"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
 
   # --- Redis (Working Memory / Cache) ---
   # Nur ueber Docker-Netzwerk erreichbar (kein externer Zugriff noetig)
