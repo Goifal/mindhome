@@ -115,9 +115,17 @@ async def auth_header_middleware(request: Request, call_next):
 
 # ----- API Key Authentication fuer /api/assistant/* Endpoints -----
 # Schuetzt alle Assistant-API-Endpoints gegen unautorisierte Netzwerkzugriffe.
+#
+# WICHTIG: Key wird beim ersten Start auto-generiert und bereitgehalten,
+# aber NUR enforced wenn security.api_key_required = true in settings.yaml.
+# Grund: Addon und HA-Integration laufen auf separaten Systemen und kennen
+# den Key nicht automatisch. Der User muss den Key erst dort eintragen
+# und dann die Pruefung im Dashboard aktivieren.
+#
 # Key-Quellen (Prioritaet): 1. Env ASSISTANT_API_KEY  2. settings.yaml security.api_key  3. Auto-generiert
 
 _assistant_api_key: str = ""
+_api_key_required: bool = False
 
 # Pfade die OHNE API Key zugaenglich bleiben (Health fuer Discovery/Config-Flow)
 _API_KEY_EXEMPT_PATHS = frozenset({
@@ -130,33 +138,53 @@ _API_KEY_EXEMPT_PATHS = frozenset({
 
 
 def _init_api_key():
-    """Initialisiert den API Key (einmalig beim Import/Start)."""
-    global _assistant_api_key
+    """Initialisiert den API Key (einmalig beim Import/Start).
+
+    Der Key wird IMMER generiert (fuer Bereitschaft), aber nur enforced
+    wenn security.api_key_required = true in settings.yaml gesetzt ist.
+    """
+    global _assistant_api_key, _api_key_required
+
+    security_cfg = yaml_config.get("security", {})
+    _api_key_required = security_cfg.get("api_key_required", False)
 
     # 1. Env-Variable hat hoechste Prioritaet
     env_key = os.getenv("ASSISTANT_API_KEY", "").strip()
     if env_key:
         _assistant_api_key = env_key
-        logger.info("API Key aus Umgebungsvariable geladen")
+        # Wenn explizit per Env gesetzt, automatisch enforced
+        _api_key_required = True
+        logger.info("API Key aus Umgebungsvariable geladen (Enforcement aktiv)")
         return
 
     # 2. Aus settings.yaml lesen
-    yaml_key = yaml_config.get("security", {}).get("api_key", "").strip()
+    yaml_key = security_cfg.get("api_key", "")
+    if isinstance(yaml_key, str):
+        yaml_key = yaml_key.strip()
+    else:
+        yaml_key = ""
     if yaml_key:
         _assistant_api_key = yaml_key
-        logger.info("API Key aus settings.yaml geladen")
+        logger.info(
+            "API Key aus settings.yaml geladen (Enforcement: %s)",
+            "aktiv" if _api_key_required else "INAKTIV — im Dashboard aktivieren",
+        )
         return
 
-    # 3. Auto-generieren und in settings.yaml speichern
+    # 3. Auto-generieren und in settings.yaml speichern (Enforcement bleibt aus)
     _assistant_api_key = secrets.token_urlsafe(32)
     try:
         config_path = Path(__file__).parent.parent / "config" / "settings.yaml"
         with open(config_path) as f:
             cfg = yaml.safe_load(f) or {}
-        cfg.setdefault("security", {})["api_key"] = _assistant_api_key
+        security = cfg.setdefault("security", {})
+        security["api_key"] = _assistant_api_key
+        # api_key_required bewusst NICHT auf true setzen
+        if "api_key_required" not in security:
+            security["api_key_required"] = False
         with open(config_path, "w") as f:
             yaml.safe_dump(cfg, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
-        logger.info("API Key auto-generiert und in settings.yaml gespeichert")
+        logger.info("API Key auto-generiert (Enforcement INAKTIV bis im Dashboard aktiviert)")
     except Exception as e:
         logger.warning("API Key konnte nicht in settings.yaml gespeichert werden: %s", e)
 
@@ -164,8 +192,6 @@ def _init_api_key():
 _init_api_key()
 
 if not _assistant_api_key:
-    # Sollte nie passieren da _init_api_key() immer auto-generiert.
-    # Sicherheitsnetz: Leerer Key = Fehler, NICHT offener Zugang.
     logger.error("SICHERHEIT: API Key konnte nicht initialisiert werden! Generiere Fallback-Key.")
     _assistant_api_key = secrets.token_urlsafe(32)
 
@@ -186,19 +212,22 @@ def _check_api_key(request: Request) -> bool:
 
 @app.middleware("http")
 async def api_key_middleware(request: Request, call_next):
-    """Prueft API Key fuer alle /api/assistant/* Endpoints (ausser Health)."""
+    """Prueft API Key fuer alle /api/assistant/* Endpoints (ausser Health).
+
+    Nur aktiv wenn security.api_key_required = true ODER Env ASSISTANT_API_KEY gesetzt.
+    """
     path = request.url.path
 
-    # Nur /api/assistant/* Pfade pruefen
-    if path.startswith("/api/assistant/") or path == "/api/assistant":
-        # Exempt-Pfade durchlassen
-        if path not in _API_KEY_EXEMPT_PATHS:
-            if not _check_api_key(request):
-                from fastapi.responses import JSONResponse
-                return JSONResponse(
-                    status_code=403,
-                    content={"detail": "Ungueltiger oder fehlender API Key"},
-                )
+    # Nur pruefen wenn Enforcement aktiviert ist
+    if _api_key_required:
+        if path.startswith("/api/assistant/") or path == "/api/assistant":
+            if path not in _API_KEY_EXEMPT_PATHS:
+                if not _check_api_key(request):
+                    from fastapi.responses import JSONResponse
+                    return JSONResponse(
+                        status_code=403,
+                        content={"detail": "Ungueltiger oder fehlender API Key"},
+                    )
 
     return await call_next(request)
 
@@ -878,8 +907,8 @@ async def websocket_endpoint(websocket: WebSocket):
     assistant.feedback - Feedback auf Meldung
     assistant.interrupt - Unterbrechung
     """
-    # API Key Authentifizierung fuer WebSocket
-    if _assistant_api_key:
+    # API Key Authentifizierung fuer WebSocket (nur wenn Enforcement aktiv)
+    if _api_key_required:
         ws_key = websocket.query_params.get("api_key", "")
         if not ws_key or not secrets.compare_digest(ws_key, _assistant_api_key):
             await websocket.close(code=4003, reason="Ungueltiger API Key")
@@ -1167,9 +1196,13 @@ def _check_token(token: str):
 
 @app.get("/api/ui/api-key")
 async def ui_get_api_key(token: str = ""):
-    """API Key anzeigen (PIN-geschuetzt). Fuer Addon/HA-Integration-Konfiguration."""
+    """API Key + Enforcement-Status anzeigen (PIN-geschuetzt)."""
     _check_token(token)
-    return {"api_key": _assistant_api_key}
+    return {
+        "api_key": _assistant_api_key,
+        "enforcement": _api_key_required,
+        "env_locked": bool(os.getenv("ASSISTANT_API_KEY", "").strip()),
+    }
 
 
 @app.post("/api/ui/api-key/regenerate")
@@ -1187,6 +1220,43 @@ async def ui_regenerate_api_key(token: str = ""):
             yaml.safe_dump(cfg, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
         _audit_log("api_key_regenerated", {})
         return {"api_key": _assistant_api_key, "message": "Neuer API Key generiert. Addon und HA-Integration muessen aktualisiert werden."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
+class ApiKeyEnforcementRequest(BaseModel):
+    enabled: bool
+
+
+@app.post("/api/ui/api-key/enforcement")
+async def ui_set_api_key_enforcement(req: ApiKeyEnforcementRequest, token: str = ""):
+    """API Key Enforcement ein-/ausschalten (PIN-geschuetzt).
+
+    Aktiviert oder deaktiviert die API Key Pruefung fuer /api/assistant/* Endpoints.
+    WICHTIG: Erst aktivieren NACHDEM der Key in Addon + HA-Integration eingetragen wurde!
+    """
+    _check_token(token)
+
+    # Env-Variable erzwingt Enforcement — Dashboard darf nicht deaktivieren
+    if not req.enabled and os.getenv("ASSISTANT_API_KEY", "").strip():
+        raise HTTPException(
+            status_code=400,
+            detail="API Key Enforcement kann nicht deaktiviert werden wenn ASSISTANT_API_KEY als Umgebungsvariable gesetzt ist.",
+        )
+
+    global _api_key_required
+    _api_key_required = req.enabled
+
+    try:
+        with open(SETTINGS_YAML_PATH) as f:
+            cfg = yaml.safe_load(f) or {}
+        cfg.setdefault("security", {})["api_key_required"] = req.enabled
+        with open(SETTINGS_YAML_PATH, "w") as f:
+            yaml.safe_dump(cfg, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+        _audit_log("api_key_enforcement_changed", {"enabled": req.enabled})
+        status = "aktiviert" if req.enabled else "deaktiviert"
+        logger.info("API Key Enforcement %s", status)
+        return {"enforcement": _api_key_required, "message": f"API Key Pruefung {status}."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Fehler: {e}")
 

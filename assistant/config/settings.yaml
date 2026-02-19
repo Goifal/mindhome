@@ -381,6 +381,11 @@ heating:
 
 # --- Sicherheit ---
 security:
+  # API Key Pruefung: Schuetzt /api/assistant/* Endpoints
+  # Der Key wird automatisch generiert. Pruefung erst aktivieren
+  # NACHDEM der Key in Addon + HA-Integration eingetragen wurde.
+  api_key_required: false
+
   # Aktionen die Bestaetigung brauchen
   require_confirmation:
     - "lock_door:unlock"
