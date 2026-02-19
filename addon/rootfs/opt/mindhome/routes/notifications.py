@@ -187,7 +187,8 @@ def api_update_notification_settings():
         return jsonify({"success": True})
     except Exception as e:
         session.rollback()
-        return jsonify({"error": str(e)}), 500
+        logger.error("Operation failed: %s", e)
+        return jsonify({"error": "Operation failed"}), 500
     finally:
         session.close()
 
@@ -219,7 +220,8 @@ def api_mute_device():
         return jsonify({"success": True, "id": mute.id})
     except Exception as e:
         session.rollback()
-        return jsonify({"error": str(e)}), 500
+        logger.error("Operation failed: %s", e)
+        return jsonify({"error": "Operation failed"}), 500
     finally:
         session.close()
 
@@ -265,7 +267,8 @@ def api_discover_notification_channels():
         return jsonify({"success": True, "found": found})
     except Exception as e:
         session.rollback()
-        return jsonify({"error": str(e)}), 500
+        logger.error("Operation failed: %s", e)
+        return jsonify({"error": "Operation failed"}), 500
     finally:
         session.close()
 
@@ -433,8 +436,8 @@ def api_scan_notification_channels():
         return jsonify({"success": True, "found": len(channels), "channels": channels})
     except Exception as e:
         session.rollback()
-        logger.error(f"Scan channels error: {e}")
-        return jsonify({"success": False, "error": str(e), "found": 0, "channels": []})
+        logger.error("Operation failed: %s", e)
+        return jsonify({"success": False, "error": "Operation failed", "found": 0, "channels": []}), 500
     finally:
         session.close()
 

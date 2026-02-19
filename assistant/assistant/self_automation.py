@@ -833,7 +833,7 @@ REGELN:
     def _get_entity_examples(self, states: list[dict], max_per_domain: int = 5) -> str:
         """Erstellt eine kompakte Entity-Liste fuer den LLM-Kontext."""
         if not states:
-            return "(Keine Entities verfuegbar)"
+            return "(Aktuell keine Geraete erreichbar)"
 
         domains: dict[str, list[str]] = {}
         for s in states:

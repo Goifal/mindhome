@@ -155,6 +155,10 @@ def api_update_device(device_id):
 
         session.commit()
         return jsonify({"id": device.id, "name": device.name})
+    except Exception as e:
+        session.rollback()
+        logger.error("Device update failed: %s", e)
+        return jsonify({"error": "Update failed"}), 500
     finally:
         session.close()
 

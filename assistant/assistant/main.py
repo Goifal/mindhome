@@ -864,9 +864,27 @@ def _is_setup_complete() -> bool:
     return dc.get("setup_complete", False)
 
 
-def _hash_value(value: str) -> str:
-    """Hasht einen Wert mit SHA-256."""
-    return hashlib.sha256(value.encode()).hexdigest()
+def _hash_value(value: str, salt: str | None = None) -> str:
+    """Hasht einen Wert mit PBKDF2-HMAC-SHA256 + Salt.
+
+    Returns 'salt:hash' format. If salt is None, a random salt is generated.
+    """
+    if salt is None:
+        salt = secrets.token_hex(16)
+    h = hashlib.pbkdf2_hmac("sha256", value.encode(), salt.encode(), iterations=100_000)
+    return f"{salt}:{h.hex()}"
+
+
+def _verify_hash(value: str, stored: str) -> bool:
+    """Prueft ob value zum gespeicherten Hash passt.
+
+    Unterstuetzt sowohl neues 'salt:hash'-Format als auch altes Plain-SHA-256.
+    """
+    if ":" in stored:
+        salt, _ = stored.split(":", 1)
+        return secrets.compare_digest(_hash_value(value, salt), stored)
+    # Legacy: Plain SHA-256 ohne Salt
+    return secrets.compare_digest(hashlib.sha256(value.encode()).hexdigest(), stored)
 
 
 def _save_dashboard_config(pin_hash: str, recovery_hash: str, setup_complete: bool = True):
@@ -958,7 +976,7 @@ async def ui_auth(req: PinRequest):
         valid = (req.pin == env_pin)
     else:
         stored_hash = _get_dashboard_config().get("pin_hash", "")
-        valid = (stored_hash and _hash_value(req.pin) == stored_hash)
+        valid = (stored_hash and _verify_hash(req.pin, stored_hash))
 
     if not valid:
         _audit_log("login", {"success": False})
@@ -986,7 +1004,7 @@ async def ui_reset_pin(req: ResetPinRequest):
 
     # Recovery-Key pruefen
     stored_recovery_hash = _get_dashboard_config().get("recovery_key_hash", "")
-    if not stored_recovery_hash or _hash_value(req.recovery_key) != stored_recovery_hash:
+    if not stored_recovery_hash or not _verify_hash(req.recovery_key, stored_recovery_hash):
         raise HTTPException(status_code=401, detail="Falscher Recovery-Key")
 
     # Neuen Recovery-Key generieren

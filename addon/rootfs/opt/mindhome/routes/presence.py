@@ -135,7 +135,8 @@ def api_current_day_phase():
         ctx = builder.build()
         return jsonify({"day_phase": ctx.get("day_phase","unknown"), "day_phase_id": ctx.get("day_phase_id"), "time_slot": ctx.get("time_slot"), "is_dark": ctx.get("is_dark",False)})
     except Exception as e:
-        return jsonify({"day_phase": "unknown", "error": str(e)})
+        logger.error("Operation failed: %s", e)
+        return jsonify({"day_phase": "unknown", "error": "Operation failed"}), 500
 
 
 @presence_bp.route("/api/presence-modes", methods=["GET"])
@@ -201,7 +202,8 @@ def api_current_presence_mode():
         # Fallback: no log exists yet - return placeholder without auto-selecting
         return jsonify({"name_de": "Erkennung laeuft...", "name_en": "Detecting...", "icon": "mdi-crosshairs-question", "color": "#9E9E9E", "since": None, "is_default": True})
     except Exception as e:
-        return jsonify({"error": str(e)})
+        logger.error("Operation failed: %s", e)
+        return jsonify({"error": "Operation failed"}), 500
 
 
 @presence_bp.route("/api/presence-modes/<int:mode_id>/activate", methods=["POST"])
@@ -209,7 +211,8 @@ def api_activate_presence_mode(mode_id):
     try:
         return jsonify(_deps.get("automation_scheduler").presence_mgr.set_mode(mode_id, trigger="manual"))
     except Exception as e:
-        return jsonify({"error": str(e)})
+        logger.error("Operation failed: %s", e)
+        return jsonify({"error": "Operation failed"}), 500
 
 
 @presence_bp.route("/api/presence-log", methods=["GET"])
@@ -354,7 +357,8 @@ def api_presence_auto_detect():
         })
     except Exception as e:
         session.rollback()
-        return jsonify({"error": str(e)}), 500
+        logger.error("Operation failed: %s", e)
+        return jsonify({"error": "Operation failed"}), 500
     finally:
         session.close()
 
