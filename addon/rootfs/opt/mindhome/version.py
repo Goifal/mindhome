@@ -4,10 +4,20 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "1.4.0"
-BUILD = 90
+VERSION = "1.4.1"
+BUILD = 91
 BUILD_DATE = "2026-02-19"
-CODENAME = "Jarvis Hardened"
+CODENAME = "Jarvis Family"
+
+# Changelog
+# Build 91: v1.4.1 Jarvis Family — Personen-Verwaltung, NoneType-Fixes, Timeout-Schutz
+#   - NEU: Personen-Tab in Settings UI (Hauptbenutzer + Familienmitglieder)
+#   - NEU: Rollen-System: Hausherr/in, Mitbewohner/in, Gast
+#   - NEU: household → persons/trust_levels Auto-Sync
+#   - NEU: 60s Timeout fuer brain.process() (kein endloses Haengen mehr)
+#   - FIX: NoneType-Crashes in personality.py (trust_persons, _format_context)
+#   - FIX: NoneType-Crash in ambient_audio.py (cfg.get None-Schutz)
+#   - FIX: user_name dynamisch statt gecacht (Aenderung sofort wirksam)
 
 # Changelog
 # Build 90: v1.4.0 Jarvis Hardened — Dual-SSD Setup, Security-Audit, System-Audit
