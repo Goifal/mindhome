@@ -114,6 +114,9 @@ class SelfOptimization:
 
     async def get_pending_proposals(self) -> list[dict]:
         """Gibt aktuelle Vorschlaege zurueck (fuer Dashboard/Chat)."""
+        if not self.is_enabled():
+            return []
+
         if self._pending_proposals:
             return self._pending_proposals
 
@@ -128,6 +131,9 @@ class SelfOptimization:
 
         Returns: {"success": bool, "message": str}
         """
+        if not self.is_enabled():
+            return {"success": False, "message": "Selbstoptimierung ist deaktiviert"}
+
         proposals = await self.get_pending_proposals()
         if index < 0 or index >= len(proposals):
             return {"success": False, "message": f"Vorschlag #{index} existiert nicht"}
@@ -174,6 +180,9 @@ class SelfOptimization:
 
     async def reject_proposal(self, index: int) -> dict:
         """User lehnt einen Vorschlag ab."""
+        if not self.is_enabled():
+            return {"success": False, "message": "Selbstoptimierung ist deaktiviert"}
+
         proposals = await self.get_pending_proposals()
         if index < 0 or index >= len(proposals):
             return {"success": False, "message": f"Vorschlag #{index} existiert nicht"}
@@ -199,6 +208,8 @@ class SelfOptimization:
 
     async def reject_all(self) -> dict:
         """User lehnt alle Vorschlaege ab."""
+        if not self.is_enabled():
+            return {"success": False, "message": "Selbstoptimierung ist deaktiviert"}
         proposals = await self.get_pending_proposals()
         count = len(proposals)
         self._pending_proposals = []
