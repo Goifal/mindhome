@@ -20,6 +20,8 @@ import asyncio
 import json
 import logging
 import re
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Optional
 
 from .action_planner import ActionPlanner
@@ -43,13 +45,16 @@ from .model_router import ModelRouter
 from .mood_detector import MoodDetector
 from .ollama_client import OllamaClient
 from .ambient_audio import AmbientAudioClassifier
+from .ocr import OCREngine
 from .conflict_resolver import ConflictResolver
 from .personality import PersonalityEngine
 from .proactive import ProactiveManager
 from .anticipation import AnticipationEngine
 from .intent_tracker import IntentTracker
 from .routine_engine import RoutineEngine
+from .config_versioning import ConfigVersioning
 from .self_automation import SelfAutomation
+from .self_optimization import SelfOptimization
 from .sound_manager import SoundManager
 from .speaker_recognition import SpeakerRecognition
 from .summarizer import DailySummarizer
@@ -58,6 +63,24 @@ from .tts_enhancer import TTSEnhancer
 from .websocket import emit_thinking, emit_speaking, emit_action
 
 logger = logging.getLogger(__name__)
+
+# Audit-Log (gleicher Pfad wie main.py, fuer Chat-basierte Sicherheitsevents)
+_AUDIT_LOG_PATH = Path(__file__).parent.parent / "logs" / "audit.jsonl"
+
+
+def _audit_log(action: str, details: dict = None):
+    """Schreibt einen Audit-Eintrag (append-only JSONL)."""
+    try:
+        _AUDIT_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        entry = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "action": action,
+            "details": details or {},
+        }
+        with open(_AUDIT_LOG_PATH, "a") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    except Exception as exc:
+        logger.warning("Audit-Log Fehler: %s", exc)
 
 # Phase 7.5: Szenen-Intelligenz — Prompt fuer natuerliches Situationsverstaendnis
 def _build_scene_intelligence_prompt() -> str:
@@ -134,6 +157,9 @@ class AssistantBrain:
         # Phase 10: Diagnostik + Wartungs-Assistent
         self.diagnostics = DiagnosticsEngine(self.ha)
 
+        # Phase 14.2: OCR & Bild-Analyse (Multi-Modal Input)
+        self.ocr = OCREngine(self.ollama)
+
         # Phase 14.3: Ambient Audio (Umgebungsgeraeusch-Erkennung)
         self.ambient_audio = AmbientAudioClassifier(self.ha)
 
@@ -151,6 +177,10 @@ class AssistantBrain:
 
         # Phase 13.2: Self Automation (Automationen aus natuerlicher Sprache)
         self.self_automation = SelfAutomation(self.ha, self.ollama)
+
+        # Phase 13.4: Config Versioning + Self Optimization
+        self.config_versioning = ConfigVersioning()
+        self.self_optimization = SelfOptimization(self.ollama, self.config_versioning)
 
         # Phase 11: Koch-Assistent
         self.cooking = CookingAssistant(self.ollama)
@@ -227,6 +257,14 @@ class AssistantBrain:
 
         # Phase 13.2: Self Automation initialisieren
         await self.self_automation.initialize(redis_client=self.memory.redis)
+
+        # Phase 13.4: Config Versioning + Self Optimization initialisieren
+        await self.config_versioning.initialize(redis_client=self.memory.redis)
+        await self.self_optimization.initialize(redis_client=self.memory.redis)
+        self.executor.set_config_versioning(self.config_versioning)
+
+        # Phase 14.2: OCR Engine initialisieren
+        await self.ocr.initialize(redis_client=self.memory.redis)
 
         # Phase 14.3: Ambient Audio initialisieren und starten
         await self.ambient_audio.initialize(redis_client=self.memory.redis)
@@ -359,6 +397,19 @@ class AssistantBrain:
                 "response": automation_result,
                 "actions": [],
                 "model_used": "self_automation",
+                "context_room": room or "unbekannt",
+            }
+
+        # Phase 13.4: Optimierungs-Vorschlag Bestaetigung
+        opt_result = await self._handle_optimization_confirmation(text)
+        if opt_result:
+            await self.memory.add_conversation("user", text)
+            await self.memory.add_conversation("assistant", opt_result)
+            await emit_speaking(opt_result)
+            return {
+                "response": opt_result,
+                "actions": [],
+                "model_used": "self_optimization",
                 "context_room": room or "unbekannt",
             }
 
@@ -512,7 +563,19 @@ class AssistantBrain:
             system_prompt += rag_context
 
         # Phase 12: Datei-Kontext in Prompt einbauen
+        # Phase 14.2: Vision-LLM Bild-Analyse (erweitert Datei-Kontext)
         if files:
+            if self.ocr.enabled and self.ocr._vision_available:
+                for f in files:
+                    if f.get("type") == "image":
+                        try:
+                            description = await self.ocr.describe_image(f, text)
+                            if description:
+                                f["vision_description"] = description
+                        except Exception as e:
+                            logger.warning("Vision-LLM fuer %s fehlgeschlagen: %s",
+                                           f.get("name", "?"), e)
+
             from .file_handler import build_file_context
             file_context = build_file_context(files)
             if file_context:
@@ -571,6 +634,8 @@ class AssistantBrain:
                 system_prompt=system_prompt,
                 context=context,
                 messages=messages,
+                person=person,
+                autonomy=self.autonomy,
             )
             response_text = planner_result.get("response", "")
             executed_actions = planner_result.get("actions", [])
@@ -665,20 +730,21 @@ class AssistantBrain:
                             continue
 
                     # Phase 10: Trust-Level Pre-Check (mit Raum-Scoping)
-                    if person:
-                        action_room = func_args.get("room", "") if isinstance(func_args, dict) else ""
-                        trust_check = self.autonomy.can_person_act(person, func_name, room=action_room)
-                        if not trust_check["allowed"]:
-                            logger.warning(
-                                "Trust-Check fehlgeschlagen: %s darf '%s' nicht (%s)",
-                                person, func_name, trust_check.get("reason", ""),
-                            )
-                            executed_actions.append({
-                                "function": func_name,
-                                "args": func_args,
-                                "result": f"blocked: {trust_check.get('reason', 'Keine Berechtigung')}",
-                            })
-                            continue
+                    # SICHERHEIT: Wenn person unbekannt/leer → als Gast behandeln (restriktivste Stufe)
+                    effective_person = person if person else "__anonymous_guest__"
+                    action_room = func_args.get("room", "") if isinstance(func_args, dict) else ""
+                    trust_check = self.autonomy.can_person_act(effective_person, func_name, room=action_room)
+                    if not trust_check["allowed"]:
+                        logger.warning(
+                            "Trust-Check fehlgeschlagen: %s darf '%s' nicht (%s)",
+                            effective_person, func_name, trust_check.get("reason", ""),
+                        )
+                        executed_actions.append({
+                            "function": func_name,
+                            "args": func_args,
+                            "result": f"blocked: {trust_check.get('reason', 'Keine Berechtigung')}",
+                        })
+                        continue
 
                     # Phase 16.1: Konflikt-Check (Multi-User)
                     final_args = func_args
@@ -1080,9 +1146,12 @@ class AssistantBrain:
                 "diagnostics": self.diagnostics.health_status(),
                 "cooking_assistant": f"active (session: {'ja' if self.cooking.has_active_session else 'nein'})",
                 "knowledge_base": f"active ({self.knowledge_base.chroma_collection.count() if self.knowledge_base.chroma_collection else 0} chunks)" if self.knowledge_base.chroma_collection else "disabled",
+                "ocr": self.ocr.health_status(),
                 "ambient_audio": self.ambient_audio.health_status(),
                 "conflict_resolver": self.conflict_resolver.health_status(),
                 "self_automation": self.self_automation.health_status(),
+                "config_versioning": self.config_versioning.health_status(),
+                "self_optimization": self.self_optimization.health_status(),
             },
             "models_available": models,
             "model_routing": self.model_router.get_model_info(),
@@ -1362,6 +1431,51 @@ class AssistantBrain:
             if self.self_automation._pending:
                 self.self_automation._pending.clear()
                 return "Automation verworfen."
+
+        return None
+
+    # ------------------------------------------------------------------
+    # Phase 13.4: Optimierungs-Vorschlag Bestaetigung (Chat)
+    # ------------------------------------------------------------------
+
+    async def _handle_optimization_confirmation(self, text: str) -> Optional[str]:
+        """Erkennt Optimierungs-Bestaetigungen im Chat.
+
+        SICHERHEIT: Jarvis kann NIEMALS selbst Vorschlaege genehmigen.
+        Nur explizite User-Eingaben loesen approve_proposal() aus.
+        """
+        proposals = await self.self_optimization.get_pending_proposals()
+        if not proposals:
+            return None
+
+        text_lower = text.lower().strip().rstrip("!?.")
+
+        # "Vorschlag 1 annehmen" / "Vorschlag 2 ablehnen"
+        import re
+        approve_match = re.search(r"vorschlag\s+(\d+)\s+(annehmen|genehmigen|akzeptieren|ok)", text_lower)
+        if approve_match:
+            idx = int(approve_match.group(1)) - 1  # 1-basiert -> 0-basiert
+            result = await self.self_optimization.approve_proposal(idx)
+            if result["success"]:
+                # yaml_config im Speicher aktualisieren
+                from .config import load_yaml_config
+                import assistant.config as cfg
+                cfg.yaml_config = load_yaml_config()
+                _audit_log("self_opt_approve_chat", {"proposal_index": idx, "result": result.get("message", "")})
+            return result.get("message", "")
+
+        reject_match = re.search(r"vorschlag\s+(\d+)\s+(ablehnen|verwerfen|nein)", text_lower)
+        if reject_match:
+            idx = int(reject_match.group(1)) - 1
+            result = await self.self_optimization.reject_proposal(idx)
+            _audit_log("self_opt_reject_chat", {"proposal_index": idx})
+            return result.get("message", "")
+
+        # "Alle Vorschlaege ablehnen"
+        if any(t in text_lower for t in ["alle vorschlaege ablehnen", "alle ablehnen", "vorschlaege verwerfen"]):
+            result = await self.self_optimization.reject_all()
+            _audit_log("self_opt_reject_all_chat", {})
+            return result.get("message", "")
 
         return None
 

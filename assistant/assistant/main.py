@@ -6,6 +6,7 @@ Startet den MindHome Assistant REST API Server.
 import json
 import logging
 import os
+import secrets
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -109,6 +110,125 @@ async def auth_header_middleware(request: Request, call_next):
         qs = scope.get("query_string", b"").decode()
         sep = "&" if qs else ""
         scope["query_string"] = f"{qs}{sep}token={token}".encode()
+    return await call_next(request)
+
+
+# ----- API Key Authentication fuer /api/assistant/* Endpoints -----
+# Schuetzt alle Assistant-API-Endpoints gegen unautorisierte Netzwerkzugriffe.
+#
+# WICHTIG: Key wird beim ersten Start auto-generiert und bereitgehalten,
+# aber NUR enforced wenn security.api_key_required = true in settings.yaml.
+# Grund: Addon und HA-Integration laufen auf separaten Systemen und kennen
+# den Key nicht automatisch. Der User muss den Key erst dort eintragen
+# und dann die Pruefung im Dashboard aktivieren.
+#
+# Key-Quellen (Prioritaet): 1. Env ASSISTANT_API_KEY  2. settings.yaml security.api_key  3. Auto-generiert
+
+_assistant_api_key: str = ""
+_api_key_required: bool = False
+
+# Pfade die OHNE API Key zugaenglich bleiben (Health fuer Discovery/Config-Flow)
+_API_KEY_EXEMPT_PATHS = frozenset({
+    "/api/assistant/health",
+    "/",
+    "/docs",
+    "/openapi.json",
+    "/redoc",
+})
+
+
+def _init_api_key():
+    """Initialisiert den API Key (einmalig beim Import/Start).
+
+    Der Key wird IMMER generiert (fuer Bereitschaft), aber nur enforced
+    wenn security.api_key_required = true in settings.yaml gesetzt ist.
+    """
+    global _assistant_api_key, _api_key_required
+
+    security_cfg = yaml_config.get("security", {})
+    _api_key_required = security_cfg.get("api_key_required", False)
+
+    # 1. Env-Variable hat hoechste Prioritaet
+    env_key = os.getenv("ASSISTANT_API_KEY", "").strip()
+    if env_key:
+        _assistant_api_key = env_key
+        # Wenn explizit per Env gesetzt, automatisch enforced
+        _api_key_required = True
+        logger.info("API Key aus Umgebungsvariable geladen (Enforcement aktiv)")
+        return
+
+    # 2. Aus settings.yaml lesen
+    yaml_key = security_cfg.get("api_key", "")
+    if isinstance(yaml_key, str):
+        yaml_key = yaml_key.strip()
+    else:
+        yaml_key = ""
+    if yaml_key:
+        _assistant_api_key = yaml_key
+        logger.info(
+            "API Key aus settings.yaml geladen (Enforcement: %s)",
+            "aktiv" if _api_key_required else "INAKTIV — im Dashboard aktivieren",
+        )
+        return
+
+    # 3. Auto-generieren und in settings.yaml speichern (Enforcement bleibt aus)
+    _assistant_api_key = secrets.token_urlsafe(32)
+    try:
+        config_path = Path(__file__).parent.parent / "config" / "settings.yaml"
+        with open(config_path) as f:
+            cfg = yaml.safe_load(f) or {}
+        security = cfg.setdefault("security", {})
+        security["api_key"] = _assistant_api_key
+        # api_key_required bewusst NICHT auf true setzen
+        if "api_key_required" not in security:
+            security["api_key_required"] = False
+        with open(config_path, "w") as f:
+            yaml.safe_dump(cfg, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+        logger.info("API Key auto-generiert (Enforcement INAKTIV bis im Dashboard aktiviert)")
+    except Exception as e:
+        logger.warning("API Key konnte nicht in settings.yaml gespeichert werden: %s", e)
+
+
+_init_api_key()
+
+if not _assistant_api_key:
+    logger.error("SICHERHEIT: API Key konnte nicht initialisiert werden! Generiere Fallback-Key.")
+    _assistant_api_key = secrets.token_urlsafe(32)
+
+
+def _check_api_key(request: Request) -> bool:
+    """Prueft ob ein gueltiger API Key mitgesendet wurde.
+
+    Akzeptiert Key via:
+    - X-API-Key Header
+    - api_key Query-Parameter
+    """
+    key = request.headers.get("x-api-key", "")
+    if not key:
+        key = request.query_params.get("api_key", "")
+
+    return secrets.compare_digest(key, _assistant_api_key) if key else False
+
+
+@app.middleware("http")
+async def api_key_middleware(request: Request, call_next):
+    """Prueft API Key fuer alle /api/assistant/* Endpoints (ausser Health).
+
+    Nur aktiv wenn security.api_key_required = true ODER Env ASSISTANT_API_KEY gesetzt.
+    """
+    path = request.url.path
+
+    # Nur pruefen wenn Enforcement aktiviert ist
+    if _api_key_required:
+        if path.startswith("/api/assistant/") or path == "/api/assistant":
+            if path not in _API_KEY_EXEMPT_PATHS:
+                if not _check_api_key(request):
+                    from fastapi.responses import JSONResponse
+                    return JSONResponse(
+                        status_code=403,
+                        content={"detail": "Ungueltiger oder fehlender API Key"},
+                    )
+
     return await call_next(request)
 
 
@@ -418,10 +538,12 @@ async def update_settings(update: SettingsUpdate, token: str = ""):
     _check_token(token)
     result = {}
     if update.autonomy_level is not None:
+        old_level = brain.autonomy.level
         success = brain.autonomy.set_level(update.autonomy_level)
         if not success:
             raise HTTPException(status_code=400, detail="Level muss 1-5 sein")
         result["autonomy"] = brain.autonomy.get_level_info()
+        _audit_log("autonomy_level_changed", {"old": old_level, "new": update.autonomy_level})
     return result
 
 
@@ -770,6 +892,9 @@ async def websocket_endpoint(websocket: WebSocket):
     """
     WebSocket fuer Echtzeit-Events.
 
+    Authentifizierung via api_key Query-Parameter:
+    ws://host:port/api/assistant/ws?api_key=DEIN_KEY
+
     Events (Server -> Client):
     assistant.speaking - Assistent spricht (Text + TTS-Metadaten)
     assistant.thinking - Assistent denkt nach
@@ -784,6 +909,13 @@ async def websocket_endpoint(websocket: WebSocket):
     assistant.feedback - Feedback auf Meldung
     assistant.interrupt - Unterbrechung
     """
+    # API Key Authentifizierung fuer WebSocket (nur wenn Enforcement aktiv)
+    if _api_key_required:
+        ws_key = websocket.query_params.get("api_key", "")
+        if not ws_key or not secrets.compare_digest(ws_key, _assistant_api_key):
+            await websocket.close(code=4003, reason="Ungueltiger API Key")
+            return
+
     await ws_manager.connect(websocket)
     try:
         while True:
@@ -830,7 +962,6 @@ async def websocket_endpoint(websocket: WebSocket):
 # ============================================================
 
 import hashlib
-import secrets
 
 # Settings-YAML Pfad
 SETTINGS_YAML_PATH = Path(__file__).parent.parent / "config" / "settings.yaml"
@@ -900,7 +1031,7 @@ def _save_dashboard_config(pin_hash: str, recovery_hash: str, setup_complete: bo
         # Alten Klartext-PIN entfernen falls vorhanden
         config["dashboard"].pop("pin", None)
         with open(SETTINGS_YAML_PATH, "w") as f:
-            yaml.dump(config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+            yaml.safe_dump(config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
         # Config im Speicher aktualisieren
         import assistant.config as cfg
         cfg.yaml_config = load_yaml_config()
@@ -955,6 +1086,7 @@ async def ui_setup(req: SetupRequest):
     _save_dashboard_config(pin_hash, recovery_hash, setup_complete=True)
 
     logger.info("Dashboard: Erstmaliges Setup abgeschlossen")
+    _audit_log("initial_setup", {"setup_complete": True})
 
     # Recovery-Key dem User anzeigen (nur dieses eine Mal!)
     return {
@@ -970,10 +1102,10 @@ async def ui_auth(req: PinRequest):
     if not _is_setup_complete():
         raise HTTPException(status_code=400, detail="Setup noch nicht abgeschlossen")
 
-    # Vergleich: Env-PIN (Klartext) oder gehashter PIN aus YAML
+    # Vergleich: Env-PIN (Klartext, timing-safe) oder gehashter PIN aus YAML
     env_pin = os.environ.get("JARVIS_UI_PIN")
     if env_pin:
-        valid = (req.pin == env_pin)
+        valid = secrets.compare_digest(req.pin, env_pin)
     else:
         stored_hash = _get_dashboard_config().get("pin_hash", "")
         valid = (stored_hash and _verify_hash(req.pin, stored_hash))
@@ -1065,6 +1197,73 @@ def _check_token(token: str):
         raise HTTPException(status_code=401, detail="Sitzung abgelaufen. Bitte erneut anmelden.")
 
 
+@app.get("/api/ui/api-key")
+async def ui_get_api_key(token: str = ""):
+    """API Key + Enforcement-Status anzeigen (PIN-geschuetzt)."""
+    _check_token(token)
+    return {
+        "api_key": _assistant_api_key,
+        "enforcement": _api_key_required,
+        "env_locked": bool(os.getenv("ASSISTANT_API_KEY", "").strip()),
+    }
+
+
+@app.post("/api/ui/api-key/regenerate")
+async def ui_regenerate_api_key(token: str = ""):
+    """API Key neu generieren (PIN-geschuetzt). Invalidiert alle bestehenden Clients."""
+    _check_token(token)
+    global _assistant_api_key
+    _assistant_api_key = secrets.token_urlsafe(32)
+
+    try:
+        with open(SETTINGS_YAML_PATH) as f:
+            cfg = yaml.safe_load(f) or {}
+        cfg.setdefault("security", {})["api_key"] = _assistant_api_key
+        with open(SETTINGS_YAML_PATH, "w") as f:
+            yaml.safe_dump(cfg, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+        _audit_log("api_key_regenerated", {})
+        return {"api_key": _assistant_api_key, "message": "Neuer API Key generiert. Addon und HA-Integration muessen aktualisiert werden."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
+class ApiKeyEnforcementRequest(BaseModel):
+    enabled: bool
+
+
+@app.post("/api/ui/api-key/enforcement")
+async def ui_set_api_key_enforcement(req: ApiKeyEnforcementRequest, token: str = ""):
+    """API Key Enforcement ein-/ausschalten (PIN-geschuetzt).
+
+    Aktiviert oder deaktiviert die API Key Pruefung fuer /api/assistant/* Endpoints.
+    WICHTIG: Erst aktivieren NACHDEM der Key in Addon + HA-Integration eingetragen wurde!
+    """
+    _check_token(token)
+
+    # Env-Variable erzwingt Enforcement — Dashboard darf nicht deaktivieren
+    if not req.enabled and os.getenv("ASSISTANT_API_KEY", "").strip():
+        raise HTTPException(
+            status_code=400,
+            detail="API Key Enforcement kann nicht deaktiviert werden wenn ASSISTANT_API_KEY als Umgebungsvariable gesetzt ist.",
+        )
+
+    global _api_key_required
+    _api_key_required = req.enabled
+
+    try:
+        with open(SETTINGS_YAML_PATH) as f:
+            cfg = yaml.safe_load(f) or {}
+        cfg.setdefault("security", {})["api_key_required"] = req.enabled
+        with open(SETTINGS_YAML_PATH, "w") as f:
+            yaml.safe_dump(cfg, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+        _audit_log("api_key_enforcement_changed", {"enabled": req.enabled})
+        status = "aktiviert" if req.enabled else "deaktiviert"
+        logger.info("API Key Enforcement %s", status)
+        return {"enforcement": _api_key_required, "message": f"API Key Pruefung {status}."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
 @app.get("/api/ui/settings")
 async def ui_get_settings(token: str = ""):
     """Alle Settings aus settings.yaml als JSON."""
@@ -1077,21 +1276,71 @@ async def ui_get_settings(token: str = ""):
         raise HTTPException(status_code=500, detail=f"Fehler: {e}")
 
 
+# Sicherheitskritische Keys die aus Bulk-Settings-Updates herausgefiltert werden.
+# Diese duerfen NUR ueber ihre dedizierten Endpoints geaendert werden.
+# "dashboard" → PIN-Hash, Recovery-Key duerfen nie per Bulk ueberschrieben werden
+# "self_optimization.immutable_keys" → Schutz vor Manipulation der Immutable-Liste
+_SETTINGS_STRIP_KEYS = frozenset({"dashboard"})
+_SETTINGS_STRIP_SUBKEYS = {
+    "security": frozenset({"api_key", "api_key_required"}),  # Nur via dedizierte Endpoints
+    "self_optimization": frozenset({"immutable_keys"}),       # Darf nicht per UI geaendert werden
+}
+
+
+def _strip_protected_settings(data: dict) -> tuple[dict, list[str]]:
+    """Entfernt sicherheitskritische Keys aus einem Settings-Dict.
+
+    Returns:
+        (bereinigtes Dict, Liste der entfernten Keys)
+    """
+    stripped = []
+    cleaned = {}
+    for key, value in data.items():
+        if key in _SETTINGS_STRIP_KEYS:
+            stripped.append(key)
+            continue
+        if key in _SETTINGS_STRIP_SUBKEYS and isinstance(value, dict):
+            protected_subkeys = _SETTINGS_STRIP_SUBKEYS[key]
+            filtered_value = {k: v for k, v in value.items() if k not in protected_subkeys}
+            removed = [f"{key}.{k}" for k in value if k in protected_subkeys]
+            stripped.extend(removed)
+            if filtered_value:
+                cleaned[key] = filtered_value
+        else:
+            cleaned[key] = value
+    return cleaned, stripped
+
+
 @app.put("/api/ui/settings")
 async def ui_update_settings(req: SettingsUpdateFull, token: str = ""):
-    """Settings in settings.yaml aktualisieren (Merge, nicht ersetzen)."""
+    """Settings in settings.yaml aktualisieren (Merge, nicht ersetzen).
+
+    SICHERHEIT: Sicherheitskritische Sub-Keys (dashboard.*, security.api_key,
+    self_optimization.immutable_keys) werden automatisch herausgefiltert.
+    """
     _check_token(token)
+
     try:
+        # SICHERHEIT: Geschuetzte Keys herausfiltern
+        safe_settings, stripped = _strip_protected_settings(
+            req.settings if isinstance(req.settings, dict) else {}
+        )
+        if stripped:
+            logger.warning("Settings-Update: Geschuetzte Keys herausgefiltert: %s", stripped)
+
+        if not safe_settings:
+            return {"success": True, "message": "Keine aenderbaren Settings vorhanden"}
+
         # Aktuelle Config laden
         with open(SETTINGS_YAML_PATH) as f:
             config = yaml.safe_load(f) or {}
 
-        # Deep Merge
-        _deep_merge(config, req.settings)
+        # Deep Merge (nur bereinigte Settings)
+        _deep_merge(config, safe_settings)
 
         # Zurueckschreiben
         with open(SETTINGS_YAML_PATH, "w") as f:
-            yaml.dump(config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+            yaml.safe_dump(config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
 
         # yaml_config im Speicher aktualisieren
         import assistant.config as cfg
@@ -1101,9 +1350,12 @@ async def ui_update_settings(req: SettingsUpdateFull, token: str = ""):
         if hasattr(brain, "model_router") and brain.model_router:
             brain.model_router.reload_config()
 
-        # Audit-Log
-        changed_keys = list(req.settings.keys()) if isinstance(req.settings, dict) else []
-        _audit_log("settings_update", {"changed_sections": changed_keys})
+        # Audit-Log (mit Details ueber geschuetzte Keys)
+        changed_keys = list(safe_settings.keys())
+        audit_details = {"changed_sections": changed_keys}
+        if stripped:
+            audit_details["stripped_protected"] = stripped
+        _audit_log("settings_update", audit_details)
 
         return {"success": True, "message": "Settings gespeichert"}
     except Exception as e:
@@ -1245,8 +1497,9 @@ async def ui_update_notification_channels(
 
         cfg.setdefault("notifications", {})["channels"] = req.channels
         with open(config_path, "w") as f:
-            yaml.dump(cfg, f, allow_unicode=True, default_flow_style=False)
+            yaml.safe_dump(cfg, f, allow_unicode=True, default_flow_style=False)
 
+        _audit_log("notification_channels_update", {"channels": list(req.channels.keys()) if isinstance(req.channels, dict) else []})
         return {"success": True, "channels": req.channels}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Fehler: {e}")
@@ -1321,6 +1574,7 @@ async def ui_knowledge_ingest(token: str = ""):
     _check_token(token)
     count = await brain.knowledge_base.ingest_all()
     stats = await brain.knowledge_base.get_stats()
+    _audit_log("knowledge_base_ingest", {"new_chunks": count, "total_chunks": stats.get("total_chunks", 0)})
     return {"new_chunks": count, "stats": stats}
 
 
@@ -1402,7 +1656,7 @@ async def ui_update_easter_eggs(req: EasterEggUpdate, token: str = ""):
     try:
         data = {"easter_eggs": req.easter_eggs}
         with open(EASTER_EGGS_PATH, "w") as f:
-            yaml.dump(data, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+            yaml.safe_dump(data, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
 
         # Personality-Engine neu laden
         if hasattr(brain, "personality") and brain.personality:
@@ -1410,6 +1664,154 @@ async def ui_update_easter_eggs(req: EasterEggUpdate, token: str = ""):
 
         _audit_log("easter_eggs_update", {"count": len(req.easter_eggs)})
         return {"success": True, "message": f"{len(req.easter_eggs)} Easter Eggs gespeichert"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
+# ------------------------------------------------------------------
+# Phase 13.4: Config Snapshots & Rollback API
+# ------------------------------------------------------------------
+
+@app.get("/api/ui/snapshots")
+async def ui_list_snapshots(token: str = "", config_file: str = ""):
+    """Listet Config-Snapshots (optional gefiltert nach config_file)."""
+    _check_token(token)
+    try:
+        if config_file:
+            snapshots = await brain.config_versioning.list_snapshots(config_file)
+        else:
+            snapshots = await brain.config_versioning.list_all_snapshots()
+        return {"snapshots": snapshots, "total": len(snapshots)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
+class RollbackRequest(BaseModel):
+    snapshot_id: str
+
+
+@app.post("/api/ui/rollback")
+async def ui_rollback(req: RollbackRequest, token: str = ""):
+    """Stellt eine Config-Datei aus einem Snapshot wieder her.
+
+    SICHERHEIT: Nach Rollback werden kritische Security-Sections aus der
+    aktuellen Config beibehalten, falls der Snapshot aeltere/schwaecher
+    konfigurierte Versionen enthaelt.
+    """
+    _check_token(token)
+    try:
+        # Aktuelle Security-Sections sichern BEVOR Rollback
+        try:
+            with open(SETTINGS_YAML_PATH) as f:
+                pre_rollback = yaml.safe_load(f) or {}
+        except Exception:
+            pre_rollback = {}
+
+        result = await brain.config_versioning.rollback(req.snapshot_id)
+        if result["success"]:
+            # Post-Rollback: Kritische Security-Sections wiederherstellen
+            _sections_to_preserve = ("dashboard", "security", "trust_levels")
+            try:
+                with open(SETTINGS_YAML_PATH) as f:
+                    restored = yaml.safe_load(f) or {}
+                patched = False
+                for section in _sections_to_preserve:
+                    if section in pre_rollback:
+                        restored[section] = pre_rollback[section]
+                        patched = True
+                if patched:
+                    with open(SETTINGS_YAML_PATH, "w") as f:
+                        yaml.safe_dump(restored, f, allow_unicode=True,
+                                       default_flow_style=False, sort_keys=False)
+                    logger.info("Rollback: Security-Sections aus Pre-Rollback beibehalten: %s",
+                                _sections_to_preserve)
+            except Exception as e:
+                logger.error("Rollback Post-Validation fehlgeschlagen: %s", e)
+
+            # yaml_config im Speicher aktualisieren
+            import assistant.config as cfg
+            cfg.yaml_config = load_yaml_config()
+            _audit_log("config_rollback", {
+                "snapshot_id": req.snapshot_id,
+                "security_sections_preserved": list(_sections_to_preserve),
+            })
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
+@app.get("/api/ui/self-optimization/status")
+async def ui_self_opt_status(token: str = ""):
+    """Status der Selbstoptimierung inkl. offener Vorschlaege."""
+    _check_token(token)
+    try:
+        proposals = await brain.self_optimization.get_pending_proposals()
+        return {
+            "health": brain.self_optimization.health_status(),
+            "proposals": proposals,
+            "versioning": brain.config_versioning.health_status(),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
+class ProposalAction(BaseModel):
+    index: int
+
+
+@app.post("/api/ui/self-optimization/approve")
+async def ui_self_opt_approve(req: ProposalAction, token: str = ""):
+    """User genehmigt einen Optimierungs-Vorschlag (explizite Zustimmung)."""
+    _check_token(token)
+    try:
+        result = await brain.self_optimization.approve_proposal(req.index)
+        if result["success"]:
+            # yaml_config im Speicher aktualisieren
+            import assistant.config as cfg
+            cfg.yaml_config = load_yaml_config()
+            _audit_log("self_opt_approve", {"index": req.index, "message": result.get("message", "")})
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
+@app.post("/api/ui/self-optimization/reject")
+async def ui_self_opt_reject(req: ProposalAction, token: str = ""):
+    """User lehnt einen Optimierungs-Vorschlag ab."""
+    _check_token(token)
+    try:
+        result = await brain.self_optimization.reject_proposal(req.index)
+        if result["success"]:
+            _audit_log("self_opt_reject", {"index": req.index})
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
+@app.post("/api/ui/self-optimization/reject-all")
+async def ui_self_opt_reject_all(token: str = ""):
+    """User lehnt alle Optimierungs-Vorschlaege ab."""
+    _check_token(token)
+    try:
+        result = await brain.self_optimization.reject_all()
+        if result["success"]:
+            _audit_log("self_opt_reject_all", {})
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
+@app.post("/api/ui/self-optimization/run-analysis")
+async def ui_self_opt_run_analysis(token: str = ""):
+    """Manuelle Analyse-Ausloesung (nur durch User, nie automatisch)."""
+    _check_token(token)
+    try:
+        proposals = await brain.self_optimization.run_analysis()
+        return {
+            "success": True,
+            "proposals": proposals,
+            "message": f"{len(proposals)} Vorschlag/Vorschlaege generiert" if proposals else "Keine Vorschlaege — alles optimal",
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Fehler: {e}")
 

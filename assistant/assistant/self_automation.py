@@ -13,6 +13,7 @@ Phase 13.2: Automation-Generierung mit Sicherheitskonzept.
 
 import json
 import logging
+import re
 import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -181,7 +182,7 @@ class SelfAutomation:
 
         # Vorschau erstellen
         preview = self._build_preview(automation, description)
-        yaml_preview = yaml.dump(
+        yaml_preview = yaml.safe_dump(
             automation, allow_unicode=True, default_flow_style=False, sort_keys=False,
         )
 
@@ -618,8 +619,29 @@ REGELN:
     # Sicherheits-Validierung
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _contains_template(value) -> bool:
+        """Prueft ob ein Wert Jinja2-Templates enthaelt. SICHERHEITSKRITISCH."""
+        if isinstance(value, str):
+            return "{{" in value or "{%" in value or "{#" in value
+        if isinstance(value, dict):
+            return any(SelfAutomation._contains_template(v) for v in value.values())
+        if isinstance(value, list):
+            return any(SelfAutomation._contains_template(v) for v in value)
+        return False
+
+    _ENTITY_ID_PATTERN = re.compile(r"^[a-z_]+\.[a-z0-9_]+$")
+
     def _validate_automation(self, automation: dict) -> dict:
-        """Validiert eine Automation gegen Sicherheitsregeln."""
+        """Validiert eine Automation gegen Sicherheitsregeln. SICHERHEITSKRITISCH.
+
+        Pruefungen:
+        1. Services gegen Whitelist/Blacklist
+        2. Trigger-Plattformen gegen Whitelist
+        3. KEINE Jinja2-Templates in LLM-generierten Automationen
+        4. entity_id Format-Validierung (kein Template-Injection)
+        5. Keine leeren Automationen
+        """
         # 1. Actions pruefen
         for action in automation.get("action", []):
             service = action.get("service", "")
@@ -632,15 +654,31 @@ REGELN:
                     "reason": f"Service '{service}' ist aus Sicherheitsgruenden gesperrt.",
                 }
 
-            # Whitelist-Check (wenn Whitelist definiert)
+            # Whitelist-Check (nur exakte Matches, keine Wildcards)
             if self._allowed_services:
-                # Pruefen ob Service oder Domain.* erlaubt
-                domain_wildcard = f"{service_domain}.*"
-                if service not in self._allowed_services and domain_wildcard not in self._allowed_services:
+                if service not in self._allowed_services:
                     return {
                         "valid": False,
                         "reason": f"Service '{service}' ist nicht in der Whitelist.",
                     }
+
+            # SICHERHEIT: Jinja2-Templates in Actions verbieten
+            if self._contains_template(action):
+                return {
+                    "valid": False,
+                    "reason": "Templates ({{ }}) sind in Automationen nicht erlaubt.",
+                }
+
+            # SICHERHEIT: entity_id Format validieren
+            target = action.get("target", {})
+            if isinstance(target, dict):
+                entity_id = target.get("entity_id", "")
+                if entity_id and entity_id != "all":
+                    if not self._ENTITY_ID_PATTERN.match(entity_id):
+                        return {
+                            "valid": False,
+                            "reason": f"Ungueltiges entity_id-Format: '{entity_id}'",
+                        }
 
         # 2. Trigger pruefen
         for trigger in automation.get("trigger", []):
@@ -651,7 +689,31 @@ REGELN:
                     "reason": f"Trigger-Plattform '{platform}' ist nicht erlaubt.",
                 }
 
-        # 3. Keine leeren Automationen
+            # SICHERHEIT: Jinja2-Templates in Triggern verbieten
+            if self._contains_template(trigger):
+                return {
+                    "valid": False,
+                    "reason": "Templates ({{ }}) sind in Triggern nicht erlaubt.",
+                }
+
+            # entity_id in Trigger validieren
+            trigger_entity = trigger.get("entity_id", "")
+            if trigger_entity:
+                if not self._ENTITY_ID_PATTERN.match(trigger_entity):
+                    return {
+                        "valid": False,
+                        "reason": f"Ungueltiges entity_id im Trigger: '{trigger_entity}'",
+                    }
+
+        # 3. Conditions pruefen (auch auf Templates)
+        for condition in automation.get("condition", []):
+            if self._contains_template(condition):
+                return {
+                    "valid": False,
+                    "reason": "Templates ({{ }}) sind in Conditions nicht erlaubt.",
+                }
+
+        # 4. Keine leeren Automationen
         if not automation.get("action"):
             return {"valid": False, "reason": "Automation hat keine Aktionen."}
         if not automation.get("trigger"):

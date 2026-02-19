@@ -3,14 +3,16 @@
     "step": {
       "user": {
         "title": "MindHome Assistant verbinden",
-        "description": "Gib die URL deines MindHome Assistant Servers ein.",
+        "description": "Gib die URL deines MindHome Assistant Servers und den API Key ein. Den API Key findest du im Jarvis Dashboard unter Sicherheit.",
         "data": {
-          "url": "Server URL"
+          "url": "Server URL",
+          "api_key": "API Key"
         }
       }
     },
     "error": {
-      "cannot_connect": "Verbindung fehlgeschlagen. Ist der Assistant-Server erreichbar?"
+      "cannot_connect": "Verbindung fehlgeschlagen. Ist der Assistant-Server erreichbar?",
+      "invalid_api_key": "API Key ungueltig. Pruefe den Key im Jarvis Dashboard."
     }
   }
 }

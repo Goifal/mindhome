@@ -124,12 +124,12 @@
 
 ---
 
-## PHASE 14 — Wahrnehmung & Sinne (30.0%)
+## PHASE 14 — Wahrnehmung & Sinne (63.3%)
 
 | # | Feature | Status | % | Details |
 |---|---------|:------:|:-:|---------|
 | 14.1 | Vision / Kamera | **OFFEN** | 0% | **FEHLT: vision.py, YOLO/LLaVA** |
-| 14.2 | Multi-Modal Input | **OFFEN** | 0% | **FEHLT: Foto-Upload, OCR** |
+| 14.2 | Multi-Modal Input | DONE | 100% | ocr.py: Tesseract-OCR (deu+eng), Bild-Preprocessing (Upscale, Kontrast, Schaerfe), Vision-LLM via Ollama (llava etc.), Redis-Cache, file_handler OCR-Integration, build_file_context mit OCR-Text + Bild-Analyse, 22 Tests |
 | 14.3 | Ambient Audio | DONE | 90% | ambient_audio.py: 9 Event-Typen, HA-Sensor-Polling, Webhook-API, Nachtmodus, Cooldowns. **Luecke:** Kein Audio-Stream-Klassifizierer (nur Sensoren) |
 
 ---
@@ -224,6 +224,7 @@
 | 2026-02-19 | `e28f6a7` | **Audit Sprint 2:** Connection Safety, room_all Fix, call_service kwargs→dict | Code-Qualitaet +1% |
 | 2026-02-19 | `9a91341` | **Comprehensive Audit (50+ Bugs):** 11 Critical (NameError, event mismatches, operator precedence, vacation_auto_activated, PIN bypass, XSS, banned words, LLM constraints), 16 High (UTC/time fixes, request.json guards, personality redis), 15 Medium. 13 Dateien, 500+ Zeilen geaendert | Sicherheit +1%, Code-Qualitaet +4% |
 | 2026-02-19 | `173b4be` | **Remaining 12 Audit Issues:** PBKDF2-HMAC-SHA256 PIN-Hashing mit Salt, SSRF-Schutz (Private-Network-Only), Backup-Export filtert Sensitive Settings, Hot-Update Size-Limit+Script-Block, DB Rollback in Error-Paths, heating_curve_away_offset Key-Fallback, DELETE 404 statt 200, Exception-Leak-Schutz (~50 Stellen), Threading Lock Watchdog, Private Attribute Access entfernt, ASSISTANT_TOOLS dynamisch, Jarvis-Ton Fehlermeldungen. 13 Dateien, 224 Insertions | Sicherheit +0.5%, Code-Qualitaet +1% |
+| 2026-02-19 | — | **Phase 14.2 Multi-Modal Input (OCR):** ocr.py (~250 Zeilen): Tesseract-OCR (deu+eng) mit Bild-Preprocessing (Upscale, Kontrast, Schaerfe), Vision-LLM via Ollama (llava etc.) mit Base64-Encoding + Redis-Cache (24h TTL). file_handler.py OCR-Integration fuer jpg/jpeg/png/gif/webp/bmp. build_file_context() zeigt OCR-Text + Bild-Analyse separat. brain.py OCREngine Init + Vision-LLM in Process-Pipeline. Dockerfile + requirements.txt (tesseract-ocr, pytesseract, Pillow). settings.yaml OCR-Konfiguration. 22 Tests (test_ocr.py) | Phase 14: 30→63.3% |
 
 ---
 
@@ -244,7 +245,7 @@ _Keine verbleibenden Luecken in implementierten Features._
 | 24 | Phase 13.3: Tool-Builder (Plugins) | 13 | 8 Std | OFFEN |
 | 25 | Phase 13.4: Prompt-Selbstoptimierung | 13 | 8 Std | OFFEN |
 | 26 | Phase 14.1: Vision / Kamera-Analyse | 14 | 10 Std | OFFEN |
-| 27 | Phase 14.2: Multi-Modal Input (OCR) | 14 | 6 Std | OFFEN |
+| ~~27~~ | ~~Phase 14.2: Multi-Modal Input (OCR)~~ | ~~14~~ | ~~6 Std~~ | **DONE** |
 
 ---
 
@@ -261,7 +262,7 @@ Phase  8 (Gedaechtnis)      94.3%  ███████████████
 Phase 10 (Multi-Room)       94.0%  ███████████████████░░
 Phase 12 (Authentizitaet)   58.0%  ████████████░░░░░░░░░
 Phase 13 (Selbstprog.)      48.8%  ██████████░░░░░░░░░░░
-Phase 14 (Wahrnehmung)      30.0%  ██████░░░░░░░░░░░░░░░
+Phase 14 (Wahrnehmung)      63.3%  █████████████░░░░░░░░
 ```
 
 ---

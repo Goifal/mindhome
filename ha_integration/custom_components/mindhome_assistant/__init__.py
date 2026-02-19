@@ -24,6 +24,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = {
         "url": entry.data["url"],
+        "api_key": entry.data.get("api_key", ""),
     }
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)

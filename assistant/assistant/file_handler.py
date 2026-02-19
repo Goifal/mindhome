@@ -117,9 +117,21 @@ def _extract_text(path: Path, ext: str) -> Optional[str]:
             return _read_text(path)
         elif ext == "pdf":
             return _extract_pdf(path)
+        elif ext in ("jpg", "jpeg", "png", "gif", "webp", "bmp"):
+            return _extract_ocr(path)
     except Exception as e:
         logger.warning("Text extraction failed for %s: %s", path.name, e)
     return None
+
+
+def _extract_ocr(path: Path) -> Optional[str]:
+    """Extract text from image using Tesseract OCR (Phase 14.2)."""
+    try:
+        from .ocr import extract_text_from_image
+        return extract_text_from_image(path)
+    except ImportError:
+        logger.debug("OCR module not available — skipping image text extraction")
+        return None
 
 
 def _read_text(path: Path) -> Optional[str]:
@@ -180,10 +192,17 @@ def build_file_context(files: list[dict]) -> str:
         parts.append(f"- {name} ({file_type}, {size_str})")
 
         extracted = f.get("extracted_text")
-        if extracted:
+        vision_desc = f.get("vision_description")
+
+        if extracted and file_type == "image":
+            parts.append(f"  OCR-Text (per Texterkennung):\n  ---\n  {extracted}\n  ---")
+        elif extracted:
             parts.append(f"  Inhalt:\n  ---\n  {extracted}\n  ---")
-        elif file_type == "image":
-            parts.append("  (Bild — kein Text-Inhalt extrahierbar)")
+
+        if vision_desc:
+            parts.append(f"  Bild-Analyse (Vision-LLM):\n  ---\n  {vision_desc}\n  ---")
+        elif file_type == "image" and not extracted:
+            parts.append("  (Bild — kein Text erkannt)")
         elif file_type == "video":
             parts.append("  (Video — kein Text-Inhalt extrahierbar)")
         elif file_type == "audio":
@@ -192,6 +211,7 @@ def build_file_context(files: list[dict]) -> str:
     parts.append("")
     parts.append("Beziehe dich auf die Dateien in deiner Antwort. "
                  "Bei Dokumenten mit extrahiertem Text, beantworte Fragen basierend auf dem Inhalt. "
-                 "Bei Bildern/Videos/Audio, bestatige den Empfang und beschreibe was du weisst (Dateiname, Typ, Groesse).")
+                 "Bei Bildern mit OCR-Text oder Bild-Analyse, nutze diese Informationen fuer deine Antwort. "
+                 "Bei Bildern/Videos/Audio ohne Analyse, bestatige den Empfang und beschreibe was du weisst (Dateiname, Typ, Groesse).")
 
     return "\n".join(parts)

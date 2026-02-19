@@ -382,6 +382,7 @@ textarea { resize:vertical; min-height:70px; font-family:var(--mono); font-size:
           <div class="tab-item" data-tab="tab-voice">Stimme</div>
           <div class="tab-item" data-tab="tab-routines">Routinen</div>
           <div class="tab-item" data-tab="tab-security">Sicherheit</div>
+          <div class="tab-item" data-tab="tab-autonomie">KI-Autonomie</div>
           <div class="tab-item" data-tab="tab-eastereggs">Easter Eggs</div>
         </div>
         <div id="settingsContent"></div>
@@ -732,7 +733,8 @@ function renderCurrentTab() {
     case 'tab-rooms': c.innerHTML = renderRooms(); break;
     case 'tab-voice': c.innerHTML = renderVoice(); break;
     case 'tab-routines': c.innerHTML = renderRoutines(); break;
-    case 'tab-security': c.innerHTML = renderSecurity(); break;
+    case 'tab-security': c.innerHTML = renderSecurity(); loadApiKey(); break;
+    case 'tab-autonomie': c.innerHTML = renderAutonomie(); loadSnapshots(); loadOptStatus(); break;
     case 'tab-eastereggs': c.innerHTML = renderEasterEggs(); loadEasterEggs(); break;
   }
   bindFormEvents();
@@ -1139,6 +1141,23 @@ function renderSecurity() {
     : '<p style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;">Temperatur-Grenzen werden im Heizkurven-Modus durch die Offset-Grenzen oben gesteuert.</p>'
     )
   ) +
+  sectionWrap('&#128273;', 'API Key (Netzwerk-Schutz)',
+    '<p style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;">Schuetzt die Assistant-API gegen unbefugte Netzwerkzugriffe. Diesen Key im HA-Addon und in der HA-Integration eintragen, DANN Pruefung aktivieren.</p>' +
+    '<div class="form-group" style="margin-bottom:12px;">' +
+    '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;">' +
+    '<input type="checkbox" id="apiKeyEnforcement" onchange="toggleApiKeyEnforcement(this.checked)" style="width:18px;height:18px;" />' +
+    '<span>API Key Pruefung aktiv</span>' +
+    '</label>' +
+    '<p id="apiKeyEnforcementHint" style="font-size:11px;color:var(--text-secondary);margin-top:4px;"></p>' +
+    '</div>' +
+    '<div class="form-group"><label>Aktueller API Key</label>' +
+    '<div style="display:flex;gap:8px;align-items:center;">' +
+    '<input type="text" id="apiKeyDisplay" readonly style="flex:1;font-family:monospace;font-size:12px;" value="Wird geladen..." />' +
+    '<button onclick="copyApiKey()" style="padding:6px 12px;border:1px solid var(--border);border-radius:6px;background:var(--card-bg);cursor:pointer;font-size:12px;">Kopieren</button>' +
+    '</div></div>' +
+    '<div style="margin-top:8px;"><button onclick="regenerateApiKey()" style="padding:6px 12px;border:1px solid #e74c3c;border-radius:6px;background:transparent;color:#e74c3c;cursor:pointer;font-size:12px;">Key neu generieren</button>' +
+    '<span style="font-size:11px;color:var(--text-secondary);margin-left:8px;">Achtung: Addon + HA-Integration muessen danach aktualisiert werden!</span></div>'
+  ) +
   sectionWrap('&#128272;', 'Vertrauensstufen',
     fNum('trust_levels.default', 'Standard-Trust', 0, 2) +
     fKeywords('trust_levels.guest_allowed_actions', 'Gast-Aktionen') +
@@ -1182,6 +1201,257 @@ function renderSecurity() {
     '<p style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;">Der Hauptbenutzer wird automatisch als "Sir" angesprochen.</p>' +
     fTextarea('persons.titles', 'Titel-Zuordnung', 'YAML-Map: name: "Anrede"')
   );
+}
+
+// ---- API Key Management ----
+async function loadApiKey() {
+  try {
+    const data = await api('ui/api-key');
+    const el = document.getElementById('apiKeyDisplay');
+    if (el && data.api_key) el.value = data.api_key;
+    const cb = document.getElementById('apiKeyEnforcement');
+    if (cb) {
+      cb.checked = !!data.enforcement;
+      if (data.env_locked) { cb.disabled = true; }
+    }
+    updateEnforcementHint(!!data.enforcement, !!data.env_locked);
+  } catch (e) { /* ignore */ }
+}
+function updateEnforcementHint(active, envLocked) {
+  const hint = document.getElementById('apiKeyEnforcementHint');
+  if (!hint) return;
+  if (envLocked) {
+    hint.textContent = 'Durch Umgebungsvariable ASSISTANT_API_KEY erzwungen (kann hier nicht deaktiviert werden).';
+    hint.style.color = '#f59e0b';
+  } else if (active) {
+    hint.textContent = 'Aktiv: Alle /api/assistant/* Anfragen benoetigen einen gueltigen API Key.';
+    hint.style.color = '#10b981';
+  } else {
+    hint.textContent = 'Inaktiv: API ist ohne Key zugaenglich. Erst Key in Addon/HA-Integration eintragen, dann hier aktivieren.';
+    hint.style.color = 'var(--text-secondary)';
+  }
+}
+function copyApiKey() {
+  const el = document.getElementById('apiKeyDisplay');
+  if (el) { navigator.clipboard.writeText(el.value); toast('API Key kopiert!'); }
+}
+async function regenerateApiKey() {
+  if (!confirm('API Key wirklich neu generieren? Addon und HA-Integration muessen danach aktualisiert werden!')) return;
+  try {
+    const data = await api('ui/api-key/regenerate', 'POST');
+    const el = document.getElementById('apiKeyDisplay');
+    if (el && data.api_key) el.value = data.api_key;
+    toast('Neuer API Key generiert!');
+  } catch (e) { toast('Fehler: ' + e.message, true); }
+}
+async function toggleApiKeyEnforcement(enabled) {
+  const action = enabled ? 'aktivieren' : 'deaktivieren';
+  if (enabled && !confirm('API Key Pruefung aktivieren? Stelle sicher, dass der Key bereits im HA-Addon und in der HA-Integration eingetragen ist, sonst funktioniert die Kommunikation nicht mehr!')) {
+    const cb = document.getElementById('apiKeyEnforcement');
+    if (cb) cb.checked = false;
+    return;
+  }
+  try {
+    const data = await api('ui/api-key/enforcement', 'POST', { enabled });
+    updateEnforcementHint(data.enforcement);
+    toast('API Key Pruefung ' + (data.enforcement ? 'aktiviert' : 'deaktiviert'));
+  } catch (e) {
+    toast('Fehler: ' + e.message, true);
+    const cb = document.getElementById('apiKeyEnforcement');
+    if (cb) cb.checked = !enabled;
+  }
+}
+
+// ---- Tab: KI-Autonomie (Phase 13.1 / 13.2 / 13.4) ----
+let SNAPSHOTS = [];
+
+function renderAutonomie() {
+  return sectionWrap('&#129302;', 'Selbstoptimierung (Phase 13.4)',
+    '<p style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;">Jarvis analysiert Interaktionen und schlaegt Parameter-Anpassungen vor. Kern-Identitaet (CODEX, Response-Filter) ist NICHT aenderbar.</p>' +
+    fToggle('self_optimization.enabled', 'Selbstoptimierung aktiv') +
+    fSelect('self_optimization.approval_mode', 'Genehmigungsmodus', [
+      {v:'manual', l:'Manuell (nur mit Bestaetigung)'},
+      {v:'off', l:'Aus (keine Vorschlaege)'}
+    ]) +
+    fSelect('self_optimization.analysis_interval', 'Analyse-Intervall', [
+      {v:'weekly', l:'Woechentlich'},
+      {v:'daily', l:'Taeglich'}
+    ]) +
+    fNum('self_optimization.max_proposals_per_cycle', 'Max. Vorschlaege pro Zyklus', 1, 10) +
+    fText('self_optimization.model', 'Analyse-Modell', 'z.B. qwen3:14b')
+  ) +
+  sectionWrap('&#128203;', 'Vorschlaege (Approval-Workflow)',
+    '<p style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;">Jarvis macht nur Vorschlaege — DU entscheidest ob sie angewendet werden. Jede Aenderung wird vorher gesnapshot.</p>' +
+    '<div id="proposalsList" style="margin-bottom:12px;"></div>' +
+    '<button class="btn btn-secondary" style="font-size:12px;" onclick="runAnalysis()">Analyse jetzt starten</button>'
+  ) +
+  sectionWrap('&#128190;', 'Rollback & Snapshots',
+    '<p style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;">Jede Config-Aenderung wird gesichert. Rollback jederzeit moeglich.</p>' +
+    fToggle('self_optimization.rollback.enabled', 'Rollback aktiv') +
+    fNum('self_optimization.rollback.max_snapshots', 'Max. gespeicherte Snapshots', 5, 100) +
+    fToggle('self_optimization.rollback.snapshot_on_every_edit', 'Snapshot bei jeder Aenderung') +
+    '<div id="snapshotsList" style="margin-top:12px;"></div>'
+  ) +
+  sectionWrap('&#128295;', 'Parameter-Grenzen',
+    '<p style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;">Jarvis kann NUR innerhalb dieser Grenzen vorschlagen.</p>' +
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">' +
+    fNum('self_optimization.parameter_bounds.sarcasm_level.min', 'Sarkasmus Min', 1, 5) +
+    fNum('self_optimization.parameter_bounds.sarcasm_level.max', 'Sarkasmus Max', 1, 5) +
+    fNum('self_optimization.parameter_bounds.opinion_intensity.min', 'Meinungen Min', 0, 3) +
+    fNum('self_optimization.parameter_bounds.opinion_intensity.max', 'Meinungen Max', 0, 3) +
+    fNum('self_optimization.parameter_bounds.max_response_sentences.min', 'Saetze Min', 1, 10) +
+    fNum('self_optimization.parameter_bounds.max_response_sentences.max', 'Saetze Max', 1, 10) +
+    fNum('self_optimization.parameter_bounds.formality_min.min', 'Formalitaet-Min Min', 0, 100) +
+    fNum('self_optimization.parameter_bounds.formality_min.max', 'Formalitaet-Min Max', 0, 100) +
+    '</div>'
+  ) +
+  sectionWrap('&#128683;', 'Geschuetzte Bereiche (Immutable)',
+    '<p style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;">Diese Bereiche kann Jarvis NIEMALS selbst aendern.</p>' +
+    fKeywords('self_optimization.immutable_keys', 'Immutable Keys')
+  ) +
+  sectionWrap('&#9889;', 'Self-Automation (Phase 13.2)',
+    '<p style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;">Jarvis erstellt HA-Automationen aus natuerlicher Sprache. Approval-Workflow: Du musst jede Automation bestaetigen.</p>' +
+    fToggle('self_automation.enabled', 'Self-Automation aktiv') +
+    fNum('self_automation.max_per_day', 'Max. Automationen pro Tag', 1, 20) +
+    fText('self_automation.model', 'Modell', 'z.B. qwen3:14b')
+  ) +
+  sectionWrap('&#128221;', 'Config-Selbstmodifikation (Phase 13.1)',
+    '<p style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;">Jarvis kann nur diese 3 Dateien editieren (Whitelist). settings.yaml ist NICHT editierbar durch Jarvis.</p>' +
+    '<div style="display:flex;flex-direction:column;gap:8px;">' +
+    '<div style="display:flex;align-items:center;gap:8px;padding:8px;background:var(--bg-secondary);border-radius:6px;">' +
+      '<span style="color:var(--success);">&#9989;</span><span style="font-size:13px;">easter_eggs.yaml</span>' +
+      '<span style="font-size:11px;color:var(--text-muted);margin-left:auto;">Easter Eggs &amp; Gag-Antworten</span></div>' +
+    '<div style="display:flex;align-items:center;gap:8px;padding:8px;background:var(--bg-secondary);border-radius:6px;">' +
+      '<span style="color:var(--success);">&#9989;</span><span style="font-size:13px;">opinion_rules.yaml</span>' +
+      '<span style="font-size:11px;color:var(--text-muted);margin-left:auto;">Meinungs-Kommentare</span></div>' +
+    '<div style="display:flex;align-items:center;gap:8px;padding:8px;background:var(--bg-secondary);border-radius:6px;">' +
+      '<span style="color:var(--success);">&#9989;</span><span style="font-size:13px;">room_profiles.yaml</span>' +
+      '<span style="font-size:11px;color:var(--text-muted);margin-left:auto;">Raum-Metadaten</span></div>' +
+    '<div style="display:flex;align-items:center;gap:8px;padding:8px;background:var(--bg-secondary);border-radius:6px;opacity:0.5;">' +
+      '<span style="color:var(--danger);">&#10060;</span><span style="font-size:13px;">settings.yaml</span>' +
+      '<span style="font-size:11px;color:var(--text-muted);margin-left:auto;">NUR durch User aenderbar</span></div>' +
+    '</div>'
+  );
+}
+
+async function loadOptStatus() {
+  try {
+    const data = await api('/api/ui/self-optimization/status');
+    renderProposalList(data.proposals || []);
+  } catch(e) { console.error('OptStatus fail:', e); }
+}
+
+function renderProposalList(proposals) {
+  const c = document.getElementById('proposalsList');
+  if (!c) return;
+  if (proposals.length === 0) {
+    c.innerHTML = '<div style="padding:12px;text-align:center;color:var(--text-muted);font-size:12px;">Keine offenen Vorschlaege</div>';
+    return;
+  }
+  c.innerHTML = '<div style="font-weight:600;font-size:13px;margin-bottom:8px;">Offene Vorschlaege:</div>' +
+    proposals.map((p, i) => {
+      const conf = Math.round((p.confidence || 0) * 100);
+      return `<div style="padding:8px;margin-bottom:6px;background:var(--bg-secondary);border-radius:6px;border-left:3px solid var(--warning);">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+          <span style="font-weight:600;font-size:13px;">${esc(p.parameter)}: ${esc(String(p.current))} &#8594; ${esc(String(p.proposed))}</span>
+          <span style="font-size:11px;color:var(--text-muted);background:var(--bg-primary);padding:2px 6px;border-radius:4px;">${conf}%</span>
+        </div>
+        <div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;">${esc(p.reason)}</div>
+        <div style="display:flex;gap:6px;justify-content:flex-end;">
+          <button class="btn btn-secondary" style="padding:3px 10px;font-size:11px;background:var(--danger);border-color:var(--danger);color:white;" onclick="rejectProposal(${i})">Ablehnen</button>
+          <button class="btn btn-primary" style="padding:3px 10px;font-size:11px;" onclick="approveProposal(${i})">Annehmen</button>
+        </div>
+      </div>`;
+    }).join('') +
+    (proposals.length > 1 ? '<div style="text-align:right;margin-top:6px;"><button class="btn btn-secondary" style="padding:3px 12px;font-size:11px;" onclick="rejectAllProposals()">Alle ablehnen</button></div>' : '');
+}
+
+async function approveProposal(index) {
+  if (!confirm('Diesen Vorschlag wirklich anwenden? (Snapshot wird vorher erstellt)')) return;
+  try {
+    const result = await api('/api/ui/self-optimization/approve', 'POST', {index});
+    if (result.success) {
+      toast('Angewendet: ' + result.message);
+      S = await api('/api/ui/settings');
+      renderCurrentTab();
+      loadOptStatus();
+      loadSnapshots();
+    } else {
+      toast(result.message, 'error');
+    }
+  } catch(e) { toast('Fehler', 'error'); }
+}
+
+async function rejectProposal(index) {
+  try {
+    const result = await api('/api/ui/self-optimization/reject', 'POST', {index});
+    if (result.success) {
+      toast('Abgelehnt');
+      loadOptStatus();
+    }
+  } catch(e) { toast('Fehler', 'error'); }
+}
+
+async function rejectAllProposals() {
+  try {
+    const result = await api('/api/ui/self-optimization/reject-all', 'POST', {});
+    if (result.success) {
+      toast(result.message);
+      loadOptStatus();
+    }
+  } catch(e) { toast('Fehler', 'error'); }
+}
+
+async function runAnalysis() {
+  toast('Analyse wird gestartet...', 'info');
+  try {
+    const result = await api('/api/ui/self-optimization/run-analysis', 'POST', {});
+    toast(result.message);
+    loadOptStatus();
+  } catch(e) { toast('Analyse-Fehler', 'error'); }
+}
+
+async function loadSnapshots() {
+  try {
+    const data = await api('/api/ui/snapshots');
+    SNAPSHOTS = data.snapshots || [];
+    renderSnapshotList();
+  } catch(e) { console.error('Snapshots fail:', e); }
+}
+
+function renderSnapshotList() {
+  const c = document.getElementById('snapshotsList');
+  if (!c) return;
+  if (SNAPSHOTS.length === 0) {
+    c.innerHTML = '<div style="padding:12px;text-align:center;color:var(--text-muted);font-size:12px;">Keine Snapshots vorhanden</div>';
+    return;
+  }
+  c.innerHTML = '<div style="font-weight:600;font-size:13px;margin-bottom:8px;">Letzte Snapshots:</div>' +
+    SNAPSHOTS.slice(0, 10).map(s => {
+      const dt = new Date(s.timestamp).toLocaleString('de-DE', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+      return `<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;margin-bottom:4px;background:var(--bg-secondary);border-radius:6px;font-size:12px;">
+        <span style="font-weight:600;min-width:100px;">${esc(s.config_file)}</span>
+        <span style="color:var(--text-secondary);flex:1;">${esc(s.reason)}</span>
+        <span style="color:var(--text-muted);min-width:80px;">${dt}</span>
+        <button class="btn btn-secondary" style="padding:2px 8px;font-size:11px;" onclick="rollbackSnapshot('${esc(s.id)}')">Rollback</button>
+      </div>`;
+    }).join('');
+}
+
+async function rollbackSnapshot(snapshotId) {
+  if (!confirm('Config auf diesen Snapshot zuruecksetzen?')) return;
+  try {
+    const result = await api('/api/ui/rollback', 'POST', {snapshot_id: snapshotId});
+    if (result.success) {
+      toast('Rollback erfolgreich: ' + result.message);
+      // Settings neu laden
+      S = await api('/api/ui/settings');
+      renderCurrentTab();
+      loadSnapshots();
+    } else {
+      toast('Rollback fehlgeschlagen: ' + result.message, 'error');
+    }
+  } catch(e) { toast('Rollback-Fehler', 'error'); }
 }
 
 // ---- Tab 9: Easter Eggs ----

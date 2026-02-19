@@ -381,6 +381,11 @@ heating:
 
 # --- Sicherheit ---
 security:
+  # API Key Pruefung: Schuetzt /api/assistant/* Endpoints
+  # Der Key wird automatisch generiert. Pruefung erst aktivieren
+  # NACHDEM der Key in Addon + HA-Integration eingetragen wurde.
+  api_key_required: false
+
   # Aktionen die Bestaetigung brauchen
   require_confirmation:
     - "lock_door:unlock"
@@ -823,6 +828,20 @@ device_health:
     - verbrauch
     - strom
 
+# --- Phase 14.2: OCR & Bild-Analyse (Multi-Modal Input) ---
+ocr:
+  enabled: true
+  # Tesseract Sprachen (installierte Pakete: tesseract-ocr-deu, tesseract-ocr-eng)
+  languages: "deu+eng"
+  # Vision-LLM Modell fuer Bild-Beschreibungen (leer = deaktiviert)
+  # Unterstuetzte Modelle: llava, llava-llama3, moondream, bakllava, minicpm-v
+  # Muss ueber "ollama pull <modell>" installiert werden
+  vision_model: ""
+  # Maximale Bildgroesse fuer Vision-LLM (MB)
+  max_image_size_mb: 20
+  # Maximale Token-Laenge der Bild-Beschreibung
+  description_max_tokens: 512
+
 # --- Phase 14.3: Ambient Audio (Umgebungsgeraeusch-Erkennung) ---
 ambient_audio:
   enabled: true
@@ -907,6 +926,64 @@ maintenance:
   enabled: true
   # Wartungsaufgaben-Datei
   config_file: "config/maintenance.yaml"
+
+# --- Phase 13.4: Prompt-Selbstoptimierung ---
+# Jarvis analysiert Interaktionen und schlaegt Anpassungen vor.
+# SICHERHEIT: Nur Vorschlaege — User muss bestaetigen.
+# Kern-Identitaet (CODEX, Response-Filter) ist NICHT aenderbar.
+self_optimization:
+  # Master-Schalter: Komplett ein/aus
+  enabled: false
+  # Wie oft Jarvis analysiert: "weekly" oder "daily"
+  analysis_interval: "weekly"
+  # Approval-Modus:
+  #   "manual"     = Jarvis schlaegt vor, User muss bestaetigen (Standard, sicherste Option)
+  #   "auto_safe"  = Kleine Aenderungen auto, grosse manuell (Fortgeschritten)
+  #   "off"        = Keine Vorschlaege generieren (wie enabled: false)
+  approval_mode: "manual"
+  # Maximale Vorschlaege pro Analyse-Zyklus
+  max_proposals_per_cycle: 3
+  # Modell fuer Analyse (smart empfohlen)
+  model: "qwen3:14b"
+
+  # --- Rollback & Snapshots ---
+  rollback:
+    enabled: true
+    # Maximale gespeicherte Snapshots (aelteste werden geloescht)
+    max_snapshots: 20
+    # Snapshot vor JEDER Config-Aenderung (auch edit_config Phase 13.1)
+    snapshot_on_every_edit: true
+
+  # --- Parameter-Grenzen (Sicherheitszaun) ---
+  # Jarvis kann NUR innerhalb dieser Grenzen vorschlagen.
+  # Werte ausserhalb werden abgelehnt.
+  parameter_bounds:
+    sarcasm_level:
+      min: 1
+      max: 5
+    opinion_intensity:
+      min: 0
+      max: 3
+    max_response_sentences:
+      min: 1
+      max: 5
+    formality_min:
+      min: 10
+      max: 80
+    formality_start:
+      min: 30
+      max: 100
+
+  # --- Geschuetzte Bereiche (NIEMALS aenderbar durch Selbstoptimierung) ---
+  # Diese Config-Keys sind immutable — kein Vorschlag wird akzeptiert.
+  immutable_keys:
+    - "trust_levels"
+    - "security"
+    - "autonomy"
+    - "models"
+    - "dashboard"
+    - "response_filter.banned_phrases"
+    - "response_filter.banned_starters"
 
 # --- Phase 13.2: Self Automation ---
 # Jarvis erstellt HA-Automationen aus natuerlicher Sprache

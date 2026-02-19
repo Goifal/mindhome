@@ -12,6 +12,7 @@ from typing import Any, Optional
 import yaml
 
 from .config import settings, yaml_config
+from .config_versioning import ConfigVersioning
 from .ha_client import HomeAssistantClient
 
 # Config-Pfade fuer Phase 13.1 (Whitelist — nur diese darf Jarvis aendern)
@@ -681,6 +682,11 @@ class FunctionExecutor:
     def __init__(self, ha_client: HomeAssistantClient):
         self.ha = ha_client
         self._entity_cache: dict[str, list[dict]] = {}
+        self._config_versioning: Optional[ConfigVersioning] = None
+
+    def set_config_versioning(self, versioning: ConfigVersioning):
+        """Setzt ConfigVersioning fuer Backup-vor-Schreiben."""
+        self._config_versioning = versioning
 
     async def execute(self, function_name: str, arguments: dict) -> dict:
         """
@@ -1576,7 +1582,14 @@ class FunctionExecutor:
     # ------------------------------------------------------------------
 
     async def _exec_edit_config(self, args: dict) -> dict:
-        """Phase 13.1: Jarvis passt eigene Config-Dateien an (Whitelist-geschuetzt)."""
+        """Phase 13.1: Jarvis passt eigene Config-Dateien an (Whitelist-geschuetzt).
+
+        SICHERHEIT:
+        - NUR easter_eggs.yaml, opinion_rules.yaml, room_profiles.yaml (Whitelist)
+        - settings.yaml ist NICHT editierbar (nicht in _EDITABLE_CONFIGS)
+        - Snapshot vor jeder Aenderung (Rollback jederzeit moeglich)
+        - yaml.safe_dump() verhindert Code-Injection
+        """
         config_file = args["config_file"]
         action = args["action"]
         key = args["key"]
@@ -1587,6 +1600,14 @@ class FunctionExecutor:
             return {"success": False, "message": f"Config '{config_file}' ist nicht editierbar"}
 
         try:
+            # Snapshot vor Aenderung (Rollback-Sicherheitsnetz)
+            if self._config_versioning and self._config_versioning.is_enabled():
+                await self._config_versioning.create_snapshot(
+                    config_file, yaml_path,
+                    reason=f"edit_config:{action}:{key}",
+                    changed_by="jarvis",
+                )
+
             # Config laden
             if yaml_path.exists():
                 with open(yaml_path) as f:
@@ -1602,7 +1623,6 @@ class FunctionExecutor:
                     return {"success": False, "message": f"'{key}' existiert bereits. Nutze 'update' stattdessen."}
                 config[key] = data
                 msg = f"'{key}' zu {config_file} hinzugefuegt"
-
             elif action == "update":
                 if key not in config:
                     return {"success": False, "message": f"'{key}' nicht in {config_file} gefunden"}
@@ -1611,7 +1631,6 @@ class FunctionExecutor:
                 else:
                     config[key] = data
                 msg = f"'{key}' in {config_file} aktualisiert"
-
             elif action == "remove":
                 if key not in config:
                     return {"success": False, "message": f"'{key}' nicht in {config_file} gefunden"}
@@ -1622,7 +1641,7 @@ class FunctionExecutor:
 
             # Zurueckschreiben
             with open(yaml_path, "w") as f:
-                yaml.dump(config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+                yaml.safe_dump(config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
 
             logger.info("Config-Selbstmodifikation: %s (%s -> %s)", config_file, action, key)
             return {"success": True, "message": msg}
