@@ -258,7 +258,7 @@ textarea { resize:vertical; min-height:70px; font-family:var(--mono); font-size:
 
 /* Info-Hint Box */
 .info-box { display:flex; align-items:flex-start; gap:8px; padding:10px 14px; background:var(--blue-dim); border:1px solid rgba(59,130,246,0.2); border-radius:var(--radius-sm); margin-bottom:14px; font-size:12px; color:var(--text-secondary); line-height:1.5; }
-.info-box::before { content:'💡'; font-size:14px; flex-shrink:0; margin-top:1px; }
+.info-box .info-icon { font-size:14px; flex-shrink:0; margin-top:1px; }
 </style>
 </head>
 <body>
@@ -737,18 +737,23 @@ async function loadSettings() {
 
 function renderCurrentTab() {
   const c = document.getElementById('settingsContent');
-  switch(currentTab) {
-    case 'tab-general': c.innerHTML = renderGeneral(); break;
-    case 'tab-persons': c.innerHTML = renderPersons(); break;
-    case 'tab-personality': c.innerHTML = renderPersonality(); break;
-    case 'tab-memory': c.innerHTML = renderMemory(); break;
-    case 'tab-mood': c.innerHTML = renderMood(); break;
-    case 'tab-rooms': c.innerHTML = renderRooms(); break;
-    case 'tab-voice': c.innerHTML = renderVoice(); break;
-    case 'tab-routines': c.innerHTML = renderRoutines(); break;
-    case 'tab-security': c.innerHTML = renderSecurity(); loadApiKey(); break;
-    case 'tab-autonomie': c.innerHTML = renderAutonomie(); loadSnapshots(); loadOptStatus(); break;
-    case 'tab-eastereggs': c.innerHTML = renderEasterEggs(); loadEasterEggs(); break;
+  try {
+    switch(currentTab) {
+      case 'tab-general': c.innerHTML = renderGeneral(); break;
+      case 'tab-persons': c.innerHTML = renderPersons(); break;
+      case 'tab-personality': c.innerHTML = renderPersonality(); break;
+      case 'tab-memory': c.innerHTML = renderMemory(); break;
+      case 'tab-mood': c.innerHTML = renderMood(); break;
+      case 'tab-rooms': c.innerHTML = renderRooms(); break;
+      case 'tab-voice': c.innerHTML = renderVoice(); break;
+      case 'tab-routines': c.innerHTML = renderRoutines(); break;
+      case 'tab-security': c.innerHTML = renderSecurity(); loadApiKey(); break;
+      case 'tab-autonomie': c.innerHTML = renderAutonomie(); loadSnapshots(); loadOptStatus(); break;
+      case 'tab-eastereggs': c.innerHTML = renderEasterEggs(); loadEasterEggs(); break;
+    }
+  } catch(err) {
+    c.innerHTML = '<div style="padding:24px;color:var(--danger);"><h3>Rendering-Fehler</h3><pre style="margin-top:12px;font-size:12px;white-space:pre-wrap;">' + err.message + '\n' + err.stack + '</pre></div>';
+    console.error('Tab render error:', err);
   }
   bindFormEvents();
 }
@@ -852,7 +857,7 @@ function fModelSelect(path, label, hint='') {
 
 // Info-Box
 function fInfo(text) {
-  return `<div class="info-box">${text}</div>`;
+  return `<div class="info-box"><span class="info-icon">&#128161;</span>${text}</div>`;
 }
 
 function sectionWrap(icon, title, content) {
