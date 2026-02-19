@@ -197,9 +197,17 @@ class AdaptiveTimingManager:
                         if not change_time:
                             continue
 
+                        # Convert UTC change_time to local for comparison with pattern trigger
+                        from helpers import get_ha_timezone
+                        try:
+                            import zoneinfo
+                            tz = zoneinfo.ZoneInfo(get_ha_timezone())
+                            local_change = change_time.replace(tzinfo=timezone.utc).astimezone(tz)
+                        except Exception:
+                            local_change = change_time
                         # Calculate offset from expected pattern time
                         expected_min = target_h * 60 + target_m
-                        actual_min = change_time.hour * 60 + change_time.minute
+                        actual_min = local_change.hour * 60 + local_change.minute
                         offset = actual_min - expected_min
 
                         # Only consider offsets within reasonable range (-60 to +60 min)

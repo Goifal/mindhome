@@ -54,7 +54,10 @@ def init_patterns(dependencies):
 
 
 def _ha():
-    return _deps.get("ha")
+    ha = _deps.get("ha")
+    if ha is None:
+        raise RuntimeError("HAConnection not initialized")
+    return ha
 
 
 def _engine():
@@ -160,7 +163,7 @@ def api_get_patterns():
 @patterns_bp.route("/api/patterns/<int:pattern_id>", methods=["PUT"])
 def api_update_pattern(pattern_id):
     """Update pattern status (activate/deactivate/disable)."""
-    data = request.json
+    data = request.json or {}
     session = get_db()
     try:
         pattern = session.get(LearnedPattern, pattern_id)
@@ -210,7 +213,10 @@ def api_delete_pattern(pattern_id):
 @patterns_bp.route("/api/patterns/analyze", methods=["POST"])
 def api_trigger_analysis():
     """Manually trigger pattern analysis."""
-    _deps.get("pattern_scheduler").trigger_analysis_now()
+    scheduler = _deps.get("pattern_scheduler")
+    if not scheduler:
+        return jsonify({"error": "Pattern scheduler not initialized"}), 503
+    scheduler.trigger_analysis_now()
     return jsonify({"success": True, "message": "Analysis started in background"})
 
 
@@ -398,7 +404,7 @@ def api_learning_stats():
 @patterns_bp.route("/api/patterns/reject/<int:pattern_id>", methods=["PUT"])
 def api_reject_pattern(pattern_id):
     """Reject a pattern and archive it with reason."""
-    data = request.json
+    data = request.json or {}
     session = get_db()
     try:
         pattern = session.get(LearnedPattern, pattern_id)
@@ -475,7 +481,7 @@ def api_get_rejected_patterns():
 @patterns_bp.route("/api/patterns/test-mode/<int:pattern_id>", methods=["PUT"])
 def api_pattern_test_mode(pattern_id):
     """Toggle test/simulation mode for a pattern."""
-    data = request.json
+    data = request.json or {}
     session = get_db()
     try:
         pattern = session.get(LearnedPattern, pattern_id)
@@ -510,12 +516,12 @@ def api_get_exclusions():
 @patterns_bp.route("/api/pattern-exclusions", methods=["POST"])
 def api_create_exclusion():
     """Create a pattern exclusion rule."""
-    data = request.json
+    data = request.json or {}
     session = get_db()
     try:
         excl = PatternExclusion(
             exclusion_type=data.get("type", "device_pair"),
-            entity_a=data["entity_a"], entity_b=data["entity_b"],
+            entity_a=data.get("entity_a", ""), entity_b=data.get("entity_b", ""),
             reason=data.get("reason"), created_by=1
         )
         session.add(excl)
@@ -598,7 +604,7 @@ def api_create_manual_rule():
 @patterns_bp.route("/api/manual-rules/<int:rule_id>", methods=["PUT"])
 def api_update_manual_rule(rule_id):
     """Update a manual rule."""
-    data = request.json
+    data = request.json or {}
     session = get_db()
     try:
         rule = session.get(ManualRule, rule_id)
@@ -664,7 +670,7 @@ def api_pattern_conflicts():
         return jsonify({"conflicts": conflicts, "total": len(conflicts)})
     except Exception as e:
         logger.error(f"Pattern conflict detection error: {e}")
-        return jsonify({"conflicts": [], "total": 0, "error": str(e)})
+        return jsonify({"conflicts": [], "total": 0, "error": str(e)}), 500
     finally:
         session.close()
 

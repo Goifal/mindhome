@@ -48,9 +48,9 @@ class SleepDetector:
 
             with self.get_session() as session:
                 now = datetime.now(timezone.utc)
-                # Lokale Stunde fuer Schlaf-Fenster-Check (UTC+1/+2 fuer DE)
-                local_now = datetime.now()
-                hour = local_now.hour
+                # Lokale Stunde fuer Schlaf-Fenster-Check
+                from helpers import local_now as _local_now
+                hour = _local_now().hour
 
                 # Only check during plausible sleep window (configurable)
                 sleep_start = int(get_setting("phase4.sleep_detection.sleep_window_start", "20"))
@@ -106,6 +106,7 @@ class SleepDetector:
         from models import StateHistory
 
         # Priority 1: Bed occupancy sensor (binary_sensor with device_class=occupancy)
+        states = []
         try:
             states = self.ha.get_states() or []
             bed_sensors = [s for s in states
@@ -141,6 +142,8 @@ class SleepDetector:
 
         # Check HA: bedroom lights currently on?
         try:
+            if not states:
+                states = self.ha.get_states() or []
             lights_on = [s for s in states if s.get("entity_id", "").startswith("light.")
                          and s.get("state") == "on"
                          and ("schlaf" in s.get("entity_id", "").lower()

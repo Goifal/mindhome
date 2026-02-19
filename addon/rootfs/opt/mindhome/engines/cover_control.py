@@ -86,10 +86,10 @@ class CoverControlManager:
         self._is_running = True
         self.event_bus.subscribe("state.changed", self._on_state_changed, priority=30)
         self.event_bus.subscribe("sleep.detected", self._on_sleep_detected, priority=30)
-        self.event_bus.subscribe("wake.detected", self._on_wake_detected, priority=30)
-        self.event_bus.subscribe("weather.alert", self._on_weather_alert, priority=80)
+        self.event_bus.subscribe("sleep.wake_detected", self._on_wake_detected, priority=30)
+        self.event_bus.subscribe("weather.alert_created", self._on_weather_alert, priority=80)
         self.event_bus.subscribe("presence.mode_changed", self._on_presence_changed, priority=30)
-        self.event_bus.subscribe("ventilation.recommended", self._on_ventilation, priority=20)
+        self.event_bus.subscribe("ventilation.reminder", self._on_ventilation, priority=20)
         logger.info("CoverControlManager started")
 
     def stop(self):

@@ -232,7 +232,7 @@ class EnergyOptimizer:
                     continue
                 if state.get("state", "off") == "off":
                     domain = entity_id.split(".")[0]
-                    self.ha.call_service(domain, "turn_on", entity_id=entity_id)
+                    self.ha.call_service(domain, "turn_on", {"entity_id": entity_id})
                     remaining -= 200  # conservative estimate
                     logger.info(f"PV surplus: Activated {entity_id} ({surplus_w:.0f}W surplus)")
 

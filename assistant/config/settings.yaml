@@ -615,7 +615,7 @@ multi_room:
     # kueche: "binary_sensor.kueche_motion"
 
 # --- Personen-Profile (10.2) ---
-persons:
+person_profiles:
   profiles:
     # max:
     #   notify_service: "notify.max_phone"

@@ -196,6 +196,8 @@ class CircadianLightManager:
                     CircadianConfig.enabled == True
                 ).all()
                 now = datetime.now(timezone.utc)
+                from helpers import local_now as _local_now
+                local_time = _local_now()
 
                 for cfg in configs:
                     room = session.query(Room).get(cfg.room_id)
@@ -223,9 +225,9 @@ class CircadianLightManager:
                             continue
 
                     if cfg.control_mode == "mindhome":
-                        # MindHome drives the curve
+                        # MindHome drives the curve (use local time for brightness curve)
                         curve = cfg.brightness_curve or DEFAULT_BRIGHTNESS_CURVE
-                        target_pct = _interpolate_curve(curve, "pct", now.hour, now.minute)
+                        target_pct = _interpolate_curve(curve, "pct", local_time.hour, local_time.minute)
                         target_pct = max(0, min(100, round(target_pct)))
 
                         from helpers import get_setting
@@ -234,7 +236,7 @@ class CircadianLightManager:
 
                         ct_kelvin = None
                         if cfg.light_type == "tunable_white":
-                            ct_kelvin = round(_interpolate_curve(DEFAULT_CT_CURVE, "kelvin", now.hour, now.minute))
+                            ct_kelvin = round(_interpolate_curve(DEFAULT_CT_CURVE, "kelvin", local_time.hour, local_time.minute))
                             self._apply_color_temp(cfg, ct_kelvin)
 
                         self._cached_status[cfg.room_id] = {

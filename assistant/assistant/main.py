@@ -99,6 +99,20 @@ _RATE_MAX_REQUESTS = 60  # Max Requests pro Fenster
 
 
 @app.middleware("http")
+async def auth_header_middleware(request: Request, call_next):
+    """Extract Bearer token from Authorization header and add as query param."""
+    auth = request.headers.get("authorization", "")
+    if auth.startswith("Bearer ") and "token=" not in str(request.url):
+        token = auth[7:]
+        # Inject token into query params for FastAPI parameter resolution
+        scope = request.scope
+        qs = scope.get("query_string", b"").decode()
+        sep = "&" if qs else ""
+        scope["query_string"] = f"{qs}{sep}token={token}".encode()
+    return await call_next(request)
+
+
+@app.middleware("http")
 async def rate_limit_middleware(request: Request, call_next):
     """Einfaches Rate-Limiting pro Client-IP."""
     client_ip = request.client.host if request.client else "unknown"

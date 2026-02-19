@@ -21,6 +21,8 @@ _deps = {}
 
 # In-memory conversation history (persists until addon restart)
 _conversation_history = []
+import threading
+_history_lock = threading.Lock()
 MAX_HISTORY = 200
 
 # File validation (checked before forwarding to assistant)
@@ -74,7 +76,8 @@ def api_chat_send():
         "person": person,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
-    _conversation_history.append(user_msg)
+    with _history_lock:
+        _conversation_history.append(user_msg)
 
     # Forward to assistant
     assistant_url = _get_assistant_url()
@@ -94,11 +97,10 @@ def api_chat_send():
                 "model_used": result.get("model_used", ""),
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             }
-            _conversation_history.append(assistant_msg)
-
-            # Trim history
-            while len(_conversation_history) > MAX_HISTORY:
-                _conversation_history.pop(0)
+            with _history_lock:
+                _conversation_history.append(assistant_msg)
+                while len(_conversation_history) > MAX_HISTORY:
+                    _conversation_history.pop(0)
 
             return jsonify({
                 "response": result.get("response", ""),
@@ -140,10 +142,11 @@ def api_chat_history():
     limit = request.args.get("limit", 50, type=int)
     offset = request.args.get("offset", 0, type=int)
 
-    total = len(_conversation_history)
-    start = max(0, total - offset - limit)
-    end = total - offset
-    messages = _conversation_history[start:end]
+    with _history_lock:
+        total = len(_conversation_history)
+        start = max(0, total - offset - limit)
+        end = total - offset
+        messages = list(_conversation_history[start:end])
 
     return jsonify({
         "messages": messages,
@@ -157,8 +160,9 @@ def api_chat_history():
 def api_chat_clear():
     """Clear conversation history."""
     global _conversation_history
-    count = len(_conversation_history)
-    _conversation_history = []
+    with _history_lock:
+        count = len(_conversation_history)
+        _conversation_history = []
     return jsonify({"cleared": count})
 
 
@@ -242,7 +246,8 @@ def api_chat_upload():
                 "timestamp": result.get("timestamp", datetime.now(timezone.utc).isoformat()),
                 "file": file_info,
             }
-            _conversation_history.append(user_msg)
+            with _history_lock:
+                _conversation_history.append(user_msg)
 
             # Store assistant response (from LLM processing)
             if result.get("response"):
@@ -253,10 +258,12 @@ def api_chat_upload():
                     "model_used": result.get("model_used", ""),
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                 }
-                _conversation_history.append(assistant_msg)
+                with _history_lock:
+                    _conversation_history.append(assistant_msg)
 
-            while len(_conversation_history) > MAX_HISTORY:
-                _conversation_history.pop(0)
+            with _history_lock:
+                while len(_conversation_history) > MAX_HISTORY:
+                    _conversation_history.pop(0)
 
             logger.info("Chat file uploaded to assistant: %s", file_info.get("name", "?"))
 
@@ -374,7 +381,8 @@ def api_chat_voice():
         "input_mode": "voice",
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
-    _conversation_history.append(user_msg)
+    with _history_lock:
+        _conversation_history.append(user_msg)
 
     assistant_url = _get_assistant_url()
     try:
@@ -398,9 +406,10 @@ def api_chat_voice():
             "model_used": result.get("model_used", ""),
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
-        _conversation_history.append(assistant_msg)
-        while len(_conversation_history) > MAX_HISTORY:
-            _conversation_history.pop(0)
+        with _history_lock:
+            _conversation_history.append(assistant_msg)
+            while len(_conversation_history) > MAX_HISTORY:
+                _conversation_history.pop(0)
 
     except Exception as e:
         logger.error("Voice chat assistant error: %s", e)

@@ -794,6 +794,8 @@ class PersonalityEngine:
 
         for item in (recent or []):
             try:
+                if isinstance(item, bytes):
+                    item = item.decode("utf-8")
                 parts = item.split("|", 1)
                 ts = float(parts[0])
                 prev_text = parts[1] if len(parts) > 1 else ""
@@ -865,7 +867,7 @@ class PersonalityEngine:
             mood_history = await self._redis.lrange("mha:personality:mood_history", 0, 99)
             avg_mood = 0.5
             if mood_history:
-                values = [float(v) for v in mood_history]
+                values = [float(v.decode("utf-8") if isinstance(v, bytes) else v) for v in mood_history]
                 if values:
                     avg_mood = sum(values) / len(values)
 

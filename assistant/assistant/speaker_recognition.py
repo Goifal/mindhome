@@ -270,7 +270,7 @@ class SpeakerRecognition:
             return persons_home[0]
 
         # Mehrere Personen: Preferred-Room Matching
-        person_profiles = yaml_config.get("persons", {}).get("profiles", {})
+        person_profiles = yaml_config.get("person_profiles", {}).get("profiles", {})
         room_lower = room.lower().replace(" ", "_")
         for person_key, profile in (person_profiles or {}).items():
             pref_room = (profile.get("preferred_room", "") or "").lower().replace(" ", "_")

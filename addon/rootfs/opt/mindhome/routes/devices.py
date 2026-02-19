@@ -53,7 +53,10 @@ def init_devices(dependencies):
 
 
 def _ha():
-    return _deps.get("ha")
+    ha = _deps.get("ha")
+    if ha is None:
+        raise RuntimeError("HAConnection not initialized")
+    return ha
 
 
 def _engine():
@@ -132,7 +135,7 @@ def api_get_devices():
 @devices_bp.route("/api/devices/<int:device_id>", methods=["PUT"])
 def api_update_device(device_id):
     """Update device settings."""
-    data = request.json
+    data = request.json or {}
     session = get_db()
     try:
         device = session.get(Device, device_id)
@@ -160,7 +163,7 @@ def api_update_device(device_id):
 @devices_bp.route("/api/devices/bulk", methods=["PUT"])
 def api_bulk_update_devices():
     """Bulk update multiple devices at once."""
-    data = request.json
+    data = request.json or {}
     session = get_db()
     try:
         device_ids = data.get("device_ids", [])
@@ -197,7 +200,7 @@ def api_bulk_update_devices():
 @devices_bp.route("/api/devices/bulk", methods=["DELETE"])
 def api_bulk_delete_devices():
     """Bulk delete multiple devices."""
-    data = request.json
+    data = request.json or {}
     session = get_db()
     try:
         device_ids = data.get("device_ids", [])
@@ -279,7 +282,7 @@ def api_discover_devices():
 @devices_bp.route("/api/discover/import", methods=["POST"])
 def api_import_discovered():
     """Import selected discovered devices into MindHome."""
-    data = request.json
+    data = request.json or {}
     session = get_db()
     try:
         imported_count = 0
@@ -424,7 +427,7 @@ def api_get_all_ha_entities():
 @devices_bp.route("/api/devices/manual-add", methods=["POST"])
 def api_manual_add_device():
     """Manually add a device by entity ID."""
-    data = request.json
+    data = request.json or {}
     session = get_db()
     try:
         entity_id = data.get("entity_id", "").strip()
