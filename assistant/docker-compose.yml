@@ -54,7 +54,7 @@ services:
       - ANONYMIZED_TELEMETRY=false
       - IS_PERSISTENT=TRUE
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/heartbeat"]
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/heartbeat')\""]
       interval: 10s
       timeout: 5s
       retries: 5
