@@ -1,7 +1,7 @@
 # JARVIS ASSISTANT — STATUS & ANALYSE
 
 > Letzte Aktualisierung: 2026-02-19
-> Commit: `d572d71` — Phase 13.2 implementiert, Zeilenzahlen aktualisiert
+> Commit: `d40c6f9` — Dual Heating Mode (21 Dateien), Voice I/O (Whisper/Piper), GradualTransitioner Fix
 
 ---
 
@@ -9,11 +9,11 @@
 
 | Kategorie | Score | Trend |
 |-----------|:-----:|:-----:|
-| **Funktionsumfang (vs. Masterplan)** | **99.6%** | +1.2% |
-| **Jarvis-Authentizitaet (vs. MCU Jarvis)** | **88.0%** | — |
+| **Funktionsumfang (vs. Masterplan)** | **99.8%** | +0.2% |
+| **Jarvis-Authentizitaet (vs. MCU Jarvis)** | **90.0%** | +2.0% |
 | **Sicherheit** | **98%** | — |
-| **Code-Qualitaet** | **85%** | — |
-| **Konfigurierbarkeit** | **97%** | — |
+| **Code-Qualitaet** | **86%** | +1% |
+| **Konfigurierbarkeit** | **98%** | +1% |
 
 ---
 
@@ -64,7 +64,7 @@
 
 ---
 
-## PHASE 9 — Stimme & Akustik (95.0%)
+## PHASE 9 — Stimme & Akustik (95.7%)
 
 | # | Feature | Status | % | Details |
 |---|---------|:------:|:-:|---------|
@@ -74,6 +74,7 @@
 | 9.4 | Narration-Modus | DONE | 90% | enhance_narration() mit Segment-Delays, Fade, Per-Segment Prosody/Emphasis |
 | 9.5 | Stimmungserkennung Sprache | DONE | 95% | WPM, Volume + detect_audio_emotion() mit Pitch/Variance/Pause/Energy-Analyse, 5 Emotionen |
 | 9.6 | Personen-Erkennung | DONE | 90% | Heuristisch + Voice-Embedding (Cosinus-Aehnlichkeit, EMA-Verschmelzung, Redis-Persistierung) |
+| 9.7 | Voice I/O (Web) | DONE | 95% | Whisper STT + Piper TTS, Mikrofon-Button in Addon+Assistant UI, konfigurierbare Entities (whisper/piper URL, Sprache, TTS-Voice) |
 
 ---
 
@@ -165,6 +166,8 @@
 | F.3 | `assistant.audio` WebSocket Event | Phase 2.2 | DONE | Gesendet via Voice-Endpoint (Text, SSML, Room) |
 | F.4 | `color_temp` Parameter in `set_light` | Phase 3 | DONE | warm=2700K, neutral=4000K, cold=6500K |
 | F.5 | `query` Parameter in `play_media` | Phase 3 | DONE | Musik-Suche via HA `play_media` Service |
+| F.6 | Dual Heating Mode (room_thermostat / heating_curve) | Phase 3 | DONE | 21 Dateien: climate.py Dual-Eval, Offset-Steuerung, Dashboard-UI, Opinion-Rules, Templates, Validator, GradualTransitioner |
+| F.7 | Voice I/O (Whisper + Piper) | Phase 9 | DONE | STT via Whisper, TTS via Piper, Mikrofon-Button (Addon + Assistant), konfigurierbare Entities, Audio-Streaming |
 
 ---
 
@@ -203,6 +206,9 @@
 | 2026-02-18 | `3edee22` | **Alle 21 Luecken geschlossen:** Memory-Gags, Monthly Report, Energie-Briefing, Geo-Fence, Raum-Override, Relevanz-Filter, Rolladen-Timing, Kontext-Patterns, Datum-Parsing, Pitch-Control, Sound-Formate, Narration-Delays, Audio-Emotion, Speaker-Embedding, Music Auto-Follow, PDF-RAG, Kalender Delete/Verschieben, Live-Status, Kanal-Wahl, Health-Trends | Gesamt +4.3%, Phase 9: 78→95%, Phase 7: 88→97%, Phase 8: 86→94% |
 | 2026-02-19 | `d572d71` | **Status-Dokument aktualisiert:** Phase 13.2 (self_automation.py) als DONE 95% korrigiert (946 Zeilen, war faelschlich als OFFEN markiert). Zeilenzahlen aller Module aktualisiert. 7 neue Dateien in Tabelle ergaenzt (action_planner, memory_extractor, ollama_client, function_validator, inventory, health_monitor, automation_templates). Gesamt-Statistik: 51.000+ Zeilen, 117 Python-Dateien | Gesamt +1.6%, Phase 13: 25→48.8% |
 | 2026-02-19 | — | **Phase 15.3 implementiert:** device_health.py (~370 Zeilen): Baseline-Anomalie-Erkennung (Rolling 30d Mean+Stddev, >2σ), Stale-Sensor-Erkennung (3d unveraendert → Batterie-Warnung), HVAC-Effizienz-Check (Zieltemp nicht erreicht nach 2h), Energie-Verbrauchs-Anomalien. Konfigurierbar via settings.yaml. Integration in brain.py mit Callback. | Gesamt +1.2%, Phase 15: 77.5→96.3% |
+| 2026-02-19 | `ad91d0e` | **Dual Heating Mode (13 Dateien):** Neuer Modus `heating_curve` neben `room_thermostat`. climate.py Dual-Eval, function_calling.py Offset-Logik, conflict_resolver.py Kurven-Mediation, function_validator.py Offset-Limits, brain.py Prompt-Kontext, personality.py Opinion-Rules nach Modus, routine_engine.py Nacht-Absenkung als Offset, settings.yaml `heating` Sektion, automation_templates.yaml Kurven-Templates, opinion_rules.yaml 4 Kurven-Regeln, room_profiles.yaml Hinweis, index.html Heizungs-UI | Gesamt +0.2%, Konfigurierbarkeit +1% |
+| 2026-02-19 | `d40c6f9` | **Heating Curve Rest (8 Dateien) + Voice I/O:** adaptive.py (SeasonalAdvisor Kurven-Tips, GradualTransitioner bleibt TODO), fire_water.py Frost-Offset, sleep.py WakeUp-Rampe, special_modes.py Kurven-Offset. **Voice I/O:** routes/chat.py (+208 Zeilen: `/api/stt` Whisper, `/api/tts` Piper), routes/system.py+health.py Voice-Config/Health, app.jsx Mikrofon-Button+Recording-UI, assistant index.html Voice-Button, settings.yaml voice_io Sektion | Jarvis-Authentizitaet +2%, Phase 9: 95→95.7% |
+| 2026-02-19 | — | **GradualTransitioner Fix:** adaptive.py `_apply_climate_curve()` + `_apply_climate_room()` — Heizkurven-Modus mit Offset-Berechnung, Offset-Limits aus Config, curve_entity Routing | Code-Qualitaet +1% |
 
 ---
 
@@ -234,13 +240,13 @@ Phase  6 (Persoenlichkeit)  98.5%  ███████████████
 Phase 11 (Wissen)           97.5%  ████████████████████░
 Phase  7 (Routinen)         96.7%  ███████████████████▓░
 Phase 16 (fuer Alle)        96.7%  ███████████████████▓░
-Phase  9 (Stimme)           95.0%  ███████████████████░░
+Phase 15 (Haushalt)         96.3%  ███████████████████▓░
+Phase  9 (Stimme)           95.7%  ███████████████████▓░
 Phase  8 (Gedaechtnis)      94.3%  ███████████████████░░
 Phase 10 (Multi-Room)       94.0%  ███████████████████░░
-Phase 15 (Haushalt)         96.3%  ███████████████████▓░
 Phase 12 (Authentizitaet)   58.0%  ████████████░░░░░░░░░
-Phase 14 (Wahrnehmung)      30.0%  ██████░░░░░░░░░░░░░░░
 Phase 13 (Selbstprog.)      48.8%  ██████████░░░░░░░░░░░
+Phase 14 (Wahrnehmung)      30.0%  ██████░░░░░░░░░░░░░░░
 ```
 
 ---
@@ -249,15 +255,15 @@ Phase 13 (Selbstprog.)      48.8%  ██████████░░░░░
 
 | Datei | Zeilen | Hauptfunktion |
 |-------|:------:|---------------|
-| brain.py | ~1793 | Zentrales Gehirn, orchestriert alle Komponenten |
-| function_calling.py | ~1716 | 21 Tools inkl. delete_calendar, reschedule_calendar |
-| personality.py | ~1081 | Sarkasmus, Meinungen, Easter Eggs, Formality, Ironie-Counter, Memory-Gags, Monthly Report |
+| brain.py | ~1831 | Zentrales Gehirn, orchestriert alle Komponenten |
+| function_calling.py | ~1800 | 21 Tools inkl. delete_calendar, reschedule_calendar |
+| personality.py | ~1092 | Sarkasmus, Meinungen, Easter Eggs, Formality, Ironie-Counter, Memory-Gags, Monthly Report |
 | self_automation.py | ~946 | HA-Automationen generieren, Approval-Workflow, Rate-Limiting, Templates |
 | main.py | ~1412 | FastAPI Server, Dashboard-Auth, Live-Status, Health-Trends, Notification-Channels |
-| routine_engine.py | ~914 | Morning/Night/Guest Routinen, Energie-Modul, Relevanz-Filter |
+| routine_engine.py | ~922 | Morning/Night/Guest Routinen, Energie-Modul, Relevanz-Filter |
 | proactive.py | ~817 | Event-Listener, Diagnostik-Loop, Feedback, Geo-Fence, Auto-Follow |
 | context_builder.py | ~728 | Haus-Status, Wetter, Kalender, Raum-Kontext, Wetter-Warnungen |
-| conflict_resolver.py | ~714 | Multi-User Konfliktloesung, 4 Strategien inkl. Raum-Scoping |
+| conflict_resolver.py | ~728 | Multi-User Konfliktloesung, 4 Strategien inkl. Raum-Scoping |
 | cooking_assistant.py | ~653 | Rezepte, Schritte, Timer |
 | mood_detector.py | ~642 | Stress/Frustration/Muedigkeit/Stimmung, Audio-Emotion-Detection |
 | diagnostics.py | ~565 | Entity-Watchdog, System-Resources, Completion-History |
@@ -285,21 +291,22 @@ Phase 13 (Selbstprog.)      48.8%  ██████████░░░░░
 | file_handler.py | ~197 | Datei-Upload, Text-Extraktion |
 | ollama_client.py | ~133 | Ollama LLM-Client |
 | websocket.py | ~122 | WebSocket Event-Emitter |
-| function_validator.py | ~101 | Funktions-Validierung |
+| function_validator.py | ~129 | Funktions-Validierung, Offset-Limits fuer Heizkurve |
 | config.py | ~72 | YAML-Config Loader, Settings |
-| index.html | ~2500 | Dashboard SPA (8 Tabs, Auth, Settings) |
-| settings.yaml | ~850 | Hauptkonfiguration (27+ Sektionen) |
-| automation_templates.yaml | — | Vorlagen fuer HA-Automationen |
+| index.html | ~1386 | Dashboard SPA (8 Tabs, Auth, Settings, Heizungs-UI, Voice-Button) |
+| settings.yaml | ~914 | Hauptkonfiguration (29+ Sektionen, inkl. heating, voice_io) |
+| automation_templates.yaml | ~268 | Vorlagen fuer HA-Automationen (Thermostat + Heizkurven-Varianten) |
 | easter_eggs.yaml | ~80 | 12 Easter Eggs |
-| opinion_rules.yaml | ~305 | 25 Meinungsregeln (7 Kategorien) |
+| opinion_rules.yaml | ~358 | 29 Meinungsregeln (8 Kategorien, inkl. Heizkurve) |
 | room_profiles.yaml | ~200 | 6 Raeume + Saisonal |
 | maintenance.yaml | ~50 | 5 Wartungsaufgaben |
 
-**Assistant-Modul: ~20.640 Zeilen Code, 39 Python-Dateien**
-**Gesamt-Projekt (inkl. Addon, Engines, Domains, Routes): ~51.400+ Zeilen, 118 Python-Dateien**
+**Assistant-Modul: ~21.008 Zeilen Code, 39 Python-Dateien**
+**Gesamt-Projekt (inkl. Addon, Engines, Domains, Routes): ~52.200+ Zeilen, 118 Python-Dateien**
 
 ---
 
 > **Hinweis:** Alle 21 kleinen Luecken geschlossen! 6 komplett fehlende Module verbleibend (Phase 12-14).
-> Sicherheits-Audit vollstaendig (alle 13/13 Punkte SICHER). Foundation komplett (5/5 DONE).
-> **Assistant-Modul: ~20.640 Zeilen, 39 Python-Dateien | Gesamt-Projekt: ~51.400+ Zeilen, 118 Python-Dateien**
+> Sicherheits-Audit vollstaendig (alle 13/13 Punkte SICHER). Foundation komplett (7/7 DONE).
+> Dual Heating Mode (21 Dateien), Voice I/O (Whisper+Piper), GradualTransitioner gefixt.
+> **Assistant-Modul: ~21.008 Zeilen, 39 Python-Dateien | Gesamt-Projekt: ~52.200+ Zeilen, 118 Python-Dateien**

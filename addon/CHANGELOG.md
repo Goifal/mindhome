@@ -1,5 +1,26 @@
 # Changelog
 
+## 1.3.0 – Dual Heating Mode, Voice I/O, GradualTransitioner Fix
+
+### Dual Heating Mode (21 Dateien)
+- **Neuer Modus**: `heating_curve` neben `room_thermostat` — fuer Systeme mit fester Heizkurve (z.B. Waermepumpen)
+- **Addon**: climate.py Dual-Eval, adaptive.py SeasonalAdvisor Kurven-Tips, fire_water.py Frost-Offset, sleep.py WakeUp-Rampe, special_modes.py Kurven-Offset
+- **Assistant**: function_calling.py Offset-Logik, conflict_resolver.py Kurven-Mediation, function_validator.py Offset-Limits, brain.py Prompt-Kontext, personality.py Opinion-Rules, routine_engine.py Nacht-Absenkung als Offset
+- **Config**: settings.yaml `heating` Sektion, 4 neue Opinion-Rules, 2 Automation-Templates (Kurven-Varianten), room_profiles.yaml Hinweis
+- **Dashboard**: Heizungs-UI im Settings-Tab (Modus-Wahl, Kurven-Entity, Offset-Bereich)
+
+### Voice I/O (Whisper STT + Piper TTS)
+- **Addon**: `/api/stt` (Whisper Speech-to-Text) + `/api/tts` (Piper Text-to-Speech) Endpoints in routes/chat.py
+- **Frontend**: Mikrofon-Button mit MediaRecorder, Recording-UI, Audio-Playback (Addon app.jsx + Assistant index.html)
+- **Config**: voice_io Sektion in settings.yaml (Whisper/Piper URL, Sprache, TTS-Voice)
+- **Health**: Voice-Config + Health-Check in routes/system.py + health.py
+
+### Fixes
+- **GradualTransitioner**: Heizkurven-Modus mit Offset-Berechnung, curve_entity Routing, Offset-Limits aus Config
+- **JARVIS_STATUS.md**: Aktualisiert (Heating Curve + Voice I/O + GradualTransitioner, Zeilenzahlen, Changelog)
+
+---
+
 ## 0.7.29 – Fix HA-Automation-Erkennung (config-Wrapper unwrapping)
 
 ### Fix

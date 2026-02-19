@@ -309,34 +309,13 @@ class GradualTransitioner:
                 logger.debug(f"Gradual light: {entity_id} → {target_state} over {transition_sec}s")
 
             elif domain == "climate":
-                # Gradual temperature via immediate steps
-                states = self.ha.get_states() or []
-                current = None
-                for s in states:
-                    if s.get("entity_id") == entity_id:
-                        current = s.get("attributes", {}).get("temperature")
-                        break
+                from helpers import get_setting
+                heating_mode = get_setting("heating_mode", "room_thermostat")
 
-                if current is not None and target_state not in ("on", "off"):
-                    try:
-                        target_temp = float(target_state)
-                        # Set directly — HA handles ramp internally for most thermostats
-                        self.ha.call_service("climate", "set_temperature", {
-                            "entity_id": entity_id,
-                            "temperature": target_temp,
-                        })
-                        logger.debug(f"Gradual climate: {entity_id} → {target_temp}°C")
-                    except (ValueError, TypeError):
-                        self.ha.call_service("climate", "set_hvac_mode", {
-                            "entity_id": entity_id,
-                            "hvac_mode": target_state,
-                        })
+                if heating_mode == "heating_curve":
+                    self._apply_climate_curve(entity_id, target_state)
                 else:
-                    service = "set_hvac_mode"
-                    self.ha.call_service("climate", service, {
-                        "entity_id": entity_id,
-                        "hvac_mode": target_state if target_state not in ("on", "off") else "heat" if target_state == "on" else "off",
-                    })
+                    self._apply_climate_room(entity_id, target_state)
 
             elif domain == "cover":
                 # Set position directly with HA transition
@@ -365,6 +344,105 @@ class GradualTransitioner:
         except Exception as e:
             logger.error(f"GradualTransitioner error for {entity_id}: {e}")
             return False
+
+    def _apply_climate_curve(self, entity_id, target_state):
+        """Heizkurven-Modus: Offset auf das zentrale curve_entity anwenden."""
+        from helpers import get_setting
+
+        curve_entity = get_setting("heating_curve_entity", entity_id)
+        if not curve_entity:
+            curve_entity = entity_id
+
+        if target_state in ("on", "off"):
+            hvac = "heat" if target_state == "on" else "off"
+            self.ha.call_service("climate", "set_hvac_mode", {
+                "entity_id": curve_entity,
+                "hvac_mode": hvac,
+            })
+            logger.debug(f"Gradual climate curve: {curve_entity} hvac → {hvac}")
+            return
+
+        try:
+            target_temp = float(target_state)
+        except (ValueError, TypeError):
+            self.ha.call_service("climate", "set_hvac_mode", {
+                "entity_id": curve_entity,
+                "hvac_mode": target_state,
+            })
+            return
+
+        # Aktuellen Sollwert lesen
+        states = self.ha.get_states() or []
+        current = None
+        for s in states:
+            if s.get("entity_id") == curve_entity:
+                current = s.get("attributes", {}).get("temperature")
+                break
+
+        if current is None:
+            logger.warning(f"Gradual climate curve: {curve_entity} has no temperature attribute")
+            return
+
+        current = float(current)
+        # Offset berechnen: Differenz zwischen Ziel und aktuellem Sollwert
+        offset = target_temp - current
+
+        # Offset-Grenzen aus Config respektieren
+        offset_min = float(get_setting("heating_curve_offset_min", "-5"))
+        offset_max = float(get_setting("heating_curve_offset_max", "5"))
+        new_temp = current + max(offset_min, min(offset_max, offset))
+
+        self.ha.call_service("climate", "set_temperature", {
+            "entity_id": curve_entity,
+            "temperature": round(new_temp, 1),
+        })
+        logger.debug(f"Gradual climate curve: {curve_entity} → {round(new_temp, 1)}°C (offset {offset:+.1f})")
+
+    def _apply_climate_room(self, entity_id, target_state):
+        """Raumthermostat-Modus: Direkt absolute Temperatur setzen."""
+        if target_state in ("on", "off"):
+            hvac = "heat" if target_state == "on" else "off"
+            self.ha.call_service("climate", "set_hvac_mode", {
+                "entity_id": entity_id,
+                "hvac_mode": hvac,
+            })
+            logger.debug(f"Gradual climate room: {entity_id} hvac → {hvac}")
+            return
+
+        # Aktuelle Temperatur lesen
+        states = self.ha.get_states() or []
+        current = None
+        for s in states:
+            if s.get("entity_id") == entity_id:
+                current = s.get("attributes", {}).get("temperature")
+                break
+
+        if current is not None:
+            try:
+                target_temp = float(target_state)
+                self.ha.call_service("climate", "set_temperature", {
+                    "entity_id": entity_id,
+                    "temperature": target_temp,
+                })
+                logger.debug(f"Gradual climate room: {entity_id} → {target_temp}°C")
+            except (ValueError, TypeError):
+                self.ha.call_service("climate", "set_hvac_mode", {
+                    "entity_id": entity_id,
+                    "hvac_mode": target_state,
+                })
+        else:
+            try:
+                target_temp = float(target_state)
+                self.ha.call_service("climate", "set_temperature", {
+                    "entity_id": entity_id,
+                    "temperature": target_temp,
+                })
+            except (ValueError, TypeError):
+                hvac = target_state if target_state not in ("on", "off") else "heat"
+                self.ha.call_service("climate", "set_hvac_mode", {
+                    "entity_id": entity_id,
+                    "hvac_mode": hvac,
+                })
 
     def get_status(self):
         """Return status of gradual transition system."""
