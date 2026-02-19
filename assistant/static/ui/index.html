@@ -382,6 +382,7 @@ textarea { resize:vertical; min-height:70px; font-family:var(--mono); font-size:
           <div class="tab-item" data-tab="tab-voice">Stimme</div>
           <div class="tab-item" data-tab="tab-routines">Routinen</div>
           <div class="tab-item" data-tab="tab-security">Sicherheit</div>
+          <div class="tab-item" data-tab="tab-autonomie">KI-Autonomie</div>
           <div class="tab-item" data-tab="tab-eastereggs">Easter Eggs</div>
         </div>
         <div id="settingsContent"></div>
@@ -733,6 +734,7 @@ function renderCurrentTab() {
     case 'tab-voice': c.innerHTML = renderVoice(); break;
     case 'tab-routines': c.innerHTML = renderRoutines(); break;
     case 'tab-security': c.innerHTML = renderSecurity(); break;
+    case 'tab-autonomie': c.innerHTML = renderAutonomie(); loadSnapshots(); break;
     case 'tab-eastereggs': c.innerHTML = renderEasterEggs(); loadEasterEggs(); break;
   }
   bindFormEvents();
@@ -1182,6 +1184,117 @@ function renderSecurity() {
     '<p style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;">Der Hauptbenutzer wird automatisch als "Sir" angesprochen.</p>' +
     fTextarea('persons.titles', 'Titel-Zuordnung', 'YAML-Map: name: "Anrede"')
   );
+}
+
+// ---- Tab: KI-Autonomie (Phase 13.1 / 13.2 / 13.4) ----
+let SNAPSHOTS = [];
+
+function renderAutonomie() {
+  return sectionWrap('&#129302;', 'Selbstoptimierung (Phase 13.4)',
+    '<p style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;">Jarvis analysiert Interaktionen und schlaegt Parameter-Anpassungen vor. Kern-Identitaet (CODEX, Response-Filter) ist NICHT aenderbar.</p>' +
+    fToggle('self_optimization.enabled', 'Selbstoptimierung aktiv') +
+    fSelect('self_optimization.approval_mode', 'Genehmigungsmodus', [
+      {v:'manual', l:'Manuell (sicherste Option)'},
+      {v:'auto_safe', l:'Auto-Safe (kleine Aenderungen auto)'},
+      {v:'off', l:'Aus (keine Vorschlaege)'}
+    ]) +
+    fSelect('self_optimization.analysis_interval', 'Analyse-Intervall', [
+      {v:'weekly', l:'Woechentlich'},
+      {v:'daily', l:'Taeglich'}
+    ]) +
+    fNum('self_optimization.max_proposals_per_cycle', 'Max. Vorschlaege pro Zyklus', 1, 10) +
+    fText('self_optimization.model', 'Analyse-Modell', 'z.B. qwen3:14b')
+  ) +
+  sectionWrap('&#128190;', 'Rollback & Snapshots',
+    '<p style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;">Jede Config-Aenderung wird gesichert. Rollback jederzeit moeglich.</p>' +
+    fToggle('self_optimization.rollback.enabled', 'Rollback aktiv') +
+    fNum('self_optimization.rollback.max_snapshots', 'Max. gespeicherte Snapshots', 5, 100) +
+    fToggle('self_optimization.rollback.snapshot_on_every_edit', 'Snapshot bei jeder Aenderung') +
+    '<div id="snapshotsList" style="margin-top:12px;"></div>'
+  ) +
+  sectionWrap('&#128295;', 'Parameter-Grenzen',
+    '<p style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;">Jarvis kann NUR innerhalb dieser Grenzen vorschlagen.</p>' +
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">' +
+    fNum('self_optimization.parameter_bounds.sarcasm_level.min', 'Sarkasmus Min', 1, 5) +
+    fNum('self_optimization.parameter_bounds.sarcasm_level.max', 'Sarkasmus Max', 1, 5) +
+    fNum('self_optimization.parameter_bounds.opinion_intensity.min', 'Meinungen Min', 0, 3) +
+    fNum('self_optimization.parameter_bounds.opinion_intensity.max', 'Meinungen Max', 0, 3) +
+    fNum('self_optimization.parameter_bounds.max_response_sentences.min', 'Saetze Min', 1, 10) +
+    fNum('self_optimization.parameter_bounds.max_response_sentences.max', 'Saetze Max', 1, 10) +
+    fNum('self_optimization.parameter_bounds.formality_min.min', 'Formalitaet-Min Min', 0, 100) +
+    fNum('self_optimization.parameter_bounds.formality_min.max', 'Formalitaet-Min Max', 0, 100) +
+    '</div>'
+  ) +
+  sectionWrap('&#128683;', 'Geschuetzte Bereiche (Immutable)',
+    '<p style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;">Diese Bereiche kann Jarvis NIEMALS selbst aendern.</p>' +
+    fKeywords('self_optimization.immutable_keys', 'Immutable Keys')
+  ) +
+  sectionWrap('&#9889;', 'Self-Automation (Phase 13.2)',
+    '<p style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;">Jarvis erstellt HA-Automationen aus natuerlicher Sprache. Approval-Workflow: Du musst jede Automation bestaetigen.</p>' +
+    fToggle('self_automation.enabled', 'Self-Automation aktiv') +
+    fNum('self_automation.max_per_day', 'Max. Automationen pro Tag', 1, 20) +
+    fText('self_automation.model', 'Modell', 'z.B. qwen3:14b')
+  ) +
+  sectionWrap('&#128221;', 'Config-Selbstmodifikation (Phase 13.1)',
+    '<p style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;">Jarvis kann nur diese 3 Dateien editieren (Whitelist). settings.yaml ist NICHT editierbar durch Jarvis.</p>' +
+    '<div style="display:flex;flex-direction:column;gap:8px;">' +
+    '<div style="display:flex;align-items:center;gap:8px;padding:8px;background:var(--bg-secondary);border-radius:6px;">' +
+      '<span style="color:var(--success);">&#9989;</span><span style="font-size:13px;">easter_eggs.yaml</span>' +
+      '<span style="font-size:11px;color:var(--text-muted);margin-left:auto;">Easter Eggs &amp; Gag-Antworten</span></div>' +
+    '<div style="display:flex;align-items:center;gap:8px;padding:8px;background:var(--bg-secondary);border-radius:6px;">' +
+      '<span style="color:var(--success);">&#9989;</span><span style="font-size:13px;">opinion_rules.yaml</span>' +
+      '<span style="font-size:11px;color:var(--text-muted);margin-left:auto;">Meinungs-Kommentare</span></div>' +
+    '<div style="display:flex;align-items:center;gap:8px;padding:8px;background:var(--bg-secondary);border-radius:6px;">' +
+      '<span style="color:var(--success);">&#9989;</span><span style="font-size:13px;">room_profiles.yaml</span>' +
+      '<span style="font-size:11px;color:var(--text-muted);margin-left:auto;">Raum-Metadaten</span></div>' +
+    '<div style="display:flex;align-items:center;gap:8px;padding:8px;background:var(--bg-secondary);border-radius:6px;opacity:0.5;">' +
+      '<span style="color:var(--danger);">&#10060;</span><span style="font-size:13px;">settings.yaml</span>' +
+      '<span style="font-size:11px;color:var(--text-muted);margin-left:auto;">NUR durch User aenderbar</span></div>' +
+    '</div>'
+  );
+}
+
+async function loadSnapshots() {
+  try {
+    const data = await api('/api/ui/snapshots');
+    SNAPSHOTS = data.snapshots || [];
+    renderSnapshotList();
+  } catch(e) { console.error('Snapshots fail:', e); }
+}
+
+function renderSnapshotList() {
+  const c = document.getElementById('snapshotsList');
+  if (!c) return;
+  if (SNAPSHOTS.length === 0) {
+    c.innerHTML = '<div style="padding:12px;text-align:center;color:var(--text-muted);font-size:12px;">Keine Snapshots vorhanden</div>';
+    return;
+  }
+  c.innerHTML = '<div style="font-weight:600;font-size:13px;margin-bottom:8px;">Letzte Snapshots:</div>' +
+    SNAPSHOTS.slice(0, 10).map(s => {
+      const dt = new Date(s.timestamp).toLocaleString('de-DE', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+      return `<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;margin-bottom:4px;background:var(--bg-secondary);border-radius:6px;font-size:12px;">
+        <span style="font-weight:600;min-width:100px;">${esc(s.config_file)}</span>
+        <span style="color:var(--text-secondary);flex:1;">${esc(s.reason)}</span>
+        <span style="color:var(--text-muted);min-width:80px;">${dt}</span>
+        <button class="btn btn-secondary" style="padding:2px 8px;font-size:11px;" onclick="rollbackSnapshot('${esc(s.id)}')">Rollback</button>
+      </div>`;
+    }).join('');
+}
+
+async function rollbackSnapshot(snapshotId) {
+  if (!confirm('Config auf diesen Snapshot zuruecksetzen?')) return;
+  try {
+    const result = await api('/api/ui/rollback', 'POST', {snapshot_id: snapshotId});
+    if (result.success) {
+      toast('Rollback erfolgreich: ' + result.message);
+      // Settings neu laden
+      S = await api('/api/ui/settings');
+      renderCurrentTab();
+      loadSnapshots();
+    } else {
+      toast('Rollback fehlgeschlagen: ' + result.message, 'error');
+    }
+  } catch(e) { toast('Rollback-Fehler', 'error'); }
 }
 
 // ---- Tab 9: Easter Eggs ----

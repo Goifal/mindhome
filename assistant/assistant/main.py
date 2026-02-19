@@ -1414,6 +1414,59 @@ async def ui_update_easter_eggs(req: EasterEggUpdate, token: str = ""):
         raise HTTPException(status_code=500, detail=f"Fehler: {e}")
 
 
+# ------------------------------------------------------------------
+# Phase 13.4: Config Snapshots & Rollback API
+# ------------------------------------------------------------------
+
+@app.get("/api/ui/snapshots")
+async def ui_list_snapshots(token: str = "", config_file: str = ""):
+    """Listet Config-Snapshots (optional gefiltert nach config_file)."""
+    _check_token(token)
+    try:
+        if config_file:
+            snapshots = await brain.config_versioning.list_snapshots(config_file)
+        else:
+            snapshots = await brain.config_versioning.list_all_snapshots()
+        return {"snapshots": snapshots, "total": len(snapshots)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
+class RollbackRequest(BaseModel):
+    snapshot_id: str
+
+
+@app.post("/api/ui/rollback")
+async def ui_rollback(req: RollbackRequest, token: str = ""):
+    """Stellt eine Config-Datei aus einem Snapshot wieder her."""
+    _check_token(token)
+    try:
+        result = await brain.config_versioning.rollback(req.snapshot_id)
+        if result["success"]:
+            # yaml_config im Speicher aktualisieren
+            import assistant.config as cfg
+            cfg.yaml_config = load_yaml_config()
+            _audit_log("config_rollback", {"snapshot_id": req.snapshot_id})
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
+@app.get("/api/ui/self-optimization/status")
+async def ui_self_opt_status(token: str = ""):
+    """Status der Selbstoptimierung inkl. offener Vorschlaege."""
+    _check_token(token)
+    try:
+        proposals = await brain.self_optimization.get_pending_proposals()
+        return {
+            "health": brain.self_optimization.health_status(),
+            "proposals": proposals,
+            "versioning": brain.config_versioning.health_status(),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
 def _deep_merge(base: dict, override: dict):
     """Tiefer Merge von override in base (in-place)."""
     for key, value in override.items():
