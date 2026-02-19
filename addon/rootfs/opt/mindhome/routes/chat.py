@@ -431,7 +431,7 @@ def api_chat_voice():
 
     except Exception as e:
         logger.error("Voice chat assistant error: %s", e)
-        return jsonify({"error": str(e), "transcribed_text": transcribed_text}), 500
+        return jsonify({"error": "Operation failed", "transcribed_text": transcribed_text}), 500
 
     # --- Step 3: TTS via Piper ---
     tts_audio_b64 = None
