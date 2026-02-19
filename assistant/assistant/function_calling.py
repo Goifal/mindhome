@@ -666,6 +666,11 @@ def get_assistant_tools() -> list:
     return tools
 
 
+# Dynamic getter: Climate-Tool-Schema wird bei jedem Aufruf frisch generiert
+def get_assistant_tools() -> list:
+    """Liefert ASSISTANT_TOOLS mit aktuellem Climate-Schema."""
+    return _build_tools_with_dynamic_climate()
+
 # Rueckwaerts-Kompatibilitaet: Bestehender Code der ASSISTANT_TOOLS referenziert
 ASSISTANT_TOOLS = _ASSISTANT_TOOLS_STATIC
 
@@ -1107,7 +1112,7 @@ class FunctionExecutor:
         person_lower = person.lower()
 
         # Person-Profil laden
-        person_profiles = yaml_config.get("persons", {}).get("profiles", {})
+        person_profiles = yaml_config.get("person_profiles", {}).get("profiles", {})
         profile = person_profiles.get(person_lower, {})
 
         # Pruefen ob Person zuhause ist

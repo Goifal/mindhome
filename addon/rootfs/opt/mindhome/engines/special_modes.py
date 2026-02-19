@@ -728,9 +728,9 @@ class EmergencyProtocol(SpecialModeBase):
             return False
 
         config = self.get_config()
-        if config.get("cancel_requires_pin") and pin:
-            # Verify PIN against user
-            if not self._verify_pin(pin, user_id):
+        if config.get("cancel_requires_pin"):
+            # PIN is required — reject if not provided or invalid
+            if not pin or not self._verify_pin(pin, user_id):
                 return False
 
         self._cancel_escalation()

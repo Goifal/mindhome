@@ -53,7 +53,10 @@ def init_energy(dependencies):
 
 
 def _ha():
-    return _deps.get("ha")
+    ha = _deps.get("ha")
+    if ha is None:
+        raise RuntimeError("HAConnection not initialized")
+    return ha
 
 
 def _engine():
@@ -70,7 +73,7 @@ def api_energy_summary():
     """Get energy usage summary from tracked power sensors."""
     session = get_db()
     try:
-        days = int(request.args.get("days", 7))
+        days = request.args.get("days", 7, type=int)
         cutoff = datetime.now(timezone.utc) - timedelta(days=days)
 
         # Find energy-related state history
@@ -103,7 +106,7 @@ def api_energy_summary():
         return jsonify(summary)
     except Exception as e:
         logger.error(f"Energy summary error: {e}")
-        return jsonify({"error": str(e), "entities": []})
+        return jsonify({"error": str(e), "entities": []}), 500
     finally:
         session.close()
 

@@ -187,6 +187,7 @@ class VacationDetector:
                 # Activate vacation after 24h away
                 if hours_away >= 24 and not vacation_active:
                     set_setting("vacation_mode", "true")
+                    set_setting("vacation_auto_activated", "true")
                     self.event_bus.publish("vacation.auto_activated", {
                         "away_hours": round(hours_away, 1),
                     })
@@ -213,7 +214,8 @@ class VacationDetector:
     def _presence_simulation(self):
         """Simulate presence by toggling lights randomly during vacation."""
         import random
-        now = datetime.now(timezone.utc)
+        from helpers import local_now as _local_now
+        now = _local_now()
         hour = now.hour
 
         sim_start = int(get_setting("phase4.vacation_detection.sim_start_hour", "18"))
@@ -232,7 +234,7 @@ class VacationDetector:
         try:
             states = self.ha.get_states() or []
             lights = [s for s in states if s.get("entity_id", "").startswith("light.")
-                      and "wohn" in s.get("entity_id", "").lower() or "living" in s.get("entity_id", "").lower()]
+                      and ("wohn" in s.get("entity_id", "").lower() or "living" in s.get("entity_id", "").lower())]
             if lights:
                 target = random.choice(lights)
                 eid = target["entity_id"]

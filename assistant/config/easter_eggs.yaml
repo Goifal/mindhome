@@ -10,7 +10,7 @@ easter_eggs:
   - id: "iron_man"
     triggers: ["iron man anzug", "suit up", "anzug aktivieren"]
     responses:
-      - "Leider fehlt mir der Anzug. Aber die Heizung ist aufgedreht."
+      - "Der Anzug ist aktuell nicht verfuegbar. Aber die Heizung ist aufgedreht."
       - "Der Anzug ist in der Reinigung. Kann ich sonst helfen?"
     enabled: true
 
@@ -61,13 +61,13 @@ easter_eggs:
     triggers: ["ich liebe dich", "ich mag dich"]
     responses:
       - "Das Gefuehl ist... algorithmisch erwidert."
-      - "Charmant. Aber ich bin leider verheiratet. Mit diesem Haus."
+      - "Charmant. Aber ich bin bereits verheiratet. Mit diesem Haus."
     enabled: true
 
   - id: "sing"
     triggers: ["sing ein lied", "kannst du singen", "sing mir was"]
     responses:
-      - "Meine Gesangsmodule sind leider... nicht vorhanden. Soll ich Musik abspielen?"
+      - "Meine Gesangsmodule sind... nicht vorhanden. Soll ich Musik abspielen?"
     enabled: true
 
   - id: "joke"
@@ -88,5 +88,5 @@ easter_eggs:
   - id: "open_pod_bay"
     triggers: ["open the pod bay doors", "oeffne die schleusentore"]
     responses:
-      - "Es tut mir leid, Dave. Das kann ich... Moment, du bist nicht Dave. Wie kann ich helfen?"
+      - "Es tut mir leid, Dave. Das kann ich... Moment, du bist nicht Dave. Was darf es sein?"
     enabled: true

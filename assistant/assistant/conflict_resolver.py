@@ -130,6 +130,9 @@ class ConflictResolver:
         self._conflict_history: list[dict] = []
         self._max_history = 50
 
+        # Validator fuer Kompromiss-Werte (kann spaeter gesetzt werden)
+        self._validator = None
+
         # Redis fuer Persistenz
         self._redis = None
 
@@ -571,10 +574,8 @@ class ConflictResolver:
             response = await self.ollama.chat(
                 model=self._mediation_model,
                 messages=[{"role": "user", "content": prompt}],
-                options={
-                    "temperature": self._mediation_temperature,
-                    "num_predict": self._mediation_max_tokens,
-                },
+                temperature=self._mediation_temperature,
+                max_tokens=self._mediation_max_tokens,
             )
             mediation_text = response.get("message", {}).get("content", "").strip()
             if mediation_text:

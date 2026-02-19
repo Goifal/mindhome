@@ -49,7 +49,7 @@ const api = {
             return data;
         } catch (e) {
             console.error(`GET ${endpoint} failed:`, e);
-            return null;
+            return {};
         }
     },
     invalidate(endpoint) { delete _apiCache[endpoint]; },
@@ -5051,7 +5051,7 @@ const CalendarSyncConfig = ({ lang, showToast, onEventsLoaded }) => {
             ]);
             if (sourcesR) { setSources(sourcesR.sources || []); setSyncedIds(sourcesR.synced_ids || []); }
             const token = tokenR?.token || '';
-            setExportUrl(`${window.location.origin}/api/calendar/export.ics?token=${token}`);
+            setExportUrl(`${window.location.origin}${API_BASE}/api/calendar/export.ics?token=${token}`);
             if (settingsR) setExportDays(settingsR.export_days || 90);
             setLoading(false);
         })();

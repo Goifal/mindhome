@@ -374,9 +374,13 @@ def camera_snapshot_get(event_id):
             if not evt or not evt.snapshot_path:
                 return jsonify({"error": "Snapshot not found"}), 404
             import os
+            SNAPSHOT_DIR = "/data/mindhome/snapshots"
             if not os.path.exists(evt.snapshot_path):
                 return jsonify({"error": "Snapshot file missing"}), 404
-            return send_file(evt.snapshot_path, mimetype="image/jpeg")
+            real_path = os.path.realpath(evt.snapshot_path)
+            if not real_path.startswith(SNAPSHOT_DIR):
+                return jsonify({"error": "Invalid snapshot path"}), 403
+            return send_file(real_path, mimetype="image/jpeg")
     except Exception as e:
         logger.error(f"Get snapshot error: {e}")
         return jsonify({"error": str(e)}), 500

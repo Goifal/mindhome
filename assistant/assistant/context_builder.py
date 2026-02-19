@@ -654,7 +654,7 @@ class ContextBuilder:
         Fuer Phase 10.2: Delegations-Routing.
         """
         # Erst konfigurierte preferred_room pruefen
-        person_profiles = yaml_config.get("persons", {}).get("profiles", {})
+        person_profiles = yaml_config.get("person_profiles", {}).get("profiles", {})
         person_key = person_name.lower()
         if person_key in (person_profiles or {}):
             return person_profiles[person_key].get("preferred_room")

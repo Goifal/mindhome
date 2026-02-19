@@ -79,26 +79,22 @@ def _domain_manager():
 @system_bp.route("/api/system/status", methods=["GET"])
 def api_system_status():
     """Get system status overview."""
-    session = get_db()
-    try:
-        tz = get_ha_timezone()
-        tz_name = str(tz) if tz != timezone.utc else "UTC"
-        return jsonify({
-            "status": "running",
-            "ha_connected": _ha().is_connected(),
-            "offline_queue_size": _ha().get_offline_queue_size(),
-            "system_mode": get_setting("system_mode", "normal"),
-            "onboarding_completed": get_setting("onboarding_completed", "false") == "true",
-            "language": get_language(),
-            "theme": get_setting("theme", "dark"),
-            "view_mode": get_setting("view_mode", "simple"),
-            "version": VERSION,
-            "timezone": tz_name,
-            "local_time": local_now().isoformat(),
-            "timestamp": datetime.now(timezone.utc).isoformat()
-        })
-    finally:
-        session.close()
+    tz = get_ha_timezone()
+    tz_name = str(tz) if tz != timezone.utc else "UTC"
+    return jsonify({
+        "status": "running",
+        "ha_connected": _ha().is_connected(),
+        "offline_queue_size": _ha().get_offline_queue_size(),
+        "system_mode": get_setting("system_mode", "normal"),
+        "onboarding_completed": get_setting("onboarding_completed", "false") == "true",
+        "language": get_language(),
+        "theme": get_setting("theme", "dark"),
+        "view_mode": get_setting("view_mode", "simple"),
+        "version": VERSION,
+        "timezone": tz_name,
+        "local_time": local_now().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    })
 
 
 
@@ -202,7 +198,7 @@ def api_system_info():
             # Phase 2a additions
             "state_history_count": session.query(StateHistory).count(),
             "pattern_count": session.query(LearnedPattern).filter_by(is_active=True).count(),
-            "event_bus_subscribers": _deps.get("event_bus").subscriber_count("state_changed"),
+            "event_bus_subscribers": _deps.get("event_bus").subscriber_count("state_changed") if _deps.get("event_bus") else 0,
         })
     finally:
         session.close()
@@ -228,7 +224,7 @@ def api_get_settings():
 @system_bp.route("/api/system/settings/<key>", methods=["PUT"])
 def api_update_setting(key):
     """Update a system setting."""
-    data = request.json
+    data = request.json or {}
     set_setting(key, data.get("value"))
     return jsonify({"success": True, "key": key, "value": data.get("value")})
 
@@ -383,7 +379,7 @@ def api_execute_quick_action(action_id):
 @system_bp.route("/api/quick-actions", methods=["POST"])
 def api_create_quick_action():
     """Create a new custom quick action."""
-    data = request.json
+    data = request.json or {}
     session = get_db()
     try:
         max_order = session.query(sa_func.max(QuickAction.sort_order)).scalar() or 0
@@ -410,7 +406,7 @@ def api_create_quick_action():
 @system_bp.route("/api/quick-actions/<int:action_id>", methods=["PUT"])
 def api_update_quick_action(action_id):
     """Update a quick action."""
-    data = request.json
+    data = request.json or {}
     session = get_db()
     try:
         qa = session.get(QuickAction, action_id)
@@ -677,7 +673,7 @@ def api_get_retention():
 @system_bp.route("/api/system/retention", methods=["PUT"])
 def api_set_retention():
     """Update data retention settings."""
-    data = request.json
+    data = request.json or {}
     days = data.get("retention_days", 90)
     if days < 7:
         days = 7  # Minimum 7 days
@@ -924,7 +920,6 @@ def serve_frontend(path):
         # Fix MIME type for .jsx files (Babel XHR needs text/javascript)
         if path.endswith(".jsx"):
             response.headers["Content-Type"] = "text/javascript; charset=utf-8"
-            response.headers["Access-Control-Allow-Origin"] = "*"
         return response
     # Return 404 for missing static assets (so onerror CDN fallback works)
     if path and "." in path.split("/")[-1]:
@@ -1502,7 +1497,7 @@ def api_device_health():
         return jsonify({"issues": issues, "total": len(issues)})
     except Exception as e:
         logger.error(f"Device health check error: {e}")
-        return jsonify({"issues": [], "total": 0, "error": str(e)})
+        return jsonify({"issues": [], "total": 0, "error": str(e)}), 500
 
 
 
@@ -1614,7 +1609,7 @@ def api_export_data(data_type):
         return jsonify({"data": data, "count": len(data)})
     except Exception as e:
         logger.error(f"Export error: {e}")
-        return jsonify({"error": str(e), "data": []})
+        return jsonify({"error": str(e), "data": []}), 500
     finally:
         session.close()
 
@@ -1717,7 +1712,7 @@ def api_get_device_groups():
 @system_bp.route("/api/device-groups", methods=["POST"])
 def api_create_device_group():
     """Create a new device group."""
-    data = request.json
+    data = request.json or {}
     session = get_db()
     try:
         group = DeviceGroup(
@@ -1741,7 +1736,7 @@ def api_create_device_group():
 @system_bp.route("/api/device-groups/<int:group_id>", methods=["PUT"])
 def api_update_device_group(group_id):
     """Update a device group."""
-    data = request.json
+    data = request.json or {}
     session = get_db()
     try:
         group = session.get(DeviceGroup, group_id)
@@ -1783,7 +1778,7 @@ def api_delete_device_group(group_id):
 @system_bp.route("/api/device-groups/<int:group_id>/execute", methods=["POST"])
 def api_execute_device_group(group_id):
     """Execute an action on all devices in a group."""
-    data = request.json
+    data = request.json or {}
     service = data.get("service", "toggle")
     session = get_db()
     try:
@@ -1876,7 +1871,8 @@ def api_self_test():
     try:
         session = get_db()
         for table in ["devices", "rooms", "domains", "users", "learned_patterns", "state_history"]:
-            session.execute(text(f"SELECT COUNT(*) FROM {table}"))
+            # Table names are hardcoded above - safe to interpolate
+            session.execute(text("SELECT COUNT(*) FROM " + table))
         session.close()
         results.append({"test": "tables", "status": "ok"})
     except Exception as e:
@@ -1914,7 +1910,7 @@ def api_get_offline_queue():
 @system_bp.route("/api/offline-queue", methods=["POST"])
 def api_add_offline_action():
     """Queue an action for when HA comes back online."""
-    data = request.json
+    data = request.json or {}
     session = get_db()
     try:
         item = OfflineActionQueue(
@@ -1932,7 +1928,7 @@ def api_add_offline_action():
 @system_bp.route("/api/tts/announce", methods=["POST"])
 def api_tts_announce():
     """Send a TTS announcement via HA."""
-    data = request.json
+    data = request.json or {}
     message = data.get("message", "")
     entity = data.get("entity_id")
     if not message:
@@ -2034,10 +2030,10 @@ def api_get_ha_entities():
 def api_get_context():
     try:
         from pattern_engine import ContextBuilder
-        builder = ContextBuilder(ha_connection, engine)
+        builder = ContextBuilder(_ha(), _engine())
         return jsonify(builder.build())
     except Exception as e:
-        return jsonify({"error": str(e)})
+        return jsonify({"error": str(e)}), 500
 
 
 @system_bp.route("/api/plugins/evaluate", methods=["POST"])
@@ -2046,7 +2042,7 @@ def api_evaluate_plugins():
     try:
         if _domain_manager():
             from pattern_engine import ContextBuilder
-            builder = ContextBuilder(ha_connection, engine)
+            builder = ContextBuilder(_ha(), _engine())
             ctx = builder.build()
             for name, plugin in _domain_manager().plugins.items():
                 try:
@@ -2054,5 +2050,5 @@ def api_evaluate_plugins():
                 except Exception as e:
                     results[name] = {"error": str(e)}
     except Exception as e:
-        return jsonify({"error": str(e)})
+        return jsonify({"error": str(e)}), 500
     return jsonify(results)

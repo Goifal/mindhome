@@ -29,7 +29,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from .config import settings, yaml_config
-from .function_calling import ASSISTANT_TOOLS, FunctionExecutor
+from .function_calling import get_assistant_tools, FunctionExecutor
 from .function_validator import FunctionValidator
 from .ollama_client import OllamaClient
 from .websocket import emit_action, emit_speaking
@@ -181,7 +181,7 @@ class ActionPlanner:
             response = await self.ollama.chat(
                 messages=planner_messages,
                 model=settings.model_deep,
-                tools=ASSISTANT_TOOLS,
+                tools=get_assistant_tools(),
                 max_tokens=512,
             )
 

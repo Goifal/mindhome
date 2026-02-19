@@ -53,7 +53,10 @@ def init_users(dependencies):
 
 
 def _ha():
-    return _deps.get("ha")
+    ha = _deps.get("ha")
+    if ha is None:
+        raise RuntimeError("HAConnection not initialized")
+    return ha
 
 
 def _engine():
@@ -126,7 +129,7 @@ def api_create_user():
 @users_bp.route("/api/users/<int:user_id>", methods=["PUT"])
 def api_update_user(user_id):
     """Update a user."""
-    data = request.json
+    data = request.json or {}
     session = get_db()
     try:
         user = session.get(User, user_id)

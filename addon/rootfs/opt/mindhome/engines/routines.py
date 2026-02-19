@@ -100,12 +100,14 @@ class RoutineEngine:
 
                     steps = []
                     for p in pats[:8]:  # max 8 steps per routine
+                        pd = p.pattern_data or {}
+                        ad = p.action_definition or {}
                         steps.append({
                             "pattern_id": p.id,
-                            "entity_id": p.entity_id,
+                            "entity_id": ad.get("entity_id", pd.get("trigger_entity", "")),
                             "domain": p.domain_id,
                             "room_id": p.room_id,
-                            "action": p.trigger_state or p.action_taken,
+                            "action": ad.get("target_state", pd.get("action", "")),
                             "confidence": round(p.confidence, 2),
                         })
 
@@ -186,7 +188,7 @@ class RoutineEngine:
 
                 # Map entities to rooms
                 devices = {d.ha_entity_id: d.room_id for d in session.query(Device).filter(Device.room_id.isnot(None)).all()}
-                rooms = {r.id: (r.name_de or r.name_en or f"Room {r.id}") for r in session.query(Room).all()}
+                rooms = {r.id: (r.name or f"Room {r.id}") for r in session.query(Room).all()}
 
                 # Build transition pairs
                 transitions = defaultdict(int)

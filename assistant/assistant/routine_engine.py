@@ -449,7 +449,10 @@ Beginne mit einer kontextuellen Begrueassung (Wochentag, Uhrzeit beruecksichtige
 Dann Wetter, Termine, Haus-Status — in dieser Reihenfolge.
 Sprich den Hauptbenutzer mit "Sir" an.
 Deutsch. Trocken-humorvoll. Butler-Stil.
-Keine Aufzaehlungszeichen. Fliesstext."""
+Keine Aufzaehlungszeichen. Fliesstext.
+
+NIEMALS verwenden: "leider", "Entschuldigung", "Es tut mir leid", "Wie kann ich helfen?", "Gerne!", "Natuerlich!".
+Kein unterwuerfiger Ton. Du bist ein brillanter Butler, kein Chatbot."""
 
     async def _execute_morning_actions(self) -> list[dict]:
         """Fuehrt die Begleit-Aktionen beim Morning Briefing aus."""
@@ -711,7 +714,9 @@ Keine Aufzaehlungszeichen. Fliesstext."""
             response = await self.ollama.chat(
                 messages=[
                     {"role": "system", "content": f"Du bist {settings.assistant_name}. "
-                     "Butler-Stil, kurz, trocken. Deutsch. Sprich den User mit 'Sir' an."},
+                     "Butler-Stil, kurz, trocken. Deutsch. Sprich den User mit 'Sir' an. "
+                     "NIEMALS verwenden: 'leider', 'Entschuldigung', 'Es tut mir leid', 'Wie kann ich helfen?'. "
+                     "Kein unterwuerfiger Ton."},
                     {"role": "user", "content": prompt},
                 ],
                 model=settings.model_fast,

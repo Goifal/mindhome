@@ -485,7 +485,7 @@ async function checkSetupAndShow() {
         } else {
           TOKEN = t;
           try {
-            const sr = await fetch(`${API}/api/ui/stats?token=${TOKEN}`);
+            const sr = await fetch(`${API}/api/ui/stats`, {headers: {'Authorization': `Bearer ${TOKEN}`}});
             if (sr.ok) { resetSessionTimer(); showApp(); return; }
           } catch(e) {}
         }
@@ -621,9 +621,8 @@ checkSetupAndShow();
 
 // ---- API ----
 async function api(path, method='GET', body=null) {
-  const sep = path.includes('?') ? '&' : '?';
-  const url = `${API}${path}${sep}token=${TOKEN}`;
-  const opts = {method, headers:{'Content-Type':'application/json'}};
+  const url = `${API}${path}`;
+  const opts = {method, headers:{'Content-Type':'application/json', 'Authorization': `Bearer ${TOKEN}`}};
   if (body) opts.body = JSON.stringify(body);
   const r = await fetch(url, opts);
   if (r.status === 401) { doLogout(); throw new Error('Auth'); }
@@ -1350,9 +1349,9 @@ function filterEntities() {
   const show = filtered.slice(0, 100);
   const c = document.getElementById('entityBrowser');
   c.innerHTML = show.map(e => `
-    <div class="entity-item" onclick="navigator.clipboard?.writeText('${e.entity_id}');toast('${e.entity_id} kopiert')">
+    <div class="entity-item" onclick="navigator.clipboard?.writeText('${esc(e.entity_id)}');toast('${esc(e.entity_id)} kopiert')">
       <span class="ename">${esc(e.name)}</span>
-      <span class="eid">${e.entity_id}</span>
+      <span class="eid">${esc(e.entity_id)}</span>
       <span style="color:var(--text-muted);font-size:11px;">${esc(e.state)}</span>
     </div>`).join('');
   if (filtered.length > 100) c.innerHTML += `<div style="padding:10px;text-align:center;color:var(--text-muted);font-size:11px;">...und ${filtered.length-100} weitere</div>`;
