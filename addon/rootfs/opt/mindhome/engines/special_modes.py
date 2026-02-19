@@ -851,6 +851,7 @@ class EmergencyProtocol(SpecialModeBase):
                         title="NOTFALL / EMERGENCY",
                         message=f"Emergency ({self._emergency_type}). Contact: {contact.name}, Phone: {contact.phone or 'N/A'}",
                         was_sent=True,
+                        user_id=contact.user_id if hasattr(contact, 'user_id') else 1,
                     ))
                     try:
                         self.ha.call_service("notify", "persistent_notification", {

@@ -449,7 +449,8 @@ Format: Fliesstext, kurze Saetze."""
             avg_mood = 0.5
             if mood_history:
                 values = [float(v) for v in mood_history]
-                avg_mood = round(sum(values) / len(values), 2)
+                if values:
+                    avg_mood = round(sum(values) / len(values), 2)
 
             snapshot = {
                 "month": month,

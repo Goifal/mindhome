@@ -83,7 +83,9 @@ def _get_climate_tool_parameters() -> dict:
 
 
 # Ollama Tool-Definitionen (Qwen 2.5 Function Calling Format)
-ASSISTANT_TOOLS = [
+# ASSISTANT_TOOLS wird als Funktion gebaut, damit set_climate
+# bei jedem Aufruf den aktuellen heating.mode aus yaml_config liest.
+_ASSISTANT_TOOLS_STATIC = [
     {
         "type": "function",
         "function": {
@@ -641,6 +643,33 @@ ASSISTANT_TOOLS = [
 ]
 
 
+def get_assistant_tools() -> list:
+    """Liefert Tool-Definitionen mit aktuellem Climate-Schema.
+
+    Climate-Tool wird bei jedem Aufruf neu gebaut, damit
+    Aenderungen am Heizungsmodus (room_thermostat vs heating_curve)
+    sofort wirksam werden — ohne Neustart.
+    """
+    tools = []
+    for tool in _ASSISTANT_TOOLS_STATIC:
+        if tool.get("function", {}).get("name") == "set_climate":
+            tools.append({
+                "type": "function",
+                "function": {
+                    "name": "set_climate",
+                    "description": _get_climate_tool_description(),
+                    "parameters": _get_climate_tool_parameters(),
+                },
+            })
+        else:
+            tools.append(tool)
+    return tools
+
+
+# Rueckwaerts-Kompatibilitaet: Bestehender Code der ASSISTANT_TOOLS referenziert
+ASSISTANT_TOOLS = _ASSISTANT_TOOLS_STATIC
+
+
 class FunctionExecutor:
     """Fuehrt Function Calls des Assistenten aus."""
 
@@ -724,15 +753,19 @@ class FunctionExecutor:
         if not current_state:
             return {"success": False, "message": f"Entity {entity_id} nicht gefunden"}
 
-        # Aktuelle Zieltemperatur als Basis
+        # Basis-Temperatur der Heizkurve (vom Regler geliefert)
         attrs = current_state.get("attributes", {})
-        current_temp = attrs.get("temperature")
-        if current_temp is None:
+        base_temp = attrs.get("temperature")
+        if base_temp is None:
             return {"success": False, "message": f"Keine Temperatur fuer {entity_id} verfuegbar"}
 
-        # Neue Temperatur = aktuelle Basis + Offset
-        # Offset wird relativ zur Heizkurve interpretiert
-        new_temp = float(current_temp) + offset
+        # Offset-Grenzen aus Config erzwingen
+        offset_min = heating.get("curve_offset_min", -5)
+        offset_max = heating.get("curve_offset_max", 5)
+        offset = max(offset_min, min(offset_max, offset))
+
+        # Offset wird absolut zur Basis-Temperatur gesetzt (nicht kumulativ)
+        new_temp = float(base_temp) + offset
 
         service_data = {"entity_id": entity_id, "temperature": new_temp}
         if "mode" in args:

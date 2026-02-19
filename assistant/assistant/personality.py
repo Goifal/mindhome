@@ -866,7 +866,8 @@ class PersonalityEngine:
             avg_mood = 0.5
             if mood_history:
                 values = [float(v) for v in mood_history]
-                avg_mood = sum(values) / len(values)
+                if values:
+                    avg_mood = sum(values) / len(values)
 
             total_int = int(total or 0)
             positive_int = int(positive or 0)

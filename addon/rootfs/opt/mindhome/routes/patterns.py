@@ -567,7 +567,10 @@ def api_get_manual_rules():
 @patterns_bp.route("/api/manual-rules", methods=["POST"])
 def api_create_manual_rule():
     """Create a manual rule."""
-    data = request.json
+    data = request.get_json() or {}
+    for field in ("trigger_entity", "trigger_state", "action_entity"):
+        if field not in data:
+            return jsonify({"error": f"Feld '{field}' fehlt"}), 400
     session = get_db()
     try:
         rule = ManualRule(

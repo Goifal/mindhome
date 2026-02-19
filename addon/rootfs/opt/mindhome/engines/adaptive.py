@@ -114,7 +114,7 @@ class HabitDriftDetector:
 
                 self._cached_drifts = drifts
                 if drifts:
-                    self.event_bus.emit("habit.drift_detected", {
+                    self.event_bus.publish("habit.drift_detected", {
                         "count": len(drifts),
                         "drifts": drifts[:5],  # top 5
                     })

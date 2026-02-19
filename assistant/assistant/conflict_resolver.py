@@ -40,15 +40,25 @@ FUNCTION_DOMAIN_MAP = {
 
 # Welche Parameter bei Konflikten verglichen werden
 def _get_climate_conflict_params() -> dict:
-    """Liefert Konflikt-Parameter je nach Heizungsmodus."""
-    mode = yaml_config.get("heating", {}).get("mode", "room_thermostat")
+    """Liefert Konflikt-Parameter je nach Heizungsmodus (live aus Config)."""
+    from .config import yaml_config as cfg
+    mode = cfg.get("heating", {}).get("mode", "room_thermostat")
     if mode == "heating_curve":
         return {"key": "offset", "unit": "°C", "type": "numeric"}
     return {"key": "temperature", "unit": "°C", "type": "numeric"}
 
 
-CONFLICT_PARAMETERS = {
-    "climate": _get_climate_conflict_params(),
+def get_conflict_parameters() -> dict:
+    """Liefert Konflikt-Parameter mit aktuellem Climate-Modus."""
+    return {
+        "climate": _get_climate_conflict_params(),
+        "light": _CONFLICT_PARAMS_STATIC["light"],
+        "media": _CONFLICT_PARAMS_STATIC["media"],
+        "cover": _CONFLICT_PARAMS_STATIC["cover"],
+    }
+
+
+_CONFLICT_PARAMS_STATIC = {
     "light": {
         "key": "brightness",
         "unit": "%",
@@ -304,7 +314,7 @@ class ConflictResolver:
         Returns:
             Konflikt-Details oder None
         """
-        params = CONFLICT_PARAMETERS.get(domain)
+        params = get_conflict_parameters().get(domain)
         if not params:
             return None
 

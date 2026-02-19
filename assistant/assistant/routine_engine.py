@@ -105,6 +105,8 @@ class RoutineEngine:
         if self.redis:
             today = datetime.now().strftime("%Y-%m-%d")
             done = await self.redis.get(KEY_MORNING_DONE)
+            if done is not None:
+                done = done.decode() if isinstance(done, bytes) else done
             if done == today:
                 logger.info("Morning Briefing bereits heute ausgefuehrt")
                 return {"text": "", "actions": []}
@@ -819,6 +821,8 @@ Keine Aufzaehlungszeichen. Fliesstext."""
         if not self.redis:
             return False
         val = await self.redis.get(KEY_GUEST_MODE)
+        if val is not None and isinstance(val, bytes):
+            val = val.decode()
         return val == "active"
 
     def get_guest_mode_prompt(self) -> str:

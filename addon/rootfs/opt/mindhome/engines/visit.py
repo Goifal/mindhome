@@ -58,7 +58,7 @@ class VisitPreparationManager:
                     except Exception as e:
                         logger.error(f"Visit action error {entity_id}/{service}: {e}")
 
-                self.event_bus.emit("visit.preparation_activated", {
+                self.event_bus.publish("visit.preparation_activated", {
                     "preparation_id": preparation_id,
                     "name": prep.name,
                     "actions_executed": executed,
@@ -187,7 +187,7 @@ class VacationDetector:
                 # Activate vacation after 24h away
                 if hours_away >= 24 and not vacation_active:
                     set_setting("vacation_mode", "true")
-                    self.event_bus.emit("vacation.auto_activated", {
+                    self.event_bus.publish("vacation.auto_activated", {
                         "away_hours": round(hours_away, 1),
                     })
                     logger.info(f"Vacation mode auto-activated (away {hours_away:.0f}h)")
@@ -204,7 +204,7 @@ class VacationDetector:
                 if vacation_active and get_setting("vacation_auto_activated") == "true":
                     set_setting("vacation_mode", "false")
                     set_setting("vacation_auto_activated", "false")
-                    self.event_bus.emit("vacation.auto_deactivated", {})
+                    self.event_bus.publish("vacation.auto_deactivated", {})
                     logger.info("Vacation mode auto-deactivated (person returned)")
 
         except Exception as e:

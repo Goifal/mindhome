@@ -7,7 +7,7 @@ import json
 import logging
 import os
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
@@ -85,7 +85,7 @@ app.add_middleware(
         f"http://localhost:{settings.assistant_port}",
     ],
     allow_credentials=True,
-    allow_methods=["GET", "POST"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -1065,6 +1065,10 @@ async def ui_update_settings(req: SettingsUpdateFull, token: str = ""):
         import assistant.config as cfg
         cfg.yaml_config = load_yaml_config()
 
+        # ModelRouter neu laden (Enabled-Status, Keywords)
+        if hasattr(brain, "model_router") and brain.model_router:
+            brain.model_router.reload_config()
+
         # Audit-Log
         changed_keys = list(req.settings.keys()) if isinstance(req.settings, dict) else []
         _audit_log("settings_update", {"changed_sections": changed_keys})
@@ -1188,9 +1192,13 @@ async def ui_notification_channels(token: str = ""):
     return {"channels": channels}
 
 
+class NotificationChannelUpdate(BaseModel):
+    channels: dict
+
+
 @app.put("/api/ui/notification-channels")
 async def ui_update_notification_channels(
-    updates: dict, token: str = "",
+    req: NotificationChannelUpdate, token: str = "",
 ):
     """Phase 15.4: Kanal-Praeferenzen aktualisieren."""
     _check_token(token)
@@ -1203,11 +1211,11 @@ async def ui_update_notification_channels(
         else:
             cfg = {}
 
-        cfg.setdefault("notifications", {})["channels"] = updates
+        cfg.setdefault("notifications", {})["channels"] = req.channels
         with open(config_path, "w") as f:
             yaml.dump(cfg, f, allow_unicode=True, default_flow_style=False)
 
-        return {"success": True, "channels": updates}
+        return {"success": True, "channels": req.channels}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Fehler: {e}")
 

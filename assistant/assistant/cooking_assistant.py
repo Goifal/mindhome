@@ -237,14 +237,14 @@ class CookingAssistant:
 
         if "error" in response:
             logger.error("Rezept-Generierung fehlgeschlagen: %s", response["error"])
-            return "Entschuldigung, ich konnte kein Rezept erstellen. Versuch es nochmal."
+            return "Rezept-Generierung fehlgeschlagen. Spezifischeres Gericht oder andere Portionsgroesse koennte helfen."
 
         content = response.get("message", {}).get("content", "")
         session = self._parse_recipe(content, dish, portions, person)
 
         if not session or not session.steps:
             logger.warning("Rezept-Parsing fehlgeschlagen fuer: %s", dish)
-            return f"Ich konnte das Rezept fuer {dish} leider nicht strukturieren. Versuch es mit einem anderen Gericht."
+            return f"Rezept fuer {dish} nicht strukturierbar. Anderes Gericht empfohlen."
 
         self.session = session
         self.session.started_at = time.time()
@@ -528,7 +528,7 @@ class CookingAssistant:
             )
             if success:
                 return f"Rezept fuer '{self.session.dish}' gespeichert! Ich erinnere mich beim naechsten Mal daran."
-            return "Konnte das Rezept leider nicht speichern."
+            return "Rezept-Speicherung fehlgeschlagen."
         except Exception as e:
             logger.error("Fehler beim Speichern des Rezepts: %s", e)
             return "Fehler beim Speichern des Rezepts."

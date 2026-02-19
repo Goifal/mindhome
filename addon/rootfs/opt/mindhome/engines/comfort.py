@@ -440,7 +440,7 @@ class VentilationMonitor:
                         if not last_remind or (now - last_remind).total_seconds() > 1800:
                             self._reminded[room.id] = now
                             reminder_sent = True
-                            self.event_bus.emit("ventilation.reminder", {
+                            self.event_bus.publish("ventilation.reminder", {
                                 "room_id": room.id,
                                 "room_name": room.name,
                                 "reason": reason,
@@ -600,7 +600,7 @@ class ScreenTimeMonitor:
                         interval = cfg.reminder_interval_min or 60
                         if not last_r or (now - last_r).total_seconds() > interval * 60:
                             self._last_reminder[cfg.user_id] = now
-                            self.event_bus.emit("screen_time.limit_reached", {
+                            self.event_bus.publish("screen_time.limit_reached", {
                                 "user_id": cfg.user_id,
                                 "total_minutes": round(total_mins),
                                 "limit_minutes": cfg.daily_limit_min,
