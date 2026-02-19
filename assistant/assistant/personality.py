@@ -284,8 +284,8 @@ class PersonalityEngine:
         self.assistant_name = settings.assistant_name
 
         # Personality Config
-        personality_config = yaml_config.get("personality", {})
-        self.time_layers = personality_config.get("time_layers", {})
+        personality_config = yaml_config.get("personality") or {}
+        self.time_layers = personality_config.get("time_layers") or {}
 
         # Phase 6: Sarkasmus & Humor
         self.sarcasm_level = personality_config.get("sarcasm_level", 3)
@@ -924,7 +924,7 @@ class PersonalityEngine:
         max_sentences = self.get_max_sentences(time_of_day)
 
         # Stimmungsabhaengige Anpassung
-        mood = context.get("mood", {}).get("mood", "neutral") if context else "neutral"
+        mood = (context.get("mood") or {}).get("mood", "neutral") if context else "neutral"
         self._current_mood = mood
         mood_config = MOOD_STYLES.get(mood, MOOD_STYLES["neutral"])
 
@@ -939,7 +939,7 @@ class PersonalityEngine:
         # Person + Anrede
         current_person = "User"
         if context:
-            current_person = context.get("person", {}).get("name", "User")
+            current_person = (context.get("person") or {}).get("name", "User")
         person_addressing = self._build_person_addressing(current_person)
 
         # Phase 6: Humor-Section
@@ -983,12 +983,12 @@ class PersonalityEngine:
     def _build_person_addressing(self, person_name: str) -> str:
         """Baut die Anrede-Regeln basierend auf Person und Beziehungsstufe."""
         primary_user = self.user_name
-        person_cfg = yaml_config.get("persons", {})
-        titles = person_cfg.get("titles", {})
+        person_cfg = yaml_config.get("persons") or {}
+        titles = person_cfg.get("titles") or {}
 
         # Trust-Level bestimmen (0=Gast, 1=Mitbewohner, 2=Owner)
-        trust_cfg = yaml_config.get("trust_levels", {})
-        trust_persons = trust_cfg.get("persons", {})
+        trust_cfg = yaml_config.get("trust_levels") or {}
+        trust_persons = trust_cfg.get("persons") or {}
         trust_level = trust_persons.get(person_name.lower(), trust_cfg.get("default", 0))
 
         if person_name.lower() == primary_user.lower() or person_name == "User":
