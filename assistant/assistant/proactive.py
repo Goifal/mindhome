@@ -157,7 +157,7 @@ class ProactiveManager:
 
     async def _listen_ha_events(self):
         """Hoert auf Home Assistant Events via WebSocket."""
-        ha_url = settings.ha_url.replace("http://", "ws://").replace("https://", "wss://")
+        ha_url = settings.ha_url.rstrip("/").replace("http://", "ws://").replace("https://", "wss://")
         ws_url = f"{ha_url}/api/websocket"
 
         while self._running:
