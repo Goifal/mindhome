@@ -113,24 +113,24 @@ class AmbientAudioClassifier:
         self.enabled = cfg.get("enabled", True)
 
         # Sensor-Mappings: HA entity_id -> event_type
-        self._sensor_mappings: dict[str, str] = cfg.get("sensor_mappings", {})
+        self._sensor_mappings: dict[str, str] = cfg.get("sensor_mappings") or {}
 
         # Cooldowns pro Event-Typ (verhindert Spam)
-        cooldowns = cfg.get("cooldowns", {})
+        cooldowns = cfg.get("cooldowns") or {}
         self._default_cooldown = cooldowns.get("default_seconds", 30)
-        self._event_cooldowns: dict[str, int] = cooldowns.get("per_event", {})
+        self._event_cooldowns: dict[str, int] = cooldowns.get("per_event") or {}
 
         # Reaktions-Overrides aus Config
-        self._reaction_overrides: dict[str, dict] = cfg.get("reaction_overrides", {})
+        self._reaction_overrides: dict[str, dict] = cfg.get("reaction_overrides") or {}
 
         # Nachmodus: Strengere Reaktionen nachts
-        night_cfg = cfg.get("night_mode", {})
+        night_cfg = cfg.get("night_mode") or {}
         self._night_start = night_cfg.get("start_hour", 22)
         self._night_end = night_cfg.get("end_hour", 7)
         self._night_escalate = night_cfg.get("escalate_severity", True)
 
         # Deaktivierte Events (z.B. wenn kein Hund da ist)
-        self._disabled_events: set[str] = set(cfg.get("disabled_events", []))
+        self._disabled_events: set[str] = set(cfg.get("disabled_events") or [])
 
         # State
         self._last_event_times: dict[str, float] = {}
