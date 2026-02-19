@@ -70,6 +70,24 @@ def _get_assistant_url():
     return url
 
 
+def _get_assistant_api_key():
+    """Get the assistant API key from settings or environment."""
+    import os
+    key = get_setting("assistant_api_key", None)
+    if not key:
+        key = os.environ.get("ASSISTANT_API_KEY", "")
+    return key or ""
+
+
+def _assistant_headers():
+    """Build request headers including API key if configured."""
+    headers = {}
+    api_key = _get_assistant_api_key()
+    if api_key:
+        headers["X-API-Key"] = api_key
+    return headers
+
+
 @chat_bp.route("/api/chat/send", methods=["POST"])
 def api_chat_send():
     """
@@ -102,6 +120,7 @@ def api_chat_send():
         resp = requests.post(
             f"{assistant_url}/api/assistant/chat",
             json={"text": text, "person": person, "room": room},
+            headers=_assistant_headers(),
             timeout=30,
         )
         if resp.status_code == 200:
@@ -188,7 +207,7 @@ def api_chat_status():
     """Check if the assistant is reachable."""
     assistant_url = _get_assistant_url()
     try:
-        resp = requests.get(f"{assistant_url}/api/assistant/health", timeout=5)
+        resp = requests.get(f"{assistant_url}/api/assistant/health", headers=_assistant_headers(), timeout=5)
         if resp.status_code == 200:
             health = resp.json()
             return jsonify({
@@ -243,6 +262,7 @@ def api_chat_upload():
             f"{assistant_url}/api/assistant/chat/upload",
             files={"file": (file.filename, file.stream, file.content_type or "application/octet-stream")},
             data={"caption": caption, "person": person},
+            headers=_assistant_headers(),
             timeout=60,
         )
 
@@ -407,6 +427,7 @@ def api_chat_voice():
         resp = requests.post(
             f"{assistant_url}/api/assistant/chat",
             json={"text": transcribed_text, "person": person, "room": room},
+            headers=_assistant_headers(),
             timeout=30,
         )
         if resp.status_code != 200:
@@ -535,6 +556,7 @@ def api_chat_serve_file(filename):
     try:
         resp = requests.get(
             f"{assistant_url}/api/assistant/chat/files/{filename}",
+            headers=_assistant_headers(),
             timeout=30,
             stream=True,
         )

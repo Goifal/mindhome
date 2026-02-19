@@ -58,6 +58,7 @@ class MindHomeAssistantAgent(ConversationEntity):
         self.hass = hass
         self.entry = entry
         self._url = entry.data["url"].rstrip("/")
+        self._api_key = entry.data.get("api_key", "")
         self._attr_unique_id = f"{entry.entry_id}_conversation"
         self._last_request_time: float = 0.0
         self._cached_speaker: str | None = None
@@ -96,9 +97,13 @@ class MindHomeAssistantAgent(ConversationEntity):
 
         try:
             session = async_get_clientsession(self.hass)
+            headers = {}
+            if self._api_key:
+                headers["X-API-Key"] = self._api_key
             async with session.post(
                 f"{self._url}/api/assistant/chat",
                 json=payload,
+                headers=headers,
                 timeout=aiohttp.ClientTimeout(total=30),
             ) as resp:
                 if resp.status == 200:

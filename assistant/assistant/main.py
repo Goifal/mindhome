@@ -6,6 +6,7 @@ Startet den MindHome Assistant REST API Server.
 import json
 import logging
 import os
+import secrets
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -109,6 +110,93 @@ async def auth_header_middleware(request: Request, call_next):
         qs = scope.get("query_string", b"").decode()
         sep = "&" if qs else ""
         scope["query_string"] = f"{qs}{sep}token={token}".encode()
+    return await call_next(request)
+
+
+# ----- API Key Authentication fuer /api/assistant/* Endpoints -----
+# Schuetzt alle Assistant-API-Endpoints gegen unautorisierte Netzwerkzugriffe.
+# Key-Quellen (Prioritaet): 1. Env ASSISTANT_API_KEY  2. settings.yaml security.api_key  3. Auto-generiert
+
+_assistant_api_key: str = ""
+
+# Pfade die OHNE API Key zugaenglich bleiben (Health fuer Discovery/Config-Flow)
+_API_KEY_EXEMPT_PATHS = frozenset({
+    "/api/assistant/health",
+    "/",
+    "/docs",
+    "/openapi.json",
+    "/redoc",
+})
+
+
+def _init_api_key():
+    """Initialisiert den API Key (einmalig beim Import/Start)."""
+    global _assistant_api_key
+
+    # 1. Env-Variable hat hoechste Prioritaet
+    env_key = os.getenv("ASSISTANT_API_KEY", "").strip()
+    if env_key:
+        _assistant_api_key = env_key
+        logger.info("API Key aus Umgebungsvariable geladen")
+        return
+
+    # 2. Aus settings.yaml lesen
+    yaml_key = yaml_config.get("security", {}).get("api_key", "").strip()
+    if yaml_key:
+        _assistant_api_key = yaml_key
+        logger.info("API Key aus settings.yaml geladen")
+        return
+
+    # 3. Auto-generieren und in settings.yaml speichern
+    _assistant_api_key = secrets.token_urlsafe(32)
+    try:
+        config_path = Path(__file__).parent.parent / "config" / "settings.yaml"
+        with open(config_path) as f:
+            cfg = yaml.safe_load(f) or {}
+        cfg.setdefault("security", {})["api_key"] = _assistant_api_key
+        with open(config_path, "w") as f:
+            yaml.safe_dump(cfg, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+        logger.info("API Key auto-generiert und in settings.yaml gespeichert")
+    except Exception as e:
+        logger.warning("API Key konnte nicht in settings.yaml gespeichert werden: %s", e)
+
+
+_init_api_key()
+
+
+def _check_api_key(request: Request) -> bool:
+    """Prueft ob ein gueltiger API Key mitgesendet wurde.
+
+    Akzeptiert Key via:
+    - X-API-Key Header
+    - api_key Query-Parameter
+    """
+    if not _assistant_api_key:
+        return True  # Kein Key konfiguriert = kein Check
+
+    key = request.headers.get("x-api-key", "")
+    if not key:
+        key = request.query_params.get("api_key", "")
+
+    return secrets.compare_digest(key, _assistant_api_key) if key else False
+
+
+@app.middleware("http")
+async def api_key_middleware(request: Request, call_next):
+    """Prueft API Key fuer alle /api/assistant/* Endpoints (ausser Health)."""
+    path = request.url.path
+
+    # Nur /api/assistant/* Pfade pruefen
+    if path.startswith("/api/assistant/") or path == "/api/assistant":
+        # Exempt-Pfade durchlassen
+        if path not in _API_KEY_EXEMPT_PATHS:
+            if not _check_api_key(request):
+                from fastapi.responses import JSONResponse
+                return JSONResponse(
+                    status_code=403,
+                    content={"detail": "Ungueltiger oder fehlender API Key"},
+                )
+
     return await call_next(request)
 
 
@@ -770,6 +858,9 @@ async def websocket_endpoint(websocket: WebSocket):
     """
     WebSocket fuer Echtzeit-Events.
 
+    Authentifizierung via api_key Query-Parameter:
+    ws://host:port/api/assistant/ws?api_key=DEIN_KEY
+
     Events (Server -> Client):
     assistant.speaking - Assistent spricht (Text + TTS-Metadaten)
     assistant.thinking - Assistent denkt nach
@@ -784,6 +875,13 @@ async def websocket_endpoint(websocket: WebSocket):
     assistant.feedback - Feedback auf Meldung
     assistant.interrupt - Unterbrechung
     """
+    # API Key Authentifizierung fuer WebSocket
+    if _assistant_api_key:
+        ws_key = websocket.query_params.get("api_key", "")
+        if not ws_key or not secrets.compare_digest(ws_key, _assistant_api_key):
+            await websocket.close(code=4003, reason="Ungueltiger API Key")
+            return
+
     await ws_manager.connect(websocket)
     try:
         while True:
@@ -830,7 +928,6 @@ async def websocket_endpoint(websocket: WebSocket):
 # ============================================================
 
 import hashlib
-import secrets
 
 # Settings-YAML Pfad
 SETTINGS_YAML_PATH = Path(__file__).parent.parent / "config" / "settings.yaml"
@@ -1063,6 +1160,32 @@ def _check_token(token: str):
     if now - created > _TOKEN_EXPIRY_SECONDS:
         del _active_tokens[token]
         raise HTTPException(status_code=401, detail="Sitzung abgelaufen. Bitte erneut anmelden.")
+
+
+@app.get("/api/ui/api-key")
+async def ui_get_api_key(token: str = ""):
+    """API Key anzeigen (PIN-geschuetzt). Fuer Addon/HA-Integration-Konfiguration."""
+    _check_token(token)
+    return {"api_key": _assistant_api_key}
+
+
+@app.post("/api/ui/api-key/regenerate")
+async def ui_regenerate_api_key(token: str = ""):
+    """API Key neu generieren (PIN-geschuetzt). Invalidiert alle bestehenden Clients."""
+    _check_token(token)
+    global _assistant_api_key
+    _assistant_api_key = secrets.token_urlsafe(32)
+
+    try:
+        with open(SETTINGS_YAML_PATH) as f:
+            cfg = yaml.safe_load(f) or {}
+        cfg.setdefault("security", {})["api_key"] = _assistant_api_key
+        with open(SETTINGS_YAML_PATH, "w") as f:
+            yaml.safe_dump(cfg, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+        _audit_log("api_key_regenerated", {})
+        return {"api_key": _assistant_api_key, "message": "Neuer API Key generiert. Addon und HA-Integration muessen aktualisiert werden."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
 
 
 @app.get("/api/ui/settings")

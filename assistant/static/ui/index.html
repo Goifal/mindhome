@@ -733,7 +733,7 @@ function renderCurrentTab() {
     case 'tab-rooms': c.innerHTML = renderRooms(); break;
     case 'tab-voice': c.innerHTML = renderVoice(); break;
     case 'tab-routines': c.innerHTML = renderRoutines(); break;
-    case 'tab-security': c.innerHTML = renderSecurity(); break;
+    case 'tab-security': c.innerHTML = renderSecurity(); loadApiKey(); break;
     case 'tab-autonomie': c.innerHTML = renderAutonomie(); loadSnapshots(); loadOptStatus(); break;
     case 'tab-eastereggs': c.innerHTML = renderEasterEggs(); loadEasterEggs(); break;
   }
@@ -1141,6 +1141,16 @@ function renderSecurity() {
     : '<p style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;">Temperatur-Grenzen werden im Heizkurven-Modus durch die Offset-Grenzen oben gesteuert.</p>'
     )
   ) +
+  sectionWrap('&#128273;', 'API Key (Netzwerk-Schutz)',
+    '<p style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;">Schuetzt die Assistant-API gegen unbefugte Netzwerkzugriffe. Diesen Key im HA-Addon und in der HA-Integration eintragen.</p>' +
+    '<div class="form-group"><label>Aktueller API Key</label>' +
+    '<div style="display:flex;gap:8px;align-items:center;">' +
+    '<input type="text" id="apiKeyDisplay" readonly style="flex:1;font-family:monospace;font-size:12px;" value="Wird geladen..." />' +
+    '<button onclick="copyApiKey()" style="padding:6px 12px;border:1px solid var(--border);border-radius:6px;background:var(--card-bg);cursor:pointer;font-size:12px;">Kopieren</button>' +
+    '</div></div>' +
+    '<div style="margin-top:8px;"><button onclick="regenerateApiKey()" style="padding:6px 12px;border:1px solid #e74c3c;border-radius:6px;background:transparent;color:#e74c3c;cursor:pointer;font-size:12px;">Key neu generieren</button>' +
+    '<span style="font-size:11px;color:var(--text-secondary);margin-left:8px;">Achtung: Addon + HA-Integration muessen danach aktualisiert werden!</span></div>'
+  ) +
   sectionWrap('&#128272;', 'Vertrauensstufen',
     fNum('trust_levels.default', 'Standard-Trust', 0, 2) +
     fKeywords('trust_levels.guest_allowed_actions', 'Gast-Aktionen') +
@@ -1184,6 +1194,28 @@ function renderSecurity() {
     '<p style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;">Der Hauptbenutzer wird automatisch als "Sir" angesprochen.</p>' +
     fTextarea('persons.titles', 'Titel-Zuordnung', 'YAML-Map: name: "Anrede"')
   );
+}
+
+// ---- API Key Management ----
+async function loadApiKey() {
+  try {
+    const data = await api('ui/api-key');
+    const el = document.getElementById('apiKeyDisplay');
+    if (el && data.api_key) el.value = data.api_key;
+  } catch (e) { /* ignore */ }
+}
+function copyApiKey() {
+  const el = document.getElementById('apiKeyDisplay');
+  if (el) { navigator.clipboard.writeText(el.value); toast('API Key kopiert!'); }
+}
+async function regenerateApiKey() {
+  if (!confirm('API Key wirklich neu generieren? Addon und HA-Integration muessen danach aktualisiert werden!')) return;
+  try {
+    const data = await api('ui/api-key/regenerate', 'POST');
+    const el = document.getElementById('apiKeyDisplay');
+    if (el && data.api_key) el.value = data.api_key;
+    toast('Neuer API Key generiert!');
+  } catch (e) { toast('Fehler: ' + e.message, true); }
 }
 
 // ---- Tab: KI-Autonomie (Phase 13.1 / 13.2 / 13.4) ----

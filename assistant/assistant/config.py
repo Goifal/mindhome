@@ -29,6 +29,9 @@ class Settings(BaseSettings):
     assistant_host: str = "0.0.0.0"
     assistant_port: int = 8200
 
+    # API Key fuer /api/assistant/* Endpoints (auto-generiert wenn leer)
+    assistant_api_key: str = ""
+
     # Redis + ChromaDB
     redis_url: str = "redis://localhost:6379"
     chroma_url: str = "http://localhost:8100"
