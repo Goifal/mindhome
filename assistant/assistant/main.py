@@ -163,6 +163,12 @@ def _init_api_key():
 
 _init_api_key()
 
+if not _assistant_api_key:
+    # Sollte nie passieren da _init_api_key() immer auto-generiert.
+    # Sicherheitsnetz: Leerer Key = Fehler, NICHT offener Zugang.
+    logger.error("SICHERHEIT: API Key konnte nicht initialisiert werden! Generiere Fallback-Key.")
+    _assistant_api_key = secrets.token_urlsafe(32)
+
 
 def _check_api_key(request: Request) -> bool:
     """Prueft ob ein gueltiger API Key mitgesendet wurde.
@@ -171,9 +177,6 @@ def _check_api_key(request: Request) -> bool:
     - X-API-Key Header
     - api_key Query-Parameter
     """
-    if not _assistant_api_key:
-        return True  # Kein Key konfiguriert = kein Check
-
     key = request.headers.get("x-api-key", "")
     if not key:
         key = request.query_params.get("api_key", "")
@@ -1067,10 +1070,10 @@ async def ui_auth(req: PinRequest):
     if not _is_setup_complete():
         raise HTTPException(status_code=400, detail="Setup noch nicht abgeschlossen")
 
-    # Vergleich: Env-PIN (Klartext) oder gehashter PIN aus YAML
+    # Vergleich: Env-PIN (Klartext, timing-safe) oder gehashter PIN aus YAML
     env_pin = os.environ.get("JARVIS_UI_PIN")
     if env_pin:
-        valid = (req.pin == env_pin)
+        valid = secrets.compare_digest(req.pin, env_pin)
     else:
         stored_hash = _get_dashboard_config().get("pin_hash", "")
         valid = (stored_hash and _verify_hash(req.pin, stored_hash))
