@@ -226,6 +226,7 @@ class AssistantBrain:
             redis_client=self.memory.redis,
             chroma_collection=self.memory.chroma_collection,
         )
+        self.summarizer.set_notify_callback(self._handle_daily_summary)
 
         # Phase 6: TimeAwareness initialisieren und starten
         await self.time_awareness.initialize(redis_client=self.memory.redis)
@@ -593,8 +594,8 @@ class AssistantBrain:
                 system_prompt += f"\n\nOFFENES THEMA: {continuity_hint}"
                 system_prompt += "\nErwaehne kurz das offene Thema, z.B.: 'Wir waren vorhin bei [Thema] — noch relevant?'"
 
-        # Phase 8: Was-waere-wenn Erkennung
-        whatif_prompt = self._get_whatif_prompt(text)
+        # Phase 8: Was-waere-wenn Erkennung (mit echten HA-Daten)
+        whatif_prompt = await self._get_whatif_prompt(text, context)
         if whatif_prompt:
             system_prompt += whatif_prompt
 
@@ -1696,9 +1697,8 @@ class AssistantBrain:
     # Phase 8: Was-waere-wenn Simulation
     # ------------------------------------------------------------------
 
-    @staticmethod
-    def _get_whatif_prompt(text: str) -> str:
-        """Erkennt Was-waere-wenn-Fragen und gibt erweiterten Prompt zurueck."""
+    async def _get_whatif_prompt(self, text: str, context: dict = None) -> str:
+        """Erkennt Was-waere-wenn-Fragen und gibt erweiterten Prompt mit echten HA-Daten zurueck."""
         text_lower = text.lower()
         whatif_triggers = [
             "was waere wenn", "was wäre wenn", "was passiert wenn",
@@ -1710,15 +1710,105 @@ class AssistantBrain:
         if not any(t in text_lower for t in whatif_triggers):
             return ""
 
-        return """
+        # Echte HA-Daten sammeln fuer fundierte Simulation
+        data_lines = []
+        try:
+            states = await self.ha.get_states()
+            if states:
+                # Temperaturen
+                temps = {}
+                for s in states:
+                    eid = s.get("entity_id", "")
+                    val = s.get("state", "")
+                    attrs = s.get("attributes", {})
+                    if eid.startswith("climate.") and val != "unavailable":
+                        name = attrs.get("friendly_name", eid)
+                        current = attrs.get("current_temperature")
+                        target = attrs.get("temperature")
+                        if current:
+                            temps[name] = f"{current}°C (Soll: {target}°C)"
+                    elif eid.startswith("sensor.") and "temperature" in eid and val.replace(".", "").replace("-", "").isdigit():
+                        name = attrs.get("friendly_name", eid)
+                        temps[name] = f"{val}°C"
+                if temps:
+                    data_lines.append("TEMPERATUREN:")
+                    for name, val in list(temps.items())[:8]:
+                        data_lines.append(f"  - {name}: {val}")
+
+                # Energie-Verbrauch
+                energy = {}
+                for s in states:
+                    eid = s.get("entity_id", "")
+                    val = s.get("state", "")
+                    attrs = s.get("attributes", {})
+                    unit = attrs.get("unit_of_measurement", "")
+                    if ("energy" in eid or "power" in eid or "verbrauch" in eid) and val.replace(".", "").isdigit():
+                        name = attrs.get("friendly_name", eid)
+                        energy[name] = f"{val} {unit}"
+                if energy:
+                    data_lines.append("ENERGIE:")
+                    for name, val in list(energy.items())[:6]:
+                        data_lines.append(f"  - {name}: {val}")
+
+                # Offene Fenster/Tueren
+                open_items = []
+                for s in states:
+                    eid = s.get("entity_id", "")
+                    if (eid.startswith("binary_sensor.") and
+                            ("window" in eid or "door" in eid or "fenster" in eid or "tuer" in eid) and
+                            s.get("state") == "on"):
+                        name = s.get("attributes", {}).get("friendly_name", eid)
+                        open_items.append(name)
+                if open_items:
+                    data_lines.append(f"OFFENE FENSTER/TUEREN: {', '.join(open_items)}")
+
+                # Alarmsystem
+                for s in states:
+                    eid = s.get("entity_id", "")
+                    if eid.startswith("alarm_control_panel."):
+                        data_lines.append(f"ALARM: {s.get('state', 'unbekannt')}")
+
+                # Wetter
+                for s in states:
+                    eid = s.get("entity_id", "")
+                    if eid.startswith("weather."):
+                        attrs = s.get("attributes", {})
+                        temp = attrs.get("temperature", "?")
+                        forecast = attrs.get("forecast", [])
+                        data_lines.append(f"WETTER: {s.get('state', '?')}, {temp}°C")
+                        if forecast and len(forecast) >= 1:
+                            fc = forecast[0]
+                            data_lines.append(
+                                f"  Morgen: {fc.get('condition', '?')}, "
+                                f"{fc.get('temperature', '?')}°C"
+                            )
+        except Exception as e:
+            logger.debug("Was-waere-wenn Datensammlung Fehler: %s", e)
+
+        # Saisonale Daten
+        if context and "seasonal" in context:
+            seasonal = context["seasonal"]
+            data_lines.append(f"SAISON: {seasonal.get('season', '?')}")
+            data_lines.append(
+                f"  Tageslicht: {seasonal.get('daylight_hours', '?')}h "
+                f"({seasonal.get('sunrise_approx', '?')} - {seasonal.get('sunset_approx', '?')})"
+            )
+
+        data_block = "\n".join(data_lines) if data_lines else "Keine Live-Daten verfuegbar."
+
+        return f"""
 
 WAS-WAERE-WENN SIMULATION:
-Der User stellt eine hypothetische Frage. Beantworte sie:
-- Nutze den aktuellen Haus-Kontext (Temperaturen, Verbrauch, Geraete)
-- Bei Energiefragen: Schaetze basierend auf typischen Werten
-- Bei Abwesenheit: Gib eine Checkliste (Heizung, Alarm, Fenster, Pflanzen, Simulation)
-- Bei Kosten: Schaetze realistisch (Strompreis ~0.30 EUR/kWh, Gas ~0.08 EUR/kWh)
-- Sei ehrlich wenn du schaetzen musst: "Grob geschaetzt..."
+Der User stellt eine hypothetische Frage. Nutze die ECHTEN Hausdaten fuer deine Antwort:
+
+{data_block}
+
+Regeln:
+- Rechne mit echten Werten wenn verfuegbar (Temperaturen, Verbrauch, Geraete-Status)
+- Bei Energiefragen: Nutze reale Verbrauchsdaten, Strompreis ~0.30 EUR/kWh, Gas ~0.08 EUR/kWh
+- Bei Abwesenheit: Pruefe offene Fenster/Tueren, Alarm-Status, aktive Geraete
+- Bei Kosten: Rechne konkret mit den vorhandenen Daten
+- Sei ehrlich wenn du schaetzen musst: "Basierend auf deinem aktuellen Verbrauch..."
 - Maximal 5 Punkte, klar strukturiert."""
 
     # ------------------------------------------------------------------
@@ -1929,6 +2019,17 @@ Der User stellt eine hypothetische Frage. Beantworte sie:
         if text:
             await emit_speaking(text)
             logger.info("Intent-Erinnerung: %s", text)
+
+    async def _handle_daily_summary(self, data: dict):
+        """Callback fuer Tages-Zusammenfassungen — wird morgens beim naechsten Kontakt gesprochen."""
+        summary_text = data.get("text", "")
+        date = data.get("date", "")
+        if summary_text and self.memory.redis:
+            # Zusammenfassung fuer naechsten Morning-Kontakt speichern
+            await self.memory.redis.set(
+                "jarvis:pending_summary", summary_text, ex=86400
+            )
+            logger.info("Tages-Zusammenfassung fuer %s zum Abruf bereitgestellt", date)
 
     async def shutdown(self):
         """Faehrt MindHome Assistant herunter."""

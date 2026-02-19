@@ -501,6 +501,13 @@ conversation_continuity:
   # Nach wie vielen Stunden verfaellt ein offenes Thema
   expire_hours: 24
 
+# Phase 7.9: Saisonale Rolladen-Automatik
+seasonal_actions:
+  enabled: true
+  check_interval_minutes: 30
+  # Ab welchem Autonomie-Level automatisch ausfuehren (sonst nur vorschlagen)
+  auto_execute_level: 3
+
 # --- Phase 9: Stimme & Akustik ---
 tts:
   # SSML Enhancement: Natuerlichere Sprachausgabe
