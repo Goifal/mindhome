@@ -3,6 +3,7 @@ MindHome Assistant - Hauptanwendung (FastAPI Server)
 Startet den MindHome Assistant REST API Server.
 """
 
+import asyncio
 import json
 import logging
 import os
@@ -316,7 +317,19 @@ async def chat(request: ChatRequest):
     if request.voice_metadata:
         brain.mood.analyze_voice_metadata(request.voice_metadata)
 
-    result = await brain.process(request.text, request.person, request.room)
+    try:
+        result = await asyncio.wait_for(
+            brain.process(request.text, request.person, request.room),
+            timeout=60.0,
+        )
+    except asyncio.TimeoutError:
+        logger.error("brain.process() Timeout nach 60s fuer: %s", request.text[:100])
+        result = {
+            "response": "Entschuldigung, ich brauche gerade zu lange zum Nachdenken. Bitte versuch es nochmal.",
+            "actions": [],
+            "model_used": "timeout",
+            "context_room": request.room or "unbekannt",
+        }
 
     # TTS-Daten als TTSInfo-Modell wrappen
     tts_raw = result.pop("tts", None)

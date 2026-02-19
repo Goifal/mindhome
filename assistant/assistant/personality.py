@@ -1031,21 +1031,21 @@ class PersonalityEngine:
         lines = []
 
         if "time" in context:
-            t = context["time"]
+            t = context["time"] or {}
             lines.append(f"- Zeit: {t.get('datetime', '?')}, {t.get('weekday', '?')}")
 
         if "person" in context:
-            p = context["person"]
+            p = context["person"] or {}
             lines.append(f"- Person: {p.get('name', '?')}, Raum: {p.get('last_room', '?')}")
 
         if "room" in context:
             lines.append(f"- Aktueller Raum: {context['room']}")
 
         if "house" in context:
-            house = context["house"]
+            house = context["house"] or {}
 
             if "temperatures" in house:
-                temps = house["temperatures"]
+                temps = house["temperatures"] or {}
                 temp_strs = [
                     f"{room}: {data.get('current', '?')}°C"
                     for room, data in temps.items()
@@ -1053,20 +1053,20 @@ class PersonalityEngine:
                 lines.append(f"- Temperaturen: {', '.join(temp_strs)}")
 
             if "lights" in house:
-                lines.append(f"- Lichter an: {', '.join(house['lights']) or 'keine'}")
+                lines.append(f"- Lichter an: {', '.join(house.get('lights') or []) or 'keine'}")
 
             if "presence" in house:
-                pres = house["presence"]
-                lines.append(f"- Zuhause: {', '.join(pres.get('home', []))}")
+                pres = house["presence"] or {}
+                lines.append(f"- Zuhause: {', '.join(pres.get('home') or [])}")
                 if pres.get("away"):
                     lines.append(f"- Unterwegs: {', '.join(pres['away'])}")
 
             if "weather" in house:
-                w = house["weather"]
+                w = house["weather"] or {}
                 lines.append(f"- Wetter: {w.get('temp', '?')}°C, {w.get('condition', '?')}")
 
             if "calendar" in house:
-                for event in house["calendar"][:3]:
+                for event in (house["calendar"] or [])[:3]:
                     lines.append(f"- Termin: {event.get('time', '?')} - {event.get('title', '?')}")
 
             if "active_scenes" in house and house["active_scenes"]:
@@ -1081,7 +1081,7 @@ class PersonalityEngine:
 
         # Stimmungs-Kontext
         if "mood" in context:
-            m = context["mood"]
+            m = context["mood"] or {}
             mood = m.get("mood", "neutral")
             stress = m.get("stress_level", 0)
             tiredness = m.get("tiredness_level", 0)
