@@ -2,7 +2,7 @@
 
 ASSISTANT_PORT = 8200
 ADDON_INGRESS_PORT = 5000
-CHROMADB_PORT = 8100
+CHROMADB_PORT = 8000           # interner Container-Port (Host: 8100)
 REDIS_PORT = 6379
 OLLAMA_PORT = 11434
 
@@ -12,6 +12,8 @@ EVENT_SPEAKING = "assistant.speaking"
 EVENT_ACTION = "assistant.action"
 EVENT_LISTENING = "assistant.listening"
 EVENT_PROACTIVE = "assistant.proactive"
+EVENT_SOUND = "assistant.sound"
+EVENT_AUDIO = "assistant.audio"
 
 # Mood levels
 MOOD_RELAXED = "relaxed"

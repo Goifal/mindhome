@@ -121,14 +121,17 @@ class DomainPlugin(ABC):
 
     def _load_settings(self):
         self._settings_cache = dict(self.DEFAULT_SETTINGS)
+        session = None
         try:
             from models import PluginSetting
             session = self.get_session()
             for s in session.query(PluginSetting).filter_by(plugin_name=self.DOMAIN_NAME).all():
                 self._settings_cache[s.setting_key] = s.setting_value
-            session.close()
         except Exception as e:
             self.logger.warning(f"Settings load error: {e}")
+        finally:
+            if session:
+                session.close()
 
     def get_setting(self, key, default=None):
         if self._settings_cache is None:
@@ -142,6 +145,7 @@ class DomainPlugin(ABC):
         return val
 
     def set_setting(self, key, value):
+        session = None
         try:
             from models import PluginSetting
             session = self.get_session()
@@ -158,9 +162,13 @@ class DomainPlugin(ABC):
             session.commit()
             if self._settings_cache:
                 self._settings_cache[key] = str_value
-            session.close()
         except Exception as e:
+            if session:
+                session.rollback()
             self.logger.warning(f"Setting save error: {e}")
+        finally:
+            if session:
+                session.close()
 
     def is_enabled(self):
         return self.get_setting("enabled", "true") == "true"
@@ -219,8 +227,8 @@ class DomainPlugin(ABC):
         return self.ha.call_service(domain, service, data, entity_id)
 
     def get_entity_history(self, entity_id, hours=24):
-        from datetime import timedelta
-        start = (datetime.utcnow() - timedelta(hours=hours)).isoformat()
+        from datetime import timedelta, timezone
+        start = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
         return self.ha.get_history(entity_id, start)
 
     def is_entity_tracked(self, entity_id):

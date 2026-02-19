@@ -117,9 +117,9 @@ def audit_log(action, details=None, user_id=None):
         from models import ActionLog
         with get_db_session() as session:
             entry = ActionLog(
-                action_type="audit", device_name="system",
-                old_value=action,
-                new_value=json.dumps(details)[:500] if details else None,
+                action_type="audit",
+                user_id=user_id,
+                action_data={"action": action, "details": details},
                 reason=f"user:{user_id}" if user_id else "system",
             )
             session.add(entry)
