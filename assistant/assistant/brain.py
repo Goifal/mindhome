@@ -28,6 +28,7 @@ from .autonomy import AutonomyManager
 from .config import settings, yaml_config
 from .context_builder import ContextBuilder
 from .cooking_assistant import CookingAssistant
+from .device_health import DeviceHealthMonitor
 from .diagnostics import DiagnosticsEngine
 from .health_monitor import HealthMonitor
 from .feedback import FeedbackTracker
@@ -126,6 +127,9 @@ class AssistantBrain:
         # Phase 15.2: Vorrats-Tracking
         self.inventory = InventoryManager(self.ha)
 
+        # Phase 15.3: Geraete-Beziehung (Anomalie-Erkennung)
+        self.device_health = DeviceHealthMonitor(self.ha)
+
         # Phase 13.2: Self Automation (Automationen aus natuerlicher Sprache)
         self.self_automation = SelfAutomation(self.ha, self.ollama)
 
@@ -217,6 +221,11 @@ class AssistantBrain:
         await self.health_monitor.initialize(redis_client=self.memory.redis)
         self.health_monitor.set_notify_callback(self._handle_health_alert)
         await self.health_monitor.start()
+
+        # Phase 15.3: Device Health Monitor initialisieren und starten
+        await self.device_health.initialize(redis_client=self.memory.redis)
+        self.device_health.set_notify_callback(self._handle_device_health_alert)
+        await self.device_health.start()
 
         await self.proactive.start()
         logger.info("Jarvis initialisiert (alle Systeme aktiv)")
@@ -1192,6 +1201,16 @@ class AssistantBrain:
         if message:
             await emit_speaking(message)
             logger.info("Health Monitor [%s/%s]: %s", alert_type, urgency, message)
+
+    async def _handle_device_health_alert(self, alert: dict):
+        """Callback fuer DeviceHealthMonitor — meldet Geraete-Anomalien."""
+        message = alert.get("message", "")
+        if message:
+            await emit_speaking(message)
+            logger.info(
+                "DeviceHealth [%s]: %s",
+                alert.get("alert_type", "?"), message,
+            )
 
     # ------------------------------------------------------------------
     # Phase 14.3: Ambient Audio Callback
