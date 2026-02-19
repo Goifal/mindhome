@@ -5,9 +5,7 @@ MindHome Assistant ruft ueber diese Funktionen Home Assistant Aktionen aus.
 Phase 10: Room-aware TTS, Person Messaging, Trust-Level Pre-Check.
 """
 
-import json
 import logging
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
@@ -685,9 +683,6 @@ class FunctionExecutor:
         self.ha = ha_client
         self._entity_cache: dict[str, list[dict]] = {}
         self._config_versioning: Optional[ConfigVersioning] = None
-        # Phase 13.1: Pending Config-Edits (Besitzer muss bestaetigen)
-        self._pending_config_edits: dict[str, dict] = {}
-        self._pending_config_ttl = 300  # 5 Minuten Timeout
 
     def set_config_versioning(self, versioning: ConfigVersioning):
         """Setzt ConfigVersioning fuer Backup-vor-Schreiben."""
@@ -1587,14 +1582,14 @@ class FunctionExecutor:
     # ------------------------------------------------------------------
 
     async def _exec_edit_config(self, args: dict) -> dict:
-        """Phase 13.1: Jarvis schlaegt Config-Aenderung vor (Besitzer muss bestaetigen).
+        """Phase 13.1: Jarvis passt eigene Config-Dateien an (Whitelist-geschuetzt).
 
-        SICHERHEIT: Jarvis darf NIEMALS direkt Config-Dateien aendern.
-        Jede Aenderung wird als Vorschlag gespeichert und wartet auf
-        explizite Bestaetigung durch den Besitzer (Chat oder Dashboard).
+        SICHERHEIT:
+        - NUR easter_eggs.yaml, opinion_rules.yaml, room_profiles.yaml (Whitelist)
+        - settings.yaml ist NICHT editierbar (nicht in _EDITABLE_CONFIGS)
+        - Snapshot vor jeder Aenderung (Rollback jederzeit moeglich)
+        - yaml.safe_dump() verhindert Code-Injection
         """
-        import uuid
-
         config_file = args["config_file"]
         action = args["action"]
         key = args["key"]
@@ -1604,61 +1599,13 @@ class FunctionExecutor:
         if not yaml_path:
             return {"success": False, "message": f"Config '{config_file}' ist nicht editierbar"}
 
-        # Abgelaufene Pending-Edits aufraeumen
-        self._cleanup_expired_config_edits()
-
-        # Vorschlag erstellen (NICHT ausfuehren!)
-        pending_id = str(uuid.uuid4())[:8]
-        self._pending_config_edits[pending_id] = {
-            "config_file": config_file,
-            "action": action,
-            "key": key,
-            "data": data,
-            "yaml_path": str(yaml_path),
-            "created": datetime.now().isoformat(),
-        }
-
-        # Natuerlichsprachliche Vorschau
-        action_labels = {"add": "hinzufuegen", "update": "aktualisieren", "remove": "entfernen"}
-        action_label = action_labels.get(action, action)
-        data_preview = f": {json.dumps(data, ensure_ascii=False)[:120]}" if data else ""
-
-        logger.info("Config-Edit Vorschlag erstellt: %s (pending_id=%s)", config_file, pending_id)
-
-        return {
-            "success": True,
-            "pending": True,
-            "pending_id": pending_id,
-            "message": (
-                f"Ich moechte '{key}' in {config_file}.yaml {action_label}{data_preview}. "
-                f"Soll ich das machen?"
-            ),
-        }
-
-    async def confirm_config_edit(self, pending_id: str) -> dict:
-        """Besitzer bestaetigt einen Config-Edit. NUR durch User aufrufbar.
-
-        SICHERHEIT: Diese Methode darf NIEMALS von Jarvis selbst aufgerufen werden.
-        Nur explizite User-Aktionen (Chat-Bestaetigung oder Dashboard-Button).
-        """
-        self._cleanup_expired_config_edits()
-        pending = self._pending_config_edits.pop(pending_id, None)
-        if not pending:
-            return {"success": False, "message": "Vorschlag abgelaufen oder nicht gefunden."}
-
-        config_file = pending["config_file"]
-        action = pending["action"]
-        key = pending["key"]
-        data = pending["data"]
-        yaml_path = Path(pending["yaml_path"])
-
         try:
-            # Snapshot vor Aenderung
+            # Snapshot vor Aenderung (Rollback-Sicherheitsnetz)
             if self._config_versioning and self._config_versioning.is_enabled():
                 await self._config_versioning.create_snapshot(
                     config_file, yaml_path,
                     reason=f"edit_config:{action}:{key}",
-                    changed_by="jarvis_approved_by_owner",
+                    changed_by="jarvis",
                 )
 
             # Config laden
@@ -1672,6 +1619,8 @@ class FunctionExecutor:
             if action == "add":
                 if not data:
                     return {"success": False, "message": "Keine Daten zum Hinzufuegen angegeben"}
+                if key in config:
+                    return {"success": False, "message": f"'{key}' existiert bereits. Nutze 'update' stattdessen."}
                 config[key] = data
                 msg = f"'{key}' zu {config_file} hinzugefuegt"
             elif action == "update":
@@ -1694,43 +1643,12 @@ class FunctionExecutor:
             with open(yaml_path, "w") as f:
                 yaml.safe_dump(config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
 
-            logger.info("Config-Selbstmodifikation (vom Besitzer genehmigt): %s (%s -> %s)", config_file, action, key)
+            logger.info("Config-Selbstmodifikation: %s (%s -> %s)", config_file, action, key)
             return {"success": True, "message": msg}
 
         except Exception as e:
             logger.error("Config-Edit fehlgeschlagen: %s", e)
             return {"success": False, "message": f"Fehler: {e}"}
-
-    def reject_config_edit(self, pending_id: str = "") -> dict:
-        """Besitzer lehnt einen Config-Edit ab."""
-        if pending_id:
-            removed = self._pending_config_edits.pop(pending_id, None)
-            if removed:
-                return {"success": True, "message": "Config-Aenderung abgelehnt."}
-            return {"success": False, "message": "Vorschlag nicht gefunden."}
-        # Alle ablehnen
-        count = len(self._pending_config_edits)
-        self._pending_config_edits.clear()
-        return {"success": True, "message": f"{count} Config-Aenderung(en) abgelehnt."}
-
-    def get_pending_config_edits(self) -> list[dict]:
-        """Gibt alle offenen Config-Edit-Vorschlaege zurueck."""
-        self._cleanup_expired_config_edits()
-        return [
-            {"pending_id": pid, **data}
-            for pid, data in self._pending_config_edits.items()
-        ]
-
-    def _cleanup_expired_config_edits(self):
-        """Entfernt abgelaufene Pending-Edits."""
-        now = datetime.now()
-        expired = [
-            pid for pid, data in self._pending_config_edits.items()
-            if (now - datetime.fromisoformat(data["created"])).total_seconds()
-            > self._pending_config_ttl
-        ]
-        for pid in expired:
-            del self._pending_config_edits[pid]
 
     # ------------------------------------------------------------------
     # Phase 15.2: Einkaufsliste (via HA Shopping List oder lokal)
