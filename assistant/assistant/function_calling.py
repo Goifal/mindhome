@@ -12,6 +12,7 @@ from typing import Any, Optional
 import yaml
 
 from .config import settings, yaml_config
+from .config_versioning import ConfigVersioning
 from .ha_client import HomeAssistantClient
 
 # Config-Pfade fuer Phase 13.1 (Whitelist — nur diese darf Jarvis aendern)
@@ -681,6 +682,11 @@ class FunctionExecutor:
     def __init__(self, ha_client: HomeAssistantClient):
         self.ha = ha_client
         self._entity_cache: dict[str, list[dict]] = {}
+        self._config_versioning: Optional[ConfigVersioning] = None
+
+    def set_config_versioning(self, versioning: ConfigVersioning):
+        """Setzt ConfigVersioning fuer Backup-vor-Schreiben."""
+        self._config_versioning = versioning
 
     async def execute(self, function_name: str, arguments: dict) -> dict:
         """
@@ -1587,6 +1593,14 @@ class FunctionExecutor:
             return {"success": False, "message": f"Config '{config_file}' ist nicht editierbar"}
 
         try:
+            # Phase 13.4: Snapshot vor Aenderung
+            if self._config_versioning and self._config_versioning.is_enabled():
+                await self._config_versioning.create_snapshot(
+                    config_file, yaml_path,
+                    reason=f"edit_config:{action}:{key}",
+                    changed_by="jarvis",
+                )
+
             # Config laden
             if yaml_path.exists():
                 with open(yaml_path) as f:

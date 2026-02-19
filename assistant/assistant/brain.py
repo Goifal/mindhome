@@ -50,7 +50,9 @@ from .proactive import ProactiveManager
 from .anticipation import AnticipationEngine
 from .intent_tracker import IntentTracker
 from .routine_engine import RoutineEngine
+from .config_versioning import ConfigVersioning
 from .self_automation import SelfAutomation
+from .self_optimization import SelfOptimization
 from .sound_manager import SoundManager
 from .speaker_recognition import SpeakerRecognition
 from .summarizer import DailySummarizer
@@ -156,6 +158,10 @@ class AssistantBrain:
         # Phase 13.2: Self Automation (Automationen aus natuerlicher Sprache)
         self.self_automation = SelfAutomation(self.ha, self.ollama)
 
+        # Phase 13.4: Config Versioning + Self Optimization
+        self.config_versioning = ConfigVersioning()
+        self.self_optimization = SelfOptimization(self.ollama, self.config_versioning)
+
         # Phase 11: Koch-Assistent
         self.cooking = CookingAssistant(self.ollama)
 
@@ -231,6 +237,11 @@ class AssistantBrain:
 
         # Phase 13.2: Self Automation initialisieren
         await self.self_automation.initialize(redis_client=self.memory.redis)
+
+        # Phase 13.4: Config Versioning + Self Optimization initialisieren
+        await self.config_versioning.initialize(redis_client=self.memory.redis)
+        await self.self_optimization.initialize(redis_client=self.memory.redis)
+        self.executor.set_config_versioning(self.config_versioning)
 
         # Phase 14.2: OCR Engine initialisieren
         await self.ocr.initialize(redis_client=self.memory.redis)
@@ -1103,6 +1114,8 @@ class AssistantBrain:
                 "ambient_audio": self.ambient_audio.health_status(),
                 "conflict_resolver": self.conflict_resolver.health_status(),
                 "self_automation": self.self_automation.health_status(),
+                "config_versioning": self.config_versioning.health_status(),
+                "self_optimization": self.self_optimization.health_status(),
             },
             "models_available": models,
             "model_routing": self.model_router.get_model_info(),
