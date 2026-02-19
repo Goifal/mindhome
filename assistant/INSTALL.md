@@ -209,7 +209,73 @@ sudo netplan apply
 
 ---
 
-## Schritt 6: Home Assistant Token erstellen
+## Schritt 6: Firewall einrichten
+
+Ubuntu hat **UFW** (Uncomplicated Firewall) vorinstalliert, aber standardmaessig deaktiviert.
+Du solltest die Firewall aktivieren und nur die noetigen Ports oeffnen.
+
+### 6.1 Firewall aktivieren und Ports freigeben
+
+```bash
+# SSH zuerst! Sonst sperrst du dich aus
+sudo ufw allow 22/tcp comment "SSH"
+
+# MindHome Assistant API (muss vom HA-Server erreichbar sein)
+sudo ufw allow 8200/tcp comment "MindHome Assistant"
+
+# Ollama (muss vom HA-Server erreichbar sein)
+sudo ufw allow 11434/tcp comment "Ollama LLM"
+
+# Firewall einschalten
+sudo ufw enable
+```
+
+Bei der Frage `Command may disrupt existing SSH connections. Proceed with operation (y|n)?` → **y**
+
+### 6.2 Pruefen
+
+```bash
+sudo ufw status
+```
+
+Erwartete Ausgabe:
+```
+Status: active
+
+To                         Action      From
+--                         ------      ----
+22/tcp                     ALLOW       Anywhere       # SSH
+8200/tcp                   ALLOW       Anywhere       # MindHome Assistant
+11434/tcp                  ALLOW       Anywhere       # Ollama LLM
+```
+
+### 6.3 Optional: Nur Heimnetzwerk erlauben (sicherer)
+
+Statt die Ports fuer alle zu oeffnen, kannst du sie auf dein lokales Netz beschraenken:
+
+```bash
+# Erst die offenen Regeln entfernen
+sudo ufw delete allow 8200/tcp
+sudo ufw delete allow 11434/tcp
+
+# Nur fuer dein Heimnetz erlauben (Adresse anpassen!)
+sudo ufw allow from 192.168.1.0/24 to any port 8200 comment "MindHome lokal"
+sudo ufw allow from 192.168.1.0/24 to any port 11434 comment "Ollama lokal"
+```
+
+### Ports die NICHT geoeffnet werden muessen
+
+| Port | Dienst | Warum nicht |
+|------|--------|-------------|
+| 6379 | Redis | Nur intern (Docker-Netzwerk) |
+| 8100 | ChromaDB | Nur intern (Docker-Netzwerk) |
+
+Redis und ChromaDB werden nur vom Assistant-Container angesprochen,
+der im selben Docker-Netzwerk laeuft. Von aussen muss da niemand ran.
+
+---
+
+## Schritt 7: Home Assistant Token erstellen
 
 Auf deinem **Home Assistant** (im Browser):
 
@@ -222,7 +288,7 @@ Auf deinem **Home Assistant** (im Browser):
 
 ---
 
-## Schritt 7: .env Datei konfigurieren
+## Schritt 8: .env Datei konfigurieren
 
 Falls du die `.env` nicht waehrend der Installation bearbeitet hast:
 
@@ -272,7 +338,7 @@ docker compose restart assistant
 
 ---
 
-## Schritt 8: Pruefen ob alles laeuft
+## Schritt 9: Pruefen ob alles laeuft
 
 ### Container-Status
 
@@ -316,7 +382,7 @@ Sollte mindestens `qwen3:4b` zeigen.
 
 ---
 
-## Schritt 9: Autostart einrichten
+## Schritt 10: Autostart einrichten
 
 Die Docker-Container starten automatisch nach einem Neustart (dank `restart: unless-stopped`).
 
