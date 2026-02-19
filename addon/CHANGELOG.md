@@ -1,5 +1,33 @@
 # Changelog
 
+## 1.4.0 – Jarvis Hardened (Dual-SSD, Security-Audit, System-Audit)
+
+### Dual-SSD Setup
+- **Neues Install-Script**: Interaktives Setup fuer NVMe (System) + SATA (Daten)
+- **docker-compose**: Alle Volumes ueber `${DATA_DIR}` Variable (portabel)
+- **.dockerignore**: Schuetzt Secrets vor Docker-Build-Context
+- **.gitignore**: `.env.backup.*` Pattern hinzugefuegt
+
+### Security-Audit (13 Fixes)
+- Token-Eingabe verdeckt (`read -s`), `.env` chmod 600
+- Redis/ChromaDB nur auf `127.0.0.1` gebunden
+- NVMe Partitions-Erkennung (`p`-Separator)
+- Input-Validierung gegen Disk-Whitelist
+- `printf` statt heredoc (Shell-Expansion verhindert)
+- `curl|sh` durch Download+Execute ersetzt
+
+### System-Audit (10 Fixes)
+- Dockerfile: `COPY static/` hinzugefuegt (Dashboard im Container)
+- docker-compose: `:ro` von config entfernt (Settings-Save)
+- `audit_log()`: Falsche ActionLog-Spalten korrigiert
+- Session-Leaks in DomainPlugin behoben (try/finally + rollback)
+- WebSocket disconnect race condition behoben
+- Shared schemas synchronisiert (ChatRequest, ChatResponse, Events)
+- `sessionmaker`-Factory gecacht, deprecated Imports modernisiert
+- `datetime.utcnow()` durch `datetime.now(timezone.utc)` ersetzt
+- ChromaDB Port-Konstante korrigiert (8000 intern)
+- `armhf` aus config.yaml entfernt (kein Build-Target)
+
 ## 1.3.0 – Dual Heating Mode, Voice I/O, GradualTransitioner Fix
 
 ### Dual Heating Mode (21 Dateien)
