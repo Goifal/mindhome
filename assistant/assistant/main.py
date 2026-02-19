@@ -538,10 +538,12 @@ async def update_settings(update: SettingsUpdate, token: str = ""):
     _check_token(token)
     result = {}
     if update.autonomy_level is not None:
+        old_level = brain.autonomy.level
         success = brain.autonomy.set_level(update.autonomy_level)
         if not success:
             raise HTTPException(status_code=400, detail="Level muss 1-5 sein")
         result["autonomy"] = brain.autonomy.get_level_info()
+        _audit_log("autonomy_level_changed", {"old": old_level, "new": update.autonomy_level})
     return result
 
 
@@ -1084,6 +1086,7 @@ async def ui_setup(req: SetupRequest):
     _save_dashboard_config(pin_hash, recovery_hash, setup_complete=True)
 
     logger.info("Dashboard: Erstmaliges Setup abgeschlossen")
+    _audit_log("initial_setup", {"setup_complete": True})
 
     # Recovery-Key dem User anzeigen (nur dieses eine Mal!)
     return {
@@ -1273,17 +1276,67 @@ async def ui_get_settings(token: str = ""):
         raise HTTPException(status_code=500, detail=f"Fehler: {e}")
 
 
+# Sicherheitskritische Keys die aus Bulk-Settings-Updates herausgefiltert werden.
+# Diese duerfen NUR ueber ihre dedizierten Endpoints geaendert werden.
+# "dashboard" → PIN-Hash, Recovery-Key duerfen nie per Bulk ueberschrieben werden
+# "self_optimization.immutable_keys" → Schutz vor Manipulation der Immutable-Liste
+_SETTINGS_STRIP_KEYS = frozenset({"dashboard"})
+_SETTINGS_STRIP_SUBKEYS = {
+    "security": frozenset({"api_key", "api_key_required"}),  # Nur via dedizierte Endpoints
+    "self_optimization": frozenset({"immutable_keys"}),       # Darf nicht per UI geaendert werden
+}
+
+
+def _strip_protected_settings(data: dict) -> tuple[dict, list[str]]:
+    """Entfernt sicherheitskritische Keys aus einem Settings-Dict.
+
+    Returns:
+        (bereinigtes Dict, Liste der entfernten Keys)
+    """
+    stripped = []
+    cleaned = {}
+    for key, value in data.items():
+        if key in _SETTINGS_STRIP_KEYS:
+            stripped.append(key)
+            continue
+        if key in _SETTINGS_STRIP_SUBKEYS and isinstance(value, dict):
+            protected_subkeys = _SETTINGS_STRIP_SUBKEYS[key]
+            filtered_value = {k: v for k, v in value.items() if k not in protected_subkeys}
+            removed = [f"{key}.{k}" for k in value if k in protected_subkeys]
+            stripped.extend(removed)
+            if filtered_value:
+                cleaned[key] = filtered_value
+        else:
+            cleaned[key] = value
+    return cleaned, stripped
+
+
 @app.put("/api/ui/settings")
 async def ui_update_settings(req: SettingsUpdateFull, token: str = ""):
-    """Settings in settings.yaml aktualisieren (Merge, nicht ersetzen)."""
+    """Settings in settings.yaml aktualisieren (Merge, nicht ersetzen).
+
+    SICHERHEIT: Sicherheitskritische Sub-Keys (dashboard.*, security.api_key,
+    self_optimization.immutable_keys) werden automatisch herausgefiltert.
+    """
     _check_token(token)
+
     try:
+        # SICHERHEIT: Geschuetzte Keys herausfiltern
+        safe_settings, stripped = _strip_protected_settings(
+            req.settings if isinstance(req.settings, dict) else {}
+        )
+        if stripped:
+            logger.warning("Settings-Update: Geschuetzte Keys herausgefiltert: %s", stripped)
+
+        if not safe_settings:
+            return {"success": True, "message": "Keine aenderbaren Settings vorhanden"}
+
         # Aktuelle Config laden
         with open(SETTINGS_YAML_PATH) as f:
             config = yaml.safe_load(f) or {}
 
-        # Deep Merge
-        _deep_merge(config, req.settings)
+        # Deep Merge (nur bereinigte Settings)
+        _deep_merge(config, safe_settings)
 
         # Zurueckschreiben
         with open(SETTINGS_YAML_PATH, "w") as f:
@@ -1297,9 +1350,12 @@ async def ui_update_settings(req: SettingsUpdateFull, token: str = ""):
         if hasattr(brain, "model_router") and brain.model_router:
             brain.model_router.reload_config()
 
-        # Audit-Log
-        changed_keys = list(req.settings.keys()) if isinstance(req.settings, dict) else []
-        _audit_log("settings_update", {"changed_sections": changed_keys})
+        # Audit-Log (mit Details ueber geschuetzte Keys)
+        changed_keys = list(safe_settings.keys())
+        audit_details = {"changed_sections": changed_keys}
+        if stripped:
+            audit_details["stripped_protected"] = stripped
+        _audit_log("settings_update", audit_details)
 
         return {"success": True, "message": "Settings gespeichert"}
     except Exception as e:
@@ -1443,6 +1499,7 @@ async def ui_update_notification_channels(
         with open(config_path, "w") as f:
             yaml.safe_dump(cfg, f, allow_unicode=True, default_flow_style=False)
 
+        _audit_log("notification_channels_update", {"channels": list(req.channels.keys()) if isinstance(req.channels, dict) else []})
         return {"success": True, "channels": req.channels}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Fehler: {e}")
@@ -1517,6 +1574,7 @@ async def ui_knowledge_ingest(token: str = ""):
     _check_token(token)
     count = await brain.knowledge_base.ingest_all()
     stats = await brain.knowledge_base.get_stats()
+    _audit_log("knowledge_base_ingest", {"new_chunks": count, "total_chunks": stats.get("total_chunks", 0)})
     return {"new_chunks": count, "stats": stats}
 
 
@@ -1634,15 +1692,49 @@ class RollbackRequest(BaseModel):
 
 @app.post("/api/ui/rollback")
 async def ui_rollback(req: RollbackRequest, token: str = ""):
-    """Stellt eine Config-Datei aus einem Snapshot wieder her."""
+    """Stellt eine Config-Datei aus einem Snapshot wieder her.
+
+    SICHERHEIT: Nach Rollback werden kritische Security-Sections aus der
+    aktuellen Config beibehalten, falls der Snapshot aeltere/schwaecher
+    konfigurierte Versionen enthaelt.
+    """
     _check_token(token)
     try:
+        # Aktuelle Security-Sections sichern BEVOR Rollback
+        try:
+            with open(SETTINGS_YAML_PATH) as f:
+                pre_rollback = yaml.safe_load(f) or {}
+        except Exception:
+            pre_rollback = {}
+
         result = await brain.config_versioning.rollback(req.snapshot_id)
         if result["success"]:
+            # Post-Rollback: Kritische Security-Sections wiederherstellen
+            _sections_to_preserve = ("dashboard", "security", "trust_levels")
+            try:
+                with open(SETTINGS_YAML_PATH) as f:
+                    restored = yaml.safe_load(f) or {}
+                patched = False
+                for section in _sections_to_preserve:
+                    if section in pre_rollback:
+                        restored[section] = pre_rollback[section]
+                        patched = True
+                if patched:
+                    with open(SETTINGS_YAML_PATH, "w") as f:
+                        yaml.safe_dump(restored, f, allow_unicode=True,
+                                       default_flow_style=False, sort_keys=False)
+                    logger.info("Rollback: Security-Sections aus Pre-Rollback beibehalten: %s",
+                                _sections_to_preserve)
+            except Exception as e:
+                logger.error("Rollback Post-Validation fehlgeschlagen: %s", e)
+
             # yaml_config im Speicher aktualisieren
             import assistant.config as cfg
             cfg.yaml_config = load_yaml_config()
-            _audit_log("config_rollback", {"snapshot_id": req.snapshot_id})
+            _audit_log("config_rollback", {
+                "snapshot_id": req.snapshot_id,
+                "security_sections_preserved": list(_sections_to_preserve),
+            })
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Fehler: {e}")

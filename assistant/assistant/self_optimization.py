@@ -51,7 +51,9 @@ class SelfOptimization:
         self._max_proposals = self._cfg.get("max_proposals_per_cycle", 3)
         self._model = self._cfg.get("model", "qwen3:14b")
         self._bounds = self._cfg.get("parameter_bounds", {})
-        self._immutable = set(self._cfg.get("immutable_keys", []))
+        # SICHERHEIT: Mindestmenge an immutable Keys, die NICHT per Config ueberschrieben werden kann
+        _HARDCODED_IMMUTABLE = {"trust_levels", "security", "autonomy", "dashboard", "models"}
+        self._immutable = _HARDCODED_IMMUTABLE | set(self._cfg.get("immutable_keys", []))
 
         self._redis = None
         self._pending_proposals: list[dict] = []

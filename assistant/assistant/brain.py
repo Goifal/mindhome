@@ -20,6 +20,8 @@ import asyncio
 import json
 import logging
 import re
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Optional
 
 from .action_planner import ActionPlanner
@@ -61,6 +63,24 @@ from .tts_enhancer import TTSEnhancer
 from .websocket import emit_thinking, emit_speaking, emit_action
 
 logger = logging.getLogger(__name__)
+
+# Audit-Log (gleicher Pfad wie main.py, fuer Chat-basierte Sicherheitsevents)
+_AUDIT_LOG_PATH = Path(__file__).parent.parent / "logs" / "audit.jsonl"
+
+
+def _audit_log(action: str, details: dict = None):
+    """Schreibt einen Audit-Eintrag (append-only JSONL)."""
+    try:
+        _AUDIT_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        entry = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "action": action,
+            "details": details or {},
+        }
+        with open(_AUDIT_LOG_PATH, "a") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    except Exception as exc:
+        logger.warning("Audit-Log Fehler: %s", exc)
 
 # Phase 7.5: Szenen-Intelligenz — Prompt fuer natuerliches Situationsverstaendnis
 def _build_scene_intelligence_prompt() -> str:
@@ -614,6 +634,8 @@ class AssistantBrain:
                 system_prompt=system_prompt,
                 context=context,
                 messages=messages,
+                person=person,
+                autonomy=self.autonomy,
             )
             response_text = planner_result.get("response", "")
             executed_actions = planner_result.get("actions", [])
@@ -708,20 +730,21 @@ class AssistantBrain:
                             continue
 
                     # Phase 10: Trust-Level Pre-Check (mit Raum-Scoping)
-                    if person:
-                        action_room = func_args.get("room", "") if isinstance(func_args, dict) else ""
-                        trust_check = self.autonomy.can_person_act(person, func_name, room=action_room)
-                        if not trust_check["allowed"]:
-                            logger.warning(
-                                "Trust-Check fehlgeschlagen: %s darf '%s' nicht (%s)",
-                                person, func_name, trust_check.get("reason", ""),
-                            )
-                            executed_actions.append({
-                                "function": func_name,
-                                "args": func_args,
-                                "result": f"blocked: {trust_check.get('reason', 'Keine Berechtigung')}",
-                            })
-                            continue
+                    # SICHERHEIT: Wenn person unbekannt/leer → als Gast behandeln (restriktivste Stufe)
+                    effective_person = person if person else "__anonymous_guest__"
+                    action_room = func_args.get("room", "") if isinstance(func_args, dict) else ""
+                    trust_check = self.autonomy.can_person_act(effective_person, func_name, room=action_room)
+                    if not trust_check["allowed"]:
+                        logger.warning(
+                            "Trust-Check fehlgeschlagen: %s darf '%s' nicht (%s)",
+                            effective_person, func_name, trust_check.get("reason", ""),
+                        )
+                        executed_actions.append({
+                            "function": func_name,
+                            "args": func_args,
+                            "result": f"blocked: {trust_check.get('reason', 'Keine Berechtigung')}",
+                        })
+                        continue
 
                     # Phase 16.1: Konflikt-Check (Multi-User)
                     final_args = func_args
@@ -1438,17 +1461,20 @@ class AssistantBrain:
                 from .config import load_yaml_config
                 import assistant.config as cfg
                 cfg.yaml_config = load_yaml_config()
+                _audit_log("self_opt_approve_chat", {"proposal_index": idx, "result": result.get("message", "")})
             return result.get("message", "")
 
         reject_match = re.search(r"vorschlag\s+(\d+)\s+(ablehnen|verwerfen|nein)", text_lower)
         if reject_match:
             idx = int(reject_match.group(1)) - 1
             result = await self.self_optimization.reject_proposal(idx)
+            _audit_log("self_opt_reject_chat", {"proposal_index": idx})
             return result.get("message", "")
 
         # "Alle Vorschlaege ablehnen"
         if any(t in text_lower for t in ["alle vorschlaege ablehnen", "alle ablehnen", "vorschlaege verwerfen"]):
             result = await self.self_optimization.reject_all()
+            _audit_log("self_opt_reject_all_chat", {})
             return result.get("message", "")
 
         return None

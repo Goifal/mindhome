@@ -144,6 +144,8 @@ class ActionPlanner:
         system_prompt: str,
         context: dict,
         messages: list[dict],
+        person: str = "",
+        autonomy=None,
     ) -> dict:
         """
         Plant und fuehrt eine komplexe Anfrage aus.
@@ -153,6 +155,8 @@ class ActionPlanner:
             system_prompt: Basis-System-Prompt (inkl. Persoenlichkeit + Memory)
             context: Aktueller Kontext
             messages: Bisherige Nachrichten (History)
+            person: Name der ausfuehrenden Person (fuer Trust-Check)
+            autonomy: AutonomyManager-Instanz (fuer Trust-Check)
 
         Returns:
             Dict mit response, actions, plan
@@ -233,6 +237,29 @@ class ActionPlanner:
                         "result": step.result,
                     })
                     continue
+
+                # SICHERHEIT: Trust-Level Pre-Check (wie in brain.py)
+                if autonomy:
+                    effective_person = person if person else "__anonymous_guest__"
+                    action_room = func_args.get("room", "") if isinstance(func_args, dict) else ""
+                    trust_check = autonomy.can_person_act(effective_person, func_name, room=action_room)
+                    if not trust_check["allowed"]:
+                        logger.warning(
+                            "Planner Trust-Check fehlgeschlagen: %s darf '%s' nicht (%s)",
+                            effective_person, func_name, trust_check.get("reason", ""),
+                        )
+                        step.status = "blocked"
+                        step.result = {"success": False, "message": f"blocked: {trust_check.get('reason', 'Keine Berechtigung')}"}
+                        plan.steps.append(step)
+                        all_actions.append({
+                            "function": func_name,
+                            "args": func_args,
+                            "result": step.result,
+                        })
+                        tool_results.append(
+                            f"BLOCKIERT: {func_name} - Keine Berechtigung ({trust_check.get('reason', '')})"
+                        )
+                        continue
 
                 # Phase 9: Narration — Transition bei Licht-Aktionen injizieren
                 if self.narration_enabled and func_name == "set_light":
