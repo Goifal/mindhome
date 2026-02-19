@@ -458,6 +458,15 @@ class ConflictResolver:
             compromise = round((val_a + val_b) / 2, 1)
             unit = conflict_detail.get("unit", "")
 
+            # Kompromiss durch Validator lassen (Limits erzwingen)
+            if hasattr(self, '_validator') and self._validator:
+                test_args = {**args_b, key: compromise}
+                validation = self._validator.validate(f"set_{domain}", test_args)
+                if not validation.ok:
+                    logger.warning(f"Kompromiss {compromise}{unit} ausserhalb Limits: {validation.reason}")
+                    # Auf naechsten gueltigen Wert clampen
+                    compromise = max(val_a, val_b) if compromise > max(val_a, val_b) else min(val_a, val_b)
+
             resolution["action"] = "use_compromise"
             resolution["compromise_value"] = compromise
             resolution["modified_args"] = {**args_b, key: compromise}

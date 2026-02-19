@@ -237,6 +237,8 @@ class AdaptiveTimingManager:
                             pattern.trigger_conditions = trigger
                             logger.info(f"Adaptive timing: Pattern {pattern.id} adjusted to {new_h:02d}:{new_m:02d} (avg offset {avg_offset:.1f} min)")
 
+                session.commit()
+
         except Exception as e:
             logger.error(f"AdaptiveTimingManager error: {e}")
 
