@@ -4,12 +4,30 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "1.1.0"
-BUILD = 88
-BUILD_DATE = "2026-02-17"
-CODENAME = "Jarvis Complete"
+VERSION = "1.3.0"
+BUILD = 89
+BUILD_DATE = "2026-02-19"
+CODENAME = "Jarvis Dual Mode"
 
 # Changelog
+# Build 89: v1.3.0 Jarvis Dual Mode — Heizkurve, Voice I/O, GradualTransitioner Fix
+#   - NEU: Dual Heating Mode (21 Dateien): room_thermostat vs heating_curve
+#     climate.py Dual-Eval, function_calling.py Offset-Logik, conflict_resolver.py Kurven-Mediation,
+#     function_validator.py Offset-Limits, brain.py Prompt-Kontext, personality.py Opinion-Rules,
+#     routine_engine.py Nacht-Absenkung als Offset, adaptive.py SeasonalAdvisor Kurven-Tips,
+#     fire_water.py Frost-Offset, sleep.py WakeUp-Rampe, special_modes.py Kurven-Offset
+#   - NEU: Voice I/O (Whisper STT + Piper TTS)
+#     routes/chat.py: /api/stt (Whisper) + /api/tts (Piper), konfigurierbare URLs/Sprache/Voice
+#     app.jsx: Mikrofon-Button, MediaRecorder, Recording-UI, Audio-Playback
+#     routes/system.py + health.py: Voice-Config + Health-Check Endpoints
+#     assistant index.html + settings.yaml: Voice-Button + voice_io Konfiguration
+#   - FIX: GradualTransitioner Heizkurven-Modus
+#     _apply_climate_curve(): Offset-Berechnung, curve_entity Routing, Offset-Limits
+#     _apply_climate_room(): Refactored room_thermostat Logik
+#   - NEU: Dashboard Heizungs-UI (Modus-Wahl, Kurven-Entity, Offset-Bereich)
+#   - NEU: 4 Heizkurven-Opinion-Rules, 2 Automation-Templates (Kurven-Varianten)
+#   - JARVIS_STATUS.md aktualisiert (Heating Curve + Voice I/O + GradualTransitioner)
+#
 # Build 88: v1.1.0 Jarvis Complete — Einheitliche Version (Addon + Assistant + HA-Integration)
 #   - VEREINHEITLICHT: Eine Versionsnummer fuer das gesamte MindHome-Projekt
 #     Addon, Assistant (Phase 1-10) und HA Custom Component auf gleicher Version

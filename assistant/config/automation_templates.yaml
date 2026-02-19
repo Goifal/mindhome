@@ -148,9 +148,13 @@ templates:
           color_temp_kelvin: 2700
 
   # --- Temperaturbasiert ---
+  # Hinweis: Bei heating.mode = "heating_curve" wird nur das zentrale
+  # Heizungs-Entity (heating.curve_entity) per Offset gesteuert.
+  # Bei "room_thermostat" werden Raum-Entities einzeln gesteuert.
   heizung_kalt:
     match_keywords: ["temperatur", "unter", "heizung"]
     alias: "Heizung an bei Kaelte"
+    heating_mode: "room_thermostat"
     trigger:
       - platform: numeric_state
         entity_id: sensor.PLACEHOLDER
@@ -162,6 +166,22 @@ templates:
           entity_id: climate.PLACEHOLDER
         data:
           temperature: 21
+
+  heizung_kalt_kurve:
+    match_keywords: ["temperatur", "unter", "heizung", "kalt"]
+    alias: "Heizung-Offset erhoehen bei Kaelte"
+    heating_mode: "heating_curve"
+    trigger:
+      - platform: numeric_state
+        entity_id: sensor.PLACEHOLDER
+        below: 18
+    condition: []
+    action:
+      - service: climate.set_temperature
+        target:
+          entity_id: climate.PLACEHOLDER
+        data:
+          temperature: "{{ state_attr('climate.PLACEHOLDER', 'temperature') + 2 }}"
 
   # --- Bewegungsbasiert ---
   licht_bewegung:
@@ -213,9 +233,12 @@ templates:
           entity_id: all
 
   # --- Fenster ---
+  # Hinweis: Bei Heizkurve kann die Heizung nicht pro Raum abgeschaltet werden,
+  # aber der Offset kann abgesenkt werden um Energie zu sparen.
   heizung_fenster_offen:
     match_keywords: ["fenster", "offen", "heizung"]
     alias: "Heizung aus bei offenem Fenster"
+    heating_mode: "room_thermostat"
     trigger:
       - platform: state
         entity_id: binary_sensor.PLACEHOLDER
@@ -227,3 +250,19 @@ templates:
           entity_id: climate.PLACEHOLDER
         data:
           hvac_mode: "off"
+
+  heizung_fenster_offen_kurve:
+    match_keywords: ["fenster", "offen", "heizung"]
+    alias: "Heizung-Offset senken bei offenem Fenster"
+    heating_mode: "heating_curve"
+    trigger:
+      - platform: state
+        entity_id: binary_sensor.PLACEHOLDER
+        to: "on"
+    condition: []
+    action:
+      - service: climate.set_temperature
+        target:
+          entity_id: climate.PLACEHOLDER
+        data:
+          temperature: "{{ state_attr('climate.PLACEHOLDER', 'temperature') - 3 }}"

@@ -326,9 +326,25 @@ def api_execute_quick_action(action_id):
             set_setting("system_mode", "away")
             for entity in _ha().get_entities_by_domain("light"):
                 _ha().call_service("light", "turn_off", entity_id=entity["entity_id"])
-            for entity in _ha().get_entities_by_domain("climate"):
-                _ha().call_service("climate", "set_temperature",
-                              {"temperature": 18}, entity_id=entity["entity_id"])
+            heating_mode = get_setting("heating_mode", "room_thermostat")
+            if heating_mode == "heating_curve":
+                # Heizkurven-Modus: Offset auf away_offset setzen
+                curve_entity = get_setting("heating_curve_entity", "")
+                away_offset = float(get_setting("heating_curve_away_offset", "-3"))
+                if curve_entity:
+                    states = _ha().get_states() or []
+                    for s in states:
+                        if s.get("entity_id") == curve_entity:
+                            current = s.get("attributes", {}).get("temperature")
+                            if current is not None:
+                                new_temp = float(current) + away_offset
+                                _ha().call_service("climate", "set_temperature",
+                                              {"temperature": round(new_temp, 1)}, entity_id=curve_entity)
+                            break
+            else:
+                for entity in _ha().get_entities_by_domain("climate"):
+                    _ha().call_service("climate", "set_temperature",
+                                  {"temperature": 18}, entity_id=entity["entity_id"])
 
         elif action_type == "arriving_home":
             set_setting("system_mode", "normal")

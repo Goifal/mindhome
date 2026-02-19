@@ -649,10 +649,18 @@ Keine Aufzaehlungszeichen. Fliesstext."""
             actions.append({"function": "set_light:off", "result": result})
 
         if gn_actions.get("heating_night", False):
-            # Schlafzimmer auf 18°C, Rest auf 17°C
-            result = await self._executor.execute("set_climate", {
-                "room": "schlafzimmer", "temperature": 18,
-            })
+            heating = yaml_config.get("heating", {})
+            if heating.get("mode") == "heating_curve":
+                # Heizkurven-Modus: Nacht-Offset setzen
+                night_offset = heating.get("night_offset", -2)
+                result = await self._executor.execute("set_climate", {
+                    "offset": night_offset,
+                })
+            else:
+                # Raumthermostat-Modus: Schlafzimmer auf 18°C
+                result = await self._executor.execute("set_climate", {
+                    "room": "schlafzimmer", "temperature": 18,
+                })
             actions.append({"function": "set_climate:night", "result": result})
 
         if gn_actions.get("covers_down", False):

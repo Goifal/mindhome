@@ -67,9 +67,63 @@ opinion_rules:
     check_operator: ">"
     check_value: 22
     check_room: "schlafzimmer"
+    check_heating_mode: "room_thermostat"
     responses:
       - "Schlafmediziner empfehlen 16-18 Grad. Aber ich bin kein Arzt."
       - "Tropische Naechte, hausgemacht."
+    min_intensity: 2
+
+  # ==========================================================
+  # KLIMA / HEIZUNG — Heizkurven-Modus (Offset)
+  # ==========================================================
+
+  - id: "curve_max_offset"
+    description: "Heizkurve: Maximaler Offset"
+    check_action: "set_climate"
+    check_field: "offset"
+    check_operator: ">="
+    check_value: 5
+    check_heating_mode: "heating_curve"
+    responses:
+      - "Maximaler Offset. Die Waermepumpe gibt alles."
+      - "Offset +5 — mehr geht nicht. Die Physik setzt Grenzen."
+    min_intensity: 1
+
+  - id: "curve_high_offset"
+    description: "Heizkurve: Hoher Offset"
+    check_action: "set_climate"
+    check_field: "offset"
+    check_operator: ">="
+    check_value: 3
+    check_heating_mode: "heating_curve"
+    responses:
+      - "Offset +3 oder mehr. Das kostet."
+      - "Deutlich ueber Heizkurve — wird ein teurer Tag."
+    min_intensity: 2
+
+  - id: "curve_min_offset"
+    description: "Heizkurve: Minimaler Offset"
+    check_action: "set_climate"
+    check_field: "offset"
+    check_operator: "<="
+    check_value: -5
+    check_heating_mode: "heating_curve"
+    responses:
+      - "Minimaler Offset. Sparsamkeit in Reinform."
+      - "Offset -5 — kaelter geht nicht. Pullover empfohlen."
+    min_intensity: 1
+
+  - id: "curve_night_raise"
+    description: "Heizkurve: Offset nachts erhoehen"
+    check_action: "set_climate"
+    check_field: "offset"
+    check_operator: ">"
+    check_value: 2
+    check_hour_min: 23
+    check_hour_max: 5
+    check_heating_mode: "heating_curve"
+    responses:
+      - "Heizung nachts hochdrehen? Die Heizkurve regelt das normalerweise selbst."
     min_intensity: 2
 
   # ==========================================================

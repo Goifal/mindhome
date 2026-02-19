@@ -366,14 +366,35 @@ class WakeUpManager:
 
             # Climate: gradual temperature raise
             if cfg.climate_entity and progress >= 0.3:
-                # Start climate ramp at 30% progress
-                # Raise from night temp (e.g. 18) to day temp (e.g. 21)
-                target_temp = 18 + (progress * 3)  # 18 -> 21°C
-                self.ha.call_service("climate", "set_temperature", {
-                    "entity_id": cfg.climate_entity,
-                    "temperature": round(target_temp, 1),
-                })
-                logger.debug(f"WakeUp climate {cfg.climate_entity} temp={target_temp:.1f}")
+                heating_mode = get_setting("heating_mode", "room_thermostat")
+                if heating_mode == "heating_curve":
+                    # Heizkurven-Modus: Offset von night_offset (-2) nach 0 rampen
+                    night_offset = float(get_setting("heating_curve_night_offset", "-2"))
+                    target_offset = night_offset + (progress * abs(night_offset))  # z.B. -2 -> 0
+                    target_offset = min(target_offset, 0)  # Nicht ueber 0 hinaus
+                    curve_entity = get_setting("heating_curve_entity", cfg.climate_entity)
+                    # Aktuellen Sollwert lesen und Offset anwenden
+                    states = self.ha.get_states() or []
+                    for s in states:
+                        if s.get("entity_id") == curve_entity:
+                            current = s.get("attributes", {}).get("temperature")
+                            if current is not None:
+                                base_temp = float(current) - night_offset  # Basis-Temp zurueckrechnen
+                                new_temp = base_temp + target_offset
+                                self.ha.call_service("climate", "set_temperature", {
+                                    "entity_id": curve_entity,
+                                    "temperature": round(new_temp, 1),
+                                })
+                                logger.debug(f"WakeUp climate curve {curve_entity} offset={target_offset:.1f}")
+                            break
+                else:
+                    # Raumthermostat-Modus: Absolute Temperatur 18 -> 21°C
+                    target_temp = 18 + (progress * 3)  # 18 -> 21°C
+                    self.ha.call_service("climate", "set_temperature", {
+                        "entity_id": cfg.climate_entity,
+                        "temperature": round(target_temp, 1),
+                    })
+                    logger.debug(f"WakeUp climate {cfg.climate_entity} temp={target_temp:.1f}")
 
             if progress >= 1.0:
                 self.event_bus.emit("sleep.wakeup_complete", {"user_id": cfg.user_id, "config_id": cfg.id})

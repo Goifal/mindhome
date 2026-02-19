@@ -1,4 +1,8 @@
-"""MindHome - Climate Domain Plugin (Phase 3)"""
+"""MindHome - Climate Domain Plugin (Phase 3)
+Unterstuetzt zwei Heizungsmodi:
+  - room_thermostat: Einzelraumregelung mit climate.* Entities pro Raum
+  - heating_curve:   Feste Heizkurve, nur Vorlauftemperatur-Offset steuerbar
+"""
 from .base import DomainPlugin
 
 
@@ -8,10 +12,17 @@ class ClimateDomain(DomainPlugin):
     DEFAULT_SETTINGS = {
         "enabled": "true", "mode": "suggest",
         "away_temp": "17", "night_temp": "18", "preheat_minutes": "30",
+        # Heizungsmodus: "room_thermostat" oder "heating_curve"
+        "heating_mode": "room_thermostat",
+        # Nur fuer heating_curve: Entity-ID und Offsets
+        "curve_entity": "",
+        "away_offset": "-3",
+        "night_offset": "-2",
     }
 
     def on_start(self):
-        self.logger.info("Climate domain ready")
+        hm = self.get_setting("heating_mode", "room_thermostat")
+        self.logger.info(f"Climate domain ready (mode: {hm})")
 
     def on_stop(self):
         pass
@@ -47,6 +58,64 @@ class ClimateDomain(DomainPlugin):
         if not self.is_enabled():
             return []
         ctx = context or self.get_context()
+
+        heating_mode = self.get_setting("heating_mode", "room_thermostat")
+        if heating_mode == "heating_curve":
+            return self._evaluate_curve(ctx)
+        return self._evaluate_room_thermostat(ctx)
+
+    def _evaluate_curve(self, ctx):
+        """Heizkurven-Modus: Offset auf zentrales Entity anpassen."""
+        actions = []
+        curve_entity = self.get_setting("curve_entity", "")
+        if not curve_entity:
+            return actions
+
+        # Aktuelles Entity finden
+        entities = self.get_entities()
+        target = None
+        for e in entities:
+            if e.get("entity_id") == curve_entity:
+                target = e
+                break
+        if not target or target.get("state") in ("off", "unavailable"):
+            return actions
+
+        current_temp = target.get("attributes", {}).get("temperature")
+        if not current_temp:
+            return actions
+        current_temp = float(current_temp)
+        name = target.get("attributes", {}).get("friendly_name", curve_entity)
+
+        # Nobody home -> away offset
+        if self.get_setting("away_lower", True):
+            if not ctx.get("anyone_home"):
+                away_offset = float(self.get_setting("away_offset", -3))
+                new_temp = current_temp + away_offset
+                actions.append({
+                    "entity_id": curve_entity, "service": "set_temperature",
+                    "data": {"temperature": new_temp},
+                    "reason_de": f"Niemand zuhause: {name} Offset {away_offset}°C",
+                    "reason_en": f"Nobody home: {name} offset {away_offset}°C",
+                })
+
+        # Night mode -> night offset
+        if self.get_setting("night_lower", True):
+            phase = ctx.get("day_phase", "")
+            if phase in ("Nacht", "Nachtruhe", "Night"):
+                night_offset = float(self.get_setting("night_offset", -2))
+                new_temp = current_temp + night_offset
+                actions.append({
+                    "entity_id": curve_entity, "service": "set_temperature",
+                    "data": {"temperature": new_temp},
+                    "reason_de": f"Nachtabsenkung: {name} Offset {night_offset}°C",
+                    "reason_en": f"Night setback: {name} offset {night_offset}°C",
+                })
+
+        return self.execute_or_suggest(actions)
+
+    def _evaluate_room_thermostat(self, ctx):
+        """Raumthermostat-Modus: Einzelne Thermostate steuern (wie bisher)."""
         actions = []
         entities = self.get_entities()
         away_temp = float(self.get_setting("away_temp", 17))

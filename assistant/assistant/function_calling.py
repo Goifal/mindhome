@@ -25,6 +25,63 @@ _EDITABLE_CONFIGS = {
 logger = logging.getLogger(__name__)
 
 
+def _get_heating_mode() -> str:
+    """Liefert den konfigurierten Heizungsmodus."""
+    return yaml_config.get("heating", {}).get("mode", "room_thermostat")
+
+
+def _get_climate_tool_description() -> str:
+    """Dynamische Tool-Beschreibung je nach Heizungsmodus."""
+    if _get_heating_mode() == "heating_curve":
+        return (
+            "Heizung steuern: Vorlauftemperatur-Offset zur Heizkurve anpassen. "
+            "Positiver Offset = waermer, negativer Offset = kaelter."
+        )
+    return "Temperatur in einem Raum aendern"
+
+
+def _get_climate_tool_parameters() -> dict:
+    """Dynamische Tool-Parameter je nach Heizungsmodus."""
+    if _get_heating_mode() == "heating_curve":
+        heating = yaml_config.get("heating", {})
+        omin = heating.get("curve_offset_min", -5)
+        omax = heating.get("curve_offset_max", 5)
+        return {
+            "type": "object",
+            "properties": {
+                "offset": {
+                    "type": "number",
+                    "description": f"Offset zur Heizkurve in Grad Celsius ({omin} bis {omax})",
+                },
+                "mode": {
+                    "type": "string",
+                    "enum": ["heat", "cool", "auto", "off"],
+                    "description": "Heizmodus (optional)",
+                },
+            },
+            "required": ["offset"],
+        }
+    return {
+        "type": "object",
+        "properties": {
+            "room": {
+                "type": "string",
+                "description": "Raumname",
+            },
+            "temperature": {
+                "type": "number",
+                "description": "Zieltemperatur in Grad Celsius",
+            },
+            "mode": {
+                "type": "string",
+                "enum": ["heat", "cool", "auto", "off"],
+                "description": "Heizmodus (optional)",
+            },
+        },
+        "required": ["room", "temperature"],
+    }
+
+
 # Ollama Tool-Definitionen (Qwen 2.5 Function Calling Format)
 ASSISTANT_TOOLS = [
     {
@@ -66,26 +123,8 @@ ASSISTANT_TOOLS = [
         "type": "function",
         "function": {
             "name": "set_climate",
-            "description": "Temperatur in einem Raum aendern",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "room": {
-                        "type": "string",
-                        "description": "Raumname",
-                    },
-                    "temperature": {
-                        "type": "number",
-                        "description": "Zieltemperatur in Grad Celsius",
-                    },
-                    "mode": {
-                        "type": "string",
-                        "enum": ["heat", "cool", "auto", "off"],
-                        "description": "Heizmodus (optional)",
-                    },
-                },
-                "required": ["room", "temperature"],
-            },
+            "description": _get_climate_tool_description(),
+            "parameters": _get_climate_tool_parameters(),
         },
     },
     {
@@ -660,6 +699,51 @@ class FunctionExecutor:
         return {"success": success, "message": f"Licht {room} {state}{extra_str}"}
 
     async def _exec_set_climate(self, args: dict) -> dict:
+        heating = yaml_config.get("heating", {})
+        mode = heating.get("mode", "room_thermostat")
+
+        if mode == "heating_curve":
+            return await self._exec_set_climate_curve(args, heating)
+        return await self._exec_set_climate_room(args)
+
+    async def _exec_set_climate_curve(self, args: dict, heating: dict) -> dict:
+        """Heizkurven-Modus: Offset auf zentrales Entity setzen."""
+        offset = args.get("offset", 0)
+        entity_id = heating.get("curve_entity", "")
+        if not entity_id:
+            return {"success": False, "message": "Kein Heizungs-Entity konfiguriert (heating.curve_entity)"}
+
+        # Aktuellen Zustand holen um Basis-Temperatur zu ermitteln
+        states = await self.ha.get_states()
+        current_state = None
+        for s in (states or []):
+            if s.get("entity_id") == entity_id:
+                current_state = s
+                break
+
+        if not current_state:
+            return {"success": False, "message": f"Entity {entity_id} nicht gefunden"}
+
+        # Aktuelle Zieltemperatur als Basis
+        attrs = current_state.get("attributes", {})
+        current_temp = attrs.get("temperature")
+        if current_temp is None:
+            return {"success": False, "message": f"Keine Temperatur fuer {entity_id} verfuegbar"}
+
+        # Neue Temperatur = aktuelle Basis + Offset
+        # Offset wird relativ zur Heizkurve interpretiert
+        new_temp = float(current_temp) + offset
+
+        service_data = {"entity_id": entity_id, "temperature": new_temp}
+        if "mode" in args:
+            service_data["hvac_mode"] = args["mode"]
+
+        success = await self.ha.call_service("climate", "set_temperature", service_data)
+        sign = "+" if offset >= 0 else ""
+        return {"success": success, "message": f"Heizung: Offset {sign}{offset}°C (Vorlauf {new_temp}°C)"}
+
+    async def _exec_set_climate_room(self, args: dict) -> dict:
+        """Raumthermostat-Modus: Temperatur pro Raum setzen (wie bisher)."""
         room = args["room"]
         temp = args["temperature"]
         entity_id = await self._find_entity("climate", room)

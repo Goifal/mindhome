@@ -309,34 +309,13 @@ class GradualTransitioner:
                 logger.debug(f"Gradual light: {entity_id} → {target_state} over {transition_sec}s")
 
             elif domain == "climate":
-                # Gradual temperature via immediate steps
-                states = self.ha.get_states() or []
-                current = None
-                for s in states:
-                    if s.get("entity_id") == entity_id:
-                        current = s.get("attributes", {}).get("temperature")
-                        break
+                from helpers import get_setting
+                heating_mode = get_setting("heating_mode", "room_thermostat")
 
-                if current is not None and target_state not in ("on", "off"):
-                    try:
-                        target_temp = float(target_state)
-                        # Set directly — HA handles ramp internally for most thermostats
-                        self.ha.call_service("climate", "set_temperature", {
-                            "entity_id": entity_id,
-                            "temperature": target_temp,
-                        })
-                        logger.debug(f"Gradual climate: {entity_id} → {target_temp}°C")
-                    except (ValueError, TypeError):
-                        self.ha.call_service("climate", "set_hvac_mode", {
-                            "entity_id": entity_id,
-                            "hvac_mode": target_state,
-                        })
+                if heating_mode == "heating_curve":
+                    self._apply_climate_curve(entity_id, target_state)
                 else:
-                    service = "set_hvac_mode"
-                    self.ha.call_service("climate", service, {
-                        "entity_id": entity_id,
-                        "hvac_mode": target_state if target_state not in ("on", "off") else "heat" if target_state == "on" else "off",
-                    })
+                    self._apply_climate_room(entity_id, target_state)
 
             elif domain == "cover":
                 # Set position directly with HA transition
@@ -366,6 +345,105 @@ class GradualTransitioner:
             logger.error(f"GradualTransitioner error for {entity_id}: {e}")
             return False
 
+    def _apply_climate_curve(self, entity_id, target_state):
+        """Heizkurven-Modus: Offset auf das zentrale curve_entity anwenden."""
+        from helpers import get_setting
+
+        curve_entity = get_setting("heating_curve_entity", entity_id)
+        if not curve_entity:
+            curve_entity = entity_id
+
+        if target_state in ("on", "off"):
+            hvac = "heat" if target_state == "on" else "off"
+            self.ha.call_service("climate", "set_hvac_mode", {
+                "entity_id": curve_entity,
+                "hvac_mode": hvac,
+            })
+            logger.debug(f"Gradual climate curve: {curve_entity} hvac → {hvac}")
+            return
+
+        try:
+            target_temp = float(target_state)
+        except (ValueError, TypeError):
+            self.ha.call_service("climate", "set_hvac_mode", {
+                "entity_id": curve_entity,
+                "hvac_mode": target_state,
+            })
+            return
+
+        # Aktuellen Sollwert lesen
+        states = self.ha.get_states() or []
+        current = None
+        for s in states:
+            if s.get("entity_id") == curve_entity:
+                current = s.get("attributes", {}).get("temperature")
+                break
+
+        if current is None:
+            logger.warning(f"Gradual climate curve: {curve_entity} has no temperature attribute")
+            return
+
+        current = float(current)
+        # Offset berechnen: Differenz zwischen Ziel und aktuellem Sollwert
+        offset = target_temp - current
+
+        # Offset-Grenzen aus Config respektieren
+        offset_min = float(get_setting("heating_curve_offset_min", "-5"))
+        offset_max = float(get_setting("heating_curve_offset_max", "5"))
+        new_temp = current + max(offset_min, min(offset_max, offset))
+
+        self.ha.call_service("climate", "set_temperature", {
+            "entity_id": curve_entity,
+            "temperature": round(new_temp, 1),
+        })
+        logger.debug(f"Gradual climate curve: {curve_entity} → {round(new_temp, 1)}°C (offset {offset:+.1f})")
+
+    def _apply_climate_room(self, entity_id, target_state):
+        """Raumthermostat-Modus: Direkt absolute Temperatur setzen."""
+        if target_state in ("on", "off"):
+            hvac = "heat" if target_state == "on" else "off"
+            self.ha.call_service("climate", "set_hvac_mode", {
+                "entity_id": entity_id,
+                "hvac_mode": hvac,
+            })
+            logger.debug(f"Gradual climate room: {entity_id} hvac → {hvac}")
+            return
+
+        # Aktuelle Temperatur lesen
+        states = self.ha.get_states() or []
+        current = None
+        for s in states:
+            if s.get("entity_id") == entity_id:
+                current = s.get("attributes", {}).get("temperature")
+                break
+
+        if current is not None:
+            try:
+                target_temp = float(target_state)
+                self.ha.call_service("climate", "set_temperature", {
+                    "entity_id": entity_id,
+                    "temperature": target_temp,
+                })
+                logger.debug(f"Gradual climate room: {entity_id} → {target_temp}°C")
+            except (ValueError, TypeError):
+                self.ha.call_service("climate", "set_hvac_mode", {
+                    "entity_id": entity_id,
+                    "hvac_mode": target_state,
+                })
+        else:
+            try:
+                target_temp = float(target_state)
+                self.ha.call_service("climate", "set_temperature", {
+                    "entity_id": entity_id,
+                    "temperature": target_temp,
+                })
+            except (ValueError, TypeError):
+                hvac = target_state if target_state not in ("on", "off") else "heat"
+                self.ha.call_service("climate", "set_hvac_mode", {
+                    "entity_id": entity_id,
+                    "hvac_mode": hvac,
+                })
+
     def get_status(self):
         """Return status of gradual transition system."""
         return {
@@ -390,13 +468,13 @@ class SeasonalAdvisor:
 
     TIPS_DE = {
         "winter": [
-            {"tip": "Heizung auf 20°C reduzieren — spart bis zu 6% Energie pro Grad", "icon": "mdi-thermometer-minus", "category": "energy"},
+            {"tip": "Heizung auf 20°C reduzieren — spart bis zu 6% Energie pro Grad", "tip_curve": "Heizkurven-Offset reduzieren — spart bis zu 6% Energie pro Grad", "icon": "mdi-thermometer-minus", "category": "energy"},
             {"tip": "Rolllaeden nachts schliessen fuer bessere Isolierung", "icon": "mdi-window-shutter", "category": "comfort"},
             {"tip": "Frostschutz fuer Aussenwasserhaehne aktivieren", "icon": "mdi-snowflake-alert", "category": "safety"},
             {"tip": "Lueften kurz und intensiv (Stosslueften 5-10 Min)", "icon": "mdi-air-filter", "category": "health"},
         ],
         "spring": [
-            {"tip": "Heizung schrittweise reduzieren — Uebergangszeit nutzen", "icon": "mdi-thermometer-low", "category": "energy"},
+            {"tip": "Heizung schrittweise reduzieren — Uebergangszeit nutzen", "tip_curve": "Heizkurven-Offset schrittweise reduzieren — Uebergangszeit nutzen", "icon": "mdi-thermometer-low", "category": "energy"},
             {"tip": "Fenster tagsuefer oeffnen fuer natuerliche Belueftung", "icon": "mdi-window-open", "category": "health"},
             {"tip": "Sonnenschutz vorbereiten (Markisen, Rollos pruefen)", "icon": "mdi-weather-sunny", "category": "comfort"},
             {"tip": "Klimaanlage warten lassen vor dem Sommer", "icon": "mdi-hvac", "category": "maintenance"},
@@ -408,7 +486,7 @@ class SeasonalAdvisor:
             {"tip": "Kuehlung nur auf 6°C unter Aussentemperatur stellen", "icon": "mdi-snowflake", "category": "energy"},
         ],
         "autumn": [
-            {"tip": "Heizung rechtzeitig starten — nicht warten bis es kalt ist", "icon": "mdi-radiator", "category": "comfort"},
+            {"tip": "Heizung rechtzeitig starten — nicht warten bis es kalt ist", "tip_curve": "Heizkurven-Offset rechtzeitig erhoehen — nicht warten bis es kalt ist", "icon": "mdi-radiator", "category": "comfort"},
             {"tip": "Dichtungen an Fenstern und Tueren pruefen", "icon": "mdi-door", "category": "maintenance"},
             {"tip": "Zeitschaltuhren fuer Beleuchtung anpassen — frueher dunkel", "icon": "mdi-clock-outline", "category": "comfort"},
             {"tip": "Regenrinnen und Abfluesse reinigen", "icon": "mdi-water", "category": "maintenance"},
@@ -417,13 +495,13 @@ class SeasonalAdvisor:
 
     TIPS_EN = {
         "winter": [
-            {"tip": "Reduce heating to 20°C — saves up to 6% energy per degree", "icon": "mdi-thermometer-minus", "category": "energy"},
+            {"tip": "Reduce heating to 20°C — saves up to 6% energy per degree", "tip_curve": "Reduce heating curve offset — saves up to 6% energy per degree", "icon": "mdi-thermometer-minus", "category": "energy"},
             {"tip": "Close shutters at night for better insulation", "icon": "mdi-window-shutter", "category": "comfort"},
             {"tip": "Activate frost protection for outdoor faucets", "icon": "mdi-snowflake-alert", "category": "safety"},
             {"tip": "Ventilate briefly but intensely (5-10 min burst)", "icon": "mdi-air-filter", "category": "health"},
         ],
         "spring": [
-            {"tip": "Gradually reduce heating — use transition period", "icon": "mdi-thermometer-low", "category": "energy"},
+            {"tip": "Gradually reduce heating — use transition period", "tip_curve": "Gradually reduce heating curve offset — use transition period", "icon": "mdi-thermometer-low", "category": "energy"},
             {"tip": "Open windows during the day for natural ventilation", "icon": "mdi-window-open", "category": "health"},
             {"tip": "Prepare sun protection (check awnings, blinds)", "icon": "mdi-weather-sunny", "category": "comfort"},
             {"tip": "Service air conditioning before summer", "icon": "mdi-hvac", "category": "maintenance"},
@@ -435,7 +513,7 @@ class SeasonalAdvisor:
             {"tip": "Set cooling to max 6°C below outdoor temperature", "icon": "mdi-snowflake", "category": "energy"},
         ],
         "autumn": [
-            {"tip": "Start heating early — don't wait until it's cold", "icon": "mdi-radiator", "category": "comfort"},
+            {"tip": "Start heating early — don't wait until it's cold", "tip_curve": "Increase heating curve offset early — don't wait until it's cold", "icon": "mdi-radiator", "category": "comfort"},
             {"tip": "Check window and door seals", "icon": "mdi-door", "category": "maintenance"},
             {"tip": "Adjust lighting timers — getting dark earlier", "icon": "mdi-clock-outline", "category": "comfort"},
             {"tip": "Clean gutters and drains", "icon": "mdi-water", "category": "maintenance"},
@@ -455,9 +533,20 @@ class SeasonalAdvisor:
 
     def get_tips(self, lang="de"):
         """Get seasonal tips for current season."""
+        from helpers import get_setting
+        heating_mode = get_setting("heating_mode", "room_thermostat")
+
         season = self.get_season()
         tips_map = self.TIPS_DE if lang == "de" else self.TIPS_EN
-        tips = tips_map.get(season, [])
+        raw_tips = tips_map.get(season, [])
+
+        # Resolve heating-mode-aware tips
+        tips = []
+        for t in raw_tips:
+            if heating_mode == "heating_curve" and "tip_curve" in t:
+                tips.append({**t, "tip": t["tip_curve"]})
+            else:
+                tips.append(t)
 
         # Add weather-based tip if available
         weather_tip = self._weather_tip(lang)
@@ -491,8 +580,14 @@ class SeasonalAdvisor:
                                 "category": "weather",
                             }
                         elif temp < 0:
+                            from helpers import get_setting
+                            hm = get_setting("heating_mode", "room_thermostat")
+                            if hm == "heating_curve":
+                                frost_tip = "Frostgefahr — Heizkurven-Offset nicht weiter senken!" if lang == "de" else "Frost danger — don't lower heating curve offset further!"
+                            else:
+                                frost_tip = "Frostgefahr — Heizung nicht unter 15°C stellen!" if lang == "de" else "Frost danger — don't set heating below 15°C!"
                             return {
-                                "tip": "Frostgefahr — Heizung nicht unter 15°C stellen!" if lang == "de" else "Frost danger — don't set heating below 15°C!",
+                                "tip": frost_tip,
                                 "icon": "mdi-snowflake",
                                 "category": "weather",
                             }

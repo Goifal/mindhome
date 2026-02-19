@@ -60,23 +60,42 @@ from .websocket import emit_thinking, emit_speaking, emit_action
 logger = logging.getLogger(__name__)
 
 # Phase 7.5: Szenen-Intelligenz — Prompt fuer natuerliches Situationsverstaendnis
-SCENE_INTELLIGENCE_PROMPT = """
+def _build_scene_intelligence_prompt() -> str:
+    """Baut den Szenen-Intelligenz-Prompt je nach Heizungsmodus."""
+    heating = yaml_config.get("heating", {})
+    mode = heating.get("mode", "room_thermostat")
+
+    if mode == "heating_curve":
+        heat_cold = "Heizungs-Offset um +1 erhoehen (Heizkurve)"
+        heat_warm = "Heizungs-Offset um -1 senken ODER Fenster-Empfehlung"
+        heat_sick = "Heizungs-Offset +2, sanftes Licht, weniger Meldungen"
+        heat_work = "Helles Tageslicht, Heizungs-Offset beibehalten, Benachrichtigungen reduzieren"
+    else:
+        heat_cold = "Heizung im aktuellen Raum um 2°C erhoehen"
+        heat_warm = "Heizung runter ODER Fenster-Empfehlung"
+        heat_sick = "Temperatur 23°C, sanftes Licht, weniger Meldungen"
+        heat_work = "Helles Tageslicht, 21°C, Benachrichtigungen reduzieren"
+
+    return f"""
 
 SZENEN-INTELLIGENZ:
 Verstehe natuerliche Situationsbeschreibungen und reagiere mit passenden Aktionen:
-- "Mir ist kalt" → Heizung im aktuellen Raum um 2°C erhoehen
-- "Mir ist warm" → Heizung runter ODER Fenster-Empfehlung
+- "Mir ist kalt" → {heat_cold}
+- "Mir ist warm" → {heat_warm}
 - "Zu hell" → Rolladen runter ODER Licht dimmen (je nach Tageszeit)
 - "Zu dunkel" → Licht an oder heller
 - "Zu laut" → Musik leiser oder Fenster-Empfehlung
 - "Romantischer Abend" → Licht 20%, warmweiss, leise Musik vorschlagen
-- "Ich bin krank" → Temperatur 23°C, sanftes Licht, weniger Meldungen
+- "Ich bin krank" → {heat_sick}
 - "Filmabend" → Licht dimmen, Rolladen runter, TV vorbereiten
-- "Ich arbeite" → Helles Tageslicht, 21°C, Benachrichtigungen reduzieren
+- "Ich arbeite" → {heat_work}
 - "Party" → Musik an, Lichter bunt/hell, Gaeste-WLAN
 
 Nutze den aktuellen Raum-Kontext fuer die richtige Aktion.
 Frage nur bei Mehrdeutigkeit nach (z.B. "Welchen Raum?")."""
+
+
+SCENE_INTELLIGENCE_PROMPT = _build_scene_intelligence_prompt()
 
 
 class AssistantBrain:

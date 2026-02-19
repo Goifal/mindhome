@@ -6,6 +6,10 @@
 # Diese Werte werden vom Context Builder genutzt um
 # raumspezifische Empfehlungen zu geben.
 #
+# Hinweis: Bei heating.mode = "heating_curve" (Heizkurve ohne Einzelraumregelung)
+# werden die default_temp Werte nur als Kontext-Info fuer das LLM genutzt,
+# NICHT zum aktiven Steuern der Raumtemperatur.
+#
 # type: living, bedroom, kitchen, office, bathroom, hallway, outdoor
 # default_temp: Standard-Temperatur in Grad Celsius
 # default_light: warmweiss, neutralweiss, tageslicht, gedimmt

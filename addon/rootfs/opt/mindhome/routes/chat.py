@@ -291,6 +291,214 @@ def api_chat_upload():
         return jsonify({"error": str(e)}), 500
 
 
+# ------------------------------------------------------------------
+# Voice chat — STT (Whisper) -> Jarvis -> TTS (Piper)
+# ------------------------------------------------------------------
+
+@chat_bp.route("/api/chat/voice", methods=["POST"])
+def api_chat_voice():
+    """
+    Voice message: receive audio, transcribe via Whisper STT,
+    send text to Jarvis, synthesize response via Piper TTS.
+
+    Request: multipart/form-data with 'audio' file
+    Optional form fields: person, room
+    Response: JSON with text response + base64-encoded TTS audio
+    """
+    import base64
+
+    if "audio" not in request.files:
+        return jsonify({"error": "Keine Audiodatei angegeben"}), 400
+
+    audio_file = request.files["audio"]
+    if not audio_file:
+        return jsonify({"error": "Leere Audiodatei"}), 400
+
+    person = request.form.get("person", get_setting("primary_user", "Max"))
+    room = request.form.get("room")
+    ha = _deps.get("ha")
+    if not ha:
+        return jsonify({"error": "Home Assistant nicht verbunden"}), 503
+
+    # --- Step 1: STT via Whisper ---
+    stt_entity = get_setting("stt_entity", "")
+    if not stt_entity:
+        # Auto-discover STT entity
+        states = ha.get_states() or []
+        stt_entities = [s["entity_id"] for s in states if s.get("entity_id", "").startswith("stt.")]
+        if stt_entities:
+            stt_entity = stt_entities[0]
+        else:
+            return jsonify({"error": "Kein STT-Entity gefunden. Bitte in Einstellungen konfigurieren."}), 503
+
+    # Send audio to HA STT API
+    audio_data = audio_file.read()
+    content_type = audio_file.content_type or "audio/wav"
+    try:
+        import os
+        ha_url = os.environ.get("SUPERVISOR_URL", ha.ha_url).rstrip("/")
+        ha_token = os.environ.get("SUPERVISOR_TOKEN", ha.token)
+        stt_resp = requests.post(
+            f"{ha_url}/api/stt/{stt_entity}",
+            headers={
+                "Authorization": f"Bearer {ha_token}",
+                "Content-Type": content_type,
+            },
+            data=audio_data,
+            timeout=30,
+        )
+        if stt_resp.status_code != 200:
+            logger.warning("STT API error: %s %s", stt_resp.status_code, stt_resp.text[:200])
+            return jsonify({"error": f"STT fehlgeschlagen (HTTP {stt_resp.status_code})"}), 502
+
+        stt_result = stt_resp.json()
+        transcribed_text = stt_result.get("text", "").strip()
+        if not transcribed_text:
+            return jsonify({"error": "Sprache nicht erkannt", "stt_result": stt_result}), 422
+
+    except requests.Timeout:
+        return jsonify({"error": "STT Timeout"}), 504
+    except Exception as e:
+        logger.error("STT exception: %s", e)
+        return jsonify({"error": f"STT Fehler: {e}"}), 500
+
+    logger.info("STT transcribed: '%s' (person=%s)", transcribed_text, person)
+
+    # --- Step 2: Send text to Jarvis (same as /api/chat/send) ---
+    user_msg = {
+        "role": "user",
+        "text": transcribed_text,
+        "person": person,
+        "input_mode": "voice",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+    _conversation_history.append(user_msg)
+
+    assistant_url = _get_assistant_url()
+    try:
+        resp = requests.post(
+            f"{assistant_url}/api/assistant/chat",
+            json={"text": transcribed_text, "person": person, "room": room},
+            timeout=30,
+        )
+        if resp.status_code != 200:
+            return jsonify({
+                "error": f"Assistant returned {resp.status_code}",
+                "transcribed_text": transcribed_text,
+            }), 502
+        result = resp.json()
+        response_text = result.get("response", "")
+
+        assistant_msg = {
+            "role": "assistant",
+            "text": response_text,
+            "actions": result.get("actions", []),
+            "model_used": result.get("model_used", ""),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        _conversation_history.append(assistant_msg)
+        while len(_conversation_history) > MAX_HISTORY:
+            _conversation_history.pop(0)
+
+    except Exception as e:
+        logger.error("Voice chat assistant error: %s", e)
+        return jsonify({"error": str(e), "transcribed_text": transcribed_text}), 500
+
+    # --- Step 3: TTS via Piper ---
+    tts_audio_b64 = None
+    tts_entity = get_setting("tts_entity", "")
+    if not tts_entity:
+        states = ha.get_states() or []
+        tts_entities = [s["entity_id"] for s in states if s.get("entity_id", "").startswith("tts.")]
+        if tts_entities:
+            tts_entity = tts_entities[0]
+
+    if tts_entity and response_text:
+        try:
+            import os
+            ha_url = os.environ.get("SUPERVISOR_URL", ha.ha_url).rstrip("/")
+            ha_token = os.environ.get("SUPERVISOR_TOKEN", ha.token)
+
+            # Use HA TTS get_url API to generate audio
+            tts_resp = requests.post(
+                f"{ha_url}/api/tts_get_url",
+                headers={
+                    "Authorization": f"Bearer {ha_token}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "engine_id": tts_entity,
+                    "message": response_text,
+                    "language": "de",
+                },
+                timeout=15,
+            )
+            if tts_resp.status_code == 200:
+                tts_data = tts_resp.json()
+                tts_url = tts_data.get("url", "")
+                if tts_url:
+                    # Download the generated audio file
+                    audio_resp = requests.get(
+                        tts_url if tts_url.startswith("http") else f"{ha_url}{tts_url}",
+                        headers={"Authorization": f"Bearer {ha_token}"},
+                        timeout=15,
+                    )
+                    if audio_resp.status_code == 200:
+                        tts_audio_b64 = base64.b64encode(audio_resp.content).decode("utf-8")
+                        logger.info("TTS audio generated (%d bytes)", len(audio_resp.content))
+            else:
+                logger.warning("TTS API error: %s", tts_resp.status_code)
+        except Exception as e:
+            logger.warning("TTS generation failed: %s", e)
+
+    return jsonify({
+        "transcribed_text": transcribed_text,
+        "response": response_text,
+        "actions": result.get("actions", []),
+        "model_used": result.get("model_used", ""),
+        "tts_audio": tts_audio_b64,
+        "timestamp": assistant_msg["timestamp"],
+    })
+
+
+@chat_bp.route("/api/chat/voice/settings", methods=["GET"])
+def api_chat_voice_settings():
+    """Get voice settings (STT/TTS entity configuration)."""
+    ha = _deps.get("ha")
+    stt_entity = get_setting("stt_entity", "")
+    tts_entity = get_setting("tts_entity", "")
+
+    # Discover available entities
+    available_stt = []
+    available_tts = []
+    if ha:
+        states = ha.get_states() or []
+        available_stt = [s["entity_id"] for s in states if s.get("entity_id", "").startswith("stt.")]
+        available_tts = [s["entity_id"] for s in states if s.get("entity_id", "").startswith("tts.")]
+
+    return jsonify({
+        "stt_entity": stt_entity,
+        "tts_entity": tts_entity,
+        "available_stt": available_stt,
+        "available_tts": available_tts,
+    })
+
+
+@chat_bp.route("/api/chat/voice/settings", methods=["PUT"])
+def api_chat_voice_settings_update():
+    """Update voice settings."""
+    from helpers import set_setting
+    data = request.get_json(silent=True) or {}
+    updated = []
+    if "stt_entity" in data:
+        set_setting("stt_entity", data["stt_entity"])
+        updated.append("stt_entity")
+    if "tts_entity" in data:
+        set_setting("tts_entity", data["tts_entity"])
+        updated.append("tts_entity")
+    return jsonify({"success": True, "updated": updated})
+
+
 @chat_bp.route("/api/chat/files/<path:filename>", methods=["GET"])
 def api_chat_serve_file(filename):
     """Proxy file serving from the Assistant (PC 2)."""
