@@ -667,11 +667,6 @@ def get_assistant_tools() -> list:
     return tools
 
 
-# Dynamic getter: Climate-Tool-Schema wird bei jedem Aufruf frisch generiert
-def get_assistant_tools() -> list:
-    """Liefert ASSISTANT_TOOLS mit aktuellem Climate-Schema."""
-    return _build_tools_with_dynamic_climate()
-
 # ASSISTANT_TOOLS: Immer die dynamische Version verwenden
 ASSISTANT_TOOLS = get_assistant_tools()
 
