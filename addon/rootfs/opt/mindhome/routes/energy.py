@@ -105,8 +105,8 @@ def api_energy_summary():
 
         return jsonify(summary)
     except Exception as e:
-        logger.error(f"Energy summary error: {e}")
-        return jsonify({"error": str(e), "entities": []}), 500
+        logger.error("Operation failed: %s", e)
+        return jsonify({"error": "Operation failed", "entities": []}), 500
     finally:
         session.close()
 
@@ -284,7 +284,8 @@ def api_discover_energy_sensors():
                 })
         return jsonify(sensors)
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        logger.error("Operation failed: %s", e)
+        return jsonify({"error": "Operation failed"}), 500
 
 
 @energy_bp.route("/api/energy/stats", methods=["GET"])

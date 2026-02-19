@@ -144,7 +144,7 @@ def api_chat_send():
         }), 504
     except Exception as e:
         logger.error("Chat proxy exception: %s", e)
-        return jsonify({"error": str(e), "response": None}), 500
+        return jsonify({"error": "Operation failed", "response": None}), 500
 
 
 @chat_bp.route("/api/chat/history", methods=["GET"])
@@ -198,7 +198,8 @@ def api_chat_status():
             })
         return jsonify({"connected": False, "assistant_url": assistant_url, "error": f"Status {resp.status_code}"})
     except Exception as e:
-        return jsonify({"connected": False, "assistant_url": assistant_url, "error": str(e)})
+        logger.error("Operation failed: %s", e)
+        return jsonify({"connected": False, "assistant_url": assistant_url, "error": "Operation failed"}), 500
 
 
 # ------------------------------------------------------------------
@@ -312,7 +313,7 @@ def api_chat_upload():
         }), 504
     except Exception as e:
         logger.error("Chat upload proxy exception: %s", e)
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "Operation failed"}), 500
 
 
 # ------------------------------------------------------------------
@@ -386,7 +387,7 @@ def api_chat_voice():
         return jsonify({"error": "STT Timeout"}), 504
     except Exception as e:
         logger.error("STT exception: %s", e)
-        return jsonify({"error": f"STT Fehler: {e}"}), 500
+        return jsonify({"error": "Operation failed"}), 500
 
     logger.info("STT transcribed: '%s' (person=%s)", transcribed_text, person)
 

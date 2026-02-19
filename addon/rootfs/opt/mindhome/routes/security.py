@@ -819,7 +819,8 @@ def emergency_contact_delete(contact_id):
             c.is_active = False
             return jsonify({"ok": True})
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        logger.error("Operation failed: %s", e)
+        return jsonify({"error": "Operation failed"}), 500
 
 
 # ==============================================================================
@@ -946,7 +947,8 @@ def security_events():
                 "timestamp": evt.timestamp.isoformat() if evt.timestamp else None,
             } for evt in events])
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        logger.error("Operation failed: %s", e)
+        return jsonify({"error": "Operation failed"}), 500
 
 
 @security_bp.route("/api/security/events/stats", methods=["GET"])
@@ -964,4 +966,5 @@ def security_event_stats():
                 by_type[row[0].value if row[0] else "unknown"] = row[1]
             return jsonify({"total": total, "by_type": by_type})
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        logger.error("Operation failed: %s", e)
+        return jsonify({"error": "Operation failed"}), 500
