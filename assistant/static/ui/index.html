@@ -375,6 +375,7 @@ textarea { resize:vertical; min-height:70px; font-family:var(--mono); font-size:
         <!-- 8 Tabs -->
         <div class="tab-bar" id="settingsTabBar">
           <div class="tab-item active" data-tab="tab-general">Allgemein</div>
+          <div class="tab-item" data-tab="tab-persons">Personen</div>
           <div class="tab-item" data-tab="tab-personality">Persoenlichkeit</div>
           <div class="tab-item" data-tab="tab-memory">Gedaechtnis</div>
           <div class="tab-item" data-tab="tab-mood">Stimmung</div>
@@ -727,6 +728,7 @@ function renderCurrentTab() {
   const c = document.getElementById('settingsContent');
   switch(currentTab) {
     case 'tab-general': c.innerHTML = renderGeneral(); break;
+    case 'tab-persons': c.innerHTML = renderPersons(); break;
     case 'tab-personality': c.innerHTML = renderPersonality(); break;
     case 'tab-memory': c.innerHTML = renderMemory(); break;
     case 'tab-mood': c.innerHTML = renderMood(); break;
@@ -851,6 +853,67 @@ function renderGeneral() {
     '<p style="font-size:11px;color:var(--text-muted);">PIN aendern: "PIN vergessen?" auf dem Login-Screen nutzen (Recovery-Key erforderlich).<br>' +
     'Alternativ: JARVIS_UI_PIN Umgebungsvariable ueberschreibt den gespeicherten PIN.</p></div>'
   );
+}
+
+// ---- Tab: Personen & Haushalt ----
+function renderPersons() {
+  const members = getPath(S, 'household.members') || [];
+  const primaryUser = getPath(S, 'household.primary_user') || '';
+
+  let memberRows = '';
+  members.forEach((m, i) => {
+    memberRows += `<div class="person-row" style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
+      <input type="text" value="${esc(m.name || '')}" data-member-idx="${i}" data-member-field="name"
+        placeholder="Name" style="flex:1;">
+      <select data-member-idx="${i}" data-member-field="role" style="flex:1;">
+        <option value="owner" ${m.role==='owner'?'selected':''}>Hausherr/in</option>
+        <option value="member" ${m.role==='member'?'selected':''}>Mitbewohner/in</option>
+        <option value="guest" ${m.role==='guest'?'selected':''}>Gast</option>
+      </select>
+      <button class="btn btn-secondary" onclick="removeHouseholdMember(${i})"
+        style="padding:6px 10px;min-width:auto;" title="Entfernen">&#10005;</button>
+    </div>`;
+  });
+
+  return sectionWrap('&#128100;', 'Hauptbenutzer',
+    '<div class="form-group"><label>Dein Name</label>' +
+    '<input type="text" data-path="household.primary_user" value="' + esc(primaryUser) + '">' +
+    '<div class="hint">So kennt dich der Assistent. Wird auch fuer die Anrede verwendet.</div></div>'
+  ) +
+  sectionWrap('&#128106;', 'Haushaltsmitglieder',
+    '<p class="hint" style="margin-bottom:12px;">Familienmitglieder und Mitbewohner. Die Rolle bestimmt den Zugriff:<br>' +
+    '<b>Hausherr/in</b> = Voller Zugriff inkl. Sicherheit &bull; ' +
+    '<b>Mitbewohner/in</b> = Alles ausser Sicherheit &bull; ' +
+    '<b>Gast</b> = Nur Licht, Klima, Medien</p>' +
+    '<div id="householdMembers">' + memberRows + '</div>' +
+    '<button class="btn btn-secondary" onclick="addHouseholdMember()" style="margin-top:4px;">+ Mitglied hinzufuegen</button>'
+  );
+}
+
+function addHouseholdMember() {
+  const members = getPath(S, 'household.members') || [];
+  members.push({name: '', role: 'member'});
+  setPath(S, 'household.members', members);
+  renderCurrentTab();
+}
+
+function removeHouseholdMember(idx) {
+  const members = getPath(S, 'household.members') || [];
+  members.splice(idx, 1);
+  setPath(S, 'household.members', members);
+  renderCurrentTab();
+}
+
+function collectHouseholdMembers() {
+  const members = [];
+  document.querySelectorAll('#householdMembers .person-row').forEach(row => {
+    const nameEl = row.querySelector('[data-member-field="name"]');
+    const roleEl = row.querySelector('[data-member-field="role"]');
+    if (nameEl && roleEl && nameEl.value.trim()) {
+      members.push({name: nameEl.value.trim(), role: roleEl.value});
+    }
+  });
+  return members;
 }
 
 // ---- Tab 2: Persoenlichkeit ----
@@ -1569,6 +1632,10 @@ function collectSettings() {
     const arr = getPath(S, path) || [];
     setPath(updates, path, arr);
   });
+  // Household members (dynamic list)
+  if (document.getElementById('householdMembers')) {
+    setPath(updates, 'household.members', collectHouseholdMembers());
+  }
   return updates;
 }
 

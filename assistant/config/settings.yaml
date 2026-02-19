@@ -9,17 +9,26 @@ assistant:
   version: "1.4.0"
   language: "de"
 
+# --- Haushalt & Personen ---
+# Wird ueber die Einstellungsseite (Tab "Personen") verwaltet
+household:
+  # Dein Name — so kennt dich der Assistent
+  primary_user: ""
+  # Familienmitglieder / Mitbewohner
+  # role: owner (Hausherr/in), member (Mitbewohner/in), guest (Gast)
+  members: []
+  # Beispiel:
+  # members:
+  #   - name: "Lisa"
+  #     role: "owner"
+  #   - name: "Thomas"
+  #     role: "member"
+
 # --- Personen und Anrede ---
-# Wie Jarvis die Hausbewohner anspricht
-# Hauptbenutzer (user_name in .env) = "Sir" (Standard)
-# Andere Personen: Name oder Titel
+# HINWEIS: Wird automatisch aus household-Sektion generiert.
+# Manuelle Eintraege hier werden von der UI ueberschrieben.
 persons:
   titles:
-    # key = vorname (kleingeschrieben), value = Anrede
-    # Der Hauptbenutzer (USER_NAME in .env) wird automatisch "Sir"
-    # Weitere Personen hier hinzufuegen:
-    # lisa: "Ms. Lisa"
-    # thomas: "Thomas"
 
 # --- Autonomie-Level ---
 # 1 = Assistent (nur auf Befehle reagieren)

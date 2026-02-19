@@ -73,3 +73,45 @@ if _models.get("smart"):
     settings.model_smart = _models["smart"]
 if _models.get("deep"):
     settings.model_deep = _models["deep"]
+
+# Household → user_name, persons, trust_levels synchronisieren
+_household = yaml_config.get("household") or {}
+if _household.get("primary_user"):
+    settings.user_name = _household["primary_user"]
+
+_ROLE_TO_TRUST = {"owner": 2, "member": 1, "guest": 0}
+
+
+def apply_household_to_config():
+    """Generiert persons.titles und trust_levels.persons aus household.members."""
+    household = yaml_config.get("household") or {}
+    members = household.get("members") or []
+    primary = household.get("primary_user") or settings.user_name
+
+    # persons.titles generieren
+    titles = {}
+    trust_persons = {}
+
+    # Hauptbenutzer immer als Owner
+    trust_persons[primary.lower()] = 2
+
+    for m in members:
+        name = (m.get("name") or "").strip()
+        if not name:
+            continue
+        role = m.get("role", "member")
+        titles[name.lower()] = name
+        trust_persons[name.lower()] = _ROLE_TO_TRUST.get(role, 0)
+
+    # In yaml_config eintragen (fuer personality.py etc.)
+    yaml_config.setdefault("persons", {})["titles"] = titles
+    yaml_config.setdefault("trust_levels", {})["persons"] = trust_persons
+    if "trust_levels" in yaml_config and "default" not in yaml_config["trust_levels"]:
+        yaml_config["trust_levels"]["default"] = 0
+
+    # user_name aktualisieren
+    if primary:
+        settings.user_name = primary
+
+
+apply_household_to_config()

@@ -1359,6 +1359,9 @@ async def ui_update_settings(req: SettingsUpdateFull, token: str = ""):
         import assistant.config as cfg
         cfg.yaml_config = load_yaml_config()
 
+        # Household → persons/trust_levels synchronisieren
+        cfg.apply_household_to_config()
+
         # ModelRouter neu laden (Enabled-Status, Keywords)
         if hasattr(brain, "model_router") and brain.model_router:
             brain.model_router.reload_config()
