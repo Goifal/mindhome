@@ -43,13 +43,21 @@ class HomeAssistantClient:
         }
         # Shared Session (wird lazy initialisiert)
         self._session: Optional[aiohttp.ClientSession] = None
+        self._session_lock: Optional[asyncio.Lock] = None
+
+    def _get_lock(self) -> asyncio.Lock:
+        """Gibt den Session-Lock zurueck (lazy init, event-loop-safe)."""
+        if self._session_lock is None:
+            self._session_lock = asyncio.Lock()
+        return self._session_lock
 
     async def _get_session(self) -> aiohttp.ClientSession:
-        """Gibt die shared aiohttp Session zurueck (lazy init)."""
-        if self._session is None or self._session.closed:
-            timeout = aiohttp.ClientTimeout(total=10)
-            self._session = aiohttp.ClientSession(timeout=timeout)
-        return self._session
+        """Gibt die shared aiohttp Session zurueck (thread-safe lazy init)."""
+        async with self._get_lock():
+            if self._session is None or self._session.closed:
+                timeout = aiohttp.ClientTimeout(total=10)
+                self._session = aiohttp.ClientSession(timeout=timeout)
+            return self._session
 
     async def close(self):
         """Schliesst die HTTP Session."""

@@ -114,7 +114,7 @@ class HabitDriftDetector:
 
                 self._cached_drifts = drifts
                 if drifts:
-                    self.event_bus.emit("habit.drift_detected", {
+                    self.event_bus.publish("habit.drift_detected", {
                         "count": len(drifts),
                         "drifts": drifts[:5],  # top 5
                     })
@@ -236,6 +236,8 @@ class AdaptiveTimingManager:
                             trigger["minute"] = new_m
                             pattern.trigger_conditions = trigger
                             logger.info(f"Adaptive timing: Pattern {pattern.id} adjusted to {new_h:02d}:{new_m:02d} (avg offset {avg_offset:.1f} min)")
+
+                session.commit()
 
         except Exception as e:
             logger.error(f"AdaptiveTimingManager error: {e}")

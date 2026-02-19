@@ -49,7 +49,7 @@ def load_yaml_config() -> dict:
     config_path = Path(__file__).parent.parent / "config" / "settings.yaml"
     if config_path.exists():
         with open(config_path) as f:
-            return yaml.safe_load(f)
+            return yaml.safe_load(f) or {}
     return {}
 
 

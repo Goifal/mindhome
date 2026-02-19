@@ -132,7 +132,8 @@ class HealthMonitor:
 
             snapshot = {}
             for s_type, values in type_values.items():
-                snapshot[s_type] = round(sum(values) / len(values), 1)
+                if values:
+                    snapshot[s_type] = round(sum(values) / len(values), 1)
             snapshot["score"] = status.get("score", 0)
 
             # In Redis mit Stunden-Key speichern

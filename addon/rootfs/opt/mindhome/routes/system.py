@@ -58,7 +58,10 @@ def init_system(dependencies):
 
 
 def _ha():
-    return _deps.get("ha")
+    ha = _deps.get("ha")
+    if ha is None:
+        raise RuntimeError("HAConnection not initialized")
+    return ha
 
 
 def _engine():
@@ -115,16 +118,20 @@ def api_health_check():
         health["status"] = "unhealthy"
 
     # HA connection
-    health["checks"]["ha_websocket"] = {
-        "status": "ok" if _ha()._ws_connected else "disconnected",
-        "reconnect_attempts": _ha()._reconnect_attempts,
-    }
-    health["checks"]["ha_rest_api"] = {
-        "status": "ok" if _ha()._is_online else "offline"
-    }
-
-    # #41 Connection stats
-    health["checks"]["connection_stats"] = _ha().get_connection_stats()
+    try:
+        ha = _ha()
+        health["checks"]["ha_websocket"] = {
+            "status": "ok" if ha._ws_connected else "disconnected",
+            "reconnect_attempts": ha._reconnect_attempts,
+        }
+        health["checks"]["ha_rest_api"] = {
+            "status": "ok" if ha._is_online else "offline"
+        }
+        health["checks"]["connection_stats"] = ha.get_connection_stats()
+    except RuntimeError:
+        health["checks"]["ha_websocket"] = {"status": "not_initialized"}
+        health["checks"]["ha_rest_api"] = {"status": "not_initialized"}
+        health["status"] = "unhealthy"
 
     # #24 Device health summary
     try:
@@ -956,7 +963,11 @@ def api_validate_config():
                     "message_en": f"Domain '{domain.display_name_en}' active but no devices assigned"})
 
         # HA connection
-        if not _ha().connected:
+        try:
+            ha_disconnected = not _ha().is_connected()
+        except RuntimeError:
+            ha_disconnected = True
+        if ha_disconnected:
             issues.append({"type": "error", "key": "ha_disconnected",
                 "message_de": "Home Assistant nicht verbunden",
                 "message_en": "Home Assistant not connected"})

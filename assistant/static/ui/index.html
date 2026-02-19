@@ -829,6 +829,11 @@ function renderGeneral() {
     fRange('autonomy.level', 'Autonomie-Level', 1, 5, 1, {1:'Assistent',2:'Butler',3:'Mitbewohner',4:'Vertrauter',5:'Autopilot'})
   ) +
   sectionWrap('&#129302;', 'Modell-Routing',
+    '<div class="form-group"><label style="font-weight:600;margin-bottom:8px;display:block;">Modelle aktivieren/deaktivieren</label>' +
+    '<p class="hint" style="margin-bottom:12px;">Alle Modelle bleiben installiert. Deaktivierte Modelle werden nicht fuer Anfragen genutzt — Fallback auf naechstkleineres.</p></div>' +
+    fToggle('models.enabled.fast', 'Fast (4B) — Einfache Befehle') +
+    fToggle('models.enabled.smart', 'Smart (14B) — Konversation') +
+    fToggle('models.enabled.deep', 'Deep (32B) — Komplexe Analyse') +
     fText('models.fast', 'Fast Model', 'Einfache Befehle') +
     fText('models.smart', 'Smart Model', 'Konversation, Standard') +
     fText('models.deep', 'Deep Model', 'Komplexe Analyse') +
@@ -1299,7 +1304,17 @@ function collectSettings() {
 }
 
 async function saveAllSettings() {
-  const updates = collectSettings();
+  // Erst aktuelle Tab-Werte in S uebernehmen, dann S als Basis nutzen
+  const tabUpdates = collectSettings();
+  Object.keys(tabUpdates).forEach(key => {
+    if (typeof tabUpdates[key] === 'object' && !Array.isArray(tabUpdates[key]) && S[key]) {
+      Object.assign(S[key], tabUpdates[key]);
+    } else {
+      S[key] = tabUpdates[key];
+    }
+  });
+  // Vollstaendiges Settings-Objekt senden (nicht nur aktiven Tab)
+  const updates = JSON.parse(JSON.stringify(S));
   try {
     await api('/api/ui/settings', 'PUT', {settings: updates});
     // Also update local cache

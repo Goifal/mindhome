@@ -167,7 +167,7 @@ class WeatherAlertManager:
                     session.add(wa)
                     stored_count += 1
 
-                    self.event_bus.emit("weather.alert_created", {
+                    self.event_bus.publish("weather.alert_created", {
                         "alert_type": alert_data["alert_type"],
                         "severity": alert_data["severity"],
                         "valid_from": alert_data["valid_from"].isoformat(),

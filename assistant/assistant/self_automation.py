@@ -152,8 +152,8 @@ class SelfAutomation:
             if not automation:
                 return {
                     "success": False,
-                    "message": "Das konnte ich leider nicht in eine Automation umsetzen. "
-                               "Versuche es mit einer klareren Beschreibung.",
+                    "message": "Automation nicht umsetzbar. "
+                               "Praezisere Beschreibung koennte helfen.",
                 }
             generation_method = "llm"
 

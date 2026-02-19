@@ -83,7 +83,9 @@ def _get_climate_tool_parameters() -> dict:
 
 
 # Ollama Tool-Definitionen (Qwen 2.5 Function Calling Format)
-ASSISTANT_TOOLS = [
+# ASSISTANT_TOOLS wird als Funktion gebaut, damit set_climate
+# bei jedem Aufruf den aktuellen heating.mode aus yaml_config liest.
+_ASSISTANT_TOOLS_STATIC = [
     {
         "type": "function",
         "function": {
@@ -641,6 +643,33 @@ ASSISTANT_TOOLS = [
 ]
 
 
+def get_assistant_tools() -> list:
+    """Liefert Tool-Definitionen mit aktuellem Climate-Schema.
+
+    Climate-Tool wird bei jedem Aufruf neu gebaut, damit
+    Aenderungen am Heizungsmodus (room_thermostat vs heating_curve)
+    sofort wirksam werden — ohne Neustart.
+    """
+    tools = []
+    for tool in _ASSISTANT_TOOLS_STATIC:
+        if tool.get("function", {}).get("name") == "set_climate":
+            tools.append({
+                "type": "function",
+                "function": {
+                    "name": "set_climate",
+                    "description": _get_climate_tool_description(),
+                    "parameters": _get_climate_tool_parameters(),
+                },
+            })
+        else:
+            tools.append(tool)
+    return tools
+
+
+# Rueckwaerts-Kompatibilitaet: Bestehender Code der ASSISTANT_TOOLS referenziert
+ASSISTANT_TOOLS = _ASSISTANT_TOOLS_STATIC
+
+
 class FunctionExecutor:
     """Fuehrt Function Calls des Assistenten aus."""
 
@@ -672,6 +701,11 @@ class FunctionExecutor:
     async def _exec_set_light(self, args: dict) -> dict:
         room = args["room"]
         state = args["state"]
+
+        # Sonderfall: "all" -> alle Lichter schalten
+        if room.lower() == "all":
+            return await self._exec_set_light_all(args, state)
+
         entity_id = await self._find_entity("light", room)
         if not entity_id:
             return {"success": False, "message": f"Kein Licht in '{room}' gefunden"}
@@ -697,6 +731,25 @@ class FunctionExecutor:
             extras.append(f"Farbtemperatur: {args['color_temp']}")
         extra_str = f" ({', '.join(extras)})" if extras else ""
         return {"success": success, "message": f"Licht {room} {state}{extra_str}"}
+
+    async def _exec_set_light_all(self, args: dict, state: str) -> dict:
+        """Alle Lichter ein- oder ausschalten."""
+        states = await self.ha.get_states()
+        if not states:
+            return {"success": False, "message": "Keine States verfuegbar"}
+
+        service = "turn_on" if state == "on" else "turn_off"
+        count = 0
+        for s in states:
+            eid = s.get("entity_id", "")
+            if eid.startswith("light.") and s.get("state") != state:
+                service_data = {"entity_id": eid}
+                if "brightness" in args and state == "on":
+                    service_data["brightness_pct"] = args["brightness"]
+                await self.ha.call_service("light", service, service_data)
+                count += 1
+
+        return {"success": True, "message": f"Alle Lichter {state} ({count} geschaltet)"}
 
     async def _exec_set_climate(self, args: dict) -> dict:
         heating = yaml_config.get("heating", {})
@@ -724,15 +777,19 @@ class FunctionExecutor:
         if not current_state:
             return {"success": False, "message": f"Entity {entity_id} nicht gefunden"}
 
-        # Aktuelle Zieltemperatur als Basis
+        # Basis-Temperatur der Heizkurve (vom Regler geliefert)
         attrs = current_state.get("attributes", {})
-        current_temp = attrs.get("temperature")
-        if current_temp is None:
+        base_temp = attrs.get("temperature")
+        if base_temp is None:
             return {"success": False, "message": f"Keine Temperatur fuer {entity_id} verfuegbar"}
 
-        # Neue Temperatur = aktuelle Basis + Offset
-        # Offset wird relativ zur Heizkurve interpretiert
-        new_temp = float(current_temp) + offset
+        # Offset-Grenzen aus Config erzwingen
+        offset_min = heating.get("curve_offset_min", -5)
+        offset_max = heating.get("curve_offset_max", 5)
+        offset = max(offset_min, min(offset_max, offset))
+
+        # Offset wird absolut zur Basis-Temperatur gesetzt (nicht kumulativ)
+        new_temp = float(base_temp) + offset
 
         service_data = {"entity_id": entity_id, "temperature": new_temp}
         if "mode" in args:
@@ -772,6 +829,11 @@ class FunctionExecutor:
     async def _exec_set_cover(self, args: dict) -> dict:
         room = args["room"]
         position = args["position"]
+
+        # Sonderfall: "all" -> alle Rolllaeden schalten
+        if room.lower() == "all":
+            return await self._exec_set_cover_all(position)
+
         entity_id = await self._find_entity("cover", room)
         if not entity_id:
             return {"success": False, "message": f"Kein Rollladen in '{room}' gefunden"}
@@ -781,6 +843,39 @@ class FunctionExecutor:
             {"entity_id": entity_id, "position": position},
         )
         return {"success": success, "message": f"Rollladen {room} auf {position}%"}
+
+    async def _exec_set_cover_all(self, position: int) -> dict:
+        """Alle Rolllaeden auf eine Position setzen."""
+        states = await self.ha.get_states()
+        if not states:
+            return {"success": False, "message": "Keine States verfuegbar"}
+
+        count = 0
+        for s in states:
+            eid = s.get("entity_id", "")
+            if eid.startswith("cover."):
+                await self.ha.call_service(
+                    "cover", "set_cover_position",
+                    {"entity_id": eid, "position": position},
+                )
+                count += 1
+
+        return {"success": True, "message": f"Alle Rolllaeden auf {position}% ({count} geschaltet)"}
+
+    async def _exec_call_service(self, args: dict) -> dict:
+        """Generischer HA Service-Aufruf (fuer Routinen wie Guest WiFi)."""
+        domain = args.get("domain", "")
+        service = args.get("service", "")
+        entity_id = args.get("entity_id", "")
+        if not domain or not service:
+            return {"success": False, "message": "domain und service erforderlich"}
+        service_data = {"entity_id": entity_id} if entity_id else {}
+        # Weitere Service-Daten aus args uebernehmen
+        for k, v in args.items():
+            if k not in ("domain", "service", "entity_id"):
+                service_data[k] = v
+        success = await self.ha.call_service(domain, service, service_data)
+        return {"success": success, "message": f"{domain}.{service} ausgefuehrt"}
 
     async def _exec_play_media(self, args: dict) -> dict:
         action = args["action"]

@@ -85,7 +85,9 @@ class HAConnection:
                     except Exception:
                         pass
                     logger.error(f"HA API client error for {endpoint}: {e} | payload={data} | response={body}")
-                    self._is_online = True
+                    # 401/403 = Auth-Problem, nicht als "online" werten
+                    if status_code not in (401, 403):
+                        self._is_online = True
                     return None
                 if attempt < attempts - 1:
                     wait = RETRY_BACKOFF_BASE ** attempt
@@ -587,8 +589,12 @@ class HAConnection:
                 self._process_offline_queue()
 
             elif msg_type == "auth_invalid":
-                logger.error("WebSocket auth failed!")
+                logger.error("WebSocket auth failed! Will retry after backoff.")
                 self._ws_connected = False
+                # Reconnect-Versuch durch Schliessen der WS-Verbindung ausloesen
+                # _on_ws_close wird aufgerufen und startet Reconnect mit Backoff
+                if ws:
+                    ws.close()
 
             elif msg_type == "event":
                 event = data.get("event", {})

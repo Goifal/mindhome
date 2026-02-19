@@ -338,8 +338,10 @@ def api_chat_voice():
         import os
         ha_url = os.environ.get("SUPERVISOR_URL", ha.ha_url).rstrip("/")
         ha_token = os.environ.get("SUPERVISOR_TOKEN", ha.token)
+        # HA STT API erwartet Platform-Name ohne Domain-Prefix
+        stt_platform = stt_entity.removeprefix("stt.")
         stt_resp = requests.post(
-            f"{ha_url}/api/stt/{stt_entity}",
+            f"{ha_url}/api/stt/{stt_platform}",
             headers={
                 "Authorization": f"Bearer {ha_token}",
                 "Content-Type": content_type,
@@ -427,7 +429,7 @@ def api_chat_voice():
                     "Content-Type": "application/json",
                 },
                 json={
-                    "engine_id": tts_entity,
+                    "engine_id": tts_entity.removeprefix("tts."),
                     "message": response_text,
                     "language": "de",
                 },

@@ -87,12 +87,18 @@ def api_get_users():
 @users_bp.route("/api/users", methods=["POST"])
 def api_create_user():
     """Create a new user."""
-    data = request.json
+    data = request.get_json() or {}
+    if not data.get("name"):
+        return jsonify({"error": "Name ist erforderlich"}), 400
     session = get_db()
     try:
+        try:
+            role = UserRole(data.get("role", "user"))
+        except ValueError:
+            return jsonify({"error": f"Ungueltiger Rolle: {data.get('role')}"}), 400
         user = User(
             name=data["name"],
-            role=UserRole(data.get("role", "user")),
+            role=role,
             ha_person_entity=data.get("ha_person_entity"),
             language=data.get("language", get_language())
         )
@@ -130,7 +136,10 @@ def api_update_user(user_id):
         if "name" in data:
             user.name = data["name"]
         if "role" in data:
-            user.role = UserRole(data["role"])
+            try:
+                user.role = UserRole(data["role"])
+            except ValueError:
+                return jsonify({"error": f"Ungueltiger Rolle: {data['role']}"}), 400
         if "ha_person_entity" in data:
             user.ha_person_entity = data["ha_person_entity"]
         if "language" in data:

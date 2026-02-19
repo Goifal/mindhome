@@ -40,15 +40,25 @@ FUNCTION_DOMAIN_MAP = {
 
 # Welche Parameter bei Konflikten verglichen werden
 def _get_climate_conflict_params() -> dict:
-    """Liefert Konflikt-Parameter je nach Heizungsmodus."""
-    mode = yaml_config.get("heating", {}).get("mode", "room_thermostat")
+    """Liefert Konflikt-Parameter je nach Heizungsmodus (live aus Config)."""
+    from .config import yaml_config as cfg
+    mode = cfg.get("heating", {}).get("mode", "room_thermostat")
     if mode == "heating_curve":
         return {"key": "offset", "unit": "°C", "type": "numeric"}
     return {"key": "temperature", "unit": "°C", "type": "numeric"}
 
 
-CONFLICT_PARAMETERS = {
-    "climate": _get_climate_conflict_params(),
+def get_conflict_parameters() -> dict:
+    """Liefert Konflikt-Parameter mit aktuellem Climate-Modus."""
+    return {
+        "climate": _get_climate_conflict_params(),
+        "light": _CONFLICT_PARAMS_STATIC["light"],
+        "media": _CONFLICT_PARAMS_STATIC["media"],
+        "cover": _CONFLICT_PARAMS_STATIC["cover"],
+    }
+
+
+_CONFLICT_PARAMS_STATIC = {
     "light": {
         "key": "brightness",
         "unit": "%",
@@ -304,7 +314,7 @@ class ConflictResolver:
         Returns:
             Konflikt-Details oder None
         """
-        params = CONFLICT_PARAMETERS.get(domain)
+        params = get_conflict_parameters().get(domain)
         if not params:
             return None
 
@@ -447,6 +457,15 @@ class ConflictResolver:
             val_b = float(conflict_detail["value_new"])
             compromise = round((val_a + val_b) / 2, 1)
             unit = conflict_detail.get("unit", "")
+
+            # Kompromiss durch Validator lassen (Limits erzwingen)
+            if hasattr(self, '_validator') and self._validator:
+                test_args = {**args_b, key: compromise}
+                validation = self._validator.validate(f"set_{domain}", test_args)
+                if not validation.ok:
+                    logger.warning(f"Kompromiss {compromise}{unit} ausserhalb Limits: {validation.reason}")
+                    # Auf naechsten gueltigen Wert clampen
+                    compromise = max(val_a, val_b) if compromise > max(val_a, val_b) else min(val_a, val_b)
 
             resolution["action"] = "use_compromise"
             resolution["compromise_value"] = compromise

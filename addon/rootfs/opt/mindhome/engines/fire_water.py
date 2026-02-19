@@ -590,12 +590,12 @@ class WaterLeakManager:
                                     current = s.get("attributes", {}).get("temperature")
                                     if current is not None:
                                         base_temp = float(current)
-                                        new_temp = base_temp + offset_min
+                                        new_temp = max(5.0, base_temp + offset_min)  # Frost-Floor: nie unter 5°C
                                         self.ha.call_service("climate", "set_temperature", {
                                             "entity_id": curve_entity,
                                             "temperature": round(new_temp, 1),
                                         })
-                                        logger.info(f"Heating curve set to min offset ({offset_min}): {curve_entity}")
+                                        logger.info(f"Heating curve set to min offset ({offset_min}), temp={new_temp}: {curve_entity}")
                                     break
                         except Exception as e:
                             logger.error(f"Heating curve shutoff failed: {e}")

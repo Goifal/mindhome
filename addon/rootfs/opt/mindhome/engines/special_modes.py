@@ -332,6 +332,10 @@ class SpecialModeBase:
                     # Heizkurven-Modus: target_temp als Offset interpretieren
                     offset = role_config.get("temperature_offset", role_config.get("target_temp"))
                     if offset is not None:
+                        # Offset-Grenzen aus Config erzwingen
+                        offset_min = float(get_setting("heating_curve_offset_min", "-5"))
+                        offset_max = float(get_setting("heating_curve_offset_max", "5"))
+                        offset = max(offset_min, min(offset_max, float(offset)))
                         curve_entity = get_setting("heating_curve_entity", entity_id)
                         states = self.ha.get_states() or []
                         for s in states:
@@ -851,6 +855,7 @@ class EmergencyProtocol(SpecialModeBase):
                         title="NOTFALL / EMERGENCY",
                         message=f"Emergency ({self._emergency_type}). Contact: {contact.name}, Phone: {contact.phone or 'N/A'}",
                         was_sent=True,
+                        user_id=contact.user_id if hasattr(contact, 'user_id') else 1,
                     ))
                     try:
                         self.ha.call_service("notify", "persistent_notification", {

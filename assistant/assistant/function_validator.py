@@ -23,20 +23,24 @@ class FunctionValidator:
     """Validiert Function Calls vor der Ausfuehrung."""
 
     def __init__(self):
+        # Aktionen die Bestaetigung brauchen (statisch)
         security = yaml_config.get("security", {})
-        limits = security.get("climate_limits", {})
-        self.temp_min = limits.get("min", 15)
-        self.temp_max = limits.get("max", 28)
-
-        # Heizungsmodus
-        heating = yaml_config.get("heating", {})
-        self.heating_mode = heating.get("mode", "room_thermostat")
-        self.offset_min = heating.get("curve_offset_min", -5)
-        self.offset_max = heating.get("curve_offset_max", 5)
-
-        # Aktionen die Bestaetigung brauchen
         confirm_list = security.get("require_confirmation", [])
         self.require_confirmation = set(confirm_list)
+
+    def _get_climate_config(self) -> dict:
+        """Liest Climate-Limits und Heizungsmodus live aus yaml_config."""
+        from .config import yaml_config as cfg
+        security = cfg.get("security", {})
+        limits = security.get("climate_limits", {})
+        heating = cfg.get("heating", {})
+        return {
+            "temp_min": limits.get("min", 15),
+            "temp_max": limits.get("max", 28),
+            "heating_mode": heating.get("mode", "room_thermostat"),
+            "offset_min": heating.get("curve_offset_min", -5),
+            "offset_max": heating.get("curve_offset_max", 5),
+        }
 
     def validate(self, function_name: str, arguments: dict) -> ValidationResult:
         """
@@ -72,39 +76,40 @@ class FunctionValidator:
         return ValidationResult(ok=True)
 
     def _validate_set_climate(self, args: dict) -> ValidationResult:
-        if self.heating_mode == "heating_curve":
-            return self._validate_climate_curve(args)
-        return self._validate_climate_room(args)
+        cc = self._get_climate_config()
+        if cc["heating_mode"] == "heating_curve":
+            return self._validate_climate_curve(args, cc)
+        return self._validate_climate_room(args, cc)
 
-    def _validate_climate_curve(self, args: dict) -> ValidationResult:
+    def _validate_climate_curve(self, args: dict, cc: dict) -> ValidationResult:
         """Validiert Offset fuer Heizkurven-Modus."""
         offset = args.get("offset")
         if offset is not None:
-            if offset < self.offset_min:
+            if offset < cc["offset_min"]:
                 return ValidationResult(
                     ok=False,
-                    reason=f"Offset {offset}°C unter Minimum ({self.offset_min}°C)",
+                    reason=f"Offset {offset}°C unter Minimum ({cc['offset_min']}°C)",
                 )
-            if offset > self.offset_max:
+            if offset > cc["offset_max"]:
                 return ValidationResult(
                     ok=False,
-                    reason=f"Offset {offset}°C ueber Maximum ({self.offset_max}°C)",
+                    reason=f"Offset {offset}°C ueber Maximum ({cc['offset_max']}°C)",
                 )
         return ValidationResult(ok=True)
 
-    def _validate_climate_room(self, args: dict) -> ValidationResult:
+    def _validate_climate_room(self, args: dict, cc: dict) -> ValidationResult:
         """Validiert absolute Temperatur fuer Raumthermostat-Modus."""
         temp = args.get("temperature")
         if temp is not None:
-            if temp < self.temp_min:
+            if temp < cc["temp_min"]:
                 return ValidationResult(
                     ok=False,
-                    reason=f"Temperatur {temp}°C unter Minimum ({self.temp_min}°C)",
+                    reason=f"Temperatur {temp}°C unter Minimum ({cc['temp_min']}°C)",
                 )
-            if temp > self.temp_max:
+            if temp > cc["temp_max"]:
                 return ValidationResult(
                     ok=False,
-                    reason=f"Temperatur {temp}°C ueber Maximum ({self.temp_max}°C)",
+                    reason=f"Temperatur {temp}°C ueber Maximum ({cc['temp_max']}°C)",
                 )
         return ValidationResult(ok=True)
 

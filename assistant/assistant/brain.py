@@ -32,7 +32,7 @@ from .device_health import DeviceHealthMonitor
 from .diagnostics import DiagnosticsEngine
 from .health_monitor import HealthMonitor
 from .feedback import FeedbackTracker
-from .function_calling import ASSISTANT_TOOLS, FunctionExecutor
+from .function_calling import get_assistant_tools, FunctionExecutor
 from .function_validator import FunctionValidator
 from .ha_client import HomeAssistantClient
 from .inventory import InventoryManager
@@ -612,7 +612,7 @@ class AssistantBrain:
             response = await self.ollama.chat(
                 messages=messages,
                 model=model,
-                tools=ASSISTANT_TOOLS,
+                tools=get_assistant_tools(),
             )
 
             if "error" in response:
@@ -1383,7 +1383,7 @@ class AssistantBrain:
                     )
                     if success:
                         return f"Notiert: \"{content}\""
-                    return "Das konnte ich leider nicht speichern."
+                    return "Speichervorgang fehlgeschlagen. Zweiter Versuch empfohlen, Sir."
 
         # "Was weisst du ueber ...?"
         for trigger in ["was weisst du ueber ", "was weißt du über ",
@@ -1399,7 +1399,7 @@ class AssistantBrain:
                             src = " (von dir)" if f.get("source") == "explicit" else ""
                             lines.append(f"- {f['content']}{src}")
                         return "\n".join(lines)
-                    return f"Zu \"{topic}\" habe ich leider nichts gespeichert."
+                    return f"Zu \"{topic}\" ist nichts hinterlegt."
 
         # "Vergiss ..."
         for trigger in ["vergiss ", "loesche ", "vergesse "]:
@@ -1419,7 +1419,7 @@ class AssistantBrain:
                     chunks = await self.knowledge_base.ingest_text(content, source="voice")
                     if chunks > 0:
                         return f"Wissen gespeichert: {chunks} Eintrag/Eintraege in der Wissensdatenbank."
-                    return "Das konnte ich leider nicht in die Wissensdatenbank aufnehmen."
+                    return "Wissensdatenbank hat den Eintrag nicht akzeptiert. Anderer Wortlaut koennte helfen."
 
         # Phase 11.1: "Was steht in der Wissensdatenbank?" / "Wissen Status"
         if any(kw in text_lower for kw in ["wissensdatenbank status", "wissen status",
@@ -1682,7 +1682,7 @@ Der User stellt eine hypothetische Frage. Beantworte sie:
         if person:
             trust_check = self.autonomy.can_person_act(person, "send_message_to_person")
             if not trust_check["allowed"]:
-                return f"Entschuldigung, du darfst keine Nachrichten senden. {trust_check.get('reason', '')}"
+                return f"Nachrichten-Versand fuer dein Profil nicht freigegeben. {trust_check.get('reason', '')}"
 
         # Nachricht senden ueber FunctionExecutor
         result = await self.executor.execute("send_message_to_person", {
@@ -1698,7 +1698,7 @@ Der User stellt eine hypothetische Frage. Beantworte sie:
             else:
                 return f"Ich habe {target_person} eine Nachricht geschickt."
         else:
-            return f"Die Nachricht an {target_person} konnte leider nicht zugestellt werden."
+            return f"Zustellung an {target_person} fehlgeschlagen. Empfaenger moeglicherweise nicht erreichbar."
 
     # ------------------------------------------------------------------
     # Phase 8: Intent-Extraktion im Hintergrund
@@ -1823,6 +1823,7 @@ Der User stellt eine hypothetische Frage. Beantworte sie:
         await self.intent_tracker.stop()
         await self.time_awareness.stop()
         await self.health_monitor.stop()
+        await self.device_health.stop()
         await self.proactive.stop()
         await self.summarizer.stop()
         await self.feedback.stop()

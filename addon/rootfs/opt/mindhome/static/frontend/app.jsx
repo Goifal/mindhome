@@ -10010,7 +10010,7 @@ const JarvisChatPage = () => {
             const formData = new FormData();
             formData.append('audio', audioBlob, 'voice.webm');
 
-            const resp = await fetch('/api/chat/voice', { method: 'POST', body: formData });
+            const resp = await fetch(`${API_BASE}/api/chat/voice`, { method: 'POST', body: formData });
             const result = await resp.json();
 
             if (resp.ok && result.transcribed_text) {
@@ -11412,7 +11412,7 @@ const PresencePage = () => {
 
     const uploadPdf = (file) => {
         const fd = new FormData(); fd.append('file', file);
-        fetch('/api/shift-plan/import', { method: 'POST', body: fd }).then(r => r.json()).then(d => { if (d.error) showToast(d.error, 'error'); else setPdfResult(d); }).catch(e => showToast(e.message, 'error'));
+        fetch(`${API_BASE}/api/shift-plan/import`, { method: 'POST', body: fd }).then(r => r.json()).then(d => { if (d.error) showToast(d.error, 'error'); else setPdfResult(d); }).catch(e => showToast(e.message, 'error'));
     };
 
     const createHoliday = () => { if (!newHoliday.name?.trim() || !newHoliday.date) { showToast('Name and date required', 'error'); return; } api.post('holidays', newHoliday).then(() => { setShowAddHoliday(false); setNewHoliday({ name: '', date: '', is_recurring: false, region: 'AT' }); load(); }).catch(e => showToast(lang === 'de' ? 'Fehler' : 'Error', 'error')); };
