@@ -8,3 +8,4 @@ class ChatRequest(BaseModel):
     person: Optional[str] = None
     room: Optional[str] = None
     speaker_confidence: Optional[float] = None
+    voice_metadata: Optional[dict] = None

@@ -15,8 +15,7 @@ from sqlalchemy import (
     create_engine, Column, Integer, String, Float, Boolean,
     DateTime, Text, ForeignKey, Enum, JSON, inspect, text
 )
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import relationship, sessionmaker
+from sqlalchemy.orm import declarative_base, relationship, sessionmaker
 import enum
 import os
 import logging
@@ -1337,12 +1336,17 @@ def get_engine(db_path=None):
     return engine
 
 
+_SessionFactory = None
+
+
 def get_session(engine=None):
-    """Create database session."""
+    """Create database session (cached sessionmaker factory)."""
+    global _SessionFactory
     if engine is None:
         engine = get_engine()
-    Session = sessionmaker(bind=engine)
-    return Session()
+    if _SessionFactory is None or _SessionFactory.kw.get("bind") is not engine:
+        _SessionFactory = sessionmaker(bind=engine)
+    return _SessionFactory()
 
 
 def init_database(engine=None):

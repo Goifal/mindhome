@@ -17,6 +17,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # MindHome Assistant Code
 COPY assistant/ ./assistant/
 COPY config/ ./config/
+COPY static/ ./static/
 
 # Port
 EXPOSE 8200

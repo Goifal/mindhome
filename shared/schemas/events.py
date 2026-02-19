@@ -7,6 +7,8 @@ EVENT_SPEAKING = "assistant.speaking"
 EVENT_ACTION = "assistant.action"
 EVENT_LISTENING = "assistant.listening"
 EVENT_PROACTIVE = "assistant.proactive"
+EVENT_SOUND = "assistant.sound"
+EVENT_AUDIO = "assistant.audio"
 
 
 class MindHomeEvent(BaseModel):

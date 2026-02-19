@@ -24,7 +24,7 @@ services:
     ports:
       - "8200:8200"
     volumes:
-      - ./config:/app/config:ro
+      - ./config:/app/config
       - ${DATA_DIR:-./data}/assistant:/app/data
       - ${DATA_DIR:-./data}/uploads:/app/data/uploads
     depends_on:
