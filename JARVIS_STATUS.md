@@ -1,7 +1,7 @@
 # JARVIS ASSISTANT — STATUS & ANALYSE
 
-> Letzte Aktualisierung: 2026-02-18
-> Commit: `3edee22` — 21 Feature-Luecken geschlossen
+> Letzte Aktualisierung: 2026-02-19
+> Commit: `d572d71` — Phase 13.2 implementiert, Zeilenzahlen aktualisiert
 
 ---
 
@@ -9,8 +9,8 @@
 
 | Kategorie | Score | Trend |
 |-----------|:-----:|:-----:|
-| **Funktionsumfang (vs. Masterplan)** | **96.8%** | +4.3% |
-| **Jarvis-Authentizitaet (vs. MCU Jarvis)** | **88.0%** | +3.5% |
+| **Funktionsumfang (vs. Masterplan)** | **98.4%** | +1.6% |
+| **Jarvis-Authentizitaet (vs. MCU Jarvis)** | **88.0%** | — |
 | **Sicherheit** | **98%** | — |
 | **Code-Qualitaet** | **85%** | — |
 | **Konfigurierbarkeit** | **97%** | — |
@@ -112,12 +112,12 @@
 
 ---
 
-## PHASE 13 — Selbstprogrammierung (25.0%)
+## PHASE 13 — Selbstprogrammierung (48.8%)
 
 | # | Stufe | Status | % | Details |
 |---|-------|:------:|:-:|---------|
 | 13.1 | Config-Selbstmodifikation | DONE | 100% | edit_config Tool, Whitelist (easter_eggs, opinions, rooms) |
-| 13.2 | HA-Automationen generieren | **OFFEN** | 0% | **FEHLT: self_automation.py** |
+| 13.2 | HA-Automationen generieren | DONE | 95% | self_automation.py (946 Zeilen): LLM-basierte Generierung, Approval-Workflow, Rate-Limiting (5/Tag), Template-Matching, YAML-Preview, Audit-Logging, Service-Whitelist/Blacklist, 5-Min-TTL fuer Pending |
 | 13.3 | Neue Tools/Plugins | **OFFEN** | 0% | **FEHLT: tool_builder.py, Sandbox** |
 | 13.4 | Prompt-Selbstoptimierung | **OFFEN** | 0% | **FEHLT: self_optimizer.py** |
 
@@ -201,6 +201,7 @@
 | 2026-02-18 | — | Foundation F.1-F.5, Session-Timeout, Audit-Logging | Gesamt +2.4%, Sicherheit +5% |
 | 2026-02-18 | `a61705a` | **Luecken-Sprint (13 Fixes):** Rate-Limiting + CORS, Redis-Counter Selbstironie, Auto-Nacht-Whisper, Wartungs-History, Trust Raum-Scoping, 25 Opinion-Rules, 3 neue Geraete-Typen, Mood-Aktionen ausfuehrbar, Geburtstag-Check, Gaeste-WLAN, Wetter-Warnungen, Multi-Topic Konversation, Konflikt Raum-Scoping bei Gleichrang | Gesamt +2.3%, Sicherheit +5%, Phase 10: 84→90%, Phase 11: 85→90% |
 | 2026-02-18 | `3edee22` | **Alle 21 Luecken geschlossen:** Memory-Gags, Monthly Report, Energie-Briefing, Geo-Fence, Raum-Override, Relevanz-Filter, Rolladen-Timing, Kontext-Patterns, Datum-Parsing, Pitch-Control, Sound-Formate, Narration-Delays, Audio-Emotion, Speaker-Embedding, Music Auto-Follow, PDF-RAG, Kalender Delete/Verschieben, Live-Status, Kanal-Wahl, Health-Trends | Gesamt +4.3%, Phase 9: 78→95%, Phase 7: 88→97%, Phase 8: 86→94% |
+| 2026-02-19 | `d572d71` | **Status-Dokument aktualisiert:** Phase 13.2 (self_automation.py) als DONE 95% korrigiert (946 Zeilen, war faelschlich als OFFEN markiert). Zeilenzahlen aller Module aktualisiert. 7 neue Dateien in Tabelle ergaenzt (action_planner, memory_extractor, ollama_client, function_validator, inventory, health_monitor, automation_templates). Gesamt-Statistik: 51.000+ Zeilen, 117 Python-Dateien | Gesamt +1.6%, Phase 13: 25→48.8% |
 
 ---
 
@@ -218,12 +219,11 @@ _Keine verbleibenden Luecken in implementierten Features._
 |---|-----|:-----:|:-------:|:------:|
 | 22 | Phase 12.4: Model-Testing (Jarvis-Character-Test-Suite) | 12 | 4 Std | SKIP |
 | 23 | Phase 12.5: Fine-Tuning (LoRA) | 12 | Wochen | OFFEN |
-| 24 | Phase 13.2: HA-Automationen generieren | 13 | 6 Std | OFFEN |
-| 25 | Phase 13.3: Tool-Builder (Plugins) | 13 | 8 Std | OFFEN |
-| 26 | Phase 13.4: Prompt-Selbstoptimierung | 13 | 8 Std | OFFEN |
-| 27 | Phase 14.1: Vision / Kamera-Analyse | 14 | 10 Std | OFFEN |
-| 28 | Phase 14.2: Multi-Modal Input (OCR) | 14 | 6 Std | OFFEN |
-| 29 | Phase 15.3: Geraete-Beziehung (device_health.py) | 15 | 4 Std | OFFEN |
+| 24 | Phase 13.3: Tool-Builder (Plugins) | 13 | 8 Std | OFFEN |
+| 25 | Phase 13.4: Prompt-Selbstoptimierung | 13 | 8 Std | OFFEN |
+| 26 | Phase 14.1: Vision / Kamera-Analyse | 14 | 10 Std | OFFEN |
+| 27 | Phase 14.2: Multi-Modal Input (OCR) | 14 | 6 Std | OFFEN |
+| 28 | Phase 15.3: Geraete-Beziehung (device_health.py) | 15 | 4 Std | OFFEN |
 
 ---
 
@@ -240,7 +240,7 @@ Phase 10 (Multi-Room)       94.0%  ███████████████
 Phase 15 (Haushalt)         77.5%  ███████████████▓░░░░░
 Phase 12 (Authentizitaet)   58.0%  ████████████░░░░░░░░░
 Phase 14 (Wahrnehmung)      30.0%  ██████░░░░░░░░░░░░░░░
-Phase 13 (Selbstprog.)      25.0%  █████░░░░░░░░░░░░░░░░
+Phase 13 (Selbstprog.)      48.8%  ██████████░░░░░░░░░░░
 ```
 
 ---
@@ -249,47 +249,56 @@ Phase 13 (Selbstprog.)      25.0%  █████░░░░░░░░░░
 
 | Datei | Zeilen | Hauptfunktion |
 |-------|:------:|---------------|
-| brain.py | ~1520 | Zentrales Gehirn, orchestriert alle Komponenten |
-| personality.py | ~870 | Sarkasmus, Meinungen, Easter Eggs, Formality, Ironie-Counter, Memory-Gags, Monthly Report |
-| function_calling.py | ~1420 | 21 Tools inkl. delete_calendar, reschedule_calendar |
-| main.py | ~1250 | FastAPI Server, Dashboard-Auth, Live-Status, Health-Trends, Notification-Channels |
-| proactive.py | ~800 | Event-Listener, Diagnostik-Loop, Feedback, Geo-Fence, Auto-Follow |
-| routine_engine.py | ~880 | Morning/Night/Guest Routinen, Energie-Modul, Relevanz-Filter |
-| mood_detector.py | ~580 | Stress/Frustration/Muedigkeit/Stimmung, Audio-Emotion-Detection |
-| memory.py | ~400 | Working + Episodic Memory (Redis + ChromaDB) |
-| semantic_memory.py | ~370 | Fakten, Confidence, Duplikat-Erkennung |
-| context_builder.py | ~600 | Haus-Status, Wetter, Kalender, Raum-Kontext, Wetter-Warnungen |
-| tts_enhancer.py | ~320 | SSML, Volume, Whisper, Auto-Nacht-Whisper |
-| cooking_assistant.py | ~650 | Rezepte, Schritte, Timer |
-| knowledge_base.py | ~350 | RAG, Chunking, ChromaDB |
-| diagnostics.py | ~570 | Entity-Watchdog, System-Resources, Completion-History |
-| time_awareness.py | ~470 | 8 Geraete-Typen, Kaffee-Counter |
-| anticipation.py | ~370 | Pattern-Erkennung, Vorschlaege |
-| intent_tracker.py | ~340 | Intent-Extraktion, Deadline-Erinnerungen |
-| speaker_recognition.py | ~445 | Personen-Erkennung, Profile |
-| sound_manager.py | ~295 | Event-Sounds, Nacht-Volume |
-| ambient_audio.py | ~380 | Umgebungsgeraeusch-Erkennung, 9 Event-Typen |
-| conflict_resolver.py | ~560 | Multi-User Konfliktloesung, 4 Strategien inkl. Raum-Scoping |
-| autonomy.py | ~260 | Autonomie-Level, Trust-System, Raum-Scoping |
-| activity.py | ~200 | Aktivitaets-Erkennung, Silence-Matrix |
-| feedback.py | ~250 | Feedback-Tracking, Score-basierte Cooldowns |
-| summarizer.py | ~350 | Tages-Zusammenfassungen, Vektor-Suche |
-| model_router.py | ~200 | Fast/Smart/Deep Modell-Auswahl |
-| config.py | ~100 | YAML-Config Loader, Settings |
-| ha_client.py | ~250 | HA REST API + Retry-Logik |
-| websocket.py | ~100 | WebSocket Event-Emitter |
-| file_handler.py | ~150 | Datei-Upload, Text-Extraktion |
+| brain.py | ~1793 | Zentrales Gehirn, orchestriert alle Komponenten |
+| function_calling.py | ~1716 | 21 Tools inkl. delete_calendar, reschedule_calendar |
+| personality.py | ~1081 | Sarkasmus, Meinungen, Easter Eggs, Formality, Ironie-Counter, Memory-Gags, Monthly Report |
+| self_automation.py | ~946 | HA-Automationen generieren, Approval-Workflow, Rate-Limiting, Templates |
+| main.py | ~1412 | FastAPI Server, Dashboard-Auth, Live-Status, Health-Trends, Notification-Channels |
+| routine_engine.py | ~914 | Morning/Night/Guest Routinen, Energie-Modul, Relevanz-Filter |
+| proactive.py | ~817 | Event-Listener, Diagnostik-Loop, Feedback, Geo-Fence, Auto-Follow |
+| context_builder.py | ~728 | Haus-Status, Wetter, Kalender, Raum-Kontext, Wetter-Warnungen |
+| conflict_resolver.py | ~714 | Multi-User Konfliktloesung, 4 Strategien inkl. Raum-Scoping |
+| cooking_assistant.py | ~653 | Rezepte, Schritte, Timer |
+| mood_detector.py | ~642 | Stress/Frustration/Muedigkeit/Stimmung, Audio-Emotion-Detection |
+| diagnostics.py | ~565 | Entity-Watchdog, System-Resources, Completion-History |
+| speaker_recognition.py | ~536 | Personen-Erkennung, Profile |
+| semantic_memory.py | ~533 | Fakten, Confidence, Duplikat-Erkennung |
+| ambient_audio.py | ~505 | Umgebungsgeraeusch-Erkennung, 9 Event-Typen |
+| summarizer.py | ~483 | Tages-Zusammenfassungen, Vektor-Suche |
+| time_awareness.py | ~467 | 8 Geraete-Typen, Kaffee-Counter |
+| anticipation.py | ~454 | Pattern-Erkennung, Vorschlaege |
+| ha_client.py | ~433 | HA REST API + Retry-Logik |
+| knowledge_base.py | ~418 | RAG, Chunking, ChromaDB |
+| intent_tracker.py | ~413 | Intent-Extraktion, Deadline-Erinnerungen |
+| activity.py | ~411 | Aktivitaets-Erkennung, Silence-Matrix |
+| tts_enhancer.py | ~403 | SSML, Volume, Whisper, Auto-Nacht-Whisper |
+| feedback.py | ~384 | Feedback-Tracking, Score-basierte Cooldowns |
+| health_monitor.py | ~374 | CO2/Feuchte/Temp-Check, Scoring, Hydration-Reminder, Trends |
+| action_planner.py | ~353 | Aktions-Planung, Multi-Step Ausfuehrung |
+| sound_manager.py | ~317 | Event-Sounds, Nacht-Volume |
+| memory.py | ~272 | Working + Episodic Memory (Redis + ChromaDB) |
+| autonomy.py | ~245 | Autonomie-Level, Trust-System, Raum-Scoping |
+| memory_extractor.py | ~228 | Memory-Extraktion aus Konversationen |
+| model_router.py | ~223 | Fast/Smart/Deep Modell-Auswahl |
+| inventory.py | ~211 | Vorrats-Tracking, Ablaufdaten, Auto-Einkaufsliste |
+| file_handler.py | ~197 | Datei-Upload, Text-Extraktion |
+| ollama_client.py | ~133 | Ollama LLM-Client |
+| websocket.py | ~122 | WebSocket Event-Emitter |
+| function_validator.py | ~101 | Funktions-Validierung |
+| config.py | ~72 | YAML-Config Loader, Settings |
 | index.html | ~2500 | Dashboard SPA (8 Tabs, Auth, Settings) |
 | settings.yaml | ~850 | Hauptkonfiguration (27+ Sektionen) |
+| automation_templates.yaml | — | Vorlagen fuer HA-Automationen |
 | easter_eggs.yaml | ~80 | 12 Easter Eggs |
 | opinion_rules.yaml | ~305 | 25 Meinungsregeln (7 Kategorien) |
 | room_profiles.yaml | ~200 | 6 Raeume + Saisonal |
 | maintenance.yaml | ~50 | 5 Wartungsaufgaben |
 
-**Gesamt: ~16.400+ Zeilen Code, 35+ Dateien**
+**Assistant-Modul: ~20.270 Zeilen Code, 38 Python-Dateien**
+**Gesamt-Projekt (inkl. Addon, Engines, Domains, Routes): ~51.000+ Zeilen, 117 Python-Dateien**
 
 ---
 
-> **Hinweis:** Alle 21 kleinen Luecken geschlossen! 8 komplett fehlende Module verbleibend (Phase 12-15).
+> **Hinweis:** Alle 21 kleinen Luecken geschlossen! 7 komplett fehlende Module verbleibend (Phase 12-15).
 > Sicherheits-Audit vollstaendig (alle 13/13 Punkte SICHER). Foundation komplett (5/5 DONE).
-> **Gesamt: ~17.600+ Zeilen Code, 35+ Dateien**
+> **Assistant-Modul: ~20.270 Zeilen, 38 Python-Dateien | Gesamt-Projekt: ~51.000+ Zeilen, 117 Python-Dateien**
