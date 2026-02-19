@@ -380,6 +380,19 @@ class AssistantBrain:
                 "context_room": room or "unbekannt",
             }
 
+        # Phase 13.4: Optimierungs-Vorschlag Bestaetigung
+        opt_result = await self._handle_optimization_confirmation(text)
+        if opt_result:
+            await self.memory.add_conversation("user", text)
+            await self.memory.add_conversation("assistant", opt_result)
+            await emit_speaking(opt_result)
+            return {
+                "response": opt_result,
+                "actions": [],
+                "model_used": "self_optimization",
+                "context_room": room or "unbekannt",
+            }
+
         # Phase 8: Explizites Notizbuch — Memory-Befehle (VOR allem anderen)
         memory_result = await self._handle_memory_command(text, person or "")
         if memory_result:
@@ -1395,6 +1408,48 @@ class AssistantBrain:
             if self.self_automation._pending:
                 self.self_automation._pending.clear()
                 return "Automation verworfen."
+
+        return None
+
+    # ------------------------------------------------------------------
+    # Phase 13.4: Optimierungs-Vorschlag Bestaetigung (Chat)
+    # ------------------------------------------------------------------
+
+    async def _handle_optimization_confirmation(self, text: str) -> Optional[str]:
+        """Erkennt Optimierungs-Bestaetigungen im Chat.
+
+        SICHERHEIT: Jarvis kann NIEMALS selbst Vorschlaege genehmigen.
+        Nur explizite User-Eingaben loesen approve_proposal() aus.
+        """
+        proposals = await self.self_optimization.get_pending_proposals()
+        if not proposals:
+            return None
+
+        text_lower = text.lower().strip().rstrip("!?.")
+
+        # "Vorschlag 1 annehmen" / "Vorschlag 2 ablehnen"
+        import re
+        approve_match = re.search(r"vorschlag\s+(\d+)\s+(annehmen|genehmigen|akzeptieren|ok)", text_lower)
+        if approve_match:
+            idx = int(approve_match.group(1)) - 1  # 1-basiert -> 0-basiert
+            result = await self.self_optimization.approve_proposal(idx)
+            if result["success"]:
+                # yaml_config im Speicher aktualisieren
+                from .config import load_yaml_config
+                import assistant.config as cfg
+                cfg.yaml_config = load_yaml_config()
+            return result.get("message", "")
+
+        reject_match = re.search(r"vorschlag\s+(\d+)\s+(ablehnen|verwerfen|nein)", text_lower)
+        if reject_match:
+            idx = int(reject_match.group(1)) - 1
+            result = await self.self_optimization.reject_proposal(idx)
+            return result.get("message", "")
+
+        # "Alle Vorschlaege ablehnen"
+        if any(t in text_lower for t in ["alle vorschlaege ablehnen", "alle ablehnen", "vorschlaege verwerfen"]):
+            result = await self.self_optimization.reject_all()
+            return result.get("message", "")
 
         return None
 

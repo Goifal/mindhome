@@ -734,7 +734,7 @@ function renderCurrentTab() {
     case 'tab-voice': c.innerHTML = renderVoice(); break;
     case 'tab-routines': c.innerHTML = renderRoutines(); break;
     case 'tab-security': c.innerHTML = renderSecurity(); break;
-    case 'tab-autonomie': c.innerHTML = renderAutonomie(); loadSnapshots(); break;
+    case 'tab-autonomie': c.innerHTML = renderAutonomie(); loadSnapshots(); loadOptStatus(); break;
     case 'tab-eastereggs': c.innerHTML = renderEasterEggs(); loadEasterEggs(); break;
   }
   bindFormEvents();
@@ -1194,8 +1194,7 @@ function renderAutonomie() {
     '<p style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;">Jarvis analysiert Interaktionen und schlaegt Parameter-Anpassungen vor. Kern-Identitaet (CODEX, Response-Filter) ist NICHT aenderbar.</p>' +
     fToggle('self_optimization.enabled', 'Selbstoptimierung aktiv') +
     fSelect('self_optimization.approval_mode', 'Genehmigungsmodus', [
-      {v:'manual', l:'Manuell (sicherste Option)'},
-      {v:'auto_safe', l:'Auto-Safe (kleine Aenderungen auto)'},
+      {v:'manual', l:'Manuell (nur mit Bestaetigung)'},
       {v:'off', l:'Aus (keine Vorschlaege)'}
     ]) +
     fSelect('self_optimization.analysis_interval', 'Analyse-Intervall', [
@@ -1204,6 +1203,11 @@ function renderAutonomie() {
     ]) +
     fNum('self_optimization.max_proposals_per_cycle', 'Max. Vorschlaege pro Zyklus', 1, 10) +
     fText('self_optimization.model', 'Analyse-Modell', 'z.B. qwen3:14b')
+  ) +
+  sectionWrap('&#128203;', 'Vorschlaege (Approval-Workflow)',
+    '<p style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;">Jarvis macht nur Vorschlaege — DU entscheidest ob sie angewendet werden. Jede Aenderung wird vorher gesnapshot.</p>' +
+    '<div id="proposalsList" style="margin-bottom:12px;"></div>' +
+    '<button class="btn btn-secondary" style="font-size:12px;" onclick="runAnalysis()">Analyse jetzt starten</button>'
   ) +
   sectionWrap('&#128190;', 'Rollback & Snapshots',
     '<p style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;">Jede Config-Aenderung wird gesichert. Rollback jederzeit moeglich.</p>' +
@@ -1252,6 +1256,83 @@ function renderAutonomie() {
       '<span style="font-size:11px;color:var(--text-muted);margin-left:auto;">NUR durch User aenderbar</span></div>' +
     '</div>'
   );
+}
+
+async function loadOptStatus() {
+  try {
+    const data = await api('/api/ui/self-optimization/status');
+    renderProposalList(data.proposals || []);
+  } catch(e) { console.error('OptStatus fail:', e); }
+}
+
+function renderProposalList(proposals) {
+  const c = document.getElementById('proposalsList');
+  if (!c) return;
+  if (proposals.length === 0) {
+    c.innerHTML = '<div style="padding:12px;text-align:center;color:var(--text-muted);font-size:12px;">Keine offenen Vorschlaege</div>';
+    return;
+  }
+  c.innerHTML = '<div style="font-weight:600;font-size:13px;margin-bottom:8px;">Offene Vorschlaege:</div>' +
+    proposals.map((p, i) => {
+      const conf = Math.round((p.confidence || 0) * 100);
+      return `<div style="padding:8px;margin-bottom:6px;background:var(--bg-secondary);border-radius:6px;border-left:3px solid var(--warning);">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+          <span style="font-weight:600;font-size:13px;">${esc(p.parameter)}: ${esc(String(p.current))} &#8594; ${esc(String(p.proposed))}</span>
+          <span style="font-size:11px;color:var(--text-muted);background:var(--bg-primary);padding:2px 6px;border-radius:4px;">${conf}%</span>
+        </div>
+        <div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;">${esc(p.reason)}</div>
+        <div style="display:flex;gap:6px;justify-content:flex-end;">
+          <button class="btn btn-secondary" style="padding:3px 10px;font-size:11px;background:var(--danger);border-color:var(--danger);color:white;" onclick="rejectProposal(${i})">Ablehnen</button>
+          <button class="btn btn-primary" style="padding:3px 10px;font-size:11px;" onclick="approveProposal(${i})">Annehmen</button>
+        </div>
+      </div>`;
+    }).join('') +
+    (proposals.length > 1 ? '<div style="text-align:right;margin-top:6px;"><button class="btn btn-secondary" style="padding:3px 12px;font-size:11px;" onclick="rejectAllProposals()">Alle ablehnen</button></div>' : '');
+}
+
+async function approveProposal(index) {
+  if (!confirm('Diesen Vorschlag wirklich anwenden? (Snapshot wird vorher erstellt)')) return;
+  try {
+    const result = await api('/api/ui/self-optimization/approve', 'POST', {index});
+    if (result.success) {
+      toast('Angewendet: ' + result.message);
+      S = await api('/api/ui/settings');
+      renderCurrentTab();
+      loadOptStatus();
+      loadSnapshots();
+    } else {
+      toast(result.message, 'error');
+    }
+  } catch(e) { toast('Fehler', 'error'); }
+}
+
+async function rejectProposal(index) {
+  try {
+    const result = await api('/api/ui/self-optimization/reject', 'POST', {index});
+    if (result.success) {
+      toast('Abgelehnt');
+      loadOptStatus();
+    }
+  } catch(e) { toast('Fehler', 'error'); }
+}
+
+async function rejectAllProposals() {
+  try {
+    const result = await api('/api/ui/self-optimization/reject-all', 'POST', {});
+    if (result.success) {
+      toast(result.message);
+      loadOptStatus();
+    }
+  } catch(e) { toast('Fehler', 'error'); }
+}
+
+async function runAnalysis() {
+  toast('Analyse wird gestartet...', 'info');
+  try {
+    const result = await api('/api/ui/self-optimization/run-analysis', 'POST', {});
+    toast(result.message);
+    loadOptStatus();
+  } catch(e) { toast('Analyse-Fehler', 'error'); }
 }
 
 async function loadSnapshots() {

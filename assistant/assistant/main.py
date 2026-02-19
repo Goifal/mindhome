@@ -1467,6 +1467,67 @@ async def ui_self_opt_status(token: str = ""):
         raise HTTPException(status_code=500, detail=f"Fehler: {e}")
 
 
+class ProposalAction(BaseModel):
+    index: int
+
+
+@app.post("/api/ui/self-optimization/approve")
+async def ui_self_opt_approve(req: ProposalAction, token: str = ""):
+    """User genehmigt einen Optimierungs-Vorschlag (explizite Zustimmung)."""
+    _check_token(token)
+    try:
+        result = await brain.self_optimization.approve_proposal(req.index)
+        if result["success"]:
+            # yaml_config im Speicher aktualisieren
+            import assistant.config as cfg
+            cfg.yaml_config = load_yaml_config()
+            _audit_log("self_opt_approve", {"index": req.index, "message": result.get("message", "")})
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
+@app.post("/api/ui/self-optimization/reject")
+async def ui_self_opt_reject(req: ProposalAction, token: str = ""):
+    """User lehnt einen Optimierungs-Vorschlag ab."""
+    _check_token(token)
+    try:
+        result = await brain.self_optimization.reject_proposal(req.index)
+        if result["success"]:
+            _audit_log("self_opt_reject", {"index": req.index})
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
+@app.post("/api/ui/self-optimization/reject-all")
+async def ui_self_opt_reject_all(token: str = ""):
+    """User lehnt alle Optimierungs-Vorschlaege ab."""
+    _check_token(token)
+    try:
+        result = await brain.self_optimization.reject_all()
+        if result["success"]:
+            _audit_log("self_opt_reject_all", {})
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
+@app.post("/api/ui/self-optimization/run-analysis")
+async def ui_self_opt_run_analysis(token: str = ""):
+    """Manuelle Analyse-Ausloesung (nur durch User, nie automatisch)."""
+    _check_token(token)
+    try:
+        proposals = await brain.self_optimization.run_analysis()
+        return {
+            "success": True,
+            "proposals": proposals,
+            "message": f"{len(proposals)} Vorschlag/Vorschlaege generiert" if proposals else "Keine Vorschlaege — alles optimal",
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
 def _deep_merge(base: dict, override: dict):
     """Tiefer Merge von override in base (in-place)."""
     for key, value in override.items():
