@@ -519,3 +519,393 @@ sudo lsof -i :6379            # Wer belegt Port 6379?
 
 Der Assistant-PC kommuniziert mit Home Assistant ueber das lokale Netzwerk.
 Kein Internet noetig fuer den Betrieb (nur fuer Installation).
+
+---
+---
+
+# Konfiguration — Alles einstellen
+
+Nach der Installation muss der Assistant konfiguriert werden.
+Es gibt **zwei Stellen**: die `.env` Datei und die `settings.yaml`.
+
+---
+
+## Teil A: MindHome Add-on mit Assistant verbinden
+
+Das MindHome Add-on auf deinem Home Assistant muss wissen, wo der Assistant-PC laeuft.
+
+### Im MindHome Web-UI:
+
+1. Oeffne MindHome im Browser (z.B. `http://192.168.1.100:8099`)
+2. Gehe zu **Einstellungen**
+3. Trage unter **"Assistant URL"** die Adresse deines Assistant-PCs ein:
+   ```
+   http://192.168.1.50:8200
+   ```
+   (Ersetze `192.168.1.50` mit der IP deines Assistant-PCs)
+4. Klicke **Speichern**
+5. Teste die Verbindung — es sollte "Verbunden" anzeigen
+
+### Was passiert im Hintergrund:
+
+Das Add-on leitet Chat-Nachrichten an `http://<assistant-ip>:8200/api/assistant/chat` weiter.
+Wenn die URL nicht gesetzt ist, versucht es den Fallback `http://192.168.1.100:8200`.
+
+---
+
+## Teil B: .env — Pflicht-Einstellungen
+
+Datei: `~/mindhome/assistant/.env`
+
+```bash
+nano ~/mindhome/assistant/.env
+```
+
+### MUSS gesetzt werden:
+
+```env
+# 1. Home Assistant Adresse
+HA_URL=http://192.168.1.100:8123
+
+# 2. Long-Lived Access Token (aus HA → Profil → Langlebige Zugriffstoken)
+HA_TOKEN=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.dein.token.hier
+
+# 3. Dein Name (so kennt Jarvis dich)
+USER_NAME=Max
+```
+
+### SOLLTE gesetzt werden:
+
+```env
+# MindHome Add-on Adresse (wenn installiert)
+MINDHOME_URL=http://192.168.1.100:8099
+
+# Assistent-Name (Standard: Jarvis)
+ASSISTANT_NAME=Jarvis
+```
+
+### NICHT aendern (funktioniert automatisch):
+
+```env
+OLLAMA_URL=http://host.docker.internal:11434
+REDIS_URL=redis://redis:6379
+CHROMA_URL=http://chromadb:8000
+ASSISTANT_HOST=0.0.0.0
+ASSISTANT_PORT=8200
+```
+
+Nach jeder Aenderung:
+```bash
+cd ~/mindhome/assistant && docker compose restart assistant
+```
+
+---
+
+## Teil C: settings.yaml — Alle Einstellungen
+
+Datei: `~/mindhome/assistant/config/settings.yaml`
+
+```bash
+nano ~/mindhome/assistant/config/settings.yaml
+```
+
+Die Datei ist gross (~900 Zeilen) und gut kommentiert.
+Hier eine Uebersicht was du anpassen **solltest**, **kannst** und was du **lassen kannst**.
+
+---
+
+### C1: Identitaet (SOLLTE anpassen)
+
+```yaml
+assistant:
+  name: "Jarvis"       # Name deines Assistenten
+  language: "de"        # "de" oder "en"
+```
+
+```yaml
+persons:
+  titles:
+    # Wie Jarvis Personen anspricht
+    # Hauptbenutzer (USER_NAME) = automatisch "Sir"
+    # Weitere Personen hier:
+    lisa: "Ms. Lisa"
+    thomas: "Thomas"
+```
+
+---
+
+### C2: Autonomie-Level (SOLLTE anpassen)
+
+```yaml
+autonomy:
+  level: 2    # Wie eigenstaendig soll Jarvis sein?
+```
+
+| Level | Name | Was Jarvis darf |
+|-------|------|-----------------|
+| 1 | Assistent | Nur auf Befehle reagieren |
+| 2 | Butler | + Proaktive Infos geben (empfohlen) |
+| 3 | Mitbewohner | + Kleine Aenderungen selbst machen |
+| 4 | Vertrauter | + Routinen anpassen |
+| 5 | Autopilot | + Automationen erstellen |
+
+---
+
+### C3: LLM-Modelle (NUR anpassen wenn andere Modelle)
+
+```yaml
+models:
+  fast: "qwen3:4b"      # Einfache Befehle (Licht an/aus)
+  smart: "qwen3:14b"    # Normale Gespraeche
+  deep: "qwen3:32b"     # Komplexe Analysen
+```
+
+Jarvis waehlt automatisch das passende Modell:
+- "Licht an" → fast (schnell, 4B)
+- "Was meinst du zum Wetter?" → smart (14B)
+- "Erklaere mir den Unterschied zwischen..." → deep (32B)
+
+Wenn du nur `qwen3:4b` installiert hast, setze alle drei auf `qwen3:4b`.
+
+---
+
+### C4: Persoenlichkeit (KANN anpassen — macht Spass)
+
+```yaml
+personality:
+  style: "butler"        # butler, minimal, freundlich
+  sarcasm_level: 3       # 1-5 (1=sachlich, 5=Vollgas Ironie)
+  opinion_intensity: 2   # 0-3 (0=still, 3=redselig)
+  self_irony_enabled: true
+  character_evolution: true   # Jarvis wird mit der Zeit persoenlicher
+  formality_start: 80         # Startet formell (0-100)
+  formality_min: 30           # Wird nie unter 30 (bleibt hoeflich)
+```
+
+**Tageszeit-abhaengiges Verhalten** (funktioniert automatisch):
+
+| Zeit | Stil |
+|------|------|
+| 05-08 Uhr | Ruhig, minimal, kein Humor |
+| 08-12 Uhr | Sachlich, effizient |
+| 12-18 Uhr | Normal, trockener Humor |
+| 18-22 Uhr | Entspannt, mehr Humor |
+| 22-05 Uhr | Nur Notfaelle, Fluestern |
+
+---
+
+### C5: Geraete-Zuordnung (SOLLTE anpassen — wichtig fuer Features)
+
+Hier musst du **deine echten Entity-IDs** aus Home Assistant eintragen.
+
+So findest du deine Entity-IDs:
+1. Home Assistant → Einstellungen → Geraete & Dienste → Entitaeten
+2. Oder: Entwicklerwerkzeuge → Zustande → Suchen
+
+#### Media Player (fuer Multi-Room Audio):
+
+```yaml
+activity:
+  entities:
+    media_players:
+      - "media_player.wohnzimmer_speaker"    # ← deine echten IDs
+      - "media_player.kueche_speaker"
+      - "media_player.schlafzimmer_speaker"
+```
+
+#### Sensoren (fuer Schlaf/Aktivitaets-Erkennung):
+
+```yaml
+    bed_sensors:
+      - "binary_sensor.bett_besetzt"         # ← Bett-Sensor (falls vorhanden)
+    pc_sensors:
+      - "binary_sensor.pc_aktiv"             # ← PC-Status (falls vorhanden)
+      - "switch.pc_buero"
+    mic_sensors:
+      - "binary_sensor.mikrofon_aktiv"       # ← Mikrofon-Status (falls vorhanden)
+```
+
+Wenn du einen Sensor nicht hast → Zeile auskommentieren mit `#` oder loeschen.
+
+#### Multi-Room Speaker (fuer "Jarvis folgt dir durchs Haus"):
+
+```yaml
+multi_room:
+  enabled: true
+  room_speakers:
+    wohnzimmer: "media_player.wohnzimmer_speaker"
+    kueche: "media_player.kueche_speaker"
+    schlafzimmer: "media_player.schlafzimmer_speaker"
+    buero: "media_player.buero_speaker"
+  room_motion_sensors:
+    wohnzimmer: "binary_sensor.wohnzimmer_bewegung"
+    kueche: "binary_sensor.kueche_bewegung"
+    schlafzimmer: "binary_sensor.schlafzimmer_bewegung"
+```
+
+#### Alarm-Sensoren (fuer Sicherheits-Events):
+
+```yaml
+ambient_audio:
+  sensor_mappings:
+    binary_sensor.rauchmelder_kueche: "smoke_alarm"
+    binary_sensor.wassermelder_keller: "water_alarm"
+    binary_sensor.tuerklingel: "doorbell"
+    # binary_sensor.glasbruch_wohnzimmer: "glass_break"   # auskommentiert = nicht aktiv
+```
+
+---
+
+### C6: Routinen (KANN anpassen)
+
+#### Morgen-Briefing:
+
+```yaml
+routines:
+  morning_briefing:
+    enabled: true
+    modules:
+      - greeting       # "Guten Morgen, Sir"
+      - weather        # Wetter-Vorhersage
+      - calendar       # Naechste Termine
+      - energy         # Solar / Strompreis
+      - house_status   # Fenster/Lichter/Temperatur
+    morning_actions:
+      covers_up: true      # Rolladen hoch
+      lights_soft: true    # Licht sanft an (30%)
+```
+
+#### Gute-Nacht-Routine:
+
+```yaml
+  good_night:
+    enabled: true
+    checks:
+      - windows      # "Kueche-Fenster ist noch offen"
+      - doors        # "Haustuer ist nicht abgeschlossen"
+      - alarm        # "Alarm ist nicht scharf"
+      - lights       # "3 Lichter noch an"
+      - appliances   # "Ofen laeuft noch!"
+    actions:
+      lights_off: true         # Alle Lichter aus
+      heating_night: true      # Heizung Nacht-Modus
+      covers_down: true        # Rolladen runter
+      alarm_arm_home: true     # Alarm scharf
+```
+
+---
+
+### C7: Sicherheit (SOLLTE pruefen)
+
+```yaml
+security:
+  require_confirmation:
+    - "lock_door:unlock"     # Tuer aufschliessen braucht Bestaetigung
+    - "set_alarm:disarm"     # Alarm deaktivieren braucht Bestaetigung
+    - "set_climate:off"      # Heizung komplett aus braucht Bestaetigung
+  climate_limits:
+    min: 15    # Nie unter 15°C heizen
+    max: 28    # Nie ueber 28°C heizen
+```
+
+#### Vertrauensstufen (bei mehreren Personen):
+
+```yaml
+trust_levels:
+  default: 0     # Unbekannte = Gast
+  persons:
+    max: 2       # Owner — voller Zugriff
+    lisa: 1      # Mitbewohner — alles ausser Sicherheit
+```
+
+| Level | Wer | Darf |
+|-------|-----|------|
+| 0 | Gast | Licht, Heizung, Musik |
+| 1 | Mitbewohner | Alles ausser Alarm/Schloss |
+| 2 | Owner | Alles |
+
+---
+
+### C8: Lautstaerke (KANN anpassen)
+
+```yaml
+volume:
+  day: 0.8          # Tagsueber: 80%
+  evening: 0.5      # Ab 22 Uhr: 50%
+  night: 0.3        # Nach Mitternacht: 30%
+  sleeping: 0.2     # Wenn jemand schlaeft: 20%
+  emergency: 1.0    # Notfall: immer 100%
+  whisper: 0.15     # Fluestermodus: 15%
+```
+
+---
+
+### C9: Zeitueberwachung (KANN anpassen)
+
+```yaml
+time_awareness:
+  thresholds:
+    oven: 60               # Ofen > 60 Min → Warnung
+    iron: 30               # Buegeleisen > 30 Min → Warnung
+    light_empty_room: 30   # Licht in leerem Raum > 30 Min
+    window_open_cold: 120  # Fenster offen bei <10°C > 2h
+    pc_no_break: 360       # 6h PC ohne Pause → "Mach mal Pause"
+  counters:
+    coffee_machine: true   # "Das ist dein dritter Kaffee heute"
+```
+
+---
+
+### C10: Was funktioniert OHNE Konfiguration
+
+Diese Features brauchen **keine Entity-IDs** und laufen sofort:
+
+| Feature | Warum |
+|---------|-------|
+| Chat / Gespraeche | Braucht nur HA-Token |
+| Licht steuern | Findet `light.*` automatisch |
+| Heizung steuern | Findet `climate.*` automatisch |
+| Rolladen steuern | Findet `cover.*` automatisch |
+| Szenen aktivieren | Entdeckt `scene.*` automatisch |
+| Tuerschloss | Findet `lock.*` automatisch |
+| Gedaechtnis | Redis + ChromaDB laufen in Docker |
+| Persoenlichkeit | Defaults aus settings.yaml |
+| Stimmungserkennung | Analysiert Text automatisch |
+| Koch-Assistent | Braucht nur LLM |
+| Anomalie-Erkennung | Ueberwacht alle Sensoren automatisch |
+
+---
+
+## Konfigurations-Checkliste
+
+### Pflicht (laeuft sonst nicht):
+
+- [ ] `.env`: `HA_URL` = IP deines Home Assistant
+- [ ] `.env`: `HA_TOKEN` = Langlebiger Zugriffstoken
+- [ ] `.env`: `USER_NAME` = Dein Vorname
+- [ ] MindHome Add-on: Assistant URL = `http://<assistant-ip>:8200`
+- [ ] Firewall: Port 8200 und 11434 offen
+- [ ] Ollama: Mindestens `qwen3:4b` installiert
+
+### Empfohlen (deutlich besser damit):
+
+- [ ] `settings.yaml`: Autonomie-Level setzen (2 empfohlen)
+- [ ] `settings.yaml`: Media Player Entity-IDs eintragen
+- [ ] `settings.yaml`: Multi-Room Speaker + Bewegungsmelder zuordnen
+- [ ] `settings.yaml`: Personen-Titel setzen (bei mehreren Bewohnern)
+- [ ] `settings.yaml`: Trust-Levels setzen (bei mehreren Bewohnern)
+- [ ] `settings.yaml`: Alarm-Sensoren zuordnen (Rauch, Wasser, Klingel)
+
+### Optional (Feintuning):
+
+- [ ] `settings.yaml`: Persoenlichkeit anpassen (Sarkasmus, Meinungen)
+- [ ] `settings.yaml`: Lautstaerke-Stufen anpassen
+- [ ] `settings.yaml`: Gute-Nacht-Checks konfigurieren
+- [ ] `settings.yaml`: Morgen-Briefing Module waehlen
+- [ ] `settings.yaml`: Zeitueberwachungs-Schwellen anpassen
+
+### Nach jeder Aenderung an settings.yaml:
+
+```bash
+cd ~/mindhome/assistant && docker compose restart assistant
+```
