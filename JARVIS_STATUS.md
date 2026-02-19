@@ -11,6 +11,7 @@
 |-----------|:-----:|:-----:|
 | **Funktionsumfang (vs. Masterplan)** | **99.8%** | +0.2% |
 | **Jarvis-Authentizitaet (vs. MCU Jarvis)** | **90.0%** | +2.0% |
+| **MCU-Jarvis Transformation (Phase 17+)** | **32.0%** | NEU |
 | **Sicherheit** | **99.5%** | +1.5% |
 | **Code-Qualitaet** | **94%** | +8% |
 | **Konfigurierbarkeit** | **98%** | +1% |
@@ -224,6 +225,7 @@
 | 2026-02-19 | `e28f6a7` | **Audit Sprint 2:** Connection Safety, room_all Fix, call_service kwargs→dict | Code-Qualitaet +1% |
 | 2026-02-19 | `9a91341` | **Comprehensive Audit (50+ Bugs):** 11 Critical (NameError, event mismatches, operator precedence, vacation_auto_activated, PIN bypass, XSS, banned words, LLM constraints), 16 High (UTC/time fixes, request.json guards, personality redis), 15 Medium. 13 Dateien, 500+ Zeilen geaendert | Sicherheit +1%, Code-Qualitaet +4% |
 | 2026-02-19 | `173b4be` | **Remaining 12 Audit Issues:** PBKDF2-HMAC-SHA256 PIN-Hashing mit Salt, SSRF-Schutz (Private-Network-Only), Backup-Export filtert Sensitive Settings, Hot-Update Size-Limit+Script-Block, DB Rollback in Error-Paths, heating_curve_away_offset Key-Fallback, DELETE 404 statt 200, Exception-Leak-Schutz (~50 Stellen), Threading Lock Watchdog, Private Attribute Access entfernt, ASSISTANT_TOOLS dynamisch, Jarvis-Ton Fehlermeldungen. 13 Dateien, 224 Insertions | Sicherheit +0.5%, Code-Qualitaet +1% |
+| 2026-02-19 | — | **Phase 17+ MCU-Jarvis Transformation (10 Features):** Kompletter End-to-End Code-Audit aller 39 Module. Funktionsstatus ermittelt: 32% funktional. 10 neue Features definiert: Continuous Presence, Kamera/Vision, Echte Initiative, Pushback & Fuersorglichkeit, Kommunikations-Management, Emergency Protocols, Daten-Analyse, Streaming & Interrupts, Langzeit-Beziehung, Werkstatt-Assistent. Quick Wins identifiziert (Morning Briefing Auto-Trigger, Summarizer Callback, Boot-Sequenz TTS). Abhaengigkeiten und Reihenfolge dokumentiert. ~112 Stunden geschaetzter Gesamtaufwand | Phase 17: NEU 32% |
 | 2026-02-19 | — | **Phase 14.2 Multi-Modal Input (OCR):** ocr.py (~250 Zeilen): Tesseract-OCR (deu+eng) mit Bild-Preprocessing (Upscale, Kontrast, Schaerfe), Vision-LLM via Ollama (llava etc.) mit Base64-Encoding + Redis-Cache (24h TTL). file_handler.py OCR-Integration fuer jpg/jpeg/png/gif/webp/bmp. build_file_context() zeigt OCR-Text + Bild-Analyse separat. brain.py OCREngine Init + Vision-LLM in Process-Pipeline. Dockerfile + requirements.txt (tesseract-ocr, pytesseract, Pillow). settings.yaml OCR-Konfiguration. 22 Tests (test_ocr.py) | Phase 14: 30→63.3% |
 
 ---
@@ -249,6 +251,59 @@ _Keine verbleibenden Luecken in implementierten Features._
 
 ---
 
+## PHASE 17+ — MCU-Jarvis Transformation (32% funktional)
+
+> **Analyse:** 2026-02-19 | End-to-End Code-Trace aller 39 Module
+> **Erkenntnis:** Die Technik ist da. Was fehlt, ist die Seele.
+
+| # | Feature | Funktional | Quick Wins | Details |
+|---|---------|:----------:|:----------:|---------|
+| 17.1 | Continuous Presence | 30% | Boot-TTS, Morning Auto-Trigger, Summarizer Callback | Activity Detection + Silence Matrix funktionieren. Kein Heartbeat, kein Situationsmodell |
+| 17.2 | Kamera/Vision | 5% | — | Nur OCR. Keine Kamera-Integration (Phase 14.1 OFFEN) |
+| 17.3 | Echte Initiative | 45% | — | Events+Anticipation+TimeAwareness funktionieren. Kein Vorausdenken, keine Background-Analyse |
+| 17.4 | Pushback & Fuersorglichkeit | 50% | — | 30+ Opinion Rules + Memory-Injection funktionieren. Keine Nachsorge, keine Fuersorge |
+| 17.5 | Kommunikations-Management | 60% | — | Silence Matrix + Volume + Batch top. Interrupt ist `pass`, kein Queuing |
+| 17.6 | Emergency Protocols | 20% | — | Prioritaeten funktionieren. Keine Protokolle, keine Eskalation, kein Override |
+| 17.7 | Daten-Analyse & Insights | 25% | Summarizer Callback | Summaries generiert aber nie zugestellt. Keine Trends, keine Kosten |
+| 17.8 | Streaming & Interrupts | 20% | — | WebSocket Events funktionieren. Kein Streaming, Interrupt ist `pass` |
+| 17.9 | Langzeit-Beziehung | 45% | — | Fakten-Memory + Formality + Gags funktionieren. Keine Autonomie-Evolution |
+| 17.10 | Werkstatt-Assistent | 15% | — | Nur Koch-Assistent + Inventar. Keine Werkstatt-Logik |
+
+### End-to-End Funktionsstatus (Was der User tatsaechlich erlebt)
+
+**Funktioniert End-to-End (Trigger → TTS/UI):**
+- ✅ Proaktive Event-Meldungen (Alarm, Ankunft, Tuerklingel → TTS)
+- ✅ Time Awareness Alerts (Ofen >60min, Buegeleisen >30min → TTS)
+- ✅ Device Health Anomalien (2σ-Baseline → TTS)
+- ✅ Anticipation Vorschlaege (Pattern Match → TTS, braucht >10 historische Aktionen)
+- ✅ Opinion Pushback (check_opinion bei jeder Funktionsausfuehrung)
+- ✅ Memory Extraction + Injection (nach jeder Antwort → vor jeder Antwort)
+- ✅ Silence Matrix + Volume (7 Aktivitaeten × 4 Prioritaeten)
+- ✅ Response Filter (40+ Phrasen entfernt)
+- ✅ Sound Events (confirmed/error ueber Media Player)
+- ✅ SSML/TTS Enhancement (Speed, Pitch, Pausen, Emphasis)
+- ✅ Formality Decay (einmal pro Tag, 4 Stufen)
+- ✅ Running Gags (Wiederholte Fragen, Thermostat-Krieg)
+
+**Code existiert, aber NICHT End-to-End:**
+- ⚠️ Morning Briefing: Code komplett, aber **kein Auto-Trigger** (nur manuell via API/Chat)
+- ⚠️ Tages-Zusammenfassungen: Werden generiert, aber **nie proaktiv gesprochen** (kein Callback)
+- ⚠️ Mood Detection: Erkennt 5 Zustaende, aber **schwach in Response integriert**
+
+**Nicht implementiert:**
+- ❌ Boot-Sequenz gesprochen (nur Logger)
+- ❌ WebSocket Interrupt (`pass`)
+- ❌ Autonomie-Evolution (statisch in YAML)
+- ❌ Zukunftsplanung (Kalender + Wetter + Muster)
+- ❌ Benannte Protokolle
+- ❌ Zeitliche Eskalation bei Gefahr
+- ❌ Kamera/Vision
+- ❌ Token-Streaming
+- ❌ Fuersorge-Meldungen (Essen, Pausen)
+- ❌ Hintergrund-Analyse mit Rueckmeldung
+
+---
+
 ## BALKENDIAGRAMM
 
 ```
@@ -263,6 +318,7 @@ Phase 10 (Multi-Room)       94.0%  ███████████████
 Phase 12 (Authentizitaet)   58.0%  ████████████░░░░░░░░░
 Phase 13 (Selbstprog.)      48.8%  ██████████░░░░░░░░░░░
 Phase 14 (Wahrnehmung)      63.3%  █████████████░░░░░░░░
+Phase 17+(MCU-Jarvis)       32.0%  ███████░░░░░░░░░░░░░░
 ```
 
 ---
@@ -326,4 +382,5 @@ Phase 14 (Wahrnehmung)      63.3%  █████████████░░
 > Sicherheits-Audit vollstaendig (alle 26/26 Punkte SICHER). Foundation komplett (7/7 DONE).
 > Comprehensive Code-Audit: 62+ Bugs gefixt (11 Critical, 16 High, 15 Medium, 12 Remaining).
 > Dual Heating Mode (21 Dateien), Voice I/O (Whisper+Piper), GradualTransitioner gefixt.
+> **NEU: Phase 17+ MCU-Jarvis Transformation — 10 Features, 32% funktional, ~112 Stunden geschaetzt.**
 > **Assistant-Modul: ~21.008 Zeilen, 39 Python-Dateien | Gesamt-Projekt: ~52.200+ Zeilen, 118 Python-Dateien**

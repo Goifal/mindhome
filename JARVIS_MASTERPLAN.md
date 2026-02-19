@@ -165,6 +165,18 @@ Phase 15     📋  Jarvis Haushalt & Fuersorge (4 Features — Gesundheit, Einka
      │
 Phase 16     📋  Jarvis fuer Alle (3 Features — Konflikte, Onboarding, Dashboard)
      │
+Phase 17+    🆕  MCU-Jarvis Transformation (10 Features — Das letzte Stueck zum echten Jarvis)
+     │           ├─ 17.1  Continuous Presence (Boot-Sequenz, Situationsmodell, Auto-Trigger)
+     │           ├─ 17.2  Kamera/Vision (Tuerkamera, Personen, Sicherheit)
+     │           ├─ 17.3  Echte Initiative (Zukunftsplanung, Hintergrund-Analyse, Deltas)
+     │           ├─ 17.4  Pushback & Fuersorglichkeit (Memory-Pushback, Nachsorge, Fuersorge)
+     │           ├─ 17.5  Kommunikations-Management (4-Stufen-Interrupt, Priority Queue)
+     │           ├─ 17.6  Emergency Protocols (Benannte Protokolle, Eskalation, Override)
+     │           ├─ 17.7  Daten-Analyse & Insights (Reports, Trends, Kosten)
+     │           ├─ 17.8  Streaming & Interrupts (Token-Streaming, Mid-Response-Abort)
+     │           ├─ 17.9  Langzeit-Beziehung (Autonomie-Evolution, Erlebnis-Memory)
+     │           └─ 17.10 Werkstatt-Assistent (DIY, Reparatur, Berechnungen)
+     │
      ▼
   🎯 JARVIS COMPLETE
 ```
@@ -2118,6 +2130,457 @@ das zeigt was er denkt, tut, oder weiss.
 
 ---
 
+# Die MCU-Jarvis-Luecken — Phase 17+
+
+> **Stand:** 2026-02-19
+> **Analyse:** Code-Audit aller 39 Module, End-to-End Trace jeder Feature-Chain
+> **Ziel:** Vom "sehr guten Smart-Home-Assistenten" zum echten MCU-Jarvis
+> **Erkenntnis:** Die Technik ist da. Was fehlt, ist die **Seele**.
+
+## Die unbequeme Wahrheit
+
+Der aktuelle Jarvis ist technisch beeindruckend — 21.000 Zeilen, 39 Module, 3-Tier-Memory.
+Aber er fuehlt sich an wie ein **sehr guter Smart-Home-Assistent mit Persoenlichkeits-Overlay**.
+Der MCU-Jarvis ist fundamental anders: Er ist ein **loyaler Partner, der zufaellig auch das Haus steuert**.
+
+Der Unterschied liegt nicht in Features. Er liegt in der **Haltung**.
+
+## Funktionsstatus der bestehenden Systeme (ehrlich)
+
+Nicht "was existiert als Code", sondern **was funktioniert als Erlebnis fuer den User**:
+
+| System | End-to-End? | Details |
+|--------|:-----------:|---------|
+| Proaktive Event-Meldungen | **JA** | HA-Events → Prioritaet → Silence-Check → TTS |
+| Time Awareness (Geraete zu lange an) | **JA** | Loop alle 5 Min → TTS Alert |
+| Device Health Anomalien | **JA** | 2σ-Baseline → TTS Alert |
+| Anticipation (Muster-Vorschlaege) | **JA** | Loop alle 15 Min → Callback → TTS (braucht >10 historische Aktionen) |
+| Opinion Pushback bei Aktionen | **JA** | check_opinion() bei jeder Funktionsausfuehrung |
+| Memory Extraction + Injection | **JA** | Nach jeder Antwort extrahieren → vor jeder Antwort injizieren |
+| Silence Matrix + Volume | **JA** | 7 Aktivitaeten × 4 Prioritaeten → Unterdrueckung/Routing |
+| Response Filter (Banned Phrases) | **JA** | 40+ Phrasen entfernt, 9 Starter geblockt |
+| Sound Events (confirmed/error) | **JA** | Spielen bei Aktions-Erfolg/Fehler |
+| SSML/TTS Enhancement | **JA** | Speed, Pitch, Pausen, Emphasis generiert und gesendet |
+| Formality Decay | **JA** | Einmal pro Tag, 4 Stufen |
+| Running Gags | **JA** | Wiederholte Fragen, Thermostat-Krieg, Vergesslichkeit |
+| Morning Briefing **automatisch** | **NEIN** | Code komplett, aber **kein Auto-Trigger** (nur manuell via API/Chat) |
+| Tages-Zusammenfassungen **zugestellt** | **NEIN** | Werden generiert, aber **nie proaktiv gesprochen** (kein Notify-Callback) |
+| Boot-Sequenz (gesprochen) | **NEIN** | Nur Logger-Output, User hoert nichts |
+| WebSocket Interrupt | **NEIN** | `assistant.interrupt` ist `pass` |
+| Autonomie-Evolution | **NEIN** | Statisch: `autonomy_level: 2` in YAML, aendert sich nie |
+| Zukunftsplanung (Kalender+Wetter) | **NEIN** | Nicht implementiert |
+
+---
+
+## Die 10 MCU-Jarvis Features
+
+### Feature 17.1: Continuous Presence — "Jarvis ist immer da"
+
+**Ist-Zustand:** Activity Detection (7 Zustaende) funktioniert on-demand. Silence Matrix
+funktioniert. Aber: kein eigener Herzschlag, keine gesprochene Boot-Sequenz, kein
+kontinuierliches Situationsmodell.
+
+**Soll-Zustand:**
+- **Boot-Sequenz** beim Systemstart via TTS:
+  ```
+  "Alle Systeme operational, Sir.
+   Home Assistant: verbunden. 47 Geraete online.
+   Gedaechtnis: 1.247 Fakten, 89 Muster aktiv.
+   Alles bereit."
+  ```
+- **Tagesrhythmus:** Jarvis hat einen eigenen Zustand — wach, aufmerksam, Nachtmodus, Standby
+- **Ambient Awareness Loop:** Alle 30 Sekunden Gesamtsituation modellieren:
+  TV an + Licht aus + 22:30 = "Filmabend" → Whisper, nicht stoeren
+  Schnelle Befehle + hohe WPM = "Stress" → kurze Antworten, kein Sarkasmus
+- **Stille Praesenz:** Auch wenn nichts gesagt wird, ist Jarvis "da"
+- **Morning Briefing Auto-Trigger:** Erste Bewegung nach Nacht → Briefing
+- **Summarizer Delivery:** Tages-Zusammenfassung proaktiv zusenden
+
+**Umsetzung:**
+- `main.py`: Boot-Sequenz als TTS statt nur Logger (nach `brain.initialize()`)
+- `brain.py`: Morning-Briefing Auto-Trigger bei erster Interaktion nach Nacht
+- `summarizer.py`: Notify-Callback verdrahten (wie time_awareness/device_health)
+- `context_builder.py`: Neues `situation_model` das Rohdaten zu abstraktem Zustand synthetisiert
+- `activity.py`: Erweiterte Situation-Klassifikation (Filmabend, Kochen, Arbeit, Gaeste-Abend)
+
+**Quick Wins:**
+- Morning Briefing Auto-Trigger: ~30 Zeilen in brain.py
+- Summarizer Callback: ~10 Zeilen (copy von device_health Pattern)
+- Boot-Sequenz TTS: ~20 Zeilen in main.py
+
+**Aufwand:** ~8 Stunden | **Jarvis-Impact:** HOCH
+
+---
+
+### Feature 17.2: Kamera/Vision — "Jarvis kann sehen"
+
+**Ist-Zustand:** `ocr.py` fuer Text/PDF-Erkennung (Tesseract + Vision-LLM). Keine
+Kamera-Integration. Phase 14.1 ist als OFFEN markiert.
+
+**Soll-Zustand:**
+- **Tuerkamera:** Wer steht vor der Tuer? → "Sir, Herr Mueller ist an der Tuer. Soll ich oeffnen?"
+- **Paket-Erkennung:** Paketbote erkannt → "Ein Paket wurde abgelegt"
+- **Sicherheit:** Unbekannte Person im Garten → "Sir, da ist jemand den ich nicht kenne"
+- **Visuelle Bestaetigung:** "Ist das Fenster zu?" → Kamera-Check statt Sensor
+- Alles lokal via Vision-LLM (LLaVA/Qwen-VL) — kein Cloud
+
+**Umsetzung:**
+- Neues Modul `vision.py` im Assistant
+- HA-Kamera-Entities (`camera.snapshot` Service) → Bild an Vision-LLM
+- Personen-Erkennung via Face-Embedding (lokale DB)
+- Event-basiert: Tuerklingel → Snapshot → Analyse → Meldung
+- Periodisch: Sicherheits-Scan bei Abwesenheit
+
+**Abhaengigkeiten:** GPU auf PC 2, Vision-LLM (LLaVA/Qwen-VL) in Ollama
+
+**Aufwand:** ~15 Stunden | **Jarvis-Impact:** HOCH
+
+---
+
+### Feature 17.3: Echte Initiative — "Sir, ich habe mir erlaubt..."
+
+**Ist-Zustand:** Event-basierte Meldungen funktionieren (Alarm, Ankunft, Geraete-Alerts).
+Anticipation erkennt Vergangenheitsmuster. Aber: kein Vorausdenken, keine Hintergrund-Analyse,
+kein "Ich schaue mir das an".
+
+**Soll-Zustand:**
+- **Zukunftsplanung:** Kalender + Wetter + Muster kombinieren:
+  ```
+  "Morgen frueh -8 Grad und Termin um 7:30.
+   Soll ich die Heizung um 6:00 hochfahren?"
+
+  "Am Wochenende wird es 35 Grad. Ich wuerde vorschlagen,
+   die Rolllaeden ab 10 Uhr automatisch zu schliessen."
+  ```
+- **Hintergrund-Analyse mit Rueckmeldung:**
+  ```
+  User: "Warum war die Stromrechnung so hoch?"
+  Jarvis: "Ich werde die Energiedaten analysieren. Einen Moment."
+  ... (30 Sek spaeter, proaktiv) ...
+  Jarvis: "Hauptverbraucher war die Waermepumpe — 40% ueber Durchschnitt."
+  ```
+- **Signifikante Delta-Meldungen:**
+  "Die Temperatur im Wohnzimmer ist in 30 Minuten um 3 Grad gefallen.
+   Das Kuechenfenster ist seit 2 Stunden offen."
+- **Vorschlaege aus Beobachtung:**
+  "Sie stellen jeden Montag um 18 Uhr die Heizung hoch. Automatisieren?"
+
+**Umsetzung:**
+- `anticipation.py`: Erweitern um Forward-Looking (Kalender + Wettervorhersage + Patterns)
+- `brain.py`: Neues Konzept "Background Task" — User-sichtbar, mit Rueckmeldung
+- `context_builder.py`: Mehrtages-Wettervorhersage statt nur 4 Stunden
+- `proactive.py`: Delta-Detection fuer signifikante Zustandsaenderungen (Temp-Drop, Kombination offenes Fenster + Regen)
+
+**Aufwand:** ~12 Stunden | **Jarvis-Impact:** SEHR HOCH
+
+---
+
+### Feature 17.4: Pushback & Fuersorglichkeit — "Ich wuerd davon abraten, Sir"
+
+**Ist-Zustand:** 30+ Opinion Rules funktionieren. Memory wird in Prompt injiziert mit
+"nutze diese Infos MIT HALTUNG". Aber: keine Nachsorge, keine Fuersorge-Meldungen.
+
+**Soll-Zustand:**
+- **Pushback mit Memory-Kontext:**
+  ```
+  "26 Grad? Beim letzten Mal hatten Sie davon Kopfschmerzen.
+   Aber wie Sie wuenschen."
+  ```
+- **Nachsorge / Follow-up:**
+  ```
+  (1 Stunde spaeter)
+  "Ich hatte Ihnen von den 26 Grad abgeraten. Wie ist die Luft jetzt?"
+  ```
+- **Fuersorge-Meldungen (proaktiv):**
+  ```
+  "Sie haben heute noch nichts gegessen, Sir."
+  (basierend auf fehlender Kuechen-Aktivitaet)
+
+  "Sie sind seit 6 Stunden am Schreibtisch. Vielleicht eine Pause?"
+  (basierend auf PC-Aktiv + keine Bewegung in anderen Raeumen)
+
+  "Sie klingen muede. Soll ich das Licht waermer machen?"
+  (basierend auf Mood Detection)
+  ```
+- **Lernende Opinion Rules:** Feedback-Loop — wenn User wiederholt ignoriert, reduzieren
+
+**Umsetzung:**
+- `personality.py`: Nachsorge-System (Redis-Timer nach Pushback → Follow-up via proactive)
+- `proactive.py`: Fuersorge-Checks (Essens-Erkennung via Kueche-Bewegung, Pausen-Erkennung via PC+Motion)
+- `opinion_rules.yaml`: Feedback-Score pro Regel, adaptive Intensitaet
+- `brain.py`: Mood-basierte Fuersorge-Vorschlaege staerker integrieren
+
+**Aufwand:** ~8 Stunden | **Jarvis-Impact:** SEHR HOCH
+
+---
+
+### Feature 17.5: Kommunikations-Management — "Wenn Sie einen Moment haben, Sir..."
+
+**Ist-Zustand:** Silence Matrix funktioniert hervorragend (Unterdrueckung). Volume Matrix
+funktioniert. Batch-Queue funktioniert. Aber: kein aktives Unterbrechen, kein Queuing,
+kein "Entschuldigung Sir".
+
+**Soll-Zustand:**
+- **4-Stufen-Interrupt-System:**
+
+  | Stufe | Verhalten | Beispiel |
+  |-------|-----------|---------|
+  | SOFORT | Unterbricht alles, laut | Feuer, Wasser, Einbruch |
+  | NAECHSTE PAUSE | "Wenn Sie einen Moment haben..." | Wichtig aber nicht dringend |
+  | GELEGENHEIT | Bei naechster Interaktion erwaehnen | "Uebrigens, die Waschmaschine..." |
+  | ZUSAMMENFASSUNG | Im naechsten Briefing | Routine-Info |
+
+- **Kontext-gerechte Formulierung:** Gleiche Info, unterschiedlich verpackt:
+  - Entspannt: "Uebrigens, die Waesche ist fertig."
+  - Fokussiert: "Waesche fertig." (kurz)
+  - Filmabend: gar nicht, erst danach erwaehnen
+- **Priority Queue:** Wichtige Meldungen warten in Queue bis Pause erkannt
+- **"Entschuldigen Sie die Unterbrechung"** bei nicht-kritischen Interrupts
+
+**Umsetzung:**
+- `activity.py`: Queue-System fuer "NAECHSTE PAUSE" Meldungen
+- `proactive.py`: Neue Delivery-Stufe "wait_for_pause" neben suppress/tts_loud/tts_quiet/led_blink
+- `brain.py`: Pause-Detection (Stille nach Interaktion → Queue abarbeiten)
+- `websocket.py`: `assistant.interrupt` implementieren (aktuell `pass`)
+- `tts_enhancer.py`: Interrupt-Phrasen ("Entschuldigung Sir...", "Wenn Sie einen Moment...")
+
+**Aufwand:** ~10 Stunden | **Jarvis-Impact:** HOCH
+
+---
+
+### Feature 17.6: Emergency Protocols — "Lockdown eingeleitet"
+
+**Ist-Zustand:** 4 Priority-Levels existieren. CRITICAL ueberschreibt Silence Matrix.
+Aber: keine benannten Protokolle, keine zeitliche Eskalation, kein autonomes Handeln.
+
+**Soll-Zustand:**
+- **Benannte Protokolle (user-erstellbar):**
+
+  | Protokoll | Aktionen |
+  |-----------|---------|
+  | Lockdown | Rolllaeden runter, Tueren verriegeln, Alarm scharf, Flutlicht |
+  | Feuer | Lichter an, Tueren entriegeln, Fluchtwege, Alarm, Bewohner warnen |
+  | Wasser | Hauptventil zu, betroffene Raeume melden, Alarm |
+  | Kino | Licht dimmen, Rolllaeden, Medien, "Viel Vergnuegen, Sir" |
+  | Party | Musik, Lichter bunt, Gaeste-WLAN, lockerer Ton |
+  | Abwesenheit | Simulation, Sicherheit, Energiesparen |
+
+- **Zeitliche Eskalation bei Gefahr:**
+  ```
+  Stufe 1 (Info):      "Das Buegeleisen ist seit 45 Minuten an."
+  Stufe 2 (Warnung):   "Sir, das Buegeleisen laeuft seit 90 Minuten."
+  Stufe 3 (Dringend):  "Ich schalte in 60 Sekunden ab. Widersprechen Sie jetzt."
+  Stufe 4 (Override):  "Buegeleisen aus Sicherheitsgruenden deaktiviert."
+  ```
+- **Narration bei Protokoll-Ausfuehrung:**
+  ```
+  "Lockdown wird eingeleitet..."
+  "Rolllaeden werden heruntergefahren..."
+  "Perimeter gesichert."
+  "Tueren verriegelt."
+  "Lockdown abgeschlossen. Alles dicht, Sir."
+  ```
+- **Override-Berechtigung:** Bei CRITICAL ueberschreibt Jarvis Normal-Regeln
+
+**Umsetzung:**
+- Neues Modul `protocols.py`: Protokoll-Registry, benannte Multi-Step-Sequenzen mit Narration
+- `config/protocols.yaml`: User-erstellbare Protokoll-Definitionen
+- `time_awareness.py`: Eskalations-Kette statt Einmal-Meldung (Info → Warnung → Countdown → Override)
+- `function_calling.py`: Neues Tool `execute_protocol(name)`
+- `brain.py`: Protokoll-Intent-Erkennung ("Lockdown" / "Kino-Modus" / "Party")
+
+**Aufwand:** ~15 Stunden | **Jarvis-Impact:** SEHR HOCH (das MCU-Feeling schlechthin)
+
+---
+
+### Feature 17.7: Daten-Analyse & Insights — "Ich habe die Zahlen, Sir"
+
+**Ist-Zustand:** Summarizer generiert Zusammenfassungen (aber liefert sie nicht zu).
+Device Health erkennt Anomalien. Aber: keine Trend-Analyse, keine Kosten, keine
+Hintergrund-Analyse auf Anfrage.
+
+**Soll-Zustand:**
+- **Energie-Reports:**
+  "Letzte Woche 23% mehr Strom. Hauptverursacher: Waermepumpe wegen Kaeltewelle."
+- **Komfort-Trends:**
+  "Im Schlafzimmer war es 4 Naechte ueber 24 Grad. Sie schlafen besser bei 20-21."
+- **Geraete-Insights:**
+  "Der Trockner braucht 40% laenger als vor 3 Monaten. Moeglicherweise Filter verstopft."
+- **Kosten-Schaetzungen:**
+  "Bei aktuellem Verbrauch: ca. 180 EUR Strom diesen Monat."
+- **Periodische Reports:** Tages-Kurzzusammenfassung (gesprochen), Wochen-Report (optional)
+
+**Umsetzung:**
+- `summarizer.py`: Notify-Callback verdrahten (Quick Win!)
+- `summarizer.py`: Erweitern um Kosten-Schaetzung (Strompreis-Entity × Verbrauch)
+- `device_health.py`: Trend-Erkennung ueber Wochen (nicht nur aktuelle Anomalie)
+- `brain.py`: "Background Analysis" Konzept — User fragt → "Ich schaue mir das an" → spaeter proaktiv antworten
+
+**Aufwand:** ~10 Stunden | **Jarvis-Impact:** HOCH
+
+---
+
+### Feature 17.8: Streaming & Interrupts — "Moment, Sir — neue Information"
+
+**Ist-Zustand:** WebSocket Events funktionieren (full messages). SSML/TTS Enhancement
+funktioniert. Aber: kein Token-Streaming, kein Mid-Response-Interrupt, kein Self-Correction.
+
+**Soll-Zustand:**
+- **Streaming-Responses:** Antwort fliesst wortweise — User hoert/sieht den Denkprozess
+- **Mid-Response-Interrupt:** User kann Jarvis unterbrechen → sofortiger Stopp → "Ja, Sir?"
+- **Self-Correction:** Neue Info waehrend Antwort → "Moment — Korrektur: ..."
+- **Priority-Interrupt:** Rauchmelder waehrend Wetterbericht → sofortiger Themenwechsel
+- **Typing-Indicator:** Dashboard: "Jarvis denkt..." mit Live-Status
+
+**Umsetzung:**
+- `ollama_client.py`: Streaming-Support (Ollama hat native Streaming-API)
+- `websocket.py`: Token-by-Token Broadcasting statt Full-Message
+- `main.py`: `assistant.interrupt` implementieren (aktuell `pass`) → Abbruch-Signal an LLM
+- `brain.py`: Interrupt-Handler der laufende Generation stoppt und neu routet
+- `tts_enhancer.py`: Streaming-SSML (Satz-fuer-Satz statt alles auf einmal)
+
+**Aufwand:** ~12 Stunden | **Jarvis-Impact:** MITTEL-HOCH
+
+---
+
+### Feature 17.9: Langzeit-Beziehung — "Wir kennen uns seit 247 Tagen, Sir"
+
+**Ist-Zustand:** Semantic Memory speichert Fakten (7 Kategorien). Memory Extraction nach
+jedem Gespraech. Formality Decay funktioniert. Running Gags funktionieren. Aber: keine
+Autonomie-Evolution, kein Erlebnis-Gedaechtnis, keine Meilensteine.
+
+**Soll-Zustand:**
+- **Autonomie-Evolution (pro Domaene):**
+  ```
+  Tag 1-30:   Level 1 — "Soll ich das Licht einschalten?"
+  Tag 30-90:  Level 2 — "Ich habe das Licht eingeschaltet."
+  Tag 90-180: Level 3 — Schaltet ein, erwaehnt nur bei Bedarf
+  Tag 180+:   Level 4 — "In 6 Monaten: 1.847 Aktionen, 0 Beschwerden.
+                         Darf ich kuenftig die Heizung selbstaendig regeln?"
+  ```
+  Licht-Autonomie kann Level 4 sein, waehrend Schloesser bei Level 1 bleiben.
+
+- **Erlebnis-Gedaechtnis:**
+  Nicht nur Fakten ("mag 21 Grad") sondern Geschichten:
+  "Der Abend als die Heizung ausfiel" / "Die Nacht mit dem Wasserrohrbruch"
+  → Werden bei passendem Kontext referenziert
+
+- **Beziehungs-Meilensteine:**
+  "Heute vor einem Jahr haben Sie mich eingerichtet.
+   12.847 Aktionen, 4 Beschwerden. Ich wuerde sagen, das laeuft."
+
+- **Insider-Referenzen aus echtem Memory:**
+  "Pizza? Wie am dritten Maerz, als die dreimal kam?"
+  (aus tatsaechlich gespeichertem Event, nicht generisch)
+
+**Umsetzung:**
+- `autonomy.py`: Pro-Domaene-Trust-Score (Redis), Feedback-basiert, automatische Level-Vorschlaege
+- `semantic_memory.py`: Neue Kategorie "experience" — speichert signifikante Events mit Kontext
+- `memory_extractor.py`: Erkennung von "erwaehnenswerten Erlebnissen" (nicht nur Fakten)
+- `personality.py`: Meilenstein-Check (Installation-Datum, Interaktions-Zaehler, Jahrestage)
+- `brain.py`: Erlebnis-Injection in Prompt bei passendem Kontext
+
+**Aufwand:** ~12 Stunden | **Jarvis-Impact:** SEHR HOCH
+
+---
+
+### Feature 17.10: Werkstatt-Assistent — "Sir, die Schraube ist M6, nicht M8"
+
+**Ist-Zustand:** Koch-Assistent (Rezepte, Timer) und Inventar (Einkaufsliste, Ablaufdaten)
+existieren. Knowledge Base (RAG) existiert. Aber: keine Werkstatt-spezifische Logik.
+
+**Soll-Zustand:**
+- **DIY-Begleitung:** "Ich baue ein Regal" → Step-by-Step, Timer fuer Trocknungszeiten
+- **Reparatur-Hilfe:** "Die Spuelmaschine tropft" → Diagnose-Fragen, Ersatzteil-Vorschlaege
+- **Masse & Berechnungen:** "Wie viel Farbe fuer 12qm?" → Sofortige Berechnung
+- **Sicherheitshinweise:** "Bevor du die Steckdose oeffnest — Sicherung raus?"
+- **Inventar-Verknuepfung:** "Hast du noch 40er Duebel?" → Check gegen Inventar
+- **Timer & Erinnerungen:** "In 2 Stunden den Kleber pruefen"
+
+**Umsetzung:**
+- `cooking_assistant.py` → Erweitern zu `project_assistant.py` (oder neues Modul)
+- Projekt-Tracking: Aktiver Schritt, Timer, Material-Liste
+- Sicherheits-Prompts: LLM-basiert mit Elektrik/Wasser/Gas-Warnungen
+- `inventory.py`: Erweitern um Werkzeug/Material-Kategorien
+- `function_calling.py`: Neues Tool `manage_project(action, step, timer)`
+
+**Aufwand:** ~10 Stunden | **Jarvis-Impact:** MITTEL
+
+---
+
+## Zusammenfassung: MCU-Jarvis Transformation
+
+```
+Feature 17.1  Continuous Presence         ████░░░░░░  30%  funktional
+Feature 17.2  Kamera/Vision               █░░░░░░░░░   5%  funktional
+Feature 17.3  Echte Initiative            █████░░░░░  45%  funktional
+Feature 17.4  Pushback & Fuersorglichkeit █████░░░░░  50%  funktional
+Feature 17.5  Kommunikations-Management   ██████░░░░  60%  funktional
+Feature 17.6  Emergency Protocols         ██░░░░░░░░  20%  funktional
+Feature 17.7  Daten-Analyse & Insights    ███░░░░░░░  25%  funktional
+Feature 17.8  Streaming & Interrupts      ██░░░░░░░░  20%  funktional
+Feature 17.9  Langzeit-Beziehung          █████░░░░░  45%  funktional
+Feature 17.10 Werkstatt-Assistent         ██░░░░░░░░  15%  funktional
+
+Durchschnitt: ~32% funktional | Geschaetzter Gesamtaufwand: ~112 Stunden
+```
+
+## Empfohlene Reihenfolge (Impact vs. Aufwand)
+
+```
+1. Quick Wins (je <1 Stunde, sofort spuerbar):
+   ├─ Morning Briefing Auto-Trigger (~30 Zeilen)
+   ├─ Summarizer Notify-Callback (~10 Zeilen)
+   └─ Boot-Sequenz als TTS (~20 Zeilen)
+
+2. Feature 17.6: Emergency Protocols ──── MCU-Feeling schlechthin
+   │
+3. Feature 17.3: Echte Initiative ─────── Groesster Jarvis-Unterschied
+   │
+4. Feature 17.4: Pushback & Fuersorge ── Macht Jarvis zum Partner
+   │
+5. Feature 17.9: Langzeit-Beziehung ──── Gibt Jarvis eine Geschichte
+   │
+6. Feature 17.5: Kommunikation ────────── Poliert die Interaktion
+   │
+7. Feature 17.7: Daten-Analyse ────────── Jarvis als Berater
+   │
+8. Feature 17.1: Continuous Presence ──── Jarvis "lebt"
+   │
+9. Feature 17.8: Streaming & Interrupts ─ Technische Verbesserung
+   │
+10. Feature 17.2: Kamera/Vision ────────── Braucht GPU + Hardware
+    │
+11. Feature 17.10: Werkstatt-Assistent ── Nice-to-have
+```
+
+## Abhaengigkeiten
+
+```
+Quick Wins ──────────────┐
+                         ├──► 17.6 Emergency Protocols (braucht kein Vorgaenger)
+17.1 Continuous Presence ┤
+                         ├──► 17.3 Echte Initiative (braucht Situationsmodell)
+                         │        │
+                         │        └──► 17.4 Pushback & Fuersorge (braucht Initiative-Pipeline)
+                         │
+                         ├──► 17.5 Kommunikation (braucht Presence fuer Pause-Detection)
+                         │
+                         └──► 17.7 Daten-Analyse (braucht Background-Task Konzept aus 17.3)
+
+17.9 Langzeit-Beziehung ────── Unabhaengig, kann jederzeit parallel
+
+17.8 Streaming ─────────────── Unabhaengig, technische Verbesserung
+
+17.2 Kamera/Vision ─────────── Unabhaengig, braucht GPU
+
+17.10 Werkstatt ────────────── Unabhaengig, erweitert cooking_assistant
+```
+
+---
+
+---
+
 # Gesamtübersicht
 
 ```
@@ -2144,8 +2607,10 @@ das zeigt was er denkt, tut, oder weiss.
           │              │ Ph 15: Fuersorge
           │              │ Ph 16: fuer Alle
           │              │         │
-          │              │ 60 neue Features
-          │              │ ~76 Commits
+          │              │ Ph 17+: MCU-Jarvis
+          │              │
+          │              │ 70 neue Features
+          │              │ ~91 Commits
           │              └─────────┘
           │
      Liefert Daten an Assistant via HA API
@@ -2166,9 +2631,10 @@ das zeigt was er denkt, tut, oder weiss.
 | 14 | Wahrnehmung | 3 | ~5 | 📋 | Vision, Multi-Modal, Ambient Audio |
 | 15 | Haushalt & Fuersorge | 4 | ~6 | 📋 | Gesundheit, Einkauf, Geraete, Notifications |
 | 16 | fuer Alle | 3 | ~5 | 📋 | Konflikte, Onboarding, Dashboard |
-| **Σ** | | **60** | **~76** | | |
+| 17+ | MCU-Jarvis Transformation | 10 | ~15 | 🆕 | Presence, Vision, Initiative, Protocols |
+| **Σ** | | **70** | **~91** | | |
 
-**Gesamt: 60 neue Assistant-Features + 156 bestehende (Add-on) + 14 bestehende (Assistant) = 230 Features**
+**Gesamt: 70 neue Assistant-Features + 156 bestehende (Add-on) + 14 bestehende (Assistant) = 240 Features**
 
 ---
 
@@ -2196,11 +2662,13 @@ Phase 14 ── Wahrnehmung ────  ~5 Commits  ─── Vision, Multi-Mo
 Phase 15 ── Fuersorge ──────  ~6 Commits  ─── Gesundheit, Einkauf, Geraete
    │
 Phase 16 ── fuer Alle ──────  ~5 Commits  ─── Konflikte, Onboarding, Dashboard
+   │
+Phase 17+── MCU-Jarvis ─────  ~15 Commits ─── Die letzte Meile zum echten Jarvis
 ```
 
-**Phase 12.1 + 12.3 sind der naechste Hebel** — unter 2 Stunden, groesster Effekt
-auf die Jarvis-Authentizitaet. Few-Shot Examples + Response-Filter.
+**Naechster Hebel: Phase 17 Quick Wins** — Morning Briefing Auto-Trigger + Summarizer
+Callback + Boot-Sequenz TTS. Unter 1 Stunde, sofort spuerbar.
 
 ---
 
-*Naechster Schritt: Phase 12.1 (Few-Shot Examples) + 12.3 (Response-Filter) implementieren.*
+*Naechster Schritt: Phase 17 Quick Wins, dann 17.6 (Emergency Protocols) + 17.3 (Echte Initiative).*
