@@ -33,7 +33,7 @@ ask_yes_no() {
     local default="${2:-n}"
     local suffix
     if [ "$default" = "j" ]; then suffix="(J/n)"; else suffix="(j/N)"; fi
-    read -p "  $prompt $suffix: " -r answer
+    read -rp "  $prompt $suffix: " answer
     answer="${answer:-$default}"
     [[ "$answer" =~ ^[Jj]$ ]]
 }
@@ -63,7 +63,7 @@ fi
 # Ubuntu-Version pruefen
 if [ -f /etc/os-release ]; then
     . /etc/os-release
-    info "OS: $PRETTY_NAME"
+    info "OS: ${PRETTY_NAME:-unbekannt}"
 else
     warn "Konnte OS nicht erkennen. Script ist fuer Ubuntu Server 24.04 LTS gedacht."
 fi
@@ -77,7 +77,7 @@ fi
 
 # CPU pruefen
 CPU_CORES=$(nproc)
-CPU_MODEL=$(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2 | xargs)
+CPU_MODEL=$(grep -m1 'model name' /proc/cpuinfo 2>/dev/null | cut -d: -f2 | xargs 2>/dev/null || echo "unbekannt")
 info "CPU: $CPU_MODEL ($CPU_CORES Kerne)"
 
 # GPU pruefen
@@ -116,7 +116,8 @@ else
         # Boot-Disk ermitteln (die mit /)
         BOOT_DISK=$(lsblk -ndo PKNAME "$(findmnt -n -o SOURCE /)" 2>/dev/null || echo "")
         if [ -z "$BOOT_DISK" ]; then
-            BOOT_DISK=$(lsblk -ndo NAME "$(findmnt -n -o SOURCE /)" 2>/dev/null | sed 's/[0-9]*$//' || echo "")
+            # Fallback: NVMe-sicher — sed entfernt pN und N Suffixe
+            BOOT_DISK=$(lsblk -ndo NAME "$(findmnt -n -o SOURCE /)" 2>/dev/null | sed -E 's/p?[0-9]+$//' || echo "")
         fi
 
         # Alle Disks anzeigen (ohne Boot-Disk, ohne Loop/RAM)
@@ -129,7 +130,7 @@ else
             DISK_NAME=$(echo "$line" | awk '{print $1}')
             DISK_SIZE=$(echo "$line" | awk '{print $2}')
             DISK_TYPE=$(echo "$line" | awk '{print $3}')
-            DISK_MODEL=$(echo "$line" | awk '{$1=$2=$3=""; print $0}' | xargs)
+            DISK_MODEL=$(echo "$line" | awk '{$1=$2=$3=""; print $0}' | xargs 2>/dev/null || echo "")
 
             # Boot-Disk ueberspringen
             if [ "$DISK_NAME" = "$BOOT_DISK" ]; then
@@ -140,7 +141,7 @@ else
 
             AVAILABLE_DISKS+=("$DISK_NAME")
             printf "  %-12s %-8s %-10s %s\n" "$DISK_NAME" "$DISK_SIZE" "$DISK_TYPE" "$DISK_MODEL"
-        done < <(lsblk -dnpo NAME,SIZE,TYPE,MODEL | grep -E 'disk' | awk '{gsub("/dev/","",$1); print}')
+        done < <(lsblk -dnpo NAME,SIZE,TYPE,MODEL | grep -E 'disk' | awk '{gsub("/dev/","",$1); print}' || true)
 
         echo "  ---------------------------------------------------------------"
         echo ""
@@ -151,8 +152,22 @@ else
             DATA_DIR="${MHA_DIR}/data"
         else
             # Disk auswaehlen
-            read -p "  Welches Laufwerk soll fuer Daten genutzt werden? (z.B. ${AVAILABLE_DISKS[0]}): " CHOSEN_DISK
+            read -rp "  Welches Laufwerk soll fuer Daten genutzt werden? (z.B. ${AVAILABLE_DISKS[0]}): " CHOSEN_DISK
             CHOSEN_DISK="${CHOSEN_DISK:-${AVAILABLE_DISKS[0]}}"
+
+            # Validierung: nur Laufwerke aus der Liste erlauben
+            DISK_VALID=false
+            for d in "${AVAILABLE_DISKS[@]}"; do
+                if [ "$d" = "$CHOSEN_DISK" ]; then
+                    DISK_VALID=true
+                    break
+                fi
+            done
+            if [ "$DISK_VALID" = false ]; then
+                error "Disk '$CHOSEN_DISK' ist nicht in der Liste verfuegbarer Laufwerke. Abbruch."
+                exit 1
+            fi
+
             CHOSEN_DEV="/dev/${CHOSEN_DISK}"
 
             # Pruefen ob Device existiert
@@ -167,17 +182,23 @@ else
             info "Gewaehltes Laufwerk: $CHOSEN_DEV (${DISK_SIZE} GB)"
 
             # Pruefen ob bereits ein Dateisystem existiert
-            EXISTING_FS=$(lsblk -nfo FSTYPE "$CHOSEN_DEV" | head -1 | xargs)
-            FIRST_PARTITION="${CHOSEN_DEV}1"
+            EXISTING_FS=$(lsblk -nfo FSTYPE "$CHOSEN_DEV" | head -1 | xargs 2>/dev/null || echo "")
 
-            if [ -n "$EXISTING_FS" ] || ([ -b "$FIRST_PARTITION" ] && [ -n "$(lsblk -nfo FSTYPE "$FIRST_PARTITION" 2>/dev/null | head -1 | xargs)" ]); then
+            # NVMe-sichere Partition-Erkennung: nvme0n1 → nvme0n1p1, sda → sda1
+            if [[ "$CHOSEN_DEV" =~ [0-9]$ ]]; then
+                FIRST_PARTITION="${CHOSEN_DEV}p1"
+            else
+                FIRST_PARTITION="${CHOSEN_DEV}1"
+            fi
+
+            if [ -n "$EXISTING_FS" ] || ([ -b "$FIRST_PARTITION" ] && [ -n "$(lsblk -nfo FSTYPE "$FIRST_PARTITION" 2>/dev/null | head -1 | xargs 2>/dev/null || echo "")" ]); then
                 # Disk hat bereits Dateisystem
                 if [ -n "$EXISTING_FS" ]; then
                     MOUNT_DEV="$CHOSEN_DEV"
                     FS_TYPE="$EXISTING_FS"
                 else
                     MOUNT_DEV="$FIRST_PARTITION"
-                    FS_TYPE=$(lsblk -nfo FSTYPE "$FIRST_PARTITION" | head -1 | xargs)
+                    FS_TYPE=$(lsblk -nfo FSTYPE "$FIRST_PARTITION" | head -1 | xargs 2>/dev/null || echo "unbekannt")
                 fi
 
                 warn "Laufwerk hat bereits ein Dateisystem: $FS_TYPE"
@@ -187,7 +208,7 @@ else
                 echo "    2) Neu formatieren (ALLE DATEN WERDEN GELOESCHT)"
                 echo "    3) Abbrechen"
                 echo ""
-                read -p "  Wahl (1/2/3): " FS_CHOICE
+                read -rp "  Wahl (1/2/3): " FS_CHOICE
 
                 case "$FS_CHOICE" in
                     1)
@@ -197,7 +218,7 @@ else
                         echo ""
                         warn "ACHTUNG: ALLE Daten auf $CHOSEN_DEV werden UNWIDERRUFLICH geloescht!"
                         echo ""
-                        read -p "  Zum Bestaetigen 'JA' eingeben: " CONFIRM
+                        read -rp "  Zum Bestaetigen 'JA' eingeben: " CONFIRM
                         if [ "$CONFIRM" != "JA" ]; then
                             info "Abgebrochen. Nichts wurde geaendert."
                             exit 0
@@ -217,7 +238,7 @@ else
                 # Leere Disk — formatieren
                 info "Laufwerk ist leer. Formatiere mit ext4..."
                 echo ""
-                read -p "  Zum Bestaetigen 'JA' eingeben: " CONFIRM
+                read -rp "  Zum Bestaetigen 'JA' eingeben: " CONFIRM
                 if [ "$CONFIRM" != "JA" ]; then
                     info "Abgebrochen. Nichts wurde geaendert."
                     exit 0
@@ -225,6 +246,12 @@ else
                 sudo mkfs.ext4 -L mindhome-data "$CHOSEN_DEV"
                 MOUNT_DEV="$CHOSEN_DEV"
                 success "Formatierung abgeschlossen"
+            fi
+
+            # Symlink-Check: /mnt/data darf kein Symlink sein
+            if [ -L /mnt/data ]; then
+                error "/mnt/data ist ein Symlink. Das ist unerwartet und unsicher. Abbruch."
+                exit 1
             fi
 
             # Mountpoint erstellen und mounten
@@ -235,7 +262,11 @@ else
 
             # fstab-Eintrag pruefen/erstellen
             UUID=$(sudo blkid -s UUID -o value "$MOUNT_DEV")
-            if ! grep -q "$UUID" /etc/fstab 2>/dev/null; then
+            if [ -z "$UUID" ]; then
+                error "Konnte UUID fuer $MOUNT_DEV nicht ermitteln. fstab-Eintrag nicht erstellt."
+                warn "Die SSD wird nach einem Neustart nicht automatisch gemountet."
+                warn "Manuelle Loesung: UUID=$(sudo blkid $MOUNT_DEV) in /etc/fstab eintragen"
+            elif ! grep -q "$UUID" /etc/fstab 2>/dev/null; then
                 echo "UUID=$UUID  /mnt/data  ext4  defaults,noatime  0  2" | sudo tee -a /etc/fstab > /dev/null
                 success "fstab-Eintrag erstellt (automatisch beim Booten)"
             else
@@ -269,7 +300,7 @@ if ! command -v docker &> /dev/null; then
     echo "deb [arch=$(dpkg --print-architecture) \
         signed-by=/etc/apt/keyrings/docker.gpg] \
         https://download.docker.com/linux/ubuntu \
-        $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
+        $(. /etc/os-release && echo "${VERSION_CODENAME:-noble}") stable" | \
         sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
     sudo apt-get update
     sudo apt-get install -y docker-ce docker-ce-cli containerd.io \
@@ -302,16 +333,19 @@ step "[4/$STEPS_TOTAL] Ollama pruefen..."
 
 if ! command -v ollama &> /dev/null; then
     info "Ollama nicht gefunden. Installiere..."
-    curl -fsSL https://ollama.ai/install.sh | sh
+    OLLAMA_INSTALLER=$(mktemp)
+    curl -fsSL https://ollama.ai/install.sh -o "$OLLAMA_INSTALLER"
+    sh "$OLLAMA_INSTALLER"
+    rm -f "$OLLAMA_INSTALLER"
     success "Ollama installiert"
 else
     OLLAMA_VERSION=$(ollama --version 2>/dev/null | awk '{print $NF}' || echo "?")
     success "Ollama: OK ($OLLAMA_VERSION)"
 fi
 
-# Ollama von aussen erreichbar machen
+# Ollama von aussen erreichbar machen (noetig fuer Docker-Container)
 if ! grep -q "OLLAMA_HOST=0.0.0.0" /etc/systemd/system/ollama.service.d/override.conf 2>/dev/null; then
-    info "Konfiguriere Ollama fuer Netzwerk-Zugriff..."
+    info "Konfiguriere Ollama fuer Docker-Zugriff..."
     sudo mkdir -p /etc/systemd/system/ollama.service.d/
     cat <<'OLLAMA_OVERRIDE' | sudo tee /etc/systemd/system/ollama.service.d/override.conf > /dev/null
 [Service]
@@ -320,6 +354,7 @@ OLLAMA_OVERRIDE
     sudo systemctl daemon-reload
     sudo systemctl restart ollama
     success "Ollama hoert auf 0.0.0.0:11434"
+    info "Tipp: Firewall-Regeln beschraenken den Zugriff auf dein lokales Netz"
 fi
 
 # Warte bis Ollama bereit ist
@@ -341,9 +376,7 @@ success "Ollama ist bereit"
 # ============================================================
 step "[5/$STEPS_TOTAL] LLM-Modelle pruefen..."
 
-# Modell-Verzeichnis anzeigen
-MODELS_DIR=$(ollama show --modelfile qwen3:4b 2>/dev/null | grep -oP '(?<=FROM ).*' | head -1 | xargs dirname 2>/dev/null || echo "${HOME}/.ollama/models")
-info "Modell-Verzeichnis: ${HOME}/.ollama/models (SSD 1)"
+info "Modell-Verzeichnis: ~/.ollama/models (SSD 1)"
 
 if ! ollama list 2>/dev/null | grep -q "qwen3:4b"; then
     info "Lade Qwen 3 4B (schnelles Modell, ~3 GB)..."
@@ -375,7 +408,7 @@ fi
 
 echo ""
 info "Installierte Modelle:"
-ollama list 2>/dev/null | head -10
+ollama list 2>/dev/null | head -10 || true
 
 # ============================================================
 # Schritt 6: Daten-Verzeichnisse erstellen
@@ -415,8 +448,10 @@ cd "$MHA_DIR"
 if [ -f .env ]; then
     success ".env existiert bereits"
     if ask_yes_no "Moechtest du die .env neu konfigurieren?" "n"; then
-        cp .env ".env.backup.$(date +%Y%m%d_%H%M%S)"
-        info "Backup erstellt"
+        BACKUP_FILE=".env.backup.$(date +%Y%m%d_%H%M%S)"
+        cp .env "$BACKUP_FILE"
+        chmod 600 "$BACKUP_FILE"
+        info "Backup erstellt: $BACKUP_FILE"
         CONFIGURE_ENV=true
     else
         CONFIGURE_ENV=false
@@ -432,10 +467,10 @@ if [ "$CONFIGURE_ENV" = true ]; then
 
     # HA URL
     DEFAULT_HA_URL="http://192.168.1.100:8123"
-    read -p "  Home Assistant URL [$DEFAULT_HA_URL]: " HA_URL
+    read -rp "  Home Assistant URL [$DEFAULT_HA_URL]: " HA_URL
     HA_URL="${HA_URL:-$DEFAULT_HA_URL}"
 
-    # HA Token
+    # HA Token (verdeckte Eingabe)
     echo ""
     echo "  Du brauchst einen Long-Lived Access Token aus Home Assistant:"
     echo "    1. Oeffne $HA_URL im Browser"
@@ -443,64 +478,71 @@ if [ "$CONFIGURE_ENV" = true ]; then
     echo "    3. Scrolle zu 'Langlebige Zugriffstoken'"
     echo "    4. Erstelle einen Token mit Name 'MindHome'"
     echo ""
-    read -p "  HA Token: " HA_TOKEN
+    read -rsp "  HA Token (Eingabe verdeckt): " HA_TOKEN
+    echo ""
 
     if [ -z "$HA_TOKEN" ]; then
         warn "Kein Token eingegeben. Du musst ihn spaeter in .env eintragen!"
         HA_TOKEN="HIER_TOKEN_EINTRAGEN"
+    else
+        success "Token erhalten"
     fi
 
-    # MindHome Addon URL
-    MINDHOME_PORT="${HA_URL%:*}:8099"
-    read -p "  MindHome Add-on URL [$MINDHOME_PORT]: " MINDHOME_URL
-    MINDHOME_URL="${MINDHOME_URL:-$MINDHOME_PORT}"
+    # MindHome Addon URL — Host sicher aus URL extrahieren
+    HA_BASE=$(echo "$HA_URL" | sed -E 's|(https?://[^:/]+).*|\1|')
+    DEFAULT_MINDHOME="${HA_BASE}:8099"
+    read -rp "  MindHome Add-on URL [$DEFAULT_MINDHOME]: " MINDHOME_URL
+    MINDHOME_URL="${MINDHOME_URL:-$DEFAULT_MINDHOME}"
 
     # Username
-    read -p "  Dein Vorname: " USER_NAME
+    read -rp "  Dein Vorname: " USER_NAME
     USER_NAME="${USER_NAME:-User}"
 
     # Assistant Name
-    read -p "  Name des Assistenten [Jarvis]: " ASSISTANT_NAME
+    read -rp "  Name des Assistenten [Jarvis]: " ASSISTANT_NAME
     ASSISTANT_NAME="${ASSISTANT_NAME:-Jarvis}"
 
-    # .env schreiben
-    cat > .env << ENVFILE
-# ============================================================
-# MindHome Assistant — Konfiguration
-# Erstellt am: $(date '+%Y-%m-%d %H:%M')
-# ============================================================
+    # .env sicher schreiben (printf statt Heredoc-Expansion, chmod 600)
+    (
+        umask 077
+        {
+            echo "# ============================================================"
+            echo "# MindHome Assistant — Konfiguration"
+            echo "# Erstellt am: $(date '+%Y-%m-%d %H:%M')"
+            echo "# ============================================================"
+            echo ""
+            echo "# --- Home Assistant Verbindung ---"
+            printf 'HA_URL=%s\n' "$HA_URL"
+            printf 'HA_TOKEN=%s\n' "$HA_TOKEN"
+            echo ""
+            echo "# --- MindHome Add-on Verbindung ---"
+            printf 'MINDHOME_URL=%s\n' "$MINDHOME_URL"
+            echo ""
+            echo "# --- Daten-Verzeichnis (SSD 2) ---"
+            echo "# Aendern falls Daten woanders liegen (z.B. /mnt/data oder ./data)"
+            printf 'DATA_DIR=%s\n' "$DATA_DIR"
+            echo ""
+            echo "# --- Ollama (laeuft nativ auf dem Host) ---"
+            echo "OLLAMA_URL=http://host.docker.internal:11434"
+            echo ""
+            echo "# --- Datenbanken (Docker-intern, nicht aendern) ---"
+            echo "REDIS_URL=redis://redis:6379"
+            echo "CHROMA_URL=http://chromadb:8000"
+            echo ""
+            echo "# --- Benutzer ---"
+            printf 'USER_NAME=%s\n' "$USER_NAME"
+            printf 'ASSISTANT_NAME=%s\n' "$ASSISTANT_NAME"
+            echo ""
+            echo "# --- Server (nicht aendern) ---"
+            echo "ASSISTANT_HOST=0.0.0.0"
+            echo "ASSISTANT_PORT=8200"
+            echo ""
+            echo "# --- API Key (wird auto-generiert wenn leer) ---"
+            echo "# ASSISTANT_API_KEY="
+        } > .env
+    )
 
-# --- Home Assistant Verbindung ---
-HA_URL=$HA_URL
-HA_TOKEN=$HA_TOKEN
-
-# --- MindHome Add-on Verbindung ---
-MINDHOME_URL=$MINDHOME_URL
-
-# --- Daten-Verzeichnis (SSD 2) ---
-# Aendern falls Daten woanders liegen (z.B. /mnt/data oder ./data)
-DATA_DIR=$DATA_DIR
-
-# --- Ollama (laeuft nativ auf dem Host) ---
-OLLAMA_URL=http://host.docker.internal:11434
-
-# --- Datenbanken (Docker-intern, nicht aendern) ---
-REDIS_URL=redis://redis:6379
-CHROMA_URL=http://chromadb:8000
-
-# --- Benutzer ---
-USER_NAME=$USER_NAME
-ASSISTANT_NAME=$ASSISTANT_NAME
-
-# --- Server (nicht aendern) ---
-ASSISTANT_HOST=0.0.0.0
-ASSISTANT_PORT=8200
-
-# --- API Key (wird auto-generiert wenn leer) ---
-# ASSISTANT_API_KEY=
-ENVFILE
-
-    success ".env erstellt"
+    success ".env erstellt (Berechtigungen: nur Besitzer kann lesen)"
 else
     # DATA_DIR aus bestehender .env lesen oder Standard setzen
     if grep -q "^DATA_DIR=" .env 2>/dev/null; then
@@ -516,9 +558,12 @@ else
         # DATA_DIR zur bestehenden .env hinzufuegen
         echo "" >> .env
         echo "# --- Daten-Verzeichnis (SSD 2) ---" >> .env
-        echo "DATA_DIR=$DATA_DIR" >> .env
+        printf 'DATA_DIR=%s\n' "$DATA_DIR" >> .env
         success "DATA_DIR=$DATA_DIR zur .env hinzugefuegt"
     fi
+
+    # Berechtigungen sicherstellen
+    chmod 600 .env
 fi
 
 # ============================================================
@@ -566,7 +611,8 @@ docker compose ps
 
 # API-Test
 echo ""
-LOCAL_IP=$(hostname -I | awk '{print $1}')
+LOCAL_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+LOCAL_IP="${LOCAL_IP:-localhost}"
 HEALTH_RESPONSE=$(curl -sf http://localhost:8200/api/assistant/health 2>/dev/null || echo "nicht erreichbar")
 
 if echo "$HEALTH_RESPONSE" | grep -q "ok\|healthy\|status" 2>/dev/null; then
