@@ -1240,6 +1240,25 @@ async def ui_regenerate_api_key(token: str = ""):
         raise HTTPException(status_code=500, detail=f"Fehler: {e}")
 
 
+@app.post("/api/ui/recovery-key/regenerate")
+async def ui_regenerate_recovery_key(token: str = ""):
+    """Recovery-Key neu generieren (nur fuer eingeloggte User)."""
+    _check_token(token)
+    new_recovery_key = secrets.token_urlsafe(16)[:12].upper()
+    recovery_hash = _hash_value(new_recovery_key)
+
+    try:
+        with open(SETTINGS_YAML_PATH) as f:
+            cfg = yaml.safe_load(f) or {}
+        cfg.setdefault("dashboard", {})["recovery_key_hash"] = recovery_hash
+        with open(SETTINGS_YAML_PATH, "w") as f:
+            yaml.safe_dump(cfg, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+        _audit_log("recovery_key_regenerated", {})
+        return {"recovery_key": new_recovery_key, "message": "Neuer Recovery-Key generiert. Bitte sicher aufbewahren!"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
 class ApiKeyEnforcementRequest(BaseModel):
     enabled: bool
 
