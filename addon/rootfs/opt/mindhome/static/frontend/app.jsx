@@ -9963,6 +9963,16 @@ const JarvisChatPage = () => {
 
     // --- Voice recording ---
     const startRecording = async () => {
+        // Secure context check (HTTPS required for microphone)
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            showToast(
+                lang === 'de'
+                    ? 'Mikrofon nicht verfuegbar. Home Assistant muss ueber HTTPS aufgerufen werden (Browser blockiert Mikrofon bei HTTP).'
+                    : 'Microphone unavailable. Home Assistant must be accessed via HTTPS (browsers block microphone on HTTP).',
+                'error'
+            );
+            return;
+        }
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
             const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
@@ -9980,10 +9990,15 @@ const JarvisChatPage = () => {
             mediaRecorder.start();
             setRecording(true);
         } catch (err) {
+            const isSecure = window.isSecureContext;
             showToast(
                 lang === 'de'
-                    ? 'Mikrofon-Zugriff verweigert. Bitte erlaube den Zugriff in den Browser-Einstellungen.'
-                    : 'Microphone access denied. Please allow access in browser settings.',
+                    ? (isSecure
+                        ? 'Mikrofon-Zugriff verweigert. Bitte erlaube den Zugriff in den Browser-Einstellungen.'
+                        : 'Mikrofon blockiert: Home Assistant muss ueber HTTPS aufgerufen werden.')
+                    : (isSecure
+                        ? 'Microphone access denied. Please allow access in browser settings.'
+                        : 'Microphone blocked: Home Assistant must be accessed via HTTPS.'),
                 'error'
             );
         }
