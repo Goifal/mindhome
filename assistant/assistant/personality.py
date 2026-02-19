@@ -404,8 +404,12 @@ class PersonalityEngine:
                 match = False
                 if operator == ">" and isinstance(actual, (int, float)):
                     match = actual > value
+                elif operator == ">=" and isinstance(actual, (int, float)):
+                    match = actual >= value
                 elif operator == "<" and isinstance(actual, (int, float)):
                     match = actual < value
+                elif operator == "<=" and isinstance(actual, (int, float)):
+                    match = actual <= value
                 elif operator == "==":
                     match = str(actual) == str(value)
 
@@ -417,6 +421,13 @@ class PersonalityEngine:
             hour_max = rule.get("check_hour_max")
             if hour_min is not None and hour_max is not None:
                 if not (hour_min <= hour <= hour_max):
+                    continue
+
+            # Heizungsmodus-Check (optional)
+            check_heating_mode = rule.get("check_heating_mode")
+            if check_heating_mode:
+                current_mode = yaml_config.get("heating", {}).get("mode", "room_thermostat")
+                if current_mode != check_heating_mode:
                     continue
 
             # Raum-Check (optional)

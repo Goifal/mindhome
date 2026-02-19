@@ -39,12 +39,16 @@ FUNCTION_DOMAIN_MAP = {
 }
 
 # Welche Parameter bei Konflikten verglichen werden
+def _get_climate_conflict_params() -> dict:
+    """Liefert Konflikt-Parameter je nach Heizungsmodus."""
+    mode = yaml_config.get("heating", {}).get("mode", "room_thermostat")
+    if mode == "heating_curve":
+        return {"key": "offset", "unit": "°C", "type": "numeric"}
+    return {"key": "temperature", "unit": "°C", "type": "numeric"}
+
+
 CONFLICT_PARAMETERS = {
-    "climate": {
-        "key": "temperature",
-        "unit": "°C",
-        "type": "numeric",
-    },
+    "climate": _get_climate_conflict_params(),
     "light": {
         "key": "brightness",
         "unit": "%",

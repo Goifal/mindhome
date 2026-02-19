@@ -355,6 +355,24 @@ context:
   # Timeout fuer API-Calls in Sekunden
   api_timeout: 5
 
+# --- Heizung ---
+heating:
+  # Heizungsmodus: "room_thermostat" oder "heating_curve"
+  #   room_thermostat: Einzelraumregelung mit climate.* Entities pro Raum
+  #   heating_curve:   Feste Heizkurve, nur Vorlauftemperatur-Offset steuerbar
+  mode: "room_thermostat"
+
+  # --- Nur fuer heating_curve Modus: ---
+  # Entity-ID der Heizung (z.B. climate.panasonic_heat_pump_main_z1_temp)
+  curve_entity: ""
+  # Erlaubter Offset-Bereich zur Heizkurve (in Grad Celsius)
+  curve_offset_min: -5
+  curve_offset_max: 5
+  # Nacht-Absenkung als Offset (Gute-Nacht-Routine)
+  night_offset: -2
+  # Abwesenheits-Absenkung als Offset
+  away_offset: -3
+
 # --- Sicherheit ---
 security:
   # Aktionen die Bestaetigung brauchen
@@ -363,7 +381,7 @@ security:
     - "set_alarm:disarm"
     - "set_climate:off"
 
-  # Temperatur-Grenzen
+  # Temperatur-Grenzen (nur fuer room_thermostat Modus)
   climate_limits:
     min: 15
     max: 28

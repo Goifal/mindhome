@@ -752,7 +752,20 @@ Das ist wichtig fuer Multi-Room Audio und Praesenz-Erkennung.
 
 ---
 
-### Tab 8: Sicherheit (SOLLTE pruefen)
+### Tab 8: Sicherheit & Heizung (SOLLTE pruefen)
+
+**Heizungsmodus** (SOLLTE als erstes einstellen):
+
+| Modus | Beschreibung |
+|-------|-------------|
+| Raumthermostate | Einzelraumregelung — jeder Raum hat eigenen Thermostat |
+| Heizkurve | Feste Heizkurve, nur Vorlauftemperatur-Offset (±5°C) steuerbar |
+
+Bei **Heizkurve** zusaetzlich eintragen:
+- Entity-ID der Heizung (z.B. `climate.panasonic_heat_pump_main_z1_temp`)
+- Offset-Grenzen (Standard: -5 bis +5)
+- Nacht-Offset (Standard: -2)
+- Abwesenheits-Offset (Standard: -3)
 
 **Bestaetigungs-Pflicht:**
 Bestimmte Aktionen brauchen eine Bestaetigung:
@@ -760,7 +773,7 @@ Bestimmte Aktionen brauchen eine Bestaetigung:
 - Alarm deaktivieren
 - Heizung komplett ausschalten
 
-**Klima-Grenzen:**
+**Klima-Grenzen** (nur bei Raumthermostat-Modus):
 - Minimum: 15°C (nie kaelter heizen)
 - Maximum: 28°C (nie waermer heizen)
 
@@ -807,6 +820,8 @@ Diese Features laufen sofort nach Schritt 1 + 2 — kein Dashboard noetig:
 
 ### Empfohlen (im Jarvis Dashboard unter `http://<assistant-ip>:8200/ui/`):
 
+- [ ] Tab "Sicherheit": Heizungsmodus waehlen (Raumthermostat oder Heizkurve)
+- [ ] Tab "Sicherheit": Bei Heizkurve → Entity-ID und Offsets eintragen
 - [ ] Tab "Allgemein": Autonomie-Level setzen (2 empfohlen)
 - [ ] Tab "Raeume": Raum-Speaker zuordnen
 - [ ] Tab "Raeume": Bewegungsmelder zuordnen

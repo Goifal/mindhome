@@ -28,6 +28,12 @@ class FunctionValidator:
         self.temp_min = limits.get("min", 15)
         self.temp_max = limits.get("max", 28)
 
+        # Heizungsmodus
+        heating = yaml_config.get("heating", {})
+        self.heating_mode = heating.get("mode", "room_thermostat")
+        self.offset_min = heating.get("curve_offset_min", -5)
+        self.offset_max = heating.get("curve_offset_max", 5)
+
         # Aktionen die Bestaetigung brauchen
         confirm_list = security.get("require_confirmation", [])
         self.require_confirmation = set(confirm_list)
@@ -66,6 +72,28 @@ class FunctionValidator:
         return ValidationResult(ok=True)
 
     def _validate_set_climate(self, args: dict) -> ValidationResult:
+        if self.heating_mode == "heating_curve":
+            return self._validate_climate_curve(args)
+        return self._validate_climate_room(args)
+
+    def _validate_climate_curve(self, args: dict) -> ValidationResult:
+        """Validiert Offset fuer Heizkurven-Modus."""
+        offset = args.get("offset")
+        if offset is not None:
+            if offset < self.offset_min:
+                return ValidationResult(
+                    ok=False,
+                    reason=f"Offset {offset}°C unter Minimum ({self.offset_min}°C)",
+                )
+            if offset > self.offset_max:
+                return ValidationResult(
+                    ok=False,
+                    reason=f"Offset {offset}°C ueber Maximum ({self.offset_max}°C)",
+                )
+        return ValidationResult(ok=True)
+
+    def _validate_climate_room(self, args: dict) -> ValidationResult:
+        """Validiert absolute Temperatur fuer Raumthermostat-Modus."""
         temp = args.get("temperature")
         if temp is not None:
             if temp < self.temp_min:

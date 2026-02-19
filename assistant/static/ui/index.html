@@ -1108,10 +1108,32 @@ function renderRoutines() {
 
 // ---- Tab 8: Sicherheit & Erweitert ----
 function renderSecurity() {
-  return sectionWrap('&#128274;', 'Sicherheit',
+  const hMode = getPath(S, 'heating.mode') || 'room_thermostat';
+  const isCurve = hMode === 'heating_curve';
+
+  return sectionWrap('&#128293;', 'Heizung',
+    '<div class="form-group"><label>Heizungsmodus</label>' +
+    '<select data-path="heating.mode" onchange="setPath(S,\'heating.mode\',this.value);renderCurrentTab();">' +
+    '<option value="room_thermostat" ' + (hMode==='room_thermostat'?'selected':'') + '>Raumthermostate (Einzelraumregelung)</option>' +
+    '<option value="heating_curve" ' + (hMode==='heating_curve'?'selected':'') + '>Heizkurve (Vorlauf-Offset)</option>' +
+    '</select></div>' +
+    (isCurve ?
+      fText('heating.curve_entity', 'Heizungs-Entity', 'z.B. climate.panasonic_heat_pump_main_z1_temp') +
+      fNum('heating.curve_offset_min', 'Min. Offset (°C)', -10, 0) +
+      fNum('heating.curve_offset_max', 'Max. Offset (°C)', 0, 10) +
+      fNum('heating.night_offset', 'Nacht-Offset (°C)', -10, 0) +
+      fNum('heating.away_offset', 'Abwesenheits-Offset (°C)', -10, 0)
+    :
+      '<p style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;">Einzelraumregelung: Jeder Raum hat einen eigenen Thermostat. Temperatur-Grenzen werden unten bei Sicherheit konfiguriert.</p>'
+    )
+  ) +
+  sectionWrap('&#128274;', 'Sicherheit',
     fKeywords('security.require_confirmation', 'Bestaetigung erforderlich') +
-    fNum('security.climate_limits.min', 'Temperatur Min (°C)', 5, 25) +
-    fNum('security.climate_limits.max', 'Temperatur Max (°C)', 20, 35)
+    (!isCurve ?
+      fNum('security.climate_limits.min', 'Temperatur Min (°C)', 5, 25) +
+      fNum('security.climate_limits.max', 'Temperatur Max (°C)', 20, 35)
+    : '<p style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;">Temperatur-Grenzen werden im Heizkurven-Modus durch die Offset-Grenzen oben gesteuert.</p>'
+    )
   ) +
   sectionWrap('&#128272;', 'Vertrauensstufen',
     fNum('trust_levels.default', 'Standard-Trust', 0, 2) +
