@@ -35,7 +35,7 @@
 
 ---
 
-## PHASE 7 — Routinen & Tagesstruktur (88.9%)
+## PHASE 7 — Routinen & Tagesstruktur (95.0%)
 
 | # | Feature | Status | % | Details |
 |---|---------|:------:|:-:|---------|
@@ -47,18 +47,18 @@
 | 7.6 | Gaeste-Modus | DONE | 100% | Trigger, Restrictions, Prompt-Mod, Gaeste-WLAN |
 | 7.7 | Raum-Intelligenz | DONE | 95% | 6 Raeume, Defaults, Farben + lernfaehiges Override (YAML-Persistierung, zeitbasiert) |
 | 7.8 | Abwesenheits-Summary | DONE | 95% | Event-Logging, LLM-Summary + Relevanz-Filter (Typ+Keyword-Filter, Deduplizierung) |
-| 7.9 | Saisonale Anpassung | ⚠️ TEIL | 35% | Saisondaten berechnet, aber **nur als LLM-Kontext** — keine autonomen Rolladen/Licht-Anpassungen |
+| 7.9 | Saisonale Anpassung | DONE | 90% | 4 Jahreszeiten, Sonnenstand, Hitzeschutz + **Rolladen-Automatik** (`_run_seasonal_loop`, auto bei Level ≥3, sonst Vorschlag) |
 
 ---
 
-## PHASE 8 — Gedaechtnis & Vorausdenken (82.9%)
+## PHASE 8 — Gedaechtnis & Vorausdenken (92.9%)
 
 | # | Feature | Status | % | Details |
 |---|---------|:------:|:-:|---------|
 | 8.1 | Anticipatory Actions | DONE | 95% | Zeit+Sequenz+Kontext-Patterns (Tageszeit-Cluster-Erkennung, dominante Aktionen) |
 | 8.2 | Explizites Notizbuch | DONE | 100% | Merk dir / Was weisst du / Vergiss / Heute gelernt |
 | 8.3 | Wissensabfragen | DONE | 90% | Intent-Routing, Deep-Model |
-| 8.4 | "Was waere wenn" | ⚠️ TEIL | 15% | 12 Trigger erkannt, aber **nur LLM-Prompt** — keine echte Simulation, keine HA-Daten-Analyse |
+| 8.4 | "Was waere wenn" | DONE | 85% | 12 Trigger + **echte HA-Daten** (Temperaturen, Energie, Fenster/Tueren, Alarm, Wetter, Saison) in Simulation-Prompt |
 | 8.5 | Intent-Extraktion | DONE | 90% | LLM-basiert, Redis, Datum-Parsing, Reminder-Loop laeuft via initialize(). Qualitaet abhaengig von LLM-Extraktion |
 | 8.6 | Konversations-Kontinuitaet | DONE | 90% | Bis zu 3 offene Themen gleichzeitig, kombinierter Prompt-Hinweis |
 | 8.7 | Langzeit-Persoenlichkeit | DONE | 100% | Metrics, Decay, 5 Stufen + Monthly Report (generate_monthly_report, Redis-Persistierung) |
@@ -79,7 +79,7 @@
 
 ---
 
-## PHASE 10 — Multi-Room & Kommunikation (86.0%)
+## PHASE 10 — Multi-Room & Kommunikation (92.0%)
 
 | # | Feature | Status | % | Details |
 |---|---------|:------:|:-:|---------|
@@ -87,7 +87,7 @@
 | 10.2 | Delegieren an Personen | DONE | 90% | 7 Pattern-Typen, Trust-Check |
 | 10.3 | Vertrauensstufen | DONE | 95% | 3 Level, Guest-Whitelist, Raum-Scoping |
 | 10.4 | Selbst-Diagnostik | DONE | 90% | Entity-Checks, System-Resources |
-| 10.5 | Wartungs-Assistent | ⚠️ TEIL | 60% | 5 Tasks + History, aber **kein Auto-Check-Loop** — Wartungserinnerungen nur bei manuellem Abruf |
+| 10.5 | Wartungs-Assistent | DONE | 90% | 5 Tasks + History, Auto-Check alle 30 Min via `_run_diagnostics_loop()`, sanfte LOW-Erinnerungen |
 
 ---
 
@@ -228,7 +228,8 @@
 | 2026-02-19 | — | **Phase 17+ MCU-Jarvis Transformation (10 Features):** Kompletter End-to-End Code-Audit aller 39 Module. Funktionsstatus ermittelt: 32% funktional. 10 neue Features definiert: Continuous Presence, Kamera/Vision, Echte Initiative, Pushback & Fuersorglichkeit, Kommunikations-Management, Emergency Protocols, Daten-Analyse, Streaming & Interrupts, Langzeit-Beziehung, Werkstatt-Assistent. Quick Wins identifiziert (Morning Briefing Auto-Trigger, Summarizer Callback, Boot-Sequenz TTS). Abhaengigkeiten und Reihenfolge dokumentiert. ~112 Stunden geschaetzter Gesamtaufwand | Phase 17: NEU 32% |
 | 2026-02-19 | — | **Phase 14.2 Multi-Modal Input (OCR):** ocr.py (~250 Zeilen): Tesseract-OCR (deu+eng) mit Bild-Preprocessing (Upscale, Kontrast, Schaerfe), Vision-LLM via Ollama (llava etc.) mit Base64-Encoding + Redis-Cache (24h TTL). file_handler.py OCR-Integration fuer jpg/jpeg/png/gif/webp/bmp. build_file_context() zeigt OCR-Text + Bild-Analyse separat. brain.py OCREngine Init + Vision-LLM in Process-Pipeline. Dockerfile + requirements.txt (tesseract-ocr, pytesseract, Pillow). settings.yaml OCR-Konfiguration. 22 Tests (test_ocr.py) | Phase 14: 30→63.3% |
 | 2026-02-19 | — | **Ehrlichkeits-Audit:** 5 Features korrigiert, B1 als Fehlalarm erkannt (Intent-Tracker funktioniert). Phasen-Durchschnitte korrigiert. | Phase 7 ↓, Phase 8 ↓, Phase 10 ↓ |
-| 2026-02-19 | — | **Quick-Fix B2+B3:** Morning Briefing Auto-Trigger (proactive.py: `_check_morning_briefing()` bei Motion-Event 6-10 Uhr). Summarizer notify-Callback (summarizer.py: `set_notify_callback()`, brain.py: `_handle_daily_summary()`, Zustellung nach Morning Briefing via pending_summary Redis-Key). | Phase 7: 83.9→88.9%, Phase 17.7: 25→35% |
+| 2026-02-19 | — | **Quick-Fix B2+B3:** Morning Briefing Auto-Trigger (proactive.py: `_check_morning_briefing()` bei Motion-Event 6-10 Uhr). Summarizer notify-Callback (summarizer.py: `set_notify_callback()`, brain.py: `_handle_daily_summary()`, Zustellung nach Morning Briefing via pending_summary Redis-Key). | Phase 7 ↑, Phase 17.7 ↑ |
+| 2026-02-19 | — | **B4: Saisonale Rolladen-Automatik:** proactive.py `_run_seasonal_loop()` (30-Min-Check), `_execute_seasonal_cover()` (auto bei Level ≥3, sonst Vorschlag). Sonnenstand-basiert, Sommer-Hitzeschutz bei >30°C, Winter-Isolierung. settings.yaml `seasonal_actions` Sektion. **B5: Was-waere-wenn mit echten HA-Daten:** brain.py `_get_whatif_prompt()` fetcht live Temperaturen, Energie, offene Fenster/Tueren, Alarm-Status, Wetter, Saison. **B6: Fehlalarm** — Wartungs-Loop funktioniert bereits via `_run_diagnostics_loop()` | Phase 7: 88.9→95%, Phase 8: 82.9→92.9%, Phase 10: 86→92% |
 
 ---
 
@@ -244,9 +245,9 @@
 | ~~B1~~ | ~~`intent_tracker.start()` nie aufgerufen~~ — **FEHLALARM:** `initialize()` startet Loop korrekt | 8.5 | — | OK |
 | ~~B2~~ | ~~Morning Briefing kein Auto-Trigger~~ — **GEFIXT: Motion-Trigger in proactive.py** | 7.1 | — | DONE |
 | ~~B3~~ | ~~Summarizer kein notify-Callback~~ — **GEFIXT: Callback + Zustellung nach Briefing** | 17.7 | — | DONE |
-| B4 | Saisonale Anpassung nur LLM-Kontext, keine autonomen Aktionen | 7.9 | 4 Std | LUECKE |
-| B5 | "Was waere wenn" nur Prompt, keine echte HA-Daten-Simulation | 8.4 | 6 Std | LUECKE |
-| B6 | Wartungs-Assistent kein automatischer Check-Loop | 10.5 | 2 Std | LUECKE |
+| ~~B4~~ | ~~Saisonale Anpassung nur LLM-Kontext~~ — **GEFIXT: `_run_seasonal_loop` + `_execute_seasonal_cover`** | 7.9 | — | DONE |
+| ~~B5~~ | ~~Was-waere-wenn nur Prompt~~ — **GEFIXT: Echte HA-Daten (Temp, Energie, Fenster, Alarm, Wetter)** | 8.4 | — | DONE |
+| ~~B6~~ | ~~Wartungs-Assistent kein Auto-Loop~~ — **FEHLALARM:** `_run_diagnostics_loop()` prueft alle 30 Min | 10.5 | — | OK |
 
 ### Komplett fehlende Module
 
@@ -322,9 +323,9 @@ Phase 11 (Wissen)           97.5%  ███████████████
 Phase 16 (fuer Alle)        96.7%  ███████████████████▓░
 Phase 15 (Haushalt)         96.3%  ███████████████████▓░
 Phase  9 (Stimme)           95.7%  ███████████████████▓░
-Phase 10 (Multi-Room)       86.0%  █████████████████░░░░  ↓ korrigiert
-Phase  7 (Routinen)         88.9%  ██████████████████░░░  B2 gefixt
-Phase  8 (Gedaechtnis)      82.9%  █████████████████░░░░  ↓ korrigiert
+Phase  7 (Routinen)         95.0%  ███████████████████░░  B2+B4 gefixt
+Phase  8 (Gedaechtnis)      92.9%  ███████████████████░░  B5 gefixt
+Phase 10 (Multi-Room)       92.0%  ██████████████████░░░  B6 Fehlalarm
 Phase 14 (Wahrnehmung)      63.3%  █████████████░░░░░░░░
 Phase 12 (Authentizitaet)   58.0%  ████████████░░░░░░░░░
 Phase 13 (Selbstprog.)      48.8%  ██████████░░░░░░░░░░░
@@ -388,8 +389,7 @@ Phase 17+(MCU-Jarvis)       32.0%  ███████░░░░░░░░
 
 ---
 
-> **Hinweis:** Ehrlichkeits-Audit durchgefuehrt — 5 Features korrigiert, 6 Bugs/Luecken dokumentiert (B1-B6).
-> 3 Quick-Fixes (B1-B3) koennen in ~30 Min behoben werden und bringen sofort spuerbare Verbesserung.
+> **Hinweis:** Alle 6 Bugs/Luecken (B1-B6) aus dem Ehrlichkeits-Audit abgearbeitet: 3 Fehlalarme (B1/B6 funktionierten bereits), 3 gefixt (B2/B3/B4/B5).
 > Sicherheits-Audit vollstaendig (alle 26/26 Punkte SICHER). Foundation komplett (7/7 DONE).
 > **Phase 17+ MCU-Jarvis Transformation — 10 Features, 32% funktional, ~112 Stunden geschaetzt.**
 > **Assistant-Modul: ~21.008 Zeilen, 39 Python-Dateien | Gesamt-Projekt: ~52.200+ Zeilen, 118 Python-Dateien**

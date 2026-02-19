@@ -43,6 +43,7 @@ class ProactiveManager:
         self._task: Optional[asyncio.Task] = None
         self._diag_task: Optional[asyncio.Task] = None
         self._batch_task: Optional[asyncio.Task] = None
+        self._seasonal_task: Optional[asyncio.Task] = None
         self._running = False
 
         # Konfiguration
@@ -100,6 +101,9 @@ class ProactiveManager:
             # Phase 7.4: Geo-Fence
             "person_approaching": (LOW, "Person naehert sich"),
             "person_arriving": (MEDIUM, "Person gleich zuhause"),
+
+            # Phase 7.9: Saisonale Aktionen
+            "seasonal_cover": (LOW, "Rolladen saisonal angepasst"),
         }
 
     async def start(self):
@@ -116,7 +120,11 @@ class ProactiveManager:
         # Phase 15.4: Batch-Loop starten
         if self.batch_enabled:
             self._batch_task = asyncio.create_task(self._run_batch_loop())
-        logger.info("Proactive Manager gestartet (Feedback + Diagnostik + Batching)")
+        # Phase 7.9: Saisonaler Rolladen-Loop
+        seasonal_cfg = yaml_config.get("seasonal_actions", {})
+        if seasonal_cfg.get("enabled", True):
+            self._seasonal_task = asyncio.create_task(self._run_seasonal_loop())
+        logger.info("Proactive Manager gestartet (Feedback + Diagnostik + Batching + Saisonal)")
 
     async def stop(self):
         """Stoppt den Event Listener."""
@@ -137,6 +145,12 @@ class ProactiveManager:
             self._batch_task.cancel()
             try:
                 await self._batch_task
+            except asyncio.CancelledError:
+                pass
+        if self._seasonal_task:
+            self._seasonal_task.cancel()
+            try:
+                await self._seasonal_task
             except asyncio.CancelledError:
                 pass
         logger.info("Proactive Manager gestoppt")
@@ -778,6 +792,22 @@ Beispiele:
                 f"Max 1 Satz. Deutsch. Butler-Stil."
             )
 
+        # Phase 7.9: Saisonale Rolladen-Meldungen
+        if event_type == "seasonal_cover":
+            msg = data.get("message", "Rolladen angepasst")
+            is_suggestion = data.get("suggestion", False)
+            if is_suggestion:
+                return (
+                    f"Saisonale Empfehlung: {msg}\n"
+                    "Formuliere als hoeflichen Vorschlag. Max 1 Satz.\n"
+                    "Beispiel: 'Sir, die Rolladen koennten jetzt runter — draussen wird es warm.'"
+                )
+            return (
+                f"Saisonale Aktion: {msg}\n"
+                "Formuliere als kurze Info. Max 1 Satz.\n"
+                "Beispiel: 'Rolladen sind angepasst — Hitzeschutz ist aktiv.'"
+            )
+
         # Phase 10: Wartungs-Erinnerungen sanft formulieren
         if event_type == "maintenance_due":
             task_name = data.get("task", "Wartungsaufgabe")
@@ -869,3 +899,126 @@ Beispiele:
 
         except Exception as e:
             logger.error("Batch-Summary Fehler: %s", e)
+
+    # ------------------------------------------------------------------
+    # Phase 7.9: Saisonale Rolladen-Automatik
+    # ------------------------------------------------------------------
+
+    async def _run_seasonal_loop(self):
+        """Periodisch Rolladen-Timing pruefen und saisonal anpassen."""
+        await asyncio.sleep(180)  # 3 Min. warten bis System stabil
+
+        seasonal_cfg = yaml_config.get("seasonal_actions", {})
+        check_interval = seasonal_cfg.get("check_interval_minutes", 30)
+        auto_level = seasonal_cfg.get("auto_execute_level", 3)
+        last_action_date = ""
+        last_action_type = ""  # "open" oder "close"
+
+        while self._running:
+            try:
+                now = datetime.now()
+                today = now.strftime("%Y-%m-%d")
+                current_minutes = now.hour * 60 + now.minute
+
+                # Reset am neuen Tag
+                if last_action_date != today:
+                    last_action_type = ""
+                    last_action_date = today
+
+                # Cover-Timing von ContextBuilder holen
+                states = await self.brain.ha.get_states()
+                timing = self.brain.context_builder.get_cover_timing(states)
+                open_time = timing.get("open_time", "07:30")
+                close_time = timing.get("close_time", "19:00")
+                season = timing.get("season", "")
+                reason = timing.get("reason", "")
+
+                # Zeiten parsen
+                try:
+                    ot_parts = open_time.split(":")
+                    open_min = int(ot_parts[0]) * 60 + int(ot_parts[1])
+                    ct_parts = close_time.split(":")
+                    close_min = int(ct_parts[0]) * 60 + int(ct_parts[1])
+                except (ValueError, IndexError):
+                    open_min, close_min = 450, 1140  # 07:30, 19:00
+
+                # Toleranz: ±15 Min um die optimale Zeit
+                tolerance = 15
+
+                # Morgens: Rolladen oeffnen
+                if (last_action_type != "open"
+                        and abs(current_minutes - open_min) <= tolerance):
+                    await self._execute_seasonal_cover(
+                        "open", 100, season, reason, auto_level,
+                    )
+                    last_action_type = "open"
+
+                # Abends: Rolladen schliessen
+                elif (last_action_type != "close"
+                        and abs(current_minutes - close_min) <= tolerance):
+                    await self._execute_seasonal_cover(
+                        "close", 0, season, reason, auto_level,
+                    )
+                    last_action_type = "close"
+
+                # Sommer-Hitzeschutz: Mitte des Tages pruefen
+                elif (season == "summer" and last_action_type == "open"):
+                    outside_temp = None
+                    for s in (states or []):
+                        if s.get("entity_id", "").startswith("weather."):
+                            outside_temp = s.get("attributes", {}).get("temperature")
+                            break
+                    if outside_temp and outside_temp > 30 and 11 <= now.hour <= 15:
+                        await self._execute_seasonal_cover(
+                            "heat_protection", 20, season,
+                            f"Hitzeschutz: {outside_temp}°C Aussentemperatur",
+                            auto_level,
+                        )
+                        last_action_type = "close"
+
+            except Exception as e:
+                logger.error("Seasonal-Loop Fehler: %s", e)
+
+            await asyncio.sleep(check_interval * 60)
+
+    async def _execute_seasonal_cover(
+        self, action: str, position: int, season: str, reason: str, auto_level: int,
+    ):
+        """Fuehrt saisonale Rolladen-Aktion aus oder schlaegt sie vor."""
+        level = self.brain.autonomy.level
+
+        if level >= auto_level:
+            # Automatisch ausfuehren
+            try:
+                states = await self.brain.ha.get_states()
+                count = 0
+                for s in (states or []):
+                    eid = s.get("entity_id", "")
+                    if eid.startswith("cover."):
+                        await self.brain.ha.call_service(
+                            "cover", "set_cover_position",
+                            {"entity_id": eid, "position": position},
+                        )
+                        count += 1
+
+                if count > 0:
+                    desc = "geoeffnet" if position > 50 else "geschlossen"
+                    await self._notify("seasonal_cover", LOW, {
+                        "action": action,
+                        "message": f"Rolladen {desc} ({reason})",
+                        "count": count,
+                    })
+                    logger.info(
+                        "Seasonal: %d Rolladen auf %d%% (%s: %s)",
+                        count, position, season, reason,
+                    )
+            except Exception as e:
+                logger.error("Seasonal Cover-Aktion Fehler: %s", e)
+        else:
+            # Nur vorschlagen
+            desc = "oeffnen" if position > 50 else "schliessen"
+            await self._notify("seasonal_cover", LOW, {
+                "action": action,
+                "message": f"Rolladen {desc}? ({reason})",
+                "suggestion": True,
+            })
