@@ -856,9 +856,9 @@ function fInfo(text) {
 }
 
 function sectionWrap(icon, title, content) {
-  return `<div class="s-section"><div class="s-section-hdr" onclick="toggleSec(this)">
+  return `<div class="s-section"><div class="s-section-hdr open" onclick="toggleSec(this)">
     <h3>${icon} ${title}</h3><span class="arrow">&#9660;</span></div>
-    <div class="s-section-body">${content}</div></div>`;
+    <div class="s-section-body open">${content}</div></div>`;
 }
 
 function updRange(el) {
