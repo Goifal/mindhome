@@ -43,6 +43,7 @@ from .model_router import ModelRouter
 from .mood_detector import MoodDetector
 from .ollama_client import OllamaClient
 from .ambient_audio import AmbientAudioClassifier
+from .ocr import OCREngine
 from .conflict_resolver import ConflictResolver
 from .personality import PersonalityEngine
 from .proactive import ProactiveManager
@@ -133,6 +134,9 @@ class AssistantBrain:
 
         # Phase 10: Diagnostik + Wartungs-Assistent
         self.diagnostics = DiagnosticsEngine(self.ha)
+
+        # Phase 14.2: OCR & Bild-Analyse (Multi-Modal Input)
+        self.ocr = OCREngine(self.ollama)
 
         # Phase 14.3: Ambient Audio (Umgebungsgeraeusch-Erkennung)
         self.ambient_audio = AmbientAudioClassifier(self.ha)
@@ -227,6 +231,9 @@ class AssistantBrain:
 
         # Phase 13.2: Self Automation initialisieren
         await self.self_automation.initialize(redis_client=self.memory.redis)
+
+        # Phase 14.2: OCR Engine initialisieren
+        await self.ocr.initialize(redis_client=self.memory.redis)
 
         # Phase 14.3: Ambient Audio initialisieren und starten
         await self.ambient_audio.initialize(redis_client=self.memory.redis)
@@ -512,7 +519,19 @@ class AssistantBrain:
             system_prompt += rag_context
 
         # Phase 12: Datei-Kontext in Prompt einbauen
+        # Phase 14.2: Vision-LLM Bild-Analyse (erweitert Datei-Kontext)
         if files:
+            if self.ocr.enabled and self.ocr._vision_available:
+                for f in files:
+                    if f.get("type") == "image":
+                        try:
+                            description = await self.ocr.describe_image(f, text)
+                            if description:
+                                f["vision_description"] = description
+                        except Exception as e:
+                            logger.warning("Vision-LLM fuer %s fehlgeschlagen: %s",
+                                           f.get("name", "?"), e)
+
             from .file_handler import build_file_context
             file_context = build_file_context(files)
             if file_context:
@@ -1080,6 +1099,7 @@ class AssistantBrain:
                 "diagnostics": self.diagnostics.health_status(),
                 "cooking_assistant": f"active (session: {'ja' if self.cooking.has_active_session else 'nein'})",
                 "knowledge_base": f"active ({self.knowledge_base.chroma_collection.count() if self.knowledge_base.chroma_collection else 0} chunks)" if self.knowledge_base.chroma_collection else "disabled",
+                "ocr": self.ocr.health_status(),
                 "ambient_audio": self.ambient_audio.health_status(),
                 "conflict_resolver": self.conflict_resolver.health_status(),
                 "self_automation": self.self_automation.health_status(),

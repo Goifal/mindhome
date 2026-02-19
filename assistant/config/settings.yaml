@@ -823,6 +823,20 @@ device_health:
     - verbrauch
     - strom
 
+# --- Phase 14.2: OCR & Bild-Analyse (Multi-Modal Input) ---
+ocr:
+  enabled: true
+  # Tesseract Sprachen (installierte Pakete: tesseract-ocr-deu, tesseract-ocr-eng)
+  languages: "deu+eng"
+  # Vision-LLM Modell fuer Bild-Beschreibungen (leer = deaktiviert)
+  # Unterstuetzte Modelle: llava, llava-llama3, moondream, bakllava, minicpm-v
+  # Muss ueber "ollama pull <modell>" installiert werden
+  vision_model: ""
+  # Maximale Bildgroesse fuer Vision-LLM (MB)
+  max_image_size_mb: 20
+  # Maximale Token-Laenge der Bild-Beschreibung
+  description_max_tokens: 512
+
 # --- Phase 14.3: Ambient Audio (Umgebungsgeraeusch-Erkennung) ---
 ambient_audio:
   enabled: true
