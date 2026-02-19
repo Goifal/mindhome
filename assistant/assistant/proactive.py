@@ -58,6 +58,14 @@ class ProactiveManager:
         self.batch_max_items = batch_cfg.get("max_items", 10)
         self._batch_queue: list[dict] = []
 
+        # Phase 7.1: Morning Briefing Auto-Trigger
+        mb_cfg = yaml_config.get("routines", {}).get("morning_briefing", {})
+        self._mb_enabled = mb_cfg.get("enabled", True)
+        self._mb_window_start = mb_cfg.get("window_start_hour", 6)
+        self._mb_window_end = mb_cfg.get("window_end_hour", 10)
+        self._mb_triggered_today = False
+        self._mb_last_date = ""
+
         # Event-Mapping: HA Event -> Prioritaet + Beschreibung
         self.event_handlers = {
             # CRITICAL - Immer melden
@@ -266,8 +274,9 @@ class ProactiveManager:
         elif entity_id.startswith("proximity.") or entity_id.startswith("sensor.") and "distance" in entity_id:
             await self._check_geo_fence(entity_id, new_val, old_val, new_state)
 
-        # Phase 10.1: Musik-Follow bei Raumwechsel
+        # Phase 7.1 + 10.1: Bewegung erkannt → Morning Briefing + Musik-Follow
         elif entity_id.startswith("binary_sensor.") and "motion" in entity_id and new_val == "on":
+            await self._check_morning_briefing()
             await self._check_music_follow(entity_id)
 
         # Waschmaschine/Trockner (Power-Sensor faellt unter Schwellwert)
@@ -275,6 +284,51 @@ class ProactiveManager:
             if entity_id.startswith("sensor.") and new_val.replace(".", "").isdigit():
                 if float(old_val or "0") > 10 and float(new_val) < 5:
                     await self._notify("washer_done", MEDIUM, {})
+
+    async def _check_morning_briefing(self):
+        """Phase 7.1: Prueft ob Morning Briefing bei erster Bewegung am Morgen geliefert werden soll."""
+        if not self._mb_enabled:
+            return
+
+        now = datetime.now()
+        today = now.strftime("%Y-%m-%d")
+
+        # Reset am neuen Tag
+        if self._mb_last_date != today:
+            self._mb_triggered_today = False
+            self._mb_last_date = today
+
+        # Schon heute geliefert?
+        if self._mb_triggered_today:
+            return
+
+        # Innerhalb des Morgen-Fensters?
+        if not (self._mb_window_start <= now.hour < self._mb_window_end):
+            return
+
+        # Briefing generieren (routine_engine prueft intern ob schon geliefert via Redis)
+        try:
+            result = await self.brain.routines.generate_morning_briefing()
+            text = result.get("text", "")
+            if text:
+                self._mb_triggered_today = True
+                await emit_proactive(text, "morning_briefing", MEDIUM)
+                logger.info("Morning Briefing automatisch geliefert")
+
+                # B3: Pending Tages-Zusammenfassung nach Briefing liefern
+                if self.brain.memory.redis:
+                    pending = await self.brain.memory.redis.get("jarvis:pending_summary")
+                    if pending:
+                        summary = pending.decode() if isinstance(pending, bytes) else pending
+                        await asyncio.sleep(3)  # Kurze Pause nach dem Briefing
+                        await emit_proactive(
+                            f"Uebrigens, gestern zusammengefasst: {summary}",
+                            "daily_summary", LOW,
+                        )
+                        await self.brain.memory.redis.delete("jarvis:pending_summary")
+                        logger.info("Pending Tages-Zusammenfassung zugestellt")
+        except Exception as e:
+            logger.error("Morning Briefing Auto-Trigger Fehler: %s", e)
 
     async def _check_music_follow(self, motion_entity: str):
         """Phase 10.1: Prueft ob Musik dem User in einen neuen Raum folgen soll."""

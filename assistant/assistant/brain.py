@@ -226,6 +226,7 @@ class AssistantBrain:
             redis_client=self.memory.redis,
             chroma_collection=self.memory.chroma_collection,
         )
+        self.summarizer.set_notify_callback(self._handle_daily_summary)
 
         # Phase 6: TimeAwareness initialisieren und starten
         await self.time_awareness.initialize(redis_client=self.memory.redis)
@@ -1929,6 +1930,17 @@ Der User stellt eine hypothetische Frage. Beantworte sie:
         if text:
             await emit_speaking(text)
             logger.info("Intent-Erinnerung: %s", text)
+
+    async def _handle_daily_summary(self, data: dict):
+        """Callback fuer Tages-Zusammenfassungen — wird morgens beim naechsten Kontakt gesprochen."""
+        summary_text = data.get("text", "")
+        date = data.get("date", "")
+        if summary_text and self.memory.redis:
+            # Zusammenfassung fuer naechsten Morning-Kontakt speichern
+            await self.memory.redis.set(
+                "jarvis:pending_summary", summary_text, ex=86400
+            )
+            logger.info("Tages-Zusammenfassung fuer %s zum Abruf bereitgestellt", date)
 
     async def shutdown(self):
         """Faehrt MindHome Assistant herunter."""

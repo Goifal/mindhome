@@ -41,6 +41,7 @@ class DailySummarizer:
         # Nachtlauf-Task
         self._task: Optional[asyncio.Task] = None
         self._running = False
+        self._notify_callback = None
 
         # Konfiguration aus YAML
         summarizer_cfg = yaml_config.get("summarizer", {})
@@ -65,6 +66,10 @@ class DailySummarizer:
             "DailySummarizer initialisiert (Nachtlauf: %02d:%02d)",
             self.run_hour, self.run_minute,
         )
+
+    def set_notify_callback(self, callback):
+        """Setzt den Callback fuer Zusammenfassungs-Benachrichtigungen."""
+        self._notify_callback = callback
 
     async def stop(self):
         """Stoppt den Nachtlauf."""
@@ -99,7 +104,18 @@ class DailySummarizer:
 
                 # Tages-Summary fuer gestern
                 yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
-                await self.summarize_day(yesterday)
+                daily_summary = await self.summarize_day(yesterday)
+
+                # Callback: Zusammenfassung proaktiv melden
+                if daily_summary and self._notify_callback:
+                    try:
+                        await self._notify_callback({
+                            "type": "daily_summary",
+                            "date": yesterday,
+                            "text": daily_summary,
+                        })
+                    except Exception as e:
+                        logger.error("Summary-Notify Fehler: %s", e)
 
                 # Wochen-Summary jeden Montag
                 if datetime.now().weekday() == 0:
