@@ -4,6 +4,7 @@ __pycache__/
 
 # MindHome Assistant
 assistant/.env
+assistant/.env.backup.*
 assistant/data/
 assistant/data/**
 
