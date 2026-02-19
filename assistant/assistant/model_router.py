@@ -9,6 +9,10 @@ Waehlt das richtige lokale LLM basierend auf Komplexitaet der Anfrage:
 Auto-Capability: Erkennt beim Start welche Modelle verfuegbar sind.
 Wenn das 32B-Modell nicht installiert ist, wird automatisch auf
 14B (oder 3B) zurueckgefallen.
+
+Modelle koennen ueber settings.yaml (models.enabled.fast/smart/deep)
+einzeln aktiviert/deaktiviert werden — unabhaengig davon ob sie in
+Ollama installiert sind.
 """
 
 import logging
@@ -31,8 +35,26 @@ class ModelRouter:
         self._deep_available = True
         self._smart_available = True
 
-        # Keywords aus settings.yaml laden
-        models_config = yaml_config.get("models", {})
+        # Enabled-Status aus Settings (User-Kontrolle)
+        self._deep_enabled = True
+        self._smart_enabled = True
+        self._fast_enabled = True
+
+        # Keywords und Config laden
+        self._load_config()
+
+    def _load_config(self):
+        """Laedt Keywords und Enabled-Status aus yaml_config."""
+        from .config import yaml_config as cfg
+        models_config = cfg.get("models", {})
+
+        # Enabled-Status
+        enabled = models_config.get("enabled", {})
+        self._fast_enabled = enabled.get("fast", True)
+        self._smart_enabled = enabled.get("smart", True)
+        self._deep_enabled = enabled.get("deep", True)
+
+        # Keywords
         self.fast_keywords = models_config.get("fast_keywords", [
             "licht", "lampe", "temperatur", "heizung", "rollladen",
             "jalousie", "szene", "alarm", "tuer", "gute nacht",
@@ -56,14 +78,38 @@ class ModelRouter:
             "pro und contra", "bewerte", "bewertung",
         ])
 
-        # Koch-Keywords die Deep triggern
         self.cooking_keywords = models_config.get("cooking_keywords", [
             "kochen", "backen", "rezept", "zubereiten",
             "braten", "grillen",
         ])
 
-        # Minimale Wortanzahl fuer Deep-Routing (lange Anfragen = komplex)
         self.deep_min_words = models_config.get("deep_min_words", 15)
+
+    def reload_config(self):
+        """
+        Laedt Enabled-Status und Keywords neu aus yaml_config.
+        Aufgerufen nach Settings-Aenderung ueber die UI.
+        """
+        old_fast = self._fast_enabled
+        old_smart = self._smart_enabled
+        old_deep = self._deep_enabled
+
+        self._load_config()
+        self._update_availability()
+
+        # Aenderungen loggen
+        changes = []
+        if old_fast != self._fast_enabled:
+            changes.append(f"Fast: {'AN' if self._fast_enabled else 'AUS'}")
+        if old_smart != self._smart_enabled:
+            changes.append(f"Smart: {'AN' if self._smart_enabled else 'AUS'}")
+        if old_deep != self._deep_enabled:
+            changes.append(f"Deep: {'AN' if self._deep_enabled else 'AUS'}")
+
+        if changes:
+            logger.info("Modell-Konfiguration geaendert: %s", ", ".join(changes))
+        else:
+            logger.debug("Modell-Konfiguration neu geladen (keine Aenderungen)")
 
     async def initialize(self, available_models: list[str]):
         """
@@ -74,45 +120,62 @@ class ModelRouter:
             available_models: Liste der installierten Ollama-Modelle
         """
         self._available_models = [m.lower() for m in available_models]
+        self._update_availability()
 
-        # Pruefen ob Deep-Modell verfuegbar
-        self._deep_available = self._is_model_available(self.model_deep)
-        self._smart_available = self._is_model_available(self.model_smart)
+    def _update_availability(self):
+        """Berechnet effektive Verfuegbarkeit (installiert UND aktiviert)."""
+        deep_installed = self._is_model_installed(self.model_deep)
+        smart_installed = self._is_model_installed(self.model_smart)
+
+        # Modell ist nur verfuegbar wenn: in Ollama installiert UND vom User aktiviert
+        self._deep_available = deep_installed and self._deep_enabled
+        self._smart_available = smart_installed and self._smart_enabled
 
         if not self._deep_available:
-            logger.warning(
-                "Deep-Modell '%s' NICHT verfuegbar! "
-                "Deep-Anfragen werden auf '%s' umgeleitet.",
+            reason = []
+            if not deep_installed:
+                reason.append("nicht installiert")
+            if not self._deep_enabled:
+                reason.append("deaktiviert")
+            logger.info(
+                "Deep-Modell '%s' nicht verfuegbar (%s). "
+                "Deep-Anfragen → '%s'.",
                 self.model_deep,
+                ", ".join(reason),
                 self.model_smart if self._smart_available else self.model_fast,
             )
 
         if not self._smart_available:
-            logger.warning(
-                "Smart-Modell '%s' NICHT verfuegbar! "
-                "Alle Anfragen laufen ueber '%s'.",
-                self.model_smart, self.model_fast,
+            reason = []
+            if not smart_installed:
+                reason.append("nicht installiert")
+            if not self._smart_enabled:
+                reason.append("deaktiviert")
+            logger.info(
+                "Smart-Modell '%s' nicht verfuegbar (%s). "
+                "Alle Anfragen → '%s'.",
+                self.model_smart, ", ".join(reason), self.model_fast,
             )
 
-        # Logge verfuegbare Modelle
         logger.info(
-            "Modell-Verfuegbarkeit: Fast(%s)=%s, Smart(%s)=%s, Deep(%s)=%s",
-            self.model_fast, "JA" if self._is_model_available(self.model_fast) else "NEIN",
-            self.model_smart, "JA" if self._smart_available else "NEIN",
-            self.model_deep, "JA" if self._deep_available else "NEIN",
+            "Modell-Status: Fast(%s)=%s, Smart(%s)=%s, Deep(%s)=%s",
+            self.model_fast,
+            "AN" if self._fast_enabled else "AUS",
+            self.model_smart,
+            "AN" if self._smart_available else "AUS",
+            self.model_deep,
+            "AN" if self._deep_available else "AUS",
         )
 
-    def _is_model_available(self, model_name: str) -> bool:
-        """Prueft ob ein Modell in der verfuegbaren Liste ist."""
+    def _is_model_installed(self, model_name: str) -> bool:
+        """Prueft ob ein Modell in Ollama installiert ist."""
         if not self._available_models:
             return True  # Kein Check moeglich -> optimistisch
 
         model_lower = model_name.lower()
         for available in self._available_models:
-            # Exakter Match oder Prefix-Match (qwen3:32b matched qwen3:32b-instruct)
             if available == model_lower or available.startswith(model_lower):
                 return True
-            # Auch umgekehrt: model_name koennte laenger sein
             if model_lower.startswith(available):
                 return True
         return False
@@ -120,7 +183,7 @@ class ModelRouter:
     def _cap_model(self, requested_model: str) -> str:
         """
         Begrenzt das Modell auf das beste verfuegbare.
-        Wenn Deep nicht da ist -> Smart. Wenn Smart nicht da ist -> Fast.
+        Wenn Deep nicht da/aktiv ist -> Smart. Wenn Smart nicht da/aktiv ist -> Fast.
         """
         if requested_model == self.model_deep and not self._deep_available:
             fallback = self.model_smart if self._smart_available else self.model_fast
@@ -142,20 +205,14 @@ class ModelRouter:
           2. Deep-Keywords oder sehr lange Anfragen → Deep (32B)
           3. Alles andere → Smart (14B)
 
-        Falls ein Modell nicht verfuegbar ist, wird automatisch
-        auf das naechstkleinere zurueckgefallen.
-
-        Args:
-            text: User-Eingabe
-
-        Returns:
-            Modellname fuer Ollama
+        Falls ein Modell nicht verfuegbar oder deaktiviert ist,
+        wird automatisch auf das naechstkleinere zurueckgefallen.
         """
         text_lower = text.lower().strip()
         word_count = len(text_lower.split())
 
-        # 1. Kurze Befehle -> schnelles Modell
-        if word_count <= 4:
+        # 1. Kurze Befehle -> schnelles Modell (wenn aktiviert)
+        if word_count <= 4 and self._fast_enabled:
             for keyword in self.fast_keywords:
                 if keyword in text_lower:
                     logger.debug("FAST model fuer: '%s' (keyword: %s)", text, keyword)
@@ -190,7 +247,7 @@ class ModelRouter:
         return model
 
     def get_best_available(self) -> str:
-        """Gibt das beste verfuegbare Modell zurueck."""
+        """Gibt das beste verfuegbare und aktivierte Modell zurueck."""
         if self._deep_available:
             return self.model_deep
         if self._smart_available:
@@ -212,6 +269,11 @@ class ModelRouter:
             "fast": self.model_fast,
             "smart": self.model_smart,
             "deep": self.model_deep,
+            "enabled": {
+                "fast": self._fast_enabled,
+                "smart": self._smart_enabled,
+                "deep": self._deep_enabled,
+            },
             "deep_available": self._deep_available,
             "smart_available": self._smart_available,
             "best_available": self.get_best_available(),

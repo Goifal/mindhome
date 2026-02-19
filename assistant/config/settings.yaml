@@ -36,6 +36,12 @@ models:
   smart: "qwen3:14b"      # Fragen, Konversation, Standard
   deep: "qwen3:32b"       # Komplexe Planung, Analyse, Reasoning
 
+  # Modelle aktivieren/deaktivieren (alle installiert, aber einzeln schaltbar)
+  enabled:
+    fast: true
+    smart: true
+    deep: true
+
   # Keywords die das schnelle Modell triggern
   fast_keywords:
     - "licht"
