@@ -25,16 +25,38 @@ Assistant, ChromaDB und Redis laufen in Docker.
 | Komponente | Minimum | Empfohlen |
 |------------|---------|-----------|
 | CPU | 4 Kerne (x86_64) | 8 Kerne |
-| RAM | 8 GB (nur 4B-Modell) | 16-32 GB (fuer 14B-Modell) |
-| Festplatte | 30 GB frei | 50+ GB SSD |
+| RAM | 8 GB (nur 4B-Modell) | 16-64 GB (fuer 14B-Modell) |
+| SSD 1 (System) | 120 GB | 250-500 GB NVMe |
+| SSD 2 (Daten) | 50 GB | 500 GB - 1 TB SATA/NVMe |
+| GPU (optional) | — | NVIDIA mit 8+ GB VRAM |
 | Netzwerk | LAN-Verbindung zum HA-Server | Ethernet (kein WLAN) |
+
+### Dual-SSD Layout
+
+Das Setup unterstuetzt zwei getrennte Festplatten:
+
+```
+SSD 1 (NVMe, schnell)              SSD 2 (SATA/NVMe, gross)
+├─ Ubuntu 24.04 LTS                ├─ chromadb/          → /mnt/data
+├─ Docker Engine                   ├─ redis/
+├─ Ollama + LLM-Modelle            ├─ uploads/
+├─ Assistant Code                  ├─ backups/
+└─ System-Logs                     └─ logs/
+```
+
+**Warum zwei SSDs?**
+- **SSD 1** bleibt schlank und kann jederzeit neu installiert werden
+- **SSD 2** enthaelt alle Daten und kann beim PC-Wechsel einfach umgesteckt werden
+- Ollama-Modelle auf NVMe = schnellerer Kaltstart (~3500 MB/s vs. ~550 MB/s SATA)
+
+**Nur eine SSD?** Kein Problem — das Install-Script fragt ab und funktioniert auch mit einer einzelnen SSD.
 
 ### Was du brauchst bevor du anfaengst
 
 1. **USB-Stick** (4+ GB) fuer Ubuntu-Installation
 2. **Einen zweiten PC** (oder Laptop) um die Anleitung zu lesen und SSH zu machen
 3. **Deine Home-Assistant IP-Adresse** (z.B. `192.168.1.100`)
-4. **Einen HA Long-Lived Access Token** (Anleitung in Schritt 6)
+4. **Einen HA Long-Lived Access Token** (Anleitung in Schritt 7)
 
 ---
 
@@ -69,7 +91,9 @@ Auf deinem **anderen PC** (nicht dem leeren):
 6. **Netzwerk:** Ethernet automatisch (DHCP)
    - **Wichtig:** Notiere dir die IP-Adresse die angezeigt wird!
    - Oder vergib spaeter eine feste IP (empfohlen)
-7. **Festplatte:** "Use an entire disk" → bestaetigen
+7. **Festplatte:** Waehle nur die **System-SSD** (NVMe) → "Use an entire disk"
+   - **Wichtig bei zwei SSDs:** Nur die kleinere/schnellere SSD fuer Ubuntu waehlen!
+   - Die zweite SSD (Daten) wird spaeter vom Install-Script eingerichtet
 8. **Benutzername:** `mindhome` (oder was du willst)
 9. **Passwort:** waehle ein sicheres Passwort
 10. **OpenSSH installieren:** JA (Haken setzen!)
@@ -140,21 +164,31 @@ chmod +x install.sh
 
 | Schritt | Was |
 |---------|-----|
-| 1/6 | Docker & Docker Compose installieren |
-| 2/6 | Ollama installieren und fuer Netzwerk konfigurieren |
-| 3/6 | LLM-Modelle herunterladen (Qwen 3 4B + optional 14B) |
-| 4/6 | `.env` Konfigurationsdatei erstellen |
-| 5/6 | Daten-Verzeichnisse anlegen |
-| 6/6 | Docker-Container bauen und starten |
+| 1/8 | System pruefen (OS, RAM, CPU, GPU) |
+| 2/8 | Daten-SSD erkennen, formatieren, mounten (/mnt/data) |
+| 3/8 | Docker & Docker Compose installieren |
+| 4/8 | Ollama installieren und fuer Netzwerk konfigurieren |
+| 5/8 | LLM-Modelle herunterladen (Qwen 3 4B + optional 14B) |
+| 6/8 | Daten-Verzeichnisse auf SSD 2 anlegen |
+| 7/8 | `.env` interaktiv konfigurieren (HA-IP, Token, Name) |
+| 8/8 | Docker-Container bauen, starten und Health-Check |
 
 ### Wichtige Fragen waehrend der Installation:
+
+**"Hast du eine zweite SSD fuer Daten?"**
+- `j` wenn du zwei SSDs hast (empfohlen)
+- `n` wenn nur eine SSD — Daten werden lokal gespeichert
+
+**"Welches Laufwerk soll fuer Daten genutzt werden?"**
+- Das Script zeigt alle verfuegbaren Laufwerke an (Boot-SSD wird uebersprungen)
+- Tippe den Namen ein (z.B. `sda`)
 
 **"Qwen 3 14B herunterladen?"**
 - `j` wenn du 16+ GB RAM hast (empfohlen — viel schlauer)
 - `n` wenn du nur 8 GB RAM hast
 
-**".env jetzt bearbeiten?"**
-- `j` waehlen! Hier musst du deine HA-Daten eintragen (siehe Schritt 6)
+**Home Assistant URL / Token / Name:**
+- Wird interaktiv abgefragt — keine manuelle .env-Bearbeitung noetig
 
 ### Docker-Neuanmeldung
 
@@ -411,21 +445,17 @@ sudo apt update && sudo apt upgrade -y
 sudo apt install -y git
 git clone https://github.com/Goifal/mindhome.git
 
-# 3. Installation starten
+# 3. Installation starten (SSD-Setup + Docker + Ollama + Config — alles interaktiv)
 cd mindhome/assistant
 chmod +x install.sh
 ./install.sh
 
-# 4. .env anpassen
-nano .env
-
-# 5. Neustart nach .env-Aenderung
-docker compose restart assistant
-
-# 6. Pruefen
+# 4. Pruefen
 docker compose ps
 curl http://localhost:8200/api/assistant/health
 ```
+
+Das Install-Script fragt alles interaktiv ab — kein manuelles `.env`-Editieren noetig.
 
 ---
 
@@ -479,7 +509,13 @@ docker compose up -d
 ```bash
 cd ~/mindhome/assistant
 docker compose down -v         # Container + Volumes loeschen
-rm -rf data/                   # Alle Daten loeschen
+
+# Daten loeschen (Pfad je nach Setup):
+# Dual-SSD:
+sudo rm -rf /mnt/data/chromadb /mnt/data/redis /mnt/data/assistant
+# Single-SSD:
+# rm -rf data/
+
 docker compose build --no-cache
 docker compose up -d
 ```
@@ -569,6 +605,16 @@ MINDHOME_URL=http://192.168.1.100:8099
 
 # Assistent-Name (Standard: Jarvis)
 ASSISTANT_NAME=Jarvis
+```
+
+### Daten-Verzeichnis (vom Install-Script gesetzt):
+
+```env
+# Dual-SSD (Standard nach install.sh):
+DATA_DIR=/mnt/data
+
+# Single-SSD (falls keine zweite SSD):
+# DATA_DIR=./data
 ```
 
 ### NICHT aendern (funktioniert automatisch):

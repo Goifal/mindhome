@@ -9,6 +9,10 @@
 # Logs: docker compose logs -f assistant
 # Status: docker compose ps
 #
+# Daten-Verzeichnis wird ueber DATA_DIR in .env gesteuert:
+#   Dual-SSD:    DATA_DIR=/mnt/data
+#   Single-SSD:  DATA_DIR=./data
+#
 
 services:
   # --- MindHome Assistant Service (das Gehirn) ---
@@ -21,8 +25,8 @@ services:
       - "8200:8200"
     volumes:
       - ./config:/app/config:ro
-      - ./data/assistant:/app/data
-      - ./data/uploads:/app/data/uploads
+      - ${DATA_DIR:-./data}/assistant:/app/data
+      - ${DATA_DIR:-./data}/uploads:/app/data/uploads
     depends_on:
       chromadb:
         condition: service_healthy
@@ -42,7 +46,7 @@ services:
     container_name: mha-chromadb
     restart: unless-stopped
     volumes:
-      - ./data/chroma:/chroma/chroma
+      - ${DATA_DIR:-./data}/chromadb:/chroma/chroma
     ports:
       - "8100:8000"
     environment:
@@ -60,7 +64,7 @@ services:
     container_name: mha-redis
     restart: unless-stopped
     volumes:
-      - ./data/redis:/data
+      - ${DATA_DIR:-./data}/redis:/data
     ports:
       - "6379:6379"
     command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
