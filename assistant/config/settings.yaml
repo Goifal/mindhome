@@ -762,6 +762,43 @@ health_monitor:
   # Cooldown (Minuten) bevor gleicher Alert erneut kommt
   alert_cooldown_minutes: 60
 
+# --- Phase 15.3: Geraete-Beziehung (Anomalie-Erkennung) ---
+device_health:
+  enabled: true
+  # Pruef-Intervall in Minuten (60 = stuendlich)
+  check_interval_minutes: 60
+  # Tage fuer Baseline-Berechnung (Rolling Average)
+  baseline_history_days: 30
+  # Anomalie-Schwelle: Alert bei > X Standardabweichungen
+  stddev_multiplier: 2.0
+  # Mindestanzahl Samples bevor Anomalie-Erkennung startet
+  min_samples: 10
+  # Tage ohne Aenderung bevor Stale-Sensor-Warnung
+  stale_sensor_days: 3
+  # Minuten bis HVAC-Ineffizienz-Warnung (Zieltemp nicht erreicht)
+  hvac_timeout_minutes: 120
+  # Toleranz in °C fuer HVAC-Zieltemperatur
+  hvac_temp_tolerance: 1.0
+  # Cooldown (Minuten) bevor gleicher Alert erneut kommt
+  alert_cooldown_minutes: 1440
+  # Welche HA-Domains ueberwacht werden
+  track_domains:
+    - sensor
+    - climate
+    - binary_sensor
+  # Entity-Patterns die ignoriert werden
+  exclude_patterns:
+    - weather.
+    - sun.
+    - automation.
+    - update.
+  # Keywords fuer Energie-Sensoren (spezielle Meldung)
+  energy_sensor_keywords:
+    - energy
+    - power
+    - verbrauch
+    - strom
+
 # --- Phase 14.3: Ambient Audio (Umgebungsgeraeusch-Erkennung) ---
 ambient_audio:
   enabled: true

@@ -9,7 +9,7 @@
 
 | Kategorie | Score | Trend |
 |-----------|:-----:|:-----:|
-| **Funktionsumfang (vs. Masterplan)** | **98.4%** | +1.6% |
+| **Funktionsumfang (vs. Masterplan)** | **99.6%** | +1.2% |
 | **Jarvis-Authentizitaet (vs. MCU Jarvis)** | **88.0%** | — |
 | **Sicherheit** | **98%** | — |
 | **Code-Qualitaet** | **85%** | — |
@@ -133,13 +133,13 @@
 
 ---
 
-## PHASE 15 — Haushalt & Fuersorge (77.5%)
+## PHASE 15 — Haushalt & Fuersorge (96.3%)
 
 | # | Feature | Status | % | Details |
 |---|---------|:------:|:-:|---------|
 | 15.1 | Gesundheit & Raumklima | DONE | 100% | health_monitor.py: CO2/Feuchte/Temp-Check, Scoring, Hydration-Reminder + Trend-Dashboard (stuendliche Snapshots in Redis, /api/ui/health-trends) |
 | 15.2 | Einkauf & Vorrat | DONE | 95% | HA Shopping-List + inventory.py: Vorrats-Tracking mit Ablaufdaten, Kategorien, Auto-Einkaufsliste |
-| 15.3 | Geraete-Beziehung | **OFFEN** | 5% | Time-Awareness Basics. **FEHLT: device_health.py** |
+| 15.3 | Geraete-Beziehung | DONE | 95% | device_health.py: Baseline-Anomalie (Rolling 30d, >2σ), Stale-Sensor-Erkennung (3d), HVAC-Effizienz-Check (Zieltemp nicht erreicht nach 2h), Energie-Anomalien, Redis-Baselines, konfigurierbarer Cooldown |
 | 15.4 | Benachrichtigungs-Intelligenz | DONE | 95% | Priority-Queue, Cooldowns, LOW-Batching + Kanal-Wahl API (/api/ui/notification-channels, konfigurierbar) |
 
 ---
@@ -202,6 +202,7 @@
 | 2026-02-18 | `a61705a` | **Luecken-Sprint (13 Fixes):** Rate-Limiting + CORS, Redis-Counter Selbstironie, Auto-Nacht-Whisper, Wartungs-History, Trust Raum-Scoping, 25 Opinion-Rules, 3 neue Geraete-Typen, Mood-Aktionen ausfuehrbar, Geburtstag-Check, Gaeste-WLAN, Wetter-Warnungen, Multi-Topic Konversation, Konflikt Raum-Scoping bei Gleichrang | Gesamt +2.3%, Sicherheit +5%, Phase 10: 84→90%, Phase 11: 85→90% |
 | 2026-02-18 | `3edee22` | **Alle 21 Luecken geschlossen:** Memory-Gags, Monthly Report, Energie-Briefing, Geo-Fence, Raum-Override, Relevanz-Filter, Rolladen-Timing, Kontext-Patterns, Datum-Parsing, Pitch-Control, Sound-Formate, Narration-Delays, Audio-Emotion, Speaker-Embedding, Music Auto-Follow, PDF-RAG, Kalender Delete/Verschieben, Live-Status, Kanal-Wahl, Health-Trends | Gesamt +4.3%, Phase 9: 78→95%, Phase 7: 88→97%, Phase 8: 86→94% |
 | 2026-02-19 | `d572d71` | **Status-Dokument aktualisiert:** Phase 13.2 (self_automation.py) als DONE 95% korrigiert (946 Zeilen, war faelschlich als OFFEN markiert). Zeilenzahlen aller Module aktualisiert. 7 neue Dateien in Tabelle ergaenzt (action_planner, memory_extractor, ollama_client, function_validator, inventory, health_monitor, automation_templates). Gesamt-Statistik: 51.000+ Zeilen, 117 Python-Dateien | Gesamt +1.6%, Phase 13: 25→48.8% |
+| 2026-02-19 | — | **Phase 15.3 implementiert:** device_health.py (~370 Zeilen): Baseline-Anomalie-Erkennung (Rolling 30d Mean+Stddev, >2σ), Stale-Sensor-Erkennung (3d unveraendert → Batterie-Warnung), HVAC-Effizienz-Check (Zieltemp nicht erreicht nach 2h), Energie-Verbrauchs-Anomalien. Konfigurierbar via settings.yaml. Integration in brain.py mit Callback. | Gesamt +1.2%, Phase 15: 77.5→96.3% |
 
 ---
 
@@ -223,7 +224,6 @@ _Keine verbleibenden Luecken in implementierten Features._
 | 25 | Phase 13.4: Prompt-Selbstoptimierung | 13 | 8 Std | OFFEN |
 | 26 | Phase 14.1: Vision / Kamera-Analyse | 14 | 10 Std | OFFEN |
 | 27 | Phase 14.2: Multi-Modal Input (OCR) | 14 | 6 Std | OFFEN |
-| 28 | Phase 15.3: Geraete-Beziehung (device_health.py) | 15 | 4 Std | OFFEN |
 
 ---
 
@@ -237,7 +237,7 @@ Phase 16 (fuer Alle)        96.7%  ███████████████
 Phase  9 (Stimme)           95.0%  ███████████████████░░
 Phase  8 (Gedaechtnis)      94.3%  ███████████████████░░
 Phase 10 (Multi-Room)       94.0%  ███████████████████░░
-Phase 15 (Haushalt)         77.5%  ███████████████▓░░░░░
+Phase 15 (Haushalt)         96.3%  ███████████████████▓░
 Phase 12 (Authentizitaet)   58.0%  ████████████░░░░░░░░░
 Phase 14 (Wahrnehmung)      30.0%  ██████░░░░░░░░░░░░░░░
 Phase 13 (Selbstprog.)      48.8%  ██████████░░░░░░░░░░░
@@ -274,6 +274,7 @@ Phase 13 (Selbstprog.)      48.8%  ██████████░░░░░
 | tts_enhancer.py | ~403 | SSML, Volume, Whisper, Auto-Nacht-Whisper |
 | feedback.py | ~384 | Feedback-Tracking, Score-basierte Cooldowns |
 | health_monitor.py | ~374 | CO2/Feuchte/Temp-Check, Scoring, Hydration-Reminder, Trends |
+| device_health.py | ~370 | Geraete-Anomalie-Erkennung, Baseline, Stale-Sensor, HVAC-Effizienz |
 | action_planner.py | ~353 | Aktions-Planung, Multi-Step Ausfuehrung |
 | sound_manager.py | ~317 | Event-Sounds, Nacht-Volume |
 | memory.py | ~272 | Working + Episodic Memory (Redis + ChromaDB) |
@@ -294,11 +295,11 @@ Phase 13 (Selbstprog.)      48.8%  ██████████░░░░░
 | room_profiles.yaml | ~200 | 6 Raeume + Saisonal |
 | maintenance.yaml | ~50 | 5 Wartungsaufgaben |
 
-**Assistant-Modul: ~20.270 Zeilen Code, 38 Python-Dateien**
-**Gesamt-Projekt (inkl. Addon, Engines, Domains, Routes): ~51.000+ Zeilen, 117 Python-Dateien**
+**Assistant-Modul: ~20.640 Zeilen Code, 39 Python-Dateien**
+**Gesamt-Projekt (inkl. Addon, Engines, Domains, Routes): ~51.400+ Zeilen, 118 Python-Dateien**
 
 ---
 
-> **Hinweis:** Alle 21 kleinen Luecken geschlossen! 7 komplett fehlende Module verbleibend (Phase 12-15).
+> **Hinweis:** Alle 21 kleinen Luecken geschlossen! 6 komplett fehlende Module verbleibend (Phase 12-14).
 > Sicherheits-Audit vollstaendig (alle 13/13 Punkte SICHER). Foundation komplett (5/5 DONE).
-> **Assistant-Modul: ~20.270 Zeilen, 38 Python-Dateien | Gesamt-Projekt: ~51.000+ Zeilen, 117 Python-Dateien**
+> **Assistant-Modul: ~20.640 Zeilen, 39 Python-Dateien | Gesamt-Projekt: ~51.400+ Zeilen, 118 Python-Dateien**
