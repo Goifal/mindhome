@@ -671,8 +671,8 @@ def get_assistant_tools() -> list:
     """Liefert ASSISTANT_TOOLS mit aktuellem Climate-Schema."""
     return _build_tools_with_dynamic_climate()
 
-# Rueckwaerts-Kompatibilitaet: Bestehender Code der ASSISTANT_TOOLS referenziert
-ASSISTANT_TOOLS = _ASSISTANT_TOOLS_STATIC
+# ASSISTANT_TOOLS: Immer die dynamische Version verwenden
+ASSISTANT_TOOLS = get_assistant_tools()
 
 
 class FunctionExecutor:
@@ -741,7 +741,7 @@ class FunctionExecutor:
         """Alle Lichter ein- oder ausschalten."""
         states = await self.ha.get_states()
         if not states:
-            return {"success": False, "message": "Keine States verfuegbar"}
+            return {"success": False, "message": "Ich kann gerade nicht auf die Geraete zugreifen. Versuch es bitte gleich nochmal."}
 
         service = "turn_on" if state == "on" else "turn_off"
         count = 0
@@ -786,7 +786,7 @@ class FunctionExecutor:
         attrs = current_state.get("attributes", {})
         base_temp = attrs.get("temperature")
         if base_temp is None:
-            return {"success": False, "message": f"Keine Temperatur fuer {entity_id} verfuegbar"}
+            return {"success": False, "message": f"Ich kann die aktuelle Temperatur von {entity_id} gerade nicht abrufen."}
 
         # Offset-Grenzen aus Config erzwingen
         offset_min = heating.get("curve_offset_min", -5)
@@ -853,7 +853,7 @@ class FunctionExecutor:
         """Alle Rolllaeden auf eine Position setzen."""
         states = await self.ha.get_states()
         if not states:
-            return {"success": False, "message": "Keine States verfuegbar"}
+            return {"success": False, "message": "Ich kann gerade nicht auf die Geraete zugreifen. Versuch es bitte gleich nochmal."}
 
         count = 0
         for s in states:

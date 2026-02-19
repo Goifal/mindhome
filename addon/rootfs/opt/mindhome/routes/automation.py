@@ -274,7 +274,8 @@ def api_create_anomaly_setting():
         return jsonify({"success": True, "id": setting.id}), 201
     except Exception as e:
         session.rollback()
-        return jsonify({"error": str(e)}), 500
+        logger.error("Operation failed: %s", e)
+        return jsonify({"error": "Operation failed"}), 500
     finally:
         session.close()
 
@@ -360,7 +361,8 @@ def api_reset_phase(room_id, domain_id):
             "message": "Lernphase zurückgesetzt" if lang == "de" else "Learning phase reset"})
     except Exception as e:
         session.rollback()
-        return jsonify({"error": str(e)}), 500
+        logger.error("Operation failed: %s", e)
+        return jsonify({"error": "Operation failed"}), 500
     finally:
         session.close()
 

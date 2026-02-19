@@ -45,12 +45,29 @@ def init_chat(dependencies):
 
 
 def _get_assistant_url():
-    """Get the assistant URL from settings or environment."""
+    """Get the assistant URL from settings or environment.
+
+    Only http/https schemes on private network addresses are allowed.
+    """
     import os
+    from urllib.parse import urlparse
     url = get_setting("assistant_url", None)
     if not url:
         url = os.environ.get("ASSISTANT_URL", "http://192.168.1.100:8200")
-    return url.rstrip("/")
+    url = url.rstrip("/")
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        logger.warning("Invalid assistant_url scheme: %s, falling back to default", parsed.scheme)
+        return "http://192.168.1.100:8200"
+    host = parsed.hostname or ""
+    # Allow only private network ranges and localhost
+    _ALLOWED_PREFIXES = ("192.168.", "10.", "172.16.", "172.17.", "172.18.",
+                         "172.19.", "172.2", "172.30.", "172.31.",
+                         "127.", "localhost", "::1")
+    if not any(host.startswith(p) for p in _ALLOWED_PREFIXES):
+        logger.warning("assistant_url host %s not in private range, falling back to default", host)
+        return "http://192.168.1.100:8200"
+    return url
 
 
 @chat_bp.route("/api/chat/send", methods=["POST"])

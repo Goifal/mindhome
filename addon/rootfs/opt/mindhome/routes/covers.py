@@ -418,8 +418,8 @@ def get_cover_entities():
                 })
             return jsonify(result), 200
     except Exception as e:
-        logger.error(f"Error getting cover entities: {e}")
-        return jsonify({"error": str(e)}), 500
+        logger.error("Operation failed: %s", e)
+        return jsonify({"error": "Operation failed"}), 500
 
 
 @covers_bp.route("/api/covers/entities", methods=["POST"])
@@ -452,8 +452,8 @@ def add_cover_entity():
             session.flush()
             return jsonify({"id": a.id}), 201
     except Exception as e:
-        logger.error(f"Error adding cover entity: {e}")
-        return jsonify({"error": str(e)}), 500
+        logger.error("Operation failed: %s", e)
+        return jsonify({"error": "Operation failed"}), 500
 
 
 @covers_bp.route("/api/covers/entities/<int:assignment_id>", methods=["DELETE"])
@@ -468,8 +468,8 @@ def remove_cover_entity(assignment_id):
             a.is_active = False
             return jsonify({"success": True}), 200
     except Exception as e:
-        logger.error(f"Error removing cover entity: {e}")
-        return jsonify({"error": str(e)}), 500
+        logger.error("Operation failed: %s", e)
+        return jsonify({"error": "Operation failed"}), 500
 
 
 # ==============================================================================
@@ -528,5 +528,5 @@ def discover_covers():
 
         return jsonify({"covers": covers, "sensors": sensors}), 200
     except Exception as e:
-        logger.error(f"Cover discovery error: {e}")
-        return jsonify({"error": str(e)}), 500
+        logger.error("Operation failed: %s", e)
+        return jsonify({"error": "Operation failed"}), 500

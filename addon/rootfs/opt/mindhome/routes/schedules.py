@@ -74,8 +74,8 @@ def api_upcoming_events():
         events = _ha().get_upcoming_events(hours=hours)
         return jsonify({"events": events})
     except Exception as e:
-        logger.warning(f"Calendar events error: {e}")
-        return jsonify({"events": [], "error": str(e)})
+        logger.error("Operation failed: %s", e)
+        return jsonify({"events": [], "error": "Operation failed"}), 500
 
 
 
@@ -256,7 +256,8 @@ def api_create_person_schedule():
         return jsonify({"success": True, "id": schedule.id})
     except Exception as e:
         session.rollback()
-        return jsonify({"error": str(e)}), 400
+        logger.error("Operation failed: %s", e)
+        return jsonify({"error": "Invalid request"}), 400
     finally:
         session.close()
 
@@ -313,7 +314,8 @@ def api_create_shift_template():
         return jsonify({"success": True, "id": t.id})
     except Exception as e:
         session.rollback()
-        return jsonify({"error": str(e)}), 400
+        logger.error("Operation failed: %s", e)
+        return jsonify({"error": "Invalid request"}), 400
     finally:
         session.close()
 
@@ -331,7 +333,8 @@ def api_update_shift_template(tid):
         return jsonify({"success": True})
     except Exception as e:
         session.rollback()
-        return jsonify({"error": str(e)}), 400
+        logger.error("Operation failed: %s", e)
+        return jsonify({"error": "Invalid request"}), 400
     finally:
         session.close()
 
@@ -407,7 +410,8 @@ def api_import_shift_plan():
                 unmatched.add(e["raw"].strip())
         return jsonify({"entries": parsed, "unmatched_types": list(unmatched), "total_lines": len(lines), "parsed_count": len(parsed)})
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        logger.error("Operation failed: %s", e)
+        return jsonify({"error": "Operation failed"}), 500
 
 
 @schedules_bp.route("/api/holidays", methods=["GET"])
@@ -727,8 +731,8 @@ def api_export_ical():
         response.headers["ETag"] = hashlib.md5(ical_content.encode()).hexdigest()
         return response
     except Exception as e:
-        logger.error(f"iCal export error: {e}")
-        return jsonify({"error": str(e)}), 500
+        logger.error("iCal export error: %s", e)
+        return jsonify({"error": "Operation failed"}), 500
     finally:
         session.close()
 
@@ -809,8 +813,8 @@ def api_get_synced_calendar_events():
         events.sort(key=lambda e: e.get("start", ""))
         return jsonify({"events": events})
     except Exception as e:
-        logger.warning(f"Synced events error: {e}")
-        return jsonify({"events": [], "error": str(e)})
+        logger.error("Operation failed: %s", e)
+        return jsonify({"events": [], "error": "Operation failed"}), 500
 
 
 @schedules_bp.route("/api/calendar/events", methods=["POST"])
@@ -837,8 +841,8 @@ def api_create_calendar_event():
         audit_log("calendar_event_create", {"entity_id": entity_id, "summary": summary})
         return jsonify({"success": True, "result": result})
     except Exception as e:
-        logger.warning(f"Create calendar event error: {e}")
-        return jsonify({"error": str(e)}), 500
+        logger.error("Operation failed: %s", e)
+        return jsonify({"error": "Operation failed"}), 500
 
 
 @schedules_bp.route("/api/calendar/events", methods=["DELETE"])
@@ -855,8 +859,8 @@ def api_delete_calendar_event():
         audit_log("calendar_event_delete", {"entity_id": entity_id, "uid": uid})
         return jsonify({"success": True, "result": result})
     except Exception as e:
-        logger.warning(f"Delete calendar event error: {e}")
-        return jsonify({"error": str(e)}), 500
+        logger.error("Operation failed: %s", e)
+        return jsonify({"error": "Operation failed"}), 500
 
 
 @schedules_bp.route("/api/calendar/shift-sync", methods=["GET"])
@@ -893,5 +897,6 @@ def api_run_shift_sync_now():
             scheduler._shift_calendar_sync_task(full_resync=True)
             return jsonify({"success": True, "message": "Full resync completed"})
         except Exception as e:
-            return jsonify({"error": str(e)}), 500
+            logger.error("Operation failed: %s", e)
+            return jsonify({"error": "Operation failed"}), 500
     return jsonify({"error": "Scheduler not available"}), 503

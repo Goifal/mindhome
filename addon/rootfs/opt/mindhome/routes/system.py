@@ -14,6 +14,7 @@ import io
 import hashlib
 import zipfile
 import shutil
+import threading
 from collections import defaultdict
 from datetime import datetime, timezone, timedelta
 from flask import Blueprint, request, jsonify, Response, make_response, send_from_directory, redirect, current_app
@@ -116,14 +117,15 @@ def api_health_check():
     # HA connection
     try:
         ha = _ha()
+        stats = ha.get_connection_stats()
         health["checks"]["ha_websocket"] = {
-            "status": "ok" if ha._ws_connected else "disconnected",
-            "reconnect_attempts": ha._reconnect_attempts,
+            "status": "ok" if stats.get("ws_connected") else "disconnected",
+            "reconnect_attempts": stats.get("reconnect_attempts", 0),
         }
         health["checks"]["ha_rest_api"] = {
-            "status": "ok" if ha._is_online else "offline"
+            "status": "ok" if stats.get("is_online") else "offline"
         }
-        health["checks"]["connection_stats"] = ha.get_connection_stats()
+        health["checks"]["connection_stats"] = stats
     except RuntimeError:
         health["checks"]["ha_websocket"] = {"status": "not_initialized"}
         health["checks"]["ha_rest_api"] = {"status": "not_initialized"}
@@ -179,7 +181,7 @@ def api_system_info():
             "version": VERSION,
             "phase": "3.5 (stabilization)",
             "ha_connected": _ha().is_connected(),
-            "ws_connected": _ha()._ws_connected,
+            "ws_connected": _ha().get_connection_stats().get("ws_connected", False),
             "ha_entity_count": len(_ha().get_states() or []),
             "timezone": str(get_ha_timezone()),
             "local_time": local_now().isoformat(),
@@ -333,7 +335,7 @@ def api_execute_quick_action(action_id):
             if heating_mode == "heating_curve":
                 # Heizkurven-Modus: Offset auf away_offset setzen
                 curve_entity = get_setting("heating_curve_entity", "")
-                away_offset = float(get_setting("heating_curve_away_offset", "-3"))
+                away_offset = float(get_setting("heating.away_offset", get_setting("heating_curve_away_offset", "-3")))
                 if curve_entity:
                     states = _ha().get_states() or []
                     for s in states:
@@ -397,7 +399,8 @@ def api_create_quick_action():
         return jsonify({"success": True, "id": qa.id}), 201
     except Exception as e:
         session.rollback()
-        return jsonify({"error": str(e)}), 500
+        logger.error("Failed to create quick action: %s", e)
+        return jsonify({"error": "Internal server error"}), 500
     finally:
         session.close()
 
@@ -429,7 +432,8 @@ def api_update_quick_action(action_id):
         return jsonify({"success": True})
     except Exception as e:
         session.rollback()
-        return jsonify({"error": str(e)}), 500
+        logger.error("Failed to update quick action: %s", e)
+        return jsonify({"error": "Internal server error"}), 500
     finally:
         session.close()
 
@@ -450,7 +454,8 @@ def api_delete_quick_action(action_id):
         return jsonify({"success": True})
     except Exception as e:
         session.rollback()
-        return jsonify({"error": str(e)}), 500
+        logger.error("Failed to delete quick action: %s", e)
+        return jsonify({"error": "Internal server error"}), 500
     finally:
         session.close()
 
@@ -895,14 +900,24 @@ def hot_update_frontend():
     filename = data["filename"]
     if filename not in ("app.jsx", "index.html"):
         return jsonify({"error": "only app.jsx and index.html allowed"}), 400
+    content = data["content"]
+    MAX_HOT_UPDATE_SIZE = 500_000  # 500 KB limit
+    if len(content) > MAX_HOT_UPDATE_SIZE:
+        return jsonify({"error": f"Content too large (max {MAX_HOT_UPDATE_SIZE} bytes)"}), 400
+    # Sanitize: block inline event handlers and script injections in HTML
+    if filename == "index.html":
+        import re
+        if re.search(r"<script[^>]*src\s*=", content, re.IGNORECASE):
+            return jsonify({"error": "External scripts not allowed in hot-update"}), 400
     filepath = os.path.join(current_app.static_folder, "frontend", filename)
     try:
         with open(filepath, "w", encoding="utf-8") as f:
-            f.write(data["content"])
-        logger.info(f"Hot-updated {filename} ({len(data['content'])} chars)")
-        return jsonify({"success": True, "size": len(data["content"])})
+            f.write(content)
+        logger.info(f"Hot-updated {filename} ({len(content)} chars)")
+        return jsonify({"success": True, "size": len(content)})
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        logger.error("Hot-update failed: %s", e)
+        return jsonify({"error": "Hot-update failed"}), 500
 
 
 
@@ -1056,7 +1071,12 @@ def api_weekly_report():
 
 @system_bp.route("/api/backup/export", methods=["GET"])
 def api_backup_export():
-    """Export MindHome data as JSON. mode=standard|full|custom, include_history=true|false"""
+    """Export MindHome data as JSON. mode=standard|full|custom, include_history=true|false
+
+    Note: HA Ingress provides authentication. Sensitive settings are filtered from export.
+    """
+    _SENSITIVE_KEYS = {"api_key", "token", "password", "secret", "openai_api_key",
+                       "anthropic_api_key", "assistant_api_key", "ha_token"}
     mode = request.args.get("mode", "standard")
     history_days = request.args.get("history_days", 90, type=int)
     include_history = request.args.get("include_history", "false").lower() == "true"
@@ -1095,6 +1115,8 @@ def api_backup_export():
                 "learning_phase": rds.learning_phase.value if rds.learning_phase else "observing",
                 "confidence_score": rds.confidence_score, "is_paused": rds.is_paused})
         for s in session.query(SystemSetting).all():
+            if s.key and s.key.lower() in _SENSITIVE_KEYS:
+                continue  # Skip sensitive settings in export
             backup["settings"].append({"key": s.key, "value": s.value})
         for log in session.query(ActionLog).order_by(ActionLog.created_at.desc()).limit(500).all():
             backup["action_log"].append({"action_type": log.action_type, "domain_id": log.domain_id,
@@ -1482,8 +1504,8 @@ def api_backup_import():
             session.rollback()
         except Exception:
             pass
-        logger.error(f"Backup import failed: {e}", exc_info=True)
-        return jsonify({"error": str(e)}), 500
+        logger.error("Backup import failed: %s", e, exc_info=True)
+        return jsonify({"error": "Internal server error"}), 500
     finally:
         session.close()
 
@@ -1496,8 +1518,8 @@ def api_device_health():
         issues = _ha().check_device_health()
         return jsonify({"issues": issues, "total": len(issues)})
     except Exception as e:
-        logger.error(f"Device health check error: {e}")
-        return jsonify({"issues": [], "total": 0, "error": str(e)}), 500
+        logger.error("Device health check failed: %s", e)
+        return jsonify({"issues": [], "total": 0, "error": "Internal server error"}), 500
 
 
 
@@ -1507,7 +1529,8 @@ def api_get_debug():
     try:
         return jsonify({"debug_mode": is_debug_mode()})
     except Exception as e:
-        return jsonify({"debug_mode": False, "error": str(e)})
+        logger.error("Failed to get debug mode status: %s", e)
+        return jsonify({"debug_mode": False, "error": "Internal server error"})
 
 
 @system_bp.route("/api/system/debug", methods=["PUT"])
@@ -1521,7 +1544,8 @@ def api_toggle_debug():
         audit_log("debug_mode_toggle", {"enabled": new_mode})
         return jsonify({"debug_mode": new_mode})
     except Exception as e:
-        return jsonify({"debug_mode": False, "error": str(e)}), 500
+        logger.error("Failed to toggle debug mode: %s", e)
+        return jsonify({"debug_mode": False, "error": "Internal server error"}), 500
 
 
 
@@ -1547,7 +1571,8 @@ def api_get_vacation_mode():
             "simulate_presence": get_setting("vacation_simulate", "true") == "true",
         })
     except Exception as e:
-        return jsonify({"enabled": False, "error": str(e)})
+        logger.error("Failed to get vacation mode status: %s", e)
+        return jsonify({"enabled": False, "error": "Internal server error"})
 
 
 @system_bp.route("/api/system/vacation-mode", methods=["PUT"])
@@ -1565,7 +1590,8 @@ def api_toggle_vacation_mode():
         audit_log("vacation_mode", {"enabled": enabled})
         return jsonify({"enabled": enabled})
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        logger.error("Failed to toggle vacation mode: %s", e)
+        return jsonify({"error": "Internal server error"}), 500
 
 
 
@@ -1608,8 +1634,8 @@ def api_export_data(data_type):
 
         return jsonify({"data": data, "count": len(data)})
     except Exception as e:
-        logger.error(f"Export error: {e}")
-        return jsonify({"error": str(e), "data": []}), 500
+        logger.error("Export failed: %s", e)
+        return jsonify({"error": "Export failed", "data": []}), 500
     finally:
         session.close()
 
@@ -1644,8 +1670,8 @@ def api_diagnose():
         }
         return jsonify(diag)
     except Exception as e:
-        logger.error(f"Diagnose error: {e}")
-        return jsonify({"error": str(e), "version": VERSION})
+        logger.error("Diagnose failed: %s", e)
+        return jsonify({"error": "Diagnostics failed", "version": VERSION})
     finally:
         session.close()
 
@@ -1661,7 +1687,8 @@ def api_check_update():
             "message": "Update check requires network access to GitHub.",
         })
     except Exception as e:
-        return jsonify({"current_version": VERSION, "error": str(e)})
+        logger.error("Update check failed: %s", e)
+        return jsonify({"current_version": VERSION, "error": "Update check failed"})
 
 
 
@@ -1702,8 +1729,8 @@ def api_get_device_groups():
                         })
         return jsonify({"groups": saved_groups, "suggestions": suggestions})
     except Exception as e:
-        logger.error(f"Device groups error: {e}")
-        return jsonify({"groups": [], "suggestions": [], "error": str(e)})
+        logger.error("Failed to load device groups: %s", e)
+        return jsonify({"groups": [], "suggestions": [], "error": "Internal server error"})
     finally:
         session.close()
 
@@ -1727,7 +1754,8 @@ def api_create_device_group():
         return jsonify({"success": True, "id": group.id})
     except Exception as e:
         session.rollback()
-        return jsonify({"error": str(e)}), 400
+        logger.error("Failed to create device group: %s", e)
+        return jsonify({"error": "Operation failed"}), 400
     finally:
         session.close()
 
@@ -1753,7 +1781,8 @@ def api_update_device_group(group_id):
         return jsonify({"success": True})
     except Exception as e:
         session.rollback()
-        return jsonify({"error": str(e)}), 400
+        logger.error("Failed to update device group: %s", e)
+        return jsonify({"error": "Operation failed"}), 400
     finally:
         session.close()
 
@@ -1765,10 +1794,11 @@ def api_delete_device_group(group_id):
     session = get_db()
     try:
         group = session.get(DeviceGroup, group_id)
-        if group:
-            session.delete(group)
-            session.commit()
-            audit_log("device_group_delete", {"id": group_id})
+        if not group:
+            return jsonify({"error": "Device group not found"}), 404
+        session.delete(group)
+        session.commit()
+        audit_log("device_group_delete", {"id": group_id})
         return jsonify({"success": True})
     finally:
         session.close()
@@ -1818,6 +1848,7 @@ def api_get_audit_trail():
 
 
 _watchdog_status = {"last_check": None, "ha_alive": False, "db_alive": False, "issues": []}
+_watchdog_lock = threading.Lock()
 
 
 @system_bp.route("/api/system/watchdog", methods=["GET"])
@@ -1843,12 +1874,14 @@ def api_watchdog():
             issues.append(f"Low disk space: {free_gb:.1f} GB")
     except Exception:
         pass
-    _watchdog_status = {
-        "last_check": datetime.now(timezone.utc).isoformat(),
-        "ha_alive": ha_alive, "db_alive": db_alive,
-        "issues": issues, "healthy": len(issues) == 0,
-    }
-    return jsonify(_watchdog_status)
+    with _watchdog_lock:
+        _watchdog_status = {
+            "last_check": datetime.now(timezone.utc).isoformat(),
+            "ha_alive": ha_alive, "db_alive": db_alive,
+            "issues": issues, "healthy": len(issues) == 0,
+        }
+        result = dict(_watchdog_status)
+    return jsonify(result)
 
 
 
@@ -2033,7 +2066,8 @@ def api_get_context():
         builder = ContextBuilder(_ha(), _engine())
         return jsonify(builder.build())
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        logger.error("Failed to build context: %s", e)
+        return jsonify({"error": "Internal server error"}), 500
 
 
 @system_bp.route("/api/plugins/evaluate", methods=["POST"])
@@ -2048,7 +2082,9 @@ def api_evaluate_plugins():
                 try:
                     results[name] = plugin.evaluate(ctx) or []
                 except Exception as e:
-                    results[name] = {"error": str(e)}
+                    logger.error("Plugin %s evaluation failed: %s", name, e)
+                    results[name] = {"error": "Plugin evaluation failed"}
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        logger.error("Plugin evaluation failed: %s", e)
+        return jsonify({"error": "Internal server error"}), 500
     return jsonify(results)

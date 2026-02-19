@@ -137,7 +137,10 @@ def api_delete_sensor_group(group_id):
     session = get_db()
     try:
         sg = session.get(SensorGroup, group_id)
-        if sg: session.delete(sg); session.commit()
+        if not sg:
+            return jsonify({"error": "Sensor group not found"}), 404
+        session.delete(sg)
+        session.commit()
         return jsonify({"success": True})
     finally:
         session.close()

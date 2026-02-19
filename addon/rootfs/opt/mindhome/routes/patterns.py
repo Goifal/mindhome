@@ -186,6 +186,10 @@ def api_update_pattern(pattern_id):
         pattern.updated_at = datetime.now(timezone.utc)
         session.commit()
         return jsonify({"success": True, "id": pattern.id, "status": pattern.status})
+    except Exception as e:
+        session.rollback()
+        logger.error("Pattern update failed: %s", e)
+        return jsonify({"error": "Update failed"}), 500
     finally:
         session.close()
 
@@ -254,7 +258,8 @@ def api_reclassify_insights():
         return jsonify({"success": True, "reclassified": reclassified})
     except Exception as e:
         session.rollback()
-        return jsonify({"error": str(e)}), 500
+        logger.error("Operation failed: %s", e)
+        return jsonify({"error": "Operation failed"}), 500
     finally:
         session.close()
 
@@ -419,7 +424,8 @@ def api_reject_pattern(pattern_id):
         return jsonify({"success": True})
     except Exception as e:
         session.rollback()
-        return jsonify({"error": str(e)}), 500
+        logger.error("Operation failed: %s", e)
+        return jsonify({"error": "Operation failed"}), 500
     finally:
         session.close()
 
@@ -441,7 +447,8 @@ def api_reactivate_pattern(pattern_id):
         return jsonify({"success": True})
     except Exception as e:
         session.rollback()
-        return jsonify({"error": str(e)}), 500
+        logger.error("Operation failed: %s", e)
+        return jsonify({"error": "Operation failed"}), 500
     finally:
         session.close()
 
@@ -529,7 +536,8 @@ def api_create_exclusion():
         return jsonify({"success": True, "id": excl.id}), 201
     except Exception as e:
         session.rollback()
-        return jsonify({"error": str(e)}), 500
+        logger.error("Operation failed: %s", e)
+        return jsonify({"error": "Operation failed"}), 500
     finally:
         session.close()
 
@@ -541,9 +549,10 @@ def api_delete_exclusion(excl_id):
     session = get_db()
     try:
         excl = session.get(PatternExclusion, excl_id)
-        if excl:
-            session.delete(excl)
-            session.commit()
+        if not excl:
+            return jsonify({"error": "Exclusion not found"}), 404
+        session.delete(excl)
+        session.commit()
         return jsonify({"success": True})
     finally:
         session.close()
@@ -595,7 +604,8 @@ def api_create_manual_rule():
         return jsonify({"success": True, "id": rule.id}), 201
     except Exception as e:
         session.rollback()
-        return jsonify({"error": str(e)}), 500
+        logger.error("Operation failed: %s", e)
+        return jsonify({"error": "Operation failed"}), 500
     finally:
         session.close()
 
@@ -618,7 +628,8 @@ def api_update_manual_rule(rule_id):
         return jsonify({"success": True})
     except Exception as e:
         session.rollback()
-        return jsonify({"error": str(e)}), 500
+        logger.error("Operation failed: %s", e)
+        return jsonify({"error": "Operation failed"}), 500
     finally:
         session.close()
 
@@ -630,9 +641,10 @@ def api_delete_manual_rule(rule_id):
     session = get_db()
     try:
         rule = session.get(ManualRule, rule_id)
-        if rule:
-            session.delete(rule)
-            session.commit()
+        if not rule:
+            return jsonify({"error": "Rule not found"}), 404
+        session.delete(rule)
+        session.commit()
         return jsonify({"success": True})
     finally:
         session.close()
@@ -669,8 +681,8 @@ def api_pattern_conflicts():
                             })
         return jsonify({"conflicts": conflicts, "total": len(conflicts)})
     except Exception as e:
-        logger.error(f"Pattern conflict detection error: {e}")
-        return jsonify({"conflicts": [], "total": 0, "error": str(e)}), 500
+        logger.error("Operation failed: %s", e)
+        return jsonify({"conflicts": [], "total": 0, "error": "Operation failed"}), 500
     finally:
         session.close()
 
@@ -713,8 +725,8 @@ def api_detect_scenes():
 
         return jsonify({"scenes": scenes})
     except Exception as e:
-        logger.error(f"Scene detection error: {e}")
-        return jsonify({"scenes": [], "error": str(e)})
+        logger.error("Operation failed: %s", e)
+        return jsonify({"scenes": [], "error": "Operation failed"}), 500
     finally:
         session.close()
 
@@ -807,7 +819,8 @@ def api_update_pattern_settings():
         return jsonify({"success": True, "updated": updated})
     except Exception as e:
         session.rollback()
-        return jsonify({"error": str(e)}), 500
+        logger.error("Operation failed: %s", e)
+        return jsonify({"error": "Operation failed"}), 500
     finally:
         session.close()
 
@@ -846,7 +859,8 @@ def api_apply_preset(name):
         return jsonify({"success": True, "preset": name, "values": preset})
     except Exception as e:
         session.rollback()
-        return jsonify({"error": str(e)}), 500
+        logger.error("Operation failed: %s", e)
+        return jsonify({"error": "Operation failed"}), 500
     finally:
         session.close()
 

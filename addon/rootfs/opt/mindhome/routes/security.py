@@ -155,8 +155,8 @@ def get_entities(feature_key):
                 })
             return jsonify(result)
     except Exception as e:
-        logger.error(f"Get entities error: {e}")
-        return jsonify({"error": str(e)}), 500
+        logger.error("Operation failed: %s", e)
+        return jsonify({"error": "Operation failed"}), 500
 
 
 @security_bp.route("/api/security/entities/<feature_key>", methods=["POST"])
@@ -183,8 +183,8 @@ def add_entity(feature_key):
             _log_security_change("ENTITY_ASSIGNED", feature_key, f"{entity_id} ({role})")
             return jsonify({"id": a.id, "entity_id": entity_id, "role": role}), 201
     except Exception as e:
-        logger.error(f"Add entity error: {e}")
-        return jsonify({"error": str(e)}), 500
+        logger.error("Operation failed: %s", e)
+        return jsonify({"error": "Operation failed"}), 500
 
 
 @security_bp.route("/api/security/entities/<feature_key>/<int:assignment_id>", methods=["PUT"])
@@ -202,8 +202,8 @@ def update_entity(feature_key, assignment_id):
                     setattr(a, key, data[key])
             return jsonify({"ok": True})
     except Exception as e:
-        logger.error(f"Update entity error: {e}")
-        return jsonify({"error": str(e)}), 500
+        logger.error("Operation failed: %s", e)
+        return jsonify({"error": "Operation failed"}), 500
 
 
 @security_bp.route("/api/security/entities/<feature_key>/<int:assignment_id>", methods=["DELETE"])
@@ -221,8 +221,8 @@ def delete_entity(feature_key, assignment_id):
             _log_security_change("ENTITY_REMOVED", feature_key, f"{eid} ({role})")
             return jsonify({"ok": True})
     except Exception as e:
-        logger.error(f"Delete entity error: {e}")
-        return jsonify({"error": str(e)}), 500
+        logger.error("Operation failed: %s", e)
+        return jsonify({"error": "Operation failed"}), 500
 
 
 @security_bp.route("/api/security/entities/<feature_key>/auto-detect", methods=["POST"])
@@ -382,8 +382,8 @@ def camera_snapshot_get(event_id):
                 return jsonify({"error": "Invalid snapshot path"}), 403
             return send_file(real_path, mimetype="image/jpeg")
     except Exception as e:
-        logger.error(f"Get snapshot error: {e}")
-        return jsonify({"error": str(e)}), 500
+        logger.error("Operation failed: %s", e)
+        return jsonify({"error": "Operation failed"}), 500
 
 
 @security_bp.route("/api/security/cameras/snapshots/<int:event_id>", methods=["DELETE"])
@@ -762,7 +762,8 @@ def emergency_contacts_list():
                 "is_active": c.is_active,
             } for c in contacts])
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        logger.error("Operation failed: %s", e)
+        return jsonify({"error": "Operation failed"}), 500
 
 
 @security_bp.route("/api/security/emergency/contacts", methods=["POST"])
@@ -785,7 +786,8 @@ def emergency_contact_create():
             session.flush()
             return jsonify({"id": c.id}), 201
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        logger.error("Operation failed: %s", e)
+        return jsonify({"error": "Operation failed"}), 500
 
 
 @security_bp.route("/api/security/emergency/contacts/<int:contact_id>", methods=["PUT"])
@@ -802,7 +804,8 @@ def emergency_contact_update(contact_id):
                     setattr(c, key, data[key])
             return jsonify({"ok": True})
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        logger.error("Operation failed: %s", e)
+        return jsonify({"error": "Operation failed"}), 500
 
 
 @security_bp.route("/api/security/emergency/contacts/<int:contact_id>", methods=["DELETE"])
