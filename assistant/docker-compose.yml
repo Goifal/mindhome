@@ -54,10 +54,11 @@ services:
       - ANONYMIZED_TELEMETRY=false
       - IS_PERSISTENT=TRUE
     healthcheck:
-      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/heartbeat')\""]
+      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8000/api/v1/heartbeat\")'  || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 15s
 
   # --- Redis (Working Memory / Cache) ---
   # Nur ueber Docker-Netzwerk erreichbar (kein externer Zugriff noetig)
