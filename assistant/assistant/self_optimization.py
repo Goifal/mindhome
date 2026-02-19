@@ -218,24 +218,42 @@ class SelfOptimization:
         return {"success": True, "message": f"{count} Vorschlaege abgelehnt"}
 
     def _validate_proposal(self, proposal: dict) -> bool:
-        """Prueft ob ein Vorschlag innerhalb der Grenzen liegt."""
+        """Prueft ob ein Vorschlag gueltig ist. SICHERHEITSKRITISCH.
+
+        Pruefungen (alle muessen bestehen):
+        1. Parameter muss in _PARAMETER_PATHS Whitelist sein
+        2. Parameter darf nicht in immutable_keys sein
+        3. Wert muss numerisch sein (alle erlaubten Parameter sind numerisch)
+        4. Wert muss innerhalb der Bounds liegen
+        """
         param = proposal.get("parameter", "")
 
+        # 1. WHITELIST: Nur bekannte Parameter erlauben
+        if param not in _PARAMETER_PATHS:
+            logger.warning("SICHERHEIT: Vorschlag fuer unbekannten Parameter abgelehnt: %s", param)
+            return False
+
+        # 2. IMMUTABLE: Geschuetzte Bereiche
         for immutable_key in self._immutable:
             if param.startswith(immutable_key) or immutable_key.startswith(param):
-                logger.warning("Vorschlag fuer immutable Key abgelehnt: %s", param)
+                logger.warning("SICHERHEIT: Vorschlag fuer immutable Key abgelehnt: %s", param)
                 return False
 
+        # 3. TYP: Nur numerische Werte erlauben (alle Parameter sind numerisch)
+        value = proposal.get("proposed")
+        if not isinstance(value, (int, float)):
+            logger.warning("SICHERHEIT: Nicht-numerischer Wert abgelehnt: %s=%s (type=%s)", param, value, type(value).__name__)
+            return False
+
+        # 4. BOUNDS: Grenzen pruefen
         bounds = self._bounds.get(param)
         if bounds:
-            value = proposal.get("proposed")
-            if isinstance(value, (int, float)):
-                if value < bounds.get("min", float("-inf")):
-                    logger.warning("Vorschlag unter Minimum: %s=%s (min=%s)", param, value, bounds["min"])
-                    return False
-                if value > bounds.get("max", float("inf")):
-                    logger.warning("Vorschlag ueber Maximum: %s=%s (max=%s)", param, value, bounds["max"])
-                    return False
+            if value < bounds.get("min", float("-inf")):
+                logger.warning("Vorschlag unter Minimum: %s=%s (min=%s)", param, value, bounds["min"])
+                return False
+            if value > bounds.get("max", float("inf")):
+                logger.warning("Vorschlag ueber Maximum: %s=%s (max=%s)", param, value, bounds["max"])
+                return False
 
         return True
 
@@ -318,7 +336,7 @@ Wenn keine Aenderung noetig: []"""
             node[path[-1]] = new_value
 
             with open(_SETTINGS_PATH, "w") as f:
-                yaml.dump(config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+                yaml.safe_dump(config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
 
             logger.info("Parameter angepasst: %s = %s", param, new_value)
             return {

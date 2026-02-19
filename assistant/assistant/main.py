@@ -900,7 +900,7 @@ def _save_dashboard_config(pin_hash: str, recovery_hash: str, setup_complete: bo
         # Alten Klartext-PIN entfernen falls vorhanden
         config["dashboard"].pop("pin", None)
         with open(SETTINGS_YAML_PATH, "w") as f:
-            yaml.dump(config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+            yaml.safe_dump(config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
         # Config im Speicher aktualisieren
         import assistant.config as cfg
         cfg.yaml_config = load_yaml_config()
@@ -1091,7 +1091,7 @@ async def ui_update_settings(req: SettingsUpdateFull, token: str = ""):
 
         # Zurueckschreiben
         with open(SETTINGS_YAML_PATH, "w") as f:
-            yaml.dump(config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+            yaml.safe_dump(config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
 
         # yaml_config im Speicher aktualisieren
         import assistant.config as cfg
@@ -1245,7 +1245,7 @@ async def ui_update_notification_channels(
 
         cfg.setdefault("notifications", {})["channels"] = req.channels
         with open(config_path, "w") as f:
-            yaml.dump(cfg, f, allow_unicode=True, default_flow_style=False)
+            yaml.safe_dump(cfg, f, allow_unicode=True, default_flow_style=False)
 
         return {"success": True, "channels": req.channels}
     except Exception as e:
@@ -1402,7 +1402,7 @@ async def ui_update_easter_eggs(req: EasterEggUpdate, token: str = ""):
     try:
         data = {"easter_eggs": req.easter_eggs}
         with open(EASTER_EGGS_PATH, "w") as f:
-            yaml.dump(data, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+            yaml.safe_dump(data, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
 
         # Personality-Engine neu laden
         if hasattr(brain, "personality") and brain.personality:

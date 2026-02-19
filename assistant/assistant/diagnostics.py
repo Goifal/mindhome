@@ -359,7 +359,7 @@ class DiagnosticsEngine:
         try:
             data = {"tasks": tasks}
             with open(self._maintenance_file, "w") as f:
-                yaml.dump(data, f, default_flow_style=False, allow_unicode=True)
+                yaml.safe_dump(data, f, default_flow_style=False, allow_unicode=True)
         except Exception as e:
             logger.error("maintenance.yaml speichern fehlgeschlagen: %s", e)
 

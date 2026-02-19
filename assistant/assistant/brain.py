@@ -393,6 +393,19 @@ class AssistantBrain:
                 "context_room": room or "unbekannt",
             }
 
+        # Phase 13.1: Config-Edit Bestaetigung
+        config_edit_result = await self._handle_config_edit_confirmation(text)
+        if config_edit_result:
+            await self.memory.add_conversation("user", text)
+            await self.memory.add_conversation("assistant", config_edit_result)
+            await emit_speaking(config_edit_result)
+            return {
+                "response": config_edit_result,
+                "actions": [],
+                "model_used": "config_edit",
+                "context_room": room or "unbekannt",
+            }
+
         # Phase 8: Explizites Notizbuch — Memory-Befehle (VOR allem anderen)
         memory_result = await self._handle_memory_command(text, person or "")
         if memory_result:
@@ -1449,6 +1462,44 @@ class AssistantBrain:
         # "Alle Vorschlaege ablehnen"
         if any(t in text_lower for t in ["alle vorschlaege ablehnen", "alle ablehnen", "vorschlaege verwerfen"]):
             result = await self.self_optimization.reject_all()
+            return result.get("message", "")
+
+        return None
+
+    # ------------------------------------------------------------------
+    # Phase 13.1: Config-Edit Bestaetigung (Chat)
+    # ------------------------------------------------------------------
+
+    async def _handle_config_edit_confirmation(self, text: str) -> Optional[str]:
+        """Erkennt Config-Edit-Bestaetigungen im Chat.
+
+        SICHERHEIT: Jarvis kann NIEMALS selbst Config-Edits bestaetigen.
+        Nur explizite User-Eingaben loesen confirm_config_edit() aus.
+        """
+        pending = self.executor.get_pending_config_edits()
+        if not pending:
+            return None
+
+        text_lower = text.lower().strip().rstrip("!?.")
+
+        # Einfache Bestaetigung: "Ja" / "Ja mach das" / "Ok"
+        confirm_triggers = [
+            "ja", "jo", "jap", "klar", "genau", "passt",
+            "ja mach das", "ja bitte", "mach das", "ok",
+            "ja aendern", "ja hinzufuegen", "ja entfernen",
+        ]
+        if any(text_lower == t or text_lower.startswith(t + " ") or text_lower.startswith(t + ",") for t in confirm_triggers):
+            # Letztes Pending nehmen
+            last = pending[-1]
+            result = await self.executor.confirm_config_edit(last["pending_id"])
+            return result.get("message", "")
+
+        # Ablehnung
+        reject_triggers = [
+            "nein", "abbrechen", "cancel", "nicht aendern", "doch nicht", "lass das",
+        ]
+        if any(text_lower == t or text_lower.startswith(t) for t in reject_triggers):
+            result = self.executor.reject_config_edit()  # Alle ablehnen
             return result.get("message", "")
 
         return None
