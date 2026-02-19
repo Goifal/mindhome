@@ -28,7 +28,10 @@ class ConnectionManager:
 
     def disconnect(self, websocket: WebSocket):
         """Verbindung entfernen."""
-        self.active_connections.remove(websocket)
+        try:
+            self.active_connections.remove(websocket)
+        except ValueError:
+            pass
         logger.info("WebSocket getrennt (%d aktiv)", len(self.active_connections))
 
     async def broadcast(self, event: str, data: Optional[dict] = None):
@@ -50,7 +53,10 @@ class ConnectionManager:
                 disconnected.append(connection)
 
         for conn in disconnected:
-            self.active_connections.remove(conn)
+            try:
+                self.active_connections.remove(conn)
+            except ValueError:
+                pass
 
     async def send_personal(self, websocket: WebSocket, event: str, data: Optional[dict] = None):
         """Event an einen bestimmten Client senden."""
