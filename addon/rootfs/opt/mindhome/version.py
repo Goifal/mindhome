@@ -4,12 +4,33 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "1.3.0"
-BUILD = 89
+VERSION = "1.4.0"
+BUILD = 90
 BUILD_DATE = "2026-02-19"
-CODENAME = "Jarvis Dual Mode"
+CODENAME = "Jarvis Hardened"
 
 # Changelog
+# Build 90: v1.4.0 Jarvis Hardened — Dual-SSD Setup, Security-Audit, System-Audit
+#   - NEU: Dual-SSD Install-Script (interaktives Setup fuer NVMe + SATA)
+#   - NEU: docker-compose mit ${DATA_DIR} Variable (portabel)
+#   - NEU: .dockerignore + .gitignore Updates
+#   - SECURITY: Token-Eingabe verdeckt (read -s), .env chmod 600
+#   - SECURITY: Redis/ChromaDB nur auf 127.0.0.1 (kein externer Zugriff)
+#   - SECURITY: Input-Validierung, printf statt heredoc, curl|sh eliminiert
+#   - FIX: NVMe Partitions-Erkennung (p-Separator)
+#   - FIX: Dockerfile COPY static/ hinzugefuegt
+#   - FIX: docker-compose config :ro entfernt (Settings-Save blockiert)
+#   - FIX: audit_log() falsche ActionLog-Spalten korrigiert
+#   - FIX: Session-Leaks in DomainPlugin (try/finally)
+#   - FIX: set_setting() rollback() bei Fehler
+#   - FIX: WebSocket disconnect race condition (ValueError)
+#   - FIX: Shared schemas synchronisiert (ChatRequest, ChatResponse, Events)
+#   - FIX: sessionmaker-Factory gecacht (models.get_session)
+#   - FIX: Deprecated declarative_base Import modernisiert
+#   - FIX: datetime.utcnow() durch datetime.now(timezone.utc) ersetzt
+#   - FIX: ChromaDB Port-Konstante korrigiert (8000 intern)
+#   - FIX: armhf aus config.yaml entfernt (kein Build-Target)
+#
 # Build 89: v1.3.0 Jarvis Dual Mode — Heizkurve, Voice I/O, GradualTransitioner Fix
 #   - NEU: Dual Heating Mode (21 Dateien): room_thermostat vs heating_curve
 #     climate.py Dual-Eval, function_calling.py Offset-Logik, conflict_resolver.py Kurven-Mediation,
