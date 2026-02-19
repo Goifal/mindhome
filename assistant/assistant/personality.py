@@ -961,7 +961,7 @@ class PersonalityEngine:
 
         prompt = SYSTEM_PROMPT_TEMPLATE.format(
             assistant_name=self.assistant_name,
-            user_name=self.user_name,
+            user_name=settings.user_name,
             max_sentences=max_sentences,
             time_style=time_style,
             mood_section=mood_section,
@@ -982,7 +982,7 @@ class PersonalityEngine:
 
     def _build_person_addressing(self, person_name: str) -> str:
         """Baut die Anrede-Regeln basierend auf Person und Beziehungsstufe."""
-        primary_user = self.user_name
+        primary_user = settings.user_name  # dynamisch, nicht cached
         person_cfg = yaml_config.get("persons") or {}
         titles = person_cfg.get("titles") or {}
 

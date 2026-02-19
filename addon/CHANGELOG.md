@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.4.1 – Jarvis Family (Personen-Verwaltung, Stability-Fixes)
+
+### Personen-Verwaltung
+- **Neuer "Personen" Tab** in der Settings UI
+- Hauptbenutzer-Name aenderbar (nicht mehr nur ueber .env)
+- Familienmitglieder hinzufuegen/entfernen mit Rollen
+- Rollen: Hausherr/in (Owner), Mitbewohner/in, Gast
+- Automatische Sync zu persons/trust_levels
+
+### Stability-Fixes
+- **60s Timeout** fuer Chat-Endpoint (kein endloses Haengen mehr)
+- NoneType-Fix in `personality.py` (trust_persons, _format_context)
+- NoneType-Fix in `ambient_audio.py` (leere YAML-Keys)
+- user_name dynamisch statt gecacht (Aenderung sofort wirksam)
+- TRACE-Logging entfernt
+
 ## 1.4.0 – Jarvis Hardened (Dual-SSD, Security-Audit, System-Audit)
 
 ### Dual-SSD Setup

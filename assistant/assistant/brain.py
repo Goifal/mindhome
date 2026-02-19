@@ -491,11 +491,9 @@ class AssistantBrain:
         await emit_thinking()
 
         # 1. Kontext sammeln (inkl. semantischer Erinnerungen)
-        logger.info("[TRACE] Starte context_builder.build()")
         context = await self.context_builder.build(
             trigger="voice", user_text=text, person=person or ""
         )
-        logger.info("[TRACE] context_builder.build() fertig")
         if room:
             context["room"] = room
         if person:
@@ -507,7 +505,6 @@ class AssistantBrain:
 
         # 3. Modell waehlen
         model = self.model_router.select_model(text)
-        logger.info("[TRACE] Modell gewaehlt: %s", model)
 
         # Phase 6: Formality Score laden
         formality_score = await self.personality.get_formality_score()
@@ -516,12 +513,10 @@ class AssistantBrain:
         irony_count = await self.personality._get_self_irony_count_today()
 
         # 4. System Prompt bauen (mit Phase 6 Erweiterungen)
-        logger.info("[TRACE] Starte build_system_prompt()")
         system_prompt = self.personality.build_system_prompt(
             context, formality_score=formality_score,
             irony_count_today=irony_count,
         )
-        logger.info("[TRACE] build_system_prompt() fertig")
 
         # Phase 6.7: Emotionale Intelligenz — Mood-Hint in System Prompt
         mood_hint = self.mood.get_mood_prompt_hint()
@@ -605,9 +600,7 @@ class AssistantBrain:
             system_prompt += whatif_prompt
 
         # 5. Letzte Gespraeche laden (Working Memory)
-        logger.info("[TRACE] Starte memory.get_recent_conversations()")
         recent = await self.memory.get_recent_conversations(limit=5)
-        logger.info("[TRACE] memory fertig, baue messages")
         messages = [{"role": "system", "content": system_prompt}]
         for conv in recent:
             messages.append({"role": conv["role"], "content": conv["content"]})
@@ -615,7 +608,6 @@ class AssistantBrain:
 
         # Phase 8: Intent-Routing — Wissensfragen ohne Tools beantworten
         intent_type = self._classify_intent(text)
-        logger.info("[TRACE] Intent: %s", intent_type)
 
         # Phase 10: Delegations-Intent → Nachricht an Person weiterleiten
         if intent_type == "delegation":
@@ -683,13 +675,11 @@ class AssistantBrain:
             executed_actions = []
         else:
             # 6b. Einfache Anfragen: Direkt LLM aufrufen
-            logger.info("[TRACE] Starte ollama.chat() mit Modell %s", model)
             response = await self.ollama.chat(
                 messages=messages,
                 model=model,
                 tools=get_assistant_tools(),
             )
-            logger.info("[TRACE] ollama.chat() fertig")
 
             if "error" in response:
                 logger.error("LLM Fehler: %s", response["error"])
