@@ -1,7 +1,7 @@
 # JARVIS ASSISTANT — STATUS & ANALYSE
 
 > Letzte Aktualisierung: 2026-02-19
-> Commit: `173b4be` — Sicherheits-Audit komplett (62+ Bugs gefixt), PBKDF2 PIN-Hashing, Exception-Leak-Schutz
+> Ehrlichkeits-Audit: 5 Features korrigiert, 6 Bugs/Luecken dokumentiert
 
 ---
 
@@ -9,8 +9,8 @@
 
 | Kategorie | Score | Trend |
 |-----------|:-----:|:-----:|
-| **Funktionsumfang (vs. Masterplan)** | **99.8%** | +0.2% |
-| **Jarvis-Authentizitaet (vs. MCU Jarvis)** | **90.0%** | +2.0% |
+| **Funktionsumfang (vs. Masterplan)** | **82.5%** | ↓ Ehrlichkeits-Audit |
+| **Jarvis-Authentizitaet (vs. MCU Jarvis)** | **75.0%** | ↓ Ehrlichkeits-Audit |
 | **MCU-Jarvis Transformation (Phase 17+)** | **32.0%** | NEU |
 | **Sicherheit** | **99.5%** | +1.5% |
 | **Code-Qualitaet** | **94%** | +8% |
@@ -35,11 +35,11 @@
 
 ---
 
-## PHASE 7 — Routinen & Tagesstruktur (96.7%)
+## PHASE 7 — Routinen & Tagesstruktur (83.9%)
 
 | # | Feature | Status | % | Details |
 |---|---------|:------:|:-:|---------|
-| 7.1 | Morning Briefing | DONE | 100% | 5 Module, Wochenende/Wochentag, Energie-Modul mit echten HA-Sensoren (Solar, Verbrauch, Strompreis) |
+| 7.1 | Morning Briefing | ⚠️ TEIL | 50% | 5 Module, Wochenende/Wochentag, Energie-Modul — **ABER: Kein Auto-Trigger!** Nur manuell via API/Chat aufrufbar |
 | 7.2 | Kontextuelle Begruessung | DONE | 95% | Zeitbasiert, LLM-generiert, Geburtstags-Check (YYYY-MM-DD aus settings.yaml, Alter-Berechnung) |
 | 7.3 | Gute-Nacht-Routine | DONE | 95% | Sicherheits-Check, Morgen-Vorschau, Night-Mode-Aktionen |
 | 7.4 | Abschied/Willkommen | DONE | 100% | Arrival-Status + Departure-Check + Geo-Fence Proximity (approaching/arriving mit Cooldown) |
@@ -47,19 +47,19 @@
 | 7.6 | Gaeste-Modus | DONE | 100% | Trigger, Restrictions, Prompt-Mod, Gaeste-WLAN |
 | 7.7 | Raum-Intelligenz | DONE | 95% | 6 Raeume, Defaults, Farben + lernfaehiges Override (YAML-Persistierung, zeitbasiert) |
 | 7.8 | Abwesenheits-Summary | DONE | 95% | Event-Logging, LLM-Summary + Relevanz-Filter (Typ+Keyword-Filter, Deduplizierung) |
-| 7.9 | Saisonale Anpassung | DONE | 95% | 4 Jahreszeiten + Rolladen-Timing (Sonnenstand, Hitzeschutz, Winter-Isolierung) |
+| 7.9 | Saisonale Anpassung | ⚠️ TEIL | 35% | Saisondaten berechnet, aber **nur als LLM-Kontext** — keine autonomen Rolladen/Licht-Anpassungen |
 
 ---
 
-## PHASE 8 — Gedaechtnis & Vorausdenken (94.3%)
+## PHASE 8 — Gedaechtnis & Vorausdenken (75.7%)
 
 | # | Feature | Status | % | Details |
 |---|---------|:------:|:-:|---------|
 | 8.1 | Anticipatory Actions | DONE | 95% | Zeit+Sequenz+Kontext-Patterns (Tageszeit-Cluster-Erkennung, dominante Aktionen) |
 | 8.2 | Explizites Notizbuch | DONE | 100% | Merk dir / Was weisst du / Vergiss / Heute gelernt |
 | 8.3 | Wissensabfragen | DONE | 90% | Intent-Routing, Deep-Model |
-| 8.4 | "Was waere wenn" | DONE | 85% | 12 Trigger, erweiterter Prompt |
-| 8.5 | Intent-Extraktion | DONE | 95% | LLM-basiert, Redis + lokales relatives Datum-Parsing (morgen, uebermorgen, naechsten Montag, in X Tagen) |
+| 8.4 | "Was waere wenn" | ⚠️ TEIL | 15% | 12 Trigger erkannt, aber **nur LLM-Prompt** — keine echte Simulation, keine HA-Daten-Analyse |
+| 8.5 | Intent-Extraktion | ⚠️ BUG | 40% | Code komplett, aber **`intent_tracker.start()` wird nie in brain.py aufgerufen** → Reminder-Loop laeuft nicht, Deadlines werden nie geprueft |
 | 8.6 | Konversations-Kontinuitaet | DONE | 90% | Bis zu 3 offene Themen gleichzeitig, kombinierter Prompt-Hinweis |
 | 8.7 | Langzeit-Persoenlichkeit | DONE | 100% | Metrics, Decay, 5 Stufen + Monthly Report (generate_monthly_report, Redis-Persistierung) |
 
@@ -79,7 +79,7 @@
 
 ---
 
-## PHASE 10 — Multi-Room & Kommunikation (94.0%)
+## PHASE 10 — Multi-Room & Kommunikation (86.0%)
 
 | # | Feature | Status | % | Details |
 |---|---------|:------:|:-:|---------|
@@ -87,7 +87,7 @@
 | 10.2 | Delegieren an Personen | DONE | 90% | 7 Pattern-Typen, Trust-Check |
 | 10.3 | Vertrauensstufen | DONE | 95% | 3 Level, Guest-Whitelist, Raum-Scoping |
 | 10.4 | Selbst-Diagnostik | DONE | 90% | Entity-Checks, System-Resources |
-| 10.5 | Wartungs-Assistent | DONE | 95% | 5 Tasks, Erinnerungen, Completion-History |
+| 10.5 | Wartungs-Assistent | ⚠️ TEIL | 60% | 5 Tasks + History, aber **kein Auto-Check-Loop** — Wartungserinnerungen nur bei manuellem Abruf |
 
 ---
 
@@ -227,6 +227,7 @@
 | 2026-02-19 | `173b4be` | **Remaining 12 Audit Issues:** PBKDF2-HMAC-SHA256 PIN-Hashing mit Salt, SSRF-Schutz (Private-Network-Only), Backup-Export filtert Sensitive Settings, Hot-Update Size-Limit+Script-Block, DB Rollback in Error-Paths, heating_curve_away_offset Key-Fallback, DELETE 404 statt 200, Exception-Leak-Schutz (~50 Stellen), Threading Lock Watchdog, Private Attribute Access entfernt, ASSISTANT_TOOLS dynamisch, Jarvis-Ton Fehlermeldungen. 13 Dateien, 224 Insertions | Sicherheit +0.5%, Code-Qualitaet +1% |
 | 2026-02-19 | — | **Phase 17+ MCU-Jarvis Transformation (10 Features):** Kompletter End-to-End Code-Audit aller 39 Module. Funktionsstatus ermittelt: 32% funktional. 10 neue Features definiert: Continuous Presence, Kamera/Vision, Echte Initiative, Pushback & Fuersorglichkeit, Kommunikations-Management, Emergency Protocols, Daten-Analyse, Streaming & Interrupts, Langzeit-Beziehung, Werkstatt-Assistent. Quick Wins identifiziert (Morning Briefing Auto-Trigger, Summarizer Callback, Boot-Sequenz TTS). Abhaengigkeiten und Reihenfolge dokumentiert. ~112 Stunden geschaetzter Gesamtaufwand | Phase 17: NEU 32% |
 | 2026-02-19 | — | **Phase 14.2 Multi-Modal Input (OCR):** ocr.py (~250 Zeilen): Tesseract-OCR (deu+eng) mit Bild-Preprocessing (Upscale, Kontrast, Schaerfe), Vision-LLM via Ollama (llava etc.) mit Base64-Encoding + Redis-Cache (24h TTL). file_handler.py OCR-Integration fuer jpg/jpeg/png/gif/webp/bmp. build_file_context() zeigt OCR-Text + Bild-Analyse separat. brain.py OCREngine Init + Vision-LLM in Process-Pipeline. Dockerfile + requirements.txt (tesseract-ocr, pytesseract, Pillow). settings.yaml OCR-Konfiguration. 22 Tests (test_ocr.py) | Phase 14: 30→63.3% |
+| 2026-02-19 | — | **Ehrlichkeits-Audit:** 5 Features korrigiert (7.1 Morning Briefing 100→50%, 7.9 Saisonal 95→35%, 8.4 Was-waere-wenn 85→15%, 8.5 Intent-Extraktion 95→40%, 10.5 Wartung 95→60%). 6 konkrete Bugs/Luecken dokumentiert (B1-B6). Phasen-Durchschnitte korrigiert (Phase 7: 96.7→83.9%, Phase 8: 94.3→75.7%, Phase 10: 94→86%). Balkendiagramm neu sortiert. Gesamt-Score angepasst | Phase 7 ↓, Phase 8 ↓, Phase 10 ↓ |
 
 ---
 
@@ -234,9 +235,17 @@
 
 ### Verbleibende Luecken in fertigen Features
 
-> **Alle 21 kleinen Luecken geschlossen!** (Commit `3edee22`)
+> **Ehrlichkeits-Audit 2026-02-19:** 5 Features waren uebertrieben bewertet.
+> "Code existiert" ≠ "Feature funktioniert End-to-End"
 
-_Keine verbleibenden Luecken in implementierten Features._
+| # | Bug/Luecke | Phase | Fix-Aufwand | Typ |
+|---|-----------|:-----:|:-----------:|:---:|
+| B1 | `intent_tracker.start()` wird nie aufgerufen in brain.py → Reminder-Loop tot | 8.5 | 5 Min | BUG |
+| B2 | Morning Briefing hat keinen Auto-Trigger (cron/schedule) | 7.1 | 15 Min | LUECKE |
+| B3 | Summarizer hat keinen notify-Callback → Zusammenfassungen nie gesprochen | 17.7 | 10 Min | LUECKE |
+| B4 | Saisonale Anpassung nur LLM-Kontext, keine autonomen Aktionen | 7.9 | 4 Std | LUECKE |
+| B5 | "Was waere wenn" nur Prompt, keine echte HA-Daten-Simulation | 8.4 | 6 Std | LUECKE |
+| B6 | Wartungs-Assistent kein automatischer Check-Loop | 10.5 | 2 Std | LUECKE |
 
 ### Komplett fehlende Module
 
@@ -309,15 +318,15 @@ _Keine verbleibenden Luecken in implementierten Features._
 ```
 Phase  6 (Persoenlichkeit)  98.5%  ████████████████████░
 Phase 11 (Wissen)           97.5%  ████████████████████░
-Phase  7 (Routinen)         96.7%  ███████████████████▓░
 Phase 16 (fuer Alle)        96.7%  ███████████████████▓░
 Phase 15 (Haushalt)         96.3%  ███████████████████▓░
 Phase  9 (Stimme)           95.7%  ███████████████████▓░
-Phase  8 (Gedaechtnis)      94.3%  ███████████████████░░
-Phase 10 (Multi-Room)       94.0%  ███████████████████░░
+Phase 10 (Multi-Room)       86.0%  █████████████████░░░░  ↓ korrigiert
+Phase  7 (Routinen)         83.9%  █████████████████░░░░  ↓ korrigiert
+Phase  8 (Gedaechtnis)      75.7%  ███████████████░░░░░░  ↓ korrigiert
+Phase 14 (Wahrnehmung)      63.3%  █████████████░░░░░░░░
 Phase 12 (Authentizitaet)   58.0%  ████████████░░░░░░░░░
 Phase 13 (Selbstprog.)      48.8%  ██████████░░░░░░░░░░░
-Phase 14 (Wahrnehmung)      63.3%  █████████████░░░░░░░░
 Phase 17+(MCU-Jarvis)       32.0%  ███████░░░░░░░░░░░░░░
 ```
 
@@ -378,9 +387,8 @@ Phase 17+(MCU-Jarvis)       32.0%  ███████░░░░░░░░
 
 ---
 
-> **Hinweis:** Alle 21 kleinen Luecken geschlossen! 6 komplett fehlende Module verbleibend (Phase 12-14).
+> **Hinweis:** Ehrlichkeits-Audit durchgefuehrt — 5 Features korrigiert, 6 Bugs/Luecken dokumentiert (B1-B6).
+> 3 Quick-Fixes (B1-B3) koennen in ~30 Min behoben werden und bringen sofort spuerbare Verbesserung.
 > Sicherheits-Audit vollstaendig (alle 26/26 Punkte SICHER). Foundation komplett (7/7 DONE).
-> Comprehensive Code-Audit: 62+ Bugs gefixt (11 Critical, 16 High, 15 Medium, 12 Remaining).
-> Dual Heating Mode (21 Dateien), Voice I/O (Whisper+Piper), GradualTransitioner gefixt.
-> **NEU: Phase 17+ MCU-Jarvis Transformation — 10 Features, 32% funktional, ~112 Stunden geschaetzt.**
+> **Phase 17+ MCU-Jarvis Transformation — 10 Features, 32% funktional, ~112 Stunden geschaetzt.**
 > **Assistant-Modul: ~21.008 Zeilen, 39 Python-Dateien | Gesamt-Projekt: ~52.200+ Zeilen, 118 Python-Dateien**
