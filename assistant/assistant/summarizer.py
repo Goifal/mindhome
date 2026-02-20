@@ -338,7 +338,10 @@ class DailySummarizer:
             all_convs = await self.redis.lrange("mha:conversations", 0, -1)
             day_convs = []
             for entry in all_convs:
-                conv = json.loads(entry)
+                try:
+                    conv = json.loads(entry)
+                except (json.JSONDecodeError, TypeError):
+                    continue
                 ts = conv.get("timestamp", "")
                 if ts.startswith(date):
                     day_convs.append(conv)

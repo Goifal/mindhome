@@ -319,11 +319,6 @@ class CookingAssistant:
         """Geht zum naechsten Schritt."""
         session = self.session
 
-        # Automatisch Timer starten wenn aktueller Schritt einen hat
-        current = session.get_current_step()
-        if current and current.timer_minutes:
-            self._start_step_timer(current)
-
         session.current_step += 1
         step = session.get_current_step()
 

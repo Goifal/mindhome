@@ -59,6 +59,13 @@ from .sound_manager import SoundManager
 from .speaker_recognition import SpeakerRecognition
 from .summarizer import DailySummarizer
 from .time_awareness import TimeAwareness
+from .timer_manager import TimerManager
+from .camera_manager import CameraManager
+from .conditional_commands import ConditionalCommands
+from .energy_optimizer import EnergyOptimizer
+from .web_search import WebSearch
+from .threat_assessment import ThreatAssessment
+from .learning_observer import LearningObserver
 from .tts_enhancer import TTSEnhancer
 from .websocket import emit_thinking, emit_speaking, emit_action
 
@@ -66,6 +73,10 @@ logger = logging.getLogger(__name__)
 
 # Audit-Log (gleicher Pfad wie main.py, fuer Chat-basierte Sicherheitsevents)
 _AUDIT_LOG_PATH = Path(__file__).parent.parent / "logs" / "audit.jsonl"
+
+# Security-Confirmation: Redis-Key + TTL fuer ausstehende Sicherheitsbestaetigungen
+SECURITY_CONFIRM_KEY = "mha:pending_security_confirmation"
+SECURITY_CONFIRM_TTL = 300  # 5 Minuten
 
 
 def _audit_log(action: str, details: dict = None):
@@ -188,6 +199,15 @@ class AssistantBrain:
         # Phase 11.1: Knowledge Base (RAG)
         self.knowledge_base = KnowledgeBase()
 
+        # Phase 17: Neue Jarvis-Features
+        self.timer_manager = TimerManager()
+        self.camera_manager = CameraManager(self.ha, self.ollama)
+        self.conditional_commands = ConditionalCommands()
+        self.energy_optimizer = EnergyOptimizer(self.ha)
+        self.web_search = WebSearch()
+        self.threat_assessment = ThreatAssessment(self.ha)
+        self.learning_observer = LearningObserver()
+
     async def initialize(self):
         """Initialisiert alle Komponenten."""
         await self.memory.initialize()
@@ -206,6 +226,9 @@ class AssistantBrain:
 
         # Activity Engine mit Context Builder verbinden
         self.context_builder.set_activity_engine(self.activity)
+
+        # Redis fuer Context Builder (Guest-Mode-Check)
+        self.context_builder.set_redis(self.memory.redis)
 
         # Mood Detector initialisieren
         await self.mood.initialize(redis_client=self.memory.redis)
@@ -285,8 +308,23 @@ class AssistantBrain:
         self.device_health.set_notify_callback(self._handle_device_health_alert)
         await self.device_health.start()
 
+        # Phase 17: Neue Features initialisieren
+        await self.timer_manager.initialize(redis_client=self.memory.redis)
+        self.timer_manager.set_notify_callback(self._handle_timer_notification)
+        self.timer_manager.set_action_callback(
+            lambda func, args: self.executor.execute(func, args)
+        )
+        await self.conditional_commands.initialize(redis_client=self.memory.redis)
+        self.conditional_commands.set_action_callback(
+            lambda func, args: self.executor.execute(func, args)
+        )
+        await self.energy_optimizer.initialize(redis_client=self.memory.redis)
+        await self.threat_assessment.initialize(redis_client=self.memory.redis)
+        await self.learning_observer.initialize(redis_client=self.memory.redis)
+        self.learning_observer.set_notify_callback(self._handle_learning_suggestion)
+
         await self.proactive.start()
-        logger.info("Jarvis initialisiert (alle Systeme aktiv)")
+        logger.info("Jarvis initialisiert (alle Systeme aktiv, inkl. Phase 17)")
 
     async def process(self, text: str, person: Optional[str] = None, room: Optional[str] = None, files: Optional[list] = None) -> dict:
         """
@@ -388,6 +426,19 @@ class AssistantBrain:
                     "context_room": room or "unbekannt",
                 }
 
+        # Phase 13.1: Sicherheits-Bestaetigung (lock_door:unlock, set_alarm:disarm, etc.)
+        security_result = await self._handle_security_confirmation(text, person or "")
+        if security_result:
+            await self.memory.add_conversation("user", text)
+            await self.memory.add_conversation("assistant", security_result)
+            await emit_speaking(security_result)
+            return {
+                "response": security_result,
+                "actions": [],
+                "model_used": "security_confirmation",
+                "context_room": room or "unbekannt",
+            }
+
         # Phase 13.2: Automation-Bestaetigung (VOR allem anderen)
         automation_result = await self._handle_automation_confirmation(text)
         if automation_result:
@@ -462,6 +513,39 @@ class AssistantBrain:
                 "tts": tts_data,
             }
 
+        # Phase 17: Planungs-Dialog Check — laufender Dialog hat Vorrang
+        pending_plan = self.action_planner.has_pending_plan()
+        if pending_plan:
+            logger.info("Laufender Planungs-Dialog: %s", pending_plan)
+            plan_result = await self.action_planner.continue_planning_dialog(text, pending_plan)
+            response_text = plan_result.get("response", "")
+            if plan_result.get("status") == "error":
+                self.action_planner.clear_plan(pending_plan)
+            await self.memory.add_conversation("user", text)
+            await self.memory.add_conversation("assistant", response_text)
+            await emit_speaking(response_text)
+            return {
+                "response": response_text,
+                "actions": [],
+                "model_used": "action_planner_dialog",
+                "context_room": room or "unbekannt",
+            }
+
+        # Phase 17: Neuen Planungs-Dialog starten
+        if self.action_planner.is_planning_request(text):
+            logger.info("Planungs-Dialog gestartet: '%s'", text)
+            plan_result = await self.action_planner.start_planning_dialog(text, person or "")
+            response_text = plan_result.get("response", "")
+            await self.memory.add_conversation("user", text)
+            await self.memory.add_conversation("assistant", response_text)
+            await emit_speaking(response_text)
+            return {
+                "response": response_text,
+                "actions": [],
+                "model_used": "action_planner_dialog",
+                "context_room": room or "unbekannt",
+            }
+
         # Phase 6: Easter-Egg-Check (VOR dem LLM — spart Latenz)
         egg_response = self.personality.check_easter_egg(text)
         if egg_response:
@@ -527,6 +611,16 @@ class AssistantBrain:
         time_hints = await self.time_awareness.get_context_hints()
         if time_hints:
             system_prompt += "\n\nZEITGEFUEHL:\n" + "\n".join(f"- {h}" for h in time_hints)
+
+        # Phase 17: Timer-Kontext in System Prompt
+        timer_hints = self.timer_manager.get_context_hints()
+        if timer_hints:
+            system_prompt += "\n\nAKTIVE TIMER:\n" + "\n".join(f"- {h}" for h in timer_hints)
+
+        # Phase 17: Kontext-Persistenz ueber Raumwechsel
+        prev_context = await self._get_cross_room_context(person or "")
+        if prev_context:
+            system_prompt += f"\n\nVORHERIGER KONTEXT (anderer Raum): {prev_context}"
 
         # Phase 7: Gaeste-Modus Prompt-Erweiterung
         if await self.routines.is_guest_mode_active():
@@ -699,7 +793,9 @@ class AssistantBrain:
             # 8. Function Calls ausfuehren
             # Tools die Daten zurueckgeben und eine LLM-formatierte Antwort brauchen
             QUERY_TOOLS = {"get_entity_state", "send_message_to_person", "get_calendar_events",
-                          "create_automation", "list_jarvis_automations"}
+                          "create_automation", "list_jarvis_automations",
+                          "get_timer_status", "list_conditionals", "get_energy_report",
+                          "web_search", "get_camera_view"}
             has_query_results = False
 
             if tool_calls:
@@ -714,6 +810,21 @@ class AssistantBrain:
                     validation = self.validator.validate(func_name, func_args)
                     if not validation.ok:
                         if validation.needs_confirmation:
+                            # Pending-Aktion in Redis speichern fuer Follow-Up
+                            if self.memory.redis:
+                                pending = {
+                                    "function": func_name,
+                                    "args": func_args,
+                                    "person": person or "",
+                                    "room": room or "",
+                                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                                    "reason": validation.reason,
+                                }
+                                await self.memory.redis.setex(
+                                    SECURITY_CONFIRM_KEY,
+                                    SECURITY_CONFIRM_TTL,
+                                    json.dumps(pending),
+                                )
                             response_text = f"Sicherheitsbestaetigung noetig: {validation.reason}"
                             executed_actions.append({
                                 "function": func_name,
@@ -774,6 +885,21 @@ class AssistantBrain:
                         "args": final_args,
                         "result": result,
                     })
+
+                    # Phase 17: Learning Observer — Jarvis-Aktionen markieren
+                    # damit sie nicht als "manuelle" Aktionen gezaehlt werden
+                    if isinstance(result, dict) and result.get("success"):
+                        entity_id = final_args.get("entity_id", "")
+                        if not entity_id:
+                            # Entity aus Room ableiten (z.B. light.wohnzimmer)
+                            r = final_args.get("room", "")
+                            if r and func_name in ("set_light", "set_cover", "set_climate", "set_switch"):
+                                domain = func_name.replace("set_", "")
+                                entity_id = f"{domain}.{r.lower().replace(' ', '_')}"
+                        if entity_id:
+                            asyncio.create_task(
+                                self.learning_observer.mark_jarvis_action(entity_id)
+                            )
 
                     # Befehl fuer Konflikt-Tracking aufzeichnen
                     if person:
@@ -872,6 +998,24 @@ class AssistantBrain:
                 else:
                     response_text = self.personality.get_varied_confirmation(success=True)
 
+            # Fehlerbehandlung auch wenn LLM optimistischen Text generiert hat
+            # (LLM sagt "Erledigt" aber Aktion ist fehlgeschlagen)
+            if executed_actions and response_text:
+                failed_actions = [
+                    a for a in executed_actions
+                    if isinstance(a["result"], dict) and not a["result"].get("success", True)
+                ]
+                if failed_actions:
+                    # Phase 17: Natuerliche Fehlerbehandlung statt hartem "Problem: ..."
+                    first_fail = failed_actions[0]
+                    error_msg = first_fail["result"].get("message", "Unbekannter Fehler")
+                    try:
+                        response_text = await self._generate_error_recovery(
+                            first_fail["function"], first_fail.get("args", {}), error_msg
+                        )
+                    except Exception:
+                        response_text = f"Problem: {error_msg}"
+
         # Phase 12: Response-Filter (Post-Processing) — Floskeln entfernen
         response_text = self._filter_response(response_text)
 
@@ -899,6 +1043,11 @@ class AssistantBrain:
         # 9. Im Gedaechtnis speichern
         await self.memory.add_conversation("user", text)
         await self.memory.add_conversation("assistant", response_text)
+
+        # Phase 17: Kontext-Persistenz fuer Raumwechsel speichern
+        asyncio.create_task(
+            self._save_cross_room_context(person or "", text, response_text, room or "")
+        )
 
         # 10. Episode speichern (Langzeitgedaechtnis)
         if len(text.split()) > 3:
@@ -1271,6 +1420,20 @@ class AssistantBrain:
         except Exception as e:
             logger.error("Fehler bei Hintergrund-Fakten-Extraktion: %s", e)
 
+    async def _handle_timer_notification(self, alert: dict):
+        """Callback fuer allgemeine Timer — meldet wenn Timer abgelaufen ist."""
+        message = alert.get("message", "")
+        if message:
+            await emit_speaking(message)
+            logger.info("Timer -> Meldung: %s", message)
+
+    async def _handle_learning_suggestion(self, alert: dict):
+        """Callback fuer Learning Observer — schlaegt Automatisierungen vor."""
+        message = alert.get("message", "")
+        if message:
+            await emit_speaking(message)
+            logger.info("Learning -> Vorschlag: %s", message)
+
     async def _handle_cooking_timer(self, alert: dict):
         """Callback fuer Koch-Timer — meldet wenn Timer abgelaufen ist."""
         message = alert.get("message", "")
@@ -1432,6 +1595,82 @@ class AssistantBrain:
             if self.self_automation._pending:
                 self.self_automation._pending.clear()
                 return "Automation verworfen."
+
+        return None
+
+    # ------------------------------------------------------------------
+    # Phase 13.1: Sicherheits-Bestaetigung (lock_door, set_alarm, etc.)
+    # ------------------------------------------------------------------
+
+    async def _handle_security_confirmation(self, text: str, person: str) -> Optional[str]:
+        """Prueft ob eine ausstehende Sicherheitsbestaetigung beantwortet wird.
+
+        Flow: User sagt z.B. 'Tuer aufschliessen' → needs_confirmation blockiert
+        und speichert Pending in Redis → User sagt 'Ja' → wird hier abgefangen
+        und ausgefuehrt (nur wenn dieselbe Person bestaetigt).
+        """
+        if not self.memory.redis:
+            return None
+
+        raw = await self.memory.redis.get(SECURITY_CONFIRM_KEY)
+        if not raw:
+            return None
+
+        text_lower = text.lower().strip().rstrip("!?.")
+
+        # Bestaetigung
+        confirm_triggers = [
+            "ja", "jo", "jap", "klar", "genau", "passt",
+            "ja bitte", "mach das", "bestaetigen", "ausfuehren",
+            "ja mach das", "ja, mach das", "bitte",
+        ]
+        if any(text_lower == t or text_lower.startswith(t + " ") or text_lower.startswith(t + ",") for t in confirm_triggers):
+            try:
+                pending = json.loads(raw)
+            except (json.JSONDecodeError, TypeError):
+                logger.error("Security-Confirmation: Korrupte Daten in Redis")
+                await self.memory.redis.delete(SECURITY_CONFIRM_KEY)
+                return None
+            # Person-Check: nur dieselbe Person darf bestaetigen
+            if pending.get("person") and person and pending["person"] != person:
+                logger.warning(
+                    "Security-Confirmation abgelehnt: %s != %s",
+                    person, pending["person"],
+                )
+                return None  # Stille Ablehnung, weiter im normalen Flow
+
+            # Ausfuehren
+            func_name = pending.get("function")
+            func_args = pending.get("args", {})
+            if not func_name:
+                logger.error("Security-Confirmation: Fehlende Funktion in Pending-Daten")
+                await self.memory.redis.delete(SECURITY_CONFIRM_KEY)
+                return None
+            result = await self.executor.execute(func_name, func_args)
+            await self.memory.redis.delete(SECURITY_CONFIRM_KEY)
+
+            _audit_log("security_confirmation_executed", {
+                "function": func_name,
+                "args": func_args,
+                "person": person,
+            })
+            logger.info(
+                "Security-Confirmation ausgefuehrt: %s(%s) durch %s",
+                func_name, func_args, person,
+            )
+
+            if result.get("success"):
+                return f"Bestaetigt und ausgefuehrt: {func_name}"
+            else:
+                return f"Bestaetigt, aber fehlgeschlagen: {result.get('message', 'Unbekannter Fehler')}"
+
+        # Ablehnung
+        reject_triggers = [
+            "nein", "abbrechen", "cancel", "doch nicht", "stop", "nee",
+        ]
+        if any(text_lower == t or text_lower.startswith(t) for t in reject_triggers):
+            await self.memory.redis.delete(SECURITY_CONFIRM_KEY)
+            return "Verstanden, Aktion verworfen."
 
         return None
 
@@ -2030,6 +2269,128 @@ Regeln:
                 "jarvis:pending_summary", summary_text, ex=86400
             )
             logger.info("Tages-Zusammenfassung fuer %s zum Abruf bereitgestellt", date)
+
+    # ------------------------------------------------------------------
+    # Phase 17: Kontext-Persistenz ueber Raumwechsel
+    # ------------------------------------------------------------------
+
+    async def _save_cross_room_context(self, person: str, text: str, response: str, room: str):
+        """Speichert Konversationskontext fuer Raumwechsel."""
+        if not self.memory.redis or not person:
+            return
+        try:
+            context_data = json.dumps({
+                "last_question": text[:200],
+                "last_response": response[:300],
+                "room": room,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            })
+            await self.memory.redis.setex(
+                f"mha:cross_room_context:{person.lower()}", 1800, context_data  # 30 Min TTL
+            )
+        except Exception:
+            pass
+
+    async def _get_cross_room_context(self, person: str) -> str:
+        """Holt den vorherigen Konversationskontext wenn Raum gewechselt wurde."""
+        if not self.memory.redis or not person:
+            return ""
+        try:
+            raw = await self.memory.redis.get(f"mha:cross_room_context:{person.lower()}")
+            if not raw:
+                return ""
+            if isinstance(raw, bytes):
+                raw = raw.decode()
+            data = json.loads(raw)
+            return f"Letzte Frage (in {data.get('room', '?')}): \"{data.get('last_question', '')}\". Antwort: \"{data.get('last_response', '')}\""
+        except Exception:
+            return ""
+
+    # ------------------------------------------------------------------
+    # Phase 17: Natuerliche Fehlerbehandlung
+    # ------------------------------------------------------------------
+
+    async def _generate_error_recovery(self, func_name: str, func_args: dict, error: str) -> str:
+        """Generiert eine menschliche Fehlermeldung mit Loesungsvorschlag."""
+        try:
+            response = await self.ollama.chat(
+                messages=[
+                    {"role": "system", "content": f"""Du bist {settings.assistant_name}.
+Ein Smart-Home-Befehl ist fehlgeschlagen. Erklaere kurz was passiert ist und schlage eine Loesung vor.
+Max 2 Saetze. Deutsch. Butler-Stil. Nicht entschuldigen, sondern sachlich loesen.
+Beispiele:
+- "Das Licht im Bad reagiert nicht. Moeglicherweise ist es offline. Soll ich den Status pruefen?"
+- "Die Heizung laesst sich gerade nicht steuern. Ich versuche es in einer Minute erneut." """},
+                    {"role": "user", "content": f"Fehlgeschlagen: {func_name}({func_args}). Fehler: {error}"},
+                ],
+                model=settings.model_fast,
+                temperature=0.5,
+                max_tokens=100,
+            )
+            return response.get("message", {}).get("content", f"Der Befehl '{func_name}' konnte nicht ausgefuehrt werden.")
+        except Exception:
+            return f"Der Befehl '{func_name}' konnte nicht ausgefuehrt werden."
+
+    # ------------------------------------------------------------------
+    # Phase 17: Predictive Resource Management
+    # ------------------------------------------------------------------
+
+    async def get_predictive_briefing(self) -> str:
+        """Generiert vorausschauende Empfehlungen basierend auf Wetter + Kalender + Energie.
+
+        Wird im Morning Briefing eingebunden.
+        """
+        try:
+            states = await self.ha.get_states()
+            if not states:
+                return ""
+
+            forecasts = []
+
+            # Wetter-Forecast
+            for s in states:
+                if s.get("entity_id", "").startswith("weather."):
+                    attrs = s.get("attributes", {})
+                    forecast = attrs.get("forecast", [])
+                    if forecast:
+                        tomorrow = forecast[0] if len(forecast) > 0 else {}
+                        high = tomorrow.get("temperature", "")
+                        cond = tomorrow.get("condition", "")
+                        precip = tomorrow.get("precipitation", 0)
+                        try:
+                            high_f = float(high) if high else None
+                        except (ValueError, TypeError):
+                            high_f = None
+                        try:
+                            precip_f = float(precip) if precip else None
+                        except (ValueError, TypeError):
+                            precip_f = None
+                        if high_f is not None and high_f > 30:
+                            forecasts.append(f"Morgen wird es heiss ({high}°C). Hitzeschutz-Rolladen empfohlen.")
+                        if precip_f is not None and precip_f > 5:
+                            forecasts.append(f"Morgen Regen erwartet ({precip}mm). Fenster schliessen empfohlen.")
+                        if cond in ("snowy", "snowy-rainy") or (high_f is not None and high_f < 0):
+                            forecasts.append(f"Frost erwartet ({high}°C). Heizung im Voraus hochfahren?")
+                    break
+
+            # Energie-Preis Forecast (wenn verfuegbar)
+            for s in states:
+                eid = s.get("entity_id", "")
+                if "price" in eid.lower() and "tomorrow" in eid.lower():
+                    try:
+                        price = float(s.get("state", 0))
+                        if price < 10:
+                            forecasts.append(f"Morgen guenstiger Strom ({price:.1f} ct). Groessere Verbraucher einplanen.")
+                    except (ValueError, TypeError):
+                        pass
+
+            if not forecasts:
+                return ""
+
+            return "Vorausschau: " + " ".join(forecasts)
+        except Exception as e:
+            logger.debug("Predictive Briefing Fehler: %s", e)
+            return ""
 
     async def shutdown(self):
         """Faehrt MindHome Assistant herunter."""

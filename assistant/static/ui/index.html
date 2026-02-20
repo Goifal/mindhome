@@ -206,6 +206,54 @@ textarea { resize:vertical; min-height:70px; font-family:var(--mono); font-size:
 .log-role.assistant { color:var(--accent); }
 .log-content { flex:1; color:var(--text-primary); line-height:1.5; }
 
+/* Fehlerspeicher */
+.err-entry { display:flex; gap:14px; padding:10px 14px; border-bottom:1px solid var(--border); font-size:12px; align-items:flex-start; }
+.err-entry:hover { background:var(--bg-card-hover); }
+.err-entry.level-ERROR { border-left:3px solid var(--danger); }
+.err-entry.level-WARNING { border-left:3px solid var(--accent); }
+.err-time { color:var(--text-muted); font-family:var(--mono); font-size:11px; min-width:130px; white-space:nowrap; }
+.err-level { min-width:60px; font-weight:700; font-size:11px; text-transform:uppercase; font-family:var(--mono); }
+.err-level.ERROR { color:var(--danger); }
+.err-level.WARNING { color:var(--accent); }
+.err-logger { min-width:120px; color:var(--text-muted); font-family:var(--mono); font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.err-msg { flex:1; color:var(--text-primary); line-height:1.5; word-break:break-word; }
+.err-badge { display:inline-flex; align-items:center; justify-content:center; min-width:18px; height:18px; padding:0 5px; border-radius:9px; background:var(--danger); color:white; font-size:10px; font-weight:700; margin-left:6px; }
+.err-filter-bar { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+.err-filter-bar .btn { font-size:11px; padding:4px 12px; }
+.err-filter-bar .btn.active-filter { background:var(--accent-dim); color:var(--accent); border-color:var(--accent); }
+
+/* Audit Log */
+.audit-entry { display:flex; gap:14px; padding:10px 14px; border-bottom:1px solid var(--border); font-size:12px; align-items:flex-start; }
+.audit-entry:hover { background:var(--bg-card-hover); }
+.audit-time { color:var(--text-muted); font-family:var(--mono); font-size:11px; min-width:130px; white-space:nowrap; }
+.audit-action { min-width:120px; font-weight:600; font-size:11px; font-family:var(--mono); padding:2px 8px; border-radius:4px; text-align:center; }
+.audit-action.auth { background:var(--blue-dim); color:var(--blue); }
+.audit-action.settings { background:var(--accent-dim); color:var(--accent); }
+.audit-action.security { background:var(--danger-dim); color:var(--danger); }
+.audit-action.system { background:var(--success-dim); color:var(--success); }
+.audit-details { flex:1; color:var(--text-secondary); font-size:11px; word-break:break-word; }
+
+/* Live-Status Indicator */
+.live-dot { width:8px; height:8px; border-radius:50%; background:var(--success); display:inline-block; animation:livePulse 2s infinite; }
+.live-dot.offline { background:var(--danger); animation:none; }
+@keyframes livePulse { 0%,100%{opacity:1;} 50%{opacity:0.4;} }
+
+/* Health Trends */
+.trend-card { padding:14px; }
+.trend-row { display:flex; align-items:center; gap:12px; padding:8px 0; border-bottom:1px solid var(--border); }
+.trend-row:last-child { border-bottom:none; }
+.trend-label { min-width:100px; font-size:12px; color:var(--text-secondary); }
+.trend-value { font-size:16px; font-weight:600; font-family:var(--mono); min-width:70px; }
+.trend-unit { font-size:11px; color:var(--text-muted); }
+.trend-arrow { font-size:14px; }
+.trend-arrow.up { color:var(--danger); }
+.trend-arrow.down { color:var(--blue); }
+.trend-arrow.stable { color:var(--success); }
+.trend-sparkline { flex:1; height:24px; }
+.trend-period-bar { display:flex; gap:6px; margin-bottom:12px; }
+.trend-period-bar button { font-size:10px; padding:2px 8px; border:1px solid var(--border); border-radius:4px; background:transparent; color:var(--text-muted); cursor:pointer; }
+.trend-period-bar button.active { background:var(--accent-dim); color:var(--accent); border-color:var(--accent); }
+
 /* Section Header */
 .section-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:20px; }
 .section-header h2 { font-size:18px; font-weight:600; }
@@ -351,8 +399,9 @@ textarea { resize:vertical; min-height:70px; font-family:var(--mono); font-size:
       <div class="nav-item" data-page="entities"><span class="nav-icon">&#8801;</span>Entities</div>
       <div class="nav-item" data-page="knowledge"><span class="nav-icon">&#128218;</span>Wissen</div>
       <div class="nav-item" data-page="logs"><span class="nav-icon">&#9776;</span>Logs</div>
+      <div class="nav-item" data-page="errors"><span class="nav-icon">&#9888;</span>Fehler<span id="errBadge" class="err-badge" style="display:none;">0</span></div>
     </nav>
-    <div class="sidebar-footer">MindHome Assistant v1.1.0</div>
+    <div class="sidebar-footer">MindHome Assistant v1.4.1</div>
   </aside>
 
   <div class="main">
@@ -370,10 +419,26 @@ textarea { resize:vertical; min-height:70px; font-family:var(--mono); font-size:
     <div class="main-content">
       <!-- ============ DASHBOARD ============ -->
       <div id="page-dashboard" class="page active">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">
+          <span id="liveIndicator" class="live-dot"></span>
+          <span style="font-size:11px;color:var(--text-muted);" id="liveTimestamp">—</span>
+          <span id="whisperBadge" style="display:none;font-size:10px;padding:2px 8px;background:var(--blue-dim);color:var(--blue);border-radius:10px;font-weight:600;">Flüstermodus</span>
+        </div>
         <div id="dashStats" class="grid grid-4"></div>
         <div class="grid grid-2" style="margin-top:16px;">
           <div class="card"><div class="card-header"><h3>Komponenten</h3></div><div id="compList"></div></div>
           <div class="card"><div class="card-header"><h3>Status</h3></div><div id="moodInfo"></div></div>
+        </div>
+        <div class="card" style="margin-top:16px;">
+          <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;">
+            <h3>Raumklima</h3>
+            <div class="trend-period-bar" id="trendPeriodBar">
+              <button class="active" onclick="loadHealthTrends(24)">24h</button>
+              <button onclick="loadHealthTrends(48)">48h</button>
+              <button onclick="loadHealthTrends(168)">7 Tage</button>
+            </div>
+          </div>
+          <div id="healthTrendsContainer" class="trend-card"></div>
         </div>
       </div>
 
@@ -383,14 +448,14 @@ textarea { resize:vertical; min-height:70px; font-family:var(--mono); font-size:
           <div><h2>Einstellungen</h2><p>Alle Konfigurationen aus settings.yaml</p></div>
           <button class="btn btn-primary" onclick="saveAllSettings()">Speichern</button>
         </div>
-        <!-- 8 Tabs -->
+        <!-- 11 Tabs -->
         <div class="tab-bar" id="settingsTabBar">
           <div class="tab-item active" data-tab="tab-general">Allgemein</div>
           <div class="tab-item" data-tab="tab-persons">Personen</div>
-          <div class="tab-item" data-tab="tab-personality">Persoenlichkeit</div>
-          <div class="tab-item" data-tab="tab-memory">Gedaechtnis</div>
+          <div class="tab-item" data-tab="tab-personality">Persönlichkeit</div>
+          <div class="tab-item" data-tab="tab-memory">Gedächtnis</div>
           <div class="tab-item" data-tab="tab-mood">Stimmung</div>
-          <div class="tab-item" data-tab="tab-rooms">Raeume</div>
+          <div class="tab-item" data-tab="tab-rooms">Räume</div>
           <div class="tab-item" data-tab="tab-voice">Stimme</div>
           <div class="tab-item" data-tab="tab-routines">Routinen</div>
           <div class="tab-item" data-tab="tab-security">Sicherheit</div>
@@ -430,10 +495,32 @@ textarea { resize:vertical; min-height:70px; font-family:var(--mono); font-size:
       <!-- ============ LOGS ============ -->
       <div id="page-logs" class="page">
         <div class="section-header">
-          <div><h2>Gespraeche</h2><p>Letzte Interaktionen mit Jarvis</p></div>
-          <button class="btn btn-secondary" onclick="loadLogs()">Aktualisieren</button>
+          <div><h2>Protokolle</h2><p>Gespraeche und Audit-Ereignisse</p></div>
+          <button class="btn btn-secondary" onclick="currentLogTab==='conversations'?loadLogs():loadAudit()">Aktualisieren</button>
         </div>
-        <div class="card" style="padding:0;"><div id="logsContainer"></div></div>
+        <div class="tab-bar" id="logsTabBar" style="margin-bottom:14px;">
+          <div class="tab-item active" data-logtab="conversations" onclick="switchLogTab('conversations')">Gespraeche</div>
+          <div class="tab-item" data-logtab="audit" onclick="switchLogTab('audit')">Audit-Log</div>
+        </div>
+        <div class="card" style="padding:0;">
+          <div id="logsContainer"></div>
+          <div id="auditContainer" style="display:none;"></div>
+        </div>
+      </div>
+
+      <div id="page-errors" class="page">
+        <div class="section-header">
+          <div><h2>Fehlerspeicher</h2><p>Letzte Warnungen und Fehler des Assistenten</p></div>
+          <div class="err-filter-bar">
+            <button class="btn btn-secondary active-filter" id="errFilterAll" onclick="filterErrors('')">Alle</button>
+            <button class="btn btn-secondary" id="errFilterError" onclick="filterErrors('ERROR')">Fehler</button>
+            <button class="btn btn-secondary" id="errFilterWarn" onclick="filterErrors('WARNING')">Warnungen</button>
+            <button class="btn btn-secondary" onclick="loadErrors()">Aktualisieren</button>
+            <button class="btn btn-danger" onclick="clearErrors()">Leeren</button>
+          </div>
+        </div>
+        <div class="card" style="padding:0;"><div id="errorsContainer"></div></div>
+        <div style="margin-top:8px;font-size:11px;color:var(--text-muted);" id="errorsInfo"></div>
       </div>
     </div>
   </div>
@@ -444,8 +531,8 @@ textarea { resize:vertical; min-height:70px; font-family:var(--mono); font-size:
 <script>
 /* ============================================================
    Jarvis Dashboard v2 — JavaScript
-   8 Settings Tabs: Allgemein, Persoenlichkeit, Gedaechtnis,
-   Stimmung, Raeume, Stimme, Routinen, Sicherheit
+   11 Settings Tabs: Allgemein, Personen, Persoenlichkeit, Gedaechtnis,
+   Stimmung, Raeume, Stimme, Routinen, Sicherheit, KI-Autonomie, Easter Eggs
    ============================================================ */
 
 let TOKEN = '';
@@ -577,6 +664,7 @@ function doLogout() {
   sessionStorage.removeItem('jt');
   sessionStorage.removeItem('jt_ts');
   if (_sessionTimer) { clearTimeout(_sessionTimer); _sessionTimer = null; }
+  stopLiveRefresh();
   hideAllScreens();
   showLoginScreen();
 }
@@ -585,6 +673,9 @@ function showApp() {
   hideAllScreens();
   document.getElementById('app').classList.add('active');
   loadDashboard();
+  startLiveRefresh();
+  loadHealthTrends(_trendHours);
+  refreshErrBadge();
 }
 
 // ---- PIN Reset ----
@@ -651,11 +742,13 @@ document.querySelectorAll('.nav-item').forEach(item => {
     const pg = item.dataset.page;
     document.getElementById(`page-${pg}`).classList.add('active');
     document.getElementById('pageTitle').textContent = item.textContent.trim();
-    if (pg==='dashboard') loadDashboard();
+    stopLiveRefresh();  // Immer stoppen bei Seitenwechsel
+    if (pg==='dashboard') { loadDashboard(); startLiveRefresh(); loadHealthTrends(_trendHours); }
     else if (pg==='settings') loadSettings();
     else if (pg==='entities') loadEntities();
     else if (pg==='knowledge') loadKnowledge();
-    else if (pg==='logs') loadLogs();
+    else if (pg==='logs') { if(currentLogTab==='audit') loadAudit(); else loadLogs(); }
+    else if (pg==='errors') loadErrors();
     document.getElementById('sidebar').classList.remove('open');
   });
 });
@@ -712,8 +805,110 @@ async function loadDashboard() {
   } catch(e) { console.error('Dashboard fail:', e); }
 }
 
+// ---- Live-Status Auto-Refresh ----
+let _liveInterval = null;
+
+function startLiveRefresh() {
+  stopLiveRefresh();
+  refreshLiveStatus();
+  _liveInterval = setInterval(refreshLiveStatus, 30000);
+}
+
+function stopLiveRefresh() {
+  if (_liveInterval) { clearInterval(_liveInterval); _liveInterval = null; }
+}
+
+async function refreshLiveStatus() {
+  try {
+    const d = await api('/api/ui/live-status');
+    const dot = document.getElementById('liveIndicator');
+    const ts = document.getElementById('liveTimestamp');
+    const wb = document.getElementById('whisperBadge');
+    if (dot) dot.classList.toggle('offline', !d.components_ok);
+    if (ts) ts.textContent = 'Aktualisiert: ' + new Date().toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    if (wb) wb.style.display = d.whisper_mode ? '' : 'none';
+    // Mood und Stress im Status-Bereich aktualisieren
+    const mi = document.getElementById('moodInfo');
+    if (mi && d.mood) {
+      const mood = d.mood;
+      mi.innerHTML = `
+        <div style="padding:8px 0;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;">
+          <span style="font-size:12px;">Stimmung</span><span style="font-size:12px;color:var(--accent);font-weight:600;">${mood.mood||'neutral'}</span></div>
+        <div style="padding:8px 0;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;">
+          <span style="font-size:12px;">Stress</span><span style="font-size:12px;font-family:var(--mono);">${(mood.stress_level||0).toFixed(2)}</span></div>
+        <div style="padding:8px 0;display:flex;justify-content:space-between;">
+          <span style="font-size:12px;">Autonomie</span><span style="font-size:12px;color:var(--accent);font-weight:600;">${d.autonomy?.level||'?'}/5</span></div>`;
+    }
+  } catch(e) {
+    const dot = document.getElementById('liveIndicator');
+    if (dot) dot.classList.add('offline');
+  }
+}
+
+// ---- Health Trends ----
+let _trendHours = 24;
+
+async function loadHealthTrends(hours) {
+  _trendHours = hours || 24;
+  // Button aktiv markieren
+  document.querySelectorAll('#trendPeriodBar button').forEach(b => {
+    b.classList.toggle('active', parseInt(b.textContent)=== hours || (b.textContent==='7 Tage' && hours===168) || (b.textContent==='24h' && hours===24) || (b.textContent==='48h' && hours===48));
+  });
+  const c = document.getElementById('healthTrendsContainer');
+  try {
+    const d = await api(`/api/ui/health-trends?hours=${hours}`);
+    const current = d.current || {};
+    const trends = d.trends || {};
+    const sensors = [
+      {key:'co2', label:'CO2', unit:'ppm', icon:'&#127811;', goodMax:800, warnMax:1200},
+      {key:'temperature', label:'Temperatur', unit:'°C', icon:'&#127777;'},
+      {key:'humidity', label:'Luftfeuchtigkeit', unit:'%', icon:'&#128167;', goodMin:40, goodMax:60},
+    ];
+    let html = '';
+    let hasData = false;
+    for (const s of sensors) {
+      const val = current[s.key];
+      const trendData = trends[s.key] || [];
+      if (val === undefined && trendData.length === 0) continue;
+      hasData = true;
+      // Trend-Pfeil berechnen
+      let arrow = 'stable', arrowIcon = '&#8594;';
+      if (trendData.length >= 2) {
+        const recent = trendData[trendData.length-1].value;
+        const older = trendData[Math.max(0, trendData.length-3)].value;
+        if (recent > older + 1) { arrow='up'; arrowIcon='&#8593;'; }
+        else if (recent < older - 1) { arrow='down'; arrowIcon='&#8595;'; }
+      }
+      // Mini-Sparkline SVG
+      let sparkline = '';
+      if (trendData.length >= 2) {
+        const vals = trendData.map(t => t.value);
+        const min = Math.min(...vals), max = Math.max(...vals);
+        const range = max - min || 1;
+        const w = 120, h = 24;
+        const points = vals.map((v, i) => `${(i/(vals.length-1))*w},${h-(((v-min)/range)*h)}`).join(' ');
+        sparkline = `<svg class="trend-sparkline" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none"><polyline points="${points}" fill="none" stroke="var(--accent)" stroke-width="1.5" /></svg>`;
+      }
+      html += `<div class="trend-row">
+        <span class="trend-label">${s.icon} ${s.label}</span>
+        <span class="trend-value">${val!==undefined ? (typeof val==='number'?val.toFixed(1):val) : '—'}</span>
+        <span class="trend-unit">${s.unit}</span>
+        <span class="trend-arrow ${arrow}">${arrowIcon}</span>
+        ${sparkline}
+        <span style="font-size:10px;color:var(--text-muted);">${trendData.length} Messpunkte</span>
+      </div>`;
+    }
+    if (!hasData) {
+      html = '<div style="padding:16px;text-align:center;color:var(--text-muted);font-size:12px;">Keine Sensordaten verfuegbar</div>';
+    }
+    c.innerHTML = html;
+  } catch(e) {
+    c.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text-muted);font-size:12px;">Keine Sensordaten verfuegbar</div>';
+  }
+}
+
 // ============================================================
-//  SETTINGS - 8 Tabs
+//  SETTINGS - 11 Tabs
 // ============================================================
 
 let currentTab = 'tab-general';
@@ -722,11 +917,26 @@ let currentTab = 'tab-general';
 document.getElementById('settingsTabBar').addEventListener('click', e => {
   const tab = e.target.closest('.tab-item');
   if (!tab) return;
+  // Aktuelle Tab-Werte in S uebernehmen bevor Tab wechselt
+  mergeCurrentTabIntoS();
   document.querySelectorAll('#settingsTabBar .tab-item').forEach(t => t.classList.remove('active'));
   tab.classList.add('active');
   currentTab = tab.dataset.tab;
   renderCurrentTab();
 });
+
+function mergeCurrentTabIntoS() {
+  try {
+    const current = collectSettings();
+    Object.keys(current).forEach(key => {
+      if (typeof current[key]==='object' && !Array.isArray(current[key]) && S[key]) {
+        Object.assign(S[key], current[key]);
+      } else {
+        S[key] = current[key];
+      }
+    });
+  } catch(e) { /* Tab noch nicht gerendert */ }
+}
 
 async function loadSettings() {
   try {
@@ -747,7 +957,7 @@ function renderCurrentTab() {
       case 'tab-rooms': c.innerHTML = renderRooms(); break;
       case 'tab-voice': c.innerHTML = renderVoice(); break;
       case 'tab-routines': c.innerHTML = renderRoutines(); break;
-      case 'tab-security': c.innerHTML = renderSecurity(); loadApiKey(); break;
+      case 'tab-security': c.innerHTML = renderSecurity(); loadApiKey(); loadNotifyChannels(); break;
       case 'tab-autonomie': c.innerHTML = renderAutonomie(); loadSnapshots(); loadOptStatus(); break;
       case 'tab-eastereggs': c.innerHTML = renderEasterEggs(); loadEasterEggs(); break;
     }
@@ -1217,7 +1427,7 @@ function renderRooms() {
   ) +
   sectionWrap('&#128101;', 'Personen-Profile',
     fInfo('Erweiterte Einstellungen pro Person — Benachrichtigungs-Service und bevorzugter Raum.') +
-    fTextarea('persons.profiles', 'Profile', 'z.B. alex: {notify_service: notify.mobile, preferred_room: wohnzimmer}')
+    fTextarea('person_profiles.profiles', 'Profile', 'z.B. alex: {notify_service: notify.mobile, preferred_room: wohnzimmer}')
   );
 }
 
@@ -1477,9 +1687,9 @@ function renderSecurity() {
     '<div class="form-group"><label>Aktueller API Key</label>' +
     '<div style="display:flex;gap:8px;align-items:center;">' +
     '<input type="text" id="apiKeyDisplay" readonly style="flex:1;font-family:monospace;font-size:12px;" value="Wird geladen..." />' +
-    '<button onclick="copyApiKey()" style="padding:6px 12px;border:1px solid var(--border);border-radius:6px;background:var(--card-bg);cursor:pointer;font-size:12px;">Kopieren</button>' +
+    '<button onclick="copyApiKey()" style="padding:6px 12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-card);cursor:pointer;font-size:12px;">Kopieren</button>' +
     '</div></div>' +
-    '<div style="margin-top:8px;"><button onclick="regenerateApiKey()" style="padding:6px 12px;border:1px solid #e74c3c;border-radius:6px;background:transparent;color:#e74c3c;cursor:pointer;font-size:12px;">Key neu generieren</button>' +
+    '<div style="margin-top:8px;"><button onclick="regenerateApiKey()" style="padding:6px 12px;border:1px solid var(--danger);border-radius:6px;background:transparent;color:var(--danger);cursor:pointer;font-size:12px;">Key neu generieren</button>' +
     '<span style="font-size:11px;color:var(--text-secondary);margin-left:8px;">Achtung: Addon + HA-Integration muessen danach aktualisiert werden!</span></div>'
   ) +
   sectionWrap('&#128272;', 'Vertrauensstufen',
@@ -1559,13 +1769,81 @@ function renderSecurity() {
   sectionWrap('&#128101;', 'Personen-Anrede',
     fInfo('Wie soll der Assistent einzelne Personen ansprechen? Der Hauptbenutzer wird standardmaessig als "Sir" angesprochen.') +
     fTextarea('persons.titles', 'Anrede pro Person', 'z.B. alex: Sir\nmaria: Frau Mueller')
+  ) +
+  sectionWrap('&#128276;', 'Benachrichtigungskanaele',
+    fInfo('Welche Kanaele soll der Assistent fuer Benachrichtigungen nutzen? Kanaele koennen einzeln konfiguriert werden.') +
+    '<div id="notifyChannelsContainer" style="color:var(--text-muted);font-size:12px;">Wird geladen...</div>' +
+    '<div style="margin-top:10px;"><button class="btn btn-primary" style="font-size:12px;" onclick="saveNotifyChannels()">Kanaele speichern</button></div>'
   );
+}
+
+// ---- Notification Channels ----
+let _notifyChannels = {};
+
+async function loadNotifyChannels() {
+  try {
+    const d = await api('/api/ui/notification-channels');
+    _notifyChannels = d.channels || {};
+    renderNotifyChannels();
+  } catch(e) { console.error('Notify channels fail:', e); }
+}
+
+function renderNotifyChannels() {
+  const c = document.getElementById('notifyChannelsContainer');
+  if (!c) return;
+  const icons = {websocket:'&#127760;', tts:'&#128266;', ha_notify:'&#128241;'};
+  const labels = {websocket:'WebSocket (Dashboard)', tts:'Sprachausgabe (TTS)', ha_notify:'HA Benachrichtigung (App)'};
+  let html = '';
+  for (const [name, ch] of Object.entries(_notifyChannels)) {
+    const icon = icons[name] || '&#128276;';
+    const label = labels[name] || name;
+    const pref = ch.preferred || false;
+    const urgency = ch.urgency_min || 'low';
+    const info = name==='websocket' && ch.connected_clients !== undefined ? ` (${ch.connected_clients} verbunden)` : '';
+    html += `<div style="padding:10px;margin-bottom:8px;background:var(--bg-secondary);border-radius:6px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+        <span style="font-size:13px;font-weight:600;">${icon} ${label}${info}</span>
+        <label class="toggle" style="margin:0;">
+          <input type="checkbox" data-notify="${name}" data-field="preferred" ${pref?'checked':''} onchange="updateNotifyChannel('${name}','preferred',this.checked)">
+          <span class="toggle-track"></span><span class="toggle-thumb"></span>
+        </label>
+      </div>
+      <div style="font-size:11px;color:var(--text-secondary);margin-bottom:6px;">${esc(ch.description||'')}</div>
+      <div style="display:flex;gap:12px;align-items:center;">
+        <label style="font-size:11px;color:var(--text-muted);">Min. Dringlichkeit:</label>
+        <select data-notify="${name}" data-field="urgency_min" style="font-size:11px;padding:3px 8px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text-primary);"
+          onchange="updateNotifyChannel('${name}','urgency_min',this.value)">
+          <option value="low" ${urgency==='low'?'selected':''}>Niedrig</option>
+          <option value="medium" ${urgency==='medium'?'selected':''}>Mittel</option>
+          <option value="high" ${urgency==='high'?'selected':''}>Hoch</option>
+        </select>
+      </div>
+    </div>`;
+  }
+  if (!html) html = '<div style="font-size:12px;color:var(--text-muted);">Keine Kanaele verfuegbar</div>';
+  c.innerHTML = html;
+}
+
+function updateNotifyChannel(name, field, value) {
+  if (_notifyChannels[name]) _notifyChannels[name][field] = value;
+}
+
+async function saveNotifyChannels() {
+  try {
+    const payload = {};
+    for (const [name, ch] of Object.entries(_notifyChannels)) {
+      payload[name] = { preferred: !!ch.preferred, urgency_min: ch.urgency_min || 'low' };
+      if (ch.quiet_hours) payload[name].quiet_hours = ch.quiet_hours;
+    }
+    await api('/api/ui/notification-channels', 'PUT', {channels: payload});
+    toast('Benachrichtigungskanaele gespeichert');
+  } catch(e) { toast('Fehler beim Speichern', 'error'); }
 }
 
 // ---- API Key Management ----
 async function loadApiKey() {
   try {
-    const data = await api('ui/api-key');
+    const data = await api('/api/ui/api-key');
     const el = document.getElementById('apiKeyDisplay');
     if (el && data.api_key) el.value = data.api_key;
     const cb = document.getElementById('apiKeyEnforcement');
@@ -1597,11 +1875,11 @@ function copyApiKey() {
 async function regenerateApiKey() {
   if (!confirm('API Key wirklich neu generieren? Addon und HA-Integration muessen danach aktualisiert werden!')) return;
   try {
-    const data = await api('ui/api-key/regenerate', 'POST');
+    const data = await api('/api/ui/api-key/regenerate', 'POST');
     const el = document.getElementById('apiKeyDisplay');
     if (el && data.api_key) el.value = data.api_key;
     toast('Neuer API Key generiert!');
-  } catch (e) { toast('Fehler: ' + e.message, true); }
+  } catch (e) { toast('Fehler: ' + e.message, 'error'); }
 }
 async function toggleApiKeyEnforcement(enabled) {
   const action = enabled ? 'aktivieren' : 'deaktivieren';
@@ -1611,11 +1889,11 @@ async function toggleApiKeyEnforcement(enabled) {
     return;
   }
   try {
-    const data = await api('ui/api-key/enforcement', 'POST', { enabled });
+    const data = await api('/api/ui/api-key/enforcement', 'POST', { enabled });
     updateEnforcementHint(data.enforcement);
     toast('API Key Pruefung ' + (data.enforcement ? 'aktiviert' : 'deaktiviert'));
   } catch (e) {
-    toast('Fehler: ' + e.message, true);
+    toast('Fehler: ' + e.message, 'error');
     const cb = document.getElementById('apiKeyEnforcement');
     if (cb) cb.checked = !enabled;
   }
@@ -1625,7 +1903,7 @@ async function toggleApiKeyEnforcement(enabled) {
 async function regenerateRecoveryKey() {
   if (!confirm('Neuen Recovery-Key generieren? Der alte Key wird ungueltig! Notiere dir den neuen Key sofort.')) return;
   try {
-    const data = await api('ui/recovery-key/regenerate', 'POST');
+    const data = await api('/api/ui/recovery-key/regenerate', 'POST');
     const el = document.getElementById('recoveryKeyDisplay');
     if (el && data.recovery_key) {
       el.value = data.recovery_key;
@@ -1634,7 +1912,7 @@ async function regenerateRecoveryKey() {
       el.style.fontWeight = '700';
     }
     toast('Neuer Recovery-Key generiert — JETZT notieren!');
-  } catch (e) { toast('Fehler: ' + e.message, true); }
+  } catch (e) { toast('Fehler: ' + e.message, 'error'); }
 }
 
 // ---- Tab: KI-Autonomie (Phase 13.1 / 13.2 / 13.4) ----
@@ -1731,7 +2009,7 @@ function renderProposalList(proposals) {
   c.innerHTML = '<div style="font-weight:600;font-size:13px;margin-bottom:8px;">Offene Vorschlaege:</div>' +
     proposals.map((p, i) => {
       const conf = Math.round((p.confidence || 0) * 100);
-      return `<div style="padding:8px;margin-bottom:6px;background:var(--bg-secondary);border-radius:6px;border-left:3px solid var(--warning);">
+      return `<div style="padding:8px;margin-bottom:6px;background:var(--bg-secondary);border-radius:6px;border-left:3px solid var(--accent);">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
           <span style="font-weight:600;font-size:13px;">${esc(p.parameter)}: ${esc(String(p.current))} &#8594; ${esc(String(p.proposed))}</span>
           <span style="font-size:11px;color:var(--text-muted);background:var(--bg-primary);padding:2px 6px;border-radius:4px;">${conf}%</span>
@@ -2041,7 +2319,40 @@ async function ingestKnowledge() {
   } catch(e) { toast('Fehler beim Einlesen', 'error'); }
 }
 
-// ---- Logs ----
+// ---- Logs & Audit ----
+let currentLogTab = 'conversations';
+
+function switchLogTab(tab) {
+  currentLogTab = tab;
+  document.querySelectorAll('#logsTabBar .tab-item').forEach(t => t.classList.toggle('active', t.dataset.logtab===tab));
+  document.getElementById('logsContainer').style.display = tab==='conversations' ? '' : 'none';
+  document.getElementById('auditContainer').style.display = tab==='audit' ? '' : 'none';
+  if (tab==='conversations') loadLogs();
+  else loadAudit();
+}
+
+async function loadAudit() {
+  try {
+    const d = await api('/api/ui/audit?limit=100');
+    const entries = d.entries || [];
+    const c = document.getElementById('auditContainer');
+    if (entries.length === 0) {
+      c.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text-muted);">Keine Audit-Eintraege</div>';
+      return;
+    }
+    c.innerHTML = entries.map(e => {
+      const t = e.timestamp ? new Date(e.timestamp).toLocaleString('de-DE',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'}) : '';
+      const act = e.action || '';
+      const cat = act.includes('login')||act.includes('pin')||act.includes('setup') ? 'auth'
+        : act.includes('security')||act.includes('api_key')||act.includes('recovery') ? 'security'
+        : act.includes('settings')||act.includes('autonomy')||act.includes('easter')||act.includes('notification') ? 'settings'
+        : 'system';
+      const details = e.details ? Object.entries(e.details).map(([k,v])=>`${k}: ${typeof v==='object'?JSON.stringify(v):v}`).join(', ') : '';
+      return `<div class="audit-entry"><span class="audit-time">${t}</span><span class="audit-action ${cat}">${esc(act)}</span><span class="audit-details">${esc(details)}</span></div>`;
+    }).join('');
+  } catch(e) { console.error('Audit fail:', e); }
+}
+
 async function loadLogs() {
   try {
     const d = await api('/api/ui/logs');
@@ -2054,6 +2365,59 @@ async function loadLogs() {
       return `<div class="log-entry"><span class="log-time">${t}</span><span class="log-role ${role}">${role}</span><span class="log-content">${esc(cv.content||'')}</span></div>`;
     }).join('');
   } catch(e) { console.error('Logs fail:', e); }
+}
+
+// ---- Fehlerspeicher ----
+let _errFilter = '';
+
+function filterErrors(level) {
+  _errFilter = level;
+  document.getElementById('errFilterAll').classList.toggle('active-filter', !level);
+  document.getElementById('errFilterError').classList.toggle('active-filter', level==='ERROR');
+  document.getElementById('errFilterWarn').classList.toggle('active-filter', level==='WARNING');
+  loadErrors();
+}
+
+async function loadErrors() {
+  try {
+    const params = _errFilter ? `&level=${_errFilter}` : '';
+    const d = await api(`/api/ui/errors?limit=200${params}`);
+    const errs = d.errors || [];
+    const c = document.getElementById('errorsContainer');
+    if (errs.length === 0) {
+      c.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text-muted);">Keine Fehler gespeichert</div>';
+    } else {
+      c.innerHTML = errs.map(e => {
+        const t = e.timestamp ? new Date(e.timestamp).toLocaleString('de-DE',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'}) : '';
+        return `<div class="err-entry level-${esc(e.level)}"><span class="err-time">${t}</span><span class="err-level ${esc(e.level)}">${esc(e.level)}</span><span class="err-logger" title="${esc(e.logger||'')}">${esc(e.logger||'')}</span><span class="err-msg">${esc(e.message||'')}</span></div>`;
+      }).join('');
+    }
+    document.getElementById('errorsInfo').textContent = `${d.total} Eintraege gespeichert (max. 200)`;
+    updateErrBadge(d.total);
+  } catch(e) { console.error('Errors fail:', e); }
+}
+
+async function clearErrors() {
+  if (!confirm('Fehlerspeicher wirklich leeren?')) return;
+  try {
+    await api('/api/ui/errors', 'DELETE');
+    toast('Fehlerspeicher geleert');
+    loadErrors();
+  } catch(e) { toast('Fehler beim Leeren', 'error'); }
+}
+
+function updateErrBadge(count) {
+  const b = document.getElementById('errBadge');
+  if (count > 0) { b.textContent = count > 99 ? '99+' : count; b.style.display = 'inline-flex'; }
+  else { b.style.display = 'none'; }
+}
+
+// Fehlerzahl beim Seitennavigation aktualisieren
+async function refreshErrBadge() {
+  try {
+    const d = await api('/api/ui/errors?limit=1');
+    updateErrBadge(d.total);
+  } catch(e) {}
 }
 </script>
 </body>

@@ -79,6 +79,28 @@ class HomeAssistantClient:
         """Generischer GET auf die HA REST API (z.B. /api/shopping_list)."""
         return await self._get_ha(path)
 
+    async def get_camera_snapshot(self, entity_id: str) -> Optional[bytes]:
+        """Holt einen Kamera-Snapshot als Bild-Bytes.
+
+        Args:
+            entity_id: Kamera-Entity (z.B. camera.haustuer)
+
+        Returns:
+            Bild-Bytes (JPEG) oder None
+        """
+        session = await self._get_session()
+        try:
+            async with session.get(
+                f"{self.ha_url}/api/camera_proxy/{entity_id}",
+                headers=self._ha_headers,
+            ) as resp:
+                if resp.status == 200:
+                    return await resp.read()
+                logger.warning("Camera Snapshot %s -> %d", entity_id, resp.status)
+        except Exception as e:
+            logger.error("Camera Snapshot Fehler: %s", e)
+        return None
+
     async def call_service(
         self, domain: str, service: str, data: Optional[dict] = None
     ) -> bool:
@@ -169,6 +191,16 @@ class HomeAssistantClient:
     async def get_day_phases(self) -> Optional[dict]:
         """Tagesphasen von MindHome."""
         return await self._get_mindhome("/api/day-phases")
+
+    async def search_devices(self, domain: str = "", room: str = "") -> Optional[list]:
+        """Geraete ueber MindHome Device-DB suchen (schneller als alle HA-States laden)."""
+        params = []
+        if domain:
+            params.append(f"domain={domain}")
+        if room:
+            params.append(f"room={room}")
+        qs = "&".join(params)
+        return await self._get_mindhome(f"/api/devices/search?{qs}")
 
     # ----- Interne HTTP Methoden mit Retry -----
 

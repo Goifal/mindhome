@@ -104,6 +104,14 @@ class ProactiveManager:
 
             # Phase 7.9: Saisonale Aktionen
             "seasonal_cover": (LOW, "Rolladen saisonal angepasst"),
+
+            # Phase 17: Neue Features
+            "conditional_executed": (MEDIUM, "Bedingte Aktion ausgefuehrt"),
+            "learning_suggestion": (LOW, "Automatisierungs-Vorschlag"),
+            "threat_detected": (HIGH, "Sicherheitswarnung"),
+            "energy_price_low": (LOW, "Guenstiger Strom"),
+            "energy_price_high": (LOW, "Teurer Strom"),
+            "solar_surplus": (LOW, "Solar-Ueberschuss"),
         }
 
     async def start(self):
@@ -124,7 +132,16 @@ class ProactiveManager:
         seasonal_cfg = yaml_config.get("seasonal_actions", {})
         if seasonal_cfg.get("enabled", True):
             self._seasonal_task = asyncio.create_task(self._run_seasonal_loop())
-        logger.info("Proactive Manager gestartet (Feedback + Diagnostik + Batching + Saisonal)")
+
+        # Emergency Protocols laden
+        self._emergency_protocols = yaml_config.get("emergency_protocols", {})
+
+        # Phase 17: Threat Assessment Loop
+        self._threat_task: Optional[asyncio.Task] = None
+        if hasattr(self.brain, "threat_assessment") and self.brain.threat_assessment.enabled:
+            self._threat_task = asyncio.create_task(self._run_threat_assessment_loop())
+
+        logger.info("Proactive Manager gestartet (Feedback + Diagnostik + Batching + Saisonal + Notfall + Threat)")
 
     async def stop(self):
         """Stoppt den Event Listener."""
@@ -151,6 +168,12 @@ class ProactiveManager:
             self._seasonal_task.cancel()
             try:
                 await self._seasonal_task
+            except asyncio.CancelledError:
+                pass
+        if hasattr(self, "_threat_task") and self._threat_task:
+            self._threat_task.cancel()
+            try:
+                await self._threat_task
             except asyncio.CancelledError:
                 pass
         logger.info("Proactive Manager gestoppt")
@@ -239,18 +262,21 @@ class ProactiveManager:
                 "entity": entity_id,
                 "state": new_val,
             })
+            await self._execute_emergency_protocol("intrusion")
 
         # Rauchmelder
         elif entity_id.startswith("binary_sensor.smoke") and new_val == "on":
             await self._notify("smoke_detected", CRITICAL, {
                 "entity": entity_id,
             })
+            await self._execute_emergency_protocol("fire")
 
         # Wassersensor
         elif entity_id.startswith("binary_sensor.water") and new_val == "on":
             await self._notify("water_leak", CRITICAL, {
                 "entity": entity_id,
             })
+            await self._execute_emergency_protocol("water_leak")
 
         # Tuerklingel
         elif "doorbell" in entity_id and new_val == "on":
@@ -296,8 +322,38 @@ class ProactiveManager:
         # Waschmaschine/Trockner (Power-Sensor faellt unter Schwellwert)
         elif "washer" in entity_id or "waschmaschine" in entity_id:
             if entity_id.startswith("sensor.") and new_val.replace(".", "").isdigit():
-                if float(old_val or "0") > 10 and float(new_val) < 5:
-                    await self._notify("washer_done", MEDIUM, {})
+                try:
+                    old_num = float(old_val) if old_val and old_val.replace(".", "").isdigit() else 0.0
+                    if old_num > 10 and float(new_val) < 5:
+                        await self._notify("washer_done", MEDIUM, {})
+                except (ValueError, TypeError):
+                    pass
+
+        # Conditional Commands pruefen (Wenn-Dann-Logik)
+        if hasattr(self.brain, "conditional_commands"):
+            try:
+                attrs = new_state.get("attributes", {})
+                executed = await self.brain.conditional_commands.check_event(
+                    entity_id, new_val, old_val, attrs,
+                )
+                for action in executed:
+                    logger.info("Conditional ausgefuehrt: %s -> %s",
+                                action.get("label", ""), action.get("action", ""))
+                    await self._notify("conditional_executed", MEDIUM, {
+                        "label": action.get("label", ""),
+                        "action": action.get("action", ""),
+                    })
+            except Exception as e:
+                logger.debug("Conditional-Check Fehler: %s", e)
+
+        # Learning Observer: Manuelle Aktionen beobachten
+        if hasattr(self.brain, "learning_observer"):
+            try:
+                await self.brain.learning_observer.observe_state_change(
+                    entity_id, new_val, old_val,
+                )
+            except Exception as e:
+                logger.debug("Learning Observer Fehler: %s", e)
 
     async def _check_morning_briefing(self):
         """Phase 7.1: Prueft ob Morning Briefing bei erster Bewegung am Morgen geliefert werden soll."""
@@ -325,6 +381,14 @@ class ProactiveManager:
             result = await self.brain.routines.generate_morning_briefing()
             text = result.get("text", "")
             if text:
+                # Phase 17: Predictive Briefing anhaengen (Wetter-/Energievorschau)
+                try:
+                    predictive = await self.brain.get_predictive_briefing()
+                    if predictive:
+                        text = f"{text}\n{predictive}"
+                except Exception as e:
+                    logger.debug("Predictive Briefing Fehler: %s", e)
+
                 self._mb_triggered_today = True
                 await emit_proactive(text, "morning_briefing", MEDIUM)
                 logger.info("Morning Briefing automatisch geliefert")
@@ -824,6 +888,26 @@ Beispiele:
             parts.append("Beispiel: 'Nebenbei, Sir: [Aufgabe] koennte mal erledigt werden.'")
             return "\n".join(parts)
 
+        # Phase 17: Sicherheitswarnung (Threat Assessment)
+        if event_type == "threat_detected":
+            threat_type = data.get("type", "unbekannt")
+            message = data.get("message", "Sicherheitswarnung")
+            return (
+                f"Sicherheitswarnung ({threat_type}): {message}\n"
+                "Formuliere als dringende, sachliche Warnung. Max 2 Saetze. Butler-Stil.\n"
+                "Beispiel: 'Sir, naechtliche Bewegung im Eingangsbereich. Alle Bewohner sollten schlafen.'"
+            )
+
+        # Phase 17: Bedingte Aktion ausgefuehrt
+        if event_type == "conditional_executed":
+            label = data.get("label", "")
+            action = data.get("action", "")
+            return (
+                f"Bedingte Aktion ausgefuehrt: {label} -> {action}\n"
+                "Formuliere als kurze Info. Max 1 Satz. Butler-Stil.\n"
+                "Beispiel: 'Die Rolladen wurden automatisch geschlossen — Regen erkannt.'"
+            )
+
         parts.append(f"Dringlichkeit: {urgency}")
 
         # Wer ist gerade zuhause?
@@ -1022,3 +1106,112 @@ Beispiele:
                 "message": f"Rolladen {desc}? ({reason})",
                 "suggestion": True,
             })
+
+    # ------------------------------------------------------------------
+    # Notfall-Protokolle
+    # ------------------------------------------------------------------
+
+    async def _execute_emergency_protocol(self, protocol_name: str):
+        """Fuehrt ein konfiguriertes Notfall-Protokoll aus.
+
+        Protokolle werden in settings.yaml definiert unter emergency_protocols.
+        Beispiel:
+            emergency_protocols:
+              fire:
+                actions:
+                  - {domain: light, service: turn_on, target: all}
+                  - {domain: lock, service: unlock, target: all}
+                  - {domain: notify, service: notify, data: {message: "FEUERALARM!"}}
+        """
+        protocol = self._emergency_protocols.get(protocol_name)
+        if not protocol:
+            logger.debug("Kein Notfall-Protokoll fuer '%s' konfiguriert", protocol_name)
+            return
+
+        actions = protocol.get("actions", [])
+        if not actions:
+            return
+
+        logger.warning("NOTFALL-PROTOKOLL '%s' wird ausgefuehrt (%d Aktionen)",
+                        protocol_name, len(actions))
+
+        executed = []
+        for action in actions:
+            domain = action.get("domain", "")
+            service = action.get("service", "")
+            target = action.get("target", "")
+            data = action.get("data", {})
+
+            if not domain or not service:
+                continue
+
+            try:
+                if target == "all":
+                    # Alle Entities dieser Domain
+                    states = await self.brain.ha.get_states()
+                    for s in (states or []):
+                        eid = s.get("entity_id", "")
+                        if eid.startswith(f"{domain}."):
+                            await self.brain.ha.call_service(
+                                domain, service,
+                                {"entity_id": eid, **data},
+                            )
+                            executed.append(eid)
+                elif target:
+                    await self.brain.ha.call_service(
+                        domain, service,
+                        {"entity_id": target, **data},
+                    )
+                    executed.append(target)
+                else:
+                    await self.brain.ha.call_service(domain, service, data)
+                    executed.append(f"{domain}.{service}")
+            except Exception as e:
+                logger.error("Notfall-Aktion fehlgeschlagen: %s.%s -> %s", domain, service, e)
+
+        if executed:
+            logger.warning("Notfall-Protokoll '%s': %d Aktionen ausgefuehrt: %s",
+                            protocol_name, len(executed), executed)
+
+    # ------------------------------------------------------------------
+    # Phase 17: Threat Assessment Loop
+    # ------------------------------------------------------------------
+
+    async def _run_threat_assessment_loop(self):
+        """Periodischer Sicherheits- + Energie-Check."""
+        await asyncio.sleep(180)  # 3 Min. warten bis System stabil
+
+        while self._running:
+            # Threat Assessment
+            try:
+                threats = await self.brain.threat_assessment.assess_threats()
+                for threat in threats:
+                    urgency_map = {
+                        "critical": CRITICAL,
+                        "high": HIGH,
+                        "medium": MEDIUM,
+                        "low": LOW,
+                    }
+                    urgency = urgency_map.get(threat.get("urgency", "medium"), MEDIUM)
+                    await self._notify("threat_detected", urgency, {
+                        "type": threat.get("type", "unknown"),
+                        "message": threat.get("message", ""),
+                        "entity": threat.get("entity", ""),
+                    })
+            except Exception as e:
+                logger.error("Threat Assessment Fehler: %s", e)
+
+            # Energy Events pruefen
+            try:
+                if hasattr(self.brain, "energy_optimizer") and self.brain.energy_optimizer.enabled:
+                    energy_alerts = await self.brain.energy_optimizer.check_energy_events()
+                    for alert in energy_alerts:
+                        urgency = LOW  # Energie-Alerts sind immer LOW
+                        await self._notify(alert.get("type", "energy_event"), urgency, {
+                            "message": alert.get("message", ""),
+                        })
+            except Exception as e:
+                logger.debug("Energy Check Fehler: %s", e)
+
+            # Alle 5 Minuten pruefen
+            await asyncio.sleep(300)

@@ -50,10 +50,15 @@ class ContextBuilder:
         self.ha = ha_client
         self.semantic: Optional[SemanticMemory] = None
         self._activity_engine = None
+        self._redis = None
 
     def set_semantic_memory(self, semantic: SemanticMemory):
         """Setzt die Referenz zum Semantic Memory."""
         self.semantic = semantic
+
+    def set_redis(self, redis_client):
+        """Setzt Redis-Client fuer Guest-Mode-Check."""
+        self._redis = redis_client
 
     def set_activity_engine(self, activity_engine):
         """Setzt die Referenz zur Activity Engine (Phase 6)."""
@@ -128,7 +133,18 @@ class ContextBuilder:
         context["alerts"] = self._extract_alerts(states or [])
 
         # Semantisches Gedaechtnis - relevante Fakten zur Anfrage
-        if self.semantic and user_text:
+        # Im Guest-Mode keine persoenlichen Fakten preisgeben
+        guest_mode_active = False
+        if self._redis:
+            try:
+                val = await self._redis.get("mha:routine:guest_mode")
+                if val is not None and isinstance(val, bytes):
+                    val = val.decode()
+                guest_mode_active = val == "active"
+            except Exception:
+                pass
+
+        if self.semantic and user_text and not guest_mode_active:
             context["memories"] = await self._get_relevant_memories(
                 user_text, person
             )
@@ -542,7 +558,7 @@ class ContextBuilder:
             sr_hour, sr_min = 7, 0
 
         offset_open = 30 if season == "summer" else 15
-        open_min = sr_hour * 60 + sr_min + offset_open
+        open_min = max(0, min(1439, sr_hour * 60 + sr_min + offset_open))
         open_time = f"{open_min // 60:02d}:{open_min % 60:02d}"
 
         # Rolladen-Schliessung: Bei Sonnenuntergang (im Sommer spaeter wegen Hitze)
@@ -562,7 +578,7 @@ class ContextBuilder:
             offset_close = -15  # Im Winter etwas frueher
             reason = "Winter: Frueher schliessen fuer Isolierung"
 
-        close_min = ss_hour * 60 + ss_min + offset_close
+        close_min = max(0, min(1439, ss_hour * 60 + ss_min + offset_close))
         close_time = f"{close_min // 60:02d}:{close_min % 60:02d}"
 
         return {

@@ -182,7 +182,7 @@ class AutonomyManager:
                 "allowed": False,
                 "trust_level": trust,
                 "trust_name": trust_name,
-                "reason": f"Sicherheitsfunktion '{function_name}' erfordert Owner-Berechtigung",
+                "reason": "Fuer Sicherheitsaktionen wird eine hoehere Autorisierung benoetigt.",
             }
 
         # Gast: Nur erlaubte Aktionen + Raum-Scoping
@@ -192,7 +192,7 @@ class AutonomyManager:
                     "allowed": False,
                     "trust_level": trust,
                     "trust_name": trust_name,
-                    "reason": f"Gaeste duerfen '{function_name}' nicht ausfuehren",
+                    "reason": "Ich fuerchte, diese Funktion steht Gaesten nicht zur Verfuegung.",
                 }
             # Raum-Scoping: Gast darf nur in zugewiesenen Raeumen handeln
             if room:
@@ -202,7 +202,7 @@ class AutonomyManager:
                         "allowed": False,
                         "trust_level": trust,
                         "trust_name": trust_name,
-                        "reason": f"Zugriff nur in: {', '.join(allowed_rooms)}",
+                        "reason": f"Ich fuerchte, der Zugriff ist auf folgende Raeume beschraenkt: {', '.join(allowed_rooms)}.",
                     }
             return {
                 "allowed": True,

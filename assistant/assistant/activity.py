@@ -259,7 +259,9 @@ class ActivityEngine:
 
         # Tageszeit-Faktor: Abends/Nachts leiser
         hour = datetime.now().hour
-        if self.night_start <= hour < self.night_end:
+        # Nacht-Erkennung (funktioniert auch bei Mitternachts-Uebergang, z.B. 22-7)
+        is_night = hour >= self.night_start or hour < self.night_end
+        if is_night:
             # Nacht: Volume reduzieren (ausser Critical)
             if urgency != "critical":
                 base_volume = min(base_volume, 0.3)

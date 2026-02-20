@@ -13,7 +13,9 @@ Nutzt bestehende Module:
 - personality.py fuer Stil und Begruessungen
 """
 
+import asyncio
 import logging
+import random
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -33,6 +35,7 @@ KEY_MORNING_DONE = "mha:routine:morning_done_today"
 KEY_GREETING_HISTORY = "mha:routine:greeting_history"
 KEY_ABSENCE_LOG = "mha:routine:absence_log"
 KEY_GUEST_MODE = "mha:routine:guest_mode"
+KEY_VACATION_SIM = "mha:routine:vacation_simulation"
 
 
 class RoutineEngine:
@@ -43,6 +46,7 @@ class RoutineEngine:
         self.ollama = ollama
         self.redis: Optional[redis.Redis] = None
         self._executor = None  # Wird von brain.py gesetzt
+        self._vacation_task: Optional[asyncio.Task] = None
 
         # Konfiguration
         routines_cfg = yaml_config.get("routines", {})
@@ -51,7 +55,7 @@ class RoutineEngine:
         mb_cfg = routines_cfg.get("morning_briefing", {})
         self.briefing_enabled = mb_cfg.get("enabled", True)
         self.briefing_modules = mb_cfg.get("modules", [
-            "greeting", "weather", "calendar", "house_status",
+            "greeting", "weather", "calendar", "house_status", "travel",
         ])
         self.weekday_style = mb_cfg.get("weekday_style", "kurz")
         self.weekend_style = mb_cfg.get("weekend_style", "ausfuehrlich")
@@ -166,6 +170,8 @@ class RoutineEngine:
                 return await self._get_energy_briefing()
             elif module == "house_status":
                 return await self._get_house_status_briefing()
+            elif module == "travel":
+                return await self.get_travel_briefing()
         except Exception as e:
             logger.debug("Briefing-Modul '%s' fehlgeschlagen: %s", module, e)
         return ""
@@ -258,8 +264,11 @@ class RoutineEngine:
             fc_cond = self._translate_weather(today_fc.get("condition", ""))
             precipitation = today_fc.get("precipitation")
             parts = [f"Heute: {low}-{high}°C, {fc_cond}"]
-            if precipitation and float(precipitation) > 0:
-                parts.append(f"{precipitation}mm Niederschlag")
+            try:
+                if precipitation and float(precipitation) > 0:
+                    parts.append(f"{precipitation}mm Niederschlag")
+            except (ValueError, TypeError):
+                pass
             result += ". " + ", ".join(parts)
 
         return result
@@ -929,3 +938,199 @@ Kein unterwuerfiger Ton. Du bist ein brillanter Butler, kein Chatbot."""
         await self.redis.delete(KEY_ABSENCE_LOG)
 
         return summary
+
+    # ------------------------------------------------------------------
+    # Abwesenheits-Simulation (Vacation Mode)
+    # ------------------------------------------------------------------
+
+    async def start_vacation_simulation(self) -> str:
+        """Startet die Abwesenheits-Simulation.
+
+        Simuliert Anwesenheit durch zufaellige Licht/Rolladen-Aktionen
+        basierend auf typischen Tagesablaeufen.
+        """
+        if not self.redis:
+            return "Redis nicht verfuegbar fuer Abwesenheits-Simulation."
+
+        await self.redis.set(KEY_VACATION_SIM, "active")
+        self._vacation_task = asyncio.create_task(self._run_vacation_simulation())
+        logger.info("Abwesenheits-Simulation gestartet")
+        return "Ich werde dafuer sorgen, dass das Haus bewohnt aussieht, Sir."
+
+    async def stop_vacation_simulation(self) -> str:
+        """Stoppt die Abwesenheits-Simulation."""
+        if self.redis:
+            await self.redis.delete(KEY_VACATION_SIM)
+        if hasattr(self, "_vacation_task") and self._vacation_task:
+            self._vacation_task.cancel()
+            try:
+                await self._vacation_task
+            except asyncio.CancelledError:
+                pass
+        logger.info("Abwesenheits-Simulation gestoppt")
+        return "Abwesenheits-Simulation beendet. Willkommen zurueck, Sir."
+
+    async def _run_vacation_simulation(self):
+        """Hauptloop der Abwesenheits-Simulation."""
+        sim_cfg = yaml_config.get("vacation_simulation", {})
+        # Typische Zeiten (konfigurierbar)
+        morning_lights = sim_cfg.get("morning_hour", 7)
+        evening_lights = sim_cfg.get("evening_hour", 18)
+        night_off = sim_cfg.get("night_hour", 23)
+        variation_minutes = sim_cfg.get("variation_minutes", 30)
+
+        while True:
+            try:
+                if not self.redis:
+                    break
+                active = await self.redis.get(KEY_VACATION_SIM)
+                if not active:
+                    break
+                active_str = active.decode() if isinstance(active, bytes) else active
+                if active_str != "active":
+                    break
+
+                now = datetime.now()
+                hour = now.hour
+
+                # Morgens: Rolladen hoch, ein Licht an
+                if hour == morning_lights:
+                    variation = random.randint(-variation_minutes, variation_minutes)
+                    await asyncio.sleep(max(0, variation * 60))
+                    await self._sim_action("covers_up")
+                    await asyncio.sleep(random.randint(60, 300))
+                    await self._sim_action("light_random_on")
+
+                # Abends: Lichter an
+                elif hour == evening_lights:
+                    variation = random.randint(-variation_minutes, variation_minutes)
+                    await asyncio.sleep(max(0, variation * 60))
+                    await self._sim_action("light_random_on")
+                    await asyncio.sleep(random.randint(300, 900))
+                    await self._sim_action("covers_down")
+
+                # Nachts: Alles aus
+                elif hour == night_off:
+                    variation = random.randint(-variation_minutes, variation_minutes)
+                    await asyncio.sleep(max(0, variation * 60))
+                    await self._sim_action("all_lights_off")
+
+                # Zufaellige Licht-Wechsel tagsüber (alle 1-3 Stunden)
+                elif morning_lights < hour < night_off:
+                    if random.random() < 0.3:  # 30% Chance pro Stunde
+                        await self._sim_action("light_toggle_random")
+
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error("Vacation-Simulation Fehler: %s", e)
+
+            # Naechster Check in 30-90 Minuten
+            await asyncio.sleep(random.randint(1800, 5400))
+
+    async def _sim_action(self, action_type: str):
+        """Fuehrt eine Simulations-Aktion aus."""
+        try:
+            states = await self.ha.get_states()
+            if not states:
+                return
+
+            if action_type == "covers_up":
+                for s in states:
+                    if s.get("entity_id", "").startswith("cover."):
+                        await self.ha.call_service("cover", "set_cover_position",
+                                                   {"entity_id": s["entity_id"], "position": 100})
+                logger.info("Vacation-Sim: Rolladen hoch")
+
+            elif action_type == "covers_down":
+                for s in states:
+                    if s.get("entity_id", "").startswith("cover."):
+                        await self.ha.call_service("cover", "set_cover_position",
+                                                   {"entity_id": s["entity_id"], "position": 0})
+                logger.info("Vacation-Sim: Rolladen runter")
+
+            elif action_type == "light_random_on":
+                lights = [s for s in states if s.get("entity_id", "").startswith("light.")
+                          and s.get("state") == "off"]
+                if lights:
+                    target = random.choice(lights)
+                    brightness = random.randint(40, 80)
+                    await self.ha.call_service("light", "turn_on",
+                                               {"entity_id": target["entity_id"], "brightness_pct": brightness})
+                    logger.info("Vacation-Sim: %s an (%d%%)",
+                                target["entity_id"], brightness)
+
+            elif action_type == "all_lights_off":
+                for s in states:
+                    if s.get("entity_id", "").startswith("light.") and s.get("state") == "on":
+                        await self.ha.call_service("light", "turn_off",
+                                                   {"entity_id": s["entity_id"]})
+                logger.info("Vacation-Sim: Alle Lichter aus")
+
+            elif action_type == "light_toggle_random":
+                lights = [s for s in states if s.get("entity_id", "").startswith("light.")]
+                if lights:
+                    target = random.choice(lights)
+                    service = "turn_off" if target.get("state") == "on" else "turn_on"
+                    data = {"entity_id": target["entity_id"]}
+                    if service == "turn_on":
+                        data["brightness_pct"] = random.randint(30, 90)
+                    await self.ha.call_service("light", service, data)
+                    logger.info("Vacation-Sim: %s %s", target["entity_id"], service)
+
+        except Exception as e:
+            logger.error("Vacation-Sim Aktion '%s' fehlgeschlagen: %s", action_type, e)
+
+    # ------------------------------------------------------------------
+    # Verkehr & Pendler-Info (Travel Time)
+    # ------------------------------------------------------------------
+
+    async def get_travel_briefing(self) -> str:
+        """Holt Verkehrs-Infos fuer das Morning Briefing.
+
+        Nutzt HA travel_time Sensoren (Google/Waze/HERE Integration).
+        """
+        states = await self.ha.get_states()
+        if not states:
+            return ""
+
+        travel_infos = []
+        for state in states:
+            entity_id = state.get("entity_id", "")
+            # travel_time Sensoren erkennen
+            if not (entity_id.startswith("sensor.") and
+                    any(kw in entity_id.lower() for kw in ["travel_time", "fahrzeit", "commute", "pendel", "route"])):
+                continue
+
+            attrs = state.get("attributes", {})
+            friendly = attrs.get("friendly_name", entity_id)
+            duration = state.get("state", "")
+            unit = attrs.get("unit_of_measurement", "min")
+            route = attrs.get("route", "")
+
+            try:
+                duration_val = float(duration)
+            except (ValueError, TypeError):
+                continue
+
+            info = f"{friendly}: {int(duration_val)} {unit}"
+            if route:
+                info += f" (via {route})"
+
+            # Verzoegerung erkennen
+            duration_normal = attrs.get("duration_in_traffic", None)
+            if duration_normal:
+                try:
+                    normal_val = float(duration_normal)
+                    if duration_val > normal_val * 1.2:  # 20% laenger als normal
+                        delay = int(duration_val - normal_val)
+                        info += f" — {delay} Min Verzoegerung"
+                except (ValueError, TypeError):
+                    pass
+
+            travel_infos.append(info)
+
+        if not travel_infos:
+            return ""
+
+        return "Verkehr: " + "; ".join(travel_infos)

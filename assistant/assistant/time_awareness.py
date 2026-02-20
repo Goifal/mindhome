@@ -177,6 +177,10 @@ class TimeAwareness:
         window_alerts = await self._check_windows_cold(states)
         alerts.extend(window_alerts)
 
+        # 4b. Heizung laeuft + Fenster offen (unabhaengig von Temperatur)
+        heating_window_alerts = await self._check_heating_window_open(states)
+        alerts.extend(heating_window_alerts)
+
         # 5. PC ohne Pause
         alert = await self._check_pc_session(states)
         if alert:
@@ -302,6 +306,50 @@ class TimeAwareness:
                         "message": f"{friendly} ist seit {int(minutes)} Minuten offen. Draussen sind es {outside_temp}°C.",
                         "urgency": "medium",
                     })
+        return alerts
+
+    async def _check_heating_window_open(self, states: list[dict]) -> list[dict]:
+        """Prueft ob Heizung laeuft waehrend ein Fenster offen ist."""
+        alerts = []
+
+        # Pruefen ob irgendein Climate-Entity aktiv heizt
+        heating_active = False
+        heating_rooms = []
+        for state in states:
+            entity_id = state.get("entity_id", "")
+            if not entity_id.startswith("climate."):
+                continue
+            hvac_action = state.get("attributes", {}).get("hvac_action", "")
+            hvac_mode = state.get("state", "")
+            if hvac_action == "heating" or hvac_mode == "heat":
+                heating_active = True
+                friendly = state.get("attributes", {}).get("friendly_name", entity_id)
+                heating_rooms.append(friendly)
+
+        if not heating_active:
+            return alerts
+
+        # Offene Fenster finden
+        for state in states:
+            entity_id = state.get("entity_id", "")
+            if not ("window" in entity_id or "fenster" in entity_id):
+                continue
+            if not entity_id.startswith("binary_sensor."):
+                continue
+            if state.get("state") != "on":
+                continue
+
+            device_key = f"heating_window_{entity_id}"
+            if not await self._was_notified(device_key):
+                await self._mark_notified(device_key)
+                friendly = state.get("attributes", {}).get("friendly_name", entity_id)
+                alerts.append({
+                    "type": "heating_window_open",
+                    "device": device_key,
+                    "message": f"Ein Fenster ist offen ({friendly}) waehrend die Heizung laeuft.",
+                    "urgency": "medium",
+                })
+
         return alerts
 
     async def _check_pc_session(self, states: list[dict]) -> Optional[dict]:

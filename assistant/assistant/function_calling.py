@@ -641,6 +641,182 @@ _ASSISTANT_TOOLS_STATIC = [
             },
         },
     },
+    # --- Neue Features: Timer, Broadcast, Kamera, Conditionals, Energie, Web-Suche ---
+    {
+        "type": "function",
+        "function": {
+            "name": "set_timer",
+            "description": "Setzt einen allgemeinen Timer/Erinnerung. Z.B. 'Erinnere mich in 30 Minuten an die Waesche' oder 'In 20 Minuten Licht aus'.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "duration_minutes": {
+                        "type": "integer",
+                        "description": "Dauer in Minuten (1-1440)",
+                    },
+                    "label": {
+                        "type": "string",
+                        "description": "Bezeichnung des Timers (z.B. 'Waesche', 'Pizza', 'Anruf')",
+                    },
+                    "room": {
+                        "type": "string",
+                        "description": "Raum in dem die Timer-Benachrichtigung erfolgen soll",
+                    },
+                    "action_on_expire": {
+                        "type": "object",
+                        "description": "Optionale Aktion bei Ablauf. Format: {\"function\": \"set_light\", \"args\": {\"room\": \"kueche\", \"state\": \"off\"}}",
+                    },
+                },
+                "required": ["duration_minutes", "label"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "cancel_timer",
+            "description": "Bricht einen laufenden Timer ab.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "label": {
+                        "type": "string",
+                        "description": "Bezeichnung des Timers zum Abbrechen (z.B. 'Waesche')",
+                    },
+                },
+                "required": ["label"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_timer_status",
+            "description": "Zeigt den Status aller aktiven Timer an. 'Wie lange noch?' oder 'Welche Timer laufen?'",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "broadcast",
+            "description": "Sendet eine Durchsage an ALLE Lautsprecher im Haus. Fuer Ankuendigungen wie 'Essen ist fertig!' oder 'Bitte alle runterkommen.'",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "message": {
+                        "type": "string",
+                        "description": "Die Durchsage-Nachricht",
+                    },
+                },
+                "required": ["message"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_camera_view",
+            "description": "Holt und beschreibt ein Kamera-Bild. Z.B. 'Wer ist an der Tuer?' oder 'Zeig mir die Garage'.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "camera_name": {
+                        "type": "string",
+                        "description": "Name oder Raum der Kamera (z.B. 'haustuer', 'garage', 'garten')",
+                    },
+                },
+                "required": ["camera_name"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_conditional",
+            "description": "Erstellt einen temporaeren bedingten Befehl: 'Wenn X passiert, dann Y'. Z.B. 'Wenn es regnet, Rolladen runter' oder 'Wenn Papa ankommt, sag ihm Bescheid'.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "trigger_type": {
+                        "type": "string",
+                        "enum": ["state_change", "person_arrives", "person_leaves", "state_attribute"],
+                        "description": "Art des Triggers",
+                    },
+                    "trigger_value": {
+                        "type": "string",
+                        "description": "Trigger-Wert. Bei state_change: 'entity_id:state' (z.B. 'sensor.regen:on'). Bei person_arrives/leaves: Name (z.B. 'papa'). Bei state_attribute: 'entity_id|attribut|operator|wert' (pipe-getrennt, z.B. 'sensor.aussen|temperature|>|25')",
+                    },
+                    "action_function": {
+                        "type": "string",
+                        "description": "Auszufuehrende Funktion (z.B. 'set_cover', 'send_notification', 'set_light')",
+                    },
+                    "action_args": {
+                        "type": "object",
+                        "description": "Argumente fuer die Aktion",
+                    },
+                    "label": {
+                        "type": "string",
+                        "description": "Beschreibung (z.B. 'Rolladen bei Regen runter')",
+                    },
+                    "ttl_hours": {
+                        "type": "integer",
+                        "description": "Gueltigkeitsdauer in Stunden (default 24, max 168)",
+                    },
+                    "one_shot": {
+                        "type": "boolean",
+                        "description": "Nur einmal ausfuehren (default true)",
+                    },
+                },
+                "required": ["trigger_type", "trigger_value", "action_function", "action_args"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_conditionals",
+            "description": "Zeigt alle aktiven bedingten Befehle (Wenn-Dann-Regeln) an.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_energy_report",
+            "description": "Zeigt einen Energie-Bericht mit Strompreis, Solar-Ertrag, Verbrauch und Empfehlungen.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "web_search",
+            "description": "Sucht im Internet nach Informationen. Nur fuer Wissensfragen die nicht aus dem Gedaechtnis beantwortet werden koennen. Z.B. 'Was ist die Hauptstadt von Australien?' oder 'Aktuelle Nachrichten'.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Die Suchanfrage",
+                    },
+                },
+                "required": ["query"],
+            },
+        },
+    },
 ]
 
 
@@ -767,7 +943,10 @@ class FunctionExecutor:
 
     async def _exec_set_climate_curve(self, args: dict, heating: dict) -> dict:
         """Heizkurven-Modus: Offset auf zentrales Entity setzen."""
-        offset = args.get("offset", 0)
+        try:
+            offset = float(args.get("offset", 0))
+        except (ValueError, TypeError):
+            return {"success": False, "message": f"Ungueltiger Offset: {args.get('offset')}"}
         entity_id = heating.get("curve_entity", "")
         if not entity_id:
             return {"success": False, "message": "Kein Heizungs-Entity konfiguriert (heating.curve_entity)"}
@@ -834,7 +1013,10 @@ class FunctionExecutor:
 
     async def _exec_set_cover(self, args: dict) -> dict:
         room = args["room"]
-        position = args["position"]
+        try:
+            position = max(0, min(100, int(args["position"])))
+        except (ValueError, TypeError):
+            return {"success": False, "message": f"Ungueltige Position: {args.get('position')}"}
 
         # Sonderfall: "all" -> alle Rolllaeden schalten
         if room.lower() == "all":
@@ -1832,30 +2014,53 @@ class FunctionExecutor:
 
         return await brain.self_automation.delete_jarvis_automation(automation_id)
 
+    @staticmethod
+    def _normalize_name(text: str) -> str:
+        """Normalisiert Umlaute und Sonderzeichen fuer Entity-Matching."""
+        n = text.lower()
+        # Unicode-Umlaute zuerst
+        n = n.replace("ü", "u").replace("ä", "a").replace("ö", "o").replace("ß", "ss")
+        # Dann ASCII-Digraphen
+        n = n.replace("ue", "u").replace("ae", "a").replace("oe", "o")
+        return n.replace(" ", "_")
+
     async def _find_entity(self, domain: str, search: str) -> Optional[str]:
-        """Findet eine Entity anhand von Domain und Suchbegriff."""
+        """Findet eine Entity anhand von Domain und Suchbegriff.
+
+        1. MindHome Device-DB (schnell, gezielt nach Domain + Raum)
+        2. Fallback: Alle HA-States durchsuchen
+        """
         if not search:
             return None
 
+        # MindHome Device-Search (schnell, DB-basiert)
+        try:
+            devices = await self.ha.search_devices(domain=domain, room=search)
+            if devices:
+                return devices[0]["ha_entity_id"]
+        except Exception as e:
+            logger.debug("MindHome device search failed, using HA fallback: %s", e)
+
+        # Fallback: Alle HA-States durchsuchen
         states = await self.ha.get_states()
         if not states:
             return None
 
-        search_lower = search.lower().replace(" ", "_").replace("ue", "u").replace("ae", "a").replace("oe", "o")
+        search_norm = self._normalize_name(search)
 
         for state in states:
             entity_id = state.get("entity_id", "")
             if not entity_id.startswith(f"{domain}."):
                 continue
 
-            # Exakter Match
+            # Entity-ID Match (normalisiert)
             name = entity_id.split(".", 1)[1]
-            if search_lower in name:
+            if search_norm in self._normalize_name(name):
                 return entity_id
 
-            # Friendly name Match
-            friendly = state.get("attributes", {}).get("friendly_name", "").lower()
-            if search.lower() in friendly:
+            # Friendly name Match (normalisiert)
+            friendly = state.get("attributes", {}).get("friendly_name", "")
+            if friendly and search_norm in self._normalize_name(friendly):
                 return entity_id
 
         return None
@@ -1912,3 +2117,110 @@ class FunctionExecutor:
             return {"success": True, "message": "\n".join(lines)}
 
         return {"success": False, "message": f"Unbekannte Aktion: {action}"}
+
+    # ------------------------------------------------------------------
+    # Neue Features: Timer, Broadcast, Kamera, Conditionals, Energie, Web
+    # ------------------------------------------------------------------
+
+    async def _exec_set_timer(self, args: dict) -> dict:
+        """Setzt einen allgemeinen Timer."""
+        import assistant.main as main_module
+        brain = main_module.brain
+        return await brain.timer_manager.create_timer(
+            duration_minutes=args["duration_minutes"],
+            label=args.get("label", ""),
+            room=args.get("room", ""),
+            person=args.get("person", ""),
+            action_on_expire=args.get("action_on_expire"),
+        )
+
+    async def _exec_cancel_timer(self, args: dict) -> dict:
+        """Bricht einen Timer ab."""
+        import assistant.main as main_module
+        brain = main_module.brain
+        return await brain.timer_manager.cancel_timer(label=args.get("label", ""))
+
+    async def _exec_get_timer_status(self, args: dict) -> dict:
+        """Zeigt Timer-Status an."""
+        import assistant.main as main_module
+        brain = main_module.brain
+        return brain.timer_manager.get_status()
+
+    async def _exec_broadcast(self, args: dict) -> dict:
+        """Sendet eine Durchsage an alle Lautsprecher."""
+        message = args.get("message", "")
+        if not message:
+            return {"success": False, "message": "Keine Nachricht angegeben."}
+
+        states = await self.ha.get_states()
+        if not states:
+            return {"success": False, "message": "Keine Verbindung zu Home Assistant."}
+
+        # Alle Media-Player mit TTS-Faehigkeit finden
+        speakers = []
+        for s in states:
+            eid = s.get("entity_id", "")
+            if eid.startswith("media_player."):
+                speakers.append(eid)
+
+        if not speakers:
+            return {"success": False, "message": "Keine Lautsprecher gefunden."}
+
+        # TTS an alle Speaker senden
+        count = 0
+        tts_entity = yaml_config.get("tts", {}).get("entity", "tts.piper")
+        for speaker in speakers:
+            try:
+                await self.ha.call_service("tts", "speak", {
+                    "entity_id": tts_entity,
+                    "media_player_entity_id": speaker,
+                    "message": message,
+                })
+                count += 1
+            except Exception as e:
+                logger.debug("Broadcast an %s fehlgeschlagen: %s", speaker, e)
+
+        return {
+            "success": count > 0,
+            "message": f"Durchsage an {count} Lautsprecher gesendet: \"{message}\"",
+        }
+
+    async def _exec_get_camera_view(self, args: dict) -> dict:
+        """Holt und beschreibt ein Kamera-Bild."""
+        import assistant.main as main_module
+        brain = main_module.brain
+        return await brain.camera_manager.get_camera_view(
+            camera_name=args.get("camera_name", ""),
+        )
+
+    async def _exec_create_conditional(self, args: dict) -> dict:
+        """Erstellt einen bedingten Befehl."""
+        import assistant.main as main_module
+        brain = main_module.brain
+        return await brain.conditional_commands.create_conditional(
+            trigger_type=args["trigger_type"],
+            trigger_value=args["trigger_value"],
+            action_function=args["action_function"],
+            action_args=args.get("action_args", {}),
+            label=args.get("label", ""),
+            ttl_hours=args.get("ttl_hours", 24),
+            one_shot=args.get("one_shot", True),
+        )
+
+    async def _exec_list_conditionals(self, args: dict) -> dict:
+        """Listet bedingte Befehle auf."""
+        import assistant.main as main_module
+        brain = main_module.brain
+        return await brain.conditional_commands.list_conditionals()
+
+    async def _exec_get_energy_report(self, args: dict) -> dict:
+        """Zeigt Energie-Bericht an."""
+        import assistant.main as main_module
+        brain = main_module.brain
+        return await brain.energy_optimizer.get_energy_report()
+
+    async def _exec_web_search(self, args: dict) -> dict:
+        """Fuehrt eine Web-Suche durch."""
+        import assistant.main as main_module
+        brain = main_module.brain
+        return await brain.web_search.search(query=args.get("query", ""))

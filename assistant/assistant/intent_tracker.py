@@ -17,7 +17,7 @@ from typing import Optional
 
 import redis.asyncio as redis
 
-from .config import yaml_config
+from .config import settings, yaml_config
 from .ollama_client import OllamaClient
 
 logger = logging.getLogger(__name__)
@@ -204,7 +204,7 @@ class IntentTracker:
         try:
             response = await self.ollama.chat(
                 messages=[{"role": "user", "content": prompt}],
-                model="qwen3:4b",
+                model=settings.model_fast,
                 temperature=0.1,
                 max_tokens=512,
             )

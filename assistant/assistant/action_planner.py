@@ -106,7 +106,8 @@ class ActionPlan:
 
 
 class ActionPlanner:
-    """Plant und fuehrt komplexe Multi-Step Aktionen aus. Phase 9: mit Narration."""
+    """Plant und fuehrt komplexe Multi-Step Aktionen aus. Phase 9: mit Narration.
+    Phase 17: Multi-Turn Planning Dialoge mit Rueckfragen."""
 
     def __init__(
         self,
@@ -118,6 +119,8 @@ class ActionPlanner:
         self.executor = executor
         self.validator = validator
         self._last_plan: Optional[ActionPlan] = None
+        self._redis = None
+        self._pending_plans: dict[str, dict] = {}  # In-Memory Cache fuer laufende Dialoge
 
         # Phase 9: Narration Mode Konfiguration
         narr_cfg = yaml_config.get("narration", {})
@@ -378,3 +381,177 @@ class ActionPlanner:
         if generator:
             return generator(func_args)
         return ""
+
+    # ------------------------------------------------------------------
+    # Multi-Turn Planning Dialoge
+    # ------------------------------------------------------------------
+
+    # Keywords die auf Planungs-Anfragen hindeuten (benoetigen Rueckfragen)
+    PLANNING_KEYWORDS = [
+        "plane", "organisiere", "bereite vor", "dinner party",
+        "feier", "event planen", "vorbereiten fuer",
+    ]
+
+    def is_planning_request(self, text: str) -> bool:
+        """Erkennt ob eine Anfrage ein interaktiver Planungs-Dialog sein soll."""
+        text_lower = text.lower()
+        return any(kw in text_lower for kw in self.PLANNING_KEYWORDS)
+
+    async def start_planning_dialog(self, text: str, person: str = "") -> dict:
+        """Startet einen mehrstufigen Planungs-Dialog.
+
+        Das LLM analysiert die Anfrage und stellt Rueckfragen bevor es Aktionen plant.
+
+        Args:
+            text: User-Anfrage (z.B. "Plane eine Dinner-Party fuer Samstag")
+            person: Person die den Dialog startet
+
+        Returns:
+            Dict mit response (Rueckfrage oder Plan), plan_id, status
+        """
+        plan_id = f"plan_{id(text) % 10000}"
+
+        planning_prompt = f"""Analysiere diese Planungsanfrage und stelle die noetigsten Rueckfragen.
+WICHTIG: Stelle maximal 2-3 Fragen. Nicht zu viele auf einmal.
+Formuliere die Fragen als nummerierte Liste.
+Am Ende: "Sobald ich die Details habe, erstelle ich einen Plan."
+
+Anfrage: {text}
+Person: {person or 'Sir'}"""
+
+        try:
+            response = await self.ollama.chat(
+                messages=[
+                    {"role": "system", "content": f"""Du bist {settings.assistant_name}, der intelligente Butler.
+Du hilfst bei der Planung von Events/Aktivitaeten.
+Stelle kurze, praesize Rueckfragen um den Plan zu verfeinern.
+Deutsch. Butler-Stil. Max 3 Fragen.
+Beispiel:
+"Sehr gerne, Sir. Fuer die Planung brauche ich noch:
+1. Fuer wie viele Gaeste?
+2. Welche Uhrzeit?
+3. Soll ich auch eine Einkaufsliste erstellen?
+Sobald ich die Details habe, kuemmere ich mich um alles."
+"""},
+                    {"role": "user", "content": planning_prompt},
+                ],
+                model=settings.model_fast,
+                temperature=0.7,
+            )
+
+            response_text = response.get("message", {}).get("content", "")
+
+            # Plan-State speichern fuer Follow-Up (mit Timestamp fuer Auto-Expiry)
+            import time as _time
+            self._pending_plans[plan_id] = {
+                "original_request": text,
+                "person": person,
+                "status": "waiting_for_details",
+                "created_at": _time.time(),
+                "messages": [
+                    {"role": "user", "content": text},
+                    {"role": "assistant", "content": response_text},
+                ],
+            }
+
+            return {
+                "response": response_text,
+                "plan_id": plan_id,
+                "status": "waiting_for_details",
+            }
+
+        except Exception as e:
+            logger.error("Planning Dialog Start Fehler: %s", e)
+            return {
+                "response": "Ich habe Schwierigkeiten mit der Planung. Koennen Sie es anders formulieren?",
+                "plan_id": plan_id,
+                "status": "error",
+            }
+
+    async def continue_planning_dialog(self, text: str, plan_id: str) -> dict:
+        """Setzt einen laufenden Planungs-Dialog fort.
+
+        Args:
+            text: User-Antwort auf Rueckfragen
+            plan_id: ID des laufenden Plans
+
+        Returns:
+            Dict mit response, actions (falls Plan fertig), status
+        """
+        plan_state = self._pending_plans.get(plan_id)
+        if not plan_state:
+            return {"response": "Planungs-Dialog nicht gefunden.", "status": "error"}
+
+        plan_state["messages"].append({"role": "user", "content": text})
+
+        finalize_prompt = """Basierend auf den bisherigen Informationen:
+1. Erstelle einen konkreten Plan mit nummerierten Schritten
+2. Frage ob der Plan so passt oder ob Anpassungen noetig sind
+3. Formatiere als uebersichtliche Liste
+
+Beispiel:
+"Verstanden. Hier ist mein Plan:
+1. Einkaufsliste erstellen (Zutaten fuer 6 Personen)
+2. Samstag 18:00: Gaeste-Modus aktivieren
+3. 19:00: Szene 'Dinner' (Licht dimmen, Musik)
+4. Kalender-Eintrag anlegen
+
+Soll ich das so umsetzen, oder gibt es Aenderungen?"
+"""
+
+        messages = [
+            {"role": "system", "content": f"""Du bist {settings.assistant_name}.
+Du planst ein Event/Aktivitaet basierend auf der Konversation.
+Erstelle einen konkreten, ausfuehrbaren Plan.
+Deutsch. Butler-Stil. Praezise.
+Frage am Ende ob der Plan so umgesetzt werden soll."""},
+        ]
+        messages.extend(plan_state["messages"])
+        messages.append({"role": "user", "content": finalize_prompt})
+
+        try:
+            response = await self.ollama.chat(
+                messages=messages,
+                model=settings.model_fast,
+                temperature=0.7,
+            )
+
+            response_text = response.get("message", {}).get("content", "")
+            plan_state["messages"].append({"role": "assistant", "content": response_text})
+            plan_state["status"] = "plan_proposed"
+
+            return {
+                "response": response_text,
+                "plan_id": plan_id,
+                "status": "plan_proposed",
+            }
+
+        except Exception as e:
+            logger.error("Planning Dialog Continue Fehler: %s", e)
+            return {"response": "Planungsfehler.", "status": "error"}
+
+    def has_pending_plan(self) -> Optional[str]:
+        """Prueft ob ein Planungs-Dialog laeuft.
+
+        Returns:
+            Plan-ID oder None. Expired Plans (>10 Min) werden automatisch entfernt.
+        """
+        import time as _time
+        expired = []
+        result = None
+        for plan_id, state in self._pending_plans.items():
+            # Auto-Expiry: Plans aelter als 10 Minuten entfernen
+            created = state.get("created_at", 0)
+            if created and (_time.time() - created) > 600:
+                expired.append(plan_id)
+                continue
+            if state.get("status") in ("waiting_for_details", "plan_proposed"):
+                result = plan_id
+        for plan_id in expired:
+            self._pending_plans.pop(plan_id, None)
+            logger.info("Planungs-Dialog %s nach Timeout entfernt", plan_id)
+        return result
+
+    def clear_plan(self, plan_id: str):
+        """Beendet einen Planungs-Dialog."""
+        self._pending_plans.pop(plan_id, None)
