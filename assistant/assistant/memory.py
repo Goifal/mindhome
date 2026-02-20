@@ -90,7 +90,13 @@ class MemoryManager:
             return []
 
         entries = await self.redis.lrange("mha:conversations", 0, limit - 1)
-        return [json.loads(e) for e in entries][::-1]  # Aelteste zuerst
+        result = []
+        for e in entries:
+            try:
+                result.append(json.loads(e))
+            except (json.JSONDecodeError, TypeError):
+                continue
+        return result[::-1]  # Aelteste zuerst
 
     async def set_context(self, key: str, value: str, ttl: int = 3600):
         """Speichert einen Kontext-Wert mit TTL."""

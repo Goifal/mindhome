@@ -2357,11 +2357,19 @@ Beispiele:
                         high = tomorrow.get("temperature", "")
                         cond = tomorrow.get("condition", "")
                         precip = tomorrow.get("precipitation", 0)
-                        if high and float(high) > 30:
+                        try:
+                            high_f = float(high) if high else None
+                        except (ValueError, TypeError):
+                            high_f = None
+                        try:
+                            precip_f = float(precip) if precip else None
+                        except (ValueError, TypeError):
+                            precip_f = None
+                        if high_f is not None and high_f > 30:
                             forecasts.append(f"Morgen wird es heiss ({high}°C). Hitzeschutz-Rolladen empfohlen.")
-                        if precip and float(precip) > 5:
+                        if precip_f is not None and precip_f > 5:
                             forecasts.append(f"Morgen Regen erwartet ({precip}mm). Fenster schliessen empfohlen.")
-                        if cond in ("snowy", "snowy-rainy") or (high and float(high) < 0):
+                        if cond in ("snowy", "snowy-rainy") or (high_f is not None and high_f < 0):
                             forecasts.append(f"Frost erwartet ({high}°C). Heizung im Voraus hochfahren?")
                     break
 
