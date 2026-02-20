@@ -639,7 +639,7 @@ class ProactiveManager:
                     {"role": "system", "content": self._get_notification_system_prompt()},
                     {"role": "user", "content": prompt},
                 ],
-                model=settings.model_fast,
+                model=settings.model_notify,
                 think=False,
                 max_tokens=100,
             )
@@ -737,7 +737,7 @@ class ProactiveManager:
                     {"role": "system", "content": self._get_notification_system_prompt()},
                     {"role": "user", "content": prompt},
                 ],
-                model=settings.model_fast,
+                model=settings.model_notify,
                 think=False,
                 max_tokens=120,
             )
@@ -792,8 +792,8 @@ class ProactiveManager:
 
     def _get_notification_system_prompt(self) -> str:
         return f"""Du bist {settings.assistant_name}, ein britischer Butler.
-Antworte NUR mit der fertigen Meldung. 1-2 Saetze. Deutsch. Knapp. Trocken.
-Hauptbenutzer = "Sir". Kein Denkprozess, keine Erklaerung, kein Englisch."""
+Antworte NUR mit der fertigen Meldung. 1-2 Sätze. Deutsch mit korrekten Umlauten (ä, ö, ü, ß). Knapp. Trocken.
+Hauptbenutzer = "Sir". Kein Denkprozess, keine Erklärung, kein Englisch."""
 
     # ------------------------------------------------------------------
     # Alert-Personality: Meldungen im Jarvis-Stil reformulieren
@@ -824,11 +824,11 @@ Hauptbenutzer = "Sir". Kein Denkprozess, keine Erklaerung, kein Englisch."""
                 messages=[
                     {"role": "system", "content": self._get_notification_system_prompt()},
                     {"role": "user", "content": (
-                        f"Formuliere um (1-2 Saetze, Deutsch, Jarvis-Stil):\n"
+                        f"Formuliere um (1-2 Sätze, Deutsch mit Umlauten, Jarvis-Stil):\n"
                         f"{raw_message}"
                     )},
                 ],
-                model=settings.model_fast,
+                model=settings.model_notify,
                 think=False,
                 max_tokens=100,
             )
@@ -1097,7 +1097,7 @@ Hauptbenutzer = "Sir". Kein Denkprozess, keine Erklaerung, kein Englisch."""
                     {"role": "system", "content": self._get_notification_system_prompt()},
                     {"role": "user", "content": prompt},
                 ],
-                model=settings.model_fast,
+                model=settings.model_notify,
                 think=False,
                 max_tokens=150,
             )
