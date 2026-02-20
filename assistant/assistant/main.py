@@ -2134,16 +2134,18 @@ async def ui_system_update(token: str = ""):
             _update_log.append("FEHLER: Docker build fehlgeschlagen")
             return {"success": False, "log": _update_log}
 
-        # 3. Docker Up (startet auch diesen Container neu)
-        _update_log.append("Docker compose up -d...")
-        rc, out = _run_cmd(
+        # 3. Docker Up — fire-and-forget (startet diesen Container neu)
+        _update_log.append("Container werden neugestartet...")
+        subprocess.Popen(
             ["docker", "compose", "up", "-d"],
-            cwd=str(_MHA_DIR), timeout=120,
+            cwd=str(_MHA_DIR),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
         )
-        _update_log.append(out.strip())
 
-        _update_log.append(f"[{datetime.now().strftime('%H:%M:%S')}] Update abgeschlossen!")
-        return {"success": rc == 0, "log": _update_log}
+        _update_log.append(f"[{datetime.now().strftime('%H:%M:%S')}] Update abgeschlossen! Container startet neu...")
+        return {"success": True, "log": _update_log}
 
 
 @app.post("/api/ui/system/restart")
@@ -2154,12 +2156,15 @@ async def ui_system_restart(token: str = ""):
     if _update_lock.locked():
         raise HTTPException(status_code=409, detail="Update/Restart laeuft bereits")
 
-    async with _update_lock:
-        rc, out = _run_cmd(
-            ["docker", "compose", "restart"],
-            cwd=str(_MHA_DIR), timeout=120,
-        )
-        return {"success": rc == 0, "output": out.strip()}
+    # Fire-and-forget: Docker-Daemon fuehrt Restart unabhaengig aus
+    subprocess.Popen(
+        ["docker", "compose", "restart"],
+        cwd=str(_MHA_DIR),
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+    return {"success": True, "output": "Container werden neugestartet..."}
 
 
 @app.post("/api/ui/system/update-models")
