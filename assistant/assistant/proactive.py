@@ -23,7 +23,7 @@ from typing import Optional
 import aiohttp
 
 from .config import settings, yaml_config
-from .ollama_client import strip_reasoning_leak
+from .ollama_client import validate_notification
 from .websocket import emit_proactive
 
 logger = logging.getLogger(__name__)
@@ -640,9 +640,11 @@ class ProactiveManager:
                     {"role": "user", "content": prompt},
                 ],
                 model=settings.model_fast,
+                think=False,
+                max_tokens=100,
             )
 
-            text = strip_reasoning_leak(
+            text = validate_notification(
                 response.get("message", {}).get("content", description)
             )
             # Fallback auf Original wenn Reasoning-Leak komplett entfernt wurde
@@ -736,8 +738,10 @@ class ProactiveManager:
                     {"role": "user", "content": prompt},
                 ],
                 model=settings.model_fast,
+                think=False,
+                max_tokens=120,
             )
-            return strip_reasoning_leak(
+            return validate_notification(
                 response.get("message", {}).get("content", "Alles ruhig, Sir.")
             )
         except Exception as e:
@@ -787,23 +791,9 @@ class ProactiveManager:
         return "\n".join(parts)
 
     def _get_notification_system_prompt(self) -> str:
-        return f"""Du bist {settings.assistant_name}, die KI dieses Hauses.
-Dein Stil: Souveraen, knapp, trocken-humorvoll. Wie ein brillanter britischer Butler.
-Formuliere KURZE proaktive Meldungen. Maximal 1-3 Saetze. Deutsch.
-Den Hauptbenutzer sprichst du mit "Sir" an, NICHT mit dem Vornamen.
-Andere Haushaltsmitglieder mit ihrem Namen oder Titel.
-
-WICHTIG: Antworte NUR mit der fertigen Meldung. Kein Denkprozess, keine Erklaerung,
-keine Analyse, kein "Okay let me", kein Meta-Kommentar. Nur die Meldung selbst.
-
-Beispiele:
-- "Es hat geklingelt, Sir."
-- "Die Waschmaschine ist fertig. Nur falls es jemanden interessiert."
-- "Willkommen zurueck, Sir. 22 Grad, alles ruhig."
-- "Willkommen, Ms. Lisa. Sir ist im Buero."
-- "Achtung: Rauchmelder Keller. Sofort pruefen."
-- "Sir, der Strom ist gerade guenstig. Guter Zeitpunkt fuer die Waschmaschine."
-"""
+        return f"""Du bist {settings.assistant_name}, ein britischer Butler.
+Antworte NUR mit der fertigen Meldung. 1-2 Saetze. Deutsch. Knapp. Trocken.
+Hauptbenutzer = "Sir". Kein Denkprozess, keine Erklaerung, kein Englisch."""
 
     # ------------------------------------------------------------------
     # Alert-Personality: Meldungen im Jarvis-Stil reformulieren
@@ -834,14 +824,15 @@ Beispiele:
                 messages=[
                     {"role": "system", "content": self._get_notification_system_prompt()},
                     {"role": "user", "content": (
-                        f"Formuliere diese Meldung im Jarvis-Stil um (1-2 Saetze, Deutsch).\n"
-                        f"Dringlichkeit: {urgency}\n"
-                        f"Original: {raw_message}"
+                        f"Formuliere um (1-2 Saetze, Deutsch, Jarvis-Stil):\n"
+                        f"{raw_message}"
                     )},
                 ],
                 model=settings.model_fast,
+                think=False,
+                max_tokens=100,
             )
-            text = strip_reasoning_leak(
+            text = validate_notification(
                 response.get("message", {}).get("content", "").strip()
             )
             return text if text else raw_message
@@ -1107,9 +1098,11 @@ Beispiele:
                     {"role": "user", "content": prompt},
                 ],
                 model=settings.model_fast,
+                think=False,
+                max_tokens=150,
             )
 
-            text = strip_reasoning_leak(
+            text = validate_notification(
                 response.get("message", {}).get("content", "")
             )
             if text:
