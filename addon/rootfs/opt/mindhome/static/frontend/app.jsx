@@ -11976,11 +11976,11 @@ const App = () => {
             api.get('quick-actions')
         ]);
         if (s) setStatus(s);
-        if (d) setDomains(d);
-        if (dev) setDevices(dev);
-        if (r) setRooms(r);
-        if (u) setUsers(u);
-        if (qa) setQuickActions(qa);
+        if (Array.isArray(d)) setDomains(d);
+        if (Array.isArray(dev)) setDevices(dev);
+        if (Array.isArray(r)) setRooms(r);
+        if (Array.isArray(u)) setUsers(u);
+        if (Array.isArray(qa)) setQuickActions(qa);
     }, []);
 
     useEffect(() => {
