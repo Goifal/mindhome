@@ -11,6 +11,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     tesseract-ocr-eng \
     && rm -rf /var/lib/apt/lists/*
 
+# Git: gemountetes /repo Volume als safe.directory markieren
+RUN git config --global --add safe.directory /repo
+
 # Docker CLI + Compose Plugin (fuer System-Management aus dem Dashboard)
 RUN ARCH=$(uname -m) && \
     curl -fsSL "https://download.docker.com/linux/static/stable/${ARCH}/docker-27.5.1.tgz" \
