@@ -19,6 +19,15 @@ logger = logging.getLogger(__name__)
 # Regex zum Entfernen von Qwen 3 Think-Bloecken
 _THINK_PATTERN = re.compile(r"<think>[\s\S]*?</think>\s*", re.DOTALL)
 
+# Muster fuer ungetaggtes LLM-Reasoning (englisch) vor der eigentlichen Antwort
+_REASONING_LEAK_PATTERN = re.compile(
+    r"^(?:"
+    r"(?:Okay|Ok|Alright|So|Let me|I need to|First|The user|I should|I'll|Here)"
+    r"[^\n]*\n)+"       # Englische Reasoning-Zeilen am Anfang
+    r"[\s]*",            # Whitespace danach
+    re.IGNORECASE,
+)
+
 
 def strip_think_tags(text: str) -> str:
     """Entfernt <think>...</think> Bloecke aus Qwen 3 Antworten."""
@@ -26,6 +35,30 @@ def strip_think_tags(text: str) -> str:
         return text
     cleaned = _THINK_PATTERN.sub("", text).strip()
     return cleaned if cleaned else text
+
+
+def strip_reasoning_leak(text: str) -> str:
+    """Entfernt ungetaggtes englisches Reasoning das vor der Antwort steht.
+
+    Manche Modelle (Qwen 3) geben gelegentlich ihren Denkprozess aus,
+    ohne ihn in <think>-Tags zu wrappen. Diese Funktion erkennt typische
+    Muster (englische Saetze wie 'Okay, let me...', 'First, I need to...')
+    und entfernt sie, wenn die eigentliche Antwort (Deutsch) danach folgt.
+    """
+    if not text:
+        return text
+
+    # Think-Tags zuerst
+    text = strip_think_tags(text)
+
+    # Pruefen ob Text mit typischem englischen Reasoning beginnt
+    # und ob danach noch deutscher Content kommt
+    cleaned = _REASONING_LEAK_PATTERN.sub("", text).strip()
+    if cleaned and cleaned != text.strip():
+        logger.debug("Reasoning-Leak entfernt (%d → %d Zeichen)", len(text), len(cleaned))
+        return cleaned
+
+    return text
 
 
 class OllamaClient:
