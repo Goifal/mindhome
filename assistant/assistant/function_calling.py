@@ -1832,6 +1832,16 @@ class FunctionExecutor:
 
         return await brain.self_automation.delete_jarvis_automation(automation_id)
 
+    @staticmethod
+    def _normalize_name(text: str) -> str:
+        """Normalisiert Umlaute und Sonderzeichen fuer Entity-Matching."""
+        n = text.lower()
+        # Unicode-Umlaute zuerst
+        n = n.replace("ü", "u").replace("ä", "a").replace("ö", "o").replace("ß", "ss")
+        # Dann ASCII-Digraphen
+        n = n.replace("ue", "u").replace("ae", "a").replace("oe", "o")
+        return n.replace(" ", "_")
+
     async def _find_entity(self, domain: str, search: str) -> Optional[str]:
         """Findet eine Entity anhand von Domain und Suchbegriff."""
         if not search:
@@ -1841,21 +1851,21 @@ class FunctionExecutor:
         if not states:
             return None
 
-        search_lower = search.lower().replace(" ", "_").replace("ue", "u").replace("ae", "a").replace("oe", "o")
+        search_norm = self._normalize_name(search)
 
         for state in states:
             entity_id = state.get("entity_id", "")
             if not entity_id.startswith(f"{domain}."):
                 continue
 
-            # Exakter Match
+            # Entity-ID Match (normalisiert)
             name = entity_id.split(".", 1)[1]
-            if search_lower in name:
+            if search_norm in self._normalize_name(name):
                 return entity_id
 
-            # Friendly name Match
-            friendly = state.get("attributes", {}).get("friendly_name", "").lower()
-            if search.lower() in friendly:
+            # Friendly name Match (normalisiert)
+            friendly = state.get("attributes", {}).get("friendly_name", "")
+            if friendly and search_norm in self._normalize_name(friendly):
                 return entity_id
 
         return None

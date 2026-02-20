@@ -872,6 +872,17 @@ class AssistantBrain:
                 else:
                     response_text = self.personality.get_varied_confirmation(success=True)
 
+            # Fehlerbehandlung auch wenn LLM optimistischen Text generiert hat
+            # (LLM sagt "Erledigt" aber Aktion ist fehlgeschlagen)
+            if executed_actions and response_text:
+                failed_msgs = [
+                    a["result"].get("message", "")
+                    for a in executed_actions
+                    if isinstance(a["result"], dict) and not a["result"].get("success", True)
+                ]
+                if failed_msgs:
+                    response_text = "Problem: " + ", ".join(m for m in failed_msgs if m)
+
         # Phase 12: Response-Filter (Post-Processing) — Floskeln entfernen
         response_text = self._filter_response(response_text)
 
