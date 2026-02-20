@@ -24,8 +24,12 @@ logger = logging.getLogger(__name__)
 
 KEY_MANUAL_ACTIONS = "mha:learning:manual_actions"
 KEY_PATTERNS = "mha:learning:patterns"
+KEY_WEEKDAY_PATTERNS = "mha:learning:weekday_patterns"
 KEY_SUGGESTED = "mha:learning:suggested"
+KEY_RESPONSES = "mha:learning:responses"
 JARVIS_ACTION_KEY = "mha:learning:jarvis_action"  # Marker fuer Jarvis-Aktionen
+
+WEEKDAY_NAMES_DE = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"]
 
 
 class LearningObserver:
@@ -102,6 +106,9 @@ class LearningObserver:
 
             # Pattern-Check: Wurde diese Aktion schon oefter zur gleichen Zeit gemacht?
             await self._check_pattern(action_key, time_slot, entity_id, new_state)
+
+            # Wochentag-spezifischer Pattern-Check
+            await self._check_weekday_pattern(action_key, time_slot, weekday, entity_id, new_state)
         except Exception as e:
             logger.debug("Learning Observer state_change Fehler: %s", e)
 
@@ -149,3 +156,133 @@ class LearningObserver:
                     "time_slot": time_slot,
                     "count": count,
                 })
+
+    async def _check_weekday_pattern(self, action_key: str, time_slot: str,
+                                     weekday: int, entity_id: str, new_state: str):
+        """Prueft Wochentag-spezifische Muster (z.B. nur Werktags)."""
+        pattern_key = f"{KEY_WEEKDAY_PATTERNS}:{action_key}:{time_slot}:{weekday}"
+
+        count = await self.redis.incr(pattern_key)
+        if count == 1:
+            await self.redis.expire(pattern_key, 60 * 86400)  # 60 Tage TTL
+
+        # Erst ab 3 Wiederholungen am gleichen Wochentag
+        if count < self.min_repetitions:
+            return
+
+        # Taeglich schon vorgeschlagen? Dann Wochentag-Vorschlag ueberspringen
+        daily_suggested = await self.redis.get(f"{KEY_SUGGESTED}:{action_key}:{time_slot}")
+        if daily_suggested:
+            return
+
+        suggested_key = f"{KEY_SUGGESTED}:weekday:{action_key}:{time_slot}:{weekday}"
+        if await self.redis.get(suggested_key):
+            return
+
+        await self.redis.setex(suggested_key, 14 * 86400, "1")  # 14 Tage Cooldown
+
+        friendly = entity_id.split(".", 1)[1].replace("_", " ").title()
+        action_de = "eingeschaltet" if new_state == "on" else "ausgeschaltet" if new_state == "off" else new_state
+        day_name = WEEKDAY_NAMES_DE[weekday]
+
+        message = (
+            f"Sir, Sie schalten {friendly} jeden {day_name} "
+            f"um {time_slot} Uhr {action_de}. "
+            f"Soll ich das fuer {day_name}s automatisieren?"
+        )
+
+        logger.info("Learning: Wochentag-Muster erkannt - %s am %s um %s (%dx)",
+                     action_key, day_name, time_slot, count)
+
+        if self._notify_callback:
+            await self._notify_callback({
+                "message": message,
+                "type": "learning_suggestion",
+                "entity_id": entity_id,
+                "new_state": new_state,
+                "time_slot": time_slot,
+                "weekday": weekday,
+                "weekday_name": day_name,
+                "count": count,
+            })
+
+    async def handle_response(self, entity_id: str, time_slot: str,
+                              accepted: bool, weekday: int = -1) -> str:
+        """Verarbeitet die Benutzer-Antwort auf einen Automatisierungs-Vorschlag.
+
+        Args:
+            entity_id: Die Entity die automatisiert werden soll
+            time_slot: Der Zeitslot (z.B. "22:00")
+            accepted: Ob der Vorschlag akzeptiert wurde
+            weekday: Wochentag (-1 = taeglich)
+
+        Returns:
+            Antwort-Text fuer den Benutzer
+        """
+        if not self.redis:
+            return "Fehler: Redis nicht verfuegbar."
+
+        response = {
+            "entity_id": entity_id,
+            "time_slot": time_slot,
+            "weekday": weekday,
+            "accepted": accepted,
+            "timestamp": datetime.now().isoformat(),
+        }
+        await self.redis.lpush(KEY_RESPONSES, json.dumps(response))
+        await self.redis.ltrim(KEY_RESPONSES, 0, 49)
+
+        if not accepted:
+            logger.info("Learning: Vorschlag abgelehnt fuer %s um %s", entity_id, time_slot)
+            return "Verstanden, Sir. Ich werde das nicht automatisieren."
+
+        logger.info("Learning: Vorschlag akzeptiert fuer %s um %s (Wochentag: %d)",
+                     entity_id, time_slot, weekday)
+
+        return (
+            f"Sehr gut, Sir. Ich habe die Automatisierung vorgemerkt. "
+            f"Die Self-Automation wird {entity_id.split('.', 1)[1].replace('_', ' ').title()} "
+            f"ab jetzt automatisch um {time_slot} Uhr schalten."
+        )
+
+    async def get_learned_patterns(self) -> list[dict]:
+        """Gibt alle erkannten Muster zurueck (fuer Status/Debug).
+
+        Returns:
+            Liste von Muster-Dicts mit entity, time_slot, count, weekday
+        """
+        if not self.redis:
+            return []
+
+        patterns = []
+
+        # Tages-Muster lesen
+        cursor = 0
+        while True:
+            cursor, keys = await self.redis.scan(
+                cursor, match=f"{KEY_PATTERNS}:*", count=50
+            )
+            for key in keys:
+                key_str = key.decode() if isinstance(key, bytes) else key
+                count = await self.redis.get(key)
+                if count:
+                    count_val = int(count)
+                    if count_val >= 2:  # Ab 2 Wiederholungen anzeigen
+                        # Parse: mha:learning:patterns:entity:state:timeslot
+                        parts = key_str.replace(f"{KEY_PATTERNS}:", "").rsplit(":", 1)
+                        if len(parts) == 2:
+                            action, time_slot = parts
+                            entity_state = action.rsplit(":", 1)
+                            patterns.append({
+                                "action": action,
+                                "entity": entity_state[0] if len(entity_state) > 1 else action,
+                                "time_slot": time_slot,
+                                "count": count_val,
+                                "weekday": -1,
+                            })
+            if cursor == 0:
+                break
+
+        # Nach Count sortieren (haeufigste zuerst)
+        patterns.sort(key=lambda p: p["count"], reverse=True)
+        return patterns[:20]  # Max 20

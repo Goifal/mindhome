@@ -69,8 +69,8 @@ class ConnectionManager:
         })
         try:
             await websocket.send_text(message)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("send_personal fehlgeschlagen: %s", e)
 
 
 # Globale Instanz
@@ -113,6 +113,24 @@ async def emit_sound(sound_event: str, volume: float = 0.5):
         "sound": sound_event,
         "volume": volume,
     })
+
+
+async def emit_stream_start():
+    """Signalisiert: Streaming-Antwort beginnt."""
+    await ws_manager.broadcast("assistant.stream_start", {"status": "streaming"})
+
+
+async def emit_stream_token(token: str):
+    """Sendet ein einzelnes Token der Streaming-Antwort."""
+    await ws_manager.broadcast("assistant.stream_token", {"token": token})
+
+
+async def emit_stream_end(full_text: str, tts_data: dict = None):
+    """Signalisiert: Streaming-Antwort komplett."""
+    data = {"text": full_text}
+    if tts_data:
+        data["tts"] = tts_data
+    await ws_manager.broadcast("assistant.stream_end", data)
 
 
 async def emit_proactive(

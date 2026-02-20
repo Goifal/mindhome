@@ -234,15 +234,20 @@ class SpeakerRecognition:
                     "method": "voice_features",
                 }
 
-        # 5. Letzter bekannter Sprecher (Cache)
+        # 5. Letzter bekannter Sprecher (Cache) — mit Time-Decay
         if self._last_speaker and self._last_speaker in self._profiles:
             profile = self._profiles[self._last_speaker]
-            return {
+            # Cache-Confidence sinkt mit der Zeit (max 1h nuetzlich)
+            age_minutes = (time.time() - profile.last_identified) / 60 if profile.last_identified else 60
+            cache_confidence = max(0.2, 0.5 - age_minutes / 120)
+            result = {
                 "person": profile.name,
-                "confidence": 0.4,
-                "fallback": True,
+                "confidence": round(cache_confidence, 2),
+                "fallback": cache_confidence < self.min_confidence,
                 "method": "cache",
             }
+            await self.log_identification(self._last_speaker, "cache", cache_confidence)
+            return result
 
         return {
             "person": None,
@@ -300,15 +305,22 @@ class SpeakerRecognition:
         return None
 
     def _match_voice_features(self, audio_metadata: dict) -> Optional[dict]:
-        """Vergleicht Audio-Features mit gespeicherten Profilen."""
+        """Vergleicht Audio-Features mit gespeicherten Profilen.
+
+        Beruecksichtigt WPM, Dauer, Lautstaerke und Time-Decay
+        (kuerzlich identifizierte Profile werden bevorzugt).
+        """
         wpm = audio_metadata.get("wpm", 0)
         duration = audio_metadata.get("duration", 0)
+        volume = audio_metadata.get("volume", 0)
 
-        if not wpm and not duration:
+        if not wpm and not duration and not volume:
             return None
 
         best_match = None
         best_score = 0.0
+
+        now = time.time()
 
         for pid, profile in self._profiles.items():
             if profile.sample_count < 3:
@@ -331,18 +343,34 @@ class SpeakerRecognition:
                 score += dur_score
                 factors += 1
 
+            # Lautstaerke-Aehnlichkeit
+            if volume > 0 and profile.avg_volume > 0:
+                vol_diff = abs(volume - profile.avg_volume) / max(profile.avg_volume, 0.01)
+                vol_score = max(0, 1.0 - vol_diff)
+                score += vol_score
+                factors += 1
+
             if factors > 0:
                 avg_score = score / factors
                 # Sample-Count Bonus (mehr Samples = zuverlaessiger)
                 sample_bonus = min(0.1, profile.sample_count * 0.01)
-                final_score = avg_score * 0.7 + sample_bonus
+
+                # Time-Decay Bonus: Kuerzlich identifizierte Profile bevorzugen
+                # Profile die in den letzten 10 Min aktiv waren bekommen Bonus
+                recency_bonus = 0.0
+                if profile.last_identified > 0:
+                    minutes_ago = (now - profile.last_identified) / 60
+                    if minutes_ago < 10:
+                        recency_bonus = 0.05 * (1.0 - minutes_ago / 10)
+
+                final_score = avg_score * 0.7 + sample_bonus + recency_bonus
 
                 if final_score > best_score:
                     best_score = final_score
                     best_match = {
                         "person_id": pid,
                         "name": profile.name,
-                        "confidence": round(final_score, 2),
+                        "confidence": round(min(1.0, final_score), 2),
                     }
 
         return best_match
@@ -528,6 +556,32 @@ class SpeakerRecognition:
 
         logger.info("Voice-Embedding gespeichert: %s (%d Dim.)", person_id, len(embedding))
         return True
+
+    async def log_identification(self, person_id: str, method: str, confidence: float):
+        """Speichert eine Identifikation in der History (fuer Debugging/Analyse)."""
+        if not self.redis:
+            return
+        try:
+            import json as _json
+            entry = _json.dumps({
+                "person": person_id, "method": method,
+                "confidence": confidence, "time": time.time(),
+            })
+            await self.redis.lpush(SPEAKER_HISTORY_KEY, entry)
+            await self.redis.ltrim(SPEAKER_HISTORY_KEY, 0, 99)  # Max 100 Eintraege
+        except Exception:
+            pass
+
+    async def get_identification_history(self, limit: int = 20) -> list[dict]:
+        """Gibt die letzten Identifikationen zurueck."""
+        if not self.redis:
+            return []
+        try:
+            import json as _json
+            entries = await self.redis.lrange(SPEAKER_HISTORY_KEY, 0, limit - 1)
+            return [_json.loads(e) for e in entries]
+        except Exception:
+            return []
 
     def health_status(self) -> str:
         """Gibt den Status zurueck."""

@@ -323,8 +323,8 @@ class TimerManager:
             return
         try:
             await self.redis.hdel(KEY_TIMERS, timer_id)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Timer Redis-Cleanup fehlgeschlagen: %s", e)
 
     async def _restore_timers(self):
         """Stellt Timer aus Redis nach Neustart wieder her."""

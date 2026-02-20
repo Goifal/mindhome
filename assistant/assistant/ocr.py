@@ -79,9 +79,15 @@ def extract_text_from_image(
         gray = ImageEnhance.Contrast(gray).enhance(1.5)
         gray = gray.filter(ImageFilter.SHARPEN)
 
-        # Run Tesseract (PSM 3 = fully automatic page segmentation)
+        # Adaptive PSM: Erst PSM 3, bei wenig Ergebnis PSM 6 (einheitlicher Block)
         text = pytesseract.image_to_string(gray, lang=languages, config="--psm 3")
         text = text.strip()
+
+        if len(text) < 10:
+            text_psm6 = pytesseract.image_to_string(gray, lang=languages, config="--psm 6")
+            text_psm6 = text_psm6.strip()
+            if len(text_psm6) > len(text):
+                text = text_psm6
 
         if not text or len(text) < 3:
             return None
@@ -94,6 +100,89 @@ def extract_text_from_image(
 
     except Exception as e:
         logger.warning("OCR fehlgeschlagen fuer %s: %s", image_path.name, e)
+        return None
+
+
+def extract_text_with_confidence(
+    image_path: Path,
+    languages: str = "deu+eng",
+    min_confidence: int = 40,
+) -> Optional[dict]:
+    """
+    Extrahiert Text mit Confidence-Werten pro Wort.
+
+    Args:
+        image_path: Pfad zum Bild
+        languages: Tesseract Sprachcodes
+        min_confidence: Minimaler Confidence-Wert (0-100) fuer ein Wort
+
+    Returns:
+        Dict mit text, avg_confidence, word_count, low_confidence_words
+        oder None
+    """
+    if not _check_tesseract():
+        return None
+
+    try:
+        import pytesseract
+        from PIL import Image, ImageEnhance, ImageFilter
+
+        img = Image.open(image_path)
+        if img.mode not in ("RGB", "L"):
+            img = img.convert("RGB")
+
+        min_dimension = 1000
+        if min(img.size) < min_dimension:
+            scale = min_dimension / min(img.size)
+            new_size = (int(img.size[0] * scale), int(img.size[1] * scale))
+            img = img.resize(new_size, Image.LANCZOS)
+
+        gray = img.convert("L")
+        gray = ImageEnhance.Contrast(gray).enhance(1.5)
+        gray = gray.filter(ImageFilter.SHARPEN)
+
+        # Tesseract data output mit Confidence pro Wort
+        data = pytesseract.image_to_data(
+            gray, lang=languages, config="--psm 3",
+            output_type=pytesseract.Output.DICT,
+        )
+
+        words = []
+        confidences = []
+        low_conf_words = []
+
+        for i, text in enumerate(data.get("text", [])):
+            text = text.strip()
+            if not text:
+                continue
+            conf = int(data["conf"][i])
+            if conf < 0:
+                continue  # Tesseract gibt -1 fuer leere Felder
+
+            words.append(text)
+            confidences.append(conf)
+
+            if conf < min_confidence:
+                low_conf_words.append({"word": text, "confidence": conf})
+
+        if not words:
+            return None
+
+        full_text = " ".join(words)
+        avg_confidence = sum(confidences) / len(confidences) if confidences else 0
+
+        if len(full_text) > MAX_OCR_CHARS:
+            full_text = full_text[:MAX_OCR_CHARS] + " ..."
+
+        return {
+            "text": full_text,
+            "avg_confidence": round(avg_confidence, 1),
+            "word_count": len(words),
+            "low_confidence_words": low_conf_words[:10],  # Max 10
+        }
+
+    except Exception as e:
+        logger.warning("OCR Confidence-Analyse fehlgeschlagen: %s", e)
         return None
 
 
@@ -280,22 +369,33 @@ class OCREngine:
         Komplette Bild-Analyse: OCR + Vision-LLM.
 
         Returns:
-            Dict mit ocr_text, description, has_text
+            Dict mit ocr_text, description, has_text, ocr_confidence
         """
-        result = {"ocr_text": None, "description": None, "has_text": False}
+        result = {
+            "ocr_text": None, "description": None,
+            "has_text": False, "ocr_confidence": None,
+        }
 
         if not self.enabled:
             return result
 
-        # 1. Tesseract OCR
+        # 1. Tesseract OCR (mit Confidence wenn moeglich)
         from .file_handler import get_file_path
 
         image_path = get_file_path(file_info.get("unique_name", ""))
         if image_path:
-            ocr_text = self.extract_text(image_path)
-            if ocr_text:
-                result["ocr_text"] = ocr_text
+            # Erst Confidence-Version versuchen
+            conf_result = extract_text_with_confidence(image_path, self.languages)
+            if conf_result:
+                result["ocr_text"] = conf_result["text"]
                 result["has_text"] = True
+                result["ocr_confidence"] = conf_result["avg_confidence"]
+            else:
+                # Fallback auf einfache Version
+                ocr_text = self.extract_text(image_path)
+                if ocr_text:
+                    result["ocr_text"] = ocr_text
+                    result["has_text"] = True
 
         # 2. Vision-LLM (if available)
         description = await self.describe_image(file_info, user_context)

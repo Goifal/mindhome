@@ -817,6 +817,90 @@ _ASSISTANT_TOOLS_STATIC = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_security_score",
+            "description": "Zeigt den aktuellen Sicherheits-Score des Hauses (0-100). Prueft offene Tueren, Fenster, Schloesser, Rauchmelder und Wassersensoren. Nutze dies wenn der User nach Sicherheit, Haus-Status oder offenen Tueren/Fenstern fragt.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_room_climate",
+            "description": "Zeigt Raumklima-Daten: CO2, Luftfeuchtigkeit, Temperatur und Gesundheitsbewertung. Nutze dies wenn der User nach Raumklima, Luftqualitaet oder Raumgesundheit fragt.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_active_intents",
+            "description": "Zeigt alle gemerkten Vorhaben und Termine die aus Gespraechen erkannt wurden. Z.B. 'Eltern kommen am Wochenende'. Nutze dies wenn der User nach anstehenden Plaenen oder 'was steht an?' fragt.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_wellness_status",
+            "description": "Zeigt den Wellness-Status des Users: PC-Nutzungsdauer, Stress-Level, letzte Mahlzeit, Hydration. Nutze dies wenn der User fragt wie es ihm geht, ob er eine Pause braucht oder nach seinem Wohlbefinden fragt.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_device_health",
+            "description": "Zeigt den Geraete-Gesundheitsstatus: Anomalien, inaktive Sensoren, HVAC-Effizienz. Nutze dies wenn der User nach Hardware-Problemen, Geraete-Status oder Sensor-Zustand fragt.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_learned_patterns",
+            "description": "Zeigt erkannte Verhaltensmuster: Welche manuellen Aktionen der User regelmaessig wiederholt. Z.B. 'Jeden Abend Licht aus um 22:30'. Nutze dies wenn der User fragt was Jarvis gelernt hat oder welche Muster erkannt wurden.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "describe_doorbell",
+            "description": "Beschreibt wer oder was gerade vor der Haustuer steht (via Tuerkamera). Nutze dies wenn der User fragt 'Wer ist an der Tuer?', 'Wer hat geklingelt?' oder 'Was ist vor der Tuer?'.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+            },
+        },
+    },
 ]
 
 
@@ -2224,3 +2308,146 @@ class FunctionExecutor:
         import assistant.main as main_module
         brain = main_module.brain
         return await brain.web_search.search(query=args.get("query", ""))
+
+    async def _exec_get_security_score(self, args: dict) -> dict:
+        """Gibt den aktuellen Sicherheits-Score zurueck."""
+        import assistant.main as main_module
+        brain = main_module.brain
+        try:
+            result = await brain.threat_assessment.get_security_score()
+            details = result.get("details", [])
+            return {
+                "success": True,
+                "score": result["score"],
+                "level": result["level"],
+                "details": ", ".join(details) if details else "Alles in Ordnung",
+            }
+        except Exception as e:
+            return {"success": False, "message": f"Sicherheits-Check fehlgeschlagen: {e}"}
+
+    async def _exec_get_room_climate(self, args: dict) -> dict:
+        """Gibt Raumklima-Daten zurueck."""
+        import assistant.main as main_module
+        brain = main_module.brain
+        try:
+            result = await brain.health_monitor.get_status()
+            return {"success": True, **result}
+        except Exception as e:
+            return {"success": False, "message": f"Raumklima-Check fehlgeschlagen: {e}"}
+
+    async def _exec_get_active_intents(self, args: dict) -> dict:
+        """Gibt aktive Vorhaben/Intents zurueck."""
+        import assistant.main as main_module
+        brain = main_module.brain
+        try:
+            intents = await brain.intent_tracker.get_active_intents()
+            if not intents:
+                return {"success": True, "message": "Keine anstehenden Vorhaben gemerkt.", "intents": []}
+            summaries = []
+            for intent in intents:
+                summaries.append({
+                    "intent": intent.get("intent", ""),
+                    "deadline": intent.get("deadline", ""),
+                    "person": intent.get("person", ""),
+                    "reminder": intent.get("reminder_text", ""),
+                })
+            return {"success": True, "count": len(summaries), "intents": summaries}
+        except Exception as e:
+            return {"success": False, "message": f"Intent-Abfrage fehlgeschlagen: {e}"}
+
+    async def _exec_get_wellness_status(self, args: dict) -> dict:
+        """Gibt den Wellness-Status des Users zurueck."""
+        import assistant.main as main_module
+        brain = main_module.brain
+        try:
+            status = {}
+
+            # Mood/Stress
+            mood_data = brain.mood.get_current_mood()
+            status["mood"] = mood_data.get("mood", "neutral")
+            status["stress_level"] = mood_data.get("stress_level", 0.0)
+
+            # PC-Nutzungsdauer aus Redis
+            if brain.memory.redis:
+                pc_start = await brain.memory.redis.get("mha:wellness:pc_start")
+                if pc_start:
+                    from datetime import datetime
+                    try:
+                        start_dt = datetime.fromisoformat(pc_start)
+                        minutes = (datetime.now() - start_dt).total_seconds() / 60
+                        status["pc_minutes"] = round(minutes)
+                    except (ValueError, TypeError):
+                        pass
+
+                last_hydration = await brain.memory.redis.get("mha:wellness:last_hydration")
+                if last_hydration:
+                    status["last_hydration"] = last_hydration
+
+            # Aktivitaet
+            try:
+                detection = await brain.activity.detect_activity()
+                status["activity"] = detection.get("activity", "unknown")
+            except Exception:
+                pass
+
+            return {"success": True, "message": str(status), **status}
+        except Exception as e:
+            return {"success": False, "message": f"Wellness-Check fehlgeschlagen: {e}"}
+
+    async def _exec_get_device_health(self, args: dict) -> dict:
+        """Gibt den Geraete-Gesundheitsstatus zurueck."""
+        import assistant.main as main_module
+        brain = main_module.brain
+        try:
+            status = await brain.device_health.get_status()
+            # Aktuelle Anomalien pruefen
+            alerts = await brain.device_health.check_all()
+            alert_msgs = [a.get("message", "") for a in alerts[:5]] if alerts else []
+            return {
+                "success": True,
+                "message": f"{len(alerts)} Anomalie(n)" if alerts else "Alle Geraete normal",
+                "alerts": alert_msgs,
+                **status,
+            }
+        except Exception as e:
+            return {"success": False, "message": f"Geraete-Check fehlgeschlagen: {e}"}
+
+    async def _exec_get_learned_patterns(self, args: dict) -> dict:
+        """Gibt erkannte Verhaltensmuster zurueck."""
+        import assistant.main as main_module
+        brain = main_module.brain
+        try:
+            patterns = await brain.learning_observer.get_learned_patterns()
+            if not patterns:
+                return {"success": True, "message": "Noch keine Muster erkannt.", "patterns": []}
+            summaries = []
+            for p in patterns:
+                summaries.append({
+                    "action": p.get("action", ""),
+                    "time": p.get("time_slot", ""),
+                    "count": p.get("count", 0),
+                    "weekday": p.get("weekday", -1),
+                })
+            return {
+                "success": True,
+                "count": len(summaries),
+                "message": f"{len(summaries)} Muster erkannt",
+                "patterns": summaries,
+            }
+        except Exception as e:
+            return {"success": False, "message": f"Muster-Abfrage fehlgeschlagen: {e}"}
+
+    async def _exec_describe_doorbell(self, args: dict) -> dict:
+        """Beschreibt was die Tuerkamera zeigt."""
+        import assistant.main as main_module
+        brain = main_module.brain
+        try:
+            description = await brain.camera_manager.describe_doorbell()
+            if description:
+                return {"success": True, "message": description}
+            return {
+                "success": False,
+                "message": "Tuerkamera nicht verfuegbar oder kein Bild erhalten.",
+            }
+        except Exception as e:
+            return {"success": False, "message": f"Tuerkamera-Abfrage fehlgeschlagen: {e}"}

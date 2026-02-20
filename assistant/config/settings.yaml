@@ -1,1026 +1,657 @@
-# ============================================================
-# MindHome Assistant - Hauptkonfiguration
-# ============================================================
-
 assistant:
-  # Name des Assistenten - so stellt er sich vor und so reagiert er
-  # Aendere diesen Namen zu was du willst (z.B. "Jarvis", "Alfred", "Nova")
-  name: "Jarvis"
-  version: "1.4.1"
-  language: "de"
-
-# --- Boot-Sequenz ---
-# Jarvis kuendigt sich beim Start gesprochenen an
+  name: Jarvis
+  version: 1.4.1
+  language: de
 boot_sequence:
   enabled: true
-  delay_seconds: 5  # Warten bis WebSocket-Clients verbunden sind
+  delay_seconds: 5
   messages:
-    - "Alle Systeme online, Sir."
-    - "Systeme hochgefahren, Sir. Alles bereit."
-    - "Online, Sir. Soll ich den Status durchgehen?"
-
-# --- Pushback ---
-# Jarvis warnt VOR riskanten Aktionen (gesteuert ueber pushback_level in opinion_rules.yaml)
+  - Alle Systeme online, Sir.
+  - Systeme hochgefahren, Sir. Alles bereit.
+  - Online, Sir. Soll ich den Status durchgehen?
 pushback:
   enabled: true
-  confirmation_timeout: 120  # Sekunden bis eine Pushback-Level-2-Bestaetigung verfaellt
-
-# --- Wellness ---
-# Jarvis kuemmert sich um den Benutzer (PC-Pause, Stress, Mahlzeiten, Nachtarbeit)
+  confirmation_timeout: 120
 wellness:
   enabled: true
   check_interval_minutes: 15
-  pc_break_reminder_minutes: 120  # Pause-Erinnerung nach X Minuten am PC
+  pc_break_reminder_minutes: 120
   stress_check: true
   meal_reminders: true
   meal_times:
     lunch: 13
     dinner: 19
   late_night_nudge: true
-
-# --- Ambient Presence ---
-# Jarvis ist eine Praesenz im Raum — gelegentliches Status-Fluestern
 ambient_presence:
-  enabled: false  # Opt-in — nicht jeder will das
+  enabled: false
   interval_minutes: 60
   quiet_start: 22
   quiet_end: 7
   report_weather: true
   report_energy: true
-  all_quiet_probability: 0.2  # 20% Chance fuer "Alles ruhig, Sir." wenn nichts zu berichten
-
-# --- Predictive Foresight ---
-# Jarvis fusioniert Kalender + Wetter + Gewohnheiten zu Vorhersagen
+  all_quiet_probability: 0.2
 foresight:
   enabled: true
-  calendar_lookahead_minutes: 60  # Wie weit voraus Kalender-Termine pruefen
+  calendar_lookahead_minutes: 60
   weather_alerts: true
-  departure_warning_minutes: 45  # Ab wann "Los, Sir." bei Terminen
-
-# --- Haushalt & Personen ---
-# Wird ueber die Einstellungsseite (Tab "Personen") verwaltet
+  departure_warning_minutes: 45
 household:
-  # Dein Name — so kennt dich der Assistent
-  primary_user: ""
-  # Familienmitglieder / Mitbewohner
-  # role: owner (Hausherr/in), member (Mitbewohner/in), guest (Gast)
+  primary_user: ''
   members: []
-  # Beispiel:
-  # members:
-  #   - name: "Lisa"
-  #     role: "owner"
-  #   - name: "Thomas"
-  #     role: "member"
-
-# --- Personen und Anrede ---
-# HINWEIS: Wird automatisch aus household-Sektion generiert.
-# Manuelle Eintraege hier werden von der UI ueberschrieben.
 persons:
-  titles:
-
-# --- Autonomie-Level ---
-# 1 = Assistent (nur auf Befehle reagieren)
-# 2 = Butler (+ proaktive Infos)
-# 3 = Mitbewohner (+ kleine Aenderungen selbst)
-# 4 = Vertrauter (+ Routinen anpassen)
-# 5 = Autopilot (+ Automationen erstellen)
+  titles: null
 autonomy:
   level: 2
-
-# --- Modell-Routing (3 Stufen) ---
 models:
-  fast: "qwen3:4b"        # Einfache Befehle (Licht, Musik, Szene)
-  smart: "qwen3:14b"      # Fragen, Konversation, Standard
-  deep: "qwen3:32b"       # Komplexe Planung, Analyse, Reasoning
-
-  # Modelle aktivieren/deaktivieren (alle installiert, aber einzeln schaltbar)
+  fast: qwen3:4b
+  smart: qwen3:14b
+  deep: qwen3:32b
   enabled:
     fast: true
     smart: true
     deep: true
-
-  # Keywords die das schnelle Modell triggern
   fast_keywords:
-    - "licht"
-    - "lampe"
-    - "temperatur"
-    - "heizung"
-    - "rollladen"
-    - "jalousie"
-    - "szene"
-    - "alarm"
-    - "tuer"
-    - "gute nacht"
-    - "guten morgen"
-    - "musik"
-    - "pause"
-    - "stopp"
-    - "stop"
-    - "leiser"
-    - "lauter"
-    - "an"
-    - "aus"
-
-  # Keywords die das Deep-Modell triggern (komplexe Anfragen)
+  - licht
+  - lampe
+  - temperatur
+  - heizung
+  - rollladen
+  - jalousie
+  - szene
+  - alarm
+  - tuer
+  - gute nacht
+  - guten morgen
+  - musik
+  - pause
+  - stopp
+  - stop
+  - leiser
+  - lauter
+  - an
+  - aus
   deep_keywords:
-    - "erklaer"
-    - "erklaere"
-    - "warum genau"
-    - "im detail"
-    - "analysiere"
-    - "analyse"
-    - "vergleich"
-    - "vergleiche"
-    - "unterschied zwischen"
-    - "vor- und nachteile"
-    - "strategie"
-    - "plan"
-    - "plane"
-    - "planung"
-    - "optimier"
-    - "optimiere"
-    - "optimierung"
-    - "was waere wenn"
-    - "hypothetisch"
-    - "stell dir vor"
-    - "angenommen"
-    - "zusammenfassung"
-    - "zusammenfassen"
-    - "fasse zusammen"
-    - "berechne"
-    - "berechnung"
-    - "wie funktioniert"
-    - "wie genau"
-    - "schreib mir"
-    - "schreibe mir"
-    - "formuliere"
-    - "rezept"
-    - "anleitung"
-    - "tutorial"
-    - "pro und contra"
-    - "bewerte"
-    - "bewertung"
-
-  # Koch-Keywords (triggern Deep-Model oder Koch-Assistent)
+  - erklaer
+  - erklaere
+  - warum genau
+  - im detail
+  - analysiere
+  - analyse
+  - vergleich
+  - vergleiche
+  - unterschied zwischen
+  - vor- und nachteile
+  - strategie
+  - plan
+  - plane
+  - planung
+  - optimier
+  - optimiere
+  - optimierung
+  - was waere wenn
+  - hypothetisch
+  - stell dir vor
+  - angenommen
+  - zusammenfassung
+  - zusammenfassen
+  - fasse zusammen
+  - berechne
+  - berechnung
+  - wie funktioniert
+  - wie genau
+  - schreib mir
+  - schreibe mir
+  - formuliere
+  - rezept
+  - anleitung
+  - tutorial
+  - pro und contra
+  - bewerte
+  - bewertung
   cooking_keywords:
-    - "kochen"
-    - "backen"
-    - "rezept"
-    - "zubereiten"
-    - "braten"
-    - "grillen"
-
-  # Ab wie vielen Woertern automatisch Deep-Model nutzen
+  - kochen
+  - backen
+  - rezept
+  - zubereiten
+  - braten
+  - grillen
   deep_min_words: 15
-
-  # LLM Optionen
   options:
     temperature: 0.7
     max_tokens: 256
-
-# --- Persoenlichkeit ---
 personality:
-  style: "butler"  # butler, minimal, freundlich
-
-  # Phase 6: Sarkasmus-Level (1-5)
-  # 1 = sachlich, 2 = gelegentlich trocken, 3 = Standard Butler,
-  # 4 = haeufig sarkastisch, 5 = Vollgas Ironie
+  style: butler
   sarcasm_level: 3
-
-  # Phase 6: Meinungs-Intensitaet (0-3)
-  # 0 = still (keine Kommentare zu Aktionen), 1 = selten,
-  # 2 = gelegentlich, 3 = redselig
   opinion_intensity: 2
-
-  # Phase 6: Selbstironie
   self_irony_enabled: true
   self_irony_max_per_day: 3
-
-  # Phase 6: Charakter-Entwicklung ueber Zeit
-  # Formality sinkt graduell -> Jarvis wird persoenlicher
   character_evolution: true
-  formality_start: 80       # Startwert (0-100, hoch = formell)
-  formality_min: 30          # Minimum (nie unter diesen Wert)
-  formality_decay_per_day: 0.5  # Wie viel pro Tag aktiver Nutzung sinkt
-
+  formality_start: 80
+  formality_min: 30
+  formality_decay_per_day: 0.5
   time_layers:
-    early_morning:  # 05:00-08:00
-      style: "ruhig, minimal, kein Humor. Kurzes Briefing wenn gefragt."
+    early_morning:
+      style: ruhig, minimal, kein Humor. Kurzes Briefing wenn gefragt.
       max_sentences: 1
-    morning:  # 08:00-12:00
-      style: "sachlich, effizient. Gelegentlich trocken. Produktiv-Modus."
+    morning:
+      style: sachlich, effizient. Gelegentlich trocken. Produktiv-Modus.
       max_sentences: 2
-    afternoon:  # 12:00-18:00
-      style: "normal, souveraen. Trockener Humor erlaubt."
+    afternoon:
+      style: normal, souveraen. Trockener Humor erlaubt.
       max_sentences: 2
-    evening:  # 18:00-22:00
-      style: "entspannter, mehr Humor. Darf spitze Bemerkungen machen."
+    evening:
+      style: entspannter, mehr Humor. Darf spitze Bemerkungen machen.
       max_sentences: 3
-    night:  # 22:00-05:00
-      style: "nur Notfaelle, absolute Stille. Fluestern wenn ueberhaupt."
+    night:
+      style: nur Notfaelle, absolute Stille. Fluestern wenn ueberhaupt.
       max_sentences: 1
-
-# --- Proaktive Meldungen ---
 proactive:
   enabled: true
-  cooldown_seconds: 300  # Minimum 5 Minuten zwischen Meldungen
-  # Musik-Follow Cooldown (Minuten) bei Raumwechsel
+  cooldown_seconds: 300
   music_follow_cooldown_minutes: 5
-  # Minimales Autonomie-Level fuer proaktive Meldungen
   min_autonomy_level: 2
-  # Wann NICHT melden (ausser Critical)
   silence_scenes:
-    - "filmabend"
-    - "kino"
-    - "schlafen"
-    - "meditation"
-  # Phase 15.4: Notification Batching (LOW-Meldungen sammeln)
+  - filmabend
+  - kino
+  - schlafen
+  - meditation
   batching:
     enabled: true
-    interval_minutes: 30       # Alle 30 Min. zusammengefasst senden
-    max_items: 10              # Max. Items pro Batch (bei Ueberlauf sofort senden)
-
-# --- Semantisches Gedaechtnis (Phase 2) ---
+    interval_minutes: 30
+    max_items: 10
 memory:
-  # Fakten-Extraktion nach Gespraechen
   extraction_enabled: true
-  # Minimale Wortanzahl fuer Extraktion
   extraction_min_words: 5
-  # Modell fuer Fakten-Extraktion (schnelles reicht)
-  extraction_model: "qwen3:4b"
-  # Temperatur fuer Fakten-Extraktion
+  extraction_model: qwen3:4b
   extraction_temperature: 0.1
-  # Max Tokens fuer Fakten-Extraktion
   extraction_max_tokens: 512
-  # Maximale Fakten pro Person im Kontext
   max_person_facts_in_context: 5
-  # Maximale relevante Fakten im Kontext
   max_relevant_facts_in_context: 3
-  # Minimale Confidence fuer Kontext-Einblendung
   min_confidence_for_context: 0.6
-  # Duplikat-Schwelle (0.0 = exakt gleich, 1.0 = komplett anders)
   duplicate_threshold: 0.15
-  # Minimale Woerter um eine Episode zu speichern
   episode_min_words: 3
-  # Default-Confidence fuer extrahierte Fakten
   default_confidence: 0.7
-
-# --- Action Planner (Phase 4) ---
 planner:
-  # Maximale Iterationen (LLM-Runden) pro Plan
   max_iterations: 5
-  # Modell fuer Planung (immer smart)
-  model: "qwen3:14b"
-  # Max Tokens fuer Planungs-Antwort
+  model: qwen3:14b
   max_tokens: 512
-  # Keywords die komplexe Anfragen erkennen
   complex_keywords:
-    - "alles"
-    - "fertig machen"
-    - "vorbereiten"
-    - "gehe weg"
-    - "fahre weg"
-    - "verreise"
-    - "urlaub"
-    - "routine"
-    - "morgenroutine"
-    - "abendroutine"
-    - "wenn ich"
-    - "falls ich"
-    - "bevor ich"
-    - "zuerst"
-    - "danach"
-    - "und dann"
-    - "ausserdem"
-    - "komplett"
-    - "ueberall"
-    - "in allen"
-    - "party"
-    - "besuch kommt"
-    - "gaeste"
-
-# --- Mood Detector (Phase 3) ---
+  - alles
+  - fertig machen
+  - vorbereiten
+  - gehe weg
+  - fahre weg
+  - verreise
+  - urlaub
+  - routine
+  - morgenroutine
+  - abendroutine
+  - wenn ich
+  - falls ich
+  - bevor ich
+  - zuerst
+  - danach
+  - und dann
+  - ausserdem
+  - komplett
+  - ueberall
+  - in allen
+  - party
+  - besuch kommt
+  - gaeste
 mood:
-  # Sekunden zwischen Befehlen = "schnelle Befehle" (Stress-Signal)
   rapid_command_seconds: 5
-  # Wie schnell Stress abklingt (in Sekunden fuer vollen Abbau)
   stress_decay_seconds: 300
-  # Ab wie vielen negativen Signalen = "frustriert"
   frustration_threshold: 3
-  # Ab welcher Uhrzeit gilt "spaet" (muede-Erkennung)
   tired_hour_start: 23
   tired_hour_end: 5
-  # Stress-Boost Werte (wie stark einzelne Signale wirken)
   rapid_command_stress_boost: 0.15
   positive_stress_reduction: 0.1
   negative_stress_boost: 0.1
   impatient_stress_boost: 0.2
   tired_boost: 0.3
   repetition_stress_boost: 0.15
-  # Keywords fuer Stimmungserkennung (koennen angepasst werden)
   positive_keywords:
-    - "danke"
-    - "super"
-    - "toll"
-    - "perfekt"
-    - "gut"
-    - "prima"
-    - "klasse"
-    - "wunderbar"
-    - "genau"
-    - "richtig"
+  - danke
+  - super
+  - toll
+  - perfekt
+  - gut
+  - prima
+  - klasse
+  - wunderbar
+  - genau
+  - richtig
   negative_keywords:
-    - "schlecht"
-    - "falsch"
-    - "nein"
-    - "nicht"
-    - "fehler"
-    - "mist"
-    - "nervig"
-    - "geht nicht"
-    - "kaputt"
-    - "problem"
+  - schlecht
+  - falsch
+  - nein
+  - nicht
+  - fehler
+  - mist
+  - nervig
+  - geht nicht
+  - kaputt
+  - problem
   impatient_keywords:
-    - "schnell"
-    - "sofort"
-    - "jetzt"
-    - "beeil"
-    - "hurry"
-    - "komm"
-    - "mach schon"
-    - "endlich"
-    - "wann"
-    - "noch nicht"
+  - schnell
+  - sofort
+  - jetzt
+  - beeil
+  - hurry
+  - komm
+  - mach schon
+  - endlich
+  - wann
+  - noch nicht
   tired_keywords:
-    - "muede"
-    - "erschoepft"
-    - "kaputt"
-    - "fertig"
-    - "schlafen"
-    - "bett"
-    - "gaehn"
-    - "nacht"
-
-# --- Activity Engine + Silence Matrix (Phase 6) ---
+  - muede
+  - erschoepft
+  - kaputt
+  - fertig
+  - schlafen
+  - bett
+  - gaehn
+  - nacht
 activity:
-  # Entity-IDs (an deine Installation anpassen)
   entities:
     media_players:
-      - "media_player.wohnzimmer"
-      - "media_player.fernseher"
-      - "media_player.tv"
+    - media_player.wohnzimmer
+    - media_player.fernseher
+    - media_player.tv
     mic_sensors:
-      - "binary_sensor.mic_active"
-      - "binary_sensor.microphone"
+    - binary_sensor.mic_active
+    - binary_sensor.microphone
     bed_sensors:
-      - "binary_sensor.bed_occupancy"
-      - "binary_sensor.bett"
+    - binary_sensor.bed_occupancy
+    - binary_sensor.bett
     pc_sensors:
-      - "binary_sensor.pc_active"
-      - "binary_sensor.computer"
-      - "switch.pc"
-
-  # Schwellwerte fuer Erkennung
+    - binary_sensor.pc_active
+    - binary_sensor.computer
+    - switch.pc
   thresholds:
-    night_start: 22        # Ab wann gilt "Nacht"
-    night_end: 7           # Bis wann gilt "Nacht"
-    guest_person_count: 2  # Ab wie vielen Personen = "Gaeste"
-    focus_min_minutes: 30  # Wie lange PC aktiv fuer "fokussiert"
-
-# --- Feedback Loop (Phase 5) ---
+    night_start: 22
+    night_end: 7
+    guest_person_count: 2
+    focus_min_minutes: 30
 feedback:
-  # Auto-Timeout: Sekunden ohne Reaktion = "ignored"
   auto_timeout_seconds: 120
-  # Basis-Cooldown in Sekunden (wird adaptiv angepasst)
   base_cooldown_seconds: 300
-  # Score-Grenzen fuer Entscheidungen
-  score_suppress: 0.15    # Darunter: nicht mehr senden
-  score_reduce: 0.30      # Darunter: laengerer Cooldown
-  score_normal: 0.50      # Normaler Cooldown
-  score_boost: 0.70       # Darueber: kuerzerer Cooldown
-
-# --- Daily Summarizer + Langzeitgedaechtnis (Phase 7) ---
+  score_suppress: 0.15
+  score_reduce: 0.3
+  score_normal: 0.5
+  score_boost: 0.7
 summarizer:
-  # Wann laeuft der naechtliche Summary-Job
   run_hour: 3
   run_minute: 0
-  # Modell fuer Zusammenfassungen (smart fuer bessere Qualitaet)
-  model: "qwen3:14b"
-  # Maximale Token pro Zusammenfassung
+  model: qwen3:14b
   max_tokens_daily: 512
   max_tokens_weekly: 384
   max_tokens_monthly: 512
-
-# --- Context Builder ---
 context:
-  # Wie viele letzte Gespraeche im Working Memory
   recent_conversations: 5
-  # Timeout fuer API-Calls in Sekunden
   api_timeout: 5
-
-# --- Heizung ---
 heating:
-  # Heizungsmodus: "room_thermostat" oder "heating_curve"
-  #   room_thermostat: Einzelraumregelung mit climate.* Entities pro Raum
-  #   heating_curve:   Feste Heizkurve, nur Vorlauftemperatur-Offset steuerbar
-  mode: "room_thermostat"
-
-  # --- Nur fuer heating_curve Modus: ---
-  # Entity-ID der Heizung (z.B. climate.panasonic_heat_pump_main_z1_temp)
-  curve_entity: ""
-  # Erlaubter Offset-Bereich zur Heizkurve (in Grad Celsius)
+  mode: room_thermostat
+  curve_entity: ''
   curve_offset_min: -5
   curve_offset_max: 5
-  # Nacht-Absenkung als Offset (Gute-Nacht-Routine)
   night_offset: -2
-  # Abwesenheits-Absenkung als Offset
   away_offset: -3
-
-# --- Sicherheit ---
 security:
-  # API Key Pruefung: Schuetzt /api/assistant/* Endpoints
-  # Der Key wird automatisch generiert. Pruefung erst aktivieren
-  # NACHDEM der Key in Addon + HA-Integration eingetragen wurde.
   api_key_required: false
-
-  # Aktionen die Bestaetigung brauchen
   require_confirmation:
-    - "lock_door:unlock"
-    - "set_alarm:disarm"
-    - "set_climate:off"
-
-  # Temperatur-Grenzen (nur fuer room_thermostat Modus)
+  - lock_door:unlock
+  - set_alarm:disarm
+  - set_climate:off
   climate_limits:
     min: 15
     max: 28
-
-# --- Phase 7: Routinen & Tagesstruktur ---
+  api_key: 20oAkoVG0fvIw_hegYx5MwyHjYbwJzqelMkGugp2QJ0
 routines:
   morning_briefing:
     enabled: true
-    # Trigger: Erste Bewegung nach Nacht-Modus
-    trigger: "first_motion_after_night"
-    # Welche Bausteine im Briefing (Reihenfolge zählt)
+    trigger: first_motion_after_night
     modules:
-      - greeting      # Kontextuelle Begruassung
-      - weather       # Wetter-Vorhersage
-      - calendar      # Naechste Termine
-      - energy        # Energie-Hinweise (Solar, Strompreis)
-      - house_status  # Fenster, Lichter, Temperatur
-    weekday_style: "kurz"        # Wochentags: 2-3 Saetze
-    weekend_style: "ausfuehrlich" # Wochenende: mehr Details
-    # Begleit-Aktionen beim Morning Briefing
+    - greeting
+    - weather
+    - calendar
+    - energy
+    - house_status
+    weekday_style: kurz
+    weekend_style: ausfuehrlich
     morning_actions:
-      covers_up: true      # Rolladen hoch
-      lights_soft: true    # Licht sanft an (30%)
-
+      covers_up: true
+      lights_soft: true
   good_night:
     enabled: true
-    # Trigger-Phrasen (werden in brain.py als Intent erkannt)
     triggers:
-      - "gute nacht"
-      - "ich gehe schlafen"
-      - "schlaf gut"
-      - "ab ins bett"
-      - "gehe ins bett"
-      - "feierabend"
-    # Sicherheits-Checks vor dem Herunterfahren
+    - gute nacht
+    - ich gehe schlafen
+    - schlaf gut
+    - ab ins bett
+    - gehe ins bett
+    - feierabend
     checks:
-      - windows     # Offene Fenster melden
-      - doors       # Offene Tueren melden
-      - alarm       # Alarm-Status pruefen
-      - lights      # Welche Lichter noch an
-      - appliances  # Herd, Buegeleisen etc.
-    # Aktionen beim Herunterfahren
+    - windows
+    - doors
+    - alarm
+    - lights
+    - appliances
     actions:
-      lights_off: true        # Alle Lichter aus
-      heating_night: true     # Heizung Nacht-Modus
-      covers_down: true       # Rolladen runter
-      alarm_arm_home: true    # Alarm scharf (Home)
-
-  # Gaeste-Modus
+      lights_off: true
+      heating_night: true
+      covers_down: true
+      alarm_arm_home: true
   guest_mode:
-    # Trigger-Phrasen
     triggers:
-      - "ich habe besuch"
-      - "ich hab besuch"
-      - "gaeste kommen"
-      - "besuch kommt"
-      - "wir haben gaeste"
-    # Was eingeschraenkt wird
+    - ich habe besuch
+    - ich hab besuch
+    - gaeste kommen
+    - besuch kommt
+    - wir haben gaeste
     restrictions:
-      hide_personal_info: true    # Keine persoenlichen Infos
-      formal_tone: true            # Formeller Ton
-      restrict_security: true      # Kein Alarm/Schloss-Zugriff
-      suggest_guest_wifi: true     # Gaeste-WLAN vorschlagen
-
-# --- Phase 6: Zeitgefuehl ---
+      hide_personal_info: true
+      formal_tone: true
+      restrict_security: true
+      suggest_guest_wifi: true
 time_awareness:
   enabled: true
   check_interval_minutes: 5
-  # Schwellen in Minuten: Ab wann wird gemeldet
   thresholds:
-    oven: 60                  # Ofen laeuft > 60 Min
-    iron: 30                  # Buegeleisen laeuft > 30 Min
-    light_empty_room: 30      # Licht in leerem Raum > 30 Min
-    window_open_cold: 120     # Fenster offen bei <10°C > 2h
-    pc_no_break: 360          # 6h PC ohne Pause
-  # Tages-Zaehler fuer Geraete
+    oven: 60
+    iron: 30
+    light_empty_room: 30
+    window_open_cold: 120
+    pc_no_break: 360
   counters:
-    coffee_machine: true      # "Das ist dein dritter Kaffee"
-
-# --- Phase 8: Gedaechtnis & Vorausdenken ---
+    coffee_machine: true
 anticipation:
   enabled: true
-  # Wie viele Tage History fuer Pattern-Erkennung
   history_days: 30
-  # Minimale Confidence fuer Vorschlaege
   min_confidence: 0.6
-  # Check-Intervall in Minuten
   check_interval_minutes: 15
-  # Confidence-Schwellen fuer Aktionen
   thresholds:
-    ask: 0.6         # "Soll ich...?"
-    suggest: 0.8     # "Ich bereite vor?"
-    auto: 0.95       # Automatisch + informieren (nur Level >= 4)
-
+    ask: 0.6
+    suggest: 0.8
+    auto: 0.95
 intent_tracking:
   enabled: true
-  # Wie oft auf faellige Intents pruefen (Minuten)
   check_interval_minutes: 60
-  # Wie viele Stunden vor Deadline erinnern
   remind_hours_before: 12
-
 conversation_continuity:
   enabled: true
-  # Nach wie vielen Minuten Pause das Thema anbieten
   resume_after_minutes: 10
-  # Nach wie vielen Stunden verfaellt ein offenes Thema
   expire_hours: 24
-
-# Phase 7.9: Saisonale Rolladen-Automatik
 seasonal_actions:
   enabled: true
   check_interval_minutes: 30
-  # Ab welchem Autonomie-Level automatisch ausfuehren (sonst nur vorschlagen)
   auto_execute_level: 3
-
-# --- Phase 9: Stimme & Akustik ---
 tts:
-  # SSML Enhancement: Natuerlichere Sprachausgabe
   ssml_enabled: true
-  # Sprechgeschwindigkeit-Anpassung pro Nachrichtentyp
   speed:
-    confirmation: 105     # Bestaetigung: etwas schneller (%)
-    warning: 85           # Warnung: langsamer
-    briefing: 95          # Briefing: etwas langsamer
-    greeting: 100         # Begruessung: normal
-    question: 100         # Frage: normal
-    casual: 100           # Normal: Standard
-  # Pausen in Millisekunden
+    confirmation: 105
+    warning: 85
+    briefing: 95
+    greeting: 100
+    question: 100
+    casual: 100
   pauses:
-    before_important: 300   # Pause vor wichtigen Infos
-    between_sentences: 200  # Pause zwischen Saetzen
-    after_greeting: 400     # Pause nach Begruessung
-  # Fluestermodus: "Psst" oder "Leise" → aktiviert bis Widerruf
+    before_important: 300
+    between_sentences: 200
+    after_greeting: 400
   whisper_triggers:
-    - "psst"
-    - "leise"
-    - "fluester"
-    - "whisper"
+  - psst
+  - leise
+  - fluester
+  - whisper
   whisper_cancel_triggers:
-    - "normal"
-    - "laut"
-    - "normale lautstaerke"
-
-# Volume-Steuerung pro Aktivitaet (0.0 - 1.0)
+  - normal
+  - laut
+  - normale lautstaerke
 volume:
-  day: 0.8                # Tag normal
-  evening: 0.5            # Abend (>22:00)
-  night: 0.3              # Nacht (>0:00)
-  sleeping: 0.2           # Jemand schlaeft
-  emergency: 1.0          # Notfall immer laut
-  whisper: 0.15           # Fluestermodus
-  # Schwellen fuer Tageszeit-basierte Lautstaerke
+  day: 0.8
+  evening: 0.5
+  night: 0.3
+  sleeping: 0.2
+  emergency: 1.0
+  whisper: 0.15
   evening_start: 22
   night_start: 0
   morning_start: 7
-
-# Sound Design: Akustische Identitaet
 sounds:
   enabled: true
-  # Event-Sounds (werden via HA Media Player abgespielt)
   events:
-    listening: "listening_chime"    # Jarvis hoert zu
-    confirmed: "confirm_ping"       # Befehl bestaetigt
-    warning: "warning_tone"         # Warnung
-    alarm: "alarm_urgent"           # Alarm/Notfall
-    doorbell: "doorbell_soft"       # Tuerklingel
-    greeting: "greeting_chime"      # Begruessung
-    error: "error_tone"             # Fehler
-    goodnight: "goodnight_tone"     # Gute Nacht
-  # Sounds bei Nacht leiser
+    listening: listening_chime
+    confirmed: confirm_ping
+    warning: warning_tone
+    alarm: alarm_urgent
+    doorbell: doorbell_soft
+    greeting: greeting_chime
+    error: error_tone
+    goodnight: goodnight_tone
   night_volume_factor: 0.4
-
-# Narration Mode: Fliessende Uebergaenge bei Szenen
 narration:
   enabled: true
-  # Standard-Transition-Dauer in Sekunden
   default_transition: 3
-  # Szenen-spezifische Transitions
   scene_transitions:
-    filmabend: 5          # Langsam dimmen
-    gute_nacht: 7         # Sehr langsam
-    aufwachen: 10         # Sanft aufhellen
-    gemuetlich: 4         # Mittel
-  # Pause zwischen Narration-Schritten in Sekunden
+    filmabend: 5
+    gute_nacht: 7
+    aufwachen: 10
+    gemuetlich: 4
   step_delay: 1.5
-  # Jarvis beschreibt was er tut
   narrate_actions: true
-
-# Voice Analysis: Stimmungserkennung per Sprache
 voice_analysis:
   enabled: true
-  # Sprechgeschwindigkeit-Schwellen (Woerter pro Minute)
-  wpm_fast: 180           # Darueber = gestresst
-  wpm_slow: 80            # Darunter = muede
-  wpm_normal: 130         # Standard
-  # Voice-Metadata-Quellen
+  wpm_fast: 180
+  wpm_slow: 80
+  wpm_normal: 130
   use_whisper_metadata: true
-  # Gewichtung: Voice vs Text (0.0 = nur Text, 1.0 = nur Voice)
   voice_weight: 0.3
-
-# Speaker Recognition: Personen-Erkennung per Stimme
 speaker_recognition:
-  enabled: false           # Standardmaessig aus (braucht GPU)
-  # Minimale Confidence fuer Erkennung (0.0 - 1.0)
+  enabled: false
   min_confidence: 0.7
-  # Enrollment: Mindest-Sprachdauer in Sekunden
   enrollment_duration: 30
-  # Fallback wenn nicht erkannt
-  fallback_ask: true       # "Wer spricht?"
-  # Maximale gespeicherte Voice-Prints
+  fallback_ask: true
   max_profiles: 10
-
-# ============================================================
-# Phase 10: Multi-Room & Kommunikation
-# ============================================================
-
-# --- Multi-Room Presence (10.1) ---
 multi_room:
   enabled: true
-  # Wie lange gilt eine Raum-Praesenz nach letzter Bewegung (Minuten)
   presence_timeout_minutes: 15
-  # Speaker pro Raum (an deine Installation anpassen)
-  room_speakers:
-    # wohnzimmer: "media_player.wohnzimmer_speaker"
-    # schlafzimmer: "media_player.schlafzimmer_speaker"
-    # kueche: "media_player.kueche_speaker"
-    # buero: "media_player.buero_speaker"
-  # Bewegungsmelder pro Raum
-  room_motion_sensors:
-    # wohnzimmer: "binary_sensor.wohnzimmer_motion"
-    # schlafzimmer: "binary_sensor.schlafzimmer_motion"
-    # kueche: "binary_sensor.kueche_motion"
-
-# --- Personen-Profile (10.2) ---
+  room_speakers: null
+  room_motion_sensors: null
 person_profiles:
-  profiles:
-    # max:
-    #   notify_service: "notify.max_phone"
-    #   preferred_room: "buero"
-    # lisa:
-    #   notify_service: "notify.lisa_phone"
-    #   preferred_room: "schlafzimmer"
-
-# --- Vertrauensstufen (10.3) ---
+  profiles: null
 trust_levels:
-  # Standard-Trust fuer unbekannte Personen
-  default: 0  # 0=Gast, 1=Mitbewohner, 2=Owner
-  # Trust-Level pro Person
-  persons:
-    # max: 2     # Owner — voller Zugriff
-    # lisa: 1    # Mitbewohner — alles ausser Sicherheit
-  # Aktionen die Gaeste ausfuehren duerfen
+  default: 0
+  persons: null
   guest_allowed_actions:
-    - set_light
-    - set_climate
-    - play_media
-    - get_entity_state
-    - play_sound
-  # Sicherheits-Aktionen (nur Owner)
+  - set_light
+  - set_climate
+  - play_media
+  - get_entity_state
+  - play_sound
   security_actions:
-    - lock_door
-    - set_alarm
-    - set_presence_mode
-
-# --- Diagnostik (10.4) ---
+  - lock_door
+  - set_alarm
+  - set_presence_mode
 diagnostics:
   enabled: true
-  # Pruef-Intervall in Minuten
   check_interval_minutes: 30
-  # Ab wann Battery-Warnung (Prozent)
   battery_warning_threshold: 20
-  # Ab wann ein Sensor als "stale" gilt (Minuten ohne Update)
   stale_sensor_minutes: 120
-  # Ab wann Entity als "offline" gilt (Minuten "unavailable")
   offline_threshold_minutes: 30
-  # Cooldown zwischen gleichen Warnungen (Minuten)
   alert_cooldown_minutes: 60
-
-# --- Phase 11: Koch-Assistent ---
 cooking:
   enabled: true
-  # Sprache fuer Rezepte
-  language: "de"
-  # Standard-Portionen wenn nicht angegeben
+  language: de
   default_portions: 2
-  # Maximale Schritte pro Rezept
   max_steps: 12
-  # Maximale Tokens fuer Rezept-Generierung
   max_tokens: 1024
-  # Timer-Benachrichtigung via TTS
   timer_notify_tts: true
-
-# --- Phase 11.1: Wissensdatenbank (RAG) ---
 knowledge_base:
   enabled: true
-  # Automatisch alle Dateien in config/knowledge/ einlesen beim Start
   auto_ingest: true
-  # Chunk-Groesse in Zeichen (kleinere Chunks = praezisere Suche)
   chunk_size: 500
-  # Ueberlappung zwischen Chunks in Zeichen
   chunk_overlap: 50
-  # Maximale Distanz fuer Treffer (kleiner = strenger)
   max_distance: 1.2
-  # Wie viele RAG-Treffer im Kontext einbinden
   search_limit: 3
-  # Unterstuetzte Datei-Endungen
   supported_extensions:
-    - ".txt"
-    - ".md"
-    - ".yaml"
-    - ".yml"
-    - ".csv"
-    - ".log"
-
-# --- Phase 12: Response-Filter (Post-Processing) ---
-# Entfernt LLM-Floskeln und typische Chatbot-Muster aus Antworten.
-# Sicherheitsnetz: Faengt alles ab was der Prompt nicht verhindert.
+  - .txt
+  - .md
+  - .yaml
+  - .yml
+  - .csv
+  - .log
 response_filter:
   enabled: true
-  # Phrasen die komplett entfernt werden (case-insensitive)
   banned_phrases:
-    - "Natürlich!"
-    - "Natuerlich!"
-    - "Gerne!"
-    - "Selbstverständlich!"
-    - "Selbstverstaendlich!"
-    - "Klar!"
-    - "Gern geschehen!"
-    - "Kann ich sonst noch etwas für dich tun?"
-    - "Kann ich sonst noch etwas fuer dich tun?"
-    - "Kann ich dir sonst noch helfen?"
-    - "Wenn du noch etwas brauchst"
-    - "Sag einfach Bescheid"
-    - "Ich bin froh, dass"
-    - "Es freut mich"
-    - "Es ist mir eine Freude"
-    - "Als KI"
-    - "Als künstliche Intelligenz"
-    - "Als kuenstliche Intelligenz"
-    - "Ich bin nur ein Programm"
-    - "Lass mich mal schauen"
-    - "Lass mich kurz schauen"
-    - "Das klingt frustrierend"
-    - "Ich verstehe, wie du dich fühlst"
-    - "Ich verstehe, wie du dich fuehlst"
-    - "Das klingt wirklich"
-  # Fuellwoerter am Satzanfang entfernen
+  - Natürlich!
+  - Natuerlich!
+  - Gerne!
+  - Selbstverständlich!
+  - Selbstverstaendlich!
+  - Klar!
+  - Gern geschehen!
+  - Kann ich sonst noch etwas für dich tun?
+  - Kann ich sonst noch etwas fuer dich tun?
+  - Kann ich dir sonst noch helfen?
+  - Wenn du noch etwas brauchst
+  - Sag einfach Bescheid
+  - Ich bin froh, dass
+  - Es freut mich
+  - Es ist mir eine Freude
+  - Als KI
+  - Als künstliche Intelligenz
+  - Als kuenstliche Intelligenz
+  - Ich bin nur ein Programm
+  - Lass mich mal schauen
+  - Lass mich kurz schauen
+  - Das klingt frustrierend
+  - Ich verstehe, wie du dich fühlst
+  - Ich verstehe, wie du dich fuehlst
+  - Das klingt wirklich
   banned_starters:
-    - "Also,"
-    - "Also "
-    - "Grundsätzlich"
-    - "Grundsaetzlich"
-    - "Im Prinzip"
-    - "Nun,"
-    - "Nun "
-    - "Sozusagen"
-    - "Quasi"
-    - "Eigentlich"
-    - "Im Grunde genommen"
-    - "Tatsächlich,"
-    - "Tatsaechlich,"
-  # 0 = kein Limit (nur Tageszeit-Max aus Personality gilt)
+  - Also,
+  - 'Also '
+  - Grundsätzlich
+  - Grundsaetzlich
+  - Im Prinzip
+  - Nun,
+  - 'Nun '
+  - Sozusagen
+  - Quasi
+  - Eigentlich
+  - Im Grunde genommen
+  - Tatsächlich,
+  - Tatsaechlich,
   max_response_sentences: 0
-
-# --- Korrektur-Lernen ---
 correction:
-  # Confidence fuer korrigierte Fakten (User hat korrigiert = sicher)
   confidence: 0.95
-  # Modell fuer Korrektur-Extraktion (schnelles reicht)
-  model: "qwen3:4b"
-  # Temperatur fuer Korrektur-Extraktion
+  model: qwen3:4b
   temperature: 0.1
-
-# --- Jarvis Dashboard (Web-UI) ---
-# Beim ersten Aufruf wird ein PIN + Recovery-Key gesetzt.
-# Alternativ: JARVIS_UI_PIN Umgebungsvariable (ueberschreibt gespeicherten PIN)
 dashboard:
   setup_complete: false
-
-# --- Tutorial-Modus (16.2) ---
 tutorial:
   enabled: true
-  # Anzahl Interaktionen mit Tutorial-Tipps pro Person
   max_interactions: 10
-
-# --- Gesundheits-Monitor (15.1) ---
 health_monitor:
   enabled: true
   check_interval_minutes: 10
-  # CO2-Schwellwerte (ppm)
   co2_warn: 1000
   co2_critical: 1500
-  # Luftfeuchtigkeit (%)
   humidity_low: 30
   humidity_high: 70
-  # Raumtemperatur (°C)
   temp_low: 16
   temp_high: 27
-  # Trink-Erinnerung
   hydration_interval_hours: 2
   hydration_start_hour: 8
   hydration_end_hour: 22
-  # Cooldown (Minuten) bevor gleicher Alert erneut kommt
   alert_cooldown_minutes: 60
-
-# --- Phase 15.3: Geraete-Beziehung (Anomalie-Erkennung) ---
 device_health:
   enabled: true
-  # Pruef-Intervall in Minuten (60 = stuendlich)
   check_interval_minutes: 60
-  # Tage fuer Baseline-Berechnung (Rolling Average)
   baseline_history_days: 30
-  # Anomalie-Schwelle: Alert bei > X Standardabweichungen
   stddev_multiplier: 2.0
-  # Mindestanzahl Samples bevor Anomalie-Erkennung startet
   min_samples: 10
-  # Tage ohne Aenderung bevor Stale-Sensor-Warnung
   stale_sensor_days: 3
-  # Minuten bis HVAC-Ineffizienz-Warnung (Zieltemp nicht erreicht)
   hvac_timeout_minutes: 120
-  # Toleranz in °C fuer HVAC-Zieltemperatur
   hvac_temp_tolerance: 1.0
-  # Cooldown (Minuten) bevor gleicher Alert erneut kommt
   alert_cooldown_minutes: 1440
-  # Welche HA-Domains ueberwacht werden
   track_domains:
-    - sensor
-    - climate
-    - binary_sensor
-  # Entity-Patterns die ignoriert werden
+  - sensor
+  - climate
+  - binary_sensor
   exclude_patterns:
-    - weather.
-    - sun.
-    - automation.
-    - update.
-  # Keywords fuer Energie-Sensoren (spezielle Meldung)
+  - weather.
+  - sun.
+  - automation.
+  - update.
   energy_sensor_keywords:
-    - energy
-    - power
-    - verbrauch
-    - strom
-
-# --- Phase 14.2: OCR & Bild-Analyse (Multi-Modal Input) ---
+  - energy
+  - power
+  - verbrauch
+  - strom
 ocr:
   enabled: true
-  # Tesseract Sprachen (installierte Pakete: tesseract-ocr-deu, tesseract-ocr-eng)
-  languages: "deu+eng"
-  # Vision-LLM Modell fuer Bild-Beschreibungen (leer = deaktiviert)
-  # Unterstuetzte Modelle: llava, llava-llama3, moondream, bakllava, minicpm-v
-  # Muss ueber "ollama pull <modell>" installiert werden
-  vision_model: ""
-  # Maximale Bildgroesse fuer Vision-LLM (MB)
+  languages: deu+eng
+  vision_model: ''
   max_image_size_mb: 20
-  # Maximale Token-Laenge der Bild-Beschreibung
   description_max_tokens: 512
-
-# --- Phase 14.3: Ambient Audio (Umgebungsgeraeusch-Erkennung) ---
 ambient_audio:
   enabled: true
-  # Minimale Confidence fuer Erkennung (0.0-1.0)
   min_confidence: 0.6
-  # Sensor-Polling Intervall in Sekunden
   poll_interval_seconds: 5
-  # Sensor-Mappings: HA entity_id -> Event-Typ
-  # Passe diese an deine Installation an (ESPHome, Zigbee-Sensoren etc.)
-  sensor_mappings:
-    # binary_sensor.kueche_smoke: "smoke_alarm"
-    # binary_sensor.wohnzimmer_glass: "glass_break"
-    # binary_sensor.flur_co: "co_alarm"
-    # binary_sensor.eingang_doorbell: "doorbell"
-    # binary_sensor.keller_water: "water_alarm"
-  # Cooldowns: Wie lange nach einem Event kein erneutes Event desselben Typs
+  sensor_mappings: null
   cooldowns:
     default_seconds: 30
     per_event:
-      smoke_alarm: 60       # Rauchmelder: 1 Min Cooldown
-      glass_break: 120      # Glasbruch: 2 Min
-      dog_bark: 10           # Hundegebell: 10 Sek
-      baby_cry: 15           # Baby: 15 Sek
-      doorbell: 5            # Klingel: 5 Sek
-  # Events die deaktiviert sind (z.B. wenn kein Hund/Baby vorhanden)
-  disabled_events:
-    # - dog_bark
-    # - baby_cry
-  # Nachtmodus: Strengere Reaktionen zwischen night_start und night_end
+      smoke_alarm: 60
+      glass_break: 120
+      dog_bark: 10
+      baby_cry: 15
+      doorbell: 5
+  disabled_events: null
   night_mode:
     start_hour: 22
     end_hour: 7
-    # Severity nachts automatisch hochstufen (info->high, high->critical)
     escalate_severity: true
-  # Reaktions-Overrides (ueberschreibt Standard-Reaktionen)
-  reaction_overrides:
-    # Beispiel: Eigene Nachricht fuer Glasbruch
-    # glass_break:
-    #   message_de: "ACHTUNG: Glasbruch in {room}! Kamera pruefen!"
-    #   actions: ["lights_on", "notify_all", "camera_snapshot"]
-
-# --- Phase 16.1: Multi-User Konfliktloesung ---
+  reaction_overrides: null
 conflict_resolution:
   enabled: true
-  # Zeitfenster in Sekunden: Befehle innerhalb dieses Fensters gelten als potenziell konfligierend
   conflict_window_seconds: 300
-  # Maximale gespeicherte Befehle pro Person (Ring-Buffer)
   max_commands_per_person: 20
-  # Trust-Level Prioritaet: Hoeher = Vorrang bei Konflikten
-  # (nutzt trust_levels aus der bestehenden Konfiguration)
   use_trust_priority: true
-  # Mediation: LLM-basierte Kompromissvorschlaege
   mediation:
     enabled: true
-    # Modell fuer Mediations-Vorschlaege (smart fuer gute Qualitaet)
-    model: "qwen3:14b"
+    model: qwen3:14b
     max_tokens: 256
     temperature: 0.7
-  # Konflikt-Domains: Welche Bereiche koennen konfligieren
   conflict_domains:
     climate:
-      # Maximale Differenz bevor es als Konflikt gilt (Grad Celsius)
       threshold: 3
-      # Kompromiss-Strategie: "average", "trust_priority", "mediate"
-      strategy: "average"
+      strategy: average
     light:
-      # Helligkeits-Differenz in Prozent
       threshold: 50
-      strategy: "trust_priority"
+      strategy: trust_priority
     media:
-      # Medien-Konflikte: Immer mediieren
-      strategy: "mediate"
+      strategy: mediate
     cover:
-      # Rolladen: Position-Differenz in Prozent
       threshold: 40
-      strategy: "trust_priority"
-  # Cooldown: Nach Konfliktloesung nicht sofort wieder melden (Sekunden)
+      strategy: trust_priority
   resolution_cooldown_seconds: 120
-
-# --- Wartungs-Assistent (10.5) ---
 maintenance:
   enabled: true
-  # Wartungsaufgaben-Datei
-  config_file: "config/maintenance.yaml"
-
-# --- Phase 13.4: Prompt-Selbstoptimierung ---
-# Jarvis analysiert Interaktionen und schlaegt Anpassungen vor.
-# SICHERHEIT: Nur Vorschlaege — User muss bestaetigen.
-# Kern-Identitaet (CODEX, Response-Filter) ist NICHT aenderbar.
+  config_file: config/maintenance.yaml
 self_optimization:
-  # Master-Schalter: Komplett ein/aus
   enabled: false
-  # Wie oft Jarvis analysiert: "weekly" oder "daily"
-  analysis_interval: "weekly"
-  # Approval-Modus:
-  #   "manual"     = Jarvis schlaegt vor, User muss bestaetigen (Standard, sicherste Option)
-  #   "auto_safe"  = Kleine Aenderungen auto, grosse manuell (Fortgeschritten)
-  #   "off"        = Keine Vorschlaege generieren (wie enabled: false)
-  approval_mode: "manual"
-  # Maximale Vorschlaege pro Analyse-Zyklus
+  analysis_interval: weekly
+  approval_mode: manual
   max_proposals_per_cycle: 3
-  # Modell fuer Analyse (smart empfohlen)
-  model: "qwen3:14b"
-
-  # --- Rollback & Snapshots ---
+  model: qwen3:14b
   rollback:
     enabled: true
-    # Maximale gespeicherte Snapshots (aelteste werden geloescht)
     max_snapshots: 20
-    # Snapshot vor JEDER Config-Aenderung (auch edit_config Phase 13.1)
     snapshot_on_every_edit: true
-
-  # --- Parameter-Grenzen (Sicherheitszaun) ---
-  # Jarvis kann NUR innerhalb dieser Grenzen vorschlagen.
-  # Werte ausserhalb werden abgelehnt.
   parameter_bounds:
     sarcasm_level:
       min: 1
@@ -1037,25 +668,16 @@ self_optimization:
     formality_start:
       min: 30
       max: 100
-
-  # --- Geschuetzte Bereiche (NIEMALS aenderbar durch Selbstoptimierung) ---
-  # Diese Config-Keys sind immutable — kein Vorschlag wird akzeptiert.
   immutable_keys:
-    - "trust_levels"
-    - "security"
-    - "autonomy"
-    - "models"
-    - "dashboard"
-    - "response_filter.banned_phrases"
-    - "response_filter.banned_starters"
-
-# --- Phase 13.2: Self Automation ---
-# Jarvis erstellt HA-Automationen aus natuerlicher Sprache
+  - trust_levels
+  - security
+  - autonomy
+  - models
+  - dashboard
+  - response_filter.banned_phrases
+  - response_filter.banned_starters
 self_automation:
   enabled: true
-  # Maximale Automationen pro Tag (Rate-Limit)
   max_per_day: 5
-  # Modell fuer Automation-Generierung (smart fuer gute Qualitaet)
-  model: "qwen3:14b"
-  # Templates-Datei (vordefinierte Automation-Muster)
-  templates_file: "config/automation_templates.yaml"
+  model: qwen3:14b
+  templates_file: config/automation_templates.yaml

@@ -329,6 +329,7 @@ class AssistantBrain:
             lambda func, args: self.executor.execute(func, args)
         )
         await self.energy_optimizer.initialize(redis_client=self.memory.redis)
+        await self.cooking.initialize(redis_client=self.memory.redis)
         await self.threat_assessment.initialize(redis_client=self.memory.redis)
         await self.learning_observer.initialize(redis_client=self.memory.redis)
         self.learning_observer.set_notify_callback(self._handle_learning_suggestion)
@@ -341,7 +342,7 @@ class AssistantBrain:
         await self.proactive.start()
         logger.info("Jarvis initialisiert (alle Systeme aktiv, inkl. Phase 17)")
 
-    async def process(self, text: str, person: Optional[str] = None, room: Optional[str] = None, files: Optional[list] = None) -> dict:
+    async def process(self, text: str, person: Optional[str] = None, room: Optional[str] = None, files: Optional[list] = None, stream_callback=None) -> dict:
         """
         Verarbeitet eine User-Eingabe.
 
@@ -350,6 +351,7 @@ class AssistantBrain:
             person: Name der Person (optional)
             room: Raum aus dem die Anfrage kommt (optional)
             files: Liste von Datei-Metadaten aus file_handler.save_upload() (optional)
+            stream_callback: Optionaler async callback(token: str) fuer Streaming
 
         Returns:
             Dict mit response, actions, model_used
@@ -642,6 +644,19 @@ class AssistantBrain:
         if timer_hints:
             system_prompt += "\n\nAKTIVE TIMER:\n" + "\n".join(f"- {h}" for h in timer_hints)
 
+        # Phase 17: Security Score im Kontext (nur bei Warnungen)
+        try:
+            sec_score = await self.threat_assessment.get_security_score()
+            if sec_score.get("level") in ("warning", "critical"):
+                details = ", ".join(sec_score.get("details", []))
+                system_prompt += (
+                    f"\n\nSICHERHEITS-STATUS: {sec_score['level'].upper()} "
+                    f"(Score: {sec_score['score']}/100). {details}. "
+                    f"Erwaehne dies bei Gelegenheit."
+                )
+        except Exception as e:
+            logger.debug("Security Score Fehler: %s", e)
+
         # Phase 17: Kontext-Persistenz ueber Raumwechsel
         prev_context = await self._get_cross_room_context(person or "")
         if prev_context:
@@ -765,16 +780,26 @@ class AssistantBrain:
             logger.info("Wissensfrage erkannt -> LLM direkt (Deep: %s, keine Tools)",
                          settings.model_deep)
             model = settings.model_deep
-            response = await self.ollama.chat(
-                messages=messages,
-                model=model,
-            )
-            response_text = self._filter_response(response.get("message", {}).get("content", ""))
-            executed_actions = []
+            if stream_callback:
+                collected_tokens = []
+                async for token in self.ollama.stream_chat(
+                    messages=messages,
+                    model=model,
+                ):
+                    collected_tokens.append(token)
+                    await stream_callback(token)
+                response_text = self._filter_response("".join(collected_tokens))
+            else:
+                response = await self.ollama.chat(
+                    messages=messages,
+                    model=model,
+                )
+                response_text = self._filter_response(response.get("message", {}).get("content", ""))
 
-            if "error" in response:
-                logger.error("LLM Fehler: %s", response["error"])
-                response_text = "Kann ich gerade nicht beantworten. Mein Modell streikt."
+                if "error" in response:
+                    logger.error("LLM Fehler: %s", response["error"])
+                    response_text = "Kann ich gerade nicht beantworten. Mein Modell streikt."
+            executed_actions = []
         elif intent_type == "memory":
             # Phase 8: Erinnerungsfrage -> Memory-Suche + Deep-Model
             logger.info("Erinnerungsfrage erkannt -> Memory-Suche + Deep-Model")
@@ -786,11 +811,21 @@ class AssistantBrain:
                 messages[0] = {"role": "system", "content": system_prompt}
 
             model = settings.model_deep
-            response = await self.ollama.chat(
-                messages=messages,
-                model=model,
-            )
-            response_text = self._filter_response(response.get("message", {}).get("content", ""))
+            if stream_callback:
+                collected_tokens = []
+                async for token in self.ollama.stream_chat(
+                    messages=messages,
+                    model=model,
+                ):
+                    collected_tokens.append(token)
+                    await stream_callback(token)
+                response_text = self._filter_response("".join(collected_tokens))
+            else:
+                response = await self.ollama.chat(
+                    messages=messages,
+                    model=model,
+                )
+                response_text = self._filter_response(response.get("message", {}).get("content", ""))
             executed_actions = []
         else:
             # 6b. Einfache Anfragen: Direkt LLM aufrufen (mit Timeout + Fallback)
@@ -862,7 +897,10 @@ class AssistantBrain:
             QUERY_TOOLS = {"get_entity_state", "send_message_to_person", "get_calendar_events",
                           "create_automation", "list_jarvis_automations",
                           "get_timer_status", "list_conditionals", "get_energy_report",
-                          "web_search", "get_camera_view"}
+                          "web_search", "get_camera_view", "get_security_score",
+                          "get_room_climate", "get_active_intents",
+                          "get_wellness_status", "get_device_health",
+                          "get_learned_patterns", "describe_doorbell"}
             has_query_results = False
 
             if tool_calls:
@@ -1066,16 +1104,32 @@ class AssistantBrain:
                     # Zweiter LLM-Call: Natuerliche Antwort generieren (ohne Tools)
                     logger.debug("Tool-Feedback: %d Results -> LLM fuer natuerliche Antwort",
                                  len(executed_actions))
-                    feedback_response = await self.ollama.chat(
-                        messages=feedback_messages,
-                        model=model,
-                        temperature=0.7,
-                        max_tokens=128,
-                    )
-                    if "error" not in feedback_response:
-                        feedback_text = feedback_response.get("message", {}).get("content", "")
-                        if feedback_text:
-                            response_text = self._filter_response(feedback_text)
+
+                    if stream_callback:
+                        # Streaming: Token-fuer-Token via stream_chat()
+                        collected = []
+                        async for token in self.ollama.stream_chat(
+                            messages=feedback_messages,
+                            model=model,
+                            temperature=0.7,
+                            max_tokens=128,
+                        ):
+                            collected.append(token)
+                            await stream_callback(token)
+                        feedback_text = "".join(collected)
+                    else:
+                        feedback_response = await self.ollama.chat(
+                            messages=feedback_messages,
+                            model=model,
+                            temperature=0.7,
+                            max_tokens=128,
+                        )
+                        feedback_text = ""
+                        if "error" not in feedback_response:
+                            feedback_text = feedback_response.get("message", {}).get("content", "")
+
+                    if feedback_text:
+                        response_text = self._filter_response(feedback_text)
                 except Exception as e:
                     logger.debug("Tool-Feedback fehlgeschlagen: %s", e)
 
@@ -1446,6 +1500,10 @@ class AssistantBrain:
                 "self_automation": self.self_automation.health_status(),
                 "config_versioning": self.config_versioning.health_status(),
                 "self_optimization": self.self_optimization.health_status(),
+                "threat_assessment": "active" if self.threat_assessment.enabled else "disabled",
+                "learning_observer": "active" if self.learning_observer.enabled else "disabled",
+                "energy_optimizer": "active" if self.energy_optimizer.enabled else "disabled",
+                "wellness_advisor": "running" if self.wellness_advisor._running else "stopped",
             },
             "models_available": models,
             "model_routing": self.model_router.get_model_info(),
@@ -2430,6 +2488,12 @@ Regeln:
                 await asyncio.sleep(wait_seconds)
                 logger.info("Fact Decay gestartet (taeglich 04:00)")
                 await self.memory.semantic.apply_decay()
+
+                # Tagesverbrauch speichern (fuer Anomalie-Erkennung & Wochen-Vergleich)
+                try:
+                    await self.energy_optimizer.track_daily_cost()
+                except Exception as e:
+                    logger.debug("Energy daily tracking Fehler: %s", e)
 
             except asyncio.CancelledError:
                 break

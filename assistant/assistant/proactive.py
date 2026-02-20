@@ -290,11 +290,17 @@ class ProactiveManager:
             })
             await self._execute_emergency_protocol("water_leak")
 
-        # Tuerklingel
+        # Tuerklingel — mit Kamera-Beschreibung wenn verfuegbar
         elif "doorbell" in entity_id and new_val == "on":
-            await self._notify("doorbell", MEDIUM, {
-                "entity": entity_id,
-            })
+            camera_desc = None
+            try:
+                camera_desc = await self.brain.camera_manager.describe_doorbell()
+            except Exception as e:
+                logger.debug("Doorbell Kamera-Beschreibung fehlgeschlagen: %s", e)
+            data = {"entity": entity_id}
+            if camera_desc:
+                data["camera_description"] = camera_desc
+            await self._notify("doorbell", MEDIUM, data)
 
         # Person tracker (Phase 7: erweitert mit Abschied + Abwesenheits-Summary)
         elif entity_id.startswith("person."):
@@ -948,6 +954,21 @@ Beispiele:
             parts.append("Beispiel: 'Nebenbei, Sir: [Aufgabe] koennte mal erledigt werden.'")
             return "\n".join(parts)
 
+        # Tuerklingel — mit optionaler Kamera-Beschreibung
+        if event_type == "doorbell":
+            camera_desc = data.get("camera_description")
+            if camera_desc:
+                return (
+                    f"Tuerklingel. Kamera zeigt: {camera_desc}\n"
+                    "Beschreibe kurz wer/was vor der Tuer ist. Max 1-2 Saetze. Butler-Stil.\n"
+                    "Beispiel: 'Paketbote an der Tuer, Sir. Sieht nach DHL aus.'"
+                )
+            return (
+                "Tuerklingel.\n"
+                "Melde kurz dass jemand geklingelt hat. Max 1 Satz. Butler-Stil.\n"
+                "Beispiel: 'Jemand an der Tuer, Sir.'"
+            )
+
         # Phase 17: Sicherheitswarnung (Threat Assessment)
         if event_type == "threat_detected":
             threat_type = data.get("type", "unbekannt")
@@ -1301,6 +1322,15 @@ Beispiele:
                         "message": threat.get("message", ""),
                         "entity": threat.get("entity", ""),
                     })
+
+                    # Eskalation fuer kritische Bedrohungen
+                    if threat.get("urgency") == "critical":
+                        try:
+                            actions = await self.brain.threat_assessment.escalate_threat(threat)
+                            if actions:
+                                logger.info("Threat Eskalation: %s", ", ".join(actions))
+                        except Exception as esc_err:
+                            logger.warning("Threat Eskalation fehlgeschlagen: %s", esc_err)
             except Exception as e:
                 logger.error("Threat Assessment Fehler: %s", e)
 

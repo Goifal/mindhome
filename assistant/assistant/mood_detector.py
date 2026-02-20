@@ -204,6 +204,16 @@ class MoodDetector:
                 self._tiredness_level = min(1.0, self._tiredness_level + 0.1)
                 signals.append("short_late_message")
 
+        # Sentiment fuer Trend-Analyse aufzeichnen
+        if "positive_language" in signals:
+            self._interaction_sentiments.append("positive")
+        elif "negative_language" in signals or "impatient_language" in signals:
+            self._interaction_sentiments.append("negative")
+        elif "tired_keywords" in signals:
+            self._interaction_sentiments.append("tired")
+        else:
+            self._interaction_sentiments.append("neutral")
+
         # Interaktion aufzeichnen
         self._interaction_times.append(now)
         self._interaction_lengths.append(text_len)
@@ -243,7 +253,13 @@ class MoodDetector:
         }
 
     def _determine_mood(self) -> str:
-        """Bestimmt die Gesamt-Stimmung aus allen Signalen."""
+        """Bestimmt die Gesamt-Stimmung aus allen Signalen.
+
+        Beruecksichtigt:
+        - Aktuelle Werte (Stress, Muedigkeit, Frustration)
+        - Trend ueber die letzten Interaktionen (verschlechtert/verbessert)
+        - Befehlsfrequenz-Analyse (schnelle Befehle = hektisch)
+        """
         # Muedigkeit hat Vorrang wenn sehr hoch
         if self._tiredness_level >= 0.6:
             return MOOD_TIRED
@@ -256,11 +272,56 @@ class MoodDetector:
         if self._stress_level >= 0.5:
             return MOOD_STRESSED
 
+        # Befehlsfrequenz-Check: Viele kurze Befehle in kurzer Zeit = hektisch/gestresst
+        if len(self._interaction_times) >= 5:
+            recent_5 = list(self._interaction_times)[-5:]
+            time_span = recent_5[-1] - recent_5[0]
+            if time_span > 0 and time_span < 60:  # 5 Befehle in unter 1 Min
+                avg_length = sum(list(self._interaction_lengths)[-5:]) / 5
+                if avg_length <= 4:  # Und alle kurz
+                    return MOOD_STRESSED
+
         # Gute Stimmung wenn positive Signale ueberwiegen
         if self._positive_count >= 2 and self._frustration_count == 0:
             return MOOD_GOOD
 
         return MOOD_NEUTRAL
+
+    def get_mood_trend(self) -> str:
+        """Analysiert den Stimmungs-Trend ueber die letzten Interaktionen.
+
+        Returns:
+            'improving' | 'stable' | 'declining' | 'volatile'
+        """
+        sentiments = list(self._interaction_sentiments)
+        if len(sentiments) < 3:
+            return "stable"
+
+        recent = sentiments[-5:]
+
+        # Zaehlungen
+        positive = sum(1 for s in recent if s == "positive")
+        negative = sum(1 for s in recent if s in ("negative", "impatient"))
+        neutral = sum(1 for s in recent if s == "neutral")
+
+        # Trend-Erkennung
+        if len(recent) >= 4:
+            first_half = recent[:len(recent) // 2]
+            second_half = recent[len(recent) // 2:]
+            first_neg = sum(1 for s in first_half if s in ("negative", "impatient"))
+            second_neg = sum(1 for s in second_half if s in ("negative", "impatient"))
+
+            if second_neg > first_neg + 1:
+                return "declining"
+            if first_neg > second_neg + 1:
+                return "improving"
+
+        # Volatile: Staendige Wechsel
+        changes = sum(1 for i in range(1, len(recent)) if recent[i] != recent[i - 1])
+        if changes >= 3:
+            return "volatile"
+
+        return "stable"
 
     def _is_repetition(self, text: str) -> bool:
         """Prueft ob der Text eine Wiederholung ist."""
