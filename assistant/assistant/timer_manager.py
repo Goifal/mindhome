@@ -297,7 +297,11 @@ class TimerManager:
             self._tasks.pop(timer.id, None)
             await self._remove_timer(timer.id)
             # Timer im Dict behalten fuer Status-Abfrage, aber nach 5 Min entfernen
-            asyncio.get_event_loop().call_later(300, lambda: self.timers.pop(timer.id, None))
+            try:
+                loop = asyncio.get_running_loop()
+                loop.call_later(300, lambda tid=timer.id: self.timers.pop(tid, None))
+            except RuntimeError:
+                self.timers.pop(timer.id, None)
 
         except asyncio.CancelledError:
             pass

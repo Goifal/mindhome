@@ -441,11 +441,13 @@ Sobald ich die Details habe, kuemmere ich mich um alles."
 
             response_text = response.get("message", {}).get("content", "")
 
-            # Plan-State speichern fuer Follow-Up
+            # Plan-State speichern fuer Follow-Up (mit Timestamp fuer Auto-Expiry)
+            import time as _time
             self._pending_plans[plan_id] = {
                 "original_request": text,
                 "person": person,
                 "status": "waiting_for_details",
+                "created_at": _time.time(),
                 "messages": [
                     {"role": "user", "content": text},
                     {"role": "assistant", "content": response_text},
@@ -532,12 +534,23 @@ Frage am Ende ob der Plan so umgesetzt werden soll."""},
         """Prueft ob ein Planungs-Dialog laeuft.
 
         Returns:
-            Plan-ID oder None
+            Plan-ID oder None. Expired Plans (>10 Min) werden automatisch entfernt.
         """
+        import time as _time
+        expired = []
+        result = None
         for plan_id, state in self._pending_plans.items():
+            # Auto-Expiry: Plans aelter als 10 Minuten entfernen
+            created = state.get("created_at", 0)
+            if created and (_time.time() - created) > 600:
+                expired.append(plan_id)
+                continue
             if state.get("status") in ("waiting_for_details", "plan_proposed"):
-                return plan_id
-        return None
+                result = plan_id
+        for plan_id in expired:
+            self._pending_plans.pop(plan_id, None)
+            logger.info("Planungs-Dialog %s nach Timeout entfernt", plan_id)
+        return result
 
     def clear_plan(self, plan_id: str):
         """Beendet einen Planungs-Dialog."""

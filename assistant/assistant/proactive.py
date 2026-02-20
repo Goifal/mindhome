@@ -109,6 +109,9 @@ class ProactiveManager:
             "conditional_executed": (MEDIUM, "Bedingte Aktion ausgefuehrt"),
             "learning_suggestion": (LOW, "Automatisierungs-Vorschlag"),
             "threat_detected": (HIGH, "Sicherheitswarnung"),
+            "energy_price_low": (LOW, "Guenstiger Strom"),
+            "energy_price_high": (LOW, "Teurer Strom"),
+            "solar_surplus": (LOW, "Solar-Ueberschuss"),
         }
 
     async def start(self):
@@ -374,6 +377,14 @@ class ProactiveManager:
             result = await self.brain.routines.generate_morning_briefing()
             text = result.get("text", "")
             if text:
+                # Phase 17: Predictive Briefing anhaengen (Wetter-/Energievorschau)
+                try:
+                    predictive = await self.brain.get_predictive_briefing()
+                    if predictive:
+                        text = f"{text}\n{predictive}"
+                except Exception as e:
+                    logger.debug("Predictive Briefing Fehler: %s", e)
+
                 self._mb_triggered_today = True
                 await emit_proactive(text, "morning_briefing", MEDIUM)
                 logger.info("Morning Briefing automatisch geliefert")
@@ -873,6 +884,26 @@ Beispiele:
             parts.append("Beispiel: 'Nebenbei, Sir: [Aufgabe] koennte mal erledigt werden.'")
             return "\n".join(parts)
 
+        # Phase 17: Sicherheitswarnung (Threat Assessment)
+        if event_type == "threat_detected":
+            threat_type = data.get("type", "unbekannt")
+            message = data.get("message", "Sicherheitswarnung")
+            return (
+                f"Sicherheitswarnung ({threat_type}): {message}\n"
+                "Formuliere als dringende, sachliche Warnung. Max 2 Saetze. Butler-Stil.\n"
+                "Beispiel: 'Sir, naechtliche Bewegung im Eingangsbereich. Alle Bewohner sollten schlafen.'"
+            )
+
+        # Phase 17: Bedingte Aktion ausgefuehrt
+        if event_type == "conditional_executed":
+            label = data.get("label", "")
+            action = data.get("action", "")
+            return (
+                f"Bedingte Aktion ausgefuehrt: {label} -> {action}\n"
+                "Formuliere als kurze Info. Max 1 Satz. Butler-Stil.\n"
+                "Beispiel: 'Die Rolladen wurden automatisch geschlossen — Regen erkannt.'"
+            )
+
         parts.append(f"Dringlichkeit: {urgency}")
 
         # Wer ist gerade zuhause?
@@ -1143,10 +1174,11 @@ Beispiele:
     # ------------------------------------------------------------------
 
     async def _run_threat_assessment_loop(self):
-        """Periodischer Sicherheits-Check (Threat Assessment)."""
+        """Periodischer Sicherheits- + Energie-Check."""
         await asyncio.sleep(180)  # 3 Min. warten bis System stabil
 
         while self._running:
+            # Threat Assessment
             try:
                 threats = await self.brain.threat_assessment.assess_threats()
                 for threat in threats:
@@ -1164,6 +1196,18 @@ Beispiele:
                     })
             except Exception as e:
                 logger.error("Threat Assessment Fehler: %s", e)
+
+            # Energy Events pruefen
+            try:
+                if hasattr(self.brain, "energy_optimizer") and self.brain.energy_optimizer.enabled:
+                    energy_alerts = await self.brain.energy_optimizer.check_energy_events()
+                    for alert in energy_alerts:
+                        urgency = LOW  # Energie-Alerts sind immer LOW
+                        await self._notify(alert.get("type", "energy_event"), urgency, {
+                            "message": alert.get("message", ""),
+                        })
+            except Exception as e:
+                logger.debug("Energy Check Fehler: %s", e)
 
             # Alle 5 Minuten pruefen
             await asyncio.sleep(300)

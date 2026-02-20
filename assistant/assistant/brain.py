@@ -886,6 +886,21 @@ class AssistantBrain:
                         "result": result,
                     })
 
+                    # Phase 17: Learning Observer — Jarvis-Aktionen markieren
+                    # damit sie nicht als "manuelle" Aktionen gezaehlt werden
+                    if isinstance(result, dict) and result.get("success"):
+                        entity_id = final_args.get("entity_id", "")
+                        if not entity_id:
+                            # Entity aus Room ableiten (z.B. light.wohnzimmer)
+                            r = final_args.get("room", "")
+                            if r and func_name in ("set_light", "set_cover", "set_climate", "set_switch"):
+                                domain = func_name.replace("set_", "")
+                                entity_id = f"{domain}.{r.lower().replace(' ', '_')}"
+                        if entity_id:
+                            asyncio.create_task(
+                                self.learning_observer.mark_jarvis_action(entity_id)
+                            )
+
                     # Befehl fuer Konflikt-Tracking aufzeichnen
                     if person:
                         self.conflict_resolver.record_command(
@@ -986,13 +1001,20 @@ class AssistantBrain:
             # Fehlerbehandlung auch wenn LLM optimistischen Text generiert hat
             # (LLM sagt "Erledigt" aber Aktion ist fehlgeschlagen)
             if executed_actions and response_text:
-                failed_msgs = [
-                    a["result"].get("message", "")
-                    for a in executed_actions
+                failed_actions = [
+                    a for a in executed_actions
                     if isinstance(a["result"], dict) and not a["result"].get("success", True)
                 ]
-                if failed_msgs:
-                    response_text = "Problem: " + ", ".join(m for m in failed_msgs if m)
+                if failed_actions:
+                    # Phase 17: Natuerliche Fehlerbehandlung statt hartem "Problem: ..."
+                    first_fail = failed_actions[0]
+                    error_msg = first_fail["result"].get("message", "Unbekannter Fehler")
+                    try:
+                        response_text = await self._generate_error_recovery(
+                            first_fail["function"], first_fail.get("args", {}), error_msg
+                        )
+                    except Exception:
+                        response_text = f"Problem: {error_msg}"
 
         # Phase 12: Response-Filter (Post-Processing) — Floskeln entfernen
         response_text = self._filter_response(response_text)

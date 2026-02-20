@@ -125,8 +125,8 @@ class EnergyOptimizer:
         # 1. Guenstiger Strom
         price = self._find_sensor_value(states, self.price_sensor, ["price", "strom", "electricity"])
         if price is not None and price < self.price_low:
-            if not await self._was_recently_alerted("low_price", cooldown_minutes=120):
-                await self._mark_alerted("low_price")
+            if not await self._was_recently_alerted("low_price"):
+                await self._mark_alerted("low_price", cooldown_minutes=120)
                 alerts.append({
                     "type": "energy_price_low",
                     "message": f"Strom ist gerade guenstig ({price:.1f} ct/kWh). "
@@ -138,8 +138,8 @@ class EnergyOptimizer:
         solar = self._find_sensor_value(states, self.solar_sensor, ["solar", "pv"])
         export = self._find_sensor_value(states, self.grid_export_sensor, ["export", "einspeisung"])
         if solar is not None and solar > self.solar_high_watts and export and export > 500:
-            if not await self._was_recently_alerted("solar_high", cooldown_minutes=180):
-                await self._mark_alerted("solar_high")
+            if not await self._was_recently_alerted("solar_high"):
+                await self._mark_alerted("solar_high", cooldown_minutes=180)
                 alerts.append({
                     "type": "solar_surplus",
                     "message": f"Solar-Ertrag ist hoch ({solar:.0f} W) mit {export:.0f} W Einspeisung. "
@@ -149,8 +149,8 @@ class EnergyOptimizer:
 
         # 3. Hoher Strompreis
         if price is not None and price > self.price_high:
-            if not await self._was_recently_alerted("high_price", cooldown_minutes=240):
-                await self._mark_alerted("high_price")
+            if not await self._was_recently_alerted("high_price"):
+                await self._mark_alerted("high_price", cooldown_minutes=240)
                 alerts.append({
                     "type": "energy_price_high",
                     "message": f"Strompreis ist hoch ({price:.1f} ct/kWh). "
@@ -203,8 +203,8 @@ class EnergyOptimizer:
 
         return None
 
-    async def _was_recently_alerted(self, alert_type: str, cooldown_minutes: int = 120) -> bool:
-        """Prueft ob bereits kuerzlich ein Alert dieses Typs gesendet wurde."""
+    async def _was_recently_alerted(self, alert_type: str) -> bool:
+        """Prueft ob bereits kuerzlich ein Alert dieses Typs gesendet wurde (TTL kommt von _mark_alerted)."""
         if not self.redis:
             return False
         key = f"mha:energy:alert:{alert_type}"

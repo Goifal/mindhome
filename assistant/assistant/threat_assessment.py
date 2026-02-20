@@ -129,7 +129,13 @@ class ThreatAssessment:
                 wind_speed = s.get("attributes", {}).get("wind_speed")
                 break
 
-        if not wind_speed or float(wind_speed) < 50:  # < 50 km/h = kein Sturm
+        if not wind_speed:
+            return []
+        try:
+            wind_speed_val = float(wind_speed)
+        except (ValueError, TypeError):
+            return []
+        if wind_speed_val < 50:  # < 50 km/h = kein Sturm
             return []
 
         # Offene Fenster bei Sturm
@@ -143,7 +149,7 @@ class ThreatAssessment:
         if open_windows:
             threats.append({
                 "type": "storm_windows",
-                "message": f"Sturmwarnung ({wind_speed} km/h)! {len(open_windows)} Fenster noch offen: {', '.join(open_windows)}.",
+                "message": f"Sturmwarnung ({wind_speed_val:.0f} km/h)! {len(open_windows)} Fenster noch offen: {', '.join(open_windows)}.",
                 "urgency": "high",
             })
 

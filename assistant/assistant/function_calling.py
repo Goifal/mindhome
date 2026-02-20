@@ -658,6 +658,10 @@ _ASSISTANT_TOOLS_STATIC = [
                         "type": "string",
                         "description": "Bezeichnung des Timers (z.B. 'Waesche', 'Pizza', 'Anruf')",
                     },
+                    "room": {
+                        "type": "string",
+                        "description": "Raum in dem die Timer-Benachrichtigung erfolgen soll",
+                    },
                     "action_on_expire": {
                         "type": "object",
                         "description": "Optionale Aktion bei Ablauf. Format: {\"function\": \"set_light\", \"args\": {\"room\": \"kueche\", \"state\": \"off\"}}",
@@ -745,7 +749,7 @@ _ASSISTANT_TOOLS_STATIC = [
                     },
                     "trigger_value": {
                         "type": "string",
-                        "description": "Trigger-Wert. Bei state_change: 'entity_id:state' (z.B. 'sensor.regen:on'). Bei person_arrives/leaves: Name (z.B. 'papa'). Bei state_attribute: 'entity_id:attribut:operator:wert'",
+                        "description": "Trigger-Wert. Bei state_change: 'entity_id:state' (z.B. 'sensor.regen:on'). Bei person_arrives/leaves: Name (z.B. 'papa'). Bei state_attribute: 'entity_id|attribut|operator|wert' (pipe-getrennt, z.B. 'sensor.aussen|temperature|>|25')",
                     },
                     "action_function": {
                         "type": "string",

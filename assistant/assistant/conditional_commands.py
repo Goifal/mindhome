@@ -220,8 +220,10 @@ class ConditionalCommands:
             return old_state == "home" and new_state != "home"
 
         elif trigger_type == "state_attribute":
-            # Format: "entity_id:attribute:operator:value"
-            parts = trigger_value.split(":", 3)
+            # Format: "entity_id|attribute|operator|value" (pipe-delimited)
+            # Fallback: "entity_id:attribute:operator:value" (colon-delimited)
+            delim = "|" if "|" in trigger_value else ":"
+            parts = trigger_value.split(delim, 3)
             if len(parts) < 4:
                 return False
             target_entity, attr_name, operator, target_val = parts

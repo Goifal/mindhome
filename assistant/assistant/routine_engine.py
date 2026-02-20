@@ -46,6 +46,7 @@ class RoutineEngine:
         self.ollama = ollama
         self.redis: Optional[redis.Redis] = None
         self._executor = None  # Wird von brain.py gesetzt
+        self._vacation_task: Optional[asyncio.Task] = None
 
         # Konfiguration
         routines_cfg = yaml_config.get("routines", {})
@@ -54,7 +55,7 @@ class RoutineEngine:
         mb_cfg = routines_cfg.get("morning_briefing", {})
         self.briefing_enabled = mb_cfg.get("enabled", True)
         self.briefing_modules = mb_cfg.get("modules", [
-            "greeting", "weather", "calendar", "house_status",
+            "greeting", "weather", "calendar", "house_status", "travel",
         ])
         self.weekday_style = mb_cfg.get("weekday_style", "kurz")
         self.weekend_style = mb_cfg.get("weekend_style", "ausfuehrlich")
@@ -980,7 +981,10 @@ Kein unterwuerfiger Ton. Du bist ein brillanter Butler, kein Chatbot."""
                 if not self.redis:
                     break
                 active = await self.redis.get(KEY_VACATION_SIM)
-                if not active or (isinstance(active, bytes) and active.decode()) != "active":
+                if not active:
+                    break
+                active_str = active.decode() if isinstance(active, bytes) else active
+                if active_str != "active":
                     break
 
                 now = datetime.now()
