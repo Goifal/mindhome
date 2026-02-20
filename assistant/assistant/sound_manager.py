@@ -58,7 +58,35 @@ DEFAULT_SOUND_DESCRIPTIONS = {
 class SoundManager:
     """Verwaltet die akustische Identitaet von Jarvis."""
 
-    def __init__(self, ha_client: HomeAssistantClient):
+    # Entity-IDs die KEINE TTS-Speaker sind (TVs, Receiver, etc.)
+    _EXCLUDED_SPEAKER_PATTERNS = (
+        "tv", "fernseher", "television", "fire_tv", "firetv", "apple_tv",
+        "appletv", "chromecast", "roku", "shield", "receiver", "avr",
+        "denon", "marantz", "yamaha_receiver", "onkyo", "pioneer",
+        "soundbar", "xbox", "playstation", "ps5", "ps4", "nintendo",
+        "kodi", "plex", "emby", "jellyfin", "vlc", "mpd",
+    )
+
+    def _is_tts_speaker(self, entity_id: str, attributes: dict = None) -> bool:
+        """Prueft ob ein media_player ein echter TTS-faehiger Speaker ist.
+
+        Schliesst TVs, Receiver, Streaming-Boxen etc. aus.
+        """
+        if not entity_id.startswith("media_player."):
+            return False
+
+        entity_lower = entity_id.lower()
+        for pattern in self._EXCLUDED_SPEAKER_PATTERNS:
+            if pattern in entity_lower:
+                return False
+
+        # Zusaetzlich: Attribute-basierte Erkennung (wenn verfuegbar)
+        if attributes:
+            device_class = (attributes.get("device_class") or "").lower()
+            if device_class in ("tv", "receiver"):
+                return False
+
+        return True
         self.ha = ha_client
 
         # Konfiguration
@@ -269,25 +297,33 @@ class SoundManager:
         return await self._find_default_speaker()
 
     async def _find_speaker(self, room: str) -> Optional[str]:
-        """Findet einen Speaker im angegebenen Raum per Entity-Name."""
+        """Findet einen TTS-faehigen Speaker im angegebenen Raum.
+
+        Schliesst TVs und andere nicht-TTS-Geraete aus.
+        """
         states = await self.ha.get_states()
         if not states:
             return None
         room_lower = room.lower().replace(" ", "_")
         for state in states:
             entity_id = state.get("entity_id", "")
-            if entity_id.startswith("media_player.") and room_lower in entity_id:
+            attributes = state.get("attributes", {})
+            if (
+                room_lower in entity_id
+                and self._is_tts_speaker(entity_id, attributes)
+            ):
                 return entity_id
         return None
 
     async def _find_default_speaker(self) -> Optional[str]:
-        """Findet den Standard-Speaker."""
+        """Findet den Standard-Speaker (kein TV/Receiver)."""
         states = await self.ha.get_states()
         if not states:
             return None
         for state in states:
             entity_id = state.get("entity_id", "")
-            if entity_id.startswith("media_player."):
+            attributes = state.get("attributes", {})
+            if self._is_tts_speaker(entity_id, attributes):
                 return entity_id
         return None
 
