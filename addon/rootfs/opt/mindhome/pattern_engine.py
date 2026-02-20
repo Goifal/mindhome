@@ -18,10 +18,11 @@ import time
 from datetime import datetime, timedelta, timezone
 from collections import defaultdict, Counter
 from sqlalchemy import func, text, and_, or_
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import sessionmaker
 
 from models import (
-    get_engine, StateHistory, LearnedPattern, PatternMatchLog,
+    get_engine, StateHistory, LearnedPattern, PatternMatchLog, Prediction,
     Device, Domain, Room, RoomDomainState, DataCollection,
     SystemSetting, User, LearningPhase, NotificationLog, NotificationType,
     DayPhase, SensorThreshold, SensorGroup, LearnedScene, PresenceMode,
@@ -527,7 +528,16 @@ class StateLogger:
                 if device_room_id and device_domain_id:
                     self._update_data_collection(session, device_room_id, device_domain_id)
 
-            session.commit()
+            for _attempt in range(3):
+                try:
+                    session.commit()
+                    break
+                except OperationalError as oe:
+                    if "database is locked" in str(oe) and _attempt < 2:
+                        session.rollback()
+                        time.sleep(0.1 * (_attempt + 1))
+                    else:
+                        raise
             self._event_timestamps.append(now)
             logger.debug(f"Logged: {entity_id} {old_state} → {new_state}")
 
@@ -871,9 +881,17 @@ class PatternDetector:
                 LearnedPattern.is_active == True,
             ).all()
             stale_count = len(stale)
-            for sp in stale:
-                session.delete(sp)
             if stale_count > 0:
+                stale_ids = [sp.id for sp in stale]
+                # Delete dependent records first to avoid FK constraint violations
+                session.query(Prediction).filter(Prediction.pattern_id.in_(stale_ids)).delete(synchronize_session="fetch")
+                session.query(PatternMatchLog).filter(PatternMatchLog.pattern_id.in_(stale_ids)).delete(synchronize_session="fetch")
+                # Clear self-referential FK
+                session.query(LearnedPattern).filter(
+                    LearnedPattern.depends_on_pattern_id.in_(stale_ids)
+                ).update({LearnedPattern.depends_on_pattern_id: None}, synchronize_session="fetch")
+                for sp in stale:
+                    session.delete(sp)
                 logger.info(f"Cleanup: removed {stale_count} stale patterns not confirmed in this run")
 
             total = len(time_patterns) + len(sequence_patterns) + len(correlation_patterns) + len(cross_room_patterns)

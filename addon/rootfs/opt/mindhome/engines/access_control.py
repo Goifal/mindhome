@@ -568,28 +568,28 @@ class GeoFenceManager:
                     feature_key="geofence", role="person", is_active=True
                 ).all()
 
-            for a in assignments:
-                state = self.ha.get_state(a.entity_id) if self.ha else None
-                if not state:
-                    continue
-                attrs = state.get("attributes", {})
-                lat = attrs.get("latitude")
-                lon = attrs.get("longitude")
-                if lat is None or lon is None:
-                    continue
+                for a in assignments:
+                    state = self.ha.get_state(a.entity_id) if self.ha else None
+                    if not state:
+                        continue
+                    attrs = state.get("attributes", {})
+                    lat = attrs.get("latitude")
+                    lon = attrs.get("longitude")
+                    if lat is None or lon is None:
+                        continue
 
-                current_zone = self._find_zone(lat, lon, zones, hysteresis)
-                prev_zone = self._person_zones.get(a.entity_id)
+                    current_zone = self._find_zone(lat, lon, zones, hysteresis)
+                    prev_zone = self._person_zones.get(a.entity_id)
 
-                if current_zone != prev_zone:
-                    self._person_zones[a.entity_id] = current_zone
-                    if prev_zone is not None:
-                        self._on_zone_leave(a.entity_id, prev_zone, config)
-                    if current_zone is not None:
-                        self._on_zone_enter(a.entity_id, current_zone, config)
+                    if current_zone != prev_zone:
+                        self._person_zones[a.entity_id] = current_zone
+                        if prev_zone is not None:
+                            self._on_zone_leave(a.entity_id, prev_zone, config)
+                        if current_zone is not None:
+                            self._on_zone_enter(a.entity_id, current_zone, config)
 
-            # Check if all persons are away from "home" zone
-            self._check_all_away(config, zones)
+                # Check if all persons are away from "home" zone
+                self._check_all_away(config, zones)
 
         except Exception as e:
             logger.error(f"Geofence check error: {e}")
