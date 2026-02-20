@@ -43,6 +43,13 @@ class WellnessAdvisor:
         self.meal_times = cfg.get("meal_times", {"lunch": 13, "dinner": 19})
         self.late_night_nudge = cfg.get("late_night_nudge", True)
 
+        # HA-Entity-IDs fuer direkten Sensor-Check (konfigurierbar)
+        entities = cfg.get("entities", {})
+        self.pc_power_sensor = entities.get("pc_power", "")  # z.B. sensor.pc_power
+        self.kitchen_motion_sensor = entities.get("kitchen_motion", "")
+        self.hydration_check = cfg.get("hydration_reminder", True)
+        self.hydration_interval_hours = cfg.get("hydration_interval_hours", 2)
+
     async def initialize(self, redis_client=None):
         """Initialisiert den Wellness Advisor."""
         self.redis = redis_client
@@ -83,6 +90,7 @@ class WellnessAdvisor:
                 await self._check_stress_intervention()
                 await self._check_meal_time()
                 await self._check_late_night()
+                await self._check_hydration()
             except Exception as e:
                 logger.error("Wellness-Check Fehler: %s", e)
 
@@ -93,17 +101,36 @@ class WellnessAdvisor:
     # ------------------------------------------------------------------
 
     async def _check_pc_break(self):
-        """Wenn User seit X Minuten am PC sitzt -> Pause vorschlagen."""
+        """Wenn User seit X Minuten am PC sitzt -> Pause vorschlagen.
+
+        Nutzt primaer den HA-PC-Power-Sensor (wenn konfiguriert),
+        faellt zurueck auf Activity Engine.
+        """
         if not self.redis:
             return
 
-        try:
-            detection = await self.activity.detect_activity()
-            activity = detection.get("activity", "")
-        except Exception:
-            return
+        user_at_pc = False
 
-        if activity != "focused":
+        # 1. Primaer: Echten HA-Sensor pruefen (PC-Stromverbrauch > 30W = an)
+        if self.pc_power_sensor and self.ha:
+            try:
+                state = await self.ha.get_entity_state(self.pc_power_sensor)
+                if state and state.get("state") not in ("unavailable", "unknown"):
+                    power = float(state.get("state", 0))
+                    user_at_pc = power > 30  # PC laeuft wenn > 30W
+            except (ValueError, TypeError, Exception):
+                pass
+
+        # 2. Fallback: Activity Engine
+        if not user_at_pc:
+            try:
+                detection = await self.activity.detect_activity()
+                activity = detection.get("activity", "")
+                user_at_pc = activity == "focused"
+            except Exception:
+                return
+
+        if not user_at_pc:
             # Nicht am PC -> Timer zuruecksetzen
             await self.redis.delete("mha:wellness:pc_start")
             return
@@ -214,9 +241,21 @@ class WellnessAdvisor:
                 continue
 
             # Pruefen ob Kueche aktiv war (= wahrscheinlich gegessen)
+            kitchen_was_active = False
+            if self.kitchen_motion_sensor and self.ha:
+                try:
+                    state = await self.ha.get_entity_state(self.kitchen_motion_sensor)
+                    if state and state.get("state") == "on":
+                        kitchen_was_active = True
+                except Exception:
+                    pass
+
+            if kitchen_was_active:
+                # Kueche ist gerade aktiv — User kocht/isst vermutlich
+                continue
+
             try:
                 detection = await self.activity.detect_activity()
-                # Wenn User gerade kocht oder weg ist, nicht erinnern
                 activity = detection.get("activity", "")
                 if activity in ("away", "sleeping"):
                     continue
@@ -264,6 +303,45 @@ class WellnessAdvisor:
         await self._send_nudge(
             "late_night",
             f"Es ist {hour} Uhr, Sir. Nur zur Kenntnis.",
+        )
+
+    # ------------------------------------------------------------------
+    # Hydration-Erinnerung
+    # ------------------------------------------------------------------
+
+    async def _check_hydration(self):
+        """Erinnerung ans Trinken alle X Stunden (nur wenn User aktiv)."""
+        if not self.hydration_check or not self.redis:
+            return
+
+        hour = datetime.now().hour
+        if hour < 8 or hour > 22:
+            return  # Nachts nicht erinnern
+
+        key = "mha:wellness:last_hydration"
+        last = await self.redis.get(key)
+        if last:
+            try:
+                last_dt = datetime.fromisoformat(last)
+                elapsed_h = (datetime.now() - last_dt).total_seconds() / 3600
+                if elapsed_h < self.hydration_interval_hours:
+                    return
+            except (ValueError, TypeError):
+                pass
+
+        # Nur wenn User aktiv (nicht away/sleeping)
+        try:
+            detection = await self.activity.detect_activity()
+            activity = detection.get("activity", "")
+            if activity in ("away", "sleeping"):
+                return
+        except Exception:
+            return
+
+        await self.redis.set(key, datetime.now().isoformat())
+        await self._send_nudge(
+            "hydration",
+            "Sir, ein Glas Wasser waere jetzt keine schlechte Idee.",
         )
 
     # ------------------------------------------------------------------

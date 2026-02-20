@@ -159,12 +159,22 @@ Erstelle das Rezept fuer: {dish}"""
 class CookingAssistant:
     """Koch-Assistent mit Schritt-fuer-Schritt Fuehrung."""
 
+    REDIS_SESSION_KEY = "mha:cooking:session"
+    REDIS_SESSION_TTL = 6 * 3600  # 6h — Session ueberlebt Neustart
+
     def __init__(self, ollama_client, semantic_memory=None):
         self.ollama = ollama_client
         self.semantic_memory = semantic_memory
+        self.redis = None
         self.session: Optional[CookingSession] = None
         self._timer_tasks: list[asyncio.Task] = []
         self._notify_callback = None
+
+    async def initialize(self, redis_client=None):
+        """Initialisiert mit Redis und laedt ggf. eine gespeicherte Session."""
+        self.redis = redis_client
+        if self.redis:
+            await self._restore_session()
 
     def set_notify_callback(self, callback):
         """Setzt den Callback fuer Timer-Benachrichtigungen."""
@@ -248,6 +258,7 @@ class CookingAssistant:
 
         self.session = session
         self.session.started_at = time.time()
+        await self._persist_session()
 
         # Antwort zusammenbauen
         parts = [f"Alles klar, {dish} fuer {portions} Portionen!"]
@@ -274,7 +285,7 @@ class CookingAssistant:
 
         # Stop
         if any(kw in text_lower for kw in NAV_STOP):
-            return self._stop_session()
+            return await self._stop_session()
 
         # Rezept speichern
         if any(kw in text_lower for kw in NAV_SAVE):
@@ -303,11 +314,11 @@ class CookingAssistant:
 
         # Naechster Schritt
         if any(kw in text_lower for kw in NAV_NEXT):
-            return self._next_step()
+            return await self._next_step()
 
         # Vorheriger Schritt
         if any(kw in text_lower for kw in NAV_PREV):
-            return self._prev_step()
+            return await self._prev_step()
 
         # Wiederholen
         if any(kw in text_lower for kw in NAV_REPEAT):
@@ -315,11 +326,12 @@ class CookingAssistant:
 
         return "Das habe ich nicht verstanden. Sag 'weiter', 'zurueck', 'nochmal' oder 'status'."
 
-    def _next_step(self) -> str:
+    async def _next_step(self) -> str:
         """Geht zum naechsten Schritt."""
         session = self.session
 
         session.current_step += 1
+        await self._persist_session()
         step = session.get_current_step()
 
         if step is None:
@@ -337,12 +349,13 @@ class CookingAssistant:
 
         return response
 
-    def _prev_step(self) -> str:
+    async def _prev_step(self) -> str:
         """Geht zum vorherigen Schritt."""
         if self.session.current_step <= 0:
             return "Du bist schon beim ersten Schritt."
 
         self.session.current_step -= 1
+        await self._persist_session()
         step = self.session.get_current_step()
         return f"Zurueck zu Schritt {step.number} von {self.session.total_steps}:\n{step.instruction}"
 
@@ -492,7 +505,7 @@ class CookingAssistant:
 
         return "\n".join(parts)
 
-    def _stop_session(self) -> str:
+    async def _stop_session(self) -> str:
         """Beendet die Koch-Session."""
         dish = self.session.dish if self.session else "unbekannt"
         # Alle Timer-Tasks canceln
@@ -500,6 +513,7 @@ class CookingAssistant:
             task.cancel()
         self._timer_tasks.clear()
         self.session = None
+        await self._clear_persisted_session()
         return f"Koch-Session fuer '{dish}' beendet. Guten Appetit!"
 
     async def _save_recipe(self) -> str:
@@ -617,6 +631,75 @@ class CookingAssistant:
         except (json.JSONDecodeError, KeyError, TypeError) as e:
             logger.error("Rezept-Parsing Fehler: %s", e)
             return None
+
+    # ------------------------------------------------------------------
+    # Redis Session-Persistenz
+    # ------------------------------------------------------------------
+
+    async def _persist_session(self):
+        """Speichert die aktive Koch-Session in Redis (ueberlebt Neustart)."""
+        if not self.redis or not self.session:
+            return
+        try:
+            data = {
+                "dish": self.session.dish,
+                "portions": self.session.portions,
+                "ingredients": self.session.ingredients,
+                "steps": [
+                    {"number": s.number, "instruction": s.instruction,
+                     "timer_minutes": s.timer_minutes}
+                    for s in self.session.steps
+                ],
+                "current_step": self.session.current_step,
+                "started_at": self.session.started_at,
+                "person": self.session.person,
+            }
+            await self.redis.setex(
+                self.REDIS_SESSION_KEY,
+                self.REDIS_SESSION_TTL,
+                json.dumps(data, ensure_ascii=False),
+            )
+        except Exception as e:
+            logger.debug("Koch-Session nicht persistiert: %s", e)
+
+    async def _restore_session(self):
+        """Laedt eine gespeicherte Koch-Session aus Redis."""
+        if not self.redis:
+            return
+        try:
+            raw = await self.redis.get(self.REDIS_SESSION_KEY)
+            if not raw:
+                return
+            data = json.loads(raw)
+            steps = [
+                CookingStep(
+                    number=s["number"],
+                    instruction=s["instruction"],
+                    timer_minutes=s.get("timer_minutes"),
+                )
+                for s in data.get("steps", [])
+            ]
+            if not steps:
+                return
+            self.session = CookingSession(
+                dish=data["dish"],
+                portions=data.get("portions", 2),
+                ingredients=data.get("ingredients", []),
+                steps=steps,
+                current_step=data.get("current_step", -1),
+                started_at=data.get("started_at", 0.0),
+                person=data.get("person", ""),
+            )
+            logger.info("Koch-Session wiederhergestellt: %s (Schritt %d/%d)",
+                        self.session.dish, self.session.current_step + 1,
+                        self.session.total_steps)
+        except Exception as e:
+            logger.debug("Koch-Session nicht wiederhergestellt: %s", e)
+
+    async def _clear_persisted_session(self):
+        """Loescht die gespeicherte Session aus Redis."""
+        if self.redis:
+            await self.redis.delete(self.REDIS_SESSION_KEY)
 
     async def _load_preferences(self, person: str) -> str:
         """Laedt Koch-Praeferenzen und Allergien aus dem Semantic Memory."""
