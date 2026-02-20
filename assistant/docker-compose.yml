@@ -26,6 +26,7 @@ services:
     volumes:
       - ./config:/app/config
       - ./static:/app/static
+      - ./assistant:/app/assistant
       - ${DATA_DIR:-./data}/assistant:/app/data
       - ${DATA_DIR:-./data}/uploads:/app/data/uploads
       # System-Management: Git-Repo + Docker-Socket fuer Dashboard-Updates
