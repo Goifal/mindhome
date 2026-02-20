@@ -65,17 +65,29 @@
 * { margin:0; padding:0; box-sizing:border-box; }
 body { font-family:var(--font); background:var(--bg-primary); color:var(--text-primary); min-height:100vh; overflow-x:hidden; }
 
-/* ---- Login ---- */
-.login-screen { display:flex; align-items:center; justify-content:center; min-height:100vh; }
-.login-box { background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius-lg); padding:48px 40px; width:360px; text-align:center; box-shadow:var(--shadow-lg); }
-.login-box h1 { font-size:28px; font-weight:600; margin-bottom:8px; color:var(--accent); }
-.login-box p { color:var(--text-secondary); margin-bottom:32px; font-size:14px; }
-.login-box input { width:100%; padding:14px 16px; background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius-sm); color:var(--text-primary); font-family:var(--mono); font-size:24px; text-align:center; letter-spacing:12px; outline:none; }
-.login-box input:focus { border-color:var(--accent); }
+/* ---- Login HUD ---- */
+.login-screen { display:flex; align-items:center; justify-content:center; min-height:100vh; background: radial-gradient(ellipse at center, rgba(245,158,11,0.03) 0%, var(--bg-primary) 70%); overflow: hidden; }
+.login-box { background: rgba(26,32,53,0.85); border: 1px solid var(--border-accent); border-radius:var(--radius-lg); padding:48px 40px; width:360px; text-align:center; box-shadow: var(--shadow-lg), var(--shadow-glow); position: relative; backdrop-filter: blur(12px); }
+.login-box h1 { font-size:28px; font-weight:600; margin-bottom:8px; color:var(--accent); letter-spacing: 4px; }
+.login-box p { color:var(--text-secondary); margin-bottom:32px; font-size:14px; text-transform: uppercase; letter-spacing: 2px; font-family: var(--mono); }
+.login-box input { width:100%; padding:14px 16px; background:var(--bg-input); border:1px solid var(--border-accent); border-radius:var(--radius-sm); color:var(--text-primary); font-family:var(--mono); font-size:24px; text-align:center; letter-spacing:12px; outline:none; transition: border-color var(--fast), box-shadow var(--fast); }
+.login-box input:focus { border-color:var(--accent); box-shadow: 0 0 20px rgba(245,158,11,0.2); }
 .login-box input::placeholder { letter-spacing:4px; font-size:14px; color:var(--text-muted); }
-.login-box button { width:100%; margin-top:20px; padding:14px; background:var(--accent); color:#0a0e17; border:none; border-radius:var(--radius-sm); font-family:var(--font); font-size:16px; font-weight:600; cursor:pointer; }
-.login-box button:hover { opacity:0.9; }
+.login-box button { width:100%; margin-top:20px; padding:14px; background:var(--accent); color:#0a0e17; border:none; border-radius:var(--radius-sm); font-family:var(--font); font-size:16px; font-weight:600; cursor:pointer; text-transform: uppercase; letter-spacing: 2px; transition: all var(--fast); }
+.login-box button:hover { opacity:0.9; box-shadow: 0 0 20px rgba(245,158,11,0.3); }
 .login-error { color:var(--danger); font-size:13px; margin-top:12px; min-height:20px; }
+.login-hud-ring { position: absolute; top: -60px; left: 50%; transform: translateX(-50%); width: 120px; height: 120px; }
+.login-hud-ring svg { width: 100%; height: 100%; animation: hudSpin 8s linear infinite; }
+.login-hud-arc { fill: none; stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 40 20; opacity: 0.6; }
+.login-hud-arc-inner { fill: none; stroke: rgba(245,158,11,0.3); stroke-width: 1; stroke-dasharray: 15 25; opacity: 0.4; }
+.login-scan-line { position: absolute; left: 0; right: 0; height: 1px; background: linear-gradient(90deg, transparent, var(--accent), transparent); opacity: 0.3; animation: scanDown 3s ease-in-out infinite; }
+.login-corner { position: absolute; width: 16px; height: 16px; border-color: var(--accent); opacity: 0.4; }
+.login-corner.tl { top: 8px; left: 8px; border-top: 1px solid; border-left: 1px solid; }
+.login-corner.tr { top: 8px; right: 8px; border-top: 1px solid; border-right: 1px solid; }
+.login-corner.bl { bottom: 8px; left: 8px; border-bottom: 1px solid; border-left: 1px solid; }
+.login-corner.br { bottom: 8px; right: 8px; border-bottom: 1px solid; border-right: 1px solid; }
+@keyframes hudSpin { to { transform: rotate(360deg); } }
+@keyframes scanDown { 0%,100% { top: 10%; } 50% { top: 90%; } }
 
 /* ---- App ---- */
 .app { display:none; }
@@ -307,6 +319,25 @@ textarea { resize:vertical; min-height:70px; font-family:var(--mono); font-size:
 /* Info-Hint Box */
 .info-box { display:flex; align-items:flex-start; gap:8px; padding:10px 14px; background:var(--blue-dim); border:1px solid rgba(59,130,246,0.2); border-radius:var(--radius-sm); margin-bottom:14px; font-size:12px; color:var(--text-secondary); line-height:1.5; }
 .info-box .info-icon { font-size:14px; flex-shrink:0; margin-top:1px; }
+
+/* ---- Jarvis Boot Sequence ---- */
+.boot-screen { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: var(--bg-primary); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 9999; }
+.boot-hud { position: relative; width: 180px; height: 180px; margin-bottom: 40px; }
+.boot-circle { width: 100%; height: 100%; animation: bootRotate 3s linear infinite; }
+.boot-ring { fill: none; stroke: rgba(245,158,11,0.15); stroke-width: 2; }
+.boot-ring-fill { fill: none; stroke: var(--accent); stroke-width: 2; stroke-dasharray: 565; stroke-dashoffset: 565; stroke-linecap: round; animation: bootDraw 2s ease-out forwards; }
+.boot-logo { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 56px; font-weight: 700; color: var(--accent); opacity: 0; animation: bootFadeIn 0.6s ease 0.3s forwards; text-shadow: 0 0 30px rgba(245,158,11,0.5); }
+.boot-text { font-family: var(--mono); font-size: 14px; color: var(--accent); letter-spacing: 2px; min-height: 20px; text-transform: uppercase; }
+.boot-systems { display: flex; gap: 12px; margin-top: 24px; }
+.boot-sys { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-muted); opacity: 0; animation: bootFadeIn 0.3s ease forwards; }
+.boot-sys .sys-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-muted); transition: background 0.3s; }
+.boot-sys.online .sys-dot { background: var(--success); }
+.boot-sys.online { color: var(--text-secondary); }
+.boot-screen.fade-out { animation: bootFadeOut 0.5s ease forwards; }
+@keyframes bootDraw { to { stroke-dashoffset: 0; } }
+@keyframes bootRotate { to { transform: rotate(360deg); } }
+@keyframes bootFadeIn { to { opacity: 1; } }
+@keyframes bootFadeOut { to { opacity: 0; pointer-events: none; } }
 </style>
 </head>
 <body>
@@ -341,12 +372,26 @@ textarea { resize:vertical; min-height:70px; font-family:var(--mono); font-size:
 <!-- LOGIN -->
 <div id="loginScreen" class="login-screen" style="display:none;">
   <div class="login-box">
-    <div style="font-size:44px;margin-bottom:14px;">&#9881;</div>
+    <!-- HUD Ring oben -->
+    <div class="login-hud-ring">
+      <svg viewBox="0 0 120 120">
+        <circle class="login-hud-arc" cx="60" cy="60" r="54" />
+        <circle class="login-hud-arc-inner" cx="60" cy="60" r="46" />
+      </svg>
+    </div>
+    <!-- Corner Brackets -->
+    <div class="login-corner tl"></div>
+    <div class="login-corner tr"></div>
+    <div class="login-corner bl"></div>
+    <div class="login-corner br"></div>
+    <!-- Scan-Linie -->
+    <div class="login-scan-line"></div>
+    <!-- Content -->
     <h1>JARVIS</h1>
-    <p>MindHome Dashboard</p>
+    <p>MindHome Assistant</p>
     <input type="password" id="pinInput" maxlength="16" placeholder="PIN" autofocus
            onkeydown="if(event.key==='Enter')doLogin()">
-    <button onclick="doLogin()">Anmelden</button>
+    <button onclick="doLogin()">Authentifizieren</button>
     <div id="loginError" class="login-error"></div>
     <div style="margin-top:20px;">
       <a href="#" onclick="showResetScreen();return false;" style="color:var(--text-muted);font-size:12px;text-decoration:none;">PIN vergessen?</a>
@@ -528,6 +573,19 @@ textarea { resize:vertical; min-height:70px; font-family:var(--mono); font-size:
 
 <div id="toast" class="toast"></div>
 
+<!-- BOOT SCREEN -->
+<div id="bootScreen" class="boot-screen" style="display:none;">
+  <div class="boot-hud">
+    <svg class="boot-circle" viewBox="0 0 200 200">
+      <circle class="boot-ring" cx="100" cy="100" r="90" />
+      <circle class="boot-ring-fill" cx="100" cy="100" r="90" />
+    </svg>
+    <div class="boot-logo">J</div>
+  </div>
+  <div class="boot-text" id="bootText"></div>
+  <div class="boot-systems" id="bootSystems"></div>
+</div>
+
 <script>
 /* ============================================================
    Jarvis Dashboard v2 — JavaScript
@@ -557,10 +615,84 @@ function resetSessionTimer() {
 
 // ---- Screens ausblenden ----
 function hideAllScreens() {
-  ['setupScreen','recoveryScreen','loginScreen','resetScreen','newRecoveryScreen'].forEach(id => {
-    document.getElementById(id).style.display = 'none';
+  ['setupScreen','recoveryScreen','loginScreen','resetScreen','newRecoveryScreen','bootScreen'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = 'none';
   });
   document.getElementById('app').classList.remove('active');
+}
+
+// ---- Jarvis Boot Sequence ----
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+async function typeText(el, text, speed) {
+  el.textContent = '';
+  for (const ch of text) { el.textContent += ch; await sleep(speed); }
+}
+
+function playBootSound() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    // Ton 1: Tiefer Sweep (0-1.5s)
+    const o1 = ctx.createOscillator(), g1 = ctx.createGain();
+    o1.type = 'sine';
+    o1.frequency.setValueAtTime(80, ctx.currentTime);
+    o1.frequency.exponentialRampToValueAtTime(300, ctx.currentTime + 1.5);
+    g1.gain.setValueAtTime(0, ctx.currentTime);
+    g1.gain.linearRampToValueAtTime(0.15, ctx.currentTime + 0.3);
+    g1.gain.linearRampToValueAtTime(0, ctx.currentTime + 1.5);
+    o1.connect(g1).connect(ctx.destination);
+    o1.start(); o1.stop(ctx.currentTime + 1.5);
+    // Ton 2: Hoher Ping (1.5s)
+    const o2 = ctx.createOscillator(), g2 = ctx.createGain();
+    o2.type = 'sine';
+    o2.frequency.setValueAtTime(880, ctx.currentTime + 1.5);
+    g2.gain.setValueAtTime(0, ctx.currentTime + 1.5);
+    g2.gain.linearRampToValueAtTime(0.1, ctx.currentTime + 1.55);
+    g2.gain.linearRampToValueAtTime(0, ctx.currentTime + 2.5);
+    o2.connect(g2).connect(ctx.destination);
+    o2.start(ctx.currentTime + 1.5); o2.stop(ctx.currentTime + 2.5);
+    // Ton 3: Confirmation-Chime (3s)
+    const o3 = ctx.createOscillator(), g3 = ctx.createGain();
+    o3.type = 'triangle';
+    o3.frequency.setValueAtTime(660, ctx.currentTime + 3);
+    o3.frequency.setValueAtTime(880, ctx.currentTime + 3.15);
+    g3.gain.setValueAtTime(0, ctx.currentTime + 3);
+    g3.gain.linearRampToValueAtTime(0.12, ctx.currentTime + 3.05);
+    g3.gain.linearRampToValueAtTime(0, ctx.currentTime + 3.8);
+    o3.connect(g3).connect(ctx.destination);
+    o3.start(ctx.currentTime + 3); o3.stop(ctx.currentTime + 3.8);
+  } catch(e) { /* Audio nicht verfuegbar */ }
+}
+
+async function playBootSequence() {
+  const screen = document.getElementById('bootScreen');
+  const textEl = document.getElementById('bootText');
+  const sysEl = document.getElementById('bootSystems');
+  screen.style.display = 'flex';
+  playBootSound();
+
+  const systems = ['LLM', 'HA', 'Redis', 'Memory', 'TTS'];
+  sysEl.innerHTML = systems.map((s, i) =>
+    `<div class="boot-sys" style="animation-delay:${0.8 + i * 0.3}s" id="bootSys${i}"><span class="sys-dot"></span>${s}</div>`
+  ).join('');
+
+  await typeText(textEl, 'INITIALIZING...', 60);
+  await sleep(600);
+  for (let i = 0; i < systems.length; i++) {
+    await sleep(300);
+    const el = document.getElementById('bootSys' + i);
+    if (el) el.classList.add('online');
+  }
+  await sleep(300);
+  textEl.textContent = '';
+  await typeText(textEl, 'ALL SYSTEMS ONLINE', 40);
+  await sleep(800);
+
+  screen.classList.add('fade-out');
+  await sleep(500);
+  screen.style.display = 'none';
+  screen.classList.remove('fade-out');
 }
 
 // ---- Setup-Status pruefen und richtigen Screen zeigen ----
@@ -663,14 +795,20 @@ function doLogout() {
   TOKEN = '';
   sessionStorage.removeItem('jt');
   sessionStorage.removeItem('jt_ts');
+  sessionStorage.removeItem('jb');
   if (_sessionTimer) { clearTimeout(_sessionTimer); _sessionTimer = null; }
   stopLiveRefresh();
   hideAllScreens();
   showLoginScreen();
 }
 
-function showApp() {
+async function showApp() {
   hideAllScreens();
+  // Boot-Animation nur beim ersten Aufruf pro Session
+  if (!sessionStorage.getItem('jb')) {
+    sessionStorage.setItem('jb', '1');
+    await playBootSequence();
+  }
   document.getElementById('app').classList.add('active');
   loadDashboard();
   startLiveRefresh();
