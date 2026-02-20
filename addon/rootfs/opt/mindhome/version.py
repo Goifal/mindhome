@@ -4,12 +4,18 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "1.4.2"
-BUILD = 92
+VERSION = "1.4.3"
+BUILD = 93
 BUILD_DATE = "2026-02-20"
-CODENAME = "Jarvis Dashboard"
+CODENAME = "Jarvis Health"
 
 # Changelog
+# Build 93: v1.4.3 Jarvis Health — Entity-Picker, STT-Fix
+#   - NEU: Geräte-Tab im Dashboard — Entity-Picker für DeviceHealth-Überwachung
+#   - NEU: Entities aus MindHome Device-DB mit Raum/Domain-Zuordnung
+#   - NEU: Whitelist-Modus: Nur ausgewählte Entities überwachen
+#   - FIX: STT 404 — Platform-Name korrekt auflösen (wyoming Fallback)
+#   - FIX: Besseres STT-Logging (URL, Entity, Platform)
 # Build 92: v1.4.2 Jarvis Dashboard — System-Management UI, Update-Script, Container-Tooling
 #   - NEU: System-Tab im Dashboard (Version, Branch, Container-Status, Ollama, Speicher)
 #   - NEU: Ein-Klick Update/Restart/Modell-Update aus dem Dashboard

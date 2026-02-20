@@ -419,6 +419,18 @@ def api_chat_voice():
         ha_token = os.environ.get("SUPERVISOR_TOKEN", ha.token)
         # HA STT API erwartet Platform-Name ohne Domain-Prefix
         stt_platform = stt_entity.removeprefix("stt.")
+
+        # Platform-Name aus Entity-Attributen lesen (z.B. "wyoming" statt "faster_whisper")
+        stt_state = ha.get_state(stt_entity) if hasattr(ha, "get_state") else None
+        if stt_state and isinstance(stt_state, dict):
+            attrs = stt_state.get("attributes", {})
+            # Manche HA-Versionen liefern "platform" als Attribut
+            if attrs.get("platform"):
+                stt_platform = attrs["platform"]
+
+        logger.info("STT request: entity=%s, platform=%s, url=%s/api/stt/%s",
+                     stt_entity, stt_platform, ha_url, stt_platform)
+
         stt_resp = requests.post(
             f"{ha_url}/api/stt/{stt_platform}",
             headers={
@@ -428,8 +440,37 @@ def api_chat_voice():
             data=audio_data,
             timeout=30,
         )
+
+        # Fallback: Bei 404 mit vollem Entity-ID versuchen (neuere HA-Versionen)
+        if stt_resp.status_code == 404 and stt_platform != stt_entity:
+            logger.info("STT 404 mit platform='%s', versuche mit vollem Entity-ID '%s'",
+                        stt_platform, stt_entity)
+            stt_resp = requests.post(
+                f"{ha_url}/api/stt/{stt_entity}",
+                headers={
+                    "Authorization": f"Bearer {ha_token}",
+                    "Content-Type": content_type,
+                },
+                data=audio_data,
+                timeout=30,
+            )
+
+        # Fallback 2: Bei 404 "wyoming" als Platform versuchen (häufigster STT-Provider)
+        if stt_resp.status_code == 404 and stt_platform != "wyoming":
+            logger.info("STT 404, versuche Fallback platform='wyoming'")
+            stt_resp = requests.post(
+                f"{ha_url}/api/stt/wyoming",
+                headers={
+                    "Authorization": f"Bearer {ha_token}",
+                    "Content-Type": content_type,
+                },
+                data=audio_data,
+                timeout=30,
+            )
+
         if stt_resp.status_code != 200:
-            logger.warning("STT API error: %s %s", stt_resp.status_code, stt_resp.text[:200])
+            logger.warning("STT API error: %s %s (entity=%s, platform=%s, url=%s)",
+                           stt_resp.status_code, stt_resp.text[:200], stt_entity, stt_platform, ha_url)
             return jsonify({"error": f"STT fehlgeschlagen (HTTP {stt_resp.status_code})"}), 502
 
         stt_result = stt_resp.json()
