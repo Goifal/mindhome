@@ -1,5 +1,32 @@
 # Changelog
 
+## 1.4.2 – Jarvis Dashboard (System-Management UI)
+
+### System-Tab im Dashboard
+- **Neuer "System" Tab** in den Einstellungen
+- Live-Status: Version, Branch, Commit, Container-Health, Ollama, Speicherplatz
+- **Ein-Klick Update**: Git Pull + Docker Rebuild aus dem Dashboard
+- **Ein-Klick Restart**: Container-Neustart ohne SSH
+- **Modell-Update**: Ollama-Modelle per Klick aktualisieren
+- Update-Check: Zeigt verfuegbare Commits auf dem Remote
+
+### Update-Script
+- Neues `update.sh` Script mit 5 Modi: Standard, --quick, --full, --models, --status
+- Git-Stash fuer lokale Aenderungen, Health-Check Monitoring, Changelog-Anzeige
+
+### Container-Tooling
+- Docker CLI + Compose Plugin im Container installiert
+- Git-Repo als `/repo` Volume gemountet (fuer Dashboard-Updates)
+- Docker-Socket gemountet (fuer Container-Steuerung aus dem Dashboard)
+- Ollama-Abfragen ueber HTTP API statt CLI (funktioniert aus dem Container)
+- Git safe.directory fuer gemountetes Volume konfiguriert
+
+### Fixes
+- **UI-Caching**: `static/` als Volume-Mount statt COPY (Aenderungen sofort sichtbar)
+
+### Tests
+- 136 neue Memory-System Tests (memory, semantic_memory, memory_extractor)
+
 ## 1.4.1 – Jarvis Family (Personen-Verwaltung, Stability-Fixes)
 
 ### Personen-Verwaltung

@@ -2008,9 +2008,12 @@ def _deep_merge(base: dict, override: dict):
 
 import subprocess
 import shutil
+import aiohttp as _aiohttp
 
-_MHA_DIR = Path(__file__).parent.parent
-_REPO_DIR = _MHA_DIR.parent
+# Pfade: /repo ist das gemountete Git-Repo, /repo/assistant hat docker-compose.yml
+_REPO_DIR = Path("/repo") if Path("/repo/.git").exists() else Path(__file__).parent.parent.parent
+_MHA_DIR = _REPO_DIR / "assistant"
+_OLLAMA_URL = os.getenv("OLLAMA_URL", "http://host.docker.internal:11434")
 _update_lock = asyncio.Lock()
 _update_log: list[str] = []
 
@@ -2029,35 +2032,59 @@ def _run_cmd(cmd: list[str], cwd: str | None = None, timeout: int = 120) -> tupl
         return -1, str(e)
 
 
+async def _ollama_api(path: str, method: str = "GET", json_data: dict | None = None) -> tuple[bool, dict | str]:
+    """Ruft die Ollama HTTP API auf (laeuft auf dem Host, nicht im Container)."""
+    try:
+        timeout = _aiohttp.ClientTimeout(total=600)
+        async with _aiohttp.ClientSession(timeout=timeout) as session:
+            url = f"{_OLLAMA_URL}{path}"
+            if method == "GET":
+                async with session.get(url) as resp:
+                    if resp.status == 200:
+                        return True, await resp.json()
+                    return False, f"HTTP {resp.status}"
+            elif method == "POST":
+                async with session.post(url, json=json_data) as resp:
+                    # Ollama pull streamt — wir lesen die letzte Zeile
+                    text = await resp.text()
+                    return resp.status == 200, text
+    except Exception as e:
+        return False, str(e)
+
+
 @app.get("/api/ui/system/status")
 async def ui_system_status(token: str = ""):
     """Systemstatus: Git, Container, Ollama, Speicher."""
     _check_token(token)
 
-    # Git
+    # Git (via gemountetes /repo Volume)
     _, branch = _run_cmd(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=str(_REPO_DIR))
     _, commit = _run_cmd(["git", "log", "-1", "--format=%h %s"], cwd=str(_REPO_DIR))
     _, git_status = _run_cmd(["git", "status", "--short"], cwd=str(_REPO_DIR))
 
-    # Container Health
+    # Container Health (via gemounteten Docker-Socket)
     containers = {}
     for name in ["mindhome-assistant", "mha-chromadb", "mha-redis"]:
         rc, out = _run_cmd(["docker", "inspect", "--format", "{{.State.Health.Status}}", name])
         containers[name] = out.strip() if rc == 0 else "unknown"
 
-    # Ollama
-    rc, ollama_models = _run_cmd(["ollama", "list"])
-    ollama_ok = rc == 0
+    # Ollama (via HTTP API auf dem Host)
+    ollama_ok, ollama_data = await _ollama_api("/api/tags")
+    ollama_models = ""
+    if ollama_ok and isinstance(ollama_data, dict):
+        models = ollama_data.get("models", [])
+        lines = [f"{m.get('name', '?'):30s} {m.get('size', 0) / 1e9:.1f} GB" for m in models]
+        ollama_models = "\n".join(["NAME                           SIZE"] + lines)
 
     # Disk
     disk_info = {}
-    if _MHA_DIR.exists():
-        total, used, free = shutil.disk_usage(str(_MHA_DIR))
-        disk_info["system"] = {
-            "total_gb": round(total / (1024**3), 1),
-            "used_gb": round(used / (1024**3), 1),
-            "free_gb": round(free / (1024**3), 1),
-        }
+    disk_path = _REPO_DIR if _REPO_DIR.exists() else Path("/app")
+    total, used, free = shutil.disk_usage(str(disk_path))
+    disk_info["system"] = {
+        "total_gb": round(total / (1024**3), 1),
+        "used_gb": round(used / (1024**3), 1),
+        "free_gb": round(free / (1024**3), 1),
+    }
 
     return {
         "git": {
@@ -2068,7 +2095,7 @@ async def ui_system_status(token: str = ""):
         "containers": containers,
         "ollama": {
             "available": ollama_ok,
-            "models": ollama_models.strip() if ollama_ok else "",
+            "models": ollama_models,
         },
         "disk": disk_info,
         "version": "1.4.1",
@@ -2088,7 +2115,7 @@ async def ui_system_update(token: str = ""):
         _update_log.clear()
         _update_log.append(f"[{datetime.now().strftime('%H:%M:%S')}] Update gestartet...")
 
-        # 1. Git Pull
+        # 1. Git Pull (via gemountetes /repo)
         _update_log.append("Git pull...")
         rc, out = _run_cmd(["git", "pull"], cwd=str(_REPO_DIR), timeout=60)
         _update_log.append(out.strip())
@@ -2096,7 +2123,7 @@ async def ui_system_update(token: str = ""):
             _update_log.append("FEHLER: Git pull fehlgeschlagen")
             return {"success": False, "log": _update_log}
 
-        # 2. Docker Build
+        # 2. Docker Build (via Docker-Socket)
         _update_log.append("Docker build...")
         rc, out = _run_cmd(
             ["docker", "compose", "build"],
@@ -2107,7 +2134,7 @@ async def ui_system_update(token: str = ""):
             _update_log.append("FEHLER: Docker build fehlgeschlagen")
             return {"success": False, "log": _update_log}
 
-        # 3. Docker Up (im Hintergrund — startet auch diesen Container neu)
+        # 3. Docker Up (startet auch diesen Container neu)
         _update_log.append("Docker compose up -d...")
         rc, out = _run_cmd(
             ["docker", "compose", "up", "-d"],
@@ -2137,7 +2164,7 @@ async def ui_system_restart(token: str = ""):
 
 @app.post("/api/ui/system/update-models")
 async def ui_system_update_models(token: str = ""):
-    """Aktualisiert alle installierten Ollama-Modelle."""
+    """Aktualisiert alle installierten Ollama-Modelle via HTTP API."""
     _check_token(token)
 
     if _update_lock.locked():
@@ -2146,23 +2173,19 @@ async def ui_system_update_models(token: str = ""):
     async with _update_lock:
         results = []
 
-        # Installierte Modelle ermitteln
-        rc, out = _run_cmd(["ollama", "list"])
-        if rc != 0:
+        # Installierte Modelle via Ollama HTTP API
+        ok, data = await _ollama_api("/api/tags")
+        if not ok or not isinstance(data, dict):
             return {"success": False, "models": [], "error": "Ollama nicht erreichbar"}
 
-        models = []
-        for line in out.strip().split("\n")[1:]:  # Header ueberspringen
-            name = line.split()[0] if line.strip() else ""
-            if name:
-                models.append(name)
+        models = [m.get("name", "") for m in data.get("models", []) if m.get("name")]
 
         for model in models:
-            rc, out = _run_cmd(["ollama", "pull", model], timeout=600)
+            ok, out = await _ollama_api("/api/pull", method="POST", json_data={"name": model})
             results.append({
                 "model": model,
-                "success": rc == 0,
-                "output": out.strip()[-200:],
+                "success": ok,
+                "output": str(out)[-200:],
             })
 
         return {
@@ -2176,14 +2199,16 @@ async def ui_system_update_check(token: str = ""):
     """Prueft ob neue Commits auf dem Remote verfuegbar sind."""
     _check_token(token)
 
-    # Fetch ohne Pull
-    rc, _ = _run_cmd(["git", "fetch", "--dry-run"], cwd=str(_REPO_DIR), timeout=30)
+    # Aktuellen Branch ermitteln
+    _, current_branch = _run_cmd(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=str(_REPO_DIR))
+    branch = current_branch.strip() or "main"
+
+    # Fetch
+    rc, _ = _run_cmd(["git", "fetch", "origin", branch], cwd=str(_REPO_DIR), timeout=30)
     if rc != 0:
         return {"updates_available": False, "error": "Git fetch fehlgeschlagen"}
 
     _, local = _run_cmd(["git", "rev-parse", "HEAD"], cwd=str(_REPO_DIR))
-    branch = "main"
-    _, _ = _run_cmd(["git", "fetch", "origin", branch], cwd=str(_REPO_DIR), timeout=30)
     _, remote = _run_cmd(["git", "rev-parse", f"origin/{branch}"], cwd=str(_REPO_DIR))
 
     local = local.strip()
