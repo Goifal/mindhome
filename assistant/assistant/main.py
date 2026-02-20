@@ -2002,6 +2002,209 @@ def _deep_merge(base: dict, override: dict):
             base[key] = value
 
 
+# ============================================================
+# System Management API (Update, Restart, Status)
+# ============================================================
+
+import subprocess
+import shutil
+
+_MHA_DIR = Path(__file__).parent.parent
+_REPO_DIR = _MHA_DIR.parent
+_update_lock = asyncio.Lock()
+_update_log: list[str] = []
+
+
+def _run_cmd(cmd: list[str], cwd: str | None = None, timeout: int = 120) -> tuple[int, str]:
+    """Fuehrt einen Shell-Befehl aus und gibt (returncode, output) zurueck."""
+    try:
+        result = subprocess.run(
+            cmd, capture_output=True, text=True,
+            cwd=cwd, timeout=timeout,
+        )
+        return result.returncode, result.stdout + result.stderr
+    except subprocess.TimeoutExpired:
+        return -1, "Timeout"
+    except Exception as e:
+        return -1, str(e)
+
+
+@app.get("/api/ui/system/status")
+async def ui_system_status(token: str = ""):
+    """Systemstatus: Git, Container, Ollama, Speicher."""
+    _check_token(token)
+
+    # Git
+    _, branch = _run_cmd(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=str(_REPO_DIR))
+    _, commit = _run_cmd(["git", "log", "-1", "--format=%h %s"], cwd=str(_REPO_DIR))
+    _, git_status = _run_cmd(["git", "status", "--short"], cwd=str(_REPO_DIR))
+
+    # Container Health
+    containers = {}
+    for name in ["mindhome-assistant", "mha-chromadb", "mha-redis"]:
+        rc, out = _run_cmd(["docker", "inspect", "--format", "{{.State.Health.Status}}", name])
+        containers[name] = out.strip() if rc == 0 else "unknown"
+
+    # Ollama
+    rc, ollama_models = _run_cmd(["ollama", "list"])
+    ollama_ok = rc == 0
+
+    # Disk
+    disk_info = {}
+    if _MHA_DIR.exists():
+        total, used, free = shutil.disk_usage(str(_MHA_DIR))
+        disk_info["system"] = {
+            "total_gb": round(total / (1024**3), 1),
+            "used_gb": round(used / (1024**3), 1),
+            "free_gb": round(free / (1024**3), 1),
+        }
+
+    return {
+        "git": {
+            "branch": branch.strip(),
+            "commit": commit.strip(),
+            "changes": git_status.strip(),
+        },
+        "containers": containers,
+        "ollama": {
+            "available": ollama_ok,
+            "models": ollama_models.strip() if ollama_ok else "",
+        },
+        "disk": disk_info,
+        "version": "1.4.1",
+        "update_log": _update_log[-20:],
+    }
+
+
+@app.post("/api/ui/system/update")
+async def ui_system_update(token: str = ""):
+    """Startet ein System-Update (git pull + docker compose build + up)."""
+    _check_token(token)
+
+    if _update_lock.locked():
+        raise HTTPException(status_code=409, detail="Update laeuft bereits")
+
+    async with _update_lock:
+        _update_log.clear()
+        _update_log.append(f"[{datetime.now().strftime('%H:%M:%S')}] Update gestartet...")
+
+        # 1. Git Pull
+        _update_log.append("Git pull...")
+        rc, out = _run_cmd(["git", "pull"], cwd=str(_REPO_DIR), timeout=60)
+        _update_log.append(out.strip())
+        if rc != 0:
+            _update_log.append("FEHLER: Git pull fehlgeschlagen")
+            return {"success": False, "log": _update_log}
+
+        # 2. Docker Build
+        _update_log.append("Docker build...")
+        rc, out = _run_cmd(
+            ["docker", "compose", "build"],
+            cwd=str(_MHA_DIR), timeout=300,
+        )
+        _update_log.append(out.strip()[-500:] if len(out) > 500 else out.strip())
+        if rc != 0:
+            _update_log.append("FEHLER: Docker build fehlgeschlagen")
+            return {"success": False, "log": _update_log}
+
+        # 3. Docker Up (im Hintergrund — startet auch diesen Container neu)
+        _update_log.append("Docker compose up -d...")
+        rc, out = _run_cmd(
+            ["docker", "compose", "up", "-d"],
+            cwd=str(_MHA_DIR), timeout=120,
+        )
+        _update_log.append(out.strip())
+
+        _update_log.append(f"[{datetime.now().strftime('%H:%M:%S')}] Update abgeschlossen!")
+        return {"success": rc == 0, "log": _update_log}
+
+
+@app.post("/api/ui/system/restart")
+async def ui_system_restart(token: str = ""):
+    """Startet alle Container neu (ohne Rebuild)."""
+    _check_token(token)
+
+    if _update_lock.locked():
+        raise HTTPException(status_code=409, detail="Update/Restart laeuft bereits")
+
+    async with _update_lock:
+        rc, out = _run_cmd(
+            ["docker", "compose", "restart"],
+            cwd=str(_MHA_DIR), timeout=120,
+        )
+        return {"success": rc == 0, "output": out.strip()}
+
+
+@app.post("/api/ui/system/update-models")
+async def ui_system_update_models(token: str = ""):
+    """Aktualisiert alle installierten Ollama-Modelle."""
+    _check_token(token)
+
+    if _update_lock.locked():
+        raise HTTPException(status_code=409, detail="Update laeuft bereits")
+
+    async with _update_lock:
+        results = []
+
+        # Installierte Modelle ermitteln
+        rc, out = _run_cmd(["ollama", "list"])
+        if rc != 0:
+            return {"success": False, "models": [], "error": "Ollama nicht erreichbar"}
+
+        models = []
+        for line in out.strip().split("\n")[1:]:  # Header ueberspringen
+            name = line.split()[0] if line.strip() else ""
+            if name:
+                models.append(name)
+
+        for model in models:
+            rc, out = _run_cmd(["ollama", "pull", model], timeout=600)
+            results.append({
+                "model": model,
+                "success": rc == 0,
+                "output": out.strip()[-200:],
+            })
+
+        return {
+            "success": all(r["success"] for r in results),
+            "models": results,
+        }
+
+
+@app.get("/api/ui/system/update-check")
+async def ui_system_update_check(token: str = ""):
+    """Prueft ob neue Commits auf dem Remote verfuegbar sind."""
+    _check_token(token)
+
+    # Fetch ohne Pull
+    rc, _ = _run_cmd(["git", "fetch", "--dry-run"], cwd=str(_REPO_DIR), timeout=30)
+    if rc != 0:
+        return {"updates_available": False, "error": "Git fetch fehlgeschlagen"}
+
+    _, local = _run_cmd(["git", "rev-parse", "HEAD"], cwd=str(_REPO_DIR))
+    branch = "main"
+    _, _ = _run_cmd(["git", "fetch", "origin", branch], cwd=str(_REPO_DIR), timeout=30)
+    _, remote = _run_cmd(["git", "rev-parse", f"origin/{branch}"], cwd=str(_REPO_DIR))
+
+    local = local.strip()
+    remote = remote.strip()
+
+    if local == remote:
+        return {"updates_available": False, "local": local[:8], "remote": remote[:8]}
+
+    _, log = _run_cmd(
+        ["git", "log", "--oneline", f"{local}..{remote}"],
+        cwd=str(_REPO_DIR),
+    )
+
+    return {
+        "updates_available": True,
+        "local": local[:8],
+        "remote": remote[:8],
+        "new_commits": log.strip().split("\n") if log.strip() else [],
+    }
+
+
 @app.get("/")
 async def root():
     """Startseite."""

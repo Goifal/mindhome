@@ -519,6 +519,7 @@ textarea { resize:vertical; min-height:70px; font-family:var(--mono); font-size:
           <div class="tab-item" data-tab="tab-security">Sicherheit</div>
           <div class="tab-item" data-tab="tab-autonomie">KI-Autonomie</div>
           <div class="tab-item" data-tab="tab-eastereggs">Easter Eggs</div>
+          <div class="tab-item" data-tab="tab-system">System</div>
         </div>
         <div id="settingsContent"></div>
       </div>
@@ -1129,6 +1130,7 @@ function renderCurrentTab() {
       case 'tab-security': c.innerHTML = renderSecurity(); loadApiKey(); loadNotifyChannels(); break;
       case 'tab-autonomie': c.innerHTML = renderAutonomie(); loadSnapshots(); loadOptStatus(); break;
       case 'tab-eastereggs': c.innerHTML = renderEasterEggs(); loadEasterEggs(); break;
+      case 'tab-system': c.innerHTML = renderSystem(); loadSystemStatus(); break;
     }
   } catch(err) {
     c.innerHTML = '<div style="padding:24px;color:var(--danger);"><h3>Rendering-Fehler</h3><pre style="margin-top:12px;font-size:12px;white-space:pre-wrap;">' + esc(err.message) + '\n' + esc(err.stack) + '</pre></div>';
@@ -2596,6 +2598,187 @@ async function refreshErrBadge() {
     updateErrBadge(d.total);
   } catch(e) {}
 }
+
+// ============================================================
+// System-Tab (Update, Restart, Status)
+// ============================================================
+
+let _sysStatus = null;
+let _updating = false;
+
+function renderSystem() {
+  return sectionWrap('&#128300;', 'System-Status',
+    '<div id="sysStatusBox" style="font-family:var(--font-mono);font-size:12px;color:var(--text-secondary);">Lade...</div>' +
+    '<button class="btn btn-secondary" style="margin-top:12px;font-size:12px;" onclick="loadSystemStatus()">Status aktualisieren</button>'
+  ) +
+  sectionWrap('&#128640;', 'System-Update',
+    '<p style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;">Holt neuen Code von Git und baut die Container neu. Der Assistant startet dabei kurz neu.</p>' +
+    '<div id="sysUpdateCheck" style="margin-bottom:12px;"></div>' +
+    '<div style="display:flex;gap:8px;flex-wrap:wrap;">' +
+      '<button class="btn btn-primary" id="btnSysUpdate" onclick="doSystemUpdate()">&#128640; System-Update starten</button>' +
+      '<button class="btn btn-secondary" id="btnSysCheckUpdate" onclick="checkForUpdates()">&#128269; Auf Updates pruefen</button>' +
+    '</div>' +
+    '<div id="sysUpdateLog" style="display:none;margin-top:16px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:12px;max-height:300px;overflow-y:auto;">' +
+      '<div style="font-size:11px;font-family:var(--font-mono);white-space:pre-wrap;" id="sysUpdateLogContent"></div>' +
+    '</div>'
+  ) +
+  sectionWrap('&#128260;', 'Container neustarten',
+    '<p style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;">Startet alle Container neu ohne Rebuild. Schneller als ein volles Update.</p>' +
+    '<button class="btn btn-secondary" id="btnSysRestart" onclick="doSystemRestart()">&#128260; Container neustarten</button>'
+  ) +
+  sectionWrap('&#129302;', 'Ollama-Modelle aktualisieren',
+    '<p style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;">Aktualisiert alle installierten LLM-Modelle auf die neueste Version.</p>' +
+    '<div id="sysModelsList" style="margin-bottom:12px;font-size:12px;color:var(--text-secondary);"></div>' +
+    '<button class="btn btn-secondary" id="btnSysModels" onclick="doUpdateModels()">&#129302; Modelle aktualisieren</button>' +
+    '<div id="sysModelsLog" style="display:none;margin-top:12px;font-size:12px;font-family:var(--font-mono);color:var(--text-secondary);"></div>'
+  );
+}
+
+async function loadSystemStatus() {
+  const box = document.getElementById('sysStatusBox');
+  if (!box) return;
+  try {
+    _sysStatus = await api('/api/ui/system/status');
+    const s = _sysStatus;
+    const git = s.git || {};
+    const containers = s.containers || {};
+    const ollama = s.ollama || {};
+    const disk = s.disk?.system || {};
+
+    const cStatus = Object.entries(containers).map(([name, status]) => {
+      const color = status === 'healthy' ? 'var(--success)' : status === 'unhealthy' ? 'var(--danger)' : 'var(--warning)';
+      const short = name.replace('mindhome-', '').replace('mha-', '');
+      return `<span style="color:${color};">&#9679;</span> ${short}: ${status}`;
+    }).join('&nbsp;&nbsp;|&nbsp;&nbsp;');
+
+    const models = document.getElementById('sysModelsList');
+    if (models && ollama.models) {
+      models.innerHTML = '<strong>Installiert:</strong> ' + esc(ollama.models).split('\n').slice(1).filter(l=>l.trim()).map(l => l.split(/\s+/)[0]).join(', ');
+    }
+
+    box.innerHTML = `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px 24px;">
+        <div><strong>Version:</strong> ${esc(s.version || '?')}</div>
+        <div><strong>Branch:</strong> ${esc(git.branch || '?')}</div>
+        <div style="grid-column:1/-1;"><strong>Commit:</strong> ${esc(git.commit || '?')}</div>
+        <div style="grid-column:1/-1;"><strong>Container:</strong> ${cStatus}</div>
+        <div><strong>Ollama:</strong> ${ollama.available ? '<span style="color:var(--success);">Online</span>' : '<span style="color:var(--danger);">Offline</span>'}</div>
+        <div><strong>Disk frei:</strong> ${disk.free_gb || '?'} GB / ${disk.total_gb || '?'} GB</div>
+      </div>
+      ${git.changes ? '<div style="margin-top:8px;padding:8px;background:var(--bg-hover);border-radius:4px;"><strong>Lokale Aenderungen:</strong><pre style="margin:4px 0 0;font-size:11px;">' + esc(git.changes) + '</pre></div>' : ''}
+    `;
+  } catch(e) {
+    box.innerHTML = '<span style="color:var(--danger);">Fehler beim Laden: ' + esc(e.message) + '</span>';
+  }
+}
+
+async function checkForUpdates() {
+  const box = document.getElementById('sysUpdateCheck');
+  const btn = document.getElementById('btnSysCheckUpdate');
+  if (!box || !btn) return;
+  btn.disabled = true;
+  btn.textContent = 'Pruefe...';
+  try {
+    const data = await api('/api/ui/system/update-check');
+    if (data.updates_available) {
+      const commits = (data.new_commits || []).map(c => '<div style="padding:2px 0;">' + esc(c) + '</div>').join('');
+      box.innerHTML = '<div style="padding:10px;background:var(--bg-hover);border-left:3px solid var(--accent);border-radius:4px;">' +
+        '<strong style="color:var(--accent);">&#9889; Updates verfuegbar!</strong> (' + esc(data.local) + ' &rarr; ' + esc(data.remote) + ')' +
+        '<div style="margin-top:8px;font-size:11px;font-family:var(--font-mono);">' + commits + '</div></div>';
+    } else {
+      box.innerHTML = '<div style="padding:8px;color:var(--success);"><strong>&#10003;</strong> System ist aktuell (' + esc(data.local || '') + ')</div>';
+    }
+  } catch(e) {
+    box.innerHTML = '<span style="color:var(--danger);">Fehler: ' + esc(e.message) + '</span>';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '\u{1F50D} Auf Updates pruefen';
+  }
+}
+
+async function doSystemUpdate() {
+  if (_updating) return;
+  if (!confirm('System-Update starten?\n\nDer Assistant wird kurz neu gestartet. Danach lade das Dashboard neu.')) return;
+  _updating = true;
+  const btn = document.getElementById('btnSysUpdate');
+  const logBox = document.getElementById('sysUpdateLog');
+  const logContent = document.getElementById('sysUpdateLogContent');
+  if (btn) { btn.disabled = true; btn.textContent = 'Update laeuft...'; }
+  if (logBox) logBox.style.display = 'block';
+  if (logContent) logContent.textContent = 'Update gestartet...\n';
+
+  try {
+    const data = await api('/api/ui/system/update', 'POST');
+    if (logContent) {
+      logContent.textContent = (data.log || []).join('\n');
+    }
+    if (data.success) {
+      toast('Update erfolgreich! Seite wird neu geladen...');
+      setTimeout(() => location.reload(), 3000);
+    } else {
+      toast('Update fehlgeschlagen — siehe Log', 'error');
+    }
+  } catch(e) {
+    if (logContent) logContent.textContent += '\nFehler: ' + e.message;
+    // Wenn Connection lost -> Container startet gerade neu
+    if (e.message.includes('Failed to fetch') || e.message.includes('NetworkError')) {
+      toast('Container startet neu... Seite wird gleich neu geladen.');
+      setTimeout(() => location.reload(), 10000);
+    } else {
+      toast('Update-Fehler: ' + e.message, 'error');
+    }
+  } finally {
+    _updating = false;
+    if (btn) { btn.disabled = false; btn.textContent = '\u{1F680} System-Update starten'; }
+  }
+}
+
+async function doSystemRestart() {
+  if (!confirm('Alle Container jetzt neustarten?')) return;
+  const btn = document.getElementById('btnSysRestart');
+  if (btn) { btn.disabled = true; btn.textContent = 'Neustart laeuft...'; }
+  try {
+    await api('/api/ui/system/restart', 'POST');
+    toast('Container werden neu gestartet. Seite wird neu geladen...');
+    setTimeout(() => location.reload(), 8000);
+  } catch(e) {
+    if (e.message.includes('Failed to fetch') || e.message.includes('NetworkError')) {
+      toast('Container startet neu... bitte kurz warten.');
+      setTimeout(() => location.reload(), 10000);
+    } else {
+      toast('Fehler: ' + e.message, 'error');
+    }
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '\u{1F504} Container neustarten'; }
+  }
+}
+
+async function doUpdateModels() {
+  if (!confirm('Alle Ollama-Modelle aktualisieren?\n\nDas kann je nach Modellgroesse einige Minuten dauern.')) return;
+  const btn = document.getElementById('btnSysModels');
+  const logBox = document.getElementById('sysModelsLog');
+  if (btn) { btn.disabled = true; btn.textContent = 'Aktualisiere...'; }
+  if (logBox) { logBox.style.display = 'block'; logBox.textContent = 'Modelle werden aktualisiert...\n'; }
+  try {
+    const data = await api('/api/ui/system/update-models', 'POST');
+    if (logBox) {
+      logBox.textContent = (data.models || []).map(m =>
+        (m.success ? '\u2713' : '\u2717') + ' ' + m.model + ': ' + (m.output || '').split('\n').pop()
+      ).join('\n');
+    }
+    if (data.success) {
+      toast('Alle Modelle aktualisiert!');
+    } else {
+      toast('Einige Modelle konnten nicht aktualisiert werden', 'error');
+    }
+  } catch(e) {
+    toast('Fehler: ' + e.message, 'error');
+    if (logBox) logBox.textContent += '\nFehler: ' + e.message;
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '\u{1F916} Modelle aktualisieren'; }
+  }
+}
+
 </script>
 </body>
 </html>
