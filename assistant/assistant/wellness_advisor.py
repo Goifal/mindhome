@@ -118,8 +118,8 @@ class WellnessAdvisor:
                 if state and state.get("state") not in ("unavailable", "unknown"):
                     power = float(state.get("state", 0))
                     user_at_pc = power > 30  # PC laeuft wenn > 30W
-            except (ValueError, TypeError, Exception):
-                pass
+            except (ValueError, TypeError, Exception) as e:
+                logger.debug("PC-Power-Sensor Fehler: %s", e)
 
         # 2. Fallback: Activity Engine
         if not user_at_pc:
@@ -247,8 +247,8 @@ class WellnessAdvisor:
                     state = await self.ha.get_entity_state(self.kitchen_motion_sensor)
                     if state and state.get("state") == "on":
                         kitchen_was_active = True
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("Kuechen-Sensor Fehler: %s", e)
 
             if kitchen_was_active:
                 # Kueche ist gerade aktiv — User kocht/isst vermutlich
@@ -259,8 +259,8 @@ class WellnessAdvisor:
                 activity = detection.get("activity", "")
                 if activity in ("away", "sleeping"):
                     continue
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Activity-Check fuer Mahlzeit fehlgeschlagen: %s", e)
 
             await self.redis.setex(key, 86400, "1")  # 24h TTL
 
@@ -290,7 +290,8 @@ class WellnessAdvisor:
             activity = detection.get("activity", "")
             if activity in ("sleeping", "away"):
                 return
-        except Exception:
+        except Exception as e:
+            logger.debug("Late-Night Activity-Check fehlgeschlagen: %s", e)
             return
 
         # Nur 1x pro Nacht (Redis TTL 6h)
@@ -335,7 +336,8 @@ class WellnessAdvisor:
             activity = detection.get("activity", "")
             if activity in ("away", "sleeping"):
                 return
-        except Exception:
+        except Exception as e:
+            logger.debug("Hydration Activity-Check fehlgeschlagen: %s", e)
             return
 
         await self.redis.set(key, datetime.now().isoformat())

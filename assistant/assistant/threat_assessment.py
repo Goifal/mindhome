@@ -77,6 +77,14 @@ class ThreatAssessment:
         device_threats = await self._check_unknown_devices(states)
         threats.extend(device_threats)
 
+        # 5. Rauchmelder / Feueralarm
+        smoke_threats = self._check_smoke_fire(states)
+        threats.extend(smoke_threats)
+
+        # 6. Wasserleck-Sensoren
+        water_threats = self._check_water_leak(states)
+        threats.extend(water_threats)
+
         return threats
 
     async def _check_night_motion(self, states: list[dict]) -> list[dict]:
@@ -241,6 +249,189 @@ class ThreatAssessment:
                     })
 
         return threats
+
+    def _check_smoke_fire(self, states: list[dict]) -> list[dict]:
+        """Prueft Rauchmelder und Feuer-Sensoren."""
+        threats = []
+        smoke_keywords = ["smoke", "rauch", "fire", "feuer", "co2", "kohlenmonoxid"]
+
+        for s in states:
+            eid = s.get("entity_id", "")
+            if not eid.startswith("binary_sensor."):
+                continue
+            if s.get("state") != "on":
+                continue
+
+            eid_lower = eid.lower()
+            if any(kw in eid_lower for kw in smoke_keywords):
+                friendly = s.get("attributes", {}).get("friendly_name", eid)
+                threats.append({
+                    "type": "smoke_fire",
+                    "message": f"ALARM: {friendly} hat ausgeloest! Sofortige Pruefung erforderlich!",
+                    "urgency": "critical",
+                    "entity": eid,
+                })
+
+        return threats
+
+    def _check_water_leak(self, states: list[dict]) -> list[dict]:
+        """Prueft Wasserleck-Sensoren (Waschmaschine, Bad, Keller)."""
+        threats = []
+        water_keywords = ["water", "wasser", "leak", "leck", "moisture", "feucht", "flood"]
+
+        for s in states:
+            eid = s.get("entity_id", "")
+            if not eid.startswith("binary_sensor."):
+                continue
+            if s.get("state") != "on":
+                continue
+
+            eid_lower = eid.lower()
+            if any(kw in eid_lower for kw in water_keywords):
+                friendly = s.get("attributes", {}).get("friendly_name", eid)
+                threats.append({
+                    "type": "water_leak",
+                    "message": f"Wasserleck erkannt: {friendly}! Bitte umgehend pruefen.",
+                    "urgency": "critical",
+                    "entity": eid,
+                })
+
+        return threats
+
+    async def get_security_score(self) -> dict:
+        """Berechnet einen Sicherheits-Score (0-100) basierend auf aktuellem Zustand.
+
+        Returns:
+            Dict mit score, level, details
+        """
+        if not self.enabled:
+            return {"score": -1, "level": "disabled", "details": []}
+
+        states = await self.ha.get_states()
+        if not states:
+            return {"score": -1, "level": "unknown", "details": ["Keine HA-Daten verfuegbar"]}
+
+        score = 100
+        details = []
+
+        # Tueren/Fenster pruefen
+        open_doors = 0
+        open_windows = 0
+        for s in states:
+            eid = s.get("entity_id", "")
+            if not eid.startswith("binary_sensor."):
+                continue
+            if s.get("state") != "on":
+                continue
+            if "door" in eid or "tuer" in eid:
+                open_doors += 1
+            elif "window" in eid or "fenster" in eid:
+                open_windows += 1
+
+        if open_doors > 0:
+            score -= open_doors * 15
+            details.append(f"{open_doors} Tuer(en) offen")
+        if open_windows > 0:
+            score -= open_windows * 5
+            details.append(f"{open_windows} Fenster offen")
+
+        # Schloesser pruefen
+        unlocked = 0
+        for s in states:
+            if s.get("entity_id", "").startswith("lock.") and s.get("state") == "unlocked":
+                unlocked += 1
+        if unlocked > 0:
+            score -= unlocked * 20
+            details.append(f"{unlocked} Schloss/Schloesser entriegelt")
+
+        # Rauchmelder pruefen
+        smoke_active = any(
+            s.get("state") == "on"
+            and s.get("entity_id", "").startswith("binary_sensor.")
+            and any(kw in s.get("entity_id", "").lower() for kw in ["smoke", "rauch", "fire", "feuer"])
+            for s in states
+        )
+        if smoke_active:
+            score -= 50
+            details.append("Rauchmelder aktiv!")
+
+        # Wasserleck pruefen
+        water_active = any(
+            s.get("state") == "on"
+            and s.get("entity_id", "").startswith("binary_sensor.")
+            and any(kw in s.get("entity_id", "").lower() for kw in ["water", "wasser", "leak", "leck"])
+            for s in states
+        )
+        if water_active:
+            score -= 30
+            details.append("Wasserleck erkannt!")
+
+        # Nachtzeit + niemand zuhause
+        now = datetime.now()
+        is_night = now.hour >= self.night_start or now.hour < self.night_end
+        anyone_home = any(
+            s.get("entity_id", "").startswith("person.") and s.get("state") == "home"
+            for s in states
+        )
+        if is_night and not anyone_home:
+            score -= 10
+            details.append("Nacht + niemand zuhause")
+
+        score = max(0, score)
+
+        if score >= 90:
+            level = "excellent"
+        elif score >= 70:
+            level = "good"
+        elif score >= 50:
+            level = "warning"
+        else:
+            level = "critical"
+
+        if not details:
+            details.append("Alles in Ordnung")
+
+        return {"score": score, "level": level, "details": details}
+
+    async def escalate_threat(self, threat: dict) -> list[str]:
+        """Fuehrt Eskalations-Aktionen fuer kritische Bedrohungen aus.
+
+        Args:
+            threat: Bedrohungs-Dict aus assess_threats()
+
+        Returns:
+            Liste der ausgefuehrten Aktionen
+        """
+        actions_taken = []
+        threat_type = threat.get("type", "")
+        urgency = threat.get("urgency", "medium")
+
+        if urgency != "critical":
+            return actions_taken
+
+        # Bei Rauch/Feuer: Alle Lichter an
+        if threat_type == "smoke_fire":
+            try:
+                lights = await self.ha.get_states()
+                for s in (lights or []):
+                    eid = s.get("entity_id", "")
+                    if eid.startswith("light.") and s.get("state") == "off":
+                        await self.ha.call_service("light", "turn_on", {"entity_id": eid})
+                actions_taken.append("Alle Lichter eingeschaltet")
+            except Exception as e:
+                logger.warning("Eskalation Lichter fehlgeschlagen: %s", e)
+
+        # Bei offenen Tueren + niemand da: Schloesser verriegeln
+        if threat_type in ("door_open_empty", "lock_open_empty"):
+            entity = threat.get("entity", "")
+            if entity.startswith("lock."):
+                try:
+                    await self.ha.call_service("lock", "lock", {"entity_id": entity})
+                    actions_taken.append(f"{entity} verriegelt")
+                except Exception as e:
+                    logger.warning("Eskalation Schloss fehlgeschlagen: %s", e)
+
+        return actions_taken
 
     async def _was_notified(self, key: str, cooldown_minutes: int = 30) -> bool:
         if not self.redis:

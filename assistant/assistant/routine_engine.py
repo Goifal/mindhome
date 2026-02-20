@@ -751,7 +751,10 @@ Kein unterwuerfiger Ton. Du bist ein brillanter Butler, kein Chatbot."""
     async def activate_guest_mode(self) -> str:
         """Aktiviert den Gaeste-Modus."""
         if self.redis:
-            await self.redis.set(KEY_GUEST_MODE, "active")
+            try:
+                await self.redis.set(KEY_GUEST_MODE, "active")
+            except Exception as e:
+                logger.warning("Guest-Mode Redis-Fehler: %s", e)
         logger.info("Gaeste-Modus aktiviert")
 
         parts = ["Gaeste-Modus aktiviert."]
@@ -826,7 +829,10 @@ Kein unterwuerfiger Ton. Du bist ein brillanter Butler, kein Chatbot."""
     async def deactivate_guest_mode(self) -> str:
         """Deaktiviert den Gaeste-Modus."""
         if self.redis:
-            await self.redis.delete(KEY_GUEST_MODE)
+            try:
+                await self.redis.delete(KEY_GUEST_MODE)
+            except Exception as e:
+                logger.warning("Guest-Mode Redis-Fehler: %s", e)
         logger.info("Gaeste-Modus deaktiviert")
         return "Gaeste-Modus beendet. Zurueck zum Normalbetrieb."
 
@@ -834,10 +840,14 @@ Kein unterwuerfiger Ton. Du bist ein brillanter Butler, kein Chatbot."""
         """Prueft ob der Gaeste-Modus aktiv ist."""
         if not self.redis:
             return False
-        val = await self.redis.get(KEY_GUEST_MODE)
-        if val is not None and isinstance(val, bytes):
-            val = val.decode()
-        return val == "active"
+        try:
+            val = await self.redis.get(KEY_GUEST_MODE)
+            if val is not None and isinstance(val, bytes):
+                val = val.decode()
+            return val == "active"
+        except Exception as e:
+            logger.debug("Guest-Mode Check fehlgeschlagen: %s", e)
+            return False
 
     def get_guest_mode_prompt(self) -> str:
         """Gibt den Prompt-Zusatz fuer den Gaeste-Modus zurueck."""

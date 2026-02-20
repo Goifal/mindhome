@@ -99,8 +99,12 @@ class ConditionalCommands:
         key = f"{KEY_PREFIX}{cond_id}"
         ttl_seconds = ttl_hours * 3600
 
-        await self.redis.setex(key, ttl_seconds, json.dumps(conditional))
-        await self.redis.sadd(KEY_INDEX, cond_id)
+        try:
+            await self.redis.setex(key, ttl_seconds, json.dumps(conditional))
+            await self.redis.sadd(KEY_INDEX, cond_id)
+        except Exception as e:
+            logger.error("Conditional speichern fehlgeschlagen: %s", e)
+            return {"success": False, "message": "Bedingung konnte nicht gespeichert werden."}
 
         time_str = f"{ttl_hours} Stunde{'n' if ttl_hours > 1 else ''}"
         shot_str = "einmalig" if one_shot else "dauerhaft"
@@ -124,7 +128,11 @@ class ConditionalCommands:
             return []
 
         executed = []
-        cond_ids = await self.redis.smembers(KEY_INDEX)
+        try:
+            cond_ids = await self.redis.smembers(KEY_INDEX)
+        except Exception as e:
+            logger.debug("Conditional index nicht lesbar: %s", e)
+            return []
         if not cond_ids:
             return []
 

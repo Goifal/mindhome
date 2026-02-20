@@ -69,8 +69,8 @@ class ConnectionManager:
         })
         try:
             await websocket.send_text(message)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("send_personal fehlgeschlagen: %s", e)
 
 
 # Globale Instanz

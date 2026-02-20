@@ -166,8 +166,8 @@ class SoundManager:
                 )
                 if success:
                     return True
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Custom Sound '%s' fehlgeschlagen: %s", event, e)
 
         # 2. Standard-Pfad mit mehreren Formaten (mp3, wav, ogg, flac)
         for ext in (".mp3", ".wav", ".ogg", ".flac"):
@@ -183,7 +183,8 @@ class SoundManager:
                 )
                 if success:
                     return True
-            except Exception:
+            except Exception as e:
+                logger.debug("Sound-Datei %s nicht abspielbar: %s", sound_url, e)
                 continue
 
         return False
@@ -220,7 +221,8 @@ class SoundManager:
                     "language": "de",
                 },
             )
-        except Exception:
+        except Exception as e:
+            logger.debug("TTS-Chime Fallback fehlgeschlagen: %s", e)
             return False
 
     def _get_auto_volume(self, event: str) -> float:

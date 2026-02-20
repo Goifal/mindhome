@@ -141,7 +141,8 @@ def _read_text(path: Path) -> Optional[str]:
         if len(text) > MAX_EXTRACT_CHARS:
             text = text[:MAX_EXTRACT_CHARS] + "\n... (abgeschnitten)"
         return text.strip() or None
-    except Exception:
+    except Exception as e:
+        logger.debug("Text-Extraktion fehlgeschlagen fuer %s: %s", path.name, e)
         return None
 
 

@@ -364,13 +364,20 @@ class EnergyOptimizer:
         """Prueft ob bereits kuerzlich ein Alert dieses Typs gesendet wurde (TTL kommt von _mark_alerted)."""
         if not self.redis:
             return False
-        key = f"mha:energy:alert:{alert_type}"
-        val = await self.redis.get(key)
-        return val is not None
+        try:
+            key = f"mha:energy:alert:{alert_type}"
+            val = await self.redis.get(key)
+            return val is not None
+        except Exception as e:
+            logger.debug("Alert-Check fehlgeschlagen: %s", e)
+            return False
 
     async def _mark_alerted(self, alert_type: str, cooldown_minutes: int = 120):
         """Markiert einen Alert als gesendet."""
         if not self.redis:
             return
-        key = f"mha:energy:alert:{alert_type}"
-        await self.redis.setex(key, cooldown_minutes * 60, "1")
+        try:
+            key = f"mha:energy:alert:{alert_type}"
+            await self.redis.setex(key, cooldown_minutes * 60, "1")
+        except Exception as e:
+            logger.debug("Alert markieren fehlgeschlagen: %s", e)
