@@ -206,6 +206,22 @@ textarea { resize:vertical; min-height:70px; font-family:var(--mono); font-size:
 .log-role.assistant { color:var(--accent); }
 .log-content { flex:1; color:var(--text-primary); line-height:1.5; }
 
+/* Fehlerspeicher */
+.err-entry { display:flex; gap:14px; padding:10px 14px; border-bottom:1px solid var(--border); font-size:12px; align-items:flex-start; }
+.err-entry:hover { background:var(--bg-card-hover); }
+.err-entry.level-ERROR { border-left:3px solid var(--danger); }
+.err-entry.level-WARNING { border-left:3px solid var(--accent); }
+.err-time { color:var(--text-muted); font-family:var(--mono); font-size:11px; min-width:130px; white-space:nowrap; }
+.err-level { min-width:60px; font-weight:700; font-size:11px; text-transform:uppercase; font-family:var(--mono); }
+.err-level.ERROR { color:var(--danger); }
+.err-level.WARNING { color:var(--accent); }
+.err-logger { min-width:120px; color:var(--text-muted); font-family:var(--mono); font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.err-msg { flex:1; color:var(--text-primary); line-height:1.5; word-break:break-word; }
+.err-badge { display:inline-flex; align-items:center; justify-content:center; min-width:18px; height:18px; padding:0 5px; border-radius:9px; background:var(--danger); color:white; font-size:10px; font-weight:700; margin-left:6px; }
+.err-filter-bar { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+.err-filter-bar .btn { font-size:11px; padding:4px 12px; }
+.err-filter-bar .btn.active-filter { background:var(--accent-dim); color:var(--accent); border-color:var(--accent); }
+
 /* Section Header */
 .section-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:20px; }
 .section-header h2 { font-size:18px; font-weight:600; }
@@ -351,6 +367,7 @@ textarea { resize:vertical; min-height:70px; font-family:var(--mono); font-size:
       <div class="nav-item" data-page="entities"><span class="nav-icon">&#8801;</span>Entities</div>
       <div class="nav-item" data-page="knowledge"><span class="nav-icon">&#128218;</span>Wissen</div>
       <div class="nav-item" data-page="logs"><span class="nav-icon">&#9776;</span>Logs</div>
+      <div class="nav-item" data-page="errors"><span class="nav-icon">&#9888;</span>Fehler<span id="errBadge" class="err-badge" style="display:none;">0</span></div>
     </nav>
     <div class="sidebar-footer">MindHome Assistant v1.1.0</div>
   </aside>
@@ -434,6 +451,21 @@ textarea { resize:vertical; min-height:70px; font-family:var(--mono); font-size:
           <button class="btn btn-secondary" onclick="loadLogs()">Aktualisieren</button>
         </div>
         <div class="card" style="padding:0;"><div id="logsContainer"></div></div>
+      </div>
+
+      <div id="page-errors" class="page">
+        <div class="section-header">
+          <div><h2>Fehlerspeicher</h2><p>Letzte Warnungen und Fehler des Assistenten</p></div>
+          <div class="err-filter-bar">
+            <button class="btn btn-secondary active-filter" id="errFilterAll" onclick="filterErrors('')">Alle</button>
+            <button class="btn btn-secondary" id="errFilterError" onclick="filterErrors('ERROR')">Fehler</button>
+            <button class="btn btn-secondary" id="errFilterWarn" onclick="filterErrors('WARNING')">Warnungen</button>
+            <button class="btn btn-secondary" onclick="loadErrors()">Aktualisieren</button>
+            <button class="btn btn-danger" onclick="clearErrors()">Leeren</button>
+          </div>
+        </div>
+        <div class="card" style="padding:0;"><div id="errorsContainer"></div></div>
+        <div style="margin-top:8px;font-size:11px;color:var(--text-muted);" id="errorsInfo"></div>
       </div>
     </div>
   </div>
@@ -585,6 +617,7 @@ function showApp() {
   hideAllScreens();
   document.getElementById('app').classList.add('active');
   loadDashboard();
+  refreshErrBadge();
 }
 
 // ---- PIN Reset ----
@@ -656,6 +689,7 @@ document.querySelectorAll('.nav-item').forEach(item => {
     else if (pg==='entities') loadEntities();
     else if (pg==='knowledge') loadKnowledge();
     else if (pg==='logs') loadLogs();
+    else if (pg==='errors') loadErrors();
     document.getElementById('sidebar').classList.remove('open');
   });
 });
@@ -2054,6 +2088,59 @@ async function loadLogs() {
       return `<div class="log-entry"><span class="log-time">${t}</span><span class="log-role ${role}">${role}</span><span class="log-content">${esc(cv.content||'')}</span></div>`;
     }).join('');
   } catch(e) { console.error('Logs fail:', e); }
+}
+
+// ---- Fehlerspeicher ----
+let _errFilter = '';
+
+function filterErrors(level) {
+  _errFilter = level;
+  document.getElementById('errFilterAll').classList.toggle('active-filter', !level);
+  document.getElementById('errFilterError').classList.toggle('active-filter', level==='ERROR');
+  document.getElementById('errFilterWarn').classList.toggle('active-filter', level==='WARNING');
+  loadErrors();
+}
+
+async function loadErrors() {
+  try {
+    const params = _errFilter ? `&level=${_errFilter}` : '';
+    const d = await api(`/api/ui/errors?limit=200${params}`);
+    const errs = d.errors || [];
+    const c = document.getElementById('errorsContainer');
+    if (errs.length === 0) {
+      c.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text-muted);">Keine Fehler gespeichert</div>';
+    } else {
+      c.innerHTML = errs.map(e => {
+        const t = e.timestamp ? new Date(e.timestamp).toLocaleString('de-DE',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'}) : '';
+        return `<div class="err-entry level-${esc(e.level)}"><span class="err-time">${t}</span><span class="err-level ${esc(e.level)}">${esc(e.level)}</span><span class="err-logger" title="${esc(e.logger||'')}">${esc(e.logger||'')}</span><span class="err-msg">${esc(e.message||'')}</span></div>`;
+      }).join('');
+    }
+    document.getElementById('errorsInfo').textContent = `${d.total} Eintraege gespeichert (max. 200)`;
+    updateErrBadge(d.total);
+  } catch(e) { console.error('Errors fail:', e); }
+}
+
+async function clearErrors() {
+  if (!confirm('Fehlerspeicher wirklich leeren?')) return;
+  try {
+    await api('/api/ui/errors', 'DELETE');
+    toast('Fehlerspeicher geleert');
+    loadErrors();
+  } catch(e) { toast('Fehler beim Leeren', 'error'); }
+}
+
+function updateErrBadge(count) {
+  const b = document.getElementById('errBadge');
+  if (count > 0) { b.textContent = count > 99 ? '99+' : count; b.style.display = 'inline-flex'; }
+  else { b.style.display = 'none'; }
+}
+
+// Fehlerzahl beim Seitennavigation aktualisieren
+async function refreshErrBadge() {
+  try {
+    const d = await api('/api/ui/errors?limit=1');
+    updateErrBadge(d.total);
+  } catch(e) {}
 }
 </script>
 </body>

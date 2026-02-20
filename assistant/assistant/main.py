@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import secrets
+from collections import deque
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -36,6 +37,29 @@ logging.basicConfig(
     datefmt="%H:%M:%S",
 )
 logger = logging.getLogger("mindhome-assistant")
+
+# ---- Fehlerspeicher: Ring-Buffer fuer WARNING/ERROR Logs ----
+_error_buffer: deque[dict] = deque(maxlen=200)
+
+
+class _ErrorBufferHandler(logging.Handler):
+    """Faengt WARNING+ Log-Eintraege ab und speichert sie im Ring-Buffer."""
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            _error_buffer.append({
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "level": record.levelname,
+                "logger": record.name,
+                "message": self.format(record),
+            })
+        except Exception:
+            pass
+
+
+_err_handler = _ErrorBufferHandler(level=logging.WARNING)
+_err_handler.setFormatter(logging.Formatter("%(message)s"))
+logging.getLogger().addHandler(_err_handler)
 
 # Brain-Instanz
 brain = AssistantBrain()
@@ -1638,6 +1662,25 @@ async def ui_get_audit(token: str = "", limit: int = 50):
     # Neueste zuerst, limitiert
     entries.reverse()
     return {"entries": entries[:min(limit, 200)], "total": len(entries)}
+
+
+@app.get("/api/ui/errors")
+async def ui_get_errors(token: str = "", limit: int = 100, level: str = ""):
+    """Fehlerspeicher: Letzte WARNING/ERROR Log-Eintraege."""
+    _check_token(token)
+    entries = list(_error_buffer)
+    if level:
+        entries = [e for e in entries if e["level"] == level.upper()]
+    entries.reverse()  # Neueste zuerst
+    return {"errors": entries[:min(limit, 200)], "total": len(entries)}
+
+
+@app.delete("/api/ui/errors")
+async def ui_clear_errors(token: str = ""):
+    """Fehlerspeicher leeren."""
+    _check_token(token)
+    _error_buffer.clear()
+    return {"status": "ok"}
 
 
 # Statische UI-Dateien ausliefern
