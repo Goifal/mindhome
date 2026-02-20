@@ -264,8 +264,11 @@ class RoutineEngine:
             fc_cond = self._translate_weather(today_fc.get("condition", ""))
             precipitation = today_fc.get("precipitation")
             parts = [f"Heute: {low}-{high}°C, {fc_cond}"]
-            if precipitation and float(precipitation) > 0:
-                parts.append(f"{precipitation}mm Niederschlag")
+            try:
+                if precipitation and float(precipitation) > 0:
+                    parts.append(f"{precipitation}mm Niederschlag")
+            except (ValueError, TypeError):
+                pass
             result += ". " + ", ".join(parts)
 
         return result

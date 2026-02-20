@@ -1010,7 +1010,10 @@ class FunctionExecutor:
 
     async def _exec_set_cover(self, args: dict) -> dict:
         room = args["room"]
-        position = args["position"]
+        try:
+            position = int(args["position"])
+        except (ValueError, TypeError):
+            return {"success": False, "message": f"Ungueltige Position: {args.get('position')}"}
 
         # Sonderfall: "all" -> alle Rolllaeden schalten
         if room.lower() == "all":

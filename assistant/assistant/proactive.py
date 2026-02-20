@@ -322,8 +322,12 @@ class ProactiveManager:
         # Waschmaschine/Trockner (Power-Sensor faellt unter Schwellwert)
         elif "washer" in entity_id or "waschmaschine" in entity_id:
             if entity_id.startswith("sensor.") and new_val.replace(".", "").isdigit():
-                if float(old_val or "0") > 10 and float(new_val) < 5:
-                    await self._notify("washer_done", MEDIUM, {})
+                try:
+                    old_num = float(old_val) if old_val and old_val.replace(".", "").isdigit() else 0.0
+                    if old_num > 10 and float(new_val) < 5:
+                        await self._notify("washer_done", MEDIUM, {})
+                except (ValueError, TypeError):
+                    pass
 
         # Conditional Commands pruefen (Wenn-Dann-Logik)
         if hasattr(self.brain, "conditional_commands"):

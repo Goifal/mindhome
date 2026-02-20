@@ -353,7 +353,7 @@ class PersonalityEngine:
             if not egg.get("enabled", True):
                 continue
             for trigger in egg.get("triggers", []):
-                if trigger.lower() in text_lower:
+                if trigger and trigger.lower() in text_lower:
                     responses = egg.get("responses", [])
                     if responses:
                         return random.choice(responses)

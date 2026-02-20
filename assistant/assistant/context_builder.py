@@ -558,7 +558,7 @@ class ContextBuilder:
             sr_hour, sr_min = 7, 0
 
         offset_open = 30 if season == "summer" else 15
-        open_min = sr_hour * 60 + sr_min + offset_open
+        open_min = max(0, min(1439, sr_hour * 60 + sr_min + offset_open))
         open_time = f"{open_min // 60:02d}:{open_min % 60:02d}"
 
         # Rolladen-Schliessung: Bei Sonnenuntergang (im Sommer spaeter wegen Hitze)
@@ -578,7 +578,7 @@ class ContextBuilder:
             offset_close = -15  # Im Winter etwas frueher
             reason = "Winter: Frueher schliessen fuer Isolierung"
 
-        close_min = ss_hour * 60 + ss_min + offset_close
+        close_min = max(0, min(1439, ss_hour * 60 + ss_min + offset_close))
         close_time = f"{close_min // 60:02d}:{close_min % 60:02d}"
 
         return {
