@@ -59,6 +59,13 @@ from .sound_manager import SoundManager
 from .speaker_recognition import SpeakerRecognition
 from .summarizer import DailySummarizer
 from .time_awareness import TimeAwareness
+from .timer_manager import TimerManager
+from .camera_manager import CameraManager
+from .conditional_commands import ConditionalCommands
+from .energy_optimizer import EnergyOptimizer
+from .web_search import WebSearch
+from .threat_assessment import ThreatAssessment
+from .learning_observer import LearningObserver
 from .tts_enhancer import TTSEnhancer
 from .websocket import emit_thinking, emit_speaking, emit_action
 
@@ -192,6 +199,15 @@ class AssistantBrain:
         # Phase 11.1: Knowledge Base (RAG)
         self.knowledge_base = KnowledgeBase()
 
+        # Phase 17: Neue Jarvis-Features
+        self.timer_manager = TimerManager()
+        self.camera_manager = CameraManager(self.ha, self.ollama)
+        self.conditional_commands = ConditionalCommands()
+        self.energy_optimizer = EnergyOptimizer(self.ha)
+        self.web_search = WebSearch()
+        self.threat_assessment = ThreatAssessment(self.ha)
+        self.learning_observer = LearningObserver()
+
     async def initialize(self):
         """Initialisiert alle Komponenten."""
         await self.memory.initialize()
@@ -292,8 +308,23 @@ class AssistantBrain:
         self.device_health.set_notify_callback(self._handle_device_health_alert)
         await self.device_health.start()
 
+        # Phase 17: Neue Features initialisieren
+        await self.timer_manager.initialize(redis_client=self.memory.redis)
+        self.timer_manager.set_notify_callback(self._handle_timer_notification)
+        self.timer_manager.set_action_callback(
+            lambda func, args: self.executor.execute(func, args)
+        )
+        await self.conditional_commands.initialize(redis_client=self.memory.redis)
+        self.conditional_commands.set_action_callback(
+            lambda func, args: self.executor.execute(func, args)
+        )
+        await self.energy_optimizer.initialize(redis_client=self.memory.redis)
+        await self.threat_assessment.initialize(redis_client=self.memory.redis)
+        await self.learning_observer.initialize(redis_client=self.memory.redis)
+        self.learning_observer.set_notify_callback(self._handle_learning_suggestion)
+
         await self.proactive.start()
-        logger.info("Jarvis initialisiert (alle Systeme aktiv)")
+        logger.info("Jarvis initialisiert (alle Systeme aktiv, inkl. Phase 17)")
 
     async def process(self, text: str, person: Optional[str] = None, room: Optional[str] = None, files: Optional[list] = None) -> dict:
         """
@@ -482,6 +513,39 @@ class AssistantBrain:
                 "tts": tts_data,
             }
 
+        # Phase 17: Planungs-Dialog Check — laufender Dialog hat Vorrang
+        pending_plan = self.action_planner.has_pending_plan()
+        if pending_plan:
+            logger.info("Laufender Planungs-Dialog: %s", pending_plan)
+            plan_result = await self.action_planner.continue_planning_dialog(text, pending_plan)
+            response_text = plan_result.get("response", "")
+            if plan_result.get("status") == "error":
+                self.action_planner.clear_plan(pending_plan)
+            await self.memory.add_conversation("user", text)
+            await self.memory.add_conversation("assistant", response_text)
+            await emit_speaking(response_text)
+            return {
+                "response": response_text,
+                "actions": [],
+                "model_used": "action_planner_dialog",
+                "context_room": room or "unbekannt",
+            }
+
+        # Phase 17: Neuen Planungs-Dialog starten
+        if self.action_planner.is_planning_request(text):
+            logger.info("Planungs-Dialog gestartet: '%s'", text)
+            plan_result = await self.action_planner.start_planning_dialog(text, person or "")
+            response_text = plan_result.get("response", "")
+            await self.memory.add_conversation("user", text)
+            await self.memory.add_conversation("assistant", response_text)
+            await emit_speaking(response_text)
+            return {
+                "response": response_text,
+                "actions": [],
+                "model_used": "action_planner_dialog",
+                "context_room": room or "unbekannt",
+            }
+
         # Phase 6: Easter-Egg-Check (VOR dem LLM — spart Latenz)
         egg_response = self.personality.check_easter_egg(text)
         if egg_response:
@@ -547,6 +611,16 @@ class AssistantBrain:
         time_hints = await self.time_awareness.get_context_hints()
         if time_hints:
             system_prompt += "\n\nZEITGEFUEHL:\n" + "\n".join(f"- {h}" for h in time_hints)
+
+        # Phase 17: Timer-Kontext in System Prompt
+        timer_hints = self.timer_manager.get_context_hints()
+        if timer_hints:
+            system_prompt += "\n\nAKTIVE TIMER:\n" + "\n".join(f"- {h}" for h in timer_hints)
+
+        # Phase 17: Kontext-Persistenz ueber Raumwechsel
+        prev_context = await self._get_cross_room_context(person or "")
+        if prev_context:
+            system_prompt += f"\n\nVORHERIGER KONTEXT (anderer Raum): {prev_context}"
 
         # Phase 7: Gaeste-Modus Prompt-Erweiterung
         if await self.routines.is_guest_mode_active():
@@ -719,7 +793,9 @@ class AssistantBrain:
             # 8. Function Calls ausfuehren
             # Tools die Daten zurueckgeben und eine LLM-formatierte Antwort brauchen
             QUERY_TOOLS = {"get_entity_state", "send_message_to_person", "get_calendar_events",
-                          "create_automation", "list_jarvis_automations"}
+                          "create_automation", "list_jarvis_automations",
+                          "get_timer_status", "list_conditionals", "get_energy_report",
+                          "web_search", "get_camera_view"}
             has_query_results = False
 
             if tool_calls:
@@ -945,6 +1021,11 @@ class AssistantBrain:
         # 9. Im Gedaechtnis speichern
         await self.memory.add_conversation("user", text)
         await self.memory.add_conversation("assistant", response_text)
+
+        # Phase 17: Kontext-Persistenz fuer Raumwechsel speichern
+        asyncio.create_task(
+            self._save_cross_room_context(person or "", text, response_text, room or "")
+        )
 
         # 10. Episode speichern (Langzeitgedaechtnis)
         if len(text.split()) > 3:
@@ -1316,6 +1397,20 @@ class AssistantBrain:
                 )
         except Exception as e:
             logger.error("Fehler bei Hintergrund-Fakten-Extraktion: %s", e)
+
+    async def _handle_timer_notification(self, alert: dict):
+        """Callback fuer allgemeine Timer — meldet wenn Timer abgelaufen ist."""
+        message = alert.get("message", "")
+        if message:
+            await emit_speaking(message)
+            logger.info("Timer -> Meldung: %s", message)
+
+    async def _handle_learning_suggestion(self, alert: dict):
+        """Callback fuer Learning Observer — schlaegt Automatisierungen vor."""
+        message = alert.get("message", "")
+        if message:
+            await emit_speaking(message)
+            logger.info("Learning -> Vorschlag: %s", message)
 
     async def _handle_cooking_timer(self, alert: dict):
         """Callback fuer Koch-Timer — meldet wenn Timer abgelaufen ist."""
@@ -2143,6 +2238,120 @@ Regeln:
                 "jarvis:pending_summary", summary_text, ex=86400
             )
             logger.info("Tages-Zusammenfassung fuer %s zum Abruf bereitgestellt", date)
+
+    # ------------------------------------------------------------------
+    # Phase 17: Kontext-Persistenz ueber Raumwechsel
+    # ------------------------------------------------------------------
+
+    async def _save_cross_room_context(self, person: str, text: str, response: str, room: str):
+        """Speichert Konversationskontext fuer Raumwechsel."""
+        if not self.memory.redis or not person:
+            return
+        try:
+            context_data = json.dumps({
+                "last_question": text[:200],
+                "last_response": response[:300],
+                "room": room,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            })
+            await self.memory.redis.setex(
+                f"mha:cross_room_context:{person.lower()}", 1800, context_data  # 30 Min TTL
+            )
+        except Exception:
+            pass
+
+    async def _get_cross_room_context(self, person: str) -> str:
+        """Holt den vorherigen Konversationskontext wenn Raum gewechselt wurde."""
+        if not self.memory.redis or not person:
+            return ""
+        try:
+            raw = await self.memory.redis.get(f"mha:cross_room_context:{person.lower()}")
+            if not raw:
+                return ""
+            if isinstance(raw, bytes):
+                raw = raw.decode()
+            data = json.loads(raw)
+            return f"Letzte Frage (in {data.get('room', '?')}): \"{data.get('last_question', '')}\". Antwort: \"{data.get('last_response', '')}\""
+        except Exception:
+            return ""
+
+    # ------------------------------------------------------------------
+    # Phase 17: Natuerliche Fehlerbehandlung
+    # ------------------------------------------------------------------
+
+    async def _generate_error_recovery(self, func_name: str, func_args: dict, error: str) -> str:
+        """Generiert eine menschliche Fehlermeldung mit Loesungsvorschlag."""
+        try:
+            response = await self.ollama.chat(
+                messages=[
+                    {"role": "system", "content": f"""Du bist {settings.assistant_name}.
+Ein Smart-Home-Befehl ist fehlgeschlagen. Erklaere kurz was passiert ist und schlage eine Loesung vor.
+Max 2 Saetze. Deutsch. Butler-Stil. Nicht entschuldigen, sondern sachlich loesen.
+Beispiele:
+- "Das Licht im Bad reagiert nicht. Moeglicherweise ist es offline. Soll ich den Status pruefen?"
+- "Die Heizung laesst sich gerade nicht steuern. Ich versuche es in einer Minute erneut." """},
+                    {"role": "user", "content": f"Fehlgeschlagen: {func_name}({func_args}). Fehler: {error}"},
+                ],
+                model=settings.model_fast,
+                temperature=0.5,
+                max_tokens=100,
+            )
+            return response.get("message", {}).get("content", f"Der Befehl '{func_name}' konnte nicht ausgefuehrt werden.")
+        except Exception:
+            return f"Der Befehl '{func_name}' konnte nicht ausgefuehrt werden."
+
+    # ------------------------------------------------------------------
+    # Phase 17: Predictive Resource Management
+    # ------------------------------------------------------------------
+
+    async def get_predictive_briefing(self) -> str:
+        """Generiert vorausschauende Empfehlungen basierend auf Wetter + Kalender + Energie.
+
+        Wird im Morning Briefing eingebunden.
+        """
+        try:
+            states = await self.ha.get_states()
+            if not states:
+                return ""
+
+            forecasts = []
+
+            # Wetter-Forecast
+            for s in states:
+                if s.get("entity_id", "").startswith("weather."):
+                    attrs = s.get("attributes", {})
+                    forecast = attrs.get("forecast", [])
+                    if forecast:
+                        tomorrow = forecast[0] if len(forecast) > 0 else {}
+                        high = tomorrow.get("temperature", "")
+                        cond = tomorrow.get("condition", "")
+                        precip = tomorrow.get("precipitation", 0)
+                        if high and float(high) > 30:
+                            forecasts.append(f"Morgen wird es heiss ({high}°C). Hitzeschutz-Rolladen empfohlen.")
+                        if precip and float(precip) > 5:
+                            forecasts.append(f"Morgen Regen erwartet ({precip}mm). Fenster schliessen empfohlen.")
+                        if cond in ("snowy", "snowy-rainy") or (high and float(high) < 0):
+                            forecasts.append(f"Frost erwartet ({high}°C). Heizung im Voraus hochfahren?")
+                    break
+
+            # Energie-Preis Forecast (wenn verfuegbar)
+            for s in states:
+                eid = s.get("entity_id", "")
+                if "price" in eid.lower() and "tomorrow" in eid.lower():
+                    try:
+                        price = float(s.get("state", 0))
+                        if price < 10:
+                            forecasts.append(f"Morgen guenstiger Strom ({price:.1f} ct). Groessere Verbraucher einplanen.")
+                    except (ValueError, TypeError):
+                        pass
+
+            if not forecasts:
+                return ""
+
+            return "Vorausschau: " + " ".join(forecasts)
+        except Exception as e:
+            logger.debug("Predictive Briefing Fehler: %s", e)
+            return ""
 
     async def shutdown(self):
         """Faehrt MindHome Assistant herunter."""
