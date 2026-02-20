@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.4.3 – Jarvis Health (Entity-Picker, STT-Fix)
+
+### Geraete-Ueberwachung
+- **Neues "Geraete" Tab** in den Dashboard-Settings
+- Entity-Picker laedt Geraete aus MindHome Device-DB (mit Raum + Domain)
+- Entities nach Raeumen gruppiert mit Checkboxen
+- **Whitelist-Modus**: Nur ausgewaehlte Entities werden ueberwacht
+- Ohne Auswahl: Alle Domains wie bisher (sensor, climate, binary_sensor)
+- Health-Monitor ein/aus, Pruefintervall, Alert-Cooldown konfigurierbar
+
+### STT Fix
+- **STT 404 behoben**: Platform-Name wurde falsch aufgeloest (Entity-Suffix statt Provider-Name)
+- Fallback-Kette: Entity-Attribute → voller Entity-ID → "wyoming" als Default
+- Besseres Logging: URL, Entity, Platform werden mitgeloggt
+
+### API
+- `GET /api/ui/entities/mindhome` — Entities aus MindHome Device-DB mit Raum/Domain
+- Settings-Update aktualisiert DeviceHealth-Whitelist live (ohne Neustart)
+
 ## 1.4.2 – Jarvis Dashboard (System-Management UI)
 
 ### System-Tab im Dashboard
