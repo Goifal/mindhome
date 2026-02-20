@@ -50,10 +50,15 @@ class ContextBuilder:
         self.ha = ha_client
         self.semantic: Optional[SemanticMemory] = None
         self._activity_engine = None
+        self._redis = None
 
     def set_semantic_memory(self, semantic: SemanticMemory):
         """Setzt die Referenz zum Semantic Memory."""
         self.semantic = semantic
+
+    def set_redis(self, redis_client):
+        """Setzt Redis-Client fuer Guest-Mode-Check."""
+        self._redis = redis_client
 
     def set_activity_engine(self, activity_engine):
         """Setzt die Referenz zur Activity Engine (Phase 6)."""
@@ -128,7 +133,18 @@ class ContextBuilder:
         context["alerts"] = self._extract_alerts(states or [])
 
         # Semantisches Gedaechtnis - relevante Fakten zur Anfrage
-        if self.semantic and user_text:
+        # Im Guest-Mode keine persoenlichen Fakten preisgeben
+        guest_mode_active = False
+        if self._redis:
+            try:
+                val = await self._redis.get("mha:routine:guest_mode")
+                if val is not None and isinstance(val, bytes):
+                    val = val.decode()
+                guest_mode_active = val == "active"
+            except Exception:
+                pass
+
+        if self.semantic and user_text and not guest_mode_active:
             context["memories"] = await self._get_relevant_memories(
                 user_text, person
             )

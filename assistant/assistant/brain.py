@@ -67,6 +67,10 @@ logger = logging.getLogger(__name__)
 # Audit-Log (gleicher Pfad wie main.py, fuer Chat-basierte Sicherheitsevents)
 _AUDIT_LOG_PATH = Path(__file__).parent.parent / "logs" / "audit.jsonl"
 
+# Security-Confirmation: Redis-Key + TTL fuer ausstehende Sicherheitsbestaetigungen
+SECURITY_CONFIRM_KEY = "mha:pending_security_confirmation"
+SECURITY_CONFIRM_TTL = 300  # 5 Minuten
+
 
 def _audit_log(action: str, details: dict = None):
     """Schreibt einen Audit-Eintrag (append-only JSONL)."""
@@ -206,6 +210,9 @@ class AssistantBrain:
 
         # Activity Engine mit Context Builder verbinden
         self.context_builder.set_activity_engine(self.activity)
+
+        # Redis fuer Context Builder (Guest-Mode-Check)
+        self.context_builder.set_redis(self.memory.redis)
 
         # Mood Detector initialisieren
         await self.mood.initialize(redis_client=self.memory.redis)
@@ -387,6 +394,19 @@ class AssistantBrain:
                     "model_used": "routine_engine",
                     "context_room": room or "unbekannt",
                 }
+
+        # Phase 13.1: Sicherheits-Bestaetigung (lock_door:unlock, set_alarm:disarm, etc.)
+        security_result = await self._handle_security_confirmation(text, person or "")
+        if security_result:
+            await self.memory.add_conversation("user", text)
+            await self.memory.add_conversation("assistant", security_result)
+            await emit_speaking(security_result)
+            return {
+                "response": security_result,
+                "actions": [],
+                "model_used": "security_confirmation",
+                "context_room": room or "unbekannt",
+            }
 
         # Phase 13.2: Automation-Bestaetigung (VOR allem anderen)
         automation_result = await self._handle_automation_confirmation(text)
@@ -714,6 +734,21 @@ class AssistantBrain:
                     validation = self.validator.validate(func_name, func_args)
                     if not validation.ok:
                         if validation.needs_confirmation:
+                            # Pending-Aktion in Redis speichern fuer Follow-Up
+                            if self.memory.redis:
+                                pending = {
+                                    "function": func_name,
+                                    "args": func_args,
+                                    "person": person or "",
+                                    "room": room or "",
+                                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                                    "reason": validation.reason,
+                                }
+                                await self.memory.redis.setex(
+                                    SECURITY_CONFIRM_KEY,
+                                    SECURITY_CONFIRM_TTL,
+                                    json.dumps(pending),
+                                )
                             response_text = f"Sicherheitsbestaetigung noetig: {validation.reason}"
                             executed_actions.append({
                                 "function": func_name,
@@ -1443,6 +1478,73 @@ class AssistantBrain:
             if self.self_automation._pending:
                 self.self_automation._pending.clear()
                 return "Automation verworfen."
+
+        return None
+
+    # ------------------------------------------------------------------
+    # Phase 13.1: Sicherheits-Bestaetigung (lock_door, set_alarm, etc.)
+    # ------------------------------------------------------------------
+
+    async def _handle_security_confirmation(self, text: str, person: str) -> Optional[str]:
+        """Prueft ob eine ausstehende Sicherheitsbestaetigung beantwortet wird.
+
+        Flow: User sagt z.B. 'Tuer aufschliessen' → needs_confirmation blockiert
+        und speichert Pending in Redis → User sagt 'Ja' → wird hier abgefangen
+        und ausgefuehrt (nur wenn dieselbe Person bestaetigt).
+        """
+        if not self.memory.redis:
+            return None
+
+        raw = await self.memory.redis.get(SECURITY_CONFIRM_KEY)
+        if not raw:
+            return None
+
+        text_lower = text.lower().strip().rstrip("!?.")
+
+        # Bestaetigung
+        confirm_triggers = [
+            "ja", "jo", "jap", "klar", "genau", "passt",
+            "ja bitte", "mach das", "bestaetigen", "ausfuehren",
+            "ja mach das", "ja, mach das", "bitte",
+        ]
+        if any(text_lower == t or text_lower.startswith(t + " ") or text_lower.startswith(t + ",") for t in confirm_triggers):
+            pending = json.loads(raw)
+            # Person-Check: nur dieselbe Person darf bestaetigen
+            if pending.get("person") and person and pending["person"] != person:
+                logger.warning(
+                    "Security-Confirmation abgelehnt: %s != %s",
+                    person, pending["person"],
+                )
+                return None  # Stille Ablehnung, weiter im normalen Flow
+
+            # Ausfuehren
+            func_name = pending["function"]
+            func_args = pending["args"]
+            result = await self.executor.execute(func_name, func_args)
+            await self.memory.redis.delete(SECURITY_CONFIRM_KEY)
+
+            _audit_log("security_confirmation_executed", {
+                "function": func_name,
+                "args": func_args,
+                "person": person,
+            })
+            logger.info(
+                "Security-Confirmation ausgefuehrt: %s(%s) durch %s",
+                func_name, func_args, person,
+            )
+
+            if result.get("success"):
+                return f"Bestaetigt und ausgefuehrt: {func_name}"
+            else:
+                return f"Bestaetigt, aber fehlgeschlagen: {result.get('message', 'Unbekannter Fehler')}"
+
+        # Ablehnung
+        reject_triggers = [
+            "nein", "abbrechen", "cancel", "doch nicht", "stop", "nee",
+        ]
+        if any(text_lower == t or text_lower.startswith(t) for t in reject_triggers):
+            await self.memory.redis.delete(SECURITY_CONFIRM_KEY)
+            return "Verstanden, Aktion verworfen."
 
         return None
 
