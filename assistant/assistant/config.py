@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     # Ollama
     ollama_url: str = "http://localhost:11434"
     model_fast: str = "qwen3:4b"
+    model_notify: str = "qwen3:8b"
     model_smart: str = "qwen3:14b"
     model_deep: str = "qwen3:32b"
 
@@ -69,6 +70,8 @@ if _yaml_name:
 _models = yaml_config.get("models", {})
 if _models.get("fast"):
     settings.model_fast = _models["fast"]
+if _models.get("notify"):
+    settings.model_notify = _models["notify"]
 if _models.get("smart"):
     settings.model_smart = _models["smart"]
 if _models.get("deep"):
