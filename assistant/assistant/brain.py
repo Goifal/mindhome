@@ -68,7 +68,7 @@ from .wellness_advisor import WellnessAdvisor
 from .threat_assessment import ThreatAssessment
 from .learning_observer import LearningObserver
 from .tts_enhancer import TTSEnhancer
-from .websocket import emit_thinking, emit_speaking, emit_action
+from .websocket import emit_thinking, emit_speaking, emit_action, emit_proactive
 
 logger = logging.getLogger(__name__)
 
@@ -1023,6 +1023,7 @@ class AssistantBrain:
 
             # Phase 6: Variierte Bestaetigung statt immer "Erledigt."
             # Nur fuer reine Action-Tools (set_light etc.), nicht fuer Query-Tools
+            # Bei Multi-Actions: Narrative statt einzelne Bestaetigungen
             if executed_actions and not response_text:
                 all_success = all(
                     a["result"].get("success", False)
@@ -1035,7 +1036,20 @@ class AssistantBrain:
                 )
 
                 if all_success:
-                    response_text = self.personality.get_varied_confirmation(success=True)
+                    if len(executed_actions) >= 2:
+                        # Multi-Action Narrative: "Licht, Heizung und Rolladen — alles erledigt."
+                        action_names = []
+                        for a in executed_actions:
+                            name = a.get("function", "").replace("set_", "").replace("_", " ").title()
+                            action_names.append(name)
+                        if len(action_names) == 2:
+                            summary = f"{action_names[0]} und {action_names[1]}"
+                        else:
+                            summary = ", ".join(action_names[:-1]) + f" und {action_names[-1]}"
+                        confirmation = self.personality.get_varied_confirmation(success=True)
+                        response_text = f"{summary} — {confirmation.rstrip('.')}"
+                    else:
+                        response_text = self.personality.get_varied_confirmation(success=True)
                 elif any_failed:
                     failed = [
                         a["result"].get("message", "")
@@ -1068,7 +1082,12 @@ class AssistantBrain:
                         response_text = f"Problem: {error_msg}"
 
         # Phase 12: Response-Filter (Post-Processing) — Floskeln entfernen
-        response_text = self._filter_response(response_text)
+        # Nachtmodus: Harter Sentence-Limit von 2 (LLM-Prompt ist nur Empfehlung)
+        night_limit = 0
+        time_of_day = self.personality.get_time_of_day()
+        if time_of_day in ("night", "early_morning"):
+            night_limit = 2
+        response_text = self._filter_response(response_text, max_sentences_override=night_limit)
 
         # Phase 6.9: Running Gag an Antwort anhaengen
         if gag_response and response_text:
@@ -1218,10 +1237,14 @@ class AssistantBrain:
     # Phase 12: Response-Filter (Post-Processing)
     # ------------------------------------------------------------------
 
-    def _filter_response(self, text: str) -> str:
+    def _filter_response(self, text: str, max_sentences_override: int = 0) -> str:
         """
         Filtert LLM-Floskeln und unerwuenschte Muster aus der Antwort.
         Wird nach jedem LLM-Response aufgerufen, vor Speicherung und TTS.
+
+        Args:
+            max_sentences_override: Harter Sentence-Limit (z.B. fuer Nachtmodus).
+                                    Ueberschreibt den Config-Wert wenn > 0.
         """
         if not text:
             return text
@@ -1307,8 +1330,8 @@ class AssistantBrain:
         text = re.sub(r"\.\s*\.", ".", text)
         text = re.sub(r"!\s*!", "!", text)
 
-        # 6. Max Sentences begrenzen
-        max_sentences = filter_config.get("max_response_sentences", 0)
+        # 6. Max Sentences begrenzen (Override hat Vorrang, z.B. Nachtmodus)
+        max_sentences = max_sentences_override or filter_config.get("max_response_sentences", 0)
         if max_sentences > 0:
             sentences = re.split(r"(?<=[.!?])\s+", text)
             if len(sentences) > max_sentences:
@@ -2316,16 +2339,16 @@ Regeln:
             # Automatisch ausfuehren + informieren
             args = suggestion.get("args", {})
             result = await self.executor.execute(action, args)
-            text = f"Ich habe {desc} automatisch ausgefuehrt."
-            await emit_speaking(text)
+            text = f"Sir, {desc} — hab ich uebernommen."
+            await emit_proactive(text, "anticipation_auto", "medium")
             logger.info("Anticipation auto-execute: %s", desc)
         else:
             # Vorschlagen
             if mode == "suggest":
-                text = f"Darf ich anmerken: {desc}. Soll ich?"
+                text = f"Sir, wenn ich darf — {desc}. Soll ich?"
             else:
-                text = f"Muster erkannt: {desc}. Soll ich das ausfuehren?"
-            await emit_speaking(text)
+                text = f"Mir ist aufgefallen: {desc}. Soll ich das uebernehmen?"
+            await emit_proactive(text, "anticipation_suggest", "low")
             logger.info("Anticipation suggestion: %s (%s)", desc, mode)
 
     async def _handle_intent_reminder(self, reminder: dict):
