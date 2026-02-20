@@ -110,6 +110,89 @@ class OllamaClient:
             logger.error("Ollama nicht erreichbar: %s", e)
             return {"error": str(e)}
 
+    async def stream_chat(
+        self,
+        messages: list[dict],
+        model: Optional[str] = None,
+        temperature: float = 0.7,
+        max_tokens: int = 256,
+        think: Optional[bool] = None,
+    ):
+        """
+        Streaming Chat — gibt Token-fuer-Token zurueck (async generator).
+
+        Yields:
+            str: Einzelne Text-Chunks sobald sie vom LLM kommen.
+
+        Usage:
+            async for chunk in ollama.stream_chat(messages, model):
+                print(chunk, end="", flush=True)
+        """
+        model = model or settings.model_smart
+
+        payload = {
+            "model": model,
+            "messages": messages,
+            "stream": True,
+            "options": {
+                "temperature": temperature,
+                "num_predict": max_tokens,
+            },
+        }
+
+        if think is not None:
+            payload["think"] = think
+        elif model == settings.model_fast:
+            payload["think"] = False
+
+        in_think_block = False
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    f"{self.base_url}/api/chat",
+                    json=payload,
+                    timeout=aiohttp.ClientTimeout(total=120),
+                ) as resp:
+                    if resp.status != 200:
+                        error = await resp.text()
+                        logger.error("Ollama Stream Fehler %d: %s", resp.status, error)
+                        return
+
+                    import json as _json
+
+                    async for line in resp.content:
+                        if not line:
+                            continue
+                        try:
+                            data = _json.loads(line)
+                        except (ValueError, _json.JSONDecodeError):
+                            continue
+
+                        content = data.get("message", {}).get("content", "")
+                        if not content:
+                            if data.get("done"):
+                                break
+                            continue
+
+                        # Think-Tags im Stream filtern
+                        if "<think>" in content:
+                            in_think_block = True
+                            continue
+                        if "</think>" in content:
+                            in_think_block = False
+                            continue
+                        if in_think_block:
+                            continue
+
+                        yield content
+
+                        if data.get("done"):
+                            break
+
+        except aiohttp.ClientError as e:
+            logger.error("Ollama Stream nicht erreichbar: %s", e)
+
     async def is_available(self) -> bool:
         """Prueft ob Ollama erreichbar ist."""
         try:

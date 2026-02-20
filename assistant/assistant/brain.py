@@ -329,6 +329,7 @@ class AssistantBrain:
             lambda func, args: self.executor.execute(func, args)
         )
         await self.energy_optimizer.initialize(redis_client=self.memory.redis)
+        await self.cooking.initialize(redis_client=self.memory.redis)
         await self.threat_assessment.initialize(redis_client=self.memory.redis)
         await self.learning_observer.initialize(redis_client=self.memory.redis)
         self.learning_observer.set_notify_callback(self._handle_learning_suggestion)
@@ -2430,6 +2431,12 @@ Regeln:
                 await asyncio.sleep(wait_seconds)
                 logger.info("Fact Decay gestartet (taeglich 04:00)")
                 await self.memory.semantic.apply_decay()
+
+                # Tagesverbrauch speichern (fuer Anomalie-Erkennung & Wochen-Vergleich)
+                try:
+                    await self.energy_optimizer.track_daily_cost()
+                except Exception as e:
+                    logger.debug("Energy daily tracking Fehler: %s", e)
 
             except asyncio.CancelledError:
                 break
