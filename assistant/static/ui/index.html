@@ -1358,7 +1358,7 @@ function renderPersons() {
       <span style="font-size:20px;">${ri.icon}</span>
       <input type="text" value="${esc(m.name || '')}" data-member-idx="${i}" data-member-field="name"
         placeholder="Name eingeben..." style="flex:1;font-size:14px;">
-      <select data-member-idx="${i}" data-member-field="role" style="width:160px;" onchange="mergeCurrentTabIntoS();renderCurrentTab()">
+      <select data-member-idx="${i}" data-member-field="role" style="width:160px;" onchange="updateMemberRoleVisual(this)">
         <option value="owner" ${m.role==='owner'?'selected':''}>&#128081; Hausherr/in</option>
         <option value="member" ${m.role==='member'?'selected':''}>&#128100; Mitbewohner/in</option>
         <option value="guest" ${m.role==='guest'?'selected':''}>&#128587; Gast</option>
@@ -1400,6 +1400,23 @@ function removeHouseholdMember(idx) {
   members.splice(idx, 1);
   setPath(S, 'household.members', members);
   renderCurrentTab();
+}
+
+function updateMemberRoleVisual(selectEl) {
+  // Nur Icon + Farbe updaten, KEIN Re-Render (verhindert Select-Reset)
+  const roleColors = {owner:'var(--accent)', member:'var(--blue)', guest:'var(--text-muted)'};
+  const roleIcons = {owner:'\u{1F451}', member:'\u{1F464}', guest:'\u{1F64B}'};
+  const role = selectEl.value;
+  const row = selectEl.closest('.person-row');
+  if (row) {
+    row.style.borderLeftColor = roleColors[role] || roleColors.member;
+    const icon = row.querySelector('span');
+    if (icon) icon.textContent = roleIcons[role] || roleIcons.member;
+  }
+  // State aktualisieren ohne Re-Render
+  const idx = parseInt(selectEl.dataset.memberIdx, 10);
+  const members = getPath(S, 'household.members') || [];
+  if (members[idx]) members[idx].role = role;
 }
 
 function collectHouseholdMembers() {
