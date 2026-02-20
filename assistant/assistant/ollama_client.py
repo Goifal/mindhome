@@ -19,12 +19,11 @@ logger = logging.getLogger(__name__)
 # Regex zum Entfernen von Qwen 3 Think-Bloecken
 _THINK_PATTERN = re.compile(r"<think>[\s\S]*?</think>\s*", re.DOTALL)
 
-# Muster fuer ungetaggtes LLM-Reasoning (englisch) vor der eigentlichen Antwort
-_REASONING_LEAK_PATTERN = re.compile(
-    r"^(?:"
-    r"(?:Okay|Ok|Alright|So|Let me|I need to|First|The user|I should|I'll|Here)"
-    r"[^\n]*\n)+"       # Englische Reasoning-Zeilen am Anfang
-    r"[\s]*",            # Whitespace danach
+# Startwoerter die typisch fuer LLM-Reasoning sind
+_REASONING_STARTERS = re.compile(
+    r"^(?:Okay|Ok|Alright|So,?\s|Let me|I need|First|The user|I should"
+    r"|I'll|I can|Here|Now|Wait|Hmm|This|Right|Well|Looking|My|In the"
+    r"|The original|The key|Possible|Maybe|But)",
     re.IGNORECASE,
 )
 
@@ -37,13 +36,50 @@ def strip_think_tags(text: str) -> str:
     return cleaned if cleaned else text
 
 
+def _is_reasoning_leak(text: str) -> bool:
+    """Erkennt ob ein Text ein LLM-Reasoning-Leak ist statt einer echten Antwort.
+
+    Heuristik: Wenn der Text mit englischem Reasoning beginnt UND
+    entweder zu lang ist oder ueberwiegend Englisch ist, ist es ein Leak.
+    """
+    if not text or len(text) < 40:
+        return False
+
+    # Beginnt mit typischem Reasoning-Starter?
+    if not _REASONING_STARTERS.match(text.strip()):
+        return False
+
+    # Anteil englischer Woerter pruefen (Jarvis-Meldungen sind Deutsch)
+    eng_markers = [
+        "let me", "i need", "the user", "i should", "first,",
+        "original", "translate", "rephrase", "thinking", "analyze",
+        "however", "therefore", "because", "which means", "so the",
+        "probably", "maybe", "perhaps", "possible", "want to",
+        "looking at", "understand", "check", "consider", "notice",
+    ]
+    text_lower = text.lower()
+    eng_hits = sum(1 for m in eng_markers if m in text_lower)
+
+    # >=3 englische Marker → definitiv Reasoning-Leak
+    if eng_hits >= 3:
+        return True
+
+    # Text > 200 Zeichen + beginnt mit Reasoning-Starter → wahrscheinlich Leak
+    if len(text) > 200 and eng_hits >= 1:
+        return True
+
+    return False
+
+
 def strip_reasoning_leak(text: str) -> str:
-    """Entfernt ungetaggtes englisches Reasoning das vor der Antwort steht.
+    """Entfernt ungetaggtes LLM-Reasoning und gibt leeren String bei komplettem Leak.
 
     Manche Modelle (Qwen 3) geben gelegentlich ihren Denkprozess aus,
-    ohne ihn in <think>-Tags zu wrappen. Diese Funktion erkennt typische
-    Muster (englische Saetze wie 'Okay, let me...', 'First, I need to...')
-    und entfernt sie, wenn die eigentliche Antwort (Deutsch) danach folgt.
+    ohne ihn in <think>-Tags zu wrappen. Diese Funktion:
+    1. Entfernt <think>-Tags
+    2. Entfernt englisches Reasoning-Prefix wenn deutsche Antwort folgt
+    3. Gibt leeren String zurueck wenn der GESAMTE Text ein Leak ist
+       (Caller faellt dann auf raw_message zurueck)
     """
     if not text:
         return text
@@ -51,12 +87,29 @@ def strip_reasoning_leak(text: str) -> str:
     # Think-Tags zuerst
     text = strip_think_tags(text)
 
-    # Pruefen ob Text mit typischem englischen Reasoning beginnt
-    # und ob danach noch deutscher Content kommt
-    cleaned = _REASONING_LEAK_PATTERN.sub("", text).strip()
-    if cleaned and cleaned != text.strip():
-        logger.debug("Reasoning-Leak entfernt (%d → %d Zeichen)", len(text), len(cleaned))
-        return cleaned
+    # Komplett-Leak erkennen (gesamter Output ist Reasoning, keine Antwort)
+    if _is_reasoning_leak(text):
+        logger.warning(
+            "Reasoning-Leak erkannt (%d Zeichen, Anfang: '%.60s...')",
+            len(text), text,
+        )
+        # Versuchen: Letzte Zeile(n) koennten die eigentliche Antwort sein
+        # (z.B. 'Sir, Phase C zieht etwas viel. Ich behalte das im Auge.')
+        lines = text.strip().split("\n")
+        for candidate in reversed(lines):
+            candidate = candidate.strip().strip('"').strip("'").strip()
+            if not candidate:
+                continue
+            # Kandidat ist kurz, auf Deutsch, und kein Reasoning
+            if (
+                10 < len(candidate) < 200
+                and not _REASONING_STARTERS.match(candidate)
+                and not any(w in candidate.lower() for w in ["let me", "i need", "the user", "i should"])
+            ):
+                logger.info("Reasoning-Leak: Letzte Zeile als Antwort: '%s'", candidate)
+                return candidate
+        # Kein brauchbarer Kandidat → leerer String (Caller nutzt Fallback)
+        return ""
 
     return text
 

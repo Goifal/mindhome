@@ -645,6 +645,9 @@ class ProactiveManager:
             text = strip_reasoning_leak(
                 response.get("message", {}).get("content", description)
             )
+            # Fallback auf Original wenn Reasoning-Leak komplett entfernt wurde
+            if not text:
+                text = description
 
             # WebSocket: Proaktive Meldung senden (mit Notification-ID + Delivery)
             await emit_proactive(text, event_type, urgency, notification_id)
