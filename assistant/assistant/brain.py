@@ -643,6 +643,19 @@ class AssistantBrain:
         if timer_hints:
             system_prompt += "\n\nAKTIVE TIMER:\n" + "\n".join(f"- {h}" for h in timer_hints)
 
+        # Phase 17: Security Score im Kontext (nur bei Warnungen)
+        try:
+            sec_score = await self.threat_assessment.get_security_score()
+            if sec_score.get("level") in ("warning", "critical"):
+                details = ", ".join(sec_score.get("details", []))
+                system_prompt += (
+                    f"\n\nSICHERHEITS-STATUS: {sec_score['level'].upper()} "
+                    f"(Score: {sec_score['score']}/100). {details}. "
+                    f"Erwaehne dies bei Gelegenheit."
+                )
+        except Exception as e:
+            logger.debug("Security Score Fehler: %s", e)
+
         # Phase 17: Kontext-Persistenz ueber Raumwechsel
         prev_context = await self._get_cross_room_context(person or "")
         if prev_context:
@@ -1447,6 +1460,10 @@ class AssistantBrain:
                 "self_automation": self.self_automation.health_status(),
                 "config_versioning": self.config_versioning.health_status(),
                 "self_optimization": self.self_optimization.health_status(),
+                "threat_assessment": "active" if self.threat_assessment.enabled else "disabled",
+                "learning_observer": "active" if self.learning_observer.enabled else "disabled",
+                "energy_optimizer": "active" if self.energy_optimizer.enabled else "disabled",
+                "wellness_advisor": "running" if self.wellness_advisor._running else "stopped",
             },
             "models_available": models,
             "model_routing": self.model_router.get_model_info(),

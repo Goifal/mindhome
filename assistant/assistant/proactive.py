@@ -1301,6 +1301,15 @@ Beispiele:
                         "message": threat.get("message", ""),
                         "entity": threat.get("entity", ""),
                     })
+
+                    # Eskalation fuer kritische Bedrohungen
+                    if threat.get("urgency") == "critical":
+                        try:
+                            actions = await self.brain.threat_assessment.escalate_threat(threat)
+                            if actions:
+                                logger.info("Threat Eskalation: %s", ", ".join(actions))
+                        except Exception as esc_err:
+                            logger.warning("Threat Eskalation fehlgeschlagen: %s", esc_err)
             except Exception as e:
                 logger.error("Threat Assessment Fehler: %s", e)
 
