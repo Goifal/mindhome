@@ -1,0 +1,8 @@
+[Unit]
+Description=MindHome NVIDIA GPU + Ollama Watchdog
+After=ollama.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/nvidia-watchdog.sh
+# Kein Restart — wird vom Timer periodisch gestartet
