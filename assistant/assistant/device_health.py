@@ -83,6 +83,8 @@ class DeviceHealthMonitor:
         self.energy_keywords = cfg.get(
             "energy_sensor_keywords", DEFAULTS["energy_sensor_keywords"]
         )
+        # Whitelist: Wenn gesetzt, NUR diese Entities überwachen
+        self.monitored_entities: list[str] = cfg.get("monitored_entities", [])
 
     async def initialize(self, redis_client: Optional[aioredis.Redis] = None):
         """Initialisiert mit Redis-Verbindung."""
@@ -509,7 +511,17 @@ class DeviceHealthMonitor:
     # ------------------------------------------------------------------
 
     def _should_exclude(self, entity_id: str) -> bool:
-        """Prueft ob Entity ausgeschlossen werden soll."""
+        """Prüft ob Entity ausgeschlossen werden soll.
+
+        Wenn monitored_entities gesetzt ist (Whitelist), werden NUR
+        diese Entities überwacht. Alles andere wird ausgeschlossen.
+        Sonst: Domain-Filter + Exclude-Patterns wie bisher.
+        """
+        # Whitelist-Modus: Nur explizit gewählte Entities
+        if self.monitored_entities:
+            return entity_id not in self.monitored_entities
+
+        # Standard-Modus: Domain-Filter + Exclude-Patterns
         for pattern in self.exclude_patterns:
             if pattern in entity_id:
                 return True

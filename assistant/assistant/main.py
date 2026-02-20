@@ -1504,6 +1504,11 @@ async def ui_update_settings(req: SettingsUpdateFull, token: str = ""):
         if hasattr(brain, "model_router") and brain.model_router:
             brain.model_router.reload_config()
 
+        # DeviceHealth: monitored_entities aktualisieren
+        if hasattr(brain, "device_health"):
+            dh_cfg = cfg.yaml_config.get("device_health", {})
+            brain.device_health.monitored_entities = dh_cfg.get("monitored_entities", [])
+
         # Audit-Log (mit Details ueber geschuetzte Keys)
         changed_keys = list(safe_settings.keys())
         audit_details = {"changed_sections": changed_keys}
@@ -1535,6 +1540,33 @@ async def ui_get_entities(token: str = "", domain: str = ""):
             })
         entities.sort(key=lambda e: (e["domain"], e["name"]))
         return {"entities": entities, "total": len(entities)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
+@app.get("/api/ui/entities/mindhome")
+async def ui_get_mindhome_entities(token: str = ""):
+    """Entities aus MindHome Device-DB mit Raum- und Domain-Zuordnung."""
+    _check_token(token)
+    try:
+        devices = await brain.ha.search_devices() or []
+        # Nach Raum gruppieren
+        by_room: dict[str, list] = {}
+        for d in devices:
+            room = d.get("room", "Unbekannt") or "Unbekannt"
+            by_room.setdefault(room, []).append({
+                "entity_id": d.get("ha_entity_id", ""),
+                "name": d.get("name", d.get("ha_entity_id", "")),
+                "room": room,
+                "domain": d.get("ha_entity_id", "").split(".")[0],
+            })
+        # Aktuelle Whitelist mitgeben
+        monitored = brain.device_health.monitored_entities
+        return {
+            "rooms": by_room,
+            "monitored_entities": monitored,
+            "total": sum(len(v) for v in by_room.values()),
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Fehler: {e}")
 
