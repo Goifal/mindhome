@@ -719,10 +719,10 @@ class ProactiveManager:
                 ],
                 model=settings.model_fast,
             )
-            return response.get("message", {}).get("content", "Alles in Ordnung.")
+            return response.get("message", {}).get("content", "Alles ruhig, Sir.")
         except Exception as e:
             logger.error("Fehler beim Status-Bericht: %s", e)
-            return "Status nicht verfuegbar."
+            return "Status-Abfrage fehlgeschlagen. Systeme pruefen."
 
     def _get_person_title(self, person_name: str) -> str:
         """Gibt die korrekte Anrede fuer eine Person zurueck (Jarvis-Style)."""

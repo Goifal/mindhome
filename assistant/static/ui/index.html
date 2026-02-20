@@ -881,7 +881,13 @@ async function api(path, method='GET', body=null) {
   if (body) opts.body = JSON.stringify(body);
   const r = await fetch(url, opts);
   if (r.status === 401) { doLogout(); throw new Error('Auth'); }
-  return r.json();
+  if (!r.ok) {
+    let detail = `HTTP ${r.status}`;
+    try { const d = await r.json(); detail = d.detail || detail; } catch(e) {}
+    throw new Error(detail);
+  }
+  try { return await r.json(); }
+  catch(e) { throw new Error('Ungueltige Server-Antwort'); }
 }
 
 // ---- Navigation ----
@@ -892,7 +898,8 @@ document.querySelectorAll('.nav-item').forEach(item => {
     item.classList.add('active');
     const pg = item.dataset.page;
     document.getElementById(`page-${pg}`).classList.add('active');
-    document.getElementById('pageTitle').textContent = item.textContent.trim();
+    const titles = {dashboard:'Dashboard',settings:'Einstellungen',entities:'Entities',knowledge:'Wissen',logs:'Logs',errors:'Fehler'};
+    document.getElementById('pageTitle').textContent = titles[pg] || pg;
     stopLiveRefresh();  // Immer stoppen bei Seitenwechsel
     if (pg==='dashboard') { loadDashboard(); startLiveRefresh(); loadHealthTrends(_trendHours); }
     else if (pg==='settings') loadSettings();
@@ -905,21 +912,34 @@ document.querySelectorAll('.nav-item').forEach(item => {
 });
 
 // ---- Toast ----
+let _toastTimer = null;
 function toast(msg, type='success') {
   const t = document.getElementById('toast');
   t.textContent = msg;
   t.className = `toast toast-${type} show`;
-  setTimeout(() => t.classList.remove('show'), 3000);
+  if (_toastTimer) clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => t.classList.remove('show'), 3000);
 }
 
 // ---- Helpers ----
-function esc(s) { const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
-function fmtBytes(b) { if(b<1024) return b+' B'; if(b<1048576) return (b/1024).toFixed(1)+' KB'; return (b/1048576).toFixed(1)+' MB'; }
+function esc(s) { if (s == null) return ''; const d=document.createElement('div'); d.textContent=String(s); return d.innerHTML.replace(/'/g,'&#39;'); }
+function fmtBytes(b) { if(b==null||isNaN(b)) return '0 B'; if(b<1024) return b+' B'; if(b<1048576) return (b/1024).toFixed(1)+' KB'; return (b/1048576).toFixed(1)+' MB'; }
 function getPath(obj,path) { return path.split('.').reduce((o,k)=>o?.[k], obj); }
 function setPath(obj,path,val) {
   const parts=path.split('.'); let cur=obj;
-  for(let i=0;i<parts.length-1;i++) { if(!cur[parts[i]]) cur[parts[i]]={}; cur=cur[parts[i]]; }
+  for(let i=0;i<parts.length-1;i++) { if(cur[parts[i]]==null||typeof cur[parts[i]]!=='object') cur[parts[i]]={}; cur=cur[parts[i]]; }
   cur[parts[parts.length-1]]=val;
+}
+function deepMerge(target, source) {
+  for (const key of Object.keys(source)) {
+    if (source[key]&&typeof source[key]==='object'&&!Array.isArray(source[key])
+        &&target[key]&&typeof target[key]==='object'&&!Array.isArray(target[key])) {
+      deepMerge(target[key], source[key]);
+    } else {
+      target[key] = source[key];
+    }
+  }
+  return target;
 }
 
 // ---- Dashboard ----
@@ -935,22 +955,22 @@ async function loadDashboard() {
       <div class="stat-card"><div class="stat-label">Episoden</div><div class="stat-value">${mem.episodic_count||0}</div>
         <div class="stat-sub">Langzeitgedaechtnis</div></div>
       <div class="stat-card"><div class="stat-label">Autonomie</div><div class="stat-value" style="color:var(--accent);">${auto.level||'?'}/5</div>
-        <div class="stat-sub">${auto.name||''}</div></div>`;
+        <div class="stat-sub">${esc(auto.name||'')}</div></div>`;
     const comps=d.components||{};
     let ch='';
     for(const [n,s] of Object.entries(comps)) {
       const ok=s==='connected'||String(s).includes('active');
       ch+=`<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);">
-        <span style="font-size:12px;">${n}</span>
-        <span style="font-size:11px;color:${ok?'var(--success)':'var(--danger)'};font-family:var(--mono);">${s}</span></div>`;
+        <span style="font-size:12px;">${esc(n)}</span>
+        <span style="font-size:11px;color:${ok?'var(--success)':'var(--danger)'};font-family:var(--mono);">${esc(s)}</span></div>`;
     }
     document.getElementById('compList').innerHTML=ch;
     const mood=d.mood||{};
     document.getElementById('moodInfo').innerHTML=`
       <div style="padding:8px 0;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;">
-        <span style="font-size:12px;">Stimmung</span><span style="font-size:12px;color:var(--accent);font-weight:600;">${mood.mood||'neutral'}</span></div>
+        <span style="font-size:12px;">Stimmung</span><span style="font-size:12px;color:var(--accent);font-weight:600;">${esc(mood.mood||'neutral')}</span></div>
       <div style="padding:8px 0;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;">
-        <span style="font-size:12px;">Stress</span><span style="font-size:12px;font-family:var(--mono);">${(mood.stress_level||0).toFixed(2)}</span></div>
+        <span style="font-size:12px;">Stress</span><span style="font-size:12px;font-family:var(--mono);">${esc((mood.stress_level||0).toFixed(2))}</span></div>
       <div style="padding:8px 0;display:flex;justify-content:space-between;">
         <span style="font-size:12px;">Redis</span><span style="font-size:11px;color:${mem.redis_connected?'var(--success)':'var(--danger)'};">${mem.redis_connected?'Verbunden':'Getrennt'}</span></div>`;
   } catch(e) { console.error('Dashboard fail:', e); }
@@ -978,21 +998,25 @@ async function refreshLiveStatus() {
     if (dot) dot.classList.toggle('offline', !d.components_ok);
     if (ts) ts.textContent = 'Aktualisiert: ' + new Date().toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
     if (wb) wb.style.display = d.whisper_mode ? '' : 'none';
+    const sb = document.getElementById('statusBadge');
+    if (sb) { sb.textContent = d.components_ok ? 'Online' : 'Offline'; sb.className = 'badge ' + (d.components_ok ? 'badge-ok' : 'badge-err'); }
     // Mood und Stress im Status-Bereich aktualisieren
     const mi = document.getElementById('moodInfo');
     if (mi && d.mood) {
       const mood = d.mood;
       mi.innerHTML = `
         <div style="padding:8px 0;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;">
-          <span style="font-size:12px;">Stimmung</span><span style="font-size:12px;color:var(--accent);font-weight:600;">${mood.mood||'neutral'}</span></div>
+          <span style="font-size:12px;">Stimmung</span><span style="font-size:12px;color:var(--accent);font-weight:600;">${esc(mood.mood||'neutral')}</span></div>
         <div style="padding:8px 0;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;">
-          <span style="font-size:12px;">Stress</span><span style="font-size:12px;font-family:var(--mono);">${(mood.stress_level||0).toFixed(2)}</span></div>
+          <span style="font-size:12px;">Stress</span><span style="font-size:12px;font-family:var(--mono);">${esc((mood.stress_level||0).toFixed(2))}</span></div>
         <div style="padding:8px 0;display:flex;justify-content:space-between;">
-          <span style="font-size:12px;">Autonomie</span><span style="font-size:12px;color:var(--accent);font-weight:600;">${d.autonomy?.level||'?'}/5</span></div>`;
+          <span style="font-size:12px;">Autonomie</span><span style="font-size:12px;color:var(--accent);font-weight:600;">${esc(d.autonomy?.level||'?')}/5</span></div>`;
     }
   } catch(e) {
     const dot = document.getElementById('liveIndicator');
     if (dot) dot.classList.add('offline');
+    const sb = document.getElementById('statusBadge');
+    if (sb) { sb.textContent = 'Offline'; sb.className = 'badge badge-err'; }
   }
 }
 
@@ -1067,7 +1091,7 @@ let currentTab = 'tab-general';
 // Tab switching
 document.getElementById('settingsTabBar').addEventListener('click', e => {
   const tab = e.target.closest('.tab-item');
-  if (!tab) return;
+  if (!tab || tab.dataset.tab === currentTab) return;
   // Aktuelle Tab-Werte in S uebernehmen bevor Tab wechselt
   mergeCurrentTabIntoS();
   document.querySelectorAll('#settingsTabBar .tab-item').forEach(t => t.classList.remove('active'));
@@ -1079,13 +1103,7 @@ document.getElementById('settingsTabBar').addEventListener('click', e => {
 function mergeCurrentTabIntoS() {
   try {
     const current = collectSettings();
-    Object.keys(current).forEach(key => {
-      if (typeof current[key]==='object' && !Array.isArray(current[key]) && S[key]) {
-        Object.assign(S[key], current[key]);
-      } else {
-        S[key] = current[key];
-      }
-    });
+    deepMerge(S, current);
   } catch(e) { /* Tab noch nicht gerendert */ }
 }
 
@@ -1113,7 +1131,7 @@ function renderCurrentTab() {
       case 'tab-eastereggs': c.innerHTML = renderEasterEggs(); loadEasterEggs(); break;
     }
   } catch(err) {
-    c.innerHTML = '<div style="padding:24px;color:var(--danger);"><h3>Rendering-Fehler</h3><pre style="margin-top:12px;font-size:12px;white-space:pre-wrap;">' + err.message + '\n' + err.stack + '</pre></div>';
+    c.innerHTML = '<div style="padding:24px;color:var(--danger);"><h3>Rendering-Fehler</h3><pre style="margin-top:12px;font-size:12px;white-space:pre-wrap;">' + esc(err.message) + '\n' + esc(err.stack) + '</pre></div>';
     console.error('Tab render error:', err);
   }
   bindFormEvents();
@@ -1145,7 +1163,7 @@ function fToggle(path, label) {
 function fSelect(path, label, opts) {
   const v = getPath(S,path) ?? '';
   let h = `<div class="form-group"><label>${label}</label><select data-path="${path}">`;
-  for(const o of opts) h += `<option value="${o.v}" ${v===o.v?'selected':''}>${o.l}</option>`;
+  for(const o of opts) h += `<option value="${o.v}" ${v==o.v?'selected':''}>${o.l}</option>`;
   return h + `</select></div>`;
 }
 function fKeywords(path, label) {
@@ -1158,9 +1176,12 @@ function fKeywords(path, label) {
 }
 function fTextarea(path, label, hint='') {
   const v = getPath(S,path);
-  const txt = Array.isArray(v) ? v.join('\n') : (typeof v === 'object' ? JSON.stringify(v,null,2) : String(v??''));
+  const isArr = Array.isArray(v);
+  const isObj = v && typeof v === 'object' && !isArr;
+  const txt = isArr ? v.join('\n') : (isObj ? JSON.stringify(v,null,2) : String(v??''));
+  const dtype = isArr ? 'array' : (isObj ? 'json' : 'text');
   return `<div class="form-group"><label>${label}</label>
-    <textarea data-path="${path}" data-type="${Array.isArray(v)?'array':'text'}">${esc(txt)}</textarea>${hint?`<div class="hint">${hint}</div>`:''}</div>`;
+    <textarea data-path="${path}" data-type="${dtype}">${esc(txt)}</textarea>${hint?`<div class="hint">${hint}</div>`:''}</div>`;
 }
 
 // Klickbare Chip-Auswahl (vordefinierte Optionen zum An/Abklicken)
@@ -1183,6 +1204,7 @@ function fChipSelect(path, label, options, hint='') {
 }
 
 function toggleChip(path, value) {
+  mergeCurrentTabIntoS();
   const arr = getPath(S, path) || [];
   const idx = arr.indexOf(value);
   if (idx >= 0) arr.splice(idx, 1); else arr.push(value);
@@ -1236,6 +1258,7 @@ function toggleSec(hdr) { hdr.classList.toggle('open'); hdr.nextElementSibling.c
 function addKw(e, input, path) {
   if (e.key !== 'Enter' || !input.value.trim()) return;
   e.preventDefault();
+  mergeCurrentTabIntoS();
   const arr = getPath(S, path) || [];
   const val = input.value.trim();
   if (!arr.includes(val)) {
@@ -1245,6 +1268,7 @@ function addKw(e, input, path) {
   }
 }
 function rmKw(el, path) {
+  mergeCurrentTabIntoS();
   const tag = el.parentElement;
   const word = tag.textContent.replace('✕','').trim();
   const arr = (getPath(S, path) || []).filter(k => k !== word);
@@ -1361,6 +1385,7 @@ function renderPersons() {
 }
 
 function addHouseholdMember() {
+  mergeCurrentTabIntoS();
   const members = getPath(S, 'household.members') || [];
   members.push({name: '', role: 'member'});
   setPath(S, 'household.members', members);
@@ -1368,6 +1393,7 @@ function addHouseholdMember() {
 }
 
 function removeHouseholdMember(idx) {
+  mergeCurrentTabIntoS();
   const members = getPath(S, 'household.members') || [];
   members.splice(idx, 1);
   setPath(S, 'household.members', members);
@@ -1401,7 +1427,7 @@ function renderPersonality() {
   ];
   return sectionWrap('&#127917;', 'Stil & Charakter',
     fInfo('Wie soll sich der Assistent verhalten? Stil, Humor und Meinungsfreude einstellen.') +
-    fSelect('personality.style', 'Grundstil', [{v:'butler',l:'Butler — Formell & elegant'},{v:'minimal',l:'Minimal — Kurz & praezise'},{v:'freundlich',l:'Freundlich — Warm & locker'}]) +
+    fSelect('personality.style', 'Grundstil', styleOpts) +
     fRange('personality.sarcasm_level', 'Sarkasmus-Level', 1, 5, 1, {1:'Sachlich',2:'Gelegentl. trocken',3:'Standard Butler',4:'Haeufig',5:'Vollgas Ironie'}) +
     fRange('personality.opinion_intensity', 'Meinungs-Intensitaet', 0, 3, 1, {0:'Still',1:'Selten',2:'Gelegentlich',3:'Redselig'}) +
     fToggle('personality.self_irony_enabled', 'Selbstironie aktiviert') +
@@ -1793,7 +1819,7 @@ function renderSecurity() {
   return sectionWrap('&#128293;', 'Heizung',
     fInfo('Wie wird geheizt? Einzelraumregelung = jeder Raum hat eigenen Thermostat. Heizkurve = zentrale Waermepumpe mit Offset-Steuerung.') +
     '<div class="form-group"><label>Heizungsmodus</label>' +
-    '<select data-path="heating.mode" onchange="setPath(S,\'heating.mode\',this.value);renderCurrentTab();">' +
+    '<select data-path="heating.mode" onchange="mergeCurrentTabIntoS();setPath(S,\'heating.mode\',this.value);renderCurrentTab();">' +
     '<option value="room_thermostat" ' + (hMode==='room_thermostat'?'selected':'') + '>Raumthermostate (Einzelraumregelung)</option>' +
     '<option value="heating_curve" ' + (hMode==='heating_curve'?'selected':'') + '>Heizkurve (Waermepumpe, Vorlauf-Offset)</option>' +
     '</select></div>' +
@@ -2302,10 +2328,10 @@ function renderEggList() {
           <label class="toggle"><input type="checkbox" ${egg.enabled!==false?'checked':''} onchange="EGGS[${i}].enabled=this.checked">
           <span class="toggle-track"></span><span class="toggle-thumb"></span></label></div>
         <div class="form-group"><label>Trigger (einer pro Zeile)</label>
-          <textarea rows="3" onchange="EGGS[${i}].triggers=this.value.split('\\n').map(s=>s.trim()).filter(Boolean)">${(egg.triggers||[]).join('\n')}</textarea>
+          <textarea rows="3" onchange="EGGS[${i}].triggers=this.value.split('\\n').map(s=>s.trim()).filter(Boolean)">${esc((egg.triggers||[]).join('\n'))}</textarea>
           <div class="hint">Substring-Matching, case-insensitive</div></div>
         <div class="form-group"><label>Antworten (eine pro Zeile)</label>
-          <textarea rows="4" onchange="EGGS[${i}].responses=this.value.split('\\n').map(s=>s.trim()).filter(Boolean)">${(egg.responses||[]).join('\n')}</textarea>
+          <textarea rows="4" onchange="EGGS[${i}].responses=this.value.split('\\n').map(s=>s.trim()).filter(Boolean)">${esc((egg.responses||[]).join('\n'))}</textarea>
           <div class="hint">Zufaellige Auswahl</div></div>
         <div style="text-align:right;margin-top:8px;">
           <button class="btn btn-secondary" style="background:var(--danger);border-color:var(--danger);" onclick="removeEgg(${i})">Entfernen</button>
@@ -2346,17 +2372,20 @@ function collectSettings() {
       val = el.checked;
     } else if (el.type === 'number' || el.type === 'range') {
       val = parseFloat(el.value);
-      if (Number.isInteger(val) && !el.step?.includes('.') && el.step !== '0.1' && el.step !== '0.05' && el.step !== '0.5') val = parseInt(el.value);
+      if (Number.isInteger(val) && el.step && !String(el.step).includes('.')) val = parseInt(el.value);
     } else if (tag === 'textarea') {
       const raw = el.value.trim();
       if (el.dataset.type === 'array') {
         val = raw.split('\n').map(l=>l.trim()).filter(Boolean);
+      } else if (el.dataset.type === 'json') {
+        // Round-trip JSON objects
+        try { val = JSON.parse(raw); } catch(e) { val = raw; }
       } else {
-        // Try YAML-like map parsing
+        // Try YAML-like map parsing (only for simple key: value lines)
         try {
           const lines = raw.split('\n').filter(l=>l.trim());
-          const isMap = lines.every(l => l.includes(':'));
-          if (isMap && lines.length > 0) {
+          const isMap = lines.length > 0 && lines.every(l => /^[a-zA-Z0-9_.-]+\s*:/.test(l));
+          if (isMap) {
             val = {};
             for (const line of lines) {
               const [k,...rest] = line.split(':');
@@ -2391,25 +2420,22 @@ function collectSettings() {
   return updates;
 }
 
+let _saving = false;
 async function saveAllSettings() {
-  // Erst aktuelle Tab-Werte in S uebernehmen, dann S als Basis nutzen
-  const tabUpdates = collectSettings();
-  Object.keys(tabUpdates).forEach(key => {
-    if (typeof tabUpdates[key] === 'object' && !Array.isArray(tabUpdates[key]) && S[key]) {
-      Object.assign(S[key], tabUpdates[key]);
-    } else {
-      S[key] = tabUpdates[key];
-    }
-  });
-  // Vollstaendiges Settings-Objekt senden (nicht nur aktiven Tab)
-  const updates = JSON.parse(JSON.stringify(S));
+  if (_saving) return;
+  _saving = true;
   try {
+    // Erst aktuelle Tab-Werte in S uebernehmen, dann S als Basis nutzen
+    const tabUpdates = collectSettings();
+    deepMerge(S, tabUpdates);
+    // Vollstaendiges Settings-Objekt senden (nicht nur aktiven Tab)
+    const updates = JSON.parse(JSON.stringify(S));
     await api('/api/ui/settings', 'PUT', {settings: updates});
-    // Also update local cache
-    Object.assign(S, JSON.parse(JSON.stringify(updates)));
     toast('Einstellungen gespeichert');
   } catch(e) {
     toast('Fehler beim Speichern', 'error');
+  } finally {
+    _saving = false;
   }
 }
 
@@ -2423,7 +2449,7 @@ async function loadEntities() {
     sel.innerHTML = `<option value="">Alle Domains (${ALL_ENTITIES.length})</option>`;
     for (const d of domains) {
       const c = ALL_ENTITIES.filter(e => e.domain === d).length;
-      sel.innerHTML += `<option value="${d}">${d} (${c})</option>`;
+      sel.innerHTML += `<option value="${esc(d)}">${esc(d)} (${c})</option>`;
     }
     filterEntities();
   } catch(e) { console.error('Entities fail:', e); }
@@ -2456,7 +2482,7 @@ async function loadKnowledge() {
         <div class="stat-value" style="font-size:18px;color:${st.enabled?'var(--success)':'var(--danger)'};">${st.enabled?'Aktiv':'Aus'}</div></div>
       <div class="stat-card"><div class="stat-label">Chunks</div><div class="stat-value">${st.total_chunks||0}</div></div>
       <div class="stat-card"><div class="stat-label">Quellen</div><div class="stat-value">${(st.sources||[]).length}</div>
-        <div class="stat-sub">${(st.sources||[]).join(', ')||'keine'}</div></div>`;
+        <div class="stat-sub">${(st.sources||[]).map(s=>esc(s)).join(', ')||'keine'}</div></div>`;
     document.getElementById('kbFiles').innerHTML = fi.length === 0
       ? '<div style="padding:16px;text-align:center;color:var(--text-muted);">Keine Dateien</div>'
       : fi.map(f => `<div class="file-item"><span style="font-size:16px;">&#128196;</span><span class="file-name">${esc(f.name)}</span><span class="file-size">${fmtBytes(f.size)}</span></div>`).join('');
@@ -2506,7 +2532,7 @@ async function loadAudit() {
 
 async function loadLogs() {
   try {
-    const d = await api('/api/ui/logs');
+    const d = await api('/api/ui/logs?limit=200');
     const convs = d.conversations || [];
     const c = document.getElementById('logsContainer');
     if (convs.length === 0) { c.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text-muted);">Keine Gespraeche</div>'; return; }

@@ -503,7 +503,7 @@ Kein unterwuerfiger Ton. Du bist ein brillanter Butler, kein Chatbot."""
                 issues: list - Offene Probleme (Fenster, Tueren)
         """
         if not self.goodnight_enabled:
-            return {"text": "Gute Nacht.", "actions": [], "issues": []}
+            return {"text": "Gute Nacht, Sir. Alles unter Kontrolle.", "actions": [], "issues": []}
 
         # 1. Sicherheits-Check
         issues = await self._run_safety_checks()
@@ -730,13 +730,13 @@ Kein unterwuerfiger Ton. Du bist ein brillanter Butler, kein Chatbot."""
                 ],
                 model=settings.model_fast,
             )
-            return response.get("message", {}).get("content", "Gute Nacht.")
+            return response.get("message", {}).get("content", "Gute Nacht, Sir. Systeme fahren runter.")
         except Exception as e:
             logger.error("Gute-Nacht LLM Fehler: %s", e)
             # Fallback ohne LLM
-            text = "Gute Nacht"
+            text = "Gute Nacht, Sir"
             if issues:
-                text += f". Hinweis: {issues[0]['message']}"
+                text += f". Noch offen: {issues[0]['message']}"
             return text + "."
 
     # ------------------------------------------------------------------

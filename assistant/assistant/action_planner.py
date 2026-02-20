@@ -463,7 +463,7 @@ Sobald ich die Details habe, kuemmere ich mich um alles."
         except Exception as e:
             logger.error("Planning Dialog Start Fehler: %s", e)
             return {
-                "response": "Ich habe Schwierigkeiten mit der Planung. Koennen Sie es anders formulieren?",
+                "response": "Planung fehlgeschlagen. Versuch es nochmal anders zu formulieren.",
                 "plan_id": plan_id,
                 "status": "error",
             }
@@ -480,7 +480,7 @@ Sobald ich die Details habe, kuemmere ich mich um alles."
         """
         plan_state = self._pending_plans.get(plan_id)
         if not plan_state:
-            return {"response": "Planungs-Dialog nicht gefunden.", "status": "error"}
+            return {"response": "Der Plan ist abgelaufen. Was soll ich planen?", "status": "error"}
 
         plan_state["messages"].append({"role": "user", "content": text})
 
@@ -528,7 +528,7 @@ Frage am Ende ob der Plan so umgesetzt werden soll."""},
 
         except Exception as e:
             logger.error("Planning Dialog Continue Fehler: %s", e)
-            return {"response": "Planungsfehler.", "status": "error"}
+            return {"response": "Die Planung hakt gerade. Nochmal von vorn?", "status": "error"}
 
     def has_pending_plan(self) -> Optional[str]:
         """Prueft ob ein Planungs-Dialog laeuft.

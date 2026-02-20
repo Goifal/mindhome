@@ -75,18 +75,36 @@ FORMALITY_PROMPTS = {
 # Antwort-Varianz: Bestaetigungs-Pools (Phase 6)
 CONFIRMATIONS_SUCCESS = [
     "Erledigt.", "Gemacht.", "Ist passiert.", "Wie gewuenscht.",
-    "Aber natuerlich.", "Sehr wohl.", "Wurde umgesetzt.", "Schon geschehen.",
+    "Sehr wohl.", "Wurde umgesetzt.", "Schon geschehen.",
     "Geht klar.", "Laeuft.", "Umgesetzt.", "Done.",
+    "Auf den Punkt.", "Wie gewohnt.",
+]
+
+# Sarkasmus-Level 4-5: Spitzere Bestaetigungen
+CONFIRMATIONS_SUCCESS_SNARKY = [
+    "War ja klar, dass das von mir kommt.", "Done. Naechster Wunsch?",
+    "Hab ich erledigt, waehrend du noch formuliert hast.",
+    "Schon passiert. Ich bin manchmal schneller als dein Gedanke.",
+    "Selbstverstaendlich. Wie immer.", "Ueberraschung — es funktioniert.",
+    "Erledigt. Gern geschehen, Sir.",
 ]
 
 CONFIRMATIONS_PARTIAL = [
-    "Teilweise erledigt.", "Fast alles geschafft.", "Zum Teil umgesetzt.",
+    "Fast alles geschafft.", "Zum Teil umgesetzt.", "Teilweise durch.",
 ]
 
 CONFIRMATIONS_FAILED = [
-    "Hat nicht funktioniert. Alternative?", "Da gab es ein Problem.",
-    "Konnte nicht ausgefuehrt werden.", "Fehlgeschlagen. Naechster Versuch.",
-    "Nicht durchgegangen. Ich pruefe.", "Negativ.",
+    "Hat nicht funktioniert. Alternative?", "Problem erkannt.",
+    "Negativ. Ich pruefe.", "Fehlgeschlagen. Naechster Versuch.",
+    "Nicht durchgegangen. Ich schau mir das an.",
+]
+
+# Sarkasmus-Level 4-5: Spitzere Fehler-Bestaetigungen
+CONFIRMATIONS_FAILED_SNARKY = [
+    "Hat nicht geklappt. Ich geb mir die Schuld. Ach nein, doch nicht.",
+    "Fehlgeschlagen. Nicht mein bester Moment.",
+    "Das war nichts. Aber Aufgeben ist keine Option.",
+    "Negativ. Ich hab trotzdem einen Plan B.",
 ]
 
 
@@ -379,8 +397,13 @@ class PersonalityEngine:
             return []
 
     def check_opinion(self, action: str, args: dict) -> Optional[str]:
-        """Prueft ob Jarvis eine Meinung zu einer Aktion hat."""
+        """Prueft ob Jarvis eine Meinung zu einer Aktion hat.
+        Unterdrueckt Meinungen wenn User gestresst oder frustriert ist."""
         if self.opinion_intensity == 0:
+            return None
+
+        # Bei Stress/Frustration: Keine ungebetenen Kommentare
+        if self._current_mood in ("stressed", "frustrated"):
             return None
 
         hour = datetime.now().hour
@@ -543,13 +566,18 @@ class PersonalityEngine:
     # ------------------------------------------------------------------
 
     def get_varied_confirmation(self, success: bool = True, partial: bool = False) -> str:
-        """Gibt eine variierte Bestaetigung zurueck (nie dieselbe hintereinander)."""
+        """Gibt eine variierte Bestaetigung zurueck (nie dieselbe hintereinander).
+        Bei Sarkasmus-Level >= 4 werden spitzere Varianten beigemischt."""
         if partial:
-            pool = CONFIRMATIONS_PARTIAL
+            pool = list(CONFIRMATIONS_PARTIAL)
         elif success:
-            pool = CONFIRMATIONS_SUCCESS
+            pool = list(CONFIRMATIONS_SUCCESS)
+            if self.sarcasm_level >= 4:
+                pool.extend(CONFIRMATIONS_SUCCESS_SNARKY)
         else:
-            pool = CONFIRMATIONS_FAILED
+            pool = list(CONFIRMATIONS_FAILED)
+            if self.sarcasm_level >= 4:
+                pool.extend(CONFIRMATIONS_FAILED_SNARKY)
 
         # Filter: Nicht die letzten 3 verwendeten
         available = [c for c in pool if c not in self._last_confirmations[-3:]]
@@ -791,15 +819,22 @@ class PersonalityEngine:
         except Exception:
             return self.formality_start
 
-    async def decay_formality(self):
-        """Taeglicher Decay: Score sinkt um decay_per_day pro aktivem Tag."""
+    async def decay_formality(self, interaction_based: bool = False):
+        """Decay: Score sinkt pro Tag UND pro Interaktion.
+
+        Args:
+            interaction_based: True = kleiner Decay pro Interaktion (0.1),
+                              False = normaler Tages-Decay (config-Wert).
+        """
         if not self.character_evolution or not self._redis:
             return
         try:
             current = await self.get_formality_score()
-            new_score = max(self.formality_min, current - self.formality_decay)
+            decay = 0.1 if interaction_based else self.formality_decay
+            new_score = max(self.formality_min, current - decay)
             await self._redis.set("mha:personality:formality", str(new_score))
-            logger.info("Formality-Score: %d -> %.1f", current, new_score)
+            if not interaction_based:
+                logger.info("Formality-Score: %d -> %.1f (Tages-Decay)", current, new_score)
         except Exception as e:
             logger.debug("Formality-Decay fehlgeschlagen: %s", e)
 
@@ -939,10 +974,11 @@ class PersonalityEngine:
             await self._redis.lpush("mha:personality:mood_history", str(mood_val))
             await self._redis.ltrim("mha:personality:mood_history", 0, 99)
 
-            # Formality Decay (einmal pro Tag)
+            # Formality Decay: Pro Interaktion (klein) + einmal pro Tag (gross)
+            await self.decay_formality(interaction_based=True)
             decay_key = f"mha:personality:decay_done:{today}"
             if not await self._redis.get(decay_key):
-                await self.decay_formality()
+                await self.decay_formality(interaction_based=False)
                 await self._redis.setex(decay_key, 86400, "1")
 
         except Exception as e:
