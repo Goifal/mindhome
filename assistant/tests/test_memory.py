@@ -46,14 +46,13 @@ class TestSemanticFactDecay:
     """Tests fuer Contradiction Detection + Fact Decay Logik."""
 
     def test_category_confidence_mapping(self):
-        from assistant.memory_extractor import MemoryExtractor
-        conf = MemoryExtractor.CATEGORY_CONFIDENCE
-        assert conf["health"] > conf["general"]
-        assert conf["person"] > conf["intent"]
-        assert conf["preference"] > conf["general"]
+        from assistant.memory_extractor import CATEGORY_CONFIDENCE
+        assert CATEGORY_CONFIDENCE["health"] > CATEGORY_CONFIDENCE["general"]
+        assert CATEGORY_CONFIDENCE["person"] > CATEGORY_CONFIDENCE["intent"]
+        assert CATEGORY_CONFIDENCE["preference"] > CATEGORY_CONFIDENCE["general"]
 
     def test_all_categories_have_confidence(self):
-        from assistant.memory_extractor import MemoryExtractor
+        from assistant.memory_extractor import CATEGORY_CONFIDENCE
         expected = ["health", "person", "preference", "habit", "work", "intent", "general"]
         for cat in expected:
-            assert cat in MemoryExtractor.CATEGORY_CONFIDENCE
+            assert cat in CATEGORY_CONFIDENCE

@@ -817,6 +817,42 @@ _ASSISTANT_TOOLS_STATIC = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_security_score",
+            "description": "Zeigt den aktuellen Sicherheits-Score des Hauses (0-100). Prueft offene Tueren, Fenster, Schloesser, Rauchmelder und Wassersensoren. Nutze dies wenn der User nach Sicherheit, Haus-Status oder offenen Tueren/Fenstern fragt.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_room_climate",
+            "description": "Zeigt Raumklima-Daten: CO2, Luftfeuchtigkeit, Temperatur und Gesundheitsbewertung. Nutze dies wenn der User nach Raumklima, Luftqualitaet oder Raumgesundheit fragt.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_active_intents",
+            "description": "Zeigt alle gemerkten Vorhaben und Termine die aus Gespraechen erkannt wurden. Z.B. 'Eltern kommen am Wochenende'. Nutze dies wenn der User nach anstehenden Plaenen oder 'was steht an?' fragt.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+            },
+        },
+    },
 ]
 
 
@@ -2224,3 +2260,49 @@ class FunctionExecutor:
         import assistant.main as main_module
         brain = main_module.brain
         return await brain.web_search.search(query=args.get("query", ""))
+
+    async def _exec_get_security_score(self, args: dict) -> dict:
+        """Gibt den aktuellen Sicherheits-Score zurueck."""
+        import assistant.main as main_module
+        brain = main_module.brain
+        try:
+            result = await brain.threat_assessment.get_security_score()
+            details = result.get("details", [])
+            return {
+                "success": True,
+                "score": result["score"],
+                "level": result["level"],
+                "details": ", ".join(details) if details else "Alles in Ordnung",
+            }
+        except Exception as e:
+            return {"success": False, "message": f"Sicherheits-Check fehlgeschlagen: {e}"}
+
+    async def _exec_get_room_climate(self, args: dict) -> dict:
+        """Gibt Raumklima-Daten zurueck."""
+        import assistant.main as main_module
+        brain = main_module.brain
+        try:
+            result = await brain.health_monitor.get_status()
+            return {"success": True, **result}
+        except Exception as e:
+            return {"success": False, "message": f"Raumklima-Check fehlgeschlagen: {e}"}
+
+    async def _exec_get_active_intents(self, args: dict) -> dict:
+        """Gibt aktive Vorhaben/Intents zurueck."""
+        import assistant.main as main_module
+        brain = main_module.brain
+        try:
+            intents = await brain.intent_tracker.get_active_intents()
+            if not intents:
+                return {"success": True, "message": "Keine anstehenden Vorhaben gemerkt.", "intents": []}
+            summaries = []
+            for intent in intents:
+                summaries.append({
+                    "intent": intent.get("intent", ""),
+                    "deadline": intent.get("deadline", ""),
+                    "person": intent.get("person", ""),
+                    "reminder": intent.get("reminder_text", ""),
+                })
+            return {"success": True, "count": len(summaries), "intents": summaries}
+        except Exception as e:
+            return {"success": False, "message": f"Intent-Abfrage fehlgeschlagen: {e}"}

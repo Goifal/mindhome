@@ -383,7 +383,7 @@ class ThreatAssessment:
             level = "excellent"
         elif score >= 70:
             level = "good"
-        elif score >= 50:
+        elif score > 50:
             level = "warning"
         else:
             level = "critical"

@@ -193,6 +193,58 @@ class OllamaClient:
         except aiohttp.ClientError as e:
             logger.error("Ollama Stream nicht erreichbar: %s", e)
 
+    async def generate(
+        self,
+        prompt: str,
+        model: Optional[str] = None,
+        temperature: float = 0.7,
+        max_tokens: int = 256,
+    ) -> str:
+        """
+        Sendet eine Generate-Anfrage an Ollama (/api/generate).
+
+        Im Gegensatz zu chat() nimmt generate() einen einzelnen Prompt-String
+        statt einer Message-Liste. Wird u.a. von SelfOptimization genutzt.
+
+        Args:
+            prompt: Der Prompt-Text
+            model: Modellname (default: smart model)
+            temperature: Kreativitaet (0.0 - 1.0)
+            max_tokens: Maximale Antwort-Laenge
+
+        Returns:
+            Generierter Text als String
+        """
+        model = model or settings.model_smart
+
+        payload = {
+            "model": model,
+            "prompt": prompt,
+            "stream": False,
+            "options": {
+                "temperature": temperature,
+                "num_predict": max_tokens,
+            },
+        }
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    f"{self.base_url}/api/generate",
+                    json=payload,
+                    timeout=aiohttp.ClientTimeout(total=120),
+                ) as resp:
+                    if resp.status != 200:
+                        error = await resp.text()
+                        logger.error("Ollama Generate Fehler %d: %s", resp.status, error)
+                        return ""
+                    result = await resp.json()
+                    text = result.get("response", "")
+                    return strip_think_tags(text)
+        except aiohttp.ClientError as e:
+            logger.error("Ollama Generate nicht erreichbar: %s", e)
+            return ""
+
     async def is_available(self) -> bool:
         """Prueft ob Ollama erreichbar ist."""
         try:

@@ -89,7 +89,7 @@ class TestAnalyze:
         """Sentiments werden in _interaction_sentiments aufgezeichnet."""
         await detector.analyze("Danke!")
         await detector.analyze("Hallo")
-        await detector.analyze("Das nervt")
+        await detector.analyze("Das ist schlecht")
         sentiments = list(detector._interaction_sentiments)
         assert sentiments[0] == "positive"
         assert sentiments[1] == "neutral"

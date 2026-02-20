@@ -876,7 +876,8 @@ class AssistantBrain:
             QUERY_TOOLS = {"get_entity_state", "send_message_to_person", "get_calendar_events",
                           "create_automation", "list_jarvis_automations",
                           "get_timer_status", "list_conditionals", "get_energy_report",
-                          "web_search", "get_camera_view"}
+                          "web_search", "get_camera_view", "get_security_score",
+                          "get_room_climate", "get_active_intents"}
             has_query_results = False
 
             if tool_calls:
