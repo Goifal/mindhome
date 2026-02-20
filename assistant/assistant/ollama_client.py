@@ -19,13 +19,28 @@ logger = logging.getLogger(__name__)
 # Regex zum Entfernen von Qwen 3 Think-Bloecken
 _THINK_PATTERN = re.compile(r"<think>[\s\S]*?</think>\s*", re.DOTALL)
 
-# Startwoerter die typisch fuer LLM-Reasoning sind
-_REASONING_STARTERS = re.compile(
-    r"^(?:Okay|Ok|Alright|So,?\s|Let me|I need|First|The user|I should"
-    r"|I'll|I can|Here|Now|Wait|Hmm|This|Right|Well|Looking|My|In the"
-    r"|The original|The key|Possible|Maybe|But)",
-    re.IGNORECASE,
-)
+# Woerter die auf Meta-Kommentar / Reasoning hindeuten (nicht in echter Meldung)
+_META_MARKERS = [
+    # Englisches Reasoning
+    "let me", "i need to", "the user", "i should", "i'll ", "i can ",
+    "original:", "original message", "translate", "rephrase", "reformulate",
+    "thinking", "analyze", "however", "therefore", "which means",
+    "looking at", "understand", "consider", "examples given",
+    "in jarvis", "jarvis's style", "jarvis style", "the example",
+    "low urgency", "medium urgency", "high urgency",
+    "short,", "concise", "1-2 sentence", "1-3 sentence",
+    "british butler", "dry humor", "matter-of-fact",
+    # Prompt-Echo
+    "formuliere diese", "meldung im jarvis", "dringlichkeit:",
+]
+
+# Haeufige deutsche Woerter (muessen in einer echten deutschen Meldung vorkommen)
+_GERMAN_MARKERS = [
+    "sir", "der", "die", "das", "ist", "ein", "und", "nicht",
+    "ich", "hab", "mal", "aus", "auf", "mit", "bei", "zur",
+    "noch", "nur", "etwas", "gerade", "bitte", "danke",
+    "grad", "uhr", "haus", "licht", "heiz",
+]
 
 
 def strip_think_tags(text: str) -> str:
@@ -36,82 +51,87 @@ def strip_think_tags(text: str) -> str:
     return cleaned if cleaned else text
 
 
-def _is_reasoning_leak(text: str) -> bool:
-    """Erkennt ob ein Text ein LLM-Reasoning-Leak ist statt einer echten Antwort.
+def validate_notification(text: str) -> str:
+    """Validiert LLM-Output als Jarvis-Meldung. Gibt leeren String bei Leak.
 
-    Heuristik: Wenn der Text mit englischem Reasoning beginnt UND
-    entweder zu lang ist oder ueberwiegend Englisch ist, ist es ein Leak.
-    """
-    if not text or len(text) < 40:
-        return False
+    Eine gueltige Jarvis-Meldung ist:
+    - Kurz (< 250 Zeichen)
+    - Auf Deutsch (enthaelt deutsche Woerter)
+    - Kein Meta-Kommentar ueber die Aufgabe selbst
+    - Kein englisches Reasoning
 
-    # Beginnt mit typischem Reasoning-Starter?
-    if not _REASONING_STARTERS.match(text.strip()):
-        return False
-
-    # Anteil englischer Woerter pruefen (Jarvis-Meldungen sind Deutsch)
-    eng_markers = [
-        "let me", "i need", "the user", "i should", "first,",
-        "original", "translate", "rephrase", "thinking", "analyze",
-        "however", "therefore", "because", "which means", "so the",
-        "probably", "maybe", "perhaps", "possible", "want to",
-        "looking at", "understand", "check", "consider", "notice",
-    ]
-    text_lower = text.lower()
-    eng_hits = sum(1 for m in eng_markers if m in text_lower)
-
-    # >=3 englische Marker → definitiv Reasoning-Leak
-    if eng_hits >= 3:
-        return True
-
-    # Text > 200 Zeichen + beginnt mit Reasoning-Starter → wahrscheinlich Leak
-    if len(text) > 200 and eng_hits >= 1:
-        return True
-
-    return False
-
-
-def strip_reasoning_leak(text: str) -> str:
-    """Entfernt ungetaggtes LLM-Reasoning und gibt leeren String bei komplettem Leak.
-
-    Manche Modelle (Qwen 3) geben gelegentlich ihren Denkprozess aus,
-    ohne ihn in <think>-Tags zu wrappen. Diese Funktion:
-    1. Entfernt <think>-Tags
-    2. Entfernt englisches Reasoning-Prefix wenn deutsche Antwort folgt
-    3. Gibt leeren String zurueck wenn der GESAMTE Text ein Leak ist
-       (Caller faellt dann auf raw_message zurueck)
+    Gibt den bereinigten Text oder leeren String zurueck (Caller nutzt Fallback).
     """
     if not text:
         return text
 
-    # Think-Tags zuerst
+    # Think-Tags entfernen
     text = strip_think_tags(text)
+    if not text:
+        return ""
 
-    # Komplett-Leak erkennen (gesamter Output ist Reasoning, keine Antwort)
-    if _is_reasoning_leak(text):
+    text = text.strip()
+
+    # --- Check 1: Meta-Kommentar / Reasoning erkannt ---
+    text_lower = text.lower()
+    meta_hits = sum(1 for m in _META_MARKERS if m in text_lower)
+    if meta_hits >= 2:
         logger.warning(
-            "Reasoning-Leak erkannt (%d Zeichen, Anfang: '%.60s...')",
-            len(text), text,
+            "Notification verworfen (Meta-Kommentar, %d Treffer): '%.80s...'",
+            meta_hits, text,
         )
-        # Versuchen: Letzte Zeile(n) koennten die eigentliche Antwort sein
-        # (z.B. 'Sir, Phase C zieht etwas viel. Ich behalte das im Auge.')
-        lines = text.strip().split("\n")
-        for candidate in reversed(lines):
-            candidate = candidate.strip().strip('"').strip("'").strip()
-            if not candidate:
-                continue
-            # Kandidat ist kurz, auf Deutsch, und kein Reasoning
-            if (
-                10 < len(candidate) < 200
-                and not _REASONING_STARTERS.match(candidate)
-                and not any(w in candidate.lower() for w in ["let me", "i need", "the user", "i should"])
-            ):
-                logger.info("Reasoning-Leak: Letzte Zeile als Antwort: '%s'", candidate)
-                return candidate
-        # Kein brauchbarer Kandidat → leerer String (Caller nutzt Fallback)
+        # Versuche letzte Zeile als Antwort zu extrahieren
+        extracted = _extract_final_answer(text)
+        if extracted:
+            return extracted
+        return ""
+
+    # --- Check 2: Zu lang fuer eine Notification ---
+    if len(text) > 300:
+        # Vielleicht ist die eigentliche Meldung in den ersten 1-2 Saetzen?
+        first_part = text.split("\n")[0].strip()
+        if 10 < len(first_part) < 250 and _looks_german(first_part):
+            logger.info("Notification gekuerzt auf erste Zeile: '%s'", first_part)
+            return first_part
+        logger.warning("Notification verworfen (zu lang: %d Zeichen)", len(text))
+        return ""
+
+    # --- Check 3: Nicht Deutsch ---
+    if not _looks_german(text) and len(text) > 50:
+        logger.warning("Notification verworfen (nicht Deutsch): '%.80s...'", text)
         return ""
 
     return text
+
+
+def _looks_german(text: str) -> bool:
+    """Prueft ob ein Text deutsch aussieht."""
+    text_lower = text.lower()
+    hits = sum(1 for w in _GERMAN_MARKERS if w in text_lower)
+    # Mindestens 2 deutsche Marker oder Umlaute vorhanden
+    return hits >= 2 or any(c in text for c in "äöüÄÖÜß")
+
+
+def _extract_final_answer(text: str) -> str:
+    """Versucht die eigentliche Antwort aus einem Reasoning-Block zu fischen.
+
+    Manche Modelle schreiben die Antwort als letzte Zeile, oft in Anfuehrungszeichen.
+    """
+    lines = text.strip().split("\n")
+    for line in reversed(lines):
+        candidate = line.strip().strip('"').strip("'").strip('"').strip('"').strip()
+        if not candidate or len(candidate) < 8 or len(candidate) > 250:
+            continue
+        if _looks_german(candidate):
+            meta_in_candidate = sum(1 for m in _META_MARKERS if m in candidate.lower())
+            if meta_in_candidate == 0:
+                logger.info("Antwort aus Reasoning extrahiert: '%s'", candidate)
+                return candidate
+    return ""
+
+
+# Legacy-Alias fuer bestehende Aufrufe
+strip_reasoning_leak = validate_notification
 
 
 class OllamaClient:
