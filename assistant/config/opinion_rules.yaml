@@ -33,8 +33,9 @@ opinion_rules:
     check_field: "temperature"
     check_operator: ">"
     check_value: 28
+    pushback_level: 1  # Warnung VOR Ausfuehrung
     responses:
-      - "28 Grad. Da schmilzt sogar der Energieberater."
+      - "28 Grad, Sir. Das ist jenseits jeder Empfehlung. Ich fuehre es aus, aber notiert."
     min_intensity: 1
 
   - id: "low_temp"
@@ -43,9 +44,10 @@ opinion_rules:
     check_field: "temperature"
     check_operator: "<"
     check_value: 15
+    pushback_level: 1  # Warnung VOR Ausfuehrung
     responses:
-      - "14 Grad? Sparsamkeit in Ehren, aber das grenzt an Selbstkasteiung."
-      - "Unter 15 Grad. Da kondensiert bald die Atemluft."
+      - "Unter 15 Grad, Sir. Das grenzt an Selbstkasteiung. Ich fuehre es aus."
+      - "Unter 15 Grad. Da kondensiert bald die Atemluft. Wird erledigt."
     min_intensity: 2
 
   - id: "heating_night"
@@ -234,8 +236,9 @@ opinion_rules:
     check_value: "disarm"
     check_hour_min: 0
     check_hour_max: 5
+    pushback_level: 2  # Bestaetigung verlangen
     responses:
-      - "Alarm deaktivieren um diese Uhrzeit? Alles in Ordnung?"
+      - "Sir, den Alarm nachts deaktivieren? Soll ich trotzdem?"
     min_intensity: 1
 
   - id: "alarm_disarm_away"
@@ -287,8 +290,9 @@ opinion_rules:
     check_value: "unlock"
     check_hour_min: 0
     check_hour_max: 5
+    pushback_level: 2  # Bestaetigung verlangen
     responses:
-      - "Die Haustuer wird nachts entriegelt. Erwartest du jemanden?"
+      - "Sir, die Haustuer nachts entriegeln? Sicher?"
     min_intensity: 1
 
   - id: "unlock_away"

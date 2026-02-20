@@ -1,0 +1,283 @@
+"""
+Wellness Advisor - Jarvis kuemmert sich um den Benutzer.
+
+Fusioniert Daten aus Activity Engine, Mood Detector und Health Monitor
+zu kontextsensitiven Wellness-Hinweisen:
+- PC-Pause nach langer Bildschirmarbeit
+- Stress-Intervention bei erkanntem Stress
+- Mahlzeiten-Erinnerung
+- Late-Night-Hinweis
+"""
+
+import asyncio
+import logging
+from datetime import datetime
+from typing import Optional
+
+import redis.asyncio as aioredis
+
+from .config import yaml_config
+
+logger = logging.getLogger(__name__)
+
+
+class WellnessAdvisor:
+    """Kontextsensitive Wellness-Hinweise — Jarvis kuemmert sich."""
+
+    def __init__(self, ha_client, activity_engine, mood_detector):
+        self.ha = ha_client
+        self.activity = activity_engine
+        self.mood = mood_detector
+        self.redis: Optional[aioredis.Redis] = None
+        self._notify_callback = None
+        self._task: Optional[asyncio.Task] = None
+        self._running = False
+
+        # Konfiguration
+        cfg = yaml_config.get("wellness", {})
+        self.enabled = cfg.get("enabled", True)
+        self.check_interval = cfg.get("check_interval_minutes", 15) * 60
+        self.pc_break_minutes = cfg.get("pc_break_reminder_minutes", 120)
+        self.stress_check = cfg.get("stress_check", True)
+        self.meal_reminders = cfg.get("meal_reminders", True)
+        self.meal_times = cfg.get("meal_times", {"lunch": 13, "dinner": 19})
+        self.late_night_nudge = cfg.get("late_night_nudge", True)
+
+    async def initialize(self, redis_client=None):
+        """Initialisiert den Wellness Advisor."""
+        self.redis = redis_client
+        if self.enabled:
+            logger.info("WellnessAdvisor initialisiert (Intervall: %ds)", self.check_interval)
+        else:
+            logger.info("WellnessAdvisor deaktiviert")
+
+    def set_notify_callback(self, callback):
+        """Setzt den Callback fuer Wellness-Meldungen."""
+        self._notify_callback = callback
+
+    async def start(self):
+        """Startet den Wellness-Loop."""
+        if not self.enabled:
+            return
+        self._running = True
+        self._task = asyncio.create_task(self._wellness_loop())
+
+    async def stop(self):
+        """Stoppt den Wellness-Loop."""
+        self._running = False
+        if self._task:
+            self._task.cancel()
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
+
+    async def _wellness_loop(self):
+        """Periodischer Wellness-Check."""
+        # 5 Min nach Start warten (System stabilisieren)
+        await asyncio.sleep(300)
+
+        while self._running:
+            try:
+                await self._check_pc_break()
+                await self._check_stress_intervention()
+                await self._check_meal_time()
+                await self._check_late_night()
+            except Exception as e:
+                logger.error("Wellness-Check Fehler: %s", e)
+
+            await asyncio.sleep(self.check_interval)
+
+    # ------------------------------------------------------------------
+    # PC-Pause-Erinnerung
+    # ------------------------------------------------------------------
+
+    async def _check_pc_break(self):
+        """Wenn User seit X Minuten am PC sitzt -> Pause vorschlagen."""
+        if not self.redis:
+            return
+
+        try:
+            detection = await self.activity.detect_activity()
+            activity = detection.get("activity", "")
+        except Exception:
+            return
+
+        if activity != "focused":
+            # Nicht am PC -> Timer zuruecksetzen
+            await self.redis.delete("mha:wellness:pc_start")
+            return
+
+        now = datetime.now()
+        pc_start = await self.redis.get("mha:wellness:pc_start")
+
+        if not pc_start:
+            # Timer starten
+            await self.redis.set("mha:wellness:pc_start", now.isoformat())
+            return
+
+        try:
+            start_dt = datetime.fromisoformat(pc_start)
+        except (ValueError, TypeError):
+            await self.redis.set("mha:wellness:pc_start", now.isoformat())
+            return
+
+        minutes = (now - start_dt).total_seconds() / 60
+
+        if minutes < self.pc_break_minutes:
+            return
+
+        # Cooldown: 1h zwischen Erinnerungen
+        last = await self.redis.get("mha:wellness:last_break_reminder")
+        if last:
+            try:
+                last_dt = datetime.fromisoformat(last)
+                if (now - last_dt).total_seconds() < 3600:
+                    return
+            except (ValueError, TypeError):
+                pass
+
+        hours = int(minutes // 60)
+        mins = int(minutes % 60)
+
+        if hours >= 1:
+            time_str = f"{hours}h{mins:02d}min"
+        else:
+            time_str = f"{mins} Minuten"
+
+        await self._send_nudge(
+            "pc_break",
+            f"Du sitzt seit {time_str} am Rechner, Sir. "
+            f"Eine kurze Pause waere nicht das Schlechteste.",
+        )
+        await self.redis.set("mha:wellness:last_break_reminder", now.isoformat())
+        # Timer zuruecksetzen damit nach Cooldown nicht sofort wieder feuert
+        await self.redis.set("mha:wellness:pc_start", now.isoformat())
+
+    # ------------------------------------------------------------------
+    # Stress-Intervention
+    # ------------------------------------------------------------------
+
+    async def _check_stress_intervention(self):
+        """Bei erkanntem Stress sanft intervenieren."""
+        if not self.stress_check or not self.redis:
+            return
+
+        mood_data = self.mood.get_current_mood()
+        mood = mood_data.get("mood", "neutral")
+        stress_level = mood_data.get("stress_level", 0.0)
+
+        if mood not in ("stressed", "frustrated"):
+            return
+
+        # Nur einmal pro Stress-Episode (30 Min Cooldown)
+        last = await self.redis.get("mha:wellness:last_stress_nudge")
+        if last:
+            try:
+                last_dt = datetime.fromisoformat(last)
+                if (datetime.now() - last_dt).total_seconds() < 1800:
+                    return
+            except (ValueError, TypeError):
+                pass
+
+        await self.redis.set("mha:wellness:last_stress_nudge", datetime.now().isoformat())
+
+        if stress_level >= 0.7:
+            msg = "Sir, der Stresspegel ist deutlich erhoert. Soll ich das Licht etwas dimmen?"
+        elif mood == "frustrated":
+            msg = "Ich bemerke etwas Frustration, Sir. Kann ich irgendwie helfen?"
+        else:
+            msg = "Sir, wenn ich anmerken darf — es scheint etwas stressig. Kurze Pause?"
+
+        await self._send_nudge("stress_detected", msg)
+
+    # ------------------------------------------------------------------
+    # Mahlzeiten-Erinnerung
+    # ------------------------------------------------------------------
+
+    async def _check_meal_time(self):
+        """Erinnert an Mahlzeiten wenn die uebliche Zeit ueberschritten ist."""
+        if not self.meal_reminders or not self.redis:
+            return
+
+        now = datetime.now()
+        hour = now.hour
+
+        for meal, target_hour in self.meal_times.items():
+            # Nur erinnern wenn 60+ Min nach der ueblichen Zeit
+            if hour != (target_hour + 1) % 24:
+                continue
+
+            # Cooldown: Nur 1x pro Mahlzeit pro Tag
+            key = f"mha:wellness:meal_{meal}_{now.strftime('%Y-%m-%d')}"
+            if await self.redis.exists(key):
+                continue
+
+            # Pruefen ob Kueche aktiv war (= wahrscheinlich gegessen)
+            try:
+                detection = await self.activity.detect_activity()
+                # Wenn User gerade kocht oder weg ist, nicht erinnern
+                activity = detection.get("activity", "")
+                if activity in ("away", "sleeping"):
+                    continue
+            except Exception:
+                pass
+
+            await self.redis.setex(key, 86400, "1")  # 24h TTL
+
+            meal_de = "Mittagessen" if meal == "lunch" else "Abendessen"
+            await self._send_nudge(
+                "meal_reminder",
+                f"Es ist {hour} Uhr, Sir. Schon {meal_de.lower()} gehabt?",
+            )
+
+    # ------------------------------------------------------------------
+    # Late-Night-Hinweis
+    # ------------------------------------------------------------------
+
+    async def _check_late_night(self):
+        """Nach Mitternacht: Sanfter Hinweis auf die Uhrzeit."""
+        if not self.late_night_nudge or not self.redis:
+            return
+
+        hour = datetime.now().hour
+
+        # Nur zwischen 0 und 4 Uhr
+        if hour >= 5:
+            return
+
+        try:
+            detection = await self.activity.detect_activity()
+            activity = detection.get("activity", "")
+            if activity in ("sleeping", "away"):
+                return
+        except Exception:
+            return
+
+        # Nur 1x pro Nacht (Redis TTL 6h)
+        key = "mha:wellness:last_latenight"
+        if await self.redis.exists(key):
+            return
+
+        await self.redis.setex(key, 6 * 3600, "1")
+
+        await self._send_nudge(
+            "late_night",
+            f"Es ist {hour} Uhr, Sir. Nur zur Kenntnis.",
+        )
+
+    # ------------------------------------------------------------------
+    # Nudge senden
+    # ------------------------------------------------------------------
+
+    async def _send_nudge(self, nudge_type: str, message: str):
+        """Sendet einen Wellness-Hinweis ueber den Callback."""
+        if not self._notify_callback:
+            logger.debug("Wellness-Nudge ohne Callback: %s", message)
+            return
+
+        try:
+            await self._notify_callback(nudge_type, message)
+            logger.info("Wellness [%s]: %s", nudge_type, message)
+        except Exception as e:
+            logger.error("Wellness-Nudge Fehler: %s", e)

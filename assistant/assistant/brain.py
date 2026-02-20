@@ -20,7 +20,7 @@ import asyncio
 import json
 import logging
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -64,6 +64,7 @@ from .camera_manager import CameraManager
 from .conditional_commands import ConditionalCommands
 from .energy_optimizer import EnergyOptimizer
 from .web_search import WebSearch
+from .wellness_advisor import WellnessAdvisor
 from .threat_assessment import ThreatAssessment
 from .learning_observer import LearningObserver
 from .tts_enhancer import TTSEnhancer
@@ -208,6 +209,9 @@ class AssistantBrain:
         self.threat_assessment = ThreatAssessment(self.ha)
         self.learning_observer = LearningObserver()
 
+        # Wellness Advisor (Caring Loops)
+        self.wellness_advisor = WellnessAdvisor(self.ha, self.activity, self.mood)
+
     async def initialize(self):
         """Initialisiert alle Komponenten."""
         await self.memory.initialize()
@@ -322,6 +326,11 @@ class AssistantBrain:
         await self.threat_assessment.initialize(redis_client=self.memory.redis)
         await self.learning_observer.initialize(redis_client=self.memory.redis)
         self.learning_observer.set_notify_callback(self._handle_learning_suggestion)
+
+        # Wellness Advisor initialisieren und starten
+        await self.wellness_advisor.initialize(redis_client=self.memory.redis)
+        self.wellness_advisor.set_notify_callback(self._handle_wellness_nudge)
+        await self.wellness_advisor.start()
 
         await self.proactive.start()
         logger.info("Jarvis initialisiert (alle Systeme aktiv, inkl. Phase 17)")
@@ -878,6 +887,38 @@ class AssistantBrain:
                                     conflict.get("strategy"), func_args, final_args,
                                 )
 
+                    # Pushback-Check: Jarvis warnt VOR der Ausfuehrung
+                    pushback_msg = None
+                    pushback = self.personality.check_pushback(func_name, final_args)
+                    if pushback:
+                        if pushback["level"] >= 2:
+                            # Level 2: Bestaetigung verlangen — nicht ausfuehren
+                            if self.memory.redis:
+                                pending = {
+                                    "function": func_name,
+                                    "args": final_args,
+                                    "person": person or "",
+                                    "room": room or "",
+                                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                                    "reason": f"pushback:{pushback['rule_id']}",
+                                }
+                                timeout = yaml_config.get("pushback", {}).get("confirmation_timeout", 120)
+                                await self.memory.redis.setex(
+                                    SECURITY_CONFIRM_KEY,
+                                    timeout,
+                                    json.dumps(pending),
+                                )
+                            response_text = pushback["message"]
+                            executed_actions.append({
+                                "function": func_name,
+                                "args": final_args,
+                                "result": "pushback_confirmation_needed",
+                            })
+                            continue
+                        elif pushback["level"] == 1:
+                            # Level 1: Warnung voranstellen, aber trotzdem ausfuehren
+                            pushback_msg = pushback["message"]
+
                     # Ausfuehren
                     result = await self.executor.execute(func_name, final_args)
                     executed_actions.append({
@@ -923,14 +964,24 @@ class AssistantBrain:
                     # WebSocket: Aktion melden
                     await emit_action(func_name, final_args, result)
 
-                    # Phase 6: Opinion Check — Jarvis kommentiert Aktionen
-                    opinion = self.personality.check_opinion(func_name, func_args)
-                    if opinion:
-                        logger.info("Jarvis Meinung: '%s'", opinion)
+                    # Pushback-Warnung (Level 1) an Response voranstellen
+                    if pushback_msg:
+                        logger.info("Pushback (Level 1): '%s'", pushback_msg)
                         if response_text:
-                            response_text = f"{response_text} {opinion}"
+                            response_text = f"{pushback_msg} {response_text}"
                         else:
-                            response_text = opinion
+                            response_text = pushback_msg
+
+                    # Phase 6: Opinion Check — Jarvis kommentiert Aktionen
+                    # Nur wenn kein Pushback-Kommentar (sonst doppelt)
+                    if not pushback_msg:
+                        opinion = self.personality.check_opinion(func_name, func_args)
+                        if opinion:
+                            logger.info("Jarvis Meinung: '%s'", opinion)
+                            if response_text:
+                                response_text = f"{response_text} {opinion}"
+                            else:
+                                response_text = opinion
 
             # 8b. Tool-Result Feedback Loop: Ergebnisse zurueck ans LLM
             # Damit Jarvis natuerlich antwortet ("Im Buero sind es 22 Grad, Sir.")
@@ -1424,45 +1475,58 @@ class AssistantBrain:
         """Callback fuer allgemeine Timer — meldet wenn Timer abgelaufen ist."""
         message = alert.get("message", "")
         if message:
-            await emit_speaking(message)
-            logger.info("Timer -> Meldung: %s", message)
+            formatted = await self.proactive.format_with_personality(message, "medium")
+            await emit_speaking(formatted)
+            logger.info("Timer -> Meldung: %s", formatted)
 
     async def _handle_learning_suggestion(self, alert: dict):
         """Callback fuer Learning Observer — schlaegt Automatisierungen vor."""
         message = alert.get("message", "")
         if message:
-            await emit_speaking(message)
-            logger.info("Learning -> Vorschlag: %s", message)
+            formatted = await self.proactive.format_with_personality(message, "low")
+            await emit_speaking(formatted)
+            logger.info("Learning -> Vorschlag: %s", formatted)
 
     async def _handle_cooking_timer(self, alert: dict):
         """Callback fuer Koch-Timer — meldet wenn Timer abgelaufen ist."""
         message = alert.get("message", "")
         if message:
-            await emit_speaking(message)
-            logger.info("Koch-Timer -> Meldung: %s", message)
+            formatted = await self.proactive.format_with_personality(message, "medium")
+            await emit_speaking(formatted)
+            logger.info("Koch-Timer -> Meldung: %s", formatted)
 
     async def _handle_time_alert(self, alert: dict):
         """Callback fuer TimeAwareness-Alerts — leitet an proaktive Meldung weiter."""
         message = alert.get("message", "")
         if message:
-            await emit_speaking(message)
-            logger.info("TimeAwareness -> Proaktive Meldung: %s", message)
+            formatted = await self.proactive.format_with_personality(message, "medium")
+            await emit_speaking(formatted)
+            logger.info("TimeAwareness -> Meldung: %s", formatted)
 
     async def _handle_health_alert(self, alert_type: str, urgency: str, message: str):
         """Callback fuer Health Monitor — leitet an proaktive Meldung weiter."""
         if message:
-            await emit_speaking(message)
-            logger.info("Health Monitor [%s/%s]: %s", alert_type, urgency, message)
+            formatted = await self.proactive.format_with_personality(message, urgency)
+            await emit_speaking(formatted)
+            logger.info("Health Monitor [%s/%s]: %s", alert_type, urgency, formatted)
 
     async def _handle_device_health_alert(self, alert: dict):
         """Callback fuer DeviceHealthMonitor — meldet Geraete-Anomalien."""
         message = alert.get("message", "")
         if message:
-            await emit_speaking(message)
+            formatted = await self.proactive.format_with_personality(message, "medium")
+            await emit_speaking(formatted)
             logger.info(
                 "DeviceHealth [%s]: %s",
-                alert.get("alert_type", "?"), message,
+                alert.get("alert_type", "?"), formatted,
             )
+
+    async def _handle_wellness_nudge(self, nudge_type: str, message: str):
+        """Callback fuer Wellness Advisor — kuemmert sich um den User."""
+        if message:
+            formatted = await self.proactive.format_with_personality(message, "low")
+            await emit_speaking(formatted)
+            logger.info("Wellness [%s]: %s", nudge_type, formatted)
 
     # ------------------------------------------------------------------
     # Phase 14.3: Ambient Audio Callback
@@ -2392,6 +2456,217 @@ Beispiele:
             logger.debug("Predictive Briefing Fehler: %s", e)
             return ""
 
+    async def get_foresight_predictions(self) -> list:
+        """Fusioniert Kalender + Wetter + HA-States zu proaktiven Vorhersagen.
+
+        Laeuft im Threat Assessment Loop (alle 5 Min).
+        Gibt nur Vorhersagen zurueck die noch nicht gemeldet wurden (Cooldown via Redis).
+
+        Returns:
+            Liste von Dicts: [{"message": str, "urgency": str, "type": str}]
+        """
+        foresight_cfg = yaml_config.get("foresight", {})
+        if not foresight_cfg.get("enabled", True):
+            return []
+
+        predictions = []
+
+        try:
+            states = await self.ha.get_states()
+            if not states:
+                return []
+
+            # Redis fuer Cooldown-Checks
+            redis = self.memory.redis
+
+            # ----------------------------------------------------------
+            # 1. Kalender: Termin in 30-60 Min → "Rechtzeitig los, Sir."
+            # ----------------------------------------------------------
+            lookahead = foresight_cfg.get("calendar_lookahead_minutes", 60)
+            departure_warn = foresight_cfg.get("departure_warning_minutes", 45)
+
+            try:
+                calendar_entity = None
+                for s in states:
+                    if s.get("entity_id", "").startswith("calendar."):
+                        calendar_entity = s.get("entity_id")
+                        break
+
+                if calendar_entity:
+                    now = datetime.now()
+                    end = now + timedelta(minutes=lookahead)
+                    result = await self.ha.call_service_with_response(
+                        "calendar", "get_events",
+                        {
+                            "entity_id": calendar_entity,
+                            "start_date_time": now.isoformat(),
+                            "end_date_time": end.isoformat(),
+                        },
+                    )
+
+                    events = []
+                    if isinstance(result, dict):
+                        for entity_data in result.values():
+                            if isinstance(entity_data, dict):
+                                events.extend(entity_data.get("events", []))
+                            elif isinstance(entity_data, list):
+                                events.extend(entity_data)
+
+                    for ev in events:
+                        summary = ev.get("summary", "Termin")
+                        ev_start = ev.get("start", "")
+                        location = ev.get("location", "")
+
+                        if not ev_start:
+                            continue
+
+                        try:
+                            if "T" in str(ev_start):
+                                start_dt = datetime.fromisoformat(str(ev_start).replace("Z", "+00:00"))
+                                # In lokale naive Zeit konvertieren fuer Vergleich mit now
+                                if start_dt.tzinfo:
+                                    start_dt = start_dt.astimezone().replace(tzinfo=None)
+                            else:
+                                continue  # Ganztaegig → kein Departure-Warning
+                        except (ValueError, TypeError):
+                            continue
+
+                        minutes_until = (start_dt - now).total_seconds() / 60
+
+                        if departure_warn <= minutes_until <= lookahead:
+                            # Cooldown: Nicht doppelt melden
+                            cool_key = f"mha:foresight:cal:{summary[:30]}"
+                            if redis and await redis.exists(cool_key):
+                                continue
+                            if redis:
+                                await redis.setex(cool_key, 3600, "1")
+
+                            msg = f"Termin '{summary}' in {int(minutes_until)} Minuten"
+                            if location:
+                                msg += f" ({location})"
+                            msg += ". Rechtzeitig los, Sir."
+                            predictions.append({
+                                "message": msg,
+                                "urgency": "medium",
+                                "type": "departure_warning",
+                            })
+            except Exception as e:
+                logger.debug("Foresight Calendar Fehler: %s", e)
+
+            # ----------------------------------------------------------
+            # 2. Wetter: Regen erwartet + Fenster offen
+            # ----------------------------------------------------------
+            if foresight_cfg.get("weather_alerts", True):
+                try:
+                    for s in states:
+                        if not s.get("entity_id", "").startswith("weather."):
+                            continue
+
+                        attrs = s.get("attributes", {})
+                        forecast = attrs.get("forecast", [])
+                        wind_speed = attrs.get("wind_speed")
+                        condition = s.get("state", "")
+
+                        # Sturm-Warnung (>60 km/h)
+                        if wind_speed is not None:
+                            try:
+                                ws = float(wind_speed)
+                                if ws > 60:
+                                    cool_key = "mha:foresight:storm"
+                                    if not redis or not await redis.exists(cool_key):
+                                        if redis:
+                                            await redis.setex(cool_key, 3600, "1")
+                                        predictions.append({
+                                            "message": f"Sturmwarnung: Wind bei {ws:.0f} km/h. Rolllaeden sichern?",
+                                            "urgency": "medium",
+                                            "type": "storm_warning",
+                                        })
+                            except (ValueError, TypeError):
+                                pass
+
+                        # Regen + offene Fenster
+                        rain_conditions = ("rainy", "pouring", "lightning-rainy", "snowy-rainy")
+                        rain_expected = condition in rain_conditions
+
+                        if not rain_expected and forecast:
+                            next_fc = forecast[0] if forecast else {}
+                            fc_cond = next_fc.get("condition", "")
+                            if fc_cond in rain_conditions:
+                                rain_expected = True
+                            try:
+                                precip = float(next_fc.get("precipitation", 0))
+                                if precip > 2:
+                                    rain_expected = True
+                            except (ValueError, TypeError):
+                                pass
+
+                        if rain_expected:
+                            # Offene Fenster zaehlen
+                            open_windows = []
+                            for ws in states:
+                                weid = ws.get("entity_id", "")
+                                wattrs = ws.get("attributes", {})
+                                if (ws.get("state") == "on" and
+                                    wattrs.get("device_class") == "window"):
+                                    open_windows.append(
+                                        wattrs.get("friendly_name", weid)
+                                    )
+
+                            if open_windows:
+                                cool_key = "mha:foresight:rain_windows"
+                                if not redis or not await redis.exists(cool_key):
+                                    if redis:
+                                        await redis.setex(cool_key, 1800, "1")  # 30 Min Cooldown
+                                    predictions.append({
+                                        "message": f"Regen erwartet. {len(open_windows)} Fenster noch offen.",
+                                        "urgency": "medium",
+                                        "type": "rain_windows",
+                                    })
+
+                        # Temperatursturz heute Nacht
+                        if forecast:
+                            current_temp = attrs.get("temperature")
+                            tonight = None
+                            for fc in forecast:
+                                fc_dt = fc.get("datetime", "")
+                                if "T" in str(fc_dt):
+                                    try:
+                                        fdt = datetime.fromisoformat(str(fc_dt).replace("Z", "+00:00"))
+                                        # In lokale Zeit konvertieren fuer korrekten Stunden-Check
+                                        if fdt.tzinfo:
+                                            fdt = fdt.astimezone()
+                                        if fdt.hour >= 20 or fdt.hour <= 6:
+                                            tonight = fc
+                                            break
+                                    except (ValueError, TypeError):
+                                        pass
+
+                            if tonight and current_temp is not None:
+                                try:
+                                    temp_now = float(current_temp)
+                                    temp_night = float(tonight.get("templow", tonight.get("temperature", temp_now)))
+                                    if temp_now - temp_night > 10:
+                                        cool_key = "mha:foresight:temp_drop"
+                                        if not redis or not await redis.exists(cool_key):
+                                            if redis:
+                                                await redis.setex(cool_key, 7200, "1")
+                                            predictions.append({
+                                                "message": f"Temperatursturz heute Nacht: von {temp_now:.0f} auf {temp_night:.0f} Grad.",
+                                                "urgency": "low",
+                                                "type": "temp_drop",
+                                            })
+                                except (ValueError, TypeError):
+                                    pass
+
+                        break  # Nur erste Weather-Entity
+                except Exception as e:
+                    logger.debug("Foresight Weather Fehler: %s", e)
+
+        except Exception as e:
+            logger.debug("Foresight Fehler: %s", e)
+
+        return predictions
+
     async def shutdown(self):
         """Faehrt MindHome Assistant herunter."""
         await self.ambient_audio.stop()
@@ -2400,6 +2675,7 @@ Beispiele:
         await self.time_awareness.stop()
         await self.health_monitor.stop()
         await self.device_health.stop()
+        await self.wellness_advisor.stop()
         await self.proactive.stop()
         await self.summarizer.stop()
         await self.feedback.stop()

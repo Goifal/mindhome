@@ -7,6 +7,7 @@ import asyncio
 import json
 import logging
 import os
+import random
 import secrets
 from collections import deque
 from contextlib import asynccontextmanager
@@ -65,6 +66,83 @@ logging.getLogger().addHandler(_err_handler)
 brain = AssistantBrain()
 
 
+async def _boot_announcement(brain_instance: "AssistantBrain", health_data: dict, cfg: dict):
+    """Jarvis Boot-Sequenz — kuendigt sich nach dem Start gesprochenen an."""
+    delay = cfg.get("delay_seconds", 5)
+    await asyncio.sleep(delay)
+
+    try:
+        # Haus-Status sammeln
+        states = await brain_instance.ha.get_states()
+        temp = None
+        open_items = []
+
+        for s in (states or []):
+            eid = s.get("entity_id", "")
+            state_val = s.get("state", "")
+            attrs = s.get("attributes", {})
+
+            # Erste Raumtemperatur finden
+            if temp is None and eid.startswith("climate."):
+                t = attrs.get("current_temperature")
+                if t is not None:
+                    try:
+                        temp = float(t)
+                    except (ValueError, TypeError):
+                        pass
+
+            # Offene Fenster/Tueren zaehlen
+            if state_val == "on" and (
+                attrs.get("device_class") in ("window", "door")
+                or "window" in eid
+                or "door" in eid
+            ):
+                name = attrs.get("friendly_name", eid)
+                open_items.append(name)
+
+        # Boot-Nachricht zusammenbauen
+        messages = cfg.get("messages", [
+            "Alle Systeme online, Sir.",
+            "Systeme hochgefahren, Sir. Alles bereit.",
+            "Online, Sir. Soll ich den Status durchgehen?",
+        ])
+        msg = random.choice(messages)
+
+        # Temperatur anhaengen
+        if temp is not None:
+            msg += f" Raumtemperatur bei {temp:.0f} Grad."
+
+        # Fehlende Komponenten pruefen
+        components = health_data.get("components", {})
+        failed = [c for c, s in components.items() if s != "connected"]
+        if failed:
+            msg += f" {len(failed)} {'System' if len(failed) == 1 else 'Systeme'} eingeschraenkt."
+        elif not open_items:
+            msg += " Keine Auffaelligkeiten."
+
+        # Offene Fenster/Tueren
+        if open_items:
+            if len(open_items) <= 3:
+                msg += f" Offen: {', '.join(open_items)}."
+            else:
+                msg += f" {len(open_items)} Fenster oder Tueren sind offen."
+
+        # Greeting-Sound + Ansage
+        if hasattr(brain_instance, "sound_manager"):
+            await brain_instance.sound_manager.play_event_sound("greeting")
+            await asyncio.sleep(1)
+
+        await emit_speaking(msg)
+        logger.info("Boot-Sequenz: %s", msg)
+
+    except Exception as e:
+        logger.warning("Boot-Sequenz fehlgeschlagen: %s", e)
+        try:
+            await emit_speaking("Alle Systeme online, Sir.")
+        except Exception:
+            pass
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup und Shutdown."""
@@ -85,6 +163,11 @@ async def lifespan(app: FastAPI):
     logger.info(" MindHome Assistant bereit auf %s:%d",
         settings.assistant_host, settings.assistant_port)
     logger.info("=" * 50)
+
+    # Boot-Sequenz: Jarvis kuendigt sich an
+    boot_cfg = yaml_config.get("boot_sequence", {})
+    if boot_cfg.get("enabled", True):
+        asyncio.create_task(_boot_announcement(brain, health, boot_cfg))
 
     yield
 
