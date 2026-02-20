@@ -4,12 +4,24 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "1.4.1"
-BUILD = 91
-BUILD_DATE = "2026-02-19"
-CODENAME = "Jarvis Family"
+VERSION = "1.4.2"
+BUILD = 92
+BUILD_DATE = "2026-02-20"
+CODENAME = "Jarvis Dashboard"
 
 # Changelog
+# Build 92: v1.4.2 Jarvis Dashboard — System-Management UI, Update-Script, Container-Tooling
+#   - NEU: System-Tab im Dashboard (Version, Branch, Container-Status, Ollama, Speicher)
+#   - NEU: Ein-Klick Update/Restart/Modell-Update aus dem Dashboard
+#   - NEU: update.sh Script (--quick, --full, --models, --status Modi)
+#   - NEU: Docker CLI + Compose im Container (System-Management Endpoints)
+#   - NEU: Ollama HTTP API statt CLI (funktioniert aus dem Container)
+#   - NEU: Git-Repo als /repo Volume gemountet (Dashboard-Updates)
+#   - NEU: Docker-Socket gemountet (Container-Steuerung aus Dashboard)
+#   - FIX: UI-Caching Problem (static/ als Volume statt COPY)
+#   - FIX: Git safe.directory fuer gemountetes Volume
+#   - NEU: 136 Memory-System Tests (memory, semantic_memory, memory_extractor)
+
 # Build 91: v1.4.1 Jarvis Family — Personen-Verwaltung, NoneType-Fixes, Timeout-Schutz
 #   - NEU: Personen-Tab in Settings UI (Hauptbenutzer + Familienmitglieder)
 #   - NEU: Rollen-System: Hausherr/in, Mitbewohner/in, Gast
