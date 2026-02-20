@@ -75,18 +75,19 @@ FORMALITY_PROMPTS = {
 # Antwort-Varianz: Bestaetigungs-Pools (Phase 6)
 CONFIRMATIONS_SUCCESS = [
     "Erledigt.", "Gemacht.", "Ist passiert.", "Wie gewuenscht.",
-    "Aber natuerlich.", "Sehr wohl.", "Wurde umgesetzt.", "Schon geschehen.",
+    "Sehr wohl.", "Wurde umgesetzt.", "Schon geschehen.",
     "Geht klar.", "Laeuft.", "Umgesetzt.", "Done.",
+    "Auf den Punkt.", "Wie gewohnt.",
 ]
 
 CONFIRMATIONS_PARTIAL = [
-    "Teilweise erledigt.", "Fast alles geschafft.", "Zum Teil umgesetzt.",
+    "Fast alles geschafft.", "Zum Teil umgesetzt.", "Teilweise durch.",
 ]
 
 CONFIRMATIONS_FAILED = [
-    "Hat nicht funktioniert. Alternative?", "Da gab es ein Problem.",
-    "Konnte nicht ausgefuehrt werden.", "Fehlgeschlagen. Naechster Versuch.",
-    "Nicht durchgegangen. Ich pruefe.", "Negativ.",
+    "Hat nicht funktioniert. Alternative?", "Problem erkannt.",
+    "Negativ. Ich pruefe.", "Fehlgeschlagen. Naechster Versuch.",
+    "Nicht durchgegangen. Ich schau mir das an.",
 ]
 
 

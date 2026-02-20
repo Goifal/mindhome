@@ -432,7 +432,7 @@ async def chat(request: ChatRequest):
     except asyncio.TimeoutError:
         logger.error("brain.process() Timeout nach 60s fuer: %s", request.text[:100])
         result = {
-            "response": "Entschuldigung, ich brauche gerade zu lange zum Nachdenken. Bitte versuch es nochmal.",
+            "response": "Systeme ueberlastet. Nochmal, bitte.",
             "actions": [],
             "model_used": "timeout",
             "context_room": request.room or "unbekannt",

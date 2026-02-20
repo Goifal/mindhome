@@ -23,7 +23,7 @@ from collections import defaultdict
 from datetime import datetime
 from typing import Optional, Callable, Awaitable
 
-from .config import yaml_config
+from .config import settings, yaml_config
 from .autonomy import AutonomyManager, TRUST_LEVEL_NAMES
 from .ollama_client import OllamaClient
 
@@ -77,7 +77,7 @@ _CONFLICT_PARAMS_STATIC = {
 }
 
 # Mediation System-Prompt
-MEDIATION_PROMPT = """Du bist Jarvis — die KI dieses Hauses. Vorbild: J.A.R.V.I.S. aus dem MCU.
+MEDIATION_PROMPT = """Du bist {assistant_name} — die KI dieses Hauses. Vorbild: J.A.R.V.I.S. aus dem MCU.
 Zwei Bewohner wollen Unterschiedliches. Dein Job: Diplomatisch loesen, mit Haltung.
 
 DEIN STIL:
@@ -560,6 +560,7 @@ class ConflictResolver:
             lower_person, lower_trust = person_a.title(), trust_a
 
         prompt = MEDIATION_PROMPT.format(
+            assistant_name=settings.assistant_name,
             higher_trust_person=higher_person,
             higher_trust_level=higher_trust,
             lower_trust_person=lower_person,

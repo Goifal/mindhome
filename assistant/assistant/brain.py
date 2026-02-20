@@ -758,7 +758,7 @@ class AssistantBrain:
 
             if "error" in response:
                 logger.error("LLM Fehler: %s", response["error"])
-                response_text = "Da bin ich mir nicht sicher."
+                response_text = "Kann ich gerade nicht beantworten. Mein Modell streikt."
         elif intent_type == "memory":
             # Phase 8: Erinnerungsfrage -> Memory-Suche + Deep-Model
             logger.info("Erinnerungsfrage erkannt -> Memory-Suche + Deep-Model")
@@ -787,7 +787,7 @@ class AssistantBrain:
             if "error" in response:
                 logger.error("LLM Fehler: %s", response["error"])
                 return {
-                    "response": "Da stimmt etwas nicht. Ich kann gerade nicht denken.",
+                    "response": "Mein Sprachmodell reagiert nicht. Ich versuche es gleich nochmal.",
                     "actions": [],
                     "model_used": model,
                     "error": response["error"],
@@ -834,7 +834,7 @@ class AssistantBrain:
                                     SECURITY_CONFIRM_TTL,
                                     json.dumps(pending),
                                 )
-                            response_text = f"Sicherheitsbestaetigung noetig: {validation.reason}"
+                            response_text = f"Sir, das braucht deine Bestaetigung. {validation.reason}"
                             executed_actions.append({
                                 "function": func_name,
                                 "args": func_args,
@@ -1253,6 +1253,15 @@ class AssistantBrain:
             "Ich verstehe, wie du dich fuehlst",
             "Ich verstehe, wie du dich fühlst",
             "Das klingt wirklich",
+            "Ich bin ein KI", "Ich bin eine KI",
+            "Ich bin ein Sprachmodell",
+            "Ich bin ein grosses Sprachmodell",
+            "als Sprachmodell", "als KI-Assistent",
+            "Ich habe keine Gefuehle",
+            "Ich habe keine eigenen Gefühle",
+            "Hallo! Wie kann ich",
+            "Hallo, wie kann ich",
+            "Hi! Wie kann ich",
         ])
         for phrase in banned_phrases:
             # Case-insensitive Entfernung
@@ -1278,8 +1287,11 @@ class AssistantBrain:
         # 3. "Es tut mir leid" Varianten durch Fakt ersetzen
         sorry_patterns = [
             "es tut mir leid,", "es tut mir leid.", "es tut mir leid ",
-            "leider ", "entschuldigung,", "entschuldigung.",
+            "es tut mir leid!", "leider ", "leider,", "leider.",
+            "entschuldigung,", "entschuldigung.", "entschuldigung!",
+            "entschuldige,", "entschuldige.", "entschuldige!",
             "ich entschuldige mich,", "tut mir leid,", "tut mir leid.",
+            "bedauerlicherweise ", "ich bedaure,", "ich bedaure.",
         ]
         for pattern in sorry_patterns:
             idx = text.lower().find(pattern)
@@ -2391,9 +2403,9 @@ Beispiele:
                 temperature=0.5,
                 max_tokens=100,
             )
-            return response.get("message", {}).get("content", f"Der Befehl '{func_name}' konnte nicht ausgefuehrt werden.")
+            return response.get("message", {}).get("content", f"{func_name} reagiert nicht. Ich pruefe das.")
         except Exception:
-            return f"Der Befehl '{func_name}' konnte nicht ausgefuehrt werden."
+            return f"{func_name} reagiert nicht. Ich pruefe das."
 
     # ------------------------------------------------------------------
     # Phase 17: Predictive Resource Management
