@@ -141,7 +141,13 @@ class ProactiveManager:
         if hasattr(self.brain, "threat_assessment") and self.brain.threat_assessment.enabled:
             self._threat_task = asyncio.create_task(self._run_threat_assessment_loop())
 
-        logger.info("Proactive Manager gestartet (Feedback + Diagnostik + Batching + Saisonal + Notfall + Threat)")
+        # Ambient Presence Loop (Jarvis ist immer da)
+        self._ambient_task: Optional[asyncio.Task] = None
+        ambient_cfg = yaml_config.get("ambient_presence", {})
+        if ambient_cfg.get("enabled", False):
+            self._ambient_task = asyncio.create_task(self._run_ambient_presence_loop())
+
+        logger.info("Proactive Manager gestartet (Feedback + Diagnostik + Batching + Saisonal + Notfall + Threat + Ambient)")
 
     async def stop(self):
         """Stoppt den Event Listener."""
@@ -174,6 +180,12 @@ class ProactiveManager:
             self._threat_task.cancel()
             try:
                 await self._threat_task
+            except asyncio.CancelledError:
+                pass
+        if hasattr(self, "_ambient_task") and self._ambient_task:
+            self._ambient_task.cancel()
+            try:
+                await self._ambient_task
             except asyncio.CancelledError:
                 pass
         logger.info("Proactive Manager gestoppt")
@@ -770,6 +782,48 @@ Beispiele:
 """
 
     # ------------------------------------------------------------------
+    # Alert-Personality: Meldungen im Jarvis-Stil reformulieren
+    # ------------------------------------------------------------------
+
+    async def format_with_personality(self, raw_message: str, urgency: str = "low") -> str:
+        """Reformuliert eine nackte Alert-Meldung im Jarvis-Stil.
+
+        Nutzt das Fast-Model (qwen3:4b) fuer minimale Latenz.
+        Faellt auf raw_message zurueck bei Fehler.
+
+        Args:
+            raw_message: Original-Meldung (z.B. "Trink-Erinnerung: Ein Glas Wasser")
+            urgency: Dringlichkeit (low/medium/high/critical)
+
+        Returns:
+            Reformulierte Meldung im Jarvis-Stil
+        """
+        if not raw_message or not raw_message.strip():
+            return raw_message
+
+        # Bei CRITICAL keine Zeit verschwenden — direkt durchreichen
+        if urgency == "critical":
+            return raw_message
+
+        try:
+            response = await self.brain.ollama.chat(
+                messages=[
+                    {"role": "system", "content": self._get_notification_system_prompt()},
+                    {"role": "user", "content": (
+                        f"Formuliere diese Meldung im Jarvis-Stil um (1-2 Saetze, Deutsch).\n"
+                        f"Dringlichkeit: {urgency}\n"
+                        f"Original: {raw_message}"
+                    )},
+                ],
+                model=settings.model_fast,
+            )
+            text = response.get("message", {}).get("content", "").strip()
+            return text if text else raw_message
+        except Exception as e:
+            logger.debug("Alert-Personality Fehler (Fallback auf Original): %s", e)
+            return raw_message
+
+    # ------------------------------------------------------------------
     # Phase 10: Periodische Diagnostik
     # ------------------------------------------------------------------
 
@@ -1201,6 +1255,23 @@ Beispiele:
             except Exception as e:
                 logger.error("Threat Assessment Fehler: %s", e)
 
+            # Predictive Foresight (Kalender + Wetter + HA-States)
+            try:
+                predictions = await self.brain.get_foresight_predictions()
+                for pred in predictions:
+                    urgency_map = {
+                        "critical": CRITICAL,
+                        "high": HIGH,
+                        "medium": MEDIUM,
+                        "low": LOW,
+                    }
+                    urgency = urgency_map.get(pred.get("urgency", "low"), LOW)
+                    await self._notify(pred.get("type", "foresight"), urgency, {
+                        "message": pred.get("message", ""),
+                    })
+            except Exception as e:
+                logger.debug("Foresight Fehler: %s", e)
+
             # Energy Events pruefen
             try:
                 if hasattr(self.brain, "energy_optimizer") and self.brain.energy_optimizer.enabled:
@@ -1215,3 +1286,91 @@ Beispiele:
 
             # Alle 5 Minuten pruefen
             await asyncio.sleep(300)
+
+    # ------------------------------------------------------------------
+    # Ambient Presence: Jarvis ist immer da
+    # ------------------------------------------------------------------
+
+    async def _run_ambient_presence_loop(self):
+        """Periodisches Status-Fluestern — Jarvis ist eine Praesenz, kein totes System."""
+        import random
+
+        ambient_cfg = yaml_config.get("ambient_presence", {})
+        interval = ambient_cfg.get("interval_minutes", 60) * 60
+        quiet_start = ambient_cfg.get("quiet_start", 22)
+        quiet_end = ambient_cfg.get("quiet_end", 7)
+        report_weather = ambient_cfg.get("report_weather", True)
+        report_energy = ambient_cfg.get("report_energy", True)
+        all_quiet_prob = ambient_cfg.get("all_quiet_probability", 0.2)
+
+        # 10 Min nach Start warten
+        await asyncio.sleep(600)
+
+        while self._running:
+            try:
+                hour = datetime.now().hour
+
+                # Quiet Hours respektieren
+                if quiet_start <= hour or hour < quiet_end:
+                    await asyncio.sleep(interval)
+                    continue
+
+                # Nur bei "relaxing" Activity sprechen
+                try:
+                    detection = await self.brain.activity.detect_activity()
+                    activity = detection.get("activity", "")
+                except Exception:
+                    activity = ""
+
+                if activity != "relaxing":
+                    await asyncio.sleep(interval)
+                    continue
+
+                # Autonomie-Level pruefen (mindestens Level 2)
+                if self.brain.autonomy.level < 2:
+                    await asyncio.sleep(interval)
+                    continue
+
+                # Status-Info sammeln
+                observations = []
+                states = await self.brain.ha.get_states()
+
+                if states and report_weather:
+                    for s in states:
+                        if s.get("entity_id", "").startswith("weather."):
+                            condition = s.get("state", "")
+                            temp = s.get("attributes", {}).get("temperature")
+                            if condition and temp is not None:
+                                observations.append(f"Wetter: {condition}, {temp} Grad")
+                            break
+
+                if states and report_energy:
+                    for s in states:
+                        eid = s.get("entity_id", "")
+                        if "solar" in eid.lower() and "power" in eid.lower():
+                            try:
+                                power = float(s.get("state", 0))
+                                if power > 100:
+                                    observations.append(f"Solar: {power:.0f}W Ertrag")
+                            except (ValueError, TypeError):
+                                pass
+
+                # Nachricht bauen
+                if observations:
+                    msg = " | ".join(observations)
+                elif random.random() < all_quiet_prob:
+                    msg = "Alles ruhig, Sir."
+                else:
+                    # Nichts zu berichten, nichts sagen
+                    await asyncio.sleep(interval)
+                    continue
+
+                # Via Notification-System senden (nutzt Silence Matrix + Batching)
+                await self._notify("ambient_status", LOW, {
+                    "message": msg,
+                })
+
+            except Exception as e:
+                logger.debug("Ambient Presence Fehler: %s", e)
+
+            await asyncio.sleep(interval)

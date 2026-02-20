@@ -9,6 +9,54 @@ assistant:
   version: "1.4.1"
   language: "de"
 
+# --- Boot-Sequenz ---
+# Jarvis kuendigt sich beim Start gesprochenen an
+boot_sequence:
+  enabled: true
+  delay_seconds: 5  # Warten bis WebSocket-Clients verbunden sind
+  messages:
+    - "Alle Systeme online, Sir."
+    - "Systeme hochgefahren, Sir. Alles bereit."
+    - "Online, Sir. Soll ich den Status durchgehen?"
+
+# --- Pushback ---
+# Jarvis warnt VOR riskanten Aktionen (gesteuert ueber pushback_level in opinion_rules.yaml)
+pushback:
+  enabled: true
+  confirmation_timeout: 120  # Sekunden bis eine Pushback-Level-2-Bestaetigung verfaellt
+
+# --- Wellness ---
+# Jarvis kuemmert sich um den Benutzer (PC-Pause, Stress, Mahlzeiten, Nachtarbeit)
+wellness:
+  enabled: true
+  check_interval_minutes: 15
+  pc_break_reminder_minutes: 120  # Pause-Erinnerung nach X Minuten am PC
+  stress_check: true
+  meal_reminders: true
+  meal_times:
+    lunch: 13
+    dinner: 19
+  late_night_nudge: true
+
+# --- Ambient Presence ---
+# Jarvis ist eine Praesenz im Raum — gelegentliches Status-Fluestern
+ambient_presence:
+  enabled: false  # Opt-in — nicht jeder will das
+  interval_minutes: 60
+  quiet_start: 22
+  quiet_end: 7
+  report_weather: true
+  report_energy: true
+  all_quiet_probability: 0.2  # 20% Chance fuer "Alles ruhig, Sir." wenn nichts zu berichten
+
+# --- Predictive Foresight ---
+# Jarvis fusioniert Kalender + Wetter + Gewohnheiten zu Vorhersagen
+foresight:
+  enabled: true
+  calendar_lookahead_minutes: 60  # Wie weit voraus Kalender-Termine pruefen
+  weather_alerts: true
+  departure_warning_minutes: 45  # Ab wann "Los, Sir." bei Terminen
+
 # --- Haushalt & Personen ---
 # Wird ueber die Einstellungsseite (Tab "Personen") verwaltet
 household:

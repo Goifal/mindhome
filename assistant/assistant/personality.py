@@ -416,12 +416,17 @@ class PersonalityEngine:
                 if not match:
                     continue
 
-            # Uhrzeit-Check (optional)
+            # Uhrzeit-Check (optional, mit Mitternachts-Wraparound)
             hour_min = rule.get("check_hour_min")
             hour_max = rule.get("check_hour_max")
             if hour_min is not None and hour_max is not None:
-                if not (hour_min <= hour <= hour_max):
-                    continue
+                if hour_min <= hour_max:
+                    if not (hour_min <= hour <= hour_max):
+                        continue
+                else:
+                    # Wraparound: z.B. 23..5 → 23,0,1,2,3,4,5
+                    if not (hour >= hour_min or hour <= hour_max):
+                        continue
 
             # Heizungsmodus-Check (optional)
             check_heating_mode = rule.get("check_heating_mode")
@@ -440,6 +445,96 @@ class PersonalityEngine:
             if responses:
                 logger.info("Opinion triggered: %s", rule.get("id", "?"))
                 return random.choice(responses)
+
+        return None
+
+    def check_pushback(self, func_name: str, func_args: dict) -> Optional[dict]:
+        """Prueft ob Jarvis VOR einer Aktion warnen oder Bestaetigung verlangen soll.
+
+        Nutzt die gleiche Rule-Matching-Logik wie check_opinion(), aber nur
+        fuer Regeln mit pushback_level >= 1.
+
+        Returns:
+            Dict mit {"level": 1-2, "message": str, "rule_id": str} oder None
+            level 1 = Warnung VOR Ausfuehrung (trotzdem ausfuehren)
+            level 2 = Bestaetigung verlangen (nicht ausfuehren ohne Ja)
+        """
+        if self.opinion_intensity == 0:
+            return None
+
+        pushback_cfg = yaml_config.get("pushback", {})
+        if not pushback_cfg.get("enabled", True):
+            return None
+
+        hour = datetime.now().hour
+
+        for rule in self._opinion_rules:
+            pushback_level = rule.get("pushback_level", 0)
+            if pushback_level < 1:
+                continue
+            if rule.get("min_intensity", 1) > self.opinion_intensity:
+                continue
+            if rule.get("check_action") != func_name:
+                continue
+
+            # Feld-Check (gleiche Logik wie check_opinion)
+            field = rule.get("check_field", "")
+            operator = rule.get("check_operator", "")
+            value = rule.get("check_value")
+
+            if field and operator and value is not None:
+                actual = func_args.get(field)
+                if actual is None:
+                    continue
+
+                match = False
+                if operator == ">" and isinstance(actual, (int, float)):
+                    match = actual > value
+                elif operator == ">=" and isinstance(actual, (int, float)):
+                    match = actual >= value
+                elif operator == "<" and isinstance(actual, (int, float)):
+                    match = actual < value
+                elif operator == "<=" and isinstance(actual, (int, float)):
+                    match = actual <= value
+                elif operator == "==":
+                    match = str(actual) == str(value)
+
+                if not match:
+                    continue
+
+            # Uhrzeit-Check (mit Mitternachts-Wraparound)
+            hour_min = rule.get("check_hour_min")
+            hour_max = rule.get("check_hour_max")
+            if hour_min is not None and hour_max is not None:
+                if hour_min <= hour_max:
+                    if not (hour_min <= hour <= hour_max):
+                        continue
+                else:
+                    # Wraparound: z.B. 23..5 → 23,0,1,2,3,4,5
+                    if not (hour >= hour_min or hour <= hour_max):
+                        continue
+
+            # Heizungsmodus-Check
+            check_heating_mode = rule.get("check_heating_mode")
+            if check_heating_mode:
+                current_mode = yaml_config.get("heating", {}).get("mode", "room_thermostat")
+                if current_mode != check_heating_mode:
+                    continue
+
+            # Raum-Check
+            check_room = rule.get("check_room")
+            if check_room and func_args.get("room") != check_room:
+                continue
+
+            # Regel passt -> Pushback
+            responses = rule.get("responses", [])
+            msg = random.choice(responses) if responses else ""
+            logger.info("Pushback triggered (level %d): %s", pushback_level, rule.get("id", "?"))
+            return {
+                "level": pushback_level,
+                "message": msg,
+                "rule_id": rule.get("id", ""),
+            }
 
         return None
 
