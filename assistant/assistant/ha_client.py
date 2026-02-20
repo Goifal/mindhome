@@ -125,11 +125,11 @@ class HomeAssistantClient:
     ) -> Any:
         """HA Service aufrufen und Response-Body zurueckgeben.
 
-        Manche HA-Services (z.B. weather.get_forecasts) geben Daten zurueck.
-        Im Gegensatz zu call_service() wird hier der volle Response zurueckgegeben.
+        Manche HA-Services (z.B. weather.get_forecasts, calendar.get_events)
+        geben Daten zurueck. Nutzt ?return_response (ab HA 2024.x erforderlich).
         """
         return await self._post_ha(
-            f"/api/services/{domain}/{service}", data or {}
+            f"/api/services/{domain}/{service}?return_response", data or {}
         )
 
     async def fire_event(
