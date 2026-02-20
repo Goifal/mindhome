@@ -342,7 +342,7 @@ class AssistantBrain:
         await self.proactive.start()
         logger.info("Jarvis initialisiert (alle Systeme aktiv, inkl. Phase 17)")
 
-    async def process(self, text: str, person: Optional[str] = None, room: Optional[str] = None, files: Optional[list] = None) -> dict:
+    async def process(self, text: str, person: Optional[str] = None, room: Optional[str] = None, files: Optional[list] = None, stream_callback=None) -> dict:
         """
         Verarbeitet eine User-Eingabe.
 
@@ -351,6 +351,7 @@ class AssistantBrain:
             person: Name der Person (optional)
             room: Raum aus dem die Anfrage kommt (optional)
             files: Liste von Datei-Metadaten aus file_handler.save_upload() (optional)
+            stream_callback: Optionaler async callback(token: str) fuer Streaming
 
         Returns:
             Dict mit response, actions, model_used
@@ -779,16 +780,26 @@ class AssistantBrain:
             logger.info("Wissensfrage erkannt -> LLM direkt (Deep: %s, keine Tools)",
                          settings.model_deep)
             model = settings.model_deep
-            response = await self.ollama.chat(
-                messages=messages,
-                model=model,
-            )
-            response_text = self._filter_response(response.get("message", {}).get("content", ""))
-            executed_actions = []
+            if stream_callback:
+                collected_tokens = []
+                async for token in self.ollama.stream_chat(
+                    messages=messages,
+                    model=model,
+                ):
+                    collected_tokens.append(token)
+                    await stream_callback(token)
+                response_text = self._filter_response("".join(collected_tokens))
+            else:
+                response = await self.ollama.chat(
+                    messages=messages,
+                    model=model,
+                )
+                response_text = self._filter_response(response.get("message", {}).get("content", ""))
 
-            if "error" in response:
-                logger.error("LLM Fehler: %s", response["error"])
-                response_text = "Kann ich gerade nicht beantworten. Mein Modell streikt."
+                if "error" in response:
+                    logger.error("LLM Fehler: %s", response["error"])
+                    response_text = "Kann ich gerade nicht beantworten. Mein Modell streikt."
+            executed_actions = []
         elif intent_type == "memory":
             # Phase 8: Erinnerungsfrage -> Memory-Suche + Deep-Model
             logger.info("Erinnerungsfrage erkannt -> Memory-Suche + Deep-Model")
@@ -800,11 +811,21 @@ class AssistantBrain:
                 messages[0] = {"role": "system", "content": system_prompt}
 
             model = settings.model_deep
-            response = await self.ollama.chat(
-                messages=messages,
-                model=model,
-            )
-            response_text = self._filter_response(response.get("message", {}).get("content", ""))
+            if stream_callback:
+                collected_tokens = []
+                async for token in self.ollama.stream_chat(
+                    messages=messages,
+                    model=model,
+                ):
+                    collected_tokens.append(token)
+                    await stream_callback(token)
+                response_text = self._filter_response("".join(collected_tokens))
+            else:
+                response = await self.ollama.chat(
+                    messages=messages,
+                    model=model,
+                )
+                response_text = self._filter_response(response.get("message", {}).get("content", ""))
             executed_actions = []
         else:
             # 6b. Einfache Anfragen: Direkt LLM aufrufen (mit Timeout + Fallback)
@@ -877,7 +898,9 @@ class AssistantBrain:
                           "create_automation", "list_jarvis_automations",
                           "get_timer_status", "list_conditionals", "get_energy_report",
                           "web_search", "get_camera_view", "get_security_score",
-                          "get_room_climate", "get_active_intents"}
+                          "get_room_climate", "get_active_intents",
+                          "get_wellness_status", "get_device_health",
+                          "get_learned_patterns", "describe_doorbell"}
             has_query_results = False
 
             if tool_calls:
@@ -1081,16 +1104,32 @@ class AssistantBrain:
                     # Zweiter LLM-Call: Natuerliche Antwort generieren (ohne Tools)
                     logger.debug("Tool-Feedback: %d Results -> LLM fuer natuerliche Antwort",
                                  len(executed_actions))
-                    feedback_response = await self.ollama.chat(
-                        messages=feedback_messages,
-                        model=model,
-                        temperature=0.7,
-                        max_tokens=128,
-                    )
-                    if "error" not in feedback_response:
-                        feedback_text = feedback_response.get("message", {}).get("content", "")
-                        if feedback_text:
-                            response_text = self._filter_response(feedback_text)
+
+                    if stream_callback:
+                        # Streaming: Token-fuer-Token via stream_chat()
+                        collected = []
+                        async for token in self.ollama.stream_chat(
+                            messages=feedback_messages,
+                            model=model,
+                            temperature=0.7,
+                            max_tokens=128,
+                        ):
+                            collected.append(token)
+                            await stream_callback(token)
+                        feedback_text = "".join(collected)
+                    else:
+                        feedback_response = await self.ollama.chat(
+                            messages=feedback_messages,
+                            model=model,
+                            temperature=0.7,
+                            max_tokens=128,
+                        )
+                        feedback_text = ""
+                        if "error" not in feedback_response:
+                            feedback_text = feedback_response.get("message", {}).get("content", "")
+
+                    if feedback_text:
+                        response_text = self._filter_response(feedback_text)
                 except Exception as e:
                     logger.debug("Tool-Feedback fehlgeschlagen: %s", e)
 

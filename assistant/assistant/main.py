@@ -29,7 +29,7 @@ from .file_handler import (
     allowed_file, ensure_upload_dir,
     get_file_path, save_upload, MAX_FILE_SIZE,
 )
-from .websocket import ws_manager, emit_speaking
+from .websocket import ws_manager, emit_speaking, emit_stream_start, emit_stream_token, emit_stream_end
 
 # Logging
 logging.basicConfig(
@@ -1048,13 +1048,25 @@ async def websocket_endpoint(websocket: WebSocket):
                     text = message.get("data", {}).get("text", "")
                     person = message.get("data", {}).get("person")
                     voice_meta = message.get("data", {}).get("voice_metadata")
+                    use_stream = message.get("data", {}).get("stream", False)
                     if text:
                         # Phase 9: Voice-Metadaten verarbeiten
                         if voice_meta:
                             brain.mood.analyze_voice_metadata(voice_meta)
-                        result = await brain.process(text, person)
-                        tts_data = result.get("tts")
-                        await emit_speaking(result["response"], tts_data=tts_data)
+
+                        if use_stream:
+                            # Streaming: Token-fuer-Token an Client senden
+                            await emit_stream_start()
+                            result = await brain.process(
+                                text, person,
+                                stream_callback=emit_stream_token,
+                            )
+                            tts_data = result.get("tts")
+                            await emit_stream_end(result["response"], tts_data=tts_data)
+                        else:
+                            result = await brain.process(text, person)
+                            tts_data = result.get("tts")
+                            await emit_speaking(result["response"], tts_data=tts_data)
 
                 elif event == "assistant.feedback":
                     # Phase 5: Feedback ueber FeedbackTracker verarbeiten
