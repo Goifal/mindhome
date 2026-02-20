@@ -170,6 +170,16 @@ class HomeAssistantClient:
         """Tagesphasen von MindHome."""
         return await self._get_mindhome("/api/day-phases")
 
+    async def search_devices(self, domain: str = "", room: str = "") -> Optional[list]:
+        """Geraete ueber MindHome Device-DB suchen (schneller als alle HA-States laden)."""
+        params = []
+        if domain:
+            params.append(f"domain={domain}")
+        if room:
+            params.append(f"room={room}")
+        qs = "&".join(params)
+        return await self._get_mindhome(f"/api/devices/search?{qs}")
+
     # ----- Interne HTTP Methoden mit Retry -----
 
     async def _get_ha(self, path: str) -> Any:

@@ -1843,10 +1843,23 @@ class FunctionExecutor:
         return n.replace(" ", "_")
 
     async def _find_entity(self, domain: str, search: str) -> Optional[str]:
-        """Findet eine Entity anhand von Domain und Suchbegriff."""
+        """Findet eine Entity anhand von Domain und Suchbegriff.
+
+        1. MindHome Device-DB (schnell, gezielt nach Domain + Raum)
+        2. Fallback: Alle HA-States durchsuchen
+        """
         if not search:
             return None
 
+        # MindHome Device-Search (schnell, DB-basiert)
+        try:
+            devices = await self.ha.search_devices(domain=domain, room=search)
+            if devices:
+                return devices[0]["ha_entity_id"]
+        except Exception as e:
+            logger.debug("MindHome device search failed, using HA fallback: %s", e)
+
+        # Fallback: Alle HA-States durchsuchen
         states = await self.ha.get_states()
         if not states:
             return None

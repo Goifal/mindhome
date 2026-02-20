@@ -132,6 +132,63 @@ def api_get_devices():
 
 
 
+@devices_bp.route("/api/devices/search", methods=["GET"])
+def api_search_devices():
+    """Search devices by domain and/or room name.
+
+    Query params:
+        domain: HA domain name (e.g. "light", "climate")
+        room: Room name (partial match, umlaut-normalized)
+    Returns: List of matching devices with ha_entity_id.
+    """
+    domain_name = request.args.get("domain", "").strip()
+    room_name = request.args.get("room", "").strip()
+
+    if not domain_name and not room_name:
+        return jsonify([])
+
+    session = get_db()
+    try:
+        query = session.query(Device).filter(Device.is_tracked == True)
+
+        if domain_name:
+            domain = session.query(Domain).filter_by(name=domain_name).first()
+            if domain:
+                query = query.filter(Device.domain_id == domain.id)
+            else:
+                return jsonify([])
+
+        if room_name:
+            # Normalize umlauts for matching
+            rn = room_name.lower().replace("ü", "u").replace("ä", "a").replace("ö", "o").replace("ß", "ss")
+            rn = rn.replace("ue", "u").replace("ae", "a").replace("oe", "o")
+            rooms = session.query(Room).filter(Room.is_active == True).all()
+            matching_room_ids = []
+            for r in rooms:
+                n = r.name.lower().replace("ü", "u").replace("ä", "a").replace("ö", "o").replace("ß", "ss")
+                n = n.replace("ue", "u").replace("ae", "a").replace("oe", "o")
+                if rn in n:
+                    matching_room_ids.append(r.id)
+            if matching_room_ids:
+                query = query.filter(Device.room_id.in_(matching_room_ids))
+            else:
+                return jsonify([])
+
+        devices = query.all()
+        result = []
+        for d in devices:
+            room_obj = d.room
+            result.append({
+                "ha_entity_id": d.ha_entity_id,
+                "name": d.name,
+                "room": room_obj.name if room_obj else None,
+                "is_controllable": d.is_controllable,
+            })
+        return jsonify(result)
+    finally:
+        session.close()
+
+
 @devices_bp.route("/api/devices/<int:device_id>", methods=["PUT"])
 def api_update_device(device_id):
     """Update device settings."""
