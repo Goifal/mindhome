@@ -26,6 +26,7 @@ services:
     volumes:
       - ./config:/app/config
       - ./static:/app/static
+      - ./assistant:/app/assistant
       - ${DATA_DIR:-./data}/assistant:/app/data
       - ${DATA_DIR:-./data}/uploads:/app/data/uploads
       # System-Management: Git-Repo + Docker-Socket fuer Dashboard-Updates
@@ -80,3 +81,16 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  # --- Autoheal (Watchdog fuer unhealthy Container) ---
+  # Startet Container automatisch neu wenn Healthcheck 3x fehlschlaegt
+  autoheal:
+    image: willfarrell/autoheal
+    container_name: mha-autoheal
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - AUTOHEAL_CONTAINER_LABEL=all
+      - AUTOHEAL_INTERVAL=30
+      - AUTOHEAL_START_PERIOD=60

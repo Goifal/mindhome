@@ -2103,9 +2103,22 @@ async def ui_system_status(token: str = ""):
     }
 
 
+async def _docker_restart(container: str = "mindhome-assistant", timeout: int = 5):
+    """Restart via Docker Engine API (Unix-Socket). Atomar — Daemon fuehrt komplett aus."""
+    sock = "/var/run/docker.sock"
+    try:
+        conn = _aiohttp.UnixConnector(path=sock)
+        async with _aiohttp.ClientSession(connector=conn) as session:
+            url = f"http://localhost/containers/{container}/restart?t={timeout}"
+            async with session.post(url) as resp:
+                return resp.status == 204
+    except Exception:
+        return False
+
+
 @app.post("/api/ui/system/update")
 async def ui_system_update(token: str = ""):
-    """Startet ein System-Update (git pull + docker compose build + up)."""
+    """System-Update: git pull + Container-Restart (Code ist als Volume gemountet)."""
     _check_token(token)
 
     if _update_lock.locked():
@@ -2123,43 +2136,27 @@ async def ui_system_update(token: str = ""):
             _update_log.append("FEHLER: Git pull fehlgeschlagen")
             return {"success": False, "log": _update_log}
 
-        # 2. Docker Build (via Docker-Socket)
-        _update_log.append("Docker build...")
-        rc, out = _run_cmd(
-            ["docker", "compose", "build"],
-            cwd=str(_MHA_DIR), timeout=300,
-        )
-        _update_log.append(out.strip()[-500:] if len(out) > 500 else out.strip())
-        if rc != 0:
-            _update_log.append("FEHLER: Docker build fehlgeschlagen")
-            return {"success": False, "log": _update_log}
+        _update_log.append(f"[{datetime.now().strftime('%H:%M:%S')}] Code aktualisiert! Container startet neu...")
 
-        # 3. Docker Up (startet auch diesen Container neu)
-        _update_log.append("Docker compose up -d...")
-        rc, out = _run_cmd(
-            ["docker", "compose", "up", "-d"],
-            cwd=str(_MHA_DIR), timeout=120,
-        )
-        _update_log.append(out.strip())
+        # 2. Restart via Docker Engine API (Code als Volume = sofort aktiv)
+        # asyncio.ensure_future damit Response noch rausgeht bevor Restart
+        asyncio.ensure_future(_docker_restart())
 
-        _update_log.append(f"[{datetime.now().strftime('%H:%M:%S')}] Update abgeschlossen!")
-        return {"success": rc == 0, "log": _update_log}
+        return {"success": True, "log": _update_log}
 
 
 @app.post("/api/ui/system/restart")
 async def ui_system_restart(token: str = ""):
-    """Startet alle Container neu (ohne Rebuild)."""
+    """Container-Restart via Docker Engine API (atomar, kein Crash)."""
     _check_token(token)
 
     if _update_lock.locked():
         raise HTTPException(status_code=409, detail="Update/Restart laeuft bereits")
 
-    async with _update_lock:
-        rc, out = _run_cmd(
-            ["docker", "compose", "restart"],
-            cwd=str(_MHA_DIR), timeout=120,
-        )
-        return {"success": rc == 0, "output": out.strip()}
+    # Restart via Docker Engine API — Daemon fuehrt komplett aus
+    asyncio.ensure_future(_docker_restart())
+
+    return {"success": True, "output": "Container wird neugestartet..."}
 
 
 @app.post("/api/ui/system/update-models")

@@ -2696,9 +2696,23 @@ async function checkForUpdates() {
   }
 }
 
+function _waitForRestart() {
+  // Pollt alle 3s bis der Server wieder antwortet, dann Reload
+  toast('Container startet neu... bitte kurz warten.');
+  let attempts = 0;
+  const poll = setInterval(async () => {
+    attempts++;
+    try {
+      const r = await fetch('/api/assistant/health');
+      if (r.ok) { clearInterval(poll); location.reload(); }
+    } catch(e) { /* noch nicht bereit */ }
+    if (attempts > 40) { clearInterval(poll); location.reload(); }
+  }, 3000);
+}
+
 async function doSystemUpdate() {
   if (_updating) return;
-  if (!confirm('System-Update starten?\n\nDer Assistant wird kurz neu gestartet. Danach lade das Dashboard neu.')) return;
+  if (!confirm('System-Update starten?\n\nDer Assistant wird kurz neu gestartet.')) return;
   _updating = true;
   const btn = document.getElementById('btnSysUpdate');
   const logBox = document.getElementById('sysUpdateLog');
@@ -2709,27 +2723,24 @@ async function doSystemUpdate() {
 
   try {
     const data = await api('/api/ui/system/update', 'POST');
-    if (logContent) {
-      logContent.textContent = (data.log || []).join('\n');
-    }
+    if (logContent) logContent.textContent = (data.log || []).join('\n');
     if (data.success) {
-      toast('Update erfolgreich! Seite wird neu geladen...');
-      setTimeout(() => location.reload(), 3000);
+      toast('Update erfolgreich! Container startet neu...');
+      _waitForRestart();
     } else {
       toast('Update fehlgeschlagen — siehe Log', 'error');
+      _updating = false;
+      if (btn) { btn.disabled = false; btn.textContent = '\u{1F680} System-Update starten'; }
     }
   } catch(e) {
     if (logContent) logContent.textContent += '\nFehler: ' + e.message;
-    // Wenn Connection lost -> Container startet gerade neu
     if (e.message.includes('Failed to fetch') || e.message.includes('NetworkError')) {
-      toast('Container startet neu... Seite wird gleich neu geladen.');
-      setTimeout(() => location.reload(), 10000);
+      _waitForRestart();
     } else {
       toast('Update-Fehler: ' + e.message, 'error');
+      _updating = false;
+      if (btn) { btn.disabled = false; btn.textContent = '\u{1F680} System-Update starten'; }
     }
-  } finally {
-    _updating = false;
-    if (btn) { btn.disabled = false; btn.textContent = '\u{1F680} System-Update starten'; }
   }
 }
 
@@ -2739,18 +2750,8 @@ async function doSystemRestart() {
   if (btn) { btn.disabled = true; btn.textContent = 'Neustart laeuft...'; }
   try {
     await api('/api/ui/system/restart', 'POST');
-    toast('Container werden neu gestartet. Seite wird neu geladen...');
-    setTimeout(() => location.reload(), 8000);
-  } catch(e) {
-    if (e.message.includes('Failed to fetch') || e.message.includes('NetworkError')) {
-      toast('Container startet neu... bitte kurz warten.');
-      setTimeout(() => location.reload(), 10000);
-    } else {
-      toast('Fehler: ' + e.message, 'error');
-    }
-  } finally {
-    if (btn) { btn.disabled = false; btn.textContent = '\u{1F504} Container neustarten'; }
-  }
+  } catch(e) { /* erwartbar: Verbindung bricht ab */ }
+  _waitForRestart();
 }
 
 async function doUpdateModels() {

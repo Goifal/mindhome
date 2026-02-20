@@ -322,7 +322,7 @@ routines:
     weekend_style: ausfuehrlich
     morning_actions:
       covers_up: true
-      lights_soft: true
+      lights_soft: false
   good_night:
     enabled: true
     triggers:

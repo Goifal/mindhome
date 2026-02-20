@@ -17,6 +17,7 @@ API-Endpoints an die tatsaechlichen MindHome Add-on Routes angepasst:
 
 import asyncio
 import logging
+import traceback
 from typing import Any, Optional
 
 import aiohttp
@@ -115,6 +116,14 @@ class HomeAssistantClient:
         Returns:
             True bei Erfolg
         """
+        # Audit-Log fuer Licht-Aktionen: Wer hat das Licht geschaltet?
+        if domain == "light":
+            caller_stack = "".join(traceback.format_stack(limit=8)[:-1])
+            logger.warning(
+                "LIGHT AUDIT: %s.%s data=%s\nCall-Stack:\n%s",
+                domain, service, data, caller_stack,
+            )
+
         result = await self._post_ha(
             f"/api/services/{domain}/{service}", data or {}
         )
@@ -125,11 +134,11 @@ class HomeAssistantClient:
     ) -> Any:
         """HA Service aufrufen und Response-Body zurueckgeben.
 
-        Manche HA-Services (z.B. weather.get_forecasts) geben Daten zurueck.
-        Im Gegensatz zu call_service() wird hier der volle Response zurueckgegeben.
+        Manche HA-Services (z.B. weather.get_forecasts, calendar.get_events)
+        geben Daten zurueck. Nutzt ?return_response (ab HA 2024.x erforderlich).
         """
         return await self._post_ha(
-            f"/api/services/{domain}/{service}", data or {}
+            f"/api/services/{domain}/{service}?return_response", data or {}
         )
 
     async def fire_event(
