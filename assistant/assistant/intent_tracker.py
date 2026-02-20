@@ -34,13 +34,13 @@ Antworte NUR mit einem JSON-Array. Wenn keine Absichten erkennbar, antworte mit 
 
 Format:
 [
-  {
+  {{
     "intent": "Besuch der Eltern",
     "deadline": "2026-02-21",
     "person": "Eltern",
     "suggested_actions": ["Gaestemodus vorbereiten", "Gaestezimmer heizen"],
     "reminder_text": "Deine Eltern kommen morgen. Soll ich den Gaestemodus vorbereiten?"
-  }
+  }}
 ]
 
 Heutiges Datum: {today}
