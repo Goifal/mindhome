@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.4.4 – Jarvis Voice (STT-Fix, Frontend-Stability)
+
+### STT Fix
+- **STT 400 behoben**: HA erwartet `X-Speech-Content` Header mit Audio-Metadaten (format, codec, sample_rate, bit_rate, channel, language)
+- ffmpeg Konvertierung erzwingt jetzt `s16` sample format fuer korrekte PCM-WAV Ausgabe
+- Alle 3 Fallback-Stufen (platform, entity-id, wyoming) senden den Header
+
+### Frontend Fix
+- **`domains.filter is not a function` Crash behoben**: `api.get()` gibt `{}` bei Fehlern zurueck — `Array.isArray()` Guard vor allen Array-setState-Aufrufen
+
 ## 1.4.3 – Jarvis Health (Entity-Picker, STT-Fix)
 
 ### Geraete-Ueberwachung

@@ -4,12 +4,16 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "1.4.3"
-BUILD = 93
+VERSION = "1.4.4"
+BUILD = 94
 BUILD_DATE = "2026-02-20"
-CODENAME = "Jarvis Health"
+CODENAME = "Jarvis Voice"
 
 # Changelog
+# Build 94: v1.4.4 Jarvis Voice — STT X-Speech-Content, Frontend-Stability
+#   - FIX: STT 400 "Missing X-Speech-Content header" — Audio-Metadaten Header hinzugefuegt
+#   - FIX: ffmpeg erzwingt s16 sample format fuer WAV-Konvertierung
+#   - FIX: Frontend "domains.filter is not a function" — Array.isArray() Guard
 # Build 93: v1.4.3 Jarvis Health — Entity-Picker, STT-Fix
 #   - NEU: Geräte-Tab im Dashboard — Entity-Picker für DeviceHealth-Überwachung
 #   - NEU: Entities aus MindHome Device-DB mit Raum/Domain-Zuordnung
