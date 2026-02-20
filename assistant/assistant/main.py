@@ -1781,6 +1781,10 @@ async def ui_clear_errors(token: str = ""):
 # Statische UI-Dateien ausliefern
 _ui_static_dir = Path(__file__).parent.parent / "static" / "ui"
 _ui_static_dir.mkdir(parents=True, exist_ok=True)
+_chat_static_dir = Path(__file__).parent.parent / "static" / "chat"
+_chat_static_dir.mkdir(parents=True, exist_ok=True)
+
+_NO_CACHE_HEADERS = {"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache", "Expires": "0"}
 
 
 @app.get("/ui/{path:path}")
@@ -1788,11 +1792,7 @@ async def ui_serve(path: str = ""):
     """Jarvis Dashboard — Single-Page App."""
     index_path = _ui_static_dir / "index.html"
     if index_path.exists():
-        return FileResponse(
-            index_path,
-            media_type="text/html",
-            headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache", "Expires": "0"},
-        )
+        return FileResponse(index_path, media_type="text/html", headers=_NO_CACHE_HEADERS)
     return HTMLResponse("<h1>Jarvis Dashboard — index.html nicht gefunden</h1>", status_code=404)
 
 
@@ -1801,6 +1801,22 @@ async def ui_redirect():
     """Redirect /ui zu /ui/."""
     from fastapi.responses import RedirectResponse
     return RedirectResponse("/ui/")
+
+
+@app.get("/chat/{path:path}")
+async def chat_serve(path: str = ""):
+    """Jarvis Chat — Standalone Chat-Seite."""
+    index_path = _chat_static_dir / "index.html"
+    if index_path.exists():
+        return FileResponse(index_path, media_type="text/html", headers=_NO_CACHE_HEADERS)
+    return HTMLResponse("<h1>Jarvis Chat — index.html nicht gefunden</h1>", status_code=404)
+
+
+@app.get("/chat")
+async def chat_redirect():
+    """Redirect /chat zu /chat/."""
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse("/chat/")
 
 
 # ============================================================
