@@ -22,9 +22,9 @@ logger = logging.getLogger(__name__)
 # Unterstuetzte Dateitypen
 SUPPORTED_EXTENSIONS = {".txt", ".md", ".yaml", ".yml", ".csv", ".log", ".pdf"}
 
-# Chunk-Einstellungen
-DEFAULT_CHUNK_SIZE = 500
-DEFAULT_CHUNK_OVERLAP = 50
+# Chunk-Einstellungen (optimiert fuer semantische Suche)
+DEFAULT_CHUNK_SIZE = 300
+DEFAULT_CHUNK_OVERLAP = 100
 
 
 class KnowledgeBase:
@@ -92,13 +92,17 @@ class KnowledgeBase:
             logger.debug("Fehler beim Laden bestehender Hashes: %s", e)
 
     async def ingest_all(self) -> int:
-        """Liest alle Dateien im Wissens-Verzeichnis ein und speichert sie."""
+        """Liest alle Dateien im Wissens-Verzeichnis ein und speichert sie.
+
+        Scannt auch Unterverzeichnisse rekursiv.
+        """
         if not self._knowledge_dir or not self.chroma_collection:
             return 0
 
         total_chunks = 0
         for ext in SUPPORTED_EXTENSIONS:
-            for filepath in self._knowledge_dir.glob(f"*{ext}"):
+            # Rekursiv suchen (** statt nur direkte Dateien)
+            for filepath in self._knowledge_dir.rglob(f"*{ext}"):
                 chunks = await self.ingest_file(filepath)
                 total_chunks += chunks
 

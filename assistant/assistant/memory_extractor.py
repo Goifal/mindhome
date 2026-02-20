@@ -59,13 +59,25 @@ MIN_CONVERSATION_WORDS = 5
 MAX_CONVERSATION_LENGTH = 2000
 
 
+# Confidence pro Kategorie: Gesundheit/Sicherheit hoeher, Smalltalk niedriger
+CATEGORY_CONFIDENCE = {
+    "health": 0.9,      # Allergien, Medikamente -> sehr wichtig
+    "person": 0.85,     # Beziehungen, Namen -> wichtig
+    "preference": 0.75, # Vorlieben -> mittel-hoch
+    "habit": 0.7,       # Gewohnheiten -> mittel
+    "work": 0.7,        # Arbeit/Projekte -> mittel
+    "intent": 0.6,      # Absichten/Plaene -> kann sich aendern
+    "general": 0.5,     # Sonstiges -> niedrig
+}
+
+
 class MemoryExtractor:
     """Extrahiert Fakten aus Gespraechen mittels LLM."""
 
     def __init__(self, ollama: OllamaClient, semantic_memory: SemanticMemory):
         self.ollama = ollama
         self.semantic = semantic_memory
-        self._extraction_model = "qwen3:4b"  # Schnelles Modell reicht
+        self._extraction_model = "qwen3:14b"  # Smart-Modell fuer bessere Extraktion
 
     async def extract_and_store(
         self,
@@ -110,11 +122,14 @@ class MemoryExtractor:
             if not content:
                 continue
 
+            # Confidence basierend auf Kategorie (Gesundheit > Smalltalk)
+            initial_confidence = CATEGORY_CONFIDENCE.get(category, 0.5)
+
             fact = SemanticFact(
                 content=content,
                 category=category,
                 person=fact_person,
-                confidence=0.7,  # Initiale Confidence
+                confidence=initial_confidence,
                 source_conversation=f"User: {user_text[:100]}",
             )
 

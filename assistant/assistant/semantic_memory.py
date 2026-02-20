@@ -107,6 +107,18 @@ class SemanticMemory:
             self.chroma_collection = None
 
     async def store_fact(self, fact: SemanticFact) -> bool:
+        # Widerspruchserkennung: Pruefen ob ein widersprechender Fakt existiert
+        contradiction = await self._check_contradiction(fact)
+        if contradiction:
+            logger.info(
+                "Widerspruch erkannt: '%s' vs '%s' -> Alter Fakt wird aktualisiert",
+                fact.content, contradiction.get("content", ""),
+            )
+            # Alten Fakt loeschen und neuen speichern (neuere Info gewinnt)
+            old_id = contradiction.get("fact_id", "")
+            if old_id:
+                await self.delete_fact(old_id)
+
         existing = await self.find_similar_fact(fact.content, threshold=0.15)
         if existing:
             return await self._update_existing_fact(existing, fact)
@@ -189,6 +201,137 @@ class SemanticMemory:
             fact_id, times_confirmed, new_confidence,
         )
         return True
+
+    async def _check_contradiction(self, new_fact: SemanticFact) -> Optional[dict]:
+        """Prueft ob ein neuer Fakt einem bestehenden widerspricht.
+
+        Sucht nach Fakten der gleichen Person + Kategorie die semantisch
+        aehnlich aber inhaltlich anders sind (z.B. unterschiedliche Zahlen
+        fuer die gleiche Praeferenz).
+        """
+        if not self.chroma_collection:
+            return None
+
+        try:
+            # Suche nach aehnlichen Fakten der gleichen Person+Kategorie
+            where_filter = {
+                "$and": [
+                    {"person": new_fact.person},
+                    {"category": new_fact.category},
+                ]
+            }
+            results = self.chroma_collection.query(
+                query_texts=[new_fact.content],
+                n_results=3,
+                where=where_filter,
+            )
+
+            if not results or not results.get("documents") or not results["documents"][0]:
+                return None
+
+            for i, doc in enumerate(results["documents"][0]):
+                distance = results["distances"][0][i] if results.get("distances") else 1.0
+                meta = results["metadatas"][0][i] if results.get("metadatas") else {}
+
+                # Aehnlich genug um verwandt zu sein (< 0.8) aber
+                # verschieden genug um ein Widerspruch zu sein (> 0.15)
+                if 0.15 < distance < 0.8:
+                    # Pruefen ob es numerische Werte gibt die sich unterscheiden
+                    import re
+                    old_nums = set(re.findall(r'\d+(?:\.\d+)?', doc))
+                    new_nums = set(re.findall(r'\d+(?:\.\d+)?', new_fact.content))
+                    if old_nums and new_nums and old_nums != new_nums:
+                        fact_id = results["ids"][0][i] if results.get("ids") else ""
+                        return {
+                            "fact_id": fact_id,
+                            "content": doc,
+                            "category": meta.get("category", ""),
+                            "person": meta.get("person", ""),
+                        }
+
+        except Exception as e:
+            logger.debug("Widerspruch-Check fehlgeschlagen: %s", e)
+
+        return None
+
+    async def apply_decay(self):
+        """Reduziert die Confidence alter Fakten ueber Zeit.
+
+        Fakten die laenger als 30 Tage nicht bestaetigt wurden verlieren
+        an Confidence. Explizite Fakten (confidence=1.0) werden langsamer
+        abgebaut. Fakten unter 0.2 Confidence werden geloescht.
+        """
+        if not self.redis:
+            return
+
+        try:
+            fact_ids = await self.redis.smembers("mha:facts:all")
+            now = datetime.now()
+            decayed = 0
+            deleted = 0
+
+            for fact_id in fact_ids:
+                data = await self.redis.hgetall(f"mha:fact:{fact_id}")
+                if not data:
+                    continue
+
+                updated_at = data.get("updated_at", "")
+                if not updated_at:
+                    continue
+
+                try:
+                    last_update = datetime.fromisoformat(updated_at)
+                except (ValueError, TypeError):
+                    continue
+
+                days_since = (now - last_update).days
+                if days_since < 30:
+                    continue
+
+                confidence = float(data.get("confidence", 0.5))
+                source = data.get("source_conversation", "")
+
+                # Explizite Fakten ("merk dir") langsamer abbauen
+                if source == "explicit":
+                    decay_rate = 0.01  # 1% pro 30-Tage-Zyklus
+                else:
+                    decay_rate = 0.05  # 5% pro 30-Tage-Zyklus
+
+                # Haeufig bestaetigte Fakten langsamer abbauen
+                times_confirmed = int(data.get("times_confirmed", 1))
+                if times_confirmed >= 5:
+                    decay_rate *= 0.5
+                elif times_confirmed >= 3:
+                    decay_rate *= 0.75
+
+                new_confidence = max(0.0, confidence - decay_rate)
+
+                if new_confidence < 0.2:
+                    # Fakt zu unsicher -> loeschen
+                    await self.delete_fact(fact_id)
+                    deleted += 1
+                elif new_confidence != confidence:
+                    await self.redis.hset(
+                        f"mha:fact:{fact_id}", "confidence", str(round(new_confidence, 3))
+                    )
+                    if self.chroma_collection:
+                        try:
+                            self.chroma_collection.update(
+                                ids=[fact_id],
+                                metadatas=[{**data, "confidence": str(round(new_confidence, 3))}],
+                            )
+                        except Exception:
+                            pass
+                    decayed += 1
+
+            if decayed or deleted:
+                logger.info(
+                    "Fact Decay: %d Fakten reduziert, %d geloescht",
+                    decayed, deleted,
+                )
+
+        except Exception as e:
+            logger.error("Fehler bei Fact Decay: %s", e)
 
     async def find_similar_fact(
         self, query: str, threshold: float = 0.15

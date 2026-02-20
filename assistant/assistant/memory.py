@@ -125,25 +125,104 @@ class MemoryManager:
 
     # ----- Episodic Memory (ChromaDB) -----
 
+    # Chunk-Einstellungen fuer Episodic Memory
+    EPISODE_CHUNK_SIZE = 200
+    EPISODE_CHUNK_OVERLAP = 50
+
     async def store_episode(self, conversation: str, metadata: Optional[dict] = None):
-        """Speichert ein Gespraech im Langzeitgedaechtnis."""
+        """Speichert ein Gespraech im Langzeitgedaechtnis.
+
+        Teilt lange Konversationen in kleinere Chunks auf fuer bessere
+        semantische Suche. Jeder Chunk erhaelt den vollen Metadaten-Kontext.
+        """
         if not self.chroma_collection:
             return
 
         try:
-            doc_id = f"conv_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
             meta = metadata or {}
             meta["timestamp"] = datetime.now().isoformat()
             meta["type"] = "conversation"
+            base_id = f"conv_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
-            self.chroma_collection.add(
-                documents=[conversation],
-                metadatas=[meta],
-                ids=[doc_id],
+            chunks = self._split_conversation(conversation)
+
+            for i, chunk in enumerate(chunks):
+                chunk_meta = meta.copy()
+                chunk_meta["chunk_index"] = str(i)
+                chunk_meta["total_chunks"] = str(len(chunks))
+                doc_id = f"{base_id}_{i}" if len(chunks) > 1 else base_id
+
+                self.chroma_collection.add(
+                    documents=[chunk],
+                    metadatas=[chunk_meta],
+                    ids=[doc_id],
+                )
+
+            logger.debug(
+                "Episode gespeichert: %s (%d Chunk(s))", base_id, len(chunks)
             )
-            logger.debug("Episode gespeichert: %s", doc_id)
         except Exception as e:
             logger.error("Fehler beim Speichern der Episode: %s", e)
+
+    @staticmethod
+    def _split_conversation(text: str) -> list[str]:
+        """Teilt eine Konversation in semantisch sinnvolle Chunks.
+
+        Strategie:
+        1. An Sprecherwechseln (User:/Assistant:) trennen
+        2. Zu lange Bloecke an Satzgrenzen splitten
+        3. Overlap fuer Kontext-Erhalt
+        """
+        chunk_size = MemoryManager.EPISODE_CHUNK_SIZE
+        overlap = MemoryManager.EPISODE_CHUNK_OVERLAP
+
+        if len(text) <= chunk_size:
+            return [text.strip()] if text.strip() else []
+
+        # An Sprecherwechseln splitten
+        import re
+        segments = re.split(r'(?=(?:User|Assistant|Sir|Jarvis):)', text)
+        segments = [s.strip() for s in segments if s.strip()]
+
+        # Segmente in Chunks zusammenfassen
+        chunks = []
+        current = ""
+
+        for segment in segments:
+            if len(current) + len(segment) + 1 <= chunk_size:
+                current = f"{current} {segment}".strip() if current else segment
+            else:
+                if current:
+                    chunks.append(current)
+                # Segment selbst zu lang? An Saetzen splitten
+                if len(segment) > chunk_size:
+                    sentences = re.split(r'(?<=[.!?])\s+', segment)
+                    current = ""
+                    for sent in sentences:
+                        if len(current) + len(sent) + 1 <= chunk_size:
+                            current = f"{current} {sent}".strip() if current else sent
+                        else:
+                            if current:
+                                chunks.append(current)
+                            current = sent
+                else:
+                    current = segment
+
+        if current.strip():
+            chunks.append(current.strip())
+
+        # Overlap hinzufuegen
+        if overlap > 0 and len(chunks) > 1:
+            overlapped = [chunks[0]]
+            for i in range(1, len(chunks)):
+                prev_tail = chunks[i - 1][-overlap:]
+                if not chunks[i].startswith(prev_tail):
+                    overlapped.append(f"...{prev_tail} {chunks[i]}")
+                else:
+                    overlapped.append(chunks[i])
+            chunks = overlapped
+
+        return [c for c in chunks if c.strip()]
 
     async def search_memories(self, query: str, limit: int = 3) -> list[dict]:
         """Sucht relevante Erinnerungen per Vektor-Suche."""

@@ -945,6 +945,68 @@ class PersonalityEngine:
     # Phase 8: Langzeit-Persoenlichkeitsanpassung
     # ------------------------------------------------------------------
 
+    async def track_sarcasm_feedback(self, positive: bool):
+        """Trackt ob der aktuelle Sarkasmus-Level positiv aufgenommen wird.
+
+        Nach 20 Interaktionen wird der Sarkasmus-Level automatisch angepasst:
+        - > 70% positive Reaktionen auf sarkastische Antworten → Level +1
+        - < 30% positive Reaktionen → Level -1
+        """
+        if not self._redis:
+            return
+
+        try:
+            key_pos = "mha:personality:sarcasm_positive"
+            key_total = "mha:personality:sarcasm_total"
+
+            if positive:
+                await self._redis.incr(key_pos)
+            await self._redis.incr(key_total)
+
+            # Alle 20 Interaktionen: Sarkasmus-Level anpassen
+            total = int(await self._redis.get(key_total) or 0)
+            if total >= 20:
+                pos_count = int(await self._redis.get(key_pos) or 0)
+                ratio = pos_count / max(1, total)
+
+                old_level = self.sarcasm_level
+                if ratio > 0.7 and self.sarcasm_level < 5:
+                    self.sarcasm_level += 1
+                    logger.info(
+                        "Sarkasmus-Level erhoeht: %d -> %d (%.0f%% positive Reaktionen)",
+                        old_level, self.sarcasm_level, ratio * 100,
+                    )
+                elif ratio < 0.3 and self.sarcasm_level > 1:
+                    self.sarcasm_level -= 1
+                    logger.info(
+                        "Sarkasmus-Level reduziert: %d -> %d (%.0f%% positive Reaktionen)",
+                        old_level, self.sarcasm_level, ratio * 100,
+                    )
+
+                # Zaehler zuruecksetzen fuer naechste Runde
+                await self._redis.set(key_pos, "0")
+                await self._redis.set(key_total, "0")
+
+                # Neuen Level persistieren
+                await self._redis.set(
+                    "mha:personality:sarcasm_level", str(self.sarcasm_level)
+                )
+
+        except Exception as e:
+            logger.debug("Sarcasm-Feedback fehlgeschlagen: %s", e)
+
+    async def load_learned_sarcasm_level(self):
+        """Laedt den gelernten Sarkasmus-Level aus Redis (beim Start)."""
+        if not self._redis:
+            return
+        try:
+            saved = await self._redis.get("mha:personality:sarcasm_level")
+            if saved is not None:
+                self.sarcasm_level = int(saved)
+                logger.info("Gelernter Sarkasmus-Level geladen: %d", self.sarcasm_level)
+        except Exception:
+            pass
+
     async def track_interaction_metrics(
         self, mood: str = "neutral", response_accepted: bool = True
     ):
@@ -966,6 +1028,10 @@ class PersonalityEngine:
             # Positive Reaktionen
             if response_accepted:
                 await self._redis.incr("mha:personality:positive_reactions")
+
+            # Sarkasmus-Learning: Tracke ob Humor gut ankommt
+            if self.sarcasm_level >= 3:
+                await self.track_sarcasm_feedback(response_accepted)
 
             # Stimmungs-Tracking (gleitender Durchschnitt)
             mood_scores = {"good": 1.0, "neutral": 0.5, "tired": 0.3,

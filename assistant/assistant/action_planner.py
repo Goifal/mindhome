@@ -74,6 +74,8 @@ class PlanStep:
     args: dict
     result: Optional[dict] = None
     status: str = "pending"  # pending, running, done, failed, blocked
+    rollback_function: Optional[str] = None  # Funktion fuer Rollback
+    rollback_args: Optional[dict] = None  # Args fuer Rollback
 
 
 @dataclass
@@ -85,6 +87,8 @@ class ActionPlan:
     iterations: int = 0
     needs_confirmation: bool = False
     confirmation_reasons: list[str] = field(default_factory=list)
+
+    rollback_performed: bool = False
 
     def to_dict(self) -> dict:
         return {
@@ -102,6 +106,7 @@ class ActionPlan:
             "iterations": self.iterations,
             "needs_confirmation": self.needs_confirmation,
             "confirmation_reasons": self.confirmation_reasons,
+            "rollback_performed": self.rollback_performed,
         }
 
 
@@ -273,11 +278,29 @@ class ActionPlanner:
                 if self.narration_enabled and len(plan.steps) > 0 and self.step_delay > 0:
                     await asyncio.sleep(self.step_delay)
 
+                # Rollback-Info VOR Ausfuehrung erfassen
+                step.rollback_function, step.rollback_args = self._get_rollback_info(
+                    func_name, func_args
+                )
+
                 # Ausfuehren
                 step.status = "running"
                 result = await self.executor.execute(func_name, func_args)
                 step.result = result
                 step.status = "done" if result.get("success", False) else "failed"
+
+                # Bei Fehlschlag: Vorherige erfolgreiche Steps zurueckrollen
+                if step.status == "failed" and len(plan.steps) > 0:
+                    rollback_count = await self._rollback_completed_steps(plan.steps)
+                    if rollback_count > 0:
+                        plan.rollback_performed = True
+                        logger.info(
+                            "Rollback: %d Step(s) nach Fehler in '%s' zurueckgerollt",
+                            rollback_count, func_name,
+                        )
+                        tool_results.append(
+                            f"ROLLBACK: {rollback_count} vorherige Aktion(en) zurueckgesetzt"
+                        )
 
                 plan.steps.append(step)
                 all_actions.append({
@@ -555,3 +578,83 @@ Frage am Ende ob der Plan so umgesetzt werden soll."""},
     def clear_plan(self, plan_id: str):
         """Beendet einen Planungs-Dialog."""
         self._pending_plans.pop(plan_id, None)
+
+    # ------------------------------------------------------------------
+    # Rollback-Mechanismus
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _get_rollback_info(func_name: str, func_args: dict) -> tuple[Optional[str], Optional[dict]]:
+        """Bestimmt die Rollback-Aktion fuer eine gegebene Funktion.
+
+        Gibt (rollback_function, rollback_args) zurueck oder (None, None)
+        wenn kein Rollback moeglich ist.
+        """
+        rollback_map = {
+            "set_light": lambda args: (
+                "set_light",
+                {
+                    "room": args.get("room", ""),
+                    "state": "off" if args.get("state") == "on" else "on",
+                },
+            ),
+            "set_climate": lambda args: (
+                "set_climate",
+                {
+                    "room": args.get("room", ""),
+                    "temperature": args.get("temperature", 21),  # Default zurueck
+                },
+            ),
+            "set_cover": lambda args: (
+                "set_cover",
+                {
+                    "room": args.get("room", ""),
+                    "position": 100 if args.get("position", 100) < 50 else 0,
+                },
+            ),
+            "lock_door": lambda args: (
+                "lock_door",
+                {
+                    "door": args.get("door", ""),
+                    "action": "lock" if args.get("action") == "unlock" else "unlock",
+                },
+            ),
+            "activate_scene": lambda args: (None, None),  # Szenen nicht zurueckrollbar
+        }
+
+        generator = rollback_map.get(func_name)
+        if generator:
+            return generator(func_args)
+        return None, None
+
+    async def _rollback_completed_steps(self, completed_steps: list[PlanStep]) -> int:
+        """Rollt erfolgreich ausgefuehrte Steps zurueck.
+
+        Returns:
+            Anzahl zurueckgerollter Steps
+        """
+        rollback_count = 0
+
+        # In umgekehrter Reihenfolge zurueckrollen (LIFO)
+        for step in reversed(completed_steps):
+            if step.status != "done":
+                continue
+            if not step.rollback_function or not step.rollback_args:
+                continue
+
+            try:
+                result = await self.executor.execute(
+                    step.rollback_function, step.rollback_args
+                )
+                if result.get("success", False):
+                    step.status = "rolled_back"
+                    rollback_count += 1
+                    logger.info(
+                        "Rollback: %s(%s) -> %s",
+                        step.rollback_function, step.rollback_args,
+                        result.get("message", "OK"),
+                    )
+            except Exception as e:
+                logger.warning("Rollback fehlgeschlagen fuer %s: %s", step.function, e)
+
+        return rollback_count

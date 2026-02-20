@@ -246,6 +246,19 @@ class ModelRouter:
         logger.debug("SMART model (default) fuer: '%s' (actual: %s)", text, model)
         return model
 
+    def get_fallback_model(self, current_model: str) -> str:
+        """Gibt ein schnelleres Fallback-Modell zurueck wenn das aktuelle nicht antwortet.
+
+        Deep -> Smart -> Fast. Gibt None zurueck wenn kein Fallback moeglich.
+        """
+        if current_model == self.model_deep:
+            if self._smart_available:
+                return self.model_smart
+            return self.model_fast
+        if current_model == self.model_smart:
+            return self.model_fast
+        return ""  # Fast hat kein Fallback
+
     def get_best_available(self) -> str:
         """Gibt das beste verfuegbare und aktivierte Modell zurueck."""
         if self._deep_available:
