@@ -381,6 +381,7 @@ def api_chat_voice():
     content_type = audio_file.content_type or "audio/wav"
 
     # Convert non-WAV audio (e.g. webm from browser) to WAV for Whisper STT
+    # HA STT API requires 16kHz mono 16-bit PCM WAV
     if content_type != "audio/wav":
         import subprocess
         import tempfile
@@ -392,7 +393,8 @@ def api_chat_voice():
             tmp_out_path = tmp_in_path + ".wav"
             result = subprocess.run(
                 ["ffmpeg", "-i", tmp_in_path, "-ar", "16000", "-ac", "1",
-                 "-f", "wav", tmp_out_path, "-y", "-loglevel", "error"],
+                 "-sample_fmt", "s16", "-f", "wav", tmp_out_path, "-y",
+                 "-loglevel", "error"],
                 capture_output=True, timeout=10,
             )
             if result.returncode == 0:
@@ -413,6 +415,14 @@ def api_chat_voice():
                     except OSError:
                         pass
 
+    # HA STT API erwartet X-Speech-Content Header mit Audio-Metadaten
+    # Ohne diesen Header gibt HA HTTP 400 "Missing X-Speech-Content header" zurueck
+    stt_language = get_setting("language", "de")
+    if content_type == "audio/wav":
+        x_speech = f"format=wav; codec=pcm; sample_rate=16000; bit_rate=16; channel=1; language={stt_language}"
+    else:
+        x_speech = f"format=ogg; codec=opus; sample_rate=16000; bit_rate=16; channel=1; language={stt_language}"
+
     try:
         import os
         ha_url = os.environ.get("SUPERVISOR_URL", ha.ha_url).rstrip("/")
@@ -428,15 +438,18 @@ def api_chat_voice():
             if attrs.get("platform"):
                 stt_platform = attrs["platform"]
 
-        logger.info("STT request: entity=%s, platform=%s, url=%s/api/stt/%s",
-                     stt_entity, stt_platform, ha_url, stt_platform)
+        stt_headers = {
+            "Authorization": f"Bearer {ha_token}",
+            "Content-Type": content_type,
+            "X-Speech-Content": x_speech,
+        }
+
+        logger.info("STT request: entity=%s, platform=%s, X-Speech-Content=%s, url=%s/api/stt/%s",
+                     stt_entity, stt_platform, x_speech, ha_url, stt_platform)
 
         stt_resp = requests.post(
             f"{ha_url}/api/stt/{stt_platform}",
-            headers={
-                "Authorization": f"Bearer {ha_token}",
-                "Content-Type": content_type,
-            },
+            headers=stt_headers,
             data=audio_data,
             timeout=30,
         )
@@ -447,10 +460,7 @@ def api_chat_voice():
                         stt_platform, stt_entity)
             stt_resp = requests.post(
                 f"{ha_url}/api/stt/{stt_entity}",
-                headers={
-                    "Authorization": f"Bearer {ha_token}",
-                    "Content-Type": content_type,
-                },
+                headers=stt_headers,
                 data=audio_data,
                 timeout=30,
             )
@@ -460,10 +470,7 @@ def api_chat_voice():
             logger.info("STT 404, versuche Fallback platform='wyoming'")
             stt_resp = requests.post(
                 f"{ha_url}/api/stt/wyoming",
-                headers={
-                    "Authorization": f"Bearer {ha_token}",
-                    "Content-Type": content_type,
-                },
+                headers=stt_headers,
                 data=audio_data,
                 timeout=30,
             )

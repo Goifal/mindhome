@@ -144,8 +144,7 @@ def api_search_devices():
     domain_name = request.args.get("domain", "").strip()
     room_name = request.args.get("room", "").strip()
 
-    if not domain_name and not room_name:
-        return jsonify([])
+    # Ohne Filter: alle tracked Devices zurueckgeben (fuer Entity-Picker UI)
 
     session = get_db()
     try:
