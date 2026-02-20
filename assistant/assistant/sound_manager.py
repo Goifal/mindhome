@@ -308,6 +308,88 @@ class SoundManager:
                 return entity_id
         return None
 
+    async def speak_response(
+        self,
+        text: str,
+        room: Optional[str] = None,
+        tts_data: Optional[dict] = None,
+    ) -> bool:
+        """Spricht eine Jarvis-Antwort ueber einen HA-Speaker aus.
+
+        Args:
+            text: Der zu sprechende Text.
+            room: Zielraum (optional, sonst Default-Speaker).
+            tts_data: TTS-Metadaten (volume, speed, ssml, target_speaker).
+
+        Returns:
+            True wenn erfolgreich.
+        """
+        if not self.enabled:
+            return False
+
+        tts_data = tts_data or {}
+
+        # Speaker bestimmen: expliziter target_speaker > room > default
+        speaker_entity = tts_data.get("target_speaker")
+        if not speaker_entity:
+            speaker_entity = await self._resolve_speaker(room)
+        if not speaker_entity:
+            logger.debug("Kein Speaker fuer Sprachausgabe gefunden")
+            return False
+
+        # Volume setzen
+        volume = tts_data.get("volume", 0.8)
+        try:
+            await self.ha.call_service(
+                "media_player", "volume_set",
+                {"entity_id": speaker_entity, "volume_level": volume},
+            )
+        except Exception as e:
+            logger.debug("Volume setzen fehlgeschlagen: %s", e)
+
+        # SSML-Text bevorzugen, sonst Plaintext
+        speak_text = tts_data.get("ssml", text) if tts_data.get("ssml") else text
+
+        # TTS-Entity finden und sprechen
+        tts_entity = await self._find_tts_entity()
+        if tts_entity:
+            try:
+                success = await self.ha.call_service(
+                    "tts", "speak",
+                    {
+                        "entity_id": tts_entity,
+                        "media_player_entity_id": speaker_entity,
+                        "message": speak_text,
+                        "language": "de",
+                    },
+                )
+                if success:
+                    logger.info(
+                        "Jarvis spricht via %s auf %s (vol: %.1f)",
+                        tts_entity, speaker_entity, volume,
+                    )
+                    return True
+            except Exception as e:
+                logger.warning("TTS speak fehlgeschlagen: %s", e)
+
+        # Fallback: Legacy TTS (cloud_say)
+        try:
+            success = await self.ha.call_service(
+                "tts", "cloud_say",
+                {
+                    "entity_id": speaker_entity,
+                    "message": speak_text,
+                    "language": "de",
+                },
+            )
+            if success:
+                logger.info("Jarvis spricht via cloud_say auf %s", speaker_entity)
+                return True
+        except Exception as e:
+            logger.warning("TTS cloud_say Fallback fehlgeschlagen: %s", e)
+
+        return False
+
     def get_sound_info(self) -> dict:
         """Gibt Infos ueber verfuegbare Sounds zurueck."""
         return {

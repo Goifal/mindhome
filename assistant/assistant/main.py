@@ -1064,9 +1064,8 @@ async def websocket_endpoint(websocket: WebSocket):
                             tts_data = result.get("tts")
                             await emit_stream_end(result["response"], tts_data=tts_data)
                         else:
+                            # brain.process() sendet intern via _speak_and_emit
                             result = await brain.process(text, person)
-                            tts_data = result.get("tts")
-                            await emit_speaking(result["response"], tts_data=tts_data)
 
                 elif event == "assistant.feedback":
                     # Phase 5: Feedback ueber FeedbackTracker verarbeiten
