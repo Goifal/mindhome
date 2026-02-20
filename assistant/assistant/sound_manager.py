@@ -67,27 +67,6 @@ class SoundManager:
         "kodi", "plex", "emby", "jellyfin", "vlc", "mpd",
     )
 
-    def _is_tts_speaker(self, entity_id: str, attributes: dict = None) -> bool:
-        """Prueft ob ein media_player ein echter TTS-faehiger Speaker ist.
-
-        Schliesst TVs, Receiver, Streaming-Boxen etc. aus.
-        """
-        if not entity_id.startswith("media_player."):
-            return False
-
-        entity_lower = entity_id.lower()
-        for pattern in self._EXCLUDED_SPEAKER_PATTERNS:
-            if pattern in entity_lower:
-                return False
-
-        # Zusaetzlich: Attribute-basierte Erkennung (wenn verfuegbar)
-        if attributes:
-            device_class = (attributes.get("device_class") or "").lower()
-            if device_class in ("tv", "receiver"):
-                return False
-
-        return True
-
     def __init__(self, ha_client: HomeAssistantClient):
         self.ha = ha_client
 
@@ -114,6 +93,27 @@ class SoundManager:
             "SoundManager initialisiert (enabled: %s, events: %d)",
             self.enabled, len(self.event_sounds),
         )
+
+    def _is_tts_speaker(self, entity_id: str, attributes: dict = None) -> bool:
+        """Prueft ob ein media_player ein echter TTS-faehiger Speaker ist.
+
+        Schliesst TVs, Receiver, Streaming-Boxen etc. aus.
+        """
+        if not entity_id.startswith("media_player."):
+            return False
+
+        entity_lower = entity_id.lower()
+        for pattern in self._EXCLUDED_SPEAKER_PATTERNS:
+            if pattern in entity_lower:
+                return False
+
+        # Zusaetzlich: Attribute-basierte Erkennung (wenn verfuegbar)
+        if attributes:
+            device_class = (attributes.get("device_class") or "").lower()
+            if device_class in ("tv", "receiver"):
+                return False
+
+        return True
 
     async def play_event_sound(
         self,
