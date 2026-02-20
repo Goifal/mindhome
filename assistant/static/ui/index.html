@@ -1358,7 +1358,7 @@ function renderPersons() {
       <span style="font-size:20px;">${ri.icon}</span>
       <input type="text" value="${esc(m.name || '')}" data-member-idx="${i}" data-member-field="name"
         placeholder="Name eingeben..." style="flex:1;font-size:14px;">
-      <select data-member-idx="${i}" data-member-field="role" style="width:160px;" onchange="renderCurrentTab()">
+      <select data-member-idx="${i}" data-member-field="role" style="width:160px;" onchange="mergeCurrentTabIntoS();renderCurrentTab()">
         <option value="owner" ${m.role==='owner'?'selected':''}>&#128081; Hausherr/in</option>
         <option value="member" ${m.role==='member'?'selected':''}>&#128100; Mitbewohner/in</option>
         <option value="guest" ${m.role==='guest'?'selected':''}>&#128587; Gast</option>
