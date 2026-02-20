@@ -531,8 +531,8 @@ textarea { resize:vertical; min-height:70px; font-family:var(--mono); font-size:
 <script>
 /* ============================================================
    Jarvis Dashboard v2 — JavaScript
-   8 Settings Tabs: Allgemein, Persoenlichkeit, Gedaechtnis,
-   Stimmung, Raeume, Stimme, Routinen, Sicherheit
+   11 Settings Tabs: Allgemein, Personen, Persoenlichkeit, Gedaechtnis,
+   Stimmung, Raeume, Stimme, Routinen, Sicherheit, KI-Autonomie, Easter Eggs
    ============================================================ */
 
 let TOKEN = '';
@@ -1875,11 +1875,11 @@ function copyApiKey() {
 async function regenerateApiKey() {
   if (!confirm('API Key wirklich neu generieren? Addon und HA-Integration muessen danach aktualisiert werden!')) return;
   try {
-    const data = await api('ui/api-key/regenerate', 'POST');
+    const data = await api('/api/ui/api-key/regenerate', 'POST');
     const el = document.getElementById('apiKeyDisplay');
     if (el && data.api_key) el.value = data.api_key;
     toast('Neuer API Key generiert!');
-  } catch (e) { toast('Fehler: ' + e.message, true); }
+  } catch (e) { toast('Fehler: ' + e.message, 'error'); }
 }
 async function toggleApiKeyEnforcement(enabled) {
   const action = enabled ? 'aktivieren' : 'deaktivieren';
@@ -1889,11 +1889,11 @@ async function toggleApiKeyEnforcement(enabled) {
     return;
   }
   try {
-    const data = await api('ui/api-key/enforcement', 'POST', { enabled });
+    const data = await api('/api/ui/api-key/enforcement', 'POST', { enabled });
     updateEnforcementHint(data.enforcement);
     toast('API Key Pruefung ' + (data.enforcement ? 'aktiviert' : 'deaktiviert'));
   } catch (e) {
-    toast('Fehler: ' + e.message, true);
+    toast('Fehler: ' + e.message, 'error');
     const cb = document.getElementById('apiKeyEnforcement');
     if (cb) cb.checked = !enabled;
   }
@@ -1903,7 +1903,7 @@ async function toggleApiKeyEnforcement(enabled) {
 async function regenerateRecoveryKey() {
   if (!confirm('Neuen Recovery-Key generieren? Der alte Key wird ungueltig! Notiere dir den neuen Key sofort.')) return;
   try {
-    const data = await api('ui/recovery-key/regenerate', 'POST');
+    const data = await api('/api/ui/recovery-key/regenerate', 'POST');
     const el = document.getElementById('recoveryKeyDisplay');
     if (el && data.recovery_key) {
       el.value = data.recovery_key;
@@ -1912,7 +1912,7 @@ async function regenerateRecoveryKey() {
       el.style.fontWeight = '700';
     }
     toast('Neuer Recovery-Key generiert — JETZT notieren!');
-  } catch (e) { toast('Fehler: ' + e.message, true); }
+  } catch (e) { toast('Fehler: ' + e.message, 'error'); }
 }
 
 // ---- Tab: KI-Autonomie (Phase 13.1 / 13.2 / 13.4) ----
