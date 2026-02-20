@@ -241,6 +241,12 @@ class AssistantBrain:
         # Phase 6: Redis fuer Personality Engine (Formality Score, Counter)
         self.personality.set_redis(self.memory.redis)
 
+        # Gelernten Sarkasmus-Level laden
+        await self.personality.load_learned_sarcasm_level()
+
+        # Fact Decay: Einmal taeglich alte Fakten abbauen
+        asyncio.create_task(self._run_daily_fact_decay())
+
         # Memory Extractor initialisieren
         self.memory_extractor = MemoryExtractor(self.ollama, self.memory.semantic)
 
@@ -583,10 +589,20 @@ class AssistantBrain:
         # WebSocket: Denk-Status senden
         await emit_thinking()
 
-        # 1. Kontext sammeln (inkl. semantischer Erinnerungen)
-        context = await self.context_builder.build(
-            trigger="voice", user_text=text, person=person or ""
-        )
+        # 1. Kontext sammeln (mit Subsystem-Timeout)
+        try:
+            context = await asyncio.wait_for(
+                self.context_builder.build(
+                    trigger="voice", user_text=text, person=person or ""
+                ),
+                timeout=5.0,
+            )
+        except asyncio.TimeoutError:
+            logger.warning("Context Build Timeout (5s) — Fallback auf Minimal-Kontext")
+            context = {"time": {"datetime": datetime.now().isoformat()}}
+        except Exception as e:
+            logger.error("Context Build Fehler: %s — Fallback auf Minimal-Kontext", e)
+            context = {"time": {"datetime": datetime.now().isoformat()}}
         if room:
             context["room"] = room
         if person:
@@ -777,12 +793,54 @@ class AssistantBrain:
             response_text = self._filter_response(response.get("message", {}).get("content", ""))
             executed_actions = []
         else:
-            # 6b. Einfache Anfragen: Direkt LLM aufrufen
-            response = await self.ollama.chat(
-                messages=messages,
-                model=model,
-                tools=get_assistant_tools(),
-            )
+            # 6b. Einfache Anfragen: Direkt LLM aufrufen (mit Timeout + Fallback)
+            try:
+                response = await asyncio.wait_for(
+                    self.ollama.chat(
+                        messages=messages,
+                        model=model,
+                        tools=get_assistant_tools(),
+                    ),
+                    timeout=30.0,
+                )
+            except asyncio.TimeoutError:
+                logger.error("LLM Timeout (30s) fuer Modell %s", model)
+                # Fallback: Schnelleres Modell versuchen
+                fallback_model = self.model_router.get_fallback_model(model)
+                if fallback_model and fallback_model != model:
+                    logger.info("LLM Fallback: %s -> %s", model, fallback_model)
+                    try:
+                        response = await asyncio.wait_for(
+                            self.ollama.chat(
+                                messages=messages,
+                                model=fallback_model,
+                                tools=get_assistant_tools(),
+                            ),
+                            timeout=20.0,
+                        )
+                        model = fallback_model
+                    except (asyncio.TimeoutError, Exception):
+                        return {
+                            "response": "Beide Sprachmodelle reagieren nicht. Server moeglicherweise ueberlastet.",
+                            "actions": [],
+                            "model_used": model,
+                            "error": "timeout_all_models",
+                        }
+                else:
+                    return {
+                        "response": "Mein Sprachmodell reagiert nicht. Server moeglicherweise ueberlastet.",
+                        "actions": [],
+                        "model_used": model,
+                        "error": "timeout",
+                    }
+            except Exception as e:
+                logger.error("LLM Exception: %s", e)
+                return {
+                    "response": "Mein Sprachmodell hat ein Problem. Versuch es nochmal.",
+                    "actions": [],
+                    "model_used": model,
+                    "error": str(e),
+                }
 
             if "error" in response:
                 logger.error("LLM Fehler: %s", response["error"])
@@ -2357,6 +2415,27 @@ Regeln:
         if text:
             await emit_speaking(text)
             logger.info("Intent-Erinnerung: %s", text)
+
+    async def _run_daily_fact_decay(self):
+        """Fuehrt einmal taeglich den Fact Decay aus (04:00 Uhr)."""
+        while True:
+            try:
+                now = datetime.now()
+                # Naechste 04:00 berechnen
+                target = now.replace(hour=4, minute=0, second=0, microsecond=0)
+                if now >= target:
+                    target += timedelta(days=1)
+                wait_seconds = (target - now).total_seconds()
+
+                await asyncio.sleep(wait_seconds)
+                logger.info("Fact Decay gestartet (taeglich 04:00)")
+                await self.memory.semantic.apply_decay()
+
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error("Fact Decay Fehler: %s", e)
+                await asyncio.sleep(3600)  # Bei Fehler 1h warten
 
     async def _handle_daily_summary(self, data: dict):
         """Callback fuer Tages-Zusammenfassungen — wird morgens beim naechsten Kontakt gesprochen."""

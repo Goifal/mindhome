@@ -143,7 +143,11 @@ class AnticipationEngine:
             return []
 
     def _detect_time_patterns(self, entries: list[dict]) -> list[dict]:
-        """Erkennt zeitbasierte Muster (gleiche Aktion zur gleichen Zeit)."""
+        """Erkennt zeitbasierte Muster (gleiche Aktion zur gleichen Zeit).
+
+        Neuere Aktionen werden staerker gewichtet als aeltere (Recency-Weighting).
+        Eine Aktion von heute zaehlt 2x soviel wie eine von vor 30 Tagen.
+        """
         patterns = []
 
         # Gruppiere nach Aktion + Wochentag + Stunde
@@ -165,8 +169,21 @@ class AnticipationEngine:
                 continue
 
             action, weekday, hour = key.split("|")
+
+            # Recency-Weighting: Neuere Eintraege zaehlen staerker
+            weighted_count = 0.0
+            for entry in group:
+                try:
+                    ts = datetime.fromisoformat(entry.get("timestamp", ""))
+                    days_ago = (now - ts).days
+                    # Gewicht: 1.0 fuer heute, 0.5 fuer vor 30 Tagen
+                    weight = max(0.3, 1.0 - (days_ago / self.history_days) * 0.7)
+                    weighted_count += weight
+                except (ValueError, TypeError):
+                    weighted_count += 0.5  # Fallback-Gewicht
+
             occurrences = len(group)
-            confidence = min(1.0, occurrences / max(1, weeks_in_data))
+            confidence = min(1.0, weighted_count / max(1, weeks_in_data))
 
             if confidence >= self.min_confidence:
                 # Typische Args ermitteln
@@ -404,7 +421,12 @@ class AnticipationEngine:
         return suggestions
 
     async def record_feedback(self, pattern_description: str, accepted: bool):
-        """Passt Confidence basierend auf User-Feedback an."""
+        """Passt Confidence basierend auf User-Feedback an.
+
+        Abgelehnte Vorschlaege erhoehen den Cooldown exponentiell:
+        1x abgelehnt = 2h, 2x = 4h, 3x = 8h, 4x+ = 24h.
+        Akzeptierte Vorschlaege senken den Cooldown zurueck.
+        """
         if not self.redis:
             return
 
@@ -418,8 +440,19 @@ class AnticipationEngine:
 
             if accepted:
                 feedback["accepted"] += 1
+                # Cooldown zuruecksetzen bei Akzeptanz
+                feedback["rejected"] = max(0, feedback["rejected"] - 1)
             else:
                 feedback["rejected"] += 1
+                # Exponentieller Cooldown bei Ablehnung
+                rejections = feedback["rejected"]
+                cooldown_hours = min(24, 2 ** rejections)
+                cooldown_key = f"mha:anticipation:suggested:{pattern_description}"
+                await self.redis.setex(cooldown_key, cooldown_hours * 3600, "1")
+                logger.info(
+                    "Anticipation: '%s' abgelehnt (%dx) -> Cooldown %dh",
+                    pattern_description, rejections, cooldown_hours,
+                )
 
             await self.redis.set(key, json.dumps(feedback))
             await self.redis.expire(key, self.history_days * 86400)

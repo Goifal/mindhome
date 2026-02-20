@@ -586,20 +586,26 @@ class ProactiveManager:
                 if datetime.now() - last_dt < timedelta(seconds=effective_cooldown):
                     return
 
-        # Phase 15.4: LOW-Meldungen batchen statt sofort senden
-        if urgency == LOW and self.batch_enabled:
+        # Phase 15.4+: LOW und MEDIUM-Meldungen batchen statt sofort senden
+        # MEDIUM wird kuerzere Batch-Intervalle haben (10 Min statt 30)
+        if self.batch_enabled and urgency in (LOW, MEDIUM):
             description = self.event_handlers.get(event_type, (MEDIUM, event_type))[1]
             self._batch_queue.append({
                 "event_type": event_type,
+                "urgency": urgency,
                 "description": description,
                 "data": data,
                 "time": datetime.now().isoformat(),
             })
-            if len(self._batch_queue) >= self.batch_max_items:
-                # Queue voll — sofort senden
+
+            # MEDIUM: Flush nach 10 Min oder wenn 5 Items
+            # LOW: Flush nach 30 Min oder wenn 10 Items
+            medium_items = sum(1 for b in self._batch_queue if b.get("urgency") == MEDIUM)
+            if medium_items >= 5 or len(self._batch_queue) >= self.batch_max_items:
                 asyncio.create_task(self._flush_batch())
-            logger.debug("LOW-Meldung gequeued [%s]: %s (%d in Queue)",
-                         event_type, description, len(self._batch_queue))
+            logger.debug("%s-Meldung gequeued [%s]: %s (%d in Queue, %d MEDIUM)",
+                         urgency.upper(), event_type, description,
+                         len(self._batch_queue), medium_items)
             return
 
         # Phase 6: Activity Engine + Silence Matrix
@@ -974,20 +980,40 @@ Beispiele:
     # ------------------------------------------------------------------
 
     async def _run_batch_loop(self):
-        """Periodisch gesammelte LOW-Meldungen als Zusammenfassung senden."""
+        """Periodisch gesammelte LOW+MEDIUM-Meldungen als Zusammenfassung senden.
+
+        MEDIUM-Events werden nach max 10 Minuten gesendet,
+        LOW-Events nach dem konfigurierten batch_interval (default 30 Min).
+        """
         await asyncio.sleep(60)  # 1 Min. warten
+        medium_check_interval = 10 * 60  # 10 Min fuer MEDIUM
+        timer = 0
 
         while self._running:
             try:
                 if self._batch_queue:
-                    await self._flush_batch()
+                    has_medium = any(
+                        b.get("urgency") == MEDIUM for b in self._batch_queue
+                    )
+                    # MEDIUM sofort flushen wenn Timer abgelaufen
+                    if has_medium and timer >= medium_check_interval:
+                        await self._flush_batch()
+                        timer = 0
+                    # LOW flushen nach Standard-Intervall
+                    elif timer >= self.batch_interval * 60:
+                        await self._flush_batch()
+                        timer = 0
             except Exception as e:
                 logger.error("Batch-Flush Fehler: %s", e)
 
-            await asyncio.sleep(self.batch_interval * 60)
+            await asyncio.sleep(60)
+            timer += 60
 
     async def _flush_batch(self):
-        """Sendet alle gesammelten LOW-Meldungen als eine Zusammenfassung."""
+        """Sendet alle gesammelten LOW+MEDIUM-Meldungen als eine Zusammenfassung.
+
+        MEDIUM-Events werden im Batch hoeher priorisiert und zuerst erwaehnt.
+        """
         if not self._batch_queue:
             return
 
@@ -995,25 +1021,48 @@ Beispiele:
         items = self._batch_queue[:self.batch_max_items]
         self._batch_queue = self._batch_queue[self.batch_max_items:]
 
-        # Activity-Check: Nicht bei Schlaf/Call
-        activity_result = await self.brain.activity.should_deliver(LOW)
+        # Sortieren: MEDIUM zuerst, dann LOW
+        items.sort(key=lambda x: 0 if x.get("urgency") == MEDIUM else 1)
+
+        # Activity-Check: Nicht bei Schlaf/Call (aber MEDIUM weniger streng)
+        highest_urgency = MEDIUM if any(b.get("urgency") == MEDIUM for b in items) else LOW
+        activity_result = await self.brain.activity.should_deliver(highest_urgency)
         if activity_result["suppress"]:
             logger.info("Batch unterdrueckt: Aktivitaet=%s", activity_result["activity"])
+            # MEDIUM zurueck in Queue (sollen nicht verloren gehen)
+            medium_items = [i for i in items if i.get("urgency") == MEDIUM]
+            if medium_items:
+                self._batch_queue = medium_items + self._batch_queue
             return
 
         # Zusammenfassung generieren
-        summary_parts = []
+        medium_parts = []
+        low_parts = []
         for item in items:
-            summary_parts.append(f"- {item['description']}")
+            line = f"- {item['description']}"
             if "message" in item.get("data", {}):
-                summary_parts.append(f"  ({item['data']['message']})")
+                line += f" ({item['data']['message']})"
+            if item.get("urgency") == MEDIUM:
+                medium_parts.append(line)
+            else:
+                low_parts.append(line)
+
+        summary_parts = []
+        if medium_parts:
+            summary_parts.append("WICHTIG:")
+            summary_parts.extend(medium_parts)
+        if low_parts:
+            summary_parts.append("Nebenbei:")
+            summary_parts.extend(low_parts)
 
         prompt = (
-            f"Du hast {len(items)} nebensaechliche Meldung(en) gesammelt. "
-            f"Fasse sie in 1-3 kurzen Saetzen zusammen. Beilaeufig, Butler-Stil.\n\n"
+            f"Du hast {len(items)} Meldung(en) gesammelt "
+            f"({len(medium_parts)} wichtig, {len(low_parts)} nebensaechlich). "
+            f"Fasse sie in 1-3 kurzen Saetzen zusammen. Butler-Stil. "
+            f"Wichtige Meldungen zuerst erwaehnen.\n\n"
             + "\n".join(summary_parts)
-            + "\n\nBeispiel: 'Nebenbei, Sir: Der Strom war guenstig, "
-            "ein Sensor haengt, und die Wartung ruft.'"
+            + "\n\nBeispiel: 'Sir, die Waschmaschine ist fertig und die Batterie "
+            "vom Fenstersensor ist niedrig. Nebenbei: Strom ist gerade guenstig.'"
         )
 
         try:
