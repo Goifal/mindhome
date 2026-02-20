@@ -78,29 +78,32 @@ class LearningObserver:
         if new_state in ("unavailable", "unknown") or old_state in ("unavailable", "unknown"):
             return
 
-        now = datetime.now()
-        hour = now.hour
-        minute = now.minute
-        weekday = now.weekday()
+        try:
+            now = datetime.now()
+            hour = now.hour
+            minute = now.minute
+            weekday = now.weekday()
 
-        # Aktion aufzeichnen
-        action_key = f"{entity_id}:{new_state}"
-        time_slot = f"{hour:02d}:{(minute // 15) * 15:02d}"  # 15-Min-Slots
+            # Aktion aufzeichnen
+            action_key = f"{entity_id}:{new_state}"
+            time_slot = f"{hour:02d}:{(minute // 15) * 15:02d}"  # 15-Min-Slots
 
-        action = {
-            "entity_id": entity_id,
-            "new_state": new_state,
-            "time_slot": time_slot,
-            "weekday": weekday,
-            "timestamp": now.isoformat(),
-        }
+            action = {
+                "entity_id": entity_id,
+                "new_state": new_state,
+                "time_slot": time_slot,
+                "weekday": weekday,
+                "timestamp": now.isoformat(),
+            }
 
-        # In Redis-Liste speichern (max 100 letzte Aktionen)
-        await self.redis.lpush(KEY_MANUAL_ACTIONS, json.dumps(action))
-        await self.redis.ltrim(KEY_MANUAL_ACTIONS, 0, 99)
+            # In Redis-Liste speichern (max 100 letzte Aktionen)
+            await self.redis.lpush(KEY_MANUAL_ACTIONS, json.dumps(action))
+            await self.redis.ltrim(KEY_MANUAL_ACTIONS, 0, 99)
 
-        # Pattern-Check: Wurde diese Aktion schon oefter zur gleichen Zeit gemacht?
-        await self._check_pattern(action_key, time_slot, entity_id, new_state)
+            # Pattern-Check: Wurde diese Aktion schon oefter zur gleichen Zeit gemacht?
+            await self._check_pattern(action_key, time_slot, entity_id, new_state)
+        except Exception as e:
+            logger.debug("Learning Observer state_change Fehler: %s", e)
 
     async def _check_pattern(self, action_key: str, time_slot: str,
                              entity_id: str, new_state: str):

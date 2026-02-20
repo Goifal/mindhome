@@ -943,7 +943,10 @@ class FunctionExecutor:
 
     async def _exec_set_climate_curve(self, args: dict, heating: dict) -> dict:
         """Heizkurven-Modus: Offset auf zentrales Entity setzen."""
-        offset = args.get("offset", 0)
+        try:
+            offset = float(args.get("offset", 0))
+        except (ValueError, TypeError):
+            return {"success": False, "message": f"Ungueltiger Offset: {args.get('offset')}"}
         entity_id = heating.get("curve_entity", "")
         if not entity_id:
             return {"success": False, "message": "Kein Heizungs-Entity konfiguriert (heating.curve_entity)"}
@@ -1011,7 +1014,7 @@ class FunctionExecutor:
     async def _exec_set_cover(self, args: dict) -> dict:
         room = args["room"]
         try:
-            position = int(args["position"])
+            position = max(0, min(100, int(args["position"])))
         except (ValueError, TypeError):
             return {"success": False, "message": f"Ungueltige Position: {args.get('position')}"}
 

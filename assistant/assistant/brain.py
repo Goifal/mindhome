@@ -1625,7 +1625,12 @@ class AssistantBrain:
             "ja mach das", "ja, mach das", "bitte",
         ]
         if any(text_lower == t or text_lower.startswith(t + " ") or text_lower.startswith(t + ",") for t in confirm_triggers):
-            pending = json.loads(raw)
+            try:
+                pending = json.loads(raw)
+            except (json.JSONDecodeError, TypeError):
+                logger.error("Security-Confirmation: Korrupte Daten in Redis")
+                await self.memory.redis.delete(SECURITY_CONFIRM_KEY)
+                return None
             # Person-Check: nur dieselbe Person darf bestaetigen
             if pending.get("person") and person and pending["person"] != person:
                 logger.warning(
@@ -1635,8 +1640,12 @@ class AssistantBrain:
                 return None  # Stille Ablehnung, weiter im normalen Flow
 
             # Ausfuehren
-            func_name = pending["function"]
-            func_args = pending["args"]
+            func_name = pending.get("function")
+            func_args = pending.get("args", {})
+            if not func_name:
+                logger.error("Security-Confirmation: Fehlende Funktion in Pending-Daten")
+                await self.memory.redis.delete(SECURITY_CONFIRM_KEY)
+                return None
             result = await self.executor.execute(func_name, func_args)
             await self.memory.redis.delete(SECURITY_CONFIRM_KEY)
 
