@@ -23,6 +23,7 @@ from typing import Optional
 import aiohttp
 
 from .config import settings, yaml_config
+from .ollama_client import strip_reasoning_leak
 from .websocket import emit_proactive
 
 logger = logging.getLogger(__name__)
@@ -641,7 +642,9 @@ class ProactiveManager:
                 model=settings.model_fast,
             )
 
-            text = response.get("message", {}).get("content", description)
+            text = strip_reasoning_leak(
+                response.get("message", {}).get("content", description)
+            )
 
             # WebSocket: Proaktive Meldung senden (mit Notification-ID + Delivery)
             await emit_proactive(text, event_type, urgency, notification_id)
@@ -731,7 +734,9 @@ class ProactiveManager:
                 ],
                 model=settings.model_fast,
             )
-            return response.get("message", {}).get("content", "Alles ruhig, Sir.")
+            return strip_reasoning_leak(
+                response.get("message", {}).get("content", "Alles ruhig, Sir.")
+            )
         except Exception as e:
             logger.error("Fehler beim Status-Bericht: %s", e)
             return "Status-Abfrage fehlgeschlagen. Systeme pruefen."
@@ -784,6 +789,10 @@ Dein Stil: Souveraen, knapp, trocken-humorvoll. Wie ein brillanter britischer Bu
 Formuliere KURZE proaktive Meldungen. Maximal 1-3 Saetze. Deutsch.
 Den Hauptbenutzer sprichst du mit "Sir" an, NICHT mit dem Vornamen.
 Andere Haushaltsmitglieder mit ihrem Namen oder Titel.
+
+WICHTIG: Antworte NUR mit der fertigen Meldung. Kein Denkprozess, keine Erklaerung,
+keine Analyse, kein "Okay let me", kein Meta-Kommentar. Nur die Meldung selbst.
+
 Beispiele:
 - "Es hat geklingelt, Sir."
 - "Die Waschmaschine ist fertig. Nur falls es jemanden interessiert."
@@ -829,7 +838,9 @@ Beispiele:
                 ],
                 model=settings.model_fast,
             )
-            text = response.get("message", {}).get("content", "").strip()
+            text = strip_reasoning_leak(
+                response.get("message", {}).get("content", "").strip()
+            )
             return text if text else raw_message
         except Exception as e:
             logger.debug("Alert-Personality Fehler (Fallback auf Original): %s", e)
@@ -1095,7 +1106,9 @@ Beispiele:
                 model=settings.model_fast,
             )
 
-            text = response.get("message", {}).get("content", "")
+            text = strip_reasoning_leak(
+                response.get("message", {}).get("content", "")
+            )
             if text:
                 notification_id = f"notif_{uuid.uuid4().hex[:12]}"
                 await emit_proactive(text, "batch_summary", LOW, notification_id)
