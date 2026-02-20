@@ -87,6 +87,8 @@ class SoundManager:
                 return False
 
         return True
+
+    def __init__(self, ha_client: HomeAssistantClient):
         self.ha = ha_client
 
         # Konfiguration
