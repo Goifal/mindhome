@@ -379,6 +379,40 @@ def api_chat_voice():
     # Send audio to HA STT API
     audio_data = audio_file.read()
     content_type = audio_file.content_type or "audio/wav"
+
+    # Convert non-WAV audio (e.g. webm from browser) to WAV for Whisper STT
+    if content_type != "audio/wav":
+        import subprocess
+        import tempfile
+        tmp_in_path = tmp_out_path = None
+        try:
+            with tempfile.NamedTemporaryFile(suffix=".webm", delete=False) as tmp_in:
+                tmp_in.write(audio_data)
+                tmp_in_path = tmp_in.name
+            tmp_out_path = tmp_in_path + ".wav"
+            result = subprocess.run(
+                ["ffmpeg", "-i", tmp_in_path, "-ar", "16000", "-ac", "1",
+                 "-f", "wav", tmp_out_path, "-y", "-loglevel", "error"],
+                capture_output=True, timeout=10,
+            )
+            if result.returncode == 0:
+                with open(tmp_out_path, "rb") as f:
+                    audio_data = f.read()
+                content_type = "audio/wav"
+                logger.debug("Audio converted to WAV (%d bytes)", len(audio_data))
+            else:
+                logger.warning("ffmpeg conversion failed: %s", result.stderr.decode()[:200])
+        except Exception as e:
+            logger.warning("Audio conversion error: %s", e)
+        finally:
+            import os as _os
+            for p in (tmp_in_path, tmp_out_path):
+                if p:
+                    try:
+                        _os.unlink(p)
+                    except OSError:
+                        pass
+
     try:
         import os
         ha_url = os.environ.get("SUPERVISOR_URL", ha.ha_url).rstrip("/")

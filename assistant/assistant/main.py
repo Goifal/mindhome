@@ -1650,7 +1650,11 @@ async def ui_serve(path: str = ""):
     """Jarvis Dashboard — Single-Page App."""
     index_path = _ui_static_dir / "index.html"
     if index_path.exists():
-        return FileResponse(index_path, media_type="text/html")
+        return FileResponse(
+            index_path,
+            media_type="text/html",
+            headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache", "Expires": "0"},
+        )
     return HTMLResponse("<h1>Jarvis Dashboard — index.html nicht gefunden</h1>", status_code=404)
 
 

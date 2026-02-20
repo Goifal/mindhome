@@ -9967,8 +9967,8 @@ const JarvisChatPage = () => {
         if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
             showToast(
                 lang === 'de'
-                    ? 'Mikrofon nicht verfuegbar. Home Assistant muss ueber HTTPS aufgerufen werden (Browser blockiert Mikrofon bei HTTP).'
-                    : 'Microphone unavailable. Home Assistant must be accessed via HTTPS (browsers block microphone on HTTP).',
+                    ? 'Mikrofon nicht verfuegbar. Oeffne MindHome ueber die Home Assistant Seitenleiste (Ingress) oder stelle sicher, dass HTTPS konfiguriert ist.'
+                    : 'Microphone unavailable. Open MindHome via Home Assistant sidebar (Ingress) or ensure HTTPS is configured.',
                 'error'
             );
             return;
@@ -9983,7 +9983,10 @@ const JarvisChatPage = () => {
             mediaRecorder.onstop = async () => {
                 stream.getTracks().forEach(t => t.stop());
                 const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-                if (audioBlob.size < 500) return; // Too short
+                if (audioBlob.size < 500) {
+                    showToast(lang === 'de' ? 'Aufnahme zu kurz' : 'Recording too short', 'warning');
+                    return;
+                }
                 await sendVoiceMessage(audioBlob);
             };
             mediaRecorderRef.current = mediaRecorder;

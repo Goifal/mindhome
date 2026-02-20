@@ -1,12 +1,13 @@
 ARG BUILD_FROM
 FROM ${BUILD_FROM}
 
-# Install minimal system dependencies
+# Install minimal system dependencies + ffmpeg for voice audio conversion
 RUN apk add --no-cache \
     py3-pip \
     gcc \
     musl-dev \
-    python3-dev
+    python3-dev \
+    ffmpeg
 
 # Copy and install Python requirements
 COPY rootfs/opt/mindhome/requirements.txt /tmp/
