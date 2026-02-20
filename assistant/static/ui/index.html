@@ -718,7 +718,7 @@ async function checkSetupAndShow() {
           TOKEN = t;
           try {
             const sr = await fetch(`${API}/api/ui/stats`, {headers: {'Authorization': `Bearer ${TOKEN}`}});
-            if (sr.ok) { resetSessionTimer(); showApp(); return; }
+            if (sr.ok) { resetSessionTimer(); await showApp(); return; }
           } catch(e) {}
         }
       }
@@ -787,7 +787,7 @@ async function doLogin() {
     sessionStorage.setItem('jt', TOKEN);
     sessionStorage.setItem('jt_ts', Date.now().toString());
     resetSessionTimer();
-    showApp();
+    await showApp();
   } catch(e) { err.textContent = 'Verbindung fehlgeschlagen'; }
 }
 
