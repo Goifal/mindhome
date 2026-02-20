@@ -251,9 +251,19 @@ class ThreatAssessment:
         return threats
 
     def _check_smoke_fire(self, states: list[dict]) -> list[dict]:
-        """Prueft Rauchmelder und Feuer-Sensoren."""
+        """Prueft Rauchmelder und Feuer-Sensoren.
+
+        Nutzt primaer device_class (smoke, carbon_monoxide) fuer zuverlaessige
+        Erkennung. Keyword-Fallback nur fuer echte Alarm-Sensoren, NICHT fuer
+        CO2-Luftqualitaetssensoren (die sind kein Notfall).
+        """
         threats = []
-        smoke_keywords = ["smoke", "rauch", "fire", "feuer", "co2", "kohlenmonoxid"]
+        # device_class Werte die HA fuer echte Alarm-Sensoren verwendet
+        alarm_device_classes = {"smoke", "carbon_monoxide", "gas"}
+        # Keywords nur als Fallback wenn kein device_class gesetzt
+        smoke_keywords = ["smoke", "rauch", "fire", "feuer", "kohlenmonoxid", "carbon_monoxide"]
+        # Explizit KEINE CO2-Sensoren — das sind Luftqualitaets-Sensoren, kein Notfall
+        co2_exclude = ["co2", "kohlendioxid", "air_quality", "luftqualitaet", "iaq"]
 
         for s in states:
             eid = s.get("entity_id", "")
@@ -262,9 +272,24 @@ class ThreatAssessment:
             if s.get("state") != "on":
                 continue
 
+            attrs = s.get("attributes", {})
+            device_class = (attrs.get("device_class") or "").lower()
             eid_lower = eid.lower()
-            if any(kw in eid_lower for kw in smoke_keywords):
-                friendly = s.get("attributes", {}).get("friendly_name", eid)
+            friendly = attrs.get("friendly_name", eid)
+
+            # Methode 1: device_class (zuverlaessig)
+            is_alarm = device_class in alarm_device_classes
+
+            # Methode 2: Keyword-Fallback (nur wenn kein device_class)
+            if not is_alarm and not device_class:
+                if any(kw in eid_lower for kw in smoke_keywords):
+                    # CO2-Sensoren ausschliessen
+                    if not any(ex in eid_lower for ex in co2_exclude):
+                        is_alarm = True
+
+            if is_alarm:
+                logger.warning("Rauchmelder/Gas-Alarm: %s (%s, device_class=%s)",
+                               friendly, eid, device_class or "none")
                 threats.append({
                     "type": "smoke_fire",
                     "message": f"ALARM: {friendly} hat ausgeloest! Sofortige Pruefung erforderlich!",
