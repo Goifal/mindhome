@@ -342,6 +342,18 @@ class AssistantBrain:
         await self.proactive.start()
         logger.info("Jarvis initialisiert (alle Systeme aktiv, inkl. Phase 17)")
 
+    async def _speak_and_emit(
+        self,
+        text: str,
+        room: Optional[str] = None,
+        tts_data: Optional[dict] = None,
+    ):
+        """Sendet Text per WebSocket UND spricht ihn ueber HA-Speaker aus."""
+        await emit_speaking(text, tts_data=tts_data)
+        asyncio.create_task(
+            self.sound_manager.speak_response(text, room=room, tts_data=tts_data)
+        )
+
     async def process(self, text: str, person: Optional[str] = None, room: Optional[str] = None, files: Optional[list] = None, stream_callback=None) -> dict:
         """
         Verarbeitet eine User-Eingabe.
@@ -365,7 +377,7 @@ class AssistantBrain:
             await self.memory.add_conversation("user", text)
             await self.memory.add_conversation("assistant", response_text)
             tts_data = self.tts_enhancer.enhance(response_text, message_type="confirmation")
-            await emit_speaking(response_text)
+            await self._speak_and_emit(response_text, room=room, tts_data=tts_data)
             return {
                 "response": response_text,
                 "actions": [],
@@ -378,7 +390,7 @@ class AssistantBrain:
             await self.memory.add_conversation("user", text)
             await self.memory.add_conversation("assistant", response_text)
             tts_data = self.tts_enhancer.enhance(response_text, message_type="confirmation")
-            await emit_speaking(response_text)
+            await self._speak_and_emit(response_text, room=room, tts_data=tts_data)
             return {
                 "response": response_text,
                 "actions": [],
@@ -406,7 +418,7 @@ class AssistantBrain:
             result = await self.routines.execute_goodnight(person or "")
             await self.memory.add_conversation("user", text)
             await self.memory.add_conversation("assistant", result["text"])
-            await emit_speaking(result["text"])
+            await self._speak_and_emit(result["text"], room=room)
             return {
                 "response": result["text"],
                 "actions": result["actions"],
@@ -420,7 +432,7 @@ class AssistantBrain:
             response_text = await self.routines.activate_guest_mode()
             await self.memory.add_conversation("user", text)
             await self.memory.add_conversation("assistant", response_text)
-            await emit_speaking(response_text)
+            await self._speak_and_emit(response_text, room=room)
             return {
                 "response": response_text,
                 "actions": [],
@@ -435,7 +447,7 @@ class AssistantBrain:
                 response_text = await self.routines.deactivate_guest_mode()
                 await self.memory.add_conversation("user", text)
                 await self.memory.add_conversation("assistant", response_text)
-                await emit_speaking(response_text)
+                await self._speak_and_emit(response_text, room=room)
                 return {
                     "response": response_text,
                     "actions": [],
@@ -448,7 +460,7 @@ class AssistantBrain:
         if security_result:
             await self.memory.add_conversation("user", text)
             await self.memory.add_conversation("assistant", security_result)
-            await emit_speaking(security_result)
+            await self._speak_and_emit(security_result, room=room)
             return {
                 "response": security_result,
                 "actions": [],
@@ -461,7 +473,7 @@ class AssistantBrain:
         if automation_result:
             await self.memory.add_conversation("user", text)
             await self.memory.add_conversation("assistant", automation_result)
-            await emit_speaking(automation_result)
+            await self._speak_and_emit(automation_result, room=room)
             return {
                 "response": automation_result,
                 "actions": [],
@@ -474,7 +486,7 @@ class AssistantBrain:
         if opt_result:
             await self.memory.add_conversation("user", text)
             await self.memory.add_conversation("assistant", opt_result)
-            await emit_speaking(opt_result)
+            await self._speak_and_emit(opt_result, room=room)
             return {
                 "response": opt_result,
                 "actions": [],
@@ -487,7 +499,7 @@ class AssistantBrain:
         if memory_result:
             await self.memory.add_conversation("user", text)
             await self.memory.add_conversation("assistant", memory_result)
-            await emit_speaking(memory_result)
+            await self._speak_and_emit(memory_result, room=room)
             return {
                 "response": memory_result,
                 "actions": [],
@@ -502,7 +514,7 @@ class AssistantBrain:
             await self.memory.add_conversation("user", text)
             await self.memory.add_conversation("assistant", cooking_response)
             tts_data = self.tts_enhancer.enhance(cooking_response, message_type="casual")
-            await emit_speaking(cooking_response)
+            await self._speak_and_emit(cooking_response, room=room, tts_data=tts_data)
             return {
                 "response": cooking_response,
                 "actions": [],
@@ -521,7 +533,7 @@ class AssistantBrain:
             await self.memory.add_conversation("user", text)
             await self.memory.add_conversation("assistant", cooking_response)
             tts_data = self.tts_enhancer.enhance(cooking_response, message_type="casual")
-            await emit_speaking(cooking_response)
+            await self._speak_and_emit(cooking_response, room=room, tts_data=tts_data)
             return {
                 "response": cooking_response,
                 "actions": [],
@@ -540,7 +552,7 @@ class AssistantBrain:
                 self.action_planner.clear_plan(pending_plan)
             await self.memory.add_conversation("user", text)
             await self.memory.add_conversation("assistant", response_text)
-            await emit_speaking(response_text)
+            await self._speak_and_emit(response_text, room=room)
             return {
                 "response": response_text,
                 "actions": [],
@@ -555,7 +567,7 @@ class AssistantBrain:
             response_text = plan_result.get("response", "")
             await self.memory.add_conversation("user", text)
             await self.memory.add_conversation("assistant", response_text)
-            await emit_speaking(response_text)
+            await self._speak_and_emit(response_text, room=room)
             return {
                 "response": response_text,
                 "actions": [],
@@ -569,7 +581,7 @@ class AssistantBrain:
             logger.info("Easter Egg getriggert: '%s'", egg_response)
             await self.memory.add_conversation("user", text)
             await self.memory.add_conversation("assistant", egg_response)
-            await emit_speaking(egg_response)
+            await self._speak_and_emit(egg_response, room=room)
             return {
                 "response": egg_response,
                 "actions": [],
@@ -751,7 +763,7 @@ class AssistantBrain:
                 await self.memory.add_conversation("user", text)
                 await self.memory.add_conversation("assistant", delegation_result)
                 tts_data = self.tts_enhancer.enhance(delegation_result, message_type="confirmation")
-                await emit_speaking(delegation_result)
+                await self._speak_and_emit(delegation_result, room=room, tts_data=tts_data)
                 return {
                     "response": delegation_result,
                     "actions": [],
@@ -1338,8 +1350,8 @@ class AssistantBrain:
             "context_room": context.get("room", "unbekannt"),
             "tts": tts_data,
         }
-        # WebSocket: Antwort senden
-        await emit_speaking(response_text)
+        # WebSocket + Sprachausgabe ueber HA-Speaker
+        await self._speak_and_emit(response_text, room=room, tts_data=tts_data)
 
         logger.info("Output: '%s' (Aktionen: %d, TTS: %s)", response_text,
                      len(executed_actions), tts_data.get("message_type", ""))
@@ -1627,7 +1639,7 @@ class AssistantBrain:
         message = alert.get("message", "")
         if message:
             formatted = await self.proactive.format_with_personality(message, "medium")
-            await emit_speaking(formatted)
+            await self._speak_and_emit(formatted)
             logger.info("Timer -> Meldung: %s", formatted)
 
     async def _handle_learning_suggestion(self, alert: dict):
@@ -1635,7 +1647,7 @@ class AssistantBrain:
         message = alert.get("message", "")
         if message:
             formatted = await self.proactive.format_with_personality(message, "low")
-            await emit_speaking(formatted)
+            await self._speak_and_emit(formatted)
             logger.info("Learning -> Vorschlag: %s", formatted)
 
     async def _handle_cooking_timer(self, alert: dict):
@@ -1643,7 +1655,7 @@ class AssistantBrain:
         message = alert.get("message", "")
         if message:
             formatted = await self.proactive.format_with_personality(message, "medium")
-            await emit_speaking(formatted)
+            await self._speak_and_emit(formatted)
             logger.info("Koch-Timer -> Meldung: %s", formatted)
 
     async def _handle_time_alert(self, alert: dict):
@@ -1651,14 +1663,14 @@ class AssistantBrain:
         message = alert.get("message", "")
         if message:
             formatted = await self.proactive.format_with_personality(message, "medium")
-            await emit_speaking(formatted)
+            await self._speak_and_emit(formatted)
             logger.info("TimeAwareness -> Meldung: %s", formatted)
 
     async def _handle_health_alert(self, alert_type: str, urgency: str, message: str):
         """Callback fuer Health Monitor — leitet an proaktive Meldung weiter."""
         if message:
             formatted = await self.proactive.format_with_personality(message, urgency)
-            await emit_speaking(formatted)
+            await self._speak_and_emit(formatted)
             logger.info("Health Monitor [%s/%s]: %s", alert_type, urgency, formatted)
 
     async def _handle_device_health_alert(self, alert: dict):
@@ -1666,7 +1678,7 @@ class AssistantBrain:
         message = alert.get("message", "")
         if message:
             formatted = await self.proactive.format_with_personality(message, "medium")
-            await emit_speaking(formatted)
+            await self._speak_and_emit(formatted)
             logger.info(
                 "DeviceHealth [%s]: %s",
                 alert.get("alert_type", "?"), formatted,
@@ -1676,7 +1688,7 @@ class AssistantBrain:
         """Callback fuer Wellness Advisor — kuemmert sich um den User."""
         if message:
             formatted = await self.proactive.format_with_personality(message, "low")
-            await emit_speaking(formatted)
+            await self._speak_and_emit(formatted)
             logger.info("Wellness [%s]: %s", nudge_type, formatted)
 
     # ------------------------------------------------------------------
@@ -1720,8 +1732,8 @@ class AssistantBrain:
                 except Exception as e:
                     logger.debug("Ambient Audio lights_on fehlgeschlagen: %s", e)
 
-        # Nachricht via WebSocket senden
-        await emit_speaking(message)
+        # Nachricht via WebSocket + Speaker senden
+        await self._speak_and_emit(message)
 
     # ------------------------------------------------------------------
     # Phase 16.2: Tutorial-Modus
@@ -2471,7 +2483,7 @@ Regeln:
         """Callback fuer Intent-Erinnerungen."""
         text = reminder.get("text", "")
         if text:
-            await emit_speaking(text)
+            await self._speak_and_emit(text)
             logger.info("Intent-Erinnerung: %s", text)
 
     async def _run_daily_fact_decay(self):
