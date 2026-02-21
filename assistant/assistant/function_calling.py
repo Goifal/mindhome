@@ -1192,6 +1192,14 @@ class FunctionExecutor:
         entity_id = args.get("entity_id", "")
         if not domain or not service:
             return {"success": False, "message": "domain und service erforderlich"}
+
+        # Sicherheitscheck: Cover-Services fuer Garagentore blockieren
+        if domain == "cover" and entity_id:
+            states = await self.ha.get_states()
+            entity_state = next((s for s in (states or []) if s.get("entity_id") == entity_id), {})
+            if not await self._is_safe_cover(entity_id, entity_state):
+                return {"success": False, "message": f"Sicherheitssperre: '{entity_id}' ist ein Garagentor/Tor und darf nicht automatisch gesteuert werden."}
+
         service_data = {"entity_id": entity_id} if entity_id else {}
         # Weitere Service-Daten aus args uebernehmen
         for k, v in args.items():

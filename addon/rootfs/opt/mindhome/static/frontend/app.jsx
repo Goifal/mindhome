@@ -9772,6 +9772,8 @@ const JarvisChatPage = () => {
     const [voiceProcessing, setVoiceProcessing] = useState(false);
     const [showActionLog, setShowActionLog] = useState(false);
     const [actionLog, setActionLog] = useState([]);
+    const [coverList, setCoverList] = useState([]);
+    const [coverConfigs, setCoverConfigs] = useState({});
     const mediaRecorderRef = useRef(null);
     const audioChunksRef = useRef([]);
     const messagesEndRef = useRef(null);
@@ -10103,6 +10105,19 @@ const JarvisChatPage = () => {
         if (d && d.items) setActionLog(d.items);
     };
 
+    const loadCovers = async () => {
+        const disc = await api.get('covers/discover');
+        if (disc && disc.covers) setCoverList(disc.covers);
+        const conf = await api.get('covers/configs');
+        if (conf) setCoverConfigs(conf);
+    };
+
+    const saveCoverType = async (entityId, coverType) => {
+        const current = coverConfigs[entityId] || {};
+        await api.put(`covers/${entityId}/config`, { ...current, cover_type: coverType });
+        setCoverConfigs(prev => ({ ...prev, [entityId]: { ...current, cover_type: coverType } }));
+    };
+
     const clearHistory = async () => {
         await api.post('chat/clear');
         setMessages([]);
@@ -10243,7 +10258,7 @@ const JarvisChatPage = () => {
                     }, React.createElement('span', { className: 'mdi mdi-delete-outline', style: { fontSize: 18 } })),
                     React.createElement('button', {
                         className: 'btn btn-ghost btn-icon',
-                        onClick: () => setShowSettings(!showSettings),
+                        onClick: () => { setShowSettings(!showSettings); if (!showSettings) loadCovers(); },
                         title: lang === 'de' ? 'Einstellungen' : 'Settings',
                     }, React.createElement('span', { className: 'mdi mdi-cog-outline', style: { fontSize: 18 } }))
                 )
@@ -10316,6 +10331,56 @@ const JarvisChatPage = () => {
                         ? 'Whisper (STT) und Piper (TTS) Entities aus Home Assistant'
                         : 'Whisper (STT) and Piper (TTS) entities from Home Assistant'
                     )
+                ),
+
+                // Cover type settings
+                React.createElement('div', { style: { marginTop: 16, borderTop: '1px solid var(--border-color)', paddingTop: 12 } },
+                    React.createElement('div', { style: { marginBottom: 8, fontWeight: 600, fontSize: 13 } },
+                        lang === 'de' ? 'Rollladen & Garagentore' : 'Covers & Garage Doors'
+                    ),
+                    React.createElement('div', { style: { fontSize: 11, color: 'var(--text-muted)', marginBottom: 8 } },
+                        lang === 'de'
+                            ? 'Hier kannst du festlegen welche Geräte Rollläden sind und welche Garagentore. Garagentore werden NIEMALS automatisch gesteuert.'
+                            : 'Define which devices are shutters and which are garage doors. Garage doors are NEVER controlled automatically.'
+                    ),
+                    coverList.length === 0
+                        ? React.createElement('div', { style: { fontSize: 12, color: 'var(--text-muted)' } },
+                            lang === 'de' ? 'Keine Cover-Geräte gefunden' : 'No cover devices found'
+                        )
+                        : coverList.map(c => {
+                            const conf = coverConfigs[c.entity_id] || {};
+                            const currentType = conf.cover_type || c.device_class || 'shutter';
+                            const isGarage = currentType === 'garage_door';
+                            return React.createElement('div', {
+                                key: c.entity_id,
+                                style: {
+                                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                                    padding: '6px 8px', marginBottom: 4, borderRadius: 6,
+                                    background: isGarage ? 'rgba(239,68,68,0.08)' : 'var(--bg-secondary)',
+                                    border: isGarage ? '1px solid rgba(239,68,68,0.3)' : '1px solid var(--border-color)',
+                                }
+                            },
+                                React.createElement('div', { style: { flex: 1, minWidth: 0 } },
+                                    React.createElement('div', { style: { fontSize: 13, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } },
+                                        isGarage ? '🔒 ' : '',
+                                        c.name
+                                    ),
+                                    React.createElement('div', { style: { fontSize: 10, color: 'var(--text-muted)' } }, c.entity_id)
+                                ),
+                                React.createElement('select', {
+                                    className: 'input',
+                                    value: currentType,
+                                    onChange: (e) => saveCoverType(c.entity_id, e.target.value),
+                                    style: { width: 120, fontSize: 11, flexShrink: 0 },
+                                },
+                                    React.createElement('option', { value: 'shutter' }, lang === 'de' ? 'Rollladen' : 'Shutter'),
+                                    React.createElement('option', { value: 'blind' }, lang === 'de' ? 'Jalousie' : 'Blind'),
+                                    React.createElement('option', { value: 'awning' }, lang === 'de' ? 'Markise' : 'Awning'),
+                                    React.createElement('option', { value: 'roof_window' }, lang === 'de' ? 'Dachfenster' : 'Roof Window'),
+                                    React.createElement('option', { value: 'garage_door' }, lang === 'de' ? 'Garagentor' : 'Garage Door')
+                                )
+                            );
+                        })
                 )
             ),
 
