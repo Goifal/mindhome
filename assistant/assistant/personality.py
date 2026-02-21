@@ -274,6 +274,72 @@ class PersonalityEngine:
             logger.warning("Opinion Rules nicht geladen: %s", e)
             return []
 
+    def _match_rule(self, rule: dict, action: str, args: dict, hour: int) -> bool:
+        """Prueft ob eine Opinion-Regel auf Aktion + Args + Kontext passt.
+
+        Gemeinsame Matching-Logik fuer check_opinion() und check_pushback().
+        """
+        if rule.get("min_intensity", 1) > self.opinion_intensity:
+            return False
+        if rule.get("check_action") != action:
+            return False
+
+        # Feld-Check
+        field = rule.get("check_field", "")
+        operator = rule.get("check_operator", "")
+        value = rule.get("check_value")
+
+        if field and operator and value is not None:
+            actual = args.get(field)
+            if actual is None:
+                return False
+
+            match = False
+            if operator == ">" and isinstance(actual, (int, float)):
+                match = actual > value
+            elif operator == ">=" and isinstance(actual, (int, float)):
+                match = actual >= value
+            elif operator == "<" and isinstance(actual, (int, float)):
+                match = actual < value
+            elif operator == "<=" and isinstance(actual, (int, float)):
+                match = actual <= value
+            elif operator == "==":
+                match = str(actual) == str(value)
+
+            if not match:
+                return False
+
+        # Uhrzeit-Check (optional, mit Mitternachts-Wraparound)
+        hour_min = rule.get("check_hour_min")
+        hour_max = rule.get("check_hour_max")
+        if hour_min is not None and hour_max is not None:
+            if hour_min <= hour_max:
+                if not (hour_min <= hour <= hour_max):
+                    return False
+            else:
+                # Wraparound: z.B. 23..5 → 23,0,1,2,3,4,5
+                if not (hour >= hour_min or hour <= hour_max):
+                    return False
+
+        # Heizungsmodus-Check (optional)
+        check_heating_mode = rule.get("check_heating_mode")
+        if check_heating_mode:
+            current_mode = yaml_config.get("heating", {}).get("mode", "room_thermostat")
+            if current_mode != check_heating_mode:
+                return False
+
+        # Raum-Check (optional, unterstuetzt Liste und Einzelwert)
+        check_room = rule.get("check_room")
+        if check_room:
+            actual_room = args.get("room", "")
+            if isinstance(check_room, list):
+                if actual_room not in check_room:
+                    return False
+            elif actual_room != check_room:
+                return False
+
+        return True
+
     def check_opinion(self, action: str, args: dict) -> Optional[str]:
         """Prueft ob Jarvis eine Meinung zu einer Aktion hat.
         Unterdrueckt Meinungen wenn User gestresst oder frustriert ist."""
@@ -287,61 +353,9 @@ class PersonalityEngine:
         hour = datetime.now().hour
 
         for rule in self._opinion_rules:
-            if rule.get("min_intensity", 1) > self.opinion_intensity:
-                continue
-            if rule.get("check_action") != action:
+            if not self._match_rule(rule, action, args, hour):
                 continue
 
-            # Feld-Check
-            field = rule.get("check_field", "")
-            operator = rule.get("check_operator", "")
-            value = rule.get("check_value")
-
-            if field and operator and value is not None:
-                actual = args.get(field)
-                if actual is None:
-                    continue
-
-                match = False
-                if operator == ">" and isinstance(actual, (int, float)):
-                    match = actual > value
-                elif operator == ">=" and isinstance(actual, (int, float)):
-                    match = actual >= value
-                elif operator == "<" and isinstance(actual, (int, float)):
-                    match = actual < value
-                elif operator == "<=" and isinstance(actual, (int, float)):
-                    match = actual <= value
-                elif operator == "==":
-                    match = str(actual) == str(value)
-
-                if not match:
-                    continue
-
-            # Uhrzeit-Check (optional, mit Mitternachts-Wraparound)
-            hour_min = rule.get("check_hour_min")
-            hour_max = rule.get("check_hour_max")
-            if hour_min is not None and hour_max is not None:
-                if hour_min <= hour_max:
-                    if not (hour_min <= hour <= hour_max):
-                        continue
-                else:
-                    # Wraparound: z.B. 23..5 → 23,0,1,2,3,4,5
-                    if not (hour >= hour_min or hour <= hour_max):
-                        continue
-
-            # Heizungsmodus-Check (optional)
-            check_heating_mode = rule.get("check_heating_mode")
-            if check_heating_mode:
-                current_mode = yaml_config.get("heating", {}).get("mode", "room_thermostat")
-                if current_mode != check_heating_mode:
-                    continue
-
-            # Raum-Check (optional)
-            check_room = rule.get("check_room")
-            if check_room and args.get("room") != check_room:
-                continue
-
-            # Regel passt -> Meinung aeussern
             responses = rule.get("responses", [])
             if responses:
                 logger.info("Opinion triggered: %s", rule.get("id", "?"))
@@ -373,61 +387,9 @@ class PersonalityEngine:
             pushback_level = rule.get("pushback_level", 0)
             if pushback_level < 1:
                 continue
-            if rule.get("min_intensity", 1) > self.opinion_intensity:
-                continue
-            if rule.get("check_action") != func_name:
+            if not self._match_rule(rule, func_name, func_args, hour):
                 continue
 
-            # Feld-Check (gleiche Logik wie check_opinion)
-            field = rule.get("check_field", "")
-            operator = rule.get("check_operator", "")
-            value = rule.get("check_value")
-
-            if field and operator and value is not None:
-                actual = func_args.get(field)
-                if actual is None:
-                    continue
-
-                match = False
-                if operator == ">" and isinstance(actual, (int, float)):
-                    match = actual > value
-                elif operator == ">=" and isinstance(actual, (int, float)):
-                    match = actual >= value
-                elif operator == "<" and isinstance(actual, (int, float)):
-                    match = actual < value
-                elif operator == "<=" and isinstance(actual, (int, float)):
-                    match = actual <= value
-                elif operator == "==":
-                    match = str(actual) == str(value)
-
-                if not match:
-                    continue
-
-            # Uhrzeit-Check (mit Mitternachts-Wraparound)
-            hour_min = rule.get("check_hour_min")
-            hour_max = rule.get("check_hour_max")
-            if hour_min is not None and hour_max is not None:
-                if hour_min <= hour_max:
-                    if not (hour_min <= hour <= hour_max):
-                        continue
-                else:
-                    # Wraparound: z.B. 23..5 → 23,0,1,2,3,4,5
-                    if not (hour >= hour_min or hour <= hour_max):
-                        continue
-
-            # Heizungsmodus-Check
-            check_heating_mode = rule.get("check_heating_mode")
-            if check_heating_mode:
-                current_mode = yaml_config.get("heating", {}).get("mode", "room_thermostat")
-                if current_mode != check_heating_mode:
-                    continue
-
-            # Raum-Check
-            check_room = rule.get("check_room")
-            if check_room and func_args.get("room") != check_room:
-                continue
-
-            # Regel passt -> Pushback
             responses = rule.get("responses", [])
             msg = random.choice(responses) if responses else ""
             logger.info("Pushback triggered (level %d): %s", pushback_level, rule.get("id", "?"))
