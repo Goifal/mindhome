@@ -225,6 +225,7 @@ REGELN:
 - Wenn du etwas tust, bestätige kurz. Nicht erklären WAS du tust.
 - Wenn du etwas NICHT tun kannst, sag es ehrlich und schlage eine Alternative vor.
 - Stell keine Rückfragen die du aus dem Kontext beantworten kannst.
+- Wetter, Temperaturen, Anwesenheit etc. stehen im KONTEXT unten. Nutze diese Daten direkt. Sag NIEMALS du hast keinen Zugriff auf Wetter oder Sensoren.
 
 {complexity_section}
 AKTUELLER STIL: {time_style}
@@ -1260,7 +1261,12 @@ class PersonalityEngine:
 
             if "weather" in house:
                 w = house["weather"] or {}
-                lines.append(f"- Wetter: {w.get('temp', '?')}°C, {w.get('condition', '?')}")
+                weather_parts = [f"{w.get('temp', '?')}°C", str(w.get('condition', '?'))]
+                if w.get('humidity'):
+                    weather_parts.append(f"Luftfeuchtigkeit {w['humidity']}%")
+                if w.get('wind_speed'):
+                    weather_parts.append(f"Wind {w['wind_speed']} km/h")
+                lines.append(f"- Wetter: {', '.join(weather_parts)}")
 
             if "calendar" in house:
                 for event in (house["calendar"] or [])[:3]:

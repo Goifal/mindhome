@@ -290,13 +290,13 @@ _ASSISTANT_TOOLS_STATIC = [
         "type": "function",
         "function": {
             "name": "get_entity_state",
-            "description": "Status einer Home Assistant Entity abfragen (z.B. Sensor, Schalter, Thermostat)",
+            "description": "Status einer Home Assistant Entity abfragen. Funktioniert mit allen Entity-Typen: sensor.*, switch.*, light.*, climate.*, weather.* (z.B. weather.forecast_home fuer Wetterdaten), lock.*, media_player.*, binary_sensor.*, person.* etc.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "entity_id": {
                         "type": "string",
-                        "description": "Entity-ID (z.B. sensor.temperatur_buero, switch.steckdose_kueche)",
+                        "description": "Entity-ID (z.B. sensor.temperatur_buero, weather.forecast_home, switch.steckdose_kueche)",
                     },
                 },
                 "required": ["entity_id"],
