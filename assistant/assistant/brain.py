@@ -781,10 +781,23 @@ class AssistantBrain:
             system_prompt += whatif_prompt
 
         # 5. Letzte Gespraeche laden (Working Memory)
-        recent = await self.memory.get_recent_conversations(limit=5)
+        # Token-Budget: System-Prompt + Conversations + User-Text muessen ins Kontext-Fenster
+        context_cfg = yaml_config.get("context", {})
+        max_context_tokens = context_cfg.get("max_context_tokens", 6000)
+        # Grobe Schaetzung: 1 Token ≈ 3.5 Zeichen (Deutsch, mit Umlauten)
+        system_tokens = len(system_prompt) // 3
+        user_tokens = len(text) // 3
+        available_tokens = max(500, max_context_tokens - system_tokens - user_tokens - 200)
+        # Dynamisch: Conversations laden bis Token-Budget aufgebraucht
+        recent = await self.memory.get_recent_conversations(limit=8)
         messages = [{"role": "system", "content": system_prompt}]
+        conv_tokens_used = 0
         for conv in recent:
+            conv_tokens = len(conv.get("content", "")) // 3
+            if conv_tokens_used + conv_tokens > available_tokens:
+                break
             messages.append({"role": conv["role"], "content": conv["content"]})
+            conv_tokens_used += conv_tokens
         messages.append({"role": "user", "content": text})
 
         # Phase 8: Intent-Routing — Wissensfragen ohne Tools beantworten
@@ -851,17 +864,19 @@ class AssistantBrain:
             # Phase 8: Erinnerungsfrage -> Memory-Suche + Deep-Model
             logger.info("Erinnerungsfrage erkannt -> Memory-Suche + Deep-Model")
             memory_facts = await self.memory.semantic.search_by_topic(text, limit=5)
+            # Kopie der Messages erstellen statt Original zu mutieren
+            memory_messages = list(messages)
             if memory_facts:
                 facts_text = "\n".join(f"- {f['content']}" for f in memory_facts)
-                system_prompt += f"\n\nGESPEICHERTE FAKTEN ZU DIESER FRAGE:\n{facts_text}"
-                system_prompt += "\nBeantworte basierend auf diesen gespeicherten Fakten."
-                messages[0] = {"role": "system", "content": system_prompt}
+                memory_prompt = system_prompt + f"\n\nGESPEICHERTE FAKTEN ZU DIESER FRAGE:\n{facts_text}"
+                memory_prompt += "\nBeantworte basierend auf diesen gespeicherten Fakten."
+                memory_messages[0] = {"role": "system", "content": memory_prompt}
 
             model = settings.model_deep
             if stream_callback:
                 collected_tokens = []
                 async for token in self.ollama.stream_chat(
-                    messages=messages,
+                    messages=memory_messages,
                     model=model,
                 ):
                     collected_tokens.append(token)
@@ -869,7 +884,7 @@ class AssistantBrain:
                 response_text = self._filter_response("".join(collected_tokens))
             else:
                 response = await self.ollama.chat(
-                    messages=messages,
+                    messages=memory_messages,
                     model=model,
                 )
                 response_text = self._filter_response(response.get("message", {}).get("content", ""))
@@ -1130,8 +1145,10 @@ class AssistantBrain:
 
             # 8b. Tool-Result Feedback Loop: Ergebnisse zurueck ans LLM
             # Damit Jarvis natuerlich antwortet ("Im Buero sind es 22 Grad, Sir.")
-            # statt nur "Erledigt." bei Abfragen
-            if tool_calls and has_query_results and not response_text:
+            # statt nur "Erledigt." bei Abfragen.
+            # Laeuft IMMER bei Query-Tools — auch wenn das LLM schon vagen Text
+            # generiert hat ("Ich schaue nach..."), denn die echten Daten muessen rein.
+            if tool_calls and has_query_results:
                 try:
                     # Tool-Ergebnisse als Messages aufbauen
                     feedback_messages = list(messages)
@@ -1140,7 +1157,6 @@ class AssistantBrain:
                     # Tool-Results als "tool" Messages
                     for action in executed_actions:
                         result = action.get("result", {})
-                        result_text = ""
                         if isinstance(result, dict):
                             result_text = result.get("message", str(result))
                         else:
@@ -1243,12 +1259,15 @@ class AssistantBrain:
                         response_text = f"Problem: {error_msg}"
 
         # Phase 12: Response-Filter (Post-Processing) — Floskeln entfernen
-        # Nachtmodus: Harter Sentence-Limit von 2 (LLM-Prompt ist nur Empfehlung)
+        # Knowledge/Memory-Pfade filtern bereits inline, daher hier nur fuer
+        # den General-Pfad (Tool-Calls) filtern, um doppelte Filterung zu vermeiden.
+        # Nachtmodus-Limit wird aber IMMER angewandt (harter Override).
         night_limit = 0
         time_of_day = self.personality.get_time_of_day()
         if time_of_day in ("night", "early_morning"):
             night_limit = 2
-        response_text = self._filter_response(response_text, max_sentences_override=night_limit)
+        if intent_type == "general" or night_limit > 0:
+            response_text = self._filter_response(response_text, max_sentences_override=night_limit)
 
         # Sprach-Retry: Wenn Antwort verworfen wurde (nicht Deutsch), nochmal mit explizitem Sprach-Prompt
         if not response_text and text:
@@ -1359,7 +1378,13 @@ class AssistantBrain:
         )
 
         # Phase 8: Offenes Thema markieren (wenn Frage ohne klare Antwort)
-        if text.endswith("?") and len(text.split()) > 5:
+        # Triviale Fragen ("Wie spaet ist es?", "Wie warm ist es?") nicht als
+        # offenes Thema speichern — nur komplexere Fragen die Follow-Up brauchen.
+        _trivial_q = ["wie spaet", "wie spät", "wie warm", "wie kalt",
+                       "welcher tag", "welches datum", "wieviel uhr"]
+        text_l = text.lower()
+        is_trivial = any(t in text_l for t in _trivial_q) or len(text.split()) <= 8
+        if text.endswith("?") and len(text.split()) > 5 and not is_trivial and not executed_actions:
             _safe_create_task(
                 self.memory.mark_conversation_pending(
                     topic=text[:100], context=response_text[:200], person=person or ""
@@ -1587,8 +1612,10 @@ class AssistantBrain:
 
         text = text.strip()
 
-        # 7. Sprach-Check: Wenn die Antwort ueberwiegend Englisch ist, verwerfen
-        if text and len(text) > 15:
+        # 7. Sprach-Check: Wenn die Antwort DEUTLICH ueberwiegend Englisch ist, verwerfen
+        # Schwelle hoeher: kurze Antworten und gemischte Texte (z.B. englische
+        # Eigennamen wie "Living Room Speaker", "Smart Home") werden durchgelassen.
+        if text and len(text) > 40:
             text_lower = f" {text.lower()} "
             _english_markers = [
                 " the ", " you ", " your ", " which ", " would ",
@@ -1606,11 +1633,14 @@ class AssistantBrain:
                 " dein ", " sehr ", " wohl ", " kann ", " wird ",
                 " auf ", " mit ", " fuer ", " für ", " noch ",
                 " auch ", " aber ", " oder ", " wenn ", " schon ",
+                " sir ", " erledigt ", " grad ", " gerade ",
             ]
             en_hits = sum(1 for m in _english_markers if m in text_lower)
             de_hits = sum(1 for m in _de_markers if m in text_lower)
             de_hits += min(3, sum(1 for c in text if c in "äöüÄÖÜß"))
-            if en_hits >= 2 and en_hits > de_hits:
+            # Nur verwerfen wenn DEUTLICH englisch: mindestens 3 EN-Marker
+            # UND mehr als doppelt so viele EN wie DE
+            if en_hits >= 3 and en_hits > de_hits * 2:
                 logger.warning("Response ueberwiegend Englisch (%d EN vs %d DE), verworfen: '%.100s...'",
                                en_hits, de_hits, text)
                 return ""
@@ -1742,7 +1772,11 @@ class AssistantBrain:
             return ""
 
     async def _get_rag_context(self, text: str) -> str:
-        """Durchsucht die Knowledge Base nach relevantem Wissen (RAG)."""
+        """Durchsucht die Knowledge Base nach relevantem Wissen (RAG).
+
+        Nur Treffer mit Relevanz >= 0.3 werden eingefuegt, um irrelevante
+        Ergebnisse aus dem System-Prompt herauszuhalten.
+        """
         if not self.knowledge_base.chroma_collection:
             return ""
 
@@ -1751,8 +1785,15 @@ class AssistantBrain:
             if not hits:
                 return ""
 
+            # Nur relevante Treffer verwenden (Schwelle konfigurierbar)
+            rag_cfg = yaml_config.get("knowledge_base", {})
+            min_relevance = rag_cfg.get("min_relevance", 0.3)
+            relevant_hits = [h for h in hits if h.get("relevance", 0) >= min_relevance]
+            if not relevant_hits:
+                return ""
+
             parts = ["\n\nWISSENSBASIS (relevante Dokumente):"]
-            for hit in hits:
+            for hit in relevant_hits:
                 source = hit.get("source", "")
                 content = hit.get("content", "")
                 source_hint = f" [Quelle: {source}]" if source else ""
@@ -1945,7 +1986,6 @@ class AssistantBrain:
         text_lower = text.lower().strip().rstrip("!?.")
 
         # Direkte Bestaetigung per ID: "Automation abc12345 bestaetigen"
-        import re
         id_match = re.search(r"automation\s+([a-f0-9]{8})\s+bestaetig", text_lower)
         if id_match:
             pending_id = id_match.group(1)
@@ -2070,7 +2110,6 @@ class AssistantBrain:
         text_lower = text.lower().strip().rstrip("!?.")
 
         # "Vorschlag 1 annehmen" / "Vorschlag 2 ablehnen"
-        import re
         approve_match = re.search(r"vorschlag\s+(\d+)\s+(annehmen|genehmigen|akzeptieren|ok)", text_lower)
         if approve_match:
             idx = int(approve_match.group(1)) - 1  # 1-basiert -> 0-basiert
@@ -2257,25 +2296,30 @@ class AssistantBrain:
     # Phase 8: Intent-Routing (Wissen vs Smart-Home vs Memory)
     # ------------------------------------------------------------------
 
+    # Vorkompilierte Delegation-Patterns (einmal statt bei jedem Call)
+    _DELEGATION_PATTERNS = [
+        re.compile(r"^sag\s+(\w+)\s+(?:dass|das)\s+"),
+        re.compile(r"^frag\s+(\w+)\s+(?:ob|mal|nach)\s+"),
+        re.compile(r"^teile?\s+(\w+)\s+mit\s+(?:dass|das)\s+"),
+        re.compile(r"^gib\s+(\w+)\s+bescheid\s+"),
+        re.compile(r"^richte?\s+(\w+)\s+aus\s+(?:dass|das)\s+"),
+        re.compile(r"^schick\s+(\w+)\s+eine?\s+nachricht"),
+        re.compile(r"^nachricht\s+an\s+(\w+)"),
+    ]
+
     def _classify_intent(self, text: str) -> str:
         """
         Klassifiziert den Intent einer Anfrage.
-        Returns: 'smart_home', 'knowledge', 'memory', 'delegation', 'general'
+        Returns: 'delegation', 'memory', 'knowledge', 'general'
+
+        Hybrid-Fragen (Wissen + Smart-Home) gehen als 'general' ans LLM
+        mit Tools, damit die Frage mit echten Geraetedaten beantwortet wird.
         """
         text_lower = text.lower().strip()
 
-        # Phase 10: Delegations-Intent erkennen
-        delegation_patterns = [
-            r"^sag\s+(\w+)\s+(dass|das)\s+",
-            r"^frag\s+(\w+)\s+(ob|mal|nach)\s+",
-            r"^teile?\s+(\w+)\s+mit\s+(dass|das)\s+",
-            r"^gib\s+(\w+)\s+bescheid\s+",
-            r"^richte?\s+(\w+)\s+aus\s+(dass|das)\s+",
-            r"^schick\s+(\w+)\s+eine?\s+nachricht",
-            r"^nachricht\s+an\s+(\w+)",
-        ]
-        for pattern in delegation_patterns:
-            if re.search(pattern, text_lower):
+        # Phase 10: Delegations-Intent erkennen (vorkompilierte Regex)
+        for pattern in self._DELEGATION_PATTERNS:
+            if pattern.search(text_lower):
                 return "delegation"
 
         # Memory-Fragen
@@ -2286,7 +2330,16 @@ class AssistantBrain:
         if any(kw in text_lower for kw in memory_keywords):
             return "memory"
 
-        # Wissensfragen (allgemeine Fragen die KEINE Smart-Home-Steuerung brauchen)
+        # Steuerungs-Befehle → immer mit Tools (frueh raus)
+        action_starters = [
+            "mach ", "schalte ", "stell ", "setz ", "dreh ",
+            "oeffne ", "schliess", "aktivier", "deaktivier",
+            "spiel ", "stopp", "pause", "lauter", "leiser",
+        ]
+        if any(text_lower.startswith(s) for s in action_starters):
+            return "general"
+
+        # Wissensfragen-Muster
         knowledge_patterns = [
             "wie lange", "wie viel", "wie viele", "was ist",
             "was sind", "was bedeutet", "erklaer mir", "erklaere",
@@ -2295,11 +2348,12 @@ class AssistantBrain:
             "rezept fuer", "rezept für", "definition von", "unterschied zwischen",
         ]
 
-        # Nur als Wissensfrage wenn KEIN Smart-Home-Keyword dabei
+        # Smart-Home-Keywords — wenn vorhanden, brauchen wir Tools
         smart_home_keywords = [
             "licht", "lampe", "heizung", "temperatur", "rollladen",
             "jalousie", "szene", "alarm", "tuer", "fenster",
             "musik", "tv", "fernseher", "kamera", "sensor",
+            "steckdose", "schalter", "thermostat",
         ]
 
         is_knowledge = any(text_lower.startswith(kw) or f" {kw}" in text_lower
@@ -2309,6 +2363,8 @@ class AssistantBrain:
         if is_knowledge and not has_smart_home:
             return "knowledge"
 
+        # Hybrid-Fragen (z.B. "Wie funktioniert meine Heizung?") → general
+        # damit das LLM Tools nutzen kann UND ausfuehrlich antworten kann
         return "general"
 
     # ------------------------------------------------------------------
@@ -2472,26 +2528,26 @@ Regeln:
     # Phase 10: Delegations-Handler
     # ------------------------------------------------------------------
 
+    # Vorkompilierte Delegation-Handler Patterns (mit Capture-Groups)
+    _DELEGATION_HANDLER_PATTERNS = [
+        re.compile(r"^sag\s+(\w+)\s+(?:dass|das)\s+(.+)"),
+        re.compile(r"^frag\s+(\w+)\s+(?:ob|mal|nach)\s+(.+)"),
+        re.compile(r"^teile?\s+(\w+)\s+mit\s+(?:dass|das)\s+(.+)"),
+        re.compile(r"^gib\s+(\w+)\s+bescheid\s+(.+)"),
+        re.compile(r"^richte?\s+(\w+)\s+aus\s+(?:dass|das)\s+(.+)"),
+        re.compile(r"^schick\s+(\w+)\s+eine?\s+nachricht:?\s*(.+)"),
+        re.compile(r"^nachricht\s+an\s+(\w+):?\s*(.+)"),
+    ]
+
     async def _handle_delegation(self, text: str, person: str) -> Optional[str]:
         """Verarbeitet Delegations-Intents ('Sag Lisa dass...', 'Frag Max ob...')."""
         text_lower = text.lower().strip()
 
-        # Muster: "Sag X dass Y" / "Frag X ob Y" / "Teile X mit dass Y" / etc.
-        patterns = [
-            (r"^sag\s+(\w+)\s+(?:dass|das)\s+(.+)", "sag"),
-            (r"^frag\s+(\w+)\s+(?:ob|mal|nach)\s+(.+)", "frag"),
-            (r"^teile?\s+(\w+)\s+mit\s+(?:dass|das)\s+(.+)", "teile_mit"),
-            (r"^gib\s+(\w+)\s+bescheid\s+(.+)", "bescheid"),
-            (r"^richte?\s+(\w+)\s+aus\s+(?:dass|das)\s+(.+)", "ausrichten"),
-            (r"^schick\s+(\w+)\s+eine?\s+nachricht:?\s*(.+)", "nachricht"),
-            (r"^nachricht\s+an\s+(\w+):?\s*(.+)", "nachricht"),
-        ]
-
         target_person = None
         message_content = None
 
-        for pattern, _ in patterns:
-            match = re.search(pattern, text_lower)
+        for pattern in self._DELEGATION_HANDLER_PATTERNS:
+            match = pattern.search(text_lower)
             if match:
                 target_person = match.group(1).capitalize()
                 message_content = match.group(2).strip().rstrip(".")
