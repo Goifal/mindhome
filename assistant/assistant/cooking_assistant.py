@@ -18,6 +18,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Optional
 
+from .config import yaml_config
+
 logger = logging.getLogger(__name__)
 
 
@@ -149,7 +151,7 @@ Regeln:
 - Klare, kurze Schritte (1-2 Saetze pro Schritt)
 - timer_minutes nur wenn der Schritt eine Wartezeit hat (sonst null)
 - Mengenangaben in metrischen Einheiten (Gramm, Liter, Essloeffel)
-- Maximal 12 Schritte
+- Maximal {max_steps} Schritte
 - Portionen: {portions}
 {preferences}
 
@@ -170,6 +172,14 @@ class CookingAssistant:
         self._timer_tasks: list[asyncio.Task] = []
         self._notify_callback = None
 
+        # Config aus settings.yaml lesen
+        cook_cfg = yaml_config.get("cooking", {})
+        self.enabled = cook_cfg.get("enabled", True)
+        self.default_portions = int(cook_cfg.get("default_portions", 2))
+        self.max_steps = int(cook_cfg.get("max_steps", 12))
+        self.max_tokens = int(cook_cfg.get("max_tokens", 1024))
+        self.timer_notify_tts = cook_cfg.get("timer_notify_tts", True)
+
     async def initialize(self, redis_client=None):
         """Initialisiert mit Redis und laedt ggf. eine gespeicherte Session."""
         self.redis = redis_client
@@ -186,6 +196,8 @@ class CookingAssistant:
 
     def is_cooking_intent(self, text: str) -> bool:
         """Erkennt ob der User kochen will."""
+        if not self.enabled:
+            return False
         text_lower = text.lower().strip()
 
         # Direkte Rezept-Anfrage
@@ -231,6 +243,7 @@ class CookingAssistant:
             dish=dish,
             portions=portions,
             preferences=preferences,
+            max_steps=self.max_steps,
         )
 
         messages = [
@@ -242,7 +255,7 @@ class CookingAssistant:
             messages=messages,
             model=model,
             temperature=0.7,
-            max_tokens=1024,
+            max_tokens=self.max_tokens,
         )
 
         if "error" in response:
@@ -592,7 +605,7 @@ class CookingAssistant:
         if match:
             return min(int(match.group(1)), 20)
 
-        return 2  # Default
+        return self.default_portions
 
     def _parse_recipe(self, content: str, dish: str, portions: int, person: str) -> Optional[CookingSession]:
         """Parst die LLM-Antwort in eine CookingSession."""

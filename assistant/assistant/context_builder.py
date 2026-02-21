@@ -160,10 +160,15 @@ class ContextBuilder:
         if not self.semantic:
             return memories
 
+        mem_cfg = yaml_config.get("memory", {})
+        max_relevant = int(mem_cfg.get("max_relevant_facts_in_context", 3))
+        max_person = int(mem_cfg.get("max_person_facts_in_context", 5))
+        min_confidence = float(mem_cfg.get("min_confidence_for_context", 0.6))
+
         try:
             # Fakten die zur aktuellen Anfrage passen
             relevant = await self.semantic.search_facts(
-                query=user_text, limit=3, person=person or None
+                query=user_text, limit=max_relevant, person=person or None
             )
             memories["relevant_facts"] = [
                 f["content"] for f in relevant if f.get("relevance", 0) > 0.3
@@ -172,10 +177,9 @@ class ContextBuilder:
             # Allgemeine Fakten ueber die Person (Praeferenzen)
             if person:
                 person_facts = await self.semantic.get_facts_by_person(person)
-                # Top-5 mit hoechster Confidence
                 memories["person_facts"] = [
-                    f["content"] for f in person_facts[:5]
-                    if f.get("confidence", 0) >= 0.6
+                    f["content"] for f in person_facts[:max_person]
+                    if f.get("confidence", 0) >= min_confidence
                 ]
         except Exception as e:
             logger.error("Fehler beim Laden semantischer Erinnerungen: %s", e)

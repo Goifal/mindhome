@@ -2615,7 +2615,16 @@ Regeln:
 
         Unterstuetzt mehrere Topics — gibt bis zu 3 als kombinierten
         Hinweis zurueck, statt nur das aelteste.
+        Konfiguriert via conversation_continuity.* in settings.yaml.
         """
+        cont_cfg = yaml_config.get("conversation_continuity", {})
+        if not cont_cfg.get("enabled", True):
+            return None
+
+        resume_after = int(cont_cfg.get("resume_after_minutes", 10))
+        expire_hours = int(cont_cfg.get("expire_hours", 24))
+        expire_minutes = expire_hours * 60
+
         try:
             pending = await self.memory.get_pending_conversations()
             if not pending:
@@ -2625,7 +2634,7 @@ Regeln:
             for item in pending:
                 topic = item.get("topic", "")
                 age = item.get("age_minutes", 0)
-                if topic and age >= 10:
+                if topic and resume_after <= age <= expire_minutes:
                     ready_topics.append(topic)
 
             if not ready_topics:
@@ -2736,6 +2745,12 @@ Regeln:
     async def _handle_correction(self, text: str, response: str, person: str):
         """Verarbeitet eine Korrektur und speichert sie als hochkonfidenten Fakt."""
         try:
+            # Config-Werte fuer Korrektur-Lernen
+            corr_cfg = yaml_config.get("correction", {})
+            corr_confidence = float(corr_cfg.get("confidence", 0.95))
+            corr_model = corr_cfg.get("model", "")
+            corr_temperature = float(corr_cfg.get("temperature", 0.1))
+
             # LLM extrahiert den korrigierten Fakt
             extraction_prompt = (
                 "Der User hat eine Korrektur gemacht. "
@@ -2746,26 +2761,26 @@ Regeln:
                 "Korrekter Fakt:"
             )
 
-            model = self.model_router.select_model("korrektur extrahieren")
+            model = corr_model or self.model_router.select_model("korrektur extrahieren")
             result = await self.ollama.chat(
                 messages=[
                     {"role": "system", "content": "Du extrahierst Fakten. Antworte mit einem einzigen Satz."},
                     {"role": "user", "content": extraction_prompt},
                 ],
                 model=model,
-                temperature=0.1,
+                temperature=corr_temperature,
                 max_tokens=64,
             )
 
             fact_text = result.get("message", {}).get("content", "").strip()
             if fact_text and len(fact_text) > 5:
-                # Fakt mit hoher Confidence speichern (User hat korrigiert = sicher)
+                # Fakt mit konfigurierter Confidence speichern
                 from .semantic_memory import SemanticFact
                 fact = SemanticFact(
                     content=fact_text,
                     category="general",
                     person=person,
-                    confidence=0.95,
+                    confidence=corr_confidence,
                     source_conversation=f"correction: {text[:100]}",
                 )
                 await self.memory.semantic.store_fact(fact)

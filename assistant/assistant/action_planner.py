@@ -36,11 +36,9 @@ from .websocket import emit_action, emit_speaking
 
 logger = logging.getLogger(__name__)
 
-# Maximale Iterationen (LLM-Runden) um Endlosschleifen zu verhindern
-MAX_ITERATIONS = 5
-
-# Keywords die auf komplexe Anfragen hindeuten
-COMPLEX_KEYWORDS = [
+# Defaults — werden von planner-Config in settings.yaml ueberschrieben
+_DEFAULT_MAX_ITERATIONS = 5
+_DEFAULT_COMPLEX_KEYWORDS = [
     "alles", "fertig machen", "vorbereiten",
     "gehe weg", "fahre weg", "verreise", "urlaub",
     "routine", "morgenroutine", "abendroutine",
@@ -49,6 +47,11 @@ COMPLEX_KEYWORDS = [
     "komplett", "ueberall", "in allen",
     "party", "besuch kommt", "gaeste",
 ]
+
+# Config-Werte laden
+_planner_cfg = yaml_config.get("planner", {})
+MAX_ITERATIONS = int(_planner_cfg.get("max_iterations", _DEFAULT_MAX_ITERATIONS))
+COMPLEX_KEYWORDS = _planner_cfg.get("complex_keywords", _DEFAULT_COMPLEX_KEYWORDS)
 
 # Prompt fuer den Action Planner
 PLANNER_SYSTEM_PROMPT = """Du bist der MindHome Action Planner.
@@ -189,12 +192,14 @@ class ActionPlanner:
 
             logger.info("Action Planner: Iteration %d", iteration + 1)
 
-            # LLM aufrufen (Deep-Model fuer komplexe Planung)
+            # LLM aufrufen — Modell und max_tokens aus planner-Config
+            planner_model = _planner_cfg.get("model", "") or settings.model_deep
+            planner_max_tokens = int(_planner_cfg.get("max_tokens", 512))
             response = await self.ollama.chat(
                 messages=planner_messages,
-                model=settings.model_deep,
+                model=planner_model,
                 tools=get_assistant_tools(),
-                max_tokens=512,
+                max_tokens=planner_max_tokens,
             )
 
             if "error" in response:
