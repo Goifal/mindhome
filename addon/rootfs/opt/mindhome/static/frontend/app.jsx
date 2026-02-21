@@ -9770,10 +9770,6 @@ const JarvisChatPage = () => {
     const [uploadProgress, setUploadProgress] = useState(0);
     const [recording, setRecording] = useState(false);
     const [voiceProcessing, setVoiceProcessing] = useState(false);
-    const [showActionLog, setShowActionLog] = useState(false);
-    const [actionLog, setActionLog] = useState([]);
-    const [coverList, setCoverList] = useState([]);
-    const [coverConfigs, setCoverConfigs] = useState({});
     const mediaRecorderRef = useRef(null);
     const audioChunksRef = useRef([]);
     const messagesEndRef = useRef(null);
@@ -10100,24 +10096,6 @@ const JarvisChatPage = () => {
         }
     };
 
-    const loadActionLog = async () => {
-        const d = await api.get('action-log?type=jarvis_action&limit=30&period=7d');
-        if (d && d.items) setActionLog(d.items);
-    };
-
-    const loadCovers = async () => {
-        const disc = await api.get('covers/discover');
-        if (disc && disc.covers) setCoverList(disc.covers);
-        const conf = await api.get('covers/configs');
-        if (conf) setCoverConfigs(conf);
-    };
-
-    const saveCoverType = async (entityId, coverType) => {
-        const current = coverConfigs[entityId] || {};
-        await api.put(`covers/${entityId}/config`, { ...current, cover_type: coverType });
-        setCoverConfigs(prev => ({ ...prev, [entityId]: { ...current, cover_type: coverType } }));
-    };
-
     const clearHistory = async () => {
         await api.post('chat/clear');
         setMessages([]);
@@ -10248,17 +10226,12 @@ const JarvisChatPage = () => {
                 React.createElement('div', { style: { display: 'flex', gap: 4 } },
                     React.createElement('button', {
                         className: 'btn btn-ghost btn-icon',
-                        onClick: () => { setShowActionLog(!showActionLog); if (!showActionLog) loadActionLog(); },
-                        title: lang === 'de' ? 'Aktivitätslog' : 'Action Log',
-                    }, React.createElement('span', { className: 'mdi mdi-format-list-bulleted', style: { fontSize: 18 } })),
-                    React.createElement('button', {
-                        className: 'btn btn-ghost btn-icon',
                         onClick: clearHistory,
                         title: lang === 'de' ? 'Verlauf löschen' : 'Clear history',
                     }, React.createElement('span', { className: 'mdi mdi-delete-outline', style: { fontSize: 18 } })),
                     React.createElement('button', {
                         className: 'btn btn-ghost btn-icon',
-                        onClick: () => { setShowSettings(!showSettings); if (!showSettings) loadCovers(); },
+                        onClick: () => setShowSettings(!showSettings),
                         title: lang === 'de' ? 'Einstellungen' : 'Settings',
                     }, React.createElement('span', { className: 'mdi mdi-cog-outline', style: { fontSize: 18 } }))
                 )
@@ -10332,122 +10305,6 @@ const JarvisChatPage = () => {
                         : 'Whisper (STT) and Piper (TTS) entities from Home Assistant'
                     )
                 ),
-
-                // Cover type settings
-                React.createElement('div', { style: { marginTop: 16, borderTop: '1px solid var(--border-color)', paddingTop: 12 } },
-                    React.createElement('div', { style: { marginBottom: 8, fontWeight: 600, fontSize: 13 } },
-                        lang === 'de' ? 'Rollladen & Garagentore' : 'Covers & Garage Doors'
-                    ),
-                    React.createElement('div', { style: { fontSize: 11, color: 'var(--text-muted)', marginBottom: 8 } },
-                        lang === 'de'
-                            ? 'Hier kannst du festlegen welche Geräte Rollläden sind und welche Garagentore. Garagentore werden NIEMALS automatisch gesteuert.'
-                            : 'Define which devices are shutters and which are garage doors. Garage doors are NEVER controlled automatically.'
-                    ),
-                    coverList.length === 0
-                        ? React.createElement('div', { style: { fontSize: 12, color: 'var(--text-muted)' } },
-                            lang === 'de' ? 'Keine Cover-Geräte gefunden' : 'No cover devices found'
-                        )
-                        : coverList.map(c => {
-                            const conf = coverConfigs[c.entity_id] || {};
-                            const currentType = conf.cover_type || c.device_class || 'shutter';
-                            const isGarage = currentType === 'garage_door';
-                            return React.createElement('div', {
-                                key: c.entity_id,
-                                style: {
-                                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                                    padding: '6px 8px', marginBottom: 4, borderRadius: 6,
-                                    background: isGarage ? 'rgba(239,68,68,0.08)' : 'var(--bg-secondary)',
-                                    border: isGarage ? '1px solid rgba(239,68,68,0.3)' : '1px solid var(--border-color)',
-                                }
-                            },
-                                React.createElement('div', { style: { flex: 1, minWidth: 0 } },
-                                    React.createElement('div', { style: { fontSize: 13, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } },
-                                        isGarage ? '🔒 ' : '',
-                                        c.name
-                                    ),
-                                    React.createElement('div', { style: { fontSize: 10, color: 'var(--text-muted)' } }, c.entity_id)
-                                ),
-                                React.createElement('select', {
-                                    className: 'input',
-                                    value: currentType,
-                                    onChange: (e) => saveCoverType(c.entity_id, e.target.value),
-                                    style: { width: 120, fontSize: 11, flexShrink: 0 },
-                                },
-                                    React.createElement('option', { value: 'shutter' }, lang === 'de' ? 'Rollladen' : 'Shutter'),
-                                    React.createElement('option', { value: 'blind' }, lang === 'de' ? 'Jalousie' : 'Blind'),
-                                    React.createElement('option', { value: 'awning' }, lang === 'de' ? 'Markise' : 'Awning'),
-                                    React.createElement('option', { value: 'roof_window' }, lang === 'de' ? 'Dachfenster' : 'Roof Window'),
-                                    React.createElement('option', { value: 'garage_door' }, lang === 'de' ? 'Garagentor' : 'Garage Door')
-                                )
-                            );
-                        })
-                )
-            ),
-
-            // Action Log panel (collapsible)
-            showActionLog && React.createElement('div', {
-                className: 'card animate-in',
-                style: { padding: 16, marginBottom: 12, flexShrink: 0, maxHeight: 350, overflowY: 'auto' }
-            },
-                React.createElement('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 } },
-                    React.createElement('div', { style: { fontWeight: 700, fontSize: 14 } },
-                        React.createElement('span', { className: 'mdi mdi-format-list-bulleted', style: { marginRight: 6 } }),
-                        lang === 'de' ? 'Jarvis Aktivitätslog' : 'Jarvis Action Log'
-                    ),
-                    React.createElement('button', {
-                        className: 'btn btn-ghost btn-sm',
-                        onClick: loadActionLog,
-                    }, React.createElement('span', { className: 'mdi mdi-refresh', style: { fontSize: 16 } }))
-                ),
-                actionLog.length === 0
-                    ? React.createElement('div', { style: { fontSize: 13, color: 'var(--text-muted)', textAlign: 'center', padding: 16 } },
-                        lang === 'de' ? 'Keine Aktionen in den letzten 7 Tagen' : 'No actions in the last 7 days'
-                    )
-                    : actionLog.map(log => {
-                        const d = log.action_data || {};
-                        const func = d.function || '?';
-                        const args = d.arguments || {};
-                        const result = d.result || '';
-                        const reason = log.reason || '';
-                        const ts = parseUTC(log.created_at);
-                        const timeStr = ts ? ts.toLocaleString(lang === 'de' ? 'de-DE' : 'en-US', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
-
-                        // Action icon based on function type
-                        const iconMap = { set_light: 'mdi-lightbulb', set_cover: 'mdi-blinds-horizontal', set_climate: 'mdi-thermometer', activate_scene: 'mdi-palette', play_media: 'mdi-music', send_notification: 'mdi-bell' };
-                        const icon = iconMap[func] || 'mdi-flash';
-
-                        // Human-readable description
-                        const descParts = [];
-                        if (args.room) descParts.push(args.room);
-                        if (args.position !== undefined) descParts.push(args.position + '%');
-                        if (args.brightness !== undefined) descParts.push(args.brightness + '%');
-                        if (args.state) descParts.push(args.state);
-                        if (args.temperature !== undefined) descParts.push(args.temperature + '°');
-                        const desc = descParts.length > 0 ? ` (${descParts.join(', ')})` : '';
-
-                        return React.createElement('div', {
-                            key: log.id,
-                            style: { padding: '8px 0', borderBottom: '1px solid var(--border-color)', fontSize: 13 }
-                        },
-                            React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 } },
-                                React.createElement('span', { className: 'mdi ' + icon, style: { fontSize: 16, color: 'var(--accent-primary)' } }),
-                                React.createElement('span', { style: { fontWeight: 600 } }, func.replace(/_/g, ' ')),
-                                React.createElement('span', { style: { color: 'var(--text-muted)' } }, desc)
-                            ),
-                            result && React.createElement('div', { style: { fontSize: 12, color: 'var(--text-secondary)', marginLeft: 22, marginBottom: 2 } },
-                                React.createElement('span', { className: 'mdi mdi-arrow-right', style: { marginRight: 4, fontSize: 10 } }),
-                                result
-                            ),
-                            React.createElement('div', { style: { fontSize: 11, color: 'var(--text-muted)', marginLeft: 22, display: 'flex', gap: 8 } },
-                                React.createElement('span', null, timeStr),
-                                reason && React.createElement('span', { style: { fontStyle: 'italic' } },
-                                    React.createElement('span', { className: 'mdi mdi-account', style: { marginRight: 2, fontSize: 10 } }),
-                                    reason.length > 60 ? reason.substring(0, 60) + '...' : reason
-                                )
-                            )
-                        );
-                    })
-            ),
 
             // Connection warning
             connected === false && !showSettings && React.createElement('div', {
