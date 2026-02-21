@@ -23,6 +23,10 @@ _deps = {}
 _conversation_history = []
 import threading
 
+# Cached STT/TTS platform names (avoid repeated HA state lookups)
+_stt_platform_cache = {}  # {stt_entity: platform_name}
+_tts_engine_cache = {}    # {tts_entity: (engine_id, language)}
+
 
 def _log_jarvis_actions(actions, user_text, response_text):
     """Log Jarvis actions to ActionLog for transparency."""
@@ -412,38 +416,24 @@ def api_chat_voice():
 
     # Convert non-WAV audio (e.g. webm from browser) to WAV for Whisper STT
     # HA STT API requires 16kHz mono 16-bit PCM WAV
+    # Pipe-basiert: kein Temp-File auf Disk, ~50% schneller
     if content_type != "audio/wav":
         import subprocess
-        import tempfile
-        tmp_in_path = tmp_out_path = None
         try:
-            with tempfile.NamedTemporaryFile(suffix=".webm", delete=False) as tmp_in:
-                tmp_in.write(audio_data)
-                tmp_in_path = tmp_in.name
-            tmp_out_path = tmp_in_path + ".wav"
             result = subprocess.run(
-                ["ffmpeg", "-i", tmp_in_path, "-ar", "16000", "-ac", "1",
-                 "-sample_fmt", "s16", "-f", "wav", tmp_out_path, "-y",
+                ["ffmpeg", "-i", "pipe:0", "-ar", "16000", "-ac", "1",
+                 "-sample_fmt", "s16", "-f", "wav", "pipe:1",
                  "-loglevel", "error"],
-                capture_output=True, timeout=10,
+                input=audio_data, capture_output=True, timeout=10,
             )
             if result.returncode == 0:
-                with open(tmp_out_path, "rb") as f:
-                    audio_data = f.read()
+                audio_data = result.stdout
                 content_type = "audio/wav"
-                logger.debug("Audio converted to WAV (%d bytes)", len(audio_data))
+                logger.debug("Audio converted to WAV via pipe (%d bytes)", len(audio_data))
             else:
                 logger.warning("ffmpeg conversion failed: %s", result.stderr.decode()[:200])
         except Exception as e:
             logger.warning("Audio conversion error: %s", e)
-        finally:
-            import os as _os
-            for p in (tmp_in_path, tmp_out_path):
-                if p:
-                    try:
-                        _os.unlink(p)
-                    except OSError:
-                        pass
 
     # HA STT API erwartet X-Speech-Content Header mit Audio-Metadaten
     # Ohne diesen Header gibt HA HTTP 400 "Missing X-Speech-Content header" zurueck
@@ -457,16 +447,17 @@ def api_chat_voice():
         import os
         ha_url = os.environ.get("SUPERVISOR_URL", ha.ha_url).rstrip("/")
         ha_token = os.environ.get("SUPERVISOR_TOKEN", ha.token)
-        # HA STT API erwartet Platform-Name ohne Domain-Prefix
-        stt_platform = stt_entity.removeprefix("stt.")
-
-        # Platform-Name aus Entity-Attributen lesen (z.B. "wyoming" statt "faster_whisper")
-        stt_state = ha.get_state(stt_entity) if hasattr(ha, "get_state") else None
-        if stt_state and isinstance(stt_state, dict):
-            attrs = stt_state.get("attributes", {})
-            # Manche HA-Versionen liefern "platform" als Attribut
-            if attrs.get("platform"):
-                stt_platform = attrs["platform"]
+        # HA STT API erwartet Platform-Name ohne Domain-Prefix (gecacht)
+        if stt_entity in _stt_platform_cache:
+            stt_platform = _stt_platform_cache[stt_entity]
+        else:
+            stt_platform = stt_entity.removeprefix("stt.")
+            stt_state = ha.get_state(stt_entity) if hasattr(ha, "get_state") else None
+            if stt_state and isinstance(stt_state, dict):
+                attrs = stt_state.get("attributes", {})
+                if attrs.get("platform"):
+                    stt_platform = attrs["platform"]
+            _stt_platform_cache[stt_entity] = stt_platform
 
         stt_headers = {
             "Authorization": f"Bearer {ha_token}",
@@ -494,6 +485,8 @@ def api_chat_voice():
                 data=audio_data,
                 timeout=30,
             )
+            if stt_resp.status_code == 200:
+                _stt_platform_cache[stt_entity] = stt_entity
 
         # Fallback 2: Bei 404 "wyoming" als Platform versuchen (häufigster STT-Provider)
         if stt_resp.status_code == 404 and stt_platform != "wyoming":
@@ -504,6 +497,8 @@ def api_chat_voice():
                 data=audio_data,
                 timeout=30,
             )
+            if stt_resp.status_code == 200:
+                _stt_platform_cache[stt_entity] = "wyoming"
 
         if stt_resp.status_code != 200:
             logger.warning("STT API error: %s %s (entity=%s, platform=%s, url=%s)",
@@ -588,39 +583,55 @@ def api_chat_voice():
                 "Content-Type": "application/json",
             }
 
-            # Platform-Name aus Entity-Attributen lesen (nicht aus Entity-ID raten)
-            engine_id = tts_entity.removeprefix("tts.")
-            tts_state = ha.get_state(tts_entity)
-            if tts_state and isinstance(tts_state, dict):
-                attrs = tts_state.get("attributes") or {}
-                # HA setzt "platform" als Attribut bei manchen Integrationen
-                engine_id = attrs.get("platform", engine_id)
+            # Gecachte Engine-ID + Sprache verwenden (spart bis zu 10 HTTP-Requests)
+            cached = _tts_engine_cache.get(tts_entity)
+            if cached:
+                cid, lang = cached
+                tts_resp = requests.post(
+                    f"{ha_url}/api/tts_get_url",
+                    headers=tts_headers,
+                    json={"engine_id": cid, "message": response_text, "language": lang},
+                    timeout=15,
+                )
+                if tts_resp.status_code != 200:
+                    logger.info("TTS cache miss (engine=%s, lang=%s), re-discovering", cid, lang)
+                    _tts_engine_cache.pop(tts_entity, None)
+                    cached = None
 
-            # Alle moeglichen Provider-Namen durchprobieren
-            # Piper via Wyoming meldet sich als "wyoming", nicht als "piper"
-            candidate_ids = list(dict.fromkeys([
-                engine_id,
-                tts_entity.removeprefix("tts."),
-                "wyoming",
-                "cloud",
-                "google_translate",
-            ]))
+            if not cached:
+                # Engine-Discovery: Platform-Name aus Entity-Attributen lesen
+                engine_id = tts_entity.removeprefix("tts.")
+                tts_state = ha.get_state(tts_entity)
+                if tts_state and isinstance(tts_state, dict):
+                    attrs = tts_state.get("attributes") or {}
+                    engine_id = attrs.get("platform", engine_id)
 
-            tts_resp = None
-            for cid in candidate_ids:
-                for lang in ("de", "de_DE"):
-                    tts_resp = requests.post(
-                        f"{ha_url}/api/tts_get_url",
-                        headers=tts_headers,
-                        json={"engine_id": cid, "message": response_text, "language": lang},
-                        timeout=15,
-                    )
-                    if tts_resp.status_code == 200:
+                candidate_ids = list(dict.fromkeys([
+                    engine_id,
+                    tts_entity.removeprefix("tts."),
+                    "wyoming",
+                    "cloud",
+                    "google_translate",
+                ]))
+
+                tts_resp = None
+                cid = None
+                for cid in candidate_ids:
+                    for lang in ("de", "de_DE"):
+                        tts_resp = requests.post(
+                            f"{ha_url}/api/tts_get_url",
+                            headers=tts_headers,
+                            json={"engine_id": cid, "message": response_text, "language": lang},
+                            timeout=15,
+                        )
+                        if tts_resp.status_code == 200:
+                            _tts_engine_cache[tts_entity] = (cid, lang)
+                            logger.info("TTS engine discovered and cached: %s/%s", cid, lang)
+                            break
+                        logger.debug("TTS tts_get_url failed (engine=%s, lang=%s): %s – %s",
+                                     cid, lang, tts_resp.status_code, tts_resp.text[:200])
+                    if tts_resp and tts_resp.status_code == 200:
                         break
-                    logger.debug("TTS tts_get_url failed (engine=%s, lang=%s): %s – %s",
-                                 cid, lang, tts_resp.status_code, tts_resp.text[:200])
-                if tts_resp and tts_resp.status_code == 200:
-                    break
 
             if tts_resp and tts_resp.status_code == 200:
                 tts_data = tts_resp.json()
