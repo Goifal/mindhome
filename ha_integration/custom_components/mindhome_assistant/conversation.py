@@ -255,13 +255,27 @@ class MindHomeAssistantAgent(ConversationEntity):
         except Exception as e:
             _LOGGER.warning("Volume setzen fehlgeschlagen: %s", e)
 
+    # Receiver/TVs/Gaming die NICHT als TTS-Speaker verwendet werden sollen
+    _EXCLUDED_SPEAKER_PATTERNS = (
+        "tv", "fernseher", "television", "fire_tv", "firetv", "apple_tv",
+        "appletv", "chromecast", "roku", "shield", "receiver", "avr",
+        "denon", "marantz", "yamaha_receiver", "onkyo", "pioneer",
+        "soundbar", "xbox", "playstation", "ps5", "ps4", "nintendo",
+        "kodi", "plex", "emby", "jellyfin",
+    )
+
+    def _is_tts_speaker(self, entity_id: str) -> bool:
+        """Prueft ob ein media_player als TTS-Speaker geeignet ist."""
+        entity_lower = entity_id.lower()
+        return not any(p in entity_lower for p in self._EXCLUDED_SPEAKER_PATTERNS)
+
     async def _find_tts_speaker(self) -> str | None:
         """Findet den Media-Player fuer TTS-Ausgabe.
 
         Sucht nach Media-Playern in dieser Reihenfolge:
         1. Gecachter Speaker (wenn noch verfuegbar)
         2. Speaker mit 'tts', 'speaker', 'vlc', 'mpd' im Namen
-        3. Erster verfuegbarer Media-Player
+        3. Erster verfuegbarer Media-Player (kein TV/Receiver)
         """
         # Cache pruefen
         if self._cached_speaker:
@@ -277,14 +291,17 @@ class MindHomeAssistantAgent(ConversationEntity):
         for state in states:
             if state.state == "unavailable":
                 continue
+            if not self._is_tts_speaker(state.entity_id):
+                continue
             if any(kw in state.entity_id for kw in preferred_keywords):
                 self._cached_speaker = state.entity_id
                 return state.entity_id
 
-        # Fallback: Erster verfuegbarer Media-Player
+        # Fallback: Erster verfuegbarer Media-Player (kein TV/Receiver)
         for state in states:
-            if state.state != "unavailable":
+            if state.state != "unavailable" and self._is_tts_speaker(state.entity_id):
                 self._cached_speaker = state.entity_id
                 return state.entity_id
 
+        _LOGGER.warning("Kein TTS-Speaker gefunden (alle ausgeschlossen oder unavailable)")
         return None
