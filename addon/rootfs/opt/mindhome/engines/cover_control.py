@@ -8,6 +8,7 @@ Features: Zeitplan, Sonnenschutz, Wetterschutz, Anwesenheitssimulation,
 import logging
 import json
 import math
+import re
 import random
 from datetime import datetime, timezone, timedelta, time as dtime
 
@@ -174,9 +175,12 @@ class CoverControlManager:
 
     def _is_garage_or_gate(self, entity_id):
         """Prueft ob ein Cover ein Garagentor/Tor ist (DARF NICHT automatisch gesteuert werden)."""
-        # 1. Entity-Name Heuristik
+        # 1. Entity-Name Heuristik — Word-Boundary fuer 'tor'
+        #    damit 'motor', 'monitor' etc. nicht faelschlich matchen
         eid_lower = entity_id.lower()
-        if any(kw in eid_lower for kw in _UNSAFE_ENTITY_KEYWORDS):
+        if "garage" in eid_lower or "gate" in eid_lower:
+            return True
+        if re.search(r'(?:^|[_.])tor(?:$|[_.])', eid_lower):
             return True
         # 2. HA device_class
         if self.ha:
@@ -234,11 +238,17 @@ class CoverControlManager:
     def set_tilt(self, entity_id, tilt, source="manual"):
         """Set cover tilt position (0-100)."""
         try:
-            # Deaktivierte Covers: nur manuelle Steuerung erlaubt
-            if source != "manual" and not self._is_cover_enabled(entity_id):
-                logger.info("BLOCKED: %s is disabled — refusing tilt (source: %s)",
-                            entity_id, source)
-                return False
+            if source != "manual":
+                # Garagentor-Schutz
+                if self._is_garage_or_gate(entity_id):
+                    logger.warning("BLOCKED: %s is a garage/gate — refusing tilt (source: %s)",
+                                   entity_id, source)
+                    return False
+                # Deaktivierte Covers: nur manuelle Steuerung erlaubt
+                if not self._is_cover_enabled(entity_id):
+                    logger.info("BLOCKED: %s is disabled — refusing tilt (source: %s)",
+                                entity_id, source)
+                    return False
 
             if source == "manual":
                 self._set_manual_override(entity_id)
