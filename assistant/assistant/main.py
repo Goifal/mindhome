@@ -1602,6 +1602,62 @@ async def ui_get_mindhome_entities(token: str = ""):
         raise HTTPException(status_code=500, detail=f"Fehler: {e}")
 
 
+@app.get("/api/ui/covers")
+async def ui_get_covers(token: str = ""):
+    """Alle Cover-Entities mit Typ-Konfiguration (fuer Rollladen/Garagentor-Verwaltung)."""
+    _check_token(token)
+    try:
+        states = await brain.ha.get_states()
+        configs = await brain.ha.mindhome_get("/api/covers/configs") or {}
+        covers = []
+        for s in (states or []):
+            eid = s.get("entity_id", "")
+            if not eid.startswith("cover."):
+                continue
+            attrs = s.get("attributes", {})
+            conf = configs.get(eid, {}) if isinstance(configs, dict) else {}
+            covers.append({
+                "entity_id": eid,
+                "name": attrs.get("friendly_name", eid),
+                "state": s.get("state", "unknown"),
+                "device_class": attrs.get("device_class", ""),
+                "cover_type": conf.get("cover_type", attrs.get("device_class", "shutter") or "shutter"),
+            })
+        covers.sort(key=lambda c: c["name"])
+        return {"covers": covers}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
+@app.put("/api/ui/covers/{entity_id:path}/type")
+async def ui_set_cover_type(entity_id: str, request: Request, token: str = ""):
+    """Cover-Typ setzen (shutter, blind, awning, roof_window, garage_door)."""
+    _check_token(token)
+    try:
+        data = await request.json()
+        cover_type = data.get("cover_type", "shutter")
+        result = await brain.ha.mindhome_put(
+            f"/api/covers/{entity_id}/config",
+            {"cover_type": cover_type},
+        )
+        return {"success": True, "cover_type": cover_type}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
+@app.get("/api/ui/action-log")
+async def ui_get_action_log(token: str = "", limit: int = 30):
+    """Jarvis Action-Log vom MindHome Add-on holen."""
+    _check_token(token)
+    try:
+        result = await brain.ha.mindhome_get(
+            f"/api/action-log?type=jarvis_action&limit={limit}&period=7d"
+        )
+        return result or {"items": [], "total": 0}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
 @app.get("/api/ui/stats")
 async def ui_get_stats(token: str = ""):
     """Kombinierte Statistiken fuer das Dashboard."""

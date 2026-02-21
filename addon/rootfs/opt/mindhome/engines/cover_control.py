@@ -20,6 +20,11 @@ PRIORITY_COMFORT = 30
 PRIORITY_WEATHER = 40
 PRIORITY_SECURITY = 50
 
+# Cover-Typen die NIEMALS automatisch gesteuert werden duerfen
+_UNSAFE_COVER_TYPES = {"garage_door", "gate", "door"}
+_UNSAFE_DEVICE_CLASSES = {"garage_door", "gate", "door"}
+_UNSAFE_ENTITY_KEYWORDS = ("garage", "tor", "gate")
+
 
 class CoverControlManager:
     """Smart cover/shutter management with multi-source automation.
@@ -167,9 +172,38 @@ class CoverControlManager:
 
     # ── Cover Control ───────────────────────────────────────
 
+    def _is_garage_or_gate(self, entity_id):
+        """Prueft ob ein Cover ein Garagentor/Tor ist (DARF NICHT automatisch gesteuert werden)."""
+        # 1. Entity-Name Heuristik
+        eid_lower = entity_id.lower()
+        if any(kw in eid_lower for kw in _UNSAFE_ENTITY_KEYWORDS):
+            return True
+        # 2. HA device_class
+        if self.ha:
+            state = self.ha.get_state(entity_id)
+            if state and isinstance(state, dict):
+                device_class = state.get("attributes", {}).get("device_class", "")
+                if device_class in _UNSAFE_DEVICE_CLASSES:
+                    return True
+        # 3. MindHome CoverConfig cover_type
+        try:
+            with self.get_session() as session:
+                conf = self._get_cover_config(session, entity_id)
+                if conf.get("cover_type") in _UNSAFE_COVER_TYPES:
+                    return True
+        except Exception:
+            pass
+        return False
+
     def set_position(self, entity_id, position, source="manual"):
         """Set cover position (0=closed, 100=open)."""
         try:
+            # Garagentor-Schutz: NIEMALS automatisch steuern
+            if source != "manual" and self._is_garage_or_gate(entity_id):
+                logger.warning("BLOCKED: %s is a garage/gate — refusing %s control (source: %s)",
+                               entity_id, position, source)
+                return False
+
             if source == "manual":
                 self._set_manual_override(entity_id)
             self.ha.call_service("cover", "set_cover_position", {

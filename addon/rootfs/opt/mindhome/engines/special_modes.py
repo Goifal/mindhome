@@ -886,13 +886,22 @@ class EmergencyProtocol(SpecialModeBase):
             logger.error(f"Emergency lights error: {e}")
 
     def _all_covers_open(self):
-        from models import FeatureEntityAssignment
+        from models import FeatureEntityAssignment, CoverConfig
         try:
             with self.get_session() as session:
                 covers = session.query(FeatureEntityAssignment).filter_by(
                     feature_key="emergency", role="cover", is_active=True
                 ).all()
                 for c in covers:
+                    # Garagentore auch im Notfall NICHT oeffnen
+                    eid_lower = c.entity_id.lower()
+                    if any(kw in eid_lower for kw in ("garage", "tor", "gate")):
+                        logger.info("Emergency: skipping garage/gate %s", c.entity_id)
+                        continue
+                    conf = session.query(CoverConfig).filter_by(entity_id=c.entity_id).first()
+                    if conf and conf.cover_type in ("garage_door", "gate", "door"):
+                        logger.info("Emergency: skipping %s (type=%s)", c.entity_id, conf.cover_type)
+                        continue
                     self.ha.call_service("cover", "open_cover", {"entity_id": c.entity_id})
         except Exception as e:
             logger.error(f"Emergency covers error: {e}")

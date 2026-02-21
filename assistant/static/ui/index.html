@@ -523,6 +523,7 @@ textarea { resize:vertical; min-height:70px; font-family:var(--mono); font-size:
           <div class="tab-item" data-tab="tab-voice">Stimme</div>
           <div class="tab-item" data-tab="tab-routines">Routinen</div>
           <div class="tab-item" data-tab="tab-devices">Geräte</div>
+          <div class="tab-item" data-tab="tab-covers">Rollläden</div>
           <div class="tab-item" data-tab="tab-security">Sicherheit</div>
           <div class="tab-item" data-tab="tab-autonomie">KI-Autonomie</div>
           <div class="tab-item" data-tab="tab-eastereggs">Easter Eggs</div>
@@ -1135,6 +1136,7 @@ function renderCurrentTab() {
       case 'tab-voice': c.innerHTML = renderVoice(); break;
       case 'tab-routines': c.innerHTML = renderRoutines(); break;
       case 'tab-devices': c.innerHTML = renderDevices(); loadMindHomeEntities(); break;
+      case 'tab-covers': c.innerHTML = renderCovers(); loadCoverEntities(); break;
       case 'tab-security': c.innerHTML = renderSecurity(); loadApiKey(); loadNotifyChannels(); break;
       case 'tab-autonomie': c.innerHTML = renderAutonomie(); loadSnapshots(); loadOptStatus(); break;
       case 'tab-eastereggs': c.innerHTML = renderEasterEggs(); loadEasterEggs(); break;
@@ -2898,6 +2900,120 @@ async function refreshErrBadge() {
 
 let _sysStatus = null;
 // ---- Tab: Geräte-Überwachung ----
+function renderCovers() {
+  return sectionWrap('&#128701;', 'Rollläden & Garagentore',
+    fInfo('Hier legst du fest, welche Geräte Rollläden sind und welche Garagentore. <strong>Garagentore werden NIEMALS automatisch von Jarvis gesteuert.</strong>') +
+    '<div id="coverListContainer" style="color:var(--text-secondary);padding:12px;">Lade Cover-Geräte...</div>'
+  ) +
+  sectionWrap('&#128220;', 'Jarvis Aktivitätslog',
+    fInfo('Letzte Aktionen die Jarvis ausgeführt hat — mit Grund warum.') +
+    '<div id="actionLogContainer" style="color:var(--text-secondary);padding:12px;">Lade Aktivitätslog...</div>'
+  );
+}
+
+async function loadCoverEntities() {
+  try {
+    const d = await api('/api/ui/covers');
+    const covers = d.covers || [];
+    const container = document.getElementById('coverListContainer');
+    if (!container) return;
+
+    if (covers.length === 0) {
+      container.innerHTML = '<div style="color:var(--text-muted);padding:8px;">Keine Cover-Geräte in Home Assistant gefunden.</div>';
+      loadActionLog();
+      return;
+    }
+
+    let html = '';
+    for (const c of covers) {
+      const isGarage = c.cover_type === 'garage_door';
+      const borderColor = isGarage ? 'var(--danger)' : 'var(--border)';
+      const bgColor = isGarage ? 'rgba(239,68,68,0.08)' : 'var(--bg-card)';
+      html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 12px;margin-bottom:6px;border-radius:8px;background:' + bgColor + ';border:1px solid ' + borderColor + ';">';
+      html += '<div style="flex:1;min-width:0;">';
+      html += '<div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + (isGarage ? '&#128274; ' : '') + esc(c.name) + '</div>';
+      html += '<div style="font-size:10px;color:var(--text-muted);font-family:var(--mono);">' + esc(c.entity_id) + '</div>';
+      html += '</div>';
+      html += '<select onchange="setCoverType(\'' + esc(c.entity_id) + '\', this.value)" style="background:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:12px;width:130px;">';
+      const types = [
+        ['shutter', 'Rollladen'], ['blind', 'Jalousie'], ['awning', 'Markise'],
+        ['roof_window', 'Dachfenster'], ['garage_door', '&#128274; Garagentor']
+      ];
+      for (const [val, label] of types) {
+        html += '<option value="' + val + '"' + (c.cover_type === val ? ' selected' : '') + '>' + label + '</option>';
+      }
+      html += '</select></div>';
+    }
+    container.innerHTML = html;
+  } catch (e) {
+    const c = document.getElementById('coverListContainer');
+    if (c) c.innerHTML = '<div style="color:var(--danger);padding:8px;">Fehler: ' + esc(e.message) + '</div>';
+  }
+  loadActionLog();
+}
+
+async function setCoverType(entityId, coverType) {
+  try {
+    await api('/api/ui/covers/' + entityId + '/type', 'PUT', { cover_type: coverType });
+    loadCoverEntities();
+  } catch (e) {
+    console.error('Cover type save failed:', e);
+  }
+}
+
+async function loadActionLog() {
+  try {
+    const d = await api('/api/ui/action-log');
+    const items = d.items || [];
+    const container = document.getElementById('actionLogContainer');
+    if (!container) return;
+
+    if (items.length === 0) {
+      container.innerHTML = '<div style="color:var(--text-muted);padding:8px;">Keine Aktionen in den letzten 7 Tagen.</div>';
+      return;
+    }
+
+    const iconMap = { set_light: '&#128161;', set_cover: '&#128701;', set_climate: '&#127777;', activate_scene: '&#127912;', play_media: '&#127925;', send_notification: '&#128276;' };
+    let html = '';
+    for (const log of items) {
+      const d = log.action_data || {};
+      const func = d.function || '?';
+      const args = d.arguments || {};
+      const result = d.result || '';
+      const reason = log.reason || '';
+      const icon = iconMap[func] || '&#9889;';
+
+      const parts = [];
+      if (args.room) parts.push(args.room);
+      if (args.position !== undefined) parts.push(args.position + '%');
+      if (args.brightness !== undefined) parts.push(args.brightness + '%');
+      if (args.state) parts.push(args.state);
+      if (args.temperature !== undefined) parts.push(args.temperature + '°');
+      const desc = parts.length > 0 ? ' (' + parts.join(', ') + ')' : '';
+
+      const ts = log.created_at ? new Date(log.created_at).toLocaleString('de-DE', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' }) : '';
+
+      html += '<div style="padding:8px 0;border-bottom:1px solid var(--border);">';
+      html += '<div style="display:flex;align-items:center;gap:6px;margin-bottom:2px;">';
+      html += '<span style="font-size:14px;">' + icon + '</span>';
+      html += '<span style="font-weight:600;font-size:13px;">' + esc(func.replace(/_/g, ' ')) + '</span>';
+      html += '<span style="color:var(--text-muted);font-size:12px;">' + esc(desc) + '</span>';
+      html += '</div>';
+      if (result) {
+        html += '<div style="font-size:12px;color:var(--text-secondary);margin-left:22px;margin-bottom:2px;">&#8594; ' + esc(result) + '</div>';
+      }
+      html += '<div style="font-size:11px;color:var(--text-muted);margin-left:22px;">';
+      html += '<span>' + ts + '</span>';
+      if (reason) html += ' &middot; <span style="font-style:italic;">' + esc(reason.length > 60 ? reason.substring(0, 60) + '...' : reason) + '</span>';
+      html += '</div></div>';
+    }
+    container.innerHTML = html;
+  } catch (e) {
+    const c = document.getElementById('actionLogContainer');
+    if (c) c.innerHTML = '<div style="color:var(--danger);padding:8px;">Fehler: ' + esc(e.message) + '</div>';
+  }
+}
+
 function renderDevices() {
   return sectionWrap('&#128268;', 'Geräteüberwachung',
     fInfo('Wähle welche Geräte der Health-Monitor überwacht. Wenn keine ausgewählt sind, werden alle Sensoren überwacht.') +

@@ -4363,6 +4363,7 @@ const CoverPage = () => {
                                             <option value="blind">{t('Jalousie', 'Blind')}</option>
                                             <option value="awning">{t('Markise', 'Awning')}</option>
                                             <option value="roof_window">{t('Dachfenster', 'Roof Window')}</option>
+                                            <option value="garage_door">{t('Garagentor', 'Garage Door')}</option>
                                         </select>
                                     </div>
                                 </div>
@@ -9763,6 +9764,7 @@ const JarvisChatPage = () => {
     const [connected, setConnected] = useState(null);
     const [showSettings, setShowSettings] = useState(false);
     const [assistantUrl, setAssistantUrl] = useState('');
+    const [assistantApiKey, setAssistantApiKey] = useState('');
     const [voiceSettings, setVoiceSettings] = useState({ stt_entity: '', tts_entity: '', available_stt: [], available_tts: [] });
     const [pendingFile, setPendingFile] = useState(null); // { file, preview, type }
     const [uploading, setUploading] = useState(false);
@@ -9798,6 +9800,12 @@ const JarvisChatPage = () => {
         });
         api.get('chat/voice/settings').then(d => {
             if (d) setVoiceSettings(d);
+        });
+        api.get('system/settings').then(d => {
+            if (d && Array.isArray(d)) {
+                const apiKeySetting = d.find(s => s.key === 'assistant_api_key');
+                if (apiKeySetting && apiKeySetting.value) setAssistantApiKey(apiKeySetting.value);
+            }
         });
     }, []);
 
@@ -10111,6 +10119,11 @@ const JarvisChatPage = () => {
         }, 500);
     };
 
+    const saveApiKey = async () => {
+        await api.put('system/settings/assistant_api_key', { value: assistantApiKey });
+        showToast(lang === 'de' ? 'API Key gespeichert' : 'API Key saved', 'success');
+    };
+
     const saveVoiceSettings = async (key, value) => {
         const updated = { ...voiceSettings, [key]: value };
         setVoiceSettings(updated);
@@ -10264,6 +10277,33 @@ const JarvisChatPage = () => {
                     : 'IP address and port of the MindHome Assistant server'
                 ),
 
+                // API Key
+                React.createElement('div', { style: { marginTop: 16, borderTop: '1px solid var(--border-color)', paddingTop: 12 } },
+                    React.createElement('div', { style: { marginBottom: 8, fontWeight: 600, fontSize: 13 } },
+                        lang === 'de' ? 'API Key (Netzwerk-Schutz)' : 'API Key (Network Protection)'
+                    ),
+                    React.createElement('div', { style: { display: 'flex', gap: 8 } },
+                        React.createElement('input', {
+                            className: 'input',
+                            type: 'password',
+                            value: assistantApiKey,
+                            onChange: (e) => setAssistantApiKey(e.target.value),
+                            placeholder: lang === 'de' ? 'API Key vom Assistant eingeben' : 'Enter API key from Assistant',
+                            style: { flex: 1 },
+                        }),
+                        React.createElement('button', {
+                            className: 'btn btn-primary',
+                            onClick: saveApiKey,
+                        }, lang === 'de' ? 'Speichern' : 'Save')
+                    ),
+                    React.createElement('div', {
+                        style: { marginTop: 6, fontSize: 11, color: 'var(--text-muted)' }
+                    }, lang === 'de'
+                        ? 'API Key aus den MindHome Assistant Einstellungen (PC 2) für sichere Kommunikation'
+                        : 'API key from MindHome Assistant settings (PC 2) for secure communication'
+                    )
+                ),
+
                 // Voice settings
                 React.createElement('div', { style: { marginTop: 16, borderTop: '1px solid var(--border-color)', paddingTop: 12 } },
                     React.createElement('div', { style: { marginBottom: 8, fontWeight: 600, fontSize: 13 } },
@@ -10303,8 +10343,7 @@ const JarvisChatPage = () => {
                         ? 'Whisper (STT) und Piper (TTS) Entities aus Home Assistant'
                         : 'Whisper (STT) and Piper (TTS) entities from Home Assistant'
                     )
-                )
-            ),
+                ),
 
             // Connection warning
             connected === false && !showSettings && React.createElement('div', {

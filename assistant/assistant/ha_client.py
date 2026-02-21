@@ -211,6 +211,26 @@ class HomeAssistantClient:
         qs = "&".join(params)
         return await self._get_mindhome(f"/api/devices/search?{qs}")
 
+    async def mindhome_get(self, path: str) -> Any:
+        """Oeffentlicher GET auf die MindHome Add-on API (z.B. /api/covers/configs)."""
+        return await self._get_mindhome(path)
+
+    async def mindhome_put(self, path: str, data: dict) -> Any:
+        """PUT auf die MindHome Add-on API (z.B. Cover-Config setzen)."""
+        session = await self._get_session()
+        try:
+            async with session.put(
+                f"{self.mindhome_url}{path}",
+                json=data,
+            ) as resp:
+                if resp.status == 200:
+                    return await resp.json()
+                logger.warning("MindHome PUT %s -> %d", path, resp.status)
+                return None
+        except Exception as e:
+            logger.warning("MindHome PUT %s fehlgeschlagen: %s", path, e)
+            return None
+
     # ----- Interne HTTP Methoden mit Retry -----
 
     async def _get_ha(self, path: str) -> Any:

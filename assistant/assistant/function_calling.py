@@ -151,7 +151,7 @@ _ASSISTANT_TOOLS_STATIC = [
         "type": "function",
         "function": {
             "name": "set_cover",
-            "description": "Rollladen oder Jalousie steuern",
+            "description": "Rollladen oder Jalousie steuern. NIEMALS fuer Garagentore verwenden — Garagentore sind keine Rolllaeden!",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -1110,29 +1110,80 @@ class FunctionExecutor:
         if not entity_id:
             return {"success": False, "message": f"Kein Rollladen in '{room}' gefunden"}
 
+        # Sicherheitscheck: Garagentore duerfen nicht ueber set_cover gesteuert werden
+        states = await self.ha.get_states()
+        entity_state = next((s for s in (states or []) if s.get("entity_id") == entity_id), {})
+        if not await self._is_safe_cover(entity_id, entity_state):
+            return {"success": False, "message": f"'{room}' ist ein Garagentor/Tor — das darf aus Sicherheitsgruenden nicht automatisch gesteuert werden."}
+
         success = await self.ha.call_service(
             "cover", "set_cover_position",
             {"entity_id": entity_id, "position": position},
         )
         return {"success": success, "message": f"Rollladen {room} auf {position}%"}
 
+    # Garagentore und andere gefaehrliche Cover-Typen NIEMALS automatisch steuern
+    _EXCLUDED_COVER_CLASSES = {"garage_door", "gate", "door"}
+
+    async def _is_safe_cover(self, entity_id: str, state: dict) -> bool:
+        """Prueft ob ein Cover sicher automatisch gesteuert werden darf.
+
+        Filtert Garagentore und als inaktiv markierte Covers aus.
+        """
+        attrs = state.get("attributes", {})
+        device_class = attrs.get("device_class", "")
+
+        # 1. HA device_class pruefen (garage_door, gate, door)
+        if device_class in self._EXCLUDED_COVER_CLASSES:
+            return False
+
+        # 2. Entity-ID Heuristik (garage, tor, gate)
+        eid_lower = entity_id.lower()
+        if any(kw in eid_lower for kw in ("garage", "tor", "gate")):
+            return False
+
+        # 3. MindHome CoverConfig pruefen (cover_type == garage_door)
+        try:
+            configs = await self.ha.mindhome_get("/api/covers/configs")
+            if configs and isinstance(configs, dict):
+                conf = configs.get(entity_id, {})
+                if conf.get("cover_type") in self._EXCLUDED_COVER_CLASSES:
+                    return False
+        except Exception:
+            pass
+
+        return True
+
     async def _exec_set_cover_all(self, position: int) -> dict:
-        """Alle Rolllaeden auf eine Position setzen."""
+        """Alle Rolllaeden auf eine Position setzen (Garagentore ausgeschlossen)."""
         states = await self.ha.get_states()
         if not states:
             return {"success": False, "message": "Ich kann gerade nicht auf die Geraete zugreifen. Versuch es bitte gleich nochmal."}
 
         count = 0
+        skipped = []
         for s in states:
             eid = s.get("entity_id", "")
-            if eid.startswith("cover."):
-                await self.ha.call_service(
-                    "cover", "set_cover_position",
-                    {"entity_id": eid, "position": position},
-                )
-                count += 1
+            if not eid.startswith("cover."):
+                continue
 
-        return {"success": True, "message": f"Alle Rolllaeden auf {position}% ({count} geschaltet)"}
+            if not await self._is_safe_cover(eid, s):
+                friendly = s.get("attributes", {}).get("friendly_name", eid)
+                skipped.append(friendly)
+                logger.info("Cover uebersprungen (Sicherheitsfilter): %s", eid)
+                continue
+
+            await self.ha.call_service(
+                "cover", "set_cover_position",
+                {"entity_id": eid, "position": position},
+            )
+            count += 1
+
+        msg = f"Alle Rolllaeden auf {position}% ({count} geschaltet)"
+        if skipped:
+            msg += f". Uebersprungen (Garagentor/Tor): {', '.join(skipped)}"
+
+        return {"success": True, "message": msg}
 
     async def _exec_call_service(self, args: dict) -> dict:
         """Generischer HA Service-Aufruf (fuer Routinen wie Guest WiFi)."""
@@ -1141,6 +1192,14 @@ class FunctionExecutor:
         entity_id = args.get("entity_id", "")
         if not domain or not service:
             return {"success": False, "message": "domain und service erforderlich"}
+
+        # Sicherheitscheck: Cover-Services fuer Garagentore blockieren
+        if domain == "cover" and entity_id:
+            states = await self.ha.get_states()
+            entity_state = next((s for s in (states or []) if s.get("entity_id") == entity_id), {})
+            if not await self._is_safe_cover(entity_id, entity_state):
+                return {"success": False, "message": f"Sicherheitssperre: '{entity_id}' ist ein Garagentor/Tor und darf nicht automatisch gesteuert werden."}
+
         service_data = {"entity_id": entity_id} if entity_id else {}
         # Weitere Service-Daten aus args uebernehmen
         for k, v in args.items():
