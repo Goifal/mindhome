@@ -8,9 +8,17 @@ Features: Zeitplan, Sonnenschutz, Wetterschutz, Anwesenheitssimulation,
 import logging
 import json
 import math
-import re
 import random
 from datetime import datetime, timezone, timedelta, time as dtime
+
+from cover_helpers import (
+    is_bed_occupied as _check_bed_occupied,
+    is_garage_or_gate_by_entity_id,
+    is_unsafe_device_class,
+    is_unsafe_cover_type,
+    UNSAFE_COVER_TYPES as _UNSAFE_COVER_TYPES,
+    UNSAFE_DEVICE_CLASSES as _UNSAFE_DEVICE_CLASSES,
+)
 
 logger = logging.getLogger("mindhome.engines.cover_control")
 
@@ -20,10 +28,6 @@ PRIORITY_ENERGY = 20
 PRIORITY_COMFORT = 30
 PRIORITY_WEATHER = 40
 PRIORITY_SECURITY = 50
-
-# Cover-Typen die NIEMALS automatisch gesteuert werden duerfen
-_UNSAFE_COVER_TYPES = {"garage_door", "gate", "door"}
-_UNSAFE_DEVICE_CLASSES = {"garage_door", "gate", "door"}
 
 
 class CoverControlManager:
@@ -86,6 +90,7 @@ class CoverControlManager:
         self._manual_overrides = {}  # entity_id -> override_until (datetime)
         self._last_simulation = {}  # entity_id -> last_sim_time
         self._pending_actions = {}  # entity_id -> {priority, position, source}
+        self._executed_schedules = {}  # schedule_id -> last_exec_date (to prevent double-fire)
 
     def start(self):
         self._is_running = True
@@ -94,7 +99,6 @@ class CoverControlManager:
         self.event_bus.subscribe("sleep.wake_detected", self._on_wake_detected, priority=30)
         self.event_bus.subscribe("weather.alert_created", self._on_weather_alert, priority=80)
         self.event_bus.subscribe("presence.mode_changed", self._on_presence_changed, priority=30)
-        self.event_bus.subscribe("ventilation.reminder", self._on_ventilation, priority=20)
         logger.info("CoverControlManager started")
 
     def stop(self):
@@ -174,25 +178,21 @@ class CoverControlManager:
 
     def _is_garage_or_gate(self, entity_id):
         """Prueft ob ein Cover ein Garagentor/Tor ist (DARF NICHT automatisch gesteuert werden)."""
-        # 1. Entity-Name Heuristik — Word-Boundary fuer 'tor'
-        #    damit 'motor', 'monitor' etc. nicht faelschlich matchen
-        eid_lower = entity_id.lower()
-        if "garage" in eid_lower or "gate" in eid_lower:
-            return True
-        if re.search(r'(?:^|[_.])tor(?:$|[_.])', eid_lower):
+        # 1. Entity-Name Heuristik (shared helper)
+        if is_garage_or_gate_by_entity_id(entity_id):
             return True
         # 2. HA device_class
         if self.ha:
             state = self.ha.get_state(entity_id)
             if state and isinstance(state, dict):
                 device_class = state.get("attributes", {}).get("device_class", "")
-                if device_class in _UNSAFE_DEVICE_CLASSES:
+                if is_unsafe_device_class(device_class):
                     return True
         # 3. MindHome CoverConfig cover_type
         try:
             with self.get_session() as session:
                 conf = self._get_cover_config(session, entity_id)
-                if conf.get("cover_type") in _UNSAFE_COVER_TYPES:
+                if is_unsafe_cover_type(conf.get("cover_type")):
                     return True
         except Exception:
             logger.warning("DB-Fehler bei Garagentor-Check fuer %s — blockiere sicherheitshalber", entity_id)
@@ -593,6 +593,7 @@ class CoverControlManager:
             local = datetime.now(timezone.utc)
 
         current_time = local.strftime("%H:%M")
+        prev_minute = (local - timedelta(minutes=1)).strftime("%H:%M")
         current_day = local.weekday()
 
         # Get current presence mode
@@ -602,15 +603,22 @@ class CoverControlManager:
         try:
             with self.get_session() as session:
                 schedules = session.query(CoverSchedule).filter_by(
-                    is_active=True, time_str=current_time
+                    is_active=True
+                ).filter(
+                    CoverSchedule.time_str.in_([current_time, prev_minute])
                 ).all()
+                today = local.date()
                 for s in schedules:
+                    # Dedup: Jedes Schedule nur einmal pro Tag ausfuehren
+                    if self._executed_schedules.get(s.id) == today:
+                        continue
                     days = s.days or [0, 1, 2, 3, 4, 5, 6]
                     if current_day not in days:
                         continue
                     if s.presence_mode and s.presence_mode != presence_mode:
                         continue
 
+                    self._executed_schedules[s.id] = today
                     if s.entity_id and not self._is_overridden(s.entity_id):
                         self.set_position(s.entity_id, s.position, source="schedule")
                         if s.tilt is not None:
@@ -849,26 +857,9 @@ class CoverControlManager:
         """Prueft ob ein Bettbelegungssensor aktiv ist."""
         try:
             states = self.ha.get_states() or []
-            bed_sensors = [
-                s for s in states
-                if s.get("entity_id", "").startswith("binary_sensor.")
-                and s.get("attributes", {}).get("device_class") == "occupancy"
-                and any(kw in s.get("entity_id", "").lower()
-                        for kw in ("bett", "bed", "matratze", "mattress"))
-            ]
-            if not bed_sensors:
-                bed_sensors = [
-                    s for s in states
-                    if s.get("entity_id", "").startswith("binary_sensor.")
-                    and s.get("attributes", {}).get("device_class") == "occupancy"
-                    and any(kw in s.get("entity_id", "").lower()
-                            for kw in ("schlafzimmer", "bedroom"))
-                ]
-            if bed_sensors:
-                return any(s.get("state") == "on" for s in bed_sensors)
+            return _check_bed_occupied(states)
         except Exception:
-            pass
-        return False
+            return False
 
     def _on_weather_alert(self, event):
         """React to weather alerts (storm, hail)."""
@@ -891,15 +882,6 @@ class CoverControlManager:
             for cover in covers:
                 if not self._is_overridden(cover["entity_id"]):
                     self.set_position(cover["entity_id"], 0, source="presence_away")
-
-    def _on_ventilation(self, event):
-        """Open covers partially for ventilation."""
-        config = self.get_config()
-        vent_pos = config.get("ventilation_position_pct", 50)
-        data = event.data if hasattr(event, 'data') else (event if isinstance(event, dict) else {})
-        room_id = data.get("room_id")
-        # Only act on covers in the affected room (future: room→cover mapping)
-        logger.debug(f"Ventilation recommended for room {room_id}")
 
     # ── Helpers ──────────────────────────────────────────────
 
@@ -948,6 +930,16 @@ class CoverControlManager:
         expired = [eid for eid, until in self._manual_overrides.items() if now >= until]
         for eid in expired:
             del self._manual_overrides[eid]
+        # Alte Schedule-Dedup-Eintraege aufräumen (aelter als heute)
+        try:
+            from helpers import local_now
+            today = local_now().date()
+        except Exception:
+            today = now.date() if hasattr(now, 'date') else None
+        if today:
+            stale = [sid for sid, d in self._executed_schedules.items() if d < today]
+            for sid in stale:
+                del self._executed_schedules[sid]
 
     def _get_sun_data(self):
         """Get sun position from HA sun.sun entity."""

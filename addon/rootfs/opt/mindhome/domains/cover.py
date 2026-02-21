@@ -1,11 +1,13 @@
 """MindHome - Cover Domain Plugin (Phase 3)"""
-import re
-
 from .base import DomainPlugin
-
-# Unsichere Cover-Typen: Garagentore, Tore, Tueren
-_UNSAFE_DEVICE_CLASSES = {"garage_door", "gate", "door"}
-_UNSAFE_COVER_TYPES = {"garage_door", "gate", "door"}
+from cover_helpers import (
+    is_bed_occupied as _check_bed_occupied,
+    is_garage_or_gate_by_entity_id,
+    is_unsafe_device_class,
+    is_unsafe_cover_type,
+    UNSAFE_DEVICE_CLASSES as _UNSAFE_DEVICE_CLASSES,
+    UNSAFE_COVER_TYPES as _UNSAFE_COVER_TYPES,
+)
 
 
 class CoverDomain(DomainPlugin):
@@ -120,14 +122,11 @@ class CoverDomain(DomainPlugin):
         device_class = attrs.get("device_class", "")
 
         # 1. HA device_class (garage_door, gate, door)
-        if device_class in _UNSAFE_DEVICE_CLASSES:
+        if is_unsafe_device_class(device_class):
             return False
 
-        # 2. Entity-ID Heuristik — Word-Boundary fuer 'tor'
-        eid_lower = entity_id.lower()
-        if "garage" in eid_lower or "gate" in eid_lower:
-            return False
-        if re.search(r'(?:^|[_.])tor(?:$|[_.])', eid_lower):
+        # 2. Entity-ID Heuristik (shared helper)
+        if is_garage_or_gate_by_entity_id(entity_id):
             return False
 
         # 3. CoverConfig aus DB: cover_type + enabled
@@ -137,7 +136,7 @@ class CoverDomain(DomainPlugin):
             with get_db_session() as session:
                 conf = session.query(CoverConfig).filter_by(entity_id=entity_id).first()
                 if conf:
-                    if conf.cover_type in _UNSAFE_COVER_TYPES:
+                    if is_unsafe_cover_type(conf.cover_type):
                         return False
                     if conf.enabled is not None and not conf.enabled:
                         return False
@@ -151,24 +150,6 @@ class CoverDomain(DomainPlugin):
         """Prueft ob ein Bettbelegungssensor aktiv ist (jemand schlaeft)."""
         try:
             states = self.ha.get_states() or []
-            bed_sensors = [
-                s for s in states
-                if s.get("entity_id", "").startswith("binary_sensor.")
-                and s.get("attributes", {}).get("device_class") == "occupancy"
-                and any(kw in s.get("entity_id", "").lower()
-                        for kw in ("bett", "bed", "matratze", "mattress"))
-            ]
-            if not bed_sensors:
-                # Fallback: Alle Occupancy-Sensoren in Schlafzimmern
-                bed_sensors = [
-                    s for s in states
-                    if s.get("entity_id", "").startswith("binary_sensor.")
-                    and s.get("attributes", {}).get("device_class") == "occupancy"
-                    and any(kw in s.get("entity_id", "").lower()
-                            for kw in ("schlafzimmer", "bedroom"))
-                ]
-            if bed_sensors:
-                return any(s.get("state") == "on" for s in bed_sensors)
+            return _check_bed_occupied(states)
         except Exception:
-            pass
-        return False
+            return False
