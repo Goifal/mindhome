@@ -59,7 +59,7 @@ class ModelRouter:
             "licht", "lampe", "temperatur", "heizung", "rollladen",
             "jalousie", "szene", "alarm", "tuer", "gute nacht",
             "guten morgen", "musik", "pause", "stopp", "stop",
-            "leiser", "lauter", "an", "aus",
+            "leiser", "lauter", "an", "aus", "schalte", "mach",
         ])
 
         self.deep_keywords = models_config.get("deep_keywords", [
@@ -212,7 +212,7 @@ class ModelRouter:
         word_count = len(text_lower.split())
 
         # 1. Kurze Befehle -> schnelles Modell (wenn aktiviert)
-        if word_count <= 4 and self._fast_enabled:
+        if word_count <= 6 and self._fast_enabled:
             for keyword in self.fast_keywords:
                 if keyword in text_lower:
                     logger.debug("FAST model fuer: '%s' (keyword: %s)", text, keyword)
