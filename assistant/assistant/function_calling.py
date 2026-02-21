@@ -1142,9 +1142,10 @@ class FunctionExecutor:
         if any(kw in eid_lower for kw in ("garage", "tor", "gate")):
             return False
 
-        # 3. MindHome CoverConfig pruefen (cover_type + enabled)
+        # 3. Lokale CoverConfig pruefen (cover_type + enabled)
         try:
-            configs = await self.ha.mindhome_get("/api/covers/configs")
+            from .cover_config import load_cover_configs
+            configs = load_cover_configs()
             if configs and isinstance(configs, dict):
                 conf = configs.get(entity_id, {})
                 # Typ-Check: Garagentore/Tore sind unsicher
