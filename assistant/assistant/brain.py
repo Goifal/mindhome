@@ -1558,8 +1558,8 @@ class AssistantBrain:
         text = text.strip()
 
         # 7. Sprach-Check: Wenn die Antwort ueberwiegend Englisch ist, verwerfen
-        if text and len(text) > 40:
-            text_lower = text.lower()
+        if text and len(text) > 15:
+            text_lower = f" {text.lower()} "
             _english_markers = [
                 " the ", " you ", " your ", " which ", " would ",
                 " could ", " should ", " have ", " this ", " that ",
@@ -1567,16 +1567,20 @@ class AssistantBrain:
                 " about ", " like ", " make ", " help ", " want ",
                 " based ", " manage ", " control ", " provide ",
                 " features ", " following ", " however ", " including ",
+                " sure ", " right ", " just ", " can ", " will ",
+                " it's ", " don't ", " i'm ", " let me ", " okay so ",
             ]
             _de_markers = [
                 " der ", " die ", " das ", " ist ", " und ",
                 " nicht ", " ich ", " hab ", " dir ", " ein ",
                 " dein ", " sehr ", " wohl ", " kann ", " wird ",
+                " auf ", " mit ", " fuer ", " für ", " noch ",
+                " auch ", " aber ", " oder ", " wenn ", " schon ",
             ]
             en_hits = sum(1 for m in _english_markers if m in text_lower)
             de_hits = sum(1 for m in _de_markers if m in text_lower)
-            de_hits += sum(1 for c in text if c in "äöüÄÖÜß")
-            if en_hits >= 3 and en_hits > de_hits:
+            de_hits += min(3, sum(1 for c in text if c in "äöüÄÖÜß"))
+            if en_hits >= 2 and en_hits > de_hits:
                 logger.warning("Response ueberwiegend Englisch (%d EN vs %d DE), verworfen: '%.100s...'",
                                en_hits, de_hits, text)
                 return ""

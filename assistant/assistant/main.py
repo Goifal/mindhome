@@ -2242,6 +2242,60 @@ async def ui_system_status(token: str = ""):
         "free_gb": round(free / (1024**3), 1),
     }
 
+    # RAM (via /proc/meminfo)
+    ram_info = {}
+    try:
+        with open("/proc/meminfo") as f:
+            meminfo = {}
+            for line in f:
+                parts = line.split(":")
+                if len(parts) == 2:
+                    meminfo[parts[0].strip()] = int(parts[1].strip().split()[0])
+            total_kb = meminfo.get("MemTotal", 0)
+            avail_kb = meminfo.get("MemAvailable", 0)
+            used_kb = total_kb - avail_kb
+            ram_info = {
+                "total_gb": round(total_kb / (1024**2), 1),
+                "used_gb": round(used_kb / (1024**2), 1),
+                "free_gb": round(avail_kb / (1024**2), 1),
+                "percent": round(used_kb / total_kb * 100, 1) if total_kb else 0,
+            }
+    except Exception:
+        pass
+
+    # CPU Load
+    cpu_info = {}
+    try:
+        load1, load5, load15 = os.getloadavg()
+        cpu_count = os.cpu_count() or 1
+        cpu_info = {
+            "load_1m": round(load1, 2),
+            "load_5m": round(load5, 2),
+            "load_15m": round(load15, 2),
+            "cores": cpu_count,
+            "percent": round(load1 / cpu_count * 100, 1),
+        }
+    except Exception:
+        pass
+
+    # GPU (via nvidia-smi)
+    gpu_info = {}
+    rc_gpu, gpu_out = _run_cmd([
+        "nvidia-smi",
+        "--query-gpu=name,memory.used,memory.total,utilization.gpu,temperature.gpu",
+        "--format=csv,noheader,nounits",
+    ])
+    if rc_gpu == 0 and gpu_out.strip():
+        parts = [p.strip() for p in gpu_out.strip().split(",")]
+        if len(parts) >= 5:
+            gpu_info = {
+                "name": parts[0],
+                "memory_used_mb": int(parts[1]),
+                "memory_total_mb": int(parts[2]),
+                "utilization_percent": int(parts[3]),
+                "temperature_c": int(parts[4]),
+            }
+
     # Remote claude/* Branches auflisten
     _, remote_branches_raw = _run_cmd(
         ["git", "branch", "-r", "--list", "origin/claude/*"],
@@ -2266,6 +2320,9 @@ async def ui_system_status(token: str = ""):
             "models": ollama_models,
         },
         "disk": disk_info,
+        "ram": ram_info,
+        "cpu": cpu_info,
+        "gpu": gpu_info,
         "version": "1.4.1",
         "update_log": _update_log[-20:],
     }

@@ -3365,14 +3365,45 @@ async function loadSystemStatus() {
       models.innerHTML = '<strong>Installiert:</strong> ' + esc(ollama.models).split('\n').slice(1).filter(l=>l.trim()).map(l => l.split(/\s+/)[0]).join(', ');
     }
 
+    const ram = s.ram || {};
+    const cpu = s.cpu || {};
+    const gpu = s.gpu || {};
+
+    function bar(pct, label, sub) {
+      const color = pct > 90 ? 'var(--danger)' : pct > 70 ? 'var(--warning)' : 'var(--success)';
+      return '<div style="margin-bottom:10px;">' +
+        '<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px;">' +
+          '<strong>' + label + '</strong><span style="color:var(--text-muted);">' + sub + '</span></div>' +
+        '<div style="height:8px;background:var(--bg-secondary);border-radius:4px;overflow:hidden;">' +
+          '<div style="height:100%;width:' + Math.min(100, pct) + '%;background:' + color + ';border-radius:4px;transition:width 0.3s;"></div>' +
+        '</div></div>';
+    }
+
+    let hwHtml = '';
+    if (ram.total_gb) {
+      hwHtml += bar(ram.percent, 'RAM', ram.used_gb + ' / ' + ram.total_gb + ' GB (' + ram.percent + '%)');
+    }
+    if (cpu.cores) {
+      hwHtml += bar(cpu.percent, 'CPU', 'Load ' + cpu.load_1m + ' / ' + cpu.cores + ' Kerne (' + cpu.percent + '%)');
+    }
+    if (gpu.name) {
+      const gpuPct = Math.round(gpu.memory_used_mb / gpu.memory_total_mb * 100);
+      hwHtml += bar(gpu.utilization_percent, 'GPU ' + esc(gpu.name), gpu.utilization_percent + '% Last, ' + gpu.temperature_c + '°C');
+      hwHtml += bar(gpuPct, 'VRAM', gpu.memory_used_mb + ' / ' + gpu.memory_total_mb + ' MB (' + gpuPct + '%)');
+    }
+    if (disk.total_gb) {
+      const diskPct = Math.round((disk.total_gb - disk.free_gb) / disk.total_gb * 100);
+      hwHtml += bar(diskPct, 'Disk', disk.free_gb + ' GB frei / ' + disk.total_gb + ' GB (' + diskPct + '%)');
+    }
+
     box.innerHTML = `
+      ${hwHtml ? '<div style="margin-bottom:16px;">' + hwHtml + '</div>' : ''}
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px 24px;">
         <div><strong>Version:</strong> ${esc(s.version || '?')}</div>
         <div><strong>Branch:</strong> ${esc(git.branch || '?')}</div>
         <div style="grid-column:1/-1;"><strong>Commit:</strong> ${esc(git.commit || '?')}</div>
         <div style="grid-column:1/-1;"><strong>Container:</strong> ${cStatus}</div>
         <div><strong>Ollama:</strong> ${ollama.available ? '<span style="color:var(--success);">Online</span>' : '<span style="color:var(--danger);">Offline</span>'}</div>
-        <div><strong>Disk frei:</strong> ${disk.free_gb || '?'} GB / ${disk.total_gb || '?'} GB</div>
       </div>
       ${git.changes ? '<div style="margin-top:8px;padding:8px;background:var(--bg-hover);border-radius:4px;"><strong>Lokale Aenderungen:</strong><pre style="margin:4px 0 0;font-size:11px;">' + esc(git.changes) + '</pre></div>' : ''}
     `;

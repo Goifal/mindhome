@@ -172,7 +172,7 @@ _ASSISTANT_TOOLS_STATIC = [
         "type": "function",
         "function": {
             "name": "play_media",
-            "description": "Musik oder Medien steuern: abspielen, pausieren, stoppen, Lautstaerke aendern. Fuer 'leiser', 'lauter', 'Lautstaerke auf X%' verwende action='volume'.",
+            "description": "Musik oder Medien steuern: abspielen, pausieren, stoppen, Lautstaerke aendern. Fuer 'leiser' verwende action='volume_down', fuer 'lauter' verwende action='volume_up'. Fuer eine bestimmte Lautstaerke verwende action='volume' mit volume-Parameter.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -182,8 +182,8 @@ _ASSISTANT_TOOLS_STATIC = [
                     },
                     "action": {
                         "type": "string",
-                        "enum": ["play", "pause", "stop", "next", "previous", "volume"],
-                        "description": "Medien-Aktion. 'volume' = Lautstaerke aendern",
+                        "enum": ["play", "pause", "stop", "next", "previous", "volume", "volume_up", "volume_down"],
+                        "description": "Medien-Aktion. 'volume' = Lautstaerke auf Wert setzen, 'volume_up' = lauter (+10%), 'volume_down' = leiser (-10%)",
                     },
                     "query": {
                         "type": "string",
@@ -191,7 +191,7 @@ _ASSISTANT_TOOLS_STATIC = [
                     },
                     "volume": {
                         "type": "number",
-                        "description": "Lautstaerke 0-100 (Prozent). Z.B. 20 fuer 20%, 50 fuer 50%",
+                        "description": "Lautstaerke 0-100 (Prozent). Nur bei action='volume'. Z.B. 20 fuer 20%, 50 fuer 50%",
                     },
                 },
                 "required": ["action"],
@@ -1250,17 +1250,30 @@ class FunctionExecutor:
             )
             return {"success": success, "message": f"Suche '{query}' wird abgespielt"}
 
-        # Volume-Steuerung
-        if action == "volume":
-            volume_pct = args.get("volume")
-            if volume_pct is None:
-                return {"success": False, "message": "Keine Lautstaerke angegeben"}
+        # Volume-Steuerung (absolut und relativ)
+        if action in ("volume", "volume_up", "volume_down"):
+            if action == "volume":
+                volume_pct = args.get("volume")
+                if volume_pct is None:
+                    return {"success": False, "message": "Keine Lautstaerke angegeben"}
+            else:
+                # Relative Steuerung: aktuelle Lautstaerke holen und anpassen
+                state = await self.ha.get_state(entity_id)
+                current = 0.5
+                if state and "attributes" in state:
+                    current = state["attributes"].get("volume_level", 0.5)
+                step = 0.1  # ±10%
+                new_level = current + step if action == "volume_up" else current - step
+                volume_pct = max(0, min(100, round(new_level * 100)))
+
             volume_level = max(0.0, min(1.0, float(volume_pct) / 100.0))
             success = await self.ha.call_service(
                 "media_player", "volume_set",
                 {"entity_id": entity_id, "volume_level": volume_level},
             )
-            return {"success": success, "message": f"Lautstaerke auf {int(volume_pct)}%"}
+            direction = "lauter" if action == "volume_up" else "leiser" if action == "volume_down" else ""
+            msg = f"Lautstaerke {direction} auf {int(volume_pct)}%" if direction else f"Lautstaerke auf {int(volume_pct)}%"
+            return {"success": success, "message": msg}
 
         service_map = {
             "play": "media_play",
