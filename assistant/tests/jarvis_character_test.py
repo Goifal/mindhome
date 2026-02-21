@@ -523,6 +523,216 @@ class TestOpinionEngine:
 
 
 # ===================================================================
+# 11b. _match_rule() UNIT TESTS
+# ===================================================================
+
+class TestMatchRule:
+    """Direkte Tests fuer _match_rule() — Operator-Matching, Wraparound, Listen."""
+
+    def _rule(self, **overrides) -> dict:
+        """Erzeugt eine Basis-Regel mit optionalen Overrides."""
+        base = {
+            "id": "test_rule",
+            "check_action": "set_climate",
+            "min_intensity": 1,
+        }
+        base.update(overrides)
+        return base
+
+    # --- Aktion & Intensity ---
+
+    def test_action_mismatch_returns_false(self, engine):
+        rule = self._rule(check_action="set_light")
+        assert not engine._match_rule(rule, "set_climate", {}, 12)
+
+    def test_action_match_returns_true(self, engine):
+        rule = self._rule()
+        assert engine._match_rule(rule, "set_climate", {}, 12)
+
+    def test_intensity_too_high_returns_false(self, engine):
+        engine.opinion_intensity = 1
+        rule = self._rule(min_intensity=3)
+        assert not engine._match_rule(rule, "set_climate", {}, 12)
+
+    def test_intensity_sufficient_returns_true(self, engine):
+        engine.opinion_intensity = 3
+        rule = self._rule(min_intensity=2)
+        assert engine._match_rule(rule, "set_climate", {}, 12)
+
+    # --- Operator-Checks ---
+
+    @pytest.mark.parametrize("op,value,actual,expected", [
+        (">", 25, 27, True),
+        (">", 25, 25, False),
+        (">", 25, 20, False),
+        (">=", 25, 25, True),
+        (">=", 25, 24, False),
+        ("<", 15, 12, True),
+        ("<", 15, 15, False),
+        ("<", 15, 18, False),
+        ("<=", 15, 15, True),
+        ("<=", 15, 16, False),
+        ("==", "on", "on", True),
+        ("==", "on", "off", False),
+        ("==", 42, 42, True),
+    ])
+    def test_operators(self, engine, op, value, actual, expected):
+        rule = self._rule(
+            check_field="temperature",
+            check_operator=op,
+            check_value=value,
+        )
+        result = engine._match_rule(rule, "set_climate", {"temperature": actual}, 12)
+        assert result == expected
+
+    def test_missing_field_in_args_returns_false(self, engine):
+        rule = self._rule(
+            check_field="temperature",
+            check_operator=">",
+            check_value=25,
+        )
+        assert not engine._match_rule(rule, "set_climate", {}, 12)
+
+    def test_no_field_check_always_passes(self, engine):
+        """Regel ohne Feld-Check matcht nur auf Aktion."""
+        rule = self._rule()
+        assert engine._match_rule(rule, "set_climate", {}, 12)
+
+    # --- Uhrzeit-Check (normal) ---
+
+    def test_hour_in_range(self, engine):
+        rule = self._rule(check_hour_min=8, check_hour_max=18)
+        assert engine._match_rule(rule, "set_climate", {}, 12)
+
+    def test_hour_below_range(self, engine):
+        rule = self._rule(check_hour_min=8, check_hour_max=18)
+        assert not engine._match_rule(rule, "set_climate", {}, 6)
+
+    def test_hour_above_range(self, engine):
+        rule = self._rule(check_hour_min=8, check_hour_max=18)
+        assert not engine._match_rule(rule, "set_climate", {}, 22)
+
+    def test_hour_at_boundary_min(self, engine):
+        rule = self._rule(check_hour_min=8, check_hour_max=18)
+        assert engine._match_rule(rule, "set_climate", {}, 8)
+
+    def test_hour_at_boundary_max(self, engine):
+        rule = self._rule(check_hour_min=8, check_hour_max=18)
+        assert engine._match_rule(rule, "set_climate", {}, 18)
+
+    # --- Uhrzeit-Check (Mitternachts-Wraparound) ---
+
+    def test_wraparound_before_midnight(self, engine):
+        """23..5 Fenster: 23 Uhr matcht."""
+        rule = self._rule(check_hour_min=23, check_hour_max=5)
+        assert engine._match_rule(rule, "set_climate", {}, 23)
+
+    def test_wraparound_after_midnight(self, engine):
+        """23..5 Fenster: 2 Uhr matcht."""
+        rule = self._rule(check_hour_min=23, check_hour_max=5)
+        assert engine._match_rule(rule, "set_climate", {}, 2)
+
+    def test_wraparound_at_end(self, engine):
+        """23..5 Fenster: 5 Uhr matcht."""
+        rule = self._rule(check_hour_min=23, check_hour_max=5)
+        assert engine._match_rule(rule, "set_climate", {}, 5)
+
+    def test_wraparound_outside(self, engine):
+        """23..5 Fenster: 12 Uhr matcht NICHT."""
+        rule = self._rule(check_hour_min=23, check_hour_max=5)
+        assert not engine._match_rule(rule, "set_climate", {}, 12)
+
+    def test_wraparound_just_outside(self, engine):
+        """23..5 Fenster: 6 Uhr matcht NICHT."""
+        rule = self._rule(check_hour_min=23, check_hour_max=5)
+        assert not engine._match_rule(rule, "set_climate", {}, 6)
+
+    def test_no_hour_check_always_passes(self, engine):
+        """Ohne Uhrzeit-Check matcht jede Stunde."""
+        rule = self._rule()
+        assert engine._match_rule(rule, "set_climate", {}, 3)
+
+    # --- Raum-Check (String) ---
+
+    def test_room_string_match(self, engine):
+        rule = self._rule(check_room="bad")
+        assert engine._match_rule(rule, "set_climate", {"room": "bad"}, 12)
+
+    def test_room_string_mismatch(self, engine):
+        rule = self._rule(check_room="bad")
+        assert not engine._match_rule(rule, "set_climate", {"room": "wohnzimmer"}, 12)
+
+    # --- Raum-Check (Liste) ---
+
+    def test_room_list_match_first(self, engine):
+        rule = self._rule(check_room=["bad", "badezimmer"])
+        assert engine._match_rule(rule, "set_climate", {"room": "bad"}, 12)
+
+    def test_room_list_match_second(self, engine):
+        rule = self._rule(check_room=["bad", "badezimmer"])
+        assert engine._match_rule(rule, "set_climate", {"room": "badezimmer"}, 12)
+
+    def test_room_list_mismatch(self, engine):
+        rule = self._rule(check_room=["bad", "badezimmer"])
+        assert not engine._match_rule(rule, "set_climate", {"room": "kueche"}, 12)
+
+    def test_room_missing_in_args(self, engine):
+        rule = self._rule(check_room="bad")
+        assert not engine._match_rule(rule, "set_climate", {}, 12)
+
+    # --- Heating-Mode-Check ---
+
+    def test_heating_mode_match(self, engine):
+        with patch("assistant.personality.yaml_config", {
+            **_MOCK_YAML_CONFIG, "heating": {"mode": "heating_curve"},
+        }):
+            rule = self._rule(check_heating_mode="heating_curve")
+            assert engine._match_rule(rule, "set_climate", {}, 12)
+
+    def test_heating_mode_mismatch(self, engine):
+        with patch("assistant.personality.yaml_config", {
+            **_MOCK_YAML_CONFIG, "heating": {"mode": "room_thermostat"},
+        }):
+            rule = self._rule(check_heating_mode="heating_curve")
+            assert not engine._match_rule(rule, "set_climate", {}, 12)
+
+    def test_heating_mode_default_when_missing(self, engine):
+        """Ohne heating-Config wird room_thermostat als Default genommen."""
+        with patch("assistant.personality.yaml_config", _MOCK_YAML_CONFIG):
+            rule = self._rule(check_heating_mode="room_thermostat")
+            assert engine._match_rule(rule, "set_climate", {}, 12)
+
+    # --- Kombinierte Checks ---
+
+    def test_all_conditions_combined(self, engine):
+        """Regel mit allen Bedingungen gleichzeitig."""
+        rule = self._rule(
+            check_field="temperature",
+            check_operator=">",
+            check_value=25,
+            check_hour_min=23,
+            check_hour_max=5,
+            check_room=["bad", "badezimmer"],
+        )
+        # Alle Bedingungen erfuellt
+        assert engine._match_rule(
+            rule, "set_climate", {"temperature": 27, "room": "bad"}, 1
+        )
+        # Temperatur zu niedrig
+        assert not engine._match_rule(
+            rule, "set_climate", {"temperature": 20, "room": "bad"}, 1
+        )
+        # Falscher Raum
+        assert not engine._match_rule(
+            rule, "set_climate", {"temperature": 27, "room": "kueche"}, 1
+        )
+        # Falsche Uhrzeit
+        assert not engine._match_rule(
+            rule, "set_climate", {"temperature": 27, "room": "bad"}, 12
+        )
+
+
+# ===================================================================
 # 12. ANTWORT-VARIANZ
 # ===================================================================
 
