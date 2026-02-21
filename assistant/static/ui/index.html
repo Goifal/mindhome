@@ -1667,6 +1667,10 @@ function renderPersons() {
     '</div>' +
     '<div id="householdMembers">' + memberRows + '</div>' +
     '<button class="btn btn-secondary" onclick="addHouseholdMember()" style="margin-top:8px;width:100%;justify-content:center;">+ Person hinzufuegen</button>'
+  ) +
+  sectionWrap('&#128101;', 'Personen-Anrede',
+    fInfo('Wie soll der Assistent einzelne Personen ansprechen? Der Hauptbenutzer wird standardmaessig als "Sir" angesprochen.') +
+    fPersonTitles()
   );
 }
 
@@ -1770,6 +1774,21 @@ function renderPersonality() {
     fSelect('personality.time_layers.night.style', 'Stil', styleOpts) +
     fRange('personality.time_layers.night.max_sentences', 'Max. Saetze', 1, 10, 1) +
     '</div>'
+  ) +
+  sectionWrap('&#128683;', 'Antwort-Filter',
+    fInfo('Unerwuenschte Phrasen aus den Antworten filtern und maximale Antwortlaenge begrenzen.') +
+    fToggle('response_filter.enabled', 'Antwort-Filter aktiv') +
+    fRange('response_filter.max_response_sentences', 'Max. Saetze pro Antwort', 0, 20, 1, {0:'Kein Limit',1:'1',2:'2',3:'3',5:'5',10:'10',20:'20'}) +
+    fChipSelect('response_filter.banned_phrases', 'Verbotene Phrasen', [
+      'als KI','als Sprachmodell','ich bin ein KI','ich habe keine Gefuehle',
+      'ich bin nur eine Maschine','als AI','language model','ich kann nicht fuehlen',
+      'ich bin kein Mensch','mein Training','meine Trainingsdaten'
+    ]) +
+    fChipSelect('response_filter.banned_starters', 'Verbotene Satzanfaenge', [
+      'Natuerlich!','Selbstverstaendlich!','Klar!','Gerne!',
+      'Absolut!','Definitiv!','Auf jeden Fall!','Sicher!',
+      'Das ist eine gute Frage','Ich verstehe'
+    ])
   );
 }
 
@@ -1879,7 +1898,27 @@ function renderMood() {
 
 // ---- Tab 5: Raeume ----
 function renderRooms() {
-  return sectionWrap('&#127968;', 'Multi-Room',
+  const hMode = getPath(S, 'heating.mode') || 'room_thermostat';
+  const isCurve = hMode === 'heating_curve';
+
+  return sectionWrap('&#128293;', 'Heizung',
+    fInfo('Wie wird geheizt? Einzelraumregelung = jeder Raum hat eigenen Thermostat. Heizkurve = zentrale Waermepumpe mit Offset-Steuerung.') +
+    '<div class="form-group"><label>Heizungsmodus</label>' +
+    '<select data-path="heating.mode" onchange="mergeCurrentTabIntoS();setPath(S,\'heating.mode\',this.value);renderCurrentTab();">' +
+    '<option value="room_thermostat" ' + (hMode==='room_thermostat'?'selected':'') + '>Raumthermostate (Einzelraumregelung)</option>' +
+    '<option value="heating_curve" ' + (hMode==='heating_curve'?'selected':'') + '>Heizkurve (Waermepumpe, Vorlauf-Offset)</option>' +
+    '</select></div>' +
+    (isCurve ?
+      fText('heating.curve_entity', 'Heizungs-Entity', 'z.B. climate.panasonic_heat_pump_main_z1_temp') +
+      fRange('heating.curve_offset_min', 'Min. Offset (°C)', -10, 0, 0.5) +
+      fRange('heating.curve_offset_max', 'Max. Offset (°C)', 0, 10, 0.5) +
+      fRange('heating.night_offset', 'Nacht-Offset (°C)', -10, 0, 0.5) +
+      fRange('heating.away_offset', 'Abwesenheits-Offset (°C)', -10, 0, 0.5)
+    :
+      '<p style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;">Jeder Raum hat seinen eigenen Thermostat. Temperatur-Grenzen findest du unter Sicherheit.</p>'
+    )
+  ) +
+  sectionWrap('&#127968;', 'Multi-Room',
     fInfo('Der Assistent erkennt in welchem Raum du bist und antwortet dort. Praesenz-Timeout = wie lange er dich in einem Raum "merkt".') +
     fToggle('multi_room.enabled', 'Multi-Room Erkennung aktiv') +
     fRange('multi_room.presence_timeout_minutes', 'Praesenz-Timeout', 1, 60, 1, {1:'1 Min',5:'5 Min',10:'10 Min',15:'15 Min',30:'30 Min',60:'1 Std'})
@@ -2119,6 +2158,15 @@ function renderRoutines() {
     fToggle('conversation_continuity.enabled', 'Gespraech fortsetzen') +
     fRange('conversation_continuity.resume_after_minutes', 'Nachfragen nach', 1, 60, 1, {1:'1 Min',5:'5 Min',10:'10 Min',15:'15 Min',30:'30 Min',60:'1 Std'}) +
     fRange('conversation_continuity.expire_hours', 'Thema vergessen nach', 1, 72, 1, {1:'1 Std',6:'6 Std',12:'12 Std',24:'1 Tag',48:'2 Tage',72:'3 Tage'})
+  ) +
+  sectionWrap('&#127859;', 'Koch-Assistent',
+    fInfo('Der Assistent kann dir Rezepte vorschlagen und beim Kochen helfen — Schritt fuer Schritt mit Timer.') +
+    fToggle('cooking.enabled', 'Koch-Assistent aktiv') +
+    fSelect('cooking.language', 'Rezept-Sprache', [{v:'de',l:'Deutsch'},{v:'en',l:'English'}]) +
+    fRange('cooking.default_portions', 'Standard-Portionen', 1, 12, 1) +
+    fRange('cooking.max_steps', 'Max. Schritte pro Rezept', 3, 30, 1) +
+    fRange('cooking.max_tokens', 'Rezept-Detailgrad', 256, 4096, 256, {256:'Kurz',512:'Normal',1024:'Ausfuehrlich',2048:'Sehr ausfuehrlich',4096:'Maximum'}) +
+    fToggle('cooking.timer_notify_tts', 'Timer-Erinnerungen per Sprache')
   );
 }
 
@@ -2127,24 +2175,7 @@ function renderSecurity() {
   const hMode = getPath(S, 'heating.mode') || 'room_thermostat';
   const isCurve = hMode === 'heating_curve';
 
-  return sectionWrap('&#128293;', 'Heizung',
-    fInfo('Wie wird geheizt? Einzelraumregelung = jeder Raum hat eigenen Thermostat. Heizkurve = zentrale Waermepumpe mit Offset-Steuerung.') +
-    '<div class="form-group"><label>Heizungsmodus</label>' +
-    '<select data-path="heating.mode" onchange="mergeCurrentTabIntoS();setPath(S,\'heating.mode\',this.value);renderCurrentTab();">' +
-    '<option value="room_thermostat" ' + (hMode==='room_thermostat'?'selected':'') + '>Raumthermostate (Einzelraumregelung)</option>' +
-    '<option value="heating_curve" ' + (hMode==='heating_curve'?'selected':'') + '>Heizkurve (Waermepumpe, Vorlauf-Offset)</option>' +
-    '</select></div>' +
-    (isCurve ?
-      fText('heating.curve_entity', 'Heizungs-Entity', 'z.B. climate.panasonic_heat_pump_main_z1_temp') +
-      fRange('heating.curve_offset_min', 'Min. Offset (°C)', -10, 0, 0.5) +
-      fRange('heating.curve_offset_max', 'Max. Offset (°C)', 0, 10, 0.5) +
-      fRange('heating.night_offset', 'Nacht-Offset (°C)', -10, 0, 0.5) +
-      fRange('heating.away_offset', 'Abwesenheits-Offset (°C)', -10, 0, 0.5)
-    :
-      '<p style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;">Jeder Raum hat seinen eigenen Thermostat. Temperatur-Grenzen findest du unten bei Sicherheit.</p>'
-    )
-  ) +
-  sectionWrap('&#128274;', 'Sicherheit',
+  return sectionWrap('&#128274;', 'Sicherheit',
     fInfo('Welche Aktionen brauchen eine Bestaetigung? Und welche Temperatur-Grenzen gelten?') +
     fChipSelect('security.require_confirmation', 'Bestaetigung erforderlich fuer', [
       {v:'alarm_disarm',l:'Alarm deaktivieren'},
@@ -2160,7 +2191,7 @@ function renderSecurity() {
     (!isCurve ?
       fRange('security.climate_limits.min', 'Temperatur Min (°C)', 5, 25, 0.5) +
       fRange('security.climate_limits.max', 'Temperatur Max (°C)', 20, 35, 0.5)
-    : '<p style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;">Im Heizkurven-Modus gelten die Offset-Grenzen von oben.</p>'
+    : '<p style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;">Im Heizkurven-Modus gelten die Offset-Grenzen (Raeume &rarr; Heizung).</p>'
     )
   ) +
   sectionWrap('&#128273;', 'API Key (Netzwerk-Schutz)',
@@ -2207,71 +2238,6 @@ function renderSecurity() {
       {v:'person_manage',l:'Personen verwalten'},
       {v:'system_restart',l:'System neustarten'}
     ])
-  ) +
-  sectionWrap('&#128295;', 'Diagnostik',
-    fInfo('Automatische Pruefung von Sensoren, Batterien und Geraetestatus.') +
-    fToggle('diagnostics.enabled', 'Geraete-Diagnostik aktiv') +
-    fRange('diagnostics.check_interval_minutes', 'Pruef-Intervall', 5, 120, 5, {5:'5 Min',15:'15 Min',30:'30 Min',60:'1 Std',120:'2 Std'}) +
-    fRange('diagnostics.battery_warning_threshold', 'Batterie-Warnung ab', 5, 50, 5, {5:'5%',10:'10%',15:'15%',20:'20%',30:'30%',50:'50%'}) +
-    fRange('diagnostics.stale_sensor_minutes', 'Sensor veraltet nach', 30, 600, 30, {30:'30 Min',60:'1 Std',120:'2 Std',300:'5 Std',600:'10 Std'}) +
-    fRange('diagnostics.offline_threshold_minutes', 'Geraet offline nach', 10, 120, 10, {10:'10 Min',30:'30 Min',60:'1 Std',120:'2 Std'}) +
-    fRange('diagnostics.alert_cooldown_minutes', 'Wiederholung fruehestens nach', 10, 240, 10, {10:'10 Min',30:'30 Min',60:'1 Std',120:'2 Std',240:'4 Std'}) +
-    fChipSelect('diagnostics.monitor_domains', 'Ueberwachte Domains', [
-        {v:'sensor',l:'Sensoren'}, {v:'binary_sensor',l:'Binaer-Sensoren'},
-        {v:'light',l:'Lichter'}, {v:'switch',l:'Schalter'},
-        {v:'cover',l:'Rolladen'}, {v:'climate',l:'Klima'},
-        {v:'lock',l:'Schloesser'}, {v:'fan',l:'Ventilatoren'},
-        {v:'water_heater',l:'Warmwasser'}, {v:'media_player',l:'Media Player'},
-        {v:'camera',l:'Kameras'}, {v:'alarm_control_panel',l:'Alarmanlagen'}
-    ], 'Nur Entities aus diesen Domains werden ueberwacht') +
-    fKeywords('diagnostics.exclude_patterns', 'Ignorierte Patterns (Entity-ID)') +
-    '<div style="margin:12px 0;font-weight:600;font-size:13px;">Ueberwachte Geraete</div>' +
-    fInfo('Waehle welche Geraete die Diagnostik ueberwachen soll. Klicke "Von MindHome importieren" um deine konfigurierten Geraete zu laden. Ohne Auswahl werden alle Entities der Standard-Domains geprueft.') +
-    '<div id="diagEntityPickerContainer" style="color:var(--text-secondary);padding:12px;">' +
-      '<button class="btn btn-primary btn-sm" onclick="loadDiagnosticsEntities()" style="font-size:12px;">&#127968; Von MindHome importieren</button>' +
-      '<span style="color:var(--text-muted);font-size:11px;margin-left:10px;" id="diagEntityStatus"></span>' +
-    '</div>'
-  ) +
-  sectionWrap('&#128200;', 'Feedback-System',
-    fInfo('Wie reagiert der Assistent auf positives/negatives Feedback? Scores bestimmen wie haeufig er sich meldet.') +
-    fRange('feedback.auto_timeout_seconds', 'Feedback-Timeout', 30, 600, 30, {30:'30s',60:'1 Min',120:'2 Min',300:'5 Min',600:'10 Min'}) +
-    fRange('feedback.base_cooldown_seconds', 'Basis-Abstand', 60, 1800, 60, {60:'1 Min',120:'2 Min',300:'5 Min',600:'10 Min',1800:'30 Min'}) +
-    fRange('feedback.score_suppress', 'Unterdruecken unter', 0, 1, 0.05) +
-    fRange('feedback.score_reduce', 'Reduzieren unter', 0, 1, 0.05) +
-    fRange('feedback.score_normal', 'Normal ab', 0, 1, 0.05) +
-    fRange('feedback.score_boost', 'Boost ab', 0, 1, 0.05)
-  ) +
-  sectionWrap('&#128683;', 'Antwort-Filter',
-    fInfo('Unerwuenschte Phrasen aus den Antworten filtern und maximale Antwortlaenge begrenzen.') +
-    fToggle('response_filter.enabled', 'Antwort-Filter aktiv') +
-    fRange('response_filter.max_response_sentences', 'Max. Saetze pro Antwort', 0, 20, 1, {0:'Kein Limit',1:'1',2:'2',3:'3',5:'5',10:'10',20:'20'}) +
-    fChipSelect('response_filter.banned_phrases', 'Verbotene Phrasen', [
-      'als KI','als Sprachmodell','ich bin ein KI','ich habe keine Gefuehle',
-      'ich bin nur eine Maschine','als AI','language model','ich kann nicht fuehlen',
-      'ich bin kein Mensch','mein Training','meine Trainingsdaten'
-    ]) +
-    fChipSelect('response_filter.banned_starters', 'Verbotene Satzanfaenge', [
-      'Natuerlich!','Selbstverstaendlich!','Klar!','Gerne!',
-      'Absolut!','Definitiv!','Auf jeden Fall!','Sicher!',
-      'Das ist eine gute Frage','Ich verstehe'
-    ])
-  ) +
-  sectionWrap('&#127859;', 'Koch-Assistent',
-    fInfo('Der Assistent kann dir Rezepte vorschlagen und beim Kochen helfen — Schritt fuer Schritt mit Timer.') +
-    fToggle('cooking.enabled', 'Koch-Assistent aktiv') +
-    fSelect('cooking.language', 'Rezept-Sprache', [{v:'de',l:'Deutsch'},{v:'en',l:'English'}]) +
-    fRange('cooking.default_portions', 'Standard-Portionen', 1, 12, 1) +
-    fRange('cooking.max_steps', 'Max. Schritte pro Rezept', 3, 30, 1) +
-    fRange('cooking.max_tokens', 'Rezept-Detailgrad', 256, 4096, 256, {256:'Kurz',512:'Normal',1024:'Ausfuehrlich',2048:'Sehr ausfuehrlich',4096:'Maximum'}) +
-    fToggle('cooking.timer_notify_tts', 'Timer-Erinnerungen per Sprache')
-  ) +
-  sectionWrap('&#128295;', 'Wartung',
-    fInfo('Automatische Wartungshinweise fuer Geraete im Haushalt.') +
-    fToggle('maintenance.enabled', 'Wartungs-Erinnerungen aktiv')
-  ) +
-  sectionWrap('&#128101;', 'Personen-Anrede',
-    fInfo('Wie soll der Assistent einzelne Personen ansprechen? Der Hauptbenutzer wird standardmaessig als "Sir" angesprochen.') +
-    fPersonTitles()
   ) +
   sectionWrap('&#128276;', 'Benachrichtigungskanaele',
     fInfo('Welche Kanaele soll der Assistent fuer Benachrichtigungen nutzen? Kanaele koennen einzeln konfiguriert werden.') +
@@ -2475,6 +2441,15 @@ function renderAutonomie() {
     fToggle('self_automation.enabled', 'Self-Automation aktiv') +
     fNum('self_automation.max_per_day', 'Max. Automationen pro Tag', 1, 20) +
     fModelSelect('self_automation.model', 'Modell fuer Automations-Erstellung')
+  ) +
+  sectionWrap('&#128200;', 'Feedback-System',
+    fInfo('Wie reagiert der Assistent auf positives/negatives Feedback? Scores bestimmen wie haeufig er sich meldet.') +
+    fRange('feedback.auto_timeout_seconds', 'Feedback-Timeout', 30, 600, 30, {30:'30s',60:'1 Min',120:'2 Min',300:'5 Min',600:'10 Min'}) +
+    fRange('feedback.base_cooldown_seconds', 'Basis-Abstand', 60, 1800, 60, {60:'1 Min',120:'2 Min',300:'5 Min',600:'10 Min',1800:'30 Min'}) +
+    fRange('feedback.score_suppress', 'Unterdruecken unter', 0, 1, 0.05) +
+    fRange('feedback.score_reduce', 'Reduzieren unter', 0, 1, 0.05) +
+    fRange('feedback.score_normal', 'Normal ab', 0, 1, 0.05) +
+    fRange('feedback.score_boost', 'Boost ab', 0, 1, 0.05)
   ) +
   sectionWrap('&#128221;', 'Config-Selbstmodifikation (Phase 13.1)',
     '<p style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;">Jarvis kann nur diese 3 Dateien editieren (Whitelist). settings.yaml ist NICHT editierbar durch Jarvis.</p>' +
@@ -3164,6 +3139,34 @@ function renderDevices() {
   sectionWrap('&#127968;', 'Überwachte Entities',
     fInfo('Entities aus MindHome. Haken setzen = wird überwacht. Ohne Auswahl werden alle Entities der aktiven Domains geprüft.') +
     '<div id="entityPickerContainer" style="color:var(--text-secondary);padding:12px;">Lade Entities aus MindHome...</div>'
+  ) +
+  sectionWrap('&#128295;', 'Diagnostik',
+    fInfo('Automatische Pruefung von Sensoren, Batterien und Geraetestatus.') +
+    fToggle('diagnostics.enabled', 'Geraete-Diagnostik aktiv') +
+    fRange('diagnostics.check_interval_minutes', 'Pruef-Intervall', 5, 120, 5, {5:'5 Min',15:'15 Min',30:'30 Min',60:'1 Std',120:'2 Std'}) +
+    fRange('diagnostics.battery_warning_threshold', 'Batterie-Warnung ab', 5, 50, 5, {5:'5%',10:'10%',15:'15%',20:'20%',30:'30%',50:'50%'}) +
+    fRange('diagnostics.stale_sensor_minutes', 'Sensor veraltet nach', 30, 600, 30, {30:'30 Min',60:'1 Std',120:'2 Std',300:'5 Std',600:'10 Std'}) +
+    fRange('diagnostics.offline_threshold_minutes', 'Geraet offline nach', 10, 120, 10, {10:'10 Min',30:'30 Min',60:'1 Std',120:'2 Std'}) +
+    fRange('diagnostics.alert_cooldown_minutes', 'Wiederholung fruehestens nach', 10, 240, 10, {10:'10 Min',30:'30 Min',60:'1 Std',120:'2 Std',240:'4 Std'}) +
+    fChipSelect('diagnostics.monitor_domains', 'Ueberwachte Domains', [
+        {v:'sensor',l:'Sensoren'}, {v:'binary_sensor',l:'Binaer-Sensoren'},
+        {v:'light',l:'Lichter'}, {v:'switch',l:'Schalter'},
+        {v:'cover',l:'Rolladen'}, {v:'climate',l:'Klima'},
+        {v:'lock',l:'Schloesser'}, {v:'fan',l:'Ventilatoren'},
+        {v:'water_heater',l:'Warmwasser'}, {v:'media_player',l:'Media Player'},
+        {v:'camera',l:'Kameras'}, {v:'alarm_control_panel',l:'Alarmanlagen'}
+    ], 'Nur Entities aus diesen Domains werden ueberwacht') +
+    fKeywords('diagnostics.exclude_patterns', 'Ignorierte Patterns (Entity-ID)') +
+    '<div style="margin:12px 0;font-weight:600;font-size:13px;">Ueberwachte Geraete</div>' +
+    fInfo('Waehle welche Geraete die Diagnostik ueberwachen soll. Klicke "Von MindHome importieren" um deine konfigurierten Geraete zu laden. Ohne Auswahl werden alle Entities der Standard-Domains geprueft.') +
+    '<div id="diagEntityPickerContainer" style="color:var(--text-secondary);padding:12px;">' +
+      '<button class="btn btn-primary btn-sm" onclick="loadDiagnosticsEntities()" style="font-size:12px;">&#127968; Von MindHome importieren</button>' +
+      '<span style="color:var(--text-muted);font-size:11px;margin-left:10px;" id="diagEntityStatus"></span>' +
+    '</div>'
+  ) +
+  sectionWrap('&#128295;', 'Wartung',
+    fInfo('Automatische Wartungshinweise fuer Geraete im Haushalt.') +
+    fToggle('maintenance.enabled', 'Wartungs-Erinnerungen aktiv')
   );
 }
 
