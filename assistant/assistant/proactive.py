@@ -23,6 +23,17 @@ from typing import Optional
 import aiohttp
 
 from .config import settings, yaml_config
+from .constants import (
+    GEO_APPROACHING_COOLDOWN_MIN,
+    GEO_ARRIVING_COOLDOWN_MIN,
+    PROACTIVE_AMBIENT_CHECK_INTERVAL,
+    PROACTIVE_BATCH_STARTUP_DELAY,
+    PROACTIVE_DIAGNOSTICS_STARTUP_DELAY,
+    PROACTIVE_SEASONAL_STARTUP_DELAY,
+    PROACTIVE_THREAT_CHECK_INTERVAL,
+    PROACTIVE_THREAT_STARTUP_DELAY,
+    PROACTIVE_WS_RECONNECT_DELAY,
+)
 from .ollama_client import validate_notification
 from .websocket import emit_proactive
 
@@ -202,7 +213,7 @@ class ProactiveManager:
             except Exception as e:
                 logger.error("HA WebSocket Fehler: %s", e)
                 if self._running:
-                    await asyncio.sleep(10)  # Reconnect nach 10s
+                    await asyncio.sleep(PROACTIVE_WS_RECONNECT_DELAY)
 
     async def _connect_and_listen(self, ws_url: str):
         """Verbindet sich mit HA WebSocket und verarbeitet Events."""
@@ -414,7 +425,7 @@ class ProactiveManager:
 
                 # B3: Pending Tages-Zusammenfassung nach Briefing liefern
                 if self.brain.memory.redis:
-                    pending = await self.brain.memory.redis.get("jarvis:pending_summary")
+                    pending = await self.brain.memory.redis.get("mha:pending_summary")
                     if pending:
                         summary = pending.decode() if isinstance(pending, bytes) else pending
                         await asyncio.sleep(3)  # Kurze Pause nach dem Briefing
@@ -422,7 +433,7 @@ class ProactiveManager:
                             f"Uebrigens, gestern zusammengefasst: {summary}",
                             "daily_summary", LOW,
                         )
-                        await self.brain.memory.redis.delete("jarvis:pending_summary")
+                        await self.brain.memory.redis.delete("mha:pending_summary")
                         logger.info("Pending Tages-Zusammenfassung zugestellt")
         except Exception as e:
             logger.error("Morning Briefing Auto-Trigger Fehler: %s", e)
@@ -532,7 +543,7 @@ class ProactiveManager:
             last = await self.brain.memory.get_last_notification_time(cooldown_key)
             if last:
                 last_dt = datetime.fromisoformat(last)
-                if datetime.now() - last_dt < timedelta(minutes=15):
+                if datetime.now() - last_dt < timedelta(minutes=GEO_APPROACHING_COOLDOWN_MIN):
                     return
             await self.brain.memory.set_last_notification_time(cooldown_key)
             await self._notify("person_approaching", LOW, {
@@ -547,7 +558,7 @@ class ProactiveManager:
             last = await self.brain.memory.get_last_notification_time(cooldown_key)
             if last:
                 last_dt = datetime.fromisoformat(last)
-                if datetime.now() - last_dt < timedelta(minutes=10):
+                if datetime.now() - last_dt < timedelta(minutes=GEO_ARRIVING_COOLDOWN_MIN):
                     return
             await self.brain.memory.set_last_notification_time(cooldown_key)
             await self._notify("person_arriving", MEDIUM, {
@@ -851,8 +862,7 @@ VERBOTEN: "Hallo", "Achtung", "Ich moechte dich informieren", "Es tut mir leid".
 
     async def _run_diagnostics_loop(self):
         """Periodischer Diagnostik-Check (Entity-Watchdog + Wartungs-Erinnerungen)."""
-        # Initial 2 Minuten warten bis alles hochgefahren ist
-        await asyncio.sleep(120)
+        await asyncio.sleep(PROACTIVE_DIAGNOSTICS_STARTUP_DELAY)
 
         while self._running:
             try:
@@ -1016,7 +1026,7 @@ VERBOTEN: "Hallo", "Achtung", "Ich moechte dich informieren", "Es tut mir leid".
         MEDIUM-Events werden nach max 10 Minuten gesendet,
         LOW-Events nach dem konfigurierten batch_interval (default 30 Min).
         """
-        await asyncio.sleep(60)  # 1 Min. warten
+        await asyncio.sleep(PROACTIVE_BATCH_STARTUP_DELAY)
         medium_check_interval = 10 * 60  # 10 Min fuer MEDIUM
         timer = 0
 
@@ -1128,7 +1138,7 @@ VERBOTEN: "Hallo", "Achtung", "Ich moechte dich informieren", "Es tut mir leid".
 
     async def _run_seasonal_loop(self):
         """Periodisch Rolladen-Timing pruefen und saisonal anpassen."""
-        await asyncio.sleep(180)  # 3 Min. warten bis System stabil
+        await asyncio.sleep(PROACTIVE_SEASONAL_STARTUP_DELAY)
 
         seasonal_cfg = yaml_config.get("seasonal_actions", {})
         check_interval = seasonal_cfg.get("check_interval_minutes", 30)
@@ -1317,7 +1327,7 @@ VERBOTEN: "Hallo", "Achtung", "Ich moechte dich informieren", "Es tut mir leid".
 
     async def _run_threat_assessment_loop(self):
         """Periodischer Sicherheits- + Energie-Check."""
-        await asyncio.sleep(180)  # 3 Min. warten bis System stabil
+        await asyncio.sleep(PROACTIVE_THREAT_STARTUP_DELAY)
 
         while self._running:
             # Threat Assessment
@@ -1377,8 +1387,7 @@ VERBOTEN: "Hallo", "Achtung", "Ich moechte dich informieren", "Es tut mir leid".
             except Exception as e:
                 logger.debug("Energy Check Fehler: %s", e)
 
-            # Alle 5 Minuten pruefen
-            await asyncio.sleep(300)
+            await asyncio.sleep(PROACTIVE_THREAT_CHECK_INTERVAL)
 
     # ------------------------------------------------------------------
     # Ambient Presence: Jarvis ist immer da
@@ -1396,8 +1405,7 @@ VERBOTEN: "Hallo", "Achtung", "Ich moechte dich informieren", "Es tut mir leid".
         report_energy = ambient_cfg.get("report_energy", True)
         all_quiet_prob = ambient_cfg.get("all_quiet_probability", 0.2)
 
-        # 10 Min nach Start warten
-        await asyncio.sleep(600)
+        await asyncio.sleep(PROACTIVE_AMBIENT_CHECK_INTERVAL)
 
         while self._running:
             try:

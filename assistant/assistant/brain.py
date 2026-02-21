@@ -1292,7 +1292,8 @@ class AssistantBrain(BrainCallbacksMixin):
                         response_text = await self._generate_error_recovery(
                             first_fail["function"], first_fail.get("args", {}), error_msg
                         )
-                    except Exception:
+                    except Exception as e:
+                        logger.warning("Error-Recovery LLM fehlgeschlagen: %s", e)
                         response_text = f"Problem: {error_msg}"
 
         # Phase 12: Response-Filter (Post-Processing) — Floskeln entfernen
@@ -2785,7 +2786,7 @@ Regeln:
         if summary_text and self.memory.redis:
             # Zusammenfassung fuer naechsten Morning-Kontakt speichern
             await self.memory.redis.set(
-                "jarvis:pending_summary", summary_text, ex=86400
+                "mha:pending_summary", summary_text, ex=86400
             )
             logger.info("Tages-Zusammenfassung fuer %s zum Abruf bereitgestellt", date)
 
@@ -2822,7 +2823,8 @@ Regeln:
                 raw = raw.decode()
             data = json.loads(raw)
             return f"Letzte Frage (in {data.get('room', '?')}): \"{data.get('last_question', '')}\". Antwort: \"{data.get('last_response', '')}\""
-        except Exception:
+        except Exception as e:
+            logger.debug("Cross-Room Kontext lesen fehlgeschlagen: %s", e)
             return ""
 
     # ------------------------------------------------------------------

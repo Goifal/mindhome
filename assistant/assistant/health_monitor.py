@@ -14,6 +14,7 @@ from typing import Optional
 import redis.asyncio as redis
 
 from .config import yaml_config
+from .constants import HEALTH_MONITOR_STARTUP_DELAY, REDIS_HEALTH_SNAPSHOT_TTL
 
 logger = logging.getLogger(__name__)
 
@@ -93,7 +94,7 @@ class HealthMonitor:
 
     async def _check_loop(self):
         """Periodischer Gesundheits-Check."""
-        await asyncio.sleep(180)  # 3 Min. warten bis HA bereit
+        await asyncio.sleep(HEALTH_MONITOR_STARTUP_DELAY)
 
         while self._running:
             try:
@@ -143,7 +144,7 @@ class HealthMonitor:
             now = datetime.now()
             key = f"mha:health:snapshot:{now.strftime('%Y-%m-%d:%H')}"
             await self.redis.set(key, json.dumps(snapshot))
-            await self.redis.expire(key, 168 * 3600)  # 7 Tage
+            await self.redis.expire(key, REDIS_HEALTH_SNAPSHOT_TTL)
 
         except Exception as e:
             logger.debug("Health-Snapshot Fehler: %s", e)
