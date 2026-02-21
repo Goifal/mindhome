@@ -2175,6 +2175,15 @@ function renderSecurity() {
     fRange('diagnostics.stale_sensor_minutes', 'Sensor veraltet nach', 30, 600, 30, {30:'30 Min',60:'1 Std',120:'2 Std',300:'5 Std',600:'10 Std'}) +
     fRange('diagnostics.offline_threshold_minutes', 'Geraet offline nach', 10, 120, 10, {10:'10 Min',30:'30 Min',60:'1 Std',120:'2 Std'}) +
     fRange('diagnostics.alert_cooldown_minutes', 'Wiederholung fruehestens nach', 10, 240, 10, {10:'10 Min',30:'30 Min',60:'1 Std',120:'2 Std',240:'4 Std'}) +
+    fChipSelect('diagnostics.monitor_domains', 'Ueberwachte Domains', [
+        {v:'sensor',l:'Sensoren'}, {v:'binary_sensor',l:'Binaer-Sensoren'},
+        {v:'light',l:'Lichter'}, {v:'switch',l:'Schalter'},
+        {v:'cover',l:'Rolladen'}, {v:'climate',l:'Klima'},
+        {v:'lock',l:'Schloesser'}, {v:'fan',l:'Ventilatoren'},
+        {v:'water_heater',l:'Warmwasser'}, {v:'media_player',l:'Media Player'},
+        {v:'camera',l:'Kameras'}, {v:'alarm_control_panel',l:'Alarmanlagen'}
+    ], 'Nur Entities aus diesen Domains werden ueberwacht') +
+    fKeywords('diagnostics.exclude_patterns', 'Ignorierte Patterns (Entity-ID)') +
     '<div style="margin:12px 0;font-weight:600;font-size:13px;">Ueberwachte Geraete</div>' +
     fInfo('Waehle welche Geraete die Diagnostik ueberwachen soll. Klicke "Von MindHome importieren" um deine konfigurierten Geraete zu laden. Ohne Auswahl werden alle Entities der Standard-Domains geprueft.') +
     '<div id="diagEntityPickerContainer" style="color:var(--text-secondary);padding:12px;">' +
