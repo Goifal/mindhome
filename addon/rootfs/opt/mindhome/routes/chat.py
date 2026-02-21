@@ -605,10 +605,24 @@ def api_chat_voice():
                         logger.warning("TTS audio download failed: %s", audio_resp.status_code)
             else:
                 body = tts_resp.text[:500] if tts_resp else "no response"
-                logger.warning("TTS API error: %s – %s (entity=%s, tried=%s)",
-                               tts_resp.status_code if tts_resp else "?", body, tts_entity, candidate_ids)
+                logger.warning("HA TTS unavailable (%s), trying gTTS fallback. (entity=%s, tried=%s)",
+                               tts_resp.status_code if tts_resp else "?", tts_entity, candidate_ids)
         except Exception as e:
-            logger.warning("TTS generation failed: %s", e)
+            logger.warning("HA TTS failed: %s – trying gTTS fallback", e)
+
+    # --- Fallback: gTTS (Google Text-to-Speech) direkt ---
+    if not tts_audio_b64 and response_text:
+        try:
+            from gtts import gTTS
+            import io
+            tts_obj = gTTS(text=response_text, lang="de")
+            audio_buf = io.BytesIO()
+            tts_obj.write_to_fp(audio_buf)
+            audio_buf.seek(0)
+            tts_audio_b64 = base64.b64encode(audio_buf.read()).decode("utf-8")
+            logger.info("TTS audio via gTTS fallback generated (%d bytes)", len(audio_buf.getvalue()))
+        except Exception as e:
+            logger.warning("gTTS fallback also failed: %s", e)
 
     return jsonify({
         "transcribed_text": transcribed_text,
