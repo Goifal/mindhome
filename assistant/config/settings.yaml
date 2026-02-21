@@ -568,11 +568,12 @@ health_monitor:
   hydration_start_hour: 8
   hydration_end_hour: 22
   alert_cooldown_minutes: 60
-  # Entities die NICHT ueberwacht werden sollen (Substring-Match auf entity_id)
+  # Entities die NICHT ueberwacht werden sollen (Substring-Match auf entity_id ODER friendly_name)
   exclude_patterns:
   - aquarea
   - solar
   - hmipw_
+  - hmipw-
   - hmip_drap
   - hmip_drd
   - steckdose
@@ -581,6 +582,33 @@ health_monitor:
   - warmwasser
   - heizung_vorlauf
   - heizung_ruecklauf
+  - taupunkt
+  - dew_point
+  - dewpoint
+  - system_monitor
+  - processor
+  - cpu_temp
+  - tablet
+  - batterie
+  - battery
+  - outdoor
+  - aussen
+  - außen
+  - carpet
+  - roborock
+  - saugroboter
+  - inlet
+  - outlet
+  - discharge
+  - defrost
+  - pipe_temp
+  - hex_outlet
+  - zone1
+  - zone2
+  - buffer
+  - pool_temp
+  - sterilisation
+  - frost
 device_health:
   enabled: true
   check_interval_minutes: 60
