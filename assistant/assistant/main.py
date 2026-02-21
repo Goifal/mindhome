@@ -2299,15 +2299,33 @@ async def ui_system_update(token: str = ""):
                 _saved_configs[cfg_path] = cfg_path.read_text(encoding="utf-8")
                 _update_log.append(f"Config gesichert: {cfg_path.name}")
 
+        # 0b. Lokale Aenderungen an Config-Dateien fuer Git zuruecksetzen,
+        #     damit git pull nicht wegen Merge-Konflikten abbricht.
+        #     Die echten User-Daten sind in _saved_configs gesichert.
+        _git_managed_configs = [
+            "assistant/config/settings.yaml",
+            "assistant/config/settings.yaml.example",
+        ]
+        for rel_path in _git_managed_configs:
+            _run_cmd(["git", "checkout", "--", rel_path], cwd=str(_REPO_DIR))
+        _update_log.append("Git-Konflikte in Config-Dateien bereinigt")
+
         # 1. Git Pull (via gemountetes /repo)
         _update_log.append("Git pull...")
         rc, out = _run_cmd(["git", "pull"], cwd=str(_REPO_DIR), timeout=60)
         _update_log.append(out.strip())
         if rc != 0:
+            # Auch bei Fehler: User-Config wiederherstellen
+            for cfg_path, content in _saved_configs.items():
+                try:
+                    cfg_path.write_text(content, encoding="utf-8")
+                except Exception:
+                    pass
             _update_log.append("FEHLER: Git pull fehlgeschlagen")
             return {"success": False, "log": _update_log}
 
         # 2. User-Konfiguration wiederherstellen (nach git pull!)
+        #    Die gesicherten User-Settings ueberschreiben die Repo-Defaults.
         for cfg_path, content in _saved_configs.items():
             try:
                 cfg_path.write_text(content, encoding="utf-8")
