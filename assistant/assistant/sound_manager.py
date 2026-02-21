@@ -66,6 +66,7 @@ class SoundManager:
         "denon", "marantz", "yamaha_receiver", "onkyo", "pioneer",
         "soundbar", "xbox", "playstation", "ps5", "ps4", "nintendo",
         "kodi", "plex", "emby", "jellyfin", "vlc", "mpd",
+        "echo", "alexa", "amazon",
     )
 
     def __init__(self, ha_client: HomeAssistantClient):

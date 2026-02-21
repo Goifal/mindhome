@@ -1902,6 +1902,7 @@ class FunctionExecutor:
         "denon", "marantz", "yamaha_receiver", "onkyo", "pioneer",
         "soundbar", "xbox", "playstation", "ps5", "ps4", "nintendo",
         "kodi", "plex", "emby", "jellyfin", "vlc", "mpd",
+        "echo", "alexa", "amazon",
     )
 
     def _is_tts_speaker(self, entity_id: str, attributes: dict = None) -> bool:
