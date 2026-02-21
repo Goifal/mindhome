@@ -979,9 +979,13 @@ class FunctionExecutor:
         service_data = {"entity_id": entity_id}
         if "brightness" in args and state == "on":
             service_data["brightness_pct"] = args["brightness"]
-        # Phase 9: Transition-Parameter (sanftes Dimmen)
+        # Phase 9: Transition-Parameter (sanftes Dimmen) — muss int/float sein
         if "transition" in args:
-            service_data["transition"] = args["transition"]
+            try:
+                service_data["transition"] = int(args["transition"])
+            except (ValueError, TypeError):
+                # LLM schickt manchmal "smooth" statt Zahl — Default 2s
+                service_data["transition"] = 2
         # Foundation F.4: Farbtemperatur (warm/neutral/cold)
         _COLOR_TEMP_MAP = {"warm": 2700, "neutral": 4000, "cold": 6500}
         if "color_temp" in args and state == "on":
