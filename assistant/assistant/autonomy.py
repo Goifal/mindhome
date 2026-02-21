@@ -58,8 +58,11 @@ class AutonomyManager:
 
         # Phase 10: Trust-Level Konfiguration laden
         trust_cfg = yaml_config.get("trust_levels", {})
-        self._default_trust = trust_cfg.get("default", 0)
-        self._person_trust: dict[str, int] = trust_cfg.get("persons", {}) or {}
+        self._default_trust = int(trust_cfg.get("default", 0))
+        raw_persons = trust_cfg.get("persons", {}) or {}
+        self._person_trust: dict[str, int] = {
+            name: int(level) for name, level in raw_persons.items()
+        }
         self._guest_actions = set(trust_cfg.get("guest_allowed_actions", [
             "set_light", "set_climate", "play_media", "get_entity_state", "play_sound",
         ]))
