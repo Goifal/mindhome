@@ -1874,7 +1874,9 @@ function renderVoice() {
     {v:'notification',l:'Benachrichtigung'}
   ];
   return sectionWrap('&#128266;', 'Sprachausgabe (TTS)',
-    fInfo('Wie schnell und mit welchen Pausen soll der Assistent sprechen?') +
+    fInfo('Standard-Lautsprecher und TTS-Engine fuer Jarvis. Wenn leer, wird der erste Raum-Speaker verwendet.') +
+    fText('sounds.default_speaker', 'Standard-Lautsprecher', 'z.B. media_player.kuche') +
+    fText('sounds.tts_entity', 'TTS-Engine', 'z.B. tts.piper') +
     fToggle('tts.ssml_enabled', 'Fortgeschrittene Betonung (SSML)') +
     '<div style="margin:12px 0;font-weight:600;font-size:13px;">Sprechgeschwindigkeit pro Situation</div>' +
     fRange('tts.speed.confirmation', 'Bestaetigung', 50, 200, 5, {50:'Langsam',100:'Normal',150:'Schnell',200:'Sehr schnell'}) +

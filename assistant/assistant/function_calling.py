@@ -1406,7 +1406,6 @@ class FunctionExecutor:
                         "entity_id": tts_entity,
                         "media_player_entity_id": speaker_entity,
                         "message": message,
-                        "language": "de",
                     },
                 )
             elif speaker_entity:
@@ -1416,7 +1415,6 @@ class FunctionExecutor:
                     {
                         "entity_id": speaker_entity,
                         "message": message,
-                        "language": "de",
                     },
                 )
             else:
@@ -1474,7 +1472,6 @@ class FunctionExecutor:
                         "entity_id": tts_entity,
                         "media_player_entity_id": speaker,
                         "message": message,
-                        "language": "de",
                     },
                 )
                 room_info = f" im {preferred_room}" if preferred_room else ""
@@ -1543,7 +1540,6 @@ class FunctionExecutor:
                     "entity_id": tts_entity,
                     "media_player_entity_id": speaker_entity,
                     "message": text,
-                    "language": "de",
                 },
             )
         else:
