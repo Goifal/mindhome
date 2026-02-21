@@ -48,6 +48,16 @@ class DiagnosticsEngine:
         self.offline_minutes = int(diag_cfg.get("offline_threshold_minutes", 30))
         self.alert_cooldown = int(diag_cfg.get("alert_cooldown_minutes", 60))
 
+        # Entity-Filter: Nur bestimmte Domains ueberwachen
+        self.monitor_domains = diag_cfg.get("monitor_domains", [
+            "sensor", "binary_sensor", "light", "switch",
+            "cover", "climate", "lock", "fan",
+        ])
+        # Zusaetzliche Ausschluss-Patterns (entity_id enthaelt Pattern → ueberspringen)
+        self.exclude_patterns = diag_cfg.get("exclude_patterns", [
+            "weather.", "sun.", "forecast",
+        ])
+
         # Wartungs-Config
         maint_cfg = yaml_config.get("maintenance", {})
         self.maintenance_enabled = maint_cfg.get("enabled", True)
@@ -93,8 +103,19 @@ class DiagnosticsEngine:
     # Feature 10.4: Entity-Diagnostik
     # ------------------------------------------------------------------
 
+    def _should_monitor(self, entity_id: str) -> bool:
+        """Prueft ob Entity ueberwacht werden soll (Domain-Whitelist + Exclude-Patterns)."""
+        domain = entity_id.split(".")[0] if "." in entity_id else ""
+        if domain not in self.monitor_domains:
+            return False
+        entity_lower = entity_id.lower()
+        for pattern in self.exclude_patterns:
+            if pattern.lower() in entity_lower:
+                return False
+        return True
+
     async def check_entities(self) -> list[dict]:
-        """Prueft alle HA-Entities auf Probleme.
+        """Prueft ueberwachte HA-Entities auf Probleme.
 
         Returns:
             Liste von Problem-Dicts mit:
@@ -112,6 +133,8 @@ class DiagnosticsEngine:
 
         for state in states:
             entity_id = state.get("entity_id", "")
+            if not self._should_monitor(entity_id):
+                continue
             current_state = state.get("state", "")
             attrs = state.get("attributes", {})
             last_changed = state.get("last_changed", "")

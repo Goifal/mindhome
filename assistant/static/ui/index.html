@@ -2171,7 +2171,14 @@ function renderSecurity() {
     fRange('diagnostics.battery_warning_threshold', 'Batterie-Warnung ab', 5, 50, 5, {5:'5%',10:'10%',15:'15%',20:'20%',30:'30%',50:'50%'}) +
     fRange('diagnostics.stale_sensor_minutes', 'Sensor veraltet nach', 30, 600, 30, {30:'30 Min',60:'1 Std',120:'2 Std',300:'5 Std',600:'10 Std'}) +
     fRange('diagnostics.offline_threshold_minutes', 'Geraet offline nach', 10, 120, 10, {10:'10 Min',30:'30 Min',60:'1 Std',120:'2 Std'}) +
-    fRange('diagnostics.alert_cooldown_minutes', 'Wiederholung fruehestens nach', 10, 240, 10, {10:'10 Min',30:'30 Min',60:'1 Std',120:'2 Std',240:'4 Std'})
+    fRange('diagnostics.alert_cooldown_minutes', 'Wiederholung fruehestens nach', 10, 240, 10, {10:'10 Min',30:'30 Min',60:'1 Std',120:'2 Std',240:'4 Std'}) +
+    '<div style="margin:12px 0;font-weight:600;font-size:13px;">Entity-Filter</div>' +
+    fInfo('Nur Entities aus den gewaehlten Domains werden ueberwacht. Zusaetzliche Patterns koennen einzelne Entities ausschliessen.') +
+    fChipSelect('diagnostics.monitor_domains', 'Ueberwachte Domains', [
+      'sensor','binary_sensor','light','switch','cover','climate',
+      'lock','fan','water_heater','media_player','camera','alarm_control_panel'
+    ]) +
+    fKeywords('diagnostics.exclude_patterns', 'Ignorierte Patterns')
   ) +
   sectionWrap('&#128200;', 'Feedback-System',
     fInfo('Wie reagiert der Assistent auf positives/negatives Feedback? Scores bestimmen wie haeufig er sich meldet.') +
