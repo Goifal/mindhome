@@ -307,7 +307,7 @@ security:
   climate_limits:
     min: 15
     max: 28
-  api_key: 20oAkoVG0fvIw_hegYx5MwyHjYbwJzqelMkGugp2QJ0
+  api_key: ''
 routines:
   morning_briefing:
     enabled: true

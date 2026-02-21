@@ -472,6 +472,7 @@ class CoverControlManager:
                         "facade": c.facade,
                         "floor": c.floor,
                         "cover_type": c.cover_type,
+                        "enabled": c.enabled if c.enabled is not None else True,
                         "group_ids": c.group_ids or [],
                     }
         except Exception as e:
@@ -479,8 +480,8 @@ class CoverControlManager:
         return configs
 
     def set_cover_config(self, entity_id, facade=None, floor=None,
-                         cover_type=None, group_ids=None):
-        """Set facade/type/floor config for a cover entity."""
+                         cover_type=None, group_ids=None, enabled=None):
+        """Set facade/type/floor/enabled config for a cover entity."""
         from models import CoverConfig
         try:
             with self.get_session() as session:
@@ -494,8 +495,11 @@ class CoverControlManager:
                     c.floor = floor
                 if cover_type is not None:
                     c.cover_type = cover_type
+                if enabled is not None:
+                    c.enabled = enabled
                 if group_ids is not None:
                     c.group_ids = group_ids
+                session.flush()
                 return True
         except Exception as e:
             logger.error(f"Error setting cover config: {e}")

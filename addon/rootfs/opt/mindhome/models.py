@@ -1247,7 +1247,8 @@ class CoverConfig(Base):
     entity_id = Column(String(255), nullable=False, unique=True)
     facade = Column(String(5), nullable=True)  # "N", "NE", "E", "SE", "S", "SW", "W", "NW"
     floor = Column(String(50), nullable=True)  # "EG", "OG1", "OG2", "DG", "KG"
-    cover_type = Column(String(30), default="shutter")  # "shutter", "blind", "awning", "roof_window"
+    cover_type = Column(String(30), default="shutter")  # "shutter", "blind", "awning", "roof_window", "garage_door"
+    enabled = Column(Boolean, default=True)  # False = Jarvis darf diesen Cover NICHT steuern
     group_ids = Column(JSON, default=list)  # [1, 3] — references CoverGroup.id
     created_at = Column(DateTime, default=_utcnow)
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
