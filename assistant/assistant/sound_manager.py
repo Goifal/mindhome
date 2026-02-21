@@ -20,6 +20,7 @@ Sound-Events:
   goodnight  - Gute-Nacht-Melodie
 """
 
+import asyncio
 import logging
 import time
 from datetime import datetime
@@ -240,7 +241,6 @@ class SoundManager:
                         "entity_id": tts_entity,
                         "media_player_entity_id": speaker_entity,
                         "message": chime_text,
-                        "language": "de",
                     },
                 )
             except Exception as e:
@@ -316,7 +316,15 @@ class SoundManager:
         if self._configured_default_speaker:
             return self._configured_default_speaker
 
-        # 2. Automatische Erkennung
+        # 2. Erster konfigurierter Room-Speaker als Fallback
+        room_speakers = yaml_config.get("multi_room", {}).get("room_speakers") or {}
+        if room_speakers:
+            first_speaker = next(iter(room_speakers.values()), None)
+            if first_speaker:
+                logger.info("Default-Speaker aus room_speakers: %s", first_speaker)
+                return first_speaker
+
+        # 3. Automatische Erkennung
         states = await self.ha.get_states()
         if not states:
             logger.warning("Kein Default-Speaker: get_states() liefert keine Daten")
@@ -387,8 +395,19 @@ class SoundManager:
             logger.warning("Kein Speaker fuer Sprachausgabe gefunden (room=%s)", room)
             return False
 
-        # Volume setzen
+        # Volume merken (fuer Wiederherstellung nach TTS)
         volume = tts_data.get("volume", 0.8)
+        old_volume = None
+        try:
+            states = await self.ha.get_states()
+            for s in (states or []):
+                if s.get("entity_id") == speaker_entity:
+                    old_volume = s.get("attributes", {}).get("volume_level")
+                    break
+        except Exception:
+            pass
+
+        # Volume setzen
         try:
             await self.ha.call_service(
                 "media_player", "volume_set",
@@ -410,7 +429,6 @@ class SoundManager:
                         "entity_id": tts_entity,
                         "media_player_entity_id": speaker_entity,
                         "message": speak_text,
-                        "language": "de",
                     },
                 )
                 if success:
@@ -418,6 +436,19 @@ class SoundManager:
                         "Jarvis spricht via %s auf %s (vol: %.1f)",
                         tts_entity, speaker_entity, volume,
                     )
+                    # Volume wiederherstellen nach TTS-Dauer
+                    if old_volume is not None and abs(old_volume - volume) > 0.01:
+                        async def _restore_volume():
+                            await asyncio.sleep(8)
+                            try:
+                                await self.ha.call_service(
+                                    "media_player", "volume_set",
+                                    {"entity_id": speaker_entity, "volume_level": old_volume},
+                                )
+                                logger.debug("Volume wiederhergestellt: %s -> %.2f", speaker_entity, old_volume)
+                            except Exception as ex:
+                                logger.debug("Volume-Restore fehlgeschlagen: %s", ex)
+                        asyncio.create_task(_restore_volume())
                     return True
             except Exception as e:
                 logger.warning("TTS speak fehlgeschlagen: %s", e)
