@@ -4,12 +4,16 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "1.4.4"
-BUILD = 94
-BUILD_DATE = "2026-02-20"
+VERSION = "1.4.5"
+BUILD = 95
+BUILD_DATE = "2026-02-21"
 CODENAME = "Jarvis Voice"
 
 # Changelog
+# Build 95: v1.4.5 Jarvis Voice — Voice-Pipeline Performance
+#   - PERF: ffmpeg Pipe statt Temp-Files (kein Disk-I/O)
+#   - PERF: STT Platform-Name gecacht (spart HTTP-Call pro Request)
+#   - PERF: TTS Engine-ID + Sprache gecacht (spart bis zu 9 HTTP-Requests)
 # Build 94: v1.4.4 Jarvis Voice — STT X-Speech-Content, Frontend-Stability
 #   - FIX: STT 400 "Missing X-Speech-Content header" — Audio-Metadaten Header hinzugefuegt
 #   - FIX: ffmpeg erzwingt s16 sample format fuer WAV-Konvertierung
