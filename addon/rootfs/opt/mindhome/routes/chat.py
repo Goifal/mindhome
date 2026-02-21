@@ -22,6 +22,33 @@ _deps = {}
 # In-memory conversation history (persists until addon restart)
 _conversation_history = []
 import threading
+
+
+def _log_jarvis_actions(actions, user_text, response_text):
+    """Log Jarvis actions to ActionLog for transparency."""
+    if not actions:
+        return
+    try:
+        from db import get_db_session
+        from models import ActionLog
+        with get_db_session() as session:
+            for action in actions:
+                func = action.get("function") or action.get("action") or "unknown"
+                args = action.get("arguments") or action.get("args") or {}
+                result_msg = action.get("result", {}).get("message", "")
+                entry = ActionLog(
+                    action_type="jarvis_action",
+                    action_data={
+                        "function": func,
+                        "arguments": args,
+                        "result": result_msg,
+                        "response": response_text[:200] if response_text else "",
+                    },
+                    reason=f"Benutzer: {user_text[:150]}" if user_text else "Automatisch",
+                )
+                session.add(entry)
+    except Exception as e:
+        logger.debug("Action logging failed: %s", e)
 _history_lock = threading.Lock()
 MAX_HISTORY = 200
 
@@ -137,6 +164,9 @@ def api_chat_send():
                 _conversation_history.append(assistant_msg)
                 while len(_conversation_history) > MAX_HISTORY:
                     _conversation_history.pop(0)
+
+            # Log actions to ActionLog for transparency
+            _log_jarvis_actions(result.get("actions", []), text, result.get("response", ""))
 
             return jsonify({
                 "response": result.get("response", ""),
@@ -531,6 +561,9 @@ def api_chat_voice():
             _conversation_history.append(assistant_msg)
             while len(_conversation_history) > MAX_HISTORY:
                 _conversation_history.pop(0)
+
+        # Log voice actions for transparency
+        _log_jarvis_actions(result.get("actions", []), transcribed_text, response_text)
 
     except Exception as e:
         logger.error("Voice chat assistant error: %s", e)

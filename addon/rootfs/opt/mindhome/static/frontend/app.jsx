@@ -4363,6 +4363,7 @@ const CoverPage = () => {
                                             <option value="blind">{t('Jalousie', 'Blind')}</option>
                                             <option value="awning">{t('Markise', 'Awning')}</option>
                                             <option value="roof_window">{t('Dachfenster', 'Roof Window')}</option>
+                                            <option value="garage_door">{t('Garagentor', 'Garage Door')}</option>
                                         </select>
                                     </div>
                                 </div>
@@ -9769,6 +9770,8 @@ const JarvisChatPage = () => {
     const [uploadProgress, setUploadProgress] = useState(0);
     const [recording, setRecording] = useState(false);
     const [voiceProcessing, setVoiceProcessing] = useState(false);
+    const [showActionLog, setShowActionLog] = useState(false);
+    const [actionLog, setActionLog] = useState([]);
     const mediaRecorderRef = useRef(null);
     const audioChunksRef = useRef([]);
     const messagesEndRef = useRef(null);
@@ -10095,6 +10098,11 @@ const JarvisChatPage = () => {
         }
     };
 
+    const loadActionLog = async () => {
+        const d = await api.get('action-log?type=jarvis_action&limit=30&period=7d');
+        if (d && d.items) setActionLog(d.items);
+    };
+
     const clearHistory = async () => {
         await api.post('chat/clear');
         setMessages([]);
@@ -10225,6 +10233,11 @@ const JarvisChatPage = () => {
                 React.createElement('div', { style: { display: 'flex', gap: 4 } },
                     React.createElement('button', {
                         className: 'btn btn-ghost btn-icon',
+                        onClick: () => { setShowActionLog(!showActionLog); if (!showActionLog) loadActionLog(); },
+                        title: lang === 'de' ? 'Aktivitätslog' : 'Action Log',
+                    }, React.createElement('span', { className: 'mdi mdi-format-list-bulleted', style: { fontSize: 18 } })),
+                    React.createElement('button', {
+                        className: 'btn btn-ghost btn-icon',
                         onClick: clearHistory,
                         title: lang === 'de' ? 'Verlauf löschen' : 'Clear history',
                     }, React.createElement('span', { className: 'mdi mdi-delete-outline', style: { fontSize: 18 } })),
@@ -10304,6 +10317,71 @@ const JarvisChatPage = () => {
                         : 'Whisper (STT) and Piper (TTS) entities from Home Assistant'
                     )
                 )
+            ),
+
+            // Action Log panel (collapsible)
+            showActionLog && React.createElement('div', {
+                className: 'card animate-in',
+                style: { padding: 16, marginBottom: 12, flexShrink: 0, maxHeight: 350, overflowY: 'auto' }
+            },
+                React.createElement('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 } },
+                    React.createElement('div', { style: { fontWeight: 700, fontSize: 14 } },
+                        React.createElement('span', { className: 'mdi mdi-format-list-bulleted', style: { marginRight: 6 } }),
+                        lang === 'de' ? 'Jarvis Aktivitätslog' : 'Jarvis Action Log'
+                    ),
+                    React.createElement('button', {
+                        className: 'btn btn-ghost btn-sm',
+                        onClick: loadActionLog,
+                    }, React.createElement('span', { className: 'mdi mdi-refresh', style: { fontSize: 16 } }))
+                ),
+                actionLog.length === 0
+                    ? React.createElement('div', { style: { fontSize: 13, color: 'var(--text-muted)', textAlign: 'center', padding: 16 } },
+                        lang === 'de' ? 'Keine Aktionen in den letzten 7 Tagen' : 'No actions in the last 7 days'
+                    )
+                    : actionLog.map(log => {
+                        const d = log.action_data || {};
+                        const func = d.function || '?';
+                        const args = d.arguments || {};
+                        const result = d.result || '';
+                        const reason = log.reason || '';
+                        const ts = parseUTC(log.created_at);
+                        const timeStr = ts ? ts.toLocaleString(lang === 'de' ? 'de-DE' : 'en-US', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
+
+                        // Action icon based on function type
+                        const iconMap = { set_light: 'mdi-lightbulb', set_cover: 'mdi-blinds-horizontal', set_climate: 'mdi-thermometer', activate_scene: 'mdi-palette', play_media: 'mdi-music', send_notification: 'mdi-bell' };
+                        const icon = iconMap[func] || 'mdi-flash';
+
+                        // Human-readable description
+                        const descParts = [];
+                        if (args.room) descParts.push(args.room);
+                        if (args.position !== undefined) descParts.push(args.position + '%');
+                        if (args.brightness !== undefined) descParts.push(args.brightness + '%');
+                        if (args.state) descParts.push(args.state);
+                        if (args.temperature !== undefined) descParts.push(args.temperature + '°');
+                        const desc = descParts.length > 0 ? ` (${descParts.join(', ')})` : '';
+
+                        return React.createElement('div', {
+                            key: log.id,
+                            style: { padding: '8px 0', borderBottom: '1px solid var(--border-color)', fontSize: 13 }
+                        },
+                            React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 } },
+                                React.createElement('span', { className: 'mdi ' + icon, style: { fontSize: 16, color: 'var(--accent-primary)' } }),
+                                React.createElement('span', { style: { fontWeight: 600 } }, func.replace(/_/g, ' ')),
+                                React.createElement('span', { style: { color: 'var(--text-muted)' } }, desc)
+                            ),
+                            result && React.createElement('div', { style: { fontSize: 12, color: 'var(--text-secondary)', marginLeft: 22, marginBottom: 2 } },
+                                React.createElement('span', { className: 'mdi mdi-arrow-right', style: { marginRight: 4, fontSize: 10 } }),
+                                result
+                            ),
+                            React.createElement('div', { style: { fontSize: 11, color: 'var(--text-muted)', marginLeft: 22, display: 'flex', gap: 8 } },
+                                React.createElement('span', null, timeStr),
+                                reason && React.createElement('span', { style: { fontStyle: 'italic' } },
+                                    React.createElement('span', { className: 'mdi mdi-account', style: { marginRight: 2, fontSize: 10 } }),
+                                    reason.length > 60 ? reason.substring(0, 60) + '...' : reason
+                                )
+                            )
+                        );
+                    })
             ),
 
             // Connection warning
