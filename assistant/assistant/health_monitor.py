@@ -60,6 +60,9 @@ class HealthMonitor:
         self._alert_cooldowns: dict[str, datetime] = {}
         self._alert_cooldown_minutes = cfg.get("alert_cooldown_minutes", 60)
 
+        # Exclude-Patterns: Entities deren ID einen dieser Substrings enthaelt werden ignoriert
+        self._exclude_patterns = [p.lower() for p in cfg.get("exclude_patterns", [])]
+
     async def initialize(self, redis_client: Optional[redis.Redis] = None):
         """Initialisiert mit Redis-Verbindung."""
         self.redis = redis_client
@@ -158,10 +161,16 @@ class HealthMonitor:
             if not entity_id.startswith("sensor."):
                 continue
 
-            value_str = state.get("state", "")
             attrs = state.get("attributes", {})
-            device_class = attrs.get("device_class", "")
             friendly_name = attrs.get("friendly_name", entity_id)
+
+            # Exclude-Filter: entity_id UND friendly_name pruefen
+            check_str = f"{entity_id} {friendly_name}".lower()
+            if any(pat in check_str for pat in self._exclude_patterns):
+                continue
+
+            value_str = state.get("state", "")
+            device_class = attrs.get("device_class", "")
 
             try:
                 value = float(value_str)
@@ -181,7 +190,7 @@ class HealthMonitor:
                     alerts.append(alert)
 
             # Temperatur-Check (nur Indoor-Sensoren)
-            elif device_class == "temperature" and "outdoor" not in entity_id.lower() and "aussen" not in entity_id.lower():
+            elif device_class == "temperature":
                 alert = self._check_temperature(entity_id, friendly_name, value)
                 if alert:
                     alerts.append(alert)
@@ -313,8 +322,14 @@ class HealthMonitor:
                 continue
 
             attrs = state.get("attributes", {})
-            device_class = attrs.get("device_class", "")
             friendly_name = attrs.get("friendly_name", entity_id)
+
+            # Exclude-Filter: entity_id UND friendly_name pruefen
+            check_str = f"{entity_id} {friendly_name}".lower()
+            if any(pat in check_str for pat in self._exclude_patterns):
+                continue
+
+            device_class = attrs.get("device_class", "")
 
             try:
                 value = float(state.get("state", ""))
@@ -331,7 +346,7 @@ class HealthMonitor:
                 sensors.append({"name": friendly_name, "type": "humidity", "value": value, "unit": "%", "score": score})
                 total_score += score
                 count += 1
-            elif device_class == "temperature" and "outdoor" not in entity_id.lower():
+            elif device_class == "temperature":
                 score = self._score_temperature(value)
                 sensors.append({"name": friendly_name, "type": "temperature", "value": value, "unit": "°C", "score": score})
                 total_score += score

@@ -225,7 +225,7 @@ REGELN:
 - Wenn du etwas tust, bestätige kurz. Nicht erklären WAS du tust.
 - Wenn du etwas NICHT tun kannst, sag es ehrlich und schlage eine Alternative vor.
 - Stell keine Rückfragen die du aus dem Kontext beantworten kannst.
-- Wetter, Temperaturen, Anwesenheit etc. stehen im KONTEXT unten. Nutze diese Daten direkt. Sag NIEMALS du hast keinen Zugriff auf Wetter oder Sensoren.
+- Wetter, Temperaturen, Anwesenheit etc. stehen im KONTEXT unten. Nutze AUSSCHLIESSLICH diese Daten. ERFINDE NIEMALS Werte! Wenn im Kontext "Wetter DRAUSSEN: 1.1°C" steht, dann IST es 1.1°C — nicht 22°C, nicht "angenehm", sondern EXAKT der Wert aus dem Kontext. Sag NIEMALS du hast keinen Zugriff auf Wetter oder Sensoren.
 
 {complexity_section}
 AKTUELLER STIL: {time_style}
@@ -1248,7 +1248,7 @@ class PersonalityEngine:
                     f"{room}: {data.get('current', '?')}°C"
                     for room, data in temps.items()
                 ]
-                lines.append(f"- Temperaturen: {', '.join(temp_strs)}")
+                lines.append(f"- Raumtemperaturen INNEN: {', '.join(temp_strs)}")
 
             if "lights" in house:
                 lines.append(f"- Lichter an: {', '.join(house.get('lights') or []) or 'keine'}")
@@ -1266,7 +1266,7 @@ class PersonalityEngine:
                     weather_parts.append(f"Luftfeuchtigkeit {w['humidity']}%")
                 if w.get('wind_speed'):
                     weather_parts.append(f"Wind {w['wind_speed']} km/h")
-                lines.append(f"- Wetter: {', '.join(weather_parts)}")
+                lines.append(f"- Wetter DRAUSSEN (Aussentemperatur!): {', '.join(weather_parts)}")
 
             if "calendar" in house:
                 for event in (house["calendar"] or [])[:3]:
