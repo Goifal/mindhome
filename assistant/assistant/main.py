@@ -2242,11 +2242,23 @@ async def ui_system_status(token: str = ""):
         "free_gb": round(free / (1024**3), 1),
     }
 
+    # Remote claude/* Branches auflisten
+    _, remote_branches_raw = _run_cmd(
+        ["git", "branch", "-r", "--list", "origin/claude/*"],
+        cwd=str(_REPO_DIR),
+    )
+    remote_branches = [
+        b.strip().removeprefix("origin/")
+        for b in remote_branches_raw.strip().splitlines()
+        if b.strip() and "->" not in b
+    ]
+
     return {
         "git": {
             "branch": branch.strip(),
             "commit": commit.strip(),
             "changes": git_status.strip(),
+            "remote_branches": remote_branches,
         },
         "containers": containers,
         "ollama": {
@@ -2272,21 +2284,42 @@ async def _docker_restart(container: str = "mindhome-assistant", timeout: int = 
         return False
 
 
+class BranchUpdateRequest(BaseModel):
+    branch: str | None = None
+
+
 @app.post("/api/ui/system/update")
-async def ui_system_update(token: str = ""):
+async def ui_system_update(token: str = "", body: BranchUpdateRequest | None = None):
     """System-Update: git pull + Container-Restart (Code ist als Volume gemountet).
 
     WICHTIG: User-Konfiguration (settings.yaml, .env) wird vor dem Pull
     gesichert und danach wiederhergestellt, damit Einstellungen nicht verloren gehen.
+
+    Optionaler Body-Parameter 'branch': Wenn angegeben, wird auf diesen Branch
+    gewechselt bevor der Pull ausgefuehrt wird.
     """
     _check_token(token)
 
     if _update_lock.locked():
         raise HTTPException(status_code=409, detail="Update laeuft bereits")
 
+    target_branch = body.branch.strip() if body and body.branch else None
+
     async with _update_lock:
         _update_log.clear()
         _update_log.append(f"[{datetime.now().strftime('%H:%M:%S')}] Update gestartet...")
+
+        # Aktuellen Branch merken (fuer Rollback bei Fehler)
+        _, current_branch_raw = _run_cmd(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=str(_REPO_DIR)
+        )
+        old_branch = current_branch_raw.strip()
+        switching = target_branch and target_branch != old_branch
+
+        if switching:
+            _update_log.append(f"Branch-Wechsel: {old_branch} -> {target_branch}")
+        else:
+            _update_log.append(f"Update auf Branch: {target_branch or old_branch}")
 
         # 0. User-Konfiguration sichern (vor git pull!)
         _user_config_files = [
@@ -2299,21 +2332,67 @@ async def ui_system_update(token: str = ""):
                 _saved_configs[cfg_path] = cfg_path.read_text(encoding="utf-8")
                 _update_log.append(f"Config gesichert: {cfg_path.name}")
 
-        # 0b. ALLE lokalen Aenderungen stashen, damit git pull sauber durchlaeuft.
+        # 0b. ALLE lokalen Aenderungen stashen, damit git pull/checkout sauber durchlaeuft.
         #     User-Config ist bereits in _saved_configs gesichert und wird danach
         #     wiederhergestellt — unabhaengig davon was Git macht.
         _run_cmd(["git", "stash", "--include-untracked"], cwd=str(_REPO_DIR))
         _update_log.append("Lokale Aenderungen gestasht")
 
-        # 1. Git Pull (via gemountetes /repo)
-        _update_log.append("Git pull...")
-        rc, out = _run_cmd(["git", "pull"], cwd=str(_REPO_DIR), timeout=60)
+        # 1. Branch-Wechsel (falls gewuenscht)
+        if switching:
+            # Fetch des Ziel-Branches
+            _update_log.append(f"Fetch origin/{target_branch}...")
+            rc_fetch, out_fetch = _run_cmd(
+                ["git", "fetch", "origin", target_branch],
+                cwd=str(_REPO_DIR), timeout=60,
+            )
+            if rc_fetch != 0:
+                _update_log.append(f"FEHLER: git fetch fehlgeschlagen: {out_fetch.strip()}")
+                # Stash droppen, Config wiederherstellen, abbrechen
+                _run_cmd(["git", "stash", "drop"], cwd=str(_REPO_DIR))
+                for cfg_path, content in _saved_configs.items():
+                    try:
+                        cfg_path.write_text(content, encoding="utf-8")
+                    except Exception:
+                        pass
+                return {"success": False, "log": _update_log}
+
+            # Checkout auf Ziel-Branch
+            _update_log.append(f"Checkout {target_branch}...")
+            rc_co, out_co = _run_cmd(
+                ["git", "checkout", target_branch],
+                cwd=str(_REPO_DIR), timeout=30,
+            )
+            if rc_co != 0:
+                _update_log.append(f"FEHLER: git checkout fehlgeschlagen: {out_co.strip()}")
+                # Zurueck zum alten Branch
+                _run_cmd(["git", "checkout", old_branch], cwd=str(_REPO_DIR))
+                _run_cmd(["git", "stash", "drop"], cwd=str(_REPO_DIR))
+                for cfg_path, content in _saved_configs.items():
+                    try:
+                        cfg_path.write_text(content, encoding="utf-8")
+                    except Exception:
+                        pass
+                _update_log.append(f"Rollback zu {old_branch}")
+                return {"success": False, "log": _update_log}
+
+        # 2. Git Pull
+        pull_branch = target_branch or old_branch
+        _update_log.append(f"Git pull origin/{pull_branch}...")
+        rc, out = _run_cmd(
+            ["git", "pull", "origin", pull_branch],
+            cwd=str(_REPO_DIR), timeout=60,
+        )
 
         # Stash wieder droppen (User-Config kommt aus _saved_configs, nicht aus stash)
         _run_cmd(["git", "stash", "drop"], cwd=str(_REPO_DIR))
         _update_log.append(out.strip())
         if rc != 0:
-            # Auch bei Fehler: User-Config wiederherstellen
+            # Bei Fehler und Branch-Wechsel: zurueck zum alten Branch
+            if switching:
+                _run_cmd(["git", "checkout", old_branch], cwd=str(_REPO_DIR))
+                _update_log.append(f"Rollback zu {old_branch}")
+            # User-Config wiederherstellen
             for cfg_path, content in _saved_configs.items():
                 try:
                     cfg_path.write_text(content, encoding="utf-8")
@@ -2322,7 +2401,7 @@ async def ui_system_update(token: str = ""):
             _update_log.append("FEHLER: Git pull fehlgeschlagen")
             return {"success": False, "log": _update_log}
 
-        # 2. User-Konfiguration wiederherstellen (nach git pull!)
+        # 3. User-Konfiguration wiederherstellen (nach git pull!)
         #    Die gesicherten User-Settings ueberschreiben die Repo-Defaults.
         for cfg_path, content in _saved_configs.items():
             try:
@@ -2333,11 +2412,11 @@ async def ui_system_update(token: str = ""):
 
         _update_log.append(f"[{datetime.now().strftime('%H:%M:%S')}] Code aktualisiert! Container startet neu...")
 
-        # 3. Restart via Docker Engine API (Code als Volume = sofort aktiv)
+        # 4. Restart via Docker Engine API (Code als Volume = sofort aktiv)
         # asyncio.ensure_future damit Response noch rausgeht bevor Restart
         asyncio.ensure_future(_docker_restart())
 
-        return {"success": True, "log": _update_log}
+        return {"success": True, "log": _update_log, "branch": pull_branch}
 
 
 @app.post("/api/ui/system/restart")
@@ -2387,39 +2466,74 @@ async def ui_system_update_models(token: str = ""):
 
 
 @app.get("/api/ui/system/update-check")
-async def ui_system_update_check(token: str = ""):
-    """Prueft ob neue Commits auf dem Remote verfuegbar sind."""
+async def ui_system_update_check(token: str = "", branch: str = ""):
+    """Prueft ob neue Commits auf dem Remote verfuegbar sind.
+
+    Optionaler Query-Parameter 'branch': Wenn angegeben, wird gegen diesen
+    Remote-Branch verglichen statt gegen den aktuellen Branch.
+    """
     _check_token(token)
 
     # Aktuellen Branch ermitteln
-    _, current_branch = _run_cmd(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=str(_REPO_DIR))
-    branch = current_branch.strip() or "main"
+    _, current_branch_raw = _run_cmd(
+        ["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=str(_REPO_DIR)
+    )
+    current_branch = current_branch_raw.strip() or "main"
+    check_branch = branch.strip() if branch.strip() else current_branch
+    is_different_branch = check_branch != current_branch
 
     # Fetch
-    rc, _ = _run_cmd(["git", "fetch", "origin", branch], cwd=str(_REPO_DIR), timeout=30)
+    rc, fetch_out = _run_cmd(
+        ["git", "fetch", "origin", check_branch],
+        cwd=str(_REPO_DIR), timeout=30,
+    )
     if rc != 0:
-        return {"updates_available": False, "error": "Git fetch fehlgeschlagen"}
+        return {
+            "updates_available": False,
+            "error": f"Git fetch fehlgeschlagen fuer {check_branch}",
+            "current_branch": current_branch,
+            "check_branch": check_branch,
+        }
 
+    # Lokalen HEAD ermitteln
     _, local = _run_cmd(["git", "rev-parse", "HEAD"], cwd=str(_REPO_DIR))
-    _, remote = _run_cmd(["git", "rev-parse", f"origin/{branch}"], cwd=str(_REPO_DIR))
+    _, remote = _run_cmd(
+        ["git", "rev-parse", f"origin/{check_branch}"], cwd=str(_REPO_DIR)
+    )
 
     local = local.strip()
     remote = remote.strip()
 
-    if local == remote:
-        return {"updates_available": False, "local": local[:8], "remote": remote[:8]}
-
-    _, log = _run_cmd(
-        ["git", "log", "--oneline", f"{local}..{remote}"],
-        cwd=str(_REPO_DIR),
-    )
-
-    return {
-        "updates_available": True,
+    result = {
+        "current_branch": current_branch,
+        "check_branch": check_branch,
+        "is_branch_switch": is_different_branch,
         "local": local[:8],
         "remote": remote[:8],
-        "new_commits": log.strip().split("\n") if log.strip() else [],
     }
+
+    if not is_different_branch and local == remote:
+        result["updates_available"] = False
+        return result
+
+    # Bei anderem Branch oder unterschiedlichen Commits: Updates vorhanden
+    if is_different_branch:
+        # Commits auf dem Ziel-Branch anzeigen (letzte 20)
+        _, log = _run_cmd(
+            ["git", "log", "--oneline", "-20", f"origin/{check_branch}"],
+            cwd=str(_REPO_DIR),
+        )
+        result["updates_available"] = True
+        result["new_commits"] = log.strip().split("\n") if log.strip() else []
+    else:
+        _, log = _run_cmd(
+            ["git", "log", "--oneline", f"{local}..{remote}"],
+            cwd=str(_REPO_DIR),
+        )
+        result["updates_available"] = True
+        result["new_commits"] = log.strip().split("\n") if log.strip() else []
+
+    return result
 
 
 @app.get("/")
