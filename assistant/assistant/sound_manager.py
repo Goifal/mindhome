@@ -241,19 +241,7 @@ class SoundManager:
             except Exception as e:
                 logger.debug("TTS-Chime fehlgeschlagen: %s", e)
 
-        # Letzter Fallback: Legacy TTS
-        try:
-            return await self.ha.call_service(
-                "tts", "cloud_say",
-                {
-                    "entity_id": speaker_entity,
-                    "message": chime_text,
-                    "language": "de",
-                },
-            )
-        except Exception as e:
-            logger.debug("TTS-Chime Fallback fehlgeschlagen: %s", e)
-            return False
+        return False
 
     def _get_auto_volume(self, event: str) -> float:
         """Bestimmt die automatische Lautstaerke basierend auf Tageszeit und Event."""
@@ -410,22 +398,9 @@ class SoundManager:
             except Exception as e:
                 logger.warning("TTS speak fehlgeschlagen: %s", e)
 
-        # Fallback: Legacy TTS (cloud_say)
-        try:
-            success = await self.ha.call_service(
-                "tts", "cloud_say",
-                {
-                    "entity_id": speaker_entity,
-                    "message": speak_text,
-                    "language": "de",
-                },
-            )
-            if success:
-                logger.info("Jarvis spricht via cloud_say auf %s", speaker_entity)
-                return True
-        except Exception as e:
-            logger.warning("TTS cloud_say Fallback fehlgeschlagen: %s", e)
-
+        # Kein cloud_say Fallback — Piper (lokal) ist der einzige TTS-Service.
+        # cloud_say wuerde nur 500er erzeugen wenn kein Cloud-TTS konfiguriert ist.
+        logger.warning("TTS-Ausgabe fehlgeschlagen — kein TTS-Service verfuegbar")
         return False
 
     def get_sound_info(self) -> dict:
