@@ -2274,7 +2274,11 @@ async def _docker_restart(container: str = "mindhome-assistant", timeout: int = 
 
 @app.post("/api/ui/system/update")
 async def ui_system_update(token: str = ""):
-    """System-Update: git pull + Container-Restart (Code ist als Volume gemountet)."""
+    """System-Update: git pull + Container-Restart (Code ist als Volume gemountet).
+
+    WICHTIG: User-Konfiguration (settings.yaml, .env) wird vor dem Pull
+    gesichert und danach wiederhergestellt, damit Einstellungen nicht verloren gehen.
+    """
     _check_token(token)
 
     if _update_lock.locked():
@@ -2284,6 +2288,17 @@ async def ui_system_update(token: str = ""):
         _update_log.clear()
         _update_log.append(f"[{datetime.now().strftime('%H:%M:%S')}] Update gestartet...")
 
+        # 0. User-Konfiguration sichern (vor git pull!)
+        _user_config_files = [
+            _MHA_DIR / "config" / "settings.yaml",
+            _MHA_DIR / ".env",
+        ]
+        _saved_configs = {}
+        for cfg_path in _user_config_files:
+            if cfg_path.exists():
+                _saved_configs[cfg_path] = cfg_path.read_text(encoding="utf-8")
+                _update_log.append(f"Config gesichert: {cfg_path.name}")
+
         # 1. Git Pull (via gemountetes /repo)
         _update_log.append("Git pull...")
         rc, out = _run_cmd(["git", "pull"], cwd=str(_REPO_DIR), timeout=60)
@@ -2292,9 +2307,17 @@ async def ui_system_update(token: str = ""):
             _update_log.append("FEHLER: Git pull fehlgeschlagen")
             return {"success": False, "log": _update_log}
 
+        # 2. User-Konfiguration wiederherstellen (nach git pull!)
+        for cfg_path, content in _saved_configs.items():
+            try:
+                cfg_path.write_text(content, encoding="utf-8")
+                _update_log.append(f"Config wiederhergestellt: {cfg_path.name}")
+            except Exception as e:
+                _update_log.append(f"WARNUNG: {cfg_path.name} konnte nicht wiederhergestellt werden: {e}")
+
         _update_log.append(f"[{datetime.now().strftime('%H:%M:%S')}] Code aktualisiert! Container startet neu...")
 
-        # 2. Restart via Docker Engine API (Code als Volume = sofort aktiv)
+        # 3. Restart via Docker Engine API (Code als Volume = sofort aktiv)
         # asyncio.ensure_future damit Response noch rausgeht bevor Restart
         asyncio.ensure_future(_docker_restart())
 
