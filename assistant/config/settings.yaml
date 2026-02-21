@@ -291,6 +291,7 @@ summarizer:
 context:
   recent_conversations: 5
   api_timeout: 5
+  llm_timeout: 60
 heating:
   mode: room_thermostat
   curve_entity: ''
