@@ -321,6 +321,12 @@ textarea { resize:vertical; min-height:70px; font-family:var(--mono); font-size:
 .kw-tag .kw-rm { cursor:pointer; opacity:0.6; }
 .kw-tag .kw-rm:hover { opacity:1; }
 .kw-input { border:none; background:transparent; color:var(--text-primary); font-family:var(--font); font-size:12px; outline:none; min-width:80px; flex:1; }
+.entity-pick-wrap { position:relative; }
+.entity-pick-dropdown { position:absolute; top:100%; left:0; right:0; max-height:200px; overflow-y:auto; background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius-sm); box-shadow:0 4px 12px rgba(0,0,0,0.3); z-index:100; }
+.entity-pick-item { padding:6px 10px; cursor:pointer; display:flex; justify-content:space-between; align-items:center; gap:8px; font-size:12px; border-bottom:1px solid var(--border); }
+.entity-pick-item:hover { background:var(--bg-card-hover); }
+.entity-pick-item .ename { color:var(--text-primary); font-weight:500; }
+.entity-pick-item .eid { color:var(--text-muted); font-family:var(--mono); font-size:10px; }
 
 /* Chip Select — klickbare vordefinierte Optionen */
 .chip-grid { display:flex; flex-wrap:wrap; gap:6px; padding:8px 0; }
@@ -1121,11 +1127,11 @@ function renderCurrentTab() {
   try {
     switch(currentTab) {
       case 'tab-general': c.innerHTML = renderGeneral(); break;
-      case 'tab-persons': c.innerHTML = renderPersons(); break;
+      case 'tab-persons': c.innerHTML = renderPersons(); loadMindHomeEntities(); break;
       case 'tab-personality': c.innerHTML = renderPersonality(); break;
       case 'tab-memory': c.innerHTML = renderMemory(); break;
       case 'tab-mood': c.innerHTML = renderMood(); break;
-      case 'tab-rooms': c.innerHTML = renderRooms(); break;
+      case 'tab-rooms': c.innerHTML = renderRooms(); loadMindHomeEntities(); break;
       case 'tab-voice': c.innerHTML = renderVoice(); break;
       case 'tab-routines': c.innerHTML = renderRoutines(); break;
       case 'tab-devices': c.innerHTML = renderDevices(); loadMindHomeEntities(); break;
@@ -1251,6 +1257,225 @@ function sectionWrap(icon, title, content) {
   return `<div class="s-section"><div class="s-section-hdr open" onclick="toggleSec(this)">
     <h3>${icon} ${title}</h3><span class="arrow">&#9660;</span></div>
     <div class="s-section-body open">${content}</div></div>`;
+}
+
+// ---- Entity-Picker Komponenten ----
+// Cached entities (lazy loaded)
+let _pickerEntities = null;
+async function ensurePickerEntities() {
+  if (_pickerEntities) return _pickerEntities;
+  if (ALL_ENTITIES.length > 0) { _pickerEntities = ALL_ENTITIES; return _pickerEntities; }
+  try {
+    const d = await api('/api/ui/entities');
+    _pickerEntities = d.entities || [];
+    ALL_ENTITIES = _pickerEntities;
+  } catch(e) { _pickerEntities = []; }
+  return _pickerEntities;
+}
+
+// Entity-Picker: Auswahl von Entities als Tags (wie fKeywords, aber mit Dropdown)
+function fEntityPicker(path, label, domains, hint='') {
+  const arr = getPath(S, path) || [];
+  const domStr = (domains||[]).join(',');
+  let tags = arr.map(k => `<span class="kw-tag">${esc(k)}<span class="kw-rm" onclick="rmEntityPick(this,'${path}')">&#10005;</span></span>`).join('');
+  return `<div class="form-group"><label>${label}</label>
+    <div class="entity-pick-wrap">
+      <div class="kw-editor" data-path="${path}" data-entity-picker="list" data-domains="${domStr}" onclick="this.querySelector('input')?.focus()">
+        ${tags}<input class="kw-input entity-pick-input" placeholder="&#128269; Entity suchen..." oninput="entityPickFilter(this,'${domStr}')" onfocus="entityPickFilter(this,'${domStr}')" data-path="${path}">
+      </div>
+      <div class="entity-pick-dropdown" style="display:none;"></div>
+    </div>${hint?`<div class="hint">${hint}</div>`:''}</div>`;
+}
+
+// Room-Entity-Map: Pro Raum eine Entity zuordnen (fuer Speaker, Motion Sensors)
+function fRoomEntityMap(path, label, domains, hint='') {
+  const map = getPath(S, path) || {};
+  const domStr = (domains||[]).join(',');
+  // Raeume aus household.members preferred_room + bekannte Raeume aus entities
+  const rooms = _getKnownRooms();
+  let rows = '';
+  for (const room of rooms) {
+    const val = map[room] || '';
+    rows += `<div class="room-entity-row" style="display:flex;gap:8px;align-items:center;margin-bottom:6px;">
+      <span style="min-width:120px;font-size:12px;font-weight:600;color:var(--text-secondary);">&#127968; ${esc(room)}</span>
+      <div class="entity-pick-wrap" style="flex:1;">
+        <input class="form-input entity-pick-input" value="${esc(val)}" placeholder="&#128269; Entity waehlen..."
+          data-room-map="${path}" data-room-name="${esc(room)}" data-domains="${domStr}"
+          oninput="entityPickFilter(this,'${domStr}')" onfocus="entityPickFilter(this,'${domStr}')"
+          style="font-size:12px;font-family:var(--mono);padding:6px 10px;">
+        <div class="entity-pick-dropdown" style="display:none;"></div>
+      </div>
+      ${val ? `<button class="btn btn-sm" style="padding:2px 6px;min-width:auto;font-size:11px;color:var(--danger);" onclick="this.parentElement.querySelector('input').value='';this.remove()">&#10005;</button>` : ''}
+    </div>`;
+  }
+  // Manuelle Eintraege die nicht in rooms sind
+  for (const [room, val] of Object.entries(map)) {
+    if (!rooms.includes(room)) {
+      rows += `<div class="room-entity-row" style="display:flex;gap:8px;align-items:center;margin-bottom:6px;">
+        <span style="min-width:120px;font-size:12px;font-weight:600;color:var(--text-muted);">&#127968; ${esc(room)}</span>
+        <input class="form-input" value="${esc(val)}" data-room-map="${path}" data-room-name="${esc(room)}"
+          style="flex:1;font-size:12px;font-family:var(--mono);padding:6px 10px;">
+      </div>`;
+    }
+  }
+  if (rooms.length === 0 && Object.keys(map).length === 0) {
+    rows = '<div style="color:var(--text-muted);font-size:12px;padding:8px;">Keine Raeume bekannt. Raeume werden automatisch aus den MindHome-Geraeten erkannt.</div>';
+  }
+  return `<div class="form-group"><label>${label}</label>
+    <div class="room-entity-map" data-path="${path}">${rows}</div>
+    ${hint?`<div class="hint">${hint}</div>`:''}</div>`;
+}
+
+function _getKnownRooms() {
+  // Raeume aus MindHome entities (wenn geladen)
+  const rooms = new Set();
+  if (_mhEntities && _mhEntities.rooms) {
+    for (const r of Object.keys(_mhEntities.rooms)) rooms.add(r.toLowerCase());
+  }
+  // Raeume aus bestehenden room_speakers / room_motion_sensors
+  const speakers = getPath(S, 'multi_room.room_speakers') || {};
+  const motion = getPath(S, 'multi_room.room_motion_sensors') || {};
+  if (typeof speakers === 'object') for (const r of Object.keys(speakers)) rooms.add(r.toLowerCase());
+  if (typeof motion === 'object') for (const r of Object.keys(motion)) rooms.add(r.toLowerCase());
+  return [...rooms].sort();
+}
+
+async function entityPickFilter(input, domStr) {
+  const entities = await ensurePickerEntities();
+  const domains = domStr ? domStr.split(',') : [];
+  const search = input.value.toLowerCase();
+  const wrap = input.closest('.entity-pick-wrap');
+  const dropdown = wrap?.querySelector('.entity-pick-dropdown');
+  if (!dropdown) return;
+
+  let filtered = entities;
+  if (domains.length > 0) filtered = filtered.filter(e => domains.includes(e.domain));
+  if (search && !search.startsWith('media_player.') && !search.startsWith('binary_sensor.')) {
+    filtered = filtered.filter(e => e.entity_id.toLowerCase().includes(search) || e.name.toLowerCase().includes(search));
+  }
+  const show = filtered.slice(0, 30);
+
+  if (show.length === 0) {
+    dropdown.style.display = 'none';
+    return;
+  }
+
+  dropdown.innerHTML = show.map(e =>
+    `<div class="entity-pick-item" onmousedown="entityPickSelect(this,'${esc(e.entity_id)}')">
+      <span class="ename">${esc(e.name)}</span>
+      <span class="eid">${esc(e.entity_id)}</span>
+    </div>`
+  ).join('');
+  dropdown.style.display = 'block';
+
+  // Schliessen bei Blur
+  input.onblur = () => setTimeout(() => { dropdown.style.display = 'none'; }, 200);
+}
+
+function entityPickSelect(item, entityId) {
+  const wrap = item.closest('.entity-pick-wrap');
+  const input = wrap.querySelector('.entity-pick-input, input[data-room-map]');
+  const dropdown = wrap.querySelector('.entity-pick-dropdown');
+  if (dropdown) dropdown.style.display = 'none';
+
+  // Room-Map Modus: Input-Wert setzen
+  if (input?.dataset?.roomMap) {
+    input.value = entityId;
+    return;
+  }
+
+  // List Modus: Entity zu Array hinzufuegen
+  const path = input?.dataset?.path;
+  if (!path) return;
+  mergeCurrentTabIntoS();
+  const arr = getPath(S, path) || [];
+  if (!arr.includes(entityId)) {
+    arr.push(entityId);
+    setPath(S, path, arr);
+    renderCurrentTab();
+  }
+}
+
+function rmEntityPick(el, path) {
+  mergeCurrentTabIntoS();
+  const tag = el.parentElement;
+  const word = tag.textContent.replace('✕','').trim();
+  const arr = (getPath(S, path) || []).filter(k => k !== word);
+  setPath(S, path, arr);
+  renderCurrentTab();
+}
+
+// Personen-Profile: Pro Haushaltsmitglied notify_service und preferred_room
+function fPersonProfiles() {
+  const profiles = getPath(S, 'person_profiles.profiles') || {};
+  const members = getPath(S, 'household.members') || [];
+  const primaryUser = getPath(S, 'household.primary_user') || '';
+  // Alle bekannten Personen sammeln
+  const persons = new Set();
+  if (primaryUser) persons.add(primaryUser.toLowerCase());
+  for (const m of members) { if (m.name) persons.add(m.name.toLowerCase()); }
+  for (const p of Object.keys(profiles)) persons.add(p.toLowerCase());
+  const rooms = _getKnownRooms();
+
+  let rows = '';
+  for (const person of [...persons].sort()) {
+    const prof = profiles[person] || {};
+    const notifySvc = prof.notify_service || '';
+    const prefRoom = prof.preferred_room || '';
+    const roomOpts = rooms.map(r => `<option value="${esc(r)}" ${prefRoom.toLowerCase()===r?'selected':''}>${esc(r)}</option>`).join('');
+    rows += `<div style="padding:10px;background:var(--bg-secondary);border-radius:var(--radius-sm);margin-bottom:8px;">
+      <div style="font-weight:600;font-size:13px;margin-bottom:8px;">&#128100; ${esc(person)}</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        <div>
+          <label style="font-size:11px;color:var(--text-muted);">Benachrichtigung</label>
+          <div class="entity-pick-wrap">
+            <input class="form-input entity-pick-input" value="${esc(notifySvc)}" placeholder="&#128269; notify.mobile..."
+              data-person-profile="${esc(person)}" data-profile-field="notify_service" data-domains="notify"
+              oninput="entityPickFilter(this,'notify')" onfocus="entityPickFilter(this,'notify')"
+              style="font-size:11px;font-family:var(--mono);padding:5px 8px;width:100%;box-sizing:border-box;">
+            <div class="entity-pick-dropdown" style="display:none;"></div>
+          </div>
+        </div>
+        <div>
+          <label style="font-size:11px;color:var(--text-muted);">Bevorzugter Raum</label>
+          <select data-person-profile="${esc(person)}" data-profile-field="preferred_room"
+            style="font-size:11px;padding:5px 8px;width:100%;box-sizing:border-box;">
+            <option value="">-- Kein Raum --</option>${roomOpts}
+          </select>
+        </div>
+      </div>
+    </div>`;
+  }
+  if (persons.size === 0) {
+    rows = '<div style="color:var(--text-muted);font-size:12px;padding:8px;">Keine Personen konfiguriert. Zuerst unter "Personen" Haushaltsmitglieder anlegen.</div>';
+  }
+  return `<div class="person-profiles-container">${rows}</div>`;
+}
+
+// Personen-Anrede: Pro Person eine Anrede zuordnen
+function fPersonTitles() {
+  const titles = getPath(S, 'persons.titles') || {};
+  const members = getPath(S, 'household.members') || [];
+  const primaryUser = getPath(S, 'household.primary_user') || '';
+  const persons = new Set();
+  if (primaryUser) persons.add(primaryUser.toLowerCase());
+  for (const m of members) { if (m.name) persons.add(m.name.toLowerCase()); }
+  for (const p of Object.keys(titles)) persons.add(p.toLowerCase());
+
+  let rows = '';
+  for (const person of [...persons].sort()) {
+    const title = (typeof titles === 'object' ? titles[person] : '') || '';
+    rows += `<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;">
+      <span style="min-width:120px;font-size:12px;font-weight:600;color:var(--text-secondary);">&#128100; ${esc(person)}</span>
+      <input class="form-input" value="${esc(title)}" placeholder="z.B. Sir, Frau Mueller..."
+        data-person-title="${esc(person)}"
+        style="flex:1;font-size:12px;padding:6px 10px;">
+    </div>`;
+  }
+  if (persons.size === 0) {
+    rows = '<div style="color:var(--text-muted);font-size:12px;padding:8px;">Keine Personen konfiguriert. Zuerst unter "Personen" Haushaltsmitglieder anlegen.</div>';
+  }
+  return `<div class="person-titles-container">${rows}</div>`;
 }
 
 function updRange(el) {
@@ -1602,19 +1827,19 @@ function renderRooms() {
     fRange('multi_room.presence_timeout_minutes', 'Praesenz-Timeout', 1, 60, 1, {1:'1 Min',5:'5 Min',10:'10 Min',15:'15 Min',30:'30 Min',60:'1 Std'})
   ) +
   sectionWrap('&#128266;', 'Raum-Speaker',
-    fInfo('Welcher Lautsprecher gehoert zu welchem Raum? Format: raumname: media_player.entity_id (ein Eintrag pro Zeile)') +
-    fTextarea('multi_room.room_speakers', 'Speaker-Zuordnung', 'z.B. wohnzimmer: media_player.wohnzimmer_speaker')
+    fInfo('Welcher Lautsprecher gehoert zu welchem Raum? Raeume werden automatisch aus MindHome erkannt.') +
+    fRoomEntityMap('multi_room.room_speakers', 'Speaker-Zuordnung', ['media_player'])
   ) +
   sectionWrap('&#128694;', 'Raum-Bewegungsmelder',
     fInfo('Welcher Bewegungsmelder gehoert zu welchem Raum? Damit weiss der Assistent wo du bist.') +
-    fTextarea('multi_room.room_motion_sensors', 'Bewegungsmelder-Zuordnung', 'z.B. wohnzimmer: binary_sensor.motion_wohnzimmer')
+    fRoomEntityMap('multi_room.room_motion_sensors', 'Bewegungsmelder-Zuordnung', ['binary_sensor'])
   ) +
   sectionWrap('&#127916;', 'Aktivitaets-Sensoren',
-    fInfo('Welche Home Assistant Entities sollen fuer die Aktivitaetserkennung genutzt werden? Gehe zu "Entities" im Seitenmenue um IDs nachzuschlagen.') +
-    fKeywords('activity.entities.media_players', 'Media Player (z.B. media_player.tv)') +
-    fKeywords('activity.entities.mic_sensors', 'Mikrofon-Sensoren') +
-    fKeywords('activity.entities.bed_sensors', 'Bett-Sensoren (Schlaf-Erkennung)') +
-    fKeywords('activity.entities.pc_sensors', 'PC-Sensoren (Arbeit-Erkennung)')
+    fInfo('Welche Home Assistant Entities sollen fuer die Aktivitaetserkennung genutzt werden? Tippe um zu suchen.') +
+    fEntityPicker('activity.entities.media_players', 'Media Player', ['media_player']) +
+    fEntityPicker('activity.entities.mic_sensors', 'Mikrofon-Sensoren', ['binary_sensor','sensor']) +
+    fEntityPicker('activity.entities.bed_sensors', 'Bett-Sensoren (Schlaf-Erkennung)', ['binary_sensor','sensor']) +
+    fEntityPicker('activity.entities.pc_sensors', 'PC-Sensoren (Arbeit-Erkennung)', ['binary_sensor','sensor'])
   ) +
   sectionWrap('&#9200;', 'Aktivitaets-Zeiten',
     fInfo('Wann ist Nacht? Ab wann zaehlt Besuch? Wie lange muss Fokus dauern?') +
@@ -1625,7 +1850,7 @@ function renderRooms() {
   ) +
   sectionWrap('&#128101;', 'Personen-Profile',
     fInfo('Erweiterte Einstellungen pro Person — Benachrichtigungs-Service und bevorzugter Raum.') +
-    fTextarea('person_profiles.profiles', 'Profile', 'z.B. alex: {notify_service: notify.mobile, preferred_room: wohnzimmer}')
+    fPersonProfiles()
   );
 }
 
@@ -1966,7 +2191,7 @@ function renderSecurity() {
   ) +
   sectionWrap('&#128101;', 'Personen-Anrede',
     fInfo('Wie soll der Assistent einzelne Personen ansprechen? Der Hauptbenutzer wird standardmaessig als "Sir" angesprochen.') +
-    fTextarea('persons.titles', 'Anrede pro Person', 'z.B. alex: Sir\nmaria: Frau Mueller')
+    fPersonTitles()
   ) +
   sectionWrap('&#128276;', 'Benachrichtigungskanaele',
     fInfo('Welche Kanaele soll der Assistent fuer Benachrichtigungen nutzen? Kanaele koennen einzeln konfiguriert werden.') +
@@ -2441,6 +2666,51 @@ function collectSettings() {
   // Monitored entities (device health entity picker)
   if (document.getElementById('entityPickerContainer')) {
     setPath(updates, 'device_health.monitored_entities', collectMonitoredEntities());
+  }
+  // Room-Entity-Maps (room_speakers, room_motion_sensors)
+  document.querySelectorAll('#settingsContent .room-entity-map[data-path]').forEach(container => {
+    const path = container.dataset.path;
+    const map = {};
+    container.querySelectorAll('input[data-room-map]').forEach(input => {
+      const room = input.dataset.roomName;
+      const val = input.value.trim();
+      if (room && val) map[room] = val;
+    });
+    setPath(updates, path, map);
+  });
+  // Entity-Picker lists (activity.entities.*)  - maintained in S via entityPickSelect/rmEntityPick
+  document.querySelectorAll('#settingsContent [data-entity-picker="list"]').forEach(el => {
+    const path = el.dataset.path;
+    const arr = getPath(S, path) || [];
+    setPath(updates, path, arr);
+  });
+  // Person-Profiles
+  const profileContainer = document.querySelector('#settingsContent .person-profiles-container');
+  if (profileContainer) {
+    const profiles = {};
+    profileContainer.querySelectorAll('[data-person-profile]').forEach(el => {
+      const person = el.dataset.personProfile;
+      const field = el.dataset.profileField;
+      if (!profiles[person]) profiles[person] = {};
+      profiles[person][field] = el.tagName === 'SELECT' ? el.value : el.value.trim();
+    });
+    // Leere Felder entfernen
+    for (const [p, fields] of Object.entries(profiles)) {
+      for (const [k, v] of Object.entries(fields)) { if (!v) delete fields[k]; }
+      if (Object.keys(fields).length === 0) delete profiles[p];
+    }
+    setPath(updates, 'person_profiles.profiles', profiles);
+  }
+  // Person-Titles (data-person-title inputs)
+  const titlesContainer = document.querySelector('#settingsContent .person-titles-container');
+  if (titlesContainer) {
+    const titles = {};
+    titlesContainer.querySelectorAll('[data-person-title]').forEach(el => {
+      const person = el.dataset.personTitle;
+      const val = el.value.trim();
+      if (person && val) titles[person] = val;
+    });
+    setPath(updates, 'persons.titles', titles);
   }
   return updates;
 }
