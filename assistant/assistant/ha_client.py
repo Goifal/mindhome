@@ -17,8 +17,10 @@ API-Endpoints an die tatsaechlichen MindHome Add-on Routes angepasst:
 
 import asyncio
 import logging
+import time
 import traceback
 from typing import Any, Optional
+from urllib.parse import quote, urlencode
 
 import aiohttp
 
@@ -45,6 +47,10 @@ class HomeAssistantClient:
         # Shared Session (wird lazy initialisiert)
         self._session: Optional[aiohttp.ClientSession] = None
         self._session_lock: Optional[asyncio.Lock] = None
+        # States-Cache: vermeidet N+1 Queries innerhalb kurzer Zeitfenster
+        self._states_cache: Optional[list[dict]] = None
+        self._states_cache_ts: float = 0.0
+        _STATES_CACHE_TTL = 2.0  # Sekunden
 
     def _get_lock(self) -> asyncio.Lock:
         """Gibt den Session-Lock zurueck (lazy init, event-loop-safe)."""
@@ -69,8 +75,14 @@ class HomeAssistantClient:
     # ----- Home Assistant API -----
 
     async def get_states(self) -> list[dict]:
-        """Alle Entity-States von HA holen."""
-        return await self._get_ha("/api/states") or []
+        """Alle Entity-States von HA holen (mit kurzem Cache gegen N+1 Queries)."""
+        now = time.monotonic()
+        if self._states_cache is not None and (now - self._states_cache_ts) < 2.0:
+            return self._states_cache
+        result = await self._get_ha("/api/states") or []
+        self._states_cache = result
+        self._states_cache_ts = now
+        return result
 
     async def get_state(self, entity_id: str) -> Optional[dict]:
         """State einer einzelnen Entity."""
@@ -203,12 +215,12 @@ class HomeAssistantClient:
 
     async def search_devices(self, domain: str = "", room: str = "") -> Optional[list]:
         """Geraete ueber MindHome Device-DB suchen (schneller als alle HA-States laden)."""
-        params = []
+        params = {}
         if domain:
-            params.append(f"domain={domain}")
+            params["domain"] = domain
         if room:
-            params.append(f"room={room}")
-        qs = "&".join(params)
+            params["room"] = room
+        qs = urlencode(params) if params else ""
         return await self._get_mindhome(f"/api/devices/search?{qs}")
 
     async def mindhome_get(self, path: str) -> Any:

@@ -203,7 +203,7 @@ app = FastAPI(
 _cors_origins = os.getenv("CORS_ORIGINS", "").strip()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=_cors_origins.split(",") if _cors_origins else [
+    allow_origins=[o.strip() for o in _cors_origins.split(",") if o.strip()] if _cors_origins else [
         "http://localhost",
         "http://localhost:8123",
         "http://homeassistant.local:8123",
@@ -211,7 +211,7 @@ app.add_middleware(
     ],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["*"],
+    allow_headers=["Content-Type", "Authorization", "X-API-Key", "Accept"],
 )
 
 # ----- Rate-Limiting (in-memory, pro IP) -----
@@ -556,8 +556,8 @@ async def memory_stats():
     if brain.memory.chroma_collection:
         try:
             episodic_count = brain.memory.chroma_collection.count()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("ChromaDB count() fehlgeschlagen: %s", e)
     return {
         "semantic": semantic_stats,
         "episodic": {"total_episodes": episodic_count},
@@ -1154,6 +1154,7 @@ SETTINGS_YAML_PATH = Path(__file__).parent.parent / "config" / "settings.yaml"
 # Session-Token mit Ablaufzeit (4 Stunden)
 _TOKEN_EXPIRY_SECONDS = 4 * 60 * 60  # 4 Stunden
 _active_tokens: dict[str, float] = {}  # token -> timestamp
+_token_lock = asyncio.Lock()
 
 
 def _get_dashboard_config() -> dict:
@@ -1187,7 +1188,7 @@ def _hash_value(value: str, salt: str | None = None) -> str:
     """
     if salt is None:
         salt = secrets.token_hex(16)
-    h = hashlib.pbkdf2_hmac("sha256", value.encode(), salt.encode(), iterations=100_000)
+    h = hashlib.pbkdf2_hmac("sha256", value.encode(), salt.encode(), iterations=600_000)
     return f"{salt}:{h.hex()}"
 
 
@@ -1379,11 +1380,11 @@ def _audit_log(action: str, details: dict = None):
 
 
 def _cleanup_expired_tokens():
-    """Entfernt abgelaufene Tokens."""
+    """Entfernt abgelaufene Tokens (thread-safe: nur aus async-Kontext aufrufen)."""
     now = datetime.now(timezone.utc).timestamp()
     expired = [t for t, ts in _active_tokens.items() if now - ts > _TOKEN_EXPIRY_SECONDS]
     for t in expired:
-        del _active_tokens[t]
+        _active_tokens.pop(t, None)
 
 
 def _check_token(token: str):
@@ -1394,7 +1395,7 @@ def _check_token(token: str):
     created = _active_tokens[token]
     now = datetime.now(timezone.utc).timestamp()
     if now - created > _TOKEN_EXPIRY_SECONDS:
-        del _active_tokens[token]
+        _active_tokens.pop(token, None)
         raise HTTPException(status_code=401, detail="Sitzung abgelaufen. Bitte erneut anmelden.")
 
 
@@ -1727,8 +1728,8 @@ async def ui_get_stats(token: str = ""):
         if brain.memory.chroma_collection:
             try:
                 episodic_count = brain.memory.chroma_collection.count()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("ChromaDB count() fehlgeschlagen: %s", e)
 
         return {
             "memory": {

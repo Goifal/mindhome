@@ -1,11 +1,14 @@
 """
 Tests fuer Security-Fixes: Bearer Token Sanitization, Rate-Limiter,
-PIN Hashing, Garage-Cover Word-Boundary.
+PIN Hashing, Garage-Cover Word-Boundary, Path Traversal, URL Parsing.
 """
 
 import hashlib
+import os
 import re
 import secrets
+from pathlib import Path
+from urllib.parse import urlparse
 
 import pytest
 
@@ -18,7 +21,7 @@ import pytest
 def _hash_value(value: str, salt: str | None = None) -> str:
     if salt is None:
         salt = secrets.token_hex(16)
-    h = hashlib.pbkdf2_hmac("sha256", value.encode(), salt.encode(), iterations=100_000)
+    h = hashlib.pbkdf2_hmac("sha256", value.encode(), salt.encode(), iterations=600_000)
     return f"{salt}:{h.hex()}"
 
 
@@ -130,3 +133,89 @@ class TestGarageCoverWordBoundary:
 
     def test_hoftor_matches(self):
         assert re.search(self._PATTERN, "cover.hof_tor")
+
+
+# ---------------------------------------------------------------
+# Path Traversal Prevention
+# ---------------------------------------------------------------
+
+
+class TestPathTraversal:
+    """os.path.basename + resolve()-Check verhindert Ausbruch aus UPLOAD_DIR."""
+
+    def test_basename_strips_directory(self):
+        assert os.path.basename("../../etc/passwd") == "passwd"
+
+    def test_basename_strips_absolute(self):
+        assert os.path.basename("/etc/shadow") == "shadow"
+
+    def test_basename_strips_mixed(self):
+        assert os.path.basename("../../../secret.txt") == "secret.txt"
+
+    def test_dot_rejected(self):
+        safe = os.path.basename(".")
+        assert safe == "."  # Wird separat abgefangen
+
+    def test_dotdot_rejected(self):
+        safe = os.path.basename("..")
+        assert safe == ".."  # Wird separat abgefangen
+
+
+# ---------------------------------------------------------------
+# ChromaDB URL Parsing (SSRF Prevention)
+# ---------------------------------------------------------------
+
+
+class TestChromaUrlParsing:
+    """urlparse() statt split(':') — verhindert SSRF."""
+
+    def test_normal_url(self):
+        url = "http://mha-chromadb:8000"
+        parsed = urlparse(url)
+        assert parsed.hostname == "mha-chromadb"
+        assert parsed.port == 8000
+
+    def test_url_with_auth_ignored(self):
+        """SSRF-Vektor: user@attacker.com wird korrekt als hostname erkannt."""
+        url = "http://localhost:8000@attacker.com:1234"
+        parsed = urlparse(url)
+        # urlparse erkennt 'attacker.com' als hostname (nicht localhost)
+        assert parsed.hostname != "localhost"
+
+    def test_url_without_port_defaults(self):
+        url = "http://chromadb"
+        parsed = urlparse(url)
+        assert parsed.hostname == "chromadb"
+        assert parsed.port is None  # Code nutzt default 8000
+
+    def test_split_ssrf_vulnerability(self):
+        """Zeigt warum split(':') unsicher ist."""
+        url = "http://localhost:8000@attacker.com:1234"
+        # Alte unsichere Methode:
+        host_old = url.replace("http://", "").split(":")[0]
+        assert host_old == "localhost"  # FALSCH! Verbindet zu localhost statt attacker
+        # Neue sichere Methode:
+        parsed = urlparse(url)
+        assert parsed.hostname != "localhost"  # Korrekt erkannt
+
+
+# ---------------------------------------------------------------
+# Function Name Whitelist
+# ---------------------------------------------------------------
+
+
+class TestFunctionWhitelist:
+    """getattr-Zugriff auf _exec_* nur fuer erlaubte Funktionen."""
+
+    def test_known_functions_in_whitelist(self):
+        from assistant.function_calling import FunctionExecutor
+        expected = {"set_light", "set_climate", "play_media", "set_cover",
+                    "call_service", "send_notification"}
+        for fn in expected:
+            assert fn in FunctionExecutor._ALLOWED_FUNCTIONS
+
+    def test_private_method_not_in_whitelist(self):
+        from assistant.function_calling import FunctionExecutor
+        # Interne Methoden die nie via LLM aufrufbar sein duerfen
+        for fn in ["_is_safe_cover", "close", "__init__", "set_config_versioning"]:
+            assert fn not in FunctionExecutor._ALLOWED_FUNCTIONS

@@ -958,6 +958,25 @@ class FunctionExecutor:
         """Setzt ConfigVersioning fuer Backup-vor-Schreiben."""
         self._config_versioning = versioning
 
+    # Whitelist erlaubter Tool-Funktionsnamen (verhindert Zugriff auf interne Methoden)
+    _ALLOWED_FUNCTIONS = frozenset({
+        "set_light", "set_light_all", "set_climate", "set_climate_curve",
+        "set_climate_room", "activate_scene", "set_cover", "set_cover_all",
+        "call_service", "play_media", "transfer_playback", "set_alarm",
+        "lock_door", "send_notification", "send_message_to_person",
+        "play_sound", "get_entity_state", "get_calendar_events",
+        "create_calendar_event", "delete_calendar_event",
+        "reschedule_calendar_event", "set_presence_mode", "edit_config",
+        "manage_shopping_list", "list_capabilities", "create_automation",
+        "confirm_automation", "list_jarvis_automations",
+        "delete_jarvis_automation", "manage_inventory",
+        "set_timer", "cancel_timer", "get_timer_status", "broadcast",
+        "get_camera_view", "create_conditional", "list_conditionals",
+        "get_energy_report", "web_search", "get_security_score",
+        "get_room_climate", "get_active_intents", "get_wellness_status",
+        "get_device_health", "get_learned_patterns", "describe_doorbell",
+    })
+
     async def execute(self, function_name: str, arguments: dict) -> dict:
         """
         Fuehrt eine Funktion aus.
@@ -969,6 +988,8 @@ class FunctionExecutor:
         Returns:
             Ergebnis-Dict mit success und message
         """
+        if function_name not in self._ALLOWED_FUNCTIONS:
+            return {"success": False, "message": f"Unbekannte Funktion: {function_name}"}
         handler = getattr(self, f"_exec_{function_name}", None)
         if not handler:
             return {"success": False, "message": f"Unbekannte Funktion: {function_name}"}

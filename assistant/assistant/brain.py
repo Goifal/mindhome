@@ -2694,8 +2694,8 @@ Regeln:
             await self.memory.redis.setex(
                 f"mha:cross_room_context:{person.lower()}", 1800, context_data  # 30 Min TTL
             )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Cross-Room Kontext speichern fehlgeschlagen: %s", e)
 
     async def _get_cross_room_context(self, person: str) -> str:
         """Holt den vorherigen Konversationskontext wenn Raum gewechselt wurde."""
