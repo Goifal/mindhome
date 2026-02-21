@@ -1622,6 +1622,7 @@ async def ui_get_covers(token: str = ""):
                 "state": s.get("state", "unknown"),
                 "device_class": attrs.get("device_class", ""),
                 "cover_type": conf.get("cover_type", attrs.get("device_class", "shutter") or "shutter"),
+                "enabled": conf.get("enabled", True),
             })
         covers.sort(key=lambda c: c["name"])
         return {"covers": covers}
@@ -1631,16 +1632,27 @@ async def ui_get_covers(token: str = ""):
 
 @app.put("/api/ui/covers/{entity_id:path}/type")
 async def ui_set_cover_type(entity_id: str, request: Request, token: str = ""):
-    """Cover-Typ setzen (shutter, blind, awning, roof_window, garage_door)."""
+    """Cover-Typ und enabled-Status setzen."""
     _check_token(token)
     try:
         data = await request.json()
-        cover_type = data.get("cover_type", "shutter")
+        payload = {}
+        if "cover_type" in data:
+            payload["cover_type"] = data["cover_type"]
+        if "enabled" in data:
+            payload["enabled"] = data["enabled"]
+        if not payload:
+            raise HTTPException(status_code=400, detail="Keine Daten")
         result = await brain.ha.mindhome_put(
             f"/api/covers/{entity_id}/config",
-            {"cover_type": cover_type},
+            payload,
         )
-        return {"success": True, "cover_type": cover_type}
+        if result is None:
+            logger.warning("Cover-Config save failed for %s (mindhome_put returned None)", entity_id)
+            raise HTTPException(status_code=502, detail="Add-on nicht erreichbar oder Speichern fehlgeschlagen")
+        return {"success": True, **payload}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Fehler: {e}")
 

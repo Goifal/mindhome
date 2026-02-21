@@ -153,6 +153,7 @@ def set_cover_config(entity_id):
         floor=data.get("floor"),
         cover_type=data.get("cover_type"),
         group_ids=data.get("group_ids"),
+        enabled=data.get("enabled"),
     )
     return jsonify({"success": ok}), 200 if ok else 500
 

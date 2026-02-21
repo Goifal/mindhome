@@ -567,10 +567,12 @@ textarea { resize:vertical; min-height:70px; font-family:var(--mono); font-size:
         </div>
         <div class="tab-bar" id="logsTabBar" style="margin-bottom:14px;">
           <div class="tab-item active" data-logtab="conversations" onclick="switchLogTab('conversations')">Gespraeche</div>
+          <div class="tab-item" data-logtab="activities" onclick="switchLogTab('activities')">Aktivitaeten</div>
           <div class="tab-item" data-logtab="audit" onclick="switchLogTab('audit')">Audit-Log</div>
         </div>
         <div class="card" style="padding:0;">
           <div id="logsContainer"></div>
+          <div id="activitiesContainer" style="display:none;"></div>
           <div id="auditContainer" style="display:none;"></div>
         </div>
       </div>
@@ -2800,8 +2802,10 @@ function switchLogTab(tab) {
   currentLogTab = tab;
   document.querySelectorAll('#logsTabBar .tab-item').forEach(t => t.classList.toggle('active', t.dataset.logtab===tab));
   document.getElementById('logsContainer').style.display = tab==='conversations' ? '' : 'none';
+  document.getElementById('activitiesContainer').style.display = tab==='activities' ? '' : 'none';
   document.getElementById('auditContainer').style.display = tab==='audit' ? '' : 'none';
   if (tab==='conversations') loadLogs();
+  else if (tab==='activities') loadActivities();
   else loadAudit();
 }
 
@@ -2825,6 +2829,38 @@ async function loadAudit() {
       return `<div class="audit-entry"><span class="audit-time">${t}</span><span class="audit-action ${cat}">${esc(act)}</span><span class="audit-details">${esc(details)}</span></div>`;
     }).join('');
   } catch(e) { console.error('Audit fail:', e); }
+}
+
+async function loadActivities() {
+  try {
+    const d = await api('/api/ui/action-log?limit=50');
+    const items = d.items || [];
+    const c = document.getElementById('activitiesContainer');
+    if (!c) return;
+    if (items.length === 0) {
+      c.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text-muted);">Keine Jarvis-Aktionen in den letzten 7 Tagen.</div>';
+      return;
+    }
+    const iconMap = { set_light: '&#128161;', set_cover: '&#129695;', set_climate: '&#127777;', activate_scene: '&#127912;', play_media: '&#127925;', send_notification: '&#128276;', call_service: '&#9881;' };
+    c.innerHTML = items.map(log => {
+      const ad = log.action_data || {};
+      const func = ad.function || '?';
+      const args = ad.arguments || {};
+      const result = ad.result || '';
+      const reason = log.reason || '';
+      const icon = iconMap[func] || '&#9889;';
+      const parts = [];
+      if (args.entity_id) parts.push(args.entity_id);
+      if (args.room) parts.push(args.room);
+      if (args.position !== undefined) parts.push(args.position + '%');
+      if (args.brightness !== undefined) parts.push(args.brightness + '%');
+      if (args.state) parts.push(args.state);
+      if (args.temperature !== undefined) parts.push(args.temperature + '\u00b0');
+      const desc = parts.length > 0 ? ' \u2014 ' + parts.join(', ') : '';
+      const ts = log.created_at ? new Date(log.created_at).toLocaleString('de-DE', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' }) : '';
+      return '<div class="log-entry"><span class="log-time">' + ts + '</span><span class="log-role assistant" style="min-width:auto;">' + icon + '</span><span class="log-content"><strong>' + esc(func.replace(/_/g, ' ')) + '</strong>' + esc(desc) + (result ? '<br><span style="color:var(--text-muted);font-size:11px;">\u2192 ' + esc(result) + '</span>' : '') + (reason ? '<br><span style="font-style:italic;color:var(--text-muted);font-size:11px;">' + esc(reason.length > 80 ? reason.substring(0, 80) + '...' : reason) + '</span>' : '') + '</span></div>';
+    }).join('');
+  } catch(e) { console.error('Activities fail:', e); }
 }
 
 async function loadLogs() {
@@ -2901,7 +2937,7 @@ async function refreshErrBadge() {
 let _sysStatus = null;
 // ---- Tab: Geräte-Überwachung ----
 function renderCovers() {
-  return sectionWrap('&#128701;', 'Rollläden & Garagentore',
+  return sectionWrap('&#129695;', 'Rollläden & Garagentore',
     fInfo('Hier legst du fest, welche Geräte Rollläden sind und welche Garagentore. <strong>Garagentore werden NIEMALS automatisch von Jarvis gesteuert.</strong>') +
     '<div id="coverListContainer" style="color:var(--text-secondary);padding:12px;">Lade Cover-Geräte...</div>'
   ) +
@@ -2927,14 +2963,24 @@ async function loadCoverEntities() {
     let html = '';
     for (const c of covers) {
       const isGarage = c.cover_type === 'garage_door';
-      const borderColor = isGarage ? 'var(--danger)' : 'var(--border)';
-      const bgColor = isGarage ? 'rgba(239,68,68,0.08)' : 'var(--bg-card)';
-      html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 12px;margin-bottom:6px;border-radius:8px;background:' + bgColor + ';border:1px solid ' + borderColor + ';">';
-      html += '<div style="flex:1;min-width:0;">';
+      const isDisabled = c.enabled === false;
+      const borderColor = isGarage ? 'var(--danger)' : isDisabled ? 'var(--text-muted)' : 'var(--border)';
+      const bgColor = isGarage ? 'rgba(239,68,68,0.08)' : isDisabled ? 'rgba(128,128,128,0.08)' : 'var(--bg-card)';
+      const opacity = isDisabled ? '0.6' : '1';
+      html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 12px;margin-bottom:6px;border-radius:8px;background:' + bgColor + ';border:1px solid ' + borderColor + ';opacity:' + opacity + ';">';
+      html += '<div style="flex:1;min-width:0;margin-right:8px;">';
       html += '<div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + (isGarage ? '&#128274; ' : '') + esc(c.name) + '</div>';
       html += '<div style="font-size:10px;color:var(--text-muted);font-family:var(--mono);">' + esc(c.entity_id) + '</div>';
       html += '</div>';
-      html += '<select onchange="setCoverType(\'' + esc(c.entity_id) + '\', this.value)" style="background:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:12px;width:130px;">';
+      // Enable/Disable Toggle
+      const toggleId = 'toggle_' + c.entity_id.replace(/\./g, '_');
+      const checked = c.enabled !== false ? ' checked' : '';
+      html += '<label style="display:flex;align-items:center;gap:4px;cursor:pointer;margin-right:8px;flex-shrink:0;" title="' + (isDisabled ? 'Deaktiviert — Jarvis steuert dieses Gerät NICHT' : 'Aktiv — Jarvis darf steuern') + '">';
+      html += '<input type="checkbox" id="' + toggleId + '"' + checked + ' onchange="setCoverEnabled(\'' + esc(c.entity_id) + '\', this.checked)" style="width:16px;height:16px;accent-color:var(--accent);cursor:pointer;">';
+      html += '<span style="font-size:11px;color:var(--text-secondary);">' + (isDisabled ? 'Aus' : 'An') + '</span>';
+      html += '</label>';
+      // Type Dropdown
+      html += '<select onchange="setCoverType(\'' + esc(c.entity_id) + '\', this.value)" style="background:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:12px;width:130px;flex-shrink:0;">';
       const types = [
         ['shutter', 'Rollladen'], ['blind', 'Jalousie'], ['awning', 'Markise'],
         ['roof_window', 'Dachfenster'], ['garage_door', '&#128274; Garagentor']
@@ -2955,9 +3001,22 @@ async function loadCoverEntities() {
 async function setCoverType(entityId, coverType) {
   try {
     await api('/api/ui/covers/' + entityId + '/type', 'PUT', { cover_type: coverType });
+    toast('Typ gespeichert');
     loadCoverEntities();
   } catch (e) {
+    toast('Fehler beim Speichern: ' + e.message, 'error');
     console.error('Cover type save failed:', e);
+  }
+}
+
+async function setCoverEnabled(entityId, enabled) {
+  try {
+    await api('/api/ui/covers/' + entityId + '/type', 'PUT', { enabled: enabled });
+    toast(enabled ? 'Aktiviert — Jarvis darf steuern' : 'Deaktiviert — Jarvis ignoriert dieses Gerät');
+    loadCoverEntities();
+  } catch (e) {
+    toast('Fehler beim Speichern: ' + e.message, 'error');
+    console.error('Cover enabled save failed:', e);
   }
 }
 
@@ -2973,7 +3032,7 @@ async function loadActionLog() {
       return;
     }
 
-    const iconMap = { set_light: '&#128161;', set_cover: '&#128701;', set_climate: '&#127777;', activate_scene: '&#127912;', play_media: '&#127925;', send_notification: '&#128276;' };
+    const iconMap = { set_light: '&#128161;', set_cover: '&#129695;', set_climate: '&#127777;', activate_scene: '&#127912;', play_media: '&#127925;', send_notification: '&#128276;' };
     let html = '';
     for (const log of items) {
       const d = log.action_data || {};

@@ -1142,12 +1142,16 @@ class FunctionExecutor:
         if any(kw in eid_lower for kw in ("garage", "tor", "gate")):
             return False
 
-        # 3. MindHome CoverConfig pruefen (cover_type == garage_door)
+        # 3. MindHome CoverConfig pruefen (cover_type + enabled)
         try:
             configs = await self.ha.mindhome_get("/api/covers/configs")
             if configs and isinstance(configs, dict):
                 conf = configs.get(entity_id, {})
+                # Typ-Check: Garagentore/Tore sind unsicher
                 if conf.get("cover_type") in self._EXCLUDED_COVER_CLASSES:
+                    return False
+                # Enabled-Check: Deaktivierte Covers werden nicht gesteuert
+                if conf.get("enabled") is False:
                     return False
         except Exception:
             pass
