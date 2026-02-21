@@ -692,67 +692,43 @@ class AssistantBrain:
             irony_count_today=irony_count,
         )
 
-        # Phase 6.7: Emotionale Intelligenz — Mood-Hint in System Prompt
+        # ----------------------------------------------------------------
+        # DYNAMISCHE SEKTIONEN MIT TOKEN-BUDGET
+        # Prioritaet 1 = immer, 2 = wichtig, 3 = optional, 4 = wenn Platz
+        # Sektionen werden nach Prioritaet sortiert und solange hinzugefuegt
+        # bis das Token-Budget fuer Sektionen erschoepft ist.
+        # ----------------------------------------------------------------
+        context_cfg = yaml_config.get("context", {})
+        max_context_tokens = context_cfg.get("max_context_tokens", 6000)
+        base_tokens = len(system_prompt) // 3
+        user_tokens_est = len(text) // 3
+        # Reserve: ~40% fuer Conversations + User-Text + Response-Space
+        section_budget = max(300, int((max_context_tokens - base_tokens - user_tokens_est) * 0.6))
+
+        # Sektionen vorbereiten: (Name, Text, Prioritaet)
+        # Prio 1: Sicherheit, Szenen, Mood — IMMER inkludieren
+        # Prio 2: Zeit, Timer, Gaeste, Warnungen, Erinnerungen
+        # Prio 3: RAG, Summaries, Cross-Room, Kontinuitaet
+        # Prio 4: Tutorial, What-If
+        sections: list[tuple[str, str, int]] = []
+
+        # --- Prio 1: Core ---
+        sections.append(("scene_intelligence", SCENE_INTELLIGENCE_PROMPT, 1))
+
         mood_hint = self.mood.get_mood_prompt_hint()
         if mood_hint:
-            system_prompt += f"\n\nEMOTIONALE LAGE: {mood_hint}"
+            sections.append(("mood", f"\n\nEMOTIONALE LAGE: {mood_hint}", 1))
 
-        # Phase 6.6: Zeitgefuehl — Hinweise in System Prompt
-        if time_hints:
-            system_prompt += "\n\nZEITGEFUEHL:\n" + "\n".join(f"- {h}" for h in time_hints)
-
-        # Phase 17: Timer-Kontext in System Prompt
-        timer_hints = self.timer_manager.get_context_hints()
-        if timer_hints:
-            system_prompt += "\n\nAKTIVE TIMER:\n" + "\n".join(f"- {h}" for h in timer_hints)
-
-        # Phase 17: Security Score im Kontext (nur bei Warnungen)
         if sec_score and sec_score.get("level") in ("warning", "critical"):
             details = ", ".join(sec_score.get("details", []))
-            system_prompt += (
+            sec_text = (
                 f"\n\nSICHERHEITS-STATUS: {sec_score['level'].upper()} "
                 f"(Score: {sec_score['score']}/100). {details}. "
                 f"Erwaehne dies bei Gelegenheit."
             )
+            sections.append(("security", sec_text, 1))
 
-        # Phase 17: Kontext-Persistenz ueber Raumwechsel
-        if prev_context:
-            system_prompt += f"\n\nVORHERIGER KONTEXT (anderer Raum): {prev_context}"
-
-        # Phase 7: Gaeste-Modus Prompt-Erweiterung
-        if guest_mode_active:
-            system_prompt += "\n\n" + self.routines.get_guest_mode_prompt()
-
-        # Phase 7.5: Szenen-Intelligenz — erweiterte Prompt-Anweisung
-        system_prompt += SCENE_INTELLIGENCE_PROMPT
-
-        # Phase 16.2: Tutorial-Modus fuer neue User
-        if tutorial_hint:
-            system_prompt += tutorial_hint
-
-        # Warning-Dedup: Bereits gegebene Warnungen nicht wiederholen
-        alerts = context.get("alerts", [])
-        if alerts:
-            dedup_notes = await self.personality.get_warning_dedup_notes(alerts)
-            if dedup_notes:
-                system_prompt += "\n\nWARNUNGS-DEDUP:\n" + "\n".join(dedup_notes)
-
-        # Semantische Erinnerungen zum System Prompt hinzufuegen
-        memories = context.get("memories", {})
-        memory_context = self._build_memory_context(memories)
-        if memory_context:
-            system_prompt += memory_context
-
-        # Langzeit-Summaries bei Fragen ueber die Vergangenheit
-        if summary_context:
-            system_prompt += summary_context
-
-        # Phase 11.1: RAG Knowledge Base — Wissen aus Dokumenten (bereits parallel geladen)
-        if rag_context:
-            system_prompt += rag_context
-
-        # Phase 12: Datei-Kontext in Prompt einbauen
-        # Phase 14.2: Vision-LLM Bild-Analyse (erweitert Datei-Kontext)
+        # Datei-Kontext: Prio 1 wenn User Dateien geschickt hat
         if files:
             if self.ocr.enabled and self.ocr._vision_available:
                 for f in files:
@@ -764,37 +740,91 @@ class AssistantBrain:
                         except Exception as e:
                             logger.warning("Vision-LLM fuer %s fehlgeschlagen: %s",
                                            f.get("name", "?"), e)
-
             from .file_handler import build_file_context
             file_context = build_file_context(files)
             if file_context:
-                system_prompt += "\n" + file_context
+                sections.append(("files", "\n" + file_context, 1))
 
-        # Phase 8: Konversations-Kontinuitaet in Prompt einbauen
+        # --- Prio 2: Wichtig ---
+        if time_hints:
+            time_text = "\n\nZEITGEFUEHL:\n" + "\n".join(f"- {h}" for h in time_hints)
+            sections.append(("time", time_text, 2))
+
+        timer_hints = self.timer_manager.get_context_hints()
+        if timer_hints:
+            timer_text = "\n\nAKTIVE TIMER:\n" + "\n".join(f"- {h}" for h in timer_hints)
+            sections.append(("timers", timer_text, 2))
+
+        if guest_mode_active:
+            sections.append(("guest_mode", "\n\n" + self.routines.get_guest_mode_prompt(), 2))
+
+        alerts = context.get("alerts", [])
+        if alerts:
+            dedup_notes = await self.personality.get_warning_dedup_notes(alerts)
+            if dedup_notes:
+                dedup_text = "\n\nWARNUNGS-DEDUP:\n" + "\n".join(dedup_notes)
+                sections.append(("warning_dedup", dedup_text, 2))
+
+        memories = context.get("memories", {})
+        memory_context = self._build_memory_context(memories)
+        if memory_context:
+            sections.append(("memory", memory_context, 2))
+
+        # --- Prio 3: Optional ---
+        if rag_context:
+            sections.append(("rag", rag_context, 3))
+
+        if summary_context:
+            sections.append(("summary", summary_context, 3))
+
+        if prev_context:
+            sections.append(("prev_room", f"\n\nVORHERIGER KONTEXT (anderer Raum): {prev_context}", 3))
+
         if continuity_hint:
             if " | " in continuity_hint:
                 topics = continuity_hint.split(" | ")
-                system_prompt += f"\n\nOFFENE THEMEN ({len(topics)}):\n"
+                cont_text = f"\n\nOFFENE THEMEN ({len(topics)}):\n"
                 for t in topics:
-                    system_prompt += f"- {t}\n"
-                system_prompt += "Erwaehne kurz die offenen Themen: 'Wir hatten noch ein paar offene Punkte — [Topics]. Noch relevant?'"
+                    cont_text += f"- {t}\n"
+                cont_text += "Erwaehne kurz die offenen Themen."
             else:
-                system_prompt += f"\n\nOFFENES THEMA: {continuity_hint}"
-                system_prompt += "\nErwaehne kurz das offene Thema, z.B.: 'Wir waren vorhin bei [Thema] — noch relevant?'"
+                cont_text = f"\n\nOFFENES THEMA: {continuity_hint}"
+            sections.append(("continuity", cont_text, 3))
 
-        # Phase 8: Was-waere-wenn Erkennung (mit echten HA-Daten)
+        # --- Prio 4: Wenn Platz ---
+        if tutorial_hint:
+            sections.append(("tutorial", tutorial_hint, 4))
+
         whatif_prompt = await self._get_whatif_prompt(text, context)
         if whatif_prompt:
-            system_prompt += whatif_prompt
+            sections.append(("whatif", whatif_prompt, 4))
+
+        # Sektionen nach Prioritaet sortieren und mit Budget einfuegen
+        sections.sort(key=lambda s: s[2])
+        tokens_used = 0
+        sections_added = []
+        sections_dropped = []
+        for name, section_text, priority in sections:
+            section_tokens = len(section_text) // 3
+            if tokens_used + section_tokens <= section_budget or priority == 1:
+                # Prio 1 wird IMMER inkludiert, auch ueber Budget
+                system_prompt += section_text
+                tokens_used += section_tokens
+                sections_added.append(name)
+            else:
+                sections_dropped.append(f"{name}(P{priority},{section_tokens}t)")
+
+        if sections_dropped:
+            logger.info(
+                "Token-Budget: %d/%d Tokens, %d Sektionen, dropped: %s",
+                tokens_used, section_budget, len(sections_added),
+                ", ".join(sections_dropped),
+            )
 
         # 5. Letzte Gespraeche laden (Working Memory)
-        # Token-Budget: System-Prompt + Conversations + User-Text muessen ins Kontext-Fenster
-        context_cfg = yaml_config.get("context", {})
-        max_context_tokens = context_cfg.get("max_context_tokens", 6000)
-        # Grobe Schaetzung: 1 Token ≈ 3.5 Zeichen (Deutsch, mit Umlauten)
+        # Token-Budget fuer Conversations: Restliches Budget nach System-Prompt + Sektionen
         system_tokens = len(system_prompt) // 3
-        user_tokens = len(text) // 3
-        available_tokens = max(500, max_context_tokens - system_tokens - user_tokens - 200)
+        available_tokens = max(500, max_context_tokens - system_tokens - user_tokens_est - 200)
         # Dynamisch: Conversations laden bis Token-Budget aufgebraucht
         recent = await self.memory.get_recent_conversations(limit=8)
         messages = [{"role": "system", "content": system_prompt}]
