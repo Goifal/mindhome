@@ -550,24 +550,35 @@ def api_chat_voice():
             import os
             ha_url = os.environ.get("SUPERVISOR_URL", ha.ha_url).rstrip("/")
             ha_token = os.environ.get("SUPERVISOR_TOKEN", ha.token)
+            tts_headers = {
+                "Authorization": f"Bearer {ha_token}",
+                "Content-Type": "application/json",
+            }
+            engine_id = tts_entity.removeprefix("tts.")
 
-            # Use HA TTS get_url API to generate audio
-            tts_resp = requests.post(
-                f"{ha_url}/api/tts_get_url",
-                headers={
-                    "Authorization": f"Bearer {ha_token}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "engine_id": tts_entity.removeprefix("tts."),
-                    "message": response_text,
-                    "language": "de",
-                },
-                timeout=15,
-            )
-            if tts_resp.status_code == 200:
+            # Versuche verschiedene Payload-Varianten (HA-API hat sich geaendert)
+            payloads = [
+                {"engine_id": engine_id, "message": response_text, "language": "de"},
+                {"platform": engine_id, "message": response_text, "language": "de"},
+                {"engine_id": engine_id, "message": response_text, "language": "de_DE"},
+            ]
+
+            tts_resp = None
+            for payload in payloads:
+                tts_resp = requests.post(
+                    f"{ha_url}/api/tts_get_url",
+                    headers=tts_headers,
+                    json=payload,
+                    timeout=15,
+                )
+                if tts_resp.status_code == 200:
+                    break
+                logger.debug("TTS tts_get_url attempt failed (%s): %s – %s",
+                             tts_resp.status_code, payload, tts_resp.text[:300])
+
+            if tts_resp and tts_resp.status_code == 200:
                 tts_data = tts_resp.json()
-                tts_url = tts_data.get("url", "")
+                tts_url = tts_data.get("url") or tts_data.get("path", "")
                 if tts_url:
                     # Download the generated audio file
                     audio_resp = requests.get(
@@ -578,8 +589,12 @@ def api_chat_voice():
                     if audio_resp.status_code == 200:
                         tts_audio_b64 = base64.b64encode(audio_resp.content).decode("utf-8")
                         logger.info("TTS audio generated (%d bytes)", len(audio_resp.content))
+                    else:
+                        logger.warning("TTS audio download failed: %s", audio_resp.status_code)
             else:
-                logger.warning("TTS API error: %s", tts_resp.status_code)
+                body = tts_resp.text[:500] if tts_resp else "no response"
+                logger.warning("TTS API error: %s – %s (entity=%s, engine_id=%s)",
+                               tts_resp.status_code if tts_resp else "?", body, tts_entity, engine_id)
         except Exception as e:
             logger.warning("TTS generation failed: %s", e)
 
