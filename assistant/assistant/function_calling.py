@@ -1564,20 +1564,22 @@ class FunctionExecutor:
                 },
             )
         else:
-            # Fallback: Aktuellen State des Quell-Players lesen und auf Ziel uebertragen
-            source_state = await self.ha.get_state(from_entity)
-            if source_state and source_state.get("state") == "playing":
-                # Versuche media_title als Suche auf dem Ziel-Player
-                media_title = source_state.get("attributes", {}).get("media_title", "")
-                if media_title:
-                    success = await self.ha.call_service(
-                        "media_player", "play_media",
-                        {
-                            "entity_id": to_entity,
-                            "media_content_id": media_title,
-                            "media_content_type": media_content_type or "music",
-                        },
-                    )
+            # Fallback: media_title aus bereits geladenem State als Suche nutzen
+            media_title = attrs.get("media_title", "")
+            if media_title:
+                success = await self.ha.call_service(
+                    "media_player", "play_media",
+                    {
+                        "entity_id": to_entity,
+                        "media_content_id": media_title,
+                        "media_content_type": media_content_type or "music",
+                    },
+                )
+            else:
+                return {
+                    "success": False,
+                    "message": f"Kein uebertragbarer Inhalt in '{from_room}' gefunden (weder Content-ID noch Titel)",
+                }
 
         # 3. Quell-Player stoppen
         if success:

@@ -645,7 +645,7 @@ class TimerManager:
         target_id = alarm_id
 
         if not target_id and label:
-            # Per Label suchen
+            # Per Label in Redis suchen
             if self.redis:
                 try:
                     raw = await self.redis.hgetall(KEY_ALARMS)
@@ -660,6 +660,14 @@ class TimerManager:
                             break
                 except Exception:
                     pass
+
+            # Fallback: In-Memory suchen (falls Redis unavailable)
+            if not target_id:
+                label_lower = label.lower()
+                for tid, timer in self.timers.items():
+                    if label_lower in timer.label.lower() and not timer.is_done:
+                        target_id = tid
+                        break
 
         if not target_id:
             return {"success": False, "message": "Wecker nicht gefunden."}

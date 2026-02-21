@@ -312,7 +312,7 @@ class CookingAssistant:
 
         # Timer setzen
         if any(kw in text_lower for kw in NAV_TIMER):
-            return self._set_timer_from_text(text)
+            return await self._set_timer_from_text(text)
 
         # Timer pruefen
         if any(kw in text_lower for kw in NAV_TIMER_CHECK):
@@ -355,7 +355,7 @@ class CookingAssistant:
 
         if step.timer_minutes:
             response += f"\n(Dieser Schritt dauert {step.timer_minutes} Minuten — ich stelle automatisch einen Timer.)"
-            self._start_step_timer(step)
+            await self._start_step_timer(step)
 
         return response
 
@@ -442,7 +442,7 @@ class CookingAssistant:
         self.session.ingredients = new_ingredients
         return f"Portionen angepasst: {old} → {new_portions}. Die Zutaten wurden umgerechnet."
 
-    def _set_timer_from_text(self, text: str) -> str:
+    async def _set_timer_from_text(self, text: str) -> str:
         """Setzt einen Timer basierend auf Text-Eingabe."""
         # Minuten extrahieren
         match = re.search(r"(\d+)\s*(?:minuten?|min)", text.lower())
@@ -465,9 +465,12 @@ class CookingAssistant:
         task = asyncio.create_task(self._timer_watcher(timer))
         self._timer_tasks.append(task)
 
+        # Timer in Redis persistieren (fuer Neustart-Recovery)
+        await self._persist_session()
+
         return f"Timer gesetzt: {label} — {minutes} Minuten. Ich sage Bescheid wenn er abgelaufen ist."
 
-    def _start_step_timer(self, step: CookingStep):
+    async def _start_step_timer(self, step: CookingStep):
         """Startet einen Timer fuer einen Koch-Schritt."""
         if not step.timer_minutes:
             return
@@ -480,10 +483,16 @@ class CookingAssistant:
         task = asyncio.create_task(self._timer_watcher(timer))
         self._timer_tasks.append(task)
 
+        # Timer in Redis persistieren (fuer Neustart-Recovery)
+        await self._persist_session()
+
     async def _timer_watcher(self, timer: CookingTimer):
         """Ueberwacht einen Timer und benachrichtigt bei Ablauf."""
         try:
-            await asyncio.sleep(timer.duration_seconds)
+            remaining = timer.remaining_seconds
+            if remaining <= 0:
+                remaining = timer.duration_seconds  # Frisch gestartet, noch kein started_at
+            await asyncio.sleep(remaining)
             timer.finished = True
             message = f"Sir, der Timer fuer '{timer.label}' ist abgelaufen!"
             logger.info("Koch-Timer abgelaufen: %s", timer.label)

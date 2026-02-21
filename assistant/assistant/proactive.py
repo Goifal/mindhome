@@ -1395,7 +1395,9 @@ VERBOTEN: "Hallo", "Achtung", "Ich moechte dich informieren", "Es tut mir leid".
                         from datetime import datetime as _dt
                         today = _dt.now().strftime("%Y-%m-%d")
                         last_tracked = await self.brain.memory.redis.get(tracked_key)
-                        if not last_tracked or last_tracked.decode("utf-8", errors="ignore") != today:
+                        if isinstance(last_tracked, bytes):
+                            last_tracked = last_tracked.decode("utf-8", errors="ignore")
+                        if not last_tracked or last_tracked != today:
                             await self.brain.energy_optimizer.track_daily_cost()
                             await self.brain.memory.redis.setex(tracked_key, 86400, today)
             except Exception as e:
