@@ -59,6 +59,7 @@ class TTSEnhancer:
         # TTS Konfiguration
         tts_cfg = yaml_config.get("tts", {})
         self.ssml_enabled = tts_cfg.get("ssml_enabled", True)
+        self.prosody_variation = tts_cfg.get("prosody_variation", False)
 
         # Sprechgeschwindigkeit pro Typ
         speed_cfg = tts_cfg.get("speed", {})
@@ -117,8 +118,8 @@ class TTSEnhancer:
         self._whisper_mode = False
 
         logger.info(
-            "TTSEnhancer initialisiert (SSML: %s, Whisper-Triggers: %d)",
-            self.ssml_enabled, len(self.whisper_triggers),
+            "TTSEnhancer initialisiert (SSML: %s, Prosody-Variation: %s, Whisper-Triggers: %d)",
+            self.ssml_enabled, self.prosody_variation, len(self.whisper_triggers),
         )
 
     def classify_message(self, text: str) -> str:
@@ -162,8 +163,12 @@ class TTSEnhancer:
         if not message_type:
             message_type = self.classify_message(text)
 
-        speed = self.speed_map.get(message_type, 100)
-        pitch = self.pitch_map.get(message_type, "0%")
+        if self.prosody_variation:
+            speed = self.speed_map.get(message_type, 100)
+            pitch = self.pitch_map.get(message_type, "0%")
+        else:
+            speed = 100
+            pitch = "0%"
         volume = self.get_volume(activity=activity, message_type=message_type, urgency=urgency)
 
         if self.ssml_enabled:

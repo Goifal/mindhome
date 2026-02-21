@@ -57,6 +57,8 @@ class DiagnosticsEngine:
         self.exclude_patterns = diag_cfg.get("exclude_patterns", [
             "weather.", "sun.", "forecast",
         ])
+        # Whitelist: Wenn gesetzt, NUR diese Entities ueberwachen
+        self.monitored_entities: list[str] = diag_cfg.get("monitored_entities", [])
 
         # Wartungs-Config
         maint_cfg = yaml_config.get("maintenance", {})
@@ -104,7 +106,16 @@ class DiagnosticsEngine:
     # ------------------------------------------------------------------
 
     def _should_monitor(self, entity_id: str) -> bool:
-        """Prueft ob Entity ueberwacht werden soll (Domain-Whitelist + Exclude-Patterns)."""
+        """Prueft ob Entity ueberwacht werden soll.
+
+        Wenn monitored_entities gesetzt ist (Whitelist), werden NUR
+        diese Entities ueberwacht. Ansonsten: Domain-Filter + Exclude-Patterns.
+        """
+        # Whitelist-Modus: Nur explizit gewaehlte Entities
+        if self.monitored_entities:
+            return entity_id in self.monitored_entities
+
+        # Standard-Modus: Domain-Filter + Exclude-Patterns
         domain = entity_id.split(".")[0] if "." in entity_id else ""
         if domain not in self.monitor_domains:
             return False
