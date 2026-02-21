@@ -2299,20 +2299,18 @@ async def ui_system_update(token: str = ""):
                 _saved_configs[cfg_path] = cfg_path.read_text(encoding="utf-8")
                 _update_log.append(f"Config gesichert: {cfg_path.name}")
 
-        # 0b. Lokale Aenderungen an Config-Dateien fuer Git zuruecksetzen,
-        #     damit git pull nicht wegen Merge-Konflikten abbricht.
-        #     Die echten User-Daten sind in _saved_configs gesichert.
-        _git_managed_configs = [
-            "assistant/config/settings.yaml",
-            "assistant/config/settings.yaml.example",
-        ]
-        for rel_path in _git_managed_configs:
-            _run_cmd(["git", "checkout", "--", rel_path], cwd=str(_REPO_DIR))
-        _update_log.append("Git-Konflikte in Config-Dateien bereinigt")
+        # 0b. ALLE lokalen Aenderungen stashen, damit git pull sauber durchlaeuft.
+        #     User-Config ist bereits in _saved_configs gesichert und wird danach
+        #     wiederhergestellt — unabhaengig davon was Git macht.
+        _run_cmd(["git", "stash", "--include-untracked"], cwd=str(_REPO_DIR))
+        _update_log.append("Lokale Aenderungen gestasht")
 
         # 1. Git Pull (via gemountetes /repo)
         _update_log.append("Git pull...")
         rc, out = _run_cmd(["git", "pull"], cwd=str(_REPO_DIR), timeout=60)
+
+        # Stash wieder droppen (User-Config kommt aus _saved_configs, nicht aus stash)
+        _run_cmd(["git", "stash", "drop"], cwd=str(_REPO_DIR))
         _update_log.append(out.strip())
         if rc != 0:
             # Auch bei Fehler: User-Config wiederherstellen
