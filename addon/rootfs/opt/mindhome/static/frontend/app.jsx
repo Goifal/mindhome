@@ -10344,6 +10344,7 @@ const JarvisChatPage = () => {
                         : 'Whisper (STT) and Piper (TTS) entities from Home Assistant'
                     )
                 ),
+            ),
 
             // Connection warning
             connected === false && !showSettings && React.createElement('div', {
