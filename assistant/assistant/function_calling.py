@@ -1796,10 +1796,10 @@ class FunctionExecutor:
         return {"success": success, "message": f"Anwesenheit: {mode}"}
 
     async def _find_speaker_in_room(self, room: str) -> Optional[str]:
-        """Phase 10.1: Findet einen Speaker in einem bestimmten Raum.
+        """Phase 10.1: Findet einen TTS-Speaker in einem bestimmten Raum.
 
         Sucht zuerst in der Konfiguration (room_speakers),
-        dann per Entity-Name-Matching.
+        dann per Entity-Name-Matching (nur echte Speaker, keine TVs).
         """
         # 1. Konfiguriertes Mapping pruefen
         room_speakers = yaml_config.get("multi_room", {}).get("room_speakers", {})
@@ -1808,8 +1808,16 @@ class FunctionExecutor:
             if cfg_room.lower() == room_lower:
                 return entity_id
 
-        # 2. Entity-Name-Matching
-        return await self._find_entity("media_player", room)
+        # 2. Entity-Name-Matching (nur echte Speaker, keine TVs/Receiver)
+        states = await self.ha.get_states()
+        if not states:
+            return None
+        for state in states:
+            entity_id = state.get("entity_id", "")
+            attributes = state.get("attributes", {})
+            if room_lower in entity_id.lower() and self._is_tts_speaker(entity_id, attributes):
+                return entity_id
+        return None
 
     async def _find_tts_entity(self) -> Optional[str]:
         """Findet die Piper TTS-Entity (tts.piper o.ae.)."""
@@ -1827,14 +1835,38 @@ class FunctionExecutor:
                 return entity_id
         return None
 
+    # Entities die KEINE TTS-Speaker sind (TVs, Receiver, Streaming-Boxen)
+    _EXCLUDED_SPEAKER_PATTERNS = (
+        "tv", "fernseher", "television", "fire_tv", "firetv", "apple_tv",
+        "appletv", "chromecast", "roku", "shield", "receiver", "avr",
+        "denon", "marantz", "yamaha_receiver", "onkyo", "pioneer",
+        "soundbar", "xbox", "playstation", "ps5", "ps4", "nintendo",
+        "kodi", "plex", "emby", "jellyfin", "vlc", "mpd",
+    )
+
+    def _is_tts_speaker(self, entity_id: str, attributes: dict = None) -> bool:
+        """Prueft ob ein media_player ein TTS-faehiger Speaker ist (kein TV etc.)."""
+        if not entity_id.startswith("media_player."):
+            return False
+        entity_lower = entity_id.lower()
+        for pattern in self._EXCLUDED_SPEAKER_PATTERNS:
+            if pattern in entity_lower:
+                return False
+        if attributes:
+            device_class = (attributes.get("device_class") or "").lower()
+            if device_class in ("tv", "receiver"):
+                return False
+        return True
+
     async def _find_tts_speaker(self) -> Optional[str]:
-        """Findet einen Media-Player der als TTS-Speaker genutzt werden kann."""
+        """Findet einen TTS-faehigen Speaker (kein TV/Receiver)."""
         states = await self.ha.get_states()
         if not states:
             return None
         for state in states:
             entity_id = state.get("entity_id", "")
-            if entity_id.startswith("media_player."):
+            attributes = state.get("attributes", {})
+            if self._is_tts_speaker(entity_id, attributes):
                 return entity_id
         return None
 
