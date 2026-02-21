@@ -3022,10 +3022,11 @@ Regeln:
                     attrs = s.get("attributes", {})
                     forecast = attrs.get("forecast", [])
                     if forecast:
-                        tomorrow = forecast[0] if len(forecast) > 0 else {}
-                        high = tomorrow.get("temperature", "")
-                        cond = tomorrow.get("condition", "")
-                        precip = tomorrow.get("precipitation", 0)
+                        # forecast[0] = heute, forecast[1] = morgen (falls vorhanden)
+                        next_forecast = forecast[1] if len(forecast) > 1 else forecast[0] if forecast else {}
+                        high = next_forecast.get("temperature", "")
+                        cond = next_forecast.get("condition", "")
+                        precip = next_forecast.get("precipitation", 0)
                         try:
                             high_f = float(high) if high else None
                         except (ValueError, TypeError):

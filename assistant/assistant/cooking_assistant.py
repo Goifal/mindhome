@@ -490,7 +490,7 @@ class CookingAssistant:
             timer.finished = True
             message = f"Sir, der Timer fuer '{timer.label}' ist abgelaufen!"
             logger.info("Koch-Timer abgelaufen: %s", timer.label)
-            if self._notify_callback:
+            if self._notify_callback and self.timer_notify_tts:
                 await self._notify_callback({"message": message, "type": "cooking_timer"})
         except asyncio.CancelledError:
             pass

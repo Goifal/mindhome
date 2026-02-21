@@ -1379,7 +1379,7 @@ VERBOTEN: "Hallo", "Achtung", "Ich moechte dich informieren", "Es tut mir leid".
             except Exception as e:
                 logger.debug("Foresight Fehler: %s", e)
 
-            # Energy Events pruefen
+            # Energy Events pruefen + taegliches Kostentracking
             try:
                 if hasattr(self.brain, "energy_optimizer") and self.brain.energy_optimizer.enabled:
                     energy_alerts = await self.brain.energy_optimizer.check_energy_events()
@@ -1388,6 +1388,16 @@ VERBOTEN: "Hallo", "Achtung", "Ich moechte dich informieren", "Es tut mir leid".
                         await self._notify(alert.get("type", "energy_event"), urgency, {
                             "message": alert.get("message", ""),
                         })
+
+                    # Taegliches Kostentracking (einmal pro Tag via Redis-Cooldown)
+                    if self.brain.memory.redis:
+                        tracked_key = "mha:energy:daily_tracked"
+                        from datetime import datetime as _dt
+                        today = _dt.now().strftime("%Y-%m-%d")
+                        last_tracked = await self.brain.memory.redis.get(tracked_key)
+                        if not last_tracked or last_tracked.decode("utf-8", errors="ignore") != today:
+                            await self.brain.energy_optimizer.track_daily_cost()
+                            await self.brain.memory.redis.setex(tracked_key, 86400, today)
             except Exception as e:
                 logger.debug("Energy Check Fehler: %s", e)
 

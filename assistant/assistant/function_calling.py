@@ -200,6 +200,11 @@ _ASSISTANT_TOOLS_STATIC = [
                         "type": "string",
                         "description": "Suchanfrage fuer Musik (z.B. 'Jazz', 'Beethoven', 'Chill Playlist')",
                     },
+                    "media_type": {
+                        "type": "string",
+                        "enum": ["music", "podcast", "audiobook", "playlist", "channel"],
+                        "description": "Art des Mediums (Standard: music)",
+                    },
                     "volume": {
                         "type": "number",
                         "description": "Lautstaerke 0-100 (Prozent). Nur bei action='volume'. Z.B. 20 fuer 20%, 50 fuer 50%",
@@ -1356,13 +1361,14 @@ class FunctionExecutor:
 
         # Foundation F.5: Musik-Suche via query
         query = args.get("query")
+        media_type = args.get("media_type", "music")
         if query and action == "play":
             success = await self.ha.call_service(
                 "media_player", "play_media",
                 {
                     "entity_id": entity_id,
                     "media_content_id": query,
-                    "media_content_type": "music",
+                    "media_content_type": media_type,
                 },
             )
             return {"success": success, "message": f"Suche '{query}' wird abgespielt"}
@@ -1468,11 +1474,20 @@ class FunctionExecutor:
                 },
             )
         else:
-            # Fallback: Join/Unjoin wenn kein Content-ID (z.B. Gruppen-Streaming)
-            success = await self.ha.call_service(
-                "media_player", "join",
-                {"entity_id": from_entity, "group_members": [to_entity]},
-            )
+            # Fallback: Aktuellen State des Quell-Players lesen und auf Ziel uebertragen
+            source_state = await self.ha.get_state(from_entity)
+            if source_state and source_state.get("state") == "playing":
+                # Versuche media_title als Suche auf dem Ziel-Player
+                media_title = source_state.get("attributes", {}).get("media_title", "")
+                if media_title:
+                    success = await self.ha.call_service(
+                        "media_player", "play_media",
+                        {
+                            "entity_id": to_entity,
+                            "media_content_id": media_title,
+                            "media_content_type": media_content_type or "music",
+                        },
+                    )
 
         # 3. Quell-Player stoppen
         if success:
@@ -1839,18 +1854,18 @@ class FunctionExecutor:
         }
 
         if start_time:
-            # Termin mit Uhrzeit
-            service_data["start_date_time"] = f"{date_str} {start_time}:00"
+            # Termin mit Uhrzeit — ISO8601-Format fuer HA
+            service_data["start_date_time"] = f"{date_str}T{start_time}:00"
             if end_time:
-                service_data["end_date_time"] = f"{date_str} {end_time}:00"
+                service_data["end_date_time"] = f"{date_str}T{end_time}:00"
             else:
                 # Standard: +1 Stunde
                 try:
                     start_dt = datetime.strptime(f"{date_str} {start_time}", "%Y-%m-%d %H:%M")
                     end_dt = start_dt + timedelta(hours=1)
-                    service_data["end_date_time"] = end_dt.strftime("%Y-%m-%d %H:%M:%S")
+                    service_data["end_date_time"] = end_dt.strftime("%Y-%m-%dT%H:%M:%S")
                 except ValueError:
-                    service_data["end_date_time"] = f"{date_str} {start_time}:00"
+                    service_data["end_date_time"] = f"{date_str}T{start_time}:00"
         else:
             # Ganztaegiger Termin
             service_data["start_date"] = date_str
@@ -1933,12 +1948,19 @@ class FunctionExecutor:
                 )
             else:
                 # Fallback: Ohne UID loeschen (Startzeit nutzen)
+                # HA gibt start/end als ISO-String oder als Dict mit date/dateTime zurueck
+                evt_start = target_event.get("start", start)
+                evt_end = target_event.get("end", end)
+                if isinstance(evt_start, dict):
+                    evt_start = evt_start.get("dateTime", evt_start.get("date", start))
+                if isinstance(evt_end, dict):
+                    evt_end = evt_end.get("dateTime", evt_end.get("date", end))
                 success = await self.ha.call_service(
                     "calendar", "delete_event",
                     {
                         "entity_id": calendar_entity,
-                        "start_date_time": target_event.get("start", {}).get("dateTime", start),
-                        "end_date_time": target_event.get("end", {}).get("dateTime", end),
+                        "start_date_time": evt_start,
+                        "end_date_time": evt_end,
                         "summary": target_event.get("summary", title),
                     },
                 )
@@ -1953,12 +1975,19 @@ class FunctionExecutor:
             return {"success": False, "message": f"Fehler: {e}"}
 
     async def _exec_reschedule_calendar_event(self, args: dict) -> dict:
-        """Phase 11.3: Kalender-Termin verschieben (Delete + Re-Create)."""
+        """Phase 11.3: Kalender-Termin verschieben (Delete + Re-Create).
+
+        Atomisch: Wenn Create fehlschlaegt, wird der alte Termin wiederhergestellt.
+        """
         title = args["title"]
         old_date = args["old_date"]
         new_date = args["new_date"]
         new_start = args.get("new_start_time", "")
         new_end = args.get("new_end_time", "")
+
+        # Alten Termin finden um Start/End fuer Rollback zu merken
+        old_start_time = args.get("old_start_time", "")
+        old_end_time = args.get("old_end_time", "")
 
         # 1. Alten Termin loeschen
         delete_result = await self._exec_delete_calendar_event({
@@ -1985,9 +2014,23 @@ class FunctionExecutor:
                 "success": True,
                 "message": f"Termin '{title}' verschoben von {old_date} nach {new_date}",
             }
+
+        # 3. Rollback: Alten Termin wiederherstellen
+        logger.warning("Reschedule-Rollback: Stelle alten Termin '%s' am %s wieder her", title, old_date)
+        rollback_result = await self._exec_create_calendar_event({
+            "title": title,
+            "date": old_date,
+            "start_time": old_start_time,
+            "end_time": old_end_time,
+        })
+        if rollback_result.get("success"):
+            return {
+                "success": False,
+                "message": f"Neuer Termin konnte nicht erstellt werden. Alter Termin '{title}' am {old_date} wiederhergestellt.",
+            }
         return {
             "success": False,
-            "message": f"Alter Termin geloescht, aber neuer konnte nicht erstellt werden",
+            "message": f"ACHTUNG: Alter Termin geloescht, neuer konnte nicht erstellt werden, Rollback fehlgeschlagen. Termin '{title}' manuell erstellen!",
         }
 
     async def _exec_set_presence_mode(self, args: dict) -> dict:
