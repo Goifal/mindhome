@@ -902,7 +902,16 @@ class PatternDetector:
                 f"{len(cross_room_patterns)} cross-room patterns"
             )
 
-            session.commit()
+            for _attempt in range(3):
+                try:
+                    session.commit()
+                    break
+                except OperationalError as oe:
+                    if "database is locked" in str(oe) and _attempt < 2:
+                        session.rollback()
+                        time.sleep(1.0 * (_attempt + 1))
+                    else:
+                        raise
 
         except Exception as e:
             session.rollback()
@@ -1003,7 +1012,16 @@ class PatternDetector:
                     decayed_count += 1
                     logger.debug(f"Pattern {p.id} decay: {old_conf:.2f} → {p.confidence:.2f} ({days_inactive}d inactive)")
 
-            session.commit()
+            for _attempt in range(3):
+                try:
+                    session.commit()
+                    break
+                except OperationalError as oe:
+                    if "database is locked" in str(oe) and _attempt < 2:
+                        session.rollback()
+                        time.sleep(1.0 * (_attempt + 1))
+                    else:
+                        raise
             if decayed_count:
                 logger.info(f"Confidence decay applied to {decayed_count} patterns")
         except Exception as e:
@@ -1912,7 +1930,16 @@ class PatternDetector:
                         session.add(scene)
                         logger.info(f"New scene detected: {name_de} (frequency: {count})")
 
-            session.commit()
+            for _attempt in range(3):
+                try:
+                    session.commit()
+                    break
+                except OperationalError as oe:
+                    if "database is locked" in str(oe) and _attempt < 2:
+                        session.rollback()
+                        time.sleep(1.0 * (_attempt + 1))
+                    else:
+                        raise
         except Exception as e:
             logger.warning(f"Scene detection error: {e}")
 
@@ -2232,7 +2259,16 @@ class PatternScheduler:
                         dc.storage_size_bytes = int(total_size * (row.cnt / total_events))
                         dc.record_count = row.cnt
 
-            session.commit()
+            for _attempt in range(3):
+                try:
+                    session.commit()
+                    break
+                except OperationalError as oe:
+                    if "database is locked" in str(oe) and _attempt < 2:
+                        session.rollback()
+                        time.sleep(1.0 * (_attempt + 1))
+                    else:
+                        raise
 
         except Exception as e:
             session.rollback()
