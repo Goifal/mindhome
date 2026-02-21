@@ -10,6 +10,35 @@ class MediaDomain(DomainPlugin):
         "night_volume_pct": "30",
     }
 
+    # Receiver/TVs die NICHT automatisch leiser gestellt werden sollen.
+    # Diese werden vom User manuell gesteuert und verwalten ihre
+    # eigene Lautstaerke (z.B. Onkyo ueber IR/HDMI-CEC).
+    _VOLUME_EXCLUDE_PATTERNS = (
+        "tv", "fernseher", "television", "fire_tv", "firetv", "apple_tv",
+        "appletv", "receiver", "avr", "denon", "marantz", "yamaha_receiver",
+        "onkyo", "pioneer", "soundbar",
+        "xbox", "playstation", "ps5", "ps4", "nintendo",
+    )
+
+    def _is_auto_volume_target(self, entity_id, attributes=None):
+        """Prueft ob ein media_player automatisch leiser gestellt werden darf.
+
+        Receiver, TVs und andere manuell gesteuerte Geraete werden ausgeschlossen.
+        """
+        entity_lower = entity_id.lower()
+        for pattern in self._VOLUME_EXCLUDE_PATTERNS:
+            if pattern in entity_lower:
+                return False
+        if attributes:
+            friendly = (attributes.get("friendly_name") or "").lower()
+            for pattern in self._VOLUME_EXCLUDE_PATTERNS:
+                if pattern in friendly:
+                    return False
+            device_class = (attributes.get("device_class") or "").lower()
+            if device_class in ("tv", "receiver"):
+                return False
+        return True
+
     def on_start(self):
         self.logger.info("Media domain ready")
 
@@ -50,9 +79,13 @@ class MediaDomain(DomainPlugin):
             if phase in ("Nacht", "Nachtruhe", "Night"):
                 for e in self.get_entities():
                     if e.get("state") == "playing":
-                        vol = e.get("attributes", {}).get("volume_level", 0)
+                        attrs = e.get("attributes", {})
+                        # Receiver/TVs nicht automatisch leiser stellen
+                        if not self._is_auto_volume_target(e["entity_id"], attrs):
+                            continue
+                        vol = attrs.get("volume_level", 0)
                         if vol and vol > night_vol:
-                            name = e.get("attributes", {}).get("friendly_name", e["entity_id"])
+                            name = attrs.get("friendly_name", e["entity_id"])
                             actions.append({
                                 "entity_id": e["entity_id"], "service": "volume_set",
                                 "data": {"volume_level": night_vol},
