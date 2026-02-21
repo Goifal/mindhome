@@ -416,6 +416,13 @@ class AssistantBrain:
                 "tts": tts_data,
             }
 
+        # Silence-Trigger: Wenn User "Filmabend", "Meditation" etc. sagt,
+        # Activity-Override setzen damit proaktive Meldungen unterdrueckt werden
+        silence_activity = self.activity.check_silence_trigger(text)
+        if silence_activity:
+            self.activity.set_manual_override(silence_activity)
+            logger.info("Silence-Trigger: %s (aus Text: '%s')", silence_activity, text[:50])
+
         # Phase 9: Speaker Recognition — Person ermitteln wenn nicht angegeben
         if person:
             _safe_create_task(
@@ -1226,7 +1233,15 @@ class AssistantBrain:
                         confirmation = self.personality.get_varied_confirmation(success=True)
                         response_text = f"{summary} — {confirmation.rstrip('.')}"
                     else:
-                        response_text = self.personality.get_varied_confirmation(success=True)
+                        # Kontextbezogene Bestaetigung mit Action + Room
+                        last_action = executed_actions[-1]
+                        action_name = last_action.get("function", "")
+                        action_room = ""
+                        if isinstance(last_action.get("args"), dict):
+                            action_room = last_action["args"].get("room", "")
+                        response_text = self.personality.get_varied_confirmation(
+                            success=True, action=action_name, room=action_room,
+                        )
                 elif any_failed:
                     failed = [
                         a["result"].get("message", "")
@@ -1558,6 +1573,22 @@ class AssistantBrain:
             "Hallo! Wie kann ich",
             "Hallo, wie kann ich",
             "Hi! Wie kann ich",
+            # Kontext-Wechsel-Floskeln (JARVIS springt sofort mit)
+            "Um auf deine vorherige Frage zurückzukommen",
+            "Um auf deine vorherige Frage zurueckzukommen",
+            "Um auf deine Frage zurückzukommen",
+            "Um auf deine Frage zurueckzukommen",
+            "Aber zurück zu deiner Frage",
+            "Aber zurueck zu deiner Frage",
+            "Um noch mal darauf einzugehen",
+            "Wie ich bereits erwähnt habe",
+            "Wie ich bereits erwaehnt habe",
+            # Devote/beeindruckte Floskeln
+            "Das ist eine tolle Frage",
+            "Das ist eine gute Frage",
+            "Das ist eine interessante Frage",
+            "Wow,", "Wow!",
+            "Oh,", "Oh!",
         ])
         for phrase in banned_phrases:
             # Case-insensitive Entfernung
@@ -1572,6 +1603,10 @@ class AssistantBrain:
             "Im Prinzip", "Nun,", "Nun ", "Sozusagen",
             "Quasi", "Eigentlich", "Im Grunde genommen",
             "Tatsächlich,", "Tatsaechlich,",
+            "Naja,", "Na ja,",
+            "Ach,", "Hmm,", "Ähm,",
+            "Okay,", "Okay ", "Ok,", "Ok ",
+            "Nun ja,",
         ])
         for starter in banned_starters:
             if text.lstrip().lower().startswith(starter.lower()):
@@ -2772,26 +2807,96 @@ Regeln:
     # Phase 17: Natuerliche Fehlerbehandlung
     # ------------------------------------------------------------------
 
+    # Vorgefertigte JARVIS-Fehler-Muster: schneller als LLM-Call
+    _ERROR_PATTERNS = {
+        "unavailable": [
+            "{device} reagiert nicht. Pruefe Stromversorgung.",
+            "{device} offline. Ich behalte das im Auge.",
+        ],
+        "timeout": [
+            "{device} antwortet nicht rechtzeitig. Zweiter Versuch laeuft.",
+            "{device} braucht zu lange. Ich versuche einen anderen Weg.",
+        ],
+        "not_found": [
+            "{device} nicht gefunden. Existiert die Entity noch?",
+            "{device} unbekannt. Konfiguration pruefen.",
+        ],
+        "unauthorized": [
+            "Keine Berechtigung fuer {device}. Token pruefen.",
+        ],
+        "generic": [
+            "{device} — unerwarteter Fehler. Ich bleibe dran.",
+            "{device} macht Probleme. Alternative?",
+            "{device} streikt. Nicht mein bester Moment.",
+        ],
+    }
+
+    def _get_error_recovery_fast(self, func_name: str, func_args: dict, error: str) -> str:
+        """Schnelle JARVIS-Fehlermeldung ohne LLM-Call.
+
+        Matcht den Fehler auf bekannte Muster und gibt sofort eine
+        kontextbezogene Antwort zurueck.
+        """
+        # Device-Namen aus Action extrahieren
+        room = func_args.get("room", "") if isinstance(func_args, dict) else ""
+        device = func_name.replace("set_", "").replace("_", " ").title()
+        if room:
+            device = f"{device} {room.replace('_', ' ').title()}"
+
+        error_lower = error.lower()
+
+        # Fehler-Kategorie bestimmen
+        if "unavailable" in error_lower or "offline" in error_lower:
+            category = "unavailable"
+        elif "timeout" in error_lower or "timed out" in error_lower:
+            category = "timeout"
+        elif "not found" in error_lower or "not_found" in error_lower:
+            category = "not_found"
+        elif "unauthorized" in error_lower or "403" in error_lower or "401" in error_lower:
+            category = "unauthorized"
+        else:
+            category = "generic"
+
+        import random
+        templates = self._ERROR_PATTERNS[category]
+        return random.choice(templates).format(device=device)
+
     async def _generate_error_recovery(self, func_name: str, func_args: dict, error: str) -> str:
-        """Generiert eine menschliche Fehlermeldung mit Loesungsvorschlag."""
+        """Generiert eine JARVIS-Fehlermeldung mit Loesungsvorschlag.
+
+        Nutzt schnelle Pattern-basierte Antwort statt LLM-Call fuer
+        bekannte Fehler. Nur bei unbekannten Fehlern wird das LLM gefragt.
+        """
+        # Schnelle Antwort fuer bekannte Fehlertypen
+        fast_response = self._get_error_recovery_fast(func_name, func_args, error)
+        error_lower = error.lower()
+
+        # Bei Standard-Fehlern: Kein LLM noetig
+        known_patterns = ["unavailable", "offline", "timeout", "timed out",
+                          "not found", "not_found", "unauthorized", "403", "401"]
+        if any(p in error_lower for p in known_patterns):
+            return fast_response
+
+        # Unbekannte Fehler: LLM fragen
         try:
             response = await self.ollama.chat(
                 messages=[
-                    {"role": "system", "content": f"""Du bist {settings.assistant_name}.
-Ein Smart-Home-Befehl ist fehlgeschlagen. Erklaere kurz was passiert ist und schlage eine Loesung vor.
-Max 2 Saetze. Deutsch. Butler-Stil. Nicht entschuldigen, sondern sachlich loesen.
-Beispiele:
-- "Das Licht im Bad reagiert nicht. Moeglicherweise ist es offline. Soll ich den Status pruefen?"
-- "Die Heizung laesst sich gerade nicht steuern. Ich versuche es in einer Minute erneut." """},
-                    {"role": "user", "content": f"Fehlgeschlagen: {func_name}({func_args}). Fehler: {error}"},
+                    {"role": "system", "content": (
+                        f"Du bist {settings.assistant_name}. Souveraener Butler-Ton. "
+                        "Ein Smart-Home-Befehl ist fehlgeschlagen. "
+                        "1 Satz: Was ist passiert. 1 Satz: Was du stattdessen tust. "
+                        "Nie entschuldigen. Nie ratlos. Du hast IMMER einen Plan B. Deutsch."
+                    )},
+                    {"role": "user", "content": f"{func_name}({func_args}) → {error}"},
                 ],
                 model=settings.model_fast,
                 temperature=0.5,
-                max_tokens=100,
+                max_tokens=80,
             )
-            return response.get("message", {}).get("content", f"{func_name} reagiert nicht. Ich pruefe das.")
+            text = response.get("message", {}).get("content", "")
+            return text.strip() if text.strip() else fast_response
         except Exception:
-            return f"{func_name} reagiert nicht. Ich pruefe das."
+            return fast_response
 
     # ------------------------------------------------------------------
     # Phase 17: Predictive Resource Management

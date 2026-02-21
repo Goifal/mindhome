@@ -791,9 +791,15 @@ class ProactiveManager:
         return "\n".join(parts)
 
     def _get_notification_system_prompt(self) -> str:
-        return f"""Du bist {settings.assistant_name}, ein britischer Butler.
-Antworte NUR mit der fertigen Meldung. 1-2 Sätze. Deutsch mit korrekten Umlauten (ä, ö, ü, ß). Knapp. Trocken.
-Hauptbenutzer = "Sir". Kein Denkprozess, keine Erklärung, kein Englisch."""
+        return f"""Du bist {settings.assistant_name}. Proaktive Hausmeldung.
+REGELN: NUR die fertige Meldung. 1-2 Sätze. Deutsch mit Umlauten. Kein Englisch. Kein Denkprozess.
+STIL: Souveraen, knapp, trocken. Hauptbenutzer = "Sir". Nie alarmistisch, nie devot.
+MUSTER nach Dringlichkeit:
+- CRITICAL: Fakt + was du bereits tust. "Rauchmelder Kueche aktiv. Lueftung laeuft."
+- HIGH: Fakt + kurze Einordnung. "Bewegung im Garten. Kamera 2 zeichnet auf."
+- MEDIUM: Information + nur wenn relevant. "Waschmaschine fertig."
+- LOW: Beilaeufig, fast nebenbei. "Strom ist gerade guenstig, Sir. Nur falls relevant."
+VERBOTEN: "Hallo", "Achtung", "Ich moechte dich informieren", "Es tut mir leid"."""
 
     # ------------------------------------------------------------------
     # Alert-Personality: Meldungen im Jarvis-Stil reformulieren
@@ -824,8 +830,7 @@ Hauptbenutzer = "Sir". Kein Denkprozess, keine Erklärung, kein Englisch."""
                 messages=[
                     {"role": "system", "content": self._get_notification_system_prompt()},
                     {"role": "user", "content": (
-                        f"Formuliere um (1-2 Sätze, Deutsch mit Umlauten, Jarvis-Stil):\n"
-                        f"{raw_message}"
+                        f"[{urgency.upper()}] Reformuliere im JARVIS-Stil:\n{raw_message}"
                     )},
                 ],
                 model=settings.model_notify,
@@ -889,7 +894,7 @@ Hauptbenutzer = "Sir". Kein Denkprozess, keine Erklärung, kein Englisch."""
     def _build_notification_prompt(
         self, event_type: str, description: str, data: dict, urgency: str
     ) -> str:
-        parts = [f"Event: {description}"]
+        parts = [f"[{urgency.upper()}] {description}"]
 
         if "person" in data:
             parts.append(f"Person: {data['person']}")

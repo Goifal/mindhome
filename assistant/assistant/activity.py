@@ -142,10 +142,26 @@ VOLUME_MATRIX = {
 
 
 class ActivityEngine:
-    """Erkennt die aktuelle Aktivitaet des Benutzers."""
+    """Erkennt die aktuelle Aktivitaet des Benutzers.
+
+    Unterstuetzt manuellen Override: Wenn der User explizit eine Aktivitaet
+    angibt (z.B. "Filmabend", "Meditation"), wird diese bevorzugt.
+    """
+
+    # Keywords die einen manuellen Silence-Modus triggern
+    SILENCE_KEYWORDS = {
+        WATCHING: ["filmabend", "film", "kino", "netflix", "serie schauen", "fernsehen"],
+        FOCUSED: ["meditation", "meditieren", "fokus", "nicht stören", "nicht stoeren",
+                   "ruhe", "konzentration", "arbeiten", "homeoffice"],
+        SLEEPING: ["gute nacht", "schlaf gut", "ich geh schlafen", "ich geh ins bett"],
+    }
 
     def __init__(self, ha_client: HomeAssistantClient):
         self.ha = ha_client
+
+        # Manueller Override (z.B. wenn User "Filmabend" sagt)
+        self._manual_override: Optional[str] = None
+        self._override_until: Optional[datetime] = None
 
         # Konfiguration aus YAML
         activity_cfg = yaml_config.get("activity", {})
@@ -182,9 +198,41 @@ class ActivityEngine:
         self._last_activity = RELAXING
         self._last_detection = None
 
+    def set_manual_override(self, activity: str, duration_minutes: int = 120):
+        """Setzt einen manuellen Aktivitaets-Override.
+
+        Wird verwendet wenn der User explizit eine Aktivitaet angibt,
+        z.B. "Filmabend" → WATCHING fuer 2 Stunden.
+        """
+        from datetime import timedelta
+        self._manual_override = activity
+        self._override_until = datetime.now() + timedelta(minutes=duration_minutes)
+        logger.info("Manueller Override: %s fuer %d Minuten", activity, duration_minutes)
+
+    def clear_manual_override(self):
+        """Entfernt den manuellen Override."""
+        if self._manual_override:
+            logger.info("Manueller Override aufgehoben: %s", self._manual_override)
+        self._manual_override = None
+        self._override_until = None
+
+    def check_silence_trigger(self, text: str) -> Optional[str]:
+        """Prueft ob ein Text einen Silence-Modus triggern soll.
+
+        Returns:
+            Aktivitaets-String oder None
+        """
+        text_lower = text.lower().strip()
+        for activity, keywords in self.SILENCE_KEYWORDS.items():
+            if any(kw in text_lower for kw in keywords):
+                return activity
+        return None
+
     async def detect_activity(self) -> dict:
         """
         Erkennt die aktuelle Aktivitaet.
+
+        Manueller Override hat Vorrang vor Sensor-Erkennung.
 
         Returns:
             Dict mit:
@@ -193,6 +241,17 @@ class ActivityEngine:
                 signals: dict - Erkannte Signale
                 delivery: str - Nicht gesetzt (wird von SilenceMatrix bestimmt)
         """
+        # Manueller Override pruefen
+        if self._manual_override and self._override_until:
+            if datetime.now() < self._override_until:
+                return {
+                    "activity": self._manual_override,
+                    "confidence": 1.0,
+                    "signals": {"manual_override": True},
+                }
+            else:
+                self.clear_manual_override()
+
         signals = {}
         states = await self.ha.get_states()
 
