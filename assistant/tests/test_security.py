@@ -108,8 +108,10 @@ class TestGarageCoverWordBoundary:
 
     _PATTERN = r'(?:^|[_.\s])tor(?:$|[_.\s])'
 
-    def test_garagentor_matches(self):
-        assert re.search(self._PATTERN, "cover.garagentor")  # 'tor' am Ende
+    def test_garagentor_not_matched_by_tor_regex(self):
+        # 'garagentor' wird NICHT durch die tor-Regex gefunden (kein Separator)
+        # Aber "garage" im Entity-Name blockiert es separat via 'in' Check
+        assert not re.search(self._PATTERN, "cover.garagentor")
 
     def test_tor_standalone_matches(self):
         assert re.search(self._PATTERN, "cover.tor_sued")
@@ -208,6 +210,7 @@ class TestFunctionWhitelist:
     """getattr-Zugriff auf _exec_* nur fuer erlaubte Funktionen."""
 
     def test_known_functions_in_whitelist(self):
+        pytest.importorskip("pydantic_settings")
         from assistant.function_calling import FunctionExecutor
         expected = {"set_light", "set_climate", "play_media", "set_cover",
                     "call_service", "send_notification"}
@@ -215,6 +218,7 @@ class TestFunctionWhitelist:
             assert fn in FunctionExecutor._ALLOWED_FUNCTIONS
 
     def test_private_method_not_in_whitelist(self):
+        pytest.importorskip("pydantic_settings")
         from assistant.function_calling import FunctionExecutor
         # Interne Methoden die nie via LLM aufrufbar sein duerfen
         for fn in ["_is_safe_cover", "close", "__init__", "set_config_versioning"]:
