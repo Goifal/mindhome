@@ -1227,6 +1227,10 @@ VERBOTEN: "Hallo", "Achtung", "Ich moechte dich informieren", "Es tut mir leid".
                 for s in (states or []):
                     eid = s.get("entity_id", "")
                     if eid.startswith("cover."):
+                        # Sicherheitsfilter: Garagentore/Tore ueberspringen
+                        if not await self.brain.executor._is_safe_cover(eid, s):
+                            logger.info("Seasonal: %s uebersprungen (Sicherheitsfilter)", eid)
+                            continue
                         await self.brain.ha.call_service(
                             "cover", "set_cover_position",
                             {"entity_id": eid, "position": position},

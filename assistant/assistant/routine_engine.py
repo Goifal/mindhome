@@ -1046,16 +1046,24 @@ Kein unterwuerfiger Ton. Du bist ein brillanter Butler, kein Chatbot."""
 
             if action_type == "covers_up":
                 for s in states:
-                    if s.get("entity_id", "").startswith("cover."):
+                    eid = s.get("entity_id", "")
+                    if eid.startswith("cover."):
+                        # Sicherheitsfilter: Garagentore/Tore ueberspringen
+                        if self._executor and not await self._executor._is_safe_cover(eid, s):
+                            continue
                         await self.ha.call_service("cover", "set_cover_position",
-                                                   {"entity_id": s["entity_id"], "position": 100})
+                                                   {"entity_id": eid, "position": 100})
                 logger.info("Vacation-Sim: Rolladen hoch")
 
             elif action_type == "covers_down":
                 for s in states:
-                    if s.get("entity_id", "").startswith("cover."):
+                    eid = s.get("entity_id", "")
+                    if eid.startswith("cover."):
+                        # Sicherheitsfilter: Garagentore/Tore ueberspringen
+                        if self._executor and not await self._executor._is_safe_cover(eid, s):
+                            continue
                         await self.ha.call_service("cover", "set_cover_position",
-                                                   {"entity_id": s["entity_id"], "position": 0})
+                                                   {"entity_id": eid, "position": 0})
                 logger.info("Vacation-Sim: Rolladen runter")
 
             elif action_type == "light_random_on":

@@ -1259,8 +1259,10 @@ class FunctionExecutor:
                 # Enabled-Check: Deaktivierte Covers werden nicht gesteuert
                 if conf.get("enabled") is False:
                     return False
-        except Exception:
-            pass
+        except Exception as e:
+            # Fail-safe: Bei CoverConfig-Fehler blockieren statt durchlassen
+            logger.warning("CoverConfig laden fehlgeschlagen fuer %s: %s — blockiere sicherheitshalber", entity_id, e)
+            return False
 
         return True
 
@@ -1314,7 +1316,15 @@ class FunctionExecutor:
             return {"success": False, "message": "domain und service erforderlich"}
 
         # Sicherheitscheck: Cover-Services fuer Garagentore blockieren
-        if domain == "cover" and entity_id:
+        # Bypass-sicher: Prueft ALLE Domains wenn entity_id ein Cover ist
+        is_cover_entity = entity_id.startswith("cover.")
+        is_cover_domain = domain == "cover"
+
+        if is_cover_domain and not entity_id:
+            # Cover-Domain ohne entity_id blockieren — koennte alle Cover betreffen
+            return {"success": False, "message": "cover-Service ohne entity_id nicht erlaubt (Sicherheitssperre)."}
+
+        if is_cover_entity or is_cover_domain:
             states = await self.ha.get_states()
             entity_state = next((s for s in (states or []) if s.get("entity_id") == entity_id), {})
             if not await self._is_safe_cover(entity_id, entity_state):
