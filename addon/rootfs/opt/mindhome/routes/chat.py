@@ -371,6 +371,91 @@ def api_chat_upload():
 
 
 # ------------------------------------------------------------------
+# Dialekt-Normalisierung (oesterreichisch / sueddeutsch)
+# ------------------------------------------------------------------
+
+# Whisper erkennt Dialekt oft falsch — diese Mappings korrigieren die
+# haeufigsten Fehltranskriptionen bei oesterreichischer Aussprache.
+# Format: (falsch_erkannt, korrekt) — case-insensitive Ersetzung
+
+_DIALECT_WORD_MAP = {
+    # Typische Whisper-Fehler bei oesterreichischem Deutsch
+    "schalpte": "schalte",
+    "schalptem": "schalte",
+    "schoite": "schalte",
+    "schoiten": "schalten",
+    "beruhlicht": "bürolicht",
+    "bürolickt": "bürolicht",
+    "buerolicht": "bürolicht",
+    "liacht": "licht",
+    "hoazung": "heizung",
+    "hazung": "heizung",
+    "haizung": "heizung",
+    "temperadur": "temperatur",
+    "temparatur": "temperatur",
+    "wohnzimma": "wohnzimmer",
+    "schlofzimma": "schlafzimmer",
+    "schlofzimmer": "schlafzimmer",
+    "kuechn": "küche",
+    "kuchl": "küche",
+    "kuche": "küche",
+    "fensta": "fenster",
+    "rollodn": "rolladen",
+    "rollladn": "rollladen",
+    "jalousie": "jalousie",
+    "jalusi": "jalousie",
+    "oamoi": "einmal",
+    "amoi": "einmal",
+    "olle": "alle",
+    "olles": "alles",
+    "mochs": "machs",
+    "moch": "mach",
+    "wos": "was",
+    "host": "hast",
+    "hob": "hab",
+    "mia": "mir",
+    "nix": "nichts",
+    "ned": "nicht",
+    "net": "nicht",
+    "a bissl": "ein bisschen",
+    "bissl": "bisschen",
+    "gemiatlich": "gemütlich",
+    "gmuetlich": "gemütlich",
+    "offen": "offen",
+    "zuadrah": "zudrehen",
+    "aufdrah": "aufdrehen",
+    "abdrah": "abdrehen",
+    "aufmochn": "aufmachen",
+    "zumochn": "zumachen",
+    "prozend": "prozent",
+    "fernseha": "fernseher",
+    "lautstaerke": "lautstärke",
+    "lauda": "lauter",
+    "leisa": "leiser",
+    "guadn": "guten",
+    "guatn": "guten",
+    "mogn": "morgen",
+    "nocht": "nacht",
+    "danke scheen": "dankeschön",
+}
+
+import re as _re
+
+def _normalize_dialect(text):
+    """Korrigiert typische Whisper-Fehltranskriptionen bei oesterreichischem Dialekt."""
+    if not text:
+        return text
+    original = text
+    # Wort-fuer-Wort Ersetzung (case-insensitive, ganze Woerter)
+    for wrong, correct in _DIALECT_WORD_MAP.items():
+        pattern = _re.compile(r'\b' + _re.escape(wrong) + r'\b', _re.IGNORECASE)
+        text = pattern.sub(correct, text)
+    if text != original:
+        logger.info("Dialekt-Normalisierung: '%s' -> '%s'", original, text)
+    return text
+
+
+# ------------------------------------------------------------------
 # Voice chat — STT (Whisper) -> Jarvis -> TTS (Piper)
 # ------------------------------------------------------------------
 
@@ -509,6 +594,9 @@ def api_chat_voice():
         transcribed_text = stt_result.get("text", "").strip()
         if not transcribed_text:
             return jsonify({"error": "Sprache nicht erkannt", "stt_result": stt_result}), 422
+
+        # Dialekt-Normalisierung (oesterreichisch/sueddeutsch)
+        transcribed_text = _normalize_dialect(transcribed_text)
 
     except requests.Timeout:
         return jsonify({"error": "STT Timeout"}), 504

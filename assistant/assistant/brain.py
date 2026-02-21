@@ -1421,6 +1421,58 @@ class AssistantBrain:
 
         original = text
 
+        # 0. qwen3 Thinking-Tags entfernen (<think>...</think>)
+        # qwen3-Modelle geben Chain-of-Thought in <think> Tags aus
+        text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+        # Falls nur ein oeffnender Tag ohne schliessenden (Streaming-Abbruch)
+        if "<think>" in text:
+            text = text.split("</think>")[-1] if "</think>" in text else re.sub(r"<think>.*", "", text, flags=re.DOTALL)
+            text = text.strip()
+
+        if not text:
+            return original
+
+        # 0b. Implizites Reasoning entfernen (qwen3 ohne <think> Tags)
+        # Erkennt englisches Chain-of-Thought das als normaler Text ausgegeben wird
+        _reasoning_starters = [
+            "Okay, the user", "Ok, the user", "The user",
+            "Let me ", "I need to", "I should ", "I'll ",
+            "First, I", "Hmm,", "So, the user", "Now, I",
+            "Alright,", "So the user", "Wait,",
+        ]
+        for starter in _reasoning_starters:
+            if text.lstrip().startswith(starter):
+                # Suche nach der eigentlichen deutschen Antwort nach dem Reasoning
+                # Typisches Muster: englisches Reasoning + deutsche Antwort am Ende
+                lines = text.split("\n")
+                german_lines = []
+                for line in lines:
+                    line_stripped = line.strip()
+                    if not line_stripped:
+                        continue
+                    # Zeile ist deutsch wenn sie Umlaute oder deutsche Marker enthaelt
+                    has_german = any(c in line_stripped for c in "äöüÄÖÜß") or \
+                                 any(f" {m} " in f" {line_stripped.lower()} " for m in [
+                                     "der", "die", "das", "ist", "und", "nicht", "ich",
+                                     "hab", "dir", "sir", "sehr", "wohl", "erledigt",
+                                 ])
+                    has_english = any(f" {m} " in f" {line_stripped.lower()} " for m in [
+                        "the", "user", "should", "would", "need", "want", "check",
+                        "first", "which", "that", "this", "response",
+                    ])
+                    if has_german and not has_english:
+                        german_lines.append(line_stripped)
+                if german_lines:
+                    text = " ".join(german_lines)
+                    logger.warning("Implizites Reasoning entfernt, deutsche Antwort extrahiert: '%s'", text[:100])
+                else:
+                    logger.warning("Implizites Reasoning erkannt, keine deutsche Antwort gefunden: '%s'", text[:100])
+                    text = ""
+                break
+
+        if not text:
+            return original
+
         # 1. Banned Phrases komplett entfernen
         banned_phrases = filter_config.get("banned_phrases", [
             "Natürlich!", "Natuerlich!", "Gerne!", "Selbstverständlich!",

@@ -76,6 +76,15 @@ body { font-family:var(--font); background:var(--bg-primary); color:var(--text-p
 .login-box button { width:100%; margin-top:20px; padding:14px; background:var(--accent); color:#0a0e17; border:none; border-radius:var(--radius-sm); font-family:var(--font); font-size:16px; font-weight:600; cursor:pointer; text-transform: uppercase; letter-spacing: 2px; transition: all var(--fast); }
 .login-box button:hover { opacity:0.9; box-shadow: 0 0 20px rgba(245,158,11,0.3); }
 .login-error { color:var(--danger); font-size:13px; margin-top:12px; min-height:20px; }
+.login-icon { font-size:44px; margin-bottom:14px; }
+.login-box input + input { margin-top:12px; }
+.login-box .recovery-hint { color:var(--accent); font-weight:600; margin-bottom:16px; }
+.login-box .recovery-desc { margin-bottom:20px; font-size:13px; }
+.login-box .recovery-key-display { background:var(--bg-input); border:2px solid var(--accent); border-radius:var(--radius-sm); padding:18px; font-family:var(--mono); font-size:22px; letter-spacing:4px; color:var(--accent); margin-bottom:20px; user-select:all; }
+.login-box .forgot-pin { margin-top:20px; }
+.login-box .forgot-pin a { color:var(--text-muted); font-size:12px; text-decoration:none; }
+.login-box .forgot-pin a:hover { color:var(--accent); }
+.login-box .reset-input { margin-bottom:12px; letter-spacing:2px; text-transform:uppercase; }
 .login-hud-ring { position: absolute; top: -60px; left: 50%; transform: translateX(-50%); width: 120px; height: 120px; }
 .login-hud-ring svg { width: 100%; height: 100%; animation: hudSpin 8s linear infinite; }
 .login-hud-arc { fill: none; stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 40 20; opacity: 0.6; }
@@ -315,6 +324,32 @@ textarea { resize:vertical; min-height:70px; font-family:var(--mono); font-size:
 .spinner { width:28px; height:28px; border:2px solid rgba(245,158,11,0.15); border-top-color:var(--accent); border-radius:50%; animation:spin 0.8s linear infinite; display:inline-block; margin-right:10px; box-shadow:0 0 10px rgba(245,158,11,0.1); }
 @keyframes spin { to { transform:rotate(360deg); } }
 
+/* Utility Classes (inline-style Ersatz) */
+.flex { display:flex; }
+.flex-center { display:flex; align-items:center; }
+.flex-between { display:flex; align-items:center; justify-content:space-between; }
+.gap-sm { gap:8px; }
+.gap-md { gap:10px; }
+.mt-md { margin-top:16px; }
+.mb-md { margin-bottom:14px; }
+.mb-0 { margin-bottom:0; }
+.text-xs { font-size:10px; }
+.text-sm { font-size:11px; }
+.text-muted-sm { font-size:11px; color:var(--text-muted); }
+.no-pad { padding:0; }
+
+/* Settings Tab-Bar Gruppen-Divider */
+.tab-bar .tab-divider { width:1px; background:rgba(245,158,11,0.12); margin:4px 4px; align-self:stretch; }
+
+/* Dashboard Live Indicator */
+.dash-live-bar { display:flex; align-items:center; gap:8px; margin-bottom:14px; }
+.whisper-badge { display:none; font-size:10px; padding:2px 8px; background:var(--blue-dim); color:var(--blue); border-radius:10px; font-weight:600; }
+
+/* Entity Browser verbessert */
+.entity-list-card { padding:0; }
+.entity-list-card .entity-list { max-height:500px; }
+.entity-filter-bar { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:14px; }
+
 /* Keyword tags editor */
 .kw-editor { display:flex; flex-wrap:wrap; gap:4px; padding:8px; background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius-sm); min-height:36px; cursor:text; }
 .kw-tag { display:inline-flex; align-items:center; gap:4px; padding:2px 8px; background:var(--accent-dim); border:1px solid var(--border-accent); border-radius:12px; font-size:11px; color:var(--accent); font-family:var(--mono); }
@@ -364,10 +399,10 @@ textarea { resize:vertical; min-height:70px; font-family:var(--mono); font-size:
 <!-- SETUP (erstmaliger Aufruf) -->
 <div id="setupScreen" class="login-screen" style="display:none;">
   <div class="login-box">
-    <div style="font-size:44px;margin-bottom:14px;">&#9881;</div>
+    <div class="login-icon">&#9881;</div>
     <h1>JARVIS</h1>
     <p>Ersteinrichtung — PIN festlegen</p>
-    <input type="password" id="setupPin" maxlength="16" placeholder="PIN waehlen" style="margin-bottom:12px;"
+    <input type="password" id="setupPin" maxlength="16" placeholder="PIN waehlen"
            onkeydown="if(event.key==='Enter')document.getElementById('setupPinConfirm').focus()">
     <input type="password" id="setupPinConfirm" maxlength="16" placeholder="PIN bestaetigen"
            onkeydown="if(event.key==='Enter')doSetup()">
@@ -379,11 +414,11 @@ textarea { resize:vertical; min-height:70px; font-family:var(--mono); font-size:
 <!-- RECOVERY KEY anzeigen (nach Setup) -->
 <div id="recoveryScreen" class="login-screen" style="display:none;">
   <div class="login-box">
-    <div style="font-size:44px;margin-bottom:14px;">&#128273;</div>
+    <div class="login-icon">&#128273;</div>
     <h1>Recovery-Key</h1>
-    <p style="color:var(--accent);font-weight:600;margin-bottom:16px;">Diesen Schluessel sicher aufbewahren!</p>
-    <p style="margin-bottom:20px;font-size:13px;">Falls du deinen PIN vergisst, kannst du ihn nur mit diesem Key zuruecksetzen. Er wird nur einmal angezeigt.</p>
-    <div id="recoveryKeyDisplay" style="background:var(--bg-input);border:2px solid var(--accent);border-radius:var(--radius-sm);padding:18px;font-family:var(--mono);font-size:22px;letter-spacing:4px;color:var(--accent);margin-bottom:20px;user-select:all;"></div>
+    <p class="recovery-hint">Diesen Schluessel sicher aufbewahren!</p>
+    <p class="recovery-desc">Falls du deinen PIN vergisst, kannst du ihn nur mit diesem Key zuruecksetzen. Er wird nur einmal angezeigt.</p>
+    <div id="recoveryKeyDisplay" class="recovery-key-display"></div>
     <button onclick="recoveryAcknowledged()">Ich habe den Key gespeichert</button>
   </div>
 </div>
@@ -391,29 +426,25 @@ textarea { resize:vertical; min-height:70px; font-family:var(--mono); font-size:
 <!-- LOGIN -->
 <div id="loginScreen" class="login-screen" style="display:none;">
   <div class="login-box">
-    <!-- HUD Ring oben -->
     <div class="login-hud-ring">
       <svg viewBox="0 0 120 120">
         <circle class="login-hud-arc" cx="60" cy="60" r="54" />
         <circle class="login-hud-arc-inner" cx="60" cy="60" r="46" />
       </svg>
     </div>
-    <!-- Corner Brackets -->
     <div class="login-corner tl"></div>
     <div class="login-corner tr"></div>
     <div class="login-corner bl"></div>
     <div class="login-corner br"></div>
-    <!-- Scan-Linie -->
     <div class="login-scan-line"></div>
-    <!-- Content -->
     <h1>JARVIS</h1>
     <p>MindHome Assistant</p>
     <input type="password" id="pinInput" maxlength="16" placeholder="PIN" autofocus
            onkeydown="if(event.key==='Enter')doLogin()">
     <button onclick="doLogin()">Authentifizieren</button>
     <div id="loginError" class="login-error"></div>
-    <div style="margin-top:20px;">
-      <a href="#" onclick="showResetScreen();return false;" style="color:var(--text-muted);font-size:12px;text-decoration:none;">PIN vergessen?</a>
+    <div class="forgot-pin">
+      <a href="#" onclick="showResetScreen();return false;">PIN vergessen?</a>
     </div>
   </div>
 </div>
@@ -421,19 +452,19 @@ textarea { resize:vertical; min-height:70px; font-family:var(--mono); font-size:
 <!-- PIN RESET -->
 <div id="resetScreen" class="login-screen" style="display:none;">
   <div class="login-box">
-    <div style="font-size:44px;margin-bottom:14px;">&#128273;</div>
+    <div class="login-icon">&#128273;</div>
     <h1>PIN zuruecksetzen</h1>
     <p>Recovery-Key eingeben</p>
-    <input type="text" id="resetRecoveryKey" maxlength="16" placeholder="Recovery-Key" style="margin-bottom:12px;letter-spacing:2px;text-transform:uppercase;"
+    <input type="text" id="resetRecoveryKey" maxlength="16" placeholder="Recovery-Key" class="reset-input"
            onkeydown="if(event.key==='Enter')document.getElementById('resetNewPin').focus()">
-    <input type="password" id="resetNewPin" maxlength="16" placeholder="Neuer PIN" style="margin-bottom:12px;"
+    <input type="password" id="resetNewPin" maxlength="16" placeholder="Neuer PIN"
            onkeydown="if(event.key==='Enter')document.getElementById('resetNewPinConfirm').focus()">
     <input type="password" id="resetNewPinConfirm" maxlength="16" placeholder="Neuer PIN bestaetigen"
            onkeydown="if(event.key==='Enter')doResetPin()">
     <button onclick="doResetPin()">PIN zuruecksetzen</button>
     <div id="resetError" class="login-error"></div>
-    <div style="margin-top:16px;">
-      <a href="#" onclick="showLoginScreen();return false;" style="color:var(--text-muted);font-size:12px;text-decoration:none;">Zurueck zur Anmeldung</a>
+    <div class="forgot-pin">
+      <a href="#" onclick="showLoginScreen();return false;">Zurueck zur Anmeldung</a>
     </div>
   </div>
 </div>
@@ -441,11 +472,11 @@ textarea { resize:vertical; min-height:70px; font-family:var(--mono); font-size:
 <!-- NEUER RECOVERY KEY (nach Reset) -->
 <div id="newRecoveryScreen" class="login-screen" style="display:none;">
   <div class="login-box">
-    <div style="font-size:44px;margin-bottom:14px;">&#128273;</div>
+    <div class="login-icon">&#128273;</div>
     <h1>Neuer Recovery-Key</h1>
-    <p style="color:var(--accent);font-weight:600;margin-bottom:16px;">Neuen Schluessel sicher aufbewahren!</p>
-    <p style="margin-bottom:20px;font-size:13px;">Der alte Recovery-Key ist ungueltig. Dieser neue Key wird nur einmal angezeigt.</p>
-    <div id="newRecoveryKeyDisplay" style="background:var(--bg-input);border:2px solid var(--accent);border-radius:var(--radius-sm);padding:18px;font-family:var(--mono);font-size:22px;letter-spacing:4px;color:var(--accent);margin-bottom:20px;user-select:all;"></div>
+    <p class="recovery-hint">Neuen Schluessel sicher aufbewahren!</p>
+    <p class="recovery-desc">Der alte Recovery-Key ist ungueltig. Dieser neue Key wird nur einmal angezeigt.</p>
+    <div id="newRecoveryKeyDisplay" class="recovery-key-display"></div>
     <button onclick="newRecoveryAcknowledged()">Ich habe den Key gespeichert</button>
   </div>
 </div>
@@ -470,11 +501,11 @@ textarea { resize:vertical; min-height:70px; font-family:var(--mono); font-size:
 
   <div class="main">
     <header class="main-header">
-      <div style="display:flex;align-items:center;gap:10px;">
+      <div class="flex-center gap-md">
         <div class="mobile-toggle" onclick="document.getElementById('sidebar').classList.toggle('open')">&#9776;</div>
         <h1 id="pageTitle">Dashboard</h1>
       </div>
-      <div style="display:flex;gap:10px;align-items:center;">
+      <div class="flex-center gap-md">
         <span id="statusBadge" class="badge badge-ok">Online</span>
         <button class="btn btn-sm btn-secondary" onclick="doLogout()">Abmelden</button>
       </div>
@@ -483,18 +514,18 @@ textarea { resize:vertical; min-height:70px; font-family:var(--mono); font-size:
     <div class="main-content">
       <!-- ============ DASHBOARD ============ -->
       <div id="page-dashboard" class="page active">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">
+        <div class="dash-live-bar">
           <span id="liveIndicator" class="live-dot"></span>
-          <span style="font-size:11px;color:var(--text-muted);" id="liveTimestamp">—</span>
-          <span id="whisperBadge" style="display:none;font-size:10px;padding:2px 8px;background:var(--blue-dim);color:var(--blue);border-radius:10px;font-weight:600;">Flüstermodus</span>
+          <span class="text-muted-sm" id="liveTimestamp">—</span>
+          <span id="whisperBadge" class="whisper-badge">Flüstermodus</span>
         </div>
         <div id="dashStats" class="grid grid-4"></div>
-        <div class="grid grid-2" style="margin-top:16px;">
+        <div class="grid grid-2 mt-md">
           <div class="card"><div class="card-header"><h3>Komponenten</h3></div><div id="compList"></div></div>
           <div class="card"><div class="card-header"><h3>Status</h3></div><div id="moodInfo"></div></div>
         </div>
-        <div class="card" style="margin-top:16px;">
-          <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;">
+        <div class="card mt-md">
+          <div class="card-header flex-between">
             <h3>Raumklima</h3>
             <div class="trend-period-bar" id="trendPeriodBar">
               <button class="active" onclick="loadHealthTrends(24)">24h</button>
@@ -512,20 +543,27 @@ textarea { resize:vertical; min-height:70px; font-family:var(--mono); font-size:
           <div><h2>Einstellungen</h2><p>Alle Konfigurationen aus settings.yaml</p></div>
           <button class="btn btn-primary" onclick="saveAllSettings()">Speichern</button>
         </div>
-        <!-- 11 Tabs -->
+        <!-- Settings Tabs (gruppiert) -->
         <div class="tab-bar" id="settingsTabBar">
+          <!-- Basis -->
           <div class="tab-item active" data-tab="tab-general">Allgemein</div>
           <div class="tab-item" data-tab="tab-persons">Personen</div>
+          <div class="tab-divider"></div>
+          <!-- KI & Persoenlichkeit -->
           <div class="tab-item" data-tab="tab-personality">Persönlichkeit</div>
           <div class="tab-item" data-tab="tab-memory">Gedächtnis</div>
           <div class="tab-item" data-tab="tab-mood">Stimmung</div>
+          <div class="tab-item" data-tab="tab-autonomie">KI-Autonomie</div>
+          <div class="tab-divider"></div>
+          <!-- Haus -->
           <div class="tab-item" data-tab="tab-rooms">Räume</div>
-          <div class="tab-item" data-tab="tab-voice">Stimme</div>
-          <div class="tab-item" data-tab="tab-routines">Routinen</div>
           <div class="tab-item" data-tab="tab-devices">Geräte</div>
           <div class="tab-item" data-tab="tab-covers">Rollläden</div>
+          <div class="tab-item" data-tab="tab-routines">Routinen</div>
+          <div class="tab-divider"></div>
+          <!-- System -->
+          <div class="tab-item" data-tab="tab-voice">Stimme</div>
           <div class="tab-item" data-tab="tab-security">Sicherheit</div>
-          <div class="tab-item" data-tab="tab-autonomie">KI-Autonomie</div>
           <div class="tab-item" data-tab="tab-eastereggs">Easter Eggs</div>
           <div class="tab-item" data-tab="tab-system">System</div>
         </div>
@@ -538,15 +576,15 @@ textarea { resize:vertical; min-height:70px; font-family:var(--mono); font-size:
           <div><h2>Home Assistant Entities</h2><p>Alle Entities — klicke zum Kopieren</p></div>
           <button class="btn btn-secondary" onclick="loadEntities()">Aktualisieren</button>
         </div>
-        <div class="grid grid-2" style="margin-bottom:14px;">
-          <div class="form-group" style="margin-bottom:0;">
+        <div class="entity-filter-bar">
+          <div class="form-group mb-0">
             <select id="entityDomainFilter" onchange="filterEntities()"><option value="">Alle Domains</option></select>
           </div>
-          <div class="form-group" style="margin-bottom:0;">
+          <div class="form-group mb-0">
             <input type="text" id="entitySearchInput" placeholder="Entity suchen..." oninput="filterEntities()">
           </div>
         </div>
-        <div class="card" style="padding:0;"><div id="entityBrowser" class="entity-list" style="max-height:500px;"></div></div>
+        <div class="card entity-list-card"><div id="entityBrowser" class="entity-list"></div></div>
       </div>
 
       <!-- ============ KNOWLEDGE ============ -->
