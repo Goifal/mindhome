@@ -172,22 +172,26 @@ _ASSISTANT_TOOLS_STATIC = [
         "type": "function",
         "function": {
             "name": "play_media",
-            "description": "Musik oder Medien steuern, optional mit Suchanfrage",
+            "description": "Musik oder Medien steuern: abspielen, pausieren, stoppen, Lautstaerke aendern. Fuer 'leiser', 'lauter', 'Lautstaerke auf X%' verwende action='volume'.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "room": {
                         "type": "string",
-                        "description": "Raumname",
+                        "description": "Raumname (z.B. 'Wohnzimmer', 'Manuel Buero')",
                     },
                     "action": {
                         "type": "string",
-                        "enum": ["play", "pause", "stop", "next", "previous"],
-                        "description": "Medien-Aktion",
+                        "enum": ["play", "pause", "stop", "next", "previous", "volume"],
+                        "description": "Medien-Aktion. 'volume' = Lautstaerke aendern",
                     },
                     "query": {
                         "type": "string",
                         "description": "Suchanfrage fuer Musik (z.B. 'Jazz', 'Beethoven', 'Chill Playlist')",
+                    },
+                    "volume": {
+                        "type": "number",
+                        "description": "Lautstaerke 0-100 (Prozent). Z.B. 20 fuer 20%, 50 fuer 50%",
                     },
                 },
                 "required": ["action"],
@@ -1245,6 +1249,18 @@ class FunctionExecutor:
                 },
             )
             return {"success": success, "message": f"Suche '{query}' wird abgespielt"}
+
+        # Volume-Steuerung
+        if action == "volume":
+            volume_pct = args.get("volume")
+            if volume_pct is None:
+                return {"success": False, "message": "Keine Lautstaerke angegeben"}
+            volume_level = max(0.0, min(1.0, float(volume_pct) / 100.0))
+            success = await self.ha.call_service(
+                "media_player", "volume_set",
+                {"entity_id": entity_id, "volume_level": volume_level},
+            )
+            return {"success": success, "message": f"Lautstaerke auf {int(volume_pct)}%"}
 
         service_map = {
             "play": "media_play",
