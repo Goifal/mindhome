@@ -25,6 +25,7 @@ import yaml
 
 from .brain import AssistantBrain
 from .config import settings, yaml_config, load_yaml_config
+from .cover_config import load_cover_configs, save_cover_configs
 from .file_handler import (
     allowed_file, ensure_upload_dir,
     get_file_path, save_upload, MAX_FILE_SIZE,
@@ -1608,14 +1609,14 @@ async def ui_get_covers(token: str = ""):
     _check_token(token)
     try:
         states = await brain.ha.get_states()
-        configs = await brain.ha.mindhome_get("/api/covers/configs") or {}
+        configs = load_cover_configs()
         covers = []
         for s in (states or []):
             eid = s.get("entity_id", "")
             if not eid.startswith("cover."):
                 continue
             attrs = s.get("attributes", {})
-            conf = configs.get(eid, {}) if isinstance(configs, dict) else {}
+            conf = configs.get(eid, {})
             covers.append({
                 "entity_id": eid,
                 "name": attrs.get("friendly_name", eid),
@@ -1632,7 +1633,7 @@ async def ui_get_covers(token: str = ""):
 
 @app.put("/api/ui/covers/{entity_id:path}/type")
 async def ui_set_cover_type(entity_id: str, request: Request, token: str = ""):
-    """Cover-Typ und enabled-Status setzen."""
+    """Cover-Typ und enabled-Status setzen (lokal gespeichert)."""
     _check_token(token)
     try:
         data = await request.json()
@@ -1643,13 +1644,11 @@ async def ui_set_cover_type(entity_id: str, request: Request, token: str = ""):
             payload["enabled"] = data["enabled"]
         if not payload:
             raise HTTPException(status_code=400, detail="Keine Daten")
-        result = await brain.ha.mindhome_put(
-            f"/api/covers/{entity_id}/config",
-            payload,
-        )
-        if result is None:
-            logger.warning("Cover-Config save failed for %s (mindhome_put returned None)", entity_id)
-            raise HTTPException(status_code=502, detail="Add-on nicht erreichbar oder Speichern fehlgeschlagen")
+        configs = load_cover_configs()
+        if entity_id not in configs:
+            configs[entity_id] = {}
+        configs[entity_id].update(payload)
+        save_cover_configs(configs)
         return {"success": True, **payload}
     except HTTPException:
         raise
