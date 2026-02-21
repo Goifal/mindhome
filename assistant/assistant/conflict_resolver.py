@@ -107,16 +107,16 @@ class ConflictResolver:
         # Konfiguration laden
         cfg = yaml_config.get("conflict_resolution", {})
         self.enabled = cfg.get("enabled", True)
-        self._conflict_window = cfg.get("conflict_window_seconds", 300)
-        self._max_commands = cfg.get("max_commands_per_person", 20)
+        self._conflict_window = int(cfg.get("conflict_window_seconds", 300))
+        self._max_commands = int(cfg.get("max_commands_per_person", 20))
         self._use_trust_priority = cfg.get("use_trust_priority", True)
-        self._resolution_cooldown = cfg.get("resolution_cooldown_seconds", 120)
+        self._resolution_cooldown = int(cfg.get("resolution_cooldown_seconds", 120))
 
         # Mediations-Config
         med_cfg = cfg.get("mediation", {})
         self._mediation_enabled = med_cfg.get("enabled", True)
         self._mediation_model = med_cfg.get("model", "qwen3:14b")
-        self._mediation_max_tokens = med_cfg.get("max_tokens", 256)
+        self._mediation_max_tokens = int(med_cfg.get("max_tokens", 256))
         self._mediation_temperature = med_cfg.get("temperature", 0.7)
 
         # Domain-spezifische Konfiguration

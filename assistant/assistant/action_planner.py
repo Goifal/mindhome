@@ -130,9 +130,9 @@ class ActionPlanner:
         # Phase 9: Narration Mode Konfiguration
         narr_cfg = yaml_config.get("narration", {})
         self.narration_enabled = narr_cfg.get("enabled", True)
-        self.default_transition = narr_cfg.get("default_transition", 3)
+        self.default_transition = int(narr_cfg.get("default_transition", 3))
         self.scene_transitions = narr_cfg.get("scene_transitions", {})
-        self.step_delay = narr_cfg.get("step_delay", 1.5)
+        self.step_delay = float(narr_cfg.get("step_delay", 1.5))
         self.narrate_actions = narr_cfg.get("narrate_actions", True)
 
     def is_complex_request(self, text: str) -> bool:

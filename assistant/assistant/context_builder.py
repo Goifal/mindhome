@@ -312,9 +312,9 @@ class ContextBuilder:
         if not weather_cfg.get("enabled", True):
             return warnings
 
-        temp_warn_high = weather_cfg.get("temp_high", 35)
-        temp_warn_low = weather_cfg.get("temp_low", -5)
-        wind_warn = weather_cfg.get("wind_speed_high", 60)
+        temp_warn_high = float(weather_cfg.get("temp_high", 35))
+        temp_warn_low = float(weather_cfg.get("temp_low", -5))
+        wind_warn = float(weather_cfg.get("wind_speed_high", 60))
         warn_conditions = weather_cfg.get("warn_conditions", [
             "lightning", "lightning-rainy", "hail", "exceptional",
         ])
@@ -609,7 +609,7 @@ class ContextBuilder:
         if not multi_room_cfg.get("enabled", True):
             return {}
 
-        timeout_minutes = multi_room_cfg.get("presence_timeout_minutes", 15)
+        timeout_minutes = int(multi_room_cfg.get("presence_timeout_minutes", 15))
         room_sensors = multi_room_cfg.get("room_motion_sensors", {})
         room_speakers = multi_room_cfg.get("room_speakers", {})
         now = datetime.now()

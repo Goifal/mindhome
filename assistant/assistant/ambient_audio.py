@@ -125,8 +125,8 @@ class AmbientAudioClassifier:
 
         # Nachmodus: Strengere Reaktionen nachts
         night_cfg = cfg.get("night_mode") or {}
-        self._night_start = night_cfg.get("start_hour", 22)
-        self._night_end = night_cfg.get("end_hour", 7)
+        self._night_start = int(night_cfg.get("start_hour", 22))
+        self._night_end = int(night_cfg.get("end_hour", 7))
         self._night_escalate = night_cfg.get("escalate_severity", True)
 
         # Deaktivierte Events (z.B. wenn kein Hund da ist)

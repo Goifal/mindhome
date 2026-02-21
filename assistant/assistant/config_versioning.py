@@ -32,7 +32,7 @@ class ConfigVersioning:
     def __init__(self):
         self._cfg = yaml_config.get("self_optimization", {}).get("rollback", {})
         self._enabled = self._cfg.get("enabled", True)
-        self._max_snapshots = self._cfg.get("max_snapshots", 20)
+        self._max_snapshots = int(self._cfg.get("max_snapshots", 20))
         self._snapshot_on_edit = self._cfg.get("snapshot_on_every_edit", True)
         self._redis = None
 

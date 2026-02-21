@@ -173,10 +173,10 @@ class ActivityEngine:
 
         # Schwellwerte
         thresholds = activity_cfg.get("thresholds", {})
-        self.night_start = thresholds.get("night_start", 22)
-        self.night_end = thresholds.get("night_end", 7)
-        self.guest_person_count = thresholds.get("guest_person_count", 2)
-        self.focus_min_minutes = thresholds.get("focus_min_minutes", 30)
+        self.night_start = int(thresholds.get("night_start", 22))
+        self.night_end = int(thresholds.get("night_end", 7))
+        self.guest_person_count = int(thresholds.get("guest_person_count", 2))
+        self.focus_min_minutes = int(thresholds.get("focus_min_minutes", 30))
 
         # Cache: letzte erkannte Aktivitaet
         self._last_activity = RELAXING
