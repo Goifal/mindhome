@@ -723,6 +723,94 @@ _ASSISTANT_TOOLS_STATIC = [
     {
         "type": "function",
         "function": {
+            "name": "set_reminder",
+            "description": "Setzt eine Erinnerung fuer eine bestimmte Uhrzeit. Z.B. 'Erinnere mich um 15 Uhr an den Anruf' oder 'Um 18:30 Abendessen kochen'.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "time": {
+                        "type": "string",
+                        "description": "Uhrzeit im Format HH:MM (z.B. '15:00', '06:30')",
+                    },
+                    "label": {
+                        "type": "string",
+                        "description": "Woran erinnert werden soll (z.B. 'Anruf bei Mama', 'Medikamente nehmen')",
+                    },
+                    "date": {
+                        "type": "string",
+                        "description": "Datum im Format YYYY-MM-DD. Wenn leer, wird heute oder morgen automatisch gewaehlt.",
+                    },
+                    "room": {
+                        "type": "string",
+                        "description": "Raum fuer die TTS-Benachrichtigung",
+                    },
+                },
+                "required": ["time", "label"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "set_wakeup_alarm",
+            "description": "Stellt einen Wecker fuer eine bestimmte Uhrzeit. Z.B. 'Weck mich um 6:30' oder 'Stell einen Wecker fuer 7 Uhr'.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "time": {
+                        "type": "string",
+                        "description": "Weckzeit im Format HH:MM (z.B. '06:30', '07:00')",
+                    },
+                    "label": {
+                        "type": "string",
+                        "description": "Bezeichnung des Weckers (Standard: 'Wecker')",
+                    },
+                    "room": {
+                        "type": "string",
+                        "description": "Raum in dem geweckt werden soll (fuer Licht + TTS)",
+                    },
+                    "repeat": {
+                        "type": "string",
+                        "enum": ["", "daily", "weekdays", "weekends"],
+                        "description": "Wiederholung: leer=einmalig, 'daily'=taeglich, 'weekdays'=Mo-Fr, 'weekends'=Sa-So",
+                    },
+                },
+                "required": ["time"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "cancel_alarm",
+            "description": "Loescht einen Wecker. Z.B. 'Loesch den Wecker' oder 'Wecker aus'.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "label": {
+                        "type": "string",
+                        "description": "Bezeichnung des Weckers zum Loeschen",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_alarms",
+            "description": "Zeigt alle aktiven Wecker an. 'Welche Wecker habe ich?' oder 'Wecker Status'.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "broadcast",
             "description": "Sendet eine Durchsage an ALLE Lautsprecher im Haus. Fuer Ankuendigungen wie 'Essen ist fertig!' oder 'Bitte alle runterkommen.'",
             "parameters": {
@@ -975,7 +1063,9 @@ class FunctionExecutor:
         "manage_shopping_list", "list_capabilities", "create_automation",
         "confirm_automation", "list_jarvis_automations",
         "delete_jarvis_automation", "manage_inventory",
-        "set_timer", "cancel_timer", "get_timer_status", "broadcast",
+        "set_timer", "cancel_timer", "get_timer_status",
+        "set_reminder", "set_wakeup_alarm", "cancel_alarm", "get_alarms",
+        "broadcast",
         "get_camera_view", "create_conditional", "list_conditionals",
         "get_energy_report", "web_search", "get_security_score",
         "get_room_climate", "get_active_intents", "get_wellness_status",
@@ -2534,6 +2624,43 @@ class FunctionExecutor:
         import assistant.main as main_module
         brain = main_module.brain
         return brain.timer_manager.get_status()
+
+    async def _exec_set_reminder(self, args: dict) -> dict:
+        """Setzt eine Erinnerung fuer eine bestimmte Uhrzeit."""
+        import assistant.main as main_module
+        brain = main_module.brain
+        return await brain.timer_manager.create_reminder(
+            time_str=args["time"],
+            label=args["label"],
+            date_str=args.get("date", ""),
+            room=args.get("room", ""),
+            person=args.get("person", ""),
+        )
+
+    async def _exec_set_wakeup_alarm(self, args: dict) -> dict:
+        """Stellt einen Wecker."""
+        import assistant.main as main_module
+        brain = main_module.brain
+        return await brain.timer_manager.set_wakeup_alarm(
+            time_str=args["time"],
+            label=args.get("label", "Wecker"),
+            room=args.get("room", ""),
+            repeat=args.get("repeat", ""),
+        )
+
+    async def _exec_cancel_alarm(self, args: dict) -> dict:
+        """Loescht einen Wecker."""
+        import assistant.main as main_module
+        brain = main_module.brain
+        return await brain.timer_manager.cancel_alarm(
+            label=args.get("label", ""),
+        )
+
+    async def _exec_get_alarms(self, args: dict) -> dict:
+        """Zeigt alle aktiven Wecker an."""
+        import assistant.main as main_module
+        brain = main_module.brain
+        return await brain.timer_manager.get_alarms()
 
     async def _exec_broadcast(self, args: dict) -> dict:
         """Sendet eine Durchsage an alle Lautsprecher."""

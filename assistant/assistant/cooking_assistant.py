@@ -41,16 +41,13 @@ class CookingTimer:
             return 0
         elapsed = time.time() - self.started_at
         remaining = self.duration_seconds - elapsed
-        return max(0, int(remaining))
+        return max(0, int(remaining + 0.5))
 
     @property
     def is_done(self) -> bool:
         if self.finished:
             return True
-        if self.started_at > 0 and self.remaining_seconds <= 0:
-            self.finished = True
-            return True
-        return False
+        return self.started_at > 0 and self.remaining_seconds <= 0
 
     def format_remaining(self) -> str:
         secs = self.remaining_seconds
@@ -521,9 +518,13 @@ class CookingAssistant:
     async def _stop_session(self) -> str:
         """Beendet die Koch-Session."""
         dish = self.session.dish if self.session else "unbekannt"
-        # Alle Timer-Tasks canceln
+        # Alle Timer-Tasks canceln und auf Abschluss warten
         for task in self._timer_tasks:
             task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
         self._timer_tasks.clear()
         self.session = None
         await self._clear_persisted_session()
@@ -654,6 +655,16 @@ class CookingAssistant:
         if not self.redis or not self.session:
             return
         try:
+            # Aktive Timer mit-persistieren
+            active_timers = []
+            for t in self.session.timers:
+                if not t.is_done:
+                    active_timers.append({
+                        "label": t.label,
+                        "duration_seconds": t.duration_seconds,
+                        "started_at": t.started_at,
+                    })
+
             data = {
                 "dish": self.session.dish,
                 "portions": self.session.portions,
@@ -666,6 +677,7 @@ class CookingAssistant:
                 "current_step": self.session.current_step,
                 "started_at": self.session.started_at,
                 "person": self.session.person,
+                "active_timers": active_timers,
             }
             await self.redis.setex(
                 self.REDIS_SESSION_KEY,
@@ -676,7 +688,7 @@ class CookingAssistant:
             logger.debug("Koch-Session nicht persistiert: %s", e)
 
     async def _restore_session(self):
-        """Laedt eine gespeicherte Koch-Session aus Redis."""
+        """Laedt eine gespeicherte Koch-Session aus Redis (inkl. aktive Timer)."""
         if not self.redis:
             return
         try:
@@ -703,9 +715,25 @@ class CookingAssistant:
                 started_at=data.get("started_at", 0.0),
                 person=data.get("person", ""),
             )
-            logger.info("Koch-Session wiederhergestellt: %s (Schritt %d/%d)",
+
+            # Aktive Timer wiederherstellen
+            restored_timers = 0
+            for td in data.get("active_timers", []):
+                timer = CookingTimer(
+                    label=td["label"],
+                    duration_seconds=td["duration_seconds"],
+                    started_at=td.get("started_at", 0.0),
+                )
+                # Nur Timer die noch laufen
+                if not timer.is_done:
+                    self.session.timers.append(timer)
+                    task = asyncio.create_task(self._timer_watcher(timer))
+                    self._timer_tasks.append(task)
+                    restored_timers += 1
+
+            logger.info("Koch-Session wiederhergestellt: %s (Schritt %d/%d, %d Timer)",
                         self.session.dish, self.session.current_step + 1,
-                        self.session.total_steps)
+                        self.session.total_steps, restored_timers)
         except Exception as e:
             logger.debug("Koch-Session nicht wiederhergestellt: %s", e)
 
