@@ -1399,7 +1399,15 @@ class FunctionExecutor:
                     {"entity_id": speaker_entity, "volume_level": volume},
                 )
 
-            if tts_entity and speaker_entity:
+            # Alexa/Echo: Keine Audio-Dateien, stattdessen notify.alexa_media
+            alexa_speakers = yaml_config.get("sounds", {}).get("alexa_speakers", [])
+            if speaker_entity and speaker_entity in alexa_speakers:
+                svc_name = "alexa_media_" + speaker_entity.replace("media_player.", "", 1)
+                success = await self.ha.call_service(
+                    "notify", svc_name,
+                    {"message": message, "data": {"type": "tts"}},
+                )
+            elif tts_entity and speaker_entity:
                 success = await self.ha.call_service(
                     "tts", "speak",
                     {
@@ -1465,15 +1473,25 @@ class FunctionExecutor:
             if not speaker:
                 speaker = await self._find_tts_speaker()
 
-            if tts_entity and speaker:
-                success = await self.ha.call_service(
-                    "tts", "speak",
-                    {
-                        "entity_id": tts_entity,
-                        "media_player_entity_id": speaker,
-                        "message": message,
-                    },
-                )
+            if speaker:
+                alexa_speakers = yaml_config.get("sounds", {}).get("alexa_speakers", [])
+                if speaker in alexa_speakers:
+                    svc_name = "alexa_media_" + speaker.replace("media_player.", "", 1)
+                    success = await self.ha.call_service(
+                        "notify", svc_name,
+                        {"message": message, "data": {"type": "tts"}},
+                    )
+                elif tts_entity:
+                    success = await self.ha.call_service(
+                        "tts", "speak",
+                        {
+                            "entity_id": tts_entity,
+                            "media_player_entity_id": speaker,
+                            "message": message,
+                        },
+                    )
+                else:
+                    success = False
                 room_info = f" im {preferred_room}" if preferred_room else ""
                 return {
                     "success": success,
@@ -1896,13 +1914,14 @@ class FunctionExecutor:
         return None
 
     # Entities die KEINE TTS-Speaker sind (TVs, Receiver, Streaming-Boxen)
+    # Hinweis: Alexa/Echo nicht mehr ausgeschlossen — wird ueber
+    # sounds.alexa_speakers Config behandelt (notify statt Audio)
     _EXCLUDED_SPEAKER_PATTERNS = (
         "tv", "fernseher", "television", "fire_tv", "firetv", "apple_tv",
         "appletv", "chromecast", "roku", "shield", "receiver", "avr",
         "denon", "marantz", "yamaha_receiver", "onkyo", "pioneer",
         "soundbar", "xbox", "playstation", "ps5", "ps4", "nintendo",
         "kodi", "plex", "emby", "jellyfin", "vlc", "mpd",
-        "echo", "alexa", "amazon",
     )
 
     def _is_tts_speaker(self, entity_id: str, attributes: dict = None) -> bool:
@@ -2346,13 +2365,21 @@ class FunctionExecutor:
         # TTS an alle Speaker senden
         count = 0
         tts_entity = yaml_config.get("tts", {}).get("entity", "tts.piper")
+        alexa_speakers = yaml_config.get("sounds", {}).get("alexa_speakers", [])
         for speaker in speakers:
             try:
-                await self.ha.call_service("tts", "speak", {
-                    "entity_id": tts_entity,
-                    "media_player_entity_id": speaker,
-                    "message": message,
-                })
+                if speaker in alexa_speakers:
+                    svc_name = "alexa_media_" + speaker.replace("media_player.", "", 1)
+                    await self.ha.call_service(
+                        "notify", svc_name,
+                        {"message": message, "data": {"type": "tts"}},
+                    )
+                else:
+                    await self.ha.call_service("tts", "speak", {
+                        "entity_id": tts_entity,
+                        "media_player_entity_id": speaker,
+                        "message": message,
+                    })
                 count += 1
             except Exception as e:
                 logger.debug("Broadcast an %s fehlgeschlagen: %s", speaker, e)

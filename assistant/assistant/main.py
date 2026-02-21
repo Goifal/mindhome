@@ -1541,6 +1541,16 @@ async def ui_update_settings(req: SettingsUpdateFull, token: str = ""):
             dh_cfg = cfg.yaml_config.get("device_health", {})
             brain.device_health.monitored_entities = dh_cfg.get("monitored_entities", [])
 
+        # Diagnostics: monitored_entities aktualisieren
+        if hasattr(brain, "diagnostics"):
+            diag_cfg = cfg.yaml_config.get("diagnostics", {})
+            brain.diagnostics.monitored_entities = diag_cfg.get("monitored_entities", [])
+
+        # SoundManager: alexa_speakers aktualisieren
+        if hasattr(brain, "sound_manager"):
+            sound_cfg = cfg.yaml_config.get("sounds", {})
+            brain.sound_manager.alexa_speakers = sound_cfg.get("alexa_speakers", [])
+
         # Audit-Log (mit Details ueber geschuetzte Keys)
         changed_keys = list(safe_settings.keys())
         audit_details = {"changed_sections": changed_keys}

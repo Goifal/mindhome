@@ -60,13 +60,14 @@ class SoundManager:
     """Verwaltet die akustische Identitaet von Jarvis."""
 
     # Entity-IDs die KEINE TTS-Speaker sind (TVs, Receiver, etc.)
+    # Hinweis: Alexa/Echo nicht mehr ausgeschlossen — wird ueber alexa_speakers
+    # Config behandelt (nutzen notify.alexa_media statt Audio-Dateien)
     _EXCLUDED_SPEAKER_PATTERNS = (
         "tv", "fernseher", "television", "fire_tv", "firetv", "apple_tv",
         "appletv", "chromecast", "roku", "shield", "receiver", "avr",
         "denon", "marantz", "yamaha_receiver", "onkyo", "pioneer",
         "soundbar", "xbox", "playstation", "ps5", "ps4", "nintendo",
         "kodi", "plex", "emby", "jellyfin", "vlc", "mpd",
-        "echo", "alexa", "amazon",
     )
 
     def __init__(self, ha_client: HomeAssistantClient):
@@ -84,6 +85,10 @@ class SoundManager:
         self._configured_tts_entity = sound_cfg.get("tts_entity", "")
         self._configured_default_speaker = sound_cfg.get("default_speaker", "")
 
+        # Alexa/Echo Speaker: Koennen keine Audio-Dateien empfangen,
+        # nutzen stattdessen notify.alexa_media fuer TTS
+        self.alexa_speakers: list[str] = sound_cfg.get("alexa_speakers", [])
+
         # Volume-Konfiguration
         vol_cfg = yaml_config.get("volume", {})
         self.evening_start = int(vol_cfg.get("evening_start", 22))
@@ -100,6 +105,42 @@ class SoundManager:
             "SoundManager initialisiert (enabled: %s, events: %d)",
             self.enabled, len(self.event_sounds),
         )
+
+    def _is_alexa_speaker(self, entity_id: str) -> bool:
+        """Prueft ob ein Speaker ein Alexa/Echo-Geraet ist (kein Audio-Empfang)."""
+        return entity_id in self.alexa_speakers
+
+    def _alexa_notify_service(self, entity_id: str) -> str:
+        """Leitet den Alexa-Notify-Service-Namen aus der Entity-ID ab.
+
+        media_player.echo_wohnzimmer → alexa_media_echo_wohnzimmer
+        """
+        name = entity_id.replace("media_player.", "", 1)
+        return f"alexa_media_{name}"
+
+    async def _speak_via_alexa(self, text: str, speaker_entity: str) -> bool:
+        """Spricht Text ueber Alexa-eigenen TTS (notify.alexa_media).
+
+        Alexa/Echo Geraete koennen keine externen Audio-Dateien abspielen.
+        Stattdessen wird der Alexa Notify-Service genutzt.
+        """
+        service_name = self._alexa_notify_service(speaker_entity)
+        try:
+            success = await self.ha.call_service(
+                "notify", service_name,
+                {
+                    "message": text,
+                    "data": {"type": "tts"},
+                },
+            )
+            if success:
+                logger.info(
+                    "Alexa-TTS via notify.%s: '%s'", service_name, text[:50],
+                )
+                return True
+        except Exception as e:
+            logger.warning("Alexa-TTS fehlgeschlagen (notify.%s): %s", service_name, e)
+        return False
 
     def _is_tts_speaker(self, entity_id: str, attributes: dict = None) -> bool:
         """Prueft ob ein media_player ein echter TTS-faehiger Speaker ist.
@@ -188,7 +229,10 @@ class SoundManager:
         """Versucht einen Soundfile via media_player.play_media abzuspielen.
 
         Phase 9.2: Sucht konfigurierte Mappings und mehrere Formate.
+        Alexa/Echo Speaker werden uebersprungen (koennen keine Dateien empfangen).
         """
+        if self._is_alexa_speaker(speaker_entity):
+            return False
         # 1. Konfiguriertes Mapping (custom URL aus settings.yaml)
         if event in self.event_sounds:
             custom_url = self.event_sounds[event]
@@ -231,6 +275,10 @@ class SoundManager:
         chime_text = TTS_CHIME_TEXTS.get(event)
         if not chime_text:
             return False
+
+        # Alexa/Echo: Chime-Text ueber Alexa-TTS
+        if self._is_alexa_speaker(speaker_entity):
+            return await self._speak_via_alexa(chime_text, speaker_entity)
 
         # TTS-Entity finden (Piper bevorzugt)
         tts_entity = await self._find_tts_entity()
@@ -419,6 +467,10 @@ class SoundManager:
 
         # SSML-Text bevorzugen, sonst Plaintext
         speak_text = tts_data.get("ssml", text) if tts_data.get("ssml") else text
+
+        # Alexa/Echo: Keine Audio-Dateien, stattdessen Alexa-eigener TTS
+        if self._is_alexa_speaker(speaker_entity):
+            return await self._speak_via_alexa(speak_text, speaker_entity)
 
         # TTS-Entity finden und sprechen
         tts_entity = await self._find_tts_entity()

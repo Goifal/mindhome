@@ -1892,6 +1892,9 @@ function renderVoice() {
     fInfo('Standard-Lautsprecher und TTS-Engine fuer Jarvis. Wenn leer, wird der erste Raum-Speaker verwendet.') +
     fEntityPickerSingle('sounds.default_speaker', 'Standard-Lautsprecher', ['media_player'], 'Welcher Lautsprecher soll Jarvis standardmaessig nutzen?') +
     fEntityPickerSingle('sounds.tts_entity', 'TTS-Engine', ['tts'], 'TTS-Service (z.B. tts.piper)') +
+    '<div style="margin:14px 0 6px;font-weight:600;font-size:13px;">Alexa / Echo Speaker</div>' +
+    fInfo('Alexa/Echo Geraete koennen keine Audio-Dateien von Piper TTS empfangen. Fuer diese Speaker wird stattdessen der Alexa-eigene TTS (notify.alexa_media) genutzt. Nur Geraete eintragen die ueber die Alexa Media Player Integration eingebunden sind.') +
+    fEntityPicker('sounds.alexa_speakers', 'Alexa/Echo Speaker', ['media_player'], 'Diese Speaker erhalten TTS ueber den Alexa Notify-Service statt Audiodateien.') +
     fToggle('tts.ssml_enabled', 'Fortgeschrittene Betonung (SSML)') +
     '<div style="margin:12px 0;font-weight:600;font-size:13px;">Sprechgeschwindigkeit pro Situation</div>' +
     fRange('tts.speed.confirmation', 'Bestaetigung', 50, 200, 5, {50:'Langsam',100:'Normal',150:'Schnell',200:'Sehr schnell'}) +
@@ -2172,13 +2175,12 @@ function renderSecurity() {
     fRange('diagnostics.stale_sensor_minutes', 'Sensor veraltet nach', 30, 600, 30, {30:'30 Min',60:'1 Std',120:'2 Std',300:'5 Std',600:'10 Std'}) +
     fRange('diagnostics.offline_threshold_minutes', 'Geraet offline nach', 10, 120, 10, {10:'10 Min',30:'30 Min',60:'1 Std',120:'2 Std'}) +
     fRange('diagnostics.alert_cooldown_minutes', 'Wiederholung fruehestens nach', 10, 240, 10, {10:'10 Min',30:'30 Min',60:'1 Std',120:'2 Std',240:'4 Std'}) +
-    '<div style="margin:12px 0;font-weight:600;font-size:13px;">Entity-Filter</div>' +
-    fInfo('Nur Entities aus den gewaehlten Domains werden ueberwacht. Zusaetzliche Patterns koennen einzelne Entities ausschliessen.') +
-    fChipSelect('diagnostics.monitor_domains', 'Ueberwachte Domains', [
-      'sensor','binary_sensor','light','switch','cover','climate',
-      'lock','fan','water_heater','media_player','camera','alarm_control_panel'
-    ]) +
-    fKeywords('diagnostics.exclude_patterns', 'Ignorierte Patterns')
+    '<div style="margin:12px 0;font-weight:600;font-size:13px;">Ueberwachte Geraete</div>' +
+    fInfo('Waehle welche Geraete die Diagnostik ueberwachen soll. Klicke "Von MindHome importieren" um deine konfigurierten Geraete zu laden. Ohne Auswahl werden alle Entities der Standard-Domains geprueft.') +
+    '<div id="diagEntityPickerContainer" style="color:var(--text-secondary);padding:12px;">' +
+      '<button class="btn btn-primary btn-sm" onclick="loadDiagnosticsEntities()" style="font-size:12px;">&#127968; Von MindHome importieren</button>' +
+      '<span style="color:var(--text-muted);font-size:11px;margin-left:10px;" id="diagEntityStatus"></span>' +
+    '</div>'
   ) +
   sectionWrap('&#128200;', 'Feedback-System',
     fInfo('Wie reagiert der Assistent auf positives/negatives Feedback? Scores bestimmen wie haeufig er sich meldet.') +
@@ -2695,6 +2697,11 @@ function collectSettings() {
   if (document.getElementById('entityPickerContainer')) {
     setPath(updates, 'device_health.monitored_entities', collectMonitoredEntities());
   }
+  // Diagnostik monitored entities
+  if (document.getElementById('diagEntityPickerContainer')) {
+    const diagEnts = collectDiagEntities();
+    if (diagEnts.length > 0) setPath(updates, 'diagnostics.monitored_entities', diagEnts);
+  }
   // Room-Entity-Maps (room_speakers, room_motion_sensors)
   document.querySelectorAll('#settingsContent .room-entity-map[data-path]').forEach(container => {
     const path = container.dataset.path;
@@ -3178,6 +3185,76 @@ function toggleAllEntities(state) {
 function collectMonitoredEntities() {
   const entities = [];
   document.querySelectorAll('.entity-check:checked').forEach(cb => {
+    entities.push(cb.dataset.entity);
+  });
+  return entities;
+}
+
+// --- Diagnostik Entity Picker (MindHome Import) ---
+async function loadDiagnosticsEntities() {
+  const container = document.getElementById('diagEntityPickerContainer');
+  const status = document.getElementById('diagEntityStatus');
+  if (!container) return;
+  if (status) status.textContent = 'Lade...';
+  try {
+    const d = await api('/api/ui/entities/mindhome');
+    const rooms = d.rooms || {};
+    const roomNames = Object.keys(rooms).sort();
+    const current = getPath(S, 'diagnostics.monitored_entities') || [];
+
+    if (roomNames.length === 0) {
+      container.innerHTML = '<div style="color:var(--text-muted);padding:8px;">Keine Geraete in MindHome gefunden.</div>';
+      return;
+    }
+
+    let html = '<div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">' +
+      '<button class="btn btn-secondary btn-sm" onclick="toggleDiagEntities(true)" style="font-size:11px;">Alle</button>' +
+      '<button class="btn btn-secondary btn-sm" onclick="toggleDiagEntities(false)" style="font-size:11px;">Keine</button>' +
+      '<button class="btn btn-primary btn-sm" onclick="loadDiagnosticsEntities()" style="font-size:11px;">&#128260; Neu laden</button>' +
+      '<span style="color:var(--text-muted);font-size:11px;align-self:center;margin-left:auto;" id="diagCountLabel"></span>' +
+      '</div>';
+
+    for (const room of roomNames) {
+      const entities = rooms[room] || [];
+      html += '<div style="margin-bottom:14px;">';
+      html += '<div style="font-size:13px;font-weight:600;color:var(--accent);margin-bottom:4px;border-bottom:1px solid var(--border);padding-bottom:3px;">&#127968; ' + esc(room) + ' <span style="color:var(--text-muted);font-weight:400;">(' + entities.length + ')</span></div>';
+      for (const e of entities) {
+        const checked = current.includes(e.entity_id) ? 'checked' : '';
+        const domain = e.domain || '';
+        const badge = domain ? '<span style="font-size:10px;font-family:var(--mono);color:var(--text-muted);background:var(--bg-primary);padding:1px 5px;border-radius:3px;margin-left:6px;">' + esc(domain) + '</span>' : '';
+        html += '<label style="display:flex;align-items:center;gap:8px;padding:4px 8px;cursor:pointer;border-radius:6px;transition:background 0.15s;" onmouseover="this.style.background=\'var(--bg-card-hover)\'" onmouseout="this.style.background=\'transparent\'">' +
+          '<input type="checkbox" class="diag-entity-check" data-entity="' + esc(e.entity_id) + '" ' + checked + ' onchange="updateDiagCount()" style="accent-color:var(--accent);width:16px;height:16px;">' +
+          '<span style="font-size:13px;">' + esc(e.name || e.entity_id) + '</span>' + badge +
+          '</label>';
+      }
+      html += '</div>';
+    }
+    container.innerHTML = html;
+    updateDiagCount();
+  } catch(e) {
+    if (container) container.innerHTML = '<div style="color:var(--danger);padding:8px;">Fehler: ' + esc(e.message) + '</div>';
+  }
+}
+
+function updateDiagCount() {
+  const all = document.querySelectorAll('.diag-entity-check');
+  const checked = document.querySelectorAll('.diag-entity-check:checked');
+  const label = document.getElementById('diagCountLabel');
+  if (label) {
+    label.textContent = checked.length === 0
+      ? 'Keine Auswahl — Standard-Domains'
+      : checked.length + ' von ' + all.length + ' gewaehlt';
+  }
+}
+
+function toggleDiagEntities(state) {
+  document.querySelectorAll('.diag-entity-check').forEach(cb => cb.checked = state);
+  updateDiagCount();
+}
+
+function collectDiagEntities() {
+  const entities = [];
+  document.querySelectorAll('.diag-entity-check:checked').forEach(cb => {
     entities.push(cb.dataset.entity);
   });
   return entities;
