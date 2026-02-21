@@ -439,8 +439,9 @@ async def chat(request: ChatRequest):
         }
     except Exception as e:
         logger.error("brain.process() Exception fuer '%s': %s", request.text[:100], e, exc_info=True)
+        error_type = type(e).__name__
         result = {
-            "response": "Da ist etwas schiefgelaufen. Versuch es nochmal.",
+            "response": f"Da ist etwas schiefgelaufen ({error_type}: {e}). Versuch es nochmal.",
             "actions": [],
             "model_used": "error",
             "context_room": request.room or "unbekannt",
