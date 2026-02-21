@@ -1270,7 +1270,8 @@ function renderRooms() {
   sectionWrap('&#127968;', 'Multi-Room',
     fInfo('Der Assistent erkennt in welchem Raum du bist und antwortet dort. Praesenz-Timeout = wie lange er dich in einem Raum "merkt".') +
     fToggle('multi_room.enabled', 'Multi-Room Erkennung aktiv') +
-    fRange('multi_room.presence_timeout_minutes', 'Praesenz-Timeout', 1, 60, 1, {1:'1 Min',5:'5 Min',10:'10 Min',15:'15 Min',30:'30 Min',60:'1 Std'})
+    fRange('multi_room.presence_timeout_minutes', 'Praesenz-Timeout', 1, 60, 1, {1:'1 Min',5:'5 Min',10:'10 Min',15:'15 Min',30:'30 Min',60:'1 Std'}) +
+    fToggle('multi_room.auto_follow', 'Musik folgt automatisch in neuen Raum')
   ) +
   sectionWrap('&#128266;', 'Raum-Speaker',
     fInfo('Welcher Lautsprecher gehoert zu welchem Raum? Raeume werden automatisch aus MindHome erkannt.') +
