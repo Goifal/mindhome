@@ -1,0 +1,697 @@
+assistant:
+  name: Jarvis
+  version: 1.4.1
+  language: de
+boot_sequence:
+  enabled: true
+  delay_seconds: 5
+  messages:
+  - Alle Systeme online, Sir.
+  - Systeme hochgefahren, Sir. Alles bereit.
+  - Online, Sir. Soll ich den Status durchgehen?
+pushback:
+  enabled: true
+  confirmation_timeout: 120
+wellness:
+  enabled: true
+  check_interval_minutes: 15
+  pc_break_reminder_minutes: 120
+  stress_check: true
+  meal_reminders: true
+  meal_times:
+    lunch: 13
+    dinner: 19
+  late_night_nudge: true
+ambient_presence:
+  enabled: false
+  interval_minutes: 60
+  quiet_start: 22
+  quiet_end: 7
+  report_weather: true
+  report_energy: true
+  all_quiet_probability: 0.2
+foresight:
+  enabled: true
+  calendar_lookahead_minutes: 60
+  weather_alerts: true
+  departure_warning_minutes: 45
+household:
+  primary_user: ''
+  members: []
+persons:
+  titles: null
+autonomy:
+  level: 2
+models:
+  fast: qwen3:4b
+  smart: qwen3:14b
+  deep: qwen3:32b
+  enabled:
+    fast: true
+    smart: true
+    deep: true
+  fast_keywords:
+  - licht
+  - lampe
+  - temperatur
+  - heizung
+  - rollladen
+  - jalousie
+  - szene
+  - alarm
+  - tuer
+  - gute nacht
+  - guten morgen
+  - musik
+  - pause
+  - stopp
+  - stop
+  - leiser
+  - lauter
+  - an
+  - aus
+  deep_keywords:
+  - erklaer
+  - erklaere
+  - warum genau
+  - im detail
+  - analysiere
+  - analyse
+  - vergleich
+  - vergleiche
+  - unterschied zwischen
+  - vor- und nachteile
+  - strategie
+  - plan
+  - plane
+  - planung
+  - optimier
+  - optimiere
+  - optimierung
+  - was waere wenn
+  - hypothetisch
+  - stell dir vor
+  - angenommen
+  - zusammenfassung
+  - zusammenfassen
+  - fasse zusammen
+  - berechne
+  - berechnung
+  - wie funktioniert
+  - wie genau
+  - schreib mir
+  - schreibe mir
+  - formuliere
+  - rezept
+  - anleitung
+  - tutorial
+  - pro und contra
+  - bewerte
+  - bewertung
+  cooking_keywords:
+  - kochen
+  - backen
+  - rezept
+  - zubereiten
+  - braten
+  - grillen
+  deep_min_words: 15
+  options:
+    temperature: 0.7
+    max_tokens: 256
+personality:
+  style: butler
+  sarcasm_level: 3
+  opinion_intensity: 2
+  self_irony_enabled: true
+  self_irony_max_per_day: 3
+  character_evolution: true
+  formality_start: 80
+  formality_min: 30
+  formality_decay_per_day: 0.5
+  time_layers:
+    early_morning:
+      style: ruhig, minimal, kein Humor. Kurzes Briefing wenn gefragt.
+      max_sentences: 1
+    morning:
+      style: sachlich, effizient. Gelegentlich trocken. Produktiv-Modus.
+      max_sentences: 2
+    afternoon:
+      style: normal, souveraen. Trockener Humor erlaubt.
+      max_sentences: 2
+    evening:
+      style: entspannter, mehr Humor. Darf spitze Bemerkungen machen.
+      max_sentences: 3
+    night:
+      style: nur Notfaelle, absolute Stille. Fluestern wenn ueberhaupt.
+      max_sentences: 1
+proactive:
+  enabled: true
+  cooldown_seconds: 300
+  music_follow_cooldown_minutes: 5
+  min_autonomy_level: 2
+  silence_scenes:
+  - filmabend
+  - kino
+  - schlafen
+  - meditation
+  batching:
+    enabled: true
+    interval_minutes: 30
+    max_items: 10
+memory:
+  extraction_enabled: true
+  extraction_min_words: 5
+  extraction_model: qwen3:4b
+  extraction_temperature: 0.1
+  extraction_max_tokens: 512
+  max_person_facts_in_context: 5
+  max_relevant_facts_in_context: 3
+  min_confidence_for_context: 0.6
+  duplicate_threshold: 0.15
+  episode_min_words: 3
+  default_confidence: 0.7
+planner:
+  max_iterations: 5
+  model: qwen3:14b
+  max_tokens: 512
+  complex_keywords:
+  - alles
+  - fertig machen
+  - vorbereiten
+  - gehe weg
+  - fahre weg
+  - verreise
+  - urlaub
+  - routine
+  - morgenroutine
+  - abendroutine
+  - wenn ich
+  - falls ich
+  - bevor ich
+  - zuerst
+  - danach
+  - und dann
+  - ausserdem
+  - komplett
+  - ueberall
+  - in allen
+  - party
+  - besuch kommt
+  - gaeste
+mood:
+  rapid_command_seconds: 5
+  stress_decay_seconds: 300
+  frustration_threshold: 3
+  tired_hour_start: 23
+  tired_hour_end: 5
+  rapid_command_stress_boost: 0.15
+  positive_stress_reduction: 0.1
+  negative_stress_boost: 0.1
+  impatient_stress_boost: 0.2
+  tired_boost: 0.3
+  repetition_stress_boost: 0.15
+  positive_keywords:
+  - danke
+  - super
+  - toll
+  - perfekt
+  - gut
+  - prima
+  - klasse
+  - wunderbar
+  - genau
+  - richtig
+  negative_keywords:
+  - schlecht
+  - falsch
+  - nein
+  - nicht
+  - fehler
+  - mist
+  - nervig
+  - geht nicht
+  - kaputt
+  - problem
+  impatient_keywords:
+  - schnell
+  - sofort
+  - jetzt
+  - beeil
+  - hurry
+  - komm
+  - mach schon
+  - endlich
+  - wann
+  - noch nicht
+  tired_keywords:
+  - muede
+  - erschoepft
+  - kaputt
+  - fertig
+  - schlafen
+  - bett
+  - gaehn
+  - nacht
+activity:
+  entities:
+    media_players:
+    - media_player.wohnzimmer
+    - media_player.fernseher
+    - media_player.tv
+    mic_sensors:
+    - binary_sensor.mic_active
+    - binary_sensor.microphone
+    bed_sensors:
+    - binary_sensor.bed_occupancy
+    - binary_sensor.bett
+    pc_sensors:
+    - binary_sensor.pc_active
+    - binary_sensor.computer
+    - switch.pc
+  thresholds:
+    night_start: 22
+    night_end: 7
+    guest_person_count: 2
+    focus_min_minutes: 30
+feedback:
+  auto_timeout_seconds: 120
+  base_cooldown_seconds: 300
+  score_suppress: 0.15
+  score_reduce: 0.3
+  score_normal: 0.5
+  score_boost: 0.7
+summarizer:
+  run_hour: 3
+  run_minute: 0
+  model: qwen3:14b
+  max_tokens_daily: 512
+  max_tokens_weekly: 384
+  max_tokens_monthly: 512
+context:
+  recent_conversations: 5
+  api_timeout: 5
+heating:
+  mode: room_thermostat
+  curve_entity: ''
+  curve_offset_min: -5
+  curve_offset_max: 5
+  night_offset: -2
+  away_offset: -3
+security:
+  api_key_required: false
+  require_confirmation:
+  - lock_door:unlock
+  - set_alarm:disarm
+  - set_climate:off
+  climate_limits:
+    min: 15
+    max: 28
+  api_key: 20oAkoVG0fvIw_hegYx5MwyHjYbwJzqelMkGugp2QJ0
+routines:
+  morning_briefing:
+    enabled: true
+    trigger: first_motion_after_night
+    modules:
+    - greeting
+    - weather
+    - calendar
+    - energy
+    - house_status
+    weekday_style: kurz
+    weekend_style: ausfuehrlich
+    morning_actions:
+      covers_up: true
+      lights_soft: false
+  good_night:
+    enabled: true
+    triggers:
+    - gute nacht
+    - ich gehe schlafen
+    - schlaf gut
+    - ab ins bett
+    - gehe ins bett
+    - feierabend
+    checks:
+    - windows
+    - doors
+    - alarm
+    - lights
+    - appliances
+    actions:
+      lights_off: true
+      heating_night: true
+      covers_down: true
+      alarm_arm_home: true
+  guest_mode:
+    triggers:
+    - ich habe besuch
+    - ich hab besuch
+    - gaeste kommen
+    - besuch kommt
+    - wir haben gaeste
+    restrictions:
+      hide_personal_info: true
+      formal_tone: true
+      restrict_security: true
+      suggest_guest_wifi: true
+time_awareness:
+  enabled: true
+  check_interval_minutes: 5
+  thresholds:
+    oven: 60
+    iron: 30
+    light_empty_room: 30
+    window_open_cold: 120
+    pc_no_break: 360
+  counters:
+    coffee_machine: true
+anticipation:
+  enabled: true
+  history_days: 30
+  min_confidence: 0.6
+  check_interval_minutes: 15
+  thresholds:
+    ask: 0.6
+    suggest: 0.8
+    auto: 0.95
+intent_tracking:
+  enabled: true
+  check_interval_minutes: 60
+  remind_hours_before: 12
+conversation_continuity:
+  enabled: true
+  resume_after_minutes: 10
+  expire_hours: 24
+seasonal_actions:
+  enabled: true
+  check_interval_minutes: 30
+  auto_execute_level: 3
+tts:
+  ssml_enabled: true
+  prosody_variation: false
+  speed:
+    confirmation: 105
+    warning: 85
+    briefing: 95
+    greeting: 100
+    question: 100
+    casual: 100
+  pauses:
+    before_important: 300
+    between_sentences: 200
+    after_greeting: 400
+  whisper_triggers:
+  - psst
+  - leise
+  - fluester
+  - whisper
+  whisper_cancel_triggers:
+  - normal
+  - laut
+  - normale lautstaerke
+volume:
+  day: 0.8
+  evening: 0.5
+  night: 0.3
+  sleeping: 0.2
+  emergency: 1.0
+  whisper: 0.15
+  evening_start: 22
+  night_start: 0
+  morning_start: 7
+sounds:
+  enabled: true
+  events:
+    listening: listening_chime
+    confirmed: confirm_ping
+    warning: warning_tone
+    alarm: alarm_urgent
+    doorbell: doorbell_soft
+    greeting: greeting_chime
+    error: error_tone
+    goodnight: goodnight_tone
+  night_volume_factor: 0.4
+narration:
+  enabled: true
+  default_transition: 3
+  scene_transitions:
+    filmabend: 5
+    gute_nacht: 7
+    aufwachen: 10
+    gemuetlich: 4
+  step_delay: 1.5
+  narrate_actions: true
+voice_analysis:
+  enabled: true
+  wpm_fast: 180
+  wpm_slow: 80
+  wpm_normal: 130
+  use_whisper_metadata: true
+  voice_weight: 0.3
+speaker_recognition:
+  enabled: false
+  min_confidence: 0.7
+  enrollment_duration: 30
+  fallback_ask: true
+  max_profiles: 10
+multi_room:
+  enabled: true
+  presence_timeout_minutes: 15
+  room_speakers: null
+  room_motion_sensors: null
+person_profiles:
+  profiles: null
+trust_levels:
+  default: 0
+  persons: null
+  guest_allowed_actions:
+  - set_light
+  - set_climate
+  - play_media
+  - get_entity_state
+  - play_sound
+  security_actions:
+  - lock_door
+  - set_alarm
+  - set_presence_mode
+diagnostics:
+  enabled: true
+  check_interval_minutes: 30
+  battery_warning_threshold: 20
+  stale_sensor_minutes: 120
+  offline_threshold_minutes: 30
+  alert_cooldown_minutes: 60
+cooking:
+  enabled: true
+  language: de
+  default_portions: 2
+  max_steps: 12
+  max_tokens: 1024
+  timer_notify_tts: true
+knowledge_base:
+  enabled: true
+  auto_ingest: true
+  chunk_size: 500
+  chunk_overlap: 50
+  max_distance: 1.2
+  search_limit: 3
+  supported_extensions:
+  - .txt
+  - .md
+  - .yaml
+  - .yml
+  - .csv
+  - .log
+response_filter:
+  enabled: true
+  banned_phrases:
+  - Natürlich!
+  - Natuerlich!
+  - Gerne!
+  - Selbstverständlich!
+  - Selbstverstaendlich!
+  - Klar!
+  - Gern geschehen!
+  - Kann ich sonst noch etwas für dich tun?
+  - Kann ich sonst noch etwas fuer dich tun?
+  - Kann ich dir sonst noch helfen?
+  - Wenn du noch etwas brauchst
+  - Sag einfach Bescheid
+  - Ich bin froh, dass
+  - Es freut mich
+  - Es ist mir eine Freude
+  - Als KI
+  - Als künstliche Intelligenz
+  - Als kuenstliche Intelligenz
+  - Ich bin nur ein Programm
+  - Lass mich mal schauen
+  - Lass mich kurz schauen
+  - Das klingt frustrierend
+  - Ich verstehe, wie du dich fühlst
+  - Ich verstehe, wie du dich fuehlst
+  - Das klingt wirklich
+  banned_starters:
+  - Also,
+  - 'Also '
+  - Grundsätzlich
+  - Grundsaetzlich
+  - Im Prinzip
+  - Nun,
+  - 'Nun '
+  - Sozusagen
+  - Quasi
+  - Eigentlich
+  - Im Grunde genommen
+  - Tatsächlich,
+  - Tatsaechlich,
+  max_response_sentences: 0
+correction:
+  confidence: 0.95
+  model: qwen3:4b
+  temperature: 0.1
+dashboard:
+  setup_complete: false
+tutorial:
+  enabled: true
+  max_interactions: 10
+health_monitor:
+  enabled: true
+  check_interval_minutes: 10
+  co2_warn: 1000
+  co2_critical: 1500
+  humidity_low: 30
+  humidity_high: 70
+  temp_low: 16
+  temp_high: 27
+  hydration_interval_hours: 2
+  hydration_start_hour: 8
+  hydration_end_hour: 22
+  alert_cooldown_minutes: 60
+  # Entities die NICHT ueberwacht werden sollen (Substring-Match auf entity_id)
+  exclude_patterns:
+  - aquarea
+  - solar
+  - hmipw_
+  - hmip_drap
+  - hmip_drd
+  - steckdose
+  - humidor
+  - boiler
+  - warmwasser
+  - heizung_vorlauf
+  - heizung_ruecklauf
+device_health:
+  enabled: true
+  check_interval_minutes: 60
+  baseline_history_days: 30
+  stddev_multiplier: 2.0
+  min_samples: 10
+  stale_sensor_days: 3
+  hvac_timeout_minutes: 120
+  hvac_temp_tolerance: 1.0
+  alert_cooldown_minutes: 1440
+  track_domains:
+  - sensor
+  - climate
+  - binary_sensor
+  exclude_patterns:
+  - weather.
+  - sun.
+  - automation.
+  - update.
+  energy_sensor_keywords:
+  - energy
+  - power
+  - verbrauch
+  - strom
+ocr:
+  enabled: true
+  languages: deu+eng
+  vision_model: ''
+  max_image_size_mb: 20
+  description_max_tokens: 512
+ambient_audio:
+  enabled: true
+  min_confidence: 0.6
+  poll_interval_seconds: 5
+  sensor_mappings: null
+  cooldowns:
+    default_seconds: 30
+    per_event:
+      smoke_alarm: 60
+      glass_break: 120
+      dog_bark: 10
+      baby_cry: 15
+      doorbell: 5
+  disabled_events: null
+  night_mode:
+    start_hour: 22
+    end_hour: 7
+    escalate_severity: true
+  reaction_overrides: null
+conflict_resolution:
+  enabled: true
+  conflict_window_seconds: 300
+  max_commands_per_person: 20
+  use_trust_priority: true
+  mediation:
+    enabled: true
+    model: qwen3:14b
+    max_tokens: 256
+    temperature: 0.7
+  conflict_domains:
+    climate:
+      threshold: 3
+      strategy: average
+    light:
+      threshold: 50
+      strategy: trust_priority
+    media:
+      strategy: mediate
+    cover:
+      threshold: 40
+      strategy: trust_priority
+  resolution_cooldown_seconds: 120
+maintenance:
+  enabled: true
+  config_file: config/maintenance.yaml
+self_optimization:
+  enabled: false
+  analysis_interval: weekly
+  approval_mode: manual
+  max_proposals_per_cycle: 3
+  model: qwen3:14b
+  rollback:
+    enabled: true
+    max_snapshots: 20
+    snapshot_on_every_edit: true
+  parameter_bounds:
+    sarcasm_level:
+      min: 1
+      max: 5
+    opinion_intensity:
+      min: 0
+      max: 3
+    max_response_sentences:
+      min: 1
+      max: 5
+    formality_min:
+      min: 10
+      max: 80
+    formality_start:
+      min: 30
+      max: 100
+  immutable_keys:
+  - trust_levels
+  - security
+  - autonomy
+  - models
+  - dashboard
+  - response_filter.banned_phrases
+  - response_filter.banned_starters
+self_automation:
+  enabled: true
+  max_per_day: 5
+  model: qwen3:14b
+  templates_file: config/automation_templates.yaml

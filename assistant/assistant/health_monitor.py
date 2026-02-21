@@ -60,6 +60,9 @@ class HealthMonitor:
         self._alert_cooldowns: dict[str, datetime] = {}
         self._alert_cooldown_minutes = cfg.get("alert_cooldown_minutes", 60)
 
+        # Exclude-Patterns: Entities deren ID einen dieser Substrings enthaelt werden ignoriert
+        self._exclude_patterns = [p.lower() for p in cfg.get("exclude_patterns", [])]
+
     async def initialize(self, redis_client: Optional[redis.Redis] = None):
         """Initialisiert mit Redis-Verbindung."""
         self.redis = redis_client
@@ -156,6 +159,11 @@ class HealthMonitor:
         for state in states:
             entity_id = state.get("entity_id", "")
             if not entity_id.startswith("sensor."):
+                continue
+
+            # Exclude-Filter: Geraete-Sensoren, Waermepumpen etc. ignorieren
+            eid_lower = entity_id.lower()
+            if any(pat in eid_lower for pat in self._exclude_patterns):
                 continue
 
             value_str = state.get("state", "")
@@ -310,6 +318,11 @@ class HealthMonitor:
         for state in states:
             entity_id = state.get("entity_id", "")
             if not entity_id.startswith("sensor."):
+                continue
+
+            # Exclude-Filter (gleich wie in check_all)
+            eid_lower = entity_id.lower()
+            if any(pat in eid_lower for pat in self._exclude_patterns):
                 continue
 
             attrs = state.get("attributes", {})
