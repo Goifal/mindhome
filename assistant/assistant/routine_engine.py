@@ -984,10 +984,10 @@ Kein unterwuerfiger Ton. Du bist ein brillanter Butler, kein Chatbot."""
         """Hauptloop der Abwesenheits-Simulation."""
         sim_cfg = yaml_config.get("vacation_simulation", {})
         # Typische Zeiten (konfigurierbar)
-        morning_lights = sim_cfg.get("morning_hour", 7)
-        evening_lights = sim_cfg.get("evening_hour", 18)
-        night_off = sim_cfg.get("night_hour", 23)
-        variation_minutes = sim_cfg.get("variation_minutes", 30)
+        morning_lights = int(sim_cfg.get("morning_hour", 7))
+        evening_lights = int(sim_cfg.get("evening_hour", 18))
+        night_off = int(sim_cfg.get("night_hour", 23))
+        variation_minutes = int(sim_cfg.get("variation_minutes", 30))
 
         while True:
             try:

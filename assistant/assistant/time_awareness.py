@@ -46,17 +46,17 @@ class TimeAwareness:
         # Konfiguration
         ta_cfg = yaml_config.get("time_awareness", {})
         self.enabled = ta_cfg.get("enabled", True)
-        self.check_interval = ta_cfg.get("check_interval_minutes", 5) * 60
+        self.check_interval = int(ta_cfg.get("check_interval_minutes", 5)) * 60
 
         thresholds = ta_cfg.get("thresholds", {})
-        self.threshold_oven = thresholds.get("oven", 60)
-        self.threshold_iron = thresholds.get("iron", 30)
-        self.threshold_light_empty = thresholds.get("light_empty_room", 30)
-        self.threshold_window_cold = thresholds.get("window_open_cold", 120)
-        self.threshold_pc_no_break = thresholds.get("pc_no_break", 360)
-        self.threshold_washer = thresholds.get("washer", 180)
-        self.threshold_dryer = thresholds.get("dryer", 150)
-        self.threshold_dishwasher = thresholds.get("dishwasher", 180)
+        self.threshold_oven = int(thresholds.get("oven", 60))
+        self.threshold_iron = int(thresholds.get("iron", 30))
+        self.threshold_light_empty = int(thresholds.get("light_empty_room", 30))
+        self.threshold_window_cold = int(thresholds.get("window_open_cold", 120))
+        self.threshold_pc_no_break = int(thresholds.get("pc_no_break", 360))
+        self.threshold_washer = int(thresholds.get("washer", 180))
+        self.threshold_dryer = int(thresholds.get("dryer", 150))
+        self.threshold_dishwasher = int(thresholds.get("dishwasher", 180))
 
         # Welche Zaehler aktiv sind
         counters_cfg = ta_cfg.get("counters", {})

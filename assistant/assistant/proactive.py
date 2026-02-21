@@ -63,8 +63,8 @@ class ProactiveManager:
         # Phase 7.1: Morning Briefing Auto-Trigger
         mb_cfg = yaml_config.get("routines", {}).get("morning_briefing", {})
         self._mb_enabled = mb_cfg.get("enabled", True)
-        self._mb_window_start = mb_cfg.get("window_start_hour", 6)
-        self._mb_window_end = mb_cfg.get("window_end_hour", 10)
+        self._mb_window_start = int(mb_cfg.get("window_start_hour", 6))
+        self._mb_window_end = int(mb_cfg.get("window_end_hour", 10))
         self._mb_triggered_today = False
         self._mb_last_date = ""
 

@@ -42,11 +42,11 @@ class DiagnosticsEngine:
         # Konfiguration
         diag_cfg = yaml_config.get("diagnostics", {})
         self.enabled = diag_cfg.get("enabled", True)
-        self.check_interval = diag_cfg.get("check_interval_minutes", 30)
-        self.battery_threshold = diag_cfg.get("battery_warning_threshold", 20)
-        self.stale_minutes = diag_cfg.get("stale_sensor_minutes", 120)
-        self.offline_minutes = diag_cfg.get("offline_threshold_minutes", 30)
-        self.alert_cooldown = diag_cfg.get("alert_cooldown_minutes", 60)
+        self.check_interval = int(diag_cfg.get("check_interval_minutes", 30))
+        self.battery_threshold = int(diag_cfg.get("battery_warning_threshold", 20))
+        self.stale_minutes = int(diag_cfg.get("stale_sensor_minutes", 120))
+        self.offline_minutes = int(diag_cfg.get("offline_threshold_minutes", 30))
+        self.alert_cooldown = int(diag_cfg.get("alert_cooldown_minutes", 60))
 
         # Wartungs-Config
         maint_cfg = yaml_config.get("maintenance", {})
