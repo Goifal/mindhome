@@ -437,13 +437,33 @@ async def chat(request: ChatRequest):
             "model_used": "timeout",
             "context_room": request.room or "unbekannt",
         }
+    except Exception as e:
+        logger.error("brain.process() Exception fuer '%s': %s", request.text[:100], e, exc_info=True)
+        result = {
+            "response": "Da ist etwas schiefgelaufen. Versuch es nochmal.",
+            "actions": [],
+            "model_used": "error",
+            "context_room": request.room or "unbekannt",
+        }
 
     # TTS-Daten als TTSInfo-Modell wrappen
     tts_raw = result.pop("tts", None)
-    if tts_raw and isinstance(tts_raw, dict):
-        result["tts"] = TTSInfo(**tts_raw)
+    try:
+        if tts_raw and isinstance(tts_raw, dict):
+            result["tts"] = TTSInfo(**tts_raw)
+    except Exception as e:
+        logger.warning("TTSInfo-Erstellung fehlgeschlagen: %s", e)
 
-    return ChatResponse(**result)
+    try:
+        return ChatResponse(**result)
+    except Exception as e:
+        logger.error("ChatResponse-Erstellung fehlgeschlagen: %s", e)
+        return ChatResponse(
+            response=result.get("response", "Systemfehler."),
+            actions=[],
+            model_used=result.get("model_used", "error"),
+            context_room=result.get("context_room", "unbekannt"),
+        )
 
 
 @app.get("/api/assistant/context")
@@ -916,17 +936,28 @@ async def chat_upload(
     )
 
     # Process through brain with file context
-    result = await brain.process(
-        text=text,
-        person=person or None,
-        room=None,
-        files=[file_info],
-    )
+    try:
+        result = await brain.process(
+            text=text,
+            person=person or None,
+            room=None,
+            files=[file_info],
+        )
+    except Exception as e:
+        logger.error("brain.process() Exception bei Upload '%s': %s", file_info.get("name", "?"), e, exc_info=True)
+        result = {
+            "response": "Datei empfangen, aber bei der Verarbeitung ist ein Fehler aufgetreten.",
+            "actions": [],
+            "model_used": "error",
+        }
 
     # TTS wrapping
     tts_raw = result.pop("tts", None)
-    if tts_raw and isinstance(tts_raw, dict):
-        result["tts"] = TTSInfo(**tts_raw)
+    try:
+        if tts_raw and isinstance(tts_raw, dict):
+            result["tts"] = TTSInfo(**tts_raw)
+    except Exception as e:
+        logger.warning("TTSInfo-Erstellung fehlgeschlagen bei Upload: %s", e)
 
     return {
         "file": {
