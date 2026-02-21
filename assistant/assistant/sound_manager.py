@@ -84,8 +84,8 @@ class SoundManager:
 
         # Volume-Konfiguration
         vol_cfg = yaml_config.get("volume", {})
-        self.evening_start = vol_cfg.get("evening_start", 22)
-        self.morning_start = vol_cfg.get("morning_start", 7)
+        self.evening_start = int(vol_cfg.get("evening_start", 22))
+        self.morning_start = int(vol_cfg.get("morning_start", 7))
 
         # Letzte Sounds (Anti-Spam)
         self._last_sound_time: dict[str, float] = {}
