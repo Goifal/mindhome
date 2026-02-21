@@ -101,7 +101,7 @@ def api_chat_send():
     if not text:
         return jsonify({"error": "Kein Text angegeben"}), 400
 
-    person = data.get("person", get_setting("primary_user", "Max"))
+    person = data.get("person", get_setting("primary_user", "User"))
     room = data.get("room")
 
     # Store user message
@@ -252,7 +252,7 @@ def api_chat_upload():
         mb = MAX_FILE_SIZE // (1024 * 1024)
         return jsonify({"error": f"Datei zu groß (max {mb} MB)"}), 413
 
-    person = request.form.get("person", get_setting("primary_user", "Max"))
+    person = request.form.get("person", get_setting("primary_user", "User"))
     caption = request.form.get("caption", "").strip()
 
     # Forward to Assistant (PC 2)
@@ -359,7 +359,7 @@ def api_chat_voice():
     if not audio_file:
         return jsonify({"error": "Leere Audiodatei"}), 400
 
-    person = request.form.get("person", get_setting("primary_user", "Max"))
+    person = request.form.get("person", get_setting("primary_user", "User"))
     room = request.form.get("room")
     ha = _deps.get("ha")
     if not ha:
