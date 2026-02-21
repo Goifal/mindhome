@@ -536,7 +536,7 @@ def api_chat_voice():
         logger.error("Voice chat assistant error: %s", e)
         return jsonify({"error": "Operation failed", "transcribed_text": transcribed_text}), 500
 
-    # --- Step 3: TTS via Piper ---
+    # --- Step 3: TTS Audio generieren ---
     tts_audio_b64 = None
     tts_entity = get_setting("tts_entity", "")
     if not tts_entity:
@@ -554,33 +554,45 @@ def api_chat_voice():
                 "Authorization": f"Bearer {ha_token}",
                 "Content-Type": "application/json",
             }
-            engine_id = tts_entity.removeprefix("tts.")
 
-            # Versuche verschiedene Payload-Varianten (HA-API hat sich geaendert)
-            payloads = [
-                {"engine_id": engine_id, "message": response_text, "language": "de"},
-                {"platform": engine_id, "message": response_text, "language": "de"},
-                {"engine_id": engine_id, "message": response_text, "language": "de_DE"},
-            ]
+            # Platform-Name aus Entity-Attributen lesen (nicht aus Entity-ID raten)
+            engine_id = tts_entity.removeprefix("tts.")
+            tts_state = ha.get_state(tts_entity)
+            if tts_state and isinstance(tts_state, dict):
+                attrs = tts_state.get("attributes") or {}
+                # HA setzt "platform" als Attribut bei manchen Integrationen
+                engine_id = attrs.get("platform", engine_id)
+
+            # Alle moeglichen Provider-Namen durchprobieren
+            # Piper via Wyoming meldet sich als "wyoming", nicht als "piper"
+            candidate_ids = list(dict.fromkeys([
+                engine_id,
+                tts_entity.removeprefix("tts."),
+                "wyoming",
+                "cloud",
+                "google_translate",
+            ]))
 
             tts_resp = None
-            for payload in payloads:
-                tts_resp = requests.post(
-                    f"{ha_url}/api/tts_get_url",
-                    headers=tts_headers,
-                    json=payload,
-                    timeout=15,
-                )
-                if tts_resp.status_code == 200:
+            for cid in candidate_ids:
+                for lang in ("de", "de_DE"):
+                    tts_resp = requests.post(
+                        f"{ha_url}/api/tts_get_url",
+                        headers=tts_headers,
+                        json={"engine_id": cid, "message": response_text, "language": lang},
+                        timeout=15,
+                    )
+                    if tts_resp.status_code == 200:
+                        break
+                    logger.debug("TTS tts_get_url failed (engine=%s, lang=%s): %s – %s",
+                                 cid, lang, tts_resp.status_code, tts_resp.text[:200])
+                if tts_resp and tts_resp.status_code == 200:
                     break
-                logger.debug("TTS tts_get_url attempt failed (%s): %s – %s",
-                             tts_resp.status_code, payload, tts_resp.text[:300])
 
             if tts_resp and tts_resp.status_code == 200:
                 tts_data = tts_resp.json()
                 tts_url = tts_data.get("url") or tts_data.get("path", "")
                 if tts_url:
-                    # Download the generated audio file
                     audio_resp = requests.get(
                         tts_url if tts_url.startswith("http") else f"{ha_url}{tts_url}",
                         headers={"Authorization": f"Bearer {ha_token}"},
@@ -588,13 +600,13 @@ def api_chat_voice():
                     )
                     if audio_resp.status_code == 200:
                         tts_audio_b64 = base64.b64encode(audio_resp.content).decode("utf-8")
-                        logger.info("TTS audio generated (%d bytes)", len(audio_resp.content))
+                        logger.info("TTS audio generated (%d bytes, engine=%s)", len(audio_resp.content), cid)
                     else:
                         logger.warning("TTS audio download failed: %s", audio_resp.status_code)
             else:
                 body = tts_resp.text[:500] if tts_resp else "no response"
-                logger.warning("TTS API error: %s – %s (entity=%s, engine_id=%s)",
-                               tts_resp.status_code if tts_resp else "?", body, tts_entity, engine_id)
+                logger.warning("TTS API error: %s – %s (entity=%s, tried=%s)",
+                               tts_resp.status_code if tts_resp else "?", body, tts_entity, candidate_ids)
         except Exception as e:
             logger.warning("TTS generation failed: %s", e)
 
