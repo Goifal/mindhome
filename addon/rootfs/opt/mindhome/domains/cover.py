@@ -66,17 +66,22 @@ class CoverDomain(DomainPlugin):
                             "reason_en": f"Sunset: close {name}",
                         })
 
-        # Sunrise -> open covers
+        # Sunrise -> open covers (only if no one is in bed)
         if self.get_setting("sunrise_open", True):
             if elevation > threshold and sun.get("rising"):
-                for e in entities:
-                    if e.get("state") == "closed":
-                        name = e.get("attributes", {}).get("friendly_name", e["entity_id"])
-                        actions.append({
-                            "entity_id": e["entity_id"], "service": "open_cover",
-                            "reason_de": f"Sonnenaufgang: {name} oeffnen",
-                            "reason_en": f"Sunrise: open {name}",
-                        })
+                # Bettbelegung pruefen: Nicht oeffnen wenn jemand schlaeft
+                bed_occupied = self._is_bed_occupied()
+                if bed_occupied:
+                    self.logger.info("Sunrise: Rolladen NICHT geoeffnet — Bett belegt")
+                else:
+                    for e in entities:
+                        if e.get("state") == "closed":
+                            name = e.get("attributes", {}).get("friendly_name", e["entity_id"])
+                            actions.append({
+                                "entity_id": e["entity_id"], "service": "open_cover",
+                                "reason_de": f"Sonnenaufgang: {name} oeffnen",
+                                "reason_en": f"Sunrise: open {name}",
+                            })
 
         # High sun + warm -> partial shading
         if self.get_setting("sun_shading", True):
@@ -94,3 +99,29 @@ class CoverDomain(DomainPlugin):
                             })
 
         return self.execute_or_suggest(actions)
+
+    def _is_bed_occupied(self) -> bool:
+        """Prueft ob ein Bettbelegungssensor aktiv ist (jemand schlaeft)."""
+        try:
+            states = self.ha.get_states() or []
+            bed_sensors = [
+                s for s in states
+                if s.get("entity_id", "").startswith("binary_sensor.")
+                and s.get("attributes", {}).get("device_class") == "occupancy"
+                and any(kw in s.get("entity_id", "").lower()
+                        for kw in ("bett", "bed", "matratze", "mattress"))
+            ]
+            if not bed_sensors:
+                # Fallback: Alle Occupancy-Sensoren in Schlafzimmern
+                bed_sensors = [
+                    s for s in states
+                    if s.get("entity_id", "").startswith("binary_sensor.")
+                    and s.get("attributes", {}).get("device_class") == "occupancy"
+                    and any(kw in s.get("entity_id", "").lower()
+                            for kw in ("schlafzimmer", "bedroom"))
+                ]
+            if bed_sensors:
+                return any(s.get("state") == "on" for s in bed_sensors)
+        except Exception:
+            pass
+        return False

@@ -793,15 +793,47 @@ class CoverControlManager:
         logger.info("Sleep detected: closing all covers")
 
     def _on_wake_detected(self, event):
-        """Gradually open covers on wake-up."""
+        """Gradually open covers on wake-up (only if bed is actually empty)."""
         config = self.get_config()
         if not config.get("wakeup_integration_enabled"):
             return
+
+        # Double-check: Bettbelegungssensoren pruefen bevor Rolladen geoeffnet werden
+        # (Wake-Heuristik kann z.B. durch kurze Badezimmer-Besuche ausloesen)
+        if self._is_bed_occupied():
+            logger.info("Wake detected but bed still occupied — NOT opening covers")
+            return
+
         covers = self.get_covers()
         for cover in covers:
             if not self._is_overridden(cover["entity_id"]):
                 self.set_position(cover["entity_id"], 100, source="wakeup")
         logger.info("Wake detected: opening covers")
+
+    def _is_bed_occupied(self) -> bool:
+        """Prueft ob ein Bettbelegungssensor aktiv ist."""
+        try:
+            states = self.ha.get_states() or []
+            bed_sensors = [
+                s for s in states
+                if s.get("entity_id", "").startswith("binary_sensor.")
+                and s.get("attributes", {}).get("device_class") == "occupancy"
+                and any(kw in s.get("entity_id", "").lower()
+                        for kw in ("bett", "bed", "matratze", "mattress"))
+            ]
+            if not bed_sensors:
+                bed_sensors = [
+                    s for s in states
+                    if s.get("entity_id", "").startswith("binary_sensor.")
+                    and s.get("attributes", {}).get("device_class") == "occupancy"
+                    and any(kw in s.get("entity_id", "").lower()
+                            for kw in ("schlafzimmer", "bedroom"))
+                ]
+            if bed_sensors:
+                return any(s.get("state") == "on" for s in bed_sensors)
+        except Exception:
+            pass
+        return False
 
     def _on_weather_alert(self, event):
         """React to weather alerts (storm, hail)."""

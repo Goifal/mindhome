@@ -1177,13 +1177,16 @@ VERBOTEN: "Hallo", "Achtung", "Ich moechte dich informieren", "Es tut mir leid".
                 # Toleranz: ±15 Min um die optimale Zeit
                 tolerance = 15
 
-                # Morgens: Rolladen oeffnen
+                # Morgens: Rolladen oeffnen (nur wenn niemand im Bett liegt)
                 if (last_action_type != "open"
                         and abs(current_minutes - open_min) <= tolerance):
-                    await self._execute_seasonal_cover(
-                        "open", 100, season, reason, auto_level,
-                    )
-                    last_action_type = "open"
+                    if await self._is_bed_occupied(states):
+                        logger.info("Seasonal: Rolladen-Oeffnung uebersprungen — Bett belegt")
+                    else:
+                        await self._execute_seasonal_cover(
+                            "open", 100, season, reason, auto_level,
+                        )
+                        last_action_type = "open"
 
                 # Abends: Rolladen schliessen
                 elif (last_action_type != "close"
@@ -1258,6 +1261,37 @@ VERBOTEN: "Hallo", "Achtung", "Ich moechte dich informieren", "Es tut mir leid".
                 "message": f"Rolladen {desc}? ({reason})",
                 "suggestion": True,
             })
+
+    # ------------------------------------------------------------------
+    # Bettbelegung
+    # ------------------------------------------------------------------
+
+    async def _is_bed_occupied(self, states=None) -> bool:
+        """Prueft ob ein Bettbelegungssensor aktiv ist (jemand schlaeft)."""
+        try:
+            if states is None:
+                states = await self.brain.ha.get_states()
+            bed_sensors = [
+                s for s in (states or [])
+                if s.get("entity_id", "").startswith("binary_sensor.")
+                and s.get("attributes", {}).get("device_class") == "occupancy"
+                and any(kw in s.get("entity_id", "").lower()
+                        for kw in ("bett", "bed", "matratze", "mattress"))
+            ]
+            if not bed_sensors:
+                # Fallback: Occupancy-Sensoren in Schlafzimmern
+                bed_sensors = [
+                    s for s in (states or [])
+                    if s.get("entity_id", "").startswith("binary_sensor.")
+                    and s.get("attributes", {}).get("device_class") == "occupancy"
+                    and any(kw in s.get("entity_id", "").lower()
+                            for kw in ("schlafzimmer", "bedroom"))
+                ]
+            if bed_sensors:
+                return any(s.get("state") == "on" for s in bed_sensors)
+        except Exception:
+            pass
+        return False
 
     # ------------------------------------------------------------------
     # Notfall-Protokolle
