@@ -539,6 +539,15 @@ let streamBuffer = '';
 let streamBubble = null;
 let isStreaming = false;
 let messageCount = 0;
+let currentPerson = '';
+
+// Load person name from settings
+fetch(`${location.origin}/api/ui/settings?token=`).then(r => r.ok ? r.json() : null).then(d => {
+  if (d) {
+    const h = (d.household || {});
+    currentPerson = h.primary_user || d.user_name || '';
+  }
+}).catch(() => {});
 
 // --- DOM ---
 const $messages = document.getElementById('messages');
@@ -690,9 +699,11 @@ function sendMessage() {
   // Show typing
   $typing.classList.add('active');
 
+  const payload = { text, stream: true };
+  if (currentPerson) payload.person = currentPerson;
   ws.send(JSON.stringify({
     event: 'assistant.text',
-    data: { text, stream: true }
+    data: payload
   }));
 }
 

@@ -1213,6 +1213,31 @@ class AssistantBrain:
             night_limit = 2
         response_text = self._filter_response(response_text, max_sentences_override=night_limit)
 
+        # Sprach-Retry: Wenn Antwort verworfen wurde (nicht Deutsch), nochmal mit explizitem Sprach-Prompt
+        if not response_text and text:
+            logger.warning("Sprach-Retry: Antwort war nicht Deutsch, versuche erneut")
+            retry_messages = [
+                {"role": "system", "content": "Du bist Jarvis, die KI dieses Hauses. "
+                 "WICHTIG: Antworte AUSSCHLIESSLICH auf Deutsch. Kurz, maximal 2 Saetze. "
+                 "Kein Englisch. Keine Listen. Keine Erklaerungen."},
+                {"role": "user", "content": text},
+            ]
+            try:
+                retry_resp = await self.ollama.chat(
+                    messages=retry_messages, model=model, temperature=0.5, max_tokens=128,
+                )
+                retry_text = retry_resp.get("message", {}).get("content", "")
+                if retry_text:
+                    from .ollama_client import strip_think_tags
+                    retry_text = strip_think_tags(retry_text).strip()
+                if retry_text:
+                    response_text = retry_text
+                    logger.info("Sprach-Retry erfolgreich: '%s'", response_text[:80])
+            except Exception as e:
+                logger.warning("Sprach-Retry fehlgeschlagen: %s", e)
+            if not response_text:
+                response_text = "Ich bin hier, Sir. Wie kann ich helfen?"
+
         # Phase 6.9: Running Gag an Antwort anhaengen
         if gag_response and response_text:
             response_text = f"{response_text} {gag_response}"
@@ -1462,6 +1487,30 @@ class AssistantBrain:
                 text = " ".join(sentences[:max_sentences])
 
         text = text.strip()
+
+        # 7. Sprach-Check: Wenn die Antwort ueberwiegend Englisch ist, verwerfen
+        if text and len(text) > 40:
+            text_lower = text.lower()
+            _english_markers = [
+                " the ", " you ", " your ", " which ", " would ",
+                " could ", " should ", " have ", " this ", " that ",
+                " here ", " there ", " what ", " with ", " from ",
+                " about ", " like ", " make ", " help ", " want ",
+                " based ", " manage ", " control ", " provide ",
+                " features ", " following ", " however ", " including ",
+            ]
+            _de_markers = [
+                " der ", " die ", " das ", " ist ", " und ",
+                " nicht ", " ich ", " hab ", " dir ", " ein ",
+                " dein ", " sehr ", " wohl ", " kann ", " wird ",
+            ]
+            en_hits = sum(1 for m in _english_markers if m in text_lower)
+            de_hits = sum(1 for m in _de_markers if m in text_lower)
+            de_hits += sum(1 for c in text if c in "äöüÄÖÜß")
+            if en_hits >= 3 and en_hits > de_hits:
+                logger.warning("Response ueberwiegend Englisch (%d EN vs %d DE), verworfen: '%.100s...'",
+                               en_hits, de_hits, text)
+                return ""
 
         if text != original:
             logger.debug("Response-Filter: '%s' -> '%s'", original[:80], text[:80])
