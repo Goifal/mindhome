@@ -622,18 +622,43 @@ class AssistantBrain:
         if person:
             context.setdefault("person", {})["name"] = person
 
-        # 2. Stimmungsanalyse
-        mood_result = await self.mood.analyze(text, person or "")
+        # 2. Parallel: Stimmung, Formality, Irony, Time, Security, Cross-Room,
+        #    Guest-Mode, Tutorial, Summary, RAG — alle unabhaengig voneinander
+        async def _safe_security_score():
+            try:
+                return await self.threat_assessment.get_security_score()
+            except Exception as e:
+                logger.debug("Security Score Fehler: %s", e)
+                return None
+
+        (
+            mood_result,
+            formality_score,
+            irony_count,
+            time_hints,
+            sec_score,
+            prev_context,
+            guest_mode_active,
+            tutorial_hint,
+            summary_context,
+            rag_context,
+        ) = await asyncio.gather(
+            self.mood.analyze(text, person or ""),
+            self.personality.get_formality_score(),
+            self.personality._get_self_irony_count_today(),
+            self.time_awareness.get_context_hints(),
+            _safe_security_score(),
+            self._get_cross_room_context(person or ""),
+            self.routines.is_guest_mode_active(),
+            self._get_tutorial_hint(person or "unknown"),
+            self._get_summary_context(text),
+            self._get_rag_context(text),
+        )
+
         context["mood"] = mood_result
 
         # 3. Modell waehlen
         model = self.model_router.select_model(text)
-
-        # Phase 6: Formality Score laden
-        formality_score = await self.personality.get_formality_score()
-
-        # Phase 6: Selbstironie-Zaehler aus Redis
-        irony_count = await self.personality._get_self_irony_count_today()
 
         # 4. System Prompt bauen (mit Phase 6 Erweiterungen)
         system_prompt = self.personality.build_system_prompt(
@@ -647,7 +672,6 @@ class AssistantBrain:
             system_prompt += f"\n\nEMOTIONALE LAGE: {mood_hint}"
 
         # Phase 6.6: Zeitgefuehl — Hinweise in System Prompt
-        time_hints = await self.time_awareness.get_context_hints()
         if time_hints:
             system_prompt += "\n\nZEITGEFUEHL:\n" + "\n".join(f"- {h}" for h in time_hints)
 
@@ -657,32 +681,26 @@ class AssistantBrain:
             system_prompt += "\n\nAKTIVE TIMER:\n" + "\n".join(f"- {h}" for h in timer_hints)
 
         # Phase 17: Security Score im Kontext (nur bei Warnungen)
-        try:
-            sec_score = await self.threat_assessment.get_security_score()
-            if sec_score.get("level") in ("warning", "critical"):
-                details = ", ".join(sec_score.get("details", []))
-                system_prompt += (
-                    f"\n\nSICHERHEITS-STATUS: {sec_score['level'].upper()} "
-                    f"(Score: {sec_score['score']}/100). {details}. "
-                    f"Erwaehne dies bei Gelegenheit."
-                )
-        except Exception as e:
-            logger.debug("Security Score Fehler: %s", e)
+        if sec_score and sec_score.get("level") in ("warning", "critical"):
+            details = ", ".join(sec_score.get("details", []))
+            system_prompt += (
+                f"\n\nSICHERHEITS-STATUS: {sec_score['level'].upper()} "
+                f"(Score: {sec_score['score']}/100). {details}. "
+                f"Erwaehne dies bei Gelegenheit."
+            )
 
         # Phase 17: Kontext-Persistenz ueber Raumwechsel
-        prev_context = await self._get_cross_room_context(person or "")
         if prev_context:
             system_prompt += f"\n\nVORHERIGER KONTEXT (anderer Raum): {prev_context}"
 
         # Phase 7: Gaeste-Modus Prompt-Erweiterung
-        if await self.routines.is_guest_mode_active():
+        if guest_mode_active:
             system_prompt += "\n\n" + self.routines.get_guest_mode_prompt()
 
         # Phase 7.5: Szenen-Intelligenz — erweiterte Prompt-Anweisung
         system_prompt += SCENE_INTELLIGENCE_PROMPT
 
         # Phase 16.2: Tutorial-Modus fuer neue User
-        tutorial_hint = await self._get_tutorial_hint(person or "unknown")
         if tutorial_hint:
             system_prompt += tutorial_hint
 
@@ -700,12 +718,10 @@ class AssistantBrain:
             system_prompt += memory_context
 
         # Langzeit-Summaries bei Fragen ueber die Vergangenheit
-        summary_context = await self._get_summary_context(text)
         if summary_context:
             system_prompt += summary_context
 
-        # Phase 11.1: RAG Knowledge Base — Wissen aus Dokumenten
-        rag_context = await self._get_rag_context(text)
+        # Phase 11.1: RAG Knowledge Base — Wissen aus Dokumenten (bereits parallel geladen)
         if rag_context:
             system_prompt += rag_context
 
