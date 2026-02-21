@@ -66,7 +66,7 @@ class HomeAssistantClient:
                 self._session = aiohttp.ClientSession(timeout=timeout)
             return self._session
 
-    async def close(self):
+    async def close(self) -> None:
         """Schliesst die HTTP Session."""
         if self._session and not self._session.closed:
             await self._session.close()

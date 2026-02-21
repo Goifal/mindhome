@@ -68,32 +68,21 @@ from .wellness_advisor import WellnessAdvisor
 from .threat_assessment import ThreatAssessment
 from .learning_observer import LearningObserver
 from .tts_enhancer import TTSEnhancer
+from .brain_callbacks import BrainCallbacksMixin
+from .circuit_breaker import registry as cb_registry, ollama_breaker, ha_breaker
+from .constants import REDIS_SECURITY_CONFIRM_KEY, REDIS_SECURITY_CONFIRM_TTL
+from .task_registry import TaskRegistry
 from .websocket import emit_thinking, emit_speaking, emit_action, emit_proactive
 
 logger = logging.getLogger(__name__)
 
 
-def _safe_create_task(coro, *, name: str = ""):
-    """Erstellt einen asyncio.Task mit Error-Logging (kein stilles Verschlucken)."""
-    task = asyncio.create_task(coro, name=name or None)
-
-    def _on_done(t: asyncio.Task):
-        if t.cancelled():
-            return
-        exc = t.exception()
-        if exc:
-            logger.error("Fire-and-forget Task %r fehlgeschlagen: %s", t.get_name(), exc, exc_info=exc)
-
-    task.add_done_callback(_on_done)
-    return task
-
-
 # Audit-Log (gleicher Pfad wie main.py, fuer Chat-basierte Sicherheitsevents)
 _AUDIT_LOG_PATH = Path(__file__).parent.parent / "logs" / "audit.jsonl"
 
-# Security-Confirmation: Redis-Key + TTL fuer ausstehende Sicherheitsbestaetigungen
-SECURITY_CONFIRM_KEY = "mha:pending_security_confirmation"
-SECURITY_CONFIRM_TTL = 300  # 5 Minuten
+# Legacy-Aliase (fuer bestehende Referenzen)
+SECURITY_CONFIRM_KEY = REDIS_SECURITY_CONFIRM_KEY
+SECURITY_CONFIRM_TTL = REDIS_SECURITY_CONFIRM_TTL
 
 
 def _audit_log(action: str, details: dict = None):
@@ -149,10 +138,13 @@ Frage nur bei Mehrdeutigkeit nach (z.B. "Welchen Raum?")."""
 SCENE_INTELLIGENCE_PROMPT = _build_scene_intelligence_prompt()
 
 
-class AssistantBrain:
+class AssistantBrain(BrainCallbacksMixin):
     """Das zentrale Gehirn von MindHome Assistant."""
 
     def __init__(self):
+        # Task Registry: Zentrales Tracking aller Background-Tasks
+        self._task_registry = TaskRegistry()
+
         # Clients
         self.ha = HomeAssistantClient()
         self.ollama = OllamaClient()
@@ -261,7 +253,7 @@ class AssistantBrain:
         await self.personality.load_learned_sarcasm_level()
 
         # Fact Decay: Einmal taeglich alte Fakten abbauen
-        _safe_create_task(self._run_daily_fact_decay(), name="daily_fact_decay")
+        self._task_registry.create_task(self._run_daily_fact_decay(), name="daily_fact_decay")
 
         # Memory Extractor initialisieren
         self.memory_extractor = MemoryExtractor(self.ollama, self.memory.semantic)
@@ -366,7 +358,7 @@ class AssistantBrain:
     ):
         """Sendet Text per WebSocket UND spricht ihn ueber HA-Speaker aus."""
         await emit_speaking(text, tts_data=tts_data)
-        _safe_create_task(
+        self._task_registry.create_task(
             self.sound_manager.speak_response(text, room=room, tts_data=tts_data),
             name="speak_response",
         )
@@ -425,7 +417,7 @@ class AssistantBrain:
 
         # Phase 9: Speaker Recognition — Person ermitteln wenn nicht angegeben
         if person:
-            _safe_create_task(
+            self._task_registry.create_task(
                 self.speaker_recognition.set_current_speaker(person.lower()),
                 name="set_speaker",
             )
@@ -615,7 +607,7 @@ class AssistantBrain:
             }
 
         # Phase 9: "listening" Sound abspielen wenn Verarbeitung startet
-        _safe_create_task(
+        self._task_registry.create_task(
             self.sound_manager.play_event_sound("listening", room=room),
             name="sound_listening",
         )
@@ -1134,7 +1126,7 @@ class AssistantBrain:
                                 domain = func_name.replace("set_", "")
                                 entity_id = f"{domain}.{r.lower().replace(' ', '_')}"
                         if entity_id:
-                            _safe_create_task(
+                            self._task_registry.create_task(
                                 self.learning_observer.mark_jarvis_action(entity_id),
                                 name="mark_jarvis_action",
                             )
@@ -1356,7 +1348,7 @@ class AssistantBrain:
         if response_text and any(w in response_text.lower() for w in [
             "warnung", "achtung", "vorsicht", "offen", "alarm", "offline",
         ]):
-            _safe_create_task(
+            self._task_registry.create_task(
                 self.sound_manager.play_event_sound("warning", room=room),
                 name="sound_warning",
             )
@@ -1366,7 +1358,7 @@ class AssistantBrain:
         await self.memory.add_conversation("assistant", response_text)
 
         # Phase 17: Kontext-Persistenz fuer Raumwechsel speichern
-        _safe_create_task(
+        self._task_registry.create_task(
             self._save_cross_room_context(person or "", text, response_text, room or ""),
             name="save_cross_room_ctx",
         )
@@ -1382,7 +1374,7 @@ class AssistantBrain:
 
         # 11. Fakten extrahieren (async im Hintergrund)
         if self.memory_extractor and len(text.split()) > 3:
-            _safe_create_task(
+            self._task_registry.create_task(
                 self._extract_facts_background(
                     text, response_text, person or "unknown", context
                 ),
@@ -1391,7 +1383,7 @@ class AssistantBrain:
 
         # Phase 11.4: Korrektur-Lernen — erkennt Korrekturen und speichert sie
         if self._is_correction(text):
-            _safe_create_task(
+            self._task_registry.create_task(
                 self._handle_correction(text, response_text, person or "unknown"),
                 name="handle_correction",
             )
@@ -1399,7 +1391,7 @@ class AssistantBrain:
         # Phase 8: Action-Logging fuer Anticipation Engine
         for action in executed_actions:
             if isinstance(action.get("result"), dict) and action["result"].get("success"):
-                _safe_create_task(
+                self._task_registry.create_task(
                     self.anticipation.log_action(
                         action["function"], action.get("args", {}), person or ""
                     ),
@@ -1408,13 +1400,13 @@ class AssistantBrain:
 
         # Phase 8: Intent-Extraktion im Hintergrund
         if len(text.split()) > 5:
-            _safe_create_task(
+            self._task_registry.create_task(
                 self._extract_intents_background(text, person or ""),
                 name="extract_intents",
             )
 
         # Phase 8: Personality-Metrics tracken
-        _safe_create_task(
+        self._task_registry.create_task(
             self.personality.track_interaction_metrics(
                 mood=mood_result.get("mood", "neutral"),
                 response_accepted=True,
@@ -1430,7 +1422,7 @@ class AssistantBrain:
         text_l = text.lower()
         is_trivial = any(t in text_l for t in _trivial_q) or len(text.split()) <= 8
         if text.endswith("?") and len(text.split()) > 5 and not is_trivial and not executed_actions:
-            _safe_create_task(
+            self._task_registry.create_task(
                 self.memory.mark_conversation_pending(
                     topic=text[:100], context=response_text[:200], person=person or ""
                 ),
@@ -1471,14 +1463,14 @@ class AssistantBrain:
                 for a in executed_actions
             )
             if all_success:
-                _safe_create_task(
+                self._task_registry.create_task(
                     self.sound_manager.play_event_sound(
                         "confirmed", room=room, volume=tts_data.get("volume")
                     ),
                     name="sound_confirmed",
                 )
             elif any_failed:
-                _safe_create_task(
+                self._task_registry.create_task(
                     self.sound_manager.play_event_sound(
                         "error", room=room, volume=tts_data.get("volume")
                     ),
@@ -3200,18 +3192,27 @@ Regeln:
 
         return predictions
 
-    async def shutdown(self):
-        """Faehrt MindHome Assistant herunter."""
-        await self.ambient_audio.stop()
-        await self.anticipation.stop()
-        await self.intent_tracker.stop()
-        await self.time_awareness.stop()
-        await self.health_monitor.stop()
-        await self.device_health.stop()
-        await self.wellness_advisor.stop()
-        await self.proactive.stop()
-        await self.summarizer.stop()
-        await self.feedback.stop()
+    async def shutdown(self) -> None:
+        """Faehrt MindHome Assistant graceful herunter.
+
+        Reihenfolge: 1) Alle Background-Tasks beenden, 2) Komponenten stoppen,
+        3) Verbindungen schliessen.
+        """
+        logger.info("Shutdown: Beende Background-Tasks...")
+        await self._task_registry.shutdown(timeout=10.0)
+
+        logger.info("Shutdown: Stoppe Komponenten...")
+        for component in [
+            self.ambient_audio, self.anticipation, self.intent_tracker,
+            self.time_awareness, self.health_monitor, self.device_health,
+            self.wellness_advisor, self.proactive, self.summarizer, self.feedback,
+        ]:
+            try:
+                await component.stop()
+            except Exception as e:
+                logger.warning("Shutdown: %s.stop() fehlgeschlagen: %s", type(component).__name__, e)
+
+        logger.info("Shutdown: Schliesse Verbindungen...")
         await self.memory.close()
         await self.ha.close()
         logger.info("MindHome Assistant heruntergefahren")

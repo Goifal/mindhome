@@ -100,9 +100,10 @@ class LearningObserver:
                 "timestamp": now.isoformat(),
             }
 
-            # In Redis-Liste speichern (max 100 letzte Aktionen)
+            # In Redis-Liste speichern (max 500 letzte Aktionen)
             await self.redis.lpush(KEY_MANUAL_ACTIONS, json.dumps(action))
-            await self.redis.ltrim(KEY_MANUAL_ACTIONS, 0, 99)
+            await self.redis.ltrim(KEY_MANUAL_ACTIONS, 0, 499)
+            await self.redis.expire(KEY_MANUAL_ACTIONS, 30 * 86400)
 
             # Pattern-Check: Wurde diese Aktion schon oefter zur gleichen Zeit gemacht?
             await self._check_pattern(action_key, time_slot, entity_id, new_state)
@@ -230,7 +231,8 @@ class LearningObserver:
             "timestamp": datetime.now().isoformat(),
         }
         await self.redis.lpush(KEY_RESPONSES, json.dumps(response))
-        await self.redis.ltrim(KEY_RESPONSES, 0, 49)
+        await self.redis.ltrim(KEY_RESPONSES, 0, 499)
+        await self.redis.expire(KEY_RESPONSES, 30 * 86400)
 
         if not accepted:
             logger.info("Learning: Vorschlag abgelehnt fuer %s um %s", entity_id, time_slot)

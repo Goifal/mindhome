@@ -6,13 +6,24 @@ Qwen 3 Kompatibilitaet:
 - Thinking Mode wird fuer Fast-Tier deaktiviert (spart Latenz)
 """
 
+import asyncio
 import logging
 import re
 from typing import Optional
 
 import aiohttp
 
+from .circuit_breaker import ollama_breaker
 from .config import settings
+from .constants import (
+    LLM_DEFAULT_MAX_TOKENS,
+    LLM_DEFAULT_TEMPERATURE,
+    LLM_TIMEOUT_AVAILABILITY,
+    LLM_TIMEOUT_DEEP,
+    LLM_TIMEOUT_FAST,
+    LLM_TIMEOUT_SMART,
+    LLM_TIMEOUT_STREAM,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -135,18 +146,27 @@ strip_reasoning_leak = validate_notification
 
 
 class OllamaClient:
-    """Asynchroner Client fuer die Ollama REST API."""
+    """Asynchroner Client fuer die Ollama REST API mit per-Model Timeouts."""
 
     def __init__(self):
         self.base_url = settings.ollama_url
+
+    def _get_timeout(self, model: str) -> int:
+        """Berechnet den passenden Timeout je nach Modell-Tier."""
+        if model == settings.model_fast:
+            return LLM_TIMEOUT_FAST
+        elif model == settings.model_deep:
+            return LLM_TIMEOUT_DEEP
+        else:
+            return LLM_TIMEOUT_SMART
 
     async def chat(
         self,
         messages: list[dict],
         model: Optional[str] = None,
         tools: Optional[list] = None,
-        temperature: float = 0.7,
-        max_tokens: int = 256,
+        temperature: float = LLM_DEFAULT_TEMPERATURE,
+        max_tokens: int = LLM_DEFAULT_MAX_TOKENS,
         think: Optional[bool] = None,
     ) -> dict:
         """
@@ -189,18 +209,27 @@ class OllamaClient:
         elif model == settings.model_fast:
             payload["think"] = False
 
+        # Circuit Breaker Check
+        if not ollama_breaker.is_available:
+            logger.warning("Ollama Circuit OPEN — ueberspringe Call")
+            return {"error": "Ollama nicht verfuegbar (Circuit Breaker offen)"}
+
+        timeout = self._get_timeout(model)
+
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.post(
                     f"{self.base_url}/api/chat",
                     json=payload,
-                    timeout=aiohttp.ClientTimeout(total=120),
+                    timeout=aiohttp.ClientTimeout(total=timeout),
                 ) as resp:
                     if resp.status != 200:
                         error = await resp.text()
                         logger.error("Ollama Fehler %d: %s", resp.status, error)
+                        ollama_breaker.record_failure()
                         return {"error": error}
                     result = await resp.json()
+                    ollama_breaker.record_success()
 
                     # Think-Tags aus der Antwort strippen (Sicherheitsnetz)
                     msg = result.get("message", {})
@@ -212,16 +241,21 @@ class OllamaClient:
                         msg["content"] = cleaned
 
                     return result
+        except asyncio.TimeoutError:
+            logger.error("Ollama Timeout nach %ds fuer Modell %s", timeout, model)
+            ollama_breaker.record_failure()
+            return {"error": f"Timeout nach {timeout}s"}
         except aiohttp.ClientError as e:
             logger.error("Ollama nicht erreichbar: %s", e)
+            ollama_breaker.record_failure()
             return {"error": str(e)}
 
     async def stream_chat(
         self,
         messages: list[dict],
         model: Optional[str] = None,
-        temperature: float = 0.7,
-        max_tokens: int = 256,
+        temperature: float = LLM_DEFAULT_TEMPERATURE,
+        max_tokens: int = LLM_DEFAULT_MAX_TOKENS,
         think: Optional[bool] = None,
     ):
         """
@@ -234,6 +268,10 @@ class OllamaClient:
             async for chunk in ollama.stream_chat(messages, model):
                 print(chunk, end="", flush=True)
         """
+        if not ollama_breaker.is_available:
+            logger.warning("Ollama Circuit OPEN — Stream abgebrochen")
+            return
+
         model = model or settings.model_smart
 
         payload = {
@@ -258,7 +296,7 @@ class OllamaClient:
                 async with session.post(
                     f"{self.base_url}/api/chat",
                     json=payload,
-                    timeout=aiohttp.ClientTimeout(total=120),
+                    timeout=aiohttp.ClientTimeout(total=LLM_TIMEOUT_STREAM),
                 ) as resp:
                     if resp.status != 200:
                         error = await resp.text()
@@ -296,15 +334,19 @@ class OllamaClient:
                         if data.get("done"):
                             break
 
+        except asyncio.TimeoutError:
+            logger.error("Ollama Stream Timeout nach %ds", LLM_TIMEOUT_STREAM)
+            ollama_breaker.record_failure()
         except aiohttp.ClientError as e:
             logger.error("Ollama Stream nicht erreichbar: %s", e)
+            ollama_breaker.record_failure()
 
     async def generate(
         self,
         prompt: str,
         model: Optional[str] = None,
-        temperature: float = 0.7,
-        max_tokens: int = 256,
+        temperature: float = LLM_DEFAULT_TEMPERATURE,
+        max_tokens: int = LLM_DEFAULT_MAX_TOKENS,
     ) -> str:
         """
         Sendet eine Generate-Anfrage an Ollama (/api/generate).
@@ -321,7 +363,12 @@ class OllamaClient:
         Returns:
             Generierter Text als String
         """
+        if not ollama_breaker.is_available:
+            logger.warning("Ollama Circuit OPEN — generate() uebersprungen")
+            return ""
+
         model = model or settings.model_smart
+        timeout = self._get_timeout(model)
 
         payload = {
             "model": model,
@@ -338,29 +385,39 @@ class OllamaClient:
                 async with session.post(
                     f"{self.base_url}/api/generate",
                     json=payload,
-                    timeout=aiohttp.ClientTimeout(total=120),
+                    timeout=aiohttp.ClientTimeout(total=timeout),
                 ) as resp:
                     if resp.status != 200:
                         error = await resp.text()
                         logger.error("Ollama Generate Fehler %d: %s", resp.status, error)
                         return ""
                     result = await resp.json()
+                    ollama_breaker.record_success()
                     text = result.get("response", "")
                     return strip_think_tags(text)
+        except asyncio.TimeoutError:
+            logger.error("Ollama Generate Timeout nach %ds fuer Modell %s", timeout, model)
+            ollama_breaker.record_failure()
+            return ""
         except aiohttp.ClientError as e:
             logger.error("Ollama Generate nicht erreichbar: %s", e)
+            ollama_breaker.record_failure()
             return ""
 
     async def is_available(self) -> bool:
-        """Prueft ob Ollama erreichbar ist."""
+        """Prueft ob Ollama erreichbar ist (mit Circuit Breaker Feedback)."""
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.get(
                     f"{self.base_url}/api/tags",
-                    timeout=aiohttp.ClientTimeout(total=5),
+                    timeout=aiohttp.ClientTimeout(total=LLM_TIMEOUT_AVAILABILITY),
                 ) as resp:
-                    return resp.status == 200
+                    available = resp.status == 200
+                    if available:
+                        ollama_breaker.record_success()
+                    return available
         except aiohttp.ClientError:
+            ollama_breaker.record_failure()
             return False
 
     async def list_models(self) -> list[str]:

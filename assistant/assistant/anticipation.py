@@ -95,7 +95,8 @@ class AnticipationEngine:
 
             # In Action-Log speichern (Rolling Window)
             await self.redis.lpush("mha:action_log", entry_json)
-            await self.redis.ltrim("mha:action_log", 0, 4999)  # Max 5000 Eintraege
+            await self.redis.ltrim("mha:action_log", 0, 999)
+            await self.redis.expire("mha:action_log", 30 * 86400)
 
             # Tages-Index fuer schnellen Zugriff
             day_key = f"mha:action_log:{now.strftime('%Y-%m-%d')}"
@@ -454,8 +455,7 @@ class AnticipationEngine:
                     pattern_description, rejections, cooldown_hours,
                 )
 
-            await self.redis.set(key, json.dumps(feedback))
-            await self.redis.expire(key, self.history_days * 86400)
+            await self.redis.setex(key, 30 * 86400, json.dumps(feedback))
         except Exception as e:
             logger.error("Fehler bei Anticipation-Feedback: %s", e)
 

@@ -304,7 +304,7 @@ class FeedbackTracker:
 
         current = await self.get_score(event_type)
         new_score = max(0.0, min(1.0, current + delta))
-        await self.redis.set(f"mha:feedback:score:{event_type}", str(new_score))
+        await self.redis.setex(f"mha:feedback:score:{event_type}", 90 * 86400, str(new_score))
         return new_score
 
     async def _increment_counter(self, event_type: str, counter_name: str):
@@ -339,6 +339,7 @@ class FeedbackTracker:
         await self.redis.lpush(key, entry)
         # Nur die letzten 50 Eintraege behalten
         await self.redis.ltrim(key, 0, 49)
+        await self.redis.expire(key, 90 * 86400)
 
     async def _get_recent_feedback(
         self, event_type: str, limit: int = 5

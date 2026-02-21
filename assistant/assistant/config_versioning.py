@@ -18,7 +18,7 @@ from typing import Optional
 
 import yaml
 
-from .config import yaml_config
+from .config import yaml_config, load_yaml_config
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +27,7 @@ _SNAPSHOT_DIR = _CONFIG_DIR / "snapshots"
 
 
 class ConfigVersioning:
-    """Verwaltet Snapshots und Rollbacks fuer Konfigurationsdateien."""
+    """Verwaltet Snapshots, Rollbacks und Hot-Reload fuer Konfigurationsdateien."""
 
     def __init__(self):
         self._cfg = yaml_config.get("self_optimization", {}).get("rollback", {})
@@ -36,7 +36,7 @@ class ConfigVersioning:
         self._snapshot_on_edit = self._cfg.get("snapshot_on_every_edit", True)
         self._redis = None
 
-    async def initialize(self, redis_client):
+    async def initialize(self, redis_client=None) -> None:
         """Initialisiert mit Redis-Client fuer Metadaten."""
         self._redis = redis_client
         _SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
@@ -82,10 +82,10 @@ class ConfigVersioning:
                 "timestamp": datetime.now().isoformat(),
             }
 
-            await self._redis.lpush(
-                f"mha:config_snapshots:{config_file}",
-                json.dumps(metadata),
-            )
+            key = f"mha:config_snapshots:{config_file}"
+            await self._redis.lpush(key, json.dumps(metadata))
+            # 90 Tage TTL als Sicherheitsnetz (Cleanup passiert auch aktiv)
+            await self._redis.expire(key, 90 * 86400)
 
             await self._cleanup_old_snapshots(config_file)
 
@@ -185,6 +185,44 @@ class ConfigVersioning:
                         logger.debug("Alter Snapshot geloescht: %s", old_path)
                 except (json.JSONDecodeError, KeyError, OSError):
                     pass
+
+    async def reload_config(self) -> dict:
+        """Hot-Reload: Laedt settings.yaml neu ohne Neustart.
+
+        Aktualisiert das globale yaml_config dict mit den neuen Werten.
+        Nicht-kritische Settings werden sofort wirksam.
+
+        Returns: {"success": bool, "changed_keys": list}
+        """
+        try:
+            config_path = _CONFIG_DIR / "settings.yaml"
+            if not config_path.exists():
+                return {"success": False, "message": "settings.yaml nicht gefunden"}
+
+            # Snapshot vor Reload
+            await self.create_snapshot("settings", config_path, reason="pre_reload")
+
+            # Neu laden
+            new_config = load_yaml_config()
+
+            # Aenderungen erkennen
+            changed = []
+            for key in set(list(yaml_config.keys()) + list(new_config.keys())):
+                old_val = yaml_config.get(key)
+                new_val = new_config.get(key)
+                if old_val != new_val:
+                    changed.append(key)
+
+            # Globales yaml_config aktualisieren
+            yaml_config.clear()
+            yaml_config.update(new_config)
+
+            logger.info("Config Hot-Reload: %d Keys geaendert: %s", len(changed), changed)
+            return {"success": True, "changed_keys": changed}
+
+        except Exception as e:
+            logger.error("Config Hot-Reload fehlgeschlagen: %s", e)
+            return {"success": False, "message": str(e)}
 
     def health_status(self) -> dict:
         """Status fuer Diagnostik."""

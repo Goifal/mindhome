@@ -68,11 +68,11 @@ class HealthMonitor:
         self.redis = redis_client
         logger.info("Health Monitor initialisiert (Intervall: %d Min.)", self.check_interval)
 
-    def set_notify_callback(self, callback):
+    def set_notify_callback(self, callback) -> None:
         """Setzt die Callback-Funktion fuer Warnungen."""
         self._notify_callback = callback
 
-    async def start(self):
+    async def start(self) -> None:
         """Startet den periodischen Check-Loop."""
         if not self.enabled:
             logger.info("Health Monitor deaktiviert")
@@ -81,7 +81,7 @@ class HealthMonitor:
         self._task = asyncio.create_task(self._check_loop())
         logger.info("Health Monitor gestartet")
 
-    async def stop(self):
+    async def stop(self) -> None:
         """Stoppt den Check-Loop."""
         self._running = False
         if self._task:
@@ -280,7 +280,7 @@ class HealthMonitor:
                 if now - last_dt < timedelta(hours=self.hydration_interval):
                     return None
 
-            await self.redis.set("mha:health:last_hydration", now.isoformat())
+            await self.redis.setex("mha:health:last_hydration", 86400, now.isoformat())
             return {
                 "entity_id": "health.hydration",
                 "alert_type": "hydration_reminder",

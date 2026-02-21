@@ -761,8 +761,8 @@ class PersonalityEngine:
         try:
             score = await self._redis.get("mha:personality:formality")
             if score is None:
-                await self._redis.set(
-                    "mha:personality:formality", str(self.formality_start)
+                await self._redis.setex(
+                    "mha:personality:formality", 90 * 86400, str(self.formality_start)
                 )
                 return self.formality_start
             return int(float(score))
@@ -782,7 +782,7 @@ class PersonalityEngine:
             current = await self.get_formality_score()
             decay = 0.1 if interaction_based else self.formality_decay
             new_score = max(self.formality_min, current - decay)
-            await self._redis.set("mha:personality:formality", str(new_score))
+            await self._redis.setex("mha:personality:formality", 90 * 86400, str(new_score))
             if not interaction_based:
                 logger.info("Formality-Score: %d -> %.1f (Tages-Decay)", current, new_score)
         except Exception as e:
@@ -887,7 +887,7 @@ class PersonalityEngine:
         # Aktuelle Frage speichern
         await self._redis.lpush(key, f"{now}|{text}")
         await self._redis.ltrim(key, 0, 9)
-        await self._redis.expire(key, 300)
+        await self._redis.expire(key, 90 * 86400)
 
         return None
 
@@ -934,12 +934,12 @@ class PersonalityEngine:
                     )
 
                 # Zaehler zuruecksetzen fuer naechste Runde
-                await self._redis.set(key_pos, "0")
-                await self._redis.set(key_total, "0")
+                await self._redis.setex(key_pos, 90 * 86400, "0")
+                await self._redis.setex(key_total, 90 * 86400, "0")
 
                 # Neuen Level persistieren
-                await self._redis.set(
-                    "mha:personality:sarcasm_level", str(self.sarcasm_level)
+                await self._redis.setex(
+                    "mha:personality:sarcasm_level", 90 * 86400, str(self.sarcasm_level)
                 )
 
         except Exception as e:
@@ -988,7 +988,8 @@ class PersonalityEngine:
                            "stressed": 0.2, "frustrated": 0.1}
             mood_val = mood_scores.get(mood, 0.5)
             await self._redis.lpush("mha:personality:mood_history", str(mood_val))
-            await self._redis.ltrim("mha:personality:mood_history", 0, 99)
+            await self._redis.ltrim("mha:personality:mood_history", 0, 999)
+            await self._redis.expire("mha:personality:mood_history", 30 * 86400)
 
             # Formality Decay: Pro Interaktion (klein) + einmal pro Tag (gross)
             await self.decay_formality(interaction_based=True)

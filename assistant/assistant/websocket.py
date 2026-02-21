@@ -77,12 +77,12 @@ class ConnectionManager:
 ws_manager = ConnectionManager()
 
 
-async def emit_thinking():
+async def emit_thinking() -> None:
     """Signalisiert: Assistant denkt nach."""
     await ws_manager.broadcast("assistant.thinking", {"status": "processing"})
 
 
-async def emit_speaking(text: str, tts_data: dict = None):
+async def emit_speaking(text: str, tts_data: Optional[dict] = None) -> None:
     """Signalisiert: Assistant spricht. Phase 9: Optional mit TTS-Metadaten."""
     data = {"text": text}
     if tts_data:
@@ -93,7 +93,7 @@ async def emit_speaking(text: str, tts_data: dict = None):
     await ws_manager.broadcast("assistant.speaking", data)
 
 
-async def emit_action(function_name: str, args: dict, result: dict):
+async def emit_action(function_name: str, args: dict, result: dict) -> None:
     """Signalisiert: Assistant fuehrt Aktion aus."""
     await ws_manager.broadcast("assistant.action", {
         "function": function_name,
@@ -102,12 +102,12 @@ async def emit_action(function_name: str, args: dict, result: dict):
     })
 
 
-async def emit_listening():
+async def emit_listening() -> None:
     """Signalisiert: Assistant hoert zu."""
     await ws_manager.broadcast("assistant.listening", {"status": "active"})
 
 
-async def emit_sound(sound_event: str, volume: float = 0.5):
+async def emit_sound(sound_event: str, volume: float = 0.5) -> None:
     """Phase 9: Signalisiert einen Sound-Event."""
     await ws_manager.broadcast("assistant.sound", {
         "sound": sound_event,
@@ -115,17 +115,17 @@ async def emit_sound(sound_event: str, volume: float = 0.5):
     })
 
 
-async def emit_stream_start():
+async def emit_stream_start() -> None:
     """Signalisiert: Streaming-Antwort beginnt."""
     await ws_manager.broadcast("assistant.stream_start", {"status": "streaming"})
 
 
-async def emit_stream_token(token: str):
+async def emit_stream_token(token: str) -> None:
     """Sendet ein einzelnes Token der Streaming-Antwort."""
     await ws_manager.broadcast("assistant.stream_token", {"token": token})
 
 
-async def emit_stream_end(full_text: str, tts_data: dict = None):
+async def emit_stream_end(full_text: str, tts_data: Optional[dict] = None) -> None:
     """Signalisiert: Streaming-Antwort komplett."""
     data = {"text": full_text}
     if tts_data:

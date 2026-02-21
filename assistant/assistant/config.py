@@ -91,7 +91,7 @@ if _household.get("primary_user"):
 _ROLE_TO_TRUST = {"owner": 2, "member": 1, "guest": 0}
 
 
-def apply_household_to_config():
+def apply_household_to_config() -> None:
     """Generiert persons.titles und trust_levels.persons aus household.members."""
     household = yaml_config.get("household") or {}
     members = household.get("members") or []

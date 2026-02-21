@@ -25,23 +25,21 @@ import yaml
 
 from .brain import AssistantBrain
 from .config import settings, yaml_config, load_yaml_config
+from .constants import ERROR_BUFFER_MAX_SIZE, RATE_LIMIT_WINDOW, RATE_LIMIT_MAX_REQUESTS
 from .cover_config import load_cover_configs, save_cover_configs
 from .file_handler import (
     allowed_file, ensure_upload_dir,
     get_file_path, save_upload, MAX_FILE_SIZE,
 )
+from .request_context import RequestContextMiddleware, setup_structured_logging, get_request_id
 from .websocket import ws_manager, emit_speaking, emit_stream_start, emit_stream_token, emit_stream_end
 
-# Logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
-    datefmt="%H:%M:%S",
-)
+# Structured Logging (mit Request-ID Support)
+setup_structured_logging()
 logger = logging.getLogger("mindhome-assistant")
 
-# ---- Fehlerspeicher: Ring-Buffer fuer WARNING/ERROR Logs ----
-_error_buffer: deque[dict] = deque(maxlen=200)
+# ---- Fehlerspeicher: Ring-Buffer fuer WARNING/ERROR Logs (2000 statt 200) ----
+_error_buffer: deque[dict] = deque(maxlen=ERROR_BUFFER_MAX_SIZE)
 
 
 class _ErrorBufferHandler(logging.Handler):
@@ -193,10 +191,16 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="MindHome Assistant",
-    description="Lokaler KI-Sprachassistent fuer Home Assistant",
+    description="Lokaler KI-Sprachassistent fuer Home Assistant — OpenAPI Docs unter /docs",
     version="1.4.1",
     lifespan=lifespan,
+    docs_url="/docs",
+    redoc_url="/redoc",
+    openapi_url="/openapi.json",
 )
+
+# Request-ID Tracing Middleware (muss VOR CORS stehen)
+app.add_middleware(RequestContextMiddleware)
 
 # ----- CORS Policy -----
 # Nur lokale Zugriffe erlauben (HA Add-on + lokale Clients)
@@ -221,8 +225,8 @@ from collections import defaultdict as _defaultdict
 
 _rate_limits: dict[str, list[float]] = _defaultdict(list)
 _rate_lock = _asyncio.Lock()
-_RATE_WINDOW = 60        # Sekunden
-_RATE_MAX_REQUESTS = 60  # Max Requests pro Fenster
+_RATE_WINDOW = RATE_LIMIT_WINDOW
+_RATE_MAX_REQUESTS = RATE_LIMIT_MAX_REQUESTS
 
 
 @app.middleware("http")
@@ -2649,6 +2653,103 @@ async def root():
         "docs": "/docs",
         "dashboard": "/ui/",
     }
+
+
+# ----- Kubernetes-ready Health Probes -----
+
+@app.get("/healthz", tags=["probes"])
+async def healthz():
+    """Liveness Probe — Ist der Prozess am Leben?"""
+    return {"status": "alive"}
+
+
+@app.get("/readyz", tags=["probes"])
+async def readyz():
+    """Readiness Probe — Ist der Assistant bereit fuer Requests?"""
+    try:
+        health = await brain.health_check()
+        components = health.get("components", {})
+        redis_ok = components.get("redis") == "connected"
+        ollama_ok = components.get("ollama") == "connected"
+
+        if redis_ok and ollama_ok:
+            return {"status": "ready", "components": components}
+
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            status_code=503,
+            content={"status": "not_ready", "components": components},
+        )
+    except Exception as e:
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            status_code=503,
+            content={"status": "error", "detail": str(type(e).__name__)},
+        )
+
+
+# ----- Prometheus-kompatible Metrics -----
+
+@app.get("/metrics", tags=["monitoring"])
+async def metrics():
+    """Prometheus-Format Metrics Endpoint."""
+    import time as _metrics_time
+
+    lines = []
+
+    # System-Info
+    lines.append("# HELP mindhome_info MindHome Assistant Info")
+    lines.append('# TYPE mindhome_info gauge')
+    lines.append('mindhome_info{version="1.4.1"} 1')
+
+    # Uptime (approximiert ueber Error-Buffer-Laenge)
+    lines.append("# HELP mindhome_error_buffer_size Anzahl Fehler im Ring-Buffer")
+    lines.append("# TYPE mindhome_error_buffer_size gauge")
+    lines.append(f"mindhome_error_buffer_size {len(_error_buffer)}")
+
+    # WebSocket Connections
+    lines.append("# HELP mindhome_websocket_connections Aktive WebSocket-Verbindungen")
+    lines.append("# TYPE mindhome_websocket_connections gauge")
+    lines.append(f"mindhome_websocket_connections {len(ws_manager.active_connections)}")
+
+    # Circuit Breaker Status
+    try:
+        from .circuit_breaker import registry as cb_registry
+        for cb_status in cb_registry.all_status():
+            name = cb_status["name"]
+            state_val = 1 if cb_status["state"] == "closed" else 0
+            lines.append(f'# HELP mindhome_circuit_{name}_closed Circuit Breaker Status')
+            lines.append(f'# TYPE mindhome_circuit_{name}_closed gauge')
+            lines.append(f'mindhome_circuit_{name}_closed {state_val}')
+            lines.append(f'mindhome_circuit_{name}_failures {cb_status["failure_count"]}')
+    except Exception:
+        pass
+
+    # Task Registry Status
+    try:
+        if hasattr(brain, '_task_registry'):
+            lines.append("# HELP mindhome_background_tasks Aktive Background-Tasks")
+            lines.append("# TYPE mindhome_background_tasks gauge")
+            lines.append(f"mindhome_background_tasks {brain._task_registry.task_count}")
+    except Exception:
+        pass
+
+    # Redis Memory (wenn verfuegbar)
+    try:
+        if brain.memory.redis:
+            info = await brain.memory.redis.info("memory")
+            used = info.get("used_memory", 0)
+            lines.append("# HELP mindhome_redis_used_memory_bytes Redis Memory Usage")
+            lines.append("# TYPE mindhome_redis_used_memory_bytes gauge")
+            lines.append(f"mindhome_redis_used_memory_bytes {used}")
+    except Exception:
+        pass
+
+    from fastapi.responses import PlainTextResponse
+    return PlainTextResponse(
+        content="\n".join(lines) + "\n",
+        media_type="text/plain; version=0.0.4; charset=utf-8",
+    )
 
 
 def start():

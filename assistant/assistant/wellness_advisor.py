@@ -140,13 +140,13 @@ class WellnessAdvisor:
 
         if not pc_start:
             # Timer starten
-            await self.redis.set("mha:wellness:pc_start", now.isoformat())
+            await self.redis.setex("mha:wellness:pc_start", 86400, now.isoformat())
             return
 
         try:
             start_dt = datetime.fromisoformat(pc_start)
         except (ValueError, TypeError):
-            await self.redis.set("mha:wellness:pc_start", now.isoformat())
+            await self.redis.setex("mha:wellness:pc_start", 86400, now.isoformat())
             return
 
         minutes = (now - start_dt).total_seconds() / 60
@@ -177,9 +177,9 @@ class WellnessAdvisor:
             f"Du sitzt seit {time_str} am Rechner, Sir. "
             f"Eine kurze Pause waere nicht das Schlechteste.",
         )
-        await self.redis.set("mha:wellness:last_break_reminder", now.isoformat())
+        await self.redis.setex("mha:wellness:last_break_reminder", 86400, now.isoformat())
         # Timer zuruecksetzen damit nach Cooldown nicht sofort wieder feuert
-        await self.redis.set("mha:wellness:pc_start", now.isoformat())
+        await self.redis.setex("mha:wellness:pc_start", 86400, now.isoformat())
 
     # ------------------------------------------------------------------
     # Stress-Intervention
@@ -207,7 +207,7 @@ class WellnessAdvisor:
             except (ValueError, TypeError):
                 pass
 
-        await self.redis.set("mha:wellness:last_stress_nudge", datetime.now().isoformat())
+        await self.redis.setex("mha:wellness:last_stress_nudge", 86400, datetime.now().isoformat())
 
         if stress_level >= 0.7:
             msg = "Sir, der Stresspegel ist deutlich erhoert. Soll ich das Licht etwas dimmen?"
@@ -340,7 +340,7 @@ class WellnessAdvisor:
             logger.debug("Hydration Activity-Check fehlgeschlagen: %s", e)
             return
 
-        await self.redis.set(key, datetime.now().isoformat())
+        await self.redis.setex(key, 86400, datetime.now().isoformat())
         await self._send_nudge(
             "hydration",
             "Sir, ein Glas Wasser waere jetzt keine schlechte Idee.",
