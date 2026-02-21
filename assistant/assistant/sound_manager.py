@@ -77,6 +77,11 @@ class SoundManager:
         self.night_volume_factor = sound_cfg.get("night_volume_factor", 0.4)
         self.sound_base_url = sound_cfg.get("sound_base_url", "/local/sounds")
 
+        # Explizit konfigurierter TTS-Entity und Default-Speaker
+        # Damit nicht bei jedem Aufruf alle HA-Entities durchsucht werden muessen
+        self._configured_tts_entity = sound_cfg.get("tts_entity", "")
+        self._configured_default_speaker = sound_cfg.get("default_speaker", "")
+
         # Volume-Konfiguration
         vol_cfg = yaml_config.get("volume", {})
         self.evening_start = vol_cfg.get("evening_start", 22)
@@ -307,31 +312,50 @@ class SoundManager:
 
     async def _find_default_speaker(self) -> Optional[str]:
         """Findet den Standard-Speaker (kein TV/Receiver)."""
+        # 1. Explizit konfigurierter Default-Speaker
+        if self._configured_default_speaker:
+            return self._configured_default_speaker
+
+        # 2. Automatische Erkennung
         states = await self.ha.get_states()
         if not states:
+            logger.warning("Kein Default-Speaker: get_states() liefert keine Daten")
             return None
         for state in states:
             entity_id = state.get("entity_id", "")
             attributes = state.get("attributes", {})
             if self._is_tts_speaker(entity_id, attributes):
+                logger.info("Default-Speaker automatisch erkannt: %s", entity_id)
                 return entity_id
+        logger.warning("Kein TTS-faehiger Speaker gefunden. "
+                       "Konfiguriere 'sounds.default_speaker' in settings.yaml")
         return None
 
     async def _find_tts_entity(self) -> Optional[str]:
         """Findet die TTS-Entity (Piper bevorzugt)."""
+        # 1. Explizit konfigurierte TTS-Entity
+        if self._configured_tts_entity:
+            return self._configured_tts_entity
+
+        # 2. Automatische Erkennung via HA-States
         states = await self.ha.get_states()
         if not states:
+            logger.warning("Keine TTS-Entity: get_states() liefert keine Daten")
             return None
         # Piper bevorzugen
         for state in states:
             entity_id = state.get("entity_id", "")
             if entity_id.startswith("tts.") and "piper" in entity_id:
+                logger.info("TTS-Entity automatisch erkannt: %s", entity_id)
                 return entity_id
         # Fallback: Erste TTS-Entity
         for state in states:
             entity_id = state.get("entity_id", "")
             if entity_id.startswith("tts."):
+                logger.info("TTS-Entity (Fallback) erkannt: %s", entity_id)
                 return entity_id
+        logger.warning("Keine TTS-Entity gefunden (kein tts.* Entity in HA). "
+                       "Konfiguriere 'sounds.tts_entity' in settings.yaml")
         return None
 
     async def speak_response(
@@ -360,7 +384,7 @@ class SoundManager:
         if not speaker_entity:
             speaker_entity = await self._resolve_speaker(room)
         if not speaker_entity:
-            logger.debug("Kein Speaker fuer Sprachausgabe gefunden")
+            logger.warning("Kein Speaker fuer Sprachausgabe gefunden (room=%s)", room)
             return False
 
         # Volume setzen
