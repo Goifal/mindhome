@@ -24,7 +24,6 @@ PRIORITY_SECURITY = 50
 # Cover-Typen die NIEMALS automatisch gesteuert werden duerfen
 _UNSAFE_COVER_TYPES = {"garage_door", "gate", "door"}
 _UNSAFE_DEVICE_CLASSES = {"garage_door", "gate", "door"}
-_UNSAFE_ENTITY_KEYWORDS = ("garage", "tor", "gate")
 
 
 class CoverControlManager:
