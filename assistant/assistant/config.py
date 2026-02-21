@@ -49,8 +49,14 @@ class Settings(BaseSettings):
 
 
 def load_yaml_config() -> dict:
-    """Laedt settings.yaml"""
+    """Laedt settings.yaml — erzeugt sie aus .example wenn sie fehlt."""
     config_path = Path(__file__).parent.parent / "config" / "settings.yaml"
+    example_path = config_path.with_suffix(".yaml.example")
+
+    if not config_path.exists() and example_path.exists():
+        import shutil
+        shutil.copy2(example_path, config_path)
+
     if config_path.exists():
         with open(config_path) as f:
             return yaml.safe_load(f) or {}

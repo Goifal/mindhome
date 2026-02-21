@@ -857,6 +857,7 @@ class AssistantBrain:
             executed_actions = []
         else:
             # 6b. Einfache Anfragen: Direkt LLM aufrufen (mit Timeout + Fallback)
+            llm_timeout = (yaml_config.get("context") or {}).get("llm_timeout", 60)
             try:
                 response = await asyncio.wait_for(
                     self.ollama.chat(
@@ -864,10 +865,10 @@ class AssistantBrain:
                         model=model,
                         tools=get_assistant_tools(),
                     ),
-                    timeout=30.0,
+                    timeout=float(llm_timeout),
                 )
             except asyncio.TimeoutError:
-                logger.error("LLM Timeout (30s) fuer Modell %s", model)
+                logger.error("LLM Timeout (%ss) fuer Modell %s", llm_timeout, model)
                 # Fallback: Schnelleres Modell versuchen
                 fallback_model = self.model_router.get_fallback_model(model)
                 if fallback_model and fallback_model != model:
@@ -879,7 +880,7 @@ class AssistantBrain:
                                 model=fallback_model,
                                 tools=get_assistant_tools(),
                             ),
-                            timeout=20.0,
+                            timeout=float(llm_timeout * 0.66),
                         )
                         model = fallback_model
                     except (asyncio.TimeoutError, Exception):
