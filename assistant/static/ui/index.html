@@ -1291,6 +1291,21 @@ function fEntityPicker(path, label, domains, hint='') {
     </div>${hint?`<div class="hint">${hint}</div>`:''}</div>`;
 }
 
+// Entity-Picker Single: Auswahl einer einzelnen Entity mit Dropdown-Autocomplete
+function fEntityPickerSingle(path, label, domains, hint='') {
+  const v = getPath(S, path) || '';
+  const domStr = (domains||[]).join(',');
+  return `<div class="form-group"><label>${label}</label>
+    <div class="entity-pick-wrap">
+      <input class="form-input entity-pick-input" value="${esc(String(v))}"
+        data-path="${path}" data-room-map="${path}" data-domains="${domStr}"
+        placeholder="&#128269; Entity suchen..."
+        oninput="entityPickFilter(this,'${domStr}')" onfocus="entityPickFilter(this,'${domStr}')"
+        style="font-family:var(--mono);font-size:13px;">
+      <div class="entity-pick-dropdown" style="display:none;"></div>
+    </div>${hint?`<div class="hint">${hint}</div>`:''}</div>`;
+}
+
 // Room-Entity-Map: Pro Raum eine Entity zuordnen (fuer Speaker, Motion Sensors)
 function fRoomEntityMap(path, label, domains, hint='') {
   const map = getPath(S, path) || {};
@@ -1875,8 +1890,8 @@ function renderVoice() {
   ];
   return sectionWrap('&#128266;', 'Sprachausgabe (TTS)',
     fInfo('Standard-Lautsprecher und TTS-Engine fuer Jarvis. Wenn leer, wird der erste Raum-Speaker verwendet.') +
-    fText('sounds.default_speaker', 'Standard-Lautsprecher', 'z.B. media_player.kuche') +
-    fText('sounds.tts_entity', 'TTS-Engine', 'z.B. tts.piper') +
+    fEntityPickerSingle('sounds.default_speaker', 'Standard-Lautsprecher', ['media_player'], 'Welcher Lautsprecher soll Jarvis standardmaessig nutzen?') +
+    fEntityPickerSingle('sounds.tts_entity', 'TTS-Engine', ['tts'], 'TTS-Service (z.B. tts.piper)') +
     fToggle('tts.ssml_enabled', 'Fortgeschrittene Betonung (SSML)') +
     '<div style="margin:12px 0;font-weight:600;font-size:13px;">Sprechgeschwindigkeit pro Situation</div>' +
     fRange('tts.speed.confirmation', 'Bestaetigung', 50, 200, 5, {50:'Langsam',100:'Normal',150:'Schnell',200:'Sehr schnell'}) +
