@@ -1283,7 +1283,10 @@ class FunctionExecutor:
             ha_state = await self.ha.get_state(entity_id)
             if ha_state:
                 attrs = ha_state.get("attributes", {})
-                current_position = int(attrs.get("current_position", 50))
+                try:
+                    current_position = int(attrs.get("current_position", 50))
+                except (ValueError, TypeError):
+                    current_position = 50
             step = 20
             position = current_position + step if adjust == "up" else current_position - step
             position = max(0, min(100, position))

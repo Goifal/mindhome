@@ -142,7 +142,8 @@ class CoverDomain(DomainPlugin):
                     if conf.enabled is not None and not conf.enabled:
                         return False
         except Exception:
-            pass
+            self.logger.warning("DB-Fehler bei Safety-Check fuer %s — blockiere sicherheitshalber", entity_id)
+            return False  # Fail-safe: bei DB-Fehler nicht automatisieren
 
         return True
 

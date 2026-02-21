@@ -195,7 +195,8 @@ class CoverControlManager:
                 if conf.get("cover_type") in _UNSAFE_COVER_TYPES:
                     return True
         except Exception:
-            pass
+            logger.warning("DB-Fehler bei Garagentor-Check fuer %s — blockiere sicherheitshalber", entity_id)
+            return True  # Fail-safe: bei DB-Fehler als unsicher behandeln
         return False
 
     def _is_cover_enabled(self, entity_id) -> bool:
@@ -205,7 +206,8 @@ class CoverControlManager:
                 conf = self._get_cover_config(session, entity_id)
                 return conf.get("enabled", True)
         except Exception:
-            return True  # Im Zweifel: erlauben
+            logger.warning("DB-Fehler bei enabled-Check fuer %s — blockiere sicherheitshalber", entity_id)
+            return False  # Fail-safe: bei DB-Fehler nicht automatisieren
 
     def set_position(self, entity_id, position, source="manual"):
         """Set cover position (0=closed, 100=open)."""
@@ -626,6 +628,9 @@ class CoverControlManager:
     def check_simulation(self):
         """Presence simulation: random cover movements when away."""
         if not self._is_running:
+            return
+        from routes.covers import is_cover_control_enabled
+        if not is_cover_control_enabled():
             return
         config = self.get_config()
         if not config.get("presence_simulation_enabled"):
