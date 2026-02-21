@@ -211,6 +211,10 @@ class HomeAssistantClient:
         qs = "&".join(params)
         return await self._get_mindhome(f"/api/devices/search?{qs}")
 
+    async def mindhome_get(self, path: str) -> Any:
+        """Oeffentlicher GET auf die MindHome Add-on API (z.B. /api/covers/configs)."""
+        return await self._get_mindhome(path)
+
     # ----- Interne HTTP Methoden mit Retry -----
 
     async def _get_ha(self, path: str) -> Any:

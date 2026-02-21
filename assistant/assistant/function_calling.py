@@ -1144,10 +1144,10 @@ class FunctionExecutor:
 
         # 3. MindHome CoverConfig pruefen (cover_type == garage_door)
         try:
-            configs = await self.ha.api_get("/api/covers/configs")
+            configs = await self.ha.mindhome_get("/api/covers/configs")
             if configs and isinstance(configs, dict):
                 conf = configs.get(entity_id, {})
-                if conf.get("cover_type") == "garage_door":
+                if conf.get("cover_type") in self._EXCLUDED_COVER_CLASSES:
                     return False
         except Exception:
             pass
