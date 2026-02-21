@@ -195,6 +195,15 @@ class CoverControlManager:
             pass
         return False
 
+    def _is_cover_enabled(self, entity_id) -> bool:
+        """Prueft ob ein Cover in der UI als aktiviert markiert ist."""
+        try:
+            with self.get_session() as session:
+                conf = self._get_cover_config(session, entity_id)
+                return conf.get("enabled", True)
+        except Exception:
+            return True  # Im Zweifel: erlauben
+
     def set_position(self, entity_id, position, source="manual"):
         """Set cover position (0=closed, 100=open)."""
         try:
@@ -202,6 +211,12 @@ class CoverControlManager:
             if source != "manual" and self._is_garage_or_gate(entity_id):
                 logger.warning("BLOCKED: %s is a garage/gate — refusing %s control (source: %s)",
                                entity_id, position, source)
+                return False
+
+            # Deaktivierte Covers: nur manuelle Steuerung erlaubt
+            if source != "manual" and not self._is_cover_enabled(entity_id):
+                logger.info("BLOCKED: %s is disabled — refusing %s control (source: %s)",
+                            entity_id, position, source)
                 return False
 
             if source == "manual":
@@ -219,6 +234,12 @@ class CoverControlManager:
     def set_tilt(self, entity_id, tilt, source="manual"):
         """Set cover tilt position (0-100)."""
         try:
+            # Deaktivierte Covers: nur manuelle Steuerung erlaubt
+            if source != "manual" and not self._is_cover_enabled(entity_id):
+                logger.info("BLOCKED: %s is disabled — refusing tilt (source: %s)",
+                            entity_id, source)
+                return False
+
             if source == "manual":
                 self._set_manual_override(entity_id)
             self.ha.call_service("cover", "set_cover_tilt_position", {
@@ -869,7 +890,7 @@ class CoverControlManager:
     # ── Helpers ──────────────────────────────────────────────
 
     def _get_cover_config(self, session, entity_id):
-        """Get per-cover config (facade, floor, type, groups)."""
+        """Get per-cover config (facade, floor, type, groups, enabled)."""
         from models import CoverConfig
         try:
             c = session.query(CoverConfig).filter_by(entity_id=entity_id).first()
@@ -878,6 +899,7 @@ class CoverControlManager:
                     "facade": c.facade,
                     "floor": c.floor,
                     "cover_type": c.cover_type,
+                    "enabled": c.enabled if c.enabled is not None else True,
                     "group_ids": c.group_ids or [],
                 }
         except Exception:

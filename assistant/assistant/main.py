@@ -1686,7 +1686,7 @@ async def ui_get_covers(token: str = ""):
 
 @app.put("/api/ui/covers/{entity_id:path}/type")
 async def ui_set_cover_type(entity_id: str, request: Request, token: str = ""):
-    """Cover-Typ und enabled-Status setzen (lokal gespeichert)."""
+    """Cover-Typ und enabled-Status setzen (lokal + Addon-Sync)."""
     _check_token(token)
     try:
         data = await request.json()
@@ -1697,11 +1697,19 @@ async def ui_set_cover_type(entity_id: str, request: Request, token: str = ""):
             payload["enabled"] = data["enabled"]
         if not payload:
             raise HTTPException(status_code=400, detail="Keine Daten")
+        # 1. Lokal speichern (fuer Assistant-Level _is_safe_cover)
         configs = load_cover_configs()
         if entity_id not in configs:
             configs[entity_id] = {}
         configs[entity_id].update(payload)
         save_cover_configs(configs)
+        # 2. An Addon synchen (fuer Addon-Level set_position/Automationen)
+        try:
+            await brain.ha.mindhome_put(
+                f"/api/covers/{entity_id}/config", payload,
+            )
+        except Exception as sync_err:
+            logger.warning("Cover-Config Sync zum Addon fehlgeschlagen: %s", sync_err)
         return {"success": True, **payload}
     except HTTPException:
         raise
