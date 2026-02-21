@@ -38,7 +38,7 @@ def _get_climate_tool_description() -> str:
             "Heizung steuern: Vorlauftemperatur-Offset zur Heizkurve anpassen. "
             "Positiver Offset = waermer, negativer Offset = kaelter."
         )
-    return "Temperatur in einem Raum aendern"
+    return "Temperatur in einem Raum aendern. Fuer 'waermer' verwende adjust='warmer', fuer 'kaelter' verwende adjust='cooler' (aendert um 1°C)."
 
 
 def _get_climate_tool_parameters() -> dict:
@@ -71,7 +71,12 @@ def _get_climate_tool_parameters() -> dict:
             },
             "temperature": {
                 "type": "number",
-                "description": "Zieltemperatur in Grad Celsius",
+                "description": "Zieltemperatur in Grad Celsius (optional bei adjust='warmer'/'cooler')",
+            },
+            "adjust": {
+                "type": "string",
+                "enum": ["warmer", "cooler"],
+                "description": "Relative Anpassung: 'warmer' = +1°C, 'cooler' = -1°C. Wenn gesetzt, wird temperature ignoriert.",
             },
             "mode": {
                 "type": "string",
@@ -79,7 +84,7 @@ def _get_climate_tool_parameters() -> dict:
                 "description": "Heizmodus (optional)",
             },
         },
-        "required": ["room", "temperature"],
+        "required": ["room"],
     }
 
 
@@ -91,7 +96,7 @@ _ASSISTANT_TOOLS_STATIC = [
         "type": "function",
         "function": {
             "name": "set_light",
-            "description": "Licht in einem Raum ein-/ausschalten oder dimmen",
+            "description": "Licht in einem Raum ein-/ausschalten oder dimmen. Fuer 'heller' verwende state='brighter', fuer 'dunkler' verwende state='dimmer'. Diese passen die Helligkeit relativ um 15% an.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -101,12 +106,12 @@ _ASSISTANT_TOOLS_STATIC = [
                     },
                     "state": {
                         "type": "string",
-                        "enum": ["on", "off"],
-                        "description": "Ein oder aus",
+                        "enum": ["on", "off", "brighter", "dimmer"],
+                        "description": "Ein, aus, heller (+15%) oder dunkler (-15%)",
                     },
                     "brightness": {
                         "type": "integer",
-                        "description": "Helligkeit 0-100 Prozent (optional)",
+                        "description": "Helligkeit 0-100 Prozent (optional, nur bei state='on')",
                     },
                     "transition": {
                         "type": "integer",
@@ -151,7 +156,7 @@ _ASSISTANT_TOOLS_STATIC = [
         "type": "function",
         "function": {
             "name": "set_cover",
-            "description": "Rollladen oder Jalousie steuern. NIEMALS fuer Garagentore verwenden — Garagentore sind keine Rolllaeden!",
+            "description": "Rollladen oder Jalousie steuern. NIEMALS fuer Garagentore verwenden! Fuer 'ein bisschen runter/hoch' verwende adjust='down' oder adjust='up' (aendert um 20%).",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -161,10 +166,15 @@ _ASSISTANT_TOOLS_STATIC = [
                     },
                     "position": {
                         "type": "integer",
-                        "description": "Position 0 (zu) bis 100 (offen)",
+                        "description": "Position 0 (zu) bis 100 (offen). Optional bei adjust.",
+                    },
+                    "adjust": {
+                        "type": "string",
+                        "enum": ["up", "down"],
+                        "description": "Relative Anpassung: 'up' = +20% (offener), 'down' = -20% (weiter zu). Wenn gesetzt, wird position ignoriert.",
                     },
                 },
-                "required": ["room", "position"],
+                "required": ["room"],
             },
         },
     },
@@ -980,6 +990,23 @@ class FunctionExecutor:
         if not entity_id:
             return {"success": False, "message": f"Kein Licht in '{room}' gefunden"}
 
+        # Relative Helligkeit: brighter/dimmer
+        if state in ("brighter", "dimmer"):
+            current_brightness = 50  # Fallback
+            ha_state = await self.ha.get_state(entity_id)
+            if ha_state and ha_state.get("state") == "on":
+                attrs = ha_state.get("attributes", {})
+                # HA gibt brightness als 0-255 zurueck
+                raw = attrs.get("brightness", 128)
+                current_brightness = round(raw / 255 * 100)
+            step = 15
+            new_brightness = current_brightness + step if state == "brighter" else current_brightness - step
+            new_brightness = max(5, min(100, new_brightness))
+            service_data = {"entity_id": entity_id, "brightness_pct": new_brightness}
+            success = await self.ha.call_service("light", "turn_on", service_data)
+            direction = "heller" if state == "brighter" else "dunkler"
+            return {"success": success, "message": f"Licht {room} {direction} auf {new_brightness}%"}
+
         service_data = {"entity_id": entity_id}
         if "brightness" in args and state == "on":
             service_data["brightness_pct"] = args["brightness"]
@@ -1077,19 +1104,41 @@ class FunctionExecutor:
         return {"success": success, "message": f"Heizung: Offset {sign}{offset}°C (Vorlauf {new_temp}°C)"}
 
     async def _exec_set_climate_room(self, args: dict) -> dict:
-        """Raumthermostat-Modus: Temperatur pro Raum setzen (wie bisher)."""
+        """Raumthermostat-Modus: Temperatur pro Raum setzen."""
         room = args["room"]
-        temp = args["temperature"]
         entity_id = await self._find_entity("climate", room)
         if not entity_id:
             return {"success": False, "message": f"Kein Thermostat in '{room}' gefunden"}
+
+        # Relative Anpassung: warmer/cooler
+        adjust = args.get("adjust")
+        if adjust in ("warmer", "cooler"):
+            ha_state = await self.ha.get_state(entity_id)
+            current_temp = 21.0  # Fallback
+            if ha_state:
+                attrs = ha_state.get("attributes", {})
+                current_temp = float(attrs.get("temperature", 21.0))
+            step = 1.0
+            temp = current_temp + step if adjust == "warmer" else current_temp - step
+            # Sicherheitsgrenzen
+            security = yaml_config.get("security", {}).get("climate_limits", {})
+            temp = max(security.get("min", 5), min(security.get("max", 30), temp))
+        elif "temperature" in args:
+            temp = args["temperature"]
+        else:
+            return {"success": False, "message": "Keine Temperatur angegeben"}
 
         service_data = {"entity_id": entity_id, "temperature": temp}
         if "mode" in args:
             service_data["hvac_mode"] = args["mode"]
 
         success = await self.ha.call_service("climate", "set_temperature", service_data)
-        return {"success": success, "message": f"{room} auf {temp}°C"}
+        direction = ""
+        if adjust == "warmer":
+            direction = "waermer auf "
+        elif adjust == "cooler":
+            direction = "kaelter auf "
+        return {"success": success, "message": f"{room} {direction}{temp}°C"}
 
     async def _exec_activate_scene(self, args: dict) -> dict:
         scene = args["scene"]
@@ -1105,16 +1154,34 @@ class FunctionExecutor:
 
     async def _exec_set_cover(self, args: dict) -> dict:
         room = args["room"]
-        try:
-            position = max(0, min(100, int(args["position"])))
-        except (ValueError, TypeError):
-            return {"success": False, "message": f"Ungueltige Position: {args.get('position')}"}
+
+        entity_id = await self._find_entity("cover", room)
+
+        # Relative Anpassung: up/down
+        adjust = args.get("adjust")
+        if adjust in ("up", "down"):
+            if not entity_id:
+                return {"success": False, "message": f"Kein Rollladen in '{room}' gefunden"}
+            current_position = 50  # Fallback
+            ha_state = await self.ha.get_state(entity_id)
+            if ha_state:
+                attrs = ha_state.get("attributes", {})
+                current_position = int(attrs.get("current_position", 50))
+            step = 20
+            position = current_position + step if adjust == "up" else current_position - step
+            position = max(0, min(100, position))
+        elif "position" in args:
+            try:
+                position = max(0, min(100, int(args["position"])))
+            except (ValueError, TypeError):
+                return {"success": False, "message": f"Ungueltige Position: {args.get('position')}"}
+        else:
+            return {"success": False, "message": "Keine Position angegeben"}
 
         # Sonderfall: "all" -> alle Rolllaeden schalten
         if room.lower() == "all":
             return await self._exec_set_cover_all(position)
 
-        entity_id = await self._find_entity("cover", room)
         if not entity_id:
             return {"success": False, "message": f"Kein Rollladen in '{room}' gefunden"}
 
@@ -1128,7 +1195,12 @@ class FunctionExecutor:
             "cover", "set_cover_position",
             {"entity_id": entity_id, "position": position},
         )
-        return {"success": success, "message": f"Rollladen {room} auf {position}%"}
+        direction = ""
+        if adjust == "up":
+            direction = "hoch auf "
+        elif adjust == "down":
+            direction = "runter auf "
+        return {"success": success, "message": f"Rollladen {room} {direction}{position}%"}
 
     # Garagentore und andere gefaehrliche Cover-Typen NIEMALS automatisch steuern
     _EXCLUDED_COVER_CLASSES = {"garage_door", "gate", "door"}
