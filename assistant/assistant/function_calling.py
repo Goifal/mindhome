@@ -6,6 +6,7 @@ Phase 10: Room-aware TTS, Person Messaging, Trust-Level Pre-Check.
 """
 
 import logging
+import re
 from pathlib import Path
 from typing import Any, Optional
 
@@ -1217,9 +1218,12 @@ class FunctionExecutor:
         if device_class in self._EXCLUDED_COVER_CLASSES:
             return False
 
-        # 2. Entity-ID Heuristik (garage, tor, gate)
+        # 2. Entity-ID Heuristik (garage, tor, gate) — Word-Boundary fuer 'tor'
+        #    damit 'motor', 'monitor' etc. nicht faelschlich matchen
         eid_lower = entity_id.lower()
-        if any(kw in eid_lower for kw in ("garage", "tor", "gate")):
+        if "garage" in eid_lower or "gate" in eid_lower:
+            return False
+        if re.search(r'(?:^|[_.\s])tor(?:$|[_.\s])', eid_lower):
             return False
 
         # 3. Lokale CoverConfig pruefen (cover_type + enabled)
@@ -1270,6 +1274,16 @@ class FunctionExecutor:
 
         return {"success": True, "message": msg}
 
+    # Erlaubte Service-Data Keys fuer _exec_call_service (Whitelist)
+    _CALL_SERVICE_ALLOWED_KEYS = frozenset({
+        "brightness", "brightness_pct", "color_temp", "rgb_color", "hs_color",
+        "temperature", "target_temp_high", "target_temp_low", "hvac_mode",
+        "position", "tilt_position",
+        "volume_level", "media_content_id", "media_content_type", "source",
+        "message", "title", "data",
+        "option", "value", "code",
+    })
+
     async def _exec_call_service(self, args: dict) -> dict:
         """Generischer HA Service-Aufruf (fuer Routinen wie Guest WiFi)."""
         domain = args.get("domain", "")
@@ -1286,9 +1300,9 @@ class FunctionExecutor:
                 return {"success": False, "message": f"Sicherheitssperre: '{entity_id}' ist ein Garagentor/Tor und darf nicht automatisch gesteuert werden."}
 
         service_data = {"entity_id": entity_id} if entity_id else {}
-        # Weitere Service-Daten aus args uebernehmen
+        # Nur erlaubte Service-Data Keys uebernehmen (Whitelist)
         for k, v in args.items():
-            if k not in ("domain", "service", "entity_id"):
+            if k in self._CALL_SERVICE_ALLOWED_KEYS:
                 service_data[k] = v
         success = await self.ha.call_service(domain, service, service_data)
         return {"success": success, "message": f"{domain}.{service} ausgefuehrt"}

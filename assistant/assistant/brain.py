@@ -72,6 +72,22 @@ from .websocket import emit_thinking, emit_speaking, emit_action, emit_proactive
 
 logger = logging.getLogger(__name__)
 
+
+def _safe_create_task(coro, *, name: str = ""):
+    """Erstellt einen asyncio.Task mit Error-Logging (kein stilles Verschlucken)."""
+    task = asyncio.create_task(coro, name=name or None)
+
+    def _on_done(t: asyncio.Task):
+        if t.cancelled():
+            return
+        exc = t.exception()
+        if exc:
+            logger.error("Fire-and-forget Task %r fehlgeschlagen: %s", t.get_name(), exc, exc_info=exc)
+
+    task.add_done_callback(_on_done)
+    return task
+
+
 # Audit-Log (gleicher Pfad wie main.py, fuer Chat-basierte Sicherheitsevents)
 _AUDIT_LOG_PATH = Path(__file__).parent.parent / "logs" / "audit.jsonl"
 
@@ -245,7 +261,7 @@ class AssistantBrain:
         await self.personality.load_learned_sarcasm_level()
 
         # Fact Decay: Einmal taeglich alte Fakten abbauen
-        asyncio.create_task(self._run_daily_fact_decay())
+        _safe_create_task(self._run_daily_fact_decay(), name="daily_fact_decay")
 
         # Memory Extractor initialisieren
         self.memory_extractor = MemoryExtractor(self.ollama, self.memory.semantic)
@@ -350,8 +366,9 @@ class AssistantBrain:
     ):
         """Sendet Text per WebSocket UND spricht ihn ueber HA-Speaker aus."""
         await emit_speaking(text, tts_data=tts_data)
-        asyncio.create_task(
-            self.sound_manager.speak_response(text, room=room, tts_data=tts_data)
+        _safe_create_task(
+            self.sound_manager.speak_response(text, room=room, tts_data=tts_data),
+            name="speak_response",
         )
 
     async def process(self, text: str, person: Optional[str] = None, room: Optional[str] = None, files: Optional[list] = None, stream_callback=None) -> dict:
@@ -401,8 +418,9 @@ class AssistantBrain:
 
         # Phase 9: Speaker Recognition — Person ermitteln wenn nicht angegeben
         if person:
-            asyncio.create_task(
-                self.speaker_recognition.set_current_speaker(person.lower())
+            _safe_create_task(
+                self.speaker_recognition.set_current_speaker(person.lower()),
+                name="set_speaker",
             )
         elif self.speaker_recognition.enabled:
             identified = await self.speaker_recognition.identify(room=room)
@@ -590,8 +608,9 @@ class AssistantBrain:
             }
 
         # Phase 9: "listening" Sound abspielen wenn Verarbeitung startet
-        asyncio.create_task(
-            self.sound_manager.play_event_sound("listening", room=room)
+        _safe_create_task(
+            self.sound_manager.play_event_sound("listening", room=room),
+            name="sound_listening",
         )
 
         # Phase 6.9: Running Gag Check (VOR LLM)
@@ -1063,8 +1082,9 @@ class AssistantBrain:
                                 domain = func_name.replace("set_", "")
                                 entity_id = f"{domain}.{r.lower().replace(' ', '_')}"
                         if entity_id:
-                            asyncio.create_task(
-                                self.learning_observer.mark_jarvis_action(entity_id)
+                            _safe_create_task(
+                                self.learning_observer.mark_jarvis_action(entity_id),
+                                name="mark_jarvis_action",
                             )
 
                     # Befehl fuer Konflikt-Tracking aufzeichnen
@@ -1272,8 +1292,9 @@ class AssistantBrain:
         if response_text and any(w in response_text.lower() for w in [
             "warnung", "achtung", "vorsicht", "offen", "alarm", "offline",
         ]):
-            asyncio.create_task(
-                self.sound_manager.play_event_sound("warning", room=room)
+            _safe_create_task(
+                self.sound_manager.play_event_sound("warning", room=room),
+                name="sound_warning",
             )
 
         # 9. Im Gedaechtnis speichern
@@ -1281,8 +1302,9 @@ class AssistantBrain:
         await self.memory.add_conversation("assistant", response_text)
 
         # Phase 17: Kontext-Persistenz fuer Raumwechsel speichern
-        asyncio.create_task(
-            self._save_cross_room_context(person or "", text, response_text, room or "")
+        _safe_create_task(
+            self._save_cross_room_context(person or "", text, response_text, room or ""),
+            name="save_cross_room_ctx",
         )
 
         # 10. Episode speichern (Langzeitgedaechtnis)
@@ -1296,47 +1318,53 @@ class AssistantBrain:
 
         # 11. Fakten extrahieren (async im Hintergrund)
         if self.memory_extractor and len(text.split()) > 3:
-            asyncio.create_task(
+            _safe_create_task(
                 self._extract_facts_background(
                     text, response_text, person or "unknown", context
-                )
+                ),
+                name="extract_facts",
             )
 
         # Phase 11.4: Korrektur-Lernen — erkennt Korrekturen und speichert sie
         if self._is_correction(text):
-            asyncio.create_task(
-                self._handle_correction(text, response_text, person or "unknown")
+            _safe_create_task(
+                self._handle_correction(text, response_text, person or "unknown"),
+                name="handle_correction",
             )
 
         # Phase 8: Action-Logging fuer Anticipation Engine
         for action in executed_actions:
             if isinstance(action.get("result"), dict) and action["result"].get("success"):
-                asyncio.create_task(
+                _safe_create_task(
                     self.anticipation.log_action(
                         action["function"], action.get("args", {}), person or ""
-                    )
+                    ),
+                    name="log_anticipation",
                 )
 
         # Phase 8: Intent-Extraktion im Hintergrund
         if len(text.split()) > 5:
-            asyncio.create_task(
-                self._extract_intents_background(text, person or "")
+            _safe_create_task(
+                self._extract_intents_background(text, person or ""),
+                name="extract_intents",
             )
 
         # Phase 8: Personality-Metrics tracken
-        asyncio.create_task(
+        _safe_create_task(
             self.personality.track_interaction_metrics(
                 mood=mood_result.get("mood", "neutral"),
                 response_accepted=True,
-            )
+            ),
+            name="track_metrics",
         )
 
         # Phase 8: Offenes Thema markieren (wenn Frage ohne klare Antwort)
         if text.endswith("?") and len(text.split()) > 5:
-            asyncio.create_task(
+            _safe_create_task(
                 self.memory.mark_conversation_pending(
                     topic=text[:100], context=response_text[:200], person=person or ""
-                )
+                ),
+                name="mark_pending",
             )
 
         # Phase 9+10: Activity-basiertes Volume + Silence-Matrix
@@ -1373,16 +1401,18 @@ class AssistantBrain:
                 for a in executed_actions
             )
             if all_success:
-                asyncio.create_task(
+                _safe_create_task(
                     self.sound_manager.play_event_sound(
                         "confirmed", room=room, volume=tts_data.get("volume")
-                    )
+                    ),
+                    name="sound_confirmed",
                 )
             elif any_failed:
-                asyncio.create_task(
+                _safe_create_task(
                     self.sound_manager.play_event_sound(
                         "error", room=room, volume=tts_data.get("volume")
-                    )
+                    ),
+                    name="sound_error",
                 )
 
         result = {

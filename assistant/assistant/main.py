@@ -144,6 +144,16 @@ async def _boot_announcement(brain_instance: "AssistantBrain", health_data: dict
             pass
 
 
+async def _periodic_token_cleanup():
+    """Raumt abgelaufene UI-Tokens alle 15 Minuten auf."""
+    while True:
+        await asyncio.sleep(900)  # 15 Minuten
+        try:
+            _cleanup_expired_tokens()
+        except Exception as e:
+            logger.debug("Token-Cleanup Fehler: %s", e)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup und Shutdown."""
@@ -168,10 +178,15 @@ async def lifespan(app: FastAPI):
     # Boot-Sequenz: Jarvis kuendigt sich an
     boot_cfg = yaml_config.get("boot_sequence", {})
     if boot_cfg.get("enabled", True):
-        asyncio.create_task(_boot_announcement(brain, health, boot_cfg))
+        task = asyncio.create_task(_boot_announcement(brain, health, boot_cfg))
+        task.add_done_callback(lambda t: t.exception() and logger.error("Boot-Sequenz Task Fehler: %s", t.exception()))
+
+    # Periodischer Token-Cleanup (alle 15 Min)
+    cleanup_task = asyncio.create_task(_periodic_token_cleanup())
 
     yield
 
+    cleanup_task.cancel()
     await brain.shutdown()
     logger.info("MindHome Assistant heruntergefahren.")
 
@@ -201,9 +216,11 @@ app.add_middleware(
 
 # ----- Rate-Limiting (in-memory, pro IP) -----
 import time as _time
+import asyncio as _asyncio
 from collections import defaultdict as _defaultdict
 
 _rate_limits: dict[str, list[float]] = _defaultdict(list)
+_rate_lock = _asyncio.Lock()
 _RATE_WINDOW = 60        # Sekunden
 _RATE_MAX_REQUESTS = 60  # Max Requests pro Fenster
 
@@ -214,22 +231,23 @@ async def auth_header_middleware(request: Request, call_next):
     auth = request.headers.get("authorization", "")
     if auth.startswith("Bearer ") and "token=" not in str(request.url):
         token = auth[7:]
-        # Inject token into query params for FastAPI parameter resolution
+        # URL-encode token to prevent parameter injection (e.g. token containing '&admin=true')
+        from urllib.parse import quote
+        safe_token = quote(token, safe="")
         scope = request.scope
         qs = scope.get("query_string", b"").decode()
         sep = "&" if qs else ""
-        scope["query_string"] = f"{qs}{sep}token={token}".encode()
+        scope["query_string"] = f"{qs}{sep}token={safe_token}".encode()
     return await call_next(request)
 
 
 # ----- API Key Authentication fuer /api/assistant/* Endpoints -----
 # Schuetzt alle Assistant-API-Endpoints gegen unautorisierte Netzwerkzugriffe.
 #
-# WICHTIG: Key wird beim ersten Start auto-generiert und bereitgehalten,
-# aber NUR enforced wenn security.api_key_required = true in settings.yaml.
-# Grund: Addon und HA-Integration laufen auf separaten Systemen und kennen
-# den Key nicht automatisch. Der User muss den Key erst dort eintragen
-# und dann die Pruefung im Dashboard aktivieren.
+# WICHTIG: Key wird beim ersten Start auto-generiert.
+# Enforcement ist per Default AKTIV (sicher). User kann es mit
+# security.api_key_required: false in settings.yaml deaktivieren,
+# falls Addon den Key noch nicht kennt.
 #
 # Key-Quellen (Prioritaet): 1. Env ASSISTANT_API_KEY  2. settings.yaml security.api_key  3. Auto-generiert
 
@@ -255,7 +273,8 @@ def _init_api_key():
     global _assistant_api_key, _api_key_required
 
     security_cfg = yaml_config.get("security", {})
-    _api_key_required = security_cfg.get("api_key_required", False)
+    # Default: ON (sicher), User kann es explizit mit api_key_required: false deaktivieren
+    _api_key_required = security_cfg.get("api_key_required", True)
 
     # 1. Env-Variable hat hoechste Prioritaet
     env_key = os.getenv("ASSISTANT_API_KEY", "").strip()
@@ -280,7 +299,7 @@ def _init_api_key():
         )
         return
 
-    # 3. Auto-generieren und in settings.yaml speichern (Enforcement bleibt aus)
+    # 3. Auto-generieren und in settings.yaml speichern (Enforcement aktiv per Default)
     _assistant_api_key = secrets.token_urlsafe(32)
     try:
         config_path = Path(__file__).parent.parent / "config" / "settings.yaml"
@@ -288,12 +307,11 @@ def _init_api_key():
             cfg = yaml.safe_load(f) or {}
         security = cfg.setdefault("security", {})
         security["api_key"] = _assistant_api_key
-        # api_key_required bewusst NICHT auf true setzen
         if "api_key_required" not in security:
-            security["api_key_required"] = False
+            security["api_key_required"] = True
         with open(config_path, "w") as f:
             yaml.safe_dump(cfg, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
-        logger.info("API Key auto-generiert (Enforcement INAKTIV bis im Dashboard aktiviert)")
+        logger.info("API Key auto-generiert und in settings.yaml gespeichert (Enforcement AKTIV)")
     except Exception as e:
         logger.warning("API Key konnte nicht in settings.yaml gespeichert werden: %s", e)
 
@@ -343,23 +361,26 @@ async def api_key_middleware(request: Request, call_next):
 
 @app.middleware("http")
 async def rate_limit_middleware(request: Request, call_next):
-    """Einfaches Rate-Limiting pro Client-IP."""
+    """Einfaches Rate-Limiting pro Client-IP (thread-safe via Lock)."""
     client_ip = request.client.host if request.client else "unknown"
-    now = _time.time()
 
-    # Alte Eintraege bereinigen
-    _rate_limits[client_ip] = [
-        t for t in _rate_limits[client_ip] if now - t < _RATE_WINDOW
-    ]
+    async with _rate_lock:
+        now = _time.time()
 
-    if len(_rate_limits[client_ip]) >= _RATE_MAX_REQUESTS:
-        from fastapi.responses import JSONResponse
-        return JSONResponse(
-            status_code=429,
-            content={"detail": "Zu viele Anfragen. Bitte warten."},
-        )
+        # Alte Eintraege bereinigen
+        _rate_limits[client_ip] = [
+            t for t in _rate_limits[client_ip] if now - t < _RATE_WINDOW
+        ]
 
-    _rate_limits[client_ip].append(now)
+        if len(_rate_limits[client_ip]) >= _RATE_MAX_REQUESTS:
+            from fastapi.responses import JSONResponse
+            return JSONResponse(
+                status_code=429,
+                content={"detail": "Zu viele Anfragen. Bitte warten."},
+            )
+
+        _rate_limits[client_ip].append(now)
+
     return await call_next(request)
 
 
@@ -1268,15 +1289,31 @@ async def ui_auth(req: PinRequest):
 
     # Vergleich: Env-PIN (Klartext, timing-safe) oder gehashter PIN aus YAML
     env_pin = os.environ.get("JARVIS_UI_PIN")
+    legacy_migration = False
     if env_pin:
         valid = secrets.compare_digest(req.pin, env_pin)
     else:
         stored_hash = _get_dashboard_config().get("pin_hash", "")
         valid = (stored_hash and _verify_hash(req.pin, stored_hash))
+        # Legacy-Migration: SHA-256 ohne Salt → PBKDF2 mit Salt
+        if valid and stored_hash and ":" not in stored_hash:
+            legacy_migration = True
 
     if not valid:
         _audit_log("login", {"success": False})
         raise HTTPException(status_code=401, detail="Falscher PIN")
+
+    # Legacy-PIN-Hash automatisch auf PBKDF2 upgraden
+    if legacy_migration:
+        try:
+            new_hash = _hash_value(req.pin)
+            dc = _get_dashboard_config()
+            recovery_hash = dc.get("recovery_key_hash", "")
+            _save_dashboard_config(new_hash, recovery_hash, setup_complete=True)
+            logger.info("Dashboard: Legacy PIN-Hash auf PBKDF2 migriert")
+            _audit_log("pin_hash_migrated", {"from": "sha256", "to": "pbkdf2"})
+        except Exception as e:
+            logger.warning("PIN-Hash Migration fehlgeschlagen: %s", e)
 
     token = hashlib.sha256(f"{req.pin}{datetime.now().isoformat()}{secrets.token_hex(8)}".encode()).hexdigest()[:32]
     _active_tokens[token] = datetime.now(timezone.utc).timestamp()
@@ -1929,7 +1966,15 @@ _NO_CACHE_HEADERS = {"Cache-Control": "no-cache, no-store, must-revalidate", "Pr
 
 @app.get("/ui/{path:path}")
 async def ui_serve(path: str = ""):
-    """Jarvis Dashboard — Single-Page App."""
+    """Jarvis Dashboard — Single-Page App + statische Assets (JS/CSS)."""
+    # Statische Assets (app.js, *.css etc.) direkt ausliefern
+    if path and not path.endswith("/"):
+        asset = _ui_static_dir / path
+        if asset.is_file() and asset.resolve().is_relative_to(_ui_static_dir.resolve()):
+            media_types = {".js": "application/javascript", ".css": "text/css", ".png": "image/png", ".svg": "image/svg+xml"}
+            mt = media_types.get(asset.suffix, None)
+            return FileResponse(asset, media_type=mt, headers=_NO_CACHE_HEADERS)
+    # SPA-Fallback: immer index.html
     index_path = _ui_static_dir / "index.html"
     if index_path.exists():
         return FileResponse(index_path, media_type="text/html", headers=_NO_CACHE_HEADERS)
