@@ -98,20 +98,20 @@ class TTSEnhancer:
 
         # Volume Konfiguration
         vol_cfg = yaml_config.get("volume", {})
-        self.vol_day = vol_cfg.get("day", 0.8)
-        self.vol_evening = vol_cfg.get("evening", 0.5)
-        self.vol_night = vol_cfg.get("night", 0.3)
-        self.vol_sleeping = vol_cfg.get("sleeping", 0.2)
-        self.vol_emergency = vol_cfg.get("emergency", 1.0)
-        self.vol_whisper = vol_cfg.get("whisper", 0.15)
-        self.evening_start = vol_cfg.get("evening_start", 22)
-        self.night_start = vol_cfg.get("night_start", 0)
-        self.morning_start = vol_cfg.get("morning_start", 7)
+        self.vol_day = float(vol_cfg.get("day", 0.8))
+        self.vol_evening = float(vol_cfg.get("evening", 0.5))
+        self.vol_night = float(vol_cfg.get("night", 0.3))
+        self.vol_sleeping = float(vol_cfg.get("sleeping", 0.2))
+        self.vol_emergency = float(vol_cfg.get("emergency", 1.0))
+        self.vol_whisper = float(vol_cfg.get("whisper", 0.15))
+        self.evening_start = int(vol_cfg.get("evening_start", 22))
+        self.night_start = int(vol_cfg.get("night_start", 0))
+        self.morning_start = int(vol_cfg.get("morning_start", 7))
 
         # Auto-Nacht-Whisper: Automatisch Fluestern zwischen bestimmten Uhrzeiten
         self.auto_night_whisper = tts_cfg.get("auto_night_whisper", True)
-        self.auto_whisper_start = vol_cfg.get("auto_whisper_start", 23)
-        self.auto_whisper_end = vol_cfg.get("auto_whisper_end", 6)
+        self.auto_whisper_start = int(vol_cfg.get("auto_whisper_start", 23))
+        self.auto_whisper_end = int(vol_cfg.get("auto_whisper_end", 6))
 
         # Zustand
         self._whisper_mode = False
