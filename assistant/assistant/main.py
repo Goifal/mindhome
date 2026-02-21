@@ -1105,6 +1105,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 if event == "assistant.text":
                     text = message.get("data", {}).get("text", "")
                     person = message.get("data", {}).get("person")
+                    room = message.get("data", {}).get("room")
                     voice_meta = message.get("data", {}).get("voice_metadata")
                     use_stream = message.get("data", {}).get("stream", False)
                     if text:
@@ -1116,14 +1117,14 @@ async def websocket_endpoint(websocket: WebSocket):
                             # Streaming: Token-fuer-Token an Client senden
                             await emit_stream_start()
                             result = await brain.process(
-                                text, person,
+                                text, person, room=room,
                                 stream_callback=emit_stream_token,
                             )
                             tts_data = result.get("tts")
                             await emit_stream_end(result["response"], tts_data=tts_data)
                         else:
                             # brain.process() sendet intern via _speak_and_emit
-                            result = await brain.process(text, person)
+                            result = await brain.process(text, person, room=room)
 
                 elif event == "assistant.feedback":
                     # Phase 5: Feedback ueber FeedbackTracker verarbeiten

@@ -458,8 +458,21 @@ speaker_recognition:
 multi_room:
   enabled: true
   presence_timeout_minutes: 15
-  room_speakers: null
-  room_motion_sensors: null
+  auto_follow: false  # Musik folgt automatisch in neuen Raum (ab Autonomie-Level 4)
+  # Speaker pro Raum — fuer TTS-Routing und Musik-Follow
+  room_speakers:
+    # wohnzimmer: media_player.wohnzimmer_echo
+    # schlafzimmer: media_player.schlafzimmer_echo
+    # kueche: media_player.kueche_echo
+    # buero: media_player.buero_echo
+    null
+  # Praesenzmelder pro Raum — fuer automatische Raumerkennung
+  room_motion_sensors:
+    # wohnzimmer: binary_sensor.motion_wohnzimmer
+    # schlafzimmer: binary_sensor.occupancy_schlafzimmer
+    # kueche: binary_sensor.motion_kueche
+    # buero: binary_sensor.motion_buero
+    null
 person_profiles:
   profiles: null
 trust_levels:

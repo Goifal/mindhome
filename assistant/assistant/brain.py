@@ -350,13 +350,76 @@ class AssistantBrain(BrainCallbacksMixin):
         await self.proactive.start()
         logger.info("Jarvis initialisiert (alle Systeme aktiv, inkl. Phase 17)")
 
+    async def _get_occupied_room(self) -> Optional[str]:
+        """Ermittelt den aktuell besetzten Raum anhand von Praesenzmeldern.
+
+        Prueft zuerst konfigurierte room_motion_sensors (mit Timeout),
+        dann Fallback auf allgemeine Motion-Sensor-Heuristik.
+        """
+        try:
+            states = await self.ha.get_states()
+            if not states:
+                return None
+
+            multi_room_cfg = yaml_config.get("multi_room", {})
+            if not multi_room_cfg.get("enabled", True):
+                return None
+
+            room_sensors = multi_room_cfg.get("room_motion_sensors", {})
+            if room_sensors:
+                # Konfigurierte Sensoren: Neuesten aktiven Raum finden
+                timeout_minutes = int(multi_room_cfg.get("presence_timeout_minutes", 15))
+                now = datetime.now()
+                best_room = None
+                best_changed = ""
+
+                for room_name, sensor_id in room_sensors.items():
+                    for s in states:
+                        if s.get("entity_id") != sensor_id:
+                            continue
+                        last_changed = s.get("last_changed", "")
+                        if s.get("state") == "on":
+                            if last_changed > best_changed:
+                                best_changed = last_changed
+                                best_room = room_name
+                        elif last_changed:
+                            try:
+                                changed = datetime.fromisoformat(
+                                    last_changed.replace("Z", "+00:00")
+                                ).replace(tzinfo=None)
+                                if (now - changed).total_seconds() / 60 < timeout_minutes:
+                                    if last_changed > best_changed:
+                                        best_changed = last_changed
+                                        best_room = room_name
+                            except (ValueError, TypeError):
+                                pass
+                        break
+
+                if best_room:
+                    return best_room
+
+            # Fallback: context_builder Heuristik (alle Motion-Sensoren)
+            guessed = self.context_builder._guess_current_room(states)
+            return guessed if guessed != "unbekannt" else None
+
+        except Exception as e:
+            logger.debug("Raum-Erkennung fehlgeschlagen: %s", e)
+            return None
+
     async def _speak_and_emit(
         self,
         text: str,
         room: Optional[str] = None,
         tts_data: Optional[dict] = None,
     ):
-        """Sendet Text per WebSocket UND spricht ihn ueber HA-Speaker aus."""
+        """Sendet Text per WebSocket UND spricht ihn ueber HA-Speaker aus.
+
+        Wenn room nicht angegeben ist, wird automatisch der aktuell besetzte
+        Raum anhand von Praesenzmeldern ermittelt.
+        """
+        if not room:
+            room = await self._get_occupied_room()
+
         await emit_speaking(text, tts_data=tts_data)
         self._task_registry.create_task(
             self.sound_manager.speak_response(text, room=room, tts_data=tts_data),
