@@ -1541,6 +1541,10 @@ function renderRoutines() {
     fToggle('routines.morning_briefing.morning_actions.covers_up', 'Rolladen automatisch hochfahren') +
     fToggle('routines.morning_briefing.morning_actions.lights_soft', 'Licht sanft einschalten')
   ) +
+  sectionWrap('&#128197;', 'Kalender',
+    fInfo('Welche Home Assistant Kalender sollen abgefragt werden? Wenn keiner gewaehlt ist, werden automatisch alle Kalender aus HA genutzt.') +
+    fEntityPicker('calendar.entities', 'Kalender-Entities', ['calendar'], 'Nur ausgewaehlte Kalender abfragen — leer = alle')
+  ) +
   sectionWrap('&#127769;', 'Gute-Nacht-Routine',
     fInfo('Automatische Aktionen wenn du "Gute Nacht" sagst — Lichter aus, Heizung runter, alles pruefen.') +
     fToggle('routines.good_night.enabled', 'Gute-Nacht-Routine aktiv') +
