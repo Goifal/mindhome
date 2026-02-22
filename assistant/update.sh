@@ -259,14 +259,21 @@ update_code() {
 
 # Hilfsfunktion: User-Config wiederherstellen
 _restore_configs() {
-    if [ -n "$SETTINGS_BACKUP" ]; then
-        echo "$SETTINGS_BACKUP" > "$MHA_DIR/config/settings.yaml"
-        success "settings.yaml wiederhergestellt"
-    fi
-    if [ -n "$ENV_BACKUP" ]; then
-        echo "$ENV_BACKUP" > "$MHA_DIR/.env"
-        success ".env wiederhergestellt"
-    fi
+    for cfg_name in settings.yaml .env; do
+        case "$cfg_name" in
+            settings.yaml) BACKUP="$SETTINGS_BACKUP"; CFG_PATH="$MHA_DIR/config/settings.yaml" ;;
+            .env)          BACKUP="$ENV_BACKUP";      CFG_PATH="$MHA_DIR/.env" ;;
+        esac
+        [ -z "$BACKUP" ] && continue
+
+        if echo "$BACKUP" > "$CFG_PATH" 2>/dev/null; then
+            success "$cfg_name wiederhergestellt"
+        elif echo "$BACKUP" | sudo tee "$CFG_PATH" > /dev/null 2>&1; then
+            success "$cfg_name wiederhergestellt (sudo)"
+        else
+            warn "$cfg_name konnte nicht wiederhergestellt werden (Berechtigung)"
+        fi
+    done
 }
 
 # ============================================================

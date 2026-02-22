@@ -7,12 +7,11 @@ direkt auf dem Assistant, ohne Umweg ueber das Addon.
 
 import json
 import logging
-import os
 from pathlib import Path
 
 logger = logging.getLogger("mindhome-assistant")
 
-_COVER_CONFIG_FILE = Path(os.environ.get("DATA_DIR", "/app/data")) / "cover_configs.json"
+_COVER_CONFIG_FILE = Path("/app/data") / "cover_configs.json"
 
 
 def load_cover_configs() -> dict:
