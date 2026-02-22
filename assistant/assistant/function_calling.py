@@ -1111,6 +1111,23 @@ _ASSISTANT_TOOLS_STATIC = [
     {
         "type": "function",
         "function": {
+            "name": "get_weather",
+            "description": "Aktuelles Wetter und Vorhersage von Home Assistant abrufen. Nutze dies wenn der User nach Wetter, Temperatur draussen, Regen, Wind oder Vorhersage fragt.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "include_forecast": {
+                        "type": "boolean",
+                        "description": "Ob die Vorhersage fuer die naechsten Stunden inkludiert werden soll (default: true)",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "get_learned_patterns",
             "description": "Zeigt erkannte Verhaltensmuster: Welche manuellen Aktionen der User regelmaessig wiederholt. Z.B. 'Jeden Abend Licht aus um 22:30'. Nutze dies wenn der User fragt was Jarvis gelernt hat oder welche Muster erkannt wurden.",
             "parameters": {
@@ -1193,7 +1210,7 @@ class FunctionExecutor:
         "get_camera_view", "create_conditional", "list_conditionals",
         "get_energy_report", "web_search", "get_security_score",
         "get_room_climate", "get_active_intents", "get_wellness_status",
-        "get_house_status",
+        "get_house_status", "get_weather",
         "get_device_health", "get_learned_patterns", "describe_doorbell",
     })
 
@@ -3486,6 +3503,83 @@ class FunctionExecutor:
             return {"success": True, "message": message}
         except Exception as e:
             return {"success": False, "message": f"Haus-Status fehlgeschlagen: {e}"}
+
+    async def _exec_get_weather(self, args: dict) -> dict:
+        """Aktuelles Wetter und Vorhersage von Home Assistant."""
+        include_forecast = args.get("include_forecast", True)
+
+        states = await self.ha.get_states()
+        if not states:
+            return {"success": False, "message": "Kann gerade nicht auf Home Assistant zugreifen."}
+
+        weather_entity = None
+        for s in states:
+            if s.get("entity_id", "").startswith("weather."):
+                weather_entity = s
+                break
+
+        if not weather_entity:
+            return {"success": False, "message": "Keine Wetter-Entity in Home Assistant gefunden."}
+
+        attrs = weather_entity.get("attributes", {})
+        condition = weather_entity.get("state", "unbekannt")
+        temp = attrs.get("temperature")
+        humidity = attrs.get("humidity")
+        wind_speed = attrs.get("wind_speed")
+        wind_bearing = attrs.get("wind_bearing")
+        pressure = attrs.get("pressure")
+
+        # Wetter-Zustand uebersetzen
+        condition_map = {
+            "sunny": "Sonnig", "clear-night": "Klare Nacht",
+            "partlycloudy": "Teilweise bewoelkt", "cloudy": "Bewoelkt",
+            "rainy": "Regen", "pouring": "Starkregen",
+            "snowy": "Schnee", "snowy-rainy": "Schneeregen",
+            "fog": "Nebel", "hail": "Hagel",
+            "lightning": "Gewitter", "lightning-rainy": "Gewitter mit Regen",
+            "windy": "Windig", "windy-variant": "Windig & bewoelkt",
+            "exceptional": "Ausnahmewetter",
+        }
+        condition_de = condition_map.get(condition, condition)
+
+        parts = [f"Aktuelles Wetter: {condition_de}"]
+        if temp is not None:
+            parts.append(f"Temperatur: {temp}°C")
+        if humidity is not None:
+            parts.append(f"Luftfeuchtigkeit: {humidity}%")
+        if wind_speed is not None:
+            wind_str = f"Wind: {wind_speed} km/h"
+            if wind_bearing is not None:
+                # Windrichtung in Himmelsrichtung
+                directions = ["N", "NO", "O", "SO", "S", "SW", "W", "NW"]
+                try:
+                    idx = round(float(wind_bearing) / 45) % 8
+                    wind_str += f" aus {directions[idx]}"
+                except (ValueError, TypeError):
+                    pass
+            parts.append(wind_str)
+        if pressure is not None:
+            parts.append(f"Luftdruck: {pressure} hPa")
+
+        # Vorhersage
+        if include_forecast:
+            forecast = attrs.get("forecast", [])
+            if forecast:
+                parts.append("\nVorhersage:")
+                for entry in forecast[:6]:
+                    dt = entry.get("datetime", "")
+                    # Nur Zeit oder Datum anzeigen
+                    time_str = dt[11:16] if len(dt) > 16 else dt[:10] if len(dt) >= 10 else dt
+                    fc_temp = entry.get("temperature", "?")
+                    fc_cond = entry.get("condition", "")
+                    fc_cond_de = condition_map.get(fc_cond, fc_cond)
+                    fc_precip = entry.get("precipitation")
+                    line = f"  {time_str}: {fc_cond_de}, {fc_temp}°C"
+                    if fc_precip and float(fc_precip) > 0:
+                        line += f", {fc_precip} mm Niederschlag"
+                    parts.append(line)
+
+        return {"success": True, "message": "\n".join(parts)}
 
     async def _exec_get_device_health(self, args: dict) -> dict:
         """Gibt den Geraete-Gesundheitsstatus zurueck."""
