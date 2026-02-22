@@ -3929,40 +3929,50 @@ class FunctionExecutor:
         }
         condition_de = condition_map.get(condition, condition)
 
-        parts = []
+        # Windrichtung bestimmen
+        wind_dir = ""
+        if wind_bearing is not None:
+            directions = ["Nord", "Nordost", "Ost", "Suedost",
+                          "Sued", "Suedwest", "West", "Nordwest"]
+            try:
+                idx = round(float(wind_bearing) / 45) % 8
+                wind_dir = directions[idx]
+            except (ValueError, TypeError):
+                pass
 
-        # Aktuelles Wetter nur wenn KEINE Vorhersage angefragt
         if not include_forecast:
-            parts.append(f"Aktuelles Wetter: {condition_de}")
-            if temp is not None:
-                parts.append(f"Temperatur: {temp}°C")
+            # Aktuelles Wetter als natuerliche Fakten
+            parts = [f"Draussen: {condition_de}, {temp}°C." if temp is not None
+                     else f"Draussen: {condition_de}."]
             if wind_speed is not None:
-                wind_str = f"Wind: {wind_speed} km/h"
-                if wind_bearing is not None:
-                    directions = ["N", "NO", "O", "SO", "S", "SW", "W", "NW"]
-                    try:
-                        idx = round(float(wind_bearing) / 45) % 8
-                        wind_str += f" aus {directions[idx]}"
-                    except (ValueError, TypeError):
-                        pass
-                parts.append(wind_str)
+                if wind_speed > 40:
+                    parts.append(f"Kraeftiger Wind mit {wind_speed} km/h aus {wind_dir}." if wind_dir
+                                 else f"Kraeftiger Wind mit {wind_speed} km/h.")
+                elif wind_speed > 15:
+                    parts.append(f"Wind aus {wind_dir} mit {wind_speed} km/h." if wind_dir
+                                 else f"Wind mit {wind_speed} km/h.")
+                else:
+                    parts.append("Kaum Wind.")
         else:
-            # Vorhersage: gleiches kompakte Format (Zustand, Temperatur, Wind)
+            # Vorhersage als natuerliche Fakten
             forecast = attrs.get("forecast", [])
             if forecast:
+                parts = []
                 for entry in forecast[:3]:
                     dt = entry.get("datetime", "")
-                    time_str = dt[:10] if len(dt) >= 10 else dt
                     fc_temp = entry.get("temperature", "?")
-                    fc_cond = entry.get("condition", "")
-                    fc_cond_de = condition_map.get(fc_cond, fc_cond)
+                    fc_cond = condition_map.get(entry.get("condition", ""), entry.get("condition", "?"))
                     fc_wind = entry.get("wind_speed")
-                    line = f"{time_str}: {fc_cond_de}, {fc_temp}°C"
-                    if fc_wind is not None:
+                    # Tag-Label: Datum in lesbares Format
+                    day_label = dt[:10] if len(dt) >= 10 else dt
+                    line = f"{day_label}: {fc_cond}, {fc_temp}°C"
+                    if fc_wind is not None and fc_wind > 15:
                         line += f", Wind {fc_wind} km/h"
+                    else:
+                        line += ", kaum Wind"
                     parts.append(line)
             else:
-                parts.append("Keine Vorhersage-Daten verfuegbar.")
+                parts = ["Keine Vorhersage-Daten verfuegbar."]
 
         return {"success": True, "message": "\n".join(parts)}
 
