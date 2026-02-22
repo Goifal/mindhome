@@ -127,12 +127,102 @@ body { font-family:var(--font); background:var(--bg-primary); color:var(--text-p
 .main-header h1 { font-size:15px; font-weight:600; text-transform:uppercase; letter-spacing:2px; color:var(--text-secondary); }
 .main-content { padding:28px; }
 
-/* Responsive */
+/* ---- Responsive ---- */
+
+/* Tablet (< 900px): Sidebar als Drawer */
 @media (max-width:900px) {
   .sidebar { transform:translateX(-100%); transition:transform var(--normal); }
   .sidebar.open { transform:translateX(0); }
   .main { margin-left:0; }
   .mobile-toggle { display:flex !important; }
+  .main-content { padding:20px; }
+  .main-header { padding:0 16px; }
+  .section-header { flex-direction:column; align-items:flex-start; gap:12px; }
+  .section-header .err-filter-bar { width:100%; }
+  .entity-filter-bar { grid-template-columns:1fr; }
+  /* Settings tab-bar: horizontal scroll statt wrap */
+  .tab-bar { flex-wrap:nowrap; overflow-x:auto; -webkit-overflow-scrolling:touch; scrollbar-width:none; }
+  .tab-bar::-webkit-scrollbar { display:none; }
+  .tab-bar .tab-divider { flex-shrink:0; }
+  .tab-item { flex-shrink:0; }
+}
+
+/* Phone (< 600px): Kompakteres Layout */
+@media (max-width:600px) {
+  .main-content { padding:14px; }
+  .main-header { padding:0 12px; height:48px; }
+  .main-header h1 { font-size:13px; letter-spacing:1px; }
+  .card { padding:14px; margin-bottom:12px; }
+  .stat-value { font-size:22px; }
+  .stat-card { padding:14px 16px; }
+  .section-header h2 { font-size:14px; }
+  .section-header p { font-size:10px; }
+  .btn { padding:8px 14px; font-size:11px; }
+  .btn-sm { padding:5px 10px; }
+  /* Nav-Items: groessere Touch-Targets */
+  .nav-item { padding:12px 14px; font-size:12px; min-height:44px; }
+  /* Login auf kleinen Screens */
+  .login-box { width:calc(100vw - 32px); max-width:360px; padding:36px 24px; }
+  .login-box h1 { font-size:24px; }
+  .login-box input { font-size:20px; padding:12px 14px; }
+  /* Log entries: Stack statt Zeile */
+  .log-entry { flex-direction:column; gap:4px; padding:10px 12px; }
+  .log-time { min-width:unset; font-size:10px; }
+  .log-role { min-width:unset; }
+  .log-content { font-size:13px; }
+  /* Error entries: Stack */
+  .err-entry { flex-direction:column; gap:4px; padding:10px 12px; }
+  .err-time { min-width:unset; }
+  .err-level { min-width:unset; }
+  .err-logger { min-width:unset; max-width:100%; }
+  /* Audit entries: Stack */
+  .audit-entry { flex-direction:column; gap:4px; padding:10px 12px; }
+  .audit-time { min-width:unset; }
+  .audit-action { min-width:unset; width:fit-content; }
+  /* Trend rows kompakter */
+  .trend-row { flex-wrap:wrap; gap:8px; }
+  .trend-label { min-width:80px; font-size:10px; }
+  .trend-value { font-size:16px; min-width:60px; }
+  /* Error filter bar */
+  .err-filter-bar { gap:6px; }
+  .err-filter-bar .btn { padding:6px 10px; font-size:10px; }
+  /* Tab items */
+  .tab-item { padding:7px 10px; font-size:10px; }
+  /* Toast unten mittig */
+  .toast { left:16px; right:16px; bottom:16px; text-align:center; }
+  /* Grid 2 auch auf Phone single column */
+  .grid-2 { grid-template-columns:1fr; }
+  /* Boot screen */
+  .boot-hud { width:140px; height:140px; }
+  .boot-logo { font-size:42px; }
+  .boot-text { font-size:12px; }
+  /* Knowledge stats */
+  .grid-3 { grid-template-columns:1fr; }
+  /* Chip grid: besser wrappen */
+  .chip-grid { gap:4px; }
+  .chip-opt { padding:4px 10px; font-size:10px; }
+  /* Collapsible sections */
+  .s-section-hdr { padding:12px 14px; }
+  .s-section-body.open { padding:14px; }
+  /* Form elements */
+  .form-group label { font-size:10px; }
+  input[type="text"],input[type="number"],input:not([type]),select,textarea { font-size:14px; padding:10px 12px; }
+  /* Range */
+  .range-group input[type="range"]::-webkit-slider-thumb { width:20px; height:20px; }
+  /* Toggle: groesseres Touch Target */
+  .toggle { width:48px; height:26px; }
+  .toggle-thumb { width:20px; height:20px; }
+  .toggle input:checked ~ .toggle-thumb { left:24px; }
+}
+
+/* Very small phones (< 380px) */
+@media (max-width:380px) {
+  .main-content { padding:10px; }
+  .stat-value { font-size:18px; }
+  .stat-card { padding:12px; }
+  .login-box { padding:28px 16px; }
+  .login-box h1 { font-size:20px; letter-spacing:2px; }
+  .sidebar-logo h2 { font-size:15px; }
 }
 
 /* Pages */
@@ -304,8 +394,12 @@ textarea { resize:vertical; min-height:70px; font-family:var(--mono); font-size:
 .badge-err { background:var(--danger-dim); color:var(--danger); border:1px solid rgba(239,68,68,0.3); }
 
 /* Mobile */
-.mobile-toggle { display:none; align-items:center; justify-content:center; width:34px; height:34px; border-radius:var(--radius-sm); background:transparent; border:1px solid var(--border-accent); cursor:pointer; font-size:16px; color:var(--accent); transition:all var(--fast); }
+.mobile-toggle { display:none; align-items:center; justify-content:center; width:40px; height:40px; border-radius:var(--radius-sm); background:transparent; border:1px solid var(--border-accent); cursor:pointer; font-size:18px; color:var(--accent); transition:all var(--fast); -webkit-tap-highlight-color:transparent; }
 .mobile-toggle:hover { box-shadow:0 0 10px rgba(245,158,11,0.2); }
+
+/* Sidebar Backdrop (mobile overlay) */
+.sidebar-backdrop { display:none; position:fixed; inset:0; background:rgba(10,14,23,0.7); z-index:99; backdrop-filter:blur(4px); -webkit-tap-highlight-color:transparent; }
+.sidebar-backdrop.show { display:block; }
 
 /* Toast */
 .toast { position:fixed; bottom:20px; right:20px; padding:12px 22px; border-radius:var(--radius-sm); font-size:12px; font-weight:600; box-shadow:var(--shadow-lg); z-index:9999; transform:translateY(80px); opacity:0; transition:all 0.3s ease; text-transform:uppercase; letter-spacing:1px; font-family:var(--mono); backdrop-filter:blur(8px); }
@@ -483,6 +577,7 @@ textarea { resize:vertical; min-height:70px; font-family:var(--mono); font-size:
 
 <!-- APP -->
 <div id="app" class="app">
+  <div class="sidebar-backdrop" id="sidebarBackdrop" onclick="closeSidebar()"></div>
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
       <div class="logo-icon">J</div>
@@ -502,7 +597,7 @@ textarea { resize:vertical; min-height:70px; font-family:var(--mono); font-size:
   <div class="main">
     <header class="main-header">
       <div class="flex-center gap-md">
-        <div class="mobile-toggle" onclick="document.getElementById('sidebar').classList.toggle('open')">&#9776;</div>
+        <div class="mobile-toggle" onclick="toggleSidebar()">&#9776;</div>
         <h1 id="pageTitle">Dashboard</h1>
       </div>
       <div class="flex-center gap-md">

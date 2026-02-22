@@ -9,6 +9,20 @@ let S = {};  // Settings cache
 let ALL_ENTITIES = [];
 const API = '';
 
+// ---- Mobile Sidebar Toggle mit Backdrop ----
+function toggleSidebar() {
+  const sb = document.getElementById('sidebar');
+  const bd = document.getElementById('sidebarBackdrop');
+  const isOpen = sb.classList.toggle('open');
+  if (bd) bd.classList.toggle('show', isOpen);
+}
+function closeSidebar() {
+  const sb = document.getElementById('sidebar');
+  const bd = document.getElementById('sidebarBackdrop');
+  sb.classList.remove('open');
+  if (bd) bd.classList.remove('show');
+}
+
 // ---- Session-Timeout: Auto-Logout bei Inaktivitaet (30 Min) ----
 const SESSION_TIMEOUT_MS = 30 * 60 * 1000;  // 30 Minuten
 let _sessionTimer = null;
@@ -305,7 +319,7 @@ document.querySelectorAll('.nav-item').forEach(item => {
     else if (pg==='knowledge') loadKnowledge();
     else if (pg==='logs') { if(currentLogTab==='audit') loadAudit(); else loadLogs(); }
     else if (pg==='errors') loadErrors();
-    document.getElementById('sidebar').classList.remove('open');
+    closeSidebar();
   });
 });
 
