@@ -2852,9 +2852,13 @@ async function loadSystemStatus() {
       hwHtml += bar(cpu.percent, 'CPU', 'Load ' + cpu.load_1m + ' / ' + cpu.cores + ' Kerne (' + cpu.percent + '%)');
     }
     if (gpu.name) {
-      const gpuPct = Math.round(gpu.memory_used_mb / gpu.memory_total_mb * 100);
-      hwHtml += bar(gpu.utilization_percent, 'GPU ' + esc(gpu.name), gpu.utilization_percent + '% Last, ' + gpu.temperature_c + '°C');
-      hwHtml += bar(gpuPct, 'VRAM', gpu.memory_used_mb + ' / ' + gpu.memory_total_mb + ' MB (' + gpuPct + '%)');
+      const gpuPct = gpu.memory_total_mb > 0 ? Math.round(gpu.memory_used_mb / gpu.memory_total_mb * 100) : 0;
+      if (gpu.ollama_fallback) {
+        hwHtml += bar(gpuPct, 'GPU (Ollama)', gpu.memory_used_mb + ' / ' + gpu.memory_total_mb + ' MB VRAM belegt');
+      } else {
+        hwHtml += bar(gpu.utilization_percent, 'GPU ' + esc(gpu.name), gpu.utilization_percent + '% Last, ' + gpu.temperature_c + '°C');
+        hwHtml += bar(gpuPct, 'VRAM', gpu.memory_used_mb + ' / ' + gpu.memory_total_mb + ' MB (' + gpuPct + '%)');
+      }
     }
     if (disk.total_gb) {
       const diskPct = Math.round((disk.total_gb - disk.free_gb) / disk.total_gb * 100);
