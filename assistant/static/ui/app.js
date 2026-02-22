@@ -533,6 +533,7 @@ function renderCurrentTab() {
       case 'tab-rooms': c.innerHTML = renderRooms(); loadMindHomeEntities(); loadRoomTempAverage(); break;
       case 'tab-voice': c.innerHTML = renderVoice(); break;
       case 'tab-routines': c.innerHTML = renderRoutines(); break;
+      case 'tab-house-status': c.innerHTML = renderHouseStatus(); break;
       case 'tab-devices': c.innerHTML = renderDevices(); loadMindHomeEntities(); break;
       case 'tab-covers': c.innerHTML = renderCovers(); loadCoverEntities(); break;
       case 'tab-security': c.innerHTML = renderSecurity(); loadApiKey(); loadNotifyChannels(); break;
@@ -1452,6 +1453,44 @@ function renderVoice() {
 }
 
 // ---- Tab 7: Routinen ----
+function renderHouseStatus() {
+  // Default: alle Sektionen aktiv wenn noch nicht konfiguriert (Backend-Verhalten)
+  if (!getPath(S, 'house_status.sections')) {
+    setPath(S, 'house_status.sections', ['presence','temperatures','weather','lights','security','media','open_items','offline']);
+  }
+  return sectionWrap('&#127968;', 'Haus-Status Bereiche',
+    fInfo('Welche Informationen sollen im Haus-Status angezeigt werden? Wird verwendet wenn du nach dem Status fragst oder "Haus-Status" sagst.') +
+    fChipSelect('house_status.sections', 'Angezeigte Bereiche', [
+      {v:'presence',l:'Anwesenheit'},
+      {v:'temperatures',l:'Temperaturen'},
+      {v:'weather',l:'Wetter'},
+      {v:'lights',l:'Lichter'},
+      {v:'security',l:'Sicherheit'},
+      {v:'media',l:'Medien'},
+      {v:'open_items',l:'Offene Fenster/Tueren'},
+      {v:'offline',l:'Offline-Geraete'}
+    ])
+  ) +
+  sectionWrap('&#127777;', 'Temperatur-Raeume',
+    fInfo('Optional: Nur bestimmte Raeume im Status anzeigen. Leer = alle Raeume. Raumnamen wie in Home Assistant (z.B. Wohnzimmer, Schlafzimmer).') +
+    fTextarea('house_status.temperature_rooms', 'Raeume (einer pro Zeile)', 'z.B.\nWohnzimmer\nSchlafzimmer\nGaestezimmer')
+  ) +
+  sectionWrap('&#128296;', 'Health Monitor',
+    fInfo('Welche Sensoren sollen ueberwacht werden? Nicht-Raum-Sensoren (Waermepumpe, Prozessor etc.) werden automatisch gefiltert.') +
+    fToggle('health_monitor.enabled', 'Health Monitor aktiv') +
+    fNum('health_monitor.check_interval_minutes', 'Pruef-Intervall (Minuten)', 5, 60, 5) +
+    fNum('health_monitor.alert_cooldown_minutes', 'Benachrichtigungs-Cooldown (Minuten)', 15, 240, 15) +
+    '<div style="margin:16px 0 8px;font-weight:600;font-size:13px;">Schwellwerte</div>' +
+    fNum('health_monitor.temp_low', 'Temperatur zu niedrig (°C)', 10, 20, 1) +
+    fNum('health_monitor.temp_high', 'Temperatur zu hoch (°C)', 24, 35, 1) +
+    fNum('health_monitor.humidity_low', 'Luftfeuchte zu niedrig (%)', 20, 40, 5) +
+    fNum('health_monitor.humidity_high', 'Luftfeuchte zu hoch (%)', 60, 80, 5) +
+    fNum('health_monitor.co2_warn', 'CO2 Warnung (ppm)', 800, 1500, 100) +
+    fNum('health_monitor.co2_critical', 'CO2 Kritisch (ppm)', 1000, 2500, 100) +
+    fTextarea('health_monitor.exclude_patterns', 'Zusaetzliche Ausschluss-Patterns (einer pro Zeile)', 'z.B.\naquarea\ntablet_\nsteckdose_')
+  );
+}
+
 function renderRoutines() {
   const morningStyleOpts = [
     {v:'kompakt',l:'Kompakt — Kurzes Briefing'},

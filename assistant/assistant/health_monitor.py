@@ -63,7 +63,7 @@ class HealthMonitor:
 
         # Exclude-Patterns: Entities deren ID einen dieser Substrings enthaelt werden ignoriert
         # Defaults: Waermepumpen, Prozessor/System-Temps, Batterie-Temps, Netzwerk-Geraete
-        _default_excludes = [
+        self._default_excludes = [
             "aquarea", "heatpump", "waermepumpe",
             "processor", "prozessor", "cpu_temp",
             "batterie_temp", "battery_temp",
@@ -76,7 +76,7 @@ class HealthMonitor:
             "taupunkt", "dew_point",
         ]
         user_excludes = cfg.get("exclude_patterns", [])
-        self._exclude_patterns = [p.lower() for p in (_default_excludes + user_excludes)]
+        self._exclude_patterns = [p.lower() for p in (self._default_excludes + user_excludes)]
         # Nach Startup erste Runde nur loggen, nicht melden (Cooldowns leer)
         self._first_check = True
 

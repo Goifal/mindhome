@@ -1638,8 +1638,14 @@ def _validate_settings_values(settings: dict) -> list[str]:
         ("personality", "self_irony_max_per_day"): (0, 20),
         ("threat_assessment", "night_start_hour"): (0, 23),
         ("threat_assessment", "night_end_hour"): (0, 23),
-        ("health_monitor", "co2_warn_ppm"): (400, 5000),
-        ("health_monitor", "co2_critical_ppm"): (400, 10000),
+        ("health_monitor", "co2_warn"): (400, 5000),
+        ("health_monitor", "co2_critical"): (400, 10000),
+        ("health_monitor", "temp_low"): (5, 22),
+        ("health_monitor", "temp_high"): (20, 40),
+        ("health_monitor", "humidity_low"): (10, 50),
+        ("health_monitor", "humidity_high"): (40, 95),
+        ("health_monitor", "check_interval_minutes"): (5, 60),
+        ("health_monitor", "alert_cooldown_minutes"): (5, 1440),
         ("proactive", "batch_interval"): (5, 300),
     }
     for (section, key), (min_val, max_val) in RANGE_RULES.items():
@@ -1737,6 +1743,24 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
             ws_cfg = yaml_cfg.get("web_search", {})
             brain.web_search.enabled = bool(ws_cfg.get("enabled", False))
             logger.info("Web Search Settings aktualisiert")
+
+        # Health Monitor: Schwellwerte + Exclude-Patterns
+        if "health_monitor" in changed_settings and hasattr(brain, "health_monitor"):
+            hm_cfg = yaml_cfg.get("health_monitor", {})
+            hm = brain.health_monitor
+            hm.enabled = bool(hm_cfg.get("enabled", True))
+            hm.check_interval = int(hm_cfg.get("check_interval_minutes", 10))
+            hm.co2_warn = int(hm_cfg.get("co2_warn", 1000))
+            hm.co2_critical = int(hm_cfg.get("co2_critical", 1500))
+            hm.humidity_low = int(hm_cfg.get("humidity_low", 30))
+            hm.humidity_high = int(hm_cfg.get("humidity_high", 70))
+            hm.temp_low = int(hm_cfg.get("temp_low", 16))
+            hm.temp_high = int(hm_cfg.get("temp_high", 27))
+            hm._alert_cooldown_minutes = int(hm_cfg.get("alert_cooldown_minutes", 60))
+            # Exclude-Patterns neu laden
+            user_excludes = hm_cfg.get("exclude_patterns", [])
+            hm._exclude_patterns = [p.lower() for p in (hm._default_excludes + user_excludes)]
+            logger.info("Health Monitor Settings aktualisiert")
 
     except Exception as e:
         logger.warning("Settings-Propagation teilweise fehlgeschlagen: %s", e)
