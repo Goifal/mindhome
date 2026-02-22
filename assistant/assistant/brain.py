@@ -1081,6 +1081,12 @@ class AssistantBrain(BrainCallbacksMixin):
                     func = tool_call.get("function", {})
                     func_name = func.get("name", "")
                     func_args = func.get("arguments", {})
+                    # Qwen kann arguments als JSON-String statt Dict liefern
+                    if isinstance(func_args, str):
+                        try:
+                            func_args = json.loads(func_args)
+                        except (json.JSONDecodeError, ValueError):
+                            func_args = {}
 
                     logger.info("Function Call: %s(%s)", func_name, func_args)
 
