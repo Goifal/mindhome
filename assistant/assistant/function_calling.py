@@ -1244,6 +1244,13 @@ class FunctionExecutor:
 
         entity_id = await self._find_entity("light", room)
         if not entity_id:
+            # Cross-Domain-Fallback: Vielleicht ist es ein Switch (z.B. Siebtraegermaschine)
+            switch_id = await self._find_entity("switch", room)
+            if switch_id:
+                logger.info("set_light cross-domain fallback: '%s' -> switch %s", room, switch_id)
+                service = "turn_on" if state == "on" else "turn_off"
+                success = await self.ha.call_service("switch", service, {"entity_id": switch_id})
+                return {"success": success, "message": f"Schalter {room} {state}"}
             return {"success": False, "message": f"Kein Licht in '{room}' gefunden"}
 
         # Relative Helligkeit: brighter/dimmer
@@ -1312,7 +1319,11 @@ class FunctionExecutor:
             if eid.startswith("light.") and s.get("state") != state:
                 service_data = {"entity_id": eid}
                 if "brightness" in args and state == "on":
-                    service_data["brightness_pct"] = args["brightness"]
+                    try:
+                        bri = str(args["brightness"]).replace("%", "").strip()
+                        service_data["brightness_pct"] = max(1, min(100, int(float(bri))))
+                    except (ValueError, TypeError):
+                        pass
                 await self.ha.call_service("light", service, service_data)
                 count += 1
 
@@ -3025,10 +3036,8 @@ class FunctionExecutor:
                 if best:
                     logger.info("_find_entity: Best Partial-Match -> %s", best)
                     return best
-                # Kein Match in DB-Ergebnissen — erstes nehmen als Fallback
-                if devices:
-                    logger.info("_find_entity: Kein Name/Raum-Match, nehme erstes DB-Ergebnis -> %s", devices[0]["ha_entity_id"])
-                    return devices[0]["ha_entity_id"]
+                # Kein Match in DB-Ergebnissen — weiter zu HA-Fallback
+                logger.info("_find_entity: Kein Name/Raum-Match in %d DB-Ergebnissen, HA-Fallback", len(devices))
             else:
                 logger.info("_find_entity: DB lieferte 0 Treffer fuer '%s', HA-Fallback", search)
         except Exception as e:
