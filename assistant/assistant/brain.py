@@ -1743,7 +1743,7 @@ class AssistantBrain(BrainCallbacksMixin):
 
         # --- Muster 4: Bare JSON mit bekannten Keys ---
         # Qwen3 gibt manchmal nur {"entity_id": "light.x", "state": "on"} aus
-        m_bare = re.search(r'\{[^{}]*"(?:entity_id|room|state)"[^{}]*\}', text)
+        m_bare = re.search(r'\{[^{}]*"(?:entity_id|room|state|position|adjust)"[^{}]*\}', text)
         if m_bare:
             try:
                 args = json.loads(m_bare.group(0))

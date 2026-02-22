@@ -1999,6 +1999,20 @@ class FunctionExecutor:
 
         entity_id = await self._find_entity("cover", room)
 
+        # Qwen3-Fallback: "state" in position/adjust umwandeln
+        # Qwen3 schickt manchmal state="open"/"close" statt position/adjust
+        if "state" in args and "position" not in args and "adjust" not in args:
+            _state = str(args["state"]).lower().strip()
+            _STATE_TO_POS = {
+                "open": 100, "auf": 100, "offen": 100, "hoch": 100, "up": 100,
+                "close": 0, "closed": 0, "zu": 0, "runter": 0, "down": 0,
+            }
+            if _state in _STATE_TO_POS:
+                args = {**args, "position": _STATE_TO_POS[_state]}
+                logger.info("set_cover: state='%s' -> position=%d", _state, _STATE_TO_POS[_state])
+            elif _state == "half" or _state == "halb":
+                args = {**args, "position": 50}
+
         # Relative Anpassung: up/down
         adjust = args.get("adjust")
         if adjust in ("up", "down"):
