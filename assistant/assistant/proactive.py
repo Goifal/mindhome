@@ -64,6 +64,11 @@ class ProactiveManager:
         self.cooldown = proactive_cfg.get("cooldown_seconds", 300)
         self.silence_scenes = set(proactive_cfg.get("silence_scenes", []))
 
+        # Quiet Hours: keine LOW/MEDIUM-Durchsagen in diesem Zeitfenster
+        quiet_cfg = yaml_config.get("ambient_presence", {})
+        self._quiet_start = int(quiet_cfg.get("quiet_start", 22))
+        self._quiet_end = int(quiet_cfg.get("quiet_end", 7))
+
         # Phase 15.4: Notification Batching (LOW sammeln)
         batch_cfg = proactive_cfg.get("batching", {})
         self.batch_enabled = batch_cfg.get("enabled", True)
@@ -126,6 +131,14 @@ class ProactiveManager:
             "energy_price_high": (LOW, "Teurer Strom"),
             "solar_surplus": (LOW, "Solar-Ueberschuss"),
         }
+
+    def _is_quiet_hours(self) -> bool:
+        """Prueft ob gerade Quiet Hours aktiv sind (z.B. 22:00-07:00)."""
+        hour = datetime.now().hour
+        if self._quiet_start > self._quiet_end:
+            # Ueber Mitternacht: z.B. 22-7
+            return hour >= self._quiet_start or hour < self._quiet_end
+        return self._quiet_start <= hour < self._quiet_end
 
     async def start(self):
         """Startet den Event Listener."""
@@ -576,6 +589,11 @@ class ProactiveManager:
 
     async def _notify(self, event_type: str, urgency: str, data: dict):
         """Prueft ob gemeldet werden soll und erzeugt Meldung."""
+
+        # Quiet Hours: LOW und MEDIUM waehrend Ruhezeiten unterdruecken
+        if urgency in (LOW, MEDIUM) and self._is_quiet_hours():
+            logger.debug("Meldung unterdrueckt (Quiet Hours): [%s] %s", urgency, event_type)
+            return
 
         # Autonomie-Level pruefen
         if urgency != CRITICAL:
@@ -1070,6 +1088,13 @@ VERBOTEN: "Hallo", "Achtung", "Ich moechte dich informieren", "Es tut mir leid".
 
         # Sortieren: MEDIUM zuerst, dann LOW
         items.sort(key=lambda x: 0 if x.get("urgency") == MEDIUM else 1)
+
+        # Quiet Hours: Batch nicht waehrend Ruhezeiten senden
+        if self._is_quiet_hours():
+            logger.info("Batch unterdrueckt (Quiet Hours, %d Items zurueck in Queue)", len(items))
+            async with self._state_lock:
+                self._batch_queue = items + self._batch_queue
+            return
 
         # Activity-Check: Nicht bei Schlaf/Call (aber MEDIUM weniger streng)
         highest_urgency = MEDIUM if any(b.get("urgency") == MEDIUM for b in items) else LOW

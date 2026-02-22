@@ -20,16 +20,17 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Optional
-
-# F-051: DST limitation — datetime.now() returns naive (timezone-unaware) datetimes.
-# Reminders and alarms scheduled by wall-clock time (e.g. "07:00") may fire at the
-# wrong time during DST transitions: skipped in spring-forward, duplicated in fall-back.
-# To fix properly, use timezone-aware datetimes:
-#   from zoneinfo import ZoneInfo
-#   now = datetime.now(ZoneInfo("Europe/Berlin"))
-# and store/compare all target times as tz-aware or UTC internally.
+from zoneinfo import ZoneInfo
 
 import redis.asyncio as aioredis
+
+# F-051: Timezone-aware datetimes fuer korrekte Wecker/Erinnerungen bei DST-Wechsel
+_TZ = ZoneInfo("Europe/Berlin")
+
+
+def _now() -> datetime:
+    """Timezone-aware datetime.now() fuer Europe/Berlin."""
+    return datetime.now(_TZ)
 
 logger = logging.getLogger(__name__)
 
@@ -424,12 +425,12 @@ class TimerManager:
             Ergebnis-Dict mit success und message
         """
         try:
-            now = datetime.now()
+            now = _now()
 
             # Zielzeit parsen
             target_time = datetime.strptime(time_str, "%H:%M")
             if date_str:
-                target_date = datetime.strptime(date_str, "%Y-%m-%d")
+                target_date = datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=_TZ)
             else:
                 target_date = now
 
@@ -488,7 +489,7 @@ class TimerManager:
     async def _reminder_watcher(self, timer: GeneralTimer, target: datetime):
         """Wartet bis zum Erinnerungs-Zeitpunkt und benachrichtigt."""
         try:
-            seconds_until = (target - datetime.now()).total_seconds()
+            seconds_until = (target - _now()).total_seconds()
             if seconds_until > 0:
                 await asyncio.sleep(seconds_until)
 
@@ -550,8 +551,10 @@ class TimerManager:
 
                 info = json.loads(data)
                 target = datetime.fromisoformat(info["target_iso"])
+                if target.tzinfo is None:
+                    target = target.replace(tzinfo=_TZ)
 
-                if target > datetime.now():
+                if target > _now():
                     timer = GeneralTimer.from_dict(info)
                     self.timers[timer.id] = timer
                     task = asyncio.create_task(self._reminder_watcher(timer, target))
@@ -597,7 +600,7 @@ class TimerManager:
             Ergebnis-Dict mit success und message
         """
         try:
-            now = datetime.now()
+            now = _now()
             target_time = datetime.strptime(time_str, "%H:%M")
             target = now.replace(
                 hour=target_time.hour,
@@ -781,7 +784,9 @@ class TimerManager:
         """Wartet bis zur Weckzeit, benachrichtigt, und plant ggf. Wiederholung."""
         try:
             target = datetime.fromisoformat(alarm_data["next_trigger"])
-            seconds_until = (target - datetime.now()).total_seconds()
+            if target.tzinfo is None:
+                target = target.replace(tzinfo=_TZ)
+            seconds_until = (target - _now()).total_seconds()
             if seconds_until > 0:
                 await asyncio.sleep(seconds_until)
 
@@ -816,7 +821,7 @@ class TimerManager:
     async def _schedule_next_alarm(self, alarm_id: str, alarm_data: dict):
         """Plant den naechsten Wecker-Termin fuer wiederkehrende Wecker."""
         try:
-            now = datetime.now()
+            now = _now()
             target_time = datetime.strptime(alarm_data["time"], "%H:%M")
             next_target = now.replace(
                 hour=target_time.hour,
@@ -876,10 +881,12 @@ class TimerManager:
                     continue
 
                 target = datetime.fromisoformat(alarm_data["next_trigger"])
+            if target.tzinfo is None:
+                target = target.replace(tzinfo=_TZ)
 
-                if target > datetime.now():
+                if target > _now():
                     # Noch in der Zukunft → Task starten
-                    seconds_until = (target - datetime.now()).total_seconds()
+                    seconds_until = (target - _now()).total_seconds()
                     timer = GeneralTimer(
                         id=aid,
                         label=alarm_data["label"],
