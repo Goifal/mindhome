@@ -337,9 +337,11 @@ class OllamaClient:
         except asyncio.TimeoutError:
             logger.error("Ollama Stream Timeout nach %ds", LLM_TIMEOUT_STREAM)
             ollama_breaker.record_failure()
+            yield "[STREAM_TIMEOUT]"
         except aiohttp.ClientError as e:
             logger.error("Ollama Stream nicht erreichbar: %s", e)
             ollama_breaker.record_failure()
+            yield "[STREAM_ERROR]"
 
     async def generate(
         self,
