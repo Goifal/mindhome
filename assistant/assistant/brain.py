@@ -1500,22 +1500,29 @@ class AssistantBrain(BrainCallbacksMixin):
                 except Exception as e:
                     logger.warning("Tool-Feedback fehlgeschlagen: %s", e, exc_info=True)
 
-            # Fallback fuer Query-Tools: Wenn der Feedback-Loop keine Antwort
-            # produziert hat, Rohdaten in natuerliche Sprache umwandeln.
-            if has_query_results and not response_text and executed_actions:
-                query_results = []
+            # Query-Tools: Humanizer IMMER anwenden wenn Rohdaten-Muster erkannt
+            # Der LLM-Feedback-Loop gibt oft die Rohdaten unveraendert durch
+            if has_query_results and executed_actions:
                 for action in executed_actions:
-                    if action.get("function") in QUERY_TOOLS:
+                    func = action.get("function", "")
+                    if func in QUERY_TOOLS:
                         result = action.get("result", {})
-                        if isinstance(result, dict) and result.get("message"):
-                            raw = result["message"]
-                            humanized = self._humanize_query_result(
-                                action["function"], raw,
-                            )
-                            query_results.append(humanized)
-                if query_results:
-                    response_text = " ".join(query_results)
-                    logger.info("Query-Fallback (humanized): '%s'", response_text[:120])
+                        raw = result.get("message", "") if isinstance(result, dict) else ""
+                        if not raw:
+                            continue
+                        if not response_text:
+                            # Kein Text vom Feedback-Loop → humanize die Rohdaten
+                            response_text = self._humanize_query_result(func, raw)
+                            logger.info("Query-Humanize (kein LLM): '%s'", response_text[:120])
+                        else:
+                            # Feedback-Loop hat Text produziert — pruefen ob es
+                            # noch Rohdaten sind (LLM hat nur durchgereicht)
+                            humanized = self._humanize_query_result(func, response_text)
+                            if humanized != response_text:
+                                logger.info("Query-Humanize (LLM war roh): '%s' -> '%s'",
+                                            response_text[:60], humanized[:60])
+                                response_text = humanized
+                        break
 
             # Phase 6: Variierte Bestaetigung statt immer "Erledigt."
             # Nur fuer reine Action-Tools (set_light etc.), nicht fuer Query-Tools
@@ -1933,39 +1940,72 @@ class AssistantBrain(BrainCallbacksMixin):
         return raw
 
     def _humanize_weather(self, raw: str) -> str:
-        """AKTUELL: Bewoelkt, 5.2°C, ... → Natuerliche Wetter-Antwort."""
-        parts = []
-        has_forecast = False
-        lines = raw.split("\n")
-        for line in lines:
+        """Wetter-Rohdaten → Natuerliche JARVIS-Antwort.
+
+        Erkennt sowohl das Rohformat (AKTUELL: ...) als auch LLM-reformatierte
+        Varianten (Bewoelkt, 5.2°C, ...).
+        """
+        import re
+
+        # Temperatur extrahieren (funktioniert fuer alle Formate)
+        temp_match = re.search(r"(-?\d+[.,]\d+)\s*°C", raw)
+        if not temp_match:
+            return raw
+
+        temp = temp_match.group(1).replace(",", ".")
+
+        # Condition extrahieren
+        conditions_map = {
+            "bewoelkt": "bewoelkt", "bewölkt": "bewoelkt",
+            "sonnig": "sonnig", "wolkenlos": "wolkenlos",
+            "klare nacht": "klare Nacht", "regen": "regnerisch",
+            "teilweise bewoelkt": "teilweise bewoelkt",
+            "teilweise bewölkt": "teilweise bewoelkt",
+            "nebel": "neblig", "schnee": "verschneit",
+            "gewitter": "gewittrig", "windig": "windig",
+            "starkregen": "Starkregen",
+        }
+        condition = ""
+        raw_lower = raw.lower()
+        for key, val in conditions_map.items():
+            if key in raw_lower:
+                condition = val
+                break
+
+        # Wind extrahieren
+        wind_match = re.search(r"Wind\s+(?:aus\s+)?(\w+)\s+(?:mit\s+)?(\d+[.,]?\d*)\s*km/h", raw, re.IGNORECASE)
+        if not wind_match:
+            wind_match = re.search(r"Wind\s+(\d+[.,]?\d*)\s*km/h\s+aus\s+(\w+)", raw, re.IGNORECASE)
+            if wind_match:
+                wind_speed = wind_match.group(1)
+                wind_dir = wind_match.group(2)
+            else:
+                wind_speed = wind_dir = ""
+        else:
+            wind_dir = wind_match.group(1)
+            wind_speed = wind_match.group(2)
+
+        # Vorhersage-Zeilen
+        forecast_parts = []
+        for line in raw.split("\n"):
             line = line.strip()
-            if line.startswith("AKTUELL:"):
-                data = line[8:].strip()
-                # Condition und Temperatur extrahieren
-                segments = [s.strip() for s in data.split(",")]
-                condition = segments[0] if segments else ""
-                temp = ""
-                wind = ""
-                for s in segments[1:]:
-                    if "°C" in s:
-                        temp = s.strip()
-                    elif "Wind" in s:
-                        wind = s.strip()
-                if temp:
-                    parts.append(f"Draussen {temp}, {condition.lower()}.")
-                else:
-                    parts.append(f"Draussen: {condition}.")
-                if wind:
-                    parts.append(f"{wind}.")
-            elif line.startswith("VORHERSAGE") and "Keine Daten" not in line and "Nicht verfuegbar" not in line:
-                # VORHERSAGE 2024-01-15: Regen, Hoch 8°C, ...
+            if line.startswith("VORHERSAGE") and "Keine Daten" not in line and "Nicht verfuegbar" not in line:
                 fc = line.split(":", 1)
                 if len(fc) > 1:
-                    has_forecast = True
-                    parts.append(f"Vorhersage: {fc[1].strip()}.")
-        if not parts:
-            return raw
-        return " ".join(parts)
+                    forecast_parts.append(fc[1].strip())
+
+        # JARVIS-Stil zusammenbauen
+        result = f"Draussen {temp} Grad"
+        if condition:
+            result += f", {condition}"
+        result += "."
+        if wind_speed and wind_dir:
+            result += f" Wind aus {wind_dir} mit {wind_speed} km/h."
+
+        if forecast_parts:
+            result += " " + " ".join(f"Vorhersage: {fp}." for fp in forecast_parts)
+
+        return result
 
     def _humanize_calendar(self, raw: str) -> str:
         """TERMINE MORGEN (2): - 09:00 | Meeting → Natuerliche Termin-Antwort."""
