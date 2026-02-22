@@ -2535,51 +2535,75 @@ class AssistantBrain(BrainCallbacksMixin):
     async def _handle_learning_suggestion(self, alert: dict):
         """Callback fuer Learning Observer — schlaegt Automatisierungen vor."""
         message = alert.get("message", "")
-        if message:
-            formatted = await self.proactive.format_with_personality(message, "low")
-            await self._speak_and_emit(formatted)
-            logger.info("Learning -> Vorschlag: %s", formatted)
+        if not message:
+            return
+        if self.proactive._is_quiet_hours():
+            logger.info("Learning unterdrueckt (Quiet Hours): %s", message[:80])
+            return
+        formatted = await self.proactive.format_with_personality(message, "low")
+        await self._speak_and_emit(formatted)
+        logger.info("Learning -> Vorschlag: %s", formatted)
 
     async def _handle_cooking_timer(self, alert: dict):
         """Callback fuer Koch-Timer — meldet wenn Timer abgelaufen ist."""
         message = alert.get("message", "")
-        if message:
-            formatted = await self.proactive.format_with_personality(message, "medium")
-            await self._speak_and_emit(formatted)
-            logger.info("Koch-Timer -> Meldung: %s", formatted)
+        if not message:
+            return
+        # Koch-Timer sind zeitkritisch — immer melden
+        formatted = await self.proactive.format_with_personality(message, "high")
+        await self._speak_and_emit(formatted)
+        logger.info("Koch-Timer -> Meldung: %s", formatted)
 
     async def _handle_time_alert(self, alert: dict):
         """Callback fuer TimeAwareness-Alerts — leitet an proaktive Meldung weiter."""
         message = alert.get("message", "")
-        if message:
-            formatted = await self.proactive.format_with_personality(message, "medium")
-            await self._speak_and_emit(formatted)
-            logger.info("TimeAwareness -> Meldung: %s", formatted)
+        urgency = alert.get("urgency", "low")
+        if not message:
+            return
+        # Quiet Hours: Nur CRITICAL darf nachts durch
+        if urgency != "critical" and self.proactive._is_quiet_hours():
+            logger.info("TimeAwareness unterdrueckt (Quiet Hours): %s", message[:80])
+            return
+        formatted = await self.proactive.format_with_personality(message, urgency)
+        await self._speak_and_emit(formatted)
+        logger.info("TimeAwareness [%s] -> Meldung: %s", urgency, formatted)
 
     async def _handle_health_alert(self, alert_type: str, urgency: str, message: str):
         """Callback fuer Health Monitor — leitet an proaktive Meldung weiter."""
-        if message:
-            formatted = await self.proactive.format_with_personality(message, urgency)
-            await self._speak_and_emit(formatted)
-            logger.info("Health Monitor [%s/%s]: %s", alert_type, urgency, formatted)
+        if not message:
+            return
+        if urgency != "critical" and self.proactive._is_quiet_hours():
+            logger.info("Health Monitor unterdrueckt (Quiet Hours): %s", message[:80])
+            return
+        formatted = await self.proactive.format_with_personality(message, urgency)
+        await self._speak_and_emit(formatted)
+        logger.info("Health Monitor [%s/%s]: %s", alert_type, urgency, formatted)
 
     async def _handle_device_health_alert(self, alert: dict):
         """Callback fuer DeviceHealthMonitor — meldet Geraete-Anomalien."""
         message = alert.get("message", "")
-        if message:
-            formatted = await self.proactive.format_with_personality(message, "medium")
-            await self._speak_and_emit(formatted)
-            logger.info(
-                "DeviceHealth [%s]: %s",
-                alert.get("alert_type", "?"), formatted,
-            )
+        if not message:
+            return
+        if self.proactive._is_quiet_hours():
+            logger.info("DeviceHealth unterdrueckt (Quiet Hours): %s", message[:80])
+            return
+        formatted = await self.proactive.format_with_personality(message, "medium")
+        await self._speak_and_emit(formatted)
+        logger.info(
+            "DeviceHealth [%s]: %s",
+            alert.get("alert_type", "?"), formatted,
+        )
 
     async def _handle_wellness_nudge(self, nudge_type: str, message: str):
         """Callback fuer Wellness Advisor — kuemmert sich um den User."""
-        if message:
-            formatted = await self.proactive.format_with_personality(message, "low")
-            await self._speak_and_emit(formatted)
-            logger.info("Wellness [%s]: %s", nudge_type, formatted)
+        if not message:
+            return
+        if self.proactive._is_quiet_hours():
+            logger.info("Wellness unterdrueckt (Quiet Hours): %s", message[:80])
+            return
+        formatted = await self.proactive.format_with_personality(message, "low")
+        await self._speak_and_emit(formatted)
+        logger.info("Wellness [%s]: %s", nudge_type, formatted)
 
     # ------------------------------------------------------------------
     # Phase 14.3: Ambient Audio Callback
