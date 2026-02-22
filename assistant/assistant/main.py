@@ -192,7 +192,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="MindHome Assistant",
     description="Lokaler KI-Sprachassistent fuer Home Assistant — OpenAPI Docs unter /docs",
-    version="1.4.1",
+    version="1.4.2",
     lifespan=lifespan,
     docs_url="/docs",
     redoc_url="/redoc",
@@ -2382,7 +2382,7 @@ async def ui_system_status(token: str = ""):
         "ram": ram_info,
         "cpu": cpu_info,
         "gpu": gpu_info,
-        "version": "1.4.1",
+        "version": "1.4.2",
         "update_log": _update_log[-20:],
     }
 
@@ -2657,7 +2657,7 @@ async def root():
     """Startseite."""
     return {
         "name": "MindHome Assistant",
-        "version": "1.4.1",
+        "version": "1.4.2",
         "status": "running",
         "docs": "/docs",
         "dashboard": "/ui/",
@@ -2709,7 +2709,7 @@ async def metrics():
     # System-Info
     lines.append("# HELP mindhome_info MindHome Assistant Info")
     lines.append('# TYPE mindhome_info gauge')
-    lines.append('mindhome_info{version="1.4.1"} 1')
+    lines.append('mindhome_info{version="1.4.2"} 1')
 
     # Uptime (approximiert ueber Error-Buffer-Laenge)
     lines.append("# HELP mindhome_error_buffer_size Anzahl Fehler im Ring-Buffer")
