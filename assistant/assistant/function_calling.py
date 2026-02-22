@@ -3971,39 +3971,65 @@ class FunctionExecutor:
             except (ValueError, TypeError):
                 pass
 
-        if not include_forecast:
-            # Aktuelles Wetter als natuerliche Fakten
-            parts = [f"Draussen: {condition_de}, {temp}°C." if temp is not None
-                     else f"Draussen: {condition_de}."]
-            if wind_speed is not None:
-                if wind_speed > 40:
-                    parts.append(f"Kraeftiger Wind mit {wind_speed} km/h aus {wind_dir}." if wind_dir
-                                 else f"Kraeftiger Wind mit {wind_speed} km/h.")
-                elif wind_speed > 15:
-                    parts.append(f"Wind aus {wind_dir} mit {wind_speed} km/h." if wind_dir
-                                 else f"Wind mit {wind_speed} km/h.")
-                else:
-                    parts.append("Kaum Wind.")
-        else:
-            # Vorhersage als natuerliche Fakten
-            forecast = attrs.get("forecast", [])
+        # Rohdaten sammeln — LLM formuliert im JARVIS-Stil
+        parts = []
+
+        # Aktuelles Wetter immer mitliefern
+        current = f"AKTUELL: {condition_de}, {temp}°C" if temp is not None else f"AKTUELL: {condition_de}"
+        if humidity is not None:
+            current += f", Luftfeuchtigkeit {humidity}%"
+        if wind_speed is not None and wind_dir:
+            current += f", Wind {wind_speed} km/h aus {wind_dir}"
+        elif wind_speed is not None:
+            current += f", Wind {wind_speed} km/h"
+        if pressure is not None:
+            current += f", Luftdruck {pressure} hPa"
+        parts.append(current)
+
+        if include_forecast:
+            # Vorhersage via weather.get_forecasts Service (ab HA 2024.x)
+            entity_id = weather_entity["entity_id"]
+            forecast = []
+            try:
+                result = await self.ha.call_service_with_response(
+                    "weather", "get_forecasts",
+                    {"entity_id": entity_id, "type": "daily"},
+                )
+                if isinstance(result, dict):
+                    # Response: {"weather.xyz": {"forecast": [...]}}
+                    for key, val in result.items():
+                        if isinstance(val, dict) and "forecast" in val:
+                            forecast = val["forecast"] or []
+                            break
+            except Exception as e:
+                logger.warning("weather.get_forecasts fehlgeschlagen: %s", e)
+
+            # Fallback: alte Methode (attrs.forecast, HA < 2024)
+            if not forecast:
+                forecast = attrs.get("forecast", [])
+
             if forecast:
-                parts = []
                 for entry in forecast[:3]:
                     dt = entry.get("datetime", "")
-                    fc_temp = entry.get("temperature", "?")
+                    fc_temp_hi = entry.get("temperature", "?")
+                    fc_temp_lo = entry.get("templow")
                     fc_cond = condition_map.get(entry.get("condition", ""), entry.get("condition", "?"))
                     fc_wind = entry.get("wind_speed")
-                    # Tag-Label: Datum in lesbares Format
+                    fc_precip = entry.get("precipitation")
+                    fc_humidity = entry.get("humidity")
                     day_label = dt[:10] if len(dt) >= 10 else dt
-                    line = f"{day_label}: {fc_cond}, {fc_temp}°C"
-                    if fc_wind is not None and fc_wind > 15:
+                    line = f"VORHERSAGE {day_label}: {fc_cond}, Hoch {fc_temp_hi}°C"
+                    if fc_temp_lo is not None:
+                        line += f", Tief {fc_temp_lo}°C"
+                    if fc_wind is not None:
                         line += f", Wind {fc_wind} km/h"
-                    else:
-                        line += ", kaum Wind"
+                    if fc_precip is not None and fc_precip > 0:
+                        line += f", Niederschlag {fc_precip} mm"
+                    if fc_humidity is not None:
+                        line += f", Luftfeuchtigkeit {fc_humidity}%"
                     parts.append(line)
             else:
-                parts = ["Keine Vorhersage-Daten verfuegbar."]
+                parts.append("VORHERSAGE: Keine Daten verfuegbar")
 
         return {"success": True, "message": "\n".join(parts)}
 
