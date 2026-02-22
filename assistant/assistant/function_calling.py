@@ -3571,10 +3571,13 @@ class FunctionExecutor:
 
     async def _exec_set_wakeup_alarm(self, args: dict) -> dict:
         """Stellt einen Wecker."""
+        time_str = args.get("time", "")
+        if not time_str:
+            return {"success": False, "message": "Keine Uhrzeit angegeben. Format: HH:MM"}
         import assistant.main as main_module
         brain = main_module.brain
         return await brain.timer_manager.set_wakeup_alarm(
-            time_str=args["time"],
+            time_str=time_str,
             label=args.get("label", "Wecker"),
             room=args.get("room", ""),
             repeat=args.get("repeat", ""),

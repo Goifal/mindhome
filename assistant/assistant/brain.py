@@ -2292,12 +2292,13 @@ class AssistantBrain(BrainCallbacksMixin):
             logger.error("Fehler bei Hintergrund-Fakten-Extraktion: %s", e)
 
     async def _handle_timer_notification(self, alert: dict):
-        """Callback fuer allgemeine Timer — meldet wenn Timer abgelaufen ist."""
+        """Callback fuer allgemeine Timer/Wecker — meldet wenn Timer abgelaufen ist."""
         message = alert.get("message", "")
+        room = alert.get("room") or None
         if message:
             formatted = await self.proactive.format_with_personality(message, "medium")
-            await self._speak_and_emit(formatted)
-            logger.info("Timer -> Meldung: %s", formatted)
+            await self._speak_and_emit(formatted, room=room)
+            logger.info("Timer -> Meldung: %s (Raum: %s)", formatted, room or "auto")
 
     async def _handle_learning_suggestion(self, alert: dict):
         """Callback fuer Learning Observer — schlaegt Automatisierungen vor."""

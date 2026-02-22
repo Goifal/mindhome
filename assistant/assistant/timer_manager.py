@@ -670,7 +670,11 @@ class TimerManager:
         }
 
     async def cancel_alarm(self, alarm_id: str = "", label: str = "") -> dict:
-        """Loescht einen Wecker."""
+        """Loescht einen Wecker.
+
+        Wenn weder alarm_id noch label angegeben und nur ein Wecker aktiv ist,
+        wird dieser geloescht.
+        """
         target_id = alarm_id
 
         if not target_id and label:
@@ -697,6 +701,27 @@ class TimerManager:
                     if label_lower in timer.label.lower() and not timer.is_done:
                         target_id = tid
                         break
+
+        # Kein Label/ID angegeben: Wenn nur ein aktiver Wecker existiert, diesen loeschen
+        if not target_id and not label:
+            active_alarms = []
+            if self.redis:
+                try:
+                    raw = await self.redis.hgetall(KEY_ALARMS)
+                    for aid, data in (raw or {}).items():
+                        if isinstance(aid, bytes):
+                            aid = aid.decode()
+                        if isinstance(data, bytes):
+                            data = data.decode()
+                        info = json.loads(data)
+                        if info.get("active"):
+                            active_alarms.append(aid)
+                except Exception:
+                    pass
+            if len(active_alarms) == 1:
+                target_id = active_alarms[0]
+            elif len(active_alarms) > 1:
+                return {"success": False, "message": "Mehrere Wecker aktiv. Bitte angeben welcher geloescht werden soll."}
 
         if not target_id:
             return {"success": False, "message": "Wecker nicht gefunden."}
