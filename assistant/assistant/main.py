@@ -487,6 +487,14 @@ async def chat(request: ChatRequest):
             "context_room": request.room or "unbekannt",
         }
 
+    # Aktionen ans Addon melden fuer Aktivitaeten-Log
+    actions = result.get("actions", [])
+    if actions:
+        asyncio.ensure_future(brain.ha.log_actions(
+            actions, user_text=request.text,
+            response_text=result.get("response", ""),
+        ))
+
     # TTS-Daten als TTSInfo-Modell wrappen
     tts_raw = result.pop("tts", None)
     try:
@@ -1139,6 +1147,14 @@ async def websocket_endpoint(websocket: WebSocket):
                         else:
                             # brain.process() sendet intern via _speak_and_emit
                             result = await brain.process(text, person, room=room)
+
+                        # Aktionen ans Addon melden fuer Aktivitaeten-Log
+                        actions = result.get("actions", [])
+                        if actions:
+                            asyncio.ensure_future(brain.ha.log_actions(
+                                actions, user_text=text,
+                                response_text=result.get("response", ""),
+                            ))
 
                 elif event == "assistant.feedback":
                     # Phase 5: Feedback ueber FeedbackTracker verarbeiten

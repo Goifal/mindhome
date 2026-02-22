@@ -1173,10 +1173,12 @@ class FunctionExecutor:
             return {"success": success, "message": f"Licht {room} {direction} auf {new_brightness}%"}
 
         service_data = {"entity_id": entity_id}
+        brightness_pct = None
         if "brightness" in args and state == "on":
             try:
                 bri = str(args["brightness"]).replace("%", "").strip()
-                service_data["brightness_pct"] = max(1, min(100, int(float(bri))))
+                brightness_pct = max(1, min(100, int(float(bri))))
+                service_data["brightness_pct"] = brightness_pct
             except (ValueError, TypeError):
                 pass
         # Phase 9: Transition-Parameter (sanftes Dimmen) — muss int/float sein
@@ -1192,9 +1194,13 @@ class FunctionExecutor:
             kelvin = _COLOR_TEMP_MAP.get(args["color_temp"], 4000)
             service_data["color_temp_kelvin"] = kelvin
 
+        logger.info("set_light: %s -> %s (service_data=%s)", room, entity_id, service_data)
+
         service = "turn_on" if state == "on" else "turn_off"
         success = await self.ha.call_service("light", service, service_data)
         extras = []
+        if brightness_pct is not None:
+            extras.append(f"{brightness_pct}%")
         if "transition" in args:
             extras.append(f"Transition: {args['transition']}s")
         if "color_temp" in args:
@@ -2652,6 +2658,7 @@ class FunctionExecutor:
         try:
             devices = await self.ha.search_devices(domain=domain, room=search)
             if devices:
+                logger.info("_find_entity: DB lieferte %d Treffer fuer '%s' (domain=%s)", len(devices), search, domain)
                 # Best-Match: Exakt > kuerzester Partial
                 best = None
                 best_len = float("inf")
@@ -2660,9 +2667,11 @@ class FunctionExecutor:
                     dev_room = self._normalize_name(dev.get("room", "") or "")
                     # Exakter Raum-Match hat hoechste Prioritaet
                     if dev_room == search_norm:
+                        logger.info("_find_entity: Exakter Raum-Match -> %s", dev["ha_entity_id"])
                         return dev["ha_entity_id"]
                     # Exakter Name-Match
                     if search_norm == dev_name:
+                        logger.info("_find_entity: Exakter Name-Match -> %s", dev["ha_entity_id"])
                         return dev["ha_entity_id"]
                     # Partial Match: kuerzester Name gewinnt (spezifischer)
                     name_len = len(dev_name) + len(dev_room)
@@ -2670,7 +2679,10 @@ class FunctionExecutor:
                         best = dev["ha_entity_id"]
                         best_len = name_len
                 if best:
+                    logger.info("_find_entity: Best Partial-Match -> %s", best)
                     return best
+            else:
+                logger.info("_find_entity: DB lieferte 0 Treffer fuer '%s', HA-Fallback", search)
         except Exception as e:
             logger.debug("MindHome device search failed, using HA fallback: %s", e)
 
