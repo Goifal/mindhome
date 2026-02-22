@@ -5,33 +5,35 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Jarvis Chat</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 :root {
-  --bg-primary: #0a0e17;
-  --bg-secondary: #111827;
-  --bg-card: #1a2035;
-  --bg-card-hover: #1f2847;
-  --bg-input: #151d30;
-  --accent: #f59e0b;
-  --accent-dim: rgba(245, 158, 11, 0.15);
-  --accent-glow: rgba(245, 158, 11, 0.3);
-  --blue: #3b82f6;
-  --success: #10b981;
-  --danger: #ef4444;
-  --text-primary: #e8ecf4;
-  --text-secondary: #8892a8;
-  --text-muted: #5a6478;
-  --border: rgba(255, 255, 255, 0.06);
-  --border-hover: rgba(255, 255, 255, 0.12);
-  --border-accent: rgba(245, 158, 11, 0.3);
-  --shadow-sm: 0 1px 3px rgba(0,0,0,0.3);
-  --shadow-md: 0 4px 16px rgba(0,0,0,0.4);
-  --shadow-lg: 0 8px 32px rgba(0,0,0,0.5);
-  --shadow-glow: 0 0 20px rgba(245, 158, 11, 0.15);
-  --radius-sm: 8px;
-  --radius-md: 12px;
-  --radius-lg: 16px;
+  --bg-primary: #040810;
+  --bg-secondary: #0a1018;
+  --bg-card: #0c1520;
+  --bg-card-hover: #111e2e;
+  --bg-input: #081018;
+  --accent: #00d4ff;
+  --accent-dim: rgba(0, 212, 255, 0.1);
+  --accent-glow: rgba(0, 212, 255, 0.35);
+  --blue: #00d4ff;
+  --success: #00e676;
+  --success-dim: rgba(0, 230, 118, 0.12);
+  --danger: #ff3d3d;
+  --danger-dim: rgba(255, 61, 61, 0.12);
+  --text-primary: #c8dce8;
+  --text-secondary: #6889a0;
+  --text-muted: #3a5568;
+  --border: rgba(0, 212, 255, 0.06);
+  --border-hover: rgba(0, 212, 255, 0.15);
+  --border-accent: rgba(0, 212, 255, 0.25);
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.5);
+  --shadow-md: 0 4px 16px rgba(0,0,0,0.6);
+  --shadow-lg: 0 8px 32px rgba(0,0,0,0.7);
+  --shadow-glow: 0 0 30px rgba(0, 212, 255, 0.15);
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
   --font: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
   --mono: 'JetBrains Mono', 'SF Mono', monospace;
 }
@@ -47,18 +49,197 @@ html, body {
 }
 
 body {
-  background-image: radial-gradient(rgba(245,158,11,0.03) 1px, transparent 1px);
-  background-size: 28px 28px;
+  background-image:
+    radial-gradient(circle at 20% 50%, rgba(0,212,255,0.015) 0%, transparent 50%),
+    radial-gradient(circle at 80% 20%, rgba(0,212,255,0.01) 0%, transparent 40%);
 }
+
+/* Holographic grid overlay */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(0,212,255,0.012) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0,212,255,0.012) 1px, transparent 1px);
+  background-size: 40px 40px;
+  pointer-events: none;
+  z-index: 0;
+  animation: gridFlicker 8s ease-in-out infinite;
+}
+
+/* Scan line */
+body::after {
+  content: '';
+  position: fixed;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent 5%, rgba(0,212,255,0.15) 20%, rgba(0,212,255,0.3) 50%, rgba(0,212,255,0.15) 80%, transparent 95%);
+  animation: scanLine 8s ease-in-out infinite;
+  pointer-events: none;
+  z-index: 1;
+  filter: drop-shadow(0 0 6px rgba(0,212,255,0.4));
+}
+
+@keyframes gridFlicker {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+@keyframes scanLine {
+  0%, 100% { top: 5%; opacity: 0.4; }
+  50% { top: 95%; opacity: 0.15; }
+}
+
+/* ========== Boot Screen ========== */
+.boot-screen {
+  position: fixed;
+  inset: 0;
+  background: var(--bg-primary);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+
+.boot-screen::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at center, rgba(0,212,255,0.04) 0%, transparent 60%);
+}
+
+.boot-hud {
+  position: relative;
+  width: 220px;
+  height: 220px;
+  margin-bottom: 32px;
+}
+
+.boot-circle {
+  position: absolute;
+  inset: 0;
+  animation: bootRotate 3s linear infinite;
+}
+
+.boot-ring {
+  fill: none;
+  stroke: rgba(0,212,255,0.08);
+  stroke-width: 1.5;
+}
+
+.boot-ring-fill {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-dasharray: 565;
+  stroke-dashoffset: 565;
+  stroke-linecap: round;
+  animation: bootDraw 2s ease-out forwards;
+  filter: drop-shadow(0 0 10px rgba(0,212,255,0.7));
+}
+
+.boot-ring-outer {
+  position: absolute;
+  inset: 0;
+  animation: bootRotateReverse 6s linear infinite;
+}
+
+.boot-ring-inner {
+  position: absolute;
+  inset: 0;
+  animation: bootRotate 10s linear infinite;
+}
+
+.boot-logo {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--accent);
+  opacity: 0;
+  animation: bootFadeIn 0.6s ease 0.3s forwards;
+  text-shadow: 0 0 40px rgba(0,212,255,0.7), 0 0 80px rgba(0,212,255,0.3);
+  letter-spacing: 6px;
+  white-space: nowrap;
+}
+
+.boot-text {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--accent);
+  letter-spacing: 3px;
+  min-height: 20px;
+  text-transform: uppercase;
+  text-shadow: 0 0 15px rgba(0,212,255,0.4);
+}
+
+.boot-systems {
+  display: flex;
+  gap: 12px;
+  margin-top: 20px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.boot-sys {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  color: var(--text-muted);
+  opacity: 0;
+  animation: bootFadeIn 0.3s ease forwards;
+  font-family: var(--mono);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.boot-sys .sys-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  transition: background 0.3s, box-shadow 0.3s;
+}
+
+.boot-sys.online .sys-dot {
+  background: var(--success);
+  box-shadow: 0 0 8px rgba(0,230,118,0.5);
+}
+
+.boot-sys.online {
+  color: var(--text-secondary);
+}
+
+.boot-screen.fade-out {
+  animation: bootFadeOut 0.5s ease forwards;
+}
+
+@keyframes bootDraw { to { stroke-dashoffset: 0; } }
+@keyframes bootRotate { to { transform: rotate(360deg); } }
+@keyframes bootRotateReverse { to { transform: rotate(-360deg); } }
+@keyframes bootFadeIn { to { opacity: 1; } }
+@keyframes bootFadeOut { to { opacity: 0; pointer-events: none; } }
 
 /* ========== Layout ========== */
 .app {
-  display: flex;
+  display: none;
   flex-direction: column;
   height: 100vh;
   height: 100dvh;
   max-width: 900px;
   margin: 0 auto;
+  position: relative;
+  z-index: 2;
+}
+
+.app.active {
+  display: flex;
 }
 
 /* ========== Header ========== */
@@ -66,9 +247,23 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 20px;
-  border-bottom: 1px solid var(--border);
+  padding: 14px 20px;
+  border-bottom: 1px solid rgba(0,212,255,0.1);
   flex-shrink: 0;
+  background: rgba(8,14,24,0.95);
+  backdrop-filter: blur(16px);
+  position: relative;
+}
+
+.header::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(0,212,255,0.5), transparent);
+  filter: drop-shadow(0 0 4px rgba(0,212,255,0.3));
 }
 
 .header-left {
@@ -78,35 +273,36 @@ body {
 }
 
 .logo {
-  font-size: 22px;
-  font-weight: 600;
-  letter-spacing: 4px;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 5px;
   color: var(--accent);
-  text-shadow: 0 0 20px var(--accent-glow);
+  text-shadow: 0 0 20px var(--accent-glow), 0 0 40px rgba(0,212,255,0.15);
+  text-transform: uppercase;
   animation: logoGlow 3s ease-in-out infinite alternate;
 }
 
 @keyframes logoGlow {
-  0% { text-shadow: 0 0 10px rgba(245,158,11,0.2); }
-  100% { text-shadow: 0 0 25px rgba(245,158,11,0.4); }
+  0% { text-shadow: 0 0 15px rgba(0,212,255,0.3); }
+  100% { text-shadow: 0 0 30px rgba(0,212,255,0.5), 0 0 60px rgba(0,212,255,0.2); }
 }
 
 .status-dot {
   width: 8px; height: 8px;
   border-radius: 50%;
   background: var(--text-muted);
-  transition: background 0.3s;
+  transition: background 0.3s, box-shadow 0.3s;
 }
 
 .status-dot.online {
   background: var(--success);
-  box-shadow: 0 0 8px rgba(16,185,129,0.5);
+  box-shadow: 0 0 8px rgba(0,230,118,0.5), 0 0 20px rgba(0,230,118,0.2);
   animation: livePulse 2s ease-in-out infinite;
 }
 
 @keyframes livePulse {
   0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
+  50% { opacity: 0.4; }
 }
 
 .header-right {
@@ -116,12 +312,15 @@ body {
 }
 
 .mood-badge {
-  font-size: 12px;
-  color: var(--text-secondary);
-  background: var(--bg-card);
+  font-size: 11px;
+  color: var(--accent);
+  background: var(--accent-dim);
   padding: 4px 10px;
-  border-radius: 20px;
-  border: 1px solid var(--border);
+  border-radius: 4px;
+  border: 1px solid var(--border-accent);
+  font-family: var(--mono);
+  text-transform: uppercase;
+  letter-spacing: 1px;
 }
 
 /* ========== Messages Area ========== */
@@ -137,13 +336,14 @@ body {
 
 .messages::-webkit-scrollbar { width: 4px; }
 .messages::-webkit-scrollbar-track { background: transparent; }
-.messages::-webkit-scrollbar-thumb { background: var(--border-hover); border-radius: 4px; }
+.messages::-webkit-scrollbar-thumb { background: rgba(0,212,255,0.2); border-radius: 2px; }
+.messages::-webkit-scrollbar-thumb:hover { background: rgba(0,212,255,0.4); }
 
 .msg {
   display: flex;
   gap: 12px;
   max-width: 85%;
-  animation: msgIn 0.25s ease-out;
+  animation: msgIn 0.3s ease-out;
 }
 
 @keyframes msgIn {
@@ -161,62 +361,80 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 14px;
-  font-weight: 600;
+  font-size: 12px;
+  font-weight: 700;
   flex-shrink: 0;
   border: 1px solid var(--border);
+  font-family: var(--mono);
+  text-transform: uppercase;
+  letter-spacing: 1px;
 }
 
 .msg.user .msg-avatar {
-  background: rgba(59, 130, 246, 0.15);
-  color: var(--blue);
-  border-color: rgba(59, 130, 246, 0.3);
+  background: rgba(0, 212, 255, 0.08);
+  color: var(--accent);
+  border-color: rgba(0, 212, 255, 0.25);
 }
 
 .msg.assistant .msg-avatar {
   background: var(--accent-dim);
   color: var(--accent);
   border-color: var(--border-accent);
+  box-shadow: 0 0 10px rgba(0,212,255,0.15);
 }
 
 .msg.proactive .msg-avatar {
-  background: rgba(16, 185, 129, 0.15);
+  background: var(--success-dim);
   color: var(--success);
-  border-color: rgba(16, 185, 129, 0.3);
+  border-color: rgba(0, 230, 118, 0.3);
 }
 
 .msg-bubble {
   padding: 12px 16px;
   border-radius: var(--radius-md);
   line-height: 1.55;
-  font-size: 14.5px;
+  font-size: 14px;
   word-break: break-word;
+  position: relative;
 }
 
 .msg.user .msg-bubble {
-  background: rgba(59, 130, 246, 0.12);
-  border: 1px solid rgba(59, 130, 246, 0.2);
-  border-top-right-radius: 4px;
+  background: rgba(0, 212, 255, 0.06);
+  border: 1px solid rgba(0, 212, 255, 0.15);
+  border-top-right-radius: 2px;
 }
 
 .msg.assistant .msg-bubble {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-top-left-radius: 4px;
+  background: linear-gradient(135deg, rgba(12,21,32,0.95), rgba(8,16,24,0.98));
+  border: 1px solid rgba(0, 212, 255, 0.1);
+  border-top-left-radius: 2px;
+}
+
+.msg.assistant .msg-bubble::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(0,212,255,0.3), transparent);
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
 }
 
 .msg.proactive .msg-bubble {
-  background: rgba(16, 185, 129, 0.08);
-  border: 1px solid rgba(16, 185, 129, 0.15);
-  border-top-left-radius: 4px;
+  background: rgba(0, 230, 118, 0.04);
+  border: 1px solid rgba(0, 230, 118, 0.12);
+  border-top-left-radius: 2px;
   font-style: italic;
 }
 
 .msg-bubble .msg-time {
   display: block;
-  font-size: 11px;
+  font-size: 10px;
   color: var(--text-muted);
   margin-top: 6px;
+  font-family: var(--mono);
+  letter-spacing: 0.5px;
 }
 
 .msg-bubble .msg-actions {
@@ -227,13 +445,49 @@ body {
 }
 
 .action-tag {
-  font-size: 11px;
+  font-size: 10px;
   font-family: var(--mono);
   background: var(--accent-dim);
   color: var(--accent);
   padding: 2px 8px;
   border-radius: 4px;
   border: 1px solid var(--border-accent);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* File attachment in message */
+.msg-file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding: 8px 12px;
+  background: rgba(0,212,255,0.04);
+  border: 1px solid rgba(0,212,255,0.1);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-family: var(--mono);
+  color: var(--accent);
+}
+
+.msg-file-icon {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
+.msg-file-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.msg-file-size {
+  font-size: 10px;
+  color: var(--text-muted);
+  flex-shrink: 0;
 }
 
 /* Typing indicator */
@@ -257,28 +511,31 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 14px;
-  font-weight: 600;
+  font-size: 12px;
+  font-weight: 700;
   flex-shrink: 0;
   background: var(--accent-dim);
   color: var(--accent);
   border: 1px solid var(--border-accent);
+  font-family: var(--mono);
+  box-shadow: 0 0 10px rgba(0,212,255,0.15);
 }
 
 .typing-dots {
   display: flex;
   gap: 4px;
   padding: 12px 16px;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
+  background: linear-gradient(135deg, rgba(12,21,32,0.95), rgba(8,16,24,0.98));
+  border: 1px solid rgba(0, 212, 255, 0.1);
   border-radius: var(--radius-md);
-  border-top-left-radius: 4px;
+  border-top-left-radius: 2px;
 }
 
 .typing-dots span {
   width: 7px; height: 7px;
   border-radius: 50%;
-  background: var(--text-muted);
+  background: var(--accent);
+  opacity: 0.4;
   animation: typingBounce 1.2s ease-in-out infinite;
 }
 
@@ -286,22 +543,142 @@ body {
 .typing-dots span:nth-child(3) { animation-delay: 0.3s; }
 
 @keyframes typingBounce {
-  0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.3; }
   30% { transform: translateY(-6px); opacity: 1; }
 }
 
 /* ========== Input Area ========== */
 .input-area {
-  padding: 16px 20px;
-  border-top: 1px solid var(--border);
+  padding: 14px 20px;
+  border-top: 1px solid rgba(0,212,255,0.1);
   flex-shrink: 0;
-  background: var(--bg-secondary);
+  background: rgba(8,14,24,0.95);
+  backdrop-filter: blur(16px);
+  position: relative;
+}
+
+.input-area::before {
+  content: '';
+  position: absolute;
+  top: -1px;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(0,212,255,0.3), transparent);
+}
+
+/* File upload drop zone */
+.drop-overlay {
+  display: none;
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 212, 255, 0.06);
+  border: 2px dashed rgba(0, 212, 255, 0.4);
+  border-radius: var(--radius-md);
+  z-index: 10;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.drop-overlay.active {
+  display: flex;
+}
+
+.drop-overlay-text {
+  font-size: 14px;
+  color: var(--accent);
+  font-family: var(--mono);
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  text-shadow: 0 0 15px rgba(0,212,255,0.4);
+}
+
+/* File preview bar */
+.file-preview-bar {
+  display: none;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  margin-bottom: 10px;
+  background: rgba(0,212,255,0.04);
+  border: 1px solid rgba(0,212,255,0.12);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-family: var(--mono);
+  color: var(--accent);
+}
+
+.file-preview-bar.active { display: flex; }
+
+.file-preview-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-preview-size {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.file-preview-remove {
+  width: 20px;
+  height: 20px;
+  border: 1px solid rgba(255,61,61,0.3);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--danger);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  transition: all 0.15s;
+}
+
+.file-preview-remove:hover {
+  background: var(--danger-dim);
+  border-color: var(--danger);
 }
 
 .input-row {
   display: flex;
-  gap: 10px;
+  gap: 8px;
   align-items: flex-end;
+}
+
+.btn-upload {
+  width: 42px;
+  height: 42px;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  border: 1px solid rgba(0,212,255,0.15);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.btn-upload:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(0,212,255,0.05);
+  box-shadow: 0 0 12px rgba(0,212,255,0.1);
+}
+
+.btn-upload svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .input-wrap {
@@ -312,18 +689,18 @@ body {
 .input-wrap textarea {
   width: 100%;
   background: var(--bg-input);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  border: 1px solid rgba(0,212,255,0.1);
+  border-radius: var(--radius-sm);
   color: var(--text-primary);
   font-family: var(--font);
-  font-size: 14.5px;
-  padding: 12px 16px;
+  font-size: 14px;
+  padding: 11px 14px;
   resize: none;
   outline: none;
-  min-height: 46px;
+  min-height: 42px;
   max-height: 140px;
   line-height: 1.45;
-  transition: border-color 0.2s;
+  transition: border-color 0.15s, box-shadow 0.15s;
 }
 
 .input-wrap textarea::placeholder {
@@ -332,36 +709,42 @@ body {
 
 .input-wrap textarea:focus {
   border-color: var(--border-accent);
-  box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.08);
+  box-shadow: 0 0 12px rgba(0, 212, 255, 0.08);
 }
 
 .btn-send {
-  width: 46px; height: 46px;
-  border-radius: var(--radius-md);
-  background: var(--accent);
-  border: none;
+  width: 42px; height: 42px;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  border: 1px solid var(--accent);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.2s;
+  transition: all 0.15s;
   flex-shrink: 0;
+  box-shadow: 0 0 15px rgba(0,212,255,0.1), inset 0 0 15px rgba(0,212,255,0.05);
 }
 
 .btn-send:hover {
-  background: #d97706;
-  box-shadow: var(--shadow-glow);
+  background: rgba(0,212,255,0.1);
+  box-shadow: 0 0 25px rgba(0,212,255,0.3), inset 0 0 20px rgba(0,212,255,0.1);
 }
 
 .btn-send:disabled {
-  opacity: 0.4;
+  opacity: 0.3;
   cursor: not-allowed;
   box-shadow: none;
+  border-color: var(--text-muted);
 }
 
 .btn-send svg {
-  width: 20px; height: 20px;
-  fill: var(--bg-primary);
+  width: 18px; height: 18px;
+  fill: var(--accent);
+}
+
+.btn-send:disabled svg {
+  fill: var(--text-muted);
 }
 
 /* ========== Welcome Screen ========== */
@@ -377,16 +760,17 @@ body {
 }
 
 .welcome-logo {
-  font-size: 48px;
-  font-weight: 600;
+  font-size: 42px;
+  font-weight: 700;
   letter-spacing: 8px;
   color: var(--accent);
-  text-shadow: 0 0 40px var(--accent-glow);
+  text-shadow: 0 0 40px var(--accent-glow), 0 0 80px rgba(0,212,255,0.15);
+  text-transform: uppercase;
 }
 
 .welcome-sub {
   color: var(--text-secondary);
-  font-size: 15px;
+  font-size: 14px;
   max-width: 360px;
   line-height: 1.6;
 }
@@ -400,20 +784,22 @@ body {
 }
 
 .hint-chip {
-  font-size: 13px;
+  font-size: 12px;
   color: var(--text-secondary);
   background: var(--bg-card);
-  border: 1px solid var(--border);
+  border: 1px solid rgba(0,212,255,0.1);
   padding: 8px 14px;
-  border-radius: 20px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.15s;
+  font-family: var(--mono);
 }
 
 .hint-chip:hover {
   border-color: var(--border-accent);
   color: var(--accent);
   background: var(--accent-dim);
+  box-shadow: 0 0 12px rgba(0,212,255,0.1);
 }
 
 /* ========== Toast ========== */
@@ -422,21 +808,41 @@ body {
   bottom: 90px;
   left: 50%;
   transform: translateX(-50%) translateY(20px);
-  background: var(--bg-card);
+  background: rgba(12,21,32,0.95);
   color: var(--text-primary);
   border: 1px solid var(--border-accent);
   padding: 10px 20px;
   border-radius: var(--radius-sm);
-  font-size: 13px;
+  font-size: 12px;
+  font-family: var(--mono);
   z-index: 999;
   opacity: 0;
   transition: all 0.3s;
   pointer-events: none;
+  backdrop-filter: blur(8px);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  max-width: 90%;
+  text-align: center;
+  box-shadow: var(--shadow-lg), 0 0 20px rgba(0,212,255,0.1);
 }
 
 .toast.show {
   opacity: 1;
   transform: translateX(-50%) translateY(0);
+  pointer-events: auto;
+}
+
+.toast.toast-error {
+  border-color: rgba(255,61,61,0.4);
+  color: var(--danger);
+  box-shadow: var(--shadow-lg), 0 0 20px rgba(255,61,61,0.15);
+}
+
+.toast.toast-success {
+  border-color: rgba(0,230,118,0.4);
+  color: var(--success);
+  box-shadow: var(--shadow-lg), 0 0 20px rgba(0,230,118,0.15);
 }
 
 /* ========== Connection Banner ========== */
@@ -446,13 +852,52 @@ body {
   justify-content: center;
   gap: 8px;
   padding: 8px;
-  background: rgba(239, 68, 68, 0.12);
-  border-bottom: 1px solid rgba(239, 68, 68, 0.2);
-  font-size: 13px;
+  background: rgba(255, 61, 61, 0.06);
+  border-bottom: 1px solid rgba(255, 61, 61, 0.15);
+  font-size: 12px;
   color: var(--danger);
+  font-family: var(--mono);
+  text-transform: uppercase;
+  letter-spacing: 1px;
 }
 
 .conn-banner.show { display: flex; }
+
+/* ========== Upload progress ========== */
+.upload-progress {
+  display: none;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  margin-bottom: 10px;
+}
+
+.upload-progress.active { display: flex; }
+
+.upload-progress-bar {
+  flex: 1;
+  height: 3px;
+  background: rgba(0,212,255,0.1);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.upload-progress-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 2px;
+  width: 0%;
+  transition: width 0.3s;
+  box-shadow: 0 0 8px rgba(0,212,255,0.5);
+}
+
+.upload-progress-text {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-family: var(--mono);
+  min-width: 60px;
+  text-align: right;
+}
 
 /* ========== Mobile ========== */
 @media (max-width: 600px) {
@@ -461,18 +906,59 @@ body {
   .header { padding: 12px 16px; }
   .messages { padding: 12px; gap: 12px; }
   .input-area { padding: 12px 16px; }
-  .welcome-logo { font-size: 36px; letter-spacing: 6px; }
+  .welcome-logo { font-size: 28px; letter-spacing: 6px; }
   .welcome { padding: 24px; }
+  .boot-hud { width: 160px; height: 160px; }
+  .boot-logo { font-size: 20px; letter-spacing: 4px; }
+  .boot-text { font-size: 10px; letter-spacing: 2px; }
+  .boot-systems { gap: 8px; }
+  .logo { font-size: 15px; letter-spacing: 4px; }
+  .hint-chip { font-size: 11px; padding: 6px 12px; }
+}
+
+@media (max-width: 380px) {
+  .boot-hud { width: 130px; height: 130px; }
+  .boot-logo { font-size: 16px; letter-spacing: 3px; }
+  .welcome-logo { font-size: 22px; letter-spacing: 4px; }
+}
+
+/* ========== Reduced Motion ========== */
+@media (prefers-reduced-motion: reduce) {
+  .boot-circle, .boot-ring-outer, .boot-ring-inner,
+  body::after, body::before { animation: none !important; }
+  .msg { animation: none !important; }
+  .typing-dots span { animation: none !important; opacity: 0.5; }
 }
 </style>
 </head>
 <body>
 
-<div class="app">
+<!-- BOOT SCREEN -->
+<div id="bootScreen" class="boot-screen">
+  <div class="boot-hud">
+    <svg class="boot-circle" viewBox="0 0 200 200">
+      <circle class="boot-ring" cx="100" cy="100" r="90" />
+      <circle class="boot-ring-fill" cx="100" cy="100" r="90" />
+    </svg>
+    <svg class="boot-ring-outer" viewBox="0 0 200 200">
+      <circle cx="100" cy="100" r="96" fill="none" stroke="rgba(0,212,255,0.12)" stroke-width="0.5" />
+      <circle cx="100" cy="100" r="96" fill="none" stroke="rgba(0,212,255,0.4)" stroke-width="1" stroke-dasharray="12 8 4 8" stroke-linecap="round" />
+    </svg>
+    <svg class="boot-ring-inner" viewBox="0 0 200 200">
+      <circle cx="100" cy="100" r="70" fill="none" stroke="rgba(0,212,255,0.3)" stroke-width="0.8" stroke-dasharray="6 14 2 14" />
+      <circle cx="100" cy="100" r="55" fill="none" stroke="rgba(0,212,255,0.15)" stroke-width="0.5" stroke-dasharray="3 20" />
+    </svg>
+    <div class="boot-logo">JARVIS</div>
+  </div>
+  <div class="boot-text" id="bootText"></div>
+  <div class="boot-systems" id="bootSystems"></div>
+</div>
+
+<div class="app" id="app">
   <!-- Connection Banner -->
   <div class="conn-banner" id="connBanner">
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
-    <span>Verbindung unterbrochen — Reconnect...</span>
+    <span>Signal Lost — Reconnecting</span>
   </div>
 
   <!-- Header -->
@@ -510,8 +996,29 @@ body {
   </div>
 
   <!-- Input -->
-  <div class="input-area">
+  <div class="input-area" id="inputArea">
+    <div class="drop-overlay" id="dropOverlay">
+      <span class="drop-overlay-text">Datei ablegen</span>
+    </div>
+
+    <!-- File preview -->
+    <div class="file-preview-bar" id="filePreview">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+      <span class="file-preview-name" id="filePreviewName"></span>
+      <span class="file-preview-size" id="filePreviewSize"></span>
+      <button class="file-preview-remove" id="filePreviewRemove" onclick="clearFile()">&times;</button>
+    </div>
+
+    <!-- Upload progress -->
+    <div class="upload-progress" id="uploadProgress">
+      <div class="upload-progress-bar"><div class="upload-progress-fill" id="uploadFill"></div></div>
+      <span class="upload-progress-text" id="uploadText">0%</span>
+    </div>
+
     <div class="input-row">
+      <button class="btn-upload" id="btnUpload" onclick="triggerFileInput()" title="Datei hochladen">
+        <svg viewBox="0 0 24 24"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+      </button>
       <div class="input-wrap">
         <textarea id="input" rows="1" placeholder="Nachricht an Jarvis..." autocomplete="off"></textarea>
       </div>
@@ -519,6 +1026,7 @@ body {
         <svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
       </button>
     </div>
+    <input type="file" id="fileInput" style="display:none" accept=".jpg,.jpeg,.png,.gif,.webp,.bmp,.pdf,.txt,.md,.csv,.json,.xml,.yaml,.yml,.log,.py,.js,.ts,.html,.css,.sh,.doc,.docx,.xls,.xlsx,.pptx,.odt,.ods,.rtf,.zip,.tar,.gz"/>
   </div>
 </div>
 
@@ -526,7 +1034,7 @@ body {
 
 <script>
 // ============================================================
-// Jarvis Chat — WebSocket-basiert mit Streaming
+// JARVIS Chat — WebSocket + Streaming + File Upload
 // ============================================================
 
 const API = location.origin;
@@ -535,14 +1043,19 @@ const WS_URL = `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.h
 let ws = null;
 let reconnectTimer = null;
 let reconnectDelay = 1000;
+let maxReconnectDelay = 15000;
 let streamBuffer = '';
 let streamBubble = null;
 let isStreaming = false;
 let messageCount = 0;
 let currentPerson = '';
+let pendingFile = null;
+let toastTimer = null;
+let streamTimeout = null;
+const STREAM_TIMEOUT_MS = 30000;
 
 // Load person name from settings
-fetch(`${location.origin}/api/ui/settings?token=`).then(r => r.ok ? r.json() : null).then(d => {
+fetch(`${API}/api/ui/settings?token=`).then(r => r.ok ? r.json() : null).then(d => {
   if (d) {
     const h = (d.household || {});
     currentPerson = h.primary_user || d.user_name || '';
@@ -550,6 +1063,10 @@ fetch(`${location.origin}/api/ui/settings?token=`).then(r => r.ok ? r.json() : n
 }).catch(() => {});
 
 // --- DOM ---
+const $app = document.getElementById('app');
+const $boot = document.getElementById('bootScreen');
+const $bootText = document.getElementById('bootText');
+const $bootSystems = document.getElementById('bootSystems');
 const $messages = document.getElementById('messages');
 const $welcome = document.getElementById('welcome');
 const $input = document.getElementById('input');
@@ -559,8 +1076,68 @@ const $statusDot = document.getElementById('statusDot');
 const $moodBadge = document.getElementById('moodBadge');
 const $connBanner = document.getElementById('connBanner');
 const $toast = document.getElementById('toast');
+const $inputArea = document.getElementById('inputArea');
+const $dropOverlay = document.getElementById('dropOverlay');
+const $filePreview = document.getElementById('filePreview');
+const $filePreviewName = document.getElementById('filePreviewName');
+const $filePreviewSize = document.getElementById('filePreviewSize');
+const $fileInput = document.getElementById('fileInput');
+const $uploadProgress = document.getElementById('uploadProgress');
+const $uploadFill = document.getElementById('uploadFill');
+const $uploadText = document.getElementById('uploadText');
 
-// --- Greeting ---
+// ========== Boot Sequence ==========
+async function runBootSequence() {
+  const steps = [
+    'Initialisiere Systeme...',
+    'Verbinde mit Server...',
+    'Lade Sprachmodell...',
+    'Systeme bereit'
+  ];
+
+  const systems = [
+    { name: 'CORE', delay: 400 },
+    { name: 'MEMORY', delay: 300 },
+    { name: 'VOICE', delay: 500 },
+    { name: 'NET', delay: 200 }
+  ];
+
+  // Create system indicators
+  $bootSystems.innerHTML = systems.map((s, i) =>
+    `<div class="boot-sys" id="bootSys${i}" style="animation-delay:${0.5 + i * 0.15}s">
+      <span class="sys-dot"></span>
+      <span>${s.name}</span>
+    </div>`
+  ).join('');
+
+  // Run boot text steps
+  for (let i = 0; i < steps.length; i++) {
+    $bootText.textContent = steps[i];
+    await sleep(600);
+  }
+
+  // Activate systems one by one
+  for (let i = 0; i < systems.length; i++) {
+    await sleep(systems[i].delay);
+    const el = document.getElementById(`bootSys${i}`);
+    if (el) el.classList.add('online');
+  }
+
+  await sleep(500);
+
+  // Fade out boot screen and show app
+  $boot.classList.add('fade-out');
+  await sleep(400);
+  $boot.style.display = 'none';
+  $app.classList.add('active');
+  $input.focus();
+}
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// ========== Greeting ==========
 function getGreeting() {
   const h = new Date().getHours();
   if (h < 6) return 'Gute Nacht, Sir.';
@@ -570,33 +1147,37 @@ function getGreeting() {
 }
 document.querySelector('.welcome-sub').textContent = getGreeting();
 
-// --- Auto-resize textarea ---
+// ========== Auto-resize textarea ==========
 $input.addEventListener('input', () => {
   $input.style.height = 'auto';
   $input.style.height = Math.min($input.scrollHeight, 140) + 'px';
-  $btnSend.disabled = !$input.value.trim();
+  updateSendButton();
 });
 
 $input.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault();
-    if ($input.value.trim()) sendMessage();
+    if ($input.value.trim() || pendingFile) sendMessage();
   }
 });
 
-// --- Hint chips ---
+function updateSendButton() {
+  $btnSend.disabled = !($input.value.trim() || pendingFile);
+}
+
+// ========== Hint chips ==========
 function sendHint(el) {
   $input.value = el.textContent;
-  $btnSend.disabled = false;
+  updateSendButton();
   sendMessage();
 }
 
-// --- Time formatting ---
+// ========== Time formatting ==========
 function timeStr() {
   return new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
 }
 
-// --- Show messages area ---
+// ========== Show messages area ==========
 function showMessages() {
   if ($welcome.style.display !== 'none') {
     $welcome.style.display = 'none';
@@ -604,8 +1185,15 @@ function showMessages() {
   }
 }
 
-// --- Add message to chat ---
-function addMessage(role, text, actions) {
+// ========== Format file size ==========
+function formatSize(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
+// ========== Add message to chat ==========
+function addMessage(role, text, actions, fileInfo) {
   showMessages();
   const div = document.createElement('div');
   div.className = `msg ${role}`;
@@ -614,13 +1202,23 @@ function addMessage(role, text, actions) {
   let actionsHTML = '';
   if (actions && actions.length) {
     actionsHTML = '<div class="msg-actions">' +
-      actions.map(a => `<span class="action-tag">${a.function || a}</span>`).join('') +
+      actions.map(a => `<span class="action-tag">${escapeHTML(a.function || a)}</span>`).join('') +
       '</div>';
+  }
+
+  let fileHTML = '';
+  if (fileInfo) {
+    fileHTML = `<div class="msg-file">
+      <svg class="msg-file-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+      <span class="msg-file-name">${escapeHTML(fileInfo.name)}</span>
+      <span class="msg-file-size">${formatSize(fileInfo.size)}</span>
+    </div>`;
   }
 
   div.innerHTML = `
     <div class="msg-avatar">${avatarText}</div>
     <div class="msg-bubble">
+      ${fileHTML}
       ${escapeHTML(text)}
       ${actionsHTML}
       <span class="msg-time">${timeStr()}</span>
@@ -632,7 +1230,7 @@ function addMessage(role, text, actions) {
   return div;
 }
 
-// --- Streaming bubble ---
+// ========== Streaming bubble ==========
 function startStreamBubble() {
   showMessages();
   streamBuffer = '';
@@ -648,6 +1246,7 @@ function startStreamBubble() {
   $messages.appendChild(div);
   streamBubble = div.querySelector('.stream-text');
   isStreaming = true;
+  resetStreamTimeout();
   scrollToBottom();
   return div;
 }
@@ -656,22 +1255,43 @@ function appendStreamToken(token) {
   if (!streamBubble) startStreamBubble();
   streamBuffer += token;
   streamBubble.textContent = streamBuffer;
+  resetStreamTimeout();
   scrollToBottom();
 }
 
 function endStream(fullText, actions) {
+  clearStreamTimeout();
   if (streamBubble) {
     streamBubble.textContent = fullText || streamBuffer;
     if (actions && actions.length) {
       const actionsDiv = document.createElement('div');
       actionsDiv.className = 'msg-actions';
-      actionsDiv.innerHTML = actions.map(a => `<span class="action-tag">${a.function || a}</span>`).join('');
+      actionsDiv.innerHTML = actions.map(a => `<span class="action-tag">${escapeHTML(a.function || a)}</span>`).join('');
       streamBubble.parentElement.insertBefore(actionsDiv, streamBubble.parentElement.querySelector('.msg-time'));
     }
   }
   streamBubble = null;
   isStreaming = false;
   streamBuffer = '';
+}
+
+// Stream timeout — recover from stuck streams
+function resetStreamTimeout() {
+  clearStreamTimeout();
+  streamTimeout = setTimeout(() => {
+    if (isStreaming) {
+      endStream(streamBuffer || '...');
+      $typing.classList.remove('active');
+      toast('Stream-Timeout — bitte erneut versuchen', 'error');
+    }
+  }, STREAM_TIMEOUT_MS);
+}
+
+function clearStreamTimeout() {
+  if (streamTimeout) {
+    clearTimeout(streamTimeout);
+    streamTimeout = null;
+  }
 }
 
 function scrollToBottom() {
@@ -681,44 +1301,202 @@ function scrollToBottom() {
 }
 
 function escapeHTML(str) {
+  if (!str) return '';
   const div = document.createElement('div');
   div.textContent = str;
   return div.innerHTML;
 }
 
-// --- Send message ---
-function sendMessage() {
-  const text = $input.value.trim();
-  if (!text || !ws || ws.readyState !== WebSocket.OPEN) return;
+// ========== File Upload ==========
+function triggerFileInput() {
+  $fileInput.click();
+}
 
-  addMessage('user', text);
+$fileInput.addEventListener('change', () => {
+  if ($fileInput.files.length > 0) {
+    selectFile($fileInput.files[0]);
+  }
+  $fileInput.value = '';
+});
+
+function selectFile(file) {
+  const maxSize = 50 * 1024 * 1024;
+  if (file.size > maxSize) {
+    toast('Datei zu gross (max 50 MB)', 'error');
+    return;
+  }
+  pendingFile = file;
+  $filePreviewName.textContent = file.name;
+  $filePreviewSize.textContent = formatSize(file.size);
+  $filePreview.classList.add('active');
+  updateSendButton();
+}
+
+function clearFile() {
+  pendingFile = null;
+  $filePreview.classList.remove('active');
+  $filePreviewName.textContent = '';
+  $filePreviewSize.textContent = '';
+  updateSendButton();
+}
+
+// Drag and drop
+let dragCounter = 0;
+
+$inputArea.addEventListener('dragenter', (e) => {
+  e.preventDefault();
+  dragCounter++;
+  $dropOverlay.classList.add('active');
+});
+
+$inputArea.addEventListener('dragleave', (e) => {
+  e.preventDefault();
+  dragCounter--;
+  if (dragCounter <= 0) {
+    dragCounter = 0;
+    $dropOverlay.classList.remove('active');
+  }
+});
+
+$inputArea.addEventListener('dragover', (e) => {
+  e.preventDefault();
+});
+
+$inputArea.addEventListener('drop', (e) => {
+  e.preventDefault();
+  dragCounter = 0;
+  $dropOverlay.classList.remove('active');
+  if (e.dataTransfer.files.length > 0) {
+    selectFile(e.dataTransfer.files[0]);
+  }
+});
+
+async function uploadFile(file, caption) {
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('caption', caption);
+  if (currentPerson) formData.append('person', currentPerson);
+
+  // Show progress
+  $uploadProgress.classList.add('active');
+  $uploadFill.style.width = '0%';
+  $uploadText.textContent = '0%';
+
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `${API}/api/assistant/chat/upload`);
+
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) {
+        const pct = Math.round((e.loaded / e.total) * 100);
+        $uploadFill.style.width = pct + '%';
+        $uploadText.textContent = pct + '%';
+      }
+    };
+
+    xhr.onload = () => {
+      $uploadProgress.classList.remove('active');
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          resolve(JSON.parse(xhr.responseText));
+        } catch (e) {
+          reject(new Error('Ungueltige Server-Antwort'));
+        }
+      } else {
+        let msg = 'Upload fehlgeschlagen';
+        try {
+          const err = JSON.parse(xhr.responseText);
+          msg = err.detail || msg;
+        } catch (e) { /* ignore */ }
+        reject(new Error(msg));
+      }
+    };
+
+    xhr.onerror = () => {
+      $uploadProgress.classList.remove('active');
+      reject(new Error('Netzwerkfehler beim Upload'));
+    };
+
+    xhr.ontimeout = () => {
+      $uploadProgress.classList.remove('active');
+      reject(new Error('Upload-Timeout'));
+    };
+
+    xhr.timeout = 120000;
+    xhr.send(formData);
+  });
+}
+
+// ========== Send message ==========
+async function sendMessage() {
+  const text = $input.value.trim();
+  const file = pendingFile;
+
+  if (!text && !file) return;
+  if (!file && (!ws || ws.readyState !== WebSocket.OPEN)) return;
+
+  const displayText = text || `Datei: ${file.name}`;
+  addMessage('user', displayText, null, file ? { name: file.name, size: file.size } : null);
+
   $input.value = '';
   $input.style.height = 'auto';
-  $btnSend.disabled = true;
+  clearFile();
+  updateSendButton();
 
   // Show typing
   $typing.classList.add('active');
 
-  const payload = { text, stream: true };
-  if (currentPerson) payload.person = currentPerson;
-  ws.send(JSON.stringify({
-    event: 'assistant.text',
-    data: payload
-  }));
+  if (file) {
+    // File upload path
+    try {
+      const result = await uploadFile(file, text);
+      $typing.classList.remove('active');
+      addMessage('assistant', result.response || 'Datei verarbeitet.', result.actions);
+    } catch (err) {
+      $typing.classList.remove('active');
+      toast(err.message || 'Upload fehlgeschlagen', 'error');
+    }
+  } else {
+    // WebSocket text path
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      $typing.classList.remove('active');
+      toast('Keine Verbindung zum Server', 'error');
+      return;
+    }
+
+    const payload = { text, stream: true };
+    if (currentPerson) payload.person = currentPerson;
+    ws.send(JSON.stringify({
+      event: 'assistant.text',
+      data: payload
+    }));
+  }
 }
 
-// --- Toast ---
-function toast(msg) {
+// ========== Toast ==========
+function toast(msg, type) {
+  if (toastTimer) clearTimeout(toastTimer);
   $toast.textContent = msg;
+  $toast.className = 'toast';
+  if (type === 'error') $toast.classList.add('toast-error');
+  else if (type === 'success') $toast.classList.add('toast-success');
   $toast.classList.add('show');
-  setTimeout(() => $toast.classList.remove('show'), 3000);
+  toastTimer = setTimeout(() => {
+    $toast.classList.remove('show');
+    toastTimer = null;
+  }, 4000);
 }
 
-// --- WebSocket ---
+// ========== WebSocket ==========
 function connectWS() {
   if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
 
-  ws = new WebSocket(WS_URL);
+  try {
+    ws = new WebSocket(WS_URL);
+  } catch (e) {
+    scheduleReconnect();
+    return;
+  }
 
   ws.onopen = () => {
     $statusDot.className = 'status-dot online';
@@ -731,30 +1509,41 @@ function connectWS() {
     try {
       const msg = JSON.parse(ev.data);
       handleWSEvent(msg);
-    } catch (e) { /* ignore */ }
+    } catch (e) {
+      console.warn('WS parse error:', e);
+    }
   };
 
-  ws.onclose = () => {
+  ws.onclose = (ev) => {
     $statusDot.className = 'status-dot';
-    $connBanner.classList.add('show');
+    // Only show banner if we had a connection before
+    if (messageCount > 0 || ev.code !== 1006) {
+      $connBanner.classList.add('show');
+    }
+    // Clean up stuck streaming state
+    if (isStreaming) {
+      endStream(streamBuffer || '');
+      $typing.classList.remove('active');
+    }
     scheduleReconnect();
   };
 
   ws.onerror = () => {
-    ws.close();
+    // onclose will fire after this
   };
 }
 
 function scheduleReconnect() {
   clearTimeout(reconnectTimer);
   reconnectTimer = setTimeout(() => {
-    reconnectDelay = Math.min(reconnectDelay * 1.5, 10000);
+    reconnectDelay = Math.min(reconnectDelay * 1.5, maxReconnectDelay);
     connectWS();
   }, reconnectDelay);
 }
 
 function handleWSEvent(msg) {
   const { event, data } = msg;
+  if (!event) return;
 
   switch (event) {
     case 'assistant.thinking':
@@ -763,13 +1552,17 @@ function handleWSEvent(msg) {
 
     case 'assistant.speaking':
       $typing.classList.remove('active');
-      if (!isStreaming) {
-        addMessage('assistant', data.text || '', data.actions);
+      clearStreamTimeout();
+      if (isStreaming) {
+        // End any active stream first
+        endStream(streamBuffer);
       }
+      addMessage('assistant', data.text || '', data.actions);
       break;
 
     case 'assistant.stream_start':
       $typing.classList.remove('active');
+      if (isStreaming) endStream(streamBuffer);
       startStreamBubble();
       break;
 
@@ -785,38 +1578,47 @@ function handleWSEvent(msg) {
 
     case 'assistant.proactive':
       $typing.classList.remove('active');
+      if (isStreaming) endStream(streamBuffer);
       addMessage('proactive', data.text || '');
       break;
 
     case 'assistant.action':
-      // Actions werden als Tags in der naechsten Nachricht angezeigt
+      // Actions are shown as tags in the message
       break;
 
     case 'error':
-      toast(data.message || 'Fehler');
       $typing.classList.remove('active');
+      clearStreamTimeout();
+      if (isStreaming) endStream(streamBuffer || '');
+      toast(data.message || 'Fehler', 'error');
       break;
   }
 }
 
-// --- Mood ---
+// ========== Mood ==========
 async function fetchMood() {
   try {
     const r = await fetch(`${API}/api/assistant/mood`);
     if (r.ok) {
       const d = await r.json();
       const mood = d.mood || d.current_mood || '';
-      if (mood) $moodBadge.textContent = mood;
-      else $moodBadge.style.display = 'none';
+      if (mood) {
+        $moodBadge.textContent = mood;
+        $moodBadge.style.display = '';
+      } else {
+        $moodBadge.style.display = 'none';
+      }
+    } else {
+      $moodBadge.style.display = 'none';
     }
   } catch (e) {
     $moodBadge.style.display = 'none';
   }
 }
 
-// --- Init ---
+// ========== Init ==========
+runBootSequence();
 connectWS();
-$input.focus();
 </script>
 </body>
 </html>
