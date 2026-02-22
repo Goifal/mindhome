@@ -93,11 +93,27 @@ class HealthMonitor:
                 pass
 
     async def _check_loop(self):
-        """Periodischer Gesundheits-Check."""
+        """Periodischer Gesundheits-Check.
+
+        F-058: Erkennt grosse Zeitspruenge die auf NTP-Probleme hindeuten.
+        """
         await asyncio.sleep(HEALTH_MONITOR_STARTUP_DELAY)
 
+        _last_check_time = datetime.now()
         while self._running:
             try:
+                # F-058: Zeitsprung-Erkennung (NTP-Ausfall)
+                now = datetime.now()
+                elapsed = (now - _last_check_time).total_seconds()
+                expected = self.check_interval * 60
+                if elapsed > expected * 3:
+                    logger.warning(
+                        "F-058: Grosser Zeitsprung erkannt (%.0fs statt ~%.0fs) — "
+                        "NTP-Synchronisation pruefen",
+                        elapsed, expected,
+                    )
+                _last_check_time = now
+
                 alerts = await self.check_all()
                 for alert in alerts:
                     await self._send_alert(alert)

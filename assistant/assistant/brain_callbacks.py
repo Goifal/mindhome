@@ -3,12 +3,23 @@ Brain Callbacks - Ausgelagerte Callback-Handler fuer AssistantBrain.
 
 Reduziert brain.py um ~200 LOC. Alle Methoden werden als Mixin
 in AssistantBrain eingebunden.
+
+F-036: Jeder Callback hat Error-Handling mit Fallback auf unformatierten Text.
 """
 
 import logging
 from typing import Optional
 
 logger = logging.getLogger(__name__)
+
+# F-026: Sichere Aktionen die ohne Trust-Check ausfuehrbar sind
+_SAFE_AMBIENT_ACTIONS = frozenset({"lights_on", "play_sound"})
+
+# F-026: Aktionen die Owner-Trust benoetigen
+_RESTRICTED_AMBIENT_ACTIONS = frozenset({
+    "lock_door", "unlock_door", "set_alarm", "disarm_alarm",
+    "open_garage", "close_garage",
+})
 
 
 class BrainCallbacksMixin:
@@ -22,7 +33,12 @@ class BrainCallbacksMixin:
         """Callback fuer allgemeine Timer — meldet wenn Timer abgelaufen ist."""
         message = alert.get("message", "")
         if message:
-            formatted = await self.proactive.format_with_personality(message, "medium")
+            # F-036: Error-Handling mit Fallback
+            try:
+                formatted = await self.proactive.format_with_personality(message, "medium")
+            except Exception as e:
+                logger.warning("Timer-Personality Fehler (Fallback): %s", e)
+                formatted = message
             await self._speak_and_emit(formatted)
             logger.info("Timer -> Meldung: %s", formatted)
 
@@ -30,7 +46,11 @@ class BrainCallbacksMixin:
         """Callback fuer Learning Observer — schlaegt Automatisierungen vor."""
         message = alert.get("message", "")
         if message:
-            formatted = await self.proactive.format_with_personality(message, "low")
+            try:
+                formatted = await self.proactive.format_with_personality(message, "low")
+            except Exception as e:
+                logger.warning("Learning-Personality Fehler (Fallback): %s", e)
+                formatted = message
             await self._speak_and_emit(formatted)
             logger.info("Learning -> Vorschlag: %s", formatted)
 
@@ -38,7 +58,11 @@ class BrainCallbacksMixin:
         """Callback fuer Koch-Timer — meldet wenn Timer abgelaufen ist."""
         message = alert.get("message", "")
         if message:
-            formatted = await self.proactive.format_with_personality(message, "medium")
+            try:
+                formatted = await self.proactive.format_with_personality(message, "medium")
+            except Exception as e:
+                logger.warning("Cooking-Personality Fehler (Fallback): %s", e)
+                formatted = message
             await self._speak_and_emit(formatted)
             logger.info("Koch-Timer -> Meldung: %s", formatted)
 
@@ -46,14 +70,22 @@ class BrainCallbacksMixin:
         """Callback fuer TimeAwareness-Alerts — leitet an proaktive Meldung weiter."""
         message = alert.get("message", "")
         if message:
-            formatted = await self.proactive.format_with_personality(message, "medium")
+            try:
+                formatted = await self.proactive.format_with_personality(message, "medium")
+            except Exception as e:
+                logger.warning("TimeAwareness-Personality Fehler (Fallback): %s", e)
+                formatted = message
             await self._speak_and_emit(formatted)
             logger.info("TimeAwareness -> Meldung: %s", formatted)
 
     async def _handle_health_alert(self, alert_type: str, urgency: str, message: str) -> None:
         """Callback fuer Health Monitor — leitet an proaktive Meldung weiter."""
         if message:
-            formatted = await self.proactive.format_with_personality(message, urgency)
+            try:
+                formatted = await self.proactive.format_with_personality(message, urgency)
+            except Exception as e:
+                logger.warning("Health-Personality Fehler (Fallback): %s", e)
+                formatted = message
             await self._speak_and_emit(formatted)
             logger.info("Health Monitor [%s/%s]: %s", alert_type, urgency, formatted)
 
@@ -61,7 +93,11 @@ class BrainCallbacksMixin:
         """Callback fuer DeviceHealthMonitor — meldet Geraete-Anomalien."""
         message = alert.get("message", "")
         if message:
-            formatted = await self.proactive.format_with_personality(message, "medium")
+            try:
+                formatted = await self.proactive.format_with_personality(message, "medium")
+            except Exception as e:
+                logger.warning("DeviceHealth-Personality Fehler (Fallback): %s", e)
+                formatted = message
             await self._speak_and_emit(formatted)
             logger.info(
                 "DeviceHealth [%s]: %s",
@@ -71,7 +107,11 @@ class BrainCallbacksMixin:
     async def _handle_wellness_nudge(self, nudge_type: str, message: str) -> None:
         """Callback fuer Wellness Advisor — kuemmert sich um den User."""
         if message:
-            formatted = await self.proactive.format_with_personality(message, "low")
+            try:
+                formatted = await self.proactive.format_with_personality(message, "low")
+            except Exception as e:
+                logger.warning("Wellness-Personality Fehler (Fallback): %s", e)
+                formatted = message
             await self._speak_and_emit(formatted)
             logger.info("Wellness [%s]: %s", nudge_type, formatted)
 
@@ -83,7 +123,12 @@ class BrainCallbacksMixin:
         room: Optional[str] = None,
         actions: Optional[list] = None,
     ) -> None:
-        """Callback fuer Ambient Audio Events — reagiert auf Umgebungsgeraeusche."""
+        """Callback fuer Ambient Audio Events — reagiert auf Umgebungsgeraeusche.
+
+        F-026: Nur sichere Aktionen (Licht, Sound) werden ohne Trust-Check
+        ausgefuehrt. Sicherheitsrelevante Aktionen (Tueren, Alarm) werden
+        blockiert und nur als Warnung gemeldet.
+        """
         if not message:
             return
 
@@ -93,23 +138,33 @@ class BrainCallbacksMixin:
         )
 
         # Sound-Alarm abspielen (wenn konfiguriert)
-        from .ambient_audio import DEFAULT_EVENT_REACTIONS
-        reaction = DEFAULT_EVENT_REACTIONS.get(event_type, {})
-        sound_event = reaction.get("sound_event")
-        if sound_event and self.sound_manager.enabled:
-            await self.sound_manager.play_event_sound(sound_event, room=room)
+        try:
+            from .ambient_audio import DEFAULT_EVENT_REACTIONS
+            reaction = DEFAULT_EVENT_REACTIONS.get(event_type, {})
+            sound_event = reaction.get("sound_event")
+            if sound_event and self.sound_manager.enabled:
+                await self.sound_manager.play_event_sound(sound_event, room=room)
+        except Exception as e:
+            logger.warning("Ambient Audio Sound fehlgeschlagen: %s", e)
 
-        # HA-Aktionen ausfuehren
+        # F-026: HA-Aktionen nur ausfuehren wenn sicher (kein Trust-Bypass)
         if actions:
-            if "lights_on" in actions and room:
-                try:
-                    await self.executor.execute("set_light", {
-                        "room": room,
-                        "state": "on",
-                        "brightness": 100,
-                    })
-                except Exception as e:
-                    logger.debug("Ambient Audio lights_on fehlgeschlagen: %s", e)
+            for action in actions:
+                if action in _RESTRICTED_AMBIENT_ACTIONS:
+                    logger.warning(
+                        "F-026: Ambient Audio Aktion '%s' blockiert — benoetigt Owner-Trust",
+                        action,
+                    )
+                    continue
+                if action == "lights_on" and room:
+                    try:
+                        await self.executor.execute("set_light", {
+                            "room": room,
+                            "state": "on",
+                            "brightness": 100,
+                        })
+                    except Exception as e:
+                        logger.debug("Ambient Audio lights_on fehlgeschlagen: %s", e)
 
         # Nachricht via WebSocket + Speaker senden
         await self._speak_and_emit(message)

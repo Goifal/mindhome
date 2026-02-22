@@ -461,14 +461,34 @@ class ConflictResolver:
             compromise = round((val_a + val_b) / 2, 1)
             unit = conflict_detail.get("unit", "")
 
-            # Kompromiss durch Validator lassen (Limits erzwingen)
+            # F-054: Kompromiss durch Validator lassen (Limits erzwingen)
+            # Sicherheitsgrenzen pro Domain (Hardcoded-Minima/Maxima)
+            _SAFE_LIMITS = {
+                "climate": {"temperature": (15.0, 28.0), "offset": (-3.0, 3.0)},
+                "light": {"brightness": (0, 100)},
+                "cover": {"position": (0, 100)},
+                "media": {"volume": (0, 100)},
+            }
+            limits = _SAFE_LIMITS.get(domain, {}).get(key)
+            if limits:
+                min_val, max_val = limits
+                if compromise < min_val or compromise > max_val:
+                    old_compromise = compromise
+                    compromise = max(min_val, min(max_val, compromise))
+                    logger.warning(
+                        "F-054: Kompromiss %s%s geclampt auf %s%s (Limits: %s-%s)",
+                        old_compromise, unit, compromise, unit, min_val, max_val,
+                    )
             if hasattr(self, '_validator') and self._validator:
                 test_args = {**args_b, key: compromise}
                 validation = self._validator.validate(f"set_{domain}", test_args)
                 if not validation.ok:
-                    logger.warning(f"Kompromiss {compromise}{unit} ausserhalb Limits: {validation.reason}")
-                    # Auf naechsten gueltigen Wert clampen
-                    compromise = max(val_a, val_b) if compromise > max(val_a, val_b) else min(val_a, val_b)
+                    logger.warning(
+                        "F-054: Kompromiss %s%s Validierung fehlgeschlagen: %s — verwende hoeher-Trust-Wert",
+                        compromise, unit, validation.reason,
+                    )
+                    # F-054: Bei ungueltigem Kompromiss den Wert des hoeher vertrauenswuerdigen Users nehmen
+                    compromise = val_a if trust_a >= trust_b else val_b
 
             resolution["action"] = "use_compromise"
             resolution["compromise_value"] = compromise

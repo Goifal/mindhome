@@ -21,6 +21,14 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Optional
 
+# F-051: DST limitation — datetime.now() returns naive (timezone-unaware) datetimes.
+# Reminders and alarms scheduled by wall-clock time (e.g. "07:00") may fire at the
+# wrong time during DST transitions: skipped in spring-forward, duplicated in fall-back.
+# To fix properly, use timezone-aware datetimes:
+#   from zoneinfo import ZoneInfo
+#   now = datetime.now(ZoneInfo("Europe/Berlin"))
+# and store/compare all target times as tz-aware or UTC internally.
+
 import redis.asyncio as aioredis
 
 logger = logging.getLogger(__name__)

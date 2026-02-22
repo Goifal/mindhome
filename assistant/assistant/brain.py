@@ -308,47 +308,71 @@ class AssistantBrain(BrainCallbacksMixin):
         # Phase 14.2: OCR Engine initialisieren
         await self.ocr.initialize(redis_client=self.memory.redis)
 
+        # F-069: Nicht-kritische Module in try/except wrappen fuer Degraded Startup.
+        # Wenn ein Modul fehlschlaegt, laeuft der Assistent trotzdem —
+        # nur die betroffene Funktionalitaet fehlt.
+        _degraded_modules: list[str] = []
+
+        async def _safe_init(name: str, init_coro):
+            """F-069: Modul-Init mit Graceful Degradation."""
+            try:
+                await init_coro
+            except Exception as e:
+                _degraded_modules.append(name)
+                logger.error("F-069: %s Initialisierung fehlgeschlagen (degraded): %s", name, e)
+
         # Phase 14.3: Ambient Audio initialisieren und starten
-        await self.ambient_audio.initialize(redis_client=self.memory.redis)
+        await _safe_init("AmbientAudio", self.ambient_audio.initialize(redis_client=self.memory.redis))
         self.ambient_audio.set_notify_callback(self._handle_ambient_audio_event)
-        await self.ambient_audio.start()
+        if "AmbientAudio" not in _degraded_modules:
+            await _safe_init("AmbientAudio.start", self.ambient_audio.start())
 
         # Phase 16.1: Conflict Resolver initialisieren
-        await self.conflict_resolver.initialize(redis_client=self.memory.redis)
+        await _safe_init("ConflictResolver", self.conflict_resolver.initialize(redis_client=self.memory.redis))
 
         # Phase 15.1: Health Monitor initialisieren und starten
-        await self.health_monitor.initialize(redis_client=self.memory.redis)
+        await _safe_init("HealthMonitor", self.health_monitor.initialize(redis_client=self.memory.redis))
         self.health_monitor.set_notify_callback(self._handle_health_alert)
-        await self.health_monitor.start()
+        if "HealthMonitor" not in _degraded_modules:
+            await _safe_init("HealthMonitor.start", self.health_monitor.start())
 
         # Phase 15.3: Device Health Monitor initialisieren und starten
-        await self.device_health.initialize(redis_client=self.memory.redis)
+        await _safe_init("DeviceHealth", self.device_health.initialize(redis_client=self.memory.redis))
         self.device_health.set_notify_callback(self._handle_device_health_alert)
-        await self.device_health.start()
+        if "DeviceHealth" not in _degraded_modules:
+            await _safe_init("DeviceHealth.start", self.device_health.start())
 
         # Phase 17: Neue Features initialisieren
-        await self.timer_manager.initialize(redis_client=self.memory.redis)
+        await _safe_init("TimerManager", self.timer_manager.initialize(redis_client=self.memory.redis))
         self.timer_manager.set_notify_callback(self._handle_timer_notification)
         self.timer_manager.set_action_callback(
             lambda func, args: self.executor.execute(func, args)
         )
-        await self.conditional_commands.initialize(redis_client=self.memory.redis)
+        await _safe_init("ConditionalCommands", self.conditional_commands.initialize(redis_client=self.memory.redis))
         self.conditional_commands.set_action_callback(
             lambda func, args: self.executor.execute(func, args)
         )
-        await self.energy_optimizer.initialize(redis_client=self.memory.redis)
-        await self.cooking.initialize(redis_client=self.memory.redis)
-        await self.threat_assessment.initialize(redis_client=self.memory.redis)
-        await self.learning_observer.initialize(redis_client=self.memory.redis)
+        await _safe_init("EnergyOptimizer", self.energy_optimizer.initialize(redis_client=self.memory.redis))
+        await _safe_init("CookingAssistant", self.cooking.initialize(redis_client=self.memory.redis))
+        await _safe_init("ThreatAssessment", self.threat_assessment.initialize(redis_client=self.memory.redis))
+        await _safe_init("LearningObserver", self.learning_observer.initialize(redis_client=self.memory.redis))
         self.learning_observer.set_notify_callback(self._handle_learning_suggestion)
 
         # Wellness Advisor initialisieren und starten
-        await self.wellness_advisor.initialize(redis_client=self.memory.redis)
+        await _safe_init("WellnessAdvisor", self.wellness_advisor.initialize(redis_client=self.memory.redis))
         self.wellness_advisor.set_notify_callback(self._handle_wellness_nudge)
-        await self.wellness_advisor.start()
+        if "WellnessAdvisor" not in _degraded_modules:
+            await _safe_init("WellnessAdvisor.start", self.wellness_advisor.start())
 
         await self.proactive.start()
-        logger.info("Jarvis initialisiert (alle Systeme aktiv, inkl. Phase 17)")
+
+        if _degraded_modules:
+            logger.warning(
+                "F-069: Jarvis gestartet im DEGRADED MODE — %d Module ausgefallen: %s",
+                len(_degraded_modules), ", ".join(_degraded_modules),
+            )
+        else:
+            logger.info("Jarvis initialisiert (alle Systeme aktiv, inkl. Phase 17)")
 
     async def _get_occupied_room(self) -> Optional[str]:
         """Ermittelt den aktuell besetzten Raum anhand von Praesenzmeldern.
@@ -2936,12 +2960,30 @@ Regeln:
     # ------------------------------------------------------------------
 
     async def _handle_anticipation_suggestion(self, suggestion: dict):
-        """Callback fuer Anticipation-Vorschlaege."""
+        """Callback fuer Anticipation-Vorschlaege.
+
+        F-027: Trust-Level der erkannten Person wird bei Auto-Execute geprueft.
+        Nur Owner darf sicherheitsrelevante Aktionen automatisch ausfuehren.
+        """
         mode = suggestion.get("mode", "ask")
         desc = suggestion.get("description", "")
         action = suggestion.get("action", "")
 
         if mode == "auto" and self.autonomy.level >= 4:
+            # F-027: Trust-Check vor Auto-Execute
+            person = suggestion.get("person", "")
+            trust_level = self.autonomy.get_trust_level(person) if person else 0
+            # Sicherheitsrelevante Aktionen nur fuer Owner
+            from .conditional_commands import OWNER_ONLY_ACTIONS
+            if action in OWNER_ONLY_ACTIONS and trust_level < 2:
+                logger.warning(
+                    "F-027: Anticipation auto-execute blockiert (%s) — Person '%s' hat Trust %d",
+                    action, person, trust_level,
+                )
+                text = f"Sir, {desc}. Soll ich das uebernehmen? (Bestaetigung erforderlich)"
+                await emit_proactive(text, "anticipation_suggest", "medium")
+                return
+
             # Automatisch ausfuehren + informieren
             args = suggestion.get("args", {})
             result = await self.executor.execute(action, args)

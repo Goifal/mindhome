@@ -71,6 +71,9 @@ class ProactiveManager:
         self.batch_max_items = batch_cfg.get("max_items", 10)
         self._batch_queue: list[dict] = []
 
+        # F-033: Lock fuer shared state (batch_queue, mb_triggered etc.)
+        self._state_lock = asyncio.Lock()
+
         # Phase 7.1: Morning Briefing Auto-Trigger
         mb_cfg = yaml_config.get("routines", {}).get("morning_briefing", {})
         self._mb_enabled = mb_cfg.get("enabled", True)
@@ -608,22 +611,25 @@ class ProactiveManager:
         # MEDIUM wird kuerzere Batch-Intervalle haben (10 Min statt 30)
         if self.batch_enabled and urgency in (LOW, MEDIUM):
             description = self.event_handlers.get(event_type, (MEDIUM, event_type))[1]
-            self._batch_queue.append({
-                "event_type": event_type,
-                "urgency": urgency,
-                "description": description,
-                "data": data,
-                "time": datetime.now().isoformat(),
-            })
+            # F-033: Lock fuer shared batch_queue
+            async with self._state_lock:
+                self._batch_queue.append({
+                    "event_type": event_type,
+                    "urgency": urgency,
+                    "description": description,
+                    "data": data,
+                    "time": datetime.now().isoformat(),
+                })
 
-            # MEDIUM: Flush nach 10 Min oder wenn 5 Items
-            # LOW: Flush nach 30 Min oder wenn 10 Items
-            medium_items = sum(1 for b in self._batch_queue if b.get("urgency") == MEDIUM)
-            if medium_items >= 5 or len(self._batch_queue) >= self.batch_max_items:
+                medium_items = sum(1 for b in self._batch_queue if b.get("urgency") == MEDIUM)
+                should_flush = medium_items >= 5 or len(self._batch_queue) >= self.batch_max_items
+                queue_len = len(self._batch_queue)
+
+            if should_flush:
                 asyncio.create_task(self._flush_batch())
             logger.debug("%s-Meldung gequeued [%s]: %s (%d in Queue, %d MEDIUM)",
                          urgency.upper(), event_type, description,
-                         len(self._batch_queue), medium_items)
+                         queue_len, medium_items)
             return
 
         # Phase 6: Activity Engine + Silence Matrix
@@ -1054,13 +1060,15 @@ VERBOTEN: "Hallo", "Achtung", "Ich moechte dich informieren", "Es tut mir leid".
         """Sendet alle gesammelten LOW+MEDIUM-Meldungen als eine Zusammenfassung.
 
         MEDIUM-Events werden im Batch hoeher priorisiert und zuerst erwaehnt.
+        F-033: Lock fuer atomaren batch_queue Zugriff.
         """
-        if not self._batch_queue:
-            return
+        async with self._state_lock:
+            if not self._batch_queue:
+                return
 
-        # Queue leeren (atomar)
-        items = self._batch_queue[:self.batch_max_items]
-        self._batch_queue = self._batch_queue[self.batch_max_items:]
+            # Queue leeren (atomar unter Lock)
+            items = self._batch_queue[:self.batch_max_items]
+            self._batch_queue = self._batch_queue[self.batch_max_items:]
 
         # Sortieren: MEDIUM zuerst, dann LOW
         items.sort(key=lambda x: 0 if x.get("urgency") == MEDIUM else 1)

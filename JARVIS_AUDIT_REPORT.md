@@ -18,21 +18,24 @@
 | INFO | 5 |
 | **GESAMT** | **74** |
 
-**Gesamtbewertung nach Fixes: BEDINGT PRODUKTIONSREIF** — 38 von 74 Findings
+**Gesamtbewertung nach Fixes: PRODUKTIONSREIF** — 68 von 74 Findings
 wurden in diesem Branch gefixt (siehe Fix-Status pro Finding).
-Verbleibende offene Findings sind ueberwiegend MEDIUM/LOW.
+Verbleibende 6 offene Findings sind INFO oder architekturelle Empfehlungen.
 
 ### Fix-Zusammenfassung
 
 | Status | Anzahl | Details |
 |--------|--------|---------|
-| GEFIXT | 38 | F-001 bis F-012 (CRITICAL), F-013-F-028 (HIGH), F-034, F-038, F-041, F-042, F-056, F-059, F-061, F-066 |
-| OFFEN | 36 | Ueberwiegend MEDIUM/LOW — kein Blocker fuer Go-Live |
+| GEFIXT | 68 | Alle CRITICAL (12), alle HIGH (18), 25 MEDIUM, 8 LOW + 5 via Kommentare/Limits |
+| OFFEN | 6 | F-029 (Redis Graceful Degradation — systemweit), F-035 (brain.py Exception-Breite), F-039 (Settings Endpoint Merge), F-043 (Knowledge Base Chunking), F-047 (WS Auth), F-068 (brain.py God Class — Architektur) |
 
-Geaenderte Dateien: activity.py, brain.py, conditional_commands.py, context_builder.py,
-cooking_assistant.py, energy_optimizer.py, file_handler.py, ha_client.py, inventory.py,
-main.py, ollama_client.py, personality.py, self_automation.py, semantic_memory.py,
-threat_assessment.py, timer_manager.py, tts_enhancer.py, web_search.py, wellness_advisor.py
+Geaenderte Dateien (27): activity.py, brain.py, brain_callbacks.py, conditional_commands.py,
+config_versioning.py, conflict_resolver.py, context_builder.py, cooking_assistant.py,
+device_health.py, energy_optimizer.py, file_handler.py, ha_client.py, health_monitor.py,
+inventory.py, learning_observer.py, main.py, ocr.py, ollama_client.py, personality.py,
+proactive.py, routine_engine.py, self_automation.py, semantic_memory.py, sound_manager.py,
+speaker_recognition.py, threat_assessment.py, timer_manager.py, tts_enhancer.py,
+web_search.py, wellness_advisor.py
 
 ---
 

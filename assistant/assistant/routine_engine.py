@@ -19,6 +19,14 @@ import random
 from datetime import datetime, timedelta
 from typing import Optional
 
+# F-050: DST limitation — datetime.now() returns naive (timezone-unaware) datetimes.
+# During DST transitions (spring forward / fall back), routines scheduled by wall-clock
+# hour may fire twice, be skipped, or shift by one hour. To fix properly, use
+# timezone-aware datetimes throughout:
+#   from zoneinfo import ZoneInfo
+#   now = datetime.now(ZoneInfo("Europe/Berlin"))
+# This requires propagating tz-aware datetimes to all Redis timestamps and comparisons.
+
 import redis.asyncio as redis
 
 from .config import settings, yaml_config
@@ -748,10 +756,16 @@ Kein unterwuerfiger Ton. Du bist ein brillanter Butler, kein Chatbot."""
         return any(trigger in text_lower for trigger in self.guest_triggers)
 
     async def activate_guest_mode(self) -> str:
-        """Aktiviert den Gaeste-Modus."""
+        """Aktiviert den Gaeste-Modus.
+
+        F-049: TTL auf 24h begrenzt (statt 7 Tage), um versehentliches
+        Haengenbleiben zu verhindern. Kann jederzeit neu aktiviert werden.
+        """
+        # F-049: Max 24h statt 7 Tage — verhindert Stuck-Guest-Mode
+        guest_ttl = int(self.guest_restrictions.get("max_duration_hours", 24)) * 3600
         if self.redis:
             try:
-                await self.redis.setex(KEY_GUEST_MODE, 7 * 86400, "active")
+                await self.redis.setex(KEY_GUEST_MODE, guest_ttl, "active")
             except Exception as e:
                 logger.warning("Guest-Mode Redis-Fehler: %s", e)
         logger.info("Gaeste-Modus aktiviert")

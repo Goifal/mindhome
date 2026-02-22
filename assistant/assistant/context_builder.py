@@ -274,10 +274,11 @@ class ContextBuilder:
                     house["presence"]["away"].append(name)
 
             # Wetter (Met.no via HA Integration)
+            # F-037: Wetter-Beschreibungen sanitisieren
             elif domain == "weather" and not house["weather"]:
                 house["weather"] = {
                     "temp": attrs.get("temperature"),
-                    "condition": s,
+                    "condition": _sanitize_for_prompt(s, 50, "weather_condition"),
                     "humidity": attrs.get("humidity"),
                     "wind_speed": attrs.get("wind_speed"),
                     "wind_bearing": attrs.get("wind_bearing"),
@@ -291,7 +292,9 @@ class ContextBuilder:
                         upcoming.append({
                             "time": entry.get("datetime", ""),
                             "temp": entry.get("temperature"),
-                            "condition": entry.get("condition", ""),
+                            "condition": _sanitize_for_prompt(
+                                entry.get("condition", ""), 50, "forecast_condition"
+                            ),
                             "precipitation": entry.get("precipitation"),
                         })
                     house["weather"]["forecast"] = upcoming

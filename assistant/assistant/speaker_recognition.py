@@ -223,6 +223,10 @@ class SpeakerRecognition:
                 }
 
         # 4. Voice-Feature-Matching (wenn Audio-Metadata und Profile vorhanden)
+        # F-048: Voice-Features (WPM, Dauer, Lautstaerke) sind KEIN sicheres
+        # Identifikationsmerkmal — sie koennen leicht gefaelscht werden.
+        # Ergebnis wird mit "spoofable" Flag markiert damit Trust-Entscheidungen
+        # nur auf Methoden 1-3 basieren.
         if audio_metadata and self._profiles:
             match = self._match_voice_features(audio_metadata)
             if match:
@@ -232,6 +236,7 @@ class SpeakerRecognition:
                     "confidence": match["confidence"],
                     "fallback": match["confidence"] < self.min_confidence,
                     "method": "voice_features",
+                    "spoofable": True,  # F-048: Nicht fuer Trust-Entscheidungen verwenden
                 }
 
         # 5. Letzter bekannter Sprecher (Cache) — mit Time-Decay

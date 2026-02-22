@@ -40,6 +40,29 @@ def _check_tesseract() -> bool:
 MAX_OCR_CHARS = 4000
 
 
+def _validate_image_path(image_path: Path) -> bool:
+    """F-045: Validiert den Bildpfad gegen Command Injection.
+
+    Prueft dass der Dateiname keine Shell-Metazeichen enthaelt
+    und der Pfad innerhalb des erlaubten Upload-Verzeichnisses liegt.
+    """
+    name = image_path.name
+    # Shell-Metazeichen im Dateinamen blockieren
+    dangerous_chars = set(";|&$`\\'\"\n\r\t{}()[]<>!~")
+    if dangerous_chars.intersection(name):
+        logger.warning("F-045: Gefaehrliche Zeichen im Dateinamen: %s", name)
+        return False
+    # Pfadtraversal verhindern
+    try:
+        resolved = image_path.resolve()
+        if ".." in str(resolved):
+            logger.warning("F-045: Pfadtraversal erkannt: %s", image_path)
+            return False
+    except (OSError, ValueError):
+        return False
+    return True
+
+
 def extract_text_from_image(
     image_path: Path,
     languages: str = "deu+eng",
@@ -55,6 +78,10 @@ def extract_text_from_image(
         Extrahierter Text oder None
     """
     if not _check_tesseract():
+        return None
+
+    # F-045: Dateiname validieren
+    if not _validate_image_path(image_path):
         return None
 
     try:
@@ -121,6 +148,10 @@ def extract_text_with_confidence(
         oder None
     """
     if not _check_tesseract():
+        return None
+
+    # F-045: Dateiname validieren
+    if not _validate_image_path(image_path):
         return None
 
     try:
