@@ -226,6 +226,35 @@ class HomeAssistantClient:
         """Oeffentlicher GET auf die MindHome Add-on API (z.B. /api/covers/configs)."""
         return await self._get_mindhome(path)
 
+    async def mindhome_post(self, path: str, data: dict) -> Any:
+        """POST auf die MindHome Add-on API."""
+        session = await self._get_session()
+        try:
+            async with session.post(
+                f"{self.mindhome_url}{path}",
+                json=data,
+            ) as resp:
+                if resp.status == 200:
+                    return await resp.json()
+                logger.warning("MindHome POST %s -> %d", path, resp.status)
+                return None
+        except Exception as e:
+            logger.warning("MindHome POST %s fehlgeschlagen: %s", path, e)
+            return None
+
+    async def log_actions(self, actions: list, user_text: str = "", response_text: str = "") -> None:
+        """Jarvis-Aktionen an MindHome Add-on ActionLog melden."""
+        if not actions:
+            return
+        try:
+            await self.mindhome_post("/api/action-log", {
+                "actions": actions,
+                "user_text": user_text,
+                "response": response_text,
+            })
+        except Exception as e:
+            logger.debug("Action logging fehlgeschlagen: %s", e)
+
     async def mindhome_put(self, path: str, data: dict) -> Any:
         """PUT auf die MindHome Add-on API (z.B. Cover-Config setzen)."""
         session = await self._get_session()

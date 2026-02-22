@@ -601,7 +601,7 @@ textarea { resize:vertical; min-height:70px; font-family:var(--mono); font-size:
       <div id="page-logs" class="page">
         <div class="section-header">
           <div><h2>Protokolle</h2><p>Gespraeche und Audit-Ereignisse</p></div>
-          <button class="btn btn-secondary" onclick="currentLogTab==='conversations'?loadLogs():loadAudit()">Aktualisieren</button>
+          <button class="btn btn-secondary" onclick="currentLogTab==='conversations'?loadLogs():currentLogTab==='activities'?loadActivities():loadAudit()">Aktualisieren</button>
         </div>
         <div class="tab-bar" id="logsTabBar" style="margin-bottom:14px;">
           <div class="tab-item active" data-logtab="conversations" onclick="switchLogTab('conversations')">Gespraeche</div>

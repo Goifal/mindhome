@@ -584,6 +584,46 @@ def api_get_action_log():
 
 
 
+@system_bp.route("/api/action-log", methods=["POST"])
+def api_create_action_log():
+    """Create action log entries (called by assistant after processing actions)."""
+    data = request.json
+    if not data or not isinstance(data.get("actions"), list):
+        return jsonify({"error": "actions list required"}), 400
+
+    session = get_db()
+    try:
+        count = 0
+        for action in data["actions"]:
+            func = action.get("function") or action.get("action") or "unknown"
+            args = action.get("arguments") or action.get("args") or {}
+            result_raw = action.get("result", {})
+            result_msg = result_raw.get("message", "") if isinstance(result_raw, dict) else str(result_raw)
+            response_text = data.get("response", "")
+            user_text = data.get("user_text", "")
+
+            entry = ActionLog(
+                action_type="jarvis_action",
+                action_data={
+                    "function": func,
+                    "arguments": args,
+                    "result": result_msg,
+                    "response": response_text[:200] if response_text else "",
+                },
+                reason=f"Benutzer: {user_text[:150]}" if user_text else "Automatisch",
+            )
+            session.add(entry)
+            count += 1
+        session.commit()
+        return jsonify({"success": True, "logged": count})
+    except Exception as e:
+        session.rollback()
+        logger.error("Action log POST failed: %s", e)
+        return jsonify({"error": str(e)}), 500
+    finally:
+        session.close()
+
+
 @system_bp.route("/api/action-log/<int:log_id>/undo", methods=["POST"])
 def api_undo_action(log_id):
     """Undo a specific action."""
