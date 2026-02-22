@@ -1449,48 +1449,47 @@ class AssistantBrain(BrainCallbacksMixin):
                     logger.info("Tool-Feedback Input: '%s' + Daten: '%s'",
                                 text[:60], combined_results[:120])
 
-                    # Feedback-Messages: System-Prompt + User-Frage + Daten als User-Message
-                    # (role:"tool" wird von lokalen Modellen oft nicht verstanden)
-                    feedback_messages = [messages[0]]  # System-Prompt behalten
+                    # Feedback-Messages: Kompakter JARVIS-Prompt + Daten
+                    # Kein voller System-Prompt noetig — kurzer, fokussierter Prompt
+                    # produziert bessere Ergebnisse bei lokalen Modellen
+                    feedback_messages = [{
+                        "role": "system",
+                        "content": (
+                            "Du bist JARVIS. Antworte auf Deutsch, 1-2 Saetze. "
+                            "Souveraen, knapp, trocken. 'Sir' sparsam einsetzen. "
+                            "Keine Aufzaehlungen. Keine technischen Rohdaten wiederholen. "
+                            "Runde Zahlen natuerlich (5 Grad statt 5.2°C). "
+                            "Beispiele: 'Fuenf Grad, bewoelkt. Jacke empfohlen, Sir.' | "
+                            "'Morgen um acht steht eine Blutabnahme an.' | "
+                            "'Im Buero 22 Grad, Luftfeuchtigkeit passt.'"
+                        ),
+                    }]
                     feedback_messages.append({
                         "role": "user",
                         "content": (
-                            f"{text}\n\n"
-                            f"DATEN AUS DEM SYSTEM (formuliere diese Daten als natuerliche Antwort):\n"
-                            f"{combined_results}"
+                            f"Frage: {text}\n"
+                            f"Daten: {combined_results}"
                         ),
                     })
 
                     # Zweiter LLM-Call: Natuerliche Antwort generieren (ohne Tools)
+                    # IMMER non-streaming: Streaming wuerde Rohdaten direkt an Client
+                    # senden BEVOR der Humanizer sie umschreiben kann
                     logger.info("Tool-Feedback: %d Results -> LLM fuer natuerliche Antwort",
                                 len(executed_actions))
 
-                    if stream_callback:
-                        # Streaming: Token-fuer-Token via stream_chat()
-                        collected = []
-                        async for token in self.ollama.stream_chat(
-                            messages=feedback_messages,
-                            model=model,
-                            temperature=0.7,
-                            max_tokens=150,
-                            think=False,
-                        ):
-                            collected.append(token)
-                            await stream_callback(token)
-                        feedback_text = "".join(collected)
+                    feedback_response = await self.ollama.chat(
+                        messages=feedback_messages,
+                        model=model,
+                        temperature=0.7,
+                        max_tokens=150,
+                        think=False,
+                    )
+                    feedback_text = ""
+                    if "error" in feedback_response:
+                        logger.warning("Tool-Feedback LLM Error: %s", feedback_response["error"])
                     else:
-                        feedback_response = await self.ollama.chat(
-                            messages=feedback_messages,
-                            model=model,
-                            temperature=0.7,
-                            max_tokens=150,
-                            think=False,
-                        )
-                        feedback_text = ""
-                        if "error" in feedback_response:
-                            logger.warning("Tool-Feedback LLM Error: %s", feedback_response["error"])
-                        else:
-                            feedback_text = feedback_response.get("message", {}).get("content", "")
+                        feedback_text = feedback_response.get("message", {}).get("content", "")
 
                     if feedback_text:
                         response_text = self._filter_response(feedback_text)
@@ -1940,19 +1939,14 @@ class AssistantBrain(BrainCallbacksMixin):
         return raw
 
     def _humanize_weather(self, raw: str) -> str:
-        """Wetter-Rohdaten → Natuerliche JARVIS-Antwort.
-
-        Erkennt sowohl das Rohformat (AKTUELL: ...) als auch LLM-reformatierte
-        Varianten (Bewoelkt, 5.2°C, ...).
-        """
+        """Wetter-Rohdaten → JARVIS-Stil Antwort."""
         import re
 
-        # Temperatur extrahieren (funktioniert fuer alle Formate)
-        temp_match = re.search(r"(-?\d+[.,]\d+)\s*°C", raw)
+        # Temperatur extrahieren
+        temp_match = re.search(r"(-?\d+)[.,]?\d*\s*°C", raw)
         if not temp_match:
             return raw
-
-        temp = temp_match.group(1).replace(",", ".")
+        temp = int(temp_match.group(1))
 
         # Condition extrahieren
         conditions_map = {
@@ -1973,49 +1967,48 @@ class AssistantBrain(BrainCallbacksMixin):
                 break
 
         # Wind extrahieren
-        wind_match = re.search(r"Wind\s+(?:aus\s+)?(\w+)\s+(?:mit\s+)?(\d+[.,]?\d*)\s*km/h", raw, re.IGNORECASE)
+        wind_match = re.search(r"Wind\s+(?:aus\s+)?(\w+)\s+(?:mit\s+)?(\d+)[.,]?\d*\s*km/h", raw, re.IGNORECASE)
         if not wind_match:
-            wind_match = re.search(r"Wind\s+(\d+[.,]?\d*)\s*km/h\s+aus\s+(\w+)", raw, re.IGNORECASE)
+            wind_match = re.search(r"Wind\s+(\d+)[.,]?\d*\s*km/h\s+aus\s+(\w+)", raw, re.IGNORECASE)
             if wind_match:
-                wind_speed = wind_match.group(1)
+                wind_speed = int(wind_match.group(1))
                 wind_dir = wind_match.group(2)
             else:
-                wind_speed = wind_dir = ""
+                wind_speed = 0
+                wind_dir = ""
         else:
             wind_dir = wind_match.group(1)
-            wind_speed = wind_match.group(2)
+            wind_speed = int(wind_match.group(2))
 
-        # Vorhersage-Zeilen
-        forecast_parts = []
-        for line in raw.split("\n"):
-            line = line.strip()
-            if line.startswith("VORHERSAGE") and "Keine Daten" not in line and "Nicht verfuegbar" not in line:
-                fc = line.split(":", 1)
-                if len(fc) > 1:
-                    forecast_parts.append(fc[1].strip())
-
-        # JARVIS-Stil zusammenbauen
-        result = f"Draussen {temp} Grad"
+        # JARVIS-Stil: natuerlich, gerundet, knapp
         if condition:
-            result += f", {condition}"
-        result += "."
-        if wind_speed and wind_dir:
-            result += f" Wind aus {wind_dir} mit {wind_speed} km/h."
+            result = f"{temp} Grad, {condition}."
+        else:
+            result = f"{temp} Grad draussen."
 
-        if forecast_parts:
-            result += " " + " ".join(f"Vorhersage: {fp}." for fp in forecast_parts)
+        # Wind nur erwaehnen wenn spuerbar (> 10 km/h)
+        if wind_speed > 10 and wind_dir:
+            result += f" Wind aus {wind_dir}."
+
+        # Kontext-Kommentar (JARVIS-Persoenlichkeit)
+        if temp <= 0:
+            result += " Handschuhe empfohlen, Sir."
+        elif temp <= 5:
+            result += " Jacke empfohlen."
+        elif temp >= 30:
+            result += " Genuegend trinken, Sir."
 
         return result
 
     def _humanize_calendar(self, raw: str) -> str:
-        """TERMINE MORGEN (2): - 09:00 | Meeting → Natuerliche Termin-Antwort."""
+        """Kalender-Rohdaten → JARVIS-Stil Antwort."""
         if not raw or not raw.strip():
             return raw
 
         # "KEINE TERMINE" Varianten
         raw_upper = raw.upper()
         if "KEINE TERMINE" in raw_upper or "(0)" in raw:
-            return "Morgen ist nichts eingetragen, Sir."
+            return "Der Tag ist frei, Sir."
 
         # Alle "HH:MM | Titel" Muster extrahieren (funktioniert ein- und mehrzeilig)
         import re
@@ -2025,10 +2018,27 @@ class AssistantBrain(BrainCallbacksMixin):
         if not matches:
             return raw
 
-        events = [f"{title.strip()} um {time.strip()}" for time, title in matches]
+        events = []
+        for time_str, title in matches:
+            title = title.strip()
+            # Uhrzeit natuerlicher formatieren
+            h, m = time_str.split(":")
+            h = int(h)
+            m = int(m)
+            if m == 0:
+                time_natural = f"um {h} Uhr"
+            elif m == 30:
+                time_natural = f"um halb {h + 1 if h < 23 else 0}"
+            elif m == 15:
+                time_natural = f"um Viertel nach {h}"
+            elif m == 45:
+                time_natural = f"um Viertel vor {h + 1 if h < 23 else 0}"
+            else:
+                time_natural = f"um {h}:{m:02d}"
+            events.append(f"{title} {time_natural}")
 
         if len(events) == 1:
-            return f"Morgen steht ein Termin an: {events[0]}, Sir."
+            return f"Morgen steht {events[0]} an, Sir."
         listing = ", ".join(events[:-1]) + f" und {events[-1]}"
         return f"Morgen stehen {len(events)} Termine an: {listing}."
 
@@ -2525,51 +2535,75 @@ class AssistantBrain(BrainCallbacksMixin):
     async def _handle_learning_suggestion(self, alert: dict):
         """Callback fuer Learning Observer — schlaegt Automatisierungen vor."""
         message = alert.get("message", "")
-        if message:
-            formatted = await self.proactive.format_with_personality(message, "low")
-            await self._speak_and_emit(formatted)
-            logger.info("Learning -> Vorschlag: %s", formatted)
+        if not message:
+            return
+        if self.proactive._is_quiet_hours():
+            logger.info("Learning unterdrueckt (Quiet Hours): %s", message[:80])
+            return
+        formatted = await self.proactive.format_with_personality(message, "low")
+        await self._speak_and_emit(formatted)
+        logger.info("Learning -> Vorschlag: %s", formatted)
 
     async def _handle_cooking_timer(self, alert: dict):
         """Callback fuer Koch-Timer — meldet wenn Timer abgelaufen ist."""
         message = alert.get("message", "")
-        if message:
-            formatted = await self.proactive.format_with_personality(message, "medium")
-            await self._speak_and_emit(formatted)
-            logger.info("Koch-Timer -> Meldung: %s", formatted)
+        if not message:
+            return
+        # Koch-Timer sind zeitkritisch — immer melden
+        formatted = await self.proactive.format_with_personality(message, "high")
+        await self._speak_and_emit(formatted)
+        logger.info("Koch-Timer -> Meldung: %s", formatted)
 
     async def _handle_time_alert(self, alert: dict):
         """Callback fuer TimeAwareness-Alerts — leitet an proaktive Meldung weiter."""
         message = alert.get("message", "")
-        if message:
-            formatted = await self.proactive.format_with_personality(message, "medium")
-            await self._speak_and_emit(formatted)
-            logger.info("TimeAwareness -> Meldung: %s", formatted)
+        urgency = alert.get("urgency", "low")
+        if not message:
+            return
+        # Quiet Hours: Nur CRITICAL darf nachts durch
+        if urgency != "critical" and self.proactive._is_quiet_hours():
+            logger.info("TimeAwareness unterdrueckt (Quiet Hours): %s", message[:80])
+            return
+        formatted = await self.proactive.format_with_personality(message, urgency)
+        await self._speak_and_emit(formatted)
+        logger.info("TimeAwareness [%s] -> Meldung: %s", urgency, formatted)
 
     async def _handle_health_alert(self, alert_type: str, urgency: str, message: str):
         """Callback fuer Health Monitor — leitet an proaktive Meldung weiter."""
-        if message:
-            formatted = await self.proactive.format_with_personality(message, urgency)
-            await self._speak_and_emit(formatted)
-            logger.info("Health Monitor [%s/%s]: %s", alert_type, urgency, formatted)
+        if not message:
+            return
+        if urgency != "critical" and self.proactive._is_quiet_hours():
+            logger.info("Health Monitor unterdrueckt (Quiet Hours): %s", message[:80])
+            return
+        formatted = await self.proactive.format_with_personality(message, urgency)
+        await self._speak_and_emit(formatted)
+        logger.info("Health Monitor [%s/%s]: %s", alert_type, urgency, formatted)
 
     async def _handle_device_health_alert(self, alert: dict):
         """Callback fuer DeviceHealthMonitor — meldet Geraete-Anomalien."""
         message = alert.get("message", "")
-        if message:
-            formatted = await self.proactive.format_with_personality(message, "medium")
-            await self._speak_and_emit(formatted)
-            logger.info(
-                "DeviceHealth [%s]: %s",
-                alert.get("alert_type", "?"), formatted,
-            )
+        if not message:
+            return
+        if self.proactive._is_quiet_hours():
+            logger.info("DeviceHealth unterdrueckt (Quiet Hours): %s", message[:80])
+            return
+        formatted = await self.proactive.format_with_personality(message, "medium")
+        await self._speak_and_emit(formatted)
+        logger.info(
+            "DeviceHealth [%s]: %s",
+            alert.get("alert_type", "?"), formatted,
+        )
 
     async def _handle_wellness_nudge(self, nudge_type: str, message: str):
         """Callback fuer Wellness Advisor — kuemmert sich um den User."""
-        if message:
-            formatted = await self.proactive.format_with_personality(message, "low")
-            await self._speak_and_emit(formatted)
-            logger.info("Wellness [%s]: %s", nudge_type, formatted)
+        if not message:
+            return
+        if self.proactive._is_quiet_hours():
+            logger.info("Wellness unterdrueckt (Quiet Hours): %s", message[:80])
+            return
+        formatted = await self.proactive.format_with_personality(message, "low")
+        await self._speak_and_emit(formatted)
+        logger.info("Wellness [%s]: %s", nudge_type, formatted)
 
     # ------------------------------------------------------------------
     # Phase 14.3: Ambient Audio Callback
