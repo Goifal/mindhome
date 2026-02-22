@@ -32,6 +32,8 @@ services:
       # System-Management: Git-Repo + Docker-Socket fuer Dashboard-Updates
       - ..:/repo
       - /var/run/docker.sock:/var/run/docker.sock
+      # GPU-Status vom Host (nvidia-watchdog schreibt alle 60s)
+      - /var/lib/mindhome:/var/lib/mindhome:ro
     depends_on:
       chromadb:
         condition: service_healthy

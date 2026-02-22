@@ -422,6 +422,7 @@ DIRS=(
     "$DATA_DIR/uploads"
     "$DATA_DIR/backups"
     "$DATA_DIR/logs"
+    "/var/lib/mindhome"
 )
 
 for dir in "${DIRS[@]}"; do
@@ -432,6 +433,8 @@ done
 if [ "$DATA_DIR" = "/mnt/data" ]; then
     sudo chown -R "$(id -u):$(id -g)" "$DATA_DIR"
 fi
+sudo mkdir -p /var/lib/mindhome
+sudo chmod 755 /var/lib/mindhome
 
 success "Verzeichnisse auf $DATA_DIR:"
 for dir in "${DIRS[@]}"; do
