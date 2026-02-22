@@ -25,6 +25,15 @@ import redis.asyncio as aioredis
 
 logger = logging.getLogger(__name__)
 
+# F-003: Whitelist fuer erlaubte Timer-Aktionen bei Ablauf
+# Sicherheitsrelevante Aktionen (lock_door, set_alarm, etc.) sind NICHT erlaubt
+TIMER_ACTION_WHITELIST = frozenset({
+    "set_light", "set_climate", "set_cover",
+    "play_media", "pause_media", "stop_media",
+    "send_message", "send_message_to_person",
+    "set_volume",
+})
+
 # Redis Keys
 KEY_TIMERS = "mha:timers:active"
 KEY_REMINDERS = "mha:reminders:active"
@@ -294,7 +303,19 @@ class TimerManager:
                 action = timer.action_on_expire
                 func_name = action.get("function", "")
                 func_args = action.get("args", {})
-                if func_name:
+                # F-003: Nur Whitelist-Aktionen erlauben
+                if func_name and func_name not in TIMER_ACTION_WHITELIST:
+                    logger.warning(
+                        "Timer-Aktion blockiert (nicht in Whitelist): %s(%s) — Timer: %s",
+                        func_name, func_args, timer.label,
+                    )
+                    if self._notify_callback:
+                        await self._notify_callback({
+                            "message": f"Timer-Aktion '{func_name}' blockiert (nicht erlaubt).",
+                            "type": "timer_action_blocked",
+                            "room": timer.room,
+                        })
+                elif func_name:
                     logger.info("Timer-Aktion ausfuehren: %s(%s)", func_name, func_args)
                     try:
                         result = await self._action_callback(func_name, func_args)

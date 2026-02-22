@@ -377,13 +377,39 @@ async def api_key_middleware(request: Request, call_next):
     return await call_next(request)
 
 
+_rate_limit_last_cleanup = 0.0
+_RATE_CLEANUP_INTERVAL = 300  # Alle 5 Minuten globaler Cleanup
+_RATE_MAX_IPS = 10000  # F-011: Maximale Anzahl getrackte IPs
+
+
 @app.middleware("http")
 async def rate_limit_middleware(request: Request, call_next):
     """Einfaches Rate-Limiting pro Client-IP (thread-safe via Lock)."""
+    global _rate_limit_last_cleanup
     client_ip = request.client.host if request.client else "unknown"
 
     async with _rate_lock:
         now = _time.time()
+
+        # F-011: Periodischer Cleanup aller abgelaufenen IPs (alle 5 Min)
+        if now - _rate_limit_last_cleanup > _RATE_CLEANUP_INTERVAL:
+            expired_ips = [
+                ip for ip, timestamps in _rate_limits.items()
+                if all(now - t >= _RATE_WINDOW for t in timestamps)
+            ]
+            for ip in expired_ips:
+                del _rate_limits[ip]
+            if expired_ips:
+                logger.debug("Rate-Limit Cleanup: %d IPs entfernt", len(expired_ips))
+            _rate_limit_last_cleanup = now
+
+        # F-011: Schutz gegen unbegrenztes Wachstum bei IP-Scan/DDoS
+        if client_ip not in _rate_limits and len(_rate_limits) >= _RATE_MAX_IPS:
+            from fastapi.responses import JSONResponse
+            return JSONResponse(
+                status_code=429,
+                content={"detail": "Zu viele Anfragen. Bitte warten."},
+            )
 
         # Alte Eintraege bereinigen
         _rate_limits[client_ip] = [

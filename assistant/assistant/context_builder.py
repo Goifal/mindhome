@@ -8,6 +8,7 @@ Phase 10: Multi-Room Presence Tracking.
 
 import logging
 import math
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -34,6 +35,39 @@ try:
         logger.info("Raum-Profile geladen: %d Raeume", len(_ROOM_PROFILES))
 except Exception as e:
     logger.warning("room_profiles.yaml nicht geladen: %s", e)
+
+# F-001/F-004/F-013-F-017: Prompt-Injection-Schutz fuer LLM-Kontext
+_INJECTION_PATTERN = re.compile(
+    r'\[(?:SYSTEM|INSTRUCTION|OVERRIDE|ADMIN|COMMAND|PROMPT|ROLE)\b'
+    r'|IGNORE\s+(?:ALL\s+)?(?:PREVIOUS\s+)?INSTRUCTIONS'
+    r'|SYSTEM\s*(?:MODE|OVERRIDE|INSTRUCTION)'
+    r'|<\/?(?:system|instruction|admin|role|prompt)\b',
+    re.IGNORECASE,
+)
+
+
+def _sanitize_for_prompt(text: str, max_len: int = 200, label: str = "") -> str:
+    """Bereinigt externen Text bevor er in den LLM-Prompt eingebettet wird.
+
+    Entfernt Newlines, Kontrollzeichen und verdaechtige Prompt-Injection-Patterns.
+    """
+    if not text or not isinstance(text, str):
+        return ""
+    # Kontrollzeichen und Newlines entfernen
+    text = text.replace('\n', ' ').replace('\r', ' ').replace('\t', ' ')
+    # Mehrfach-Leerzeichen komprimieren
+    text = re.sub(r'\s{2,}', ' ', text).strip()
+    # Laenge begrenzen
+    text = text[:max_len]
+    # Injection-Patterns pruefen
+    if _INJECTION_PATTERN.search(text):
+        logger.warning(
+            "Prompt-Injection-Verdacht in %s blockiert: %.80s",
+            label or "Kontext", text,
+        )
+        return ""
+    return text
+
 
 # Relevante Entity-Typen fuer den Kontext
 RELEVANT_DOMAINS = [
@@ -171,15 +205,18 @@ class ContextBuilder:
                 query=user_text, limit=max_relevant, person=person or None
             )
             memories["relevant_facts"] = [
-                f["content"] for f in relevant if f.get("relevance", 0) > 0.3
+                sanitized for f in relevant
+                if f.get("relevance", 0) > 0.3
+                and (sanitized := _sanitize_for_prompt(f["content"], 500, "semantic_fact"))
             ]
 
             # Allgemeine Fakten ueber die Person (Praeferenzen)
             if person:
                 person_facts = await self.semantic.get_facts_by_person(person)
                 memories["person_facts"] = [
-                    f["content"] for f in person_facts[:max_person]
+                    sanitized for f in person_facts[:max_person]
                     if f.get("confidence", 0) >= min_confidence
+                    and (sanitized := _sanitize_for_prompt(f["content"], 500, "person_fact"))
                 ]
         except Exception as e:
             logger.error("Fehler beim Laden semantischer Erinnerungen: %s", e)
@@ -206,16 +243,19 @@ class ContextBuilder:
 
             # Temperaturen
             if domain == "climate":
-                room = attrs.get("friendly_name", entity_id)
-                house["temperatures"][room] = {
-                    "current": attrs.get("current_temperature"),
-                    "target": attrs.get("temperature"),
-                    "mode": s,
-                }
+                room = _sanitize_for_prompt(attrs.get("friendly_name", entity_id), 50, "climate_name")
+                if room:
+                    house["temperatures"][room] = {
+                        "current": attrs.get("current_temperature"),
+                        "target": attrs.get("temperature"),
+                        "mode": s,
+                    }
 
             # Lichter (nur die an sind)
             elif domain == "light" and s == "on":
-                name = attrs.get("friendly_name", entity_id)
+                name = _sanitize_for_prompt(attrs.get("friendly_name", entity_id), 50, "light_name")
+                if not name:
+                    continue
                 brightness = attrs.get("brightness")
                 if brightness:
                     pct = round(brightness / 255 * 100)
@@ -225,7 +265,9 @@ class ContextBuilder:
 
             # Personen
             elif domain == "person":
-                name = attrs.get("friendly_name", entity_id)
+                name = _sanitize_for_prompt(attrs.get("friendly_name", entity_id), 50, "person_name")
+                if not name:
+                    continue
                 if s == "home":
                     house["presence"]["home"].append(name)
                 else:
@@ -269,9 +311,10 @@ class ContextBuilder:
 
             # Medien
             elif domain == "media_player" and s == "playing":
-                name = attrs.get("friendly_name", entity_id)
-                title = attrs.get("media_title", "")
-                house["media"].append(f"{name}: {title}" if title else name)
+                name = _sanitize_for_prompt(attrs.get("friendly_name", entity_id), 50, "media_name")
+                title = _sanitize_for_prompt(attrs.get("media_title", ""), 100, "media_title")
+                if name:
+                    house["media"].append(f"{name}: {title}" if title else name)
 
         return house
 

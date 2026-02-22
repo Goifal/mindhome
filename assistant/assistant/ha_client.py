@@ -24,6 +24,7 @@ from urllib.parse import quote, urlencode
 
 import aiohttp
 
+from .circuit_breaker import ha_breaker
 from .config import settings
 
 logger = logging.getLogger(__name__)
@@ -46,16 +47,15 @@ class HomeAssistantClient:
         }
         # Shared Session (wird lazy initialisiert)
         self._session: Optional[aiohttp.ClientSession] = None
-        self._session_lock: Optional[asyncio.Lock] = None
+        # F-034: Lock im __init__ erstellen statt lazy (Race Condition bei gleichzeitigem Zugriff)
+        self._session_lock: asyncio.Lock = asyncio.Lock()
         # States-Cache: vermeidet N+1 Queries innerhalb kurzer Zeitfenster
         self._states_cache: Optional[list[dict]] = None
         self._states_cache_ts: float = 0.0
         _STATES_CACHE_TTL = 2.0  # Sekunden
 
     def _get_lock(self) -> asyncio.Lock:
-        """Gibt den Session-Lock zurueck (lazy init, event-loop-safe)."""
-        if self._session_lock is None:
-            self._session_lock = asyncio.Lock()
+        """Gibt den Session-Lock zurueck."""
         return self._session_lock
 
     async def _get_session(self) -> aiohttp.ClientSession:
@@ -304,7 +304,12 @@ class HomeAssistantClient:
     # ----- Interne HTTP Methoden mit Retry -----
 
     async def _get_ha(self, path: str) -> Any:
-        """GET-Request an Home Assistant mit Retry."""
+        """GET-Request an Home Assistant mit Retry und Circuit Breaker."""
+        # F-025: Circuit Breaker pruefen
+        if not ha_breaker.is_available:
+            logger.debug("HA Circuit Breaker OPEN — GET %s uebersprungen", path)
+            return None
+
         session = await self._get_session()
         last_error = None
 
@@ -315,6 +320,7 @@ class HomeAssistantClient:
                     headers=self._ha_headers,
                 ) as resp:
                     if resp.status == 200:
+                        ha_breaker.record_success()
                         return await resp.json()
                     # Client-Fehler: nicht retrien
                     if 400 <= resp.status < 500:
@@ -348,11 +354,18 @@ class HomeAssistantClient:
                 wait = RETRY_BACKOFF_BASE * (attempt + 1)
                 await asyncio.sleep(wait)
 
+        # F-025: Fehler im Circuit Breaker registrieren
+        ha_breaker.record_failure()
         logger.error("HA GET %s endgueltig fehlgeschlagen: %s", path, last_error)
         return None
 
     async def _post_ha(self, path: str, data: dict) -> Any:
-        """POST-Request an Home Assistant mit Retry."""
+        """POST-Request an Home Assistant mit Retry und Circuit Breaker."""
+        # F-025: Circuit Breaker pruefen
+        if not ha_breaker.is_available:
+            logger.debug("HA Circuit Breaker OPEN — POST %s uebersprungen", path)
+            return None
+
         session = await self._get_session()
         last_error = None
 

@@ -422,6 +422,10 @@ class ThreatAssessment:
     async def escalate_threat(self, threat: dict) -> list[str]:
         """Fuehrt Eskalations-Aktionen fuer kritische Bedrohungen aus.
 
+        F-009: Nur Benachrichtigungs-Aktionen (Lichter) werden automatisch ausgefuehrt.
+        Physische Sicherheits-Aktionen (Schloesser) erfordern Owner-Bestaetigung
+        die ueber den Notification-Callback angefordert wird.
+
         Args:
             threat: Bedrohungs-Dict aus assess_threats()
 
@@ -435,7 +439,7 @@ class ThreatAssessment:
         if urgency != "critical":
             return actions_taken
 
-        # Bei Rauch/Feuer: Alle Lichter an
+        # Bei Rauch/Feuer: Alle Lichter an (sicher — keine Bestaetigung noetig)
         if threat_type == "smoke_fire":
             try:
                 lights = await self.ha.get_states()
@@ -447,15 +451,20 @@ class ThreatAssessment:
             except Exception as e:
                 logger.warning("Eskalation Lichter fehlgeschlagen: %s", e)
 
-        # Bei offenen Tueren + niemand da: Schloesser verriegeln
+        # F-009: Bei offenen Tueren + niemand da: NUR WARNUNG, keine Auto-Verriegelung
+        # Automatisches Verriegeln kann Bewohner aussperren bei Fehlalarmen
         if threat_type in ("door_open_empty", "lock_open_empty"):
             entity = threat.get("entity", "")
             if entity.startswith("lock."):
-                try:
-                    await self.ha.call_service("lock", "lock", {"entity_id": entity})
-                    actions_taken.append(f"{entity} verriegelt")
-                except Exception as e:
-                    logger.warning("Eskalation Schloss fehlgeschlagen: %s", e)
+                logger.warning(
+                    "Bedrohung erkannt: %s offen bei leerem Haus. "
+                    "Automatische Verriegelung deaktiviert (F-009). "
+                    "Benachrichtigung wird gesendet.", entity,
+                )
+                actions_taken.append(
+                    f"WARNUNG: {entity} ist offen bei leerem Haus — "
+                    f"bitte manuell verriegeln oder per Sprache bestaetigen"
+                )
 
         return actions_taken
 

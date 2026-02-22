@@ -107,6 +107,27 @@ class SemanticMemory:
             self.chroma_collection = None
 
     async def store_fact(self, fact: SemanticFact) -> bool:
+        # F-007: Lock um den gesamten Read-Write-Zyklus gegen TOCTOU
+        lock_key = f"mha:fact_lock:{hash(fact.content) % 100000}"
+        if self.redis:
+            try:
+                acquired = await self.redis.set(lock_key, "1", ex=10, nx=True)
+                if not acquired:
+                    logger.debug("Fakt-Lock nicht erhalten, paralleler Zugriff: %s", fact.content[:50])
+                    return False
+            except Exception:
+                pass  # Ohne Lock weiter (Redis evtl. nicht verfuegbar)
+
+        try:
+            return await self._store_fact_inner(fact)
+        finally:
+            if self.redis:
+                try:
+                    await self.redis.delete(lock_key)
+                except Exception:
+                    pass
+
+    async def _store_fact_inner(self, fact: SemanticFact) -> bool:
         # Widerspruchserkennung: Pruefen ob ein widersprechender Fakt existiert
         contradiction = await self._check_contradiction(fact)
         if contradiction:

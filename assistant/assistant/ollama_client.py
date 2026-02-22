@@ -289,6 +289,8 @@ class OllamaClient:
         elif model == settings.model_fast:
             payload["think"] = False
 
+        # F-024: Buffer-basiertes Think-Tag-Filtering (verhindert Content-Verlust)
+        _think_buffer = ""
         in_think_block = False
 
         try:
@@ -314,25 +316,54 @@ class OllamaClient:
                             continue
 
                         content = data.get("message", {}).get("content", "")
-                        if not content:
-                            if data.get("done"):
+                        is_done = data.get("done", False)
+                        if not content and not is_done:
+                            continue
+
+                        # F-024: Buffer-Ansatz — Chunks mit Tags im Buffer sammeln
+                        _think_buffer += content
+
+                        # Wenn wir im Think-Block sind, weiter buffern bis </think>
+                        if in_think_block:
+                            if "</think>" in _think_buffer:
+                                # Think-Block beenden, Rest nach </think> behalten
+                                _, _, after = _think_buffer.partition("</think>")
+                                _think_buffer = after.lstrip()
+                                in_think_block = False
+                            else:
+                                if is_done:
+                                    break
+                                continue
+
+                        # Pruefe ob ein neuer Think-Block beginnt
+                        if "<think>" in _think_buffer:
+                            before, _, after = _think_buffer.partition("<think>")
+                            # Content VOR <think> ausgeben
+                            if before.strip():
+                                yield before
+                            # Alles nach <think> buffern
+                            _think_buffer = after
+                            in_think_block = True
+                            # Sofort pruefen ob </think> auch schon im Buffer
+                            if "</think>" in _think_buffer:
+                                _, _, after = _think_buffer.partition("</think>")
+                                _think_buffer = after.lstrip()
+                                in_think_block = False
+                            if is_done:
                                 break
                             continue
 
-                        # Think-Tags im Stream filtern
-                        if "<think>" in content:
-                            in_think_block = True
-                            continue
-                        if "</think>" in content:
-                            in_think_block = False
-                            continue
-                        if in_think_block:
-                            continue
+                        # Kein Think-Tag — Buffer ausgeben
+                        if _think_buffer:
+                            yield _think_buffer
+                            _think_buffer = ""
 
-                        yield content
-
-                        if data.get("done"):
+                        if is_done:
                             break
+
+                    # Rest im Buffer ausgeben (falls kein offener Think-Block)
+                    if _think_buffer and not in_think_block:
+                        yield _think_buffer
 
         except asyncio.TimeoutError:
             logger.error("Ollama Stream Timeout nach %ds", LLM_TIMEOUT_STREAM)

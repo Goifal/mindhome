@@ -340,14 +340,19 @@ class PersonalityEngine:
 
         return True
 
-    def check_opinion(self, action: str, args: dict) -> Optional[str]:
+    def check_opinion(self, action: str, args: dict, mood: str = "") -> Optional[str]:
         """Prueft ob Jarvis eine Meinung zu einer Aktion hat.
-        Unterdrueckt Meinungen wenn User gestresst oder frustriert ist."""
+        Unterdrueckt Meinungen wenn User gestresst oder frustriert ist.
+
+        F-020: mood wird explizit uebergeben statt aus Instanzvariable gelesen.
+        """
         if self.opinion_intensity == 0:
             return None
 
         # Bei Stress/Frustration: Keine ungebetenen Kommentare
-        if self._current_mood in ("stressed", "frustrated"):
+        # F-020: Expliziter mood-Parameter statt self._current_mood (Race Condition)
+        effective_mood = mood or self._current_mood
+        if effective_mood in ("stressed", "frustrated"):
             return None
 
         hour = datetime.now().hour
@@ -617,15 +622,20 @@ class PersonalityEngine:
     # Humor-Level (Phase 6.1)
     # ------------------------------------------------------------------
 
-    def _build_humor_section(self, mood: str, time_of_day: str) -> str:
-        """Baut den Humor-Abschnitt basierend auf Level + Kontext."""
+    def _build_humor_section(self, mood: str, time_of_day: str, has_alerts: bool = False) -> str:
+        """Baut den Humor-Abschnitt basierend auf Level + Kontext.
+
+        F-023: Bei aktiven Sicherheits-Alerts wird Sarkasmus komplett deaktiviert.
+        """
         base_level = self.sarcasm_level
 
+        # F-023: Bei Sicherheits-Alerts KEIN Sarkasmus
+        if has_alerts:
+            effective_level = 1
         # Mood-Anpassung (Jarvis-Stil: unter Druck trockener, nicht stiller)
-        if mood in ("stressed", "frustrated"):
-            # Jarvis wird unter Druck TROCKENER, nicht stiller.
-            # Level bleibt, aber Tageszeit kann noch daempfen.
-            effective_level = base_level
+        elif mood in ("stressed", "frustrated"):
+            # Unter Druck: eine Stufe weniger Sarkasmus (statt gleich)
+            effective_level = max(1, base_level - 1)
         elif mood == "tired":
             effective_level = min(base_level, 2)
         elif mood == "good":
@@ -1052,8 +1062,9 @@ class PersonalityEngine:
             current_person = (context.get("person") or {}).get("name", "User")
         person_addressing = self._build_person_addressing(current_person)
 
-        # Phase 6: Humor-Section
-        humor_section = self._build_humor_section(mood, time_of_day)
+        # Phase 6: Humor-Section — F-023: Alerts unterdruecken Sarkasmus
+        has_alerts = bool(context.get("alerts")) if context else False
+        humor_section = self._build_humor_section(mood, time_of_day, has_alerts=has_alerts)
 
         # Phase 6: Complexity-Section
         complexity_section = self._build_complexity_section(mood, time_of_day)

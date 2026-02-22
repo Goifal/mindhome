@@ -776,6 +776,10 @@ class CookingAssistant:
                 return "\nBekannte Praeferenzen/Einschraenkungen:\n" + "\n".join(prefs)
 
         except Exception as e:
-            logger.debug("Fehler beim Laden der Koch-Praeferenzen: %s", e)
+            # F-028: Bei Fehler WARNEN statt stumm ignorieren — Allergien sind sicherheitsrelevant
+            logger.error("WARNUNG: Allergie/Praeferenz-Check fehlgeschlagen: %s", e)
+            return ("\n⚠ WARNUNG: Allergie-Datenbank nicht erreichbar. "
+                    "Frage den Nutzer AKTIV nach Allergien und Unvertraeglichkeiten "
+                    "bevor du Rezepte vorschlaegst!")
 
         return ""

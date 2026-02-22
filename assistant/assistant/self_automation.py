@@ -621,9 +621,25 @@ REGELN:
 
     @staticmethod
     def _contains_template(value) -> bool:
-        """Prueft ob ein Wert Jinja2-Templates enthaelt. SICHERHEITSKRITISCH."""
+        """Prueft ob ein Wert Jinja2-Templates enthaelt. SICHERHEITSKRITISCH.
+
+        F-006: Erweiterte Erkennung inkl. Unicode-Escapes und verschleierter Patterns.
+        """
         if isinstance(value, str):
-            return "{{" in value or "{%" in value or "{#" in value
+            # Direkte Template-Syntax
+            if "{{" in value or "{%" in value or "{#" in value:
+                return True
+            # F-006: Verschleierte Varianten (Unicode Fullwidth, Zero-Width-Chars entfernt)
+            cleaned = value.replace('\u200b', '').replace('\u200c', '').replace('\u200d', '').replace('\ufeff', '')
+            # Fullwidth Klammern: ｛｛ → {{
+            cleaned = cleaned.replace('\uff5b', '{').replace('\uff5d', '}').replace('\uff05', '%')
+            if "{{" in cleaned or "{%" in cleaned or "{#" in cleaned:
+                return True
+            # states(), is_state(), etc. — HA Template-Funktionen
+            import re
+            if re.search(r'(?:states|is_state|state_attr|expand)\s*\(', cleaned, re.IGNORECASE):
+                return True
+            return False
         if isinstance(value, dict):
             return any(SelfAutomation._contains_template(v) for v in value.values())
         if isinstance(value, list):
