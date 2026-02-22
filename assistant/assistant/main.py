@@ -206,7 +206,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="MindHome Assistant",
     description="Lokaler KI-Sprachassistent fuer Home Assistant — OpenAPI Docs unter /docs",
-    version="1.4.2",
+    version="1.4.3",
     lifespan=lifespan,
     docs_url="/docs",
     redoc_url="/redoc",
