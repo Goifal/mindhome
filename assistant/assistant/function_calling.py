@@ -2638,17 +2638,39 @@ class FunctionExecutor:
     async def _find_entity(self, domain: str, search: str) -> Optional[str]:
         """Findet eine Entity anhand von Domain und Suchbegriff.
 
-        1. MindHome Device-DB (schnell, gezielt nach Domain + Raum)
-        2. Fallback: Alle HA-States durchsuchen
+        Matching-Strategie (Best-Match statt First-Match):
+        1. MindHome Device-DB (schnell, DB-basiert) — bester Match
+        2. Fallback: Alle HA-States durchsuchen — bester Match
+        Exakter Match > kuerzester Partial-Match (spezifischstes Ergebnis)
         """
         if not search:
             return None
+
+        search_norm = self._normalize_name(search)
 
         # MindHome Device-Search (schnell, DB-basiert)
         try:
             devices = await self.ha.search_devices(domain=domain, room=search)
             if devices:
-                return devices[0]["ha_entity_id"]
+                # Best-Match: Exakt > kuerzester Partial
+                best = None
+                best_len = float("inf")
+                for dev in devices:
+                    dev_name = self._normalize_name(dev.get("name", ""))
+                    dev_room = self._normalize_name(dev.get("room", "") or "")
+                    # Exakter Raum-Match hat hoechste Prioritaet
+                    if dev_room == search_norm:
+                        return dev["ha_entity_id"]
+                    # Exakter Name-Match
+                    if search_norm == dev_name:
+                        return dev["ha_entity_id"]
+                    # Partial Match: kuerzester Name gewinnt (spezifischer)
+                    name_len = len(dev_name) + len(dev_room)
+                    if name_len < best_len:
+                        best = dev["ha_entity_id"]
+                        best_len = name_len
+                if best:
+                    return best
         except Exception as e:
             logger.debug("MindHome device search failed, using HA fallback: %s", e)
 
@@ -2657,24 +2679,35 @@ class FunctionExecutor:
         if not states:
             return None
 
-        search_norm = self._normalize_name(search)
+        best_match = None
+        best_len = float("inf")
 
         for state in states:
             entity_id = state.get("entity_id", "")
             if not entity_id.startswith(f"{domain}."):
                 continue
 
-            # Entity-ID Match (normalisiert)
             name = entity_id.split(".", 1)[1]
-            if search_norm in self._normalize_name(name):
-                return entity_id
-
-            # Friendly name Match (normalisiert)
+            name_norm = self._normalize_name(name)
             friendly = state.get("attributes", {}).get("friendly_name", "")
-            if friendly and search_norm in self._normalize_name(friendly):
+            friendly_norm = self._normalize_name(friendly) if friendly else ""
+
+            # Exakter Match → sofort zurueck
+            if search_norm == name_norm or search_norm == friendly_norm:
                 return entity_id
 
-        return None
+            # Partial Match → besten (kuerzesten) merken
+            matched = False
+            if search_norm in name_norm:
+                matched = True
+            elif friendly_norm and search_norm in friendly_norm:
+                matched = True
+
+            if matched and len(name_norm) < best_len:
+                best_match = entity_id
+                best_len = len(name_norm)
+
+        return best_match
 
     # ------------------------------------------------------------------
     # Phase 15.2: Vorrats-Tracking
