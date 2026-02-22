@@ -65,6 +65,7 @@ class AutonomyManager:
         }
         self._guest_actions = set(trust_cfg.get("guest_allowed_actions", [
             "set_light", "set_climate", "play_media", "get_entity_state", "play_sound",
+            "get_house_status", "get_room_climate",
         ]))
         self._security_actions = set(trust_cfg.get("security_actions", [
             "lock_door", "set_alarm", "set_presence_mode",

@@ -488,6 +488,8 @@ trust_levels:
   - play_media
   - get_entity_state
   - play_sound
+  - get_house_status
+  - get_room_climate
   security_actions:
   - lock_door
   - set_alarm
