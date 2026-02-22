@@ -3034,6 +3034,15 @@ class FunctionExecutor:
         search_norm = self._normalize_name(search)
         hint_norm = self._normalize_name(device_hint) if device_hint else ""
 
+        # Spezifische Geraete-Begriffe: werden bei der Auswahl deprioritisiert,
+        # wenn kein device_hint angegeben ist, damit das Hauptgeraet im Raum
+        # bevorzugt wird (z.B. Deckenlampe statt Stehlampe).
+        _SPECIFIC_DEVICE_TERMS = {
+            "stehlampe", "stehleuchte", "nachttisch", "nachttischlampe",
+            "leselampe", "tischlampe", "tischleuchte", "led_strip",
+            "ledstrip", "lichterkette", "nachtlicht", "spot",
+        }
+
         # MindHome Device-Search (schnell, DB-basiert)
         try:
             devices = await self.ha.search_devices(domain=domain, room=search)
@@ -3055,30 +3064,39 @@ class FunctionExecutor:
 
                 # Best-Match: Exakt > kuerzester Partial (mit Match-Pruefung!)
                 best = None
-                best_len = float("inf")
+                best_score = float("inf")
                 for dev in devices:
                     dev_name = self._normalize_name(dev.get("name", ""))
                     dev_room = self._normalize_name(dev.get("room", "") or "")
+                    eid_name = self._normalize_name(dev.get("ha_entity_id", "").split(".", 1)[-1])
+
+                    matched = False
                     # Exakter Raum-Match hat hoechste Prioritaet
                     if dev_room == search_norm:
-                        # Bei mehreren Geraeten im Raum: nicht sofort den ersten nehmen
-                        name_len = len(dev_name) + len(dev_room)
-                        if name_len < best_len:
-                            best = dev["ha_entity_id"]
-                            best_len = name_len
-                        continue
+                        matched = True
                     # Exakter Name-Match
-                    if search_norm == dev_name:
+                    elif search_norm == dev_name:
                         logger.info("_find_entity: Exakter Name-Match -> %s", dev["ha_entity_id"])
                         return dev["ha_entity_id"]
                     # Partial Match: Suchbegriff MUSS im Namen oder Raum vorkommen
-                    if search_norm in dev_name or search_norm in dev_room:
+                    elif search_norm in dev_name or search_norm in dev_room:
+                        matched = True
+
+                    if matched:
                         name_len = len(dev_name) + len(dev_room)
-                        if name_len < best_len:
+                        # Ohne device_hint: Spezifische Geraete mit Malus versehen,
+                        # damit "Wohnzimmer Licht" vor "Stehlampe Wohnzimmer" gewaehlt wird
+                        penalty = 0
+                        if not hint_norm:
+                            combined = f"{dev_name} {eid_name}"
+                            if any(term in combined for term in _SPECIFIC_DEVICE_TERMS):
+                                penalty = 1000
+                        score = name_len + penalty
+                        if score < best_score:
                             best = dev["ha_entity_id"]
-                            best_len = name_len
+                            best_score = score
                 if best:
-                    logger.info("_find_entity: Best Match -> %s", best)
+                    logger.info("_find_entity: Best Match -> %s (score=%d)", best, best_score)
                     return best
                 # Kein Match in DB-Ergebnissen — weiter zu HA-Fallback
                 logger.info("_find_entity: Kein Name/Raum-Match in %d DB-Ergebnissen, HA-Fallback", len(devices))
@@ -3124,9 +3142,16 @@ class FunctionExecutor:
             elif friendly_norm and search_norm in friendly_norm:
                 matched = True
 
-            if matched and len(name_norm) < best_len:
-                best_match = entity_id
-                best_len = len(name_norm)
+            if matched:
+                penalty = 0
+                if not hint_norm:
+                    combined = f"{name_norm} {friendly_norm}"
+                    if any(term in combined for term in _SPECIFIC_DEVICE_TERMS):
+                        penalty = 1000
+                score = len(name_norm) + penalty
+                if score < best_len:
+                    best_match = entity_id
+                    best_len = score
 
         return best_match
 
