@@ -142,7 +142,7 @@ _ASSISTANT_TOOLS_STATIC = [
                 "properties": {
                     "room": {
                         "type": "string",
-                        "description": "Raumname zum Filtern (optional, ohne = alle Lichter)",
+                        "description": "Raumname zum Filtern inkl. Personen-Praefix (z.B. 'manuel buero', optional, ohne = alle Lichter)",
                     },
                 },
                 "required": [],
@@ -210,7 +210,7 @@ _ASSISTANT_TOOLS_STATIC = [
                 "properties": {
                     "room": {
                         "type": "string",
-                        "description": "Raumname zum Filtern (optional)",
+                        "description": "Raumname zum Filtern inkl. Personen-Praefix falls relevant (z.B. 'manuel buero', optional)",
                     },
                 },
                 "required": [],
@@ -262,7 +262,7 @@ _ASSISTANT_TOOLS_STATIC = [
                 "properties": {
                     "room": {
                         "type": "string",
-                        "description": "Raumname zum Filtern (optional)",
+                        "description": "Raumname zum Filtern inkl. Personen-Praefix falls relevant (z.B. 'manuel buero', optional)",
                     },
                 },
                 "required": [],
@@ -319,7 +319,7 @@ _ASSISTANT_TOOLS_STATIC = [
                 "properties": {
                     "room": {
                         "type": "string",
-                        "description": "Raumname zum Filtern (optional)",
+                        "description": "Raumname zum Filtern inkl. Personen-Praefix falls relevant (z.B. 'manuel buero', optional)",
                     },
                 },
                 "required": [],
@@ -336,7 +336,7 @@ _ASSISTANT_TOOLS_STATIC = [
                 "properties": {
                     "room": {
                         "type": "string",
-                        "description": "Raumname zum Filtern (optional)",
+                        "description": "Raumname zum Filtern inkl. Personen-Praefix falls relevant (z.B. 'manuel buero', optional)",
                     },
                 },
                 "required": [],
