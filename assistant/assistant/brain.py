@@ -3298,6 +3298,11 @@ Regeln:
         F-027: Trust-Level der erkannten Person wird bei Auto-Execute geprueft.
         Nur Owner darf sicherheitsrelevante Aktionen automatisch ausfuehren.
         """
+        # Quiet Hours: Anticipation-Vorschlaege sind nicht kritisch
+        if hasattr(self, 'proactive') and self.proactive._is_quiet_hours():
+            logger.info("Anticipation unterdrueckt (Quiet Hours): %s", suggestion.get("description", ""))
+            return
+
         mode = suggestion.get("mode", "ask")
         desc = suggestion.get("description", "")
         action = suggestion.get("action", "")
