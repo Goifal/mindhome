@@ -308,6 +308,7 @@ _api_key_required: bool = False
 # Pfade die OHNE API Key zugaenglich bleiben (Health fuer Discovery/Config-Flow)
 _API_KEY_EXEMPT_PATHS = frozenset({
     "/api/assistant/health",
+    "/api/assistant/ws",  # WebSocket hat eigene Auth-Pruefung im Endpoint
     "/",
     "/docs",
     "/openapi.json",
