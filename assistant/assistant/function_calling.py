@@ -1940,7 +1940,15 @@ class FunctionExecutor:
         return {"success": success, "message": f"Szene '{scene}' aktiviert"}
 
     async def _exec_set_cover(self, args: dict) -> dict:
-        room = self._clean_room(args.get("room"))
+        room = args.get("room")
+
+        # Qwen3-Fallback: entity_id statt room
+        if not room and args.get("entity_id"):
+            eid = args["entity_id"]
+            room = eid.split(".", 1)[1] if "." in eid else eid
+        # Qwen3-Cleanup: Domain-Prefix aus room strippen
+        room = self._clean_room(room)
+
         if not room:
             return {"success": False, "message": "Kein Raum angegeben"}
 
