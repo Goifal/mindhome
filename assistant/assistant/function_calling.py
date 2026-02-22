@@ -1157,7 +1157,11 @@ class FunctionExecutor:
 
         service_data = {"entity_id": entity_id}
         if "brightness" in args and state == "on":
-            service_data["brightness_pct"] = args["brightness"]
+            try:
+                bri = str(args["brightness"]).replace("%", "").strip()
+                service_data["brightness_pct"] = max(1, min(100, int(float(bri))))
+            except (ValueError, TypeError):
+                pass
         # Phase 9: Transition-Parameter (sanftes Dimmen) — muss int/float sein
         if "transition" in args:
             try:
