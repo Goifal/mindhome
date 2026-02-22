@@ -10011,9 +10011,190 @@ const ClimatePage = () => {
             {/* Config Tab */}
             {tab === 'config' && (
                 <div className="animate-in">
-                    <FeatureSettingsPanel category="climate" lang={lang} showToast={showToast} />
+                    <RoomTemperatureSensors lang={lang} showToast={showToast} />
+                    <div style={{ marginTop: 16 }}>
+                        <FeatureSettingsPanel category="climate" lang={lang} showToast={showToast} />
+                    </div>
                 </div>
             )}
+        </div>
+    );
+};
+
+
+// ================================================================
+// Room Temperature Sensors Config
+// ================================================================
+const RoomTemperatureSensors = ({ lang, showToast }) => {
+    const [configured, setConfigured] = useState(null);
+    const [available, setAvailable] = useState([]);
+    const [showPicker, setShowPicker] = useState(false);
+    const [search, setSearch] = useState('');
+
+    const load = () => {
+        api.invalidate('ui/room-temperature');
+        api.get('ui/room-temperature').then(d => setConfigured(d || {})).catch(() => {});
+    };
+    useEffect(() => {
+        load();
+    }, []);
+
+    const openPicker = async () => {
+        const d = await api.get('ui/room-temperature/available');
+        setAvailable(d?.sensors || []);
+        setShowPicker(true);
+        setSearch('');
+    };
+
+    const addSensor = async (entityId) => {
+        const current = (configured?.sensors || []).map(s => s.entity_id);
+        if (current.includes(entityId)) return;
+        const updated = [...current, entityId];
+        const r = await api.put('ui/room-temperature', { sensors: updated });
+        if (r?.success) {
+            showToast(lang === 'de' ? 'Sensor hinzugefuegt' : 'Sensor added', 'success');
+            load();
+        }
+    };
+
+    const removeSensor = async (entityId) => {
+        const current = (configured?.sensors || []).map(s => s.entity_id);
+        const updated = current.filter(id => id !== entityId);
+        const r = await api.put('ui/room-temperature', { sensors: updated });
+        if (r?.success) {
+            showToast(lang === 'de' ? 'Sensor entfernt' : 'Sensor removed', 'success');
+            load();
+        }
+    };
+
+    const configuredIds = new Set((configured?.sensors || []).map(s => s.entity_id));
+    const filtered = available.filter(s =>
+        !configuredIds.has(s.entity_id) &&
+        (search === '' || s.name.toLowerCase().includes(search.toLowerCase()) || s.entity_id.toLowerCase().includes(search.toLowerCase()))
+    );
+
+    return (
+        <div className="card">
+            <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span className="mdi mdi-thermometer" style={{ color: 'var(--accent-primary)' }} />
+                    {lang === 'de' ? 'Raumtemperatur-Sensoren' : 'Room Temperature Sensors'}
+                </div>
+                {configured?.average != null && (
+                    <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--accent-primary)' }}>
+                        {configured.average}°C
+                    </div>
+                )}
+            </div>
+
+            <div style={{ padding: 16 }}>
+                <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 12 }}>
+                    {lang === 'de'
+                        ? 'Jarvis berechnet den Mittelwert aller konfigurierten Sensoren als Raumtemperatur.'
+                        : 'Jarvis calculates the average of all configured sensors as room temperature.'}
+                </div>
+
+                {/* Configured sensors */}
+                {(configured?.sensors || []).length === 0 ? (
+                    <div style={{ padding: 20, textAlign: 'center', color: 'var(--text-muted)', background: 'var(--bg-tertiary)', borderRadius: 8 }}>
+                        <span className="mdi mdi-thermometer-off" style={{ fontSize: 28, display: 'block', marginBottom: 6 }} />
+                        {lang === 'de'
+                            ? 'Noch keine Sensoren konfiguriert. Jarvis nutzt aktuell die Temperatur der Klimaanlage/Heizung.'
+                            : 'No sensors configured yet. Jarvis currently uses the HVAC temperature.'}
+                    </div>
+                ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        {configured.sensors.map(s => (
+                            <div key={s.entity_id} style={{
+                                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                                padding: '10px 14px', background: 'var(--bg-tertiary)', borderRadius: 8
+                            }}>
+                                <div>
+                                    <div style={{ fontWeight: 600, fontSize: 14 }}>{s.name}</div>
+                                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{s.entity_id}</div>
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                                    <span style={{
+                                        fontSize: 18, fontWeight: 700,
+                                        color: s.available ? 'var(--text-primary)' : 'var(--danger)'
+                                    }}>
+                                        {s.value != null ? `${s.value}°C` : (lang === 'de' ? 'n/v' : 'n/a')}
+                                    </span>
+                                    <button className="btn btn-ghost btn-icon" style={{ color: 'var(--danger)', padding: 4 }}
+                                        onClick={() => removeSensor(s.entity_id)}
+                                        title={lang === 'de' ? 'Entfernen' : 'Remove'}>
+                                        <span className="mdi mdi-close-circle" style={{ fontSize: 18 }} />
+                                    </button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
+
+                {/* Add button */}
+                <button className="btn btn-primary" style={{ marginTop: 12, width: '100%' }}
+                    onClick={openPicker}>
+                    <span className="mdi mdi-plus" style={{ marginRight: 6 }} />
+                    {lang === 'de' ? 'Sensor hinzufuegen' : 'Add Sensor'}
+                </button>
+
+                {/* Sensor picker modal */}
+                {showPicker && (
+                    <div style={{
+                        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000
+                    }} onClick={() => setShowPicker(false)}>
+                        <div style={{
+                            background: 'var(--bg-secondary)', borderRadius: 12, padding: 20,
+                            width: '90%', maxWidth: 500, maxHeight: '70vh', display: 'flex', flexDirection: 'column'
+                        }} onClick={e => e.stopPropagation()}>
+                            <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <span>
+                                    <span className="mdi mdi-thermometer-plus" style={{ marginRight: 8, color: 'var(--accent-primary)' }} />
+                                    {lang === 'de' ? 'Temperatursensor waehlen' : 'Choose Temperature Sensor'}
+                                </span>
+                                <button className="btn btn-ghost btn-icon" onClick={() => setShowPicker(false)}>
+                                    <span className="mdi mdi-close" />
+                                </button>
+                            </div>
+                            <input
+                                type="text" placeholder={lang === 'de' ? 'Suchen...' : 'Search...'}
+                                value={search} onChange={e => setSearch(e.target.value)}
+                                style={{
+                                    padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border-color)',
+                                    background: 'var(--bg-primary)', color: 'var(--text-primary)',
+                                    marginBottom: 12, fontSize: 14
+                                }}
+                            />
+                            <div style={{ overflowY: 'auto', flex: 1 }}>
+                                {filtered.length === 0 && (
+                                    <div style={{ padding: 20, textAlign: 'center', color: 'var(--text-muted)' }}>
+                                        {lang === 'de' ? 'Keine Temperatursensoren gefunden' : 'No temperature sensors found'}
+                                    </div>
+                                )}
+                                {filtered.map(s => (
+                                    <div key={s.entity_id} style={{
+                                        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                                        padding: '10px 12px', cursor: 'pointer', borderRadius: 8,
+                                        transition: 'background 0.15s'
+                                    }}
+                                        onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-tertiary)'}
+                                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                                        onClick={() => { addSensor(s.entity_id); setShowPicker(false); }}>
+                                        <div>
+                                            <div style={{ fontWeight: 600, fontSize: 14 }}>{s.name}</div>
+                                            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{s.entity_id}</div>
+                                        </div>
+                                        <span style={{ fontSize: 16, fontWeight: 600 }}>
+                                            {s.value != null ? `${s.value}${s.unit}` : '—'}
+                                        </span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                )}
+            </div>
         </div>
     );
 };

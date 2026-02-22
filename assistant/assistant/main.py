@@ -76,12 +76,26 @@ async def _boot_announcement(brain_instance: "AssistantBrain", health_data: dict
         temp = None
         open_items = []
 
+        # Raumtemperatur: Konfigurierte Sensoren (Mittelwert) bevorzugen
+        rt_cfg = yaml_config.get("room_temperature", {})
+        sensor_ids = rt_cfg.get("sensors", []) or []
+        if sensor_ids:
+            temps = []
+            for s in (states or []):
+                if s.get("entity_id") in sensor_ids:
+                    try:
+                        temps.append(float(s.get("state", "")))
+                    except (ValueError, TypeError):
+                        pass
+            if temps:
+                temp = sum(temps) / len(temps)
+
         for s in (states or []):
             eid = s.get("entity_id", "")
             state_val = s.get("state", "")
             attrs = s.get("attributes", {})
 
-            # Erste Raumtemperatur finden
+            # Fallback: climate.* Temperatur nur wenn keine Sensoren konfiguriert
             if temp is None and eid.startswith("climate."):
                 t = attrs.get("current_temperature")
                 if t is not None:
@@ -1625,6 +1639,124 @@ async def ui_get_entities(token: str = "", domain: str = ""):
             })
         entities.sort(key=lambda e: (e["domain"], e["name"]))
         return {"entities": entities, "total": len(entities)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
+# ---------------------------------------------------------------
+# Room Temperature Sensors (Mittelwert-Berechnung)
+# ---------------------------------------------------------------
+
+@app.get("/api/ui/room-temperature")
+async def ui_get_room_temperature(token: str = ""):
+    """Konfigurierte Raumtemperatur-Sensoren mit aktuellem Wert und Mittelwert."""
+    _check_token(token)
+    try:
+        import assistant.config as cfg
+        rt_cfg = cfg.yaml_config.get("room_temperature", {})
+        sensor_ids = rt_cfg.get("sensors", []) or []
+
+        states = await brain.ha.get_states()
+        state_map = {s.get("entity_id"): s for s in (states or [])}
+
+        sensors = []
+        temps = []
+        for sid in sensor_ids:
+            s = state_map.get(sid, {})
+            name = s.get("attributes", {}).get("friendly_name", sid) if s else sid
+            val = None
+            try:
+                val = float(s.get("state", ""))
+            except (ValueError, TypeError):
+                pass
+            sensors.append({
+                "entity_id": sid,
+                "name": name,
+                "value": val,
+                "unit": s.get("attributes", {}).get("unit_of_measurement", "°C") if s else "°C",
+                "available": s.get("state") not in (None, "unavailable", "unknown", ""),
+            })
+            if val is not None:
+                temps.append(val)
+
+        avg = round(sum(temps) / len(temps), 1) if temps else None
+
+        return {
+            "sensors": sensors,
+            "average": avg,
+            "count": len(sensors),
+            "active_count": len(temps),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
+@app.put("/api/ui/room-temperature")
+async def ui_set_room_temperature(req: Request, token: str = ""):
+    """Raumtemperatur-Sensoren konfigurieren. Body: {"sensors": ["sensor.x", ...]}"""
+    _check_token(token)
+    try:
+        data = await req.json()
+        sensor_list = data.get("sensors", [])
+        if not isinstance(sensor_list, list):
+            raise HTTPException(status_code=400, detail="sensors muss eine Liste sein")
+
+        # Validierung: nur sensor.* Entity-IDs erlaubt
+        for sid in sensor_list:
+            if not isinstance(sid, str) or not sid.startswith("sensor."):
+                raise HTTPException(status_code=400, detail=f"Ungueltige Entity-ID: {sid}")
+
+        # In settings.yaml speichern
+        with open(SETTINGS_YAML_PATH) as f:
+            config = yaml.safe_load(f) or {}
+
+        if "room_temperature" not in config:
+            config["room_temperature"] = {}
+        config["room_temperature"]["sensors"] = sensor_list
+
+        with open(SETTINGS_YAML_PATH, "w") as f:
+            yaml.safe_dump(config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+
+        # yaml_config im Speicher aktualisieren
+        import assistant.config as cfg
+        cfg.yaml_config = load_yaml_config()
+
+        return {"success": True, "count": len(sensor_list)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
+@app.get("/api/ui/room-temperature/available")
+async def ui_get_available_temp_sensors(token: str = ""):
+    """Alle verfuegbaren Temperatur-Sensoren aus Home Assistant."""
+    _check_token(token)
+    try:
+        states = await brain.ha.get_states()
+        sensors = []
+        for s in (states or []):
+            eid = s.get("entity_id", "")
+            if not eid.startswith("sensor."):
+                continue
+            attrs = s.get("attributes", {})
+            unit = attrs.get("unit_of_measurement", "")
+            device_class = attrs.get("device_class", "")
+            # Nur Temperatur-Sensoren
+            if device_class == "temperature" or unit in ("°C", "°F"):
+                val = None
+                try:
+                    val = float(s.get("state", ""))
+                except (ValueError, TypeError):
+                    pass
+                sensors.append({
+                    "entity_id": eid,
+                    "name": attrs.get("friendly_name", eid),
+                    "value": val,
+                    "unit": unit or "°C",
+                })
+        sensors.sort(key=lambda x: x["name"])
+        return {"sensors": sensors, "total": len(sensors)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Fehler: {e}")
 
