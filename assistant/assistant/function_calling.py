@@ -132,7 +132,7 @@ _ASSISTANT_TOOLS_STATIC = [
         "type": "function",
         "function": {
             "name": "get_lights",
-            "description": "Zeigt alle Lichter mit Name, Raum und Status (an/aus, Helligkeit). Optional nach Raum filtern.",
+            "description": "NUR zum Abfragen/Auflisten: Zeigt alle Lichter mit Name, Raum-Zuordnung und aktuellem Status (an/aus, Helligkeit). NICHT zum Schalten verwenden — dafuer set_light nutzen.",
             "parameters": {
                 "type": "object",
                 "properties": {
