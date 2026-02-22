@@ -2369,36 +2369,42 @@ async def ui_system_status(token: str = ""):
     except Exception:
         pass
 
-    # GPU (via nvidia-smi — lokal oder Host-Fallback via docker exec)
+    # GPU — Status-Datei vom Host-Watchdog lesen (nvidia-watchdog schreibt alle 60s)
     gpu_info = {}
-    gpu_query = "--query-gpu=name,memory.used,memory.total,utilization.gpu,temperature.gpu"
-    gpu_fmt = "--format=csv,noheader,nounits"
-    rc_gpu, gpu_out = _run_cmd(["nvidia-smi", gpu_query, gpu_fmt])
-    # Fallback: nvidia-smi auf dem Host via docker exec ausfuehren
-    if rc_gpu != 0 or not gpu_out.strip():
-        rc_gpu, gpu_out = _run_cmd([
-            "docker", "exec", "mindhome-assistant",
-            "nvidia-smi", gpu_query, gpu_fmt,
-        ])
-    # Zweiter Fallback: nsenter fuer Host-Zugriff
-    if rc_gpu != 0 or not gpu_out.strip():
-        rc_gpu, gpu_out = _run_cmd([
-            "nsenter", "--target", "1", "--mount", "--",
-            "nvidia-smi", gpu_query, gpu_fmt,
-        ])
-    if rc_gpu == 0 and gpu_out.strip():
-        parts = [p.strip() for p in gpu_out.strip().split(",")]
-        if len(parts) >= 5:
-            try:
+    _gpu_status_file = Path("/var/lib/mindhome/gpu_status.json")
+    try:
+        if _gpu_status_file.exists():
+            data = json.loads(_gpu_status_file.read_text())
+            if data.get("available") and data.get("name"):
                 gpu_info = {
-                    "name": parts[0],
-                    "memory_used_mb": int(parts[1]),
-                    "memory_total_mb": int(parts[2]),
-                    "utilization_percent": int(parts[3]),
-                    "temperature_c": int(parts[4]),
+                    "name": data["name"],
+                    "memory_used_mb": int(data["memory_used_mb"]),
+                    "memory_total_mb": int(data["memory_total_mb"]),
+                    "utilization_percent": int(data["utilization_percent"]),
+                    "temperature_c": int(data["temperature_c"]),
                 }
-            except (ValueError, IndexError):
-                pass
+    except Exception:
+        pass
+    # Fallback: direktes nvidia-smi (falls Container GPU-Zugriff hat)
+    if not gpu_info:
+        rc_gpu, gpu_out = _run_cmd([
+            "nvidia-smi",
+            "--query-gpu=name,memory.used,memory.total,utilization.gpu,temperature.gpu",
+            "--format=csv,noheader,nounits",
+        ])
+        if rc_gpu == 0 and gpu_out.strip():
+            parts = [p.strip() for p in gpu_out.strip().split(",")]
+            if len(parts) >= 5:
+                try:
+                    gpu_info = {
+                        "name": parts[0],
+                        "memory_used_mb": int(parts[1]),
+                        "memory_total_mb": int(parts[2]),
+                        "utilization_percent": int(parts[3]),
+                        "temperature_c": int(parts[4]),
+                    }
+                except (ValueError, IndexError):
+                    pass
 
     # Remote claude/* Branches auflisten
     _, remote_branches_raw = _run_cmd(

@@ -23,6 +23,8 @@ LOG_TAG="nvidia-watchdog"
 OLLAMA_URL="http://localhost:11434"
 MAX_RETRIES=3
 RETRY_DELAY=5
+GPU_STATUS_DIR="/var/lib/mindhome"
+GPU_STATUS_FILE="${GPU_STATUS_DIR}/gpu_status.json"
 
 log_info()  { logger -t "$LOG_TAG" -p user.info  "$1"; echo "[INFO]  $1"; }
 log_warn()  { logger -t "$LOG_TAG" -p user.warning "$1"; echo "[WARN]  $1"; }
@@ -120,6 +122,30 @@ restart_ollama() {
     return 1
 }
 
+# --- 5. GPU-Status als JSON fuer Container bereitstellen ---
+write_gpu_status() {
+    mkdir -p "$GPU_STATUS_DIR" 2>/dev/null
+    local gpu_out
+    gpu_out=$(nvidia-smi --query-gpu=name,memory.used,memory.total,utilization.gpu,temperature.gpu \
+              --format=csv,noheader,nounits 2>/dev/null)
+    if [ -z "$gpu_out" ]; then
+        # Kein Output — leeres JSON schreiben
+        printf '{"available":false,"timestamp":"%s"}\n' "$(date -Iseconds)" > "$GPU_STATUS_FILE"
+        return
+    fi
+    local name mem_used mem_total util temp
+    IFS=',' read -r name mem_used mem_total util temp <<< "$gpu_out"
+    # Whitespace trimmen
+    name=$(echo "$name" | xargs)
+    mem_used=$(echo "$mem_used" | xargs)
+    mem_total=$(echo "$mem_total" | xargs)
+    util=$(echo "$util" | xargs)
+    temp=$(echo "$temp" | xargs)
+    printf '{"available":true,"name":"%s","memory_used_mb":%s,"memory_total_mb":%s,"utilization_percent":%s,"temperature_c":%s,"timestamp":"%s"}\n' \
+        "$name" "$mem_used" "$mem_total" "$util" "$temp" "$(date -Iseconds)" > "$GPU_STATUS_FILE"
+    log_info "GPU-Status geschrieben: $GPU_STATUS_FILE"
+}
+
 # --- Hauptprogramm ---
 main() {
     local nvidia_ok=true
@@ -131,6 +157,11 @@ main() {
         if recover_nvidia; then
             nvidia_ok=true
         fi
+    fi
+
+    # GPU-Status fuer Container bereitstellen
+    if $nvidia_ok; then
+        write_gpu_status
     fi
 
     # Ollama pruefen (und bei Bedarf starten)
