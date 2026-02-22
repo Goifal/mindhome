@@ -294,15 +294,15 @@ textarea { resize:vertical; min-height:70px; font-family:var(--mono); font-size:
 .tab-item.active { background:rgba(245,158,11,0.1); color:var(--accent); box-shadow:0 0 10px rgba(245,158,11,0.1); border:1px solid rgba(245,158,11,0.2); }
 
 /* Settings Section (collapsible) */
-.s-section { border:1px solid rgba(245,158,11,0.1); border-radius:var(--radius-md); margin-bottom:14px; overflow:hidden; }
-.s-section-hdr { display:flex; align-items:center; justify-content:space-between; padding:14px 18px; background:var(--bg-card); cursor:pointer; transition:all var(--fast); border-left:2px solid transparent; }
+.s-section { border:1px solid rgba(245,158,11,0.1); border-radius:var(--radius-md); margin-bottom:14px; overflow:visible; }
+.s-section-hdr { display:flex; align-items:center; justify-content:space-between; padding:14px 18px; background:var(--bg-card); cursor:pointer; transition:all var(--fast); border-left:2px solid transparent; border-radius:var(--radius-md) var(--radius-md) 0 0; }
 .s-section-hdr:hover { background:var(--bg-card-hover); border-left-color:var(--accent); }
 .s-section-hdr h3 { font-size:13px; font-weight:600; display:flex; align-items:center; gap:8px; text-transform:uppercase; letter-spacing:0.5px; }
 .s-section-hdr .arrow { transition:transform var(--fast); color:var(--accent); font-size:12px; }
 .s-section-hdr.open .arrow { transform:rotate(180deg); }
 .s-section-hdr.open { border-left-color:var(--accent); }
-.s-section-body { padding:0 18px; max-height:0; overflow:hidden; transition:max-height 0.3s ease,padding 0.3s ease; }
-.s-section-body.open { padding:18px; max-height:5000px; }
+.s-section-body { padding:0 18px; max-height:0; overflow:hidden; transition:max-height 0.3s ease,padding 0.3s ease,overflow 0s 0.3s; }
+.s-section-body.open { padding:18px; max-height:5000px; overflow:visible; transition:max-height 0.3s ease,padding 0.3s ease,overflow 0s 0s; }
 
 /* Entity */
 .entity-picker { background:var(--bg-card); border:1px solid rgba(245,158,11,0.1); border-radius:var(--radius-md); padding:14px; margin-bottom:14px; }
