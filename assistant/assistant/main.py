@@ -1734,8 +1734,12 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
         if "tts" in changed_settings and hasattr(brain, "tts_enhancer"):
             tts_cfg = yaml_cfg.get("tts", {})
             te = brain.tts_enhancer
-            te.speed = float(tts_cfg.get("speed", getattr(te, "speed", 1.0)))
-            te.pitch = float(tts_cfg.get("pitch", getattr(te, "pitch", 1.0)))
+            speed_val = tts_cfg.get("speed", getattr(te, "speed", 1.0))
+            if not isinstance(speed_val, dict):
+                te.speed = float(speed_val)
+            pitch_val = tts_cfg.get("pitch", getattr(te, "pitch", 1.0))
+            if not isinstance(pitch_val, dict):
+                te.pitch = float(pitch_val)
             logger.info("TTS Enhancer Settings aktualisiert")
 
         # Web Search
