@@ -2792,7 +2792,7 @@ async def ui_system_status(token: str = ""):
                 }
     except Exception:
         pass
-    # Fallback: direktes nvidia-smi (falls Container GPU-Zugriff hat)
+    # Fallback 1: direktes nvidia-smi (falls Container GPU-Zugriff hat)
     if not gpu_info:
         rc_gpu, gpu_out = _run_cmd([
             "nvidia-smi",
@@ -2812,6 +2812,56 @@ async def ui_system_status(token: str = ""):
                     }
                 except (ValueError, IndexError):
                     pass
+
+    # Fallback 2: nvidia-smi via Host PID namespace (Container hat Docker-Socket)
+    if not gpu_info:
+        rc_gpu, gpu_out = _run_cmd([
+            "nsenter", "--target", "1", "--mount", "--uts", "--",
+            "nvidia-smi",
+            "--query-gpu=name,memory.used,memory.total,utilization.gpu,temperature.gpu",
+            "--format=csv,noheader,nounits",
+        ], timeout=10)
+        if rc_gpu == 0 and gpu_out.strip():
+            parts = [p.strip() for p in gpu_out.strip().split(",")]
+            if len(parts) >= 5:
+                try:
+                    gpu_info = {
+                        "name": parts[0],
+                        "memory_used_mb": int(parts[1]),
+                        "memory_total_mb": int(parts[2]),
+                        "utilization_percent": int(parts[3]),
+                        "temperature_c": int(parts[4]),
+                    }
+                except (ValueError, IndexError):
+                    pass
+
+    # Fallback 3: Ollama /api/ps — zeigt GPU-Nutzung geladener Modelle
+    if not gpu_info:
+        try:
+            import aiohttp as _aio_tmp
+            async with _aio_tmp.ClientSession(
+                timeout=_aio_tmp.ClientTimeout(total=5)
+            ) as _sess:
+                async with _sess.get(f"{_OLLAMA_URL}/api/ps") as resp:
+                    if resp.status == 200:
+                        ps_data = await resp.json()
+                        models = ps_data.get("models", [])
+                        for m in models:
+                            details = m.get("details", {})
+                            size_vram = m.get("size_vram", 0)
+                            size_total = m.get("size", 0)
+                            if size_vram > 0:
+                                gpu_info = {
+                                    "name": "GPU (via Ollama)",
+                                    "memory_used_mb": round(size_vram / 1024 / 1024),
+                                    "memory_total_mb": round(size_total / 1024 / 1024),
+                                    "utilization_percent": 0,
+                                    "temperature_c": 0,
+                                    "ollama_fallback": True,
+                                }
+                                break
+        except Exception:
+            pass
 
     # Remote claude/* Branches auflisten
     _, remote_branches_raw = _run_cmd(

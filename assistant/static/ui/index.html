@@ -145,17 +145,22 @@ body { font-family:var(--font); background:var(--bg-primary); color:var(--text-p
   .tab-bar::-webkit-scrollbar { display:none; }
   .tab-bar .tab-divider { flex-shrink:0; }
   .tab-item { flex-shrink:0; }
+  /* HUD: Scan-Linie + Grid an mobiles Layout anpassen */
+  .main::after { left:0; }
+  .main-content::before { left:0; }
+  /* Arc Reactor kleiner auf Tablet */
+  .arc-reactor-bg { width:350px; height:350px; }
 }
 
 /* Phone (< 600px): Kompakteres Layout */
 @media (max-width:600px) {
   .main-content { padding:14px; }
   .main-header { padding:0 12px; height:48px; }
-  .main-header h1 { font-size:13px; letter-spacing:1px; }
+  .main-header h1 { font-size:13px; letter-spacing:2px; }
   .card { padding:14px; margin-bottom:12px; }
   .stat-value { font-size:22px; }
   .stat-card { padding:14px 16px; }
-  .section-header h2 { font-size:14px; }
+  .section-header h2 { font-size:14px; letter-spacing:2px; }
   .section-header p { font-size:10px; }
   .btn { padding:8px 14px; font-size:11px; }
   .btn-sm { padding:5px 10px; }
@@ -163,8 +168,9 @@ body { font-family:var(--font); background:var(--bg-primary); color:var(--text-p
   .nav-item { padding:12px 14px; font-size:12px; min-height:44px; }
   /* Login auf kleinen Screens */
   .login-box { width:calc(100vw - 32px); max-width:360px; padding:36px 24px; }
-  .login-box h1 { font-size:24px; }
+  .login-box h1 { font-size:24px; letter-spacing:4px; }
   .login-box input { font-size:20px; padding:12px 14px; }
+  .login-hud-ring { width:100px; height:100px; top:-50px; }
   /* Log entries: Stack statt Zeile */
   .log-entry { flex-direction:column; gap:4px; padding:10px 12px; }
   .log-time { min-width:unset; font-size:10px; }
@@ -192,27 +198,40 @@ body { font-family:var(--font); background:var(--bg-primary); color:var(--text-p
   .toast { left:16px; right:16px; bottom:16px; text-align:center; }
   /* Grid 2 auch auf Phone single column */
   .grid-2 { grid-template-columns:1fr; }
-  /* Boot screen */
-  .boot-hud { width:140px; height:140px; }
-  .boot-logo { font-size:42px; }
-  .boot-text { font-size:12px; }
+  /* Boot screen: kleiner */
+  .boot-hud { width:200px; height:200px; }
+  .boot-logo { font-size:24px; letter-spacing:6px; }
+  .boot-text { font-size:11px; letter-spacing:2px; }
+  .boot-systems { flex-wrap:wrap; justify-content:center; gap:8px; }
   /* Knowledge stats */
   .grid-3 { grid-template-columns:1fr; }
   /* Chip grid: besser wrappen */
   .chip-grid { gap:4px; }
-  .chip-opt { padding:4px 10px; font-size:10px; }
+  .chip-opt { padding:5px 10px; font-size:10px; }
   /* Collapsible sections */
   .s-section-hdr { padding:12px 14px; }
   .s-section-body.open { padding:14px; }
+  .s-section-hdr h3 { font-size:12px; }
+  /* HUD Brackets kleiner auf Mobile */
+  .s-section::before { width:10px; height:10px; }
+  .s-section::after { width:10px; height:10px; }
   /* Form elements */
   .form-group label { font-size:10px; }
   input[type="text"],input[type="number"],input:not([type]),select,textarea { font-size:14px; padding:10px 12px; }
-  /* Range */
-  .range-group input[type="range"]::-webkit-slider-thumb { width:20px; height:20px; }
+  /* Range: groesserer Thumb fuer Touch */
+  .range-group input[type="range"]::-webkit-slider-thumb { width:22px; height:22px; }
+  .range-value { font-size:13px; }
   /* Toggle: groesseres Touch Target */
   .toggle { width:48px; height:26px; }
   .toggle-thumb { width:20px; height:20px; }
   .toggle input:checked ~ .toggle-thumb { left:24px; }
+  /* Arc Reactor: kleiner + weniger opak auf Phone */
+  .arc-reactor-bg { width:280px; height:280px; opacity:0.3; }
+  #page-dashboard::before { width:400px; height:400px; }
+  /* Holographic Grid: leichter auf Mobile (Performance) */
+  .main-content::before { background-size:50px 50px; }
+  /* Buttons: volle Breite auf Mobile */
+  .section-header .btn { width:100%; justify-content:center; }
 }
 
 /* Very small phones (< 380px) */
@@ -221,8 +240,29 @@ body { font-family:var(--font); background:var(--bg-primary); color:var(--text-p
   .stat-value { font-size:18px; }
   .stat-card { padding:12px; }
   .login-box { padding:28px 16px; }
-  .login-box h1 { font-size:20px; letter-spacing:2px; }
-  .sidebar-logo h2 { font-size:15px; }
+  .login-box h1 { font-size:20px; letter-spacing:3px; }
+  .login-hud-ring { width:80px; height:80px; top:-40px; }
+  .sidebar-logo h2 { font-size:15px; letter-spacing:3px; }
+  /* Arc Reactor aus auf sehr kleinen Screens */
+  .arc-reactor-bg { display:none; }
+  /* Grid-Overlay aus (Performance) */
+  .main-content::before { display:none; }
+  /* Boot noch kleiner */
+  .boot-hud { width:160px; height:160px; }
+  .boot-logo { font-size:18px; letter-spacing:4px; }
+}
+
+/* Reduce motion for users who prefer it */
+@media (prefers-reduced-motion: reduce) {
+  .arc-ring-1, .arc-ring-2, .arc-ring-3,
+  .boot-circle, .boot-ring-outer, .boot-ring-inner,
+  .login-hud-ring svg,
+  .sidebar::after, .main::after { animation:none !important; }
+  .main-content::before { animation:none !important; }
+  .stat-value { animation:none !important; }
+  .login-box { animation:none !important; }
+  #page-dashboard::before { animation:none !important; }
+  .page { animation:none !important; }
 }
 
 /* Pages */
@@ -471,13 +511,13 @@ textarea { resize:vertical; min-height:70px; font-family:var(--mono); font-size:
 /* ---- J.A.R.V.I.S. Boot Sequence ---- */
 .boot-screen { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: var(--bg-primary); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 9999; }
 .boot-screen::before { content:''; position:absolute; inset:0; background:radial-gradient(circle at center, rgba(0,212,255,0.04) 0%, transparent 60%); }
-.boot-hud { position: relative; width: 220px; height: 220px; margin-bottom: 40px; }
+.boot-hud { position: relative; width: 280px; height: 280px; margin-bottom: 40px; }
 .boot-circle { position:absolute; inset:0; animation: bootRotate 3s linear infinite; }
 .boot-ring { fill: none; stroke: rgba(0,212,255,0.08); stroke-width: 1.5; }
 .boot-ring-fill { fill: none; stroke: var(--accent); stroke-width: 2; stroke-dasharray: 565; stroke-dashoffset: 565; stroke-linecap: round; animation: bootDraw 2s ease-out forwards; filter: drop-shadow(0 0 10px rgba(0,212,255,0.7)); }
 .boot-ring-outer { position:absolute; inset:0; animation: bootRotateReverse 6s linear infinite; }
 .boot-ring-inner { position:absolute; inset:0; animation: bootRotate 10s linear infinite; }
-.boot-logo { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 52px; font-weight: 700; color: var(--accent); opacity: 0; animation: bootFadeIn 0.6s ease 0.3s forwards; text-shadow: 0 0 40px rgba(0,212,255,0.7), 0 0 80px rgba(0,212,255,0.3), 0 0 120px rgba(0,212,255,0.1); letter-spacing: 4px; }
+.boot-logo { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 32px; font-weight: 700; color: var(--accent); opacity: 0; animation: bootFadeIn 0.6s ease 0.3s forwards; text-shadow: 0 0 40px rgba(0,212,255,0.7), 0 0 80px rgba(0,212,255,0.3), 0 0 120px rgba(0,212,255,0.1); letter-spacing: 8px; white-space:nowrap; }
 .boot-text { font-family: var(--mono); font-size: 13px; color: var(--accent); letter-spacing: 3px; min-height: 20px; text-transform: uppercase; text-shadow: 0 0 15px rgba(0,212,255,0.4); }
 .boot-systems { display: flex; gap: 12px; margin-top: 24px; }
 .boot-sys { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-muted); opacity: 0; animation: bootFadeIn 0.3s ease forwards; }
@@ -920,7 +960,7 @@ input:focus,select:focus,textarea:focus { border-color:var(--accent); box-shadow
       <circle cx="100" cy="100" r="70" fill="none" stroke="rgba(0,212,255,0.3)" stroke-width="0.8" stroke-dasharray="6 14 2 14" />
       <circle cx="100" cy="100" r="55" fill="none" stroke="rgba(0,212,255,0.15)" stroke-width="0.5" stroke-dasharray="3 20" />
     </svg>
-    <div class="boot-logo">J</div>
+    <div class="boot-logo">JARVIS</div>
   </div>
   <div class="boot-text" id="bootText"></div>
   <div class="boot-systems" id="bootSystems"></div>
