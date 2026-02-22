@@ -3929,23 +3929,25 @@ class FunctionExecutor:
         }
         condition_de = condition_map.get(condition, condition)
 
-        parts = [f"Aktuelles Wetter: {condition_de}"]
-        if temp is not None:
-            parts.append(f"Temperatur: {temp}°C")
-        if wind_speed is not None:
-            wind_str = f"Wind: {wind_speed} km/h"
-            if wind_bearing is not None:
-                # Windrichtung in Himmelsrichtung
-                directions = ["N", "NO", "O", "SO", "S", "SW", "W", "NW"]
-                try:
-                    idx = round(float(wind_bearing) / 45) % 8
-                    wind_str += f" aus {directions[idx]}"
-                except (ValueError, TypeError):
-                    pass
-            parts.append(wind_str)
+        parts = []
 
-        # Vorhersage: gleiches kompakte Format wie aktuelles Wetter
-        if include_forecast:
+        # Aktuelles Wetter nur wenn KEINE Vorhersage angefragt
+        if not include_forecast:
+            parts.append(f"Aktuelles Wetter: {condition_de}")
+            if temp is not None:
+                parts.append(f"Temperatur: {temp}°C")
+            if wind_speed is not None:
+                wind_str = f"Wind: {wind_speed} km/h"
+                if wind_bearing is not None:
+                    directions = ["N", "NO", "O", "SO", "S", "SW", "W", "NW"]
+                    try:
+                        idx = round(float(wind_bearing) / 45) % 8
+                        wind_str += f" aus {directions[idx]}"
+                    except (ValueError, TypeError):
+                        pass
+                parts.append(wind_str)
+        else:
+            # Vorhersage: gleiches kompakte Format (Zustand, Temperatur, Wind)
             forecast = attrs.get("forecast", [])
             if forecast:
                 for entry in forecast[:3]:
@@ -3955,10 +3957,12 @@ class FunctionExecutor:
                     fc_cond = entry.get("condition", "")
                     fc_cond_de = condition_map.get(fc_cond, fc_cond)
                     fc_wind = entry.get("wind_speed")
-                    line = f"\n{time_str}: {fc_cond_de}, {fc_temp}°C"
+                    line = f"{time_str}: {fc_cond_de}, {fc_temp}°C"
                     if fc_wind is not None:
                         line += f", Wind {fc_wind} km/h"
                     parts.append(line)
+            else:
+                parts.append("Keine Vorhersage-Daten verfuegbar.")
 
         return {"success": True, "message": "\n".join(parts)}
 
