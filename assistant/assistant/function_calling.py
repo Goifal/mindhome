@@ -5,8 +5,10 @@ MindHome Assistant ruft ueber diese Funktionen Home Assistant Aktionen aus.
 Phase 10: Room-aware TTS, Person Messaging, Trust-Level Pre-Check.
 """
 
+import copy
 import logging
 import re
+import time
 from pathlib import Path
 from typing import Any, Optional
 
@@ -25,6 +27,147 @@ _EDITABLE_CONFIGS = {
 }
 
 logger = logging.getLogger(__name__)
+
+# ── Entity-Katalog: Echte Raum- und Entity-Namen fuer Tool-Beschreibungen ──
+# Wird asynchron aus HA geladen und gecached (TTL 5 Min).
+# Raumnamen kommen zusaetzlich aus room_profiles.yaml (immer verfuegbar).
+_entity_catalog: dict[str, list[str]] = {}
+_entity_catalog_ts: float = 0.0
+_CATALOG_TTL = 300  # 5 Minuten
+
+
+def _get_config_rooms() -> list[str]:
+    """Liefert Raumnamen aus room_profiles.yaml (immer verfuegbar)."""
+    _cfg_dir = Path(__file__).parent.parent / "config"
+    try:
+        rp_file = _cfg_dir / "room_profiles.yaml"
+        if rp_file.exists():
+            with open(rp_file) as f:
+                data = yaml.safe_load(f)
+            return sorted(data.get("rooms", {}).keys())
+    except Exception:
+        pass
+    return []
+
+
+async def refresh_entity_catalog(ha: HomeAssistantClient) -> None:
+    """Laedt verfuegbare Entities aus HA und cached Raum-/Geraete-Namen.
+
+    Wird periodisch aufgerufen (z.B. alle 5 Min) um Tool-Beschreibungen
+    mit echten Entity-Namen anzureichern.
+    """
+    global _entity_catalog, _entity_catalog_ts
+
+    states = await ha.get_states()
+    if not states:
+        return
+
+    rooms: set[str] = set()
+    lights: list[str] = []
+    switches: list[str] = []
+    covers: list[str] = []
+
+    for state in states:
+        eid = state.get("entity_id", "")
+        friendly = state.get("attributes", {}).get("friendly_name", "")
+        if "." not in eid:
+            continue
+        domain, name = eid.split(".", 1)
+
+        if domain == "light":
+            lights.append(f"{name} ({friendly})" if friendly else name)
+            # Raumnamen aus Entity-IDs extrahieren (best-effort)
+            rooms.add(name)
+        elif domain == "switch":
+            switches.append(f"{name} ({friendly})" if friendly else name)
+        elif domain == "cover":
+            covers.append(f"{name} ({friendly})" if friendly else name)
+
+    # Config-Raeume immer hinzufuegen
+    for r in _get_config_rooms():
+        rooms.add(r)
+
+    _entity_catalog = {
+        "rooms": sorted(rooms),
+        "lights": sorted(lights),
+        "switches": sorted(switches),
+        "covers": sorted(covers),
+    }
+    _entity_catalog_ts = time.time()
+    logger.info(
+        "Entity-Katalog aktualisiert: %d rooms, %d lights, %d switches, %d covers",
+        len(rooms), len(lights), len(switches), len(covers),
+    )
+
+
+def _get_room_names() -> list[str]:
+    """Liefert aktuelle Raumnamen (aus Cache oder Config-Fallback)."""
+    if _entity_catalog.get("rooms"):
+        return _entity_catalog["rooms"]
+    return _get_config_rooms()
+
+
+def _inject_entity_hints(tool: dict) -> dict:
+    """Fuegt verfuegbare Raum- und Entity-Namen in Tool-Beschreibungen ein.
+
+    - Alle Tools mit 'room'-Parameter: Raumnamen-Liste anfuegen
+    - set_switch/get_switches: Verfuegbare Switches anfuegen
+    - set_cover/get_covers: Verfuegbare Covers anfuegen
+    - set_light/get_lights: Verfuegbare Lights anfuegen
+    """
+    func = tool.get("function", {})
+    fname = func.get("name", "")
+    params = func.get("parameters", {})
+    props = params.get("properties", {})
+    needs_copy = False
+
+    # --- Room-Hints ---
+    rooms = _get_room_names()
+    room_prop = props.get("room")
+    if rooms and room_prop:
+        needs_copy = True
+
+    # --- Entity-Hints (Switches, Covers, Lights) ---
+    entity_hint = ""
+    _ENTITY_MAP = {
+        "set_switch": "switches",
+        "get_switches": "switches",
+        "set_cover": "covers",
+        "get_covers": "covers",
+        "set_light": "lights",
+        "get_lights": "lights",
+    }
+    catalog_key = _ENTITY_MAP.get(fname)
+    if catalog_key and _entity_catalog.get(catalog_key):
+        entities = _entity_catalog[catalog_key]
+        if entities:
+            entity_hint = ", ".join(entities[:30])  # Max 30 um Token zu sparen
+            needs_copy = True
+
+    if not needs_copy:
+        return tool
+
+    tool = copy.deepcopy(tool)
+
+    # Room-Liste injizieren
+    if rooms and room_prop:
+        rp = tool["function"]["parameters"]["properties"]["room"]
+        room_list = ", ".join(rooms)
+        desc = rp.get("description", "Raumname")
+        if "Verfuegbare Raeume:" in desc:
+            desc = desc.split("Verfuegbare Raeume:")[0].rstrip()
+        if "Verfuegbare Geraete:" in desc:
+            desc = desc.split("Verfuegbare Geraete:")[0].rstrip()
+        rp["description"] = f"{desc} — Verfuegbare Raeume: {room_list}"
+
+    # Entity-Liste in die Tool-Beschreibung injizieren
+    if entity_hint:
+        tool_desc = tool["function"].get("description", "")
+        if "Verfuegbare Geraete:" in tool_desc:
+            tool_desc = tool_desc.split("Verfuegbare Geraete:")[0].rstrip()
+        tool["function"]["description"] = f"{tool_desc} — Verfuegbare Geraete: {entity_hint}"
+
+    return tool
 
 
 def _get_heating_mode() -> str:
@@ -1153,25 +1296,27 @@ _ASSISTANT_TOOLS_STATIC = [
 
 
 def get_assistant_tools() -> list:
-    """Liefert Tool-Definitionen mit aktuellem Climate-Schema.
+    """Liefert Tool-Definitionen mit aktuellem Climate-Schema und Entity-Katalog.
 
-    Climate-Tool wird bei jedem Aufruf neu gebaut, damit
-    Aenderungen am Heizungsmodus (room_thermostat vs heating_curve)
-    sofort wirksam werden — ohne Neustart.
+    - Climate-Tool wird bei jedem Aufruf neu gebaut (Heizungsmodus)
+    - Room-Parameter werden mit echten Raumnamen angereichert
+    - Entity-Katalog (Switches, Covers, Lights) wird aus HA-Cache injiziert
     """
     tools = []
     for tool in _ASSISTANT_TOOLS_STATIC:
-        if tool.get("function", {}).get("name") == "set_climate":
-            tools.append({
+        fname = tool.get("function", {}).get("name", "")
+        if fname == "set_climate":
+            t = {
                 "type": "function",
                 "function": {
                     "name": "set_climate",
                     "description": _get_climate_tool_description(),
                     "parameters": _get_climate_tool_parameters(),
                 },
-            })
+            }
+            tools.append(_inject_entity_hints(t))
         else:
-            tools.append(tool)
+            tools.append(_inject_entity_hints(tool))
     return tools
 
 
