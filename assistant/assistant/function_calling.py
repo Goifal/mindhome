@@ -1389,24 +1389,55 @@ class FunctionExecutor:
         "dining room": "esszimmer",
     }
 
+    # Geraetetyp-Woerter die Qwen3 manchmal in den Raumnamen packt
+    _DEVICE_TYPE_WORDS = {
+        # Deutsch
+        "licht", "lampe", "leuchte", "beleuchtung",
+        "rollladen", "rolladen", "jalousie", "rollo",
+        "heizung", "thermostat", "klima", "klimaanlage",
+        "steckdose", "schalter", "dose",
+        "lautsprecher", "speaker", "media", "musik",
+        "tuer", "schloss", "lock",
+        "fenster", "sensor",
+        # Englisch
+        "light", "lights", "lamp", "blind", "blinds",
+        "shutter", "cover", "switch", "plug", "outlet",
+        "heater", "heating", "thermostat", "climate",
+        "door", "window",
+    }
+
     @classmethod
     def _clean_room(cls, room: str) -> str:
-        """Bereinigt room-Parameter: Domain-Prefixe strippen + EN->DE Uebersetzung.
+        """Bereinigt room-Parameter: Prefixe, Geraetetypen, EN->DE.
 
         Qwen3 schickt manchmal:
         - 'licht.buero' statt 'buero' (Domain-Prefix)
         - 'living_room' statt 'wohnzimmer' (englische Uebersetzung)
+        - 'schlafzimmer rollladen' statt 'schlafzimmer' (Geraetetyp im Raum)
         """
         if not room:
             return room
+
+        # 1. Domain-Prefix strippen (z.B. "light.wohnzimmer" -> "wohnzimmer")
         for prefix in ("licht.", "light.", "schalter.", "switch.",
                        "rollladen.", "rolladen.", "cover.",
-                       "steckdose.", "lampe."):
+                       "steckdose.", "lampe.", "climate.", "media_player.",
+                       "lock.", "sensor.", "binary_sensor."):
             if room.lower().startswith(prefix):
                 room = room[len(prefix):]
                 break
 
-        # Englisch -> Deutsch Uebersetzung
+        # 2. Geraetetyp-Woerter entfernen (z.B. "schlafzimmer rollladen" -> "schlafzimmer")
+        parts = room.replace("_", " ").split()
+        if len(parts) > 1:
+            cleaned = [p for p in parts if p.lower() not in cls._DEVICE_TYPE_WORDS]
+            if cleaned:
+                original = room
+                room = " ".join(cleaned)
+                if room != original:
+                    logger.info("Room device-word cleanup: '%s' -> '%s'", original, room)
+
+        # 3. Englisch -> Deutsch Uebersetzung
         room_lower = room.lower().strip()
         if room_lower in cls._EN_TO_DE_ROOMS:
             translated = cls._EN_TO_DE_ROOMS[room_lower]
@@ -3317,8 +3348,9 @@ class FunctionExecutor:
                     elif search_norm == dev_name:
                         logger.info("_find_entity: Exakter Name-Match -> %s", dev["ha_entity_id"])
                         return dev["ha_entity_id"]
-                    # Partial Match: Suchbegriff MUSS im Namen oder Raum vorkommen
-                    elif search_norm in dev_name or search_norm in dev_room:
+                    # Partial Match: bidirektional (Suchbegriff IN Entity ODER Entity IN Suchbegriff)
+                    elif (search_norm in dev_name or search_norm in dev_room
+                          or dev_room in search_norm or dev_name in search_norm):
                         matched = True
 
                     if matched:
@@ -3374,11 +3406,11 @@ class FunctionExecutor:
             if search_norm == name_norm or search_norm == friendly_norm:
                 return entity_id
 
-            # Partial Match → besten (kuerzesten) merken
+            # Partial Match → besten (kuerzesten) merken (bidirektional)
             matched = False
-            if search_norm in name_norm:
+            if search_norm in name_norm or name_norm in search_norm:
                 matched = True
-            elif friendly_norm and search_norm in friendly_norm:
+            elif friendly_norm and (search_norm in friendly_norm or friendly_norm in search_norm):
                 matched = True
 
             if matched:

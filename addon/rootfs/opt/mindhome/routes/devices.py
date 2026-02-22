@@ -171,7 +171,7 @@ def api_search_devices():
                 n = n.replace(" ", "_")
                 if rn == n:
                     exact_ids.append(r.id)
-                elif rn in n:
+                elif rn in n or n in rn:
                     partial_ids.append(r.id)
             # Exakte Matches bevorzugen, dann partial
             matching_room_ids = exact_ids if exact_ids else partial_ids
