@@ -1743,7 +1743,7 @@ class AssistantBrain(BrainCallbacksMixin):
 
         # --- Muster 4: Bare JSON mit bekannten Keys ---
         # Qwen3 gibt manchmal nur {"entity_id": "light.x", "state": "on"} aus
-        m_bare = re.search(r'\{[^{}]*"(?:entity_id|room|state)"[^{}]*\}', text)
+        m_bare = re.search(r'\{[^{}]*"(?:entity_id|room|state|position|adjust)"[^{}]*\}', text)
         if m_bare:
             try:
                 args = json.loads(m_bare.group(0))
@@ -3364,13 +3364,8 @@ Regeln:
             # Energie-Preis Forecast (wenn verfuegbar)
             for s in states:
                 eid = s.get("entity_id", "")
-                if "price" in eid.lower() and "tomorrow" in eid.lower():
-                    try:
-                        price = float(s.get("state", 0))
-                        if price < 10:
-                            forecasts.append(f"Morgen guenstiger Strom ({price:.1f} ct). Groessere Verbraucher einplanen.")
-                    except (ValueError, TypeError):
-                        pass
+                # Guenstiger-Strom-Meldung deaktiviert (Owner-Feedback: uninteressant)
+                pass
 
             if not forecasts:
                 return ""
