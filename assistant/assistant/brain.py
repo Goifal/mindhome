@@ -1501,18 +1501,21 @@ class AssistantBrain(BrainCallbacksMixin):
                     logger.warning("Tool-Feedback fehlgeschlagen: %s", e, exc_info=True)
 
             # Fallback fuer Query-Tools: Wenn der Feedback-Loop keine Antwort
-            # produziert hat, die rohen Tool-Ergebnisse direkt verwenden.
-            # Verhindert "Umgesetzt." bei Wetter-/Status-Abfragen.
+            # produziert hat, Rohdaten in natuerliche Sprache umwandeln.
             if has_query_results and not response_text and executed_actions:
                 query_results = []
                 for action in executed_actions:
                     if action.get("function") in QUERY_TOOLS:
                         result = action.get("result", {})
                         if isinstance(result, dict) and result.get("message"):
-                            query_results.append(result["message"])
+                            raw = result["message"]
+                            humanized = self._humanize_query_result(
+                                action["function"], raw,
+                            )
+                            query_results.append(humanized)
                 if query_results:
                     response_text = " ".join(query_results)
-                    logger.info("Query-Fallback: Rohe Tool-Ergebnisse als Antwort verwendet")
+                    logger.info("Query-Fallback (humanized): '%s'", response_text[:120])
 
             # Phase 6: Variierte Bestaetigung statt immer "Erledigt."
             # Nur fuer reine Action-Tools (set_light etc.), nicht fuer Query-Tools
@@ -1892,6 +1895,123 @@ class AssistantBrain(BrainCallbacksMixin):
                 pass
 
         return []
+
+    # ------------------------------------------------------------------
+    # Query-Result Humanizer (Fallback wenn LLM-Feedback-Loop fehlschlaegt)
+    # ------------------------------------------------------------------
+
+    def _humanize_query_result(self, func_name: str, raw: str) -> str:
+        """Wandelt rohe Query-Ergebnisse in natuerliche JARVIS-Sprache um.
+
+        Template-basiert, kein LLM noetig. Greift nur als Fallback wenn der
+        LLM-Feedback-Loop keine Antwort produziert hat.
+        """
+        try:
+            if func_name == "get_weather":
+                return self._humanize_weather(raw)
+            elif func_name == "get_calendar_events":
+                return self._humanize_calendar(raw)
+            elif func_name == "get_entity_state":
+                return self._humanize_entity_state(raw)
+            elif func_name == "get_room_climate":
+                return self._humanize_room_climate(raw)
+            elif func_name == "get_house_status":
+                return self._humanize_house_status(raw)
+        except Exception as e:
+            logger.debug("Humanize fehlgeschlagen fuer %s: %s", func_name, e)
+        # Kein Template vorhanden — Rohdaten zurueckgeben
+        return raw
+
+    def _humanize_weather(self, raw: str) -> str:
+        """AKTUELL: Bewoelkt, 5.2°C, ... → Natuerliche Wetter-Antwort."""
+        parts = []
+        lines = raw.split("\n")
+        for line in lines:
+            line = line.strip()
+            if line.startswith("AKTUELL:"):
+                data = line[8:].strip()
+                # Condition und Temperatur extrahieren
+                segments = [s.strip() for s in data.split(",")]
+                condition = segments[0] if segments else ""
+                temp = ""
+                wind = ""
+                for s in segments[1:]:
+                    if "°C" in s:
+                        temp = s.strip()
+                    elif "Wind" in s:
+                        wind = s.strip()
+                if temp:
+                    parts.append(f"Draussen {temp}, {condition.lower()}.")
+                else:
+                    parts.append(f"Draussen: {condition}.")
+                if wind:
+                    parts.append(f"{wind}.")
+            elif line.startswith("VORHERSAGE") and "Keine Daten" not in line:
+                # VORHERSAGE 2024-01-15: Regen, Hoch 8°C, ...
+                fc = line.split(":", 1)
+                if len(fc) > 1:
+                    parts.append(f"Vorhersage: {fc[1].strip()}.")
+        if not parts:
+            return raw
+        return " ".join(parts)
+
+    def _humanize_calendar(self, raw: str) -> str:
+        """TERMINE MORGEN (2): - 09:00 | Meeting → Natuerliche Termin-Antwort."""
+        lines = raw.strip().split("\n")
+        if not lines:
+            return raw
+        header = lines[0].strip()
+        # "KEINE TERMINE" Varianten
+        if "KEINE TERMINE" in header.upper() or "(0)" in header:
+            return "Morgen ist nichts eingetragen, Sir."
+
+        # Termine parsen
+        events = []
+        for line in lines[1:] if len(lines) > 1 else lines:
+            line = line.strip().lstrip("- ")
+            if "|" in line:
+                time_part, title = line.split("|", 1)
+                time_part = time_part.strip()
+                title = title.strip()
+                # "01:00" -> "um eins" oder einfach beibehalten
+                events.append(f"{title} um {time_part}")
+            elif line and not line.startswith("TERMINE"):
+                events.append(line)
+
+        # Auch aus Header parsen wenn inline (single-line Format)
+        if not events and "|" in header:
+            # "TERMINE MORGEN (1): - 07:45 | Blutabnahme"
+            after_colon = header.split(":", 1)[1] if ":" in header else ""
+            for part in after_colon.split("- "):
+                part = part.strip()
+                if "|" in part:
+                    time_part, title = part.split("|", 1)
+                    events.append(f"{title.strip()} um {time_part.strip()}")
+
+        if not events:
+            return raw
+
+        count = len(events)
+        if count == 1:
+            return f"Morgen steht ein Termin an: {events[0]}, Sir."
+        else:
+            listing = ", ".join(events[:-1]) + f" und {events[-1]}"
+            return f"Morgen stehen {count} Termine an: {listing}."
+
+    def _humanize_entity_state(self, raw: str) -> str:
+        """Entity-Status in natuerliche Sprache."""
+        # Kurze Rohdaten einfach durchlassen (z.B. "22.5°C")
+        if len(raw) < 60:
+            return raw
+        return raw
+
+    def _humanize_room_climate(self, raw: str) -> str:
+        """Raum-Klima in natuerliche Sprache."""
+        return raw
+
+    def _humanize_house_status(self, raw: str) -> str:
+        """Haus-Status in natuerliche Sprache."""
+        return raw
 
     # ------------------------------------------------------------------
     # Phase 12: Response-Filter (Post-Processing)
