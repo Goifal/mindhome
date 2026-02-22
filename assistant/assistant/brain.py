@@ -516,6 +516,13 @@ class AssistantBrain(BrainCallbacksMixin):
                             person, identified.get("confidence", 0),
                             identified.get("method", "unknown"))
 
+        # Fallback: Wenn kein Person ermittelt, Primary User aus Household annehmen
+        # (nur wenn explizit konfiguriert, nicht den Pydantic-Default "Max" nutzen)
+        if not person:
+            primary = yaml_config.get("household", {}).get("primary_user", "")
+            if primary:
+                person = primary
+
         # Phase 7: Gute-Nacht-Intent (VOR allem anderen)
         if self.routines.is_goodnight_intent(text):
             logger.info("Gute-Nacht-Intent erkannt")
