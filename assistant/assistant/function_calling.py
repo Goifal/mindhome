@@ -2659,20 +2659,22 @@ class FunctionExecutor:
     async def _exec_get_calendar_events(self, args: dict) -> dict:
         """Phase 11.3: Kalender-Termine abrufen via HA Calendar Entity."""
         from datetime import datetime, timedelta
+        from zoneinfo import ZoneInfo
 
+        _tz = ZoneInfo("Europe/Berlin")
         timeframe = args.get("timeframe", "today")
-        now = datetime.now()
+        now = datetime.now(_tz)
 
         if timeframe == "today":
-            start = now.replace(hour=0, minute=0, second=0)
-            end = now.replace(hour=23, minute=59, second=59)
+            start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            end = now.replace(hour=23, minute=59, second=59, microsecond=0)
         elif timeframe == "tomorrow":
             tomorrow = now + timedelta(days=1)
-            start = tomorrow.replace(hour=0, minute=0, second=0)
-            end = tomorrow.replace(hour=23, minute=59, second=59)
+            start = tomorrow.replace(hour=0, minute=0, second=0, microsecond=0)
+            end = tomorrow.replace(hour=23, minute=59, second=59, microsecond=0)
         else:  # week
-            start = now.replace(hour=0, minute=0, second=0)
-            end = (now + timedelta(days=7)).replace(hour=23, minute=59, second=59)
+            start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            end = (now + timedelta(days=7)).replace(hour=23, minute=59, second=59, microsecond=0)
 
         # Kalender-Entity finden
         states = await self.ha.get_states()
@@ -2714,12 +2716,12 @@ class FunctionExecutor:
             for ev in events[:10]:
                 summary = ev.get("summary", "Kein Titel")
                 ev_start = ev.get("start", "")
-                ev_end = ev.get("end", "")
-                # Zeit formatieren
+                # Zeit formatieren und in Lokalzeit umrechnen
                 if "T" in str(ev_start):
                     try:
                         dt = datetime.fromisoformat(str(ev_start).replace("Z", "+00:00"))
-                        time_str = dt.strftime("%H:%M")
+                        dt_local = dt.astimezone(_tz)
+                        time_str = dt_local.strftime("%H:%M")
                     except (ValueError, TypeError):
                         time_str = str(ev_start)
                 else:
