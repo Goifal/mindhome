@@ -1359,6 +1359,22 @@ class FunctionExecutor:
         "get_device_health", "get_learned_patterns", "describe_doorbell",
     })
 
+    @staticmethod
+    def _clean_room(room: str) -> str:
+        """Bereinigt room-Parameter von deutschen/englischen Domain-Prefixen.
+
+        Qwen3 schickt manchmal 'licht.buero' oder 'switch.kueche'
+        statt nur 'buero' bzw. 'kueche'.
+        """
+        if not room:
+            return room
+        for prefix in ("licht.", "light.", "schalter.", "switch.",
+                       "rollladen.", "rolladen.", "cover.",
+                       "steckdose.", "lampe."):
+            if room.lower().startswith(prefix):
+                return room[len(prefix):]
+        return room
+
     async def execute(self, function_name: str, arguments: dict) -> dict:
         """
         Fuehrt eine Funktion aus.
@@ -1394,6 +1410,9 @@ class FunctionExecutor:
                 room = eid.split(".", 1)[1]
             else:
                 room = eid
+
+        # Qwen3-Cleanup: Domain-Prefix aus room strippen
+        room = self._clean_room(room)
 
         # State ableiten wenn nicht explizit angegeben
         if not state:
@@ -1800,6 +1819,7 @@ class FunctionExecutor:
         if not room and args.get("entity_id"):
             eid = args["entity_id"]
             room = eid.split(".", 1)[1] if "." in eid else eid
+        room = self._clean_room(room)
 
         if not state:
             state = "off"
@@ -1921,6 +1941,14 @@ class FunctionExecutor:
 
     async def _exec_set_cover(self, args: dict) -> dict:
         room = args.get("room")
+
+        # Qwen3-Fallback: entity_id statt room
+        if not room and args.get("entity_id"):
+            eid = args["entity_id"]
+            room = eid.split(".", 1)[1] if "." in eid else eid
+        # Qwen3-Cleanup: Domain-Prefix aus room strippen
+        room = self._clean_room(room)
+
         if not room:
             return {"success": False, "message": "Kein Raum angegeben"}
 
