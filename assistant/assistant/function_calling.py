@@ -97,13 +97,17 @@ _ASSISTANT_TOOLS_STATIC = [
         "type": "function",
         "function": {
             "name": "set_light",
-            "description": "Licht in einem Raum ein-/ausschalten oder dimmen. Fuer 'heller' verwende state='brighter', fuer 'dunkler' verwende state='dimmer'. Diese passen die Helligkeit relativ um 15% an.",
+            "description": "Licht in einem Raum ein-/ausschalten oder dimmen. Fuer 'heller' verwende state='brighter', fuer 'dunkler' verwende state='dimmer'. Diese passen die Helligkeit relativ um 15% an. Wenn der User ein bestimmtes Licht meint (z.B. 'Stehlampe', 'Deckenlampe'), setze den device-Parameter.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "room": {
                         "type": "string",
                         "description": "Raumname (z.B. wohnzimmer, schlafzimmer, buero)",
+                    },
+                    "device": {
+                        "type": "string",
+                        "description": "Optionaler Geraetename wenn ein bestimmtes Licht gemeint ist (z.B. 'stehlampe', 'deckenlampe', 'nachttisch'). Ohne device wird das Hauptlicht im Raum geschaltet.",
                     },
                     "state": {
                         "type": "string",
@@ -1219,6 +1223,7 @@ class FunctionExecutor:
     async def _exec_set_light(self, args: dict) -> dict:
         room = args.get("room")
         state = args.get("state")
+        device = args.get("device")
 
         # Qwen3-Fallback: entity_id statt room akzeptieren
         if not room and args.get("entity_id"):
@@ -1242,7 +1247,7 @@ class FunctionExecutor:
         if room.lower() == "all":
             return await self._exec_set_light_all(args, state)
 
-        entity_id = await self._find_entity("light", room)
+        entity_id = await self._find_entity("light", room, device_hint=device)
         if not entity_id:
             # Cross-Domain-Fallback: Vielleicht ist es ein Switch (z.B. Siebtraegermaschine)
             switch_id = await self._find_entity("switch", room)
@@ -2993,26 +2998,42 @@ class FunctionExecutor:
         n = n.replace("ue", "u").replace("ae", "a").replace("oe", "o")
         return n.replace(" ", "_")
 
-    async def _find_entity(self, domain: str, search: str) -> Optional[str]:
+    async def _find_entity(self, domain: str, search: str, device_hint: str = "") -> Optional[str]:
         """Findet eine Entity anhand von Domain und Suchbegriff.
 
         Matching-Strategie (Best-Match statt First-Match):
         1. MindHome Device-DB (schnell, DB-basiert) — bester Match
         2. Fallback: Alle HA-States durchsuchen — bester Match
         Exakter Match > kuerzester Partial-Match (spezifischstes Ergebnis)
+
+        device_hint: Optionaler Geraetename (z.B. 'stehlampe', 'deckenlampe')
+                     zur Disambiguierung bei mehreren Geraeten im selben Raum.
         """
         if not search:
             return None
 
         search_norm = self._normalize_name(search)
+        hint_norm = self._normalize_name(device_hint) if device_hint else ""
 
         # MindHome Device-Search (schnell, DB-basiert)
         try:
             devices = await self.ha.search_devices(domain=domain, room=search)
             if devices:
-                logger.info("_find_entity: DB lieferte %d Treffer fuer '%s' (domain=%s): %s",
-                            len(devices), search, domain,
+                logger.info("_find_entity: DB lieferte %d Treffer fuer '%s' (domain=%s, hint='%s'): %s",
+                            len(devices), search, domain, device_hint or "",
                             [(d.get("name"), d.get("room"), d.get("ha_entity_id")) for d in devices])
+
+                # Wenn device_hint angegeben: zuerst nach Geraetename filtern
+                if hint_norm:
+                    for dev in devices:
+                        dev_name = self._normalize_name(dev.get("name", ""))
+                        eid_name = self._normalize_name(dev.get("ha_entity_id", "").split(".", 1)[-1])
+                        if hint_norm in dev_name or hint_norm in eid_name:
+                            logger.info("_find_entity: Device-Hint '%s' matched -> %s", device_hint, dev["ha_entity_id"])
+                            return dev["ha_entity_id"]
+                    # Hint passt auf kein Geraet -> weiter ohne Hint
+                    logger.info("_find_entity: Device-Hint '%s' matched kein DB-Ergebnis, ignoriere Hint", device_hint)
+
                 # Best-Match: Exakt > kuerzester Partial (mit Match-Pruefung!)
                 best = None
                 best_len = float("inf")
@@ -3021,8 +3042,12 @@ class FunctionExecutor:
                     dev_room = self._normalize_name(dev.get("room", "") or "")
                     # Exakter Raum-Match hat hoechste Prioritaet
                     if dev_room == search_norm:
-                        logger.info("_find_entity: Exakter Raum-Match -> %s", dev["ha_entity_id"])
-                        return dev["ha_entity_id"]
+                        # Bei mehreren Geraeten im Raum: nicht sofort den ersten nehmen
+                        name_len = len(dev_name) + len(dev_room)
+                        if name_len < best_len:
+                            best = dev["ha_entity_id"]
+                            best_len = name_len
+                        continue
                     # Exakter Name-Match
                     if search_norm == dev_name:
                         logger.info("_find_entity: Exakter Name-Match -> %s", dev["ha_entity_id"])
@@ -3034,7 +3059,7 @@ class FunctionExecutor:
                             best = dev["ha_entity_id"]
                             best_len = name_len
                 if best:
-                    logger.info("_find_entity: Best Partial-Match -> %s", best)
+                    logger.info("_find_entity: Best Match -> %s", best)
                     return best
                 # Kein Match in DB-Ergebnissen — weiter zu HA-Fallback
                 logger.info("_find_entity: Kein Name/Raum-Match in %d DB-Ergebnissen, HA-Fallback", len(devices))
@@ -3060,6 +3085,14 @@ class FunctionExecutor:
             name_norm = self._normalize_name(name)
             friendly = state.get("attributes", {}).get("friendly_name", "")
             friendly_norm = self._normalize_name(friendly) if friendly else ""
+
+            # Device-Hint: Geraetename muss im entity oder friendly_name vorkommen
+            if hint_norm:
+                if hint_norm in name_norm or (friendly_norm and hint_norm in friendly_norm):
+                    # Zusaetzlich pruefen ob auch der Raum passt
+                    if search_norm in name_norm or (friendly_norm and search_norm in friendly_norm):
+                        logger.info("_find_entity: HA-Fallback Hint-Match -> %s", entity_id)
+                        return entity_id
 
             # Exakter Match → sofort zurueck
             if search_norm == name_norm or search_norm == friendly_norm:
