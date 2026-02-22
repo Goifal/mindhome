@@ -2685,6 +2685,11 @@ class FunctionExecutor:
             start = now.replace(hour=0, minute=0, second=0, microsecond=0)
             end = (now + timedelta(days=7)).replace(hour=23, minute=59, second=59, microsecond=0)
 
+        # HA erwartet naive datetime-Strings (ohne TZ-Offset) im lokalen Format
+        start_str = start.strftime("%Y-%m-%dT%H:%M:%S")
+        end_str = end.strftime("%Y-%m-%dT%H:%M:%S")
+        logger.info("Kalender: Zeitraum %s -> %s bis %s", timeframe, start_str, end_str)
+
         # Kalender-Entities bestimmen: Config hat Vorrang, sonst alle aus HA
         configured = yaml_config.get("calendar", {}).get("entities", [])
         if isinstance(configured, str):
@@ -2708,26 +2713,44 @@ class FunctionExecutor:
         # Alle Kalender abfragen und Events sammeln
         all_events = []
         for cal_entity in calendar_entities:
+            events_found = False
+            # Methode 1: Service-Call mit ?return_response (HA 2024.x+)
             try:
                 result = await self.ha.call_service_with_response(
                     "calendar", "get_events",
                     {
                         "entity_id": cal_entity,
-                        "start_date_time": start.isoformat(),
-                        "end_date_time": end.isoformat(),
+                        "start_date_time": start_str,
+                        "end_date_time": end_str,
                     },
                 )
-                logger.debug("Kalender %s result: %s", cal_entity, result)
+                logger.info("Kalender %s service result: %s", cal_entity, result)
 
                 if isinstance(result, dict):
                     # Response-Format: {entity_id: {"events": [...]}}
                     for entity_data in result.values():
                         if isinstance(entity_data, dict):
-                            all_events.extend(entity_data.get("events", []))
-                        elif isinstance(entity_data, list):
+                            evts = entity_data.get("events", [])
+                            if evts:
+                                all_events.extend(evts)
+                                events_found = True
+                        elif isinstance(entity_data, list) and entity_data:
                             all_events.extend(entity_data)
+                            events_found = True
             except Exception as e:
-                logger.warning("Kalender %s Abfrage fehlgeschlagen: %s", cal_entity, e)
+                logger.warning("Kalender %s Service-Call fehlgeschlagen: %s", cal_entity, e)
+
+            # Methode 2: Direkte Calendar REST API als Fallback
+            if not events_found:
+                try:
+                    rest_result = await self.ha.api_get(
+                        f"/api/calendars/{cal_entity}?start={start_str}&end={end_str}"
+                    )
+                    logger.info("Kalender %s REST result: %s", cal_entity, rest_result)
+                    if isinstance(rest_result, list) and rest_result:
+                        all_events.extend(rest_result)
+                except Exception as e:
+                    logger.warning("Kalender %s REST-Fallback fehlgeschlagen: %s", cal_entity, e)
 
         if not all_events:
             label = {"today": "heute", "tomorrow": "morgen", "week": "diese Woche"}.get(timeframe, timeframe)
@@ -3971,39 +3994,65 @@ class FunctionExecutor:
             except (ValueError, TypeError):
                 pass
 
-        if not include_forecast:
-            # Aktuelles Wetter als natuerliche Fakten
-            parts = [f"Draussen: {condition_de}, {temp}°C." if temp is not None
-                     else f"Draussen: {condition_de}."]
-            if wind_speed is not None:
-                if wind_speed > 40:
-                    parts.append(f"Kraeftiger Wind mit {wind_speed} km/h aus {wind_dir}." if wind_dir
-                                 else f"Kraeftiger Wind mit {wind_speed} km/h.")
-                elif wind_speed > 15:
-                    parts.append(f"Wind aus {wind_dir} mit {wind_speed} km/h." if wind_dir
-                                 else f"Wind mit {wind_speed} km/h.")
-                else:
-                    parts.append("Kaum Wind.")
-        else:
-            # Vorhersage als natuerliche Fakten
-            forecast = attrs.get("forecast", [])
+        # Rohdaten sammeln — LLM formuliert im JARVIS-Stil
+        parts = []
+
+        # Aktuelles Wetter immer mitliefern
+        current = f"AKTUELL: {condition_de}, {temp}°C" if temp is not None else f"AKTUELL: {condition_de}"
+        if humidity is not None:
+            current += f", Luftfeuchtigkeit {humidity}%"
+        if wind_speed is not None and wind_dir:
+            current += f", Wind {wind_speed} km/h aus {wind_dir}"
+        elif wind_speed is not None:
+            current += f", Wind {wind_speed} km/h"
+        if pressure is not None:
+            current += f", Luftdruck {pressure} hPa"
+        parts.append(current)
+
+        if include_forecast:
+            # Vorhersage via weather.get_forecasts Service (ab HA 2024.x)
+            entity_id = weather_entity["entity_id"]
+            forecast = []
+            try:
+                result = await self.ha.call_service_with_response(
+                    "weather", "get_forecasts",
+                    {"entity_id": entity_id, "type": "daily"},
+                )
+                if isinstance(result, dict):
+                    # Response: {"weather.xyz": {"forecast": [...]}}
+                    for key, val in result.items():
+                        if isinstance(val, dict) and "forecast" in val:
+                            forecast = val["forecast"] or []
+                            break
+            except Exception as e:
+                logger.warning("weather.get_forecasts fehlgeschlagen: %s", e)
+
+            # Fallback: alte Methode (attrs.forecast, HA < 2024)
+            if not forecast:
+                forecast = attrs.get("forecast", [])
+
             if forecast:
-                parts = []
                 for entry in forecast[:3]:
                     dt = entry.get("datetime", "")
-                    fc_temp = entry.get("temperature", "?")
+                    fc_temp_hi = entry.get("temperature", "?")
+                    fc_temp_lo = entry.get("templow")
                     fc_cond = condition_map.get(entry.get("condition", ""), entry.get("condition", "?"))
                     fc_wind = entry.get("wind_speed")
-                    # Tag-Label: Datum in lesbares Format
+                    fc_precip = entry.get("precipitation")
+                    fc_humidity = entry.get("humidity")
                     day_label = dt[:10] if len(dt) >= 10 else dt
-                    line = f"{day_label}: {fc_cond}, {fc_temp}°C"
-                    if fc_wind is not None and fc_wind > 15:
+                    line = f"VORHERSAGE {day_label}: {fc_cond}, Hoch {fc_temp_hi}°C"
+                    if fc_temp_lo is not None:
+                        line += f", Tief {fc_temp_lo}°C"
+                    if fc_wind is not None:
                         line += f", Wind {fc_wind} km/h"
-                    else:
-                        line += ", kaum Wind"
+                    if fc_precip is not None and fc_precip > 0:
+                        line += f", Niederschlag {fc_precip} mm"
+                    if fc_humidity is not None:
+                        line += f", Luftfeuchtigkeit {fc_humidity}%"
                     parts.append(line)
             else:
-                parts = ["Keine Vorhersage-Daten verfuegbar."]
+                parts.append("VORHERSAGE: Keine Daten verfuegbar")
 
         return {"success": True, "message": "\n".join(parts)}
 
