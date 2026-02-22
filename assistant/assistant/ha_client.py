@@ -226,35 +226,64 @@ class HomeAssistantClient:
         """Oeffentlicher GET auf die MindHome Add-on API (z.B. /api/covers/configs)."""
         return await self._get_mindhome(path)
 
-    async def mindhome_post(self, path: str, data: dict) -> Any:
+    async def mindhome_post(self, path: str, data: dict, retries: int = 0) -> Any:
         """POST auf die MindHome Add-on API."""
-        session = await self._get_session()
-        try:
-            async with session.post(
-                f"{self.mindhome_url}{path}",
-                json=data,
-            ) as resp:
-                if resp.status == 200:
-                    return await resp.json()
-                body = await resp.text()
-                logger.warning("MindHome POST %s -> %d: %s", path, resp.status, body[:300])
-                return None
-        except Exception as e:
-            logger.warning("MindHome POST %s fehlgeschlagen: %s", path, e)
-            return None
+        last_err = None
+        for attempt in range(1 + retries):
+            session = await self._get_session()
+            try:
+                async with session.post(
+                    f"{self.mindhome_url}{path}",
+                    json=data,
+                ) as resp:
+                    if resp.status == 200:
+                        return await resp.json()
+                    body = await resp.text()
+                    logger.warning("MindHome POST %s -> %d: %s", path, resp.status, body[:300])
+                    last_err = f"HTTP {resp.status}"
+            except Exception as e:
+                logger.warning("MindHome POST %s fehlgeschlagen (Versuch %d): %s", path, attempt + 1, e)
+                last_err = str(e)
+            if attempt < retries:
+                await asyncio.sleep(1.5)
+        if last_err:
+            logger.warning("MindHome POST %s endgueltig fehlgeschlagen: %s", path, last_err)
+        return None
 
     async def log_actions(self, actions: list, user_text: str = "", response_text: str = "") -> None:
         """Jarvis-Aktionen an MindHome Add-on ActionLog melden."""
         if not actions:
             return
-        try:
-            await self.mindhome_post("/api/action-log", {
-                "actions": actions,
-                "user_text": user_text,
-                "response": response_text,
-            })
-        except Exception as e:
-            logger.debug("Action logging fehlgeschlagen: %s", e)
+        # Actions JSON-sicher machen (result kann komplexe Objekte enthalten)
+        safe_actions = []
+        for a in actions:
+            safe = {
+                "function": str(a.get("function", "unknown")),
+                "args": a.get("args") or a.get("arguments") or {},
+            }
+            result = a.get("result", {})
+            if isinstance(result, dict):
+                safe["result"] = {
+                    "success": bool(result.get("success", False)),
+                    "message": str(result.get("message", "")),
+                }
+            else:
+                safe["result"] = {"success": False, "message": str(result)}
+            safe_actions.append(safe)
+
+        payload = {
+            "actions": safe_actions,
+            "user_text": str(user_text or ""),
+            "response": str(response_text or ""),
+        }
+        logger.info("log_actions: %d Aktionen melden (%s)",
+                     len(safe_actions),
+                     [a["function"] for a in safe_actions])
+        result = await self.mindhome_post("/api/action-log", payload, retries=1)
+        if result is None:
+            logger.warning("log_actions: POST /api/action-log fehlgeschlagen (result=None)")
+        else:
+            logger.info("log_actions: Erfolgreich %d Aktionen geloggt", len(safe_actions))
 
     async def mindhome_put(self, path: str, data: dict) -> Any:
         """PUT auf die MindHome Add-on API (z.B. Cover-Config setzen)."""

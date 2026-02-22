@@ -111,20 +111,22 @@ def sanitize_dict(data, keys=None):
 # Audit Log
 # ==============================================================================
 
-def audit_log(action, details=None, user_id=None):
+def audit_log(action, details=None, user_id=None, target=None, ip_address=None):
     """Log an audit trail entry."""
     try:
-        from models import ActionLog
+        from models import AuditTrail
         with get_db_session() as session:
-            entry = ActionLog(
-                action_type="audit",
+            entry = AuditTrail(
+                action=action,
                 user_id=user_id,
-                action_data={"action": action, "details": details},
-                reason=f"user:{user_id}" if user_id else "system",
+                target=target,
+                details=details,
+                ip_address=ip_address,
             )
             session.add(entry)
-    except Exception:
-        pass
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning("audit_log failed: %s", e)
 
 
 # ==============================================================================
