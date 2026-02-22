@@ -342,6 +342,28 @@ _ASSISTANT_TOOLS_STATIC = [
     {
         "type": "function",
         "function": {
+            "name": "set_switch",
+            "description": "Steckdose oder Schalter ein- oder ausschalten.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "room": {
+                        "type": "string",
+                        "description": "Raumname oder Name der Steckdose/des Schalters (z.B. 'kueche', 'steckdose_buero')",
+                    },
+                    "state": {
+                        "type": "string",
+                        "enum": ["on", "off"],
+                        "description": "Einschalten oder ausschalten",
+                    },
+                },
+                "required": ["room", "state"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "send_notification",
             "description": "Benachrichtigung senden (optional gezielt in einen Raum)",
             "parameters": {
@@ -1152,7 +1174,7 @@ class FunctionExecutor:
     _ALLOWED_FUNCTIONS = frozenset({
         "set_light", "set_light_all", "get_lights", "set_climate", "set_climate_curve",
         "set_climate_room", "activate_scene", "set_cover", "set_cover_all",
-        "get_covers", "get_media", "get_climate", "get_switches",
+        "get_covers", "get_media", "get_climate", "get_switches", "set_switch",
         "call_service", "play_media", "transfer_playback", "set_alarm",
         "lock_door", "send_notification", "send_message_to_person",
         "play_sound", "get_entity_state", "get_calendar_events",
@@ -1590,6 +1612,30 @@ class FunctionExecutor:
             header += f" in '{room_filter}'"
         header += f" ({on_count} an, {len(switches) - on_count} aus):\n"
         return {"success": True, "message": header + "\n".join(switches)}
+
+    async def _exec_set_switch(self, args: dict) -> dict:
+        """Steckdose oder Schalter ein-/ausschalten."""
+        room = args.get("room")
+        state = args.get("state")
+
+        # Qwen3-Fallback: entity_id statt room
+        if not room and args.get("entity_id"):
+            eid = args["entity_id"]
+            room = eid.split(".", 1)[1] if "." in eid else eid
+
+        if not state:
+            state = "off"
+        if not room:
+            return {"success": False, "message": "Kein Raum/Name angegeben"}
+
+        entity_id = await self._find_entity("switch", room)
+        if not entity_id:
+            return {"success": False, "message": f"Kein Schalter in '{room}' gefunden"}
+
+        service = "turn_on" if state == "on" else "turn_off"
+        logger.info("set_switch: %s -> %s (%s)", room, entity_id, service)
+        success = await self.ha.call_service("switch", service, {"entity_id": entity_id})
+        return {"success": success, "message": f"Schalter {room} {state}"}
 
     async def _exec_set_climate(self, args: dict) -> dict:
         heating = yaml_config.get("heating", {})
