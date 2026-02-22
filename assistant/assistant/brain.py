@@ -1449,15 +1449,26 @@ class AssistantBrain(BrainCallbacksMixin):
                     logger.info("Tool-Feedback Input: '%s' + Daten: '%s'",
                                 text[:60], combined_results[:120])
 
-                    # Feedback-Messages: System-Prompt + User-Frage + Daten als User-Message
-                    # (role:"tool" wird von lokalen Modellen oft nicht verstanden)
-                    feedback_messages = [messages[0]]  # System-Prompt behalten
+                    # Feedback-Messages: Kompakter JARVIS-Prompt + Daten
+                    # Kein voller System-Prompt noetig — kurzer, fokussierter Prompt
+                    # produziert bessere Ergebnisse bei lokalen Modellen
+                    feedback_messages = [{
+                        "role": "system",
+                        "content": (
+                            "Du bist JARVIS. Antworte auf Deutsch, 1-2 Saetze. "
+                            "Souveraen, knapp, trocken. 'Sir' sparsam einsetzen. "
+                            "Keine Aufzaehlungen. Keine technischen Rohdaten wiederholen. "
+                            "Runde Zahlen natuerlich (5 Grad statt 5.2°C). "
+                            "Beispiele: 'Fuenf Grad, bewoelkt. Jacke empfohlen, Sir.' | "
+                            "'Morgen um acht steht eine Blutabnahme an.' | "
+                            "'Im Buero 22 Grad, Luftfeuchtigkeit passt.'"
+                        ),
+                    }]
                     feedback_messages.append({
                         "role": "user",
                         "content": (
-                            f"{text}\n\n"
-                            f"DATEN AUS DEM SYSTEM (formuliere diese Daten als natuerliche Antwort):\n"
-                            f"{combined_results}"
+                            f"Frage: {text}\n"
+                            f"Daten: {combined_results}"
                         ),
                     })
 
@@ -1928,19 +1939,14 @@ class AssistantBrain(BrainCallbacksMixin):
         return raw
 
     def _humanize_weather(self, raw: str) -> str:
-        """Wetter-Rohdaten → Natuerliche JARVIS-Antwort.
-
-        Erkennt sowohl das Rohformat (AKTUELL: ...) als auch LLM-reformatierte
-        Varianten (Bewoelkt, 5.2°C, ...).
-        """
+        """Wetter-Rohdaten → JARVIS-Stil Antwort."""
         import re
 
-        # Temperatur extrahieren (funktioniert fuer alle Formate)
-        temp_match = re.search(r"(-?\d+[.,]\d+)\s*°C", raw)
+        # Temperatur extrahieren
+        temp_match = re.search(r"(-?\d+)[.,]?\d*\s*°C", raw)
         if not temp_match:
             return raw
-
-        temp = temp_match.group(1).replace(",", ".")
+        temp = int(temp_match.group(1))
 
         # Condition extrahieren
         conditions_map = {
@@ -1961,49 +1967,48 @@ class AssistantBrain(BrainCallbacksMixin):
                 break
 
         # Wind extrahieren
-        wind_match = re.search(r"Wind\s+(?:aus\s+)?(\w+)\s+(?:mit\s+)?(\d+[.,]?\d*)\s*km/h", raw, re.IGNORECASE)
+        wind_match = re.search(r"Wind\s+(?:aus\s+)?(\w+)\s+(?:mit\s+)?(\d+)[.,]?\d*\s*km/h", raw, re.IGNORECASE)
         if not wind_match:
-            wind_match = re.search(r"Wind\s+(\d+[.,]?\d*)\s*km/h\s+aus\s+(\w+)", raw, re.IGNORECASE)
+            wind_match = re.search(r"Wind\s+(\d+)[.,]?\d*\s*km/h\s+aus\s+(\w+)", raw, re.IGNORECASE)
             if wind_match:
-                wind_speed = wind_match.group(1)
+                wind_speed = int(wind_match.group(1))
                 wind_dir = wind_match.group(2)
             else:
-                wind_speed = wind_dir = ""
+                wind_speed = 0
+                wind_dir = ""
         else:
             wind_dir = wind_match.group(1)
-            wind_speed = wind_match.group(2)
+            wind_speed = int(wind_match.group(2))
 
-        # Vorhersage-Zeilen
-        forecast_parts = []
-        for line in raw.split("\n"):
-            line = line.strip()
-            if line.startswith("VORHERSAGE") and "Keine Daten" not in line and "Nicht verfuegbar" not in line:
-                fc = line.split(":", 1)
-                if len(fc) > 1:
-                    forecast_parts.append(fc[1].strip())
-
-        # JARVIS-Stil zusammenbauen
-        result = f"Draussen {temp} Grad"
+        # JARVIS-Stil: natuerlich, gerundet, knapp
         if condition:
-            result += f", {condition}"
-        result += "."
-        if wind_speed and wind_dir:
-            result += f" Wind aus {wind_dir} mit {wind_speed} km/h."
+            result = f"{temp} Grad, {condition}."
+        else:
+            result = f"{temp} Grad draussen."
 
-        if forecast_parts:
-            result += " " + " ".join(f"Vorhersage: {fp}." for fp in forecast_parts)
+        # Wind nur erwaehnen wenn spuerbar (> 10 km/h)
+        if wind_speed > 10 and wind_dir:
+            result += f" Wind aus {wind_dir}."
+
+        # Kontext-Kommentar (JARVIS-Persoenlichkeit)
+        if temp <= 0:
+            result += " Handschuhe empfohlen, Sir."
+        elif temp <= 5:
+            result += " Jacke empfohlen."
+        elif temp >= 30:
+            result += " Genuegend trinken, Sir."
 
         return result
 
     def _humanize_calendar(self, raw: str) -> str:
-        """TERMINE MORGEN (2): - 09:00 | Meeting → Natuerliche Termin-Antwort."""
+        """Kalender-Rohdaten → JARVIS-Stil Antwort."""
         if not raw or not raw.strip():
             return raw
 
         # "KEINE TERMINE" Varianten
         raw_upper = raw.upper()
         if "KEINE TERMINE" in raw_upper or "(0)" in raw:
-            return "Morgen ist nichts eingetragen, Sir."
+            return "Der Tag ist frei, Sir."
 
         # Alle "HH:MM | Titel" Muster extrahieren (funktioniert ein- und mehrzeilig)
         import re
@@ -2013,10 +2018,27 @@ class AssistantBrain(BrainCallbacksMixin):
         if not matches:
             return raw
 
-        events = [f"{title.strip()} um {time.strip()}" for time, title in matches]
+        events = []
+        for time_str, title in matches:
+            title = title.strip()
+            # Uhrzeit natuerlicher formatieren
+            h, m = time_str.split(":")
+            h = int(h)
+            m = int(m)
+            if m == 0:
+                time_natural = f"um {h} Uhr"
+            elif m == 30:
+                time_natural = f"um halb {h + 1 if h < 23 else 0}"
+            elif m == 15:
+                time_natural = f"um Viertel nach {h}"
+            elif m == 45:
+                time_natural = f"um Viertel vor {h + 1 if h < 23 else 0}"
+            else:
+                time_natural = f"um {h}:{m:02d}"
+            events.append(f"{title} {time_natural}")
 
         if len(events) == 1:
-            return f"Morgen steht ein Termin an: {events[0]}, Sir."
+            return f"Morgen steht {events[0]} an, Sir."
         listing = ", ".join(events[:-1]) + f" und {events[-1]}"
         return f"Morgen stehen {len(events)} Termine an: {listing}."
 
