@@ -28,6 +28,7 @@ KEY_WEEKDAY_PATTERNS = "mha:learning:weekday_patterns"
 KEY_SUGGESTED = "mha:learning:suggested"
 KEY_RESPONSES = "mha:learning:responses"
 JARVIS_ACTION_KEY = "mha:learning:jarvis_action"  # Marker fuer Jarvis-Aktionen
+KEY_AUTOMATED = "mha:learning:automated"  # F-053: Tracks automated entity+timeslot pairs
 
 WEEKDAY_NAMES_DE = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"]
 
@@ -91,6 +92,14 @@ class LearningObserver:
             # Aktion aufzeichnen
             action_key = f"{entity_id}:{new_state}"
             time_slot = f"{hour:02d}:{(minute // 15) * 15:02d}"  # 15-Min-Slots
+
+            # F-053: Cycle detection — skip entities+timeslots that have already been
+            # automated via a previous suggestion. Without this, the automation fires
+            # a state change, which the observer counts again, leading to duplicate
+            # suggestions or infinite observe->suggest->automate->observe loops.
+            automated_key = f"{KEY_AUTOMATED}:{action_key}:{time_slot}"
+            if await self.redis.get(automated_key):
+                return
 
             action = {
                 "entity_id": entity_id,
@@ -161,6 +170,11 @@ class LearningObserver:
     async def _check_weekday_pattern(self, action_key: str, time_slot: str,
                                      weekday: int, entity_id: str, new_state: str):
         """Prueft Wochentag-spezifische Muster (z.B. nur Werktags)."""
+        # F-053: Cycle detection for weekday-specific patterns
+        automated_key = f"{KEY_AUTOMATED}:{action_key}:{time_slot}:{weekday}"
+        if await self.redis.get(automated_key):
+            return
+
         pattern_key = f"{KEY_WEEKDAY_PATTERNS}:{action_key}:{time_slot}:{weekday}"
 
         count = await self.redis.incr(pattern_key)
@@ -240,6 +254,19 @@ class LearningObserver:
 
         logger.info("Learning: Vorschlag akzeptiert fuer %s um %s (Wochentag: %d)",
                      entity_id, time_slot, weekday)
+
+        # F-053: Mark this entity+timeslot as automated to prevent feedback loops.
+        # The observer will skip state changes matching automated patterns, breaking
+        # the observe->suggest->automate->observe cycle.
+        # Use long TTL (90 days) so the marker outlives the automation.
+        states_to_mark = ["on", "off"]  # Mark both directions to avoid partial loops
+        for state in states_to_mark:
+            automated_key = f"{KEY_AUTOMATED}:{entity_id}:{state}:{time_slot}"
+            await self.redis.setex(automated_key, 90 * 86400, "1")
+        if weekday >= 0:
+            for state in states_to_mark:
+                automated_key = f"{KEY_AUTOMATED}:{entity_id}:{state}:{time_slot}:{weekday}"
+                await self.redis.setex(automated_key, 90 * 86400, "1")
 
         return (
             f"Sehr gut, Sir. Ich habe die Automatisierung vorgemerkt. "

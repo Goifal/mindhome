@@ -201,8 +201,10 @@ class PersonalityEngine:
         self._current_mood: str = "neutral"
         self._mood_detector = None
         self._redis = None
-        self._last_confirmations: list[str] = []
-        self._last_interaction_time: float = 0.0
+        # F-021: Per-User Confirmation-Tracking (statt shared Instanzvariable)
+        self._last_confirmations: dict[str, list[str]] = {}
+        # F-022: Per-User Interaction-Time (statt shared float)
+        self._last_interaction_times: dict[str, float] = {}
 
         # Easter Eggs laden
         self._easter_eggs = self._load_easter_eggs()
@@ -412,7 +414,7 @@ class PersonalityEngine:
 
     def get_varied_confirmation(
         self, success: bool = True, partial: bool = False,
-        action: str = "", room: str = "",
+        action: str = "", room: str = "", person: str = "",
     ) -> str:
         """Gibt eine variierte, kontextbezogene Bestaetigung zurueck.
 
@@ -421,17 +423,23 @@ class PersonalityEngine:
             partial: Teilweise erfolgreich?
             action: Ausgefuehrte Aktion (z.B. "set_light", "set_temperature")
             room: Raum der Aktion (z.B. "Wohnzimmer")
+            person: F-021: Person fuer per-User Tracking
 
         Bei Sarkasmus-Level >= 4 werden spitzere Varianten beigemischt.
         Kontextbezogene Bestaetigungen werden bevorzugt wenn passend.
         """
+        # F-021: Per-User History statt globaler Liste
+        user_key = person or "_default"
+        user_history = self._last_confirmations.get(user_key, [])
+
         # Kontextbezogene Bestaetigung versuchen
         if success and not partial and action:
             contextual = self._get_contextual_confirmation(action, room)
-            if contextual and contextual not in self._last_confirmations[-3:]:
-                self._last_confirmations.append(contextual)
-                if len(self._last_confirmations) > 10:
-                    self._last_confirmations = self._last_confirmations[-10:]
+            if contextual and contextual not in user_history[-3:]:
+                user_history.append(contextual)
+                if len(user_history) > 10:
+                    user_history = user_history[-10:]
+                self._last_confirmations[user_key] = user_history
                 return contextual
 
         if partial:
@@ -446,14 +454,20 @@ class PersonalityEngine:
                 pool.extend(CONFIRMATIONS_FAILED_SNARKY)
 
         # Filter: Nicht die letzten 3 verwendeten
-        available = [c for c in pool if c not in self._last_confirmations[-3:]]
+        available = [c for c in pool if c not in user_history[-3:]]
         if not available:
             available = pool
 
         chosen = random.choice(available)
-        self._last_confirmations.append(chosen)
-        if len(self._last_confirmations) > 10:
-            self._last_confirmations = self._last_confirmations[-10:]
+        user_history.append(chosen)
+        if len(user_history) > 10:
+            user_history = user_history[-10:]
+        self._last_confirmations[user_key] = user_history
+
+        # F-021: Begrenze Anzahl getrackter User (Speicherleck vermeiden)
+        if len(self._last_confirmations) > 50:
+            oldest_key = next(iter(self._last_confirmations))
+            del self._last_confirmations[oldest_key]
 
         return chosen
 
@@ -656,11 +670,21 @@ class PersonalityEngine:
     # Adaptive Komplexitaet (Phase 6.8)
     # ------------------------------------------------------------------
 
-    def _build_complexity_section(self, mood: str, time_of_day: str) -> str:
-        """Bestimmt den Komplexitaets-Modus basierend auf Kontext."""
+    def _build_complexity_section(self, mood: str, time_of_day: str, person: str = "") -> str:
+        """Bestimmt den Komplexitaets-Modus basierend auf Kontext.
+
+        F-022: Per-User Interaction-Time statt shared Instanzvariable.
+        """
         now = time.time()
-        time_since_last = now - self._last_interaction_time if self._last_interaction_time else 999
-        self._last_interaction_time = now
+        user_key = person or "_default"
+        last_time = self._last_interaction_times.get(user_key, 0.0)
+        time_since_last = now - last_time if last_time else 999
+        self._last_interaction_times[user_key] = now
+
+        # F-022: Begrenze Anzahl getrackter User
+        if len(self._last_interaction_times) > 50:
+            oldest_key = min(self._last_interaction_times, key=self._last_interaction_times.get)
+            del self._last_interaction_times[oldest_key]
 
         # Schnelle Befehle hintereinander = Kurz-Modus
         if time_since_last < 5.0:
@@ -694,8 +718,37 @@ class PersonalityEngine:
         except Exception:
             return 0
 
+    async def try_reserve_self_irony(self) -> bool:
+        """F-032: Atomically reserves a self-irony slot for today.
+
+        Uses Redis INCR to atomically increment and check the counter in one step,
+        preventing race conditions where two concurrent requests both read a count
+        below the quota and both produce ironic responses.
+
+        Returns:
+            True if a slot was reserved (count <= max), False if quota exhausted.
+        """
+        if not self._redis:
+            return True  # No Redis = no quota enforcement
+        try:
+            key = f"mha:irony:count:{datetime.now().strftime('%Y-%m-%d')}"
+            new_count = await self._redis.incr(key)
+            await self._redis.expire(key, 86400)  # 24h TTL
+            if new_count > self.self_irony_max_per_day:
+                # Over quota — decrement back so counter stays accurate
+                await self._redis.decr(key)
+                return False
+            return True
+        except Exception as e:
+            logger.debug("Ironie-Reservation fehlgeschlagen: %s", e)
+            return True  # Fail open — allow irony on Redis errors
+
     async def increment_self_irony_count(self):
-        """Erhoeht den Selbstironie-Zaehler fuer heute."""
+        """Erhoeht den Selbstironie-Zaehler fuer heute.
+
+        F-032: Prefer try_reserve_self_irony() for atomic check-and-increment.
+        This method is kept for backward compatibility.
+        """
         if not self._redis:
             return
         try:
@@ -867,12 +920,33 @@ class PersonalityEngine:
     # Phase 8: Langzeit-Persoenlichkeitsanpassung
     # ------------------------------------------------------------------
 
+    # F-031: Lua script for atomic sarcasm counter check-and-reset.
+    # Without this, concurrent requests can both read total>=20, both adjust
+    # the level, and both reset counters — a classic TOCTOU race condition.
+    _SARCASM_EVAL_LUA = """
+    local key_pos = KEYS[1]
+    local key_total = KEYS[2]
+    local threshold = tonumber(ARGV[1])
+    local ttl = tonumber(ARGV[2])
+    local total = tonumber(redis.call('GET', key_total) or '0')
+    if total < threshold then
+        return {0, 0, 0}
+    end
+    local pos = tonumber(redis.call('GET', key_pos) or '0')
+    redis.call('SETEX', key_pos, ttl, '0')
+    redis.call('SETEX', key_total, ttl, '0')
+    return {1, pos, total}
+    """
+
     async def track_sarcasm_feedback(self, positive: bool):
         """Trackt ob der aktuelle Sarkasmus-Level positiv aufgenommen wird.
 
         Nach 20 Interaktionen wird der Sarkasmus-Level automatisch angepasst:
-        - > 70% positive Reaktionen auf sarkastische Antworten → Level +1
-        - < 30% positive Reaktionen → Level -1
+        - > 70% positive Reaktionen auf sarkastische Antworten -> Level +1
+        - < 30% positive Reaktionen -> Level -1
+
+        F-031: Uses atomic Redis INCR for counters and a Lua script for the
+        check-and-reset to prevent race conditions between concurrent requests.
         """
         if not self._redis:
             return
@@ -881,14 +955,21 @@ class PersonalityEngine:
             key_pos = "mha:personality:sarcasm_positive"
             key_total = "mha:personality:sarcasm_total"
 
+            # Atomic increments (Redis INCR is already atomic per-operation)
             if positive:
                 await self._redis.incr(key_pos)
             await self._redis.incr(key_total)
 
-            # Alle 20 Interaktionen: Sarkasmus-Level anpassen
-            total = int(await self._redis.get(key_total) or 0)
-            if total >= 20:
-                pos_count = int(await self._redis.get(key_pos) or 0)
+            # F-031: Atomic check-and-reset via Lua script to prevent TOCTOU race.
+            # Returns [did_eval, pos_count, total_count]. If did_eval==0, threshold
+            # not yet reached; counters are untouched.
+            result = await self._redis.eval(
+                self._SARCASM_EVAL_LUA, 2, key_pos, key_total,
+                20, 90 * 86400,
+            )
+            did_eval, pos_count, total = int(result[0]), int(result[1]), int(result[2])
+
+            if did_eval:
                 ratio = pos_count / max(1, total)
 
                 old_level = self.sarcasm_level
@@ -905,9 +986,8 @@ class PersonalityEngine:
                         old_level, self.sarcasm_level, ratio * 100,
                     )
 
-                # Zaehler zuruecksetzen fuer naechste Runde
-                await self._redis.setex(key_pos, 90 * 86400, "0")
-                await self._redis.setex(key_total, 90 * 86400, "0")
+                # F-031: Clamp sarcasm_level to valid bounds [1, 5]
+                self.sarcasm_level = max(1, min(5, self.sarcasm_level))
 
                 # Neuen Level persistieren
                 await self._redis.setex(
@@ -1066,8 +1146,11 @@ class PersonalityEngine:
         has_alerts = bool(context.get("alerts")) if context else False
         humor_section = self._build_humor_section(mood, time_of_day, has_alerts=has_alerts)
 
-        # Phase 6: Complexity-Section
-        complexity_section = self._build_complexity_section(mood, time_of_day)
+        # Phase 6: Complexity-Section — F-022: person durchreichen fuer per-User Tracking
+        current_person_name = ""
+        if context:
+            current_person_name = (context.get("person") or {}).get("name", "")
+        complexity_section = self._build_complexity_section(mood, time_of_day, person=current_person_name)
 
         # Phase 6: Self-Irony-Section
         self_irony_section = self._build_self_irony_section(irony_count_today=irony_count_today or 0)

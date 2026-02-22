@@ -487,12 +487,35 @@ class DeviceHealthMonitor:
             return True
 
     async def _mark_notified(self, entity_id: str):
-        """Markiert Entity als benachrichtigt (Cooldown starten)."""
+        """Markiert Entity als benachrichtigt (Cooldown starten).
+
+        F-057: Cooldown eskaliert mit der Anzahl der Alerts fuer dieselbe Entity.
+        1. Alert: normaler Cooldown (24h Standard)
+        2. Alert: 2x Cooldown (48h)
+        3. Alert: 4x Cooldown (4 Tage)
+        4+: 7 Tage max (Entity wahrscheinlich dauerhaft defekt)
+        """
         if not self.redis:
             return
         try:
             key = f"mha:device:notified:{entity_id}"
-            await self.redis.set(key, "1", ex=self.alert_cooldown * 60)
+            count_key = f"mha:device:alert_count:{entity_id}"
+            # F-057: Alert-Zaehler inkrementieren
+            count = await self.redis.incr(count_key)
+            await self.redis.expire(count_key, 30 * 86400)  # 30 Tage TTL
+
+            # Eskalierender Cooldown
+            multiplier = min(2 ** (count - 1), 7)  # 1x, 2x, 4x, 7x max
+            cooldown_seconds = self.alert_cooldown * 60 * multiplier
+            max_cooldown = 7 * 86400  # Max 7 Tage
+            cooldown_seconds = min(cooldown_seconds, max_cooldown)
+
+            await self.redis.set(key, str(count), ex=int(cooldown_seconds))
+            if count > 1:
+                logger.info(
+                    "F-057: Alert-Cooldown eskaliert fuer %s: %dx (Alert #%d)",
+                    entity_id, multiplier, count,
+                )
         except Exception as e:
             logger.debug("Notified mark error [%s]: %s", entity_id, e)
 

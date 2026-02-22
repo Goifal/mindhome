@@ -297,8 +297,11 @@ class SoundManager:
 
         return False
 
-    def _get_auto_volume(self, event: str) -> float:
-        """Bestimmt die automatische Lautstaerke basierend auf Tageszeit und Event."""
+    def _get_auto_volume(self, event: str, activity: str = "") -> float:
+        """Bestimmt die automatische Lautstaerke basierend auf Tageszeit, Event und Aktivitaet.
+
+        F-060: Beruecksichtigt jetzt auch den Activity-State (sleeping, in_call, focused).
+        """
         hour = datetime.now().hour
         is_night = hour >= self.evening_start or hour < self.morning_start
 
@@ -318,6 +321,15 @@ class SoundManager:
         # Nacht-Faktor anwenden (ausser Alarm)
         if is_night and event not in ("alarm",):
             base *= self.night_volume_factor
+
+        # F-060: Activity-basierte Lautstaerke-Anpassung
+        if activity and event != "alarm":  # Alarm immer volle Lautstaerke
+            if activity == "sleeping":
+                base *= 0.2  # Fast stumm beim Schlafen
+            elif activity == "in_call":
+                base *= 0.3  # Leise bei Telefonat
+            elif activity == "focused":
+                base *= 0.6  # Gedaempft bei Konzentration
 
         return round(min(1.0, base), 2)
 

@@ -166,11 +166,17 @@ class ConfigVersioning:
             return {"success": False, "message": f"Rollback-Fehler: {e}"}
 
     async def _cleanup_old_snapshots(self, config_file: str):
-        """Entfernt aelteste Snapshots wenn max_snapshots ueberschritten."""
+        """Entfernt aelteste Snapshots wenn max_snapshots oder Disk-Quota ueberschritten.
+
+        F-044: Zusaetzlich zur Anzahl wird auch die Gesamtgroesse des
+        Snapshot-Verzeichnisses geprueft (max 50 MB, konfigurierbar).
+        """
         key = f"mha:config_snapshots:{config_file}"
         count = await self._redis.llen(key)
 
         if count <= self._max_snapshots:
+            # F-044: Trotzdem Disk-Quota pruefen
+            await self._enforce_disk_quota()
             return
 
         to_remove = count - self._max_snapshots
@@ -185,6 +191,29 @@ class ConfigVersioning:
                         logger.debug("Alter Snapshot geloescht: %s", old_path)
                 except (json.JSONDecodeError, KeyError, OSError):
                     pass
+
+        await self._enforce_disk_quota()
+
+    async def _enforce_disk_quota(self):
+        """F-044: Loescht aelteste Snapshots wenn Disk-Quota ueberschritten wird."""
+        max_mb = self._cfg.get("max_disk_mb", 50)
+        max_bytes = max_mb * 1024 * 1024
+        try:
+            total = sum(f.stat().st_size for f in _SNAPSHOT_DIR.iterdir() if f.is_file())
+            if total <= max_bytes:
+                return
+            # Aelteste Dateien zuerst loeschen
+            files = sorted(_SNAPSHOT_DIR.iterdir(), key=lambda f: f.stat().st_mtime)
+            for f in files:
+                if total <= max_bytes:
+                    break
+                if f.is_file() and f.suffix == ".yaml":
+                    size = f.stat().st_size
+                    f.unlink()
+                    total -= size
+                    logger.info("F-044: Snapshot %s geloescht (Disk-Quota)", f.name)
+        except Exception as e:
+            logger.warning("F-044: Disk-Quota Check fehlgeschlagen: %s", e)
 
     async def reload_config(self) -> dict:
         """Hot-Reload: Laedt settings.yaml neu ohne Neustart.

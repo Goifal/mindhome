@@ -81,8 +81,21 @@ class SelfAutomation:
             "homeassistant",
         ]))
 
+        # F-052: Drift detection — warn if security-critical config lists are empty or
+        # suspiciously large, which could indicate gradual parameter drift from external
+        # modification or misconfiguration.
+        if not self._allowed_services:
+            logger.warning("F-052: allowed_services is EMPTY — all services will be blocked")
+        if not self._blocked_services:
+            logger.warning("F-052: blocked_services is EMPTY — no services are explicitly blocked")
+        if len(self._allowed_services) > 100:
+            logger.warning("F-052: allowed_services has %d entries — possible drift", len(self._allowed_services))
+
         # Rate-Limit
-        self._max_per_day = self._cfg.get("max_per_day", 5)
+        # F-052: Bounds checking — prevent drift from config changes or external modification.
+        # max_per_day is clamped to [1, 20] to prevent runaway automation creation.
+        raw_max = self._cfg.get("max_per_day", 5)
+        self._max_per_day = max(1, min(20, int(raw_max)))
         self._daily_count = 0
         self._daily_reset: Optional[datetime] = None
 
@@ -101,7 +114,8 @@ class SelfAutomation:
             try:
                 count = await self._redis.get("mha:automation:daily_count")
                 if count:
-                    self._daily_count = int(count)
+                    # F-052: Clamp restored count to [0, _max_per_day] to prevent drift
+                    self._daily_count = max(0, min(self._max_per_day, int(count)))
             except Exception as e:
                 logger.debug("Redis daily_count laden: %s", e)
         logger.info(

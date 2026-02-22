@@ -42,16 +42,31 @@ logger = logging.getLogger("mindhome-assistant")
 _error_buffer: deque[dict] = deque(maxlen=ERROR_BUFFER_MAX_SIZE)
 
 
+# F-067: Sensitive Patterns die aus Error-Buffer-Nachrichten entfernt werden
+import re as _re
+_SENSITIVE_PATTERNS = _re.compile(
+    r'(api[_-]?key|token|password|secret|credential|auth)[=:"\s]+\S+',
+    _re.IGNORECASE,
+)
+
+
 class _ErrorBufferHandler(logging.Handler):
-    """Faengt WARNING+ Log-Eintraege ab und speichert sie im Ring-Buffer."""
+    """Faengt WARNING+ Log-Eintraege ab und speichert sie im Ring-Buffer.
+
+    F-067: Sensitive Daten (API-Keys, Tokens, Passwoerter) werden
+    vor dem Speichern aus der Nachricht entfernt.
+    """
 
     def emit(self, record: logging.LogRecord) -> None:
         try:
+            msg = self.format(record)
+            # F-067: Sensitive Daten maskieren
+            msg = _SENSITIVE_PATTERNS.sub("[REDACTED]", msg)
             _error_buffer.append({
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "level": record.levelname,
                 "logger": record.name,
-                "message": self.format(record),
+                "message": msg,
             })
         except Exception:
             pass
@@ -199,18 +214,28 @@ async def lifespan(app: FastAPI):
     yield
 
     cleanup_task.cancel()
+
+    # F-065: WebSocket-Clients ueber Shutdown benachrichtigen
+    try:
+        await ws_manager.broadcast("system", {"event": "shutdown", "message": "System wird heruntergefahren"})
+        await asyncio.sleep(0.5)  # Kurz warten damit Clients die Nachricht empfangen
+    except Exception as e:
+        logger.debug("F-065: WS-Shutdown-Broadcast fehlgeschlagen: %s", e)
+
     await brain.shutdown()
     logger.info("MindHome Assistant heruntergefahren.")
 
 
+# F-062: OpenAPI-Docs nur wenn explizit konfiguriert (Default: aus in Produktion)
+_expose_docs = os.getenv("EXPOSE_OPENAPI_DOCS", "true").lower() in ("1", "true", "yes")
 app = FastAPI(
     title="MindHome Assistant",
     description="Lokaler KI-Sprachassistent fuer Home Assistant — OpenAPI Docs unter /docs",
     version="1.4.2",
     lifespan=lifespan,
-    docs_url="/docs",
-    redoc_url="/redoc",
-    openapi_url="/openapi.json",
+    docs_url="/docs" if _expose_docs else None,
+    redoc_url="/redoc" if _expose_docs else None,
+    openapi_url="/openapi.json" if _expose_docs else None,
 )
 
 # Request-ID Tracing Middleware (muss VOR CORS stehen)
@@ -218,16 +243,24 @@ app.add_middleware(RequestContextMiddleware)
 
 # ----- CORS Policy -----
 # Nur lokale Zugriffe erlauben (HA Add-on + lokale Clients)
+# F-046: allow_credentials nur bei expliziten Origins, nie bei Wildcard
 _cors_origins = os.getenv("CORS_ORIGINS", "").strip()
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[o.strip() for o in _cors_origins.split(",") if o.strip()] if _cors_origins else [
+_cors_origin_list = (
+    [o.strip() for o in _cors_origins.split(",") if o.strip()]
+    if _cors_origins
+    else [
         "http://localhost",
         "http://localhost:8123",
         "http://homeassistant.local:8123",
         f"http://localhost:{settings.assistant_port}",
-    ],
-    allow_credentials=True,
+    ]
+)
+_cors_has_wildcard = "*" in _cors_origin_list
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_cors_origin_list,
+    # F-046: credentials nur erlauben wenn keine Wildcard-Origin gesetzt ist
+    allow_credentials=not _cors_has_wildcard,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization", "X-API-Key", "Accept"],
 )
@@ -1143,9 +1176,26 @@ async def websocket_endpoint(websocket: WebSocket):
             return
 
     await ws_manager.connect(websocket)
+    # F-063: WebSocket Rate-Limiting (max 30 Nachrichten pro 10 Sekunden)
+    _ws_msg_times: list[float] = []
+    _WS_RATE_LIMIT = 30
+    _WS_RATE_WINDOW = 10.0
     try:
         while True:
             data = await websocket.receive_text()
+
+            # F-063: Rate-Limit pruefen
+            import time as _t
+            now = _t.time()
+            _ws_msg_times = [t for t in _ws_msg_times if now - t < _WS_RATE_WINDOW]
+            _ws_msg_times.append(now)
+            if len(_ws_msg_times) > _WS_RATE_LIMIT:
+                logger.warning("F-063: WebSocket Rate-Limit ueberschritten")
+                await ws_manager.send_personal(
+                    websocket, "error", {"message": "Rate limit exceeded"}
+                )
+                continue
+
             try:
                 message = json.loads(data)
                 event = message.get("event", "")
@@ -1658,7 +1708,7 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
         # Autonomy: Trust-Levels
         if "autonomy" in changed_settings and hasattr(brain, "autonomy"):
             auto_cfg = yaml_cfg.get("autonomy", {})
-            brain.autonomy.autonomy_level = int(auto_cfg.get("level", brain.autonomy.autonomy_level))
+            brain.autonomy.level = int(auto_cfg.get("level", brain.autonomy.level))
             logger.info("Autonomy Settings aktualisiert")
 
         # Threat Assessment: Nacht-Zeiten
@@ -2524,11 +2574,18 @@ async def ui_self_opt_run_analysis(token: str = ""):
         raise HTTPException(status_code=500, detail=f"Fehler: {e}")
 
 
-def _deep_merge(base: dict, override: dict):
-    """Tiefer Merge von override in base (in-place)."""
+def _deep_merge(base: dict, override: dict, _depth: int = 0):
+    """Tiefer Merge von override in base (in-place).
+
+    F-040: Tiefe begrenzt auf 10 Level um endlose Rekursion bei
+    zirkulaeren Referenzen zu verhindern.
+    """
+    if _depth > 10:
+        logger.warning("_deep_merge: Maximale Tiefe erreicht (10)")
+        return
     for key, value in override.items():
         if key in base and isinstance(base[key], dict) and isinstance(value, dict):
-            _deep_merge(base[key], value)
+            _deep_merge(base[key], value, _depth + 1)
         else:
             base[key] = value
 

@@ -490,6 +490,31 @@ class SemanticMemory:
             return []
 
     async def delete_fact(self, fact_id: str) -> bool:
+        """Loescht einen Fakt aus ChromaDB und Redis.
+
+        F-030: Lock um den gesamten Delete-Zyklus gegen TOCTOU Race Condition.
+        """
+        lock_key = f"mha:fact_lock:del:{fact_id}"
+        if self.redis:
+            try:
+                acquired = await self.redis.set(lock_key, "1", ex=10, nx=True)
+                if not acquired:
+                    logger.debug("Delete-Lock nicht erhalten: %s", fact_id)
+                    return False
+            except Exception:
+                pass
+
+        try:
+            return await self._delete_fact_inner(fact_id)
+        finally:
+            if self.redis:
+                try:
+                    await self.redis.delete(lock_key)
+                except Exception:
+                    pass
+
+    async def _delete_fact_inner(self, fact_id: str) -> bool:
+        """Interne Loesch-Logik (unter Lock)."""
         if self.chroma_collection:
             try:
                 self.chroma_collection.delete(ids=[fact_id])
