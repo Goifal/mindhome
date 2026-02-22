@@ -54,6 +54,12 @@ class EnergyOptimizer:
         self.solar_high_watts = thresholds.get("solar_high_watts", 2000)
         self.anomaly_percent = thresholds.get("anomaly_increase_percent", 30)
 
+        # F-056: Essentielle Geraete die nie abgeschaltet werden duerfen
+        self.essential_entities = set(energy_cfg.get("essential_entities", [
+            "switch.kuehlschrank", "switch.gefrierschrank", "switch.tiefkuehler",
+            "switch.server", "switch.nas", "switch.aquarium",
+        ]))
+
     async def initialize(self, redis_client: Optional[aioredis.Redis] = None):
         """Initialisiert den EnergyOptimizer."""
         self.redis = redis_client

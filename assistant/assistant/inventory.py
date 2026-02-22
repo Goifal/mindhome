@@ -47,7 +47,9 @@ class InventoryManager:
         if not self.redis:
             return {"success": False, "message": "Redis nicht verfuegbar"}
 
-        item_id = f"inv_{name.lower().replace(' ', '_')}_{datetime.now().strftime('%H%M%S')}"
+        # F-042: UUID statt Timestamp-Suffix (verhindert Kollision bei gleicher Sekunde)
+        import uuid
+        item_id = f"inv_{name.lower().replace(' ', '_')}_{uuid.uuid4().hex[:8]}"
         item = {
             "id": item_id,
             "name": name,
