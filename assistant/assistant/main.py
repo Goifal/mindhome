@@ -2624,6 +2624,7 @@ async def ui_system_update(token: str = "", body: BranchUpdateRequest | None = N
         _user_config_files = [
             _MHA_DIR / "config" / "settings.yaml",
             _MHA_DIR / ".env",
+            Path("/app/data/cover_configs.json"),
         ]
         _saved_configs = {}
         for cfg_path in _user_config_files:
