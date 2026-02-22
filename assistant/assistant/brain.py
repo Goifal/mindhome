@@ -1780,7 +1780,17 @@ class AssistantBrain(BrainCallbacksMixin):
             "tts": tts_data,
         }
         # WebSocket + Sprachausgabe ueber HA-Speaker
-        await self._speak_and_emit(response_text, room=room, tts_data=tts_data)
+        # Bei Streaming sendet main.py via emit_stream_end — hier KEIN emit_speaking
+        # (verhindert doppelte Chat-Nachrichten), aber TTS-Ausgabe trotzdem starten
+        if stream_callback:
+            if not room:
+                room = await self._get_occupied_room()
+            self._task_registry.create_task(
+                self.sound_manager.speak_response(response_text, room=room, tts_data=tts_data),
+                name="speak_response",
+            )
+        else:
+            await self._speak_and_emit(response_text, room=room, tts_data=tts_data)
 
         logger.info("Output: '%s' (Aktionen: %d, TTS: %s)", response_text,
                      len(executed_actions), tts_data.get("message_type", ""))
@@ -1925,6 +1935,7 @@ class AssistantBrain(BrainCallbacksMixin):
     def _humanize_weather(self, raw: str) -> str:
         """AKTUELL: Bewoelkt, 5.2°C, ... → Natuerliche Wetter-Antwort."""
         parts = []
+        has_forecast = False
         lines = raw.split("\n")
         for line in lines:
             line = line.strip()
@@ -1946,10 +1957,11 @@ class AssistantBrain(BrainCallbacksMixin):
                     parts.append(f"Draussen: {condition}.")
                 if wind:
                     parts.append(f"{wind}.")
-            elif line.startswith("VORHERSAGE") and "Keine Daten" not in line:
+            elif line.startswith("VORHERSAGE") and "Keine Daten" not in line and "Nicht verfuegbar" not in line:
                 # VORHERSAGE 2024-01-15: Regen, Hoch 8°C, ...
                 fc = line.split(":", 1)
                 if len(fc) > 1:
+                    has_forecast = True
                     parts.append(f"Vorhersage: {fc[1].strip()}.")
         if not parts:
             return raw
@@ -1957,46 +1969,28 @@ class AssistantBrain(BrainCallbacksMixin):
 
     def _humanize_calendar(self, raw: str) -> str:
         """TERMINE MORGEN (2): - 09:00 | Meeting → Natuerliche Termin-Antwort."""
-        lines = raw.strip().split("\n")
-        if not lines:
+        if not raw or not raw.strip():
             return raw
-        header = lines[0].strip()
+
         # "KEINE TERMINE" Varianten
-        if "KEINE TERMINE" in header.upper() or "(0)" in header:
+        raw_upper = raw.upper()
+        if "KEINE TERMINE" in raw_upper or "(0)" in raw:
             return "Morgen ist nichts eingetragen, Sir."
 
-        # Termine parsen
-        events = []
-        for line in lines[1:] if len(lines) > 1 else lines:
-            line = line.strip().lstrip("- ")
-            if "|" in line:
-                time_part, title = line.split("|", 1)
-                time_part = time_part.strip()
-                title = title.strip()
-                # "01:00" -> "um eins" oder einfach beibehalten
-                events.append(f"{title} um {time_part}")
-            elif line and not line.startswith("TERMINE"):
-                events.append(line)
+        # Alle "HH:MM | Titel" Muster extrahieren (funktioniert ein- und mehrzeilig)
+        import re
+        pattern = r"(\d{1,2}:\d{2})\s*\|\s*(.+?)(?:\n|$)"
+        matches = re.findall(pattern, raw)
 
-        # Auch aus Header parsen wenn inline (single-line Format)
-        if not events and "|" in header:
-            # "TERMINE MORGEN (1): - 07:45 | Blutabnahme"
-            after_colon = header.split(":", 1)[1] if ":" in header else ""
-            for part in after_colon.split("- "):
-                part = part.strip()
-                if "|" in part:
-                    time_part, title = part.split("|", 1)
-                    events.append(f"{title.strip()} um {time_part.strip()}")
-
-        if not events:
+        if not matches:
             return raw
 
-        count = len(events)
-        if count == 1:
+        events = [f"{title.strip()} um {time.strip()}" for time, title in matches]
+
+        if len(events) == 1:
             return f"Morgen steht ein Termin an: {events[0]}, Sir."
-        else:
-            listing = ", ".join(events[:-1]) + f" und {events[-1]}"
-            return f"Morgen stehen {count} Termine an: {listing}."
+        listing = ", ".join(events[:-1]) + f" und {events[-1]}"
+        return f"Morgen stehen {len(events)} Termine an: {listing}."
 
     def _humanize_entity_state(self, raw: str) -> str:
         """Entity-Status in natuerliche Sprache."""

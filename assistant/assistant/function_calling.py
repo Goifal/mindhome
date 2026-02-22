@@ -4068,7 +4068,9 @@ class FunctionExecutor:
                         line += f", Luftfeuchtigkeit {fc_humidity}%"
                     parts.append(line)
             else:
-                parts.append("VORHERSAGE: Keine Daten verfuegbar")
+                # Keine Vorhersage verfuegbar — still weglassen statt Fehlermeldung
+                # Das LLM/Humanizer antwortet dann nur mit den aktuellen Daten
+                logger.info("Wetter-Vorhersage nicht verfuegbar (HA-Integration liefert keine Prognosedaten)")
 
         return {"success": True, "message": "\n".join(parts)}
 
