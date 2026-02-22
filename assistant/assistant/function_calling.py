@@ -2685,6 +2685,11 @@ class FunctionExecutor:
             start = now.replace(hour=0, minute=0, second=0, microsecond=0)
             end = (now + timedelta(days=7)).replace(hour=23, minute=59, second=59, microsecond=0)
 
+        # HA erwartet naive datetime-Strings (ohne TZ-Offset) im lokalen Format
+        start_str = start.strftime("%Y-%m-%dT%H:%M:%S")
+        end_str = end.strftime("%Y-%m-%dT%H:%M:%S")
+        logger.info("Kalender: Zeitraum %s -> %s bis %s", timeframe, start_str, end_str)
+
         # Kalender-Entities bestimmen: Config hat Vorrang, sonst alle aus HA
         configured = yaml_config.get("calendar", {}).get("entities", [])
         if isinstance(configured, str):
@@ -2708,26 +2713,44 @@ class FunctionExecutor:
         # Alle Kalender abfragen und Events sammeln
         all_events = []
         for cal_entity in calendar_entities:
+            events_found = False
+            # Methode 1: Service-Call mit ?return_response (HA 2024.x+)
             try:
                 result = await self.ha.call_service_with_response(
                     "calendar", "get_events",
                     {
                         "entity_id": cal_entity,
-                        "start_date_time": start.isoformat(),
-                        "end_date_time": end.isoformat(),
+                        "start_date_time": start_str,
+                        "end_date_time": end_str,
                     },
                 )
-                logger.debug("Kalender %s result: %s", cal_entity, result)
+                logger.info("Kalender %s service result: %s", cal_entity, result)
 
                 if isinstance(result, dict):
                     # Response-Format: {entity_id: {"events": [...]}}
                     for entity_data in result.values():
                         if isinstance(entity_data, dict):
-                            all_events.extend(entity_data.get("events", []))
-                        elif isinstance(entity_data, list):
+                            evts = entity_data.get("events", [])
+                            if evts:
+                                all_events.extend(evts)
+                                events_found = True
+                        elif isinstance(entity_data, list) and entity_data:
                             all_events.extend(entity_data)
+                            events_found = True
             except Exception as e:
-                logger.warning("Kalender %s Abfrage fehlgeschlagen: %s", cal_entity, e)
+                logger.warning("Kalender %s Service-Call fehlgeschlagen: %s", cal_entity, e)
+
+            # Methode 2: Direkte Calendar REST API als Fallback
+            if not events_found:
+                try:
+                    rest_result = await self.ha.api_get(
+                        f"/api/calendars/{cal_entity}?start={start_str}&end={end_str}"
+                    )
+                    logger.info("Kalender %s REST result: %s", cal_entity, rest_result)
+                    if isinstance(rest_result, list) and rest_result:
+                        all_events.extend(rest_result)
+                except Exception as e:
+                    logger.warning("Kalender %s REST-Fallback fehlgeschlagen: %s", cal_entity, e)
 
         if not all_events:
             label = {"today": "heute", "tomorrow": "morgen", "week": "diese Woche"}.get(timeframe, timeframe)
