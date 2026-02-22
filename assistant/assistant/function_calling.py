@@ -199,6 +199,23 @@ _ASSISTANT_TOOLS_STATIC = [
     {
         "type": "function",
         "function": {
+            "name": "get_covers",
+            "description": "NUR zum Abfragen: Zeigt alle Rolllaeden/Jalousien mit Name, Raum und Position (0=zu, 100=offen). NICHT zum Steuern — dafuer set_cover nutzen.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "room": {
+                        "type": "string",
+                        "description": "Raumname zum Filtern (optional)",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "play_media",
             "description": "Musik oder Medien steuern: abspielen, pausieren, stoppen, Lautstaerke aendern. Fuer 'leiser' verwende action='volume_down', fuer 'lauter' verwende action='volume_up'. Fuer eine bestimmte Lautstaerke verwende action='volume' mit volume-Parameter.",
             "parameters": {
@@ -228,6 +245,23 @@ _ASSISTANT_TOOLS_STATIC = [
                     },
                 },
                 "required": ["action"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_media",
+            "description": "NUR zum Abfragen: Zeigt alle Media Player mit Wiedergabestatus, Titel und Lautstaerke. NICHT zum Steuern — dafuer play_media nutzen.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "room": {
+                        "type": "string",
+                        "description": "Raumname zum Filtern (optional)",
+                    },
+                },
+                "required": [],
             },
         },
     },
@@ -268,6 +302,40 @@ _ASSISTANT_TOOLS_STATIC = [
                     },
                 },
                 "required": ["door", "action"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_climate",
+            "description": "NUR zum Abfragen: Zeigt alle Thermostate/Heizungen mit Raum, Ist-Temperatur, Soll-Temperatur und Modus. NICHT zum Steuern — dafuer set_climate nutzen.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "room": {
+                        "type": "string",
+                        "description": "Raumname zum Filtern (optional)",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_switches",
+            "description": "NUR zum Abfragen: Zeigt alle Steckdosen/Schalter (switch.*) mit Name, Raum und Status (an/aus). NICHT zum Steuern.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "room": {
+                        "type": "string",
+                        "description": "Raumname zum Filtern (optional)",
+                    },
+                },
+                "required": [],
             },
         },
     },
@@ -1084,6 +1152,7 @@ class FunctionExecutor:
     _ALLOWED_FUNCTIONS = frozenset({
         "set_light", "set_light_all", "get_lights", "set_climate", "set_climate_curve",
         "set_climate_room", "activate_scene", "set_cover", "set_cover_all",
+        "get_covers", "get_media", "get_climate", "get_switches",
         "call_service", "play_media", "transfer_playback", "set_alarm",
         "lock_door", "send_notification", "send_message_to_person",
         "play_sound", "get_entity_state", "get_calendar_events",
@@ -1295,6 +1364,232 @@ class FunctionExecutor:
         header += f" ({on_count} an, {len(lights) - on_count} aus):\n"
 
         return {"success": True, "message": header + "\n".join(lights)}
+
+    async def _exec_get_covers(self, args: dict) -> dict:
+        """Alle Rolllaeden/Jalousien mit Status auflisten."""
+        room_filter = args.get("room", "")
+
+        try:
+            devices = await self.ha.search_devices(domain="cover", room=room_filter)
+        except Exception:
+            devices = None
+
+        states = await self.ha.get_states()
+        if not states:
+            return {"success": False, "message": "Kann gerade nicht auf die Geraete zugreifen."}
+
+        state_map = {}
+        for s in states:
+            eid = s.get("entity_id", "")
+            if eid.startswith("cover."):
+                state_map[eid] = s
+
+        covers = []
+        if devices:
+            for dev in devices:
+                eid = dev.get("ha_entity_id", "")
+                name = dev.get("name", eid)
+                room = dev.get("room", "—")
+                ha = state_map.get(eid, {})
+                status = ha.get("state", "unknown")
+                attrs = ha.get("attributes", {})
+                pos = attrs.get("current_position")
+                pos_str = f" ({pos}%)" if pos is not None else ""
+                covers.append(f"- {name} [{room}]: {status}{pos_str}")
+        else:
+            search_norm = self._normalize_name(room_filter) if room_filter else ""
+            for eid, ha in state_map.items():
+                if search_norm:
+                    entity_name = eid.split(".", 1)[1]
+                    friendly = ha.get("attributes", {}).get("friendly_name", "")
+                    if (search_norm not in self._normalize_name(entity_name)
+                            and search_norm not in self._normalize_name(friendly)):
+                        continue
+                attrs = ha.get("attributes", {})
+                friendly = attrs.get("friendly_name", eid)
+                status = ha.get("state", "unknown")
+                pos = attrs.get("current_position")
+                pos_str = f" ({pos}%)" if pos is not None else ""
+                covers.append(f"- {friendly}: {status}{pos_str}")
+
+        if not covers:
+            msg = f"Keine Rolllaeden in '{room_filter}' gefunden." if room_filter else "Keine Rolllaeden gefunden."
+            return {"success": False, "message": msg}
+
+        open_count = sum(1 for c in covers if ": open" in c)
+        header = f"{len(covers)} Rolllaeden"
+        if room_filter:
+            header += f" in '{room_filter}'"
+        header += f" ({open_count} offen, {len(covers) - open_count} zu):\n"
+        return {"success": True, "message": header + "\n".join(covers)}
+
+    async def _exec_get_media(self, args: dict) -> dict:
+        """Alle Media Player mit Status auflisten."""
+        room_filter = args.get("room", "")
+
+        states = await self.ha.get_states()
+        if not states:
+            return {"success": False, "message": "Kann gerade nicht auf die Geraete zugreifen."}
+
+        search_norm = self._normalize_name(room_filter) if room_filter else ""
+        players = []
+        for s in states:
+            eid = s.get("entity_id", "")
+            if not eid.startswith("media_player."):
+                continue
+            if search_norm:
+                entity_name = eid.split(".", 1)[1]
+                friendly = s.get("attributes", {}).get("friendly_name", "")
+                if (search_norm not in self._normalize_name(entity_name)
+                        and search_norm not in self._normalize_name(friendly)):
+                    continue
+            attrs = s.get("attributes", {})
+            friendly = attrs.get("friendly_name", eid)
+            status = s.get("state", "unknown")
+            details = []
+            title = attrs.get("media_title")
+            artist = attrs.get("media_artist")
+            if title:
+                details.append(title)
+            if artist:
+                details.append(artist)
+            vol = attrs.get("volume_level")
+            if vol is not None:
+                details.append(f"Vol: {round(vol * 100)}%")
+            detail_str = f" — {', '.join(details)}" if details else ""
+            players.append(f"- {friendly}: {status}{detail_str}")
+
+        if not players:
+            msg = f"Keine Media Player in '{room_filter}' gefunden." if room_filter else "Keine Media Player gefunden."
+            return {"success": False, "message": msg}
+
+        playing = sum(1 for p in players if ": playing" in p)
+        header = f"{len(players)} Media Player"
+        if room_filter:
+            header += f" in '{room_filter}'"
+        header += f" ({playing} aktiv):\n"
+        return {"success": True, "message": header + "\n".join(players)}
+
+    async def _exec_get_climate(self, args: dict) -> dict:
+        """Alle Thermostate/Heizungen mit Status auflisten."""
+        room_filter = args.get("room", "")
+
+        try:
+            devices = await self.ha.search_devices(domain="climate", room=room_filter)
+        except Exception:
+            devices = None
+
+        states = await self.ha.get_states()
+        if not states:
+            return {"success": False, "message": "Kann gerade nicht auf die Geraete zugreifen."}
+
+        state_map = {}
+        for s in states:
+            eid = s.get("entity_id", "")
+            if eid.startswith("climate."):
+                state_map[eid] = s
+
+        thermostats = []
+        if devices:
+            for dev in devices:
+                eid = dev.get("ha_entity_id", "")
+                name = dev.get("name", eid)
+                room = dev.get("room", "—")
+                ha = state_map.get(eid, {})
+                mode = ha.get("state", "unknown")
+                attrs = ha.get("attributes", {})
+                current = attrs.get("current_temperature")
+                target = attrs.get("temperature")
+                parts = [mode]
+                if current is not None:
+                    parts.append(f"Ist: {current}°C")
+                if target is not None:
+                    parts.append(f"Soll: {target}°C")
+                thermostats.append(f"- {name} [{room}]: {', '.join(parts)}")
+        else:
+            search_norm = self._normalize_name(room_filter) if room_filter else ""
+            for eid, ha in state_map.items():
+                if search_norm:
+                    entity_name = eid.split(".", 1)[1]
+                    friendly = ha.get("attributes", {}).get("friendly_name", "")
+                    if (search_norm not in self._normalize_name(entity_name)
+                            and search_norm not in self._normalize_name(friendly)):
+                        continue
+                attrs = ha.get("attributes", {})
+                friendly = attrs.get("friendly_name", eid)
+                mode = ha.get("state", "unknown")
+                current = attrs.get("current_temperature")
+                target = attrs.get("temperature")
+                parts = [mode]
+                if current is not None:
+                    parts.append(f"Ist: {current}°C")
+                if target is not None:
+                    parts.append(f"Soll: {target}°C")
+                thermostats.append(f"- {friendly}: {', '.join(parts)}")
+
+        if not thermostats:
+            msg = f"Keine Thermostate in '{room_filter}' gefunden." if room_filter else "Keine Thermostate gefunden."
+            return {"success": False, "message": msg}
+
+        heating = sum(1 for t in thermostats if "heat" in t.lower())
+        header = f"{len(thermostats)} Thermostate"
+        if room_filter:
+            header += f" in '{room_filter}'"
+        header += f" ({heating} heizen):\n"
+        return {"success": True, "message": header + "\n".join(thermostats)}
+
+    async def _exec_get_switches(self, args: dict) -> dict:
+        """Alle Steckdosen/Schalter mit Status auflisten."""
+        room_filter = args.get("room", "")
+
+        try:
+            devices = await self.ha.search_devices(domain="switch", room=room_filter)
+        except Exception:
+            devices = None
+
+        states = await self.ha.get_states()
+        if not states:
+            return {"success": False, "message": "Kann gerade nicht auf die Geraete zugreifen."}
+
+        state_map = {}
+        for s in states:
+            eid = s.get("entity_id", "")
+            if eid.startswith("switch."):
+                state_map[eid] = s
+
+        switches = []
+        if devices:
+            for dev in devices:
+                eid = dev.get("ha_entity_id", "")
+                name = dev.get("name", eid)
+                room = dev.get("room", "—")
+                ha = state_map.get(eid, {})
+                status = ha.get("state", "unknown")
+                switches.append(f"- {name} [{room}]: {status}")
+        else:
+            search_norm = self._normalize_name(room_filter) if room_filter else ""
+            for eid, ha in state_map.items():
+                if search_norm:
+                    entity_name = eid.split(".", 1)[1]
+                    friendly = ha.get("attributes", {}).get("friendly_name", "")
+                    if (search_norm not in self._normalize_name(entity_name)
+                            and search_norm not in self._normalize_name(friendly)):
+                        continue
+                attrs = ha.get("attributes", {})
+                friendly = attrs.get("friendly_name", eid)
+                status = ha.get("state", "unknown")
+                switches.append(f"- {friendly}: {status}")
+
+        if not switches:
+            msg = f"Keine Schalter in '{room_filter}' gefunden." if room_filter else "Keine Schalter gefunden."
+            return {"success": False, "message": msg}
+
+        on_count = sum(1 for s in switches if ": on" in s)
+        header = f"{len(switches)} Schalter/Steckdosen"
+        if room_filter:
+            header += f" in '{room_filter}'"
+        header += f" ({on_count} an, {len(switches) - on_count} aus):\n"
+        return {"success": True, "message": header + "\n".join(switches)}
 
     async def _exec_set_climate(self, args: dict) -> dict:
         heating = yaml_config.get("heating", {})

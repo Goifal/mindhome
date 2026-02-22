@@ -1090,7 +1090,8 @@ class AssistantBrain(BrainCallbacksMixin):
                           "get_room_climate", "get_active_intents",
                           "get_wellness_status", "get_device_health",
                           "get_learned_patterns", "describe_doorbell",
-                          "get_house_status", "get_lights"}
+                          "get_house_status", "get_lights",
+                          "get_covers", "get_media", "get_climate", "get_switches"}
             has_query_results = False
 
             if tool_calls:
