@@ -128,6 +128,10 @@ class FunctionValidator:
                 brightness = int(brightness)
             except (ValueError, TypeError):
                 return ValidationResult(ok=False, reason=f"Helligkeit '{brightness}' ist keine gueltige Zahl")
+            # Qwen3 sendet manchmal 0-255 (HA-Skala) statt 0-100 (Prozent)
+            if 101 <= brightness <= 255:
+                brightness = round(brightness / 255 * 100)
+                args["brightness"] = brightness
             if brightness < 0 or brightness > 100:
                 return ValidationResult(
                     ok=False,
