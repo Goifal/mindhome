@@ -988,6 +988,18 @@ _ASSISTANT_TOOLS_STATIC = [
     {
         "type": "function",
         "function": {
+            "name": "get_house_status",
+            "description": "Gibt den kompletten Haus-Status zurueck: Temperaturen, Lichter, Anwesenheit, Wetter, Sicherheit, offene Fenster/Tueren, Medien, offline Geraete. IMMER nutzen wenn der User nach Hausstatus, Status, Ueberblick oder Zusammenfassung fragt.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "get_learned_patterns",
             "description": "Zeigt erkannte Verhaltensmuster: Welche manuellen Aktionen der User regelmaessig wiederholt. Z.B. 'Jeden Abend Licht aus um 22:30'. Nutze dies wenn der User fragt was Jarvis gelernt hat oder welche Muster erkannt wurden.",
             "parameters": {
@@ -1069,6 +1081,7 @@ class FunctionExecutor:
         "get_camera_view", "create_conditional", "list_conditionals",
         "get_energy_report", "web_search", "get_security_score",
         "get_room_climate", "get_active_intents", "get_wellness_status",
+        "get_house_status",
         "get_device_health", "get_learned_patterns", "describe_doorbell",
     })
 
@@ -2848,6 +2861,92 @@ class FunctionExecutor:
             return {"success": True, "message": str(status), **status}
         except Exception as e:
             return {"success": False, "message": f"Wellness-Check fehlgeschlagen: {e}"}
+
+    async def _exec_get_house_status(self, args: dict) -> dict:
+        """Gibt den kompletten Haus-Status zurueck."""
+        import assistant.main as main_module
+        brain = main_module.brain
+        try:
+            states = await brain.ha.get_states()
+            if not states:
+                return {"success": False, "message": "Home Assistant nicht erreichbar"}
+
+            house = brain.context_builder._extract_house_status(states)
+            parts = []
+
+            # Anwesenheit
+            presence = house.get("presence", {})
+            home = presence.get("home", [])
+            away = presence.get("away", [])
+            if home:
+                parts.append(f"Zuhause: {', '.join(home)}")
+            if away:
+                parts.append(f"Unterwegs: {', '.join(away)}")
+
+            # Temperaturen
+            temps = house.get("temperatures", {})
+            if temps:
+                temp_strs = []
+                for room, data in temps.items():
+                    current = data.get("current", "?")
+                    target = data.get("target")
+                    if target:
+                        temp_strs.append(f"{room}: {current}°C (Soll {target}°C)")
+                    else:
+                        temp_strs.append(f"{room}: {current}°C")
+                parts.append(f"Temperaturen: {', '.join(temp_strs)}")
+
+            # Wetter
+            weather = house.get("weather", {})
+            if weather:
+                parts.append(
+                    f"Wetter: {weather.get('condition', '?')}, "
+                    f"{weather.get('temp', '?')}°C, "
+                    f"Luftfeuchte {weather.get('humidity', '?')}%"
+                )
+
+            # Lichter
+            lights = house.get("lights", [])
+            if lights:
+                parts.append(f"Lichter an: {', '.join(lights)}")
+            else:
+                parts.append("Alle Lichter aus")
+
+            # Sicherheit
+            security = house.get("security", "unknown")
+            parts.append(f"Sicherheit: {security}")
+
+            # Medien
+            media = house.get("media", [])
+            if media:
+                parts.append(f"Medien aktiv: {', '.join(str(m) for m in media)}")
+
+            # Offene Fenster/Tueren
+            alerts = house.get("open_windows", []) if "open_windows" in house else []
+            open_items = []
+            for s in states:
+                eid = s.get("entity_id", "")
+                if ("binary_sensor" in eid and
+                    ("window" in eid or "door" in eid or "fenster" in eid or "tuer" in eid) and
+                    s.get("state") == "on"):
+                    name = s.get("attributes", {}).get("friendly_name", eid)
+                    open_items.append(name)
+            if open_items:
+                parts.append(f"Offen: {', '.join(open_items)}")
+
+            # Offline Geraete
+            unavailable = []
+            for s in states:
+                if s.get("state") == "unavailable":
+                    name = s.get("attributes", {}).get("friendly_name", s.get("entity_id", "?"))
+                    unavailable.append(name)
+            if unavailable:
+                parts.append(f"Offline ({len(unavailable)}): {', '.join(unavailable[:10])}")
+
+            message = "\n".join(parts)
+            return {"success": True, "message": message}
+        except Exception as e:
+            return {"success": False, "message": f"Haus-Status fehlgeschlagen: {e}"}
 
     async def _exec_get_device_health(self, args: dict) -> dict:
         """Gibt den Geraete-Gesundheitsstatus zurueck."""
