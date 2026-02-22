@@ -1759,6 +1759,8 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
             hm._alert_cooldown_minutes = int(hm_cfg.get("alert_cooldown_minutes", 60))
             # Exclude-Patterns neu laden
             user_excludes = hm_cfg.get("exclude_patterns", [])
+            if isinstance(user_excludes, str):
+                user_excludes = [p.strip() for p in user_excludes.splitlines() if p.strip()]
             hm._exclude_patterns = [p.lower() for p in (hm._default_excludes + user_excludes)]
             logger.info("Health Monitor Settings aktualisiert")
 
