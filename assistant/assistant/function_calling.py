@@ -3419,8 +3419,23 @@ class FunctionExecutor:
             return {"success": False, "message": f"Wellness-Check fehlgeschlagen: {e}"}
 
     async def _exec_get_house_status(self, args: dict) -> dict:
-        """Gibt den kompletten Haus-Status zurueck."""
+        """Gibt den Haus-Status zurueck — konfigurierbar via settings.yaml.
+
+        In settings.yaml unter house_status.sections kann der User festlegen
+        welche Bereiche angezeigt werden:
+          house_status:
+            sections:
+              - presence      # Wer ist zuhause/unterwegs
+              - temperatures  # Raumtemperaturen
+              - weather       # Aktuelles Wetter
+              - lights        # Welche Lichter sind an
+              - security      # Sicherheitsstatus
+              - media         # Aktive Mediengeraete
+              - open_items    # Offene Fenster/Tueren
+              - offline       # Offline-Geraete
+        """
         import assistant.main as main_module
+        from .config import yaml_config as _cfg
         brain = main_module.brain
         try:
             states = await brain.ha.get_states()
@@ -3428,76 +3443,100 @@ class FunctionExecutor:
                 return {"success": False, "message": "Home Assistant nicht erreichbar"}
 
             house = brain.context_builder._extract_house_status(states)
+
+            # Konfigurierbare Sektionen (Default: alle)
+            hs_cfg = _cfg.get("house_status", {})
+            all_sections = [
+                "presence", "temperatures", "weather", "lights",
+                "security", "media", "open_items", "offline",
+            ]
+            enabled_sections = hs_cfg.get("sections", all_sections)
+
             parts = []
 
             # Anwesenheit
-            presence = house.get("presence", {})
-            home = presence.get("home", [])
-            away = presence.get("away", [])
-            if home:
-                parts.append(f"Zuhause: {', '.join(home)}")
-            if away:
-                parts.append(f"Unterwegs: {', '.join(away)}")
+            if "presence" in enabled_sections:
+                presence = house.get("presence", {})
+                home = presence.get("home", [])
+                away = presence.get("away", [])
+                if home:
+                    parts.append(f"Zuhause: {', '.join(home)}")
+                if away:
+                    parts.append(f"Unterwegs: {', '.join(away)}")
 
             # Temperaturen
-            temps = house.get("temperatures", {})
-            if temps:
-                temp_strs = []
-                for room, data in temps.items():
-                    current = data.get("current", "?")
-                    target = data.get("target")
-                    if target:
-                        temp_strs.append(f"{room}: {current}°C (Soll {target}°C)")
-                    else:
-                        temp_strs.append(f"{room}: {current}°C")
-                parts.append(f"Temperaturen: {', '.join(temp_strs)}")
+            if "temperatures" in enabled_sections:
+                temps = house.get("temperatures", {})
+                if temps:
+                    # Optional: nur bestimmte Raeume anzeigen
+                    temp_rooms = hs_cfg.get("temperature_rooms", [])
+                    temp_strs = []
+                    for room, data in temps.items():
+                        if temp_rooms and room.lower() not in [r.lower() for r in temp_rooms]:
+                            continue
+                        current = data.get("current", "?")
+                        target = data.get("target")
+                        if target:
+                            temp_strs.append(f"{room}: {current}°C (Soll {target}°C)")
+                        else:
+                            temp_strs.append(f"{room}: {current}°C")
+                    if temp_strs:
+                        parts.append(f"Temperaturen: {', '.join(temp_strs)}")
 
             # Wetter
-            weather = house.get("weather", {})
-            if weather:
-                parts.append(
-                    f"Wetter: {weather.get('condition', '?')}, "
-                    f"{weather.get('temp', '?')}°C, "
-                    f"Luftfeuchte {weather.get('humidity', '?')}%"
-                )
+            if "weather" in enabled_sections:
+                weather = house.get("weather", {})
+                if weather:
+                    parts.append(
+                        f"Wetter: {weather.get('condition', '?')}, "
+                        f"{weather.get('temp', '?')}°C, "
+                        f"Luftfeuchte {weather.get('humidity', '?')}%"
+                    )
 
             # Lichter
-            lights = house.get("lights", [])
-            if lights:
-                parts.append(f"Lichter an: {', '.join(lights)}")
-            else:
-                parts.append("Alle Lichter aus")
+            if "lights" in enabled_sections:
+                lights = house.get("lights", [])
+                if lights:
+                    parts.append(f"Lichter an: {', '.join(lights)}")
+                else:
+                    parts.append("Alle Lichter aus")
 
             # Sicherheit
-            security = house.get("security", "unknown")
-            parts.append(f"Sicherheit: {security}")
+            if "security" in enabled_sections:
+                security = house.get("security", "unknown")
+                parts.append(f"Sicherheit: {security}")
 
             # Medien
-            media = house.get("media", [])
-            if media:
-                parts.append(f"Medien aktiv: {', '.join(str(m) for m in media)}")
+            if "media" in enabled_sections:
+                media = house.get("media", [])
+                if media:
+                    parts.append(f"Medien aktiv: {', '.join(str(m) for m in media)}")
 
             # Offene Fenster/Tueren
-            alerts = house.get("open_windows", []) if "open_windows" in house else []
-            open_items = []
-            for s in states:
-                eid = s.get("entity_id", "")
-                if ("binary_sensor" in eid and
-                    ("window" in eid or "door" in eid or "fenster" in eid or "tuer" in eid) and
-                    s.get("state") == "on"):
-                    name = s.get("attributes", {}).get("friendly_name", eid)
-                    open_items.append(name)
-            if open_items:
-                parts.append(f"Offen: {', '.join(open_items)}")
+            if "open_items" in enabled_sections:
+                open_items = []
+                for s in states:
+                    eid = s.get("entity_id", "")
+                    if ("binary_sensor" in eid and
+                        ("window" in eid or "door" in eid or "fenster" in eid or "tuer" in eid) and
+                        s.get("state") == "on"):
+                        name = s.get("attributes", {}).get("friendly_name", eid)
+                        open_items.append(name)
+                if open_items:
+                    parts.append(f"Offen: {', '.join(open_items)}")
 
             # Offline Geraete
-            unavailable = []
-            for s in states:
-                if s.get("state") == "unavailable":
-                    name = s.get("attributes", {}).get("friendly_name", s.get("entity_id", "?"))
-                    unavailable.append(name)
-            if unavailable:
-                parts.append(f"Offline ({len(unavailable)}): {', '.join(unavailable[:10])}")
+            if "offline" in enabled_sections:
+                unavailable = []
+                for s in states:
+                    if s.get("state") == "unavailable":
+                        name = s.get("attributes", {}).get("friendly_name", s.get("entity_id", "?"))
+                        unavailable.append(name)
+                if unavailable:
+                    parts.append(f"Offline ({len(unavailable)}): {', '.join(unavailable[:10])}")
+
+            if not parts:
+                parts.append("Keine Sektionen konfiguriert. Pruefe house_status.sections in settings.yaml.")
 
             message = "\n".join(parts)
             return {"success": True, "message": message}
