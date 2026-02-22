@@ -113,15 +113,27 @@ class EnergyOptimizer:
 
         return {"success": True, "message": "\n".join(parts)}
 
+    @property
+    def has_configured_entities(self) -> bool:
+        """True wenn mindestens ein Energie-Entity explizit konfiguriert ist."""
+        return bool(self.price_sensor or self.consumption_sensor
+                     or self.solar_sensor or self.grid_export_sensor)
+
     async def check_energy_events(self) -> list[dict]:
         """Periodischer Check fuer proaktive Energie-Meldungen.
 
         Wird von proactive.py aufgerufen.
+        Proaktive Alerts NUR wenn Entities explizit konfiguriert sind.
+        Auto-Discovery (Keyword-Suche) bleibt fuer manuelle Abfragen verfuegbar.
 
         Returns:
             Liste von Meldungen (kann leer sein)
         """
         if not self.enabled:
+            return []
+
+        # Keine proaktiven Alerts ohne explizite Konfiguration
+        if not self.has_configured_entities:
             return []
 
         alerts = []
@@ -205,7 +217,7 @@ class EnergyOptimizer:
 
         Wird taeglich um Mitternacht von brain.py aufgerufen.
         """
-        if not self.redis or not self.enabled:
+        if not self.redis or not self.enabled or not self.has_configured_entities:
             return
 
         states = await self.ha.get_states()

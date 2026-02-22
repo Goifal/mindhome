@@ -1124,6 +1124,45 @@ class AssistantBrain(BrainCallbacksMixin):
                     # Erklaerungstext entfernen — nur Antwort behalten
                     response_text = ""
 
+            # 7c. Retry: Qwen3 hat bei Geraetebefehl keinen Tool-Call gemacht
+            if not tool_calls and self._is_device_command(text):
+                logger.warning("Geraetebefehl ohne Tool-Call erkannt: '%s' -> Retry mit Hint", text)
+                hint_msg = (
+                    f"Du MUSST jetzt einen Function-Call ausfuehren! "
+                    f"Der User hat gesagt: \"{text}\". "
+                    f"Das ist ein Geraete-Steuerungsbefehl. "
+                    f"Antworte NUR mit einem Tool-Call (set_cover, set_light, set_climate, etc.). "
+                    f"KEIN Text. NUR der Function-Call."
+                )
+                retry_messages = messages + [
+                    {"role": "assistant", "content": response_text},
+                    {"role": "user", "content": hint_msg},
+                ]
+                try:
+                    retry_response = await asyncio.wait_for(
+                        self.ollama.chat(
+                            messages=retry_messages,
+                            model=model,
+                            tools=get_assistant_tools(),
+                        ),
+                        timeout=30.0,
+                    )
+                    retry_msg = retry_response.get("message", {})
+                    retry_tool_calls = retry_msg.get("tool_calls", [])
+                    if not retry_tool_calls:
+                        retry_tool_calls = self._extract_tool_calls_from_text(
+                            retry_msg.get("content", "")
+                        )
+                    if retry_tool_calls:
+                        _rtc = retry_tool_calls[0]["function"]
+                        logger.info("Retry erfolgreich: %s(%s)", _rtc["name"], _rtc["arguments"])
+                        tool_calls = retry_tool_calls
+                        response_text = ""
+                    else:
+                        logger.warning("Retry ebenfalls ohne Tool-Call")
+                except Exception as e:
+                    logger.warning("Retry fehlgeschlagen: %s", e)
+
             # 8. Function Calls ausfuehren
             # Tools die Daten zurueckgeben und eine LLM-formatierte Antwort brauchen
             QUERY_TOOLS = {"get_entity_state", "send_message_to_person", "get_calendar_events",
@@ -2727,6 +2766,36 @@ class AssistantBrain(BrainCallbacksMixin):
         re.compile(r"^nachricht\s+an\s+(\w+)"),
     ]
 
+    @staticmethod
+    def _is_device_command(text: str) -> bool:
+        """Erkennt ob der Text ein Geraete-Steuerungsbefehl ist.
+
+        Prueft auf Kombination von Geraete-Nomen + Aktion/Prozent.
+        Wird fuer Tool-Call-Retry genutzt: Wenn Qwen3 keinen Tool-Call macht
+        aber der Text offensichtlich ein Geraetebefehl ist.
+        """
+        t = text.lower()
+        _NOUNS = [
+            "rollladen", "rolladen", "rollo", "jalousie",
+            "licht", "lampe", "leuchte", "beleuchtung",
+            "heizung", "thermostat", "klima",
+            "steckdose", "schalter",
+            "musik", "lautsprecher",
+        ]
+        has_noun = any(n in t for n in _NOUNS)
+        # Wort-genaue Aktionserkennung (kein Partial-Match auf "eine", "Auge" etc.)
+        words = set(re.split(r'[\s,.!?]+', t))
+        _ACTION_WORDS = {
+            "auf", "zu", "an", "aus", "hoch", "runter",
+            "offen", "ein", "ab", "halb", "stopp",
+            "oeffne", "schliess", "oeffnen", "schliessen",
+        }
+        has_action = bool(words & _ACTION_WORDS) or "%" in t
+        # Verb-Start: "mach licht an", "schalte heizung ein"
+        _VERBS = ["mach ", "schalte ", "stell ", "setz ", "dreh ", "oeffne ", "schliess"]
+        verb_start = any(t.startswith(v) for v in _VERBS)
+        return (has_noun and has_action) or (verb_start and has_noun)
+
     def _classify_intent(self, text: str) -> str:
         """
         Klassifiziert den Intent einer Anfrage.
@@ -2757,6 +2826,27 @@ class AssistantBrain(BrainCallbacksMixin):
             "spiel ", "stopp", "pause", "lauter", "leiser",
         ]
         if any(text_lower.startswith(s) for s in action_starters):
+            return "general"
+
+        # Geraete-Befehle die mit Raum/Geraet statt Verb anfangen
+        # z.B. "Schlafzimmer Rollladen auf 10%", "Wohnzimmer Licht aus"
+        _DEVICE_NOUNS = [
+            "rollladen", "rolladen", "rollo", "jalousie",
+            "licht", "lampe", "leuchte",
+            "heizung", "thermostat",
+            "steckdose", "schalter",
+        ]
+        _DEVICE_ACTIONS = [
+            "auf", "zu", "an", "aus", "hoch", "runter",
+            "offen", "ein", "ab", "halb", "stopp",
+        ]
+        # Pruefen ob ein Geraete-Nomen + Aktion/Prozent im Text vorkommt
+        has_device_noun = any(noun in text_lower for noun in _DEVICE_NOUNS)
+        has_device_action = (
+            any(f" {act}" in f" {text_lower}" for act in _DEVICE_ACTIONS)
+            or "%" in text_lower
+        )
+        if has_device_noun and has_device_action:
             return "general"
 
         # Wissensfragen-Muster
