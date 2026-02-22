@@ -2743,15 +2743,16 @@ async function loadSystemStatus() {
     }
     if (disk.total_gb) {
       const diskPct = Math.round((disk.total_gb - disk.free_gb) / disk.total_gb * 100);
-      hwHtml += bar(diskPct, 'Disk', disk.free_gb + ' GB frei / ' + disk.total_gb + ' GB (' + diskPct + '%)');
+      hwHtml += bar(diskPct, 'Gehirn', disk.free_gb + ' GB frei / ' + disk.total_gb + ' GB (' + diskPct + '%)');
     }
     // Weitere Partitionen (z.B. zweite SSD)
     const allDisks = s.disk || {};
+    let extraDiskIdx = 0;
     for (const [mount, dinfo] of Object.entries(allDisks)) {
       if (mount === 'system' || !dinfo.total_gb) continue;
       const pct = Math.round((dinfo.total_gb - dinfo.free_gb) / dinfo.total_gb * 100);
-      const label = 'Disk ' + mount;
-      hwHtml += bar(pct, label, dinfo.free_gb + ' GB frei / ' + dinfo.total_gb + ' GB (' + pct + '%)');
+      hwHtml += bar(pct, 'Ged\u00e4chtnis', dinfo.free_gb + ' GB frei / ' + dinfo.total_gb + ' GB (' + pct + '%)');
+      extraDiskIdx++;
     }
 
     box.innerHTML = `
