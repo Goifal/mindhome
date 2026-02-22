@@ -3944,22 +3944,20 @@ class FunctionExecutor:
                     pass
             parts.append(wind_str)
 
-        # Vorhersage
+        # Vorhersage: gleiches kompakte Format wie aktuelles Wetter
         if include_forecast:
             forecast = attrs.get("forecast", [])
             if forecast:
-                parts.append("\nVorhersage:")
-                for entry in forecast[:6]:
+                for entry in forecast[:3]:
                     dt = entry.get("datetime", "")
-                    # Nur Zeit oder Datum anzeigen
-                    time_str = dt[11:16] if len(dt) > 16 else dt[:10] if len(dt) >= 10 else dt
+                    time_str = dt[:10] if len(dt) >= 10 else dt
                     fc_temp = entry.get("temperature", "?")
                     fc_cond = entry.get("condition", "")
                     fc_cond_de = condition_map.get(fc_cond, fc_cond)
-                    fc_precip = entry.get("precipitation")
-                    line = f"  {time_str}: {fc_cond_de}, {fc_temp}°C"
-                    if fc_precip and float(fc_precip) > 0:
-                        line += f", {fc_precip} mm Niederschlag"
+                    fc_wind = entry.get("wind_speed")
+                    line = f"\n{time_str}: {fc_cond_de}, {fc_temp}°C"
+                    if fc_wind is not None:
+                        line += f", Wind {fc_wind} km/h"
                     parts.append(line)
 
         return {"success": True, "message": "\n".join(parts)}
