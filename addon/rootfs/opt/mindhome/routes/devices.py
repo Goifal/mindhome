@@ -161,13 +161,20 @@ def api_search_devices():
             # Normalize umlauts for matching
             rn = room_name.lower().replace("ü", "u").replace("ä", "a").replace("ö", "o").replace("ß", "ss")
             rn = rn.replace("ue", "u").replace("ae", "a").replace("oe", "o")
+            rn = rn.replace(" ", "_")
             rooms = session.query(Room).filter(Room.is_active == True).all()
-            matching_room_ids = []
+            exact_ids = []
+            partial_ids = []
             for r in rooms:
                 n = r.name.lower().replace("ü", "u").replace("ä", "a").replace("ö", "o").replace("ß", "ss")
                 n = n.replace("ue", "u").replace("ae", "a").replace("oe", "o")
-                if rn in n:
-                    matching_room_ids.append(r.id)
+                n = n.replace(" ", "_")
+                if rn == n:
+                    exact_ids.append(r.id)
+                elif rn in n:
+                    partial_ids.append(r.id)
+            # Exakte Matches bevorzugen, dann partial
+            matching_room_ids = exact_ids if exact_ids else partial_ids
             if matching_room_ids:
                 query = query.filter(Device.room_id.in_(matching_room_ids))
             else:
