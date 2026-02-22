@@ -2656,6 +2656,15 @@ class FunctionExecutor:
 
         return {"success": True, "message": display, "state": current, "attributes": attrs}
 
+    def _get_write_calendar(self) -> Optional[str]:
+        """Ersten konfigurierten Kalender fuer Schreib-Operationen zurueckgeben."""
+        configured = yaml_config.get("calendar", {}).get("entities", [])
+        if isinstance(configured, str):
+            return configured
+        if configured:
+            return configured[0]
+        return None
+
     async def _exec_get_calendar_events(self, args: dict) -> dict:
         """Phase 11.3: Kalender-Termine abrufen via HA Calendar Entity."""
         from datetime import datetime, timedelta
@@ -2676,66 +2685,81 @@ class FunctionExecutor:
             start = now.replace(hour=0, minute=0, second=0, microsecond=0)
             end = (now + timedelta(days=7)).replace(hour=23, minute=59, second=59, microsecond=0)
 
-        # Kalender-Entity finden
-        states = await self.ha.get_states()
-        calendar_entity = None
-        for s in (states or []):
-            eid = s.get("entity_id", "")
-            if eid.startswith("calendar."):
-                calendar_entity = eid
-                break
+        # Kalender-Entities bestimmen: Config hat Vorrang, sonst alle aus HA
+        configured = yaml_config.get("calendar", {}).get("entities", [])
+        if isinstance(configured, str):
+            configured = [configured]
 
-        if not calendar_entity:
+        if configured:
+            calendar_entities = configured
+            logger.info("Kalender: %d konfigurierte Entities: %s", len(calendar_entities), calendar_entities)
+        else:
+            # Alle calendar.* Entities aus HA sammeln
+            states = await self.ha.get_states()
+            calendar_entities = [
+                s["entity_id"] for s in (states or [])
+                if s.get("entity_id", "").startswith("calendar.")
+            ]
+            logger.info("Kalender: %d Entities in HA gefunden: %s", len(calendar_entities), calendar_entities)
+
+        if not calendar_entities:
             return {"success": False, "message": "Kein Kalender in Home Assistant gefunden"}
 
-        # HA Calendar Service: get_events
-        try:
-            result = await self.ha.call_service_with_response(
-                "calendar", "get_events",
-                {
-                    "entity_id": calendar_entity,
-                    "start_date_time": start.isoformat(),
-                    "end_date_time": end.isoformat(),
-                },
-            )
+        # Alle Kalender abfragen und Events sammeln
+        all_events = []
+        for cal_entity in calendar_entities:
+            try:
+                result = await self.ha.call_service_with_response(
+                    "calendar", "get_events",
+                    {
+                        "entity_id": cal_entity,
+                        "start_date_time": start.isoformat(),
+                        "end_date_time": end.isoformat(),
+                    },
+                )
+                logger.debug("Kalender %s result: %s", cal_entity, result)
 
-            events = []
-            if isinstance(result, dict):
-                # Response-Format: {entity_id: {"events": [...]}}
-                for entity_data in result.values():
-                    if isinstance(entity_data, dict):
-                        events.extend(entity_data.get("events", []))
-                    elif isinstance(entity_data, list):
-                        events.extend(entity_data)
+                if isinstance(result, dict):
+                    # Response-Format: {entity_id: {"events": [...]}}
+                    for entity_data in result.values():
+                        if isinstance(entity_data, dict):
+                            all_events.extend(entity_data.get("events", []))
+                        elif isinstance(entity_data, list):
+                            all_events.extend(entity_data)
+            except Exception as e:
+                logger.warning("Kalender %s Abfrage fehlgeschlagen: %s", cal_entity, e)
 
-            if not events:
-                label = {"today": "heute", "tomorrow": "morgen", "week": "diese Woche"}.get(timeframe, timeframe)
-                return {"success": True, "message": f"Keine Termine {label}."}
+        if not all_events:
+            label = {"today": "heute", "tomorrow": "morgen", "week": "diese Woche"}.get(timeframe, timeframe)
+            return {"success": True, "message": f"Keine Termine {label}."}
 
-            lines = []
-            for ev in events[:10]:
-                summary = ev.get("summary", "Kein Titel")
-                ev_start = ev.get("start", "")
-                # Zeit formatieren und in Lokalzeit umrechnen
-                if "T" in str(ev_start):
-                    try:
-                        dt = datetime.fromisoformat(str(ev_start).replace("Z", "+00:00"))
-                        dt_local = dt.astimezone(_tz)
-                        time_str = dt_local.strftime("%H:%M")
-                    except (ValueError, TypeError):
-                        time_str = str(ev_start)
-                else:
-                    time_str = "ganztaegig"
-                lines.append(f"{time_str}: {summary}")
+        # Nach Startzeit sortieren
+        def _sort_key(ev):
+            s = ev.get("start", "")
+            return str(s) if s else "9999"
+        all_events.sort(key=_sort_key)
 
-            return {
-                "success": True,
-                "message": "\n".join(lines),
-                "events": events[:10],
-            }
-        except Exception as e:
-            logger.error("Kalender-Abfrage fehlgeschlagen: %s", e)
-            return {"success": False, "message": f"Kalender-Fehler: {e}"}
+        lines = []
+        for ev in all_events[:15]:
+            summary = ev.get("summary", "Kein Titel")
+            ev_start = ev.get("start", "")
+            # Zeit formatieren und in Lokalzeit umrechnen
+            if "T" in str(ev_start):
+                try:
+                    dt = datetime.fromisoformat(str(ev_start).replace("Z", "+00:00"))
+                    dt_local = dt.astimezone(_tz)
+                    time_str = dt_local.strftime("%H:%M")
+                except (ValueError, TypeError):
+                    time_str = str(ev_start)
+            else:
+                time_str = "ganztaegig"
+            lines.append(f"{time_str}: {summary}")
+
+        return {
+            "success": True,
+            "message": "\n".join(lines),
+            "events": all_events[:15],
+        }
 
     async def _exec_create_calendar_event(self, args: dict) -> dict:
         """Phase 11.3: Neuen Kalender-Termin erstellen via HA."""
@@ -2747,14 +2771,15 @@ class FunctionExecutor:
         end_time = args.get("end_time", "")
         description = args.get("description", "")
 
-        # Kalender-Entity finden
-        states = await self.ha.get_states()
-        calendar_entity = None
-        for s in (states or []):
-            eid = s.get("entity_id", "")
-            if eid.startswith("calendar."):
-                calendar_entity = eid
-                break
+        # Kalender-Entity: Config oder erster aus HA
+        calendar_entity = self._get_write_calendar()
+        if not calendar_entity:
+            states = await self.ha.get_states()
+            for s in (states or []):
+                eid = s.get("entity_id", "")
+                if eid.startswith("calendar."):
+                    calendar_entity = eid
+                    break
 
         if not calendar_entity:
             return {"success": False, "message": "Kein Kalender in Home Assistant gefunden"}
@@ -2810,13 +2835,14 @@ class FunctionExecutor:
         title = args["title"]
         date_str = args["date"]
 
-        # Kalender-Entity finden
-        states = await self.ha.get_states()
-        calendar_entity = None
-        for s in (states or []):
-            if s.get("entity_id", "").startswith("calendar."):
-                calendar_entity = s.get("entity_id")
-                break
+        # Kalender-Entity: Config oder erster aus HA
+        calendar_entity = self._get_write_calendar()
+        if not calendar_entity:
+            states = await self.ha.get_states()
+            for s in (states or []):
+                if s.get("entity_id", "").startswith("calendar."):
+                    calendar_entity = s.get("entity_id")
+                    break
 
         if not calendar_entity:
             return {"success": False, "message": "Kein Kalender in Home Assistant gefunden"}
