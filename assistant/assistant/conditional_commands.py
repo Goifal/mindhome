@@ -25,6 +25,14 @@ logger = logging.getLogger(__name__)
 KEY_PREFIX = "mha:conditional:"
 KEY_INDEX = "mha:conditional:index"
 
+# F-002: Aktionen die Owner-Trust erfordern
+OWNER_ONLY_ACTIONS = frozenset({
+    "lock_door", "unlock_door",
+    "set_alarm", "arm_alarm", "disarm_alarm",
+    "open_garage", "close_garage",
+    "open_cover",  # Sicherheitsrelevant (Rolladen/Tore)
+})
+
 
 class ConditionalCommands:
     """Verwaltet temporaere bedingte Befehle."""
@@ -54,6 +62,7 @@ class ConditionalCommands:
         ttl_hours: int = 24,
         one_shot: bool = True,
         person: str = "",
+        trust_level: str = "member",
     ) -> dict:
         """Erstellt einen neuen bedingten Befehl.
 
@@ -77,6 +86,17 @@ class ConditionalCommands:
         if not self.redis:
             return {"success": False, "message": "Redis nicht verfuegbar."}
 
+        # F-002: Trust-Check bei Erstellung — Gaeste duerfen keine Sicherheitsaktionen anlegen
+        if action_function in OWNER_ONLY_ACTIONS and trust_level not in ("owner",):
+            logger.warning(
+                "Conditional blockiert: %s erfordert Owner-Trust (person=%s, trust=%s)",
+                action_function, person, trust_level,
+            )
+            return {
+                "success": False,
+                "message": f"'{action_function}' erfordert Owner-Berechtigung.",
+            }
+
         ttl_hours = max(1, min(168, ttl_hours))  # 1h bis 7 Tage
         cond_id = str(uuid.uuid4())[:8]
 
@@ -92,6 +112,7 @@ class ConditionalCommands:
             "label": label,
             "one_shot": one_shot,
             "person": person,
+            "trust_level": trust_level,  # F-002: Trust-Level bei Erstellung speichern
             "created_at": datetime.now(timezone.utc).isoformat(),
             "executed_count": 0,
         }
@@ -156,6 +177,16 @@ class ConditionalCommands:
 
             if match:
                 logger.info("Conditional Match: '%s' (ID: %s)", cond["label"], cond_id)
+
+                # F-002: Trust-Check bei Ausfuehrung
+                creator_trust = cond.get("trust_level", "guest")
+                if cond["action_function"] in OWNER_ONLY_ACTIONS and creator_trust != "owner":
+                    logger.warning(
+                        "Conditional Ausfuehrung blockiert: %s erfordert Owner-Trust "
+                        "(creator=%s, trust=%s)", cond["action_function"],
+                        cond.get("person", "?"), creator_trust,
+                    )
+                    continue
 
                 # Aktion ausfuehren
                 if self._action_callback:

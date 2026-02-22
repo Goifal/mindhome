@@ -273,6 +273,10 @@ class TTSEnhancer:
 
         parts.append(f'<speak><prosody{prosody_attrs}>')
 
+        # F-059: User-Text XML-escapen um SSML-Injection zu verhindern
+        from xml.sax.saxutils import escape as xml_escape
+        text = xml_escape(text)
+
         # Text in Saetze aufteilen
         sentences = self._split_sentences(text)
 

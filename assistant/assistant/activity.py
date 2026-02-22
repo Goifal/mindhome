@@ -56,8 +56,8 @@ SILENCE_MATRIX = {
         "low": SUPPRESS,
     },
     IN_CALL: {
-        "critical": LED_BLINK,
-        "high": LED_BLINK,
+        "critical": TTS_LOUD,   # F-005: Leben > Telefonat — Critical MUSS hoerbar sein
+        "high": TTS_QUIET,
         "medium": SUPPRESS,
         "low": SUPPRESS,
     },

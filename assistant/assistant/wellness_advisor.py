@@ -86,6 +86,14 @@ class WellnessAdvisor:
 
         while self._running:
             try:
+                # F-061: Wellness-Checks bei aktiven Notfaellen unterdruecken
+                if self.redis:
+                    active_threats = await self.redis.get("mha:threat:active")
+                    if active_threats:
+                        logger.debug("Wellness-Checks uebersprungen: aktive Bedrohung")
+                        await asyncio.sleep(self.check_interval)
+                        continue
+
                 await self._check_pc_break()
                 await self._check_stress_intervention()
                 await self._check_meal_time()

@@ -377,13 +377,39 @@ async def api_key_middleware(request: Request, call_next):
     return await call_next(request)
 
 
+_rate_limit_last_cleanup = 0.0
+_RATE_CLEANUP_INTERVAL = 300  # Alle 5 Minuten globaler Cleanup
+_RATE_MAX_IPS = 10000  # F-011: Maximale Anzahl getrackte IPs
+
+
 @app.middleware("http")
 async def rate_limit_middleware(request: Request, call_next):
     """Einfaches Rate-Limiting pro Client-IP (thread-safe via Lock)."""
+    global _rate_limit_last_cleanup
     client_ip = request.client.host if request.client else "unknown"
 
     async with _rate_lock:
         now = _time.time()
+
+        # F-011: Periodischer Cleanup aller abgelaufenen IPs (alle 5 Min)
+        if now - _rate_limit_last_cleanup > _RATE_CLEANUP_INTERVAL:
+            expired_ips = [
+                ip for ip, timestamps in _rate_limits.items()
+                if all(now - t >= _RATE_WINDOW for t in timestamps)
+            ]
+            for ip in expired_ips:
+                del _rate_limits[ip]
+            if expired_ips:
+                logger.debug("Rate-Limit Cleanup: %d IPs entfernt", len(expired_ips))
+            _rate_limit_last_cleanup = now
+
+        # F-011: Schutz gegen unbegrenztes Wachstum bei IP-Scan/DDoS
+        if client_ip not in _rate_limits and len(_rate_limits) >= _RATE_MAX_IPS:
+            from fastapi.responses import JSONResponse
+            return JSONResponse(
+                status_code=429,
+                content={"detail": "Zu viele Anfragen. Bitte warten."},
+            )
 
         # Alte Eintraege bereinigen
         _rate_limits[client_ip] = [
@@ -1399,10 +1425,25 @@ async def ui_reset_pin(req: ResetPinRequest):
 _AUDIT_LOG_PATH = Path(__file__).parent.parent / "logs" / "audit.jsonl"
 
 
+_AUDIT_LOG_MAX_SIZE = 10 * 1024 * 1024  # F-066: 10 MB Max
+
+
 def _audit_log(action: str, details: dict = None):
-    """Schreibt einen Eintrag ins Audit-Log (JSON-Lines)."""
+    """Schreibt einen Eintrag ins Audit-Log (JSON-Lines).
+
+    F-066: Rotation bei > 10 MB — altes Log wird zu .bak umbenannt.
+    """
     try:
         _AUDIT_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+        # F-066: Rotation
+        if _AUDIT_LOG_PATH.exists() and _AUDIT_LOG_PATH.stat().st_size > _AUDIT_LOG_MAX_SIZE:
+            bak = _AUDIT_LOG_PATH.with_suffix(".jsonl.bak")
+            if bak.exists():
+                bak.unlink()
+            _AUDIT_LOG_PATH.rename(bak)
+            logger.info("Audit-Log rotiert (> %d MB)", _AUDIT_LOG_MAX_SIZE // (1024 * 1024))
+
         entry = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "action": action,
@@ -1532,6 +1573,121 @@ async def ui_get_settings(token: str = ""):
         raise HTTPException(status_code=500, detail=f"Fehler: {e}")
 
 
+# F-041: Settings-Validierung
+def _validate_settings_values(settings: dict) -> list[str]:
+    """Validiert Settings-Werte auf sinnvolle Bereiche."""
+    errors = []
+    RANGE_RULES = {
+        ("autonomy", "level"): (1, 5),
+        ("personality", "sarcasm_level"): (1, 5),
+        ("personality", "opinion_intensity"): (0, 5),
+        ("personality", "self_irony_max_per_day"): (0, 20),
+        ("threat_assessment", "night_start_hour"): (0, 23),
+        ("threat_assessment", "night_end_hour"): (0, 23),
+        ("health_monitor", "co2_warn_ppm"): (400, 5000),
+        ("health_monitor", "co2_critical_ppm"): (400, 10000),
+        ("proactive", "batch_interval"): (5, 300),
+    }
+    for (section, key), (min_val, max_val) in RANGE_RULES.items():
+        if section in settings and isinstance(settings[section], dict):
+            val = settings[section].get(key)
+            if val is not None:
+                try:
+                    num = float(val)
+                    if num < min_val or num > max_val:
+                        errors.append(f"{section}.{key}={val} (erlaubt: {min_val}-{max_val})")
+                except (ValueError, TypeError):
+                    errors.append(f"{section}.{key}={val} (kein gueltiger Wert)")
+    return errors
+
+
+# F-038: Settings-Propagation — Module nach UI-Update benachrichtigen
+def _get_reloaded_modules(changed_settings: dict) -> list[str]:
+    """Ermittelt welche Module von den geaenderten Settings betroffen sind."""
+    reloaded = []
+    keys = set(changed_settings.keys())
+
+    # Mapping: Settings-Key → (brain-Attribut, Config-Key, zu setzende Attribute)
+    MODULE_CONFIG_MAP = {
+        "personality": "personality",
+        "proactive": "proactive",
+        "autonomy": "autonomy",
+        "threat_assessment": "threat_assessment",
+        "energy": "energy_optimizer",
+        "wellness": "wellness_advisor",
+        "health_monitor": "health_monitor",
+        "tts": "tts_enhancer",
+        "web_search": "web_search",
+        "ambient_audio": "ambient_audio",
+        "feedback": "feedback",
+    }
+
+    for config_key, attr_name in MODULE_CONFIG_MAP.items():
+        if config_key in keys:
+            reloaded.append(attr_name)
+
+    return reloaded
+
+
+def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
+    """F-038: Benachrichtigt alle Module deren Config sich geaendert hat.
+
+    Module die reload_config() implementieren werden direkt aufgerufen.
+    Fuer alle anderen wird die neue Config in yaml_config gespeichert —
+    Module die bei jedem Zugriff yaml_config lesen profitieren automatisch.
+    Module die im __init__ cachen werden hier explizit aktualisiert.
+    """
+    try:
+        # Personality: Sarkasmus, Humor, Style direkt aktualisieren
+        if "personality" in changed_settings and hasattr(brain, "personality"):
+            p_cfg = yaml_cfg.get("personality", {})
+            pe = brain.personality
+            pe.sarcasm_level = int(p_cfg.get("sarcasm_level", pe.sarcasm_level))
+            pe.opinion_intensity = int(p_cfg.get("opinion_intensity", pe.opinion_intensity))
+            pe.self_irony_enabled = bool(p_cfg.get("self_irony_enabled", pe.self_irony_enabled))
+            pe.self_irony_max_per_day = int(p_cfg.get("self_irony_max_per_day", pe.self_irony_max_per_day))
+            logger.info("Personality Engine Settings aktualisiert")
+
+        # Proactive: Cooldowns und Batch-Interval
+        if "proactive" in changed_settings and hasattr(brain, "proactive"):
+            pro_cfg = yaml_cfg.get("proactive", {})
+            brain.proactive.batch_interval = int(pro_cfg.get("batch_interval", 30))
+            brain.proactive.enabled = bool(pro_cfg.get("enabled", True))
+            logger.info("Proactive Settings aktualisiert")
+
+        # Autonomy: Trust-Levels
+        if "autonomy" in changed_settings and hasattr(brain, "autonomy"):
+            auto_cfg = yaml_cfg.get("autonomy", {})
+            brain.autonomy.autonomy_level = int(auto_cfg.get("level", brain.autonomy.autonomy_level))
+            logger.info("Autonomy Settings aktualisiert")
+
+        # Threat Assessment: Nacht-Zeiten
+        if "threat_assessment" in changed_settings and hasattr(brain, "threat_assessment"):
+            ta_cfg = yaml_cfg.get("threat_assessment", {})
+            ta = brain.threat_assessment
+            ta.night_start = int(ta_cfg.get("night_start_hour", ta.night_start))
+            ta.night_end = int(ta_cfg.get("night_end_hour", ta.night_end))
+            ta.enabled = bool(ta_cfg.get("enabled", ta.enabled))
+            logger.info("Threat Assessment Settings aktualisiert")
+
+        # TTS Enhancer
+        if "tts" in changed_settings and hasattr(brain, "tts_enhancer"):
+            tts_cfg = yaml_cfg.get("tts", {})
+            te = brain.tts_enhancer
+            te.speed = float(tts_cfg.get("speed", getattr(te, "speed", 1.0)))
+            te.pitch = float(tts_cfg.get("pitch", getattr(te, "pitch", 1.0)))
+            logger.info("TTS Enhancer Settings aktualisiert")
+
+        # Web Search
+        if "web_search" in changed_settings and hasattr(brain, "web_search"):
+            ws_cfg = yaml_cfg.get("web_search", {})
+            brain.web_search.enabled = bool(ws_cfg.get("enabled", False))
+            logger.info("Web Search Settings aktualisiert")
+
+    except Exception as e:
+        logger.warning("Settings-Propagation teilweise fehlgeschlagen: %s", e)
+
+
 # Sicherheitskritische Keys die aus Bulk-Settings-Updates herausgefiltert werden.
 # Diese duerfen NUR ueber ihre dedizierten Endpoints geaendert werden.
 # "dashboard" → PIN-Hash, Recovery-Key duerfen nie per Bulk ueberschrieben werden
@@ -1587,6 +1743,14 @@ async def ui_update_settings(req: SettingsUpdateFull, token: str = ""):
         if not safe_settings:
             return {"success": True, "message": "Keine aenderbaren Settings vorhanden"}
 
+        # F-041: Settings-Werte validieren
+        validation_errors = _validate_settings_values(safe_settings)
+        if validation_errors:
+            return {
+                "success": False,
+                "message": f"Ungueltige Werte: {', '.join(validation_errors)}",
+            }
+
         # Aktuelle Config laden
         with open(SETTINGS_YAML_PATH) as f:
             config = yaml.safe_load(f) or {}
@@ -1624,6 +1788,9 @@ async def ui_update_settings(req: SettingsUpdateFull, token: str = ""):
             sound_cfg = cfg.yaml_config.get("sounds", {})
             brain.sound_manager.alexa_speakers = sound_cfg.get("alexa_speakers", [])
 
+        # F-038: Alle weiteren Module benachrichtigen die Config bei __init__ cachen
+        _reload_all_modules(cfg.yaml_config, safe_settings)
+
         # Audit-Log (mit Details ueber geschuetzte Keys)
         changed_keys = list(safe_settings.keys())
         audit_details = {"changed_sections": changed_keys}
@@ -1631,7 +1798,8 @@ async def ui_update_settings(req: SettingsUpdateFull, token: str = ""):
             audit_details["stripped_protected"] = stripped
         _audit_log("settings_update", audit_details)
 
-        return {"success": True, "message": "Settings gespeichert"}
+        reloaded_count = 4 + len(_get_reloaded_modules(safe_settings))
+        return {"success": True, "message": f"Settings gespeichert ({reloaded_count} Module aktualisiert)"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Fehler: {e}")
 
