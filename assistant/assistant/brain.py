@@ -1411,12 +1411,15 @@ class AssistantBrain(BrainCallbacksMixin):
         # Sprach-Retry: Wenn Antwort verworfen wurde (nicht Deutsch), nochmal mit explizitem Sprach-Prompt
         if not response_text and text:
             logger.warning("Sprach-Retry: Antwort war nicht Deutsch, versuche erneut")
+            # Konversationskontext beibehalten (letzte 4 Messages + System-Prompt)
             retry_messages = [
                 {"role": "system", "content": "Du bist Jarvis, die KI dieses Hauses. "
                  "WICHTIG: Antworte AUSSCHLIESSLICH auf Deutsch. Kurz, maximal 2 Saetze. "
                  "Kein Englisch. Keine Listen. Keine Erklaerungen."},
-                {"role": "user", "content": text},
             ]
+            # Kontext aus den Original-Messages uebernehmen (ohne System-Prompt)
+            context_msgs = [m for m in messages if m.get("role") != "system"]
+            retry_messages.extend(context_msgs[-4:])
             try:
                 retry_resp = await self.ollama.chat(
                     messages=retry_messages, model=model, temperature=0.5, max_tokens=128,
