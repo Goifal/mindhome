@@ -2756,27 +2756,42 @@ class FunctionExecutor:
             label = {"today": "heute", "tomorrow": "morgen", "week": "diese Woche"}.get(timeframe, timeframe)
             return {"success": True, "message": f"Keine Termine {label}."}
 
-        # Nach Startzeit sortieren
-        def _sort_key(ev):
-            s = ev.get("start", "")
-            return str(s) if s else "9999"
-        all_events.sort(key=_sort_key)
+        # Startzeit aus Event extrahieren (HA gibt dict oder string zurueck)
+        def _parse_event_start(ev):
+            raw = ev.get("start", "")
+            if isinstance(raw, dict):
+                raw = raw.get("dateTime") or raw.get("date") or ""
+            return str(raw) if raw else ""
 
-        lines = []
+        # Nach Startzeit sortieren
+        all_events.sort(key=lambda ev: _parse_event_start(ev) or "9999")
+
+        # Strukturierte Rohdaten — LLM formuliert im JARVIS-Stil
+        label = {"today": "heute", "tomorrow": "morgen", "week": "diese Woche"}.get(timeframe, timeframe)
+        lines = [f"TERMINE {label.upper()} ({len(all_events)}):"]
         for ev in all_events[:15]:
             summary = ev.get("summary", "Kein Titel")
-            ev_start = ev.get("start", "")
-            # Zeit formatieren und in Lokalzeit umrechnen
-            if "T" in str(ev_start):
+            location = ev.get("location", "")
+            description = ev.get("description", "")
+            raw_start = _parse_event_start(ev)
+
+            # Zeit formatieren
+            if "T" in raw_start:
                 try:
-                    dt = datetime.fromisoformat(str(ev_start).replace("Z", "+00:00"))
+                    dt = datetime.fromisoformat(raw_start.replace("Z", "+00:00"))
                     dt_local = dt.astimezone(_tz)
                     time_str = dt_local.strftime("%H:%M")
                 except (ValueError, TypeError):
-                    time_str = str(ev_start)
+                    time_str = raw_start
             else:
                 time_str = "ganztaegig"
-            lines.append(f"{time_str}: {summary}")
+
+            line = f"- {time_str} | {summary}"
+            if location:
+                line += f" | Ort: {location}"
+            if description:
+                line += f" | Info: {description[:80]}"
+            lines.append(line)
 
         return {
             "success": True,
