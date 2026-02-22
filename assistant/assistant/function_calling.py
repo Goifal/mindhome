@@ -1111,10 +1111,24 @@ class FunctionExecutor:
     async def _exec_set_light(self, args: dict) -> dict:
         room = args.get("room")
         state = args.get("state")
+
+        # Qwen3-Fallback: entity_id statt room akzeptieren
+        if not room and args.get("entity_id"):
+            eid = args["entity_id"]
+            if eid.startswith("light."):
+                room = eid.split(".", 1)[1]
+            else:
+                room = eid
+
+        # State ableiten wenn nicht explizit angegeben
+        if not state:
+            if args.get("brightness"):
+                state = "on"
+            else:
+                state = "off"
+
         if not room:
             return {"success": False, "message": "Kein Raum angegeben"}
-        if not state:
-            return {"success": False, "message": "Kein Zustand (on/off) angegeben"}
 
         # Sonderfall: "all" -> alle Lichter schalten
         if room.lower() == "all":
