@@ -199,8 +199,8 @@ body { font-family:var(--font); background:var(--bg-primary); color:var(--text-p
   /* Grid 2 auch auf Phone single column */
   .grid-2 { grid-template-columns:1fr; }
   /* Boot screen: kleiner */
-  .boot-hud { width:160px; height:160px; }
-  .boot-logo { font-size:38px; }
+  .boot-hud { width:200px; height:200px; }
+  .boot-logo { font-size:24px; letter-spacing:6px; }
   .boot-text { font-size:11px; letter-spacing:2px; }
   .boot-systems { flex-wrap:wrap; justify-content:center; gap:8px; }
   /* Knowledge stats */
@@ -248,8 +248,8 @@ body { font-family:var(--font); background:var(--bg-primary); color:var(--text-p
   /* Grid-Overlay aus (Performance) */
   .main-content::before { display:none; }
   /* Boot noch kleiner */
-  .boot-hud { width:120px; height:120px; }
-  .boot-logo { font-size:32px; }
+  .boot-hud { width:160px; height:160px; }
+  .boot-logo { font-size:18px; letter-spacing:4px; }
 }
 
 /* Reduce motion for users who prefer it */
@@ -511,13 +511,13 @@ textarea { resize:vertical; min-height:70px; font-family:var(--mono); font-size:
 /* ---- J.A.R.V.I.S. Boot Sequence ---- */
 .boot-screen { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: var(--bg-primary); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 9999; }
 .boot-screen::before { content:''; position:absolute; inset:0; background:radial-gradient(circle at center, rgba(0,212,255,0.04) 0%, transparent 60%); }
-.boot-hud { position: relative; width: 220px; height: 220px; margin-bottom: 40px; }
+.boot-hud { position: relative; width: 280px; height: 280px; margin-bottom: 40px; }
 .boot-circle { position:absolute; inset:0; animation: bootRotate 3s linear infinite; }
 .boot-ring { fill: none; stroke: rgba(0,212,255,0.08); stroke-width: 1.5; }
 .boot-ring-fill { fill: none; stroke: var(--accent); stroke-width: 2; stroke-dasharray: 565; stroke-dashoffset: 565; stroke-linecap: round; animation: bootDraw 2s ease-out forwards; filter: drop-shadow(0 0 10px rgba(0,212,255,0.7)); }
 .boot-ring-outer { position:absolute; inset:0; animation: bootRotateReverse 6s linear infinite; }
 .boot-ring-inner { position:absolute; inset:0; animation: bootRotate 10s linear infinite; }
-.boot-logo { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 52px; font-weight: 700; color: var(--accent); opacity: 0; animation: bootFadeIn 0.6s ease 0.3s forwards; text-shadow: 0 0 40px rgba(0,212,255,0.7), 0 0 80px rgba(0,212,255,0.3), 0 0 120px rgba(0,212,255,0.1); letter-spacing: 4px; }
+.boot-logo { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 32px; font-weight: 700; color: var(--accent); opacity: 0; animation: bootFadeIn 0.6s ease 0.3s forwards; text-shadow: 0 0 40px rgba(0,212,255,0.7), 0 0 80px rgba(0,212,255,0.3), 0 0 120px rgba(0,212,255,0.1); letter-spacing: 8px; white-space:nowrap; }
 .boot-text { font-family: var(--mono); font-size: 13px; color: var(--accent); letter-spacing: 3px; min-height: 20px; text-transform: uppercase; text-shadow: 0 0 15px rgba(0,212,255,0.4); }
 .boot-systems { display: flex; gap: 12px; margin-top: 24px; }
 .boot-sys { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-muted); opacity: 0; animation: bootFadeIn 0.3s ease forwards; }
@@ -960,7 +960,7 @@ input:focus,select:focus,textarea:focus { border-color:var(--accent); box-shadow
       <circle cx="100" cy="100" r="70" fill="none" stroke="rgba(0,212,255,0.3)" stroke-width="0.8" stroke-dasharray="6 14 2 14" />
       <circle cx="100" cy="100" r="55" fill="none" stroke="rgba(0,212,255,0.15)" stroke-width="0.5" stroke-dasharray="3 20" />
     </svg>
-    <div class="boot-logo">J</div>
+    <div class="boot-logo">JARVIS</div>
   </div>
   <div class="boot-text" id="bootText"></div>
   <div class="boot-systems" id="bootSystems"></div>
