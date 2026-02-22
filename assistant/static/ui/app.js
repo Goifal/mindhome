@@ -530,7 +530,7 @@ function renderCurrentTab() {
       case 'tab-personality': c.innerHTML = renderPersonality(); break;
       case 'tab-memory': c.innerHTML = renderMemory(); break;
       case 'tab-mood': c.innerHTML = renderMood(); break;
-      case 'tab-rooms': c.innerHTML = renderRooms(); loadMindHomeEntities(); break;
+      case 'tab-rooms': c.innerHTML = renderRooms(); loadMindHomeEntities(); loadRoomTempAverage(); break;
       case 'tab-voice': c.innerHTML = renderVoice(); break;
       case 'tab-routines': c.innerHTML = renderRoutines(); break;
       case 'tab-devices': c.innerHTML = renderDevices(); loadMindHomeEntities(); break;
@@ -936,6 +936,38 @@ function bindFormEvents() {
   // no-op: we collect on save
 }
 
+async function loadRoomTempAverage() {
+  const el = document.getElementById('roomTempAverage');
+  if (!el) return;
+  try {
+    const d = await api('/api/ui/room-temperature');
+    if (!d || !d.sensors || d.sensors.length === 0) {
+      el.innerHTML = '<div style="padding:8px 12px;background:var(--bg-tertiary);border-radius:8px;font-size:12px;color:var(--text-muted);">' +
+        '&#128161; Noch keine Sensoren konfiguriert. Jarvis nutzt aktuell die Temperatur der Heizung/Klimaanlage.</div>';
+      return;
+    }
+    let rows = d.sensors.map(s =>
+      '<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;">' +
+        '<span style="font-size:12px;">' + esc(s.name) + ' <span style="color:var(--text-muted);font-size:11px;">(' + esc(s.entity_id) + ')</span></span>' +
+        '<span style="font-weight:600;color:' + (s.available ? 'var(--accent)' : 'var(--danger)') + ';">' +
+          (s.value != null ? s.value + '\u00b0C' : 'n/v') +
+        '</span>' +
+      '</div>'
+    ).join('');
+    const avgHtml = d.average != null
+      ? '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-top:1px solid var(--border);margin-top:4px;font-weight:700;">' +
+          '<span>&#127777; Mittelwert (wird Jarvis gemeldet)</span>' +
+          '<span style="font-size:18px;color:var(--accent);">' + d.average + '\u00b0C</span>' +
+        '</div>'
+      : '';
+    el.innerHTML = '<div style="padding:10px 14px;background:var(--bg-tertiary);border-radius:8px;margin-top:4px;">' +
+      '<div style="font-size:12px;font-weight:600;margin-bottom:6px;">Aktuelle Sensorwerte</div>' +
+      rows + avgHtml + '</div>';
+  } catch(e) {
+    el.innerHTML = '';
+  }
+}
+
 // ---- Tab 1: Allgemein ----
 function renderGeneral() {
   return sectionWrap('&#9881;', 'Assistent',
@@ -1287,6 +1319,11 @@ function renderRooms() {
     :
       '<p style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;">Jeder Raum hat seinen eigenen Thermostat. Temperatur-Grenzen findest du unter Sicherheit.</p>'
     )
+  ) +
+  sectionWrap('&#127777;', 'Raumtemperatur-Sensoren',
+    fInfo('Welche Temperatursensoren sollen fuer die Raumtemperatur verwendet werden? Jarvis berechnet den Mittelwert aller Sensoren. Ohne Sensoren wird die Temperatur der Klimaanlage/Heizung genutzt.') +
+    fEntityPicker('room_temperature.sensors', 'Temperatursensoren', ['sensor'], 'Nur sensor.*-Entities mit Temperaturwerten. z.B. sensor.temperatur_wohnzimmer') +
+    '<div id="roomTempAverage" style="margin-top:8px;"></div>'
   ) +
   sectionWrap('&#127968;', 'Multi-Room',
     fInfo('Der Assistent erkennt in welchem Raum du bist und antwortet dort. Praesenz-Timeout = wie lange er dich in einem Raum "merkt".') +
