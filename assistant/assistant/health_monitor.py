@@ -76,6 +76,8 @@ class HealthMonitor:
             "taupunkt", "dew_point",
         ]
         user_excludes = cfg.get("exclude_patterns", [])
+        if isinstance(user_excludes, str):
+            user_excludes = [p.strip() for p in user_excludes.splitlines() if p.strip()]
         self._exclude_patterns = [p.lower() for p in (self._default_excludes + user_excludes)]
         # Nach Startup erste Runde nur loggen, nicht melden (Cooldowns leer)
         self._first_check = True
