@@ -1627,6 +1627,26 @@ class AssistantBrain(BrainCallbacksMixin):
         if not text:
             return original
 
+        # 0a. Nicht-lateinische Schrift entfernen (Qwen3 denkt manchmal in Arabisch/Chinesisch/Hebräisch)
+        # Zaehle Anteil nicht-lateinischer Zeichen — wenn dominant, nur deutsche Teile behalten
+        _non_latin = sum(1 for c in text if '\u0600' <= c <= '\u06FF'    # Arabisch
+                         or '\u0590' <= c <= '\u05FF'                    # Hebraeisch
+                         or '\u4E00' <= c <= '\u9FFF'                    # Chinesisch
+                         or '\u3040' <= c <= '\u309F'                    # Hiragana
+                         or '\u30A0' <= c <= '\u30FF'                    # Katakana
+                         or '\uAC00' <= c <= '\uD7AF')                  # Koreanisch
+        _alpha = sum(1 for c in text if c.isalpha())
+        if _alpha > 0 and _non_latin / _alpha > 0.3:
+            # Versuche deutsche Teile zu retten
+            _parts = re.split(r'[\u0600-\u06FF\u0590-\u05FF\u4E00-\u9FFF\u3040-\u309F\u30A0-\u30FF\uAC00-\uD7AF]+', text)
+            _german_parts = [p.strip() for p in _parts if p.strip() and len(p.strip()) > 3]
+            if _german_parts:
+                text = " ".join(_german_parts)
+                logger.warning("Nicht-lateinisches Reasoning entfernt, Rest: '%s'", text[:100])
+            else:
+                logger.warning("Komplett nicht-lateinische Antwort verworfen: '%s'", text[:100])
+                return ""
+
         # 0b. Implizites Reasoning entfernen (qwen3 ohne <think> Tags)
         # Erkennt englisches Chain-of-Thought das als normaler Text ausgegeben wird
         _reasoning_starters = [
@@ -1701,7 +1721,9 @@ class AssistantBrain(BrainCallbacksMixin):
                 logger.info("Nur Meta-Narration, kein Antwort-Text gefunden")
 
         if not text:
-            return original
+            # Alle Reasoning-Filter haben den Text verworfen → leer zurueckgeben
+            # damit der Sprach-Retry (Zeile ~1411) eine saubere Antwort generieren kann
+            return ""
 
         # 1. Banned Phrases komplett entfernen
         banned_phrases = filter_config.get("banned_phrases", [
