@@ -85,6 +85,10 @@ class FunctionValidator:
         """Validiert Offset fuer Heizkurven-Modus."""
         offset = args.get("offset")
         if offset is not None:
+            try:
+                offset = float(offset)
+            except (ValueError, TypeError):
+                return ValidationResult(ok=False, reason=f"Offset '{offset}' ist keine gueltige Zahl")
             if offset < cc["offset_min"]:
                 return ValidationResult(
                     ok=False,
@@ -101,6 +105,10 @@ class FunctionValidator:
         """Validiert absolute Temperatur fuer Raumthermostat-Modus."""
         temp = args.get("temperature")
         if temp is not None:
+            try:
+                temp = float(temp)
+            except (ValueError, TypeError):
+                return ValidationResult(ok=False, reason=f"Temperatur '{temp}' ist keine gueltige Zahl")
             if temp < cc["temp_min"]:
                 return ValidationResult(
                     ok=False,
@@ -116,6 +124,10 @@ class FunctionValidator:
     def _validate_set_light(self, args: dict) -> ValidationResult:
         brightness = args.get("brightness")
         if brightness is not None:
+            try:
+                brightness = int(brightness)
+            except (ValueError, TypeError):
+                return ValidationResult(ok=False, reason=f"Helligkeit '{brightness}' ist keine gueltige Zahl")
             if brightness < 0 or brightness > 100:
                 return ValidationResult(
                     ok=False,
@@ -126,6 +138,10 @@ class FunctionValidator:
     def _validate_set_cover(self, args: dict) -> ValidationResult:
         position = args.get("position")
         if position is not None:
+            try:
+                position = int(position)
+            except (ValueError, TypeError):
+                return ValidationResult(ok=False, reason=f"Position '{position}' ist keine gueltige Zahl")
             if position < 0 or position > 100:
                 return ValidationResult(
                     ok=False,
