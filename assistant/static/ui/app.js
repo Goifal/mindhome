@@ -514,6 +514,15 @@ async function loadSettings() {
 
 function renderCurrentTab() {
   const c = document.getElementById('settingsContent');
+  // Offene Sections merken (Index-basiert)
+  const openIdxs = new Set();
+  c.querySelectorAll('.s-section-hdr.open').forEach(hdr => {
+    const sec = hdr.closest('.s-section');
+    if (sec) {
+      const all = c.querySelectorAll('.s-section');
+      for (let i = 0; i < all.length; i++) { if (all[i] === sec) { openIdxs.add(i); break; } }
+    }
+  });
   try {
     switch(currentTab) {
       case 'tab-general': c.innerHTML = renderGeneral(); break;
@@ -534,6 +543,18 @@ function renderCurrentTab() {
   } catch(err) {
     c.innerHTML = '<div style="padding:24px;color:var(--danger);"><h3>Rendering-Fehler</h3><pre style="margin-top:12px;font-size:12px;white-space:pre-wrap;">' + esc(err.message) + '\n' + esc(err.stack) + '</pre></div>';
     console.error('Tab render error:', err);
+  }
+  // Offene Sections wiederherstellen
+  if (openIdxs.size > 0) {
+    const secs = c.querySelectorAll('.s-section');
+    openIdxs.forEach(i => {
+      if (secs[i]) {
+        const hdr = secs[i].querySelector('.s-section-hdr');
+        const body = secs[i].querySelector('.s-section-body');
+        if (hdr) hdr.classList.add('open');
+        if (body) body.classList.add('open');
+      }
+    });
   }
   bindFormEvents();
 }
