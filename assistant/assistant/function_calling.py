@@ -68,7 +68,7 @@ def _get_climate_tool_parameters() -> dict:
         "properties": {
             "room": {
                 "type": "string",
-                "description": "Raumname",
+                "description": "Raumname VOLLSTAENDIG inkl. Personen-Praefix falls genannt (z.B. 'manuel buero', 'julia buero'). NICHT den Personennamen weglassen!",
             },
             "temperature": {
                 "type": "number",
@@ -103,7 +103,7 @@ _ASSISTANT_TOOLS_STATIC = [
                 "properties": {
                     "room": {
                         "type": "string",
-                        "description": "Raumname (z.B. wohnzimmer, schlafzimmer, buero)",
+                        "description": "Raumname VOLLSTAENDIG angeben inkl. Personen-Praefix falls genannt (z.B. 'manuel buero', 'julia buero', 'wohnzimmer', 'schlafzimmer'). NICHT den Personennamen weglassen!",
                     },
                     "device": {
                         "type": "string",
@@ -184,7 +184,7 @@ _ASSISTANT_TOOLS_STATIC = [
                 "properties": {
                     "room": {
                         "type": "string",
-                        "description": "Raumname",
+                        "description": "Raumname VOLLSTAENDIG inkl. Personen-Praefix falls genannt (z.B. 'manuel buero', 'julia buero'). NICHT den Personennamen weglassen!",
                     },
                     "position": {
                         "type": "integer",
@@ -353,7 +353,7 @@ _ASSISTANT_TOOLS_STATIC = [
                 "properties": {
                     "room": {
                         "type": "string",
-                        "description": "Raumname oder Name der Steckdose/des Schalters (z.B. 'kueche', 'steckdose_buero')",
+                        "description": "Raumname VOLLSTAENDIG inkl. Personen-Praefix falls genannt (z.B. 'manuel buero', 'julia buero', 'kueche') oder Name der Steckdose/des Schalters. NICHT den Personennamen weglassen!",
                     },
                     "state": {
                         "type": "string",
