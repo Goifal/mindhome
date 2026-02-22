@@ -1073,7 +1073,8 @@ class AssistantBrain(BrainCallbacksMixin):
                           "web_search", "get_camera_view", "get_security_score",
                           "get_room_climate", "get_active_intents",
                           "get_wellness_status", "get_device_health",
-                          "get_learned_patterns", "describe_doorbell"}
+                          "get_learned_patterns", "describe_doorbell",
+                          "get_house_status"}
             has_query_results = False
 
             if tool_calls:
