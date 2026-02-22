@@ -1117,19 +1117,12 @@ class AssistantBrain(BrainCallbacksMixin):
 
             # 7b. Tool-Calls aus Text extrahieren (Qwen3 gibt sie manchmal als Text aus)
             if not tool_calls and response_text:
-                _tc_match = re.search(
-                    r'\{\s*"name"\s*:\s*"(\w+)"\s*,\s*"arguments"\s*:\s*(\{[^}]*\})\s*\}',
-                    response_text,
-                )
-                if _tc_match:
-                    try:
-                        _tc_args = json.loads(_tc_match.group(2))
-                        tool_calls = [{"function": {"name": _tc_match.group(1), "arguments": _tc_args}}]
-                        # Text-Teil vor/nach dem Tool-Call entfernen
-                        response_text = re.sub(r'.*\{\s*"name".*?\}.*?(?:</tool_call>)?', '', response_text).strip()
-                        logger.warning("Tool-Call aus Text extrahiert: %s(%s)", _tc_match.group(1), _tc_args)
-                    except (json.JSONDecodeError, ValueError, KeyError, TypeError) as e:
-                        logger.warning("Tool-Call aus Text extrahieren fehlgeschlagen: %s", e)
+                tool_calls = self._extract_tool_calls_from_text(response_text)
+                if tool_calls:
+                    _tc = tool_calls[0]["function"]
+                    logger.warning("Tool-Call aus Text extrahiert: %s(%s)", _tc["name"], _tc["arguments"])
+                    # Erklaerungstext entfernen — nur Antwort behalten
+                    response_text = ""
 
             # 8. Function Calls ausfuehren
             # Tools die Daten zurueckgeben und eine LLM-formatierte Antwort brauchen
@@ -1677,6 +1670,116 @@ class AssistantBrain(BrainCallbacksMixin):
         logger.info("Output: '%s' (Aktionen: %d, TTS: %s)", response_text,
                      len(executed_actions), tts_data.get("message_type", ""))
         return result
+
+    # ------------------------------------------------------------------
+    # Phase 7b: Robuste Tool-Call-Extraktion aus Qwen3-Text
+    # ------------------------------------------------------------------
+
+    # Bekannte Argument-Keys pro Funktion (fuer Bare-JSON-Erkennung)
+    _ARG_KEY_TO_FUNC: dict[str, str] = {
+        # set_light hat "room"+"state", aber Qwen3 schickt oft "entity_id"+"state"
+        "brightness": "set_light",
+        "color_temp": "set_light",
+        # set_cover
+        "position": "set_cover",
+        # set_climate
+        "temperature": "set_climate",
+        "hvac_mode": "set_climate",
+    }
+
+    def _extract_tool_calls_from_text(self, text: str) -> list[dict]:
+        """Extrahiert Tool-Calls aus Qwen3-Textantworten.
+
+        Qwen3 gibt manchmal keine echten tool_calls zurueck, sondern:
+        1. {"name": "func", "arguments": {...}}         — Standard-Fallback
+        2. <tool_call>{"name": "func", "arguments": {...}}</tool_call>
+        3. `func_name` ... ```json {...} ```             — Erklaerungsmodus
+        4. Bare JSON {"entity_id": "...", "state": "on"} — minimale Ausgabe
+
+        Returns: Liste von tool_call-Dicts oder leere Liste.
+        """
+        from .function_calling import FunctionExecutor
+
+        # --- Muster 1: Standard {"name": "...", "arguments": {...}} ---
+        m = re.search(
+            r'\{\s*"name"\s*:\s*"(\w+)"\s*,\s*"arguments"\s*:\s*(\{[^}]*\})\s*\}',
+            text,
+        )
+        if m:
+            try:
+                args = json.loads(m.group(2))
+                name = m.group(1)
+                if name in FunctionExecutor._ALLOWED_FUNCTIONS:
+                    return [{"function": {"name": name, "arguments": args}}]
+            except (json.JSONDecodeError, ValueError):
+                pass
+
+        # --- Muster 2: <tool_call>...</tool_call> XML-Tags ---
+        m = re.search(r'<tool_call>\s*(\{.*?\})\s*</tool_call>', text, re.DOTALL)
+        if m:
+            try:
+                obj = json.loads(m.group(1))
+                name = obj.get("name", "")
+                args = obj.get("arguments", {})
+                if isinstance(args, str):
+                    args = json.loads(args)
+                if name in FunctionExecutor._ALLOWED_FUNCTIONS:
+                    return [{"function": {"name": name, "arguments": args}}]
+            except (json.JSONDecodeError, ValueError, TypeError):
+                pass
+
+        # --- Muster 3: `func_name` + JSON-Code-Block ---
+        # Qwen3 schreibt z.B.: `set_light` ... ```json {"entity_id": "...", "state": "on"} ```
+        m_func = re.search(r'`(\w+)`', text)
+        m_json = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', text, re.DOTALL)
+        if m_func and m_json:
+            func_name = m_func.group(1)
+            if func_name in FunctionExecutor._ALLOWED_FUNCTIONS:
+                try:
+                    args = json.loads(m_json.group(1))
+                    return [{"function": {"name": func_name, "arguments": args}}]
+                except (json.JSONDecodeError, ValueError):
+                    pass
+
+        # --- Muster 4: Bare JSON mit bekannten Keys ---
+        # Qwen3 gibt manchmal nur {"entity_id": "light.x", "state": "on"} aus
+        m_bare = re.search(r'\{[^{}]*"(?:entity_id|room|state)"[^{}]*\}', text)
+        if m_bare:
+            try:
+                args = json.loads(m_bare.group(0))
+                # Funktionsname aus Keys ableiten
+                func_name = None
+
+                # entity_id mit Domain-Prefix → Funktion ableiten
+                eid = args.get("entity_id", "")
+                _DOMAIN_TO_FUNC = {
+                    "light.": "set_light", "switch.": "set_switch",
+                    "cover.": "set_cover", "climate.": "set_climate",
+                    "media_player.": "play_media", "lock.": "lock_door",
+                }
+                for prefix, fname in _DOMAIN_TO_FUNC.items():
+                    if eid.startswith(prefix):
+                        func_name = fname
+                        break
+
+                # Fallback: bekannte Argument-Keys
+                if not func_name:
+                    for key in args:
+                        if key in self._ARG_KEY_TO_FUNC:
+                            func_name = self._ARG_KEY_TO_FUNC[key]
+                            break
+
+                # Letzter Fallback: wenn "state" vorhanden + "room" oder "entity_id"
+                if not func_name and "state" in args and ("room" in args or "entity_id" in args):
+                    func_name = "set_light"
+
+                if func_name and func_name in FunctionExecutor._ALLOWED_FUNCTIONS:
+                    logger.info("Bare-JSON erkannt -> %s(%s)", func_name, args)
+                    return [{"function": {"name": func_name, "arguments": args}}]
+            except (json.JSONDecodeError, ValueError):
+                pass
+
+        return []
 
     # ------------------------------------------------------------------
     # Phase 12: Response-Filter (Post-Processing)
