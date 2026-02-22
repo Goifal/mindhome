@@ -1138,6 +1138,47 @@ class AssistantBrain(BrainCallbacksMixin):
                         except (json.JSONDecodeError, ValueError):
                             func_args = {}
 
+                    # Room-Enrichment: Qwen trennt oft Person und Raum
+                    # ("manuel buero" → room="buero"). Pruefen ob User-Text
+                    # einen laengeren Raumnamen enthaelt als das LLM generiert hat.
+                    if isinstance(func_args, dict) and func_args.get("room"):
+                        llm_room = func_args["room"].lower().strip()
+                        text_lower = text.lower()
+                        # Suche nach "XYZ <room>" im User-Text (z.B. "manuel büro")
+                        # Unterstuetzt Umlaute und Digraphen
+                        room_variants = [llm_room]
+                        # Umlaut-Varianten erzeugen
+                        r = llm_room
+                        for a, b in [("ue", "ü"), ("ae", "ä"), ("oe", "ö"),
+                                     ("ü", "ue"), ("ä", "ae"), ("ö", "oe"),
+                                     ("u", "ü"), ("a", "ä"), ("o", "ö")]:
+                            v = r.replace(a, b)
+                            if v != r and v not in room_variants:
+                                room_variants.append(v)
+                        for variant in room_variants:
+                            pattern = re.search(
+                                r"(\w+)\s+" + re.escape(variant),
+                                text_lower,
+                            )
+                            if pattern:
+                                prefix = pattern.group(1)
+                                # Nur echte Personen-Praefixe, nicht Verben/Artikel
+                                _SKIP_PREFIXES = {
+                                    "im", "in", "das", "die", "der", "den", "dem",
+                                    "ein", "eine", "mein", "dein", "sein", "ihr",
+                                    "vom", "zum", "zur", "auf", "aus", "ans",
+                                    "schalte", "mach", "stelle", "setz", "dreh",
+                                    "alle", "jede", "jedes", "jeden",
+                                }
+                                if prefix not in _SKIP_PREFIXES and len(prefix) > 2:
+                                    enriched = f"{prefix} {func_args['room']}"
+                                    logger.info(
+                                        "Room-Enrichment: '%s' -> '%s' (aus User-Text)",
+                                        func_args["room"], enriched,
+                                    )
+                                    func_args["room"] = enriched
+                                    break
+
                     logger.info("Function Call: %s(%s)", func_name, func_args)
 
                     # Validierung
