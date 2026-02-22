@@ -2658,8 +2658,10 @@ class FunctionExecutor:
         try:
             devices = await self.ha.search_devices(domain=domain, room=search)
             if devices:
-                logger.info("_find_entity: DB lieferte %d Treffer fuer '%s' (domain=%s)", len(devices), search, domain)
-                # Best-Match: Exakt > kuerzester Partial
+                logger.info("_find_entity: DB lieferte %d Treffer fuer '%s' (domain=%s): %s",
+                            len(devices), search, domain,
+                            [(d.get("name"), d.get("room"), d.get("ha_entity_id")) for d in devices])
+                # Best-Match: Exakt > kuerzester Partial (mit Match-Pruefung!)
                 best = None
                 best_len = float("inf")
                 for dev in devices:
@@ -2673,14 +2675,19 @@ class FunctionExecutor:
                     if search_norm == dev_name:
                         logger.info("_find_entity: Exakter Name-Match -> %s", dev["ha_entity_id"])
                         return dev["ha_entity_id"]
-                    # Partial Match: kuerzester Name gewinnt (spezifischer)
-                    name_len = len(dev_name) + len(dev_room)
-                    if name_len < best_len:
-                        best = dev["ha_entity_id"]
-                        best_len = name_len
+                    # Partial Match: Suchbegriff MUSS im Namen oder Raum vorkommen
+                    if search_norm in dev_name or search_norm in dev_room:
+                        name_len = len(dev_name) + len(dev_room)
+                        if name_len < best_len:
+                            best = dev["ha_entity_id"]
+                            best_len = name_len
                 if best:
                     logger.info("_find_entity: Best Partial-Match -> %s", best)
                     return best
+                # Kein Match in DB-Ergebnissen — erstes nehmen als Fallback
+                if devices:
+                    logger.info("_find_entity: Kein Name/Raum-Match, nehme erstes DB-Ergebnis -> %s", devices[0]["ha_entity_id"])
+                    return devices[0]["ha_entity_id"]
             else:
                 logger.info("_find_entity: DB lieferte 0 Treffer fuer '%s', HA-Fallback", search)
         except Exception as e:

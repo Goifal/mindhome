@@ -236,7 +236,8 @@ class HomeAssistantClient:
             ) as resp:
                 if resp.status == 200:
                     return await resp.json()
-                logger.warning("MindHome POST %s -> %d", path, resp.status)
+                body = await resp.text()
+                logger.warning("MindHome POST %s -> %d: %s", path, resp.status, body[:300])
                 return None
         except Exception as e:
             logger.warning("MindHome POST %s fehlgeschlagen: %s", path, e)
