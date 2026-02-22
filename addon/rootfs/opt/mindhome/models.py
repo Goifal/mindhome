@@ -2146,6 +2146,13 @@ MIGRATIONS = [
             "CREATE INDEX IF NOT EXISTS idx_cover_schedules_time ON cover_schedules(time_str, is_active)",
         ]
     },
+    {
+        "version": 14,
+        "description": "Add enabled column to cover_configs",
+        "sql": [
+            "ALTER TABLE cover_configs ADD COLUMN enabled BOOLEAN DEFAULT 1",
+        ]
+    },
 ]
 
 
