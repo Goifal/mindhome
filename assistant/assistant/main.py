@@ -8,6 +8,9 @@ import json
 import logging
 import os
 import random
+
+# ChromaDB Telemetrie deaktivieren (posthog capture() Fehler vermeiden)
+os.environ["ANONYMIZED_TELEMETRY"] = "False"
 import secrets
 from collections import deque
 from contextlib import asynccontextmanager
