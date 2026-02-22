@@ -934,13 +934,22 @@ class AssistantBrain(BrainCallbacksMixin):
             model = settings.model_deep
             if stream_callback:
                 collected_tokens = []
+                stream_error = False
                 async for token in self.ollama.stream_chat(
                     messages=messages,
                     model=model,
                 ):
+                    if token in ("[STREAM_TIMEOUT]", "[STREAM_ERROR]"):
+                        stream_error = True
+                        continue
                     collected_tokens.append(token)
                     await stream_callback(token)
-                response_text = self._filter_response("".join(collected_tokens))
+                if stream_error or not collected_tokens:
+                    response_text = "Mein Sprachmodell reagiert gerade nicht. Versuch es gleich nochmal."
+                    if stream_callback:
+                        await stream_callback(response_text)
+                else:
+                    response_text = self._filter_response("".join(collected_tokens))
             else:
                 response = await self.ollama.chat(
                     messages=messages,
@@ -967,13 +976,22 @@ class AssistantBrain(BrainCallbacksMixin):
             model = settings.model_deep
             if stream_callback:
                 collected_tokens = []
+                stream_error = False
                 async for token in self.ollama.stream_chat(
                     messages=memory_messages,
                     model=model,
                 ):
+                    if token in ("[STREAM_TIMEOUT]", "[STREAM_ERROR]"):
+                        stream_error = True
+                        continue
                     collected_tokens.append(token)
                     await stream_callback(token)
-                response_text = self._filter_response("".join(collected_tokens))
+                if stream_error or not collected_tokens:
+                    response_text = "Mein Sprachmodell reagiert gerade nicht. Versuch es gleich nochmal."
+                    if stream_callback:
+                        await stream_callback(response_text)
+                else:
+                    response_text = self._filter_response("".join(collected_tokens))
             else:
                 response = await self.ollama.chat(
                     messages=memory_messages,
@@ -1417,9 +1435,10 @@ class AssistantBrain(BrainCallbacksMixin):
                 name="sound_warning",
             )
 
-        # 9. Im Gedaechtnis speichern
-        await self.memory.add_conversation("user", text)
-        await self.memory.add_conversation("assistant", response_text)
+        # 9. Im Gedaechtnis speichern (nur nicht-leere Antworten)
+        if response_text and response_text.strip():
+            await self.memory.add_conversation("user", text)
+            await self.memory.add_conversation("assistant", response_text)
 
         # Phase 17: Kontext-Persistenz fuer Raumwechsel speichern
         self._task_registry.create_task(
