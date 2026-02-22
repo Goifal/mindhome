@@ -590,9 +590,9 @@ class ProactiveManager:
     async def _notify(self, event_type: str, urgency: str, data: dict):
         """Prueft ob gemeldet werden soll und erzeugt Meldung."""
 
-        # Quiet Hours: LOW und MEDIUM waehrend Ruhezeiten unterdruecken
-        if urgency in (LOW, MEDIUM) and self._is_quiet_hours():
-            logger.debug("Meldung unterdrueckt (Quiet Hours): [%s] %s", urgency, event_type)
+        # Quiet Hours: Nur CRITICAL darf nachts durch
+        if urgency != CRITICAL and self._is_quiet_hours():
+            logger.info("Meldung unterdrueckt (Quiet Hours): [%s] %s", urgency, event_type)
             return
 
         # Autonomie-Level pruefen

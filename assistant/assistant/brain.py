@@ -1435,25 +1435,33 @@ class AssistantBrain(BrainCallbacksMixin):
             # generiert hat ("Ich schaue nach..."), denn die echten Daten muessen rein.
             if tool_calls and has_query_results:
                 try:
-                    # Tool-Ergebnisse als Messages aufbauen
-                    feedback_messages = list(messages)
-                    # LLM-Antwort mit Tool-Calls anhaengen
-                    feedback_messages.append(message)
-                    # Tool-Results als "tool" Messages
+                    # Tool-Ergebnisse sammeln
+                    tool_results = []
                     for action in executed_actions:
                         result = action.get("result", {})
                         if isinstance(result, dict):
                             result_text = result.get("message", str(result))
                         else:
                             result_text = str(result)
-                        feedback_messages.append({
-                            "role": "tool",
-                            "content": result_text,
-                        })
+                        tool_results.append(result_text)
+
+                    combined_results = "\n".join(tool_results)
+
+                    # Feedback-Messages: System-Prompt + User-Frage + Daten als User-Message
+                    # (role:"tool" wird von lokalen Modellen oft nicht verstanden)
+                    feedback_messages = [messages[0]]  # System-Prompt behalten
+                    feedback_messages.append({
+                        "role": "user",
+                        "content": (
+                            f"{text}\n\n"
+                            f"DATEN AUS DEM SYSTEM (formuliere diese Daten als natuerliche Antwort):\n"
+                            f"{combined_results}"
+                        ),
+                    })
 
                     # Zweiter LLM-Call: Natuerliche Antwort generieren (ohne Tools)
-                    logger.debug("Tool-Feedback: %d Results -> LLM fuer natuerliche Antwort",
-                                 len(executed_actions))
+                    logger.info("Tool-Feedback: %d Results -> LLM fuer natuerliche Antwort",
+                                len(executed_actions))
 
                     if stream_callback:
                         # Streaming: Token-fuer-Token via stream_chat()
@@ -1462,7 +1470,7 @@ class AssistantBrain(BrainCallbacksMixin):
                             messages=feedback_messages,
                             model=model,
                             temperature=0.7,
-                            max_tokens=128,
+                            max_tokens=150,
                         ):
                             collected.append(token)
                             await stream_callback(token)
@@ -1472,7 +1480,7 @@ class AssistantBrain(BrainCallbacksMixin):
                             messages=feedback_messages,
                             model=model,
                             temperature=0.7,
-                            max_tokens=128,
+                            max_tokens=150,
                         )
                         feedback_text = ""
                         if "error" not in feedback_response:
@@ -1480,6 +1488,9 @@ class AssistantBrain(BrainCallbacksMixin):
 
                     if feedback_text:
                         response_text = self._filter_response(feedback_text)
+                        logger.info("Tool-Feedback Antwort: %s", response_text[:100])
+                    else:
+                        logger.warning("Tool-Feedback: LLM hat leere Antwort produziert")
                 except Exception as e:
                     logger.warning("Tool-Feedback fehlgeschlagen: %s", e)
 
@@ -3298,6 +3309,11 @@ Regeln:
         F-027: Trust-Level der erkannten Person wird bei Auto-Execute geprueft.
         Nur Owner darf sicherheitsrelevante Aktionen automatisch ausfuehren.
         """
+        # Quiet Hours: Anticipation-Vorschlaege sind nicht kritisch
+        if hasattr(self, 'proactive') and self.proactive._is_quiet_hours():
+            logger.info("Anticipation unterdrueckt (Quiet Hours): %s", suggestion.get("description", ""))
+            return
+
         mode = suggestion.get("mode", "ask")
         desc = suggestion.get("description", "")
         action = suggestion.get("action", "")
