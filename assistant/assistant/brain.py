@@ -1081,6 +1081,12 @@ class AssistantBrain(BrainCallbacksMixin):
                     func = tool_call.get("function", {})
                     func_name = func.get("name", "")
                     func_args = func.get("arguments", {})
+                    # Qwen kann arguments als JSON-String statt Dict liefern
+                    if isinstance(func_args, str):
+                        try:
+                            func_args = json.loads(func_args)
+                        except (json.JSONDecodeError, ValueError):
+                            func_args = {}
 
                     logger.info("Function Call: %s(%s)", func_name, func_args)
 
@@ -1677,7 +1683,19 @@ class AssistantBrain(BrainCallbacksMixin):
             "Ich habe keine eigenen Gefühle",
             "Hallo! Wie kann ich",
             "Hallo, wie kann ich",
+            "Hallo! Was kann ich",
+            "Hallo, was kann ich",
             "Hi! Wie kann ich",
+            "Wie kann ich Ihnen helfen",
+            "Wie kann ich Ihnen heute helfen",
+            "Wie kann ich Ihnen behilflich sein",
+            "Was kann ich fuer Sie tun",
+            "Was kann ich für Sie tun",
+            "Bitte erkläre, worauf",
+            "Bitte erklaere, worauf",
+            "Ich bin ein KI-Assistent",
+            "Ich bin hier, um",
+            "Ich bin hier um",
             # Kontext-Wechsel-Floskeln (JARVIS springt sofort mit)
             "Um auf deine vorherige Frage zurückzukommen",
             "Um auf deine vorherige Frage zurueckzukommen",
@@ -2494,6 +2512,7 @@ class AssistantBrain(BrainCallbacksMixin):
             "jalousie", "szene", "alarm", "tuer", "fenster",
             "musik", "tv", "fernseher", "kamera", "sensor",
             "steckdose", "schalter", "thermostat",
+            "status", "hausstatus", "haus-status", "ueberblick",
         ]
 
         is_knowledge = any(text_lower.startswith(kw) or f" {kw}" in text_lower
