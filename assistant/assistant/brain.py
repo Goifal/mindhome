@@ -941,6 +941,57 @@ class AssistantBrain(BrainCallbacksMixin):
         # Phase 8: Intent-Routing — Wissensfragen ohne Tools beantworten
         intent_type = self._classify_intent(text)
 
+        # Kalender-Shortcut: LLM waehlt bei "Was steht morgen an?" oft das
+        # falsche Tool (get_active_intents statt get_calendar_events).
+        # Daher Kalender-Fragen direkt erkennen und abkuerzen.
+        calendar_shortcut = self._detect_calendar_query(text)
+        if calendar_shortcut:
+            timeframe = calendar_shortcut
+            logger.info("Kalender-Shortcut: '%s' -> timeframe=%s", text, timeframe)
+            try:
+                cal_result = await self.function_executor.execute(
+                    "get_calendar_events", {"timeframe": timeframe}
+                )
+                cal_msg = cal_result.get("message", "") if isinstance(cal_result, dict) else str(cal_result)
+                # LLM natuerlich formulieren lassen
+                # messages hat text bereits als letzten Eintrag — ersetzen
+                fmt_messages = list(messages)
+                fmt_messages[-1] = {
+                    "role": "user",
+                    "content": (
+                        f"{text}\n\n[KALENDER-DATEN]\n{cal_msg}\n"
+                        "[/KALENDER-DATEN]\n"
+                        "Fasse die Kalender-Daten natuerlich zusammen."
+                    ),
+                }
+                try:
+                    fmt_response = await asyncio.wait_for(
+                        self.ollama.chat(messages=fmt_messages, model=model, temperature=0.7),
+                        timeout=15.0,
+                    )
+                    response_text = self._filter_response(
+                        fmt_response.get("message", {}).get("content", cal_msg)
+                    )
+                except Exception:
+                    response_text = cal_msg  # Fallback: rohe Daten
+
+                await self.memory.add_conversation("user", text)
+                await self.memory.add_conversation("assistant", response_text)
+                tts_data = self.tts_enhancer.enhance(response_text, message_type="casual")
+                await self._speak_and_emit(response_text, room=room, tts_data=tts_data)
+                await emit_action("get_calendar_events", {"timeframe": timeframe}, cal_result)
+                return {
+                    "response": response_text,
+                    "actions": [{"function": "get_calendar_events",
+                                 "args": {"timeframe": timeframe},
+                                 "result": cal_result}],
+                    "model_used": "calendar_shortcut",
+                    "context_room": room or "unbekannt",
+                    "tts": tts_data,
+                }
+            except Exception as e:
+                logger.warning("Kalender-Shortcut fehlgeschlagen: %s — Fallback auf LLM", e)
+
         # Phase 10: Delegations-Intent → Nachricht an Person weiterleiten
         if intent_type == "delegation":
             logger.info("Delegations-Intent erkannt")
@@ -2801,6 +2852,50 @@ class AssistantBrain(BrainCallbacksMixin):
         _VERBS = ["mach ", "schalte ", "stell ", "setz ", "dreh ", "oeffne ", "schliess"]
         verb_start = any(t.startswith(v) for v in _VERBS)
         return (has_noun and has_action) or (verb_start and has_noun)
+
+    @staticmethod
+    def _detect_calendar_query(text: str) -> Optional[str]:
+        """Erkennt eindeutige Kalender-Fragen und gibt den Timeframe zurueck.
+
+        Returns 'today', 'tomorrow', 'week' oder None (kein Kalender-Match).
+        Wird VOR dem LLM aufgerufen, damit das LLM nicht das falsche Tool waehlt.
+        """
+        t = text.lower().strip()
+
+        # "morgen" Patterns
+        if any(kw in t for kw in [
+            "was steht morgen an", "was ist morgen", "termine morgen",
+            "habe ich morgen termin", "was habe ich morgen",
+            "morgen termine", "morgen kalender", "kalender morgen",
+            "steht morgen was an", "steht morgen etwas an",
+        ]):
+            return "tomorrow"
+
+        # "heute" Patterns
+        if any(kw in t for kw in [
+            "was steht heute an", "was ist heute", "termine heute",
+            "habe ich heute termin", "was habe ich heute",
+            "heute termine", "heute kalender", "kalender heute",
+            "steht heute was an", "steht heute etwas an",
+        ]):
+            return "today"
+
+        # "Woche" Patterns
+        if any(kw in t for kw in [
+            "was steht diese woche an", "termine diese woche",
+            "woche termine", "kalender woche", "was steht die woche an",
+            "welche termine habe ich", "welche termine stehen an",
+        ]):
+            return "week"
+
+        # Generisch "termine" / "kalender" ohne Zeitangabe → heute
+        if any(kw in t for kw in [
+            "was steht an", "meine termine", "welche termine",
+            "habe ich termine", "zeig termine", "zeig kalender",
+        ]):
+            return "today"
+
+        return None
 
     def _classify_intent(self, text: str) -> str:
         """
