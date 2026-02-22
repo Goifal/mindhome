@@ -1195,6 +1195,19 @@ class AssistantBrain(BrainCallbacksMixin):
                             # Level 1: Warnung voranstellen, aber trotzdem ausfuehren
                             pushback_msg = pushback["message"]
 
+                    # Brightness-Fallback: Wenn set_light ohne brightness,
+                    # aber User-Text "X%" enthaelt → brightness ergaenzen
+                    if (func_name == "set_light"
+                            and isinstance(final_args, dict)
+                            and final_args.get("state") == "on"
+                            and "brightness" not in final_args):
+                        pct_match = re.search(r"(\d{1,3})\s*%", text)
+                        if pct_match:
+                            pct = int(pct_match.group(1))
+                            if 1 <= pct <= 100:
+                                final_args["brightness"] = pct
+                                logger.info("Brightness-Fallback: %d%% aus User-Text extrahiert", pct)
+
                     # Ausfuehren
                     result = await self.executor.execute(func_name, final_args)
                     executed_actions.append({
