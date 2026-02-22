@@ -633,7 +633,7 @@ _ASSISTANT_TOOLS_STATIC = [
         "type": "function",
         "function": {
             "name": "get_calendar_events",
-            "description": "Kalender-Termine abrufen (heute, morgen oder bestimmtes Datum)",
+            "description": "Kalender-Termine abrufen. Nutze dies wenn der User nach Terminen fragt, z.B. 'Was steht morgen an?', 'Was steht heute an?', 'Habe ich morgen Termine?', 'Was steht diese Woche an?'. Immer bevorzugt fuer zeitbezogene Fragen zu Plaenen und Terminen.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -1212,7 +1212,7 @@ _ASSISTANT_TOOLS_STATIC = [
         "type": "function",
         "function": {
             "name": "get_active_intents",
-            "description": "Zeigt alle gemerkten Vorhaben und Termine die aus Gespraechen erkannt wurden. Z.B. 'Eltern kommen am Wochenende'. Nutze dies wenn der User nach anstehenden Plaenen oder 'was steht an?' fragt.",
+            "description": "Zeigt gemerkte Vorhaben die aus frueheren Gespraechen erkannt wurden, z.B. 'Eltern kommen am Wochenende'. Nutze dies NUR wenn der User explizit nach gemerkten Vorhaben fragt, z.B. 'Was habe ich mir vorgenommen?', 'Was hast du dir gemerkt?'. NICHT fuer Kalender-Termine oder 'Was steht morgen an?' verwenden.",
             "parameters": {
                 "type": "object",
                 "properties": {},
