@@ -1375,7 +1375,21 @@ class AssistantBrain(BrainCallbacksMixin):
                     if feedback_text:
                         response_text = self._filter_response(feedback_text)
                 except Exception as e:
-                    logger.debug("Tool-Feedback fehlgeschlagen: %s", e)
+                    logger.warning("Tool-Feedback fehlgeschlagen: %s", e)
+
+            # Fallback fuer Query-Tools: Wenn der Feedback-Loop keine Antwort
+            # produziert hat, die rohen Tool-Ergebnisse direkt verwenden.
+            # Verhindert "Umgesetzt." bei Wetter-/Status-Abfragen.
+            if has_query_results and not response_text and executed_actions:
+                query_results = []
+                for action in executed_actions:
+                    if action.get("function") in QUERY_TOOLS:
+                        result = action.get("result", {})
+                        if isinstance(result, dict) and result.get("message"):
+                            query_results.append(result["message"])
+                if query_results:
+                    response_text = " ".join(query_results)
+                    logger.info("Query-Fallback: Rohe Tool-Ergebnisse als Antwort verwendet")
 
             # Phase 6: Variierte Bestaetigung statt immer "Erledigt."
             # Nur fuer reine Action-Tools (set_light etc.), nicht fuer Query-Tools
