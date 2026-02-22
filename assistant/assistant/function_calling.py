@@ -131,6 +131,23 @@ _ASSISTANT_TOOLS_STATIC = [
     {
         "type": "function",
         "function": {
+            "name": "get_lights",
+            "description": "Zeigt alle Lichter mit Name, Raum und Status (an/aus, Helligkeit). Optional nach Raum filtern.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "room": {
+                        "type": "string",
+                        "description": "Raumname zum Filtern (optional, ohne = alle Lichter)",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "set_climate",
             "description": _get_climate_tool_description(),
             "parameters": _get_climate_tool_parameters(),
@@ -1065,7 +1082,7 @@ class FunctionExecutor:
 
     # Whitelist erlaubter Tool-Funktionsnamen (verhindert Zugriff auf interne Methoden)
     _ALLOWED_FUNCTIONS = frozenset({
-        "set_light", "set_light_all", "set_climate", "set_climate_curve",
+        "set_light", "set_light_all", "get_lights", "set_climate", "set_climate_curve",
         "set_climate_room", "activate_scene", "set_cover", "set_cover_all",
         "call_service", "play_media", "transfer_playback", "set_alarm",
         "lock_door", "send_notification", "send_message_to_person",
@@ -1203,6 +1220,75 @@ class FunctionExecutor:
                 count += 1
 
         return {"success": True, "message": f"Alle Lichter {state} ({count} geschaltet)"}
+
+    async def _exec_get_lights(self, args: dict) -> dict:
+        """Alle Lichter mit Name, Raum-Zuordnung und Status auflisten."""
+        room_filter = args.get("room", "")
+
+        # Geraete aus MindHome DB laden (enthaelt Raum-Zuordnung)
+        try:
+            devices = await self.ha.search_devices(domain="light", room=room_filter)
+        except Exception:
+            devices = None
+
+        # HA-States fuer aktuellen Status laden
+        states = await self.ha.get_states()
+        if not states:
+            return {"success": False, "message": "Kann gerade nicht auf die Geraete zugreifen."}
+
+        # State-Lookup: entity_id -> state-dict
+        state_map = {}
+        for s in states:
+            eid = s.get("entity_id", "")
+            if eid.startswith("light."):
+                state_map[eid] = s
+
+        lights = []
+
+        if devices:
+            # MindHome DB hat Raum-Zuordnung
+            for dev in devices:
+                eid = dev.get("ha_entity_id", "")
+                name = dev.get("name", eid)
+                room = dev.get("room", "—")
+                ha = state_map.get(eid, {})
+                status = ha.get("state", "unknown")
+                attrs = ha.get("attributes", {})
+                brightness = ""
+                if status == "on" and "brightness" in attrs:
+                    bri_pct = round(attrs["brightness"] / 255 * 100)
+                    brightness = f" ({bri_pct}%)"
+                lights.append(f"- {name} [{room}]: {status}{brightness}")
+        else:
+            # Fallback: alle light-Entities aus HA (ohne Raum-Zuordnung)
+            search_norm = self._normalize_name(room_filter) if room_filter else ""
+            for eid, ha in state_map.items():
+                if search_norm:
+                    entity_name = eid.split(".", 1)[1]
+                    friendly = ha.get("attributes", {}).get("friendly_name", "")
+                    if (search_norm not in self._normalize_name(entity_name)
+                            and search_norm not in self._normalize_name(friendly)):
+                        continue
+                attrs = ha.get("attributes", {})
+                friendly = attrs.get("friendly_name", eid)
+                status = ha.get("state", "unknown")
+                brightness = ""
+                if status == "on" and "brightness" in attrs:
+                    bri_pct = round(attrs["brightness"] / 255 * 100)
+                    brightness = f" ({bri_pct}%)"
+                lights.append(f"- {friendly}: {status}{brightness}")
+
+        if not lights:
+            msg = f"Keine Lichter in '{room_filter}' gefunden." if room_filter else "Keine Lichter gefunden."
+            return {"success": False, "message": msg}
+
+        on_count = sum(1 for l in lights if ": on" in l)
+        header = f"{len(lights)} Lichter"
+        if room_filter:
+            header += f" in '{room_filter}'"
+        header += f" ({on_count} an, {len(lights) - on_count} aus):\n"
+
+        return {"success": True, "message": header + "\n".join(lights)}
 
     async def _exec_set_climate(self, args: dict) -> dict:
         heating = yaml_config.get("heating", {})
