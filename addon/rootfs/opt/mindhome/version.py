@@ -4,12 +4,16 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "1.4.5"
-BUILD = 95
-BUILD_DATE = "2026-02-21"
+VERSION = "1.5.5"
+BUILD = 96
+BUILD_DATE = "2026-02-22"
 CODENAME = "Jarvis Voice"
 
 # Changelog
+# Build 96: v1.5.5 Jarvis Voice — Entity-Matching Fix
+#   - FIX: Geraetetyp-Woerter aus Room-Parameter strippen (schlafzimmer rollladen -> schlafzimmer)
+#   - FIX: Bidirektionales Entity-Matching (DB + HA-Fallback)
+#   - FIX: search_devices bidirektional (n in rn)
 # Build 95: v1.4.5 Jarvis Voice — Voice-Pipeline Performance
 #   - PERF: ffmpeg Pipe statt Temp-Files (kein Disk-I/O)
 #   - PERF: STT Platform-Name gecacht (spart HTTP-Call pro Request)
