@@ -741,7 +741,9 @@ class ProactiveManager:
             open_items = []
             for s in states:
                 eid = s.get("entity_id", "")
-                if ("window" in eid or "door" in eid) and s.get("state") == "on":
+                if not eid.startswith("binary_sensor."):
+                    continue
+                if ("window" in eid or "door" in eid or "fenster" in eid or "tuer" in eid) and s.get("state") == "on":
                     name = s.get("attributes", {}).get("friendly_name", eid)
                     open_items.append(name)
             if open_items:

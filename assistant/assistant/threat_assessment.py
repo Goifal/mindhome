@@ -147,10 +147,12 @@ class ThreatAssessment:
         if wind_speed_val < wind_threshold:  # kein Sturm
             return []
 
-        # Offene Fenster bei Sturm
+        # Offene Fenster bei Sturm (nur binary_sensor Kontakt-Sensoren)
         open_windows = []
         for s in states:
             eid = s.get("entity_id", "")
+            if not eid.startswith("binary_sensor."):
+                continue
             if ("window" in eid or "fenster" in eid) and s.get("state") == "on":
                 friendly = s.get("attributes", {}).get("friendly_name", eid)
                 open_windows.append(friendly)

@@ -35,6 +35,11 @@ foresight:
   calendar_lookahead_minutes: 60
   weather_alerts: true
   departure_warning_minutes: 45
+calendar:
+  # Kalender-Entities explizit angeben (optional).
+  # Wenn leer, werden alle calendar.* Entities aus HA abgefragt.
+  entities: []
+  # Beispiel: entities: ['calendar.persoenlich', 'calendar.familie']
 household:
   primary_user: ''
   members: []

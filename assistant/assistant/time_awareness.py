@@ -286,9 +286,11 @@ class TimeAwareness:
         if outside_temp is None or outside_temp >= 10:
             return alerts
 
-        # Offene Fenster finden
+        # Offene Fenster finden (nur binary_sensor Kontakt-Sensoren)
         for state in states:
             entity_id = state.get("entity_id", "")
+            if not entity_id.startswith("binary_sensor."):
+                continue
             if not ("window" in entity_id or "fenster" in entity_id):
                 continue
             if state.get("state") != "on":
