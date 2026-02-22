@@ -20,6 +20,7 @@ import asyncio
 import json
 import logging
 import re
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
@@ -365,6 +366,14 @@ class AssistantBrain(BrainCallbacksMixin):
             await _safe_init("WellnessAdvisor.start", self.wellness_advisor.start())
 
         await self.proactive.start()
+
+        # Entity-Katalog: Echte Raum-/Entity-Namen aus HA laden
+        # fuer dynamische Tool-Beschreibungen (hilft dem LLM beim Matching)
+        try:
+            from .function_calling import refresh_entity_catalog
+            await refresh_entity_catalog(self.ha)
+        except Exception as e:
+            logger.debug("Entity-Katalog initial nicht geladen: %s", e)
 
         if _degraded_modules:
             logger.warning(
@@ -1032,6 +1041,15 @@ class AssistantBrain(BrainCallbacksMixin):
                 response_text = self._filter_response(response.get("message", {}).get("content", ""))
             executed_actions = []
         else:
+            # Entity-Katalog bei Bedarf refreshen (TTL 5 Min)
+            from .function_calling import _entity_catalog_ts, _CATALOG_TTL
+            if time.time() - _entity_catalog_ts > _CATALOG_TTL:
+                try:
+                    from .function_calling import refresh_entity_catalog
+                    await refresh_entity_catalog(self.ha)
+                except Exception:
+                    pass  # Kein Blocker — Config-Fallback reicht
+
             # 6b. Einfache Anfragen: Direkt LLM aufrufen (mit Timeout + Fallback)
             llm_timeout = (yaml_config.get("context") or {}).get("llm_timeout", 60)
             try:
@@ -1137,47 +1155,6 @@ class AssistantBrain(BrainCallbacksMixin):
                             func_args = json.loads(func_args)
                         except (json.JSONDecodeError, ValueError):
                             func_args = {}
-
-                    # Room-Enrichment: Qwen trennt oft Person und Raum
-                    # ("manuel buero" → room="buero"). Pruefen ob User-Text
-                    # einen laengeren Raumnamen enthaelt als das LLM generiert hat.
-                    if isinstance(func_args, dict) and func_args.get("room"):
-                        llm_room = func_args["room"].lower().strip()
-                        text_lower = text.lower()
-                        # Suche nach "XYZ <room>" im User-Text (z.B. "manuel büro")
-                        # Unterstuetzt Umlaute und Digraphen
-                        room_variants = [llm_room]
-                        # Umlaut-Varianten erzeugen
-                        r = llm_room
-                        for a, b in [("ue", "ü"), ("ae", "ä"), ("oe", "ö"),
-                                     ("ü", "ue"), ("ä", "ae"), ("ö", "oe"),
-                                     ("u", "ü"), ("a", "ä"), ("o", "ö")]:
-                            v = r.replace(a, b)
-                            if v != r and v not in room_variants:
-                                room_variants.append(v)
-                        for variant in room_variants:
-                            pattern = re.search(
-                                r"(\w+)\s+" + re.escape(variant),
-                                text_lower,
-                            )
-                            if pattern:
-                                prefix = pattern.group(1)
-                                # Nur echte Personen-Praefixe, nicht Verben/Artikel
-                                _SKIP_PREFIXES = {
-                                    "im", "in", "das", "die", "der", "den", "dem",
-                                    "ein", "eine", "mein", "dein", "sein", "ihr",
-                                    "vom", "zum", "zur", "auf", "aus", "ans",
-                                    "schalte", "mach", "stelle", "setz", "dreh",
-                                    "alle", "jede", "jedes", "jeden",
-                                }
-                                if prefix not in _SKIP_PREFIXES and len(prefix) > 2:
-                                    enriched = f"{prefix} {func_args['room']}"
-                                    logger.info(
-                                        "Room-Enrichment: '%s' -> '%s' (aus User-Text)",
-                                        func_args["room"], enriched,
-                                    )
-                                    func_args["room"] = enriched
-                                    break
 
                     logger.info("Function Call: %s(%s)", func_name, func_args)
 
