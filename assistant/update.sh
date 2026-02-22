@@ -211,7 +211,7 @@ update_code() {
     fi
 
     info "Hole Updates von origin/$PULL_BRANCH..."
-    if ! git pull origin "$PULL_BRANCH"; then
+    if ! git pull --rebase origin "$PULL_BRANCH"; then
         error "git pull fehlgeschlagen"
         # Rollback bei Branch-Wechsel
         if [ "$SWITCHING" = true ]; then
