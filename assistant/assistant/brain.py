@@ -1462,35 +1462,23 @@ class AssistantBrain(BrainCallbacksMixin):
                     })
 
                     # Zweiter LLM-Call: Natuerliche Antwort generieren (ohne Tools)
+                    # IMMER non-streaming: Streaming wuerde Rohdaten direkt an Client
+                    # senden BEVOR der Humanizer sie umschreiben kann
                     logger.info("Tool-Feedback: %d Results -> LLM fuer natuerliche Antwort",
                                 len(executed_actions))
 
-                    if stream_callback:
-                        # Streaming: Token-fuer-Token via stream_chat()
-                        collected = []
-                        async for token in self.ollama.stream_chat(
-                            messages=feedback_messages,
-                            model=model,
-                            temperature=0.7,
-                            max_tokens=150,
-                            think=False,
-                        ):
-                            collected.append(token)
-                            await stream_callback(token)
-                        feedback_text = "".join(collected)
+                    feedback_response = await self.ollama.chat(
+                        messages=feedback_messages,
+                        model=model,
+                        temperature=0.7,
+                        max_tokens=150,
+                        think=False,
+                    )
+                    feedback_text = ""
+                    if "error" in feedback_response:
+                        logger.warning("Tool-Feedback LLM Error: %s", feedback_response["error"])
                     else:
-                        feedback_response = await self.ollama.chat(
-                            messages=feedback_messages,
-                            model=model,
-                            temperature=0.7,
-                            max_tokens=150,
-                            think=False,
-                        )
-                        feedback_text = ""
-                        if "error" in feedback_response:
-                            logger.warning("Tool-Feedback LLM Error: %s", feedback_response["error"])
-                        else:
-                            feedback_text = feedback_response.get("message", {}).get("content", "")
+                        feedback_text = feedback_response.get("message", {}).get("content", "")
 
                     if feedback_text:
                         response_text = self._filter_response(feedback_text)

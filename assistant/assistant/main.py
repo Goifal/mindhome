@@ -1220,13 +1220,27 @@ async def websocket_endpoint(websocket: WebSocket):
 
                         if use_stream:
                             # Streaming: Token-fuer-Token an Client senden
-                            await emit_stream_start()
+                            stream_tokens_sent = []
+
+                            async def _guarded_stream_token(token: str):
+                                """Sendet stream_start erst beim ersten echten Token."""
+                                if not stream_tokens_sent:
+                                    await emit_stream_start()
+                                stream_tokens_sent.append(token)
+                                await emit_stream_token(token)
+
                             result = await brain.process(
                                 text, person, room=room,
-                                stream_callback=emit_stream_token,
+                                stream_callback=_guarded_stream_token,
                             )
                             tts_data = result.get("tts")
-                            await emit_stream_end(result["response"], tts_data=tts_data)
+                            if stream_tokens_sent:
+                                # Es wurden Tokens gestreamt → stream_end senden
+                                await emit_stream_end(result["response"], tts_data=tts_data)
+                            else:
+                                # Keine Tokens gestreamt (z.B. Tool-Query mit Humanizer)
+                                # → normale Antwort senden statt leerer Stream-Blase
+                                await emit_speaking(result["response"], tts_data=tts_data)
                         else:
                             # brain.process() sendet intern via _speak_and_emit
                             result = await brain.process(text, person, room=room)
