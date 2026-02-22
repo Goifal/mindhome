@@ -1517,7 +1517,7 @@ class FunctionExecutor:
 
     async def _exec_get_lights(self, args: dict) -> dict:
         """Alle Lichter mit Name, Raum-Zuordnung und Status auflisten."""
-        room_filter = args.get("room", "")
+        room_filter = self._clean_room(args.get("room", ""))
 
         # Geraete aus MindHome DB laden (enthaelt Raum-Zuordnung)
         try:
@@ -1586,7 +1586,7 @@ class FunctionExecutor:
 
     async def _exec_get_covers(self, args: dict) -> dict:
         """Alle Rolllaeden/Jalousien mit Status auflisten."""
-        room_filter = args.get("room", "")
+        room_filter = self._clean_room(args.get("room", ""))
 
         try:
             devices = await self.ha.search_devices(domain="cover", room=room_filter)
@@ -1644,7 +1644,7 @@ class FunctionExecutor:
 
     async def _exec_get_media(self, args: dict) -> dict:
         """Alle Media Player mit Status auflisten."""
-        room_filter = args.get("room", "")
+        room_filter = self._clean_room(args.get("room", ""))
 
         states = await self.ha.get_states()
         if not states:
@@ -1691,7 +1691,7 @@ class FunctionExecutor:
 
     async def _exec_get_climate(self, args: dict) -> dict:
         """Alle Thermostate/Heizungen mit Status auflisten."""
-        room_filter = args.get("room", "")
+        room_filter = self._clean_room(args.get("room", ""))
 
         try:
             devices = await self.ha.search_devices(domain="climate", room=room_filter)
@@ -1759,7 +1759,7 @@ class FunctionExecutor:
 
     async def _exec_get_switches(self, args: dict) -> dict:
         """Alle Steckdosen/Schalter mit Status auflisten."""
-        room_filter = args.get("room", "")
+        room_filter = self._clean_room(args.get("room", ""))
 
         try:
             devices = await self.ha.search_devices(domain="switch", room=room_filter)
@@ -1889,6 +1889,11 @@ class FunctionExecutor:
     async def _exec_set_climate_room(self, args: dict) -> dict:
         """Raumthermostat-Modus: Temperatur pro Raum setzen."""
         room = args.get("room")
+        # Qwen3-Fallback: entity_id statt room
+        if not room and args.get("entity_id"):
+            eid = args["entity_id"]
+            room = eid.split(".", 1)[1] if "." in eid else eid
+        room = self._clean_room(room)
         if not room:
             return {"success": False, "message": "Kein Raum angegeben"}
         entity_id = await self._find_entity("climate", room)
@@ -2119,6 +2124,10 @@ class FunctionExecutor:
     async def _exec_play_media(self, args: dict) -> dict:
         action = args["action"]
         room = args.get("room")
+        if not room and args.get("entity_id"):
+            eid = args["entity_id"]
+            room = eid.split(".", 1)[1] if "." in eid else eid
+        room = self._clean_room(room)
         entity_id = await self._find_entity("media_player", room) if room else None
 
         if not entity_id:
@@ -2186,8 +2195,11 @@ class FunctionExecutor:
 
     async def _exec_transfer_playback(self, args: dict) -> dict:
         """Phase 10.1: Uebertraegt Musik-Wiedergabe von einem Raum zum anderen."""
-        from_room = args.get("from_room")
-        to_room = args["to_room"]
+        from_room = self._clean_room(args.get("from_room"))
+        to_room = self._clean_room(args.get("to_room", ""))
+
+        if not to_room:
+            return {"success": False, "message": "Kein Zielraum angegeben"}
 
         to_entity = await self._find_entity("media_player", to_room)
         if not to_entity:
@@ -2316,7 +2328,7 @@ class FunctionExecutor:
         message = args["message"]
         target = args.get("target", "phone")
         volume = args.get("volume")  # Phase 9: Optional volume (0.0-1.0)
-        room = args.get("room")  # Phase 10: Optional room for TTS routing
+        room = self._clean_room(args.get("room"))  # Phase 10: Optional room for TTS routing
 
         if target == "phone":
             success = await self.ha.call_service(
@@ -2461,7 +2473,7 @@ class FunctionExecutor:
     async def _exec_play_sound(self, args: dict) -> dict:
         """Phase 9: Spielt einen Sound-Effekt ab."""
         sound = args["sound"]
-        room = args.get("room")
+        room = self._clean_room(args.get("room"))
 
         speaker_entity = None
         if room:
