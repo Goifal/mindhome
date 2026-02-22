@@ -949,7 +949,7 @@ class AssistantBrain(BrainCallbacksMixin):
             timeframe = calendar_shortcut
             logger.info("Kalender-Shortcut: '%s' -> timeframe=%s", text, timeframe)
             try:
-                cal_result = await self.function_executor.execute(
+                cal_result = await self.executor.execute(
                     "get_calendar_events", {"timeframe": timeframe}
                 )
                 cal_msg = cal_result.get("message", "") if isinstance(cal_result, dict) else str(cal_result)
