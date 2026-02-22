@@ -1096,8 +1096,12 @@ class FunctionExecutor:
             return {"success": False, "message": f"Fehler: {e}"}
 
     async def _exec_set_light(self, args: dict) -> dict:
-        room = args["room"]
-        state = args["state"]
+        room = args.get("room")
+        state = args.get("state")
+        if not room:
+            return {"success": False, "message": "Kein Raum angegeben"}
+        if not state:
+            return {"success": False, "message": "Kein Zustand (on/off) angegeben"}
 
         # Sonderfall: "all" -> alle Lichter schalten
         if room.lower() == "all":
@@ -1222,7 +1226,9 @@ class FunctionExecutor:
 
     async def _exec_set_climate_room(self, args: dict) -> dict:
         """Raumthermostat-Modus: Temperatur pro Raum setzen."""
-        room = args["room"]
+        room = args.get("room")
+        if not room:
+            return {"success": False, "message": "Kein Raum angegeben"}
         entity_id = await self._find_entity("climate", room)
         if not entity_id:
             return {"success": False, "message": f"Kein Thermostat in '{room}' gefunden"}
@@ -1258,7 +1264,9 @@ class FunctionExecutor:
         return {"success": success, "message": f"{room} {direction}{temp}°C"}
 
     async def _exec_activate_scene(self, args: dict) -> dict:
-        scene = args["scene"]
+        scene = args.get("scene")
+        if not scene:
+            return {"success": False, "message": "Keine Szene angegeben"}
         entity_id = await self._find_entity("scene", scene)
         if not entity_id:
             # Versuche direkt mit scene.name
@@ -1270,7 +1278,9 @@ class FunctionExecutor:
         return {"success": success, "message": f"Szene '{scene}' aktiviert"}
 
     async def _exec_set_cover(self, args: dict) -> dict:
-        room = args["room"]
+        room = args.get("room")
+        if not room:
+            return {"success": False, "message": "Kein Raum angegeben"}
 
         entity_id = await self._find_entity("cover", room)
 
