@@ -321,22 +321,27 @@ _ASSISTANT_TOOLS_STATIC = [
         "type": "function",
         "function": {
             "name": "set_cover",
-            "description": "Rollladen oder Jalousie steuern. NIEMALS fuer Garagentore verwenden! Fuer 'ein bisschen runter/hoch' verwende adjust='down' oder adjust='up' (aendert um 20%).",
+            "description": "Rollladen/Jalousie steuern. NIEMALS fuer Garagentore! Verwende action fuer einfache Befehle ('runter'=close, 'hoch'=open). Fuer Feinsteuerung: position (0-100) oder adjust (up/down, +-20%).",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "room": {
                         "type": "string",
-                        "description": "Raumname VOLLSTAENDIG inkl. Personen-Praefix falls genannt (z.B. 'manuel buero', 'julia buero'). NICHT den Personennamen weglassen!",
+                        "description": "Raumname VOLLSTAENDIG inkl. Personen-Praefix falls genannt (z.B. 'manuel buero', 'julia buero'). NICHT den Personennamen weglassen! KEIN Geraetetyp (kein 'rollladen', 'jalousie' etc.)",
+                    },
+                    "action": {
+                        "type": "string",
+                        "enum": ["open", "close", "stop", "half"],
+                        "description": "Einfache Aktion: open=ganz oeffnen/hoch, close=ganz schliessen/runter, stop=anhalten, half=halb offen. BEVORZUGE action fuer 'Rollladen hoch/runter/auf/zu'.",
                     },
                     "position": {
                         "type": "integer",
-                        "description": "Position 0 (zu) bis 100 (offen). Optional bei adjust.",
+                        "description": "Exakte Position 0 (zu) bis 100 (offen). Nur fuer Prozent-Angaben (z.B. 'Rollladen auf 30%').",
                     },
                     "adjust": {
                         "type": "string",
                         "enum": ["up", "down"],
-                        "description": "Relative Anpassung: 'up' = +20% (offener), 'down' = -20% (weiter zu). Wenn gesetzt, wird position ignoriert.",
+                        "description": "Relative Anpassung: 'up'=+20% offener, 'down'=-20% weiter zu. Nur fuer 'ein bisschen hoch/runter'.",
                     },
                 },
                 "required": ["room"],
@@ -2030,19 +2035,38 @@ class FunctionExecutor:
 
         entity_id = await self._find_entity("cover", room)
 
-        # Qwen3-Fallback: "state" in position/adjust umwandeln
-        # Qwen3 schickt manchmal state="open"/"close" statt position/adjust
-        if "state" in args and "position" not in args and "adjust" not in args:
-            _state = str(args["state"]).lower().strip()
-            _STATE_TO_POS = {
-                "open": 100, "auf": 100, "offen": 100, "hoch": 100, "up": 100,
-                "close": 0, "closed": 0, "zu": 0, "runter": 0, "down": 0,
-            }
-            if _state in _STATE_TO_POS:
-                args = {**args, "position": _STATE_TO_POS[_state]}
-                logger.info("set_cover: state='%s' -> position=%d", _state, _STATE_TO_POS[_state])
-            elif _state == "half" or _state == "halb":
-                args = {**args, "position": 50}
+        # --- Position bestimmen: action > state > adjust > position ---
+        _ACTION_TO_POS = {
+            "open": 100, "close": 0, "half": 50,
+            # Qwen3-Fallback: state-Werte (deutsch + englisch)
+            "auf": 100, "offen": 100, "hoch": 100, "up": 100,
+            "closed": 0, "zu": 0, "runter": 0, "down": 0,
+            "halb": 50,
+        }
+
+        # 1. action-Parameter (bevorzugt)
+        action = str(args.get("action", "")).lower().strip()
+        # 2. Qwen3-Fallback: state-Parameter
+        state_val = str(args.get("state", "")).lower().strip()
+        # Bestimme effektiven Befehl
+        effective = action or state_val
+
+        if effective == "stop":
+            # stop: HA cover.stop_cover aufrufen (kein Position noetig)
+            if not entity_id:
+                return {"success": False, "message": f"Kein Rollladen in '{room}' gefunden"}
+            states = await self.ha.get_states()
+            entity_state = next((s for s in (states or []) if s.get("entity_id") == entity_id), {})
+            if not await self._is_safe_cover(entity_id, entity_state):
+                return {"success": False, "message": f"'{room}' ist ein Garagentor/Tor — nicht erlaubt."}
+            success = await self.ha.call_service(
+                "cover", "stop_cover", {"entity_id": entity_id}
+            )
+            return {"success": success, "message": f"Rollladen {room} gestoppt"}
+
+        if effective in _ACTION_TO_POS and "position" not in args:
+            args = {**args, "position": _ACTION_TO_POS[effective]}
+            logger.info("set_cover: action/state='%s' -> position=%d", effective, args["position"])
 
         # Relative Anpassung: up/down
         adjust = args.get("adjust")
@@ -2066,14 +2090,27 @@ class FunctionExecutor:
             except (ValueError, TypeError):
                 return {"success": False, "message": f"Ungueltige Position: {args.get('position')}"}
         else:
-            return {"success": False, "message": "Keine Position angegeben"}
+            # Letzter Fallback: Kein action, kein state, kein adjust, kein position
+            # -> Annahme: User will schliessen (haeufigster Fall)
+            logger.warning("set_cover: Keine Position/Action angegeben, Fallback -> position=0 (close)")
+            position = 0
 
         # Sonderfall: "all" -> alle Rolllaeden schalten
         if room.lower() == "all":
             return await self._exec_set_cover_all(position)
 
         if not entity_id:
-            return {"success": False, "message": f"Kein Rollladen in '{room}' gefunden"}
+            # Diagnose: verfuegbare Covers auflisten
+            try:
+                all_states = await self.ha.get_states()
+                available = [
+                    s.get("entity_id") for s in (all_states or [])
+                    if s.get("entity_id", "").startswith("cover.")
+                ]
+                logger.warning("set_cover: Kein Cover fuer room='%s' gefunden. Verfuegbare Covers: %s", room, available)
+            except Exception:
+                available = []
+            return {"success": False, "message": f"Kein Rollladen in '{room}' gefunden. Verfuegbar: {', '.join(available) if available else 'keine'}"}
 
         # Sicherheitscheck: Garagentore duerfen nicht ueber set_cover gesteuert werden
         states = await self.ha.get_states()
@@ -3423,6 +3460,19 @@ class FunctionExecutor:
                 if score < best_len:
                     best_match = entity_id
                     best_len = score
+
+        if not best_match:
+            # Diagnose: Alle verfuegbaren Entities dieser Domain loggen
+            available = [
+                f"{s.get('entity_id')} ('{s.get('attributes', {}).get('friendly_name', '')}')"
+                for s in (states or [])
+                if s.get("entity_id", "").startswith(f"{domain}.")
+            ]
+            logger.warning(
+                "_find_entity: KEIN Match fuer '%s' (norm='%s') in domain '%s'. "
+                "Verfuegbare Entities: %s",
+                search, search_norm, domain, available[:20]
+            )
 
         return best_match
 
