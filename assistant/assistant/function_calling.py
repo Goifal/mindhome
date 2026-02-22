@@ -1260,13 +1260,13 @@ _ASSISTANT_TOOLS_STATIC = [
         "type": "function",
         "function": {
             "name": "get_weather",
-            "description": "Aktuelles Wetter und Vorhersage von Home Assistant abrufen. Nutze dies wenn der User nach Wetter, Temperatur draussen, Regen, Wind oder Vorhersage fragt.",
+            "description": "Aktuelles Wetter von Home Assistant abrufen. Nutze dies wenn der User nach Wetter, Temperatur draussen, Regen oder Wind fragt. Standardmaessig nur aktuelles Wetter, Vorhersage nur wenn explizit gewuenscht.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "include_forecast": {
                         "type": "boolean",
-                        "description": "Ob die Vorhersage fuer die naechsten Stunden inkludiert werden soll (default: true)",
+                        "description": "Nur auf true setzen wenn der User EXPLIZIT nach Vorhersage, morgen, spaeter oder den kommenden Tagen fragt (default: false)",
                     },
                 },
                 "required": [],
@@ -3893,7 +3893,7 @@ class FunctionExecutor:
 
     async def _exec_get_weather(self, args: dict) -> dict:
         """Aktuelles Wetter und Vorhersage von Home Assistant."""
-        include_forecast = args.get("include_forecast", True)
+        include_forecast = args.get("include_forecast", False)
 
         states = await self.ha.get_states()
         if not states:
@@ -3932,8 +3932,6 @@ class FunctionExecutor:
         parts = [f"Aktuelles Wetter: {condition_de}"]
         if temp is not None:
             parts.append(f"Temperatur: {temp}°C")
-        if humidity is not None:
-            parts.append(f"Luftfeuchtigkeit: {humidity}%")
         if wind_speed is not None:
             wind_str = f"Wind: {wind_speed} km/h"
             if wind_bearing is not None:
@@ -3945,8 +3943,6 @@ class FunctionExecutor:
                 except (ValueError, TypeError):
                     pass
             parts.append(wind_str)
-        if pressure is not None:
-            parts.append(f"Luftdruck: {pressure} hPa")
 
         # Vorhersage
         if include_forecast:
