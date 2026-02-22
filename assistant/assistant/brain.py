@@ -685,15 +685,16 @@ class AssistantBrain(BrainCallbacksMixin):
         await emit_thinking()
 
         # 1. Kontext sammeln (mit Subsystem-Timeout)
+        ctx_timeout = float((yaml_config.get("context") or {}).get("api_timeout", 10))
         try:
             context = await asyncio.wait_for(
                 self.context_builder.build(
                     trigger="voice", user_text=text, person=person or ""
                 ),
-                timeout=5.0,
+                timeout=ctx_timeout,
             )
         except asyncio.TimeoutError:
-            logger.warning("Context Build Timeout (5s) — Fallback auf Minimal-Kontext")
+            logger.warning("Context Build Timeout (%.0fs) — Fallback auf Minimal-Kontext", ctx_timeout)
             context = {"time": {"datetime": datetime.now().isoformat()}}
         except Exception as e:
             logger.error("Context Build Fehler: %s — Fallback auf Minimal-Kontext", e)

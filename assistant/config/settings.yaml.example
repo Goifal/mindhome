@@ -288,7 +288,7 @@ summarizer:
   max_tokens_monthly: 512
 context:
   recent_conversations: 5
-  api_timeout: 5
+  api_timeout: 10
   llm_timeout: 60
 heating:
   mode: room_thermostat

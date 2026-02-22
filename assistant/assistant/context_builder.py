@@ -408,14 +408,19 @@ class ContextBuilder:
         return alerts
 
     async def _get_mindhome_data(self) -> Optional[dict]:
-        """Holt optionale MindHome-Daten."""
+        """Holt optionale MindHome-Daten (parallel fuer Geschwindigkeit)."""
+        import asyncio
+
         try:
+            presence, energy = await asyncio.gather(
+                self.ha.get_presence(),
+                self.ha.get_energy(),
+                return_exceptions=True,
+            )
             data = {}
-            presence = await self.ha.get_presence()
-            if presence:
+            if isinstance(presence, dict):
                 data["presence"] = presence
-            energy = await self.ha.get_energy()
-            if energy:
+            if isinstance(energy, dict):
                 data["energy"] = energy
             return data if data else None
         except Exception as e:
