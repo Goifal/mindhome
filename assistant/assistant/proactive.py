@@ -100,7 +100,6 @@ class ProactiveManager:
             "doorbell": (MEDIUM, "Jemand hat geklingelt"),
 
             # LOW - Melden wenn entspannt
-            "energy_price_low": (LOW, "Strom ist guenstig"),
             "weather_warning": (LOW, "Wetterwarnung"),
             "window_open_rain": (LOW, "Fenster offen bei Regen"),
 
@@ -124,7 +123,6 @@ class ProactiveManager:
             "conditional_executed": (MEDIUM, "Bedingte Aktion ausgefuehrt"),
             "learning_suggestion": (LOW, "Automatisierungs-Vorschlag"),
             "threat_detected": (HIGH, "Sicherheitswarnung"),
-            "energy_price_low": (LOW, "Guenstiger Strom"),
             "energy_price_high": (LOW, "Teurer Strom"),
             "solar_surplus": (LOW, "Solar-Ueberschuss"),
         }

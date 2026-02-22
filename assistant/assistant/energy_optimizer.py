@@ -129,17 +129,8 @@ class EnergyOptimizer:
         if not states:
             return []
 
-        # 1. Guenstiger Strom
+        # 1. Guenstiger Strom — deaktiviert (Owner-Feedback: uninteressant)
         price = self._find_sensor_value(states, self.price_sensor, ["price", "strom", "electricity"])
-        if price is not None and price < self.price_low:
-            if not await self._was_recently_alerted("low_price"):
-                await self._mark_alerted("low_price", cooldown_minutes=120)
-                alerts.append({
-                    "type": "energy_price_low",
-                    "message": f"Strom ist gerade guenstig ({price:.1f} ct/kWh). "
-                               f"Guter Zeitpunkt fuer Waschmaschine oder Trockner.",
-                    "urgency": "low",
-                })
 
         # 2. Solar-Ueberschuss
         solar = self._find_sensor_value(states, self.solar_sensor, ["solar", "pv"])
