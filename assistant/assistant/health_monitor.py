@@ -62,7 +62,23 @@ class HealthMonitor:
         self._alert_cooldown_minutes = cfg.get("alert_cooldown_minutes", 60)
 
         # Exclude-Patterns: Entities deren ID einen dieser Substrings enthaelt werden ignoriert
-        self._exclude_patterns = [p.lower() for p in cfg.get("exclude_patterns", [])]
+        # Defaults: Waermepumpen, Prozessor/System-Temps, Batterie-Temps, Netzwerk-Geraete
+        _default_excludes = [
+            "aquarea", "heatpump", "waermepumpe",
+            "processor", "prozessor", "cpu_temp",
+            "batterie_temp", "battery_temp",
+            "tablet_", "steckdose_", "socket_",
+            "inlet", "outlet", "discharge", "defrost",
+            "solar_temp", "buffer_temp", "pool_temp",
+            "pipe_temp", "eva_outlet", "main_hex",
+            "sterilization", "backup_heater",
+            "zone_1_", "zone_2_", "zone1_", "zone2_",
+            "taupunkt", "dew_point",
+        ]
+        user_excludes = cfg.get("exclude_patterns", [])
+        self._exclude_patterns = [p.lower() for p in (_default_excludes + user_excludes)]
+        # Nach Startup erste Runde nur loggen, nicht melden (Cooldowns leer)
+        self._first_check = True
 
     async def initialize(self, redis_client: Optional[redis.Redis] = None):
         """Initialisiert mit Redis-Verbindung."""
@@ -115,8 +131,22 @@ class HealthMonitor:
                 _last_check_time = now
 
                 alerts = await self.check_all()
-                for alert in alerts:
-                    await self._send_alert(alert)
+                if self._first_check:
+                    # Erste Runde nach Startup: Cooldowns befuellen aber
+                    # nur kritische Alerts (high urgency) tatsaechlich senden
+                    self._first_check = False
+                    critical = [a for a in alerts if a.get("urgency") == "high"]
+                    if critical:
+                        for alert in critical:
+                            await self._send_alert(alert)
+                    if alerts:
+                        logger.info(
+                            "Health Monitor: %d Alerts nach Startup unterdrueckt (nur %d kritische gesendet)",
+                            len(alerts) - len(critical), len(critical),
+                        )
+                else:
+                    for alert in alerts:
+                        await self._send_alert(alert)
 
                 # Hydration-Reminder
                 hydration = await self._check_hydration()
