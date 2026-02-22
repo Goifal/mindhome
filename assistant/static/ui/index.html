@@ -167,7 +167,7 @@ body { font-family:var(--font); background:var(--bg-primary); color:var(--text-p
 .form-group { margin-bottom:16px; }
 .form-group label { display:block; font-size:11px; font-weight:600; color:var(--text-muted); margin-bottom:6px; text-transform:uppercase; letter-spacing:1px; }
 .form-group .hint { font-size:11px; color:var(--text-muted); margin-top:3px; }
-input[type="text"],input[type="number"],select,textarea { width:100%; padding:9px 12px; background:var(--bg-input); border:1px solid rgba(245,158,11,0.1); border-radius:var(--radius-sm); color:var(--text-primary); font-family:var(--font); font-size:13px; outline:none; transition:all var(--fast); }
+input[type="text"],input[type="number"],input:not([type]),select,textarea { width:100%; padding:9px 12px; background:var(--bg-input); border:1px solid rgba(245,158,11,0.1); border-radius:var(--radius-sm); color:var(--text-primary); font-family:var(--font); font-size:13px; outline:none; transition:all var(--fast); }
 input:focus,select:focus,textarea:focus { border-color:var(--accent); box-shadow:0 0 12px rgba(245,158,11,0.1); }
 select { cursor:pointer; }
 textarea { resize:vertical; min-height:70px; font-family:var(--mono); font-size:12px; }

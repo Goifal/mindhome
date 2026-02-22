@@ -645,9 +645,9 @@ function fInfo(text) {
 }
 
 function sectionWrap(icon, title, content) {
-  return `<div class="s-section"><div class="s-section-hdr open" onclick="toggleSec(this)">
+  return `<div class="s-section"><div class="s-section-hdr" onclick="toggleSec(this)">
     <h3>${icon} ${title}</h3><span class="arrow">&#9660;</span></div>
-    <div class="s-section-body open">${content}</div></div>`;
+    <div class="s-section-body">${content}</div></div>`;
 }
 
 // ---- Entity-Picker Komponenten ----
@@ -2744,6 +2744,14 @@ async function loadSystemStatus() {
     if (disk.total_gb) {
       const diskPct = Math.round((disk.total_gb - disk.free_gb) / disk.total_gb * 100);
       hwHtml += bar(diskPct, 'Disk', disk.free_gb + ' GB frei / ' + disk.total_gb + ' GB (' + diskPct + '%)');
+    }
+    // Weitere Partitionen (z.B. zweite SSD)
+    const allDisks = s.disk || {};
+    for (const [mount, dinfo] of Object.entries(allDisks)) {
+      if (mount === 'system' || !dinfo.total_gb) continue;
+      const pct = Math.round((dinfo.total_gb - dinfo.free_gb) / dinfo.total_gb * 100);
+      const label = 'Disk ' + mount;
+      hwHtml += bar(pct, label, dinfo.free_gb + ' GB frei / ' + dinfo.total_gb + ' GB (' + pct + '%)');
     }
 
     box.innerHTML = `

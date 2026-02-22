@@ -2291,7 +2291,7 @@ async def ui_system_status(token: str = ""):
         lines = [f"{m.get('name', '?'):30s} {m.get('size', 0) / 1e9:.1f} GB" for m in models]
         ollama_models = "\n".join(["NAME                           SIZE"] + lines)
 
-    # Disk
+    # Disk — alle physischen Partitionen erkennen (inkl. zweite SSD)
     disk_info = {}
     disk_path = _REPO_DIR if _REPO_DIR.exists() else Path("/app")
     total, used, free = shutil.disk_usage(str(disk_path))
@@ -2300,6 +2300,38 @@ async def ui_system_status(token: str = ""):
         "used_gb": round(used / (1024**3), 1),
         "free_gb": round(free / (1024**3), 1),
     }
+    # Weitere Partitionen aus /proc/mounts lesen
+    try:
+        seen_devs = set()
+        with open("/proc/mounts") as f:
+            for line in f:
+                parts_m = line.split()
+                if len(parts_m) < 2:
+                    continue
+                dev, mount = parts_m[0], parts_m[1]
+                if not dev.startswith("/dev/") or dev in seen_devs:
+                    continue
+                # Nur echte Block-Devices (sd*, nvme*, vd*), keine loop/ram
+                base = dev.split("/")[-1]
+                if not any(base.startswith(p) for p in ("sd", "nvme", "vd", "hd")):
+                    continue
+                seen_devs.add(dev)
+                try:
+                    t, u, fr = shutil.disk_usage(mount)
+                    total_gb = round(t / (1024**3), 1)
+                    # Ueberspringe wenn es dasselbe wie system ist
+                    if total_gb == disk_info["system"]["total_gb"]:
+                        continue
+                    disk_info[mount] = {
+                        "total_gb": total_gb,
+                        "used_gb": round(u / (1024**3), 1),
+                        "free_gb": round(fr / (1024**3), 1),
+                        "device": dev,
+                    }
+                except Exception:
+                    pass
+    except Exception:
+        pass
 
     # RAM (via /proc/meminfo)
     ram_info = {}
@@ -2337,23 +2369,36 @@ async def ui_system_status(token: str = ""):
     except Exception:
         pass
 
-    # GPU (via nvidia-smi)
+    # GPU (via nvidia-smi — lokal oder Host-Fallback via docker exec)
     gpu_info = {}
-    rc_gpu, gpu_out = _run_cmd([
-        "nvidia-smi",
-        "--query-gpu=name,memory.used,memory.total,utilization.gpu,temperature.gpu",
-        "--format=csv,noheader,nounits",
-    ])
+    gpu_query = "--query-gpu=name,memory.used,memory.total,utilization.gpu,temperature.gpu"
+    gpu_fmt = "--format=csv,noheader,nounits"
+    rc_gpu, gpu_out = _run_cmd(["nvidia-smi", gpu_query, gpu_fmt])
+    # Fallback: nvidia-smi auf dem Host via docker exec ausfuehren
+    if rc_gpu != 0 or not gpu_out.strip():
+        rc_gpu, gpu_out = _run_cmd([
+            "docker", "exec", "mindhome-assistant",
+            "nvidia-smi", gpu_query, gpu_fmt,
+        ])
+    # Zweiter Fallback: nsenter fuer Host-Zugriff
+    if rc_gpu != 0 or not gpu_out.strip():
+        rc_gpu, gpu_out = _run_cmd([
+            "nsenter", "--target", "1", "--mount", "--",
+            "nvidia-smi", gpu_query, gpu_fmt,
+        ])
     if rc_gpu == 0 and gpu_out.strip():
         parts = [p.strip() for p in gpu_out.strip().split(",")]
         if len(parts) >= 5:
-            gpu_info = {
-                "name": parts[0],
-                "memory_used_mb": int(parts[1]),
-                "memory_total_mb": int(parts[2]),
-                "utilization_percent": int(parts[3]),
-                "temperature_c": int(parts[4]),
-            }
+            try:
+                gpu_info = {
+                    "name": parts[0],
+                    "memory_used_mb": int(parts[1]),
+                    "memory_total_mb": int(parts[2]),
+                    "utilization_percent": int(parts[3]),
+                    "temperature_c": int(parts[4]),
+                }
+            except (ValueError, IndexError):
+                pass
 
     # Remote claude/* Branches auflisten
     _, remote_branches_raw = _run_cmd(
