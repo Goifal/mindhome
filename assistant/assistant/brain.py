@@ -1446,6 +1446,8 @@ class AssistantBrain(BrainCallbacksMixin):
                         tool_results.append(result_text)
 
                     combined_results = "\n".join(tool_results)
+                    logger.info("Tool-Feedback Input: '%s' + Daten: '%s'",
+                                text[:60], combined_results[:120])
 
                     # Feedback-Messages: System-Prompt + User-Frage + Daten als User-Message
                     # (role:"tool" wird von lokalen Modellen oft nicht verstanden)
@@ -1471,6 +1473,7 @@ class AssistantBrain(BrainCallbacksMixin):
                             model=model,
                             temperature=0.7,
                             max_tokens=150,
+                            think=False,
                         ):
                             collected.append(token)
                             await stream_callback(token)
@@ -1481,18 +1484,21 @@ class AssistantBrain(BrainCallbacksMixin):
                             model=model,
                             temperature=0.7,
                             max_tokens=150,
+                            think=False,
                         )
                         feedback_text = ""
-                        if "error" not in feedback_response:
+                        if "error" in feedback_response:
+                            logger.warning("Tool-Feedback LLM Error: %s", feedback_response["error"])
+                        else:
                             feedback_text = feedback_response.get("message", {}).get("content", "")
 
                     if feedback_text:
                         response_text = self._filter_response(feedback_text)
-                        logger.info("Tool-Feedback Antwort: %s", response_text[:100])
+                        logger.info("Tool-Feedback Antwort: '%s'", response_text[:150])
                     else:
                         logger.warning("Tool-Feedback: LLM hat leere Antwort produziert")
                 except Exception as e:
-                    logger.warning("Tool-Feedback fehlgeschlagen: %s", e)
+                    logger.warning("Tool-Feedback fehlgeschlagen: %s", e, exc_info=True)
 
             # Fallback fuer Query-Tools: Wenn der Feedback-Loop keine Antwort
             # produziert hat, die rohen Tool-Ergebnisse direkt verwenden.
