@@ -1065,6 +1065,22 @@ class AssistantBrain(BrainCallbacksMixin):
             tool_calls = message.get("tool_calls", [])
             executed_actions = []
 
+            # 7b. Tool-Calls aus Text extrahieren (Qwen3 gibt sie manchmal als Text aus)
+            if not tool_calls and response_text:
+                _tc_match = re.search(
+                    r'\{\s*"name"\s*:\s*"(\w+)"\s*,\s*"arguments"\s*:\s*(\{[^}]*\})\s*\}',
+                    response_text,
+                )
+                if _tc_match:
+                    try:
+                        _tc_args = json.loads(_tc_match.group(2))
+                        tool_calls = [{"function": {"name": _tc_match.group(1), "arguments": _tc_args}}]
+                        # Text-Teil vor/nach dem Tool-Call entfernen
+                        response_text = re.sub(r'.*\{\s*"name".*?\}.*?(?:</tool_call>)?', '', response_text).strip()
+                        logger.warning("Tool-Call aus Text extrahiert: %s(%s)", _tc_match.group(1), _tc_args)
+                    except (json.JSONDecodeError, ValueError):
+                        pass
+
             # 8. Function Calls ausfuehren
             # Tools die Daten zurueckgeben und eine LLM-formatierte Antwort brauchen
             QUERY_TOOLS = {"get_entity_state", "send_message_to_person", "get_calendar_events",
@@ -1411,12 +1427,15 @@ class AssistantBrain(BrainCallbacksMixin):
         # Sprach-Retry: Wenn Antwort verworfen wurde (nicht Deutsch), nochmal mit explizitem Sprach-Prompt
         if not response_text and text:
             logger.warning("Sprach-Retry: Antwort war nicht Deutsch, versuche erneut")
+            # Konversationskontext beibehalten (letzte 4 Messages + System-Prompt)
             retry_messages = [
                 {"role": "system", "content": "Du bist Jarvis, die KI dieses Hauses. "
                  "WICHTIG: Antworte AUSSCHLIESSLICH auf Deutsch. Kurz, maximal 2 Saetze. "
                  "Kein Englisch. Keine Listen. Keine Erklaerungen."},
-                {"role": "user", "content": text},
             ]
+            # Kontext aus den Original-Messages uebernehmen (ohne System-Prompt)
+            context_msgs = [m for m in messages if m.get("role") != "system"]
+            retry_messages.extend(context_msgs[-4:])
             try:
                 retry_resp = await self.ollama.chat(
                     messages=retry_messages, model=model, temperature=0.5, max_tokens=128,
