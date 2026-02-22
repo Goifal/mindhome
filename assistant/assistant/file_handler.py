@@ -100,7 +100,13 @@ def get_file_path(unique_name: str) -> Optional[Path]:
     """Get the full path for a stored file, or None if not found."""
     # Sanitize to prevent path traversal
     safe = os.path.basename(unique_name)
-    path = UPLOAD_DIR / safe
+    if not safe or safe in (".", ".."):
+        return None
+    path = (UPLOAD_DIR / safe).resolve()
+    # Sicherstellen dass der aufgeloeste Pfad innerhalb UPLOAD_DIR bleibt
+    if not path.is_relative_to(UPLOAD_DIR.resolve()):
+        logger.warning("Path Traversal Versuch abgewehrt: %s", unique_name)
+        return None
     if path.is_file():
         return path
     return None

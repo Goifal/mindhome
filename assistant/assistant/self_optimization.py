@@ -109,7 +109,7 @@ class SelfOptimization:
                 ex=7 * 86400,
             )
 
-        await self._redis.set("mha:self_opt:last_run", datetime.now().isoformat())
+        await self._redis.setex("mha:self_opt:last_run", 86400, datetime.now().isoformat())
 
         logger.info("Analyse abgeschlossen: %d Vorschlaege generiert", len(valid_proposals))
         return valid_proposals
@@ -177,6 +177,7 @@ class SelfOptimization:
                     }),
                 )
                 await self._redis.ltrim("mha:self_opt:history", 0, 49)
+                await self._redis.expire("mha:self_opt:history", 90 * 86400)
 
         return result
 
@@ -205,6 +206,7 @@ class SelfOptimization:
                 json.dumps({**rejected, "rejected_at": datetime.now().isoformat()}),
             )
             await self._redis.ltrim("mha:self_opt:rejected", 0, 29)
+            await self._redis.expire("mha:self_opt:rejected", 90 * 86400)
 
         return {"success": True, "message": f"Vorschlag '{rejected['parameter']}' abgelehnt"}
 

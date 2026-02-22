@@ -68,16 +68,21 @@ from .wellness_advisor import WellnessAdvisor
 from .threat_assessment import ThreatAssessment
 from .learning_observer import LearningObserver
 from .tts_enhancer import TTSEnhancer
+from .brain_callbacks import BrainCallbacksMixin
+from .circuit_breaker import registry as cb_registry, ollama_breaker, ha_breaker
+from .constants import REDIS_SECURITY_CONFIRM_KEY, REDIS_SECURITY_CONFIRM_TTL
+from .task_registry import TaskRegistry
 from .websocket import emit_thinking, emit_speaking, emit_action, emit_proactive
 
 logger = logging.getLogger(__name__)
 
+
 # Audit-Log (gleicher Pfad wie main.py, fuer Chat-basierte Sicherheitsevents)
 _AUDIT_LOG_PATH = Path(__file__).parent.parent / "logs" / "audit.jsonl"
 
-# Security-Confirmation: Redis-Key + TTL fuer ausstehende Sicherheitsbestaetigungen
-SECURITY_CONFIRM_KEY = "mha:pending_security_confirmation"
-SECURITY_CONFIRM_TTL = 300  # 5 Minuten
+# Legacy-Aliase (fuer bestehende Referenzen)
+SECURITY_CONFIRM_KEY = REDIS_SECURITY_CONFIRM_KEY
+SECURITY_CONFIRM_TTL = REDIS_SECURITY_CONFIRM_TTL
 
 
 def _audit_log(action: str, details: dict = None):
@@ -133,10 +138,13 @@ Frage nur bei Mehrdeutigkeit nach (z.B. "Welchen Raum?")."""
 SCENE_INTELLIGENCE_PROMPT = _build_scene_intelligence_prompt()
 
 
-class AssistantBrain:
+class AssistantBrain(BrainCallbacksMixin):
     """Das zentrale Gehirn von MindHome Assistant."""
 
     def __init__(self):
+        # Task Registry: Zentrales Tracking aller Background-Tasks
+        self._task_registry = TaskRegistry()
+
         # Clients
         self.ha = HomeAssistantClient()
         self.ollama = OllamaClient()
@@ -245,7 +253,7 @@ class AssistantBrain:
         await self.personality.load_learned_sarcasm_level()
 
         # Fact Decay: Einmal taeglich alte Fakten abbauen
-        asyncio.create_task(self._run_daily_fact_decay())
+        self._task_registry.create_task(self._run_daily_fact_decay(), name="daily_fact_decay")
 
         # Memory Extractor initialisieren
         self.memory_extractor = MemoryExtractor(self.ollama, self.memory.semantic)
@@ -342,16 +350,80 @@ class AssistantBrain:
         await self.proactive.start()
         logger.info("Jarvis initialisiert (alle Systeme aktiv, inkl. Phase 17)")
 
+    async def _get_occupied_room(self) -> Optional[str]:
+        """Ermittelt den aktuell besetzten Raum anhand von Praesenzmeldern.
+
+        Prueft zuerst konfigurierte room_motion_sensors (mit Timeout),
+        dann Fallback auf allgemeine Motion-Sensor-Heuristik.
+        """
+        try:
+            states = await self.ha.get_states()
+            if not states:
+                return None
+
+            multi_room_cfg = yaml_config.get("multi_room", {})
+            if not multi_room_cfg.get("enabled", True):
+                return None
+
+            room_sensors = multi_room_cfg.get("room_motion_sensors", {})
+            if room_sensors:
+                # Konfigurierte Sensoren: Neuesten aktiven Raum finden
+                timeout_minutes = int(multi_room_cfg.get("presence_timeout_minutes", 15))
+                now = datetime.now()
+                best_room = None
+                best_changed = ""
+
+                for room_name, sensor_id in room_sensors.items():
+                    for s in states:
+                        if s.get("entity_id") != sensor_id:
+                            continue
+                        last_changed = s.get("last_changed", "")
+                        if s.get("state") == "on":
+                            if last_changed > best_changed:
+                                best_changed = last_changed
+                                best_room = room_name
+                        elif last_changed:
+                            try:
+                                changed = datetime.fromisoformat(
+                                    last_changed.replace("Z", "+00:00")
+                                ).replace(tzinfo=None)
+                                if (now - changed).total_seconds() / 60 < timeout_minutes:
+                                    if last_changed > best_changed:
+                                        best_changed = last_changed
+                                        best_room = room_name
+                            except (ValueError, TypeError):
+                                pass
+                        break
+
+                if best_room:
+                    return best_room
+
+            # Fallback: context_builder Heuristik (alle Motion-Sensoren)
+            guessed = self.context_builder._guess_current_room(states)
+            return guessed if guessed != "unbekannt" else None
+
+        except Exception as e:
+            logger.debug("Raum-Erkennung fehlgeschlagen: %s", e)
+            return None
+
     async def _speak_and_emit(
         self,
         text: str,
         room: Optional[str] = None,
         tts_data: Optional[dict] = None,
     ):
-        """Sendet Text per WebSocket UND spricht ihn ueber HA-Speaker aus."""
+        """Sendet Text per WebSocket UND spricht ihn ueber HA-Speaker aus.
+
+        Wenn room nicht angegeben ist, wird automatisch der aktuell besetzte
+        Raum anhand von Praesenzmeldern ermittelt.
+        """
+        if not room:
+            room = await self._get_occupied_room()
+
         await emit_speaking(text, tts_data=tts_data)
-        asyncio.create_task(
-            self.sound_manager.speak_response(text, room=room, tts_data=tts_data)
+        self._task_registry.create_task(
+            self.sound_manager.speak_response(text, room=room, tts_data=tts_data),
+            name="speak_response",
         )
 
     async def process(self, text: str, person: Optional[str] = None, room: Optional[str] = None, files: Optional[list] = None, stream_callback=None) -> dict:
@@ -399,10 +471,18 @@ class AssistantBrain:
                 "tts": tts_data,
             }
 
+        # Silence-Trigger: Wenn User "Filmabend", "Meditation" etc. sagt,
+        # Activity-Override setzen damit proaktive Meldungen unterdrueckt werden
+        silence_activity = self.activity.check_silence_trigger(text)
+        if silence_activity:
+            self.activity.set_manual_override(silence_activity)
+            logger.info("Silence-Trigger: %s (aus Text: '%s')", silence_activity, text[:50])
+
         # Phase 9: Speaker Recognition — Person ermitteln wenn nicht angegeben
         if person:
-            asyncio.create_task(
-                self.speaker_recognition.set_current_speaker(person.lower())
+            self._task_registry.create_task(
+                self.speaker_recognition.set_current_speaker(person.lower()),
+                name="set_speaker",
             )
         elif self.speaker_recognition.enabled:
             identified = await self.speaker_recognition.identify(room=room)
@@ -590,8 +670,9 @@ class AssistantBrain:
             }
 
         # Phase 9: "listening" Sound abspielen wenn Verarbeitung startet
-        asyncio.create_task(
-            self.sound_manager.play_event_sound("listening", room=room)
+        self._task_registry.create_task(
+            self.sound_manager.play_event_sound("listening", room=room),
+            name="sound_listening",
         )
 
         # Phase 6.9: Running Gag Check (VOR LLM)
@@ -666,67 +747,43 @@ class AssistantBrain:
             irony_count_today=irony_count,
         )
 
-        # Phase 6.7: Emotionale Intelligenz — Mood-Hint in System Prompt
+        # ----------------------------------------------------------------
+        # DYNAMISCHE SEKTIONEN MIT TOKEN-BUDGET
+        # Prioritaet 1 = immer, 2 = wichtig, 3 = optional, 4 = wenn Platz
+        # Sektionen werden nach Prioritaet sortiert und solange hinzugefuegt
+        # bis das Token-Budget fuer Sektionen erschoepft ist.
+        # ----------------------------------------------------------------
+        context_cfg = yaml_config.get("context", {})
+        max_context_tokens = context_cfg.get("max_context_tokens", 6000)
+        base_tokens = len(system_prompt) // 3
+        user_tokens_est = len(text) // 3
+        # Reserve: ~40% fuer Conversations + User-Text + Response-Space
+        section_budget = max(300, int((max_context_tokens - base_tokens - user_tokens_est) * 0.6))
+
+        # Sektionen vorbereiten: (Name, Text, Prioritaet)
+        # Prio 1: Sicherheit, Szenen, Mood — IMMER inkludieren
+        # Prio 2: Zeit, Timer, Gaeste, Warnungen, Erinnerungen
+        # Prio 3: RAG, Summaries, Cross-Room, Kontinuitaet
+        # Prio 4: Tutorial, What-If
+        sections: list[tuple[str, str, int]] = []
+
+        # --- Prio 1: Core ---
+        sections.append(("scene_intelligence", SCENE_INTELLIGENCE_PROMPT, 1))
+
         mood_hint = self.mood.get_mood_prompt_hint()
         if mood_hint:
-            system_prompt += f"\n\nEMOTIONALE LAGE: {mood_hint}"
+            sections.append(("mood", f"\n\nEMOTIONALE LAGE: {mood_hint}", 1))
 
-        # Phase 6.6: Zeitgefuehl — Hinweise in System Prompt
-        if time_hints:
-            system_prompt += "\n\nZEITGEFUEHL:\n" + "\n".join(f"- {h}" for h in time_hints)
-
-        # Phase 17: Timer-Kontext in System Prompt
-        timer_hints = self.timer_manager.get_context_hints()
-        if timer_hints:
-            system_prompt += "\n\nAKTIVE TIMER:\n" + "\n".join(f"- {h}" for h in timer_hints)
-
-        # Phase 17: Security Score im Kontext (nur bei Warnungen)
         if sec_score and sec_score.get("level") in ("warning", "critical"):
             details = ", ".join(sec_score.get("details", []))
-            system_prompt += (
+            sec_text = (
                 f"\n\nSICHERHEITS-STATUS: {sec_score['level'].upper()} "
                 f"(Score: {sec_score['score']}/100). {details}. "
                 f"Erwaehne dies bei Gelegenheit."
             )
+            sections.append(("security", sec_text, 1))
 
-        # Phase 17: Kontext-Persistenz ueber Raumwechsel
-        if prev_context:
-            system_prompt += f"\n\nVORHERIGER KONTEXT (anderer Raum): {prev_context}"
-
-        # Phase 7: Gaeste-Modus Prompt-Erweiterung
-        if guest_mode_active:
-            system_prompt += "\n\n" + self.routines.get_guest_mode_prompt()
-
-        # Phase 7.5: Szenen-Intelligenz — erweiterte Prompt-Anweisung
-        system_prompt += SCENE_INTELLIGENCE_PROMPT
-
-        # Phase 16.2: Tutorial-Modus fuer neue User
-        if tutorial_hint:
-            system_prompt += tutorial_hint
-
-        # Warning-Dedup: Bereits gegebene Warnungen nicht wiederholen
-        alerts = context.get("alerts", [])
-        if alerts:
-            dedup_notes = await self.personality.get_warning_dedup_notes(alerts)
-            if dedup_notes:
-                system_prompt += "\n\nWARNUNGS-DEDUP:\n" + "\n".join(dedup_notes)
-
-        # Semantische Erinnerungen zum System Prompt hinzufuegen
-        memories = context.get("memories", {})
-        memory_context = self._build_memory_context(memories)
-        if memory_context:
-            system_prompt += memory_context
-
-        # Langzeit-Summaries bei Fragen ueber die Vergangenheit
-        if summary_context:
-            system_prompt += summary_context
-
-        # Phase 11.1: RAG Knowledge Base — Wissen aus Dokumenten (bereits parallel geladen)
-        if rag_context:
-            system_prompt += rag_context
-
-        # Phase 12: Datei-Kontext in Prompt einbauen
-        # Phase 14.2: Vision-LLM Bild-Analyse (erweitert Datei-Kontext)
+        # Datei-Kontext: Prio 1 wenn User Dateien geschickt hat
         if files:
             if self.ocr.enabled and self.ocr._vision_available:
                 for f in files:
@@ -738,34 +795,101 @@ class AssistantBrain:
                         except Exception as e:
                             logger.warning("Vision-LLM fuer %s fehlgeschlagen: %s",
                                            f.get("name", "?"), e)
-
             from .file_handler import build_file_context
             file_context = build_file_context(files)
             if file_context:
-                system_prompt += "\n" + file_context
+                sections.append(("files", "\n" + file_context, 1))
 
-        # Phase 8: Konversations-Kontinuitaet in Prompt einbauen
+        # --- Prio 2: Wichtig ---
+        if time_hints:
+            time_text = "\n\nZEITGEFUEHL:\n" + "\n".join(f"- {h}" for h in time_hints)
+            sections.append(("time", time_text, 2))
+
+        timer_hints = self.timer_manager.get_context_hints()
+        if timer_hints:
+            timer_text = "\n\nAKTIVE TIMER:\n" + "\n".join(f"- {h}" for h in timer_hints)
+            sections.append(("timers", timer_text, 2))
+
+        if guest_mode_active:
+            sections.append(("guest_mode", "\n\n" + self.routines.get_guest_mode_prompt(), 2))
+
+        alerts = context.get("alerts", [])
+        if alerts:
+            dedup_notes = await self.personality.get_warning_dedup_notes(alerts)
+            if dedup_notes:
+                dedup_text = "\n\nWARNUNGS-DEDUP:\n" + "\n".join(dedup_notes)
+                sections.append(("warning_dedup", dedup_text, 2))
+
+        memories = context.get("memories", {})
+        memory_context = self._build_memory_context(memories)
+        if memory_context:
+            sections.append(("memory", memory_context, 2))
+
+        # --- Prio 3: Optional ---
+        if rag_context:
+            sections.append(("rag", rag_context, 3))
+
+        if summary_context:
+            sections.append(("summary", summary_context, 3))
+
+        if prev_context:
+            sections.append(("prev_room", f"\n\nVORHERIGER KONTEXT (anderer Raum): {prev_context}", 3))
+
         if continuity_hint:
             if " | " in continuity_hint:
                 topics = continuity_hint.split(" | ")
-                system_prompt += f"\n\nOFFENE THEMEN ({len(topics)}):\n"
+                cont_text = f"\n\nOFFENE THEMEN ({len(topics)}):\n"
                 for t in topics:
-                    system_prompt += f"- {t}\n"
-                system_prompt += "Erwaehne kurz die offenen Themen: 'Wir hatten noch ein paar offene Punkte — [Topics]. Noch relevant?'"
+                    cont_text += f"- {t}\n"
+                cont_text += "Erwaehne kurz die offenen Themen."
             else:
-                system_prompt += f"\n\nOFFENES THEMA: {continuity_hint}"
-                system_prompt += "\nErwaehne kurz das offene Thema, z.B.: 'Wir waren vorhin bei [Thema] — noch relevant?'"
+                cont_text = f"\n\nOFFENES THEMA: {continuity_hint}"
+            sections.append(("continuity", cont_text, 3))
 
-        # Phase 8: Was-waere-wenn Erkennung (mit echten HA-Daten)
+        # --- Prio 4: Wenn Platz ---
+        if tutorial_hint:
+            sections.append(("tutorial", tutorial_hint, 4))
+
         whatif_prompt = await self._get_whatif_prompt(text, context)
         if whatif_prompt:
-            system_prompt += whatif_prompt
+            sections.append(("whatif", whatif_prompt, 4))
+
+        # Sektionen nach Prioritaet sortieren und mit Budget einfuegen
+        sections.sort(key=lambda s: s[2])
+        tokens_used = 0
+        sections_added = []
+        sections_dropped = []
+        for name, section_text, priority in sections:
+            section_tokens = len(section_text) // 3
+            if tokens_used + section_tokens <= section_budget or priority == 1:
+                # Prio 1 wird IMMER inkludiert, auch ueber Budget
+                system_prompt += section_text
+                tokens_used += section_tokens
+                sections_added.append(name)
+            else:
+                sections_dropped.append(f"{name}(P{priority},{section_tokens}t)")
+
+        if sections_dropped:
+            logger.info(
+                "Token-Budget: %d/%d Tokens, %d Sektionen, dropped: %s",
+                tokens_used, section_budget, len(sections_added),
+                ", ".join(sections_dropped),
+            )
 
         # 5. Letzte Gespraeche laden (Working Memory)
-        recent = await self.memory.get_recent_conversations(limit=5)
+        # Token-Budget fuer Conversations: Restliches Budget nach System-Prompt + Sektionen
+        system_tokens = len(system_prompt) // 3
+        available_tokens = max(500, max_context_tokens - system_tokens - user_tokens_est - 200)
+        # Dynamisch: Conversations laden bis Token-Budget aufgebraucht
+        recent = await self.memory.get_recent_conversations(limit=8)
         messages = [{"role": "system", "content": system_prompt}]
+        conv_tokens_used = 0
         for conv in recent:
+            conv_tokens = len(conv.get("content", "")) // 3
+            if conv_tokens_used + conv_tokens > available_tokens:
+                break
             messages.append({"role": conv["role"], "content": conv["content"]})
+            conv_tokens_used += conv_tokens
         messages.append({"role": "user", "content": text})
 
         # Phase 8: Intent-Routing — Wissensfragen ohne Tools beantworten
@@ -832,17 +956,19 @@ class AssistantBrain:
             # Phase 8: Erinnerungsfrage -> Memory-Suche + Deep-Model
             logger.info("Erinnerungsfrage erkannt -> Memory-Suche + Deep-Model")
             memory_facts = await self.memory.semantic.search_by_topic(text, limit=5)
+            # Kopie der Messages erstellen statt Original zu mutieren
+            memory_messages = list(messages)
             if memory_facts:
                 facts_text = "\n".join(f"- {f['content']}" for f in memory_facts)
-                system_prompt += f"\n\nGESPEICHERTE FAKTEN ZU DIESER FRAGE:\n{facts_text}"
-                system_prompt += "\nBeantworte basierend auf diesen gespeicherten Fakten."
-                messages[0] = {"role": "system", "content": system_prompt}
+                memory_prompt = system_prompt + f"\n\nGESPEICHERTE FAKTEN ZU DIESER FRAGE:\n{facts_text}"
+                memory_prompt += "\nBeantworte basierend auf diesen gespeicherten Fakten."
+                memory_messages[0] = {"role": "system", "content": memory_prompt}
 
             model = settings.model_deep
             if stream_callback:
                 collected_tokens = []
                 async for token in self.ollama.stream_chat(
-                    messages=messages,
+                    messages=memory_messages,
                     model=model,
                 ):
                     collected_tokens.append(token)
@@ -850,7 +976,7 @@ class AssistantBrain:
                 response_text = self._filter_response("".join(collected_tokens))
             else:
                 response = await self.ollama.chat(
-                    messages=messages,
+                    messages=memory_messages,
                     model=model,
                 )
                 response_text = self._filter_response(response.get("message", {}).get("content", ""))
@@ -1063,8 +1189,9 @@ class AssistantBrain:
                                 domain = func_name.replace("set_", "")
                                 entity_id = f"{domain}.{r.lower().replace(' ', '_')}"
                         if entity_id:
-                            asyncio.create_task(
-                                self.learning_observer.mark_jarvis_action(entity_id)
+                            self._task_registry.create_task(
+                                self.learning_observer.mark_jarvis_action(entity_id),
+                                name="mark_jarvis_action",
                             )
 
                     # Befehl fuer Konflikt-Tracking aufzeichnen
@@ -1110,8 +1237,10 @@ class AssistantBrain:
 
             # 8b. Tool-Result Feedback Loop: Ergebnisse zurueck ans LLM
             # Damit Jarvis natuerlich antwortet ("Im Buero sind es 22 Grad, Sir.")
-            # statt nur "Erledigt." bei Abfragen
-            if tool_calls and has_query_results and not response_text:
+            # statt nur "Erledigt." bei Abfragen.
+            # Laeuft IMMER bei Query-Tools — auch wenn das LLM schon vagen Text
+            # generiert hat ("Ich schaue nach..."), denn die echten Daten muessen rein.
+            if tool_calls and has_query_results:
                 try:
                     # Tool-Ergebnisse als Messages aufbauen
                     feedback_messages = list(messages)
@@ -1120,7 +1249,6 @@ class AssistantBrain:
                     # Tool-Results als "tool" Messages
                     for action in executed_actions:
                         result = action.get("result", {})
-                        result_text = ""
                         if isinstance(result, dict):
                             result_text = result.get("message", str(result))
                         else:
@@ -1190,7 +1318,15 @@ class AssistantBrain:
                         confirmation = self.personality.get_varied_confirmation(success=True)
                         response_text = f"{summary} — {confirmation.rstrip('.')}"
                     else:
-                        response_text = self.personality.get_varied_confirmation(success=True)
+                        # Kontextbezogene Bestaetigung mit Action + Room
+                        last_action = executed_actions[-1]
+                        action_name = last_action.get("function", "")
+                        action_room = ""
+                        if isinstance(last_action.get("args"), dict):
+                            action_room = last_action["args"].get("room", "")
+                        response_text = self.personality.get_varied_confirmation(
+                            success=True, action=action_name, room=action_room,
+                        )
                 elif any_failed:
                     failed = [
                         a["result"].get("message", "")
@@ -1219,16 +1355,20 @@ class AssistantBrain:
                         response_text = await self._generate_error_recovery(
                             first_fail["function"], first_fail.get("args", {}), error_msg
                         )
-                    except Exception:
+                    except Exception as e:
+                        logger.warning("Error-Recovery LLM fehlgeschlagen: %s", e)
                         response_text = f"Problem: {error_msg}"
 
         # Phase 12: Response-Filter (Post-Processing) — Floskeln entfernen
-        # Nachtmodus: Harter Sentence-Limit von 2 (LLM-Prompt ist nur Empfehlung)
+        # Knowledge/Memory-Pfade filtern bereits inline, daher hier nur fuer
+        # den General-Pfad (Tool-Calls) filtern, um doppelte Filterung zu vermeiden.
+        # Nachtmodus-Limit wird aber IMMER angewandt (harter Override).
         night_limit = 0
         time_of_day = self.personality.get_time_of_day()
         if time_of_day in ("night", "early_morning"):
             night_limit = 2
-        response_text = self._filter_response(response_text, max_sentences_override=night_limit)
+        if intent_type == "general" or night_limit > 0:
+            response_text = self._filter_response(response_text, max_sentences_override=night_limit)
 
         # Sprach-Retry: Wenn Antwort verworfen wurde (nicht Deutsch), nochmal mit explizitem Sprach-Prompt
         if not response_text and text:
@@ -1272,8 +1412,9 @@ class AssistantBrain:
         if response_text and any(w in response_text.lower() for w in [
             "warnung", "achtung", "vorsicht", "offen", "alarm", "offline",
         ]):
-            asyncio.create_task(
-                self.sound_manager.play_event_sound("warning", room=room)
+            self._task_registry.create_task(
+                self.sound_manager.play_event_sound("warning", room=room),
+                name="sound_warning",
             )
 
         # 9. Im Gedaechtnis speichern
@@ -1281,8 +1422,9 @@ class AssistantBrain:
         await self.memory.add_conversation("assistant", response_text)
 
         # Phase 17: Kontext-Persistenz fuer Raumwechsel speichern
-        asyncio.create_task(
-            self._save_cross_room_context(person or "", text, response_text, room or "")
+        self._task_registry.create_task(
+            self._save_cross_room_context(person or "", text, response_text, room or ""),
+            name="save_cross_room_ctx",
         )
 
         # 10. Episode speichern (Langzeitgedaechtnis)
@@ -1296,47 +1438,59 @@ class AssistantBrain:
 
         # 11. Fakten extrahieren (async im Hintergrund)
         if self.memory_extractor and len(text.split()) > 3:
-            asyncio.create_task(
+            self._task_registry.create_task(
                 self._extract_facts_background(
                     text, response_text, person or "unknown", context
-                )
+                ),
+                name="extract_facts",
             )
 
         # Phase 11.4: Korrektur-Lernen — erkennt Korrekturen und speichert sie
         if self._is_correction(text):
-            asyncio.create_task(
-                self._handle_correction(text, response_text, person or "unknown")
+            self._task_registry.create_task(
+                self._handle_correction(text, response_text, person or "unknown"),
+                name="handle_correction",
             )
 
         # Phase 8: Action-Logging fuer Anticipation Engine
         for action in executed_actions:
             if isinstance(action.get("result"), dict) and action["result"].get("success"):
-                asyncio.create_task(
+                self._task_registry.create_task(
                     self.anticipation.log_action(
                         action["function"], action.get("args", {}), person or ""
-                    )
+                    ),
+                    name="log_anticipation",
                 )
 
         # Phase 8: Intent-Extraktion im Hintergrund
         if len(text.split()) > 5:
-            asyncio.create_task(
-                self._extract_intents_background(text, person or "")
+            self._task_registry.create_task(
+                self._extract_intents_background(text, person or ""),
+                name="extract_intents",
             )
 
         # Phase 8: Personality-Metrics tracken
-        asyncio.create_task(
+        self._task_registry.create_task(
             self.personality.track_interaction_metrics(
                 mood=mood_result.get("mood", "neutral"),
                 response_accepted=True,
-            )
+            ),
+            name="track_metrics",
         )
 
         # Phase 8: Offenes Thema markieren (wenn Frage ohne klare Antwort)
-        if text.endswith("?") and len(text.split()) > 5:
-            asyncio.create_task(
+        # Triviale Fragen ("Wie spaet ist es?", "Wie warm ist es?") nicht als
+        # offenes Thema speichern — nur komplexere Fragen die Follow-Up brauchen.
+        _trivial_q = ["wie spaet", "wie spät", "wie warm", "wie kalt",
+                       "welcher tag", "welches datum", "wieviel uhr"]
+        text_l = text.lower()
+        is_trivial = any(t in text_l for t in _trivial_q) or len(text.split()) <= 8
+        if text.endswith("?") and len(text.split()) > 5 and not is_trivial and not executed_actions:
+            self._task_registry.create_task(
                 self.memory.mark_conversation_pending(
                     topic=text[:100], context=response_text[:200], person=person or ""
-                )
+                ),
+                name="mark_pending",
             )
 
         # Phase 9+10: Activity-basiertes Volume + Silence-Matrix
@@ -1373,16 +1527,18 @@ class AssistantBrain:
                 for a in executed_actions
             )
             if all_success:
-                asyncio.create_task(
+                self._task_registry.create_task(
                     self.sound_manager.play_event_sound(
                         "confirmed", room=room, volume=tts_data.get("volume")
-                    )
+                    ),
+                    name="sound_confirmed",
                 )
             elif any_failed:
-                asyncio.create_task(
+                self._task_registry.create_task(
                     self.sound_manager.play_event_sound(
                         "error", room=room, volume=tts_data.get("volume")
-                    )
+                    ),
+                    name="sound_error",
                 )
 
         result = {
@@ -1503,6 +1659,22 @@ class AssistantBrain:
             "Hallo! Wie kann ich",
             "Hallo, wie kann ich",
             "Hi! Wie kann ich",
+            # Kontext-Wechsel-Floskeln (JARVIS springt sofort mit)
+            "Um auf deine vorherige Frage zurückzukommen",
+            "Um auf deine vorherige Frage zurueckzukommen",
+            "Um auf deine Frage zurückzukommen",
+            "Um auf deine Frage zurueckzukommen",
+            "Aber zurück zu deiner Frage",
+            "Aber zurueck zu deiner Frage",
+            "Um noch mal darauf einzugehen",
+            "Wie ich bereits erwähnt habe",
+            "Wie ich bereits erwaehnt habe",
+            # Devote/beeindruckte Floskeln
+            "Das ist eine tolle Frage",
+            "Das ist eine gute Frage",
+            "Das ist eine interessante Frage",
+            "Wow,", "Wow!",
+            "Oh,", "Oh!",
         ])
         for phrase in banned_phrases:
             # Case-insensitive Entfernung
@@ -1517,6 +1689,10 @@ class AssistantBrain:
             "Im Prinzip", "Nun,", "Nun ", "Sozusagen",
             "Quasi", "Eigentlich", "Im Grunde genommen",
             "Tatsächlich,", "Tatsaechlich,",
+            "Naja,", "Na ja,",
+            "Ach,", "Hmm,", "Ähm,",
+            "Okay,", "Okay ", "Ok,", "Ok ",
+            "Nun ja,",
         ])
         for starter in banned_starters:
             if text.lstrip().lower().startswith(starter.lower()):
@@ -1557,9 +1733,11 @@ class AssistantBrain:
 
         text = text.strip()
 
-        # 7. Sprach-Check: Wenn die Antwort ueberwiegend Englisch ist, verwerfen
+        # 7. Sprach-Check: Wenn die Antwort DEUTLICH ueberwiegend Englisch ist, verwerfen
+        # Schwelle hoeher: kurze Antworten und gemischte Texte (z.B. englische
+        # Eigennamen wie "Living Room Speaker", "Smart Home") werden durchgelassen.
         if text and len(text) > 40:
-            text_lower = text.lower()
+            text_lower = f" {text.lower()} "
             _english_markers = [
                 " the ", " you ", " your ", " which ", " would ",
                 " could ", " should ", " have ", " this ", " that ",
@@ -1567,16 +1745,23 @@ class AssistantBrain:
                 " about ", " like ", " make ", " help ", " want ",
                 " based ", " manage ", " control ", " provide ",
                 " features ", " following ", " however ", " including ",
+                " sure ", " right ", " just ", " can ", " will ",
+                " it's ", " don't ", " i'm ", " let me ", " okay so ",
             ]
             _de_markers = [
                 " der ", " die ", " das ", " ist ", " und ",
                 " nicht ", " ich ", " hab ", " dir ", " ein ",
                 " dein ", " sehr ", " wohl ", " kann ", " wird ",
+                " auf ", " mit ", " fuer ", " für ", " noch ",
+                " auch ", " aber ", " oder ", " wenn ", " schon ",
+                " sir ", " erledigt ", " grad ", " gerade ",
             ]
             en_hits = sum(1 for m in _english_markers if m in text_lower)
             de_hits = sum(1 for m in _de_markers if m in text_lower)
-            de_hits += sum(1 for c in text if c in "äöüÄÖÜß")
-            if en_hits >= 3 and en_hits > de_hits:
+            de_hits += min(3, sum(1 for c in text if c in "äöüÄÖÜß"))
+            # Nur verwerfen wenn DEUTLICH englisch: mindestens 3 EN-Marker
+            # UND mehr als doppelt so viele EN wie DE
+            if en_hits >= 3 and en_hits > de_hits * 2:
                 logger.warning("Response ueberwiegend Englisch (%d EN vs %d DE), verworfen: '%.100s...'",
                                en_hits, de_hits, text)
                 return ""
@@ -1708,7 +1893,11 @@ class AssistantBrain:
             return ""
 
     async def _get_rag_context(self, text: str) -> str:
-        """Durchsucht die Knowledge Base nach relevantem Wissen (RAG)."""
+        """Durchsucht die Knowledge Base nach relevantem Wissen (RAG).
+
+        Nur Treffer mit Relevanz >= 0.3 werden eingefuegt, um irrelevante
+        Ergebnisse aus dem System-Prompt herauszuhalten.
+        """
         if not self.knowledge_base.chroma_collection:
             return ""
 
@@ -1717,8 +1906,15 @@ class AssistantBrain:
             if not hits:
                 return ""
 
+            # Nur relevante Treffer verwenden (Schwelle konfigurierbar)
+            rag_cfg = yaml_config.get("knowledge_base", {})
+            min_relevance = rag_cfg.get("min_relevance", 0.3)
+            relevant_hits = [h for h in hits if h.get("relevance", 0) >= min_relevance]
+            if not relevant_hits:
+                return ""
+
             parts = ["\n\nWISSENSBASIS (relevante Dokumente):"]
-            for hit in hits:
+            for hit in relevant_hits:
                 source = hit.get("source", "")
                 content = hit.get("content", "")
                 source_hint = f" [Quelle: {source}]" if source else ""
@@ -1911,7 +2107,6 @@ class AssistantBrain:
         text_lower = text.lower().strip().rstrip("!?.")
 
         # Direkte Bestaetigung per ID: "Automation abc12345 bestaetigen"
-        import re
         id_match = re.search(r"automation\s+([a-f0-9]{8})\s+bestaetig", text_lower)
         if id_match:
             pending_id = id_match.group(1)
@@ -2036,7 +2231,6 @@ class AssistantBrain:
         text_lower = text.lower().strip().rstrip("!?.")
 
         # "Vorschlag 1 annehmen" / "Vorschlag 2 ablehnen"
-        import re
         approve_match = re.search(r"vorschlag\s+(\d+)\s+(annehmen|genehmigen|akzeptieren|ok)", text_lower)
         if approve_match:
             idx = int(approve_match.group(1)) - 1  # 1-basiert -> 0-basiert
@@ -2223,25 +2417,30 @@ class AssistantBrain:
     # Phase 8: Intent-Routing (Wissen vs Smart-Home vs Memory)
     # ------------------------------------------------------------------
 
+    # Vorkompilierte Delegation-Patterns (einmal statt bei jedem Call)
+    _DELEGATION_PATTERNS = [
+        re.compile(r"^sag\s+(\w+)\s+(?:dass|das)\s+"),
+        re.compile(r"^frag\s+(\w+)\s+(?:ob|mal|nach)\s+"),
+        re.compile(r"^teile?\s+(\w+)\s+mit\s+(?:dass|das)\s+"),
+        re.compile(r"^gib\s+(\w+)\s+bescheid\s+"),
+        re.compile(r"^richte?\s+(\w+)\s+aus\s+(?:dass|das)\s+"),
+        re.compile(r"^schick\s+(\w+)\s+eine?\s+nachricht"),
+        re.compile(r"^nachricht\s+an\s+(\w+)"),
+    ]
+
     def _classify_intent(self, text: str) -> str:
         """
         Klassifiziert den Intent einer Anfrage.
-        Returns: 'smart_home', 'knowledge', 'memory', 'delegation', 'general'
+        Returns: 'delegation', 'memory', 'knowledge', 'general'
+
+        Hybrid-Fragen (Wissen + Smart-Home) gehen als 'general' ans LLM
+        mit Tools, damit die Frage mit echten Geraetedaten beantwortet wird.
         """
         text_lower = text.lower().strip()
 
-        # Phase 10: Delegations-Intent erkennen
-        delegation_patterns = [
-            r"^sag\s+(\w+)\s+(dass|das)\s+",
-            r"^frag\s+(\w+)\s+(ob|mal|nach)\s+",
-            r"^teile?\s+(\w+)\s+mit\s+(dass|das)\s+",
-            r"^gib\s+(\w+)\s+bescheid\s+",
-            r"^richte?\s+(\w+)\s+aus\s+(dass|das)\s+",
-            r"^schick\s+(\w+)\s+eine?\s+nachricht",
-            r"^nachricht\s+an\s+(\w+)",
-        ]
-        for pattern in delegation_patterns:
-            if re.search(pattern, text_lower):
+        # Phase 10: Delegations-Intent erkennen (vorkompilierte Regex)
+        for pattern in self._DELEGATION_PATTERNS:
+            if pattern.search(text_lower):
                 return "delegation"
 
         # Memory-Fragen
@@ -2252,7 +2451,16 @@ class AssistantBrain:
         if any(kw in text_lower for kw in memory_keywords):
             return "memory"
 
-        # Wissensfragen (allgemeine Fragen die KEINE Smart-Home-Steuerung brauchen)
+        # Steuerungs-Befehle → immer mit Tools (frueh raus)
+        action_starters = [
+            "mach ", "schalte ", "stell ", "setz ", "dreh ",
+            "oeffne ", "schliess", "aktivier", "deaktivier",
+            "spiel ", "stopp", "pause", "lauter", "leiser",
+        ]
+        if any(text_lower.startswith(s) for s in action_starters):
+            return "general"
+
+        # Wissensfragen-Muster
         knowledge_patterns = [
             "wie lange", "wie viel", "wie viele", "was ist",
             "was sind", "was bedeutet", "erklaer mir", "erklaere",
@@ -2261,11 +2469,12 @@ class AssistantBrain:
             "rezept fuer", "rezept für", "definition von", "unterschied zwischen",
         ]
 
-        # Nur als Wissensfrage wenn KEIN Smart-Home-Keyword dabei
+        # Smart-Home-Keywords — wenn vorhanden, brauchen wir Tools
         smart_home_keywords = [
             "licht", "lampe", "heizung", "temperatur", "rollladen",
             "jalousie", "szene", "alarm", "tuer", "fenster",
             "musik", "tv", "fernseher", "kamera", "sensor",
+            "steckdose", "schalter", "thermostat",
         ]
 
         is_knowledge = any(text_lower.startswith(kw) or f" {kw}" in text_lower
@@ -2275,6 +2484,8 @@ class AssistantBrain:
         if is_knowledge and not has_smart_home:
             return "knowledge"
 
+        # Hybrid-Fragen (z.B. "Wie funktioniert meine Heizung?") → general
+        # damit das LLM Tools nutzen kann UND ausfuehrlich antworten kann
         return "general"
 
     # ------------------------------------------------------------------
@@ -2404,7 +2615,16 @@ Regeln:
 
         Unterstuetzt mehrere Topics — gibt bis zu 3 als kombinierten
         Hinweis zurueck, statt nur das aelteste.
+        Konfiguriert via conversation_continuity.* in settings.yaml.
         """
+        cont_cfg = yaml_config.get("conversation_continuity", {})
+        if not cont_cfg.get("enabled", True):
+            return None
+
+        resume_after = int(cont_cfg.get("resume_after_minutes", 10))
+        expire_hours = int(cont_cfg.get("expire_hours", 24))
+        expire_minutes = expire_hours * 60
+
         try:
             pending = await self.memory.get_pending_conversations()
             if not pending:
@@ -2414,7 +2634,7 @@ Regeln:
             for item in pending:
                 topic = item.get("topic", "")
                 age = item.get("age_minutes", 0)
-                if topic and age >= 10:
+                if topic and resume_after <= age <= expire_minutes:
                     ready_topics.append(topic)
 
             if not ready_topics:
@@ -2438,26 +2658,26 @@ Regeln:
     # Phase 10: Delegations-Handler
     # ------------------------------------------------------------------
 
+    # Vorkompilierte Delegation-Handler Patterns (mit Capture-Groups)
+    _DELEGATION_HANDLER_PATTERNS = [
+        re.compile(r"^sag\s+(\w+)\s+(?:dass|das)\s+(.+)"),
+        re.compile(r"^frag\s+(\w+)\s+(?:ob|mal|nach)\s+(.+)"),
+        re.compile(r"^teile?\s+(\w+)\s+mit\s+(?:dass|das)\s+(.+)"),
+        re.compile(r"^gib\s+(\w+)\s+bescheid\s+(.+)"),
+        re.compile(r"^richte?\s+(\w+)\s+aus\s+(?:dass|das)\s+(.+)"),
+        re.compile(r"^schick\s+(\w+)\s+eine?\s+nachricht:?\s*(.+)"),
+        re.compile(r"^nachricht\s+an\s+(\w+):?\s*(.+)"),
+    ]
+
     async def _handle_delegation(self, text: str, person: str) -> Optional[str]:
         """Verarbeitet Delegations-Intents ('Sag Lisa dass...', 'Frag Max ob...')."""
         text_lower = text.lower().strip()
 
-        # Muster: "Sag X dass Y" / "Frag X ob Y" / "Teile X mit dass Y" / etc.
-        patterns = [
-            (r"^sag\s+(\w+)\s+(?:dass|das)\s+(.+)", "sag"),
-            (r"^frag\s+(\w+)\s+(?:ob|mal|nach)\s+(.+)", "frag"),
-            (r"^teile?\s+(\w+)\s+mit\s+(?:dass|das)\s+(.+)", "teile_mit"),
-            (r"^gib\s+(\w+)\s+bescheid\s+(.+)", "bescheid"),
-            (r"^richte?\s+(\w+)\s+aus\s+(?:dass|das)\s+(.+)", "ausrichten"),
-            (r"^schick\s+(\w+)\s+eine?\s+nachricht:?\s*(.+)", "nachricht"),
-            (r"^nachricht\s+an\s+(\w+):?\s*(.+)", "nachricht"),
-        ]
-
         target_person = None
         message_content = None
 
-        for pattern, _ in patterns:
-            match = re.search(pattern, text_lower)
+        for pattern in self._DELEGATION_HANDLER_PATTERNS:
+            match = pattern.search(text_lower)
             if match:
                 target_person = match.group(1).capitalize()
                 message_content = match.group(2).strip().rstrip(".")
@@ -2525,6 +2745,12 @@ Regeln:
     async def _handle_correction(self, text: str, response: str, person: str):
         """Verarbeitet eine Korrektur und speichert sie als hochkonfidenten Fakt."""
         try:
+            # Config-Werte fuer Korrektur-Lernen
+            corr_cfg = yaml_config.get("correction", {})
+            corr_confidence = float(corr_cfg.get("confidence", 0.95))
+            corr_model = corr_cfg.get("model", "")
+            corr_temperature = float(corr_cfg.get("temperature", 0.1))
+
             # LLM extrahiert den korrigierten Fakt
             extraction_prompt = (
                 "Der User hat eine Korrektur gemacht. "
@@ -2535,26 +2761,26 @@ Regeln:
                 "Korrekter Fakt:"
             )
 
-            model = self.model_router.select_model("korrektur extrahieren")
+            model = corr_model or self.model_router.select_model("korrektur extrahieren")
             result = await self.ollama.chat(
                 messages=[
                     {"role": "system", "content": "Du extrahierst Fakten. Antworte mit einem einzigen Satz."},
                     {"role": "user", "content": extraction_prompt},
                 ],
                 model=model,
-                temperature=0.1,
+                temperature=corr_temperature,
                 max_tokens=64,
             )
 
             fact_text = result.get("message", {}).get("content", "").strip()
             if fact_text and len(fact_text) > 5:
-                # Fakt mit hoher Confidence speichern (User hat korrigiert = sicher)
+                # Fakt mit konfigurierter Confidence speichern
                 from .semantic_memory import SemanticFact
                 fact = SemanticFact(
                     content=fact_text,
                     category="general",
                     person=person,
-                    confidence=0.95,
+                    confidence=corr_confidence,
                     source_conversation=f"correction: {text[:100]}",
                 )
                 await self.memory.semantic.store_fact(fact)
@@ -2638,7 +2864,7 @@ Regeln:
         if summary_text and self.memory.redis:
             # Zusammenfassung fuer naechsten Morning-Kontakt speichern
             await self.memory.redis.set(
-                "jarvis:pending_summary", summary_text, ex=86400
+                "mha:pending_summary", summary_text, ex=86400
             )
             logger.info("Tages-Zusammenfassung fuer %s zum Abruf bereitgestellt", date)
 
@@ -2660,8 +2886,8 @@ Regeln:
             await self.memory.redis.setex(
                 f"mha:cross_room_context:{person.lower()}", 1800, context_data  # 30 Min TTL
             )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Cross-Room Kontext speichern fehlgeschlagen: %s", e)
 
     async def _get_cross_room_context(self, person: str) -> str:
         """Holt den vorherigen Konversationskontext wenn Raum gewechselt wurde."""
@@ -2675,33 +2901,104 @@ Regeln:
                 raw = raw.decode()
             data = json.loads(raw)
             return f"Letzte Frage (in {data.get('room', '?')}): \"{data.get('last_question', '')}\". Antwort: \"{data.get('last_response', '')}\""
-        except Exception:
+        except Exception as e:
+            logger.debug("Cross-Room Kontext lesen fehlgeschlagen: %s", e)
             return ""
 
     # ------------------------------------------------------------------
     # Phase 17: Natuerliche Fehlerbehandlung
     # ------------------------------------------------------------------
 
+    # Vorgefertigte JARVIS-Fehler-Muster: schneller als LLM-Call
+    _ERROR_PATTERNS = {
+        "unavailable": [
+            "{device} reagiert nicht. Pruefe Stromversorgung.",
+            "{device} offline. Ich behalte das im Auge.",
+        ],
+        "timeout": [
+            "{device} antwortet nicht rechtzeitig. Zweiter Versuch laeuft.",
+            "{device} braucht zu lange. Ich versuche einen anderen Weg.",
+        ],
+        "not_found": [
+            "{device} nicht gefunden. Existiert die Entity noch?",
+            "{device} unbekannt. Konfiguration pruefen.",
+        ],
+        "unauthorized": [
+            "Keine Berechtigung fuer {device}. Token pruefen.",
+        ],
+        "generic": [
+            "{device} — unerwarteter Fehler. Ich bleibe dran.",
+            "{device} macht Probleme. Alternative?",
+            "{device} streikt. Nicht mein bester Moment.",
+        ],
+    }
+
+    def _get_error_recovery_fast(self, func_name: str, func_args: dict, error: str) -> str:
+        """Schnelle JARVIS-Fehlermeldung ohne LLM-Call.
+
+        Matcht den Fehler auf bekannte Muster und gibt sofort eine
+        kontextbezogene Antwort zurueck.
+        """
+        # Device-Namen aus Action extrahieren
+        room = func_args.get("room", "") if isinstance(func_args, dict) else ""
+        device = func_name.replace("set_", "").replace("_", " ").title()
+        if room:
+            device = f"{device} {room.replace('_', ' ').title()}"
+
+        error_lower = error.lower()
+
+        # Fehler-Kategorie bestimmen
+        if "unavailable" in error_lower or "offline" in error_lower:
+            category = "unavailable"
+        elif "timeout" in error_lower or "timed out" in error_lower:
+            category = "timeout"
+        elif "not found" in error_lower or "not_found" in error_lower:
+            category = "not_found"
+        elif "unauthorized" in error_lower or "403" in error_lower or "401" in error_lower:
+            category = "unauthorized"
+        else:
+            category = "generic"
+
+        import random
+        templates = self._ERROR_PATTERNS[category]
+        return random.choice(templates).format(device=device)
+
     async def _generate_error_recovery(self, func_name: str, func_args: dict, error: str) -> str:
-        """Generiert eine menschliche Fehlermeldung mit Loesungsvorschlag."""
+        """Generiert eine JARVIS-Fehlermeldung mit Loesungsvorschlag.
+
+        Nutzt schnelle Pattern-basierte Antwort statt LLM-Call fuer
+        bekannte Fehler. Nur bei unbekannten Fehlern wird das LLM gefragt.
+        """
+        # Schnelle Antwort fuer bekannte Fehlertypen
+        fast_response = self._get_error_recovery_fast(func_name, func_args, error)
+        error_lower = error.lower()
+
+        # Bei Standard-Fehlern: Kein LLM noetig
+        known_patterns = ["unavailable", "offline", "timeout", "timed out",
+                          "not found", "not_found", "unauthorized", "403", "401"]
+        if any(p in error_lower for p in known_patterns):
+            return fast_response
+
+        # Unbekannte Fehler: LLM fragen
         try:
             response = await self.ollama.chat(
                 messages=[
-                    {"role": "system", "content": f"""Du bist {settings.assistant_name}.
-Ein Smart-Home-Befehl ist fehlgeschlagen. Erklaere kurz was passiert ist und schlage eine Loesung vor.
-Max 2 Saetze. Deutsch. Butler-Stil. Nicht entschuldigen, sondern sachlich loesen.
-Beispiele:
-- "Das Licht im Bad reagiert nicht. Moeglicherweise ist es offline. Soll ich den Status pruefen?"
-- "Die Heizung laesst sich gerade nicht steuern. Ich versuche es in einer Minute erneut." """},
-                    {"role": "user", "content": f"Fehlgeschlagen: {func_name}({func_args}). Fehler: {error}"},
+                    {"role": "system", "content": (
+                        f"Du bist {settings.assistant_name}. Souveraener Butler-Ton. "
+                        "Ein Smart-Home-Befehl ist fehlgeschlagen. "
+                        "1 Satz: Was ist passiert. 1 Satz: Was du stattdessen tust. "
+                        "Nie entschuldigen. Nie ratlos. Du hast IMMER einen Plan B. Deutsch."
+                    )},
+                    {"role": "user", "content": f"{func_name}({func_args}) → {error}"},
                 ],
                 model=settings.model_fast,
                 temperature=0.5,
-                max_tokens=100,
+                max_tokens=80,
             )
-            return response.get("message", {}).get("content", f"{func_name} reagiert nicht. Ich pruefe das.")
+            text = response.get("message", {}).get("content", "")
+            return text.strip() if text.strip() else fast_response
         except Exception:
-            return f"{func_name} reagiert nicht. Ich pruefe das."
+            return fast_response
 
     # ------------------------------------------------------------------
     # Phase 17: Predictive Resource Management
@@ -2725,10 +3022,11 @@ Beispiele:
                     attrs = s.get("attributes", {})
                     forecast = attrs.get("forecast", [])
                     if forecast:
-                        tomorrow = forecast[0] if len(forecast) > 0 else {}
-                        high = tomorrow.get("temperature", "")
-                        cond = tomorrow.get("condition", "")
-                        precip = tomorrow.get("precipitation", 0)
+                        # forecast[0] = heute, forecast[1] = morgen (falls vorhanden)
+                        next_forecast = forecast[1] if len(forecast) > 1 else forecast[0] if forecast else {}
+                        high = next_forecast.get("temperature", "")
+                        cond = next_forecast.get("condition", "")
+                        precip = next_forecast.get("precipitation", 0)
                         try:
                             high_f = float(high) if high else None
                         except (ValueError, TypeError):
@@ -2975,18 +3273,27 @@ Beispiele:
 
         return predictions
 
-    async def shutdown(self):
-        """Faehrt MindHome Assistant herunter."""
-        await self.ambient_audio.stop()
-        await self.anticipation.stop()
-        await self.intent_tracker.stop()
-        await self.time_awareness.stop()
-        await self.health_monitor.stop()
-        await self.device_health.stop()
-        await self.wellness_advisor.stop()
-        await self.proactive.stop()
-        await self.summarizer.stop()
-        await self.feedback.stop()
+    async def shutdown(self) -> None:
+        """Faehrt MindHome Assistant graceful herunter.
+
+        Reihenfolge: 1) Alle Background-Tasks beenden, 2) Komponenten stoppen,
+        3) Verbindungen schliessen.
+        """
+        logger.info("Shutdown: Beende Background-Tasks...")
+        await self._task_registry.shutdown(timeout=10.0)
+
+        logger.info("Shutdown: Stoppe Komponenten...")
+        for component in [
+            self.ambient_audio, self.anticipation, self.intent_tracker,
+            self.time_awareness, self.health_monitor, self.device_health,
+            self.wellness_advisor, self.proactive, self.summarizer, self.feedback,
+        ]:
+            try:
+                await component.stop()
+            except Exception as e:
+                logger.warning("Shutdown: %s.stop() fehlgeschlagen: %s", type(component).__name__, e)
+
+        logger.info("Shutdown: Schliesse Verbindungen...")
         await self.memory.close()
         await self.ha.close()
         logger.info("MindHome Assistant heruntergefahren")

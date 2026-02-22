@@ -11,7 +11,7 @@ from typing import Optional
 
 import redis.asyncio as redis
 
-from .config import settings
+from .config import settings, yaml_config
 
 logger = logging.getLogger(__name__)
 
@@ -119,7 +119,8 @@ class SemanticMemory:
             if old_id:
                 await self.delete_fact(old_id)
 
-        existing = await self.find_similar_fact(fact.content, threshold=0.15)
+        dup_threshold = float(yaml_config.get("memory", {}).get("duplicate_threshold", 0.15))
+        existing = await self.find_similar_fact(fact.content, threshold=dup_threshold)
         if existing:
             return await self._update_existing_fact(existing, fact)
 

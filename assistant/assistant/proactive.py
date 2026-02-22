@@ -23,6 +23,17 @@ from typing import Optional
 import aiohttp
 
 from .config import settings, yaml_config
+from .constants import (
+    GEO_APPROACHING_COOLDOWN_MIN,
+    GEO_ARRIVING_COOLDOWN_MIN,
+    PROACTIVE_AMBIENT_CHECK_INTERVAL,
+    PROACTIVE_BATCH_STARTUP_DELAY,
+    PROACTIVE_DIAGNOSTICS_STARTUP_DELAY,
+    PROACTIVE_SEASONAL_STARTUP_DELAY,
+    PROACTIVE_THREAT_CHECK_INTERVAL,
+    PROACTIVE_THREAT_STARTUP_DELAY,
+    PROACTIVE_WS_RECONNECT_DELAY,
+)
 from .ollama_client import validate_notification
 from .websocket import emit_proactive
 
@@ -202,7 +213,7 @@ class ProactiveManager:
             except Exception as e:
                 logger.error("HA WebSocket Fehler: %s", e)
                 if self._running:
-                    await asyncio.sleep(10)  # Reconnect nach 10s
+                    await asyncio.sleep(PROACTIVE_WS_RECONNECT_DELAY)
 
     async def _connect_and_listen(self, ws_url: str):
         """Verbindet sich mit HA WebSocket und verarbeitet Events."""
@@ -414,7 +425,7 @@ class ProactiveManager:
 
                 # B3: Pending Tages-Zusammenfassung nach Briefing liefern
                 if self.brain.memory.redis:
-                    pending = await self.brain.memory.redis.get("jarvis:pending_summary")
+                    pending = await self.brain.memory.redis.get("mha:pending_summary")
                     if pending:
                         summary = pending.decode() if isinstance(pending, bytes) else pending
                         await asyncio.sleep(3)  # Kurze Pause nach dem Briefing
@@ -422,7 +433,7 @@ class ProactiveManager:
                             f"Uebrigens, gestern zusammengefasst: {summary}",
                             "daily_summary", LOW,
                         )
-                        await self.brain.memory.redis.delete("jarvis:pending_summary")
+                        await self.brain.memory.redis.delete("mha:pending_summary")
                         logger.info("Pending Tages-Zusammenfassung zugestellt")
         except Exception as e:
             logger.error("Morning Briefing Auto-Trigger Fehler: %s", e)
@@ -532,7 +543,7 @@ class ProactiveManager:
             last = await self.brain.memory.get_last_notification_time(cooldown_key)
             if last:
                 last_dt = datetime.fromisoformat(last)
-                if datetime.now() - last_dt < timedelta(minutes=15):
+                if datetime.now() - last_dt < timedelta(minutes=GEO_APPROACHING_COOLDOWN_MIN):
                     return
             await self.brain.memory.set_last_notification_time(cooldown_key)
             await self._notify("person_approaching", LOW, {
@@ -547,7 +558,7 @@ class ProactiveManager:
             last = await self.brain.memory.get_last_notification_time(cooldown_key)
             if last:
                 last_dt = datetime.fromisoformat(last)
-                if datetime.now() - last_dt < timedelta(minutes=10):
+                if datetime.now() - last_dt < timedelta(minutes=GEO_ARRIVING_COOLDOWN_MIN):
                     return
             await self.brain.memory.set_last_notification_time(cooldown_key)
             await self._notify("person_arriving", MEDIUM, {
@@ -791,9 +802,15 @@ class ProactiveManager:
         return "\n".join(parts)
 
     def _get_notification_system_prompt(self) -> str:
-        return f"""Du bist {settings.assistant_name}, ein britischer Butler.
-Antworte NUR mit der fertigen Meldung. 1-2 Sätze. Deutsch mit korrekten Umlauten (ä, ö, ü, ß). Knapp. Trocken.
-Hauptbenutzer = "Sir". Kein Denkprozess, keine Erklärung, kein Englisch."""
+        return f"""Du bist {settings.assistant_name}. Proaktive Hausmeldung.
+REGELN: NUR die fertige Meldung. 1-2 Sätze. Deutsch mit Umlauten. Kein Englisch. Kein Denkprozess.
+STIL: Souveraen, knapp, trocken. Hauptbenutzer = "Sir". Nie alarmistisch, nie devot.
+MUSTER nach Dringlichkeit:
+- CRITICAL: Fakt + was du bereits tust. "Rauchmelder Kueche aktiv. Lueftung laeuft."
+- HIGH: Fakt + kurze Einordnung. "Bewegung im Garten. Kamera 2 zeichnet auf."
+- MEDIUM: Information + nur wenn relevant. "Waschmaschine fertig."
+- LOW: Beilaeufig, fast nebenbei. "Strom ist gerade guenstig, Sir. Nur falls relevant."
+VERBOTEN: "Hallo", "Achtung", "Ich moechte dich informieren", "Es tut mir leid"."""
 
     # ------------------------------------------------------------------
     # Alert-Personality: Meldungen im Jarvis-Stil reformulieren
@@ -824,8 +841,7 @@ Hauptbenutzer = "Sir". Kein Denkprozess, keine Erklärung, kein Englisch."""
                 messages=[
                     {"role": "system", "content": self._get_notification_system_prompt()},
                     {"role": "user", "content": (
-                        f"Formuliere um (1-2 Sätze, Deutsch mit Umlauten, Jarvis-Stil):\n"
-                        f"{raw_message}"
+                        f"[{urgency.upper()}] Reformuliere im JARVIS-Stil:\n{raw_message}"
                     )},
                 ],
                 model=settings.model_notify,
@@ -846,8 +862,7 @@ Hauptbenutzer = "Sir". Kein Denkprozess, keine Erklärung, kein Englisch."""
 
     async def _run_diagnostics_loop(self):
         """Periodischer Diagnostik-Check (Entity-Watchdog + Wartungs-Erinnerungen)."""
-        # Initial 2 Minuten warten bis alles hochgefahren ist
-        await asyncio.sleep(120)
+        await asyncio.sleep(PROACTIVE_DIAGNOSTICS_STARTUP_DELAY)
 
         while self._running:
             try:
@@ -889,7 +904,7 @@ Hauptbenutzer = "Sir". Kein Denkprozess, keine Erklärung, kein Englisch."""
     def _build_notification_prompt(
         self, event_type: str, description: str, data: dict, urgency: str
     ) -> str:
-        parts = [f"Event: {description}"]
+        parts = [f"[{urgency.upper()}] {description}"]
 
         if "person" in data:
             parts.append(f"Person: {data['person']}")
@@ -1011,7 +1026,7 @@ Hauptbenutzer = "Sir". Kein Denkprozess, keine Erklärung, kein Englisch."""
         MEDIUM-Events werden nach max 10 Minuten gesendet,
         LOW-Events nach dem konfigurierten batch_interval (default 30 Min).
         """
-        await asyncio.sleep(60)  # 1 Min. warten
+        await asyncio.sleep(PROACTIVE_BATCH_STARTUP_DELAY)
         medium_check_interval = 10 * 60  # 10 Min fuer MEDIUM
         timer = 0
 
@@ -1123,7 +1138,7 @@ Hauptbenutzer = "Sir". Kein Denkprozess, keine Erklärung, kein Englisch."""
 
     async def _run_seasonal_loop(self):
         """Periodisch Rolladen-Timing pruefen und saisonal anpassen."""
-        await asyncio.sleep(180)  # 3 Min. warten bis System stabil
+        await asyncio.sleep(PROACTIVE_SEASONAL_STARTUP_DELAY)
 
         seasonal_cfg = yaml_config.get("seasonal_actions", {})
         check_interval = seasonal_cfg.get("check_interval_minutes", 30)
@@ -1162,13 +1177,16 @@ Hauptbenutzer = "Sir". Kein Denkprozess, keine Erklärung, kein Englisch."""
                 # Toleranz: ±15 Min um die optimale Zeit
                 tolerance = 15
 
-                # Morgens: Rolladen oeffnen
+                # Morgens: Rolladen oeffnen (nur wenn niemand im Bett liegt)
                 if (last_action_type != "open"
                         and abs(current_minutes - open_min) <= tolerance):
-                    await self._execute_seasonal_cover(
-                        "open", 100, season, reason, auto_level,
-                    )
-                    last_action_type = "open"
+                    if await self._is_bed_occupied(states):
+                        logger.info("Seasonal: Rolladen-Oeffnung uebersprungen — Bett belegt")
+                    else:
+                        await self._execute_seasonal_cover(
+                            "open", 100, season, reason, auto_level,
+                        )
+                        last_action_type = "open"
 
                 # Abends: Rolladen schliessen
                 elif (last_action_type != "close"
@@ -1212,6 +1230,10 @@ Hauptbenutzer = "Sir". Kein Denkprozess, keine Erklärung, kein Englisch."""
                 for s in (states or []):
                     eid = s.get("entity_id", "")
                     if eid.startswith("cover."):
+                        # Sicherheitsfilter: Garagentore/Tore ueberspringen
+                        if not await self.brain.executor._is_safe_cover(eid, s):
+                            logger.info("Seasonal: %s uebersprungen (Sicherheitsfilter)", eid)
+                            continue
                         await self.brain.ha.call_service(
                             "cover", "set_cover_position",
                             {"entity_id": eid, "position": position},
@@ -1239,6 +1261,37 @@ Hauptbenutzer = "Sir". Kein Denkprozess, keine Erklärung, kein Englisch."""
                 "message": f"Rolladen {desc}? ({reason})",
                 "suggestion": True,
             })
+
+    # ------------------------------------------------------------------
+    # Bettbelegung
+    # ------------------------------------------------------------------
+
+    async def _is_bed_occupied(self, states=None) -> bool:
+        """Prueft ob ein Bettbelegungssensor aktiv ist (jemand schlaeft)."""
+        try:
+            if states is None:
+                states = await self.brain.ha.get_states()
+            bed_sensors = [
+                s for s in (states or [])
+                if s.get("entity_id", "").startswith("binary_sensor.")
+                and s.get("attributes", {}).get("device_class") == "occupancy"
+                and any(kw in s.get("entity_id", "").lower()
+                        for kw in ("bett", "bed", "matratze", "mattress"))
+            ]
+            if not bed_sensors:
+                # Fallback: Occupancy-Sensoren in Schlafzimmern
+                bed_sensors = [
+                    s for s in (states or [])
+                    if s.get("entity_id", "").startswith("binary_sensor.")
+                    and s.get("attributes", {}).get("device_class") == "occupancy"
+                    and any(kw in s.get("entity_id", "").lower()
+                            for kw in ("schlafzimmer", "bedroom"))
+                ]
+            if bed_sensors:
+                return any(s.get("state") == "on" for s in bed_sensors)
+        except Exception:
+            pass
+        return False
 
     # ------------------------------------------------------------------
     # Notfall-Protokolle
@@ -1312,7 +1365,7 @@ Hauptbenutzer = "Sir". Kein Denkprozess, keine Erklärung, kein Englisch."""
 
     async def _run_threat_assessment_loop(self):
         """Periodischer Sicherheits- + Energie-Check."""
-        await asyncio.sleep(180)  # 3 Min. warten bis System stabil
+        await asyncio.sleep(PROACTIVE_THREAT_STARTUP_DELAY)
 
         while self._running:
             # Threat Assessment
@@ -1360,7 +1413,7 @@ Hauptbenutzer = "Sir". Kein Denkprozess, keine Erklärung, kein Englisch."""
             except Exception as e:
                 logger.debug("Foresight Fehler: %s", e)
 
-            # Energy Events pruefen
+            # Energy Events pruefen + taegliches Kostentracking
             try:
                 if hasattr(self.brain, "energy_optimizer") and self.brain.energy_optimizer.enabled:
                     energy_alerts = await self.brain.energy_optimizer.check_energy_events()
@@ -1369,11 +1422,22 @@ Hauptbenutzer = "Sir". Kein Denkprozess, keine Erklärung, kein Englisch."""
                         await self._notify(alert.get("type", "energy_event"), urgency, {
                             "message": alert.get("message", ""),
                         })
+
+                    # Taegliches Kostentracking (einmal pro Tag via Redis-Cooldown)
+                    if self.brain.memory.redis:
+                        tracked_key = "mha:energy:daily_tracked"
+                        from datetime import datetime as _dt
+                        today = _dt.now().strftime("%Y-%m-%d")
+                        last_tracked = await self.brain.memory.redis.get(tracked_key)
+                        if isinstance(last_tracked, bytes):
+                            last_tracked = last_tracked.decode("utf-8", errors="ignore")
+                        if not last_tracked or last_tracked != today:
+                            await self.brain.energy_optimizer.track_daily_cost()
+                            await self.brain.memory.redis.setex(tracked_key, 86400, today)
             except Exception as e:
                 logger.debug("Energy Check Fehler: %s", e)
 
-            # Alle 5 Minuten pruefen
-            await asyncio.sleep(300)
+            await asyncio.sleep(PROACTIVE_THREAT_CHECK_INTERVAL)
 
     # ------------------------------------------------------------------
     # Ambient Presence: Jarvis ist immer da
@@ -1391,8 +1455,7 @@ Hauptbenutzer = "Sir". Kein Denkprozess, keine Erklärung, kein Englisch."""
         report_energy = ambient_cfg.get("report_energy", True)
         all_quiet_prob = ambient_cfg.get("all_quiet_probability", 0.2)
 
-        # 10 Min nach Start warten
-        await asyncio.sleep(600)
+        await asyncio.sleep(PROACTIVE_AMBIENT_CHECK_INTERVAL)
 
         while self._running:
             try:

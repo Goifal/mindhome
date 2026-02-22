@@ -143,7 +143,8 @@ class ThreatAssessment:
             wind_speed_val = float(wind_speed)
         except (ValueError, TypeError):
             return []
-        if wind_speed_val < 50:  # < 50 km/h = kein Sturm
+        wind_threshold = float(yaml_config.get("weather_warnings", {}).get("wind_speed_high", 60))
+        if wind_speed_val < wind_threshold:  # kein Sturm
             return []
 
         # Offene Fenster bei Sturm

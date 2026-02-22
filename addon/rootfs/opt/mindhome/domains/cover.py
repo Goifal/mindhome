@@ -1,5 +1,13 @@
 """MindHome - Cover Domain Plugin (Phase 3)"""
 from .base import DomainPlugin
+from cover_helpers import (
+    is_bed_occupied as _check_bed_occupied,
+    is_garage_or_gate_by_entity_id,
+    is_unsafe_device_class,
+    is_unsafe_cover_type,
+    UNSAFE_DEVICE_CLASSES as _UNSAFE_DEVICE_CLASSES,
+    UNSAFE_COVER_TYPES as _UNSAFE_COVER_TYPES,
+)
 
 
 class CoverDomain(DomainPlugin):
@@ -52,12 +60,15 @@ class CoverDomain(DomainPlugin):
         if not sun:
             return []
 
+        # Unsichere Covers (Garagentore, deaktivierte) herausfiltern
+        safe_entities = [e for e in entities if self._is_safe_for_automation(e)]
+
         elevation = sun.get("elevation", 0)
 
         # Sunset -> close covers
         if self.get_setting("sunset_close", True):
             if elevation < -2 and ctx.get("anyone_home"):
-                for e in entities:
+                for e in safe_entities:
                     if e.get("state") == "open":
                         name = e.get("attributes", {}).get("friendly_name", e["entity_id"])
                         actions.append({
@@ -66,24 +77,29 @@ class CoverDomain(DomainPlugin):
                             "reason_en": f"Sunset: close {name}",
                         })
 
-        # Sunrise -> open covers
+        # Sunrise -> open covers (only if no one is in bed)
         if self.get_setting("sunrise_open", True):
             if elevation > threshold and sun.get("rising"):
-                for e in entities:
-                    if e.get("state") == "closed":
-                        name = e.get("attributes", {}).get("friendly_name", e["entity_id"])
-                        actions.append({
-                            "entity_id": e["entity_id"], "service": "open_cover",
-                            "reason_de": f"Sonnenaufgang: {name} oeffnen",
-                            "reason_en": f"Sunrise: open {name}",
-                        })
+                # Bettbelegung pruefen: Nicht oeffnen wenn jemand schlaeft
+                bed_occupied = self._is_bed_occupied()
+                if bed_occupied:
+                    self.logger.info("Sunrise: Rolladen NICHT geoeffnet — Bett belegt")
+                else:
+                    for e in safe_entities:
+                        if e.get("state") == "closed":
+                            name = e.get("attributes", {}).get("friendly_name", e["entity_id"])
+                            actions.append({
+                                "entity_id": e["entity_id"], "service": "open_cover",
+                                "reason_de": f"Sonnenaufgang: {name} oeffnen",
+                                "reason_en": f"Sunrise: open {name}",
+                            })
 
         # High sun + warm -> partial shading
         if self.get_setting("sun_shading", True):
             if elevation > 40:
                 weather = self.get_weather()
                 if weather and weather.get("temperature", 0) > 25:
-                    for e in entities:
+                    for e in safe_entities:
                         if e.get("state") == "open":
                             name = e.get("attributes", {}).get("friendly_name", e["entity_id"])
                             actions.append({
@@ -94,3 +110,46 @@ class CoverDomain(DomainPlugin):
                             })
 
         return self.execute_or_suggest(actions)
+
+    def _is_safe_for_automation(self, entity) -> bool:
+        """Prueft ob ein Cover sicher automatisch gesteuert werden darf.
+
+        Filtert Garagentore (device_class, entity_id, CoverConfig) und
+        deaktivierte Covers heraus.
+        """
+        entity_id = entity.get("entity_id", "")
+        attrs = entity.get("attributes", {})
+        device_class = attrs.get("device_class", "")
+
+        # 1. HA device_class (garage_door, gate, door)
+        if is_unsafe_device_class(device_class):
+            return False
+
+        # 2. Entity-ID Heuristik (shared helper)
+        if is_garage_or_gate_by_entity_id(entity_id):
+            return False
+
+        # 3. CoverConfig aus DB: cover_type + enabled
+        try:
+            from models import CoverConfig
+            from db import get_db_session
+            with get_db_session() as session:
+                conf = session.query(CoverConfig).filter_by(entity_id=entity_id).first()
+                if conf:
+                    if is_unsafe_cover_type(conf.cover_type):
+                        return False
+                    if conf.enabled is not None and not conf.enabled:
+                        return False
+        except Exception:
+            self.logger.warning("DB-Fehler bei Safety-Check fuer %s — blockiere sicherheitshalber", entity_id)
+            return False  # Fail-safe: bei DB-Fehler nicht automatisieren
+
+        return True
+
+    def _is_bed_occupied(self) -> bool:
+        """Prueft ob ein Bettbelegungssensor aktiv ist (jemand schlaeft)."""
+        try:
+            states = self.ha.get_states() or []
+            return _check_bed_occupied(states)
+        except Exception:
+            return False

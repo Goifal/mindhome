@@ -6,6 +6,7 @@ Phase 10: Room-aware TTS, Person Messaging, Trust-Level Pre-Check.
 """
 
 import logging
+import re
 from pathlib import Path
 from typing import Any, Optional
 
@@ -38,7 +39,7 @@ def _get_climate_tool_description() -> str:
             "Heizung steuern: Vorlauftemperatur-Offset zur Heizkurve anpassen. "
             "Positiver Offset = waermer, negativer Offset = kaelter."
         )
-    return "Temperatur in einem Raum aendern"
+    return "Temperatur in einem Raum aendern. Fuer 'waermer' verwende adjust='warmer', fuer 'kaelter' verwende adjust='cooler' (aendert um 1°C)."
 
 
 def _get_climate_tool_parameters() -> dict:
@@ -71,7 +72,12 @@ def _get_climate_tool_parameters() -> dict:
             },
             "temperature": {
                 "type": "number",
-                "description": "Zieltemperatur in Grad Celsius",
+                "description": "Zieltemperatur in Grad Celsius (optional bei adjust='warmer'/'cooler')",
+            },
+            "adjust": {
+                "type": "string",
+                "enum": ["warmer", "cooler"],
+                "description": "Relative Anpassung: 'warmer' = +1°C, 'cooler' = -1°C. Wenn gesetzt, wird temperature ignoriert.",
             },
             "mode": {
                 "type": "string",
@@ -79,7 +85,7 @@ def _get_climate_tool_parameters() -> dict:
                 "description": "Heizmodus (optional)",
             },
         },
-        "required": ["room", "temperature"],
+        "required": ["room"],
     }
 
 
@@ -91,7 +97,7 @@ _ASSISTANT_TOOLS_STATIC = [
         "type": "function",
         "function": {
             "name": "set_light",
-            "description": "Licht in einem Raum ein-/ausschalten oder dimmen",
+            "description": "Licht in einem Raum ein-/ausschalten oder dimmen. Fuer 'heller' verwende state='brighter', fuer 'dunkler' verwende state='dimmer'. Diese passen die Helligkeit relativ um 15% an.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -101,12 +107,12 @@ _ASSISTANT_TOOLS_STATIC = [
                     },
                     "state": {
                         "type": "string",
-                        "enum": ["on", "off"],
-                        "description": "Ein oder aus",
+                        "enum": ["on", "off", "brighter", "dimmer"],
+                        "description": "Ein, aus, heller (+15%) oder dunkler (-15%)",
                     },
                     "brightness": {
                         "type": "integer",
-                        "description": "Helligkeit 0-100 Prozent (optional)",
+                        "description": "Helligkeit 0-100 Prozent (optional, nur bei state='on')",
                     },
                     "transition": {
                         "type": "integer",
@@ -151,7 +157,7 @@ _ASSISTANT_TOOLS_STATIC = [
         "type": "function",
         "function": {
             "name": "set_cover",
-            "description": "Rollladen oder Jalousie steuern. NIEMALS fuer Garagentore verwenden — Garagentore sind keine Rolllaeden!",
+            "description": "Rollladen oder Jalousie steuern. NIEMALS fuer Garagentore verwenden! Fuer 'ein bisschen runter/hoch' verwende adjust='down' oder adjust='up' (aendert um 20%).",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -161,10 +167,15 @@ _ASSISTANT_TOOLS_STATIC = [
                     },
                     "position": {
                         "type": "integer",
-                        "description": "Position 0 (zu) bis 100 (offen)",
+                        "description": "Position 0 (zu) bis 100 (offen). Optional bei adjust.",
+                    },
+                    "adjust": {
+                        "type": "string",
+                        "enum": ["up", "down"],
+                        "description": "Relative Anpassung: 'up' = +20% (offener), 'down' = -20% (weiter zu). Wenn gesetzt, wird position ignoriert.",
                     },
                 },
-                "required": ["room", "position"],
+                "required": ["room"],
             },
         },
     },
@@ -172,7 +183,7 @@ _ASSISTANT_TOOLS_STATIC = [
         "type": "function",
         "function": {
             "name": "play_media",
-            "description": "Musik oder Medien steuern: abspielen, pausieren, stoppen, Lautstaerke aendern. Fuer 'leiser', 'lauter', 'Lautstaerke auf X%' verwende action='volume'.",
+            "description": "Musik oder Medien steuern: abspielen, pausieren, stoppen, Lautstaerke aendern. Fuer 'leiser' verwende action='volume_down', fuer 'lauter' verwende action='volume_up'. Fuer eine bestimmte Lautstaerke verwende action='volume' mit volume-Parameter.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -182,16 +193,21 @@ _ASSISTANT_TOOLS_STATIC = [
                     },
                     "action": {
                         "type": "string",
-                        "enum": ["play", "pause", "stop", "next", "previous", "volume"],
-                        "description": "Medien-Aktion. 'volume' = Lautstaerke aendern",
+                        "enum": ["play", "pause", "stop", "next", "previous", "volume", "volume_up", "volume_down"],
+                        "description": "Medien-Aktion. 'volume' = Lautstaerke auf Wert setzen, 'volume_up' = lauter (+10%), 'volume_down' = leiser (-10%)",
                     },
                     "query": {
                         "type": "string",
                         "description": "Suchanfrage fuer Musik (z.B. 'Jazz', 'Beethoven', 'Chill Playlist')",
                     },
+                    "media_type": {
+                        "type": "string",
+                        "enum": ["music", "podcast", "audiobook", "playlist", "channel"],
+                        "description": "Art des Mediums (Standard: music)",
+                    },
                     "volume": {
                         "type": "number",
-                        "description": "Lautstaerke 0-100 (Prozent). Z.B. 20 fuer 20%, 50 fuer 50%",
+                        "description": "Lautstaerke 0-100 (Prozent). Nur bei action='volume'. Z.B. 20 fuer 20%, 50 fuer 50%",
                     },
                 },
                 "required": ["action"],
@@ -707,6 +723,94 @@ _ASSISTANT_TOOLS_STATIC = [
     {
         "type": "function",
         "function": {
+            "name": "set_reminder",
+            "description": "Setzt eine Erinnerung fuer eine bestimmte Uhrzeit. Z.B. 'Erinnere mich um 15 Uhr an den Anruf' oder 'Um 18:30 Abendessen kochen'.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "time": {
+                        "type": "string",
+                        "description": "Uhrzeit im Format HH:MM (z.B. '15:00', '06:30')",
+                    },
+                    "label": {
+                        "type": "string",
+                        "description": "Woran erinnert werden soll (z.B. 'Anruf bei Mama', 'Medikamente nehmen')",
+                    },
+                    "date": {
+                        "type": "string",
+                        "description": "Datum im Format YYYY-MM-DD. Wenn leer, wird heute oder morgen automatisch gewaehlt.",
+                    },
+                    "room": {
+                        "type": "string",
+                        "description": "Raum fuer die TTS-Benachrichtigung",
+                    },
+                },
+                "required": ["time", "label"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "set_wakeup_alarm",
+            "description": "Stellt einen Wecker fuer eine bestimmte Uhrzeit. Z.B. 'Weck mich um 6:30' oder 'Stell einen Wecker fuer 7 Uhr'.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "time": {
+                        "type": "string",
+                        "description": "Weckzeit im Format HH:MM (z.B. '06:30', '07:00')",
+                    },
+                    "label": {
+                        "type": "string",
+                        "description": "Bezeichnung des Weckers (Standard: 'Wecker')",
+                    },
+                    "room": {
+                        "type": "string",
+                        "description": "Raum in dem geweckt werden soll (fuer Licht + TTS)",
+                    },
+                    "repeat": {
+                        "type": "string",
+                        "enum": ["", "daily", "weekdays", "weekends"],
+                        "description": "Wiederholung: leer=einmalig, 'daily'=taeglich, 'weekdays'=Mo-Fr, 'weekends'=Sa-So",
+                    },
+                },
+                "required": ["time"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "cancel_alarm",
+            "description": "Loescht einen Wecker. Z.B. 'Loesch den Wecker' oder 'Wecker aus'.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "label": {
+                        "type": "string",
+                        "description": "Bezeichnung des Weckers zum Loeschen",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_alarms",
+            "description": "Zeigt alle aktiven Wecker an. 'Welche Wecker habe ich?' oder 'Wecker Status'.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "broadcast",
             "description": "Sendet eine Durchsage an ALLE Lautsprecher im Haus. Fuer Ankuendigungen wie 'Essen ist fertig!' oder 'Bitte alle runterkommen.'",
             "parameters": {
@@ -947,6 +1051,27 @@ class FunctionExecutor:
         """Setzt ConfigVersioning fuer Backup-vor-Schreiben."""
         self._config_versioning = versioning
 
+    # Whitelist erlaubter Tool-Funktionsnamen (verhindert Zugriff auf interne Methoden)
+    _ALLOWED_FUNCTIONS = frozenset({
+        "set_light", "set_light_all", "set_climate", "set_climate_curve",
+        "set_climate_room", "activate_scene", "set_cover", "set_cover_all",
+        "call_service", "play_media", "transfer_playback", "set_alarm",
+        "lock_door", "send_notification", "send_message_to_person",
+        "play_sound", "get_entity_state", "get_calendar_events",
+        "create_calendar_event", "delete_calendar_event",
+        "reschedule_calendar_event", "set_presence_mode", "edit_config",
+        "manage_shopping_list", "list_capabilities", "create_automation",
+        "confirm_automation", "list_jarvis_automations",
+        "delete_jarvis_automation", "manage_inventory",
+        "set_timer", "cancel_timer", "get_timer_status",
+        "set_reminder", "set_wakeup_alarm", "cancel_alarm", "get_alarms",
+        "broadcast",
+        "get_camera_view", "create_conditional", "list_conditionals",
+        "get_energy_report", "web_search", "get_security_score",
+        "get_room_climate", "get_active_intents", "get_wellness_status",
+        "get_device_health", "get_learned_patterns", "describe_doorbell",
+    })
+
     async def execute(self, function_name: str, arguments: dict) -> dict:
         """
         Fuehrt eine Funktion aus.
@@ -958,6 +1083,8 @@ class FunctionExecutor:
         Returns:
             Ergebnis-Dict mit success und message
         """
+        if function_name not in self._ALLOWED_FUNCTIONS:
+            return {"success": False, "message": f"Unbekannte Funktion: {function_name}"}
         handler = getattr(self, f"_exec_{function_name}", None)
         if not handler:
             return {"success": False, "message": f"Unbekannte Funktion: {function_name}"}
@@ -979,6 +1106,23 @@ class FunctionExecutor:
         entity_id = await self._find_entity("light", room)
         if not entity_id:
             return {"success": False, "message": f"Kein Licht in '{room}' gefunden"}
+
+        # Relative Helligkeit: brighter/dimmer
+        if state in ("brighter", "dimmer"):
+            current_brightness = 50  # Fallback
+            ha_state = await self.ha.get_state(entity_id)
+            if ha_state and ha_state.get("state") == "on":
+                attrs = ha_state.get("attributes", {})
+                # HA gibt brightness als 0-255 zurueck
+                raw = attrs.get("brightness", 128)
+                current_brightness = round(raw / 255 * 100)
+            step = 15
+            new_brightness = current_brightness + step if state == "brighter" else current_brightness - step
+            new_brightness = max(5, min(100, new_brightness))
+            service_data = {"entity_id": entity_id, "brightness_pct": new_brightness}
+            success = await self.ha.call_service("light", "turn_on", service_data)
+            direction = "heller" if state == "brighter" else "dunkler"
+            return {"success": success, "message": f"Licht {room} {direction} auf {new_brightness}%"}
 
         service_data = {"entity_id": entity_id}
         if "brightness" in args and state == "on":
@@ -1077,19 +1221,41 @@ class FunctionExecutor:
         return {"success": success, "message": f"Heizung: Offset {sign}{offset}°C (Vorlauf {new_temp}°C)"}
 
     async def _exec_set_climate_room(self, args: dict) -> dict:
-        """Raumthermostat-Modus: Temperatur pro Raum setzen (wie bisher)."""
+        """Raumthermostat-Modus: Temperatur pro Raum setzen."""
         room = args["room"]
-        temp = args["temperature"]
         entity_id = await self._find_entity("climate", room)
         if not entity_id:
             return {"success": False, "message": f"Kein Thermostat in '{room}' gefunden"}
+
+        # Relative Anpassung: warmer/cooler
+        adjust = args.get("adjust")
+        if adjust in ("warmer", "cooler"):
+            ha_state = await self.ha.get_state(entity_id)
+            current_temp = 21.0  # Fallback
+            if ha_state:
+                attrs = ha_state.get("attributes", {})
+                current_temp = float(attrs.get("temperature", 21.0))
+            step = 1.0
+            temp = current_temp + step if adjust == "warmer" else current_temp - step
+            # Sicherheitsgrenzen
+            security = yaml_config.get("security", {}).get("climate_limits", {})
+            temp = max(security.get("min", 5), min(security.get("max", 30), temp))
+        elif "temperature" in args:
+            temp = args["temperature"]
+        else:
+            return {"success": False, "message": "Keine Temperatur angegeben"}
 
         service_data = {"entity_id": entity_id, "temperature": temp}
         if "mode" in args:
             service_data["hvac_mode"] = args["mode"]
 
         success = await self.ha.call_service("climate", "set_temperature", service_data)
-        return {"success": success, "message": f"{room} auf {temp}°C"}
+        direction = ""
+        if adjust == "warmer":
+            direction = "waermer auf "
+        elif adjust == "cooler":
+            direction = "kaelter auf "
+        return {"success": success, "message": f"{room} {direction}{temp}°C"}
 
     async def _exec_activate_scene(self, args: dict) -> dict:
         scene = args["scene"]
@@ -1105,16 +1271,37 @@ class FunctionExecutor:
 
     async def _exec_set_cover(self, args: dict) -> dict:
         room = args["room"]
-        try:
-            position = max(0, min(100, int(args["position"])))
-        except (ValueError, TypeError):
-            return {"success": False, "message": f"Ungueltige Position: {args.get('position')}"}
+
+        entity_id = await self._find_entity("cover", room)
+
+        # Relative Anpassung: up/down
+        adjust = args.get("adjust")
+        if adjust in ("up", "down"):
+            if not entity_id:
+                return {"success": False, "message": f"Kein Rollladen in '{room}' gefunden"}
+            current_position = 50  # Fallback
+            ha_state = await self.ha.get_state(entity_id)
+            if ha_state:
+                attrs = ha_state.get("attributes", {})
+                try:
+                    current_position = int(attrs.get("current_position", 50))
+                except (ValueError, TypeError):
+                    current_position = 50
+            step = 20
+            position = current_position + step if adjust == "up" else current_position - step
+            position = max(0, min(100, position))
+        elif "position" in args:
+            try:
+                position = max(0, min(100, int(args["position"])))
+            except (ValueError, TypeError):
+                return {"success": False, "message": f"Ungueltige Position: {args.get('position')}"}
+        else:
+            return {"success": False, "message": "Keine Position angegeben"}
 
         # Sonderfall: "all" -> alle Rolllaeden schalten
         if room.lower() == "all":
             return await self._exec_set_cover_all(position)
 
-        entity_id = await self._find_entity("cover", room)
         if not entity_id:
             return {"success": False, "message": f"Kein Rollladen in '{room}' gefunden"}
 
@@ -1128,7 +1315,12 @@ class FunctionExecutor:
             "cover", "set_cover_position",
             {"entity_id": entity_id, "position": position},
         )
-        return {"success": success, "message": f"Rollladen {room} auf {position}%"}
+        direction = ""
+        if adjust == "up":
+            direction = "hoch auf "
+        elif adjust == "down":
+            direction = "runter auf "
+        return {"success": success, "message": f"Rollladen {room} {direction}{position}%"}
 
     # Garagentore und andere gefaehrliche Cover-Typen NIEMALS automatisch steuern
     _EXCLUDED_COVER_CLASSES = {"garage_door", "gate", "door"}
@@ -1145,9 +1337,12 @@ class FunctionExecutor:
         if device_class in self._EXCLUDED_COVER_CLASSES:
             return False
 
-        # 2. Entity-ID Heuristik (garage, tor, gate)
+        # 2. Entity-ID Heuristik (garage, tor, gate) — Word-Boundary fuer 'tor'
+        #    damit 'motor', 'monitor' etc. nicht faelschlich matchen
         eid_lower = entity_id.lower()
-        if any(kw in eid_lower for kw in ("garage", "tor", "gate")):
+        if "garage" in eid_lower or "gate" in eid_lower:
+            return False
+        if re.search(r'(?:^|[_.\s])tor(?:$|[_.\s])', eid_lower):
             return False
 
         # 3. Lokale CoverConfig pruefen (cover_type + enabled)
@@ -1162,8 +1357,10 @@ class FunctionExecutor:
                 # Enabled-Check: Deaktivierte Covers werden nicht gesteuert
                 if conf.get("enabled") is False:
                     return False
-        except Exception:
-            pass
+        except Exception as e:
+            # Fail-safe: Bei CoverConfig-Fehler blockieren statt durchlassen
+            logger.warning("CoverConfig laden fehlgeschlagen fuer %s: %s — blockiere sicherheitshalber", entity_id, e)
+            return False
 
         return True
 
@@ -1198,6 +1395,16 @@ class FunctionExecutor:
 
         return {"success": True, "message": msg}
 
+    # Erlaubte Service-Data Keys fuer _exec_call_service (Whitelist)
+    _CALL_SERVICE_ALLOWED_KEYS = frozenset({
+        "brightness", "brightness_pct", "color_temp", "rgb_color", "hs_color",
+        "temperature", "target_temp_high", "target_temp_low", "hvac_mode",
+        "position", "tilt_position",
+        "volume_level", "media_content_id", "media_content_type", "source",
+        "message", "title", "data",
+        "option", "value", "code",
+    })
+
     async def _exec_call_service(self, args: dict) -> dict:
         """Generischer HA Service-Aufruf (fuer Routinen wie Guest WiFi)."""
         domain = args.get("domain", "")
@@ -1207,16 +1414,24 @@ class FunctionExecutor:
             return {"success": False, "message": "domain und service erforderlich"}
 
         # Sicherheitscheck: Cover-Services fuer Garagentore blockieren
-        if domain == "cover" and entity_id:
+        # Bypass-sicher: Prueft ALLE Domains wenn entity_id ein Cover ist
+        is_cover_entity = entity_id.startswith("cover.")
+        is_cover_domain = domain == "cover"
+
+        if is_cover_domain and not entity_id:
+            # Cover-Domain ohne entity_id blockieren — koennte alle Cover betreffen
+            return {"success": False, "message": "cover-Service ohne entity_id nicht erlaubt (Sicherheitssperre)."}
+
+        if is_cover_entity or is_cover_domain:
             states = await self.ha.get_states()
             entity_state = next((s for s in (states or []) if s.get("entity_id") == entity_id), {})
             if not await self._is_safe_cover(entity_id, entity_state):
                 return {"success": False, "message": f"Sicherheitssperre: '{entity_id}' ist ein Garagentor/Tor und darf nicht automatisch gesteuert werden."}
 
         service_data = {"entity_id": entity_id} if entity_id else {}
-        # Weitere Service-Daten aus args uebernehmen
+        # Nur erlaubte Service-Data Keys uebernehmen (Whitelist)
         for k, v in args.items():
-            if k not in ("domain", "service", "entity_id"):
+            if k in self._CALL_SERVICE_ALLOWED_KEYS:
                 service_data[k] = v
         success = await self.ha.call_service(domain, service, service_data)
         return {"success": success, "message": f"{domain}.{service} ausgefuehrt"}
@@ -1239,28 +1454,42 @@ class FunctionExecutor:
 
         # Foundation F.5: Musik-Suche via query
         query = args.get("query")
+        media_type = args.get("media_type", "music")
         if query and action == "play":
             success = await self.ha.call_service(
                 "media_player", "play_media",
                 {
                     "entity_id": entity_id,
                     "media_content_id": query,
-                    "media_content_type": "music",
+                    "media_content_type": media_type,
                 },
             )
             return {"success": success, "message": f"Suche '{query}' wird abgespielt"}
 
-        # Volume-Steuerung
-        if action == "volume":
-            volume_pct = args.get("volume")
-            if volume_pct is None:
-                return {"success": False, "message": "Keine Lautstaerke angegeben"}
+        # Volume-Steuerung (absolut und relativ)
+        if action in ("volume", "volume_up", "volume_down"):
+            if action == "volume":
+                volume_pct = args.get("volume")
+                if volume_pct is None:
+                    return {"success": False, "message": "Keine Lautstaerke angegeben"}
+            else:
+                # Relative Steuerung: aktuelle Lautstaerke holen und anpassen
+                state = await self.ha.get_state(entity_id)
+                current = 0.5
+                if state and "attributes" in state:
+                    current = state["attributes"].get("volume_level", 0.5)
+                step = 0.1  # ±10%
+                new_level = current + step if action == "volume_up" else current - step
+                volume_pct = max(0, min(100, round(new_level * 100)))
+
             volume_level = max(0.0, min(1.0, float(volume_pct) / 100.0))
             success = await self.ha.call_service(
                 "media_player", "volume_set",
                 {"entity_id": entity_id, "volume_level": volume_level},
             )
-            return {"success": success, "message": f"Lautstaerke auf {int(volume_pct)}%"}
+            direction = "lauter" if action == "volume_up" else "leiser" if action == "volume_down" else ""
+            msg = f"Lautstaerke {direction} auf {int(volume_pct)}%" if direction else f"Lautstaerke auf {int(volume_pct)}%"
+            return {"success": success, "message": msg}
 
         service_map = {
             "play": "media_play",
@@ -1338,11 +1567,22 @@ class FunctionExecutor:
                 },
             )
         else:
-            # Fallback: Join/Unjoin wenn kein Content-ID (z.B. Gruppen-Streaming)
-            success = await self.ha.call_service(
-                "media_player", "join",
-                {"entity_id": from_entity, "group_members": [to_entity]},
-            )
+            # Fallback: media_title aus bereits geladenem State als Suche nutzen
+            media_title = attrs.get("media_title", "")
+            if media_title:
+                success = await self.ha.call_service(
+                    "media_player", "play_media",
+                    {
+                        "entity_id": to_entity,
+                        "media_content_id": media_title,
+                        "media_content_type": media_content_type or "music",
+                    },
+                )
+            else:
+                return {
+                    "success": False,
+                    "message": f"Kein uebertragbarer Inhalt in '{from_room}' gefunden (weder Content-ID noch Titel)",
+                }
 
         # 3. Quell-Player stoppen
         if success:
@@ -1709,18 +1949,18 @@ class FunctionExecutor:
         }
 
         if start_time:
-            # Termin mit Uhrzeit
-            service_data["start_date_time"] = f"{date_str} {start_time}:00"
+            # Termin mit Uhrzeit — ISO8601-Format fuer HA
+            service_data["start_date_time"] = f"{date_str}T{start_time}:00"
             if end_time:
-                service_data["end_date_time"] = f"{date_str} {end_time}:00"
+                service_data["end_date_time"] = f"{date_str}T{end_time}:00"
             else:
                 # Standard: +1 Stunde
                 try:
                     start_dt = datetime.strptime(f"{date_str} {start_time}", "%Y-%m-%d %H:%M")
                     end_dt = start_dt + timedelta(hours=1)
-                    service_data["end_date_time"] = end_dt.strftime("%Y-%m-%d %H:%M:%S")
+                    service_data["end_date_time"] = end_dt.strftime("%Y-%m-%dT%H:%M:%S")
                 except ValueError:
-                    service_data["end_date_time"] = f"{date_str} {start_time}:00"
+                    service_data["end_date_time"] = f"{date_str}T{start_time}:00"
         else:
             # Ganztaegiger Termin
             service_data["start_date"] = date_str
@@ -1803,12 +2043,19 @@ class FunctionExecutor:
                 )
             else:
                 # Fallback: Ohne UID loeschen (Startzeit nutzen)
+                # HA gibt start/end als ISO-String oder als Dict mit date/dateTime zurueck
+                evt_start = target_event.get("start", start)
+                evt_end = target_event.get("end", end)
+                if isinstance(evt_start, dict):
+                    evt_start = evt_start.get("dateTime", evt_start.get("date", start))
+                if isinstance(evt_end, dict):
+                    evt_end = evt_end.get("dateTime", evt_end.get("date", end))
                 success = await self.ha.call_service(
                     "calendar", "delete_event",
                     {
                         "entity_id": calendar_entity,
-                        "start_date_time": target_event.get("start", {}).get("dateTime", start),
-                        "end_date_time": target_event.get("end", {}).get("dateTime", end),
+                        "start_date_time": evt_start,
+                        "end_date_time": evt_end,
                         "summary": target_event.get("summary", title),
                     },
                 )
@@ -1823,12 +2070,19 @@ class FunctionExecutor:
             return {"success": False, "message": f"Fehler: {e}"}
 
     async def _exec_reschedule_calendar_event(self, args: dict) -> dict:
-        """Phase 11.3: Kalender-Termin verschieben (Delete + Re-Create)."""
+        """Phase 11.3: Kalender-Termin verschieben (Delete + Re-Create).
+
+        Atomisch: Wenn Create fehlschlaegt, wird der alte Termin wiederhergestellt.
+        """
         title = args["title"]
         old_date = args["old_date"]
         new_date = args["new_date"]
         new_start = args.get("new_start_time", "")
         new_end = args.get("new_end_time", "")
+
+        # Alten Termin finden um Start/End fuer Rollback zu merken
+        old_start_time = args.get("old_start_time", "")
+        old_end_time = args.get("old_end_time", "")
 
         # 1. Alten Termin loeschen
         delete_result = await self._exec_delete_calendar_event({
@@ -1855,9 +2109,23 @@ class FunctionExecutor:
                 "success": True,
                 "message": f"Termin '{title}' verschoben von {old_date} nach {new_date}",
             }
+
+        # 3. Rollback: Alten Termin wiederherstellen
+        logger.warning("Reschedule-Rollback: Stelle alten Termin '%s' am %s wieder her", title, old_date)
+        rollback_result = await self._exec_create_calendar_event({
+            "title": title,
+            "date": old_date,
+            "start_time": old_start_time,
+            "end_time": old_end_time,
+        })
+        if rollback_result.get("success"):
+            return {
+                "success": False,
+                "message": f"Neuer Termin konnte nicht erstellt werden. Alter Termin '{title}' am {old_date} wiederhergestellt.",
+            }
         return {
             "success": False,
-            "message": f"Alter Termin geloescht, aber neuer konnte nicht erstellt werden",
+            "message": f"ACHTUNG: Alter Termin geloescht, neuer konnte nicht erstellt werden, Rollback fehlgeschlagen. Termin '{title}' manuell erstellen!",
         }
 
     async def _exec_set_presence_mode(self, args: dict) -> dict:
@@ -2361,6 +2629,43 @@ class FunctionExecutor:
         import assistant.main as main_module
         brain = main_module.brain
         return brain.timer_manager.get_status()
+
+    async def _exec_set_reminder(self, args: dict) -> dict:
+        """Setzt eine Erinnerung fuer eine bestimmte Uhrzeit."""
+        import assistant.main as main_module
+        brain = main_module.brain
+        return await brain.timer_manager.create_reminder(
+            time_str=args["time"],
+            label=args["label"],
+            date_str=args.get("date", ""),
+            room=args.get("room", ""),
+            person=args.get("person", ""),
+        )
+
+    async def _exec_set_wakeup_alarm(self, args: dict) -> dict:
+        """Stellt einen Wecker."""
+        import assistant.main as main_module
+        brain = main_module.brain
+        return await brain.timer_manager.set_wakeup_alarm(
+            time_str=args["time"],
+            label=args.get("label", "Wecker"),
+            room=args.get("room", ""),
+            repeat=args.get("repeat", ""),
+        )
+
+    async def _exec_cancel_alarm(self, args: dict) -> dict:
+        """Loescht einen Wecker."""
+        import assistant.main as main_module
+        brain = main_module.brain
+        return await brain.timer_manager.cancel_alarm(
+            label=args.get("label", ""),
+        )
+
+    async def _exec_get_alarms(self, args: dict) -> dict:
+        """Zeigt alle aktiven Wecker an."""
+        import assistant.main as main_module
+        brain = main_module.brain
+        return await brain.timer_manager.get_alarms()
 
     async def _exec_broadcast(self, args: dict) -> dict:
         """Sendet eine Durchsage an alle Lautsprecher."""

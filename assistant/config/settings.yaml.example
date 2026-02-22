@@ -389,6 +389,7 @@ seasonal_actions:
   check_interval_minutes: 30
   auto_execute_level: 3
 tts:
+  entity: tts.piper
   ssml_enabled: true
   speed:
     confirmation: 105
@@ -432,6 +433,9 @@ sounds:
     error: error_tone
     goodnight: goodnight_tone
   night_volume_factor: 0.4
+  alexa_speakers: []
+    # - media_player.echo_wohnzimmer
+    # - media_player.echo_kueche
 narration:
   enabled: true
   default_transition: 3
@@ -458,8 +462,21 @@ speaker_recognition:
 multi_room:
   enabled: true
   presence_timeout_minutes: 15
-  room_speakers: null
-  room_motion_sensors: null
+  auto_follow: false  # Musik folgt automatisch in neuen Raum (ab Autonomie-Level 4)
+  # Speaker pro Raum — fuer TTS-Routing und Musik-Follow
+  room_speakers:
+    # wohnzimmer: media_player.wohnzimmer_echo
+    # schlafzimmer: media_player.schlafzimmer_echo
+    # kueche: media_player.kueche_echo
+    # buero: media_player.buero_echo
+    null
+  # Praesenzmelder pro Raum — fuer automatische Raumerkennung
+  room_motion_sensors:
+    # wohnzimmer: binary_sensor.motion_wohnzimmer
+    # schlafzimmer: binary_sensor.occupancy_schlafzimmer
+    # kueche: binary_sensor.motion_kueche
+    # buero: binary_sensor.motion_buero
+    null
 person_profiles:
   profiles: null
 trust_levels:
@@ -475,6 +492,10 @@ trust_levels:
   - lock_door
   - set_alarm
   - set_presence_mode
+  room_restrictions: null
+    # schlafzimmer:
+    #   allowed_persons: [Max, Lisa]
+    #   min_trust_level: 2
 diagnostics:
   enabled: true
   check_interval_minutes: 30
@@ -682,3 +703,73 @@ self_automation:
   max_per_day: 5
   model: qwen3:14b
   templates_file: config/automation_templates.yaml
+# --- Kamera-Integration ---
+cameras:
+  enabled: true
+  vision_model: llava
+  camera_map: null
+    # haustuer: camera.haustuer
+    # garage: camera.garage
+# --- Energie-Optimierung ---
+energy:
+  enabled: true
+  entities:
+    electricity_price: ''
+    total_consumption: ''
+    solar_production: ''
+    grid_export: ''
+  thresholds:
+    price_low_cent: 15
+    price_high_cent: 35
+    solar_high_watts: 2000
+    anomaly_increase_percent: 30
+# --- Geo-Fence / Proximity ---
+geo_fence:
+  approaching_km: 2.0
+  arriving_km: 0.5
+# --- Notfall-Protokolle ---
+emergency_protocols: null
+  # fire:
+  #   actions:
+  #     - {domain: light, service: turn_on, target: all}
+  #     - {domain: lock, service: unlock, target: all}
+  #     - {domain: notify, service: notify, data: {message: "FEUERALARM!"}}
+# --- Lern-Beobachter ---
+learning:
+  enabled: true
+  min_repetitions: 3
+  time_window_minutes: 30
+# --- Benachrichtigungen ---
+notifications:
+  channels: null
+    # tts:
+    #   preferred: true
+    #   quiet_hours: [23, 7]
+    #   urgency_min: low
+    # push:
+    #   preferred: false
+    #   urgency_min: medium
+# --- Urlaubs-Simulation ---
+vacation_simulation:
+  morning_hour: 7
+  evening_hour: 18
+  night_hour: 23
+  variation_minutes: 30
+# --- Wetter-Warnungen ---
+weather_warnings:
+  enabled: true
+  temp_high: 35
+  temp_low: -5
+  wind_speed_high: 60
+  warn_conditions:
+  - lightning
+  - lightning-rainy
+  - hail
+  - exceptional
+# --- Web-Suche ---
+web_search:
+  enabled: false
+  engine: searxng
+  searxng_url: http://localhost:8888
+  max_results: 5
+  timeout_seconds: 10

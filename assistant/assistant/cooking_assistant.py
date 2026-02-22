@@ -18,6 +18,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Optional
 
+from .config import yaml_config
+
 logger = logging.getLogger(__name__)
 
 
@@ -39,16 +41,13 @@ class CookingTimer:
             return 0
         elapsed = time.time() - self.started_at
         remaining = self.duration_seconds - elapsed
-        return max(0, int(remaining))
+        return max(0, int(remaining + 0.5))
 
     @property
     def is_done(self) -> bool:
         if self.finished:
             return True
-        if self.started_at > 0 and self.remaining_seconds <= 0:
-            self.finished = True
-            return True
-        return False
+        return self.started_at > 0 and self.remaining_seconds <= 0
 
     def format_remaining(self) -> str:
         secs = self.remaining_seconds
@@ -149,7 +148,7 @@ Regeln:
 - Klare, kurze Schritte (1-2 Saetze pro Schritt)
 - timer_minutes nur wenn der Schritt eine Wartezeit hat (sonst null)
 - Mengenangaben in metrischen Einheiten (Gramm, Liter, Essloeffel)
-- Maximal 12 Schritte
+- Maximal {max_steps} Schritte
 - Portionen: {portions}
 {preferences}
 
@@ -170,6 +169,14 @@ class CookingAssistant:
         self._timer_tasks: list[asyncio.Task] = []
         self._notify_callback = None
 
+        # Config aus settings.yaml lesen
+        cook_cfg = yaml_config.get("cooking", {})
+        self.enabled = cook_cfg.get("enabled", True)
+        self.default_portions = int(cook_cfg.get("default_portions", 2))
+        self.max_steps = int(cook_cfg.get("max_steps", 12))
+        self.max_tokens = int(cook_cfg.get("max_tokens", 1024))
+        self.timer_notify_tts = cook_cfg.get("timer_notify_tts", True)
+
     async def initialize(self, redis_client=None):
         """Initialisiert mit Redis und laedt ggf. eine gespeicherte Session."""
         self.redis = redis_client
@@ -186,6 +193,8 @@ class CookingAssistant:
 
     def is_cooking_intent(self, text: str) -> bool:
         """Erkennt ob der User kochen will."""
+        if not self.enabled:
+            return False
         text_lower = text.lower().strip()
 
         # Direkte Rezept-Anfrage
@@ -231,6 +240,7 @@ class CookingAssistant:
             dish=dish,
             portions=portions,
             preferences=preferences,
+            max_steps=self.max_steps,
         )
 
         messages = [
@@ -242,7 +252,7 @@ class CookingAssistant:
             messages=messages,
             model=model,
             temperature=0.7,
-            max_tokens=1024,
+            max_tokens=self.max_tokens,
         )
 
         if "error" in response:
@@ -302,7 +312,7 @@ class CookingAssistant:
 
         # Timer setzen
         if any(kw in text_lower for kw in NAV_TIMER):
-            return self._set_timer_from_text(text)
+            return await self._set_timer_from_text(text)
 
         # Timer pruefen
         if any(kw in text_lower for kw in NAV_TIMER_CHECK):
@@ -345,7 +355,7 @@ class CookingAssistant:
 
         if step.timer_minutes:
             response += f"\n(Dieser Schritt dauert {step.timer_minutes} Minuten — ich stelle automatisch einen Timer.)"
-            self._start_step_timer(step)
+            await self._start_step_timer(step)
 
         return response
 
@@ -432,7 +442,7 @@ class CookingAssistant:
         self.session.ingredients = new_ingredients
         return f"Portionen angepasst: {old} → {new_portions}. Die Zutaten wurden umgerechnet."
 
-    def _set_timer_from_text(self, text: str) -> str:
+    async def _set_timer_from_text(self, text: str) -> str:
         """Setzt einen Timer basierend auf Text-Eingabe."""
         # Minuten extrahieren
         match = re.search(r"(\d+)\s*(?:minuten?|min)", text.lower())
@@ -455,9 +465,12 @@ class CookingAssistant:
         task = asyncio.create_task(self._timer_watcher(timer))
         self._timer_tasks.append(task)
 
+        # Timer in Redis persistieren (fuer Neustart-Recovery)
+        await self._persist_session()
+
         return f"Timer gesetzt: {label} — {minutes} Minuten. Ich sage Bescheid wenn er abgelaufen ist."
 
-    def _start_step_timer(self, step: CookingStep):
+    async def _start_step_timer(self, step: CookingStep):
         """Startet einen Timer fuer einen Koch-Schritt."""
         if not step.timer_minutes:
             return
@@ -470,14 +483,20 @@ class CookingAssistant:
         task = asyncio.create_task(self._timer_watcher(timer))
         self._timer_tasks.append(task)
 
+        # Timer in Redis persistieren (fuer Neustart-Recovery)
+        await self._persist_session()
+
     async def _timer_watcher(self, timer: CookingTimer):
         """Ueberwacht einen Timer und benachrichtigt bei Ablauf."""
         try:
-            await asyncio.sleep(timer.duration_seconds)
+            remaining = timer.remaining_seconds
+            if remaining <= 0:
+                remaining = timer.duration_seconds  # Frisch gestartet, noch kein started_at
+            await asyncio.sleep(remaining)
             timer.finished = True
             message = f"Sir, der Timer fuer '{timer.label}' ist abgelaufen!"
             logger.info("Koch-Timer abgelaufen: %s", timer.label)
-            if self._notify_callback:
+            if self._notify_callback and self.timer_notify_tts:
                 await self._notify_callback({"message": message, "type": "cooking_timer"})
         except asyncio.CancelledError:
             pass
@@ -508,9 +527,13 @@ class CookingAssistant:
     async def _stop_session(self) -> str:
         """Beendet die Koch-Session."""
         dish = self.session.dish if self.session else "unbekannt"
-        # Alle Timer-Tasks canceln
+        # Alle Timer-Tasks canceln und auf Abschluss warten
         for task in self._timer_tasks:
             task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
         self._timer_tasks.clear()
         self.session = None
         await self._clear_persisted_session()
@@ -592,7 +615,7 @@ class CookingAssistant:
         if match:
             return min(int(match.group(1)), 20)
 
-        return 2  # Default
+        return self.default_portions
 
     def _parse_recipe(self, content: str, dish: str, portions: int, person: str) -> Optional[CookingSession]:
         """Parst die LLM-Antwort in eine CookingSession."""
@@ -641,6 +664,16 @@ class CookingAssistant:
         if not self.redis or not self.session:
             return
         try:
+            # Aktive Timer mit-persistieren
+            active_timers = []
+            for t in self.session.timers:
+                if not t.is_done:
+                    active_timers.append({
+                        "label": t.label,
+                        "duration_seconds": t.duration_seconds,
+                        "started_at": t.started_at,
+                    })
+
             data = {
                 "dish": self.session.dish,
                 "portions": self.session.portions,
@@ -653,6 +686,7 @@ class CookingAssistant:
                 "current_step": self.session.current_step,
                 "started_at": self.session.started_at,
                 "person": self.session.person,
+                "active_timers": active_timers,
             }
             await self.redis.setex(
                 self.REDIS_SESSION_KEY,
@@ -663,7 +697,7 @@ class CookingAssistant:
             logger.debug("Koch-Session nicht persistiert: %s", e)
 
     async def _restore_session(self):
-        """Laedt eine gespeicherte Koch-Session aus Redis."""
+        """Laedt eine gespeicherte Koch-Session aus Redis (inkl. aktive Timer)."""
         if not self.redis:
             return
         try:
@@ -690,9 +724,25 @@ class CookingAssistant:
                 started_at=data.get("started_at", 0.0),
                 person=data.get("person", ""),
             )
-            logger.info("Koch-Session wiederhergestellt: %s (Schritt %d/%d)",
+
+            # Aktive Timer wiederherstellen
+            restored_timers = 0
+            for td in data.get("active_timers", []):
+                timer = CookingTimer(
+                    label=td["label"],
+                    duration_seconds=td["duration_seconds"],
+                    started_at=td.get("started_at", 0.0),
+                )
+                # Nur Timer die noch laufen
+                if not timer.is_done:
+                    self.session.timers.append(timer)
+                    task = asyncio.create_task(self._timer_watcher(timer))
+                    self._timer_tasks.append(task)
+                    restored_timers += 1
+
+            logger.info("Koch-Session wiederhergestellt: %s (Schritt %d/%d, %d Timer)",
                         self.session.dish, self.session.current_step + 1,
-                        self.session.total_steps)
+                        self.session.total_steps, restored_timers)
         except Exception as e:
             logger.debug("Koch-Session nicht wiederhergestellt: %s", e)
 

@@ -7,6 +7,7 @@ import json
 import logging
 from datetime import datetime
 from typing import Optional
+from urllib.parse import urlparse
 
 import redis.asyncio as redis
 
@@ -42,9 +43,10 @@ class MemoryManager:
         try:
             import chromadb
 
+            _parsed = urlparse(settings.chroma_url)
             self._chroma_client = chromadb.HttpClient(
-                host=settings.chroma_url.replace("http://", "").split(":")[0],
-                port=int(settings.chroma_url.split(":")[-1]),
+                host=_parsed.hostname or "localhost",
+                port=_parsed.port or 8000,
             )
             self.chroma_collection = self._chroma_client.get_or_create_collection(
                 name="mha_conversations",
@@ -73,9 +75,10 @@ class MemoryManager:
         }
         entry_json = json.dumps(entry)
 
-        # Working Memory (letzte 50)
+        # Working Memory (letzte 50, mit 7-Tage-TTL als Sicherheitsnetz)
         await self.redis.lpush("mha:conversations", entry_json)
         await self.redis.ltrim("mha:conversations", 0, 49)
+        await self.redis.expire("mha:conversations", 7 * 86400)
 
         # Tages-Archiv (Phase 7: fuer DailySummarizer)
         today = datetime.now().strftime("%Y-%m-%d")
@@ -349,7 +352,12 @@ class MemoryManager:
             return
         current = await self.get_feedback_score(event_type)
         new_score = max(0.0, min(1.0, current + delta))
-        await self.redis.set(f"mha:feedback:score:{event_type}", str(new_score))
+        # 90 Tage TTL auf Feedback-Scores
+        await self.redis.setex(
+            f"mha:feedback:score:{event_type}",
+            90 * 86400,
+            str(new_score),
+        )
 
     async def close(self):
         """Schliesst Verbindungen."""

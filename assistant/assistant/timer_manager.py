@@ -18,6 +18,7 @@ import logging
 import time
 import uuid
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 from typing import Optional
 
 import redis.asyncio as aioredis
@@ -26,6 +27,8 @@ logger = logging.getLogger(__name__)
 
 # Redis Keys
 KEY_TIMERS = "mha:timers:active"
+KEY_REMINDERS = "mha:reminders:active"
+KEY_ALARMS = "mha:alarms:active"
 
 
 @dataclass
@@ -45,24 +48,27 @@ class GeneralTimer:
         self.finished = False
 
     @property
-    def remaining_seconds(self) -> int:
+    def remaining_seconds(self) -> float:
+        """Verbleibende Sekunden als Float (Praezision fuer Sleep)."""
         if self.finished or self.started_at == 0:
-            return 0
+            return 0.0
         elapsed = time.time() - self.started_at
         remaining = self.duration_seconds - elapsed
-        return max(0, int(remaining))
+        return max(0.0, remaining)
+
+    @property
+    def remaining_seconds_display(self) -> int:
+        """Gerundete verbleibende Sekunden fuer Anzeige."""
+        return int(self.remaining_seconds + 0.5)
 
     @property
     def is_done(self) -> bool:
         if self.finished:
             return True
-        if self.started_at > 0 and self.remaining_seconds <= 0:
-            self.finished = True
-            return True
-        return False
+        return self.started_at > 0 and self.remaining_seconds <= 0
 
     def format_remaining(self) -> str:
-        secs = self.remaining_seconds
+        secs = self.remaining_seconds_display
         if secs <= 0:
             return "abgelaufen"
         hours = secs // 3600
@@ -114,12 +120,14 @@ class TimerManager:
         self.redis: Optional[aioredis.Redis] = None
 
     async def initialize(self, redis_client: Optional[aioredis.Redis] = None):
-        """Initialisiert den TimerManager."""
+        """Initialisiert den TimerManager (Timer, Erinnerungen, Wecker)."""
         self.redis = redis_client
-        # Bestehende Timer aus Redis wiederherstellen
+        # Bestehende Timer, Erinnerungen und Wecker aus Redis wiederherstellen
         if self.redis:
             await self._restore_timers()
-        logger.info("TimerManager initialisiert (%d aktive Timer)", len(self.timers))
+            await self._restore_reminders()
+            await self._restore_alarms()
+        logger.info("TimerManager initialisiert (%d aktive Timer/Erinnerungen/Wecker)", len(self.timers))
 
     def set_notify_callback(self, callback):
         """Setzt den Callback fuer Timer-Benachrichtigungen."""
@@ -212,13 +220,17 @@ class TimerManager:
         if not target:
             return {"success": False, "message": "Timer nicht gefunden."}
 
-        # Task canceln
+        # Task canceln und auf Abschluss warten
         task = self._tasks.pop(target.id, None)
         if task:
             task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
 
         target.finished = True
-        del self.timers[target.id]
+        self.timers.pop(target.id, None)
         await self._remove_timer(target.id)
 
         return {"success": True, "message": f"Timer '{target.label}' abgebrochen."}
@@ -284,7 +296,11 @@ class TimerManager:
                 func_args = action.get("args", {})
                 if func_name:
                     logger.info("Timer-Aktion ausfuehren: %s(%s)", func_name, func_args)
-                    result = await self._action_callback(func_name, func_args)
+                    try:
+                        result = await self._action_callback(func_name, func_args)
+                    except Exception as action_err:
+                        logger.error("Timer-Aktion fehlgeschlagen: %s", action_err)
+                        result = None
                     action_msg = f"Timer-Aktion '{func_name}' ausgefuehrt."
                     if self._notify_callback:
                         await self._notify_callback({
@@ -297,11 +313,9 @@ class TimerManager:
             self._tasks.pop(timer.id, None)
             await self._remove_timer(timer.id)
             # Timer im Dict behalten fuer Status-Abfrage, aber nach 5 Min entfernen
-            try:
-                loop = asyncio.get_running_loop()
-                loop.call_later(300, lambda tid=timer.id: self.timers.pop(tid, None))
-            except RuntimeError:
-                self.timers.pop(timer.id, None)
+            asyncio.get_running_loop().call_later(
+                300, lambda tid=timer.id: self.timers.pop(tid, None)
+            )
 
         except asyncio.CancelledError:
             pass
@@ -343,8 +357,8 @@ class TimerManager:
 
                 timer = GeneralTimer.from_dict(json.loads(data))
 
-                # Pruefen ob Timer noch laeuft
-                if timer.remaining_seconds > 0 and not timer.finished:
+                # Pruefen ob Timer noch laeuft (remaining_seconds ist jetzt float)
+                if timer.remaining_seconds > 0.0 and not timer.finished:
                     self.timers[timer.id] = timer
                     task = asyncio.create_task(self._timer_watcher(timer))
                     self._tasks[timer.id] = task
@@ -355,3 +369,480 @@ class TimerManager:
                     await self._remove_timer(timer.id)
         except Exception as e:
             logger.warning("Timer-Wiederherstellung fehlgeschlagen: %s", e)
+
+    # ==================================================================
+    # Erinnerungen (absolute Uhrzeit)
+    # ==================================================================
+
+    async def create_reminder(
+        self,
+        time_str: str,
+        label: str,
+        date_str: str = "",
+        room: str = "",
+        person: str = "",
+    ) -> dict:
+        """Erstellt eine Erinnerung fuer einen absoluten Zeitpunkt.
+
+        Args:
+            time_str: Uhrzeit im Format "HH:MM" (z.B. "15:00")
+            label: Woran erinnert werden soll
+            date_str: Datum im Format "YYYY-MM-DD" (leer = heute/morgen automatisch)
+            room: Raum fuer TTS-Benachrichtigung
+            person: Person die die Erinnerung erstellt hat
+
+        Returns:
+            Ergebnis-Dict mit success und message
+        """
+        try:
+            now = datetime.now()
+
+            # Zielzeit parsen
+            target_time = datetime.strptime(time_str, "%H:%M")
+            if date_str:
+                target_date = datetime.strptime(date_str, "%Y-%m-%d")
+            else:
+                target_date = now
+
+            target = target_date.replace(
+                hour=target_time.hour,
+                minute=target_time.minute,
+                second=0,
+                microsecond=0,
+            )
+
+            # Wenn Zeitpunkt heute schon vorbei ist → morgen
+            if target <= now and not date_str:
+                target += timedelta(days=1)
+
+            seconds_until = (target - now).total_seconds()
+            if seconds_until <= 0:
+                return {"success": False, "message": "Der Zeitpunkt liegt in der Vergangenheit."}
+            if seconds_until > 7 * 86400:
+                return {"success": False, "message": "Erinnerungen koennen maximal 7 Tage in der Zukunft liegen."}
+
+        except ValueError:
+            return {"success": False, "message": f"Ungueltige Uhrzeit: {time_str}. Format: HH:MM"}
+
+        reminder_id = str(uuid.uuid4())[:8]
+        timer = GeneralTimer(
+            id=reminder_id,
+            label=label,
+            duration_seconds=int(seconds_until),
+            room=room,
+            person=person,
+            started_at=time.time(),
+        )
+
+        self.timers[reminder_id] = timer
+        await self._persist_reminder(reminder_id, timer, target)
+
+        # Watcher-Task starten
+        task = asyncio.create_task(self._reminder_watcher(timer, target))
+        self._tasks[reminder_id] = task
+
+        # Menschenlesbare Zeitangabe
+        day_str = ""
+        if target.date() == now.date():
+            day_str = "heute"
+        elif target.date() == (now + timedelta(days=1)).date():
+            day_str = "morgen"
+        else:
+            day_str = target.strftime("%d.%m.%Y")
+
+        return {
+            "success": True,
+            "message": f"Erinnerung gesetzt: '{label}' {day_str} um {time_str} Uhr.",
+            "reminder_id": reminder_id,
+        }
+
+    async def _reminder_watcher(self, timer: GeneralTimer, target: datetime):
+        """Wartet bis zum Erinnerungs-Zeitpunkt und benachrichtigt."""
+        try:
+            seconds_until = (target - datetime.now()).total_seconds()
+            if seconds_until > 0:
+                await asyncio.sleep(seconds_until)
+
+            timer.finished = True
+            logger.info("Erinnerung ausgeloest: %s (ID: %s)", timer.label, timer.id)
+
+            if self._notify_callback:
+                await self._notify_callback({
+                    "message": f"Sir, Erinnerung: {timer.label}",
+                    "type": "reminder",
+                    "room": timer.room,
+                    "timer_id": timer.id,
+                })
+
+            # Aufraumen
+            self._tasks.pop(timer.id, None)
+            await self._remove_reminder(timer.id)
+            asyncio.get_running_loop().call_later(
+                300, lambda tid=timer.id: self.timers.pop(tid, None)
+            )
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            logger.error("Reminder-Watcher Fehler fuer '%s': %s", timer.label, e)
+
+    async def _persist_reminder(self, reminder_id: str, timer: GeneralTimer, target: datetime):
+        """Speichert Erinnerung in Redis."""
+        if not self.redis:
+            return
+        try:
+            data = timer.to_dict()
+            data["target_iso"] = target.isoformat()
+            await self.redis.hset(KEY_REMINDERS, reminder_id, json.dumps(data))
+        except Exception as e:
+            logger.debug("Reminder-Persistenz fehlgeschlagen: %s", e)
+
+    async def _remove_reminder(self, reminder_id: str):
+        """Entfernt Erinnerung aus Redis."""
+        if not self.redis:
+            return
+        try:
+            await self.redis.hdel(KEY_REMINDERS, reminder_id)
+        except Exception as e:
+            logger.debug("Reminder Redis-Cleanup fehlgeschlagen: %s", e)
+
+    async def _restore_reminders(self):
+        """Stellt Erinnerungen aus Redis nach Neustart wieder her."""
+        if not self.redis:
+            return
+        try:
+            raw = await self.redis.hgetall(KEY_REMINDERS)
+            if not raw:
+                return
+            for rid, data in raw.items():
+                if isinstance(rid, bytes):
+                    rid = rid.decode()
+                if isinstance(data, bytes):
+                    data = data.decode()
+
+                info = json.loads(data)
+                target = datetime.fromisoformat(info["target_iso"])
+
+                if target > datetime.now():
+                    timer = GeneralTimer.from_dict(info)
+                    self.timers[timer.id] = timer
+                    task = asyncio.create_task(self._reminder_watcher(timer, target))
+                    self._tasks[timer.id] = task
+                    logger.info("Erinnerung wiederhergestellt: '%s' um %s",
+                                timer.label, target.strftime("%H:%M"))
+                else:
+                    await self._remove_reminder(rid)
+        except Exception as e:
+            logger.warning("Reminder-Wiederherstellung fehlgeschlagen: %s", e)
+
+    def get_reminders_status(self) -> dict:
+        """Gibt den Status aller Erinnerungen zurueck (nur aktive Reminder)."""
+        # Erinnerungen sind auch in self.timers, aber wir filtern per Redis-Key
+        active = [t for t in self.timers.values() if not t.is_done]
+        if not active:
+            return {"success": True, "message": "Keine aktiven Erinnerungen."}
+        parts = ["Aktive Erinnerungen:"]
+        for t in active:
+            parts.append(f"  - {t.label}: in {t.format_remaining()}")
+        return {"success": True, "message": "\n".join(parts)}
+
+    # ==================================================================
+    # Wecker (Wake-Up Alarm)
+    # ==================================================================
+
+    async def set_wakeup_alarm(
+        self,
+        time_str: str,
+        label: str = "Wecker",
+        room: str = "",
+        repeat: str = "",
+    ) -> dict:
+        """Setzt einen Wecker fuer eine bestimmte Uhrzeit.
+
+        Args:
+            time_str: Uhrzeit im Format "HH:MM" (z.B. "06:30")
+            label: Bezeichnung (Standard: "Wecker")
+            room: Raum fuer TTS/Licht-Wecken
+            repeat: Wiederholungs-Modus: "" (einmalig), "daily", "weekdays", "weekends"
+
+        Returns:
+            Ergebnis-Dict mit success und message
+        """
+        try:
+            now = datetime.now()
+            target_time = datetime.strptime(time_str, "%H:%M")
+            target = now.replace(
+                hour=target_time.hour,
+                minute=target_time.minute,
+                second=0,
+                microsecond=0,
+            )
+
+            # Wenn heute schon vorbei → morgen
+            if target <= now:
+                target += timedelta(days=1)
+
+            # Bei weekdays/weekends ggf. weiter springen
+            if repeat == "weekdays":
+                while target.weekday() >= 5:  # Sa=5, So=6
+                    target += timedelta(days=1)
+            elif repeat == "weekends":
+                while target.weekday() < 5:
+                    target += timedelta(days=1)
+
+            seconds_until = (target - now).total_seconds()
+            if seconds_until <= 0:
+                return {"success": False, "message": "Zeitpunkt liegt in der Vergangenheit."}
+
+        except ValueError:
+            return {"success": False, "message": f"Ungueltige Uhrzeit: {time_str}. Format: HH:MM"}
+
+        alarm_id = str(uuid.uuid4())[:8]
+        alarm_data = {
+            "id": alarm_id,
+            "time": time_str,
+            "label": label,
+            "room": room,
+            "repeat": repeat,
+            "active": True,
+            "created_at": now.isoformat(),
+            "next_trigger": target.isoformat(),
+        }
+
+        # Alarm in Redis speichern
+        if self.redis:
+            try:
+                await self.redis.hset(KEY_ALARMS, alarm_id, json.dumps(alarm_data))
+            except Exception as e:
+                logger.debug("Wecker-Persistenz fehlgeschlagen: %s", e)
+
+        # Timer erstellen fuer naechstes Klingeln
+        timer = GeneralTimer(
+            id=alarm_id,
+            label=label,
+            duration_seconds=int(seconds_until),
+            room=room,
+            started_at=time.time(),
+        )
+        self.timers[alarm_id] = timer
+        task = asyncio.create_task(self._alarm_watcher(alarm_id, alarm_data))
+        self._tasks[alarm_id] = task
+
+        repeat_text = {
+            "daily": " (taeglich)",
+            "weekdays": " (Mo-Fr)",
+            "weekends": " (Sa-So)",
+        }.get(repeat, "")
+
+        day_str = "morgen" if target.date() > now.date() else "heute"
+        return {
+            "success": True,
+            "message": f"Wecker gestellt: {day_str} um {time_str} Uhr{repeat_text}.",
+            "alarm_id": alarm_id,
+        }
+
+    async def cancel_alarm(self, alarm_id: str = "", label: str = "") -> dict:
+        """Loescht einen Wecker."""
+        target_id = alarm_id
+
+        if not target_id and label:
+            # Per Label in Redis suchen
+            if self.redis:
+                try:
+                    raw = await self.redis.hgetall(KEY_ALARMS)
+                    for aid, data in (raw or {}).items():
+                        if isinstance(aid, bytes):
+                            aid = aid.decode()
+                        if isinstance(data, bytes):
+                            data = data.decode()
+                        info = json.loads(data)
+                        if label.lower() in info.get("label", "").lower() and info.get("active"):
+                            target_id = aid
+                            break
+                except Exception:
+                    pass
+
+            # Fallback: In-Memory suchen (falls Redis unavailable)
+            if not target_id:
+                label_lower = label.lower()
+                for tid, timer in self.timers.items():
+                    if label_lower in timer.label.lower() and not timer.is_done:
+                        target_id = tid
+                        break
+
+        if not target_id:
+            return {"success": False, "message": "Wecker nicht gefunden."}
+
+        # Task canceln
+        task = self._tasks.pop(target_id, None)
+        if task:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
+        self.timers.pop(target_id, None)
+
+        # Aus Redis entfernen
+        if self.redis:
+            try:
+                await self.redis.hdel(KEY_ALARMS, target_id)
+            except Exception:
+                pass
+
+        return {"success": True, "message": "Wecker geloescht."}
+
+    async def get_alarms(self) -> dict:
+        """Gibt alle aktiven Wecker zurueck."""
+        if not self.redis:
+            return {"success": True, "message": "Keine Wecker gesetzt."}
+
+        try:
+            raw = await self.redis.hgetall(KEY_ALARMS)
+            if not raw:
+                return {"success": True, "message": "Keine Wecker gesetzt."}
+
+            alarms = []
+            for aid, data in raw.items():
+                if isinstance(data, bytes):
+                    data = data.decode()
+                info = json.loads(data)
+                if info.get("active"):
+                    repeat_text = {
+                        "daily": "taeglich",
+                        "weekdays": "Mo-Fr",
+                        "weekends": "Sa-So",
+                    }.get(info.get("repeat", ""), "einmalig")
+                    alarms.append(f"  - {info['label']}: {info['time']} Uhr ({repeat_text})")
+
+            if not alarms:
+                return {"success": True, "message": "Keine Wecker gesetzt."}
+
+            return {"success": True, "message": "Aktive Wecker:\n" + "\n".join(alarms)}
+        except Exception as e:
+            logger.debug("Wecker-Status Fehler: %s", e)
+            return {"success": True, "message": "Keine Wecker gesetzt."}
+
+    async def _alarm_watcher(self, alarm_id: str, alarm_data: dict):
+        """Wartet bis zur Weckzeit, benachrichtigt, und plant ggf. Wiederholung."""
+        try:
+            target = datetime.fromisoformat(alarm_data["next_trigger"])
+            seconds_until = (target - datetime.now()).total_seconds()
+            if seconds_until > 0:
+                await asyncio.sleep(seconds_until)
+
+            logger.info("Wecker klingelt: %s um %s", alarm_data["label"], alarm_data["time"])
+
+            # Benachrichtigung senden
+            if self._notify_callback:
+                await self._notify_callback({
+                    "message": f"Guten Morgen Sir! Wecker: {alarm_data['label']} — es ist {alarm_data['time']} Uhr.",
+                    "type": "wakeup_alarm",
+                    "room": alarm_data.get("room", ""),
+                    "alarm_id": alarm_id,
+                })
+
+            self._tasks.pop(alarm_id, None)
+            self.timers.pop(alarm_id, None)
+
+            # Wiederholung planen
+            repeat = alarm_data.get("repeat", "")
+            if repeat:
+                await self._schedule_next_alarm(alarm_id, alarm_data)
+            else:
+                # Einmaliger Wecker — aus Redis entfernen
+                if self.redis:
+                    await self.redis.hdel(KEY_ALARMS, alarm_id)
+
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            logger.error("Wecker-Watcher Fehler: %s", e)
+
+    async def _schedule_next_alarm(self, alarm_id: str, alarm_data: dict):
+        """Plant den naechsten Wecker-Termin fuer wiederkehrende Wecker."""
+        try:
+            now = datetime.now()
+            target_time = datetime.strptime(alarm_data["time"], "%H:%M")
+            next_target = now.replace(
+                hour=target_time.hour,
+                minute=target_time.minute,
+                second=0,
+                microsecond=0,
+            ) + timedelta(days=1)
+
+            repeat = alarm_data.get("repeat", "daily")
+            if repeat == "weekdays":
+                while next_target.weekday() >= 5:
+                    next_target += timedelta(days=1)
+            elif repeat == "weekends":
+                while next_target.weekday() < 5:
+                    next_target += timedelta(days=1)
+
+            alarm_data["next_trigger"] = next_target.isoformat()
+
+            # Redis aktualisieren
+            if self.redis:
+                await self.redis.hset(KEY_ALARMS, alarm_id, json.dumps(alarm_data))
+
+            # Neuen Timer + Task erstellen
+            seconds_until = (next_target - now).total_seconds()
+            timer = GeneralTimer(
+                id=alarm_id,
+                label=alarm_data["label"],
+                duration_seconds=int(seconds_until),
+                room=alarm_data.get("room", ""),
+                started_at=time.time(),
+            )
+            self.timers[alarm_id] = timer
+            task = asyncio.create_task(self._alarm_watcher(alarm_id, alarm_data))
+            self._tasks[alarm_id] = task
+
+            logger.info("Naechster Wecker: %s um %s", alarm_data["label"],
+                        next_target.strftime("%d.%m. %H:%M"))
+        except Exception as e:
+            logger.error("Wecker-Wiederholung fehlgeschlagen: %s", e)
+
+    async def _restore_alarms(self):
+        """Stellt Wecker aus Redis nach Neustart wieder her."""
+        if not self.redis:
+            return
+        try:
+            raw = await self.redis.hgetall(KEY_ALARMS)
+            if not raw:
+                return
+            for aid, data in raw.items():
+                if isinstance(aid, bytes):
+                    aid = aid.decode()
+                if isinstance(data, bytes):
+                    data = data.decode()
+
+                alarm_data = json.loads(data)
+                if not alarm_data.get("active", True):
+                    continue
+
+                target = datetime.fromisoformat(alarm_data["next_trigger"])
+
+                if target > datetime.now():
+                    # Noch in der Zukunft → Task starten
+                    seconds_until = (target - datetime.now()).total_seconds()
+                    timer = GeneralTimer(
+                        id=aid,
+                        label=alarm_data["label"],
+                        duration_seconds=int(seconds_until),
+                        room=alarm_data.get("room", ""),
+                        started_at=time.time(),
+                    )
+                    self.timers[aid] = timer
+                    task = asyncio.create_task(self._alarm_watcher(aid, alarm_data))
+                    self._tasks[aid] = task
+                    logger.info("Wecker wiederhergestellt: '%s' um %s",
+                                alarm_data["label"], alarm_data["time"])
+                elif alarm_data.get("repeat"):
+                    # Vergangener wiederkehrender Wecker → naechsten planen
+                    await self._schedule_next_alarm(aid, alarm_data)
+                else:
+                    # Vergangener einmaliger Wecker → entfernen
+                    await self.redis.hdel(KEY_ALARMS, aid)
+        except Exception as e:
+            logger.warning("Wecker-Wiederherstellung fehlgeschlagen: %s", e)

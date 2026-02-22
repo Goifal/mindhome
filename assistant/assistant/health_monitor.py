@@ -14,6 +14,7 @@ from typing import Optional
 import redis.asyncio as redis
 
 from .config import yaml_config
+from .constants import HEALTH_MONITOR_STARTUP_DELAY, REDIS_HEALTH_SNAPSHOT_TTL
 
 logger = logging.getLogger(__name__)
 
@@ -68,11 +69,11 @@ class HealthMonitor:
         self.redis = redis_client
         logger.info("Health Monitor initialisiert (Intervall: %d Min.)", self.check_interval)
 
-    def set_notify_callback(self, callback):
+    def set_notify_callback(self, callback) -> None:
         """Setzt die Callback-Funktion fuer Warnungen."""
         self._notify_callback = callback
 
-    async def start(self):
+    async def start(self) -> None:
         """Startet den periodischen Check-Loop."""
         if not self.enabled:
             logger.info("Health Monitor deaktiviert")
@@ -81,7 +82,7 @@ class HealthMonitor:
         self._task = asyncio.create_task(self._check_loop())
         logger.info("Health Monitor gestartet")
 
-    async def stop(self):
+    async def stop(self) -> None:
         """Stoppt den Check-Loop."""
         self._running = False
         if self._task:
@@ -93,7 +94,7 @@ class HealthMonitor:
 
     async def _check_loop(self):
         """Periodischer Gesundheits-Check."""
-        await asyncio.sleep(180)  # 3 Min. warten bis HA bereit
+        await asyncio.sleep(HEALTH_MONITOR_STARTUP_DELAY)
 
         while self._running:
             try:
@@ -143,7 +144,7 @@ class HealthMonitor:
             now = datetime.now()
             key = f"mha:health:snapshot:{now.strftime('%Y-%m-%d:%H')}"
             await self.redis.set(key, json.dumps(snapshot))
-            await self.redis.expire(key, 168 * 3600)  # 7 Tage
+            await self.redis.expire(key, REDIS_HEALTH_SNAPSHOT_TTL)
 
         except Exception as e:
             logger.debug("Health-Snapshot Fehler: %s", e)
@@ -280,7 +281,7 @@ class HealthMonitor:
                 if now - last_dt < timedelta(hours=self.hydration_interval):
                     return None
 
-            await self.redis.set("mha:health:last_hydration", now.isoformat())
+            await self.redis.setex("mha:health:last_hydration", 86400, now.isoformat())
             return {
                 "entity_id": "health.hydration",
                 "alert_type": "hydration_reminder",

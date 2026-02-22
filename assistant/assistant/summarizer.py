@@ -376,7 +376,7 @@ class DailySummarizer:
         # Redis (schneller Zugriff)
         if self.redis:
             key = f"mha:summary:{summary_type}:{date}"
-            await self.redis.set(key, content)
+            await self.redis.setex(key, 90 * 86400, content)
 
         # ChromaDB (Vektor-Suche)
         if self.chroma_collection:
@@ -482,8 +482,7 @@ Format: Fliesstext, kurze Saetze."""
 
             # In Redis speichern
             key = f"mha:personality:snapshot:{month}"
-            await self.redis.set(key, json.dumps(snapshot))
-            await self.redis.expire(key, 365 * 86400)
+            await self.redis.setex(key, 90 * 86400, json.dumps(snapshot))
 
             # Optional: In Summary integrieren
             existing_summary = await self._get_summary(month, MONTHLY)

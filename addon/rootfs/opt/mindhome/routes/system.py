@@ -2088,3 +2088,92 @@ def api_evaluate_plugins():
         logger.error("Plugin evaluation failed: %s", e)
         return jsonify({"error": "Internal server error"}), 500
     return jsonify(results)
+
+
+# ============================================================
+# Assistant Proxy — Branch Update System
+# Leitet Anfragen an den MindHome Assistant (PC2) weiter,
+# der die Git-Operationen auf dem gemounteten Repo ausfuehrt.
+# ============================================================
+
+def _get_assistant_url():
+    """Get the assistant URL from settings or environment (private networks only)."""
+    from urllib.parse import urlparse
+    url = get_setting("assistant_url", None)
+    if not url:
+        url = os.environ.get("ASSISTANT_URL", "http://192.168.1.100:8200")
+    url = url.rstrip("/")
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        return "http://192.168.1.100:8200"
+    host = parsed.hostname or ""
+    _ALLOWED = ("192.168.", "10.", "172.16.", "172.17.", "172.18.",
+                "172.19.", "172.2", "172.30.", "172.31.",
+                "127.", "localhost", "::1")
+    if not any(host.startswith(p) for p in _ALLOWED):
+        return "http://192.168.1.100:8200"
+    return url
+
+
+def _assistant_api_key():
+    """Get assistant API key from settings or environment."""
+    key = get_setting("assistant_api_key", None)
+    if not key:
+        key = os.environ.get("ASSISTANT_API_KEY", "")
+    return key or ""
+
+
+def _proxy_get(path, params=None, timeout=30):
+    """GET request to assistant API with API key auth."""
+    import requests as _requests
+    url = f"{_get_assistant_url()}{path}"
+    headers = {}
+    api_key = _assistant_api_key()
+    if api_key:
+        headers["X-API-Key"] = api_key
+    params = params or {}
+    params["token"] = api_key
+    try:
+        resp = _requests.get(url, headers=headers, params=params, timeout=timeout)
+        return resp.json()
+    except Exception as e:
+        logger.error("Assistant proxy GET %s failed: %s", path, e)
+        return {"error": f"Assistant nicht erreichbar: {e}"}
+
+
+def _proxy_post(path, data=None, timeout=60):
+    """POST request to assistant API with API key auth."""
+    import requests as _requests
+    url = f"{_get_assistant_url()}{path}"
+    headers = {"Content-Type": "application/json"}
+    api_key = _assistant_api_key()
+    if api_key:
+        headers["X-API-Key"] = api_key
+    params = {"token": api_key} if api_key else {}
+    try:
+        resp = _requests.post(url, headers=headers, json=data or {}, params=params, timeout=timeout)
+        return resp.json()
+    except Exception as e:
+        logger.error("Assistant proxy POST %s failed: %s", path, e)
+        return {"error": f"Assistant nicht erreichbar: {e}"}
+
+
+@system_bp.route("/api/system/assistant-status", methods=["GET"])
+def api_assistant_system_status():
+    """Proxy: Systemstatus vom Assistant (Git, Container, Branches)."""
+    return jsonify(_proxy_get("/api/ui/system/status"))
+
+
+@system_bp.route("/api/system/branch-update-check", methods=["GET"])
+def api_branch_update_check():
+    """Proxy: Update-Check fuer einen bestimmten Branch via Assistant."""
+    branch = request.args.get("branch", "")
+    return jsonify(_proxy_get("/api/ui/system/update-check", params={"branch": branch}))
+
+
+@system_bp.route("/api/system/branch-update", methods=["POST"])
+def api_branch_update():
+    """Proxy: Update/Branch-Wechsel via Assistant ausfuehren."""
+    data = request.json or {}
+    branch = sanitize_input(data.get("branch", ""), max_length=200)
+    return jsonify(_proxy_post("/api/ui/system/update", data={"branch": branch} if branch else {}))

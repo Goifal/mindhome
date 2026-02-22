@@ -14,6 +14,7 @@ import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urlparse
 
 from .config import settings, yaml_config
 
@@ -46,9 +47,10 @@ class KnowledgeBase:
         try:
             import chromadb
 
+            _parsed = urlparse(settings.chroma_url)
             self._chroma_client = chromadb.HttpClient(
-                host=settings.chroma_url.replace("http://", "").split(":")[0],
-                port=int(settings.chroma_url.split(":")[-1]),
+                host=_parsed.hostname or "localhost",
+                port=_parsed.port or 8000,
             )
             self.chroma_collection = self._chroma_client.get_or_create_collection(
                 name="mha_knowledge_base",

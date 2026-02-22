@@ -344,19 +344,8 @@ opinion_rules:
     check_field: "temperature"
     check_operator: "<"
     check_value: 20
-    check_room: "bad"
+    check_room: ["bad", "badezimmer"]
     responses:
       - "Unter 20 Grad im Bad. Das wird eine erfrischende Dusche."
       - "Badezimmer auf Keller-Niveau. Abhaertung?"
-    min_intensity: 2
-
-  - id: "heating_bathroom_low_alt"
-    description: "Badezimmer unter 20 Grad (badezimmer)"
-    check_action: "set_climate"
-    check_field: "temperature"
-    check_operator: "<"
-    check_value: 20
-    check_room: "badezimmer"
-    responses:
-      - "Unter 20 Grad im Bad. Das wird eine erfrischende Dusche."
     min_intensity: 2

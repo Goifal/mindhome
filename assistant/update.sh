@@ -4,11 +4,13 @@
 # Aktualisiert Code, Container und optional Ollama-Modelle
 #
 # Nutzung:
-#   ./update.sh              Normales Update (git pull + rebuild)
-#   ./update.sh --quick      Nur Container neustarten (kein Rebuild)
-#   ./update.sh --full       Alles: Code + Container + Ollama-Modelle
-#   ./update.sh --models     Nur Ollama-Modelle aktualisieren
-#   ./update.sh --status     Zeigt aktuellen Systemstatus
+#   ./update.sh                             Normales Update (git pull + rebuild)
+#   ./update.sh --branch claude/fix-xyz     Auf Branch wechseln + Update
+#   ./update.sh --quick                     Nur Container neustarten (kein Rebuild)
+#   ./update.sh --full                      Alles: Code + Container + Ollama-Modelle
+#   ./update.sh --full --branch <name>      Branch-Wechsel + Full Update
+#   ./update.sh --models                    Nur Ollama-Modelle aktualisieren
+#   ./update.sh --status                    Zeigt aktuellen Systemstatus
 # ============================================================
 
 set -euo pipefail
@@ -31,7 +33,27 @@ step()    { echo ""; echo -e "${CYAN}${BOLD}$*${NC}"; echo ""; }
 
 MHA_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="$(cd "$MHA_DIR/.." && pwd)"
-MODE="${1:-}"
+MODE=""
+TARGET_BRANCH=""
+
+# Parameter parsen
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --branch|-b)
+            TARGET_BRANCH="${2:-}"
+            if [ -z "$TARGET_BRANCH" ]; then
+                error "Option --branch erfordert einen Branch-Namen."
+                echo "  Beispiel: ./update.sh --branch claude/fix-xyz-Ab12C"
+                exit 1
+            fi
+            shift 2
+            ;;
+        *)
+            MODE="$1"
+            shift
+            ;;
+    esac
+done
 
 # ============================================================
 # Status anzeigen
@@ -119,7 +141,29 @@ update_code() {
 
     cd "$REPO_DIR"
 
-    # Lokale Aenderungen pruefen
+    # Aktuellen Branch merken (fuer Rollback und Log)
+    CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+    PULL_BRANCH="${TARGET_BRANCH:-$CURRENT_BRANCH}"
+    SWITCHING=false
+
+    if [ -n "$TARGET_BRANCH" ] && [ "$TARGET_BRANCH" != "$CURRENT_BRANCH" ]; then
+        SWITCHING=true
+        info "Branch-Wechsel: $CURRENT_BRANCH -> $TARGET_BRANCH"
+    fi
+
+    # User-Konfiguration in-memory sichern (settings.yaml + .env)
+    SETTINGS_BACKUP=""
+    ENV_BACKUP=""
+    if [ -f "$MHA_DIR/config/settings.yaml" ]; then
+        SETTINGS_BACKUP=$(cat "$MHA_DIR/config/settings.yaml")
+        success "settings.yaml gesichert"
+    fi
+    if [ -f "$MHA_DIR/.env" ]; then
+        ENV_BACKUP=$(cat "$MHA_DIR/.env")
+        success ".env gesichert"
+    fi
+
+    # Lokale Aenderungen pruefen und stashen
     if ! git diff --quiet 2>/dev/null || ! git diff --cached --quiet 2>/dev/null; then
         warn "Lokale Aenderungen erkannt:"
         git status --short
@@ -136,27 +180,68 @@ update_code() {
         STASHED=false
     fi
 
-    # Aktuellen Branch und Remote merken
-    BRANCH=$(git rev-parse --abbrev-ref HEAD)
     OLD_COMMIT=$(git rev-parse --short HEAD)
 
-    info "Hole Updates von origin/$BRANCH..."
-    git pull origin "$BRANCH"
+    # Branch-Wechsel (falls gewuenscht)
+    if [ "$SWITCHING" = true ]; then
+        info "Fetch origin/$TARGET_BRANCH..."
+        if ! git fetch origin "$TARGET_BRANCH"; then
+            error "git fetch fehlgeschlagen fuer $TARGET_BRANCH"
+            # Stash wiederherstellen
+            if [ "$STASHED" = true ]; then
+                git stash pop 2>/dev/null || true
+            fi
+            # Config wiederherstellen
+            _restore_configs
+            exit 1
+        fi
+
+        info "Checkout $TARGET_BRANCH..."
+        if ! git checkout "$TARGET_BRANCH"; then
+            error "git checkout fehlgeschlagen fuer $TARGET_BRANCH"
+            # Zurueck zum alten Branch
+            git checkout "$CURRENT_BRANCH" 2>/dev/null || true
+            if [ "$STASHED" = true ]; then
+                git stash pop 2>/dev/null || true
+            fi
+            _restore_configs
+            exit 1
+        fi
+        success "Auf Branch $TARGET_BRANCH gewechselt"
+    fi
+
+    info "Hole Updates von origin/$PULL_BRANCH..."
+    if ! git pull origin "$PULL_BRANCH"; then
+        error "git pull fehlgeschlagen"
+        # Rollback bei Branch-Wechsel
+        if [ "$SWITCHING" = true ]; then
+            warn "Rollback zu $CURRENT_BRANCH..."
+            git checkout "$CURRENT_BRANCH" 2>/dev/null || true
+        fi
+        if [ "$STASHED" = true ]; then
+            git stash pop 2>/dev/null || true
+        fi
+        _restore_configs
+        exit 1
+    fi
 
     NEW_COMMIT=$(git rev-parse --short HEAD)
-    if [ "$OLD_COMMIT" = "$NEW_COMMIT" ]; then
+    if [ "$OLD_COMMIT" = "$NEW_COMMIT" ] && [ "$SWITCHING" = false ]; then
         success "Bereits aktuell ($OLD_COMMIT)"
     else
         success "Aktualisiert: $OLD_COMMIT -> $NEW_COMMIT"
+        if [ "$SWITCHING" = true ]; then
+            success "Branch: $CURRENT_BRANCH -> $PULL_BRANCH"
+        fi
         echo ""
         info "Aenderungen:"
-        git log --oneline "${OLD_COMMIT}..${NEW_COMMIT}" | while IFS= read -r line; do
+        git log --oneline "${OLD_COMMIT}..${NEW_COMMIT}" 2>/dev/null | while IFS= read -r line; do
             echo "    $line"
         done
     fi
 
-    # Stash zurueckholen
-    if [ "$STASHED" = true ]; then
+    # Stash zurueckholen (nur wenn KEIN Branch-Wechsel — Stash gehoert zum alten Branch)
+    if [ "$STASHED" = true ] && [ "$SWITCHING" = false ]; then
         echo ""
         if git stash pop 2>/dev/null; then
             success "Lokale Aenderungen wiederhergestellt"
@@ -164,6 +249,23 @@ update_code() {
             warn "Stash konnte nicht automatisch angewendet werden."
             warn "Manuelle Loesung: git stash pop"
         fi
+    elif [ "$STASHED" = true ]; then
+        info "Stash beibehalten (Branch-Wechsel). Manuell anwenden: git stash pop"
+    fi
+
+    # User-Konfiguration wiederherstellen
+    _restore_configs
+}
+
+# Hilfsfunktion: User-Config wiederherstellen
+_restore_configs() {
+    if [ -n "$SETTINGS_BACKUP" ]; then
+        echo "$SETTINGS_BACKUP" > "$MHA_DIR/config/settings.yaml"
+        success "settings.yaml wiederhergestellt"
+    fi
+    if [ -n "$ENV_BACKUP" ]; then
+        echo "$ENV_BACKUP" > "$MHA_DIR/.env"
+        success ".env wiederhergestellt"
     fi
 }
 
@@ -275,6 +377,10 @@ echo -e "${BLUE}============================================================${NC
 echo -e "${BLUE}    MindHome Assistant — Update${NC}"
 echo -e "${BLUE}============================================================${NC}"
 
+if [ -n "$TARGET_BRANCH" ]; then
+    info "Ziel-Branch: $TARGET_BRANCH"
+fi
+
 case "$MODE" in
     --status|-s)
         show_status
@@ -302,15 +408,22 @@ case "$MODE" in
 
     --help|-h)
         echo ""
-        echo "  Nutzung: ./update.sh [OPTION]"
+        echo "  Nutzung: ./update.sh [OPTION] [--branch <name>]"
         echo ""
         echo "  Optionen:"
-        echo "    (keine)      Standard-Update: Code + Container rebuild"
-        echo "    --quick, -q  Nur Container neustarten (kein Rebuild)"
-        echo "    --full, -f   Alles: Code + Container + Ollama-Modelle"
-        echo "    --models, -m Nur Ollama-Modelle aktualisieren"
-        echo "    --status, -s Aktuellen Systemstatus anzeigen"
-        echo "    --help, -h   Diese Hilfe"
+        echo "    (keine)         Standard-Update: Code + Container rebuild"
+        echo "    --quick, -q     Nur Container neustarten (kein Rebuild)"
+        echo "    --full, -f      Alles: Code + Container + Ollama-Modelle"
+        echo "    --models, -m    Nur Ollama-Modelle aktualisieren"
+        echo "    --status, -s    Aktuellen Systemstatus anzeigen"
+        echo "    --help, -h      Diese Hilfe"
+        echo ""
+        echo "  Branch-Wechsel:"
+        echo "    --branch, -b <name>  Auf angegebenen Branch wechseln vor Update"
+        echo ""
+        echo "  Beispiele:"
+        echo "    ./update.sh --branch claude/fix-xyz-Ab12C"
+        echo "    ./update.sh --full --branch claude/new-feature-Cd34E"
         echo ""
         ;;
 

@@ -150,9 +150,8 @@ class RoutineEngine:
         # Als erledigt markieren
         if self.redis:
             today = datetime.now().strftime("%Y-%m-%d")
-            await self.redis.set(KEY_MORNING_DONE, today)
-            await self.redis.expire(KEY_MORNING_DONE, 86400)
-            await self.redis.set(KEY_LAST_BRIEFING, now.isoformat())
+            await self.redis.setex(KEY_MORNING_DONE, 86400, today)
+            await self.redis.setex(KEY_LAST_BRIEFING, 86400, now.isoformat())
 
         logger.info("Morning Briefing generiert (%d Bausteine, %d Aktionen)", len(parts), len(actions))
         return {"text": text, "actions": actions}
@@ -521,7 +520,7 @@ Kein unterwuerfiger Ton. Du bist ein brillanter Butler, kein Chatbot."""
 
         # Timestamp speichern
         if self.redis:
-            await self.redis.set(KEY_LAST_GOODNIGHT, datetime.now().isoformat())
+            await self.redis.setex(KEY_LAST_GOODNIGHT, 86400, datetime.now().isoformat())
 
         logger.info(
             "Gute-Nacht: %d Aktionen, %d Issues",
@@ -752,7 +751,7 @@ Kein unterwuerfiger Ton. Du bist ein brillanter Butler, kein Chatbot."""
         """Aktiviert den Gaeste-Modus."""
         if self.redis:
             try:
-                await self.redis.set(KEY_GUEST_MODE, "active")
+                await self.redis.setex(KEY_GUEST_MODE, 7 * 86400, "active")
             except Exception as e:
                 logger.warning("Guest-Mode Redis-Fehler: %s", e)
         logger.info("Gaeste-Modus aktiviert")
@@ -873,7 +872,7 @@ Kein unterwuerfiger Ton. Du bist ein brillanter Butler, kein Chatbot."""
         now = datetime.now().isoformat()
         entry = f"{now}|{event_type}|{description}"
         await self.redis.rpush(KEY_ABSENCE_LOG, entry)
-        await self.redis.expire(KEY_ABSENCE_LOG, 86400)  # Max 24h aufbewahren
+        await self.redis.expire(KEY_ABSENCE_LOG, 30 * 86400)
 
     async def get_absence_summary(self) -> str:
         """Gibt eine Zusammenfassung der Events waehrend der Abwesenheit zurueck."""
@@ -962,7 +961,7 @@ Kein unterwuerfiger Ton. Du bist ein brillanter Butler, kein Chatbot."""
         if not self.redis:
             return "Redis nicht verfuegbar fuer Abwesenheits-Simulation."
 
-        await self.redis.set(KEY_VACATION_SIM, "active")
+        await self.redis.setex(KEY_VACATION_SIM, 30 * 86400, "active")
         self._vacation_task = asyncio.create_task(self._run_vacation_simulation())
         logger.info("Abwesenheits-Simulation gestartet")
         return "Ich werde dafuer sorgen, dass das Haus bewohnt aussieht, Sir."
@@ -1047,16 +1046,24 @@ Kein unterwuerfiger Ton. Du bist ein brillanter Butler, kein Chatbot."""
 
             if action_type == "covers_up":
                 for s in states:
-                    if s.get("entity_id", "").startswith("cover."):
+                    eid = s.get("entity_id", "")
+                    if eid.startswith("cover."):
+                        # Sicherheitsfilter: Garagentore/Tore ueberspringen
+                        if self._executor and not await self._executor._is_safe_cover(eid, s):
+                            continue
                         await self.ha.call_service("cover", "set_cover_position",
-                                                   {"entity_id": s["entity_id"], "position": 100})
+                                                   {"entity_id": eid, "position": 100})
                 logger.info("Vacation-Sim: Rolladen hoch")
 
             elif action_type == "covers_down":
                 for s in states:
-                    if s.get("entity_id", "").startswith("cover."):
+                    eid = s.get("entity_id", "")
+                    if eid.startswith("cover."):
+                        # Sicherheitsfilter: Garagentore/Tore ueberspringen
+                        if self._executor and not await self._executor._is_safe_cover(eid, s):
+                            continue
                         await self.ha.call_service("cover", "set_cover_position",
-                                                   {"entity_id": s["entity_id"], "position": 0})
+                                                   {"entity_id": eid, "position": 0})
                 logger.info("Vacation-Sim: Rolladen runter")
 
             elif action_type == "light_random_on":

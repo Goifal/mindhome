@@ -4394,6 +4394,269 @@ const CoverPage = () => {
 };
 
 
+// ================================================================
+// Branch & Update Card — Git Branch-Auswahl im System-Tab
+// ================================================================
+const BranchUpdateCard = ({ lang, showToast }) => {
+    const [assistantStatus, setAssistantStatus] = useState(null);
+    const [selectedBranch, setSelectedBranch] = useState('');
+    const [updateCheck, setUpdateCheck] = useState(null);
+    const [updating, setUpdating] = useState(false);
+    const [checking, setChecking] = useState(false);
+    const [updateLog, setUpdateLog] = useState([]);
+
+    // Beim Laden: Assistant-Status (mit Branches) abrufen
+    useEffect(() => {
+        api.invalidate('system/assistant-status');
+        api.get('system/assistant-status').then(data => {
+            if (data && !data.error) setAssistantStatus(data);
+        });
+    }, []);
+
+    const currentBranch = assistantStatus?.git?.branch || '...';
+    const remoteBranches = assistantStatus?.git?.remote_branches || [];
+    const lastCommit = assistantStatus?.git?.commit || '';
+
+    // Update-Check fuer ausgewaehlten Branch
+    const checkBranch = async (branch) => {
+        setChecking(true);
+        setUpdateCheck(null);
+        try {
+            api.invalidate(`system/branch-update-check?branch=${encodeURIComponent(branch || '')}`);
+            const r = await api.get(`system/branch-update-check?branch=${encodeURIComponent(branch || '')}`);
+            if (r && !r.error) {
+                setUpdateCheck(r);
+            } else {
+                showToast(r?.error || (lang === 'de' ? 'Fehler beim Update-Check' : 'Update check failed'), 'error');
+            }
+        } finally {
+            setChecking(false);
+        }
+    };
+
+    // Update/Branch-Wechsel ausfuehren
+    const doUpdate = async (branch) => {
+        setUpdating(true);
+        setUpdateLog([]);
+        try {
+            const r = await api.post('system/branch-update', { branch: branch || '' });
+            if (r && !r._error) {
+                setUpdateLog(r.log || []);
+                if (r.success) {
+                    showToast(
+                        lang === 'de'
+                            ? `Update erfolgreich! Branch: ${r.branch || currentBranch}`
+                            : `Update successful! Branch: ${r.branch || currentBranch}`,
+                        'success'
+                    );
+                } else {
+                    showToast(lang === 'de' ? 'Update fehlgeschlagen' : 'Update failed', 'error');
+                }
+            } else {
+                showToast(r?.error || (lang === 'de' ? 'Fehler beim Update' : 'Update failed'), 'error');
+            }
+        } finally {
+            setUpdating(false);
+            // Status neu laden
+            const fresh = await api.get('system/assistant-status');
+            if (fresh && !fresh.error) setAssistantStatus(fresh);
+        }
+    };
+
+    return (
+        <div className="card" style={{ marginBottom: 16 }}>
+            <div className="card-title" style={{ marginBottom: 16 }}>
+                <span className="mdi mdi-source-branch" style={{ marginRight: 8, color: 'var(--accent-primary)' }} />
+                {lang === 'de' ? 'Branch & Update (Assistant)' : 'Branch & Update (Assistant)'}
+            </div>
+
+            {/* Aktueller Branch + Commit */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14 }}>
+                    <span style={{ color: 'var(--text-secondary)' }}>
+                        {lang === 'de' ? 'Aktueller Branch' : 'Current Branch'}
+                    </span>
+                    <span style={{
+                        fontFamily: 'var(--font-mono)', fontSize: 13,
+                        background: 'var(--accent-primary)', color: '#fff',
+                        padding: '2px 8px', borderRadius: 4
+                    }}>
+                        {currentBranch}
+                    </span>
+                </div>
+                {lastCommit && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
+                        <span style={{ color: 'var(--text-secondary)' }}>Commit</span>
+                        <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', fontSize: 12 }}>
+                            {lastCommit}
+                        </span>
+                    </div>
+                )}
+            </div>
+
+            {/* Branch-Auswahl */}
+            {remoteBranches.length > 0 && (
+                <div style={{ marginBottom: 12 }}>
+                    <label style={{ fontSize: 13, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>
+                        {lang === 'de' ? 'Branch wechseln' : 'Switch Branch'}
+                    </label>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                        <select
+                            value={selectedBranch}
+                            onChange={e => { setSelectedBranch(e.target.value); setUpdateCheck(null); }}
+                            style={{
+                                flex: 1, padding: '6px 10px', fontSize: 13,
+                                fontFamily: 'var(--font-mono)',
+                                background: 'var(--bg-secondary)', color: 'var(--text-primary)',
+                                border: '1px solid var(--border)', borderRadius: 6,
+                            }}
+                        >
+                            <option value="">
+                                {currentBranch} ({lang === 'de' ? 'aktuell' : 'current'})
+                            </option>
+                            {remoteBranches
+                                .filter(b => b !== currentBranch)
+                                .map(b => <option key={b} value={b}>{b}</option>)
+                            }
+                        </select>
+                        <button
+                            className="btn btn-sm btn-secondary"
+                            disabled={checking}
+                            onClick={() => checkBranch(selectedBranch)}
+                        >
+                            <span className="mdi mdi-magnify" style={{ marginRight: 4 }} />
+                            {checking
+                                ? (lang === 'de' ? 'Prüfe...' : 'Checking...')
+                                : (lang === 'de' ? 'Prüfen' : 'Check')
+                            }
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {/* Update-Check Ergebnis */}
+            {updateCheck && (
+                <div style={{
+                    padding: 10, marginBottom: 12, borderRadius: 6, fontSize: 13,
+                    background: updateCheck.updates_available ? 'rgba(59,130,246,0.1)' : 'rgba(34,197,94,0.1)',
+                    border: `1px solid ${updateCheck.updates_available ? 'rgba(59,130,246,0.3)' : 'rgba(34,197,94,0.3)'}`,
+                }}>
+                    {updateCheck.is_branch_switch ? (
+                        <div>
+                            <strong>{lang === 'de' ? 'Branch-Wechsel verfügbar' : 'Branch switch available'}</strong>
+                            <div style={{ color: 'var(--text-secondary)', marginTop: 4 }}>
+                                {currentBranch} → {updateCheck.check_branch}
+                            </div>
+                        </div>
+                    ) : updateCheck.updates_available ? (
+                        <div>
+                            <strong>{updateCheck.new_commits?.length || 0} {lang === 'de' ? 'neue Commits' : 'new commits'}</strong>
+                            <div style={{ color: 'var(--text-muted)', marginTop: 4, fontFamily: 'var(--font-mono)', fontSize: 11 }}>
+                                {updateCheck.local} → {updateCheck.remote}
+                            </div>
+                        </div>
+                    ) : (
+                        <span>{lang === 'de' ? 'Bereits aktuell' : 'Up to date'}</span>
+                    )}
+
+                    {/* Commit-Liste */}
+                    {updateCheck.new_commits?.length > 0 && (
+                        <div style={{
+                            marginTop: 8, maxHeight: 120, overflowY: 'auto',
+                            fontFamily: 'var(--font-mono)', fontSize: 11,
+                            color: 'var(--text-secondary)', lineHeight: 1.6,
+                        }}>
+                            {updateCheck.new_commits.map((c, i) => (
+                                <div key={i}>{c}</div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* Action Buttons */}
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                {/* Update aktueller Branch */}
+                <button
+                    className="btn btn-sm btn-primary"
+                    disabled={updating}
+                    onClick={() => doUpdate('')}
+                >
+                    <span className="mdi mdi-download" style={{ marginRight: 4 }} />
+                    {updating
+                        ? (lang === 'de' ? 'Update läuft...' : 'Updating...')
+                        : (lang === 'de' ? 'Aktuellen Branch updaten' : 'Update Current Branch')
+                    }
+                </button>
+
+                {/* Branch wechseln + Update */}
+                {selectedBranch && selectedBranch !== currentBranch && (
+                    <button
+                        className="btn btn-sm btn-accent"
+                        disabled={updating}
+                        onClick={() => {
+                            if (confirm(lang === 'de'
+                                ? `Wirklich zu "${selectedBranch}" wechseln? Der Container wird neu gestartet.`
+                                : `Switch to "${selectedBranch}"? The container will restart.`
+                            )) {
+                                doUpdate(selectedBranch);
+                            }
+                        }}
+                        style={{
+                            background: 'var(--accent-secondary, #7c3aed)',
+                            color: '#fff', border: 'none',
+                        }}
+                    >
+                        <span className="mdi mdi-source-branch-sync" style={{ marginRight: 4 }} />
+                        {lang === 'de'
+                            ? `Zu ${selectedBranch.split('/').pop()} wechseln`
+                            : `Switch to ${selectedBranch.split('/').pop()}`
+                        }
+                    </button>
+                )}
+
+                {/* Refresh Branches */}
+                <button
+                    className="btn btn-sm btn-secondary"
+                    onClick={async () => {
+                        api.invalidate('system/assistant-status');
+                        const fresh = await api.get('system/assistant-status');
+                        if (fresh && !fresh.error) {
+                            setAssistantStatus(fresh);
+                            showToast(lang === 'de' ? 'Branch-Liste aktualisiert' : 'Branch list refreshed', 'success');
+                        } else {
+                            showToast(fresh?.error || (lang === 'de' ? 'Assistant nicht erreichbar' : 'Assistant unreachable'), 'error');
+                        }
+                    }}
+                >
+                    <span className="mdi mdi-refresh" style={{ marginRight: 4 }} />
+                    {lang === 'de' ? 'Aktualisieren' : 'Refresh'}
+                </button>
+            </div>
+
+            {/* Update Log */}
+            {updateLog.length > 0 && (
+                <div style={{
+                    marginTop: 12, padding: 10, borderRadius: 6,
+                    background: 'var(--bg-tertiary)', maxHeight: 200, overflowY: 'auto',
+                    fontFamily: 'var(--font-mono)', fontSize: 11, lineHeight: 1.5,
+                    color: 'var(--text-secondary)',
+                }}>
+                    {updateLog.map((line, i) => (
+                        <div key={i} style={{
+                            color: line.includes('FEHLER') || line.includes('ERROR') ? 'var(--danger)'
+                                 : line.includes('WARNUNG') ? 'var(--warning)'
+                                 : line.includes('wiederhergestellt') || line.includes('aktualisiert') ? 'var(--success)'
+                                 : 'var(--text-secondary)'
+                        }}>{line}</div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+};
+
+
 const SettingsPage = () => {
     const { lang, setLang, theme, setTheme, viewMode, setViewMode, showToast, refreshData } = useApp();
     const [sysInfo, setSysInfo] = useState(null);
@@ -4709,6 +4972,9 @@ const SettingsPage = () => {
                     </button>
                 </div>
             </div>
+
+            {/* Branch & Update — Git Branch-Verwaltung via Assistant */}
+            <BranchUpdateCard lang={lang} showToast={showToast} />
 
             </div>
             {/* RIGHT COLUMN */}

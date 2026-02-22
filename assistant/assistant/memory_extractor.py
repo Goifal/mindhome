@@ -8,6 +8,7 @@ import json
 import logging
 from typing import Optional
 
+from .config import yaml_config
 from .ollama_client import OllamaClient
 from .semantic_memory import SemanticFact, SemanticMemory
 
@@ -53,10 +54,9 @@ Wenn der User etwas plant (Besuch, Reise, Termin, Vorhaben), extrahiere das als:
 
 Nur echte Plaene mit erkennbarer Zeitangabe. Keine Vermutungen."""
 
-# Minimale Konversationslaenge fuer Extraktion
-MIN_CONVERSATION_WORDS = 5
-# Maximale Konversationslaenge fuer Extraktion (Token-Limit)
-MAX_CONVERSATION_LENGTH = 2000
+# Defaults — werden von yaml_config ueberschrieben
+_DEFAULT_MIN_WORDS = 5
+_DEFAULT_MAX_LENGTH = 2000
 
 
 # Confidence pro Kategorie: Gesundheit/Sicherheit hoeher, Smalltalk niedriger
@@ -77,7 +77,16 @@ class MemoryExtractor:
     def __init__(self, ollama: OllamaClient, semantic_memory: SemanticMemory):
         self.ollama = ollama
         self.semantic = semantic_memory
-        self._extraction_model = "qwen3:14b"  # Smart-Modell fuer bessere Extraktion
+
+        # Config aus settings.yaml lesen
+        mem_cfg = yaml_config.get("memory", {})
+        self.enabled = mem_cfg.get("extraction_enabled", True)
+        self._extraction_model = mem_cfg.get("extraction_model", "qwen3:14b")
+        self._extraction_temperature = float(mem_cfg.get("extraction_temperature", 0.1))
+        self._extraction_max_tokens = int(mem_cfg.get("extraction_max_tokens", 512))
+        self._min_words = int(mem_cfg.get("extraction_min_words", _DEFAULT_MIN_WORDS))
+        self._default_confidence = float(mem_cfg.get("default_confidence", 0.7))
+        self._duplicate_threshold = float(mem_cfg.get("duplicate_threshold", 0.15))
 
     async def extract_and_store(
         self,
@@ -98,8 +107,8 @@ class MemoryExtractor:
         Returns:
             Liste der extrahierten und gespeicherten Fakten
         """
-        # Pruefen ob Extraktion sinnvoll ist
-        if not self._should_extract(user_text, assistant_response):
+        # Pruefen ob Extraktion sinnvoll / aktiviert ist
+        if not self.enabled or not self._should_extract(user_text, assistant_response):
             return []
 
         # Konversation formatieren
@@ -148,7 +157,7 @@ class MemoryExtractor:
     def _should_extract(self, user_text: str, assistant_response: str) -> bool:
         """Prueeft ob eine Extraktion sinnvoll ist."""
         # Zu kurze Texte ueberspringen
-        if len(user_text.split()) < MIN_CONVERSATION_WORDS:
+        if len(user_text.split()) < self._min_words:
             return False
 
         # Reine Befehle ueberspringen (kein Fakten-Potenzial)
@@ -187,7 +196,7 @@ class MemoryExtractor:
 
         conversation = "\n".join(parts)
         # Auf maximale Laenge begrenzen
-        return conversation[:MAX_CONVERSATION_LENGTH]
+        return conversation[:_DEFAULT_MAX_LENGTH]
 
     async def _call_llm(self, conversation: str) -> list[dict]:
         """Ruft das LLM auf um Fakten zu extrahieren."""
@@ -199,8 +208,8 @@ class MemoryExtractor:
             response = await self.ollama.chat(
                 messages=[{"role": "user", "content": prompt}],
                 model=self._extraction_model,
-                temperature=0.1,  # Niedrige Temperatur = konsistentere Extraktion
-                max_tokens=512,
+                temperature=self._extraction_temperature,
+                max_tokens=self._extraction_max_tokens,
             )
 
             if "error" in response:

@@ -25,23 +25,21 @@ import yaml
 
 from .brain import AssistantBrain
 from .config import settings, yaml_config, load_yaml_config
+from .constants import ERROR_BUFFER_MAX_SIZE, RATE_LIMIT_WINDOW, RATE_LIMIT_MAX_REQUESTS
 from .cover_config import load_cover_configs, save_cover_configs
 from .file_handler import (
     allowed_file, ensure_upload_dir,
     get_file_path, save_upload, MAX_FILE_SIZE,
 )
+from .request_context import RequestContextMiddleware, setup_structured_logging, get_request_id
 from .websocket import ws_manager, emit_speaking, emit_stream_start, emit_stream_token, emit_stream_end
 
-# Logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
-    datefmt="%H:%M:%S",
-)
+# Structured Logging (mit Request-ID Support)
+setup_structured_logging()
 logger = logging.getLogger("mindhome-assistant")
 
-# ---- Fehlerspeicher: Ring-Buffer fuer WARNING/ERROR Logs ----
-_error_buffer: deque[dict] = deque(maxlen=200)
+# ---- Fehlerspeicher: Ring-Buffer fuer WARNING/ERROR Logs (2000 statt 200) ----
+_error_buffer: deque[dict] = deque(maxlen=ERROR_BUFFER_MAX_SIZE)
 
 
 class _ErrorBufferHandler(logging.Handler):
@@ -144,6 +142,16 @@ async def _boot_announcement(brain_instance: "AssistantBrain", health_data: dict
             pass
 
 
+async def _periodic_token_cleanup():
+    """Raumt abgelaufene UI-Tokens alle 15 Minuten auf."""
+    while True:
+        await asyncio.sleep(900)  # 15 Minuten
+        try:
+            _cleanup_expired_tokens()
+        except Exception as e:
+            logger.debug("Token-Cleanup Fehler: %s", e)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup und Shutdown."""
@@ -168,27 +176,38 @@ async def lifespan(app: FastAPI):
     # Boot-Sequenz: Jarvis kuendigt sich an
     boot_cfg = yaml_config.get("boot_sequence", {})
     if boot_cfg.get("enabled", True):
-        asyncio.create_task(_boot_announcement(brain, health, boot_cfg))
+        task = asyncio.create_task(_boot_announcement(brain, health, boot_cfg))
+        task.add_done_callback(lambda t: t.exception() and logger.error("Boot-Sequenz Task Fehler: %s", t.exception()))
+
+    # Periodischer Token-Cleanup (alle 15 Min)
+    cleanup_task = asyncio.create_task(_periodic_token_cleanup())
 
     yield
 
+    cleanup_task.cancel()
     await brain.shutdown()
     logger.info("MindHome Assistant heruntergefahren.")
 
 
 app = FastAPI(
     title="MindHome Assistant",
-    description="Lokaler KI-Sprachassistent fuer Home Assistant",
+    description="Lokaler KI-Sprachassistent fuer Home Assistant — OpenAPI Docs unter /docs",
     version="1.4.1",
     lifespan=lifespan,
+    docs_url="/docs",
+    redoc_url="/redoc",
+    openapi_url="/openapi.json",
 )
+
+# Request-ID Tracing Middleware (muss VOR CORS stehen)
+app.add_middleware(RequestContextMiddleware)
 
 # ----- CORS Policy -----
 # Nur lokale Zugriffe erlauben (HA Add-on + lokale Clients)
 _cors_origins = os.getenv("CORS_ORIGINS", "").strip()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=_cors_origins.split(",") if _cors_origins else [
+    allow_origins=[o.strip() for o in _cors_origins.split(",") if o.strip()] if _cors_origins else [
         "http://localhost",
         "http://localhost:8123",
         "http://homeassistant.local:8123",
@@ -196,16 +215,18 @@ app.add_middleware(
     ],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["*"],
+    allow_headers=["Content-Type", "Authorization", "X-API-Key", "Accept"],
 )
 
 # ----- Rate-Limiting (in-memory, pro IP) -----
 import time as _time
+import asyncio as _asyncio
 from collections import defaultdict as _defaultdict
 
 _rate_limits: dict[str, list[float]] = _defaultdict(list)
-_RATE_WINDOW = 60        # Sekunden
-_RATE_MAX_REQUESTS = 60  # Max Requests pro Fenster
+_rate_lock = _asyncio.Lock()
+_RATE_WINDOW = RATE_LIMIT_WINDOW
+_RATE_MAX_REQUESTS = RATE_LIMIT_MAX_REQUESTS
 
 
 @app.middleware("http")
@@ -214,22 +235,23 @@ async def auth_header_middleware(request: Request, call_next):
     auth = request.headers.get("authorization", "")
     if auth.startswith("Bearer ") and "token=" not in str(request.url):
         token = auth[7:]
-        # Inject token into query params for FastAPI parameter resolution
+        # URL-encode token to prevent parameter injection (e.g. token containing '&admin=true')
+        from urllib.parse import quote
+        safe_token = quote(token, safe="")
         scope = request.scope
         qs = scope.get("query_string", b"").decode()
         sep = "&" if qs else ""
-        scope["query_string"] = f"{qs}{sep}token={token}".encode()
+        scope["query_string"] = f"{qs}{sep}token={safe_token}".encode()
     return await call_next(request)
 
 
 # ----- API Key Authentication fuer /api/assistant/* Endpoints -----
 # Schuetzt alle Assistant-API-Endpoints gegen unautorisierte Netzwerkzugriffe.
 #
-# WICHTIG: Key wird beim ersten Start auto-generiert und bereitgehalten,
-# aber NUR enforced wenn security.api_key_required = true in settings.yaml.
-# Grund: Addon und HA-Integration laufen auf separaten Systemen und kennen
-# den Key nicht automatisch. Der User muss den Key erst dort eintragen
-# und dann die Pruefung im Dashboard aktivieren.
+# WICHTIG: Key wird beim ersten Start auto-generiert.
+# Enforcement ist per Default AKTIV (sicher). User kann es mit
+# security.api_key_required: false in settings.yaml deaktivieren,
+# falls Addon den Key noch nicht kennt.
 #
 # Key-Quellen (Prioritaet): 1. Env ASSISTANT_API_KEY  2. settings.yaml security.api_key  3. Auto-generiert
 
@@ -255,7 +277,8 @@ def _init_api_key():
     global _assistant_api_key, _api_key_required
 
     security_cfg = yaml_config.get("security", {})
-    _api_key_required = security_cfg.get("api_key_required", False)
+    # Default: ON (sicher), User kann es explizit mit api_key_required: false deaktivieren
+    _api_key_required = security_cfg.get("api_key_required", True)
 
     # 1. Env-Variable hat hoechste Prioritaet
     env_key = os.getenv("ASSISTANT_API_KEY", "").strip()
@@ -280,7 +303,7 @@ def _init_api_key():
         )
         return
 
-    # 3. Auto-generieren und in settings.yaml speichern (Enforcement bleibt aus)
+    # 3. Auto-generieren und in settings.yaml speichern (Enforcement aktiv per Default)
     _assistant_api_key = secrets.token_urlsafe(32)
     try:
         config_path = Path(__file__).parent.parent / "config" / "settings.yaml"
@@ -288,12 +311,11 @@ def _init_api_key():
             cfg = yaml.safe_load(f) or {}
         security = cfg.setdefault("security", {})
         security["api_key"] = _assistant_api_key
-        # api_key_required bewusst NICHT auf true setzen
         if "api_key_required" not in security:
-            security["api_key_required"] = False
+            security["api_key_required"] = True
         with open(config_path, "w") as f:
             yaml.safe_dump(cfg, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
-        logger.info("API Key auto-generiert (Enforcement INAKTIV bis im Dashboard aktiviert)")
+        logger.info("API Key auto-generiert und in settings.yaml gespeichert (Enforcement AKTIV)")
     except Exception as e:
         logger.warning("API Key konnte nicht in settings.yaml gespeichert werden: %s", e)
 
@@ -343,23 +365,26 @@ async def api_key_middleware(request: Request, call_next):
 
 @app.middleware("http")
 async def rate_limit_middleware(request: Request, call_next):
-    """Einfaches Rate-Limiting pro Client-IP."""
+    """Einfaches Rate-Limiting pro Client-IP (thread-safe via Lock)."""
     client_ip = request.client.host if request.client else "unknown"
-    now = _time.time()
 
-    # Alte Eintraege bereinigen
-    _rate_limits[client_ip] = [
-        t for t in _rate_limits[client_ip] if now - t < _RATE_WINDOW
-    ]
+    async with _rate_lock:
+        now = _time.time()
 
-    if len(_rate_limits[client_ip]) >= _RATE_MAX_REQUESTS:
-        from fastapi.responses import JSONResponse
-        return JSONResponse(
-            status_code=429,
-            content={"detail": "Zu viele Anfragen. Bitte warten."},
-        )
+        # Alte Eintraege bereinigen
+        _rate_limits[client_ip] = [
+            t for t in _rate_limits[client_ip] if now - t < _RATE_WINDOW
+        ]
 
-    _rate_limits[client_ip].append(now)
+        if len(_rate_limits[client_ip]) >= _RATE_MAX_REQUESTS:
+            from fastapi.responses import JSONResponse
+            return JSONResponse(
+                status_code=429,
+                content={"detail": "Zu viele Anfragen. Bitte warten."},
+            )
+
+        _rate_limits[client_ip].append(now)
+
     return await call_next(request)
 
 
@@ -535,8 +560,8 @@ async def memory_stats():
     if brain.memory.chroma_collection:
         try:
             episodic_count = brain.memory.chroma_collection.count()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("ChromaDB count() fehlgeschlagen: %s", e)
     return {
         "semantic": semantic_stats,
         "episodic": {"total_episodes": episodic_count},
@@ -1080,6 +1105,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 if event == "assistant.text":
                     text = message.get("data", {}).get("text", "")
                     person = message.get("data", {}).get("person")
+                    room = message.get("data", {}).get("room")
                     voice_meta = message.get("data", {}).get("voice_metadata")
                     use_stream = message.get("data", {}).get("stream", False)
                     if text:
@@ -1091,14 +1117,14 @@ async def websocket_endpoint(websocket: WebSocket):
                             # Streaming: Token-fuer-Token an Client senden
                             await emit_stream_start()
                             result = await brain.process(
-                                text, person,
+                                text, person, room=room,
                                 stream_callback=emit_stream_token,
                             )
                             tts_data = result.get("tts")
                             await emit_stream_end(result["response"], tts_data=tts_data)
                         else:
                             # brain.process() sendet intern via _speak_and_emit
-                            result = await brain.process(text, person)
+                            result = await brain.process(text, person, room=room)
 
                 elif event == "assistant.feedback":
                     # Phase 5: Feedback ueber FeedbackTracker verarbeiten
@@ -1133,6 +1159,7 @@ SETTINGS_YAML_PATH = Path(__file__).parent.parent / "config" / "settings.yaml"
 # Session-Token mit Ablaufzeit (4 Stunden)
 _TOKEN_EXPIRY_SECONDS = 4 * 60 * 60  # 4 Stunden
 _active_tokens: dict[str, float] = {}  # token -> timestamp
+_token_lock = asyncio.Lock()
 
 
 def _get_dashboard_config() -> dict:
@@ -1166,7 +1193,7 @@ def _hash_value(value: str, salt: str | None = None) -> str:
     """
     if salt is None:
         salt = secrets.token_hex(16)
-    h = hashlib.pbkdf2_hmac("sha256", value.encode(), salt.encode(), iterations=100_000)
+    h = hashlib.pbkdf2_hmac("sha256", value.encode(), salt.encode(), iterations=600_000)
     return f"{salt}:{h.hex()}"
 
 
@@ -1268,15 +1295,31 @@ async def ui_auth(req: PinRequest):
 
     # Vergleich: Env-PIN (Klartext, timing-safe) oder gehashter PIN aus YAML
     env_pin = os.environ.get("JARVIS_UI_PIN")
+    legacy_migration = False
     if env_pin:
         valid = secrets.compare_digest(req.pin, env_pin)
     else:
         stored_hash = _get_dashboard_config().get("pin_hash", "")
         valid = (stored_hash and _verify_hash(req.pin, stored_hash))
+        # Legacy-Migration: SHA-256 ohne Salt → PBKDF2 mit Salt
+        if valid and stored_hash and ":" not in stored_hash:
+            legacy_migration = True
 
     if not valid:
         _audit_log("login", {"success": False})
         raise HTTPException(status_code=401, detail="Falscher PIN")
+
+    # Legacy-PIN-Hash automatisch auf PBKDF2 upgraden
+    if legacy_migration:
+        try:
+            new_hash = _hash_value(req.pin)
+            dc = _get_dashboard_config()
+            recovery_hash = dc.get("recovery_key_hash", "")
+            _save_dashboard_config(new_hash, recovery_hash, setup_complete=True)
+            logger.info("Dashboard: Legacy PIN-Hash auf PBKDF2 migriert")
+            _audit_log("pin_hash_migrated", {"from": "sha256", "to": "pbkdf2"})
+        except Exception as e:
+            logger.warning("PIN-Hash Migration fehlgeschlagen: %s", e)
 
     token = hashlib.sha256(f"{req.pin}{datetime.now().isoformat()}{secrets.token_hex(8)}".encode()).hexdigest()[:32]
     _active_tokens[token] = datetime.now(timezone.utc).timestamp()
@@ -1342,11 +1385,11 @@ def _audit_log(action: str, details: dict = None):
 
 
 def _cleanup_expired_tokens():
-    """Entfernt abgelaufene Tokens."""
+    """Entfernt abgelaufene Tokens (thread-safe: nur aus async-Kontext aufrufen)."""
     now = datetime.now(timezone.utc).timestamp()
     expired = [t for t, ts in _active_tokens.items() if now - ts > _TOKEN_EXPIRY_SECONDS]
     for t in expired:
-        del _active_tokens[t]
+        _active_tokens.pop(t, None)
 
 
 def _check_token(token: str):
@@ -1357,7 +1400,7 @@ def _check_token(token: str):
     created = _active_tokens[token]
     now = datetime.now(timezone.utc).timestamp()
     if now - created > _TOKEN_EXPIRY_SECONDS:
-        del _active_tokens[token]
+        _active_tokens.pop(token, None)
         raise HTTPException(status_code=401, detail="Sitzung abgelaufen. Bitte erneut anmelden.")
 
 
@@ -1643,7 +1686,7 @@ async def ui_get_covers(token: str = ""):
 
 @app.put("/api/ui/covers/{entity_id:path}/type")
 async def ui_set_cover_type(entity_id: str, request: Request, token: str = ""):
-    """Cover-Typ und enabled-Status setzen (lokal gespeichert)."""
+    """Cover-Typ und enabled-Status setzen (lokal + Addon-Sync)."""
     _check_token(token)
     try:
         data = await request.json()
@@ -1654,11 +1697,19 @@ async def ui_set_cover_type(entity_id: str, request: Request, token: str = ""):
             payload["enabled"] = data["enabled"]
         if not payload:
             raise HTTPException(status_code=400, detail="Keine Daten")
+        # 1. Lokal speichern (fuer Assistant-Level _is_safe_cover)
         configs = load_cover_configs()
         if entity_id not in configs:
             configs[entity_id] = {}
         configs[entity_id].update(payload)
         save_cover_configs(configs)
+        # 2. An Addon synchen (fuer Addon-Level set_position/Automationen)
+        try:
+            await brain.ha.mindhome_put(
+                f"/api/covers/{entity_id}/config", payload,
+            )
+        except Exception as sync_err:
+            logger.warning("Cover-Config Sync zum Addon fehlgeschlagen: %s", sync_err)
         return {"success": True, **payload}
     except HTTPException:
         raise
@@ -1690,8 +1741,8 @@ async def ui_get_stats(token: str = ""):
         if brain.memory.chroma_collection:
             try:
                 episodic_count = brain.memory.chroma_collection.count()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("ChromaDB count() fehlgeschlagen: %s", e)
 
         return {
             "memory": {
@@ -1929,7 +1980,15 @@ _NO_CACHE_HEADERS = {"Cache-Control": "no-cache, no-store, must-revalidate", "Pr
 
 @app.get("/ui/{path:path}")
 async def ui_serve(path: str = ""):
-    """Jarvis Dashboard — Single-Page App."""
+    """Jarvis Dashboard — Single-Page App + statische Assets (JS/CSS)."""
+    # Statische Assets (app.js, *.css etc.) direkt ausliefern
+    if path and not path.endswith("/"):
+        asset = _ui_static_dir / path
+        if asset.is_file() and asset.resolve().is_relative_to(_ui_static_dir.resolve()):
+            media_types = {".js": "application/javascript", ".css": "text/css", ".png": "image/png", ".svg": "image/svg+xml"}
+            mt = media_types.get(asset.suffix, None)
+            return FileResponse(asset, media_type=mt, headers=_NO_CACHE_HEADERS)
+    # SPA-Fallback: immer index.html
     index_path = _ui_static_dir / "index.html"
     if index_path.exists():
         return FileResponse(index_path, media_type="text/html", headers=_NO_CACHE_HEADERS)
@@ -2242,11 +2301,77 @@ async def ui_system_status(token: str = ""):
         "free_gb": round(free / (1024**3), 1),
     }
 
+    # RAM (via /proc/meminfo)
+    ram_info = {}
+    try:
+        with open("/proc/meminfo") as f:
+            meminfo = {}
+            for line in f:
+                parts = line.split(":")
+                if len(parts) == 2:
+                    meminfo[parts[0].strip()] = int(parts[1].strip().split()[0])
+            total_kb = meminfo.get("MemTotal", 0)
+            avail_kb = meminfo.get("MemAvailable", 0)
+            used_kb = total_kb - avail_kb
+            ram_info = {
+                "total_gb": round(total_kb / (1024**2), 1),
+                "used_gb": round(used_kb / (1024**2), 1),
+                "free_gb": round(avail_kb / (1024**2), 1),
+                "percent": round(used_kb / total_kb * 100, 1) if total_kb else 0,
+            }
+    except Exception:
+        pass
+
+    # CPU Load
+    cpu_info = {}
+    try:
+        load1, load5, load15 = os.getloadavg()
+        cpu_count = os.cpu_count() or 1
+        cpu_info = {
+            "load_1m": round(load1, 2),
+            "load_5m": round(load5, 2),
+            "load_15m": round(load15, 2),
+            "cores": cpu_count,
+            "percent": round(load1 / cpu_count * 100, 1),
+        }
+    except Exception:
+        pass
+
+    # GPU (via nvidia-smi)
+    gpu_info = {}
+    rc_gpu, gpu_out = _run_cmd([
+        "nvidia-smi",
+        "--query-gpu=name,memory.used,memory.total,utilization.gpu,temperature.gpu",
+        "--format=csv,noheader,nounits",
+    ])
+    if rc_gpu == 0 and gpu_out.strip():
+        parts = [p.strip() for p in gpu_out.strip().split(",")]
+        if len(parts) >= 5:
+            gpu_info = {
+                "name": parts[0],
+                "memory_used_mb": int(parts[1]),
+                "memory_total_mb": int(parts[2]),
+                "utilization_percent": int(parts[3]),
+                "temperature_c": int(parts[4]),
+            }
+
+    # Remote claude/* Branches auflisten
+    _, remote_branches_raw = _run_cmd(
+        ["git", "branch", "-r", "--list", "origin/claude/*"],
+        cwd=str(_REPO_DIR),
+    )
+    remote_branches = [
+        b.strip().removeprefix("origin/")
+        for b in remote_branches_raw.strip().splitlines()
+        if b.strip() and "->" not in b
+    ]
+
     return {
         "git": {
             "branch": branch.strip(),
             "commit": commit.strip(),
             "changes": git_status.strip(),
+            "remote_branches": remote_branches,
         },
         "containers": containers,
         "ollama": {
@@ -2254,6 +2379,9 @@ async def ui_system_status(token: str = ""):
             "models": ollama_models,
         },
         "disk": disk_info,
+        "ram": ram_info,
+        "cpu": cpu_info,
+        "gpu": gpu_info,
         "version": "1.4.1",
         "update_log": _update_log[-20:],
     }
@@ -2272,21 +2400,42 @@ async def _docker_restart(container: str = "mindhome-assistant", timeout: int = 
         return False
 
 
+class BranchUpdateRequest(BaseModel):
+    branch: str | None = None
+
+
 @app.post("/api/ui/system/update")
-async def ui_system_update(token: str = ""):
+async def ui_system_update(token: str = "", body: BranchUpdateRequest | None = None):
     """System-Update: git pull + Container-Restart (Code ist als Volume gemountet).
 
     WICHTIG: User-Konfiguration (settings.yaml, .env) wird vor dem Pull
     gesichert und danach wiederhergestellt, damit Einstellungen nicht verloren gehen.
+
+    Optionaler Body-Parameter 'branch': Wenn angegeben, wird auf diesen Branch
+    gewechselt bevor der Pull ausgefuehrt wird.
     """
     _check_token(token)
 
     if _update_lock.locked():
         raise HTTPException(status_code=409, detail="Update laeuft bereits")
 
+    target_branch = body.branch.strip() if body and body.branch else None
+
     async with _update_lock:
         _update_log.clear()
         _update_log.append(f"[{datetime.now().strftime('%H:%M:%S')}] Update gestartet...")
+
+        # Aktuellen Branch merken (fuer Rollback bei Fehler)
+        _, current_branch_raw = _run_cmd(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=str(_REPO_DIR)
+        )
+        old_branch = current_branch_raw.strip()
+        switching = target_branch and target_branch != old_branch
+
+        if switching:
+            _update_log.append(f"Branch-Wechsel: {old_branch} -> {target_branch}")
+        else:
+            _update_log.append(f"Update auf Branch: {target_branch or old_branch}")
 
         # 0. User-Konfiguration sichern (vor git pull!)
         _user_config_files = [
@@ -2299,21 +2448,67 @@ async def ui_system_update(token: str = ""):
                 _saved_configs[cfg_path] = cfg_path.read_text(encoding="utf-8")
                 _update_log.append(f"Config gesichert: {cfg_path.name}")
 
-        # 0b. ALLE lokalen Aenderungen stashen, damit git pull sauber durchlaeuft.
+        # 0b. ALLE lokalen Aenderungen stashen, damit git pull/checkout sauber durchlaeuft.
         #     User-Config ist bereits in _saved_configs gesichert und wird danach
         #     wiederhergestellt — unabhaengig davon was Git macht.
         _run_cmd(["git", "stash", "--include-untracked"], cwd=str(_REPO_DIR))
         _update_log.append("Lokale Aenderungen gestasht")
 
-        # 1. Git Pull (via gemountetes /repo)
-        _update_log.append("Git pull...")
-        rc, out = _run_cmd(["git", "pull"], cwd=str(_REPO_DIR), timeout=60)
+        # 1. Branch-Wechsel (falls gewuenscht)
+        if switching:
+            # Fetch des Ziel-Branches
+            _update_log.append(f"Fetch origin/{target_branch}...")
+            rc_fetch, out_fetch = _run_cmd(
+                ["git", "fetch", "origin", target_branch],
+                cwd=str(_REPO_DIR), timeout=60,
+            )
+            if rc_fetch != 0:
+                _update_log.append(f"FEHLER: git fetch fehlgeschlagen: {out_fetch.strip()}")
+                # Stash droppen, Config wiederherstellen, abbrechen
+                _run_cmd(["git", "stash", "drop"], cwd=str(_REPO_DIR))
+                for cfg_path, content in _saved_configs.items():
+                    try:
+                        cfg_path.write_text(content, encoding="utf-8")
+                    except Exception:
+                        pass
+                return {"success": False, "log": _update_log}
+
+            # Checkout auf Ziel-Branch
+            _update_log.append(f"Checkout {target_branch}...")
+            rc_co, out_co = _run_cmd(
+                ["git", "checkout", target_branch],
+                cwd=str(_REPO_DIR), timeout=30,
+            )
+            if rc_co != 0:
+                _update_log.append(f"FEHLER: git checkout fehlgeschlagen: {out_co.strip()}")
+                # Zurueck zum alten Branch
+                _run_cmd(["git", "checkout", old_branch], cwd=str(_REPO_DIR))
+                _run_cmd(["git", "stash", "drop"], cwd=str(_REPO_DIR))
+                for cfg_path, content in _saved_configs.items():
+                    try:
+                        cfg_path.write_text(content, encoding="utf-8")
+                    except Exception:
+                        pass
+                _update_log.append(f"Rollback zu {old_branch}")
+                return {"success": False, "log": _update_log}
+
+        # 2. Git Pull
+        pull_branch = target_branch or old_branch
+        _update_log.append(f"Git pull origin/{pull_branch}...")
+        rc, out = _run_cmd(
+            ["git", "pull", "origin", pull_branch],
+            cwd=str(_REPO_DIR), timeout=60,
+        )
 
         # Stash wieder droppen (User-Config kommt aus _saved_configs, nicht aus stash)
         _run_cmd(["git", "stash", "drop"], cwd=str(_REPO_DIR))
         _update_log.append(out.strip())
         if rc != 0:
-            # Auch bei Fehler: User-Config wiederherstellen
+            # Bei Fehler und Branch-Wechsel: zurueck zum alten Branch
+            if switching:
+                _run_cmd(["git", "checkout", old_branch], cwd=str(_REPO_DIR))
+                _update_log.append(f"Rollback zu {old_branch}")
+            # User-Config wiederherstellen
             for cfg_path, content in _saved_configs.items():
                 try:
                     cfg_path.write_text(content, encoding="utf-8")
@@ -2322,7 +2517,7 @@ async def ui_system_update(token: str = ""):
             _update_log.append("FEHLER: Git pull fehlgeschlagen")
             return {"success": False, "log": _update_log}
 
-        # 2. User-Konfiguration wiederherstellen (nach git pull!)
+        # 3. User-Konfiguration wiederherstellen (nach git pull!)
         #    Die gesicherten User-Settings ueberschreiben die Repo-Defaults.
         for cfg_path, content in _saved_configs.items():
             try:
@@ -2333,11 +2528,11 @@ async def ui_system_update(token: str = ""):
 
         _update_log.append(f"[{datetime.now().strftime('%H:%M:%S')}] Code aktualisiert! Container startet neu...")
 
-        # 3. Restart via Docker Engine API (Code als Volume = sofort aktiv)
+        # 4. Restart via Docker Engine API (Code als Volume = sofort aktiv)
         # asyncio.ensure_future damit Response noch rausgeht bevor Restart
         asyncio.ensure_future(_docker_restart())
 
-        return {"success": True, "log": _update_log}
+        return {"success": True, "log": _update_log, "branch": pull_branch}
 
 
 @app.post("/api/ui/system/restart")
@@ -2387,39 +2582,74 @@ async def ui_system_update_models(token: str = ""):
 
 
 @app.get("/api/ui/system/update-check")
-async def ui_system_update_check(token: str = ""):
-    """Prueft ob neue Commits auf dem Remote verfuegbar sind."""
+async def ui_system_update_check(token: str = "", branch: str = ""):
+    """Prueft ob neue Commits auf dem Remote verfuegbar sind.
+
+    Optionaler Query-Parameter 'branch': Wenn angegeben, wird gegen diesen
+    Remote-Branch verglichen statt gegen den aktuellen Branch.
+    """
     _check_token(token)
 
     # Aktuellen Branch ermitteln
-    _, current_branch = _run_cmd(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=str(_REPO_DIR))
-    branch = current_branch.strip() or "main"
+    _, current_branch_raw = _run_cmd(
+        ["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=str(_REPO_DIR)
+    )
+    current_branch = current_branch_raw.strip() or "main"
+    check_branch = branch.strip() if branch.strip() else current_branch
+    is_different_branch = check_branch != current_branch
 
     # Fetch
-    rc, _ = _run_cmd(["git", "fetch", "origin", branch], cwd=str(_REPO_DIR), timeout=30)
+    rc, fetch_out = _run_cmd(
+        ["git", "fetch", "origin", check_branch],
+        cwd=str(_REPO_DIR), timeout=30,
+    )
     if rc != 0:
-        return {"updates_available": False, "error": "Git fetch fehlgeschlagen"}
+        return {
+            "updates_available": False,
+            "error": f"Git fetch fehlgeschlagen fuer {check_branch}",
+            "current_branch": current_branch,
+            "check_branch": check_branch,
+        }
 
+    # Lokalen HEAD ermitteln
     _, local = _run_cmd(["git", "rev-parse", "HEAD"], cwd=str(_REPO_DIR))
-    _, remote = _run_cmd(["git", "rev-parse", f"origin/{branch}"], cwd=str(_REPO_DIR))
+    _, remote = _run_cmd(
+        ["git", "rev-parse", f"origin/{check_branch}"], cwd=str(_REPO_DIR)
+    )
 
     local = local.strip()
     remote = remote.strip()
 
-    if local == remote:
-        return {"updates_available": False, "local": local[:8], "remote": remote[:8]}
-
-    _, log = _run_cmd(
-        ["git", "log", "--oneline", f"{local}..{remote}"],
-        cwd=str(_REPO_DIR),
-    )
-
-    return {
-        "updates_available": True,
+    result = {
+        "current_branch": current_branch,
+        "check_branch": check_branch,
+        "is_branch_switch": is_different_branch,
         "local": local[:8],
         "remote": remote[:8],
-        "new_commits": log.strip().split("\n") if log.strip() else [],
     }
+
+    if not is_different_branch and local == remote:
+        result["updates_available"] = False
+        return result
+
+    # Bei anderem Branch oder unterschiedlichen Commits: Updates vorhanden
+    if is_different_branch:
+        # Commits auf dem Ziel-Branch anzeigen (letzte 20)
+        _, log = _run_cmd(
+            ["git", "log", "--oneline", "-20", f"origin/{check_branch}"],
+            cwd=str(_REPO_DIR),
+        )
+        result["updates_available"] = True
+        result["new_commits"] = log.strip().split("\n") if log.strip() else []
+    else:
+        _, log = _run_cmd(
+            ["git", "log", "--oneline", f"{local}..{remote}"],
+            cwd=str(_REPO_DIR),
+        )
+        result["updates_available"] = True
+        result["new_commits"] = log.strip().split("\n") if log.strip() else []
+
+    return result
 
 
 @app.get("/")
@@ -2432,6 +2662,103 @@ async def root():
         "docs": "/docs",
         "dashboard": "/ui/",
     }
+
+
+# ----- Kubernetes-ready Health Probes -----
+
+@app.get("/healthz", tags=["probes"])
+async def healthz():
+    """Liveness Probe — Ist der Prozess am Leben?"""
+    return {"status": "alive"}
+
+
+@app.get("/readyz", tags=["probes"])
+async def readyz():
+    """Readiness Probe — Ist der Assistant bereit fuer Requests?"""
+    try:
+        health = await brain.health_check()
+        components = health.get("components", {})
+        redis_ok = components.get("redis") == "connected"
+        ollama_ok = components.get("ollama") == "connected"
+
+        if redis_ok and ollama_ok:
+            return {"status": "ready", "components": components}
+
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            status_code=503,
+            content={"status": "not_ready", "components": components},
+        )
+    except Exception as e:
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            status_code=503,
+            content={"status": "error", "detail": str(type(e).__name__)},
+        )
+
+
+# ----- Prometheus-kompatible Metrics -----
+
+@app.get("/metrics", tags=["monitoring"])
+async def metrics():
+    """Prometheus-Format Metrics Endpoint."""
+    import time as _metrics_time
+
+    lines = []
+
+    # System-Info
+    lines.append("# HELP mindhome_info MindHome Assistant Info")
+    lines.append('# TYPE mindhome_info gauge')
+    lines.append('mindhome_info{version="1.4.1"} 1')
+
+    # Uptime (approximiert ueber Error-Buffer-Laenge)
+    lines.append("# HELP mindhome_error_buffer_size Anzahl Fehler im Ring-Buffer")
+    lines.append("# TYPE mindhome_error_buffer_size gauge")
+    lines.append(f"mindhome_error_buffer_size {len(_error_buffer)}")
+
+    # WebSocket Connections
+    lines.append("# HELP mindhome_websocket_connections Aktive WebSocket-Verbindungen")
+    lines.append("# TYPE mindhome_websocket_connections gauge")
+    lines.append(f"mindhome_websocket_connections {len(ws_manager.active_connections)}")
+
+    # Circuit Breaker Status
+    try:
+        from .circuit_breaker import registry as cb_registry
+        for cb_status in cb_registry.all_status():
+            name = cb_status["name"]
+            state_val = 1 if cb_status["state"] == "closed" else 0
+            lines.append(f'# HELP mindhome_circuit_{name}_closed Circuit Breaker Status')
+            lines.append(f'# TYPE mindhome_circuit_{name}_closed gauge')
+            lines.append(f'mindhome_circuit_{name}_closed {state_val}')
+            lines.append(f'mindhome_circuit_{name}_failures {cb_status["failure_count"]}')
+    except Exception:
+        pass
+
+    # Task Registry Status
+    try:
+        if hasattr(brain, '_task_registry'):
+            lines.append("# HELP mindhome_background_tasks Aktive Background-Tasks")
+            lines.append("# TYPE mindhome_background_tasks gauge")
+            lines.append(f"mindhome_background_tasks {brain._task_registry.task_count}")
+    except Exception:
+        pass
+
+    # Redis Memory (wenn verfuegbar)
+    try:
+        if brain.memory.redis:
+            info = await brain.memory.redis.info("memory")
+            used = info.get("used_memory", 0)
+            lines.append("# HELP mindhome_redis_used_memory_bytes Redis Memory Usage")
+            lines.append("# TYPE mindhome_redis_used_memory_bytes gauge")
+            lines.append(f"mindhome_redis_used_memory_bytes {used}")
+    except Exception:
+        pass
+
+    from fastapi.responses import PlainTextResponse
+    return PlainTextResponse(
+        content="\n".join(lines) + "\n",
+        media_type="text/plain; version=0.0.4; charset=utf-8",
+    )
 
 
 def start():

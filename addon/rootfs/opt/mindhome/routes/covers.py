@@ -7,6 +7,7 @@ per-cover config, automation settings, manual control.
 
 import logging
 import json
+import re
 from flask import Blueprint, request, jsonify
 
 from helpers import get_setting, set_setting
@@ -85,6 +86,8 @@ def set_cover_position(entity_id):
         position = int(position)
     except (ValueError, TypeError):
         return jsonify({"error": "position must be integer 0-100"}), 400
+    if not (0 <= position <= 100):
+        return jsonify({"error": "position must be 0-100"}), 400
     ok = mgr.set_position(entity_id, position, source="manual")
     return jsonify({"success": ok}), 200 if ok else 500
 
@@ -103,6 +106,8 @@ def set_cover_tilt(entity_id):
         tilt = int(tilt)
     except (ValueError, TypeError):
         return jsonify({"error": "tilt must be integer 0-100"}), 400
+    if not (0 <= tilt <= 100):
+        return jsonify({"error": "tilt must be 0-100"}), 400
     ok = mgr.set_tilt(entity_id, tilt, source="manual")
     return jsonify({"success": ok}), 200 if ok else 500
 
@@ -226,6 +231,8 @@ def control_group(group_id):
         position = int(position)
     except (ValueError, TypeError):
         return jsonify({"error": "position must be integer 0-100"}), 400
+    if not (0 <= position <= 100):
+        return jsonify({"error": "position must be 0-100"}), 400
     results = mgr.control_group(group_id, position, source="manual")
     return jsonify({"results": results}), 200
 
@@ -253,9 +260,40 @@ def create_scene():
     name = data.get("name")
     if not name:
         return jsonify({"error": "name required"}), 400
+    positions = data.get("positions", {})
+    if not isinstance(positions, dict):
+        return jsonify({"error": "positions must be a dict {entity_id: position}"}), 400
+    for eid, pos in positions.items():
+        if isinstance(pos, dict):
+            p = pos.get("position")
+            t = pos.get("tilt")
+            if p is not None:
+                try:
+                    p = int(p)
+                except (ValueError, TypeError):
+                    return jsonify({"error": f"Invalid position for {eid}"}), 400
+                if not (0 <= p <= 100):
+                    return jsonify({"error": f"position for {eid} must be 0-100"}), 400
+                pos["position"] = p
+            if t is not None:
+                try:
+                    t = int(t)
+                except (ValueError, TypeError):
+                    return jsonify({"error": f"Invalid tilt for {eid}"}), 400
+                if not (0 <= t <= 100):
+                    return jsonify({"error": f"tilt for {eid} must be 0-100"}), 400
+                pos["tilt"] = t
+        else:
+            try:
+                pos = int(pos)
+            except (ValueError, TypeError):
+                return jsonify({"error": f"Invalid position for {eid}"}), 400
+            if not (0 <= pos <= 100):
+                return jsonify({"error": f"position for {eid} must be 0-100"}), 400
+            positions[eid] = pos
     scene_id = mgr.create_scene(
         name=name,
-        positions=data.get("positions", {}),
+        positions=positions,
         name_en=data.get("name_en"),
         icon=data.get("icon"),
     )
@@ -320,13 +358,33 @@ def create_schedule():
     time_str = data.get("time_str")
     if not time_str:
         return jsonify({"error": "time_str required"}), 400
+    if not re.match(r'^\d{2}:\d{2}$', time_str):
+        return jsonify({"error": "time_str must be HH:MM format"}), 400
+    hh, mm = int(time_str[:2]), int(time_str[3:])
+    if not (0 <= hh <= 23 and 0 <= mm <= 59):
+        return jsonify({"error": "time_str out of range (00:00-23:59)"}), 400
+    position = data.get("position", 100)
+    try:
+        position = int(position)
+    except (ValueError, TypeError):
+        return jsonify({"error": "position must be integer 0-100"}), 400
+    if not (0 <= position <= 100):
+        return jsonify({"error": "position must be 0-100"}), 400
+    tilt = data.get("tilt")
+    if tilt is not None:
+        try:
+            tilt = int(tilt)
+        except (ValueError, TypeError):
+            return jsonify({"error": "tilt must be integer 0-100"}), 400
+        if not (0 <= tilt <= 100):
+            return jsonify({"error": "tilt must be 0-100"}), 400
     schedule_id = mgr.create_schedule(
         entity_id=data.get("entity_id"),
         group_id=data.get("group_id"),
         time_str=time_str,
         days=data.get("days"),
-        position=data.get("position", 100),
-        tilt=data.get("tilt"),
+        position=position,
+        tilt=tilt,
         presence_mode=data.get("presence_mode"),
     )
     if schedule_id:
