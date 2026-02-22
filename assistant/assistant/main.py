@@ -2679,7 +2679,7 @@ async def ui_system_update(token: str = "", body: BranchUpdateRequest | None = N
         pull_branch = target_branch or old_branch
         _update_log.append(f"Git pull origin/{pull_branch}...")
         rc, out = _run_cmd(
-            ["git", "pull", "origin", pull_branch],
+            ["git", "pull", "--rebase", "origin", pull_branch],
             cwd=str(_REPO_DIR), timeout=60,
         )
 
