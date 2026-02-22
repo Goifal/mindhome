@@ -1065,6 +1065,22 @@ class AssistantBrain(BrainCallbacksMixin):
             tool_calls = message.get("tool_calls", [])
             executed_actions = []
 
+            # 7b. Tool-Calls aus Text extrahieren (Qwen3 gibt sie manchmal als Text aus)
+            if not tool_calls and response_text:
+                _tc_match = re.search(
+                    r'\{\s*"name"\s*:\s*"(\w+)"\s*,\s*"arguments"\s*:\s*(\{[^}]*\})\s*\}',
+                    response_text,
+                )
+                if _tc_match:
+                    try:
+                        _tc_args = json.loads(_tc_match.group(2))
+                        tool_calls = [{"function": {"name": _tc_match.group(1), "arguments": _tc_args}}]
+                        # Text-Teil vor/nach dem Tool-Call entfernen
+                        response_text = re.sub(r'.*\{\s*"name".*?\}.*?(?:</tool_call>)?', '', response_text).strip()
+                        logger.warning("Tool-Call aus Text extrahiert: %s(%s)", _tc_match.group(1), _tc_args)
+                    except (json.JSONDecodeError, ValueError):
+                        pass
+
             # 8. Function Calls ausfuehren
             # Tools die Daten zurueckgeben und eine LLM-formatierte Antwort brauchen
             QUERY_TOOLS = {"get_entity_state", "send_message_to_person", "get_calendar_events",
