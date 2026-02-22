@@ -476,8 +476,12 @@ class AssistantBrain(BrainCallbacksMixin):
         logger.info("Input: '%s' (Person: %s, Raum: %s)", text, person or "unbekannt", room or "unbekannt")
 
         # Phase 9: Fluestermodus-Check
+        # Whisper-Modus wird als Seiteneffekt gesetzt/entfernt.
+        # Nur bei reinen Whisper-Befehlen (<=3 Woerter) sofort antworten,
+        # bei laengeren Texten weiterverarbeiten (z.B. "Rollladen auf 10%, leise").
         whisper_cmd = self.tts_enhancer.check_whisper_command(text)
-        if whisper_cmd == "activate":
+        _word_count = len(text.split())
+        if whisper_cmd == "activate" and _word_count <= 3:
             response_text = "Verstanden. Ich fluester ab jetzt."
             await self.memory.add_conversation("user", text)
             await self.memory.add_conversation("assistant", response_text)
@@ -490,7 +494,7 @@ class AssistantBrain(BrainCallbacksMixin):
                 "context_room": room or "unbekannt",
                 "tts": tts_data,
             }
-        elif whisper_cmd == "deactivate":
+        elif whisper_cmd == "deactivate" and _word_count <= 3:
             response_text = "Normale Lautstaerke wiederhergestellt."
             await self.memory.add_conversation("user", text)
             await self.memory.add_conversation("assistant", response_text)
@@ -503,6 +507,7 @@ class AssistantBrain(BrainCallbacksMixin):
                 "context_room": room or "unbekannt",
                 "tts": tts_data,
             }
+        # whisper_cmd gesetzt aber >3 Woerter: Modus aktiv, Befehl weiterverarbeiten
 
         # Silence-Trigger: Wenn User "Filmabend", "Meditation" etc. sagt,
         # Activity-Override setzen damit proaktive Meldungen unterdrueckt werden

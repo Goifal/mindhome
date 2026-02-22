@@ -1412,8 +1412,8 @@ function renderVoice() {
     fRange('tts.pauses.after_greeting', 'Nach Begruessung (ms)', 0, 1000, 50) +
     '<div style="margin:12px 0;font-weight:600;font-size:13px;">Fluestern</div>' +
     fChipSelect('tts.whisper_triggers', 'Fluestern aktivieren bei', [
-      'psst','leise','fluestern','schlafen','baby','schlaf','ruhe',
-      'still','shh','nachts','nacht'
+      'psst','leise','fluestern','schlafen','baby',
+      'ruhe','still','shh','nachts','nacht'
     ]) +
     fChipSelect('tts.whisper_cancel_triggers', 'Fluestern beenden bei', [
       'normal','laut','aufwachen','morgen','wach','genug gefluestert'

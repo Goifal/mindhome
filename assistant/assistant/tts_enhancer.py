@@ -217,6 +217,9 @@ class TTSEnhancer:
         """
         Prueft ob der Text einen Fluestermodus-Befehl enthaelt.
 
+        Nutzt Wortgrenzen-Matching um Fehlerkennungen zu vermeiden
+        (z.B. Substring-Treffer in Geraetebefehlen).
+
         Returns:
             "activate" wenn Fluestern aktiviert werden soll
             "deactivate" wenn deaktiviert
@@ -224,13 +227,13 @@ class TTSEnhancer:
         """
         text_lower = text.lower().strip()
 
-        if any(t in text_lower for t in self.whisper_cancel):
+        if any(re.search(rf"\b{re.escape(t)}\b", text_lower) for t in self.whisper_cancel):
             if self._whisper_mode:
                 self._whisper_mode = False
                 logger.info("Fluestermodus deaktiviert")
                 return "deactivate"
 
-        if any(t in text_lower for t in self.whisper_triggers):
+        if any(re.search(rf"\b{re.escape(t)}\b", text_lower) for t in self.whisper_triggers):
             self._whisper_mode = True
             logger.info("Fluestermodus aktiviert")
             return "activate"

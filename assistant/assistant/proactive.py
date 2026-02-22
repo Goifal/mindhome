@@ -813,7 +813,7 @@ MUSTER nach Dringlichkeit:
 - CRITICAL: Fakt + was du bereits tust. "Rauchmelder Kueche aktiv. Lueftung laeuft."
 - HIGH: Fakt + kurze Einordnung. "Bewegung im Garten. Kamera 2 zeichnet auf."
 - MEDIUM: Information + nur wenn relevant. "Waschmaschine fertig."
-- LOW: Beilaeufig, fast nebenbei. "Strom ist gerade guenstig, Sir. Nur falls relevant."
+- LOW: Beilaeufig, fast nebenbei. "Waschmaschine ist fertig, Sir. Nur falls relevant."
 VERBOTEN: "Hallo", "Achtung", "Ich moechte dich informieren", "Es tut mir leid"."""
 
     # ------------------------------------------------------------------
@@ -1109,7 +1109,7 @@ VERBOTEN: "Hallo", "Achtung", "Ich moechte dich informieren", "Es tut mir leid".
             f"Wichtige Meldungen zuerst erwaehnen.\n\n"
             + "\n".join(summary_parts)
             + "\n\nBeispiel: 'Sir, die Waschmaschine ist fertig und die Batterie "
-            "vom Fenstersensor ist niedrig. Nebenbei: Strom ist gerade guenstig.'"
+            "vom Fenstersensor ist niedrig.'"
         )
 
         try:
@@ -1501,7 +1501,8 @@ VERBOTEN: "Hallo", "Achtung", "Ich moechte dich informieren", "Es tut mir leid".
                                 observations.append(f"Wetter: {condition}, {temp} Grad")
                             break
 
-                if states and report_energy:
+                if states and report_energy and hasattr(self.brain, "energy_optimizer") \
+                        and self.brain.energy_optimizer.has_configured_entities:
                     for s in states:
                         eid = s.get("entity_id", "")
                         if "solar" in eid.lower() and "power" in eid.lower():
