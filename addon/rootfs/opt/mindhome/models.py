@@ -2103,6 +2103,7 @@ MIGRATIONS = [
                 facade VARCHAR(5),
                 floor VARCHAR(50),
                 cover_type VARCHAR(30) DEFAULT 'shutter',
+                enabled BOOLEAN DEFAULT 1,
                 group_ids JSON DEFAULT '[]',
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -2154,6 +2155,24 @@ MIGRATIONS = [
         ]
     },
 ]
+
+
+def _ensure_columns(session, table, columns):
+    """Ensure columns exist in table — adds missing ones via ALTER TABLE."""
+    try:
+        result = session.execute(text(f"PRAGMA table_info({table})"))
+        existing = {row[1] for row in result}
+        for col_name, col_def in columns:
+            if col_name not in existing:
+                session.execute(text(f"ALTER TABLE {table} ADD COLUMN {col_name} {col_def}"))
+                session.commit()
+                logger.info(f"Column {table}.{col_name} added (was missing)")
+    except Exception as e:
+        logger.warning(f"Column check for {table} failed: {e}")
+        try:
+            session.rollback()
+        except Exception:
+            pass
 
 
 def run_migrations(engine):
@@ -2217,6 +2236,11 @@ def run_migrations(engine):
                 session.rollback()
                 logger.error(f"Migration v{migration['version']} FAILED - rolled back")
                 break
+
+        # Safety check: ensure critical columns exist (handles skipped migrations)
+        _ensure_columns(session, "cover_configs", [
+            ("enabled", "BOOLEAN DEFAULT 1"),
+        ])
 
         final_v = max(m['version'] for m in MIGRATIONS) if MIGRATIONS else 0
         logger.info(f"Database at migration version {final_v}")
