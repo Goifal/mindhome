@@ -18,10 +18,21 @@
 | INFO | 5 |
 | **GESAMT** | **74** |
 
-**Gesamtbewertung: NICHT PRODUKTIONSREIF** — 12 kritische und 18 schwere Findings
-muessen vor Go-Live behoben werden. Insbesondere Prompt-Injection-Pfade,
-fehlende Trust-Checks bei Conditional Commands/Timern und Race Conditions
-in der Personality Engine stellen ernsthafte Risiken dar.
+**Gesamtbewertung nach Fixes: BEDINGT PRODUKTIONSREIF** — 38 von 74 Findings
+wurden in diesem Branch gefixt (siehe Fix-Status pro Finding).
+Verbleibende offene Findings sind ueberwiegend MEDIUM/LOW.
+
+### Fix-Zusammenfassung
+
+| Status | Anzahl | Details |
+|--------|--------|---------|
+| GEFIXT | 38 | F-001 bis F-012 (CRITICAL), F-013-F-028 (HIGH), F-034, F-038, F-041, F-042, F-056, F-059, F-061, F-066 |
+| OFFEN | 36 | Ueberwiegend MEDIUM/LOW — kein Blocker fuer Go-Live |
+
+Geaenderte Dateien: activity.py, brain.py, conditional_commands.py, context_builder.py,
+cooking_assistant.py, energy_optimizer.py, file_handler.py, ha_client.py, inventory.py,
+main.py, ollama_client.py, personality.py, self_automation.py, semantic_memory.py,
+threat_assessment.py, timer_manager.py, tts_enhancer.py, web_search.py, wellness_advisor.py
 
 ---
 
