@@ -51,8 +51,6 @@ models:
     smart: true
     deep: true
   fast_keywords:
-  - licht
-  - lampe
   - temperatur
   - heizung
   - rollladen

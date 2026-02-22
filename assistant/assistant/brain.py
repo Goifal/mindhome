@@ -1195,6 +1195,19 @@ class AssistantBrain(BrainCallbacksMixin):
                             # Level 1: Warnung voranstellen, aber trotzdem ausfuehren
                             pushback_msg = pushback["message"]
 
+                    # Brightness-Fallback: Wenn set_light ohne brightness,
+                    # aber User-Text "X%" enthaelt → brightness ergaenzen
+                    if (func_name == "set_light"
+                            and isinstance(final_args, dict)
+                            and final_args.get("state") == "on"
+                            and "brightness" not in final_args):
+                        pct_match = re.search(r"(\d{1,3})\s*%", text)
+                        if pct_match:
+                            pct = int(pct_match.group(1))
+                            if 1 <= pct <= 100:
+                                final_args["brightness"] = pct
+                                logger.info("Brightness-Fallback: %d%% aus User-Text extrahiert", pct)
+
                     # Ausfuehren
                     result = await self.executor.execute(func_name, final_args)
                     executed_actions.append({
@@ -1651,6 +1664,41 @@ class AssistantBrain(BrainCallbacksMixin):
                     logger.warning("Implizites Reasoning erkannt, keine deutsche Antwort gefunden: '%s'", text[:100])
                     text = ""
                 break
+
+        # 0c. Deutsches Reasoning entfernen (Qwen denkt manchmal auf Deutsch laut)
+        # Muster: "Was ist passiert: ... Was du stattdessen tust: ..."
+        # oder "Analyse: ... Ergebnis: ... Aktion: ..."
+        _de_reasoning_patterns = [
+            r"Was ist passiert:.*?(?:Was du stattdessen tust:|Was ich stattdessen tue:)(.*)",
+            r"(?:Analyse|Kontext|Situation|Problem|Ergebnis|Schritt \d|Plan):.*?(?:Aktion|Antwort|Ergebnis|Fazit):\s*(.*)",
+        ]
+        for pattern in _de_reasoning_patterns:
+            m = re.search(pattern, text, re.DOTALL | re.IGNORECASE)
+            if m:
+                extracted = m.group(1).strip().rstrip(".")
+                if extracted:
+                    text = extracted
+                    logger.info("Deutsches Reasoning entfernt, Antwort: '%s'", text[:100])
+                break
+
+        # 0d. Meta-Narration entfernen: Zeilen die mit Reasoning-Markern beginnen
+        _de_meta_markers = [
+            "Was ist passiert:", "Was du stattdessen tust:", "Was ich stattdessen tue:",
+            "Hintergrund:", "Analyse:", "Kontext:", "Situation:", "Hinweis fuer mich:",
+            "Mein Plan:", "Gedankengang:", "Ueberlegung:", "Schritt 1:", "Schritt 2:",
+        ]
+        if any(text.lstrip().startswith(m) for m in _de_meta_markers):
+            # Letzte Zeile ist oft die eigentliche Antwort
+            lines = [l.strip() for l in text.split("\n") if l.strip()]
+            # Zeilen ohne Meta-Marker finden
+            clean_lines = [l for l in lines if not any(l.startswith(m) for m in _de_meta_markers)]
+            if clean_lines:
+                text = " ".join(clean_lines)
+                logger.info("Meta-Narration entfernt: '%s'", text[:100])
+            else:
+                # Alles war Meta — Fallback auf leeren String (Confirmation greift)
+                text = ""
+                logger.info("Nur Meta-Narration, kein Antwort-Text gefunden")
 
         if not text:
             return original
