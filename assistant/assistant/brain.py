@@ -1428,100 +1428,66 @@ class AssistantBrain(BrainCallbacksMixin):
                             else:
                                 response_text = opinion
 
-            # 8b. Tool-Result Feedback Loop: Ergebnisse zurueck ans LLM
-            # Damit Jarvis natuerlich antwortet ("Im Buero sind es 22 Grad, Sir.")
-            # statt nur "Erledigt." bei Abfragen.
-            # Laeuft IMMER bei Query-Tools — auch wenn das LLM schon vagen Text
-            # generiert hat ("Ich schaue nach..."), denn die echten Daten muessen rein.
+            # 8b. Query-Tool Antwort aufbereiten:
+            # 1. Humanizer wandelt Rohdaten in natuerliche Sprache um (zuverlaessig)
+            # 2. LLM verfeinert den humanisierten Text (JARVIS-Persoenlichkeit)
+            # 3. Wenn LLM fehlschlaegt → humanisierter Text als Fallback
             if tool_calls and has_query_results:
-                try:
-                    # Tool-Ergebnisse sammeln
-                    tool_results = []
-                    for action in executed_actions:
-                        result = action.get("result", {})
-                        if isinstance(result, dict):
-                            result_text = result.get("message", str(result))
-                        else:
-                            result_text = str(result)
-                        tool_results.append(result_text)
-
-                    combined_results = "\n".join(tool_results)
-                    logger.info("Tool-Feedback Input: '%s' + Daten: '%s'",
-                                text[:60], combined_results[:120])
-
-                    # Feedback-Messages: Kompakter JARVIS-Prompt + Daten
-                    # Kein voller System-Prompt noetig — kurzer, fokussierter Prompt
-                    # produziert bessere Ergebnisse bei lokalen Modellen
-                    feedback_messages = [{
-                        "role": "system",
-                        "content": (
-                            "Du bist JARVIS. Antworte auf Deutsch, 1-2 Saetze. "
-                            "Souveraen, knapp, trocken. 'Sir' sparsam einsetzen. "
-                            "Keine Aufzaehlungen. Keine technischen Rohdaten wiederholen. "
-                            "Runde Zahlen natuerlich (5 Grad statt 5.2°C). "
-                            "Beispiele: 'Fuenf Grad, bewoelkt. Jacke empfohlen, Sir.' | "
-                            "'Morgen um acht steht eine Blutabnahme an.' | "
-                            "'Im Buero 22 Grad, Luftfeuchtigkeit passt.'"
-                        ),
-                    }]
-                    feedback_messages.append({
-                        "role": "user",
-                        "content": (
-                            f"Frage: {text}\n"
-                            f"Daten: {combined_results}"
-                        ),
-                    })
-
-                    # Zweiter LLM-Call: Natuerliche Antwort generieren (ohne Tools)
-                    # IMMER non-streaming: Streaming wuerde Rohdaten direkt an Client
-                    # senden BEVOR der Humanizer sie umschreiben kann
-                    logger.info("Tool-Feedback: %d Results -> LLM fuer natuerliche Antwort",
-                                len(executed_actions))
-
-                    feedback_response = await self.ollama.chat(
-                        messages=feedback_messages,
-                        model=model,
-                        temperature=0.7,
-                        max_tokens=150,
-                        think=False,
-                    )
-                    feedback_text = ""
-                    if "error" in feedback_response:
-                        logger.warning("Tool-Feedback LLM Error: %s", feedback_response["error"])
-                    else:
-                        feedback_text = feedback_response.get("message", {}).get("content", "")
-
-                    if feedback_text:
-                        response_text = self._filter_response(feedback_text)
-                        logger.info("Tool-Feedback Antwort: '%s'", response_text[:150])
-                    else:
-                        logger.warning("Tool-Feedback: LLM hat leere Antwort produziert")
-                except Exception as e:
-                    logger.warning("Tool-Feedback fehlgeschlagen: %s", e, exc_info=True)
-
-            # Query-Tools: Humanizer IMMER anwenden wenn Rohdaten-Muster erkannt
-            # Der LLM-Feedback-Loop gibt oft die Rohdaten unveraendert durch
-            if has_query_results and executed_actions:
+                # Schritt 1: Rohdaten humanisieren
+                humanized_results = []
                 for action in executed_actions:
                     func = action.get("function", "")
-                    if func in QUERY_TOOLS:
-                        result = action.get("result", {})
-                        raw = result.get("message", "") if isinstance(result, dict) else ""
-                        if not raw:
-                            continue
-                        if not response_text:
-                            # Kein Text vom Feedback-Loop → humanize die Rohdaten
-                            response_text = self._humanize_query_result(func, raw)
-                            logger.info("Query-Humanize (kein LLM): '%s'", response_text[:120])
+                    if func not in QUERY_TOOLS:
+                        continue
+                    result = action.get("result", {})
+                    raw = result.get("message", str(result)) if isinstance(result, dict) else str(result)
+                    humanized = self._humanize_query_result(func, raw)
+                    humanized_results.append(humanized)
+                    logger.info("Query-Humanize [%s]: '%s' -> '%s'",
+                                func, raw[:60], humanized[:60])
+
+                humanized_text = " ".join(humanized_results) if humanized_results else ""
+
+                # Schritt 2: LLM fuer JARVIS-Feinschliff (optional, verbessert Stil)
+                if humanized_text:
+                    response_text = humanized_text  # Fallback steht schon
+                    try:
+                        feedback_messages = [{
+                            "role": "system",
+                            "content": (
+                                "Du bist JARVIS. Antworte auf Deutsch, 1-2 Saetze. "
+                                "Souveraen, knapp, trocken. 'Sir' sparsam einsetzen. "
+                                "Keine Aufzaehlungen. Runde Zahlen natuerlich. "
+                                "Beispiele: 'Fuenf Grad, bewoelkt. Jacke empfohlen, Sir.' | "
+                                "'Morgen um acht steht eine Blutabnahme an.' | "
+                                "'Im Buero 22 Grad, passt.'"
+                            ),
+                        }, {
+                            "role": "user",
+                            "content": f"Frage: {text}\nAntwort-Entwurf: {humanized_text}",
+                        }]
+
+                        logger.info("Tool-Feedback: LLM verfeinert '%s'", humanized_text[:80])
+                        feedback_response = await self.ollama.chat(
+                            messages=feedback_messages,
+                            model=model,
+                            temperature=0.7,
+                            max_tokens=150,
+                            think=False,
+                        )
+                        if "error" not in feedback_response:
+                            feedback_text = feedback_response.get("message", {}).get("content", "")
+                            if feedback_text:
+                                refined = self._filter_response(feedback_text)
+                                if refined and len(refined) > 5:
+                                    response_text = refined
+                                    logger.info("Tool-Feedback verfeinert: '%s'", response_text[:120])
+                                else:
+                                    logger.info("Tool-Feedback verworfen (zu kurz/leer), nutze Humanizer")
                         else:
-                            # Feedback-Loop hat Text produziert — pruefen ob es
-                            # noch Rohdaten sind (LLM hat nur durchgereicht)
-                            humanized = self._humanize_query_result(func, response_text)
-                            if humanized != response_text:
-                                logger.info("Query-Humanize (LLM war roh): '%s' -> '%s'",
-                                            response_text[:60], humanized[:60])
-                                response_text = humanized
-                        break
+                            logger.warning("Tool-Feedback LLM Error: %s", feedback_response.get("error"))
+                    except Exception as e:
+                        logger.warning("Tool-Feedback fehlgeschlagen, nutze Humanizer: %s", e)
 
             # Phase 6: Variierte Bestaetigung statt immer "Erledigt."
             # Nur fuer reine Action-Tools (set_light etc.), nicht fuer Query-Tools
