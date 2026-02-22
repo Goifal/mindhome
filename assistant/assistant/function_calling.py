@@ -3013,6 +3013,8 @@ class FunctionExecutor:
         n = n.replace("ü", "u").replace("ä", "a").replace("ö", "o").replace("ß", "ss")
         # Dann ASCII-Digraphen
         n = n.replace("ue", "u").replace("ae", "a").replace("oe", "o")
+        # LLM-Varianten: "bureau" statt "buero"/"büro"
+        n = n.replace("bureau", "buro")
         return n.replace(" ", "_")
 
     async def _find_entity(self, domain: str, search: str, device_hint: str = "") -> Optional[str]:
