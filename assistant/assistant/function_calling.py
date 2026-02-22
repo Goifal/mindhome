@@ -1359,12 +1359,43 @@ class FunctionExecutor:
         "get_device_health", "get_learned_patterns", "describe_doorbell",
     })
 
-    @staticmethod
-    def _clean_room(room: str) -> str:
-        """Bereinigt room-Parameter von deutschen/englischen Domain-Prefixen.
+    # Qwen3 uebersetzt deutsche Raumnamen oft ins Englische
+    _EN_TO_DE_ROOMS: dict[str, str] = {
+        "living_room": "wohnzimmer",
+        "livingroom": "wohnzimmer",
+        "living room": "wohnzimmer",
+        "bedroom": "schlafzimmer",
+        "kitchen": "kueche",
+        "office": "buero",
+        "bathroom": "bad",
+        "bath": "bad",
+        "hallway": "flur",
+        "corridor": "flur",
+        "hall": "flur",
+        "garage": "garage",
+        "balcony": "balkon",
+        "terrace": "terrasse",
+        "garden": "garten",
+        "basement": "keller",
+        "laundry": "waschkueche",
+        "guest_room": "gaestezimmer",
+        "guestroom": "gaestezimmer",
+        "guest room": "gaestezimmer",
+        "kids_room": "kinderzimmer",
+        "kidsroom": "kinderzimmer",
+        "kids room": "kinderzimmer",
+        "dining_room": "esszimmer",
+        "diningroom": "esszimmer",
+        "dining room": "esszimmer",
+    }
 
-        Qwen3 schickt manchmal 'licht.buero' oder 'switch.kueche'
-        statt nur 'buero' bzw. 'kueche'.
+    @classmethod
+    def _clean_room(cls, room: str) -> str:
+        """Bereinigt room-Parameter: Domain-Prefixe strippen + EN->DE Uebersetzung.
+
+        Qwen3 schickt manchmal:
+        - 'licht.buero' statt 'buero' (Domain-Prefix)
+        - 'living_room' statt 'wohnzimmer' (englische Uebersetzung)
         """
         if not room:
             return room
@@ -1372,7 +1403,16 @@ class FunctionExecutor:
                        "rollladen.", "rolladen.", "cover.",
                        "steckdose.", "lampe."):
             if room.lower().startswith(prefix):
-                return room[len(prefix):]
+                room = room[len(prefix):]
+                break
+
+        # Englisch -> Deutsch Uebersetzung
+        room_lower = room.lower().strip()
+        if room_lower in cls._EN_TO_DE_ROOMS:
+            translated = cls._EN_TO_DE_ROOMS[room_lower]
+            logger.info("Room EN->DE: '%s' -> '%s'", room, translated)
+            return translated
+
         return room
 
     async def execute(self, function_name: str, arguments: dict) -> dict:
