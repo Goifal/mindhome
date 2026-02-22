@@ -1169,10 +1169,13 @@ async def websocket_endpoint(websocket: WebSocket):
     assistant.feedback - Feedback auf Meldung
     assistant.interrupt - Unterbrechung
     """
-    # API Key Authentifizierung fuer WebSocket (nur wenn Enforcement aktiv)
-    if _api_key_required:
-        ws_key = websocket.query_params.get("api_key", "")
-        if not ws_key or not secrets.compare_digest(ws_key, _assistant_api_key):
+    # Auth: WebSocket ist via _API_KEY_EXEMPT_PATHS von der Middleware ausgenommen,
+    # da die Chat-UI (/chat/) keinen API Key mitschickt.
+    # Optional: Client kann api_key als Query-Parameter senden (z.B. externe Clients).
+    ws_key = websocket.query_params.get("api_key", "")
+    if _api_key_required and ws_key:
+        # Wenn ein Key mitgeschickt wird, muss er stimmen
+        if not secrets.compare_digest(ws_key, _assistant_api_key):
             await websocket.close(code=4003, reason="Ungueltiger API Key")
             return
 
