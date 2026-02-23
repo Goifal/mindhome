@@ -257,9 +257,30 @@ class CookingAssistant:
             max_tokens=self.max_tokens,
         )
 
+        # Fallback: bei Fehler mit kleinerem Model nochmal versuchen
         if "error" in response:
-            logger.error("Rezept-Generierung fehlgeschlagen: %s", response["error"])
-            return "Rezept-Generierung fehlgeschlagen. Spezifischeres Gericht oder andere Portionsgroesse koennte helfen."
+            from .config import settings
+            fallback_model = settings.model_fast
+            if fallback_model != model:
+                logger.warning(
+                    "Rezept-Generierung mit %s fehlgeschlagen (%s), "
+                    "Fallback auf %s", model, response["error"], fallback_model,
+                )
+                response = await self.ollama.chat(
+                    messages=messages,
+                    model=fallback_model,
+                    temperature=0.7,
+                    max_tokens=self.max_tokens,
+                )
+
+        if "error" in response:
+            error_detail = response["error"]
+            logger.error("Rezept-Generierung fehlgeschlagen: %s", error_detail)
+            if "Circuit Breaker" in str(error_detail):
+                return "Ollama ist gerade nicht erreichbar. Bitte einen Moment warten und nochmal versuchen."
+            if "Timeout" in str(error_detail):
+                return f"Rezept-Generierung fuer {dish} hat zu lange gedauert. Bitte nochmal versuchen."
+            return f"Rezept-Generierung fuer {dish} fehlgeschlagen. Bitte nochmal versuchen."
 
         content = response.get("message", {}).get("content", "")
         session = self._parse_recipe(content, dish, portions, person)
@@ -574,7 +595,23 @@ class CookingAssistant:
         # "Rezept fuer X" / "Rezept für X"
         match = re.search(r"rezept\s+(?:fuer|für)\s+(.+?)(?:\s+fuer\s+\d|\s+für\s+\d|$)", text_lower)
         if match:
-            return match.group(1).strip().rstrip(".")
+            return match.group(1).strip().rstrip(".?!")
+
+        # "Wie mache/koche/backe ich X?"
+        match = re.search(
+            r"wie\s+(?:mache|koche|backe|brate|grille|bereite)\s+ich\s+(.+?)(?:\?|$)",
+            text_lower,
+        )
+        if match:
+            return match.group(1).strip().rstrip(".?!")
+
+        # "Wie macht/kocht man X?"
+        match = re.search(
+            r"wie\s+(?:macht|kocht|backt|brät|grillt|bereitet)\s+man\s+(.+?)(?:\?|$)",
+            text_lower,
+        )
+        if match:
+            return match.group(1).strip().rstrip(".?!")
 
         # "Ich will/moechte X kochen/backen"
         match = re.search(
@@ -588,7 +625,7 @@ class CookingAssistant:
         # "Koche/Backe mir X"
         match = re.search(r"(?:koch|back|brat|grill)\w*\s+(?:mir\s+)?(.+?)(?:\s+fuer\s+\d|\s+für\s+\d|$)", text_lower)
         if match:
-            dish = match.group(1).strip().rstrip(".")
+            dish = match.group(1).strip().rstrip(".?!")
             # Keine Navigation-Keywords als Gericht
             if dish and dish not in ["was", "etwas", "mir"]:
                 return dish
@@ -596,14 +633,14 @@ class CookingAssistant:
         # "Hilf mir bei/beim X"
         match = re.search(r"hilf\s+mir\s+(?:bei|beim)\s+(.+?)(?:\s+kochen|\s+backen|$)", text_lower)
         if match:
-            return match.group(1).strip().rstrip(".")
+            return match.group(1).strip().rstrip(".?!")
 
         # Fallback: Letztes Substantiv nach Koch-Keyword
         for kw in COOKING_KEYWORDS:
             if kw in text_lower:
                 after = text_lower.split(kw, 1)[-1].strip()
                 if after and len(after) > 2:
-                    return after.rstrip(".").strip()
+                    return after.rstrip(".?!").strip()
 
         return ""
 
