@@ -3241,6 +3241,7 @@ class AssistantBrain(BrainCallbacksMixin):
             "habe ich heute termin", "was habe ich heute",
             "heute termine", "heute kalender", "kalender heute",
             "steht heute was an", "steht heute etwas an",
+            "welche termine habe ich heute", "welche termine heute",
         ]):
             return "today"
 
@@ -3248,13 +3249,16 @@ class AssistantBrain(BrainCallbacksMixin):
         if any(kw in t for kw in [
             "was steht diese woche an", "termine diese woche",
             "woche termine", "kalender woche", "was steht die woche an",
-            "welche termine habe ich", "welche termine stehen an",
+            "welche termine habe ich diese woche",
+            "welche termine stehen diese woche an",
+            "welche termine stehen an diese woche",
         ]):
             return "week"
 
         # Generisch "termine" / "kalender" ohne Zeitangabe → heute
         if any(kw in t for kw in [
             "was steht an", "meine termine", "welche termine",
+            "welche termine habe ich", "welche termine stehen an",
             "habe ich termine", "zeig termine", "zeig kalender",
         ]):
             return "today"
