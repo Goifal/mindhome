@@ -2121,6 +2121,8 @@ class AssistantBrain(BrainCallbacksMixin):
 
         # Markiere ob diese Antwort sarkastisch war (fuer Feedback bei naechster Nachricht)
         self._last_response_was_snarky = self.personality.sarcasm_level >= 3
+        # Sarkasmus-Fatigue: Streak tracken (in-memory, 0ms)
+        self.personality.track_sarcasm_streak(self._last_response_was_snarky)
 
         # Phase 8: Offenes Thema markieren (wenn Frage ohne klare Antwort)
         # Triviale Fragen ("Wie spaet ist es?", "Wie warm ist es?") nicht als

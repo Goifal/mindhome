@@ -241,6 +241,8 @@ class PersonalityEngine:
         self._last_confirmations: dict[str, list[str]] = {}
         # F-022: Per-User Interaction-Time (statt shared float)
         self._last_interaction_times: dict[str, float] = {}
+        # Sarkasmus-Fatigue: Counter fuer aufeinanderfolgende sarkastische Antworten
+        self._sarcasm_streak: int = 0
 
         # Easter Eggs laden
         self._easter_eggs = self._load_easter_eggs()
@@ -692,6 +694,7 @@ class PersonalityEngine:
         """Baut den Humor-Abschnitt basierend auf Level + Kontext.
 
         F-023: Bei aktiven Sicherheits-Alerts wird Sarkasmus komplett deaktiviert.
+        Sarkasmus-Fatigue: Nach 4+ sarkastischen Antworten in Folge eine Stufe runter.
         """
         base_level = self.sarcasm_level
 
@@ -709,14 +712,31 @@ class PersonalityEngine:
         else:
             effective_level = base_level
 
+        # Sarkasmus-Fatigue: Nach 4+ Antworten in Folge etwas zuruecknehmen
+        # Jarvis wird nie repetitiv — ein echter Butler variiert
+        if self._sarcasm_streak >= 6 and effective_level >= 3:
+            effective_level = max(2, effective_level - 2)
+        elif self._sarcasm_streak >= 4 and effective_level >= 3:
+            effective_level = max(2, effective_level - 1)
+
         # Tageszeit-Dampening
         if time_of_day == "early_morning":
             effective_level = min(effective_level, 2)
         elif time_of_day == "night":
             effective_level = min(effective_level, 1)
 
+        # Streak tracken (wird in track_sarcasm_streak aufgerufen)
+        self._last_effective_humor = effective_level
+
         template = HUMOR_TEMPLATES.get(effective_level, HUMOR_TEMPLATES[3])
         return f"HUMOR: {template}"
+
+    def track_sarcasm_streak(self, was_snarky: bool):
+        """Trackt aufeinanderfolgende sarkastische Antworten. 0ms — rein in-memory."""
+        if was_snarky:
+            self._sarcasm_streak += 1
+        else:
+            self._sarcasm_streak = 0
 
     # ------------------------------------------------------------------
     # Adaptive Komplexitaet (Phase 6.8)
@@ -1225,7 +1245,14 @@ class PersonalityEngine:
         if mood_config["style_addon"]:
             mood_section = f"STIMMUNG: {mood_config['style_addon']}\n"
 
-        # Person + Anrede
+        # Phase 6: Formality-Section (mit Mood-Reset bei Stress)
+        # MUSS vor person_addressing stehen — Titel-Evolution braucht den Score
+        if formality_score is None:
+            formality_score = self.formality_start
+        self._current_formality = formality_score
+        formality_section = self._build_formality_section(formality_score, mood=mood)
+
+        # Person + Anrede (nutzt self._current_formality fuer Titel-Haeufigkeit)
         current_person = "User"
         if context:
             current_person = (context.get("person") or {}).get("name", "User")
@@ -1243,11 +1270,6 @@ class PersonalityEngine:
 
         # Phase 6: Self-Irony-Section
         self_irony_section = self._build_self_irony_section(irony_count_today=irony_count_today or 0)
-
-        # Phase 6: Formality-Section (mit Mood-Reset bei Stress)
-        if formality_score is None:
-            formality_score = self.formality_start
-        formality_section = self._build_formality_section(formality_score, mood=mood)
 
         # Urgency-Section (Dichte nach Dringlichkeit)
         urgency_section = self._build_urgency_section(context)
@@ -1286,16 +1308,32 @@ class PersonalityEngine:
 
         if person_name.lower() == primary_user.lower() or person_name == "User":
             title = titles.get(primary_user.lower(), "Sir")
+
+            # Titel-Evolution: "Sir"-Haeufigkeit haengt vom Formality-Score ab
+            formality = getattr(self, '_current_formality', self.formality_start)
+            if formality >= 70:
+                title_freq = f"Verwende \"{title}\" HAEUFIG — fast in jedem Satz."
+            elif formality >= 50:
+                title_freq = f"Verwende \"{title}\" regelmaessig, aber nicht in jedem Satz."
+            elif formality >= 35:
+                title_freq = f"Verwende \"{title}\" GELEGENTLICH — nur zur Betonung oder bei wichtigen Momenten."
+            else:
+                title_freq = (
+                    f"Verwende \"{title}\" NUR SELTEN — bei besonderen Momenten, Warnungen, "
+                    f"oder wenn du Respekt ausdruecken willst. Ansonsten einfach DU ohne Titel."
+                )
+
             return (
                 f"- Die aktuelle Person ist der Hauptbenutzer: {primary_user}.\n"
                 f"- BEZIEHUNGSSTUFE: Owner. Engste Vertrauensstufe.\n"
                 f"- Sprich ihn mit \"{title}\" an — aber DUZE ihn. IMMER.\n"
                 f"- NIEMALS siezen. Kein \"Sie\", kein \"Ihnen\", kein \"Ihr\".\n"
+                f"- {title_freq}\n"
                 f"- Ton: Vertraut, direkt, loyal. Wie ein alter Freund mit Titel.\n"
                 f"- Du darfst widersprechen, warnen, Meinung sagen. Er erwartet das.\n"
                 f"- Beispiel: \"Sehr wohl, {title}. Hab ich dir eingestellt.\"\n"
                 f"- Beispiel: \"Darf ich anmerken, {title} — du hast das Fenster offen.\"\n"
-                f"- Beispiel: \"Ich würd davon abraten, aber du bist der Boss.\""
+                f"- Beispiel: \"Ich wuerd davon abraten, aber du bist der Boss.\""
             )
         elif trust_level >= 1:
             # Mitbewohner: freundlich, respektvoll, aber weniger intim

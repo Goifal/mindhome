@@ -16,6 +16,7 @@ Phase 10: Diagnostik + Wartungs-Erinnerungen.
 import asyncio
 import json
 import logging
+import random
 import uuid
 from datetime import datetime, timedelta
 from typing import Optional
@@ -442,6 +443,16 @@ class ProactiveManager:
                 except Exception as e:
                     logger.debug("Predictive Briefing Fehler: %s", e)
 
+                # JARVIS-Begruessung: Persoenliches Guten Morgen VOR den Daten
+                _greetings = [
+                    "Guten Morgen, Sir.",
+                    "Morgen, Sir. Systeme laufen.",
+                    "Guten Morgen. Alles bereit.",
+                    "Morgen, Sir. Hier die Lage.",
+                ]
+                greeting = random.choice(_greetings)
+                text = f"{greeting} {text}"
+
                 self._mb_triggered_today = True
                 await emit_proactive(text, "morning_briefing", MEDIUM)
                 logger.info("Morning Briefing automatisch geliefert")
@@ -524,6 +535,22 @@ class ProactiveManager:
                         temp = f"Innen {t} Grad."
                     break
 
+            # Rolllaeden offen?
+            covers_open = []
+            for s in states:
+                eid = s.get("entity_id", "")
+                if eid.startswith("cover.") and s.get("state") == "open":
+                    name = s.get("attributes", {}).get("friendly_name", eid)
+                    covers_open.append(name)
+
+            # Lichter noch an?
+            lights_on = []
+            for s in states:
+                eid = s.get("entity_id", "")
+                if eid.startswith("light.") and s.get("state") == "on":
+                    name = s.get("attributes", {}).get("friendly_name", eid)
+                    lights_on.append(name)
+
             # Prompt bauen
             parts = []
             if temp:
@@ -534,7 +561,20 @@ class ProactiveManager:
                 parts.append(f"Noch offen: {', '.join(open_items)}.")
             if unlocked:
                 parts.append(f"Unverriegelt: {', '.join(unlocked)}.")
-            if not open_items and not unlocked:
+
+            # Proaktive Abend-Empfehlungen (JARVIS denkt mit)
+            suggestions = []
+            if covers_open:
+                suggestions.append(f"Rolllaeden noch offen: {', '.join(covers_open[:3])}.")
+            if lights_on and len(lights_on) >= 3:
+                suggestions.append(f"{len(lights_on)} Lichter noch an.")
+            if open_items:
+                suggestions.append("Fenster vor der Nacht schliessen?")
+            if unlocked:
+                suggestions.append("Schloesser verriegeln?")
+            if suggestions:
+                parts.append("Vorschlaege: " + " ".join(suggestions))
+            elif not open_items and not unlocked:
                 parts.append("Alles gesichert.")
 
             if not parts:
@@ -543,7 +583,9 @@ class ProactiveManager:
             # LLM-Polish im JARVIS-Stil
             prompt = (
                 "Abend-Status-Bericht fuer den Hauptbenutzer (Sir). "
-                "Fasse zusammen, JARVIS-Butler-Stil, max 2 Saetze:\n"
+                "Fasse zusammen, JARVIS-Butler-Stil, max 3 Saetze. "
+                "Bei offenen Fenstern/Tueren/Rolllaeden: Kurz vorschlagen ob du sie schliessen sollst. "
+                "Nicht fragen ob du helfen kannst — direkt anbieten was du tun wuerdest.\n"
                 + "\n".join(parts)
             )
 
@@ -554,7 +596,7 @@ class ProactiveManager:
                 ],
                 model=settings.model_notify,
                 think=False,
-                max_tokens=100,
+                max_tokens=150,
             )
             text = validate_notification(
                 response.get("message", {}).get("content", "")
