@@ -1237,9 +1237,11 @@ async def websocket_endpoint(websocket: WebSocket):
                             if stream_tokens_sent:
                                 # Es wurden Tokens gestreamt → stream_end senden
                                 await emit_stream_end(result["response"], tts_data=tts_data)
-                            else:
+                            elif not result.get("_emitted"):
                                 # Keine Tokens gestreamt (z.B. Tool-Query mit Humanizer)
                                 # → normale Antwort senden statt leerer Stream-Blase
+                                # _emitted=True: Shortcut-Pfade in brain.py haben
+                                # bereits via _speak_and_emit gesendet
                                 await emit_speaking(result["response"], tts_data=tts_data)
                         else:
                             # brain.process() sendet intern via _speak_and_emit
