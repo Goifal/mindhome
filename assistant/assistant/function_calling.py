@@ -2701,14 +2701,34 @@ class FunctionExecutor:
         else:
             # Alle calendar.* Entities aus HA sammeln
             states = await self.ha.get_states()
-            calendar_entities = [
+            all_cal_entities = [
                 s["entity_id"] for s in (states or [])
                 if s.get("entity_id", "").startswith("calendar.")
             ]
-            logger.info("Kalender: %d Entities in HA gefunden: %s", len(calendar_entities), calendar_entities)
+            logger.info("Kalender: %d Entities in HA gefunden: %s", len(all_cal_entities), all_cal_entities)
+
+            # Bekannte Noise-Kalender ausfiltern (Feiertage, Geburtstage etc.)
+            _NOISE_KEYWORDS = [
+                "feiertag", "holiday", "birthday", "geburtstag",
+                "abfall", "muell", "garbage", "waste", "trash",
+                "schulferien", "school", "vacation",
+            ]
+            calendar_entities = [
+                eid for eid in all_cal_entities
+                if not any(kw in eid.lower() for kw in _NOISE_KEYWORDS)
+            ]
+            # Wenn nach Filter nichts uebrig, alle verwenden
+            if not calendar_entities and all_cal_entities:
+                calendar_entities = all_cal_entities
+                logger.info("Kalender: Noise-Filter hat alles entfernt, nutze alle %d", len(calendar_entities))
+            elif len(calendar_entities) < len(all_cal_entities):
+                filtered_out = set(all_cal_entities) - set(calendar_entities)
+                logger.info("Kalender: %d nach Filter (entfernt: %s)", len(calendar_entities), filtered_out)
 
         if not calendar_entities:
             return {"success": False, "message": "Kein Kalender in Home Assistant gefunden"}
+
+        logger.info("Kalender: Abfrage von %d Entities: %s", len(calendar_entities), calendar_entities)
 
         # Alle Kalender abfragen und Events sammeln
         all_events = []
@@ -2762,6 +2782,36 @@ class FunctionExecutor:
             if isinstance(raw, dict):
                 raw = raw.get("dateTime") or raw.get("date") or ""
             return str(raw) if raw else ""
+
+        # Datum-Validierung: Nur Events im angefragten Zeitraum behalten
+        # (HA gibt manchmal Events ausserhalb des Bereichs zurueck)
+        validated_events = []
+        for ev in all_events:
+            raw_start = _parse_event_start(ev)
+            if not raw_start:
+                validated_events.append(ev)
+                continue
+            try:
+                if "T" in raw_start:
+                    ev_dt = datetime.fromisoformat(raw_start.replace("Z", "+00:00"))
+                    ev_local = ev_dt.astimezone(_tz)
+                else:
+                    # Ganztaegig: nur Datum, als Mitternacht behandeln
+                    ev_local = datetime.strptime(raw_start[:10], "%Y-%m-%d").replace(tzinfo=_tz)
+                if start <= ev_local <= end:
+                    validated_events.append(ev)
+                else:
+                    logger.warning("Kalender: Event '%s' am %s liegt ausserhalb %s-%s, uebersprungen",
+                                   ev.get("summary", "?"), ev_local.isoformat(),
+                                   start_str, end_str)
+            except (ValueError, TypeError) as e:
+                logger.warning("Kalender: Event-Datum nicht parsebar: %s (%s)", raw_start, e)
+                validated_events.append(ev)  # Im Zweifel behalten
+
+        all_events = validated_events
+        if not all_events:
+            label = {"today": "heute", "tomorrow": "morgen", "week": "diese Woche"}.get(timeframe, timeframe)
+            return {"success": True, "message": f"Keine Termine {label}."}
 
         # Nach Startzeit sortieren
         all_events.sort(key=lambda ev: _parse_event_start(ev) or "9999")
