@@ -68,7 +68,7 @@ class AutonomyManager:
             "get_house_status", "get_room_climate",
         ]))
         self._security_actions = set(trust_cfg.get("security_actions", [
-            "lock_door", "set_alarm", "set_presence_mode",
+            "lock_door", "arm_security_system", "set_presence_mode",
         ]))
 
     def can_act(self, action_type: str) -> bool:

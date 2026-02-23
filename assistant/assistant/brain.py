@@ -585,7 +585,7 @@ class AssistantBrain(BrainCallbacksMixin):
                     "_emitted": True,
                 }
 
-        # Phase 13.1: Sicherheits-Bestaetigung (lock_door:unlock, set_alarm:disarm, etc.)
+        # Phase 13.1: Sicherheits-Bestaetigung (lock_door:unlock, arm_security_system:disarm, etc.)
         security_result = await self._handle_security_confirmation(text, person or "")
         if security_result:
             await self.memory.add_conversation("user", text)
@@ -2940,7 +2940,7 @@ class AssistantBrain(BrainCallbacksMixin):
         return None
 
     # ------------------------------------------------------------------
-    # Phase 13.1: Sicherheits-Bestaetigung (lock_door, set_alarm, etc.)
+    # Phase 13.1: Sicherheits-Bestaetigung (lock_door, arm_security_system, etc.)
     # ------------------------------------------------------------------
 
     async def _handle_security_confirmation(self, text: str, person: str) -> Optional[str]:
