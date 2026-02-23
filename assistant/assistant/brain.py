@@ -1172,7 +1172,7 @@ class AssistantBrain(BrainCallbacksMixin):
         # --- Prio 1: Core ---
         sections.append(("scene_intelligence", SCENE_INTELLIGENCE_PROMPT, 1))
 
-        mood_hint = self.mood.get_mood_prompt_hint()
+        mood_hint = self.mood.get_mood_prompt_hint() if profile.need_mood else ""
         if mood_hint:
             sections.append(("mood", f"\n\nEMOTIONALE LAGE: {mood_hint}", 1))
 
