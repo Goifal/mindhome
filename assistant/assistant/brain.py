@@ -1056,12 +1056,6 @@ class AssistantBrain(BrainCallbacksMixin):
             name="sound_listening",
         )
 
-        # Phase 6.9: Running Gag Check (VOR LLM)
-        gag_response = await self.personality.check_running_gag(text)
-
-        # Phase 8: Konversations-Kontinuitaet — offene Themen anbieten
-        continuity_hint = await self._check_conversation_continuity()
-
         # WebSocket: Denk-Status senden
         await emit_thinking()
 
@@ -1069,28 +1063,13 @@ class AssistantBrain(BrainCallbacksMixin):
         profile = self.pre_classifier.classify(text)
         logger.info("Pre-Classification: %s", profile.category)
 
-        # 1. Kontext sammeln (mit Subsystem-Timeout)
+        # ----------------------------------------------------------------
+        # MEGA-PARALLEL GATHER: Context Build, alle Subsysteme, Running Gag,
+        # Continuity und What-If laufen gleichzeitig statt nacheinander.
+        # Spart 500ms-1.5s Latenz gegenueber der seriellen Ausfuehrung.
+        # ----------------------------------------------------------------
         ctx_timeout = float((yaml_config.get("context") or {}).get("api_timeout", 10))
-        try:
-            context = await asyncio.wait_for(
-                self.context_builder.build(
-                    trigger="voice", user_text=text, person=person or "",
-                    profile=profile,
-                ),
-                timeout=ctx_timeout,
-            )
-        except asyncio.TimeoutError:
-            logger.warning("Context Build Timeout (%.0fs) — Fallback auf Minimal-Kontext", ctx_timeout)
-            context = {"time": {"datetime": datetime.now().isoformat()}}
-        except Exception as e:
-            logger.error("Context Build Fehler: %s — Fallback auf Minimal-Kontext", e)
-            context = {"time": {"datetime": datetime.now().isoformat()}}
-        if room:
-            context["room"] = room
-        if person:
-            context.setdefault("person", {})["name"] = person
 
-        # 2. Parallel: Nur die Subsysteme starten die das Profil verlangt
         async def _safe_security_score():
             try:
                 return await self.threat_assessment.get_security_score()
@@ -1098,45 +1077,99 @@ class AssistantBrain(BrainCallbacksMixin):
                 logger.debug("Security Score Fehler: %s", e)
                 return None
 
-        _gather_tasks: list[tuple[str, object]] = []
+        _mega_tasks: list[tuple[str, object]] = []
+
+        # Context Build (mit Timeout-Wrapper)
+        _mega_tasks.append(("context", asyncio.wait_for(
+            self.context_builder.build(
+                trigger="voice", user_text=text, person=person or "",
+                profile=profile,
+            ),
+            timeout=ctx_timeout,
+        )))
+
+        # Running Gag + Continuity (bisher seriell VOR Context Build)
+        _mega_tasks.append(("gag", self.personality.check_running_gag(text)))
+        _mega_tasks.append(("continuity", self._check_conversation_continuity()))
+
+        # What-If Prompt (bisher seriell NACH dem Parallel-Gather)
+        _mega_tasks.append(("whatif", self._get_whatif_prompt(text)))
+
+        # Alle Subsysteme die das Profil verlangt
         if profile.need_mood:
-            _gather_tasks.append(("mood", self.mood.analyze(text, person or "")))
+            _mega_tasks.append(("mood", self.mood.analyze(text, person or "")))
         if profile.need_formality:
-            _gather_tasks.append(("formality", self.personality.get_formality_score()))
+            _mega_tasks.append(("formality", self.personality.get_formality_score()))
         if profile.need_irony:
-            _gather_tasks.append(("irony", self.personality._get_self_irony_count_today()))
+            _mega_tasks.append(("irony", self.personality._get_self_irony_count_today()))
         if profile.need_time_hints:
-            _gather_tasks.append(("time_hints", self.time_awareness.get_context_hints()))
+            _mega_tasks.append(("time_hints", self.time_awareness.get_context_hints()))
         if profile.need_security:
-            _gather_tasks.append(("security", _safe_security_score()))
+            _mega_tasks.append(("security", _safe_security_score()))
         if profile.need_cross_room:
-            _gather_tasks.append(("cross_room", self._get_cross_room_context(person or "")))
+            _mega_tasks.append(("cross_room", self._get_cross_room_context(person or "")))
         if profile.need_guest_mode:
-            _gather_tasks.append(("guest_mode", self.routines.is_guest_mode_active()))
+            _mega_tasks.append(("guest_mode", self.routines.is_guest_mode_active()))
         if profile.need_tutorial:
-            _gather_tasks.append(("tutorial", self._get_tutorial_hint(person or "unknown")))
+            _mega_tasks.append(("tutorial", self._get_tutorial_hint(person or "unknown")))
         if profile.need_summary:
-            _gather_tasks.append(("summary", self._get_summary_context(text)))
+            _mega_tasks.append(("summary", self._get_summary_context(text)))
         if profile.need_rag:
-            _gather_tasks.append(("rag", self._get_rag_context(text)))
+            _mega_tasks.append(("rag", self._get_rag_context(text)))
 
-        if _gather_tasks:
-            _keys, _coros = zip(*_gather_tasks)
-            _results = await asyncio.gather(*_coros)
-            _result_map = dict(zip(_keys, _results))
-        else:
-            _result_map = {}
+        _mega_keys, _mega_coros = zip(*_mega_tasks)
+        _mega_results = await asyncio.gather(*_mega_coros, return_exceptions=True)
+        _result_map = dict(zip(_mega_keys, _mega_results))
 
-        mood_result = _result_map.get("mood")
-        formality_score = _result_map.get("formality")  # None → personality nutzt formality_start
-        irony_count = _result_map.get("irony", 0)
-        time_hints = _result_map.get("time_hints")
-        sec_score = _result_map.get("security")
-        prev_context = _result_map.get("cross_room")
-        guest_mode_active = _result_map.get("guest_mode", False)
-        tutorial_hint = _result_map.get("tutorial")
-        summary_context = _result_map.get("summary")
-        rag_context = _result_map.get("rag")
+        # --- Context Build Ergebnis verarbeiten ---
+        context = _result_map.get("context")
+        if isinstance(context, asyncio.TimeoutError):
+            logger.warning("Context Build Timeout (%.0fs) — Fallback auf Minimal-Kontext", ctx_timeout)
+            context = {"time": {"datetime": datetime.now().isoformat()}}
+        elif isinstance(context, BaseException):
+            logger.error("Context Build Fehler: %s — Fallback auf Minimal-Kontext", context)
+            context = {"time": {"datetime": datetime.now().isoformat()}}
+        if room:
+            context["room"] = room
+        if person:
+            context.setdefault("person", {})["name"] = person
+
+        # --- Running Gag Ergebnis ---
+        gag_response = _result_map.get("gag")
+        if isinstance(gag_response, BaseException):
+            logger.debug("Running Gag Fehler: %s", gag_response)
+            gag_response = None
+
+        # --- Continuity Ergebnis ---
+        continuity_hint = _result_map.get("continuity")
+        if isinstance(continuity_hint, BaseException):
+            logger.debug("Continuity Fehler: %s", continuity_hint)
+            continuity_hint = None
+
+        # --- What-If Ergebnis ---
+        whatif_prompt = _result_map.get("whatif")
+        if isinstance(whatif_prompt, BaseException):
+            logger.debug("What-If Fehler: %s", whatif_prompt)
+            whatif_prompt = None
+
+        # --- Subsystem-Ergebnisse (mit Fehler-Toleranz) ---
+        def _safe_get(key, default=None):
+            val = _result_map.get(key, default)
+            if isinstance(val, BaseException):
+                logger.debug("Subsystem '%s' Fehler: %s", key, val)
+                return default
+            return val
+
+        mood_result = _safe_get("mood")
+        formality_score = _safe_get("formality")  # None → personality nutzt formality_start
+        irony_count = _safe_get("irony", 0)
+        time_hints = _safe_get("time_hints")
+        sec_score = _safe_get("security")
+        prev_context = _safe_get("cross_room")
+        guest_mode_active = _safe_get("guest_mode", False)
+        tutorial_hint = _safe_get("tutorial")
+        summary_context = _safe_get("summary")
+        rag_context = _safe_get("rag")
 
         context["mood"] = mood_result
 
@@ -1252,7 +1285,6 @@ class AssistantBrain(BrainCallbacksMixin):
         if tutorial_hint:
             sections.append(("tutorial", tutorial_hint, 4))
 
-        whatif_prompt = await self._get_whatif_prompt(text, context)
         if whatif_prompt:
             sections.append(("whatif", whatif_prompt, 4))
 
@@ -4782,4 +4814,5 @@ Regeln:
         logger.info("Shutdown: Schliesse Verbindungen...")
         await self.memory.close()
         await self.ha.close()
+        await self.ollama.close()
         logger.info("MindHome Assistant heruntergefahren")
