@@ -3269,12 +3269,20 @@ class AssistantBrain(BrainCallbacksMixin):
         ]):
             return "week"
 
-        # Generisch "termine" / "kalender" ohne Zeitangabe → heute
-        if any(kw in t for kw in [
+        # Generisch "termine" / "kalender" ohne Zeitangabe
+        _calendar_keywords = [
             "was steht an", "meine termine", "welche termine",
             "welche termine habe ich", "welche termine stehen an",
             "habe ich termine", "zeig termine", "zeig kalender",
-        ]):
+            "am kalender", "im kalender", "auf dem kalender",
+            "steht am", "steht im",
+        ]
+        if any(kw in t for kw in _calendar_keywords):
+            # Zeitangabe im Text hat Vorrang vor Default "today"
+            if "morgen" in t:
+                return "tomorrow"
+            if "woche" in t:
+                return "week"
             return "today"
 
         return None
