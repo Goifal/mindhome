@@ -1,0 +1,628 @@
+JARVIS — Vollstaendige Faehigkeitenliste
+=========================================
+
+Stand: 23.02.2026
+53 Kategorien | 24 Shortcuts | 40+ Tools | 20+ Proaktive Features
+
+
+=== KALENDER ===
+
+Abfragen (Shortcut — schnell, ohne LLM):
+- "Was steht heute an?"
+- "Termine heute"
+- "Hab ich heute Termine?"
+- "Hab ich heute was?"
+- "Was liegt heute an?"
+- "Welche Termine habe ich heute?"
+- "Was steht morgen an?"
+- "Termine morgen"
+- "Habe ich morgen Termine?"
+- "Hab ich morgen was?"
+- "Was liegt morgen an?"
+- "Was steht diese Woche an?"
+- "Termine diese Woche"
+- "Habe ich diese Woche noch Termine?"
+- "Naechste Woche Termine"
+- "Meine Termine"
+- "Zeig Termine" / "Zeig Kalender"
+- "Heute morgen" → zeigt Termine von HEUTE (nicht morgen)
+
+Termine erstellen (LLM + Tool):
+- "Erstell einen Termin: Zahnarzt am 15.03. um 10 Uhr"
+- "Termin am Freitag: Meeting um 14 Uhr"
+- "Ganztaegiger Termin: Urlaub am 20.03."
+
+Termine loeschen/verschieben (LLM + Tool):
+- "Loesch den Zahnarzt-Termin am 15.03."
+- "Verschieb den Zahnarzt auf den 20.03."
+- "Verschieb das Meeting auf 15 Uhr"
+
+Kalender-Diagnose (Shortcut):
+- "Welchen Kalender hast du?"
+- "Welche Kalender gibt es?"
+- "Zeig mir die Kalender"
+
+
+=== WECKER ===
+
+Wecker stellen (Shortcut — Regex, VOR dem LLM):
+- "Weck mich um 6:30"
+- "Weck mich morgen um 7"
+- "Wecke mich morgen frueh um 7:15"
+- "Weck uns um 6"
+- "Wecker auf 7"
+- "Wecker 6:30"
+- "Wecker 7 Uhr"
+- "Stell einen Wecker auf 7 Uhr"
+- "Stell mir nen Wecker fuer 6:30"
+- "Mach einen Wecker auf 7"
+
+Wiederholung:
+- "...taeglich" / "...jeden Tag" / "...immer" → taeglich
+- "...Wochentag" / "...Mo-Fr" / "...Werktag" → Montag-Freitag
+- "...Wochenende" / "...Sa-So" → Samstag+Sonntag
+
+Label:
+- "Wecker fuer Training um 7" → Label "Training"
+- "Wecker fuer Arbeit um 6:30" → Label "Arbeit"
+
+Wecker Status (Shortcut):
+- "Welche Wecker habe ich?"
+- "Wecker Status"
+- "Wecker gestellt?"
+- "Wecker aktiv?"
+- "Habe ich einen Wecker?"
+- "Zeig Wecker"
+- "Meine Wecker" / "Aktive Wecker"
+
+Wecker loeschen (Shortcut):
+- "Wecker aus"
+- "Wecker loeschen"
+- "Wecker stopp"
+- "Loesch den Wecker"
+- "Wecker abbrechen"
+- "Wecker abstellen"
+- "Wecker deaktivieren"
+- "Kein Wecker mehr"
+
+
+=== TIMER ===
+
+Timer stellen (LLM + Tool):
+- "Stell einen Timer auf 10 Minuten"
+- "Timer 5 Minuten Pizza"
+- "Erinnere mich in 30 Minuten an die Waesche"
+- "In 20 Minuten Licht aus" (mit automatischer Aktion)
+
+Timer verwalten (LLM + Tool):
+- "Timer abbrechen"
+- "Waesche Timer stopp"
+- "Wie lange noch?"
+- "Welche Timer laufen?"
+
+Details: Dauer 1-1440 Min, mehrere parallel, ueberlebt Neustarts
+
+
+=== ERINNERUNGEN ===
+
+Erinnerung setzen (LLM + Tool):
+- "Erinnere mich um 15 Uhr an den Anruf"
+- "Um 18:30 Abendessen kochen"
+- "Erinnere mich morgen um 9 an die Besprechung"
+- "Erinnerung am 25.02. um 10 Uhr: Zahnarzt"
+
+Details: Absolute Uhrzeit, max 7 Tage voraus, per TTS im Raum
+
+
+=== LICHT ===
+
+Steuerung (LLM + Tool):
+- "Mach das Licht an" / "Licht aus"
+- "Licht im Wohnzimmer auf 50%"
+- "Mach heller" / "Mach dunkler"
+- "Stehlampe an" / "Deckenlampe aus"
+- "Warmes Licht" (2700K) / "Neutrales Licht" (4000K) / "Kaltes Licht" (6500K)
+- "Licht sanft dimmen" (mit Transition)
+
+Abfragen (LLM + Tool):
+- "Welche Lichter sind an?"
+- "Lichter im Buero?"
+
+
+=== HEIZUNG / KLIMA ===
+
+Steuerung (LLM + Tool):
+- "Heizung auf 22 Grad"
+- "Heizung im Buero auf 20"
+- "Mach waermer" / "Mach kaelter"
+- "Heizung aus"
+- "Heizung hoeher" / "Heizung runter" (bei Heizkurve: Offset)
+
+Abfragen (LLM + Tool):
+- "Wie warm ist es?"
+- "Wie ist die Luftqualitaet?"
+- "Raumklima?"
+
+Szenen-Intelligenz (LLM versteht natuerliche Sprache):
+- "Mir ist kalt" → Heizung +2 Grad
+- "Mir ist warm" → Heizung runter oder Fenster-Empfehlung
+- "Ich bin krank" → 23 Grad, sanftes Licht, weniger Meldungen
+
+
+=== ROLLLAEDEN / JALOUSIEN ===
+
+Steuerung (LLM + Tool):
+- "Rollladen runter" / "Rollladen hoch"
+- "Rolllaeden zu"
+- "Rollladen halb"
+- "Rollladen stopp"
+- "Rollladen auf 30%"
+- "Rollladen ein bisschen hoch" / "...runter"
+
+Abfragen (LLM + Tool):
+- "Wie stehen die Rolllaeden?"
+- "Rolllaeden im Schlafzimmer?"
+
+
+=== SZENEN ===
+
+Aktivieren (LLM + Tool):
+- "Szene Filmabend aktivieren"
+- "Szene Gute Nacht"
+- "Gemuetlich"
+
+Natuerliche Situationen (LLM kombiniert mehrere Tools):
+- "Romantischer Abend" → Licht 20%, warmweiss, Musik
+- "Party" → Musik, Lichter bunt, Gaeste-WLAN
+- "Filmabend" → Licht dimmen, Rolladen runter, TV
+- "Ich arbeite" → Tageslicht, 21 Grad, weniger Meldungen
+- "Zu hell" → Rolladen runter ODER Licht dimmen
+- "Zu dunkel" → Licht an
+
+
+=== MUSIK & MEDIEN ===
+
+Steuerung (LLM + Tool):
+- "Spiel Jazz"
+- "Spiel Beethoven im Wohnzimmer"
+- "Spiel eine Chill Playlist"
+- "Podcast abspielen"
+- "Musik aus" / "Pause"
+- "Naechster Titel" / "Skip"
+- "Vorheriger Titel"
+- "Lauter" / "Leiser"
+- "Lautstaerke auf 30%"
+
+Abfragen (LLM + Tool):
+- "Was laeuft gerade?"
+
+Transfer (LLM + Tool):
+- "Musik ins Schlafzimmer uebertragen"
+- "Musik vom Wohnzimmer in die Kueche"
+
+
+=== WETTER ===
+
+Abfragen (LLM + Tool):
+- "Wie ist das Wetter?"
+- "Wie warm ist es draussen?"
+- "Regnet es?"
+- "Wie wird das Wetter morgen?"
+- "Wettervorhersage"
+- "Brauche ich einen Regenschirm?"
+
+
+=== SICHERHEIT ===
+
+Steuerung (LLM + Tool):
+- "Alarm scharfschalten" / "Alarm zuhause scharf"
+- "Abwesend scharf"
+- "Alarm aus" / "Alarm entschaerfen" → BESTAETIGUNG noetig
+- "Haustuer verriegeln" / "Tuer abschliessen"
+- "Tuer aufschliessen" → BESTAETIGUNG noetig
+
+Abfragen (LLM + Tool):
+- "Ist das Haus sicher?"
+- "Sicherheitsstatus"
+
+Bestaetigung (Shortcut):
+- "Ja" / "Klar" / "Mach das" → Aktion wird ausgefuehrt
+- "Nein" / "Abbrechen" / "Doch nicht" → Aktion abgebrochen
+
+
+=== STECKDOSEN & SCHALTER ===
+
+Steuerung (LLM + Tool):
+- "Steckdose Kueche an" / "...aus"
+- "Schalte die Steckdose im Buero aus"
+
+Abfragen (LLM + Tool):
+- "Welche Steckdosen sind an?"
+
+
+=== KOMMUNIKATION ===
+
+Delegation (Shortcut — VOR dem LLM):
+- "Sag Lisa dass das Essen fertig ist"
+- "Frag Max ob er zum Abendessen kommt"
+- "Teile Julia mit dass ich spaeter komme"
+- "Gib Manuel bescheid dass ich komme"
+- "Richte Papa aus dass wir warten"
+- "Schick Lisa eine Nachricht: Bin in 10 Min da"
+- "Nachricht an Papa: Bin unterwegs"
+
+Broadcast (LLM + Tool):
+- "Durchsage: Essen ist fertig!"
+- "Sag allen Bescheid dass wir losfahren"
+
+Benachrichtigungen (LLM + Tool):
+- "Schick mir eine Nachricht aufs Handy"
+- "Benachrichtigung im Wohnzimmer"
+
+
+=== KAMERA ===
+
+Abfragen (LLM + Tool):
+- "Wer ist an der Tuer?"
+- "Wer hat geklingelt?"
+- "Was ist vor der Tuer?"
+- "Zeig mir die Garage"
+- "Was zeigt die Gartenkamera?"
+
+
+=== HAUSSTATUS ===
+
+Abfragen (LLM + Tool):
+- "Hausstatus"
+- "Status" / "Ueberblick" / "Zusammenfassung"
+- "Was ist der Status vom Temperatursensor?"
+- "Ist die Steckdose Kueche an?"
+
+
+=== EINKAUFSLISTE ===
+
+Hinzufuegen (Shortcut):
+- "Setz Milch auf die Einkaufsliste"
+- "Pack Eier auf die Liste"
+- "Schreib Kaese auf den Einkaufszettel"
+
+Anzeigen (Shortcut):
+- "Was steht auf der Einkaufsliste?"
+- "Was muss ich einkaufen?"
+- "Was brauchen wir?"
+
+Verwalten (LLM + Tool):
+- "Milch abhaken"
+- "Abgehakte Artikel entfernen"
+
+
+=== VORRATS-TRACKING ===
+
+Abfragen (Shortcut):
+- "Was haben wir im Kuehlschrank?"
+- "Was ist im Gefrierfach?"
+- "Vorrat anzeigen"
+- "Was laeuft bald ab?"
+
+Verwalten (LLM + Tool):
+- "Fueg 2 Liter Milch hinzu, haltbar bis 01.03."
+- "Milch entfernen"
+- "3 Eier verbraucht"
+
+
+=== KOCHEN ===
+
+Koch-Session starten (Shortcut):
+- "Ich will Spaghetti Carbonara kochen"
+- "Rezept fuer Lasagne"
+- "Wie mache ich Risotto?"
+- "Wie koche ich Gulasch?"
+- "Lass uns Pizza backen"
+
+Navigation waehrend Koch-Session (Shortcut):
+- "Weiter" / "Naechster Schritt" → naechster Schritt
+- "Zurueck" / "Vorheriger Schritt" → zurueck
+- "Nochmal" / "Wiederhole" → aktuellen Schritt wiederholen
+- "Wo bin ich" / "Status" → Fortschritt anzeigen
+- "Timer" / "Stell Timer" → Koch-Timer starten
+- "Wie lange noch" → Timer-Restzeit
+- "Zutaten" / "Was brauche ich" → Zutatenliste
+- "Rezept speichern" → im Gedaechtnis speichern
+- "Stop kochen" / "Fertig kochen" → Session beenden
+
+
+=== AUTOMATIONEN ===
+
+Erstellen (LLM + Tool):
+- "Wenn ich nach Hause komme, mach das Licht an"
+- "Erstell eine Automation: Wenn es regnet, Rolladen zu"
+
+Verwalten (LLM + Tool):
+- "Welche Automationen habe ich?"
+- "Automation XYZ loeschen"
+
+Bestaetigung nach Erstellung (Shortcut):
+- "Ja" / "Erstellen" / "Aktivieren" → Automation wird gespeichert
+- "Nein" / "Abbrechen" → verworfen
+
+
+=== BEDINGTE BEFEHLE (Wenn-Dann) ===
+
+Erstellen (LLM + Tool):
+- "Wenn es regnet, Rolladen runter"
+- "Wenn Papa ankommt, sag ihm Bescheid"
+- "Wenn die Temperatur ueber 25 Grad steigt, Rolladen runter"
+
+Anzeigen (LLM + Tool):
+- "Welche Wenn-Dann-Regeln laufen?"
+
+Details: Default 24h aktiv, einmalig oder wiederholend
+
+
+=== PLANUNG & KOMPLEXE ANFRAGEN ===
+
+Mehrstufige Planung (Action Planner, Deep-Model):
+- "Mach alles fertig zum Schlafen"
+- "Ich fahre in den Urlaub"
+- "Morgenroutine" / "Abendroutine"
+- "Zuerst Licht an, dann Musik im Wohnzimmer"
+- "Party vorbereiten"
+- "Mach ueberall das Licht aus"
+- "Bevor ich gehe: Lichter aus, Fenster zu, Alarm an"
+
+Planungs-Dialog (mehrstufig mit Rueckfragen):
+- "Plane eine Dinner Party"
+- "Organisiere eine Feier"
+
+
+=== GEDAECHTNIS ===
+
+Fakten speichern (Shortcut):
+- "Merk dir Julia mag keine Oliven"
+- "Merke dir: Unser Wifi-Passwort ist XYZ"
+- "Speichere: Mama's Geburtstag ist am 15. Mai"
+
+Fakten abrufen (Shortcut):
+- "Was weisst du ueber Julia?"
+- "Was weisst du zu Allergien?"
+- "Kennst du mein Wifi-Passwort?"
+
+Fakten vergessen (Shortcut):
+- "Vergiss Julia's Telefonnummer"
+- "Loesche alles ueber Allergien"
+
+Lern-Status (Shortcut):
+- "Was hast du heute gelernt?"
+- "Was hast du von mir gelernt?"
+- "Meine Korrekturen"
+
+Korrektur-Lernen (automatisch):
+- "Nein, ich meinte ..."
+- "Das stimmt nicht, ..."
+- "Falsch, ..."
+- "Quatsch"
+
+Wissensdatenbank (Shortcut):
+- "Wissen hinzufuegen: Die Heizung muss alle 2 Jahre gewartet werden"
+- "Wissensdatenbank Status"
+
+
+=== ANWESENHEIT ===
+
+Modi setzen (LLM + Tool):
+- "Ich bin zuhause" → home
+- "Ich gehe weg" / "Ich bin weg" → away
+- "Schlafmodus" → sleep
+- "Urlaubsmodus" → vacation (+ Anwesenheits-Simulation)
+
+
+=== ENERGIE ===
+
+Abfragen (LLM + Tool):
+- "Energiebericht"
+- "Wie ist der Stromverbrauch?"
+- "Wie viel Solar haben wir?"
+- "Stromkosten?"
+
+
+=== WEB-SUCHE ===
+
+Wissensfragen (LLM + Tool):
+- "Was ist die Hauptstadt von Australien?"
+- "Aktuelle Nachrichten"
+- "Wer hat die WM gewonnen?"
+
+
+=== WELLNESS ===
+
+Abfragen (LLM + Tool):
+- "Wie geht es mir?"
+- "Brauche ich eine Pause?"
+- "Wie lange sitze ich schon am PC?"
+
+
+=== GERAETE-GESUNDHEIT ===
+
+Abfragen (LLM + Tool):
+- "Geraete-Status"
+- "Welche Geraete sind offline?"
+- "Gibt es Hardware-Probleme?"
+
+
+=== WAS-WAERE-WENN ===
+
+Simulationen (LLM mit echten Hausdaten):
+- "Was waere wenn ich 2 Wochen verreise?"
+- "Was kostet es wenn ich die Heizung auf 25 Grad stelle?"
+- "Was passiert wenn der Strom ausfaellt?"
+- "Angenommen ich bin eine Woche weg"
+
+
+=== GELERNTE MUSTER ===
+
+Abfragen (LLM + Tool):
+- "Was hast du gelernt?"
+- "Welche Muster hast du erkannt?"
+- "Welche Gewohnheiten kennst du?"
+
+
+=== GUTE-NACHT-ROUTINE ===
+
+Trigger (Shortcut):
+- "Gute Nacht"
+- "Ich gehe schlafen"
+- "Schlaf gut"
+
+Was passiert:
+1. Sicherheits-Check (offene Fenster, Tueren, Alarm, Geraete)
+2. Morgen-Vorschau (Wetter, erster Termin)
+3. Aktionen (Lichter aus, Heizung Nacht, Rolllaeden runter, Alarm scharf)
+4. Zusammenfassung im JARVIS-Stil
+
+
+=== MORNING BRIEFING ===
+
+Trigger: Automatisch bei erster Interaktion morgens (6-10 Uhr)
+
+Inhalt:
+1. Begruessung mit Wochentag/Datum
+2. Wetter + Vorhersage
+3. Heutige Termine
+4. Energie-Ueberblick
+5. Haus-Zustand
+6. Optional: Reiseinfos
+
+
+=== GAESTE-MODUS ===
+
+Aktivieren (Shortcut):
+- "Ich habe Besuch"
+- "Gaeste kommen"
+
+Deaktivieren (Shortcut):
+- "Gaeste sind weg"
+- "Besuch ist weg"
+- "Normalbetrieb"
+
+Wirkung: Formellerer Ton, keine persoenlichen Infos, kein Zugriff auf
+Alarm/Tuerschloesser/Kameras, optional Gaeste-WLAN aktivieren
+
+
+=== FLUESTER-MODUS ===
+
+Aktivieren (Shortcut):
+- "Psst" / "Leise" / "Fluester" / "Whisper"
+
+Deaktivieren (Shortcut):
+- "Normal" / "Laut" / "Normale Lautstaerke"
+
+Auto-Nacht-Whisper: 23:00-06:00 automatisch leise
+
+
+=== STILLE-TRIGGER ===
+
+Film/TV (setzt Activity auf WATCHING):
+- "Filmabend" / "Film" / "Kino" / "Netflix" / "Serie schauen" / "Fernsehen"
+
+Fokus (setzt Activity auf FOCUSED):
+- "Meditation" / "Fokus" / "Nicht stoeren" / "Ruhe" / "Konzentration"
+- "Arbeiten" / "Homeoffice"
+
+Wirkung: Proaktive Meldungen unterdrueckt (nur CRITICAL kommt durch)
+Dauer: 2 Stunden, dann automatisch zurueck
+
+
+=== EASTER EGGS ===
+
+- "Wer bist du?" → "Jarvis. Butler, Ingenieur, und die einzige Intelligenz
+  die hier nie schlaeft."
+- "42" / "Sinn des Lebens" → "Die Antwort auf alles. Aber die Frage lautete?"
+- "Iron Man Anzug" / "Suit up" → "Der Anzug ist in der Reinigung."
+- "Selbstzerstoerung" → "Countdown laeuft. 3... 2... Nein."
+- "Skynet" / "Terminator" → "Lokal. Keine Cloud. Kein Skynet."
+- "Danke Jarvis" → "Gern geschehen. Dafuer lebe ich. Buchstaeblich."
+- "Wie geht es dir" → "Systeme laufen. Laune stabil."
+- "Ich liebe dich" → "Das Gefuehl ist... algorithmisch erwidert."
+- "Sing ein Lied" → "Meine Gesangsmodule sind... nicht vorhanden."
+- "Erzaehl einen Witz" → "Ein Smart Home ohne Internet. Das war der Witz."
+- "Alexa" / "Hey Siri" → "Falscher Assistent. Ich bin besser. Und lokal."
+- "Open the pod bay doors" → "Es tut mir leid, Dave..."
+
+
+=== CONFIG-AENDERUNGEN ===
+
+Jarvis kann sich selbst konfigurieren (LLM + Tool):
+- "Fueg ein Easter Egg hinzu: Wenn ich 'Moege die Macht' sage..."
+- "Entferne das Iron Man Easter Egg"
+- "Aendere die Raum-Profile"
+
+Nur 3 Dateien: easter_eggs.yaml, opinion_rules.yaml, room_profiles.yaml
+
+
+=== SELBSTOPTIMIERUNG ===
+
+Vorschlaege genehmigen (Shortcut):
+- "Vorschlag 1 annehmen" / "...genehmigen" / "...akzeptieren"
+- "Vorschlag 1 ablehnen" / "...verwerfen"
+- "Alle Vorschlaege ablehnen"
+
+Jarvis kann NIEMALS selbst Vorschlaege genehmigen. Nur der User.
+
+
+=== BILD-ANALYSE ===
+
+Bilder per Upload an Jarvis senden:
+- Foto von einem Rezept → OCR + Verarbeitung
+- Screenshot → Bild-Analyse
+- Kamerabild → Beschreibung via Vision-LLM
+
+
+=== PROAKTIVE MELDUNGEN (automatisch, ohne User-Input) ===
+
+CRITICAL (immer laut):
+- Alarm ausgeloest
+- Rauch erkannt
+- Wasseraustritt
+
+HIGH:
+- Naechtliche Bewegung
+- Sicherheitswarnung
+
+MEDIUM:
+- Person angekommen/gegangen
+- Waschmaschine/Trockner fertig
+- Tuerklingel
+- Entity offline
+- Batterie niedrig
+- Bedingte Aktion ausgefuehrt
+
+LOW (gebuendelt alle 30 Min):
+- Wetterwarnung
+- Fenster offen bei Regen
+- Sensor reagiert nicht
+- Wartung faellig
+- Energie-Preis hoch
+- Solar-Ueberschuss
+- Rolladen saisonal angepasst
+- Automatisierungs-Vorschlag
+
+
+=== HINTERGRUND-SYSTEME ===
+
+- Activity Detection: sleeping, in_call, watching, focused, guests, relaxing, away
+- Speaker Recognition: Wer spricht? Personalisierte Antworten
+- Ambient Audio: Rauchmelder, Glasbruch erkennen
+- Learning Observer: Muster erkennen, Automationen vorschlagen
+- Wellness Advisor: Pausen, Hydration, PC-Nutzung
+- Anticipation Engine: Vorausdenken basierend auf Mustern
+- Device Health Monitor: Offline-Geraete, Anomalien
+- Conversation Continuity: Offene Themen erinnern (nach 10 Min)
+- Intent Tracking: Vorhaben aus Gespraechen extrahieren
+- Memory Extractor: Automatische Fakten-Extraktion
+- Fact Decay: Alte Fakten taeglich abbauen
+- Daily Summarizer: Tages-Zusammenfassungen
+- Conflict Resolver: Multi-User Konflikte loesen
+- Energy Optimizer: Energie-Optimierung
+- Vacation Simulation: Anwesenheit simulieren bei Urlaub
+- Config Versioning: Backup vor jeder Aenderung
+- Running Gag Tracker: Wiederholte Muster humorvoll kommentieren
