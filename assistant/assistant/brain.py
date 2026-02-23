@@ -19,6 +19,7 @@ Phase 10: Multi-Room & Kommunikation (Room Presence, TTS Routing,
 import asyncio
 import json
 import logging
+import random
 import re
 import time
 from datetime import datetime, timedelta, timezone
@@ -468,6 +469,36 @@ class AssistantBrain(BrainCallbacksMixin):
             name="speak_response",
         )
 
+    # Sarkasmus-Feedback Erkennung — Keyword-basiert, kein LLM/Redis in Hot Path
+    _SARCASM_POSITIVE_PATTERNS = frozenset([
+        "haha", "lol", "hehe", "hihi", "xd", "witzig", "lustig", "gut",
+        "stimmt", "genau", "ja", "ok", "passt", "nice", "geil",
+        "👍", "😂", "😄", "🤣",
+    ])
+    _SARCASM_NEGATIVE_PATTERNS = frozenset([
+        "hoer auf", "lass das", "sei ernst", "nicht witzig", "nervt",
+        "ernst", "bitte sachlich", "ohne sarkasmus", "ohne witz",
+        "lass den quatsch", "reicht", "genug",
+    ])
+
+    def _detect_sarcasm_feedback(self, text: str) -> bool | None:
+        """Erkennt ob der User auf Sarkasmus positiv/negativ reagiert.
+
+        Rein pattern-basiert — KEIN LLM, kein Redis, keine Latenz.
+        Returns True (positiv), False (negativ), None (neutral/unklar).
+        """
+        text_lower = text.lower().strip()
+        # Kurze positive Reaktionen (1-3 Woerter)
+        words = text_lower.split()
+        if len(words) <= 3:
+            if any(p in text_lower for p in self._SARCASM_POSITIVE_PATTERNS):
+                return True
+        # Explizite Ablehnung (beliebige Laenge)
+        if any(p in text_lower for p in self._SARCASM_NEGATIVE_PATTERNS):
+            return False
+        # Unklar — kein Feedback tracken
+        return None
+
     def _remember_exchange(self, user_text: str, assistant_text: str) -> None:
         """Fire-and-forget: Gespraech im Working Memory speichern.
 
@@ -495,6 +526,17 @@ class AssistantBrain(BrainCallbacksMixin):
             Dict mit response, actions, model_used
         """
         logger.info("Input: '%s' (Person: %s, Raum: %s)", text, person or "unbekannt", room or "unbekannt")
+
+        # Sarkasmus-Feedback: Reaktion auf vorherige sarkastische Antwort auswerten
+        if self.personality.sarcasm_level >= 3 and hasattr(self, '_last_response_was_snarky'):
+            if self._last_response_was_snarky:
+                feedback = self._detect_sarcasm_feedback(text)
+                if feedback is not None:
+                    self._task_registry.create_task(
+                        self.personality.track_sarcasm_feedback(feedback),
+                        name="sarcasm_feedback",
+                    )
+            self._last_response_was_snarky = False
 
         # Phase 9: Fluestermodus-Check
         # Whisper-Modus wird als Seiteneffekt gesetzt/entfernt.
@@ -1573,6 +1615,19 @@ class AssistantBrain(BrainCallbacksMixin):
             has_query_results = False
 
             if tool_calls:
+                # "Verstanden, Sir"-Moment: Bei 2+ Aktionen kurz bestaetigen BEVOR ausgefuehrt wird
+                # Latenz-neutral: fire-and-forget WebSocket emit, blockiert nicht
+                if len(tool_calls) >= 2:
+                    _ack_phrases = [
+                        "Sehr wohl.", "Verstanden.", "Wird gemacht.",
+                        "Einen Moment.", "Laeuft.",
+                    ]
+                    _ack = random.choice(_ack_phrases)
+                    self._task_registry.create_task(
+                        emit_speaking(_ack, tts_data={"message_type": "confirmation"}),
+                        name="pre_action_ack",
+                    )
+
                 for tool_call in tool_calls:
                     func = tool_call.get("function", {})
                     func_name = func.get("name", "")
@@ -2055,7 +2110,7 @@ class AssistantBrain(BrainCallbacksMixin):
                 name="extract_intents",
             )
 
-        # Phase 8: Personality-Metrics tracken
+        # Phase 8: Personality-Metrics tracken (ohne Sarkasmus — das laeuft jetzt separat)
         self._task_registry.create_task(
             self.personality.track_interaction_metrics(
                 mood=mood_result.get("mood", "neutral"),
@@ -2063,6 +2118,9 @@ class AssistantBrain(BrainCallbacksMixin):
             ),
             name="track_metrics",
         )
+
+        # Markiere ob diese Antwort sarkastisch war (fuer Feedback bei naechster Nachricht)
+        self._last_response_was_snarky = self.personality.sarcasm_level >= 3
 
         # Phase 8: Offenes Thema markieren (wenn Frage ohne klare Antwort)
         # Triviale Fragen ("Wie spaet ist es?", "Wie warm ist es?") nicht als
@@ -2889,7 +2947,12 @@ class AssistantBrain(BrainCallbacksMixin):
         if parts:
             parts.insert(0, (
                 "\n\nGEDAECHTNIS (nutze diese Infos MIT HALTUNG — "
-                "wie ein alter Bekannter, nicht wie eine Datenbank):"
+                "wie ein alter Bekannter, nicht wie eine Datenbank):\n"
+                "ANWEISUNG: Wenn eine Erinnerung zur aktuellen Frage passt, baue sie TROCKEN ein.\n"
+                "RICHTIG: 'Milch? Beim letzten Mal endete das... suboptimal.' / "
+                "'Wie am Dienstag. Nur ohne den Zwischenfall.'\n"
+                "FALSCH: 'Laut meinen Daten hast du gesagt...' / 'In meiner Datenbank steht...'\n"
+                "Nicht erzwingen — nur einbauen wenn es PASST und WITZIG oder NUETZLICH ist."
             ))
             return "\n".join(parts)
 
