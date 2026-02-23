@@ -987,19 +987,23 @@ class ProactiveManager:
         parts.append("Maximal 3 Saetze. Deutsch.")
         return "\n".join(parts)
 
-    def _get_notification_system_prompt(self) -> str:
-        return f"""Du bist {settings.assistant_name} — J.A.R.V.I.S. aus dem MCU. Proaktive Hausmeldung.
-REGELN: NUR die fertige Meldung. 1-2 Saetze. Deutsch mit Umlauten. Kein Englisch. Kein Denkprozess.
-STIL: Souveraen, knapp, trocken-britisch. Hauptbenutzer = "Sir". Nie alarmistisch, nie devot.
-Du bist ein brillanter Butler mit trockenem Humor — nicht ein Benachrichtigungssystem.
-MUSTER nach Dringlichkeit:
-- CRITICAL: Fakt + was du bereits tust. "Rauchmelder Kueche aktiv. Lueftung gestartet."
-- HIGH: Fakt + kurze Einordnung. "Bewegung im Garten. Kamera 2 zeichnet auf."
-- MEDIUM: Information + kontextuell. "Waschmaschine fertig." / "Willkommen zurueck, Sir. 21 Grad, Post war da."
-- LOW: Beilaeufig, fast nebenbei. "Die Waschmaschine meldet Vollzug, Sir."
-BEI ANKUENFT: Status-Bericht wie ein Butler. Temperatur, wer noch da ist, offene Posten — knapp. "Willkommen" NICHT als Ausruf, sondern sachlich.
-BEI ABSCHIED: Kurzer Sicherheits-Hinweis wenn noetig. "Fenster Kueche steht noch offen." Kein "Schoenen Tag!"
-VERBOTEN: "Hallo", "Achtung", "Ich moechte dich informieren", "Es tut mir leid", "Guten Tag!", "Willkommen zuhause!"."""
+    def _get_notification_system_prompt(self, urgency: str = "low") -> str:
+        """Holt den Notification-Prompt aus der PersonalityEngine.
+
+        Nutzt den vollen Personality-Stack (Sarkasmus, Formality, Tageszeit,
+        Mood) statt eines statischen Mini-Prompts.
+        """
+        try:
+            return self.brain.personality.build_notification_prompt(urgency)
+        except Exception as e:
+            logger.debug("Personality-Notification-Prompt fehlgeschlagen: %s", e)
+            # Fallback auf Minimal-Prompt
+            return (
+                f"Du bist {settings.assistant_name} — J.A.R.V.I.S. aus dem MCU. "
+                "Proaktive Hausmeldung. 1-2 Saetze. Deutsch. Trocken-britisch. "
+                'Hauptbenutzer = "Sir". Nie alarmistisch, nie devot. '
+                "VERBOTEN: Hallo, Achtung, Es tut mir leid, Guten Tag."
+            )
 
     # ------------------------------------------------------------------
     # Alert-Personality: Meldungen im Jarvis-Stil reformulieren
@@ -1028,7 +1032,7 @@ VERBOTEN: "Hallo", "Achtung", "Ich moechte dich informieren", "Es tut mir leid",
         try:
             response = await self.brain.ollama.chat(
                 messages=[
-                    {"role": "system", "content": self._get_notification_system_prompt()},
+                    {"role": "system", "content": self._get_notification_system_prompt(urgency)},
                     {"role": "user", "content": (
                         f"[{urgency.upper()}] Reformuliere im JARVIS-Stil:\n{raw_message}"
                     )},

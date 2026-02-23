@@ -1457,3 +1457,182 @@ class PersonalityEngine:
                 lines.append(f"- Stimmung: {', '.join(mood_parts)}")
 
         return "\n".join(lines)
+
+    # ------------------------------------------------------------------
+    # Notification & Routine Prompts (Personality-Konsistenz)
+    # ------------------------------------------------------------------
+
+    def build_notification_prompt(self, urgency: str = "low") -> str:
+        """Baut einen personality-konsistenten Prompt fuer proaktive Meldungen.
+
+        Im Gegensatz zum Chat-Prompt ist dieser kompakter (fuer Fast-Model),
+        traegt aber den vollen Personality-Stack: Sarkasmus-Level, Formality,
+        Tageszeit-Stil, Selbstironie und Mood.
+
+        Args:
+            urgency: Dringlichkeit (low/medium/high/critical)
+
+        Returns:
+            System Prompt fuer Notification-Formatierung
+        """
+        time_of_day = self.get_time_of_day()
+        time_style = self.get_time_style(time_of_day)
+
+        # Humor/Sarkasmus — bei CRITICAL komplett aus
+        has_alerts = urgency == "critical"
+        humor_line = self._build_humor_section(
+            self._current_mood, time_of_day, has_alerts=has_alerts,
+        )
+
+        # Formality
+        formality = getattr(self, '_current_formality', self.formality_start)
+        if formality >= 70:
+            tone = "professionell, respektvoll"
+        elif formality >= 50:
+            tone = "souveraener Butler-Ton"
+        elif formality >= 35:
+            tone = "entspannt, vertraut"
+        else:
+            tone = "locker, persoenlich"
+
+        # "Sir"-Haeufigkeit
+        if formality >= 70:
+            sir_rule = '"Sir" haeufig verwenden.'
+        elif formality >= 50:
+            sir_rule = '"Sir" gelegentlich verwenden.'
+        elif formality >= 35:
+            sir_rule = '"Sir" nur bei wichtigen Momenten.'
+        else:
+            sir_rule = '"Sir" nur selten — bei Warnungen oder besonderen Momenten.'
+
+        # Urgency-Muster
+        urgency_patterns = {
+            "critical": 'Fakt + was du bereits tust. "Rauchmelder Kueche aktiv. Lueftung gestartet."',
+            "high": 'Fakt + kurze Einordnung. "Bewegung im Garten. Kamera 2 zeichnet auf."',
+            "medium": 'Information + kontextuell. "Waschmaschine fertig, Sir."',
+            "low": 'Beilaeufig, fast nebenbei. "Die Waschmaschine meldet Vollzug."',
+        }
+        pattern = urgency_patterns.get(urgency, urgency_patterns["low"])
+
+        return f"""Du bist {self.assistant_name} — J.A.R.V.I.S. aus dem MCU. Proaktive Hausmeldung.
+REGELN: NUR die fertige Meldung. 1-2 Saetze. Deutsch mit Umlauten. Kein Englisch. Kein Denkprozess.
+TON: {tone}. {sir_rule}
+AKTUELLER STIL: {time_style}
+{humor_line}
+MUSTER [{urgency.upper()}]: {pattern}
+BEI ANKUENFT: Status-Bericht wie ein Butler. Temperatur, offene Posten — knapp.
+BEI ABSCHIED: Kurzer Sicherheits-Hinweis wenn noetig. Kein "Schoenen Tag!"
+VERBOTEN: "Hallo", "Achtung", "Ich moechte dich informieren", "Es tut mir leid", "Guten Tag!", "Willkommen zuhause!", "Natuerlich!", "Gerne!", "Leider"."""
+
+    def build_routine_prompt(self, routine_type: str = "morning", style: str = "butler") -> str:
+        """Baut einen personality-konsistenten Prompt fuer Routinen (Briefing, Gute-Nacht).
+
+        Traegt den vollen Personality-Stack: Sarkasmus, Formality, Tageszeit,
+        Selbstironie — angepasst an den Routine-Typ.
+
+        Args:
+            routine_type: "morning", "evening" oder "goodnight"
+            style: Wochentag/Wochenende-Stil (z.B. "entspannt", "effizient")
+
+        Returns:
+            System Prompt fuer Routine-Generierung
+        """
+        time_of_day = self.get_time_of_day()
+        time_style = self.get_time_style(time_of_day)
+
+        # Humor — Morgens gedaempft, Abends lockerer
+        humor_line = self._build_humor_section(self._current_mood, time_of_day)
+
+        # Formality
+        formality = getattr(self, '_current_formality', self.formality_start)
+        formality_section = self._build_formality_section(formality)
+
+        # Selbstironie — nur wenn noch Budget
+        irony_note = ""
+        if self.self_irony_enabled:
+            irony_note = "Gelegentlich Selbstironie erlaubt, wenn es passt."
+
+        if routine_type == "morning":
+            structure = (
+                "Erstelle ein Morning Briefing. Beginne mit kontextueller Begruessung.\n"
+                "Dann Wetter, Termine, Haus-Status — in dieser Reihenfolge.\n"
+                "Keine Aufzaehlungszeichen. Fliesstext. Max 5 Saetze."
+            )
+        elif routine_type == "evening":
+            structure = (
+                "Erstelle ein Abend-Briefing. Tages-Rueckblick, Morgen-Vorschau.\n"
+                "Beilaeufig, nicht formal. Max 4 Saetze."
+            )
+        else:  # goodnight
+            structure = (
+                "Gute-Nacht-Zusammenfassung. Sicherheits-Check + Morgen-Vorschau.\n"
+                "Bei offenen Fenstern/Tueren: erwaehne und frage ob so lassen.\n"
+                "Bei kritischen Issues: deutlich warnen. Max 3 Saetze."
+            )
+
+        return f"""Du bist {self.assistant_name}, die KI dieses Hauses — J.A.R.V.I.S. aus dem MCU.
+{structure}
+Stil: {style}. {time_style}
+{humor_line}
+{formality_section}
+{irony_note}
+Sprich den Hauptbenutzer mit "Sir" an. DUZE ihn.
+VERBOTEN: "leider", "Entschuldigung", "Es tut mir leid", "Wie kann ich helfen?", "Gerne!", "Natuerlich!".
+Kein unterwuerfiger Ton. Du bist ein brillanter Butler, kein Chatbot."""
+
+    def get_error_response(self, error_type: str = "general") -> str:
+        """Gibt eine Jarvis-typische Fehlermeldung zurueck.
+
+        Statt generischer Errors kommen Butler-maessige Formulierungen.
+
+        Args:
+            error_type: Art des Fehlers (general, timeout, unavailable, limit, unknown_device)
+
+        Returns:
+            Jarvis-Fehlermeldung
+        """
+        import random
+
+        templates = {
+            "general": [
+                "Das hat nicht funktioniert. Ich bleibe dran.",
+                "Negativ. Pruefe Alternativen.",
+                "Da ging etwas schief. Zweiter Versuch?",
+                "Nicht mein bester Moment. Aber ich habe einen Plan B.",
+            ],
+            "timeout": [
+                "Keine Antwort. Das System braucht einen Moment.",
+                "Timeout. Entweder das Netzwerk oder meine Geduld — beides endlich.",
+                "Dauert laenger als erwartet. Ich bleibe dran.",
+            ],
+            "unavailable": [
+                "Das Geraet antwortet nicht. Pruefe Verbindung.",
+                "Keine Verbindung. Entweder offline oder ignoriert mich.",
+                "Das System ist gerade nicht erreichbar. Ich versuche es spaeter.",
+            ],
+            "limit": [
+                "Das uebersteigt meine aktuelle Konfiguration.",
+                "Ausserhalb der erlaubten Parameter. Sicherheit geht vor.",
+                "Das wuerde ich gerne tun, aber die Grenzen sind gesetzt.",
+            ],
+            "unknown_device": [
+                "Dieses Geraet kenne ich nicht. Ist es in Home Assistant eingerichtet?",
+                "Unbekanntes Geraet. Pruefe die Entity-ID.",
+                "Das Geraet ist mir nicht bekannt. Wurde es korrekt konfiguriert?",
+            ],
+        }
+
+        pool = templates.get(error_type, templates["general"])
+
+        # Bei hohem Sarkasmus: spitzere Varianten
+        if self.sarcasm_level >= 4:
+            snarky_extras = {
+                "general": ["Das war nichts. Aufgeben steht nicht im Handbuch."],
+                "timeout": ["Timeout. Ich nehme es nicht persoenlich."],
+                "unavailable": ["Keine Antwort. Vielleicht braucht das Geraet auch eine Pause."],
+                "limit": ["Netter Versuch. Aber nein."],
+                "unknown_device": ["Noch nie gehoert. Und ich kenne hier alles."],
+            }
+            pool = pool + snarky_extras.get(error_type, [])
+
+        return random.choice(pool)

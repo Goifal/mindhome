@@ -54,6 +54,7 @@ class RoutineEngine:
         self.ollama = ollama
         self.redis: Optional[redis.Redis] = None
         self._executor = None  # Wird von brain.py gesetzt
+        self._personality = None  # Wird von brain.py gesetzt
         self._vacation_task: Optional[asyncio.Task] = None
 
         # Konfiguration
@@ -96,6 +97,10 @@ class RoutineEngine:
     def set_executor(self, executor):
         """Setzt den FunctionExecutor fuer Aktionen."""
         self._executor = executor
+
+    def set_personality(self, personality):
+        """Setzt die PersonalityEngine fuer personality-konsistente Prompts."""
+        self._personality = personality
 
     # ------------------------------------------------------------------
     # Morning Briefing (Feature 7.1)
@@ -458,17 +463,26 @@ class RoutineEngine:
         return prompt
 
     def _get_briefing_system_prompt(self, style: str) -> str:
-        """System Prompt fuer das Morning Briefing."""
-        return f"""Du bist {settings.assistant_name}, die KI dieses Hauses.
-Erstelle ein Morning Briefing. Stil: {style}.
-Beginne mit einer kontextuellen Begrueassung (Wochentag, Uhrzeit beruecksichtigen).
-Dann Wetter, Termine, Haus-Status — in dieser Reihenfolge.
-Sprich den Hauptbenutzer mit "Sir" an.
-Deutsch. Trocken-humorvoll. Butler-Stil.
-Keine Aufzaehlungszeichen. Fliesstext.
+        """System Prompt fuer das Morning Briefing.
 
-NIEMALS verwenden: "leider", "Entschuldigung", "Es tut mir leid", "Wie kann ich helfen?", "Gerne!", "Natuerlich!".
-Kein unterwuerfiger Ton. Du bist ein brillanter Butler, kein Chatbot."""
+        Nutzt die PersonalityEngine fuer personality-konsistente Prompts
+        (Sarkasmus, Formality, Tageszeit-Stil) statt eines statischen Prompts.
+        """
+        if self._personality:
+            try:
+                return self._personality.build_routine_prompt(
+                    routine_type="morning", style=style,
+                )
+            except Exception as e:
+                logger.debug("Personality-Routine-Prompt fehlgeschlagen: %s", e)
+        # Fallback
+        return (
+            f"Du bist {settings.assistant_name}, die KI dieses Hauses — J.A.R.V.I.S. aus dem MCU.\n"
+            f"Erstelle ein Morning Briefing. Stil: {style}.\n"
+            "Beginne mit kontextueller Begruessung. Dann Wetter, Termine, Haus-Status.\n"
+            'Sprich den Hauptbenutzer mit "Sir" an. Deutsch. Butler-Stil.\n'
+            "VERBOTEN: leider, Entschuldigung, Es tut mir leid, Wie kann ich helfen?, Gerne!, Natuerlich!"
+        )
 
     async def _execute_morning_actions(self) -> list[dict]:
         """Fuehrt die Begleit-Aktionen beim Morning Briefing aus."""
@@ -751,13 +765,26 @@ Kein unterwuerfiger Ton. Du bist ein brillanter Butler, kein Chatbot."""
         prompt += "\nBei offenen Fenster/Tueren: Erwaehne und frage ob so lassen."
         prompt += "\nBei kritischen Issues: Deutlich warnen."
 
+        # Personality-konsistenter Prompt (Sarkasmus, Formality, Tageszeit)
+        if self._personality:
+            try:
+                system_prompt = self._personality.build_routine_prompt(
+                    routine_type="goodnight",
+                )
+            except Exception:
+                system_prompt = (
+                    f"Du bist {settings.assistant_name}. Butler-Stil, kurz, trocken. Deutsch. "
+                    "Sprich den User mit 'Sir' an. Kein unterwuerfiger Ton."
+                )
+        else:
+            system_prompt = (
+                f"Du bist {settings.assistant_name}. Butler-Stil, kurz, trocken. Deutsch. "
+                "Sprich den User mit 'Sir' an. Kein unterwuerfiger Ton."
+            )
         try:
             response = await self.ollama.chat(
                 messages=[
-                    {"role": "system", "content": f"Du bist {settings.assistant_name}. "
-                     "Butler-Stil, kurz, trocken. Deutsch. Sprich den User mit 'Sir' an. "
-                     "NIEMALS verwenden: 'leider', 'Entschuldigung', 'Es tut mir leid', 'Wie kann ich helfen?'. "
-                     "Kein unterwuerfiger Ton."},
+                    {"role": "system", "content": system_prompt},
                     {"role": "user", "content": prompt},
                 ],
                 model=settings.model_fast,

@@ -281,6 +281,7 @@ class AssistantBrain(BrainCallbacksMixin):
         # Phase 7: RoutineEngine initialisieren
         await self.routines.initialize(redis_client=self.memory.redis)
         self.routines.set_executor(self.executor)
+        self.routines.set_personality(self.personality)
 
         # Phase 8: Anticipation Engine + Intent Tracker
         await self.anticipation.initialize(redis_client=self.memory.redis)
@@ -1992,7 +1993,8 @@ class AssistantBrain(BrainCallbacksMixin):
                         )
                     except Exception as e:
                         logger.warning("Error-Recovery LLM fehlgeschlagen: %s", e)
-                        response_text = f"Problem: {error_msg}"
+                        # Personality-konsistente Fehlermeldung statt generischem "Problem: ..."
+                        response_text = self.personality.get_error_response("general")
 
         # Phase 12: Response-Filter (Post-Processing) — Floskeln entfernen
         # Knowledge/Memory-Pfade filtern bereits inline, daher hier nur fuer
@@ -2031,7 +2033,7 @@ class AssistantBrain(BrainCallbacksMixin):
             except Exception as e:
                 logger.warning("Sprach-Retry fehlgeschlagen: %s", e)
             if not response_text:
-                response_text = "Ich bin hier, Sir. Wie kann ich helfen?"
+                response_text = self.personality.get_error_response("general")
 
         # Phase 6.9: Running Gag an Antwort anhaengen
         if gag_response and response_text:
@@ -3094,6 +3096,27 @@ class AssistantBrain(BrainCallbacksMixin):
             logger.warning("format_with_personality fehlgeschlagen (%s), nutze Roh-Nachricht", e)
             return message
 
+    async def _format_callback_with_escalation(
+        self, message: str, urgency: str, callback_type: str,
+    ) -> str:
+        """Formatiert Callback-Nachricht mit Eskalations-Tracking.
+
+        Wenn der gleiche Callback-Typ wiederholt auftritt, fuegt Jarvis
+        eine eskalierende Bemerkung hinzu (Butler wird langsam ungehalten).
+
+        Args:
+            message: Roh-Nachricht
+            urgency: Dringlichkeit
+            callback_type: Typ des Callbacks (z.B. "health_co2", "device_stale")
+
+        Returns:
+            Formatierte Nachricht mit optionaler Eskalation
+        """
+        escalation = await self.personality.check_escalation(callback_type)
+        if escalation:
+            message = f"{message} [{escalation}]"
+        return await self._safe_format(message, urgency)
+
     async def _handle_timer_notification(self, alert: dict):
         """Callback fuer allgemeine Timer/Wecker — meldet wenn Timer abgelaufen ist."""
         message = alert.get("message", "")
@@ -3146,7 +3169,10 @@ class AssistantBrain(BrainCallbacksMixin):
         # CRITICAL darf immer durch, Rest wird per Activity geprüft
         if urgency != "critical" and not await self._callback_should_speak(urgency):
             return
-        formatted = await self._safe_format(message, urgency)
+        device_type = alert.get("device_type", "time_alert")
+        formatted = await self._format_callback_with_escalation(
+            message, urgency, f"time_{device_type}",
+        )
         await self._speak_and_emit(formatted)
         logger.info("TimeAwareness [%s] -> Meldung: %s", urgency, formatted)
 
@@ -3156,7 +3182,9 @@ class AssistantBrain(BrainCallbacksMixin):
             return
         if urgency != "critical" and not await self._callback_should_speak(urgency):
             return
-        formatted = await self._safe_format(message, urgency)
+        formatted = await self._format_callback_with_escalation(
+            message, urgency, f"health_{alert_type}",
+        )
         await self._speak_and_emit(formatted)
         logger.info("Health Monitor [%s/%s]: %s", alert_type, urgency, formatted)
 
@@ -3168,7 +3196,10 @@ class AssistantBrain(BrainCallbacksMixin):
         urgency = alert.get("urgency", "low")
         if not await self._callback_should_speak(urgency):
             return
-        formatted = await self._safe_format(message, urgency)
+        alert_type = alert.get("alert_type", "device")
+        formatted = await self._format_callback_with_escalation(
+            message, urgency, f"device_{alert_type}",
+        )
         await self._speak_and_emit(formatted)
         logger.info(
             "DeviceHealth [%s/%s]: %s",
@@ -3181,7 +3212,9 @@ class AssistantBrain(BrainCallbacksMixin):
             return
         if not await self._callback_should_speak("low"):
             return
-        formatted = await self._safe_format(message, "low")
+        formatted = await self._format_callback_with_escalation(
+            message, "low", f"wellness_{nudge_type}",
+        )
         await self._speak_and_emit(formatted)
         logger.info("Wellness [%s]: %s", nudge_type, formatted)
 
@@ -4554,22 +4587,27 @@ Regeln:
         "unavailable": [
             "{device} reagiert nicht. Pruefe Stromversorgung.",
             "{device} offline. Ich behalte das im Auge.",
+            "{device} schweigt. Entweder Strom oder Trotz.",
         ],
         "timeout": [
             "{device} antwortet nicht rechtzeitig. Zweiter Versuch laeuft.",
             "{device} braucht zu lange. Ich versuche einen anderen Weg.",
+            "{device} laesst auf sich warten. Geduld ist endlich.",
         ],
         "not_found": [
             "{device} nicht gefunden. Existiert die Entity noch?",
             "{device} unbekannt. Konfiguration pruefen.",
+            "{device} — nie gehoert. Und ich kenne hier alles.",
         ],
         "unauthorized": [
             "Keine Berechtigung fuer {device}. Token pruefen.",
+            "Zugriff verweigert. {device} ist eigensinnig.",
         ],
         "generic": [
             "{device} — unerwarteter Fehler. Ich bleibe dran.",
             "{device} macht Probleme. Alternative?",
             "{device} streikt. Nicht mein bester Moment.",
+            "{device} hat andere Plaene. Ich klaere das.",
         ],
     }
 
@@ -4619,15 +4657,22 @@ Regeln:
         if any(p in error_lower for p in known_patterns):
             return fast_response
 
-        # Unbekannte Fehler: LLM fragen
+        # Unbekannte Fehler: LLM fragen — Personality-konsistenter Prompt
         try:
+            # Kompakter Personality-Prompt fuer Fehler
+            humor_hint = ""
+            if self.personality.sarcasm_level >= 3:
+                humor_hint = " Trockener Kommentar erlaubt."
+            elif self.personality.sarcasm_level <= 1:
+                humor_hint = " Sachlich bleiben."
+
             response = await self.ollama.chat(
                 messages=[
                     {"role": "system", "content": (
-                        f"Du bist {settings.assistant_name}. Souveraener Butler-Ton. "
+                        f"Du bist {settings.assistant_name} — J.A.R.V.I.S. aus dem MCU. "
                         "Ein Smart-Home-Befehl ist fehlgeschlagen. "
                         "1 Satz: Was ist passiert. 1 Satz: Was du stattdessen tust. "
-                        "Nie entschuldigen. Nie ratlos. Du hast IMMER einen Plan B. Deutsch."
+                        f"Nie entschuldigen. Nie ratlos. Du hast IMMER einen Plan B. Deutsch.{humor_hint}"
                     )},
                     {"role": "user", "content": f"{func_name}({func_args}) → {error}"},
                 ],
