@@ -28,7 +28,7 @@ KEY_INDEX = "mha:conditional:index"
 # F-002: Aktionen die Owner-Trust erfordern
 OWNER_ONLY_ACTIONS = frozenset({
     "lock_door", "unlock_door",
-    "set_alarm", "arm_alarm", "disarm_alarm",
+    "arm_security_system", "arm_alarm", "disarm_alarm",
     "open_garage", "close_garage",
     "open_cover",  # Sicherheitsrelevant (Rolladen/Tore)
 })

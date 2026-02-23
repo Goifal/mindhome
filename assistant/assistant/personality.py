@@ -519,7 +519,7 @@ class PersonalityEngine:
             "unlock_door": [
                 "Entriegelt.",
             ],
-            "set_alarm": [
+            "arm_security_system": [
                 "Alarm scharf.",
             ],
             "disarm_alarm": [

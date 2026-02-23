@@ -691,10 +691,10 @@ Kein unterwuerfiger Ton. Du bist ein brillanter Butler, kein Chatbot."""
             actions.append({"function": "set_cover:down", "result": result})
 
         if gn_actions.get("alarm_arm_home", False):
-            result = await self._executor.execute("set_alarm", {
+            result = await self._executor.execute("arm_security_system", {
                 "mode": "arm_home",
             })
-            actions.append({"function": "set_alarm:arm_home", "result": result})
+            actions.append({"function": "arm_security_system:arm_home", "result": result})
 
         return actions
 

@@ -17,7 +17,7 @@ _SAFE_AMBIENT_ACTIONS = frozenset({"lights_on", "play_sound"})
 
 # F-026: Aktionen die Owner-Trust benoetigen
 _RESTRICTED_AMBIENT_ACTIONS = frozenset({
-    "lock_door", "unlock_door", "set_alarm", "disarm_alarm",
+    "lock_door", "unlock_door", "arm_security_system", "disarm_alarm",
     "open_garage", "close_garage",
 })
 

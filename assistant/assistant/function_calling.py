@@ -420,8 +420,8 @@ _ASSISTANT_TOOLS_STATIC = [
     {
         "type": "function",
         "function": {
-            "name": "set_alarm",
-            "description": "Sicherheits-Alarmanlage (Einbruchschutz) scharf/unscharf schalten. NICHT fuer Wecker — dafuer set_wakeup_alarm verwenden.",
+            "name": "arm_security_system",
+            "description": "Sicherheits-Alarmanlage (Einbruchschutz) scharf oder unscharf schalten.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -1346,7 +1346,7 @@ class FunctionExecutor:
         "set_light", "set_light_all", "get_lights", "set_climate", "set_climate_curve",
         "set_climate_room", "activate_scene", "set_cover", "set_cover_all",
         "get_covers", "get_media", "get_climate", "get_switches", "set_switch",
-        "call_service", "play_media", "transfer_playback", "set_alarm",
+        "call_service", "play_media", "transfer_playback", "arm_security_system",
         "lock_door", "send_notification", "send_message_to_person",
         "play_sound", "get_entity_state", "get_calendar_events",
         "create_calendar_event", "delete_calendar_event",
@@ -2411,10 +2411,10 @@ class FunctionExecutor:
                        else f"Transfer nach {to_room} fehlgeschlagen",
         }
 
-    async def _exec_set_alarm(self, args: dict) -> dict:
+    async def _exec_arm_security_system(self, args: dict) -> dict:
         mode = args.get("mode")
         if not mode:
-            return {"success": False, "message": "Kein Modus angegeben. Fuer Wecker bitte set_wakeup_alarm verwenden."}
+            return {"success": False, "message": "Kein Modus angegeben (arm_home, arm_away oder disarm)."}
         states = await self.ha.get_states()
         entity_id = None
         for s in (states or []):
