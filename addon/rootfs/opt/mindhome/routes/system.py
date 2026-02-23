@@ -2209,6 +2209,23 @@ def _proxy_post(path, data=None, timeout=60):
         return {"error": f"Assistant nicht erreichbar: {e}"}
 
 
+def _proxy_put(path, data=None, timeout=60):
+    """PUT request to assistant API with API key auth."""
+    import requests as _requests
+    url = f"{_get_assistant_url()}{path}"
+    headers = {"Content-Type": "application/json"}
+    api_key = _assistant_api_key()
+    if api_key:
+        headers["X-API-Key"] = api_key
+    params = {"token": api_key} if api_key else {}
+    try:
+        resp = _requests.put(url, headers=headers, json=data or {}, params=params, timeout=timeout)
+        return resp.json()
+    except Exception as e:
+        logger.error("Assistant proxy PUT %s failed: %s", path, e)
+        return {"error": f"Assistant nicht erreichbar: {e}"}
+
+
 @system_bp.route("/api/system/assistant-status", methods=["GET"])
 def api_assistant_system_status():
     """Proxy: Systemstatus vom Assistant (Git, Container, Branches)."""
@@ -2228,3 +2245,20 @@ def api_branch_update():
     data = request.json or {}
     branch = sanitize_input(data.get("branch", ""), max_length=200)
     return jsonify(_proxy_post("/api/ui/system/update", data={"branch": branch} if branch else {}))
+
+
+# ============================================================
+# Assistant Proxy — Personality Settings
+# ============================================================
+
+@system_bp.route("/api/system/assistant-settings", methods=["GET"])
+def api_get_assistant_settings():
+    """Proxy: Settings vom Assistant lesen."""
+    return jsonify(_proxy_get("/api/ui/settings"))
+
+
+@system_bp.route("/api/system/assistant-settings", methods=["PUT"])
+def api_update_assistant_settings():
+    """Proxy: Settings am Assistant aktualisieren (Merge)."""
+    data = request.json or {}
+    return jsonify(_proxy_put("/api/ui/settings", data={"settings": data}))

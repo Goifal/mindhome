@@ -1655,6 +1655,9 @@ def _validate_settings_values(settings: dict) -> list[str]:
         ("personality", "sarcasm_level"): (1, 5),
         ("personality", "opinion_intensity"): (0, 5),
         ("personality", "self_irony_max_per_day"): (0, 20),
+        ("personality", "formality_start"): (0, 100),
+        ("personality", "formality_min"): (0, 100),
+        ("personality", "formality_decay_per_day"): (0, 5),
         ("threat_assessment", "night_start_hour"): (0, 23),
         ("threat_assessment", "night_end_hour"): (0, 23),
         ("health_monitor", "co2_warn"): (400, 5000),
@@ -1690,6 +1693,7 @@ def _get_reloaded_modules(changed_settings: dict) -> list[str]:
     MODULE_CONFIG_MAP = {
         "personality": "personality",
         "proactive": "proactive",
+        "routines": "proactive",
         "autonomy": "autonomy",
         "threat_assessment": "threat_assessment",
         "energy": "energy_optimizer",
@@ -1725,6 +1729,11 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
             pe.opinion_intensity = int(p_cfg.get("opinion_intensity", pe.opinion_intensity))
             pe.self_irony_enabled = bool(p_cfg.get("self_irony_enabled", pe.self_irony_enabled))
             pe.self_irony_max_per_day = int(p_cfg.get("self_irony_max_per_day", pe.self_irony_max_per_day))
+            pe.character_evolution = bool(p_cfg.get("character_evolution", pe.character_evolution))
+            pe.formality_start = int(p_cfg.get("formality_start", pe.formality_start))
+            pe.formality_min = int(p_cfg.get("formality_min", pe.formality_min))
+            pe.formality_decay = float(p_cfg.get("formality_decay_per_day", pe.formality_decay))
+            pe.time_layers = p_cfg.get("time_layers") or pe.time_layers
             logger.info("Personality Engine Settings aktualisiert")
 
         # Proactive: Cooldowns und Batch-Interval
@@ -1733,6 +1742,19 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
             brain.proactive.batch_interval = int(pro_cfg.get("batch_interval", 30))
             brain.proactive.enabled = bool(pro_cfg.get("enabled", True))
             logger.info("Proactive Settings aktualisiert")
+
+        # Routines: Morning/Evening Briefing
+        if "routines" in changed_settings and hasattr(brain, "proactive"):
+            routines_cfg = yaml_cfg.get("routines", {})
+            mb_cfg = routines_cfg.get("morning_briefing", {})
+            brain.proactive._mb_enabled = bool(mb_cfg.get("enabled", True))
+            brain.proactive._mb_window_start = int(mb_cfg.get("window_start_hour", 6))
+            brain.proactive._mb_window_end = int(mb_cfg.get("window_end_hour", 10))
+            eb_cfg = routines_cfg.get("evening_briefing", {})
+            brain.proactive._eb_enabled = bool(eb_cfg.get("enabled", True))
+            brain.proactive._eb_window_start = int(eb_cfg.get("window_start_hour", 20))
+            brain.proactive._eb_window_end = int(eb_cfg.get("window_end_hour", 22))
+            logger.info("Routine Settings aktualisiert")
 
         # Autonomy: Trust-Levels
         if "autonomy" in changed_settings and hasattr(brain, "autonomy"):
