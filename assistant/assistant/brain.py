@@ -1128,7 +1128,7 @@ class AssistantBrain(BrainCallbacksMixin):
             _result_map = {}
 
         mood_result = _result_map.get("mood")
-        formality_score = _result_map.get("formality", 0.5)
+        formality_score = _result_map.get("formality")  # None → personality nutzt formality_start
         irony_count = _result_map.get("irony", 0)
         time_hints = _result_map.get("time_hints")
         sec_score = _result_map.get("security")
