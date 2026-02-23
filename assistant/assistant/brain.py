@@ -1055,14 +1055,28 @@ class AssistantBrain(BrainCallbacksMixin):
                                 fmt_response.get("message", {}).get("content", "")
                             )
                             # Nur uebernehmen wenn LLM keine Rohdaten zurueckgibt
+                            # UND die Originaldaten (Terminname) bewahrt hat
                             if refined and len(refined) > 5:
                                 import re as _re
-                                if not _re.search(r'\d{1,2}:\d{2}\s*\|', refined):
-                                    response_text = refined
-                                    logger.info("Kalender-Shortcut LLM-verfeinert: '%s'",
-                                                response_text[:80])
-                                else:
+                                if _re.search(r'\d{1,2}:\d{2}\s*\|', refined):
                                     logger.info("Kalender LLM-Antwort enthaelt Rohdaten, nutze Humanizer")
+                                else:
+                                    # Pruefen ob alle Terminnamen im LLM-Output enthalten sind
+                                    _orig_pattern = r"(\d{1,2}:\d{2})\s*\|\s*(.+?)(?:\n|$)"
+                                    _orig_events = _re.findall(_orig_pattern, cal_msg)
+                                    _names_preserved = all(
+                                        name.strip().split(" | ")[0].strip().lower() in refined.lower()
+                                        for _, name in _orig_events
+                                    ) if _orig_events else True
+                                    if _names_preserved:
+                                        response_text = refined
+                                        logger.info("Kalender-Shortcut LLM-verfeinert: '%s'",
+                                                    response_text[:80])
+                                    else:
+                                        logger.warning(
+                                            "Kalender LLM-Antwort hat Terminnamen veraendert, "
+                                            "nutze Humanizer. LLM='%s'", refined[:80]
+                                        )
                     except Exception as e:
                         logger.warning("Kalender-Shortcut LLM-Feinschliff fehlgeschlagen: %s", e)
                         # Humanisierter Text bleibt als Fallback
