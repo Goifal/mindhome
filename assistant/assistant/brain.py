@@ -952,6 +952,100 @@ class AssistantBrain(BrainCallbacksMixin):
             except Exception as e:
                 logger.warning("Wecker-Shortcut fehlgeschlagen: %s — Fallback auf LLM", e)
 
+        # Geraete-Shortcut: Einfache Befehle (Licht/Rollladen/Heizung)
+        # direkt ausfuehren — kein Context Build, kein LLM noetig.
+        device_cmd = self._detect_device_command(text, room=room or "")
+        if device_cmd:
+            func_name = device_cmd["function"]
+            func_args = device_cmd["args"]
+            logger.info("Geraete-Shortcut: '%s' -> %s(%s)", text, func_name, func_args)
+            try:
+                # Security: Validation + Trust-Check
+                validation = self.validator.validate(func_name, func_args)
+                effective_person = person if person else "__anonymous_guest__"
+                trust = self.autonomy.can_person_act(
+                    effective_person, func_name,
+                    room=func_args.get("room", ""),
+                )
+                if not validation.ok:
+                    logger.info("Geraete-Shortcut blockiert (Validation: %s) — Fallback",
+                                validation.reason)
+                elif not trust["allowed"]:
+                    logger.info("Geraete-Shortcut blockiert (Trust: %s) — Fallback",
+                                trust.get("reason", ""))
+                else:
+                    result = await self.executor.execute(func_name, func_args)
+                    success = isinstance(result, dict) and result.get("success", False)
+                    error_msg = result.get("message", "") if isinstance(result, dict) else ""
+
+                    if not success and (
+                        "nicht gefunden" in error_msg
+                        or "kein " in error_msg.lower()
+                        or "no " in error_msg.lower()
+                    ):
+                        # Entity nicht aufloesbar → LLM hat mehr Kontext
+                        logger.info("Geraete-Shortcut: '%s' — Fallback auf LLM", error_msg)
+                    else:
+                        if success:
+                            response_text = self.personality.get_varied_confirmation(
+                                success=True, action=func_name,
+                                room=func_args.get("room", ""),
+                            )
+                        else:
+                            response_text = self.personality.get_varied_confirmation(
+                                success=False,
+                            )
+
+                        await self.memory.add_conversation("user", text)
+                        await self.memory.add_conversation("assistant", response_text)
+                        tts_data = self.tts_enhancer.enhance(
+                            response_text, message_type="confirmation",
+                        )
+                        if stream_callback:
+                            if not room:
+                                room = await self._get_occupied_room()
+                            self._task_registry.create_task(
+                                self.sound_manager.speak_response(
+                                    response_text, room=room, tts_data=tts_data),
+                                name="speak_response",
+                            )
+                        else:
+                            await self._speak_and_emit(
+                                response_text, room=room, tts_data=tts_data,
+                            )
+
+                        await emit_action(func_name, func_args, result)
+
+                        # Learning Observer
+                        if success:
+                            entity_id = func_args.get("entity_id", "")
+                            if not entity_id:
+                                r = func_args.get("room", "")
+                                if r and func_name in (
+                                    "set_light", "set_cover", "set_climate",
+                                ):
+                                    domain = func_name.replace("set_", "")
+                                    entity_id = f"{domain}.{r.lower().replace(' ', '_')}"
+                            if entity_id:
+                                self._task_registry.create_task(
+                                    self.learning_observer.mark_jarvis_action(
+                                        entity_id),
+                                    name="mark_jarvis_action",
+                                )
+
+                        return {
+                            "response": response_text,
+                            "actions": [{"function": func_name,
+                                         "args": func_args,
+                                         "result": result}],
+                            "model_used": "device_shortcut",
+                            "context_room": room or "unbekannt",
+                            "tts": tts_data,
+                            "_emitted": True,
+                        }
+            except Exception as e:
+                logger.warning("Geraete-Shortcut fehlgeschlagen: %s — Fallback auf LLM", e)
+
         # ----- Ende schnelle Shortcuts -----
 
         # Phase 9: "listening" Sound abspielen wenn Verarbeitung startet
@@ -3487,6 +3581,164 @@ class AssistantBrain(BrainCallbacksMixin):
             if label_match:
                 label = label_match.group(1)
             return {"action": "cancel", "label": label}
+
+        return None
+
+    @staticmethod
+    def _detect_device_command(text: str, room: str = "") -> Optional[dict]:
+        """Erkennt einfache Geraetebefehle und gibt function + args zurueck.
+
+        Returns:
+            {"function": "set_light"|"set_cover"|"set_climate",
+             "args": {...}} oder None.
+
+        Wird VOR dem LLM aufgerufen fuer sofortige Ausfuehrung (~200ms statt 2-10s).
+        Matcht NUR eindeutige, einfache Befehle — alles andere faellt durch zum LLM.
+        """
+        import re as _re
+        t = text.lower().strip()
+
+        # --- Ausschluss: Fragen, Multi-Target, Szenen ---
+        if t.endswith("?") or any(t.startswith(q) for q in [
+            "was ", "wie ", "warum ", "wer ", "welch", "kannst ",
+            "ist ", "hast ", "gibt ", "soll ", "koennt", "könnt",
+        ]):
+            return None
+        if " alle " in f" {t} " or " und " in t:
+            return None
+        if "szene" in t:
+            return None
+
+        words = [w for w in _re.split(r'[\s,.!?]+', t) if w]
+        word_set = set(words)
+
+        # Befehlsverb am Anfang ODER kurzer Satz (≤ 6 Woerter)?
+        _CMD_VERBS = [
+            "mach", "schalte", "schalt", "stell", "setz",
+            "dreh", "fahr", "oeffne", "schliess",
+        ]
+        has_verb = any(t.startswith(v) for v in _CMD_VERBS)
+        if not has_verb and len(words) > 6:
+            return None
+
+        # --- Raum aus Text extrahieren ---
+        extracted_room = ""
+        rm = _re.search(
+            r'(?:im|in\s+der|in\s+dem|ins|vom|am)\s+'
+            r'([A-ZÄÖÜa-zäöüß][A-ZÄÖÜa-zäöüß\-]+)',
+            text,  # Original-Case fuer Raumnamen
+            _re.IGNORECASE,
+        )
+        if rm:
+            candidate = rm.group(1)
+            _SKIP = {"moment", "prinzip", "grunde", "allgemeinen"}
+            if candidate.lower() not in _SKIP:
+                extracted_room = candidate
+        effective_room = extracted_room or room
+
+        # --- LICHT ---
+        if any(n in t for n in ["licht", "lampe", "leuchte"]):
+            state = None
+            brightness = None
+
+            # Eindeutige Verben
+            if any(v in t for v in ["einschalten", "anschalten", "anmachen"]):
+                state = "on"
+            elif any(v in t for v in ["ausschalten", "abschalten", "ausmachen"]):
+                state = "off"
+            # "an"/"ein" am Ende (vor optionalem "im X")
+            elif _re.search(r'\b(?:an|ein)\s*(?:(?:im|in|vom)\s+\w+)?\s*$', t):
+                state = "on"
+            elif _re.search(r'\baus\s*(?:(?:im|in|vom)\s+\w+)?\s*$', t):
+                state = "off"
+            # Heller/Dunkler
+            elif "heller" in word_set:
+                state = "brighter"
+            elif "dunkler" in word_set:
+                state = "dimmer"
+
+            # Brightness: "auf 50%", "50 Prozent"
+            pct_m = _re.search(r'(\d{1,3})\s*(?:%|prozent)', t)
+            if pct_m:
+                brightness = max(1, min(100, int(pct_m.group(1))))
+                state = "on"
+
+            if state is None and brightness is None:
+                return None
+
+            args = {"room": effective_room, "state": state or "on"}
+            if brightness is not None:
+                args["brightness"] = brightness
+            return {"function": "set_light", "args": args}
+
+        # --- ROLLLADEN ---
+        if any(n in t for n in ["rollladen", "rolladen", "rollo", "jalousie"]):
+            action = None
+            position = None
+
+            # Eindeutige Verben
+            if any(v in t for v in ["hochfahren", "aufmachen", "oeffnen", "öffnen"]):
+                action = "open"
+            elif any(v in t for v in ["runterfahren", "zumachen", "schliessen", "schließen"]):
+                action = "close"
+            # Aktionswort am Ende (vor optionalem "im X")
+            elif _re.search(r'\b(?:hoch|auf)\s*(?:(?:im|in|vom)\s+\w+)?\s*$', t):
+                action = "open"
+            elif _re.search(r'\b(?:runter|zu)\s*(?:(?:im|in|vom)\s+\w+)?\s*$', t):
+                action = "close"
+            elif "halb" in word_set:
+                action = "half"
+            elif word_set & {"stopp", "stop"} or "anhalten" in t:
+                action = "stop"
+
+            # Position: "auf 30%"
+            pct_m = _re.search(r'(\d{1,3})\s*(?:%|prozent)', t)
+            if pct_m:
+                position = max(0, min(100, int(pct_m.group(1))))
+
+            if action is None and position is None:
+                return None
+
+            args = {"room": effective_room}
+            if action:
+                args["action"] = action
+            if position is not None:
+                args["position"] = position
+            return {"function": "set_cover", "args": args}
+
+        # --- HEIZUNG ---
+        if any(n in t for n in ["heizung", "thermostat"]):
+            temperature = None
+            adjust = None
+
+            # Temperatur: "22 Grad", "auf 22°", "auf 22"
+            temp_m = _re.search(r'(\d{1,2}(?:[.,]\d)?)\s*(?:°|grad)', t)
+            if not temp_m:
+                temp_m = _re.search(r'auf\s+(\d{1,2}(?:[.,]\d)?)\s*$', t)
+            if temp_m:
+                temperature = float(temp_m.group(1).replace(",", "."))
+                temperature = max(5.0, min(30.0, temperature))
+
+            # Relative Anpassung
+            if any(kw in t for kw in [
+                "waermer", "wärmer", "höher", "hoeher", "aufdrehen",
+            ]):
+                adjust = "warmer"
+            elif any(kw in t for kw in [
+                "kaelter", "kälter", "runter", "niedriger", "kühler",
+                "kuehler", "runterdrehen",
+            ]):
+                adjust = "cooler"
+
+            if temperature is None and adjust is None:
+                return None
+
+            args = {"room": effective_room}
+            if temperature is not None:
+                args["temperature"] = temperature
+            if adjust:
+                args["adjust"] = adjust
+            return {"function": "set_climate", "args": args}
 
         return None
 
