@@ -3365,9 +3365,9 @@ class AssistantBrain(BrainCallbacksMixin):
         # --- Wecker loeschen ---
         if any(kw in t for kw in [
             "wecker aus", "wecker loeschen", "wecker loesch",
-            "wecker ab", "wecker stopp", "wecker stop",
+            "wecker stopp", "wecker stop",
             "loesch den wecker", "loesch meinen wecker",
-            "wecker abbrechen", "wecker deaktiv",
+            "wecker abbrechen", "wecker abstellen", "wecker deaktiv",
             "keinen wecker", "kein wecker mehr",
         ]):
             label = ""
@@ -3411,7 +3411,7 @@ class AssistantBrain(BrainCallbacksMixin):
 
                 # Label erkennen (optional)
                 label = "Wecker"
-                label_match = _re.search(r"(?:label|name|bezeichnung|fuer|für)\s+['\"]?(.+?)['\"]?$", t)
+                label_match = _re.search(r"(?:label|name|bezeichnung)\s+['\"]?(.+?)['\"]?$", t)
                 if label_match:
                     label = label_match.group(1).strip().capitalize()
 
