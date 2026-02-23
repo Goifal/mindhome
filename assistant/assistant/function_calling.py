@@ -421,14 +421,14 @@ _ASSISTANT_TOOLS_STATIC = [
         "type": "function",
         "function": {
             "name": "set_alarm",
-            "description": "Alarmanlage steuern",
+            "description": "Sicherheits-Alarmanlage (Einbruchschutz) scharf/unscharf schalten. NICHT fuer Wecker — dafuer set_wakeup_alarm verwenden.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "mode": {
                         "type": "string",
                         "enum": ["arm_home", "arm_away", "disarm"],
-                        "description": "Alarm-Modus",
+                        "description": "Sicherheitsmodus: arm_home=zuhause scharf, arm_away=abwesend scharf, disarm=entschaerfen",
                     },
                 },
                 "required": ["mode"],
@@ -2412,7 +2412,9 @@ class FunctionExecutor:
         }
 
     async def _exec_set_alarm(self, args: dict) -> dict:
-        mode = args["mode"]
+        mode = args.get("mode")
+        if not mode:
+            return {"success": False, "message": "Kein Modus angegeben. Fuer Wecker bitte set_wakeup_alarm verwenden."}
         states = await self.ha.get_states()
         entity_id = None
         for s in (states or []):

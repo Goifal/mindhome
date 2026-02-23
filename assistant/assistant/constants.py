@@ -13,8 +13,8 @@ from typing import Final
 
 # Ollama LLM Timeouts
 LLM_TIMEOUT_FAST: Final[int] = 30
-LLM_TIMEOUT_SMART: Final[int] = 60
-LLM_TIMEOUT_DEEP: Final[int] = 120
+LLM_TIMEOUT_SMART: Final[int] = 45
+LLM_TIMEOUT_DEEP: Final[int] = 60
 LLM_TIMEOUT_STREAM: Final[int] = 120
 LLM_TIMEOUT_AVAILABILITY: Final[int] = 5
 

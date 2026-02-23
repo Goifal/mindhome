@@ -257,11 +257,13 @@ class CookingAssistant:
             max_tokens=self.max_tokens,
         )
 
-        # Fallback: bei Fehler mit kleinerem Model nochmal versuchen
+        # Fallback-Kaskade: deep(32b) → smart(14b) → fast(8b)
         if "error" in response:
             from .config import settings
-            fallback_model = settings.model_fast
-            if fallback_model != model:
+            fallback_chain = [settings.model_smart, settings.model_fast]
+            for fallback_model in fallback_chain:
+                if fallback_model == model:
+                    continue
                 logger.warning(
                     "Rezept-Generierung mit %s fehlgeschlagen (%s), "
                     "Fallback auf %s", model, response["error"], fallback_model,
@@ -272,6 +274,9 @@ class CookingAssistant:
                     temperature=0.7,
                     max_tokens=self.max_tokens,
                 )
+                if "error" not in response:
+                    break
+                model = fallback_model  # fuer naechste Iteration im Log
 
         if "error" in response:
             error_detail = response["error"]
