@@ -56,6 +56,30 @@ class TestCookingIntent:
         assert assistant.is_cooking_intent("Rezept fuer Lasagne") is True
         assert assistant.is_cooking_intent("Wie ist das Wetter?") is False
 
+    def test_recognizes_wie_mache_ich(self, assistant):
+        assert assistant.is_cooking_intent("Wie mache ich Pasta Carbonara?") is True
+        assert assistant.is_cooking_intent("Wie macht man Risotto?") is True
+        assert assistant.is_cooking_intent("Wie koche ich Reis?") is True
+        assert assistant.is_cooking_intent("Wie bereite ich Sushi zu?") is True
+
+
+class TestDishExtraction:
+    def test_wie_mache_ich(self, assistant):
+        assert assistant._extract_dish("Wie mache ich Pasta Carbonara?") == "pasta carbonara"
+
+    def test_wie_macht_man(self, assistant):
+        assert assistant._extract_dish("Wie macht man Risotto?") == "risotto"
+
+    def test_rezept_fuer(self, assistant):
+        assert assistant._extract_dish("Rezept fuer Lasagne") == "lasagne"
+
+    def test_ich_will_kochen(self, assistant):
+        assert assistant._extract_dish("Ich will Spaghetti kochen") == "spaghetti"
+
+    def test_no_trailing_punctuation(self, assistant):
+        assert assistant._extract_dish("Wie mache ich Gulasch?") == "gulasch"
+        assert assistant._extract_dish("Wie koche ich Suppe!") == "suppe"
+
     def test_navigation_detection(self, assistant):
         # Ohne aktive Session
         assert assistant.is_cooking_navigation("weiter") is False
