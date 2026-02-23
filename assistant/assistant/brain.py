@@ -2332,6 +2332,17 @@ class AssistantBrain(BrainCallbacksMixin):
             "Wie kann ich Ihnen behilflich sein",
             "Was kann ich fuer Sie tun",
             "Was kann ich für Sie tun",
+            "Wie kann ich dir helfen",
+            "Wie kann ich dir heute helfen",
+            "Was kann ich fuer dich tun",
+            "Was kann ich für dich tun",
+            "stehe ich Ihnen gerne zur Verfügung",
+            "stehe ich Ihnen gerne zur Verfuegung",
+            "stehe ich dir gerne zur Verfügung",
+            "stehe ich dir gerne zur Verfuegung",
+            "Wenn Sie Fragen haben",
+            "Wenn du Fragen hast",
+            "Wenn du noch Fragen hast",
             "Bitte erkläre, worauf",
             "Bitte erklaere, worauf",
             "Ich bin ein KI-Assistent",
@@ -2394,6 +2405,35 @@ class AssistantBrain(BrainCallbacksMixin):
                 text = text[:idx] + text[idx + len(pattern):].lstrip()
                 if text:
                     text = text[0].upper() + text[1:]
+
+        # 3b. Formelles "Sie" → informelles "du" (Qwen3 ignoriert Du-Anweisung)
+        # "Ihnen/Ihre/Ihrem" sind eindeutig formell (kein Lowercase-Pendant fuer "sie"=she)
+        _has_formal = bool(re.search(r"\b(?:Ihnen|Ihre[mnrs]?)\b", text))
+        if _has_formal:
+            _formal_map = [
+                (r"\bIhnen\b", "dir"), (r"\bIhre\b", "deine"),
+                (r"\bIhren\b", "deinen"), (r"\bIhrem\b", "deinem"),
+                (r"\bIhrer\b", "deiner"),
+                # "Sie" nur in eindeutigen Kontexten ersetzen (nicht am Satzanfang)
+                (r"(?<=[,;:!?]\s)Sie\b", "du"),
+                (r"(?<=\bfuer\s)Sie\b", "dich"), (r"(?<=\bfür\s)Sie\b", "dich"),
+                (r"(?<=\bdass\s)Sie\b", "du"), (r"(?<=\bwenn\s)Sie\b", "du"),
+                (r"(?<=\bob\s)Sie\b", "du"),
+            ]
+            for pattern, replacement in _formal_map:
+                text = re.sub(pattern, replacement, text)
+            logger.info("Sie->du Korrektur angewendet: '%s'", text[:80])
+
+        # 3c. Chatbot-Floskeln entfernen die trotz Prompt durchkommen
+        _chatbot_floskels = [
+            r"Wenn (?:du|Sie) (?:noch |weitere )?Fragen ha(?:ben|st).*?(?:\.|!|$)",
+            r"(?:Ich )?[Ss]tehe? (?:dir|Ihnen) (?:gerne |jederzeit )?zur Verf[uü]gung.*?(?:\.|!|$)",
+            r"Zögern? (?:du|Sie) nicht.*?(?:\.|!|$)",
+            r"(?:Ich bin )?(?:hier,? )?um (?:dir|Ihnen) zu helfen.*?(?:\.|!|$)",
+            r"Lass(?:e|t)? (?:es )?mich wissen.*?(?:\.|!|$)",
+        ]
+        for floskel in _chatbot_floskels:
+            text = re.sub(floskel, "", text, flags=re.IGNORECASE).strip()
 
         # 4. Mehrere Leerzeichen / fuehrende Leerzeichen bereinigen
         text = re.sub(r"  +", " ", text).strip()
