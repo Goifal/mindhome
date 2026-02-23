@@ -655,8 +655,8 @@ class PersonalityEngine:
             effective_level = 1
         # Mood-Anpassung (Jarvis-Stil: unter Druck trockener, nicht stiller)
         elif mood in ("stressed", "frustrated"):
-            # Unter Druck: eine Stufe weniger Sarkasmus (statt gleich)
-            effective_level = max(1, base_level - 1)
+            # Unter Druck bleibt Humor gleich — Jarvis wird trockener, nicht stiller
+            effective_level = base_level
         elif mood == "tired":
             effective_level = min(base_level, 2)
         elif mood == "good":
