@@ -493,6 +493,7 @@ class AssistantBrain(BrainCallbacksMixin):
                 "model_used": "tts_enhancer",
                 "context_room": room or "unbekannt",
                 "tts": tts_data,
+                "_emitted": True,
             }
         elif whisper_cmd == "deactivate" and _word_count <= 3:
             response_text = "Normale Lautstaerke wiederhergestellt."
@@ -506,6 +507,7 @@ class AssistantBrain(BrainCallbacksMixin):
                 "model_used": "tts_enhancer",
                 "context_room": room or "unbekannt",
                 "tts": tts_data,
+                "_emitted": True,
             }
         # whisper_cmd gesetzt aber >3 Woerter: Modus aktiv, Befehl weiterverarbeiten
 
@@ -549,6 +551,7 @@ class AssistantBrain(BrainCallbacksMixin):
                 "actions": result["actions"],
                 "model_used": "routine_engine",
                 "context_room": room or "unbekannt",
+                "_emitted": True,
             }
 
         # Phase 7: Gaeste-Modus Trigger
@@ -563,6 +566,7 @@ class AssistantBrain(BrainCallbacksMixin):
                 "actions": [],
                 "model_used": "routine_engine",
                 "context_room": room or "unbekannt",
+                "_emitted": True,
             }
 
         # Phase 7: Gaeste-Modus Deaktivierung
@@ -578,6 +582,7 @@ class AssistantBrain(BrainCallbacksMixin):
                     "actions": [],
                     "model_used": "routine_engine",
                     "context_room": room or "unbekannt",
+                    "_emitted": True,
                 }
 
         # Phase 13.1: Sicherheits-Bestaetigung (lock_door:unlock, set_alarm:disarm, etc.)
@@ -591,6 +596,7 @@ class AssistantBrain(BrainCallbacksMixin):
                 "actions": [],
                 "model_used": "security_confirmation",
                 "context_room": room or "unbekannt",
+                "_emitted": True,
             }
 
         # Phase 13.2: Automation-Bestaetigung (VOR allem anderen)
@@ -604,6 +610,7 @@ class AssistantBrain(BrainCallbacksMixin):
                 "actions": [],
                 "model_used": "self_automation",
                 "context_room": room or "unbekannt",
+                "_emitted": True,
             }
 
         # Phase 13.4: Optimierungs-Vorschlag Bestaetigung
@@ -617,6 +624,7 @@ class AssistantBrain(BrainCallbacksMixin):
                 "actions": [],
                 "model_used": "self_optimization",
                 "context_room": room or "unbekannt",
+                "_emitted": True,
             }
 
         # Phase 8: Explizites Notizbuch — Memory-Befehle (VOR allem anderen)
@@ -630,6 +638,7 @@ class AssistantBrain(BrainCallbacksMixin):
                 "actions": [],
                 "model_used": "memory_direct",
                 "context_room": room or "unbekannt",
+                "_emitted": True,
             }
 
         # Phase 11: Koch-Navigation — aktive Session hat Vorrang
@@ -646,6 +655,7 @@ class AssistantBrain(BrainCallbacksMixin):
                 "model_used": "cooking_assistant",
                 "context_room": room or "unbekannt",
                 "tts": tts_data,
+                "_emitted": True,
             }
 
         # Phase 11: Koch-Intent — neue Koch-Session starten
@@ -665,6 +675,7 @@ class AssistantBrain(BrainCallbacksMixin):
                 "model_used": f"cooking_assistant ({cooking_model})",
                 "context_room": room or "unbekannt",
                 "tts": tts_data,
+                "_emitted": True,
             }
 
         # Phase 17: Planungs-Dialog Check — laufender Dialog hat Vorrang
@@ -683,6 +694,7 @@ class AssistantBrain(BrainCallbacksMixin):
                 "actions": [],
                 "model_used": "action_planner_dialog",
                 "context_room": room or "unbekannt",
+                "_emitted": True,
             }
 
         # Phase 17: Neuen Planungs-Dialog starten
@@ -698,6 +710,7 @@ class AssistantBrain(BrainCallbacksMixin):
                 "actions": [],
                 "model_used": "action_planner_dialog",
                 "context_room": room or "unbekannt",
+                "_emitted": True,
             }
 
         # Phase 6: Easter-Egg-Check (VOR dem LLM — spart Latenz)
@@ -712,6 +725,7 @@ class AssistantBrain(BrainCallbacksMixin):
                 "actions": [],
                 "model_used": "easter_egg",
                 "context_room": room or "unbekannt",
+                "_emitted": True,
             }
 
         # Phase 9: "listening" Sound abspielen wenn Verarbeitung startet
@@ -953,32 +967,70 @@ class AssistantBrain(BrainCallbacksMixin):
                     "get_calendar_events", {"timeframe": timeframe}
                 )
                 cal_msg = cal_result.get("message", "") if isinstance(cal_result, dict) else str(cal_result)
-                # LLM natuerlich formulieren lassen
-                # messages hat text bereits als letzten Eintrag — ersetzen
-                fmt_messages = list(messages)
-                fmt_messages[-1] = {
-                    "role": "user",
-                    "content": (
-                        f"{text}\n\n[KALENDER-DATEN]\n{cal_msg}\n"
-                        "[/KALENDER-DATEN]\n"
-                        "Fasse die Kalender-Daten natuerlich zusammen."
-                    ),
-                }
-                try:
-                    fmt_response = await asyncio.wait_for(
-                        self.ollama.chat(messages=fmt_messages, model=model, temperature=0.7),
-                        timeout=15.0,
-                    )
-                    response_text = self._filter_response(
-                        fmt_response.get("message", {}).get("content", cal_msg)
-                    )
-                except Exception:
-                    response_text = cal_msg  # Fallback: rohe Daten
+
+                # Humanizer-First: Rohdaten zuverlaessig umwandeln
+                response_text = self._humanize_calendar(cal_msg)
+                logger.info("Kalender-Shortcut humanisiert: '%s' -> '%s'",
+                            cal_msg[:60], response_text[:60])
+
+                # LLM-Feinschliff (optional, verbessert JARVIS-Stil)
+                if response_text and response_text != cal_msg:
+                    try:
+                        feedback_messages = [{
+                            "role": "system",
+                            "content": (
+                                "Du bist JARVIS. Antworte auf Deutsch, 1-2 Saetze. "
+                                "Souveraen, knapp, trocken. 'Sir' sparsam einsetzen. "
+                                "Keine Aufzaehlungen. Runde Zahlen natuerlich. "
+                                "Beispiele: 'Morgen um acht steht eine Blutabnahme an.' | "
+                                "'Drei Termine morgen: Meeting um neun, Zahnarzt um elf "
+                                "und Einkaufen um vier.'"
+                            ),
+                        }, {
+                            "role": "user",
+                            "content": f"Frage: {text}\nAntwort-Entwurf: {response_text}",
+                        }]
+                        fmt_response = await asyncio.wait_for(
+                            self.ollama.chat(
+                                messages=feedback_messages, model=model,
+                                temperature=0.7, max_tokens=150, think=False,
+                            ),
+                            timeout=15.0,
+                        )
+                        if "error" not in fmt_response:
+                            refined = self._filter_response(
+                                fmt_response.get("message", {}).get("content", "")
+                            )
+                            # Nur uebernehmen wenn LLM keine Rohdaten zurueckgibt
+                            if refined and len(refined) > 5:
+                                import re as _re
+                                if not _re.search(r'\d{1,2}:\d{2}\s*\|', refined):
+                                    response_text = refined
+                                    logger.info("Kalender-Shortcut LLM-verfeinert: '%s'",
+                                                response_text[:80])
+                                else:
+                                    logger.info("Kalender LLM-Antwort enthaelt Rohdaten, nutze Humanizer")
+                    except Exception as e:
+                        logger.warning("Kalender-Shortcut LLM-Feinschliff fehlgeschlagen: %s", e)
+                        # Humanisierter Text bleibt als Fallback
 
                 await self.memory.add_conversation("user", text)
                 await self.memory.add_conversation("assistant", response_text)
                 tts_data = self.tts_enhancer.enhance(response_text, message_type="casual")
-                await self._speak_and_emit(response_text, room=room, tts_data=tts_data)
+
+                # Nur TTS starten wenn stream_callback gesetzt (main.py sendet
+                # die Chat-Nachricht), sonst _speak_and_emit fuer beides
+                if stream_callback:
+                    if not room:
+                        room = await self._get_occupied_room()
+                    self._task_registry.create_task(
+                        self.sound_manager.speak_response(
+                            response_text, room=room, tts_data=tts_data),
+                        name="speak_response",
+                    )
+                else:
+                    await self._speak_and_emit(response_text, room=room, tts_data=tts_data)
+
                 await emit_action("get_calendar_events", {"timeframe": timeframe}, cal_result)
                 return {
                     "response": response_text,
@@ -1007,6 +1059,7 @@ class AssistantBrain(BrainCallbacksMixin):
                     "model_used": "delegation",
                     "context_room": room or "unbekannt",
                     "tts": tts_data,
+                    "_emitted": True,
                 }
 
         # 6. Komplexe Anfragen ueber Action Planner routen
@@ -1744,6 +1797,16 @@ class AssistantBrain(BrainCallbacksMixin):
                     name="sound_error",
                 )
 
+        # Letztes Sicherheitsnetz: Rohdaten-Muster die durchgerutscht sind
+        if response_text:
+            import re as _re
+            if _re.search(r'\d{1,2}:\d{2}\s*\|', response_text):
+                logger.warning("Rohdaten-Leak (Kalender) vor Senden erkannt: '%s'", response_text[:80])
+                response_text = self._humanize_calendar(response_text)
+            elif response_text.lstrip().startswith("AKTUELL:"):
+                logger.warning("Rohdaten-Leak (Wetter) vor Senden erkannt")
+                response_text = self._humanize_weather(response_text)
+
         result = {
             "response": response_text,
             "actions": executed_actions,
@@ -1900,7 +1963,7 @@ class AssistantBrain(BrainCallbacksMixin):
             elif func_name == "get_house_status":
                 return self._humanize_house_status(raw)
         except Exception as e:
-            logger.debug("Humanize fehlgeschlagen fuer %s: %s", func_name, e)
+            logger.warning("Humanize fehlgeschlagen fuer %s: %s", func_name, e, exc_info=True)
         # Kein Template vorhanden — Rohdaten zurueckgeben
         return raw
 
@@ -1971,22 +2034,44 @@ class AssistantBrain(BrainCallbacksMixin):
         if not raw or not raw.strip():
             return raw
 
-        # "KEINE TERMINE" Varianten
+        import re
         raw_upper = raw.upper()
+
+        # Zeitkontext aus Header bestimmen ("TERMINE MORGEN", "TERMINE HEUTE", ...)
+        if "MORGEN" in raw_upper:
+            prefix_single = "Morgen steht"
+            prefix_multi = "Morgen stehen"
+            prefix_free = "Morgen ist frei, Sir."
+        elif "WOCHE" in raw_upper:
+            prefix_single = "Diese Woche steht"
+            prefix_multi = "Diese Woche stehen"
+            prefix_free = "Die Woche ist frei, Sir."
+        else:
+            prefix_single = "Heute steht"
+            prefix_multi = "Heute stehen"
+            prefix_free = "Heute ist nichts geplant, Sir."
+
+        # "KEINE TERMINE" Varianten
         if "KEINE TERMINE" in raw_upper or "(0)" in raw:
-            return "Der Tag ist frei, Sir."
+            return prefix_free
 
         # Alle "HH:MM | Titel" Muster extrahieren (funktioniert ein- und mehrzeilig)
-        import re
         pattern = r"(\d{1,2}:\d{2})\s*\|\s*(.+?)(?:\n|$)"
         matches = re.findall(pattern, raw)
 
-        if not matches:
+        # Ganztaegige Termine separat erfassen
+        ganztag_pattern = r"ganztaegig\s*\|\s*(.+?)(?:\n|$)"
+        ganztag_matches = re.findall(ganztag_pattern, raw)
+
+        if not matches and not ganztag_matches:
             return raw
 
         events = []
         for time_str, title in matches:
             title = title.strip()
+            # Ort/Info-Suffix entfernen (nach erstem |)
+            if " | " in title:
+                title = title.split(" | ")[0].strip()
             # Uhrzeit natuerlicher formatieren
             h, m = time_str.split(":")
             h = int(h)
@@ -2003,10 +2088,13 @@ class AssistantBrain(BrainCallbacksMixin):
                 time_natural = f"um {h}:{m:02d}"
             events.append(f"{title} {time_natural}")
 
+        for title in ganztag_matches:
+            events.append(title.strip())
+
         if len(events) == 1:
-            return f"Morgen steht {events[0]} an, Sir."
+            return f"{prefix_single} {events[0]} an, Sir."
         listing = ", ".join(events[:-1]) + f" und {events[-1]}"
-        return f"Morgen stehen {len(events)} Termine an: {listing}."
+        return f"{prefix_multi} {len(events)} Termine an: {listing}."
 
     def _humanize_entity_state(self, raw: str) -> str:
         """Entity-Status in natuerliche Sprache."""
