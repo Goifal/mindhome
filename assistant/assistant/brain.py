@@ -728,6 +728,232 @@ class AssistantBrain(BrainCallbacksMixin):
                 "_emitted": True,
             }
 
+        # ----- Schnelle Shortcuts (VOR Context Build — spart 1-4s Latenz) -----
+
+        # Kalender-Diagnose: "Welchen Kalender hast du?" etc.
+        cal_diag = self._detect_calendar_diagnostic(text)
+        if cal_diag:
+            logger.info("Kalender-Diagnose angefragt: '%s'", text)
+            try:
+                states = await self.ha.get_states()
+                cal_entities = [
+                    s for s in (states or [])
+                    if s.get("entity_id", "").startswith("calendar.")
+                ]
+                configured = yaml_config.get("calendar", {}).get("entities", [])
+                if isinstance(configured, str):
+                    configured = [configured]
+
+                if not cal_entities:
+                    response_text = "Ich sehe keine Kalender-Entities in Home Assistant, Sir."
+                else:
+                    names = []
+                    for s in cal_entities:
+                        eid = s.get("entity_id", "")
+                        friendly = s.get("attributes", {}).get("friendly_name", eid)
+                        names.append(f"{friendly} ({eid})")
+                    listing = ", ".join(names)
+                    response_text = f"In Home Assistant sehe ich {len(cal_entities)} Kalender: {listing}."
+                    if configured:
+                        response_text += f" Konfiguriert: {', '.join(configured)}."
+                    else:
+                        response_text += " Aktuell frage ich alle ab — du kannst in der settings.yaml festlegen, welche ich nutzen soll."
+
+                await self.memory.add_conversation("user", text)
+                await self.memory.add_conversation("assistant", response_text)
+                tts_data = self.tts_enhancer.enhance(response_text, message_type="casual")
+                if stream_callback:
+                    if not room:
+                        room = await self._get_occupied_room()
+                    self._task_registry.create_task(
+                        self.sound_manager.speak_response(
+                            response_text, room=room, tts_data=tts_data),
+                        name="speak_response",
+                    )
+                else:
+                    await self._speak_and_emit(response_text, room=room, tts_data=tts_data)
+                return {
+                    "response": response_text,
+                    "actions": [],
+                    "model_used": "calendar_diagnostic",
+                    "context_room": room or "unbekannt",
+                    "tts": tts_data,
+                    "_emitted": not stream_callback,
+                }
+            except Exception as e:
+                logger.warning("Kalender-Diagnose fehlgeschlagen: %s", e)
+
+        # Kalender-Shortcut: Kalender-Fragen direkt erkennen und abkuerzen.
+        # Chat-Antwort kommt sofort (Humanizer), TTS spricht die LLM-verfeinerte Version.
+        calendar_shortcut = self._detect_calendar_query(text)
+        if calendar_shortcut:
+            timeframe = calendar_shortcut
+            logger.info("Kalender-Shortcut: '%s' -> timeframe=%s", text, timeframe)
+            try:
+                cal_result = await self.executor.execute(
+                    "get_calendar_events", {"timeframe": timeframe}
+                )
+                cal_msg = cal_result.get("message", "") if isinstance(cal_result, dict) else str(cal_result)
+
+                # Humanizer-First: sofortige Antwort
+                response_text = self._humanize_calendar(cal_msg)
+                logger.info("Kalender-Shortcut humanisiert: '%s' -> '%s'",
+                            cal_msg[:60], response_text[:60])
+
+                await self.memory.add_conversation("user", text)
+                await self.memory.add_conversation("assistant", response_text)
+                tts_data = self.tts_enhancer.enhance(response_text, message_type="casual")
+
+                # WebSocket emit fuer nicht-streaming Modus
+                if not stream_callback:
+                    await emit_speaking(response_text, tts_data=tts_data)
+
+                # Background: LLM-Polish (4B, 3s Timeout) + TTS
+                # Chat-Antwort kommt sofort mit Humanizer-Text,
+                # TTS spricht die verfeinerte Version (oder Fallback).
+                async def _calendar_polish_and_speak(
+                    _text=text, _response=response_text, _cal_msg=cal_msg,
+                    _room=room, _tts_data=tts_data,
+                ):
+                    speak_text = _response
+                    speak_tts = _tts_data
+                    if _response and _response != _cal_msg:
+                        try:
+                            feedback_messages = [{
+                                "role": "system",
+                                "content": (
+                                    "Du bist JARVIS. Antworte auf Deutsch, 1-2 Saetze. "
+                                    "Souveraen, knapp, trocken. 'Sir' sparsam einsetzen. "
+                                    "Keine Aufzaehlungen. "
+                                    "WICHTIG: Uhrzeiten EXAKT uebernehmen, NIEMALS aendern "
+                                    "oder runden. 'Viertel vor 8' bleibt 'Viertel vor 8'. "
+                                    "Beispiele: 'Morgen um Viertel vor acht steht eine Blutabnahme an.' | "
+                                    "'Drei Termine morgen: Meeting um neun, Zahnarzt um halb zwoelf "
+                                    "und Einkaufen um 16:30.'"
+                                ),
+                            }, {
+                                "role": "user",
+                                "content": f"Frage: {_text}\nAntwort-Entwurf: {_response}",
+                            }]
+                            fmt_response = await asyncio.wait_for(
+                                self.ollama.chat(
+                                    messages=feedback_messages,
+                                    model=self.model_router.model_fast,
+                                    temperature=0.7, max_tokens=150, think=False,
+                                ),
+                                timeout=3.0,
+                            )
+                            if "error" not in fmt_response:
+                                refined = self._filter_response(
+                                    fmt_response.get("message", {}).get("content", "")
+                                )
+                                if refined and len(refined) > 5:
+                                    import re as _re
+                                    if _re.search(r'\d{1,2}:\d{2}\s*\|', refined):
+                                        logger.info("Kalender LLM-Antwort enthaelt Rohdaten, nutze Humanizer")
+                                    else:
+                                        _orig_pattern = r"(\d{1,2}:\d{2})\s*\|\s*(.+?)(?:\n|$)"
+                                        _orig_events = _re.findall(_orig_pattern, _cal_msg)
+                                        _names_preserved = all(
+                                            name.strip().split(" | ")[0].strip().lower() in refined.lower()
+                                            for _, name in _orig_events
+                                        ) if _orig_events else True
+                                        if _names_preserved:
+                                            speak_text = refined
+                                            speak_tts = self.tts_enhancer.enhance(
+                                                speak_text, message_type="casual"
+                                            )
+                                            logger.info("Kalender-Shortcut LLM-verfeinert: '%s'",
+                                                        speak_text[:80])
+                                        else:
+                                            logger.warning(
+                                                "Kalender LLM-Antwort hat Terminnamen veraendert, "
+                                                "nutze Humanizer. LLM='%s'", refined[:80]
+                                            )
+                        except Exception as e:
+                            logger.debug("Kalender LLM-Polish fehlgeschlagen: %s", e)
+                    if not _room:
+                        _room = await self._get_occupied_room()
+                    await self.sound_manager.speak_response(
+                        speak_text, room=_room, tts_data=speak_tts
+                    )
+
+                self._task_registry.create_task(
+                    _calendar_polish_and_speak(), name="calendar_polish_speak"
+                )
+
+                await emit_action("get_calendar_events", {"timeframe": timeframe}, cal_result)
+                return {
+                    "response": response_text,
+                    "actions": [{"function": "get_calendar_events",
+                                 "args": {"timeframe": timeframe},
+                                 "result": cal_result}],
+                    "model_used": "calendar_shortcut",
+                    "context_room": room or "unbekannt",
+                    "tts": tts_data,
+                    "_emitted": True,
+                }
+            except Exception as e:
+                logger.warning("Kalender-Shortcut fehlgeschlagen: %s — Fallback auf LLM", e)
+
+        # Wecker-Shortcut: Wecker-Befehle direkt erkennen und ausfuehren.
+        alarm_shortcut = self._detect_alarm_command(text)
+        if alarm_shortcut:
+            action = alarm_shortcut["action"]
+            logger.info("Wecker-Shortcut: '%s' -> %s", text, alarm_shortcut)
+            try:
+                if action == "set":
+                    alarm_result = await self.timer_manager.set_wakeup_alarm(
+                        time_str=alarm_shortcut["time"],
+                        label=alarm_shortcut.get("label", "Wecker"),
+                        room=room or "",
+                        repeat=alarm_shortcut.get("repeat", ""),
+                    )
+                elif action == "cancel":
+                    alarm_result = await self.timer_manager.cancel_alarm(
+                        label=alarm_shortcut.get("label", ""),
+                    )
+                elif action == "status":
+                    alarm_result = await self.timer_manager.get_alarms()
+                else:
+                    alarm_result = None
+
+                if alarm_result:
+                    alarm_msg = alarm_result.get("message", "")
+                    response_text = self._humanize_alarms(alarm_msg)
+                    await self.memory.add_conversation("user", text)
+                    await self.memory.add_conversation("assistant", response_text)
+                    tts_data = self.tts_enhancer.enhance(response_text, message_type="confirmation")
+                    if stream_callback:
+                        if not room:
+                            room = await self._get_occupied_room()
+                        self._task_registry.create_task(
+                            self.sound_manager.speak_response(
+                                response_text, room=room, tts_data=tts_data),
+                            name="speak_response",
+                        )
+                    else:
+                        await self._speak_and_emit(response_text, room=room, tts_data=tts_data)
+
+                    await emit_action(
+                        f"{'set_wakeup_alarm' if action == 'set' else 'cancel_alarm' if action == 'cancel' else 'get_alarms'}",
+                        alarm_shortcut, alarm_result,
+                    )
+                    return {
+                        "response": response_text,
+                        "actions": [{"function": f"alarm_{action}",
+                                     "args": alarm_shortcut,
+                                     "result": alarm_result}],
+                        "model_used": "alarm_shortcut",
+                        "context_room": room or "unbekannt",
+                        "tts": tts_data,
+                        "_emitted": True,
+                    }
+            except Exception as e:
+                logger.warning("Wecker-Shortcut fehlgeschlagen: %s — Fallback auf LLM", e)
+
+        # ----- Ende schnelle Shortcuts -----
+
         # Phase 9: "listening" Sound abspielen wenn Verarbeitung startet
         self._task_registry.create_task(
             self.sound_manager.play_event_sound("listening", room=room),
@@ -954,222 +1180,6 @@ class AssistantBrain(BrainCallbacksMixin):
 
         # Phase 8: Intent-Routing — Wissensfragen ohne Tools beantworten
         intent_type = self._classify_intent(text)
-
-        # Kalender-Diagnose: "Welchen Kalender hast du?" etc.
-        cal_diag = self._detect_calendar_diagnostic(text)
-        if cal_diag:
-            logger.info("Kalender-Diagnose angefragt: '%s'", text)
-            try:
-                states = await self.ha.get_states()
-                cal_entities = [
-                    s for s in (states or [])
-                    if s.get("entity_id", "").startswith("calendar.")
-                ]
-                configured = yaml_config.get("calendar", {}).get("entities", [])
-                if isinstance(configured, str):
-                    configured = [configured]
-
-                if not cal_entities:
-                    response_text = "Ich sehe keine Kalender-Entities in Home Assistant, Sir."
-                else:
-                    names = []
-                    for s in cal_entities:
-                        eid = s.get("entity_id", "")
-                        friendly = s.get("attributes", {}).get("friendly_name", eid)
-                        names.append(f"{friendly} ({eid})")
-                    listing = ", ".join(names)
-                    response_text = f"In Home Assistant sehe ich {len(cal_entities)} Kalender: {listing}."
-                    if configured:
-                        response_text += f" Konfiguriert: {', '.join(configured)}."
-                    else:
-                        response_text += " Aktuell frage ich alle ab — du kannst in der settings.yaml festlegen, welche ich nutzen soll."
-
-                await self.memory.add_conversation("user", text)
-                await self.memory.add_conversation("assistant", response_text)
-                tts_data = self.tts_enhancer.enhance(response_text, message_type="casual")
-                if stream_callback:
-                    if not room:
-                        room = await self._get_occupied_room()
-                    self._task_registry.create_task(
-                        self.sound_manager.speak_response(
-                            response_text, room=room, tts_data=tts_data),
-                        name="speak_response",
-                    )
-                else:
-                    await self._speak_and_emit(response_text, room=room, tts_data=tts_data)
-                return {
-                    "response": response_text,
-                    "actions": [],
-                    "model_used": "calendar_diagnostic",
-                    "context_room": room or "unbekannt",
-                    "tts": tts_data,
-                    "_emitted": not stream_callback,
-                }
-            except Exception as e:
-                logger.warning("Kalender-Diagnose fehlgeschlagen: %s", e)
-
-        # Kalender-Shortcut: LLM waehlt bei "Was steht morgen an?" oft das
-        # falsche Tool (get_active_intents statt get_calendar_events).
-        # Daher Kalender-Fragen direkt erkennen und abkuerzen.
-        calendar_shortcut = self._detect_calendar_query(text)
-        if calendar_shortcut:
-            timeframe = calendar_shortcut
-            logger.info("Kalender-Shortcut: '%s' -> timeframe=%s", text, timeframe)
-            try:
-                cal_result = await self.executor.execute(
-                    "get_calendar_events", {"timeframe": timeframe}
-                )
-                cal_msg = cal_result.get("message", "") if isinstance(cal_result, dict) else str(cal_result)
-
-                # Humanizer-First: Rohdaten zuverlaessig umwandeln
-                response_text = self._humanize_calendar(cal_msg)
-                logger.info("Kalender-Shortcut humanisiert: '%s' -> '%s'",
-                            cal_msg[:60], response_text[:60])
-
-                # LLM-Feinschliff (optional, verbessert JARVIS-Stil)
-                if response_text and response_text != cal_msg:
-                    try:
-                        feedback_messages = [{
-                            "role": "system",
-                            "content": (
-                                "Du bist JARVIS. Antworte auf Deutsch, 1-2 Saetze. "
-                                "Souveraen, knapp, trocken. 'Sir' sparsam einsetzen. "
-                                "Keine Aufzaehlungen. "
-                                "WICHTIG: Uhrzeiten EXAKT uebernehmen, NIEMALS aendern "
-                                "oder runden. 'Viertel vor 8' bleibt 'Viertel vor 8'. "
-                                "Beispiele: 'Morgen um Viertel vor acht steht eine Blutabnahme an.' | "
-                                "'Drei Termine morgen: Meeting um neun, Zahnarzt um halb zwoelf "
-                                "und Einkaufen um 16:30.'"
-                            ),
-                        }, {
-                            "role": "user",
-                            "content": f"Frage: {text}\nAntwort-Entwurf: {response_text}",
-                        }]
-                        fmt_response = await asyncio.wait_for(
-                            self.ollama.chat(
-                                messages=feedback_messages, model=model,
-                                temperature=0.7, max_tokens=150, think=False,
-                            ),
-                            timeout=15.0,
-                        )
-                        if "error" not in fmt_response:
-                            refined = self._filter_response(
-                                fmt_response.get("message", {}).get("content", "")
-                            )
-                            # Nur uebernehmen wenn LLM keine Rohdaten zurueckgibt
-                            # UND die Originaldaten (Terminname) bewahrt hat
-                            if refined and len(refined) > 5:
-                                import re as _re
-                                if _re.search(r'\d{1,2}:\d{2}\s*\|', refined):
-                                    logger.info("Kalender LLM-Antwort enthaelt Rohdaten, nutze Humanizer")
-                                else:
-                                    # Pruefen ob alle Terminnamen im LLM-Output enthalten sind
-                                    _orig_pattern = r"(\d{1,2}:\d{2})\s*\|\s*(.+?)(?:\n|$)"
-                                    _orig_events = _re.findall(_orig_pattern, cal_msg)
-                                    _names_preserved = all(
-                                        name.strip().split(" | ")[0].strip().lower() in refined.lower()
-                                        for _, name in _orig_events
-                                    ) if _orig_events else True
-                                    if _names_preserved:
-                                        response_text = refined
-                                        logger.info("Kalender-Shortcut LLM-verfeinert: '%s'",
-                                                    response_text[:80])
-                                    else:
-                                        logger.warning(
-                                            "Kalender LLM-Antwort hat Terminnamen veraendert, "
-                                            "nutze Humanizer. LLM='%s'", refined[:80]
-                                        )
-                    except Exception as e:
-                        logger.warning("Kalender-Shortcut LLM-Feinschliff fehlgeschlagen: %s", e)
-                        # Humanisierter Text bleibt als Fallback
-
-                await self.memory.add_conversation("user", text)
-                await self.memory.add_conversation("assistant", response_text)
-                tts_data = self.tts_enhancer.enhance(response_text, message_type="casual")
-
-                # Nur TTS starten wenn stream_callback gesetzt (main.py sendet
-                # die Chat-Nachricht), sonst _speak_and_emit fuer beides
-                if stream_callback:
-                    if not room:
-                        room = await self._get_occupied_room()
-                    self._task_registry.create_task(
-                        self.sound_manager.speak_response(
-                            response_text, room=room, tts_data=tts_data),
-                        name="speak_response",
-                    )
-                else:
-                    await self._speak_and_emit(response_text, room=room, tts_data=tts_data)
-
-                await emit_action("get_calendar_events", {"timeframe": timeframe}, cal_result)
-                return {
-                    "response": response_text,
-                    "actions": [{"function": "get_calendar_events",
-                                 "args": {"timeframe": timeframe},
-                                 "result": cal_result}],
-                    "model_used": "calendar_shortcut",
-                    "context_room": room or "unbekannt",
-                    "tts": tts_data,
-                    "_emitted": True,
-                }
-            except Exception as e:
-                logger.warning("Kalender-Shortcut fehlgeschlagen: %s — Fallback auf LLM", e)
-
-        # Wecker-Shortcut: LLM generiert nicht zuverlaessig den set_wakeup_alarm
-        # Tool-Call. Daher Wecker-Befehle direkt erkennen und ausfuehren.
-        alarm_shortcut = self._detect_alarm_command(text)
-        if alarm_shortcut:
-            action = alarm_shortcut["action"]
-            logger.info("Wecker-Shortcut: '%s' -> %s", text, alarm_shortcut)
-            try:
-                if action == "set":
-                    alarm_result = await self.timer_manager.set_wakeup_alarm(
-                        time_str=alarm_shortcut["time"],
-                        label=alarm_shortcut.get("label", "Wecker"),
-                        room=room or "",
-                        repeat=alarm_shortcut.get("repeat", ""),
-                    )
-                elif action == "cancel":
-                    alarm_result = await self.timer_manager.cancel_alarm(
-                        label=alarm_shortcut.get("label", ""),
-                    )
-                elif action == "status":
-                    alarm_result = await self.timer_manager.get_alarms()
-                else:
-                    alarm_result = None
-
-                if alarm_result:
-                    alarm_msg = alarm_result.get("message", "")
-                    response_text = self._humanize_alarms(alarm_msg)
-                    await self.memory.add_conversation("user", text)
-                    await self.memory.add_conversation("assistant", response_text)
-                    tts_data = self.tts_enhancer.enhance(response_text, message_type="confirmation")
-                    if stream_callback:
-                        if not room:
-                            room = await self._get_occupied_room()
-                        self._task_registry.create_task(
-                            self.sound_manager.speak_response(
-                                response_text, room=room, tts_data=tts_data),
-                            name="speak_response",
-                        )
-                    else:
-                        await self._speak_and_emit(response_text, room=room, tts_data=tts_data)
-
-                    await emit_action(
-                        f"{'set_wakeup_alarm' if action == 'set' else 'cancel_alarm' if action == 'cancel' else 'get_alarms'}",
-                        alarm_shortcut, alarm_result,
-                    )
-                    return {
-                        "response": response_text,
-                        "actions": [{"function": f"alarm_{action}",
-                                     "args": alarm_shortcut,
-                                     "result": alarm_result}],
-                        "model_used": "alarm_shortcut",
-                        "context_room": room or "unbekannt",
-                        "tts": tts_data,
-                        "_emitted": True,
-                    }
-            except Exception as e:
-                logger.warning("Wecker-Shortcut fehlgeschlagen: %s — Fallback auf LLM", e)
 
         # Phase 10: Delegations-Intent → Nachricht an Person weiterleiten
         if intent_type == "delegation":
