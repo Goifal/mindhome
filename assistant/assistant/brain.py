@@ -1109,6 +1109,7 @@ class AssistantBrain(BrainCallbacksMixin):
                     "model_used": "calendar_shortcut",
                     "context_room": room or "unbekannt",
                     "tts": tts_data,
+                    "_emitted": True,
                 }
             except Exception as e:
                 logger.warning("Kalender-Shortcut fehlgeschlagen: %s — Fallback auf LLM", e)
@@ -1165,7 +1166,7 @@ class AssistantBrain(BrainCallbacksMixin):
                         "model_used": "alarm_shortcut",
                         "context_room": room or "unbekannt",
                         "tts": tts_data,
-                        "_emitted": not stream_callback,
+                        "_emitted": True,
                     }
             except Exception as e:
                 logger.warning("Wecker-Shortcut fehlgeschlagen: %s — Fallback auf LLM", e)
@@ -1313,35 +1314,39 @@ class AssistantBrain(BrainCallbacksMixin):
                         )
                         model = fallback_model
                     except (asyncio.TimeoutError, Exception):
+                        _err = "Beide Sprachmodelle reagieren nicht. Server moeglicherweise ueberlastet."
+                        await self._speak_and_emit(_err, room=room)
                         return {
-                            "response": "Beide Sprachmodelle reagieren nicht. Server moeglicherweise ueberlastet.",
-                            "actions": [],
-                            "model_used": model,
-                            "error": "timeout_all_models",
+                            "response": _err, "actions": [],
+                            "model_used": model, "error": "timeout_all_models",
+                            "_emitted": True,
                         }
                 else:
+                    _err = "Mein Sprachmodell reagiert nicht. Server moeglicherweise ueberlastet."
+                    await self._speak_and_emit(_err, room=room)
                     return {
-                        "response": "Mein Sprachmodell reagiert nicht. Server moeglicherweise ueberlastet.",
-                        "actions": [],
-                        "model_used": model,
-                        "error": "timeout",
+                        "response": _err, "actions": [],
+                        "model_used": model, "error": "timeout",
+                        "_emitted": True,
                     }
             except Exception as e:
                 logger.error("LLM Exception: %s", e)
+                _err = "Mein Sprachmodell hat ein Problem. Versuch es nochmal."
+                await self._speak_and_emit(_err, room=room)
                 return {
-                    "response": "Mein Sprachmodell hat ein Problem. Versuch es nochmal.",
-                    "actions": [],
-                    "model_used": model,
-                    "error": str(e),
+                    "response": _err, "actions": [],
+                    "model_used": model, "error": str(e),
+                    "_emitted": True,
                 }
 
             if "error" in response:
                 logger.error("LLM Fehler: %s", response["error"])
+                _err = "Mein Sprachmodell reagiert nicht. Ich versuche es gleich nochmal."
+                await self._speak_and_emit(_err, room=room)
                 return {
-                    "response": "Mein Sprachmodell reagiert nicht. Ich versuche es gleich nochmal.",
-                    "actions": [],
-                    "model_used": model,
-                    "error": response["error"],
+                    "response": _err, "actions": [],
+                    "model_used": model, "error": response["error"],
+                    "_emitted": True,
                 }
 
             # 7. Antwort verarbeiten
@@ -1637,9 +1642,9 @@ class AssistantBrain(BrainCallbacksMixin):
                             "content": (
                                 "Du bist JARVIS. Antworte auf Deutsch, 1-2 Saetze. "
                                 "Souveraen, knapp, trocken. 'Sir' sparsam einsetzen. "
-                                "Keine Aufzaehlungen. Runde Zahlen natuerlich. "
+                                "Keine Aufzaehlungen. Zahlen und Uhrzeiten EXAKT uebernehmen. "
                                 "Beispiele: 'Fuenf Grad, bewoelkt. Jacke empfohlen, Sir.' | "
-                                "'Morgen um acht steht eine Blutabnahme an.' | "
+                                "'Morgen um Viertel vor acht steht eine Blutabnahme an.' | "
                                 "'Im Buero 22 Grad, passt.'"
                             ),
                         }, {
@@ -1648,12 +1653,15 @@ class AssistantBrain(BrainCallbacksMixin):
                         }]
 
                         logger.info("Tool-Feedback: LLM verfeinert '%s'", humanized_text[:80])
-                        feedback_response = await self.ollama.chat(
-                            messages=feedback_messages,
-                            model=model,
-                            temperature=0.7,
-                            max_tokens=150,
-                            think=False,
+                        feedback_response = await asyncio.wait_for(
+                            self.ollama.chat(
+                                messages=feedback_messages,
+                                model=model,
+                                temperature=0.7,
+                                max_tokens=150,
+                                think=False,
+                            ),
+                            timeout=15.0,
                         )
                         if "error" not in feedback_response:
                             feedback_text = feedback_response.get("message", {}).get("content", "")
@@ -2198,7 +2206,7 @@ class AssistantBrain(BrainCallbacksMixin):
 
         # Ganztaegige Termine separat erfassen
         ganztag_pattern = r"ganztaegig\s*\|\s*(.+?)(?:\n|$)"
-        ganztag_matches = re.findall(ganztag_pattern, raw)
+        ganztag_matches = re.findall(ganztag_pattern, raw, re.IGNORECASE)
 
         if not matches and not ganztag_matches:
             return raw
@@ -2215,14 +2223,8 @@ class AssistantBrain(BrainCallbacksMixin):
             m = int(m)
             if m == 0:
                 time_natural = f"um {h} Uhr"
-            elif m == 30:
-                time_natural = f"um halb {h + 1 if h < 23 else 0}"
-            elif m == 15:
-                time_natural = f"um Viertel nach {h}"
-            elif m == 45:
-                time_natural = f"um Viertel vor {h + 1 if h < 23 else 0}"
             else:
-                time_natural = f"um {h}:{m:02d}"
+                time_natural = f"um {h} Uhr {m}"
             events.append(f"{title} {time_natural}")
 
         for title in ganztag_matches:
@@ -2824,6 +2826,14 @@ class AssistantBrain(BrainCallbacksMixin):
             logger.debug("Activity-Check fehlgeschlagen: %s", e)
             return True  # Im Fehlerfall lieber melden als verschlucken
 
+    async def _safe_format(self, message: str, urgency: str) -> str:
+        """Formatiert mit Personality, bei Fehler Fallback auf Roh-Nachricht."""
+        try:
+            return await self.proactive.format_with_personality(message, urgency)
+        except Exception as e:
+            logger.warning("format_with_personality fehlgeschlagen (%s), nutze Roh-Nachricht", e)
+            return message
+
     async def _handle_timer_notification(self, alert: dict):
         """Callback fuer allgemeine Timer/Wecker — meldet wenn Timer abgelaufen ist."""
         message = alert.get("message", "")
@@ -2832,10 +2842,16 @@ class AssistantBrain(BrainCallbacksMixin):
         if not message:
             return
         # Wecker MUSS klingeln — auch wenn User schlaeft (das ist der Sinn)
-        if alert_type != "wakeup_alarm":
+        if alert_type == "wakeup_alarm":
+            # Alarm-Sound VOR TTS abspielen damit User sicher aufwacht
+            try:
+                await self.sound_manager.play_event_sound("alarm", room=room)
+            except Exception as e:
+                logger.warning("Alarm-Sound fehlgeschlagen: %s", e)
+        else:
             if not await self._callback_should_speak("medium"):
                 return
-        formatted = await self.proactive.format_with_personality(message, "medium")
+        formatted = await self._safe_format(message, "medium")
         await self._speak_and_emit(formatted, room=room)
         logger.info("Timer -> Meldung: %s (Raum: %s)", formatted, room or "auto")
 
@@ -2846,18 +2862,19 @@ class AssistantBrain(BrainCallbacksMixin):
             return
         if not await self._callback_should_speak("low"):
             return
-        formatted = await self.proactive.format_with_personality(message, "low")
+        formatted = await self._safe_format(message, "low")
         await self._speak_and_emit(formatted)
         logger.info("Learning -> Vorschlag: %s", formatted)
 
     async def _handle_cooking_timer(self, alert: dict):
         """Callback fuer Koch-Timer — meldet wenn Timer abgelaufen ist."""
         message = alert.get("message", "")
+        room = alert.get("room") or None
         if not message:
             return
         # Koch-Timer sind zeitkritisch — immer melden
-        formatted = await self.proactive.format_with_personality(message, "high")
-        await self._speak_and_emit(formatted)
+        formatted = await self._safe_format(message, "high")
+        await self._speak_and_emit(formatted, room=room)
         logger.info("Koch-Timer -> Meldung: %s", formatted)
 
     async def _handle_time_alert(self, alert: dict):
@@ -2869,7 +2886,7 @@ class AssistantBrain(BrainCallbacksMixin):
         # CRITICAL darf immer durch, Rest wird per Activity geprüft
         if urgency != "critical" and not await self._callback_should_speak(urgency):
             return
-        formatted = await self.proactive.format_with_personality(message, urgency)
+        formatted = await self._safe_format(message, urgency)
         await self._speak_and_emit(formatted)
         logger.info("TimeAwareness [%s] -> Meldung: %s", urgency, formatted)
 
@@ -2879,7 +2896,7 @@ class AssistantBrain(BrainCallbacksMixin):
             return
         if urgency != "critical" and not await self._callback_should_speak(urgency):
             return
-        formatted = await self.proactive.format_with_personality(message, urgency)
+        formatted = await self._safe_format(message, urgency)
         await self._speak_and_emit(formatted)
         logger.info("Health Monitor [%s/%s]: %s", alert_type, urgency, formatted)
 
@@ -2891,7 +2908,7 @@ class AssistantBrain(BrainCallbacksMixin):
         urgency = alert.get("urgency", "low")
         if not await self._callback_should_speak(urgency):
             return
-        formatted = await self.proactive.format_with_personality(message, urgency)
+        formatted = await self._safe_format(message, urgency)
         await self._speak_and_emit(formatted)
         logger.info(
             "DeviceHealth [%s/%s]: %s",
@@ -2904,7 +2921,7 @@ class AssistantBrain(BrainCallbacksMixin):
             return
         if not await self._callback_should_speak("low"):
             return
-        formatted = await self.proactive.format_with_personality(message, "low")
+        formatted = await self._safe_format(message, "low")
         await self._speak_and_emit(formatted)
         logger.info("Wellness [%s]: %s", nudge_type, formatted)
 
@@ -3380,42 +3397,27 @@ class AssistantBrain(BrainCallbacksMixin):
         import re as _re
         t = text.lower().strip()
 
-        # --- Status-Abfragen ---
-        if any(kw in t for kw in [
-            "welche wecker", "wecker status", "wecker gestellt",
-            "wecker aktiv", "habe ich einen wecker", "ist mein wecker",
-            "ist ein wecker", "wecker an", "zeig wecker",
-            "meine wecker", "aktive wecker",
-        ]):
-            return {"action": "status"}
-
-        # --- Wecker loeschen ---
-        if any(kw in t for kw in [
-            "wecker aus", "wecker loeschen", "wecker loesch",
-            "wecker stopp", "wecker stop",
-            "loesch den wecker", "loesch meinen wecker",
-            "wecker abbrechen", "wecker abstellen", "wecker deaktiv",
-            "keinen wecker", "kein wecker mehr",
-        ]):
-            label = ""
-            label_match = _re.search(r"wecker\s+['\"]?(.+?)['\"]?\s+(?:loeschen|aus|ab|stopp)", t)
-            if label_match:
-                label = label_match.group(1)
-            return {"action": "cancel", "label": label}
-
-        # --- Wecker stellen ---
-        # Patterns: "Wecker auf 7", "Weck mich um 6:30", "Stell einen Wecker auf 7 Uhr"
-        # "Wecker 7 Uhr", "Wecker fuer 6:30"
+        # --- Wecker stellen (VOR Status/Cancel, da "wecker an" und
+        #     "wecker aus" sonst SET-Befehle wie "Stell den Wecker an" stehlen) ---
+        # Pattern 1: "Wecker auf 7", "Weck mich um 6:30", "Wecke mich morgen um 6",
+        #            "Weck uns morgen frueh um 7:15"
         time_match = _re.search(
-            r"(?:wecker|weck\s*(?:mich|uns)?)\s*"
-            r"(?:auf|um|fuer|für|gegen|ab|in)?\s*"
+            r"(?:wecker|weck(?:e|st)?\s+(?:mich|uns))\s+"
+            r"(?:\w+\s+){0,3}"
+            r"(?:auf|um|fuer|für|gegen|ab)\s*"
             r"(\d{1,2})(?::(\d{2}))?\s*(?:uhr)?",
             t,
         )
         if not time_match:
-            # "Stell einen Wecker auf 7 Uhr" / "Stell mir nen Wecker fuer 6:30"
+            # Pattern 2: "Wecker 7 Uhr", "Wecker 6:30" (ohne Praeposition)
             time_match = _re.search(
-                r"(?:stell|setz|erstell)\w*\s+(?:\w+\s+){0,3}wecker\s*"
+                r"(?:wecker)\s+(\d{1,2})(?::(\d{2}))?\s*(?:uhr)?",
+                t,
+            )
+        if not time_match:
+            # Pattern 3: "Stell einen Wecker auf 7 Uhr", "Stell mir nen Wecker fuer 6:30"
+            time_match = _re.search(
+                r"(?:stell|setz|erstell|mach)\w*\s+(?:\w+\s+){0,3}wecker\s*"
                 r"(?:auf|um|fuer|für|gegen)?\s*"
                 r"(\d{1,2})(?::(\d{2}))?\s*(?:uhr)?",
                 t,
@@ -3436,13 +3438,45 @@ class AssistantBrain(BrainCallbacksMixin):
                 elif any(kw in t for kw in ["wochenend", "sa-so", "samstag und sonntag"]):
                     repeat = "weekends"
 
-                # Label erkennen (optional)
+                # Label erkennen: "fuer Training", "fuer Arbeit"
                 label = "Wecker"
-                label_match = _re.search(r"(?:label|name|bezeichnung)\s+['\"]?(.+?)['\"]?$", t)
+                label_match = _re.search(
+                    r"(?:fuer|für)\s+(?:den\s+|die\s+|das\s+)?(\w[\w\s-]{1,20}?)(?:\s*$|\s+(?:um|auf|ab))",
+                    t,
+                )
                 if label_match:
-                    label = label_match.group(1).strip().capitalize()
+                    candidate = label_match.group(1).strip().capitalize()
+                    # Zeitangaben nicht als Label
+                    if not _re.match(r"^\d", candidate):
+                        label = candidate
 
                 return {"action": "set", "time": time_str, "label": label, "repeat": repeat}
+
+        # --- Status-Abfragen ---
+        # "wecker an" entfernt: zu mehrdeutig ("Mach den Wecker an" = SET, nicht Status)
+        if any(kw in t for kw in [
+            "welche wecker", "wecker status", "wecker gestellt",
+            "wecker aktiv", "habe ich einen wecker", "ist mein wecker",
+            "ist ein wecker", "zeig wecker",
+            "meine wecker", "aktive wecker",
+        ]):
+            return {"action": "status"}
+
+        # --- Wecker loeschen ---
+        # "keinen wecker" entfernt: "Ich brauche keinen Wecker" ist kein Loeschbefehl
+        if any(kw in t for kw in [
+            "wecker aus", "wecker loeschen", "wecker loesch",
+            "wecker stopp", "wecker stop",
+            "loesch den wecker", "loesch meinen wecker",
+            "wecker abbrechen", "wecker abstellen", "wecker deaktiv",
+            "kein wecker mehr",
+        ]):
+            label = ""
+            label_match = _re.search(
+                r"wecker\s+['\"]?(.+?)['\"]?\s+(?:loeschen|aus|ab|stopp)", t)
+            if label_match:
+                label = label_match.group(1)
+            return {"action": "cancel", "label": label}
 
         return None
 
@@ -3467,22 +3501,47 @@ class AssistantBrain(BrainCallbacksMixin):
         """
         t = text.lower().strip()
 
-        # "morgen" Patterns
+        # "heute morgen" = this morning → today (NICHT tomorrow!)
+        # Muss VOR den morgen-Patterns stehen, sonst gewinnt "morgen"
+        if "heute morgen" in t or "heut morgen" in t:
+            return "today"
+
+        # Termin-Kontext: Mindestens ein Termin-Keyword muss vorkommen,
+        # damit generische Phrasen wie "was ist morgen" nicht Wetter-Fragen stehlen
+        _termin_context = any(kw in t for kw in [
+            "termin", "kalender", "steht an", "geplant", "ansteh",
+            "verabredet", "verabredung", "meeting", "arzt",
+        ])
+
+        # "morgen" Patterns — nur mit Termin-Kontext oder eindeutiger Phrase
         if any(kw in t for kw in [
-            "was steht morgen an", "was ist morgen", "termine morgen",
-            "habe ich morgen termin", "was habe ich morgen",
-            "morgen termine", "morgen kalender", "kalender morgen",
+            "was steht morgen an", "termine morgen",
+            "habe ich morgen termin", "morgen termine",
+            "morgen kalender", "kalender morgen",
             "steht morgen was an", "steht morgen etwas an",
+            "was liegt morgen an", "hab ich morgen was",
+            "hab ich morgen termin", "gibt es morgen termin",
+        ]):
+            return "tomorrow"
+        # "was ist morgen" / "was habe ich morgen" nur MIT Termin-Kontext
+        if _termin_context and any(kw in t for kw in [
+            "was ist morgen", "was habe ich morgen",
         ]):
             return "tomorrow"
 
         # "heute" Patterns
         if any(kw in t for kw in [
-            "was steht heute an", "was ist heute", "termine heute",
-            "habe ich heute termin", "was habe ich heute",
-            "heute termine", "heute kalender", "kalender heute",
+            "was steht heute an", "termine heute",
+            "habe ich heute termin", "heute termine",
+            "heute kalender", "kalender heute",
             "steht heute was an", "steht heute etwas an",
             "welche termine habe ich heute", "welche termine heute",
+            "was liegt heute an", "hab ich heute was",
+            "hab ich heute termin", "gibt es heute termin",
+        ]):
+            return "today"
+        if _termin_context and any(kw in t for kw in [
+            "was ist heute", "was habe ich heute",
         ]):
             return "today"
 
@@ -3493,6 +3552,8 @@ class AssistantBrain(BrainCallbacksMixin):
             "welche termine habe ich diese woche",
             "welche termine stehen diese woche an",
             "welche termine stehen an diese woche",
+            "was liegt diese woche an", "naechste woche termine",
+            "termine naechste woche",
         ]):
             return "week"
 
@@ -3501,16 +3562,26 @@ class AssistantBrain(BrainCallbacksMixin):
             "was steht an", "meine termine", "welche termine",
             "welche termine habe ich", "welche termine stehen an",
             "habe ich termine", "zeig termine", "zeig kalender",
-            "am kalender", "im kalender", "auf dem kalender",
-            "steht am", "steht im",
+            "im kalender", "auf dem kalender",
         ]
         if any(kw in t for kw in _calendar_keywords):
             # Zeitangabe im Text hat Vorrang vor Default "today"
-            if "morgen" in t:
+            if "morgen" in t and "heute morgen" not in t:
                 return "tomorrow"
             if "woche" in t:
                 return "week"
             return "today"
+
+        # Fallback: Explizites Termin/Kalender-Keyword + Zeitangabe im selben Satz
+        # Faengt Formulierungen wie "Habe ich diese Woche noch Termine" auf,
+        # wo Fuellwoerter (noch, eigentlich, etc.) die Substring-Matches brechen
+        if any(kw in t for kw in ["termin", "kalender"]):
+            if "woche" in t:
+                return "week"
+            if "morgen" in t and "heute morgen" not in t:
+                return "tomorrow"
+            if "heute" in t:
+                return "today"
 
         return None
 
