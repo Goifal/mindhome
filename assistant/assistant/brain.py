@@ -1349,7 +1349,8 @@ class AssistantBrain(BrainCallbacksMixin):
                           "get_wellness_status", "get_device_health",
                           "get_learned_patterns", "describe_doorbell",
                           "get_house_status", "get_weather", "get_lights",
-                          "get_covers", "get_media", "get_climate", "get_switches"}
+                          "get_covers", "get_media", "get_climate", "get_switches",
+                          "get_alarms", "set_wakeup_alarm", "cancel_alarm"}
             has_query_results = False
 
             if tool_calls:
@@ -2029,6 +2030,8 @@ class AssistantBrain(BrainCallbacksMixin):
                 return self._humanize_room_climate(raw)
             elif func_name == "get_house_status":
                 return self._humanize_house_status(raw)
+            elif func_name in ("get_alarms", "set_wakeup_alarm", "cancel_alarm"):
+                return self._humanize_alarms(raw)
         except Exception as e:
             logger.warning("Humanize fehlgeschlagen fuer %s: %s", func_name, e, exc_info=True)
         # Kein Template vorhanden — Rohdaten zurueckgeben
@@ -2176,6 +2179,35 @@ class AssistantBrain(BrainCallbacksMixin):
 
     def _humanize_house_status(self, raw: str) -> str:
         """Haus-Status in natuerliche Sprache."""
+        return raw
+
+    def _humanize_alarms(self, raw: str) -> str:
+        """Wecker-Daten in natuerliche JARVIS-Sprache."""
+        import re
+
+        if not raw or "keine wecker" in raw.lower():
+            return "Aktuell ist kein Wecker gestellt."
+
+        # "Wecker gestellt: morgen um 08:15 Uhr." (set_wakeup_alarm result)
+        set_match = re.search(r"Wecker gestellt:\s*(.+)", raw, re.IGNORECASE)
+        if set_match:
+            return f"Wecker gestellt — {set_match.group(1).strip()}"
+
+        # "Aktive Wecker:\n  - Wecker: 08:15 Uhr (einmalig)" (get_alarms result)
+        entries = re.findall(r"-\s*(.+?):\s*(\d{1,2}:\d{2})\s*Uhr\s*\(([^)]+)\)", raw)
+        if entries:
+            parts = []
+            for label, time_str, repeat in entries:
+                label = label.strip()
+                if repeat == "einmalig":
+                    parts.append(f"{time_str} Uhr")
+                else:
+                    parts.append(f"{time_str} Uhr ({repeat})")
+            if len(parts) == 1:
+                return f"Ein Wecker ist gestellt auf {parts[0]}."
+            return "Aktive Wecker: " + ", ".join(parts) + "."
+
+        # Fallback — Rohdaten zurueckgeben
         return raw
 
     # ------------------------------------------------------------------
