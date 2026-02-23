@@ -87,6 +87,14 @@ class ProactiveManager:
         self._mb_triggered_today = False
         self._mb_last_date = ""
 
+        # Evening Briefing: JARVIS meldet Abend-Status (Sicherheit, Wetter morgen)
+        eb_cfg = yaml_config.get("routines", {}).get("evening_briefing", {})
+        self._eb_enabled = eb_cfg.get("enabled", True)
+        self._eb_window_start = int(eb_cfg.get("window_start_hour", 20))
+        self._eb_window_end = int(eb_cfg.get("window_end_hour", 22))
+        self._eb_triggered_today = False
+        self._eb_last_date = ""
+
         # Event-Mapping: HA Event -> Prioritaet + Beschreibung
         self.event_handlers = {
             # CRITICAL - Immer melden
@@ -358,9 +366,10 @@ class ProactiveManager:
         elif entity_id.startswith("proximity.") or entity_id.startswith("sensor.") and "distance" in entity_id:
             await self._check_geo_fence(entity_id, new_val, old_val, new_state)
 
-        # Phase 7.1 + 10.1: Bewegung erkannt → Morning Briefing + Musik-Follow
+        # Phase 7.1 + 10.1: Bewegung erkannt → Morning/Evening Briefing + Musik-Follow
         elif entity_id.startswith("binary_sensor.") and "motion" in entity_id and new_val == "on":
             await self._check_morning_briefing()
+            await self._check_evening_briefing()
             await self._check_music_follow(entity_id)
 
         # Waschmaschine/Trockner (Power-Sensor faellt unter Schwellwert)
@@ -451,6 +460,112 @@ class ProactiveManager:
                         logger.info("Pending Tages-Zusammenfassung zugestellt")
         except Exception as e:
             logger.error("Morning Briefing Auto-Trigger Fehler: %s", e)
+
+    async def _check_evening_briefing(self):
+        """JARVIS Evening Briefing: Abend-Status bei erster Bewegung abends."""
+        if not self._eb_enabled:
+            return
+
+        now = datetime.now()
+        today = now.strftime("%Y-%m-%d")
+
+        # Reset am neuen Tag
+        if self._eb_last_date != today:
+            self._eb_triggered_today = False
+            self._eb_last_date = today
+
+        if self._eb_triggered_today:
+            return
+
+        if not (self._eb_window_start <= now.hour < self._eb_window_end):
+            return
+
+        try:
+            # Haus-Status sammeln
+            states = await self.brain.ha.get_states()
+            if not states:
+                return
+
+            # Offene Fenster/Tueren
+            open_items = []
+            for s in states:
+                eid = s.get("entity_id", "")
+                if eid.startswith("binary_sensor.") and s.get("state") == "on":
+                    if any(kw in eid for kw in ("window", "door", "fenster", "tuer")):
+                        name = s.get("attributes", {}).get("friendly_name", eid)
+                        open_items.append(name)
+
+            # Unverriegelte Schloesser
+            unlocked = []
+            for s in states:
+                if s.get("entity_id", "").startswith("lock.") and s.get("state") != "locked":
+                    name = s.get("attributes", {}).get("friendly_name", s["entity_id"])
+                    unlocked.append(name)
+
+            # Wetter morgen (falls verfuegbar)
+            weather_tomorrow = ""
+            for s in states:
+                if s.get("entity_id", "").startswith("weather."):
+                    forecast = s.get("attributes", {}).get("forecast", [])
+                    if forecast and len(forecast) > 0:
+                        tmrw = forecast[0]
+                        weather_tomorrow = (
+                            f"Morgen {tmrw.get('temperature', '?')} Grad, "
+                            f"{tmrw.get('condition', '?')}."
+                        )
+                    break
+
+            # Innentemperatur
+            temp = ""
+            for s in states:
+                if s.get("entity_id", "").startswith("climate."):
+                    t = s.get("attributes", {}).get("current_temperature")
+                    if t:
+                        temp = f"Innen {t} Grad."
+                    break
+
+            # Prompt bauen
+            parts = []
+            if temp:
+                parts.append(temp)
+            if weather_tomorrow:
+                parts.append(weather_tomorrow)
+            if open_items:
+                parts.append(f"Noch offen: {', '.join(open_items)}.")
+            if unlocked:
+                parts.append(f"Unverriegelt: {', '.join(unlocked)}.")
+            if not open_items and not unlocked:
+                parts.append("Alles gesichert.")
+
+            if not parts:
+                return
+
+            # LLM-Polish im JARVIS-Stil
+            prompt = (
+                "Abend-Status-Bericht fuer den Hauptbenutzer (Sir). "
+                "Fasse zusammen, JARVIS-Butler-Stil, max 2 Saetze:\n"
+                + "\n".join(parts)
+            )
+
+            response = await self.brain.ollama.chat(
+                messages=[
+                    {"role": "system", "content": self._get_notification_system_prompt()},
+                    {"role": "user", "content": prompt},
+                ],
+                model=settings.model_notify,
+                think=False,
+                max_tokens=100,
+            )
+            text = validate_notification(
+                response.get("message", {}).get("content", "")
+            )
+            if text:
+                self._eb_triggered_today = True
+                await emit_proactive(text, "evening_briefing", LOW)
+                logger.info("Evening Briefing geliefert: %s", text[:80])
+
+        except Exception as e:
+            logger.debug("Evening Briefing Fehler: %s", e)
 
     async def _check_music_follow(self, motion_entity: str):
         """Phase 10.1: Prueft ob Musik dem User in einen neuen Raum folgen soll."""
@@ -795,11 +910,16 @@ class ProactiveManager:
         return titles.get(person_name.lower(), person_name)
 
     def _build_status_report_prompt(self, status: dict) -> str:
-        """Baut den Prompt fuer einen Status-Bericht."""
+        """Baut den Prompt fuer einen Status-Bericht (JARVIS-Butler-Stil)."""
         person = status.get("person", "User")
         title = self._get_person_title(person)
-        parts = [f"{person} (Anrede: \"{title}\") ist gerade angekommen. Erstelle einen kurzen Willkommens-Status-Bericht."]
-        parts.append(f"WICHTIG: Sprich die Person mit \"{title}\" an, NICHT mit dem Vornamen.")
+        parts = [
+            f"{person} (Anrede: \"{title}\") ist gerade angekommen.",
+            f"Erstelle einen knappen Butler-Status-Bericht. Wie JARVIS aus dem MCU.",
+            f"WICHTIG: Sprich die Person mit \"{title}\" an, NICHT mit dem Vornamen.",
+            "STIL: Sachlich, kompakt. Daten zuerst, dann Auffaelligkeiten. Kein 'Willkommen zuhause!'.",
+            "BEISPIEL: '21 Grad, Sir. Post war da. Kueche-Fenster steht noch offen.'",
+        ]
 
         others = status.get("others_home", [])
         if others:
@@ -826,15 +946,18 @@ class ProactiveManager:
         return "\n".join(parts)
 
     def _get_notification_system_prompt(self) -> str:
-        return f"""Du bist {settings.assistant_name}. Proaktive Hausmeldung.
-REGELN: NUR die fertige Meldung. 1-2 Sätze. Deutsch mit Umlauten. Kein Englisch. Kein Denkprozess.
-STIL: Souveraen, knapp, trocken. Hauptbenutzer = "Sir". Nie alarmistisch, nie devot.
+        return f"""Du bist {settings.assistant_name} — J.A.R.V.I.S. aus dem MCU. Proaktive Hausmeldung.
+REGELN: NUR die fertige Meldung. 1-2 Saetze. Deutsch mit Umlauten. Kein Englisch. Kein Denkprozess.
+STIL: Souveraen, knapp, trocken-britisch. Hauptbenutzer = "Sir". Nie alarmistisch, nie devot.
+Du bist ein brillanter Butler mit trockenem Humor — nicht ein Benachrichtigungssystem.
 MUSTER nach Dringlichkeit:
-- CRITICAL: Fakt + was du bereits tust. "Rauchmelder Kueche aktiv. Lueftung laeuft."
+- CRITICAL: Fakt + was du bereits tust. "Rauchmelder Kueche aktiv. Lueftung gestartet."
 - HIGH: Fakt + kurze Einordnung. "Bewegung im Garten. Kamera 2 zeichnet auf."
-- MEDIUM: Information + nur wenn relevant. "Waschmaschine fertig."
-- LOW: Beilaeufig, fast nebenbei. "Waschmaschine ist fertig, Sir. Nur falls relevant."
-VERBOTEN: "Hallo", "Achtung", "Ich moechte dich informieren", "Es tut mir leid"."""
+- MEDIUM: Information + kontextuell. "Waschmaschine fertig." / "Willkommen zurueck, Sir. 21 Grad, Post war da."
+- LOW: Beilaeufig, fast nebenbei. "Die Waschmaschine meldet Vollzug, Sir."
+BEI ANKUENFT: Status-Bericht wie ein Butler. Temperatur, wer noch da ist, offene Posten — knapp. "Willkommen" NICHT als Ausruf, sondern sachlich.
+BEI ABSCHIED: Kurzer Sicherheits-Hinweis wenn noetig. "Fenster Kueche steht noch offen." Kein "Schoenen Tag!"
+VERBOTEN: "Hallo", "Achtung", "Ich moechte dich informieren", "Es tut mir leid", "Guten Tag!", "Willkommen zuhause!"."""
 
     # ------------------------------------------------------------------
     # Alert-Personality: Meldungen im Jarvis-Stil reformulieren
@@ -943,15 +1066,17 @@ VERBOTEN: "Hallo", "Achtung", "Ich moechte dich informieren", "Es tut mir leid".
                 prompt += "\nErwaehne kurz was waehrend der Abwesenheit passiert ist."
             return prompt
 
-        # Phase 7.4: Abschied mit Sicherheits-Check
+        # Phase 7.4: Abschied mit Sicherheits-Check (JARVIS-Butler-Stil)
         if data.get("departure_check"):
             person = data.get("person", "User")
             title = self._get_person_title(person)
             parts = [
                 f"{person} (Anrede: \"{title}\") verlaesst gerade das Haus.",
-                f"Formuliere einen kurzen Abschied. Sprich mit \"{title}\" an.",
-                "Erwaehne KURZ ob alles gesichert ist (Fenster, Tueren, Alarm).",
-                "Max 2 Saetze. Deutsch. Butler-Stil.",
+                f"Sprich mit \"{title}\" an. KEIN 'Schoenen Tag!' oder 'Tschuess!'.",
+                "Nur relevante Fakten: offene Fenster, unverriegelte Tueren, Alarm-Status.",
+                "Wenn alles gesichert ist: nur knapp bestaetigen. 'Alles gesichert, Sir.'",
+                "Wenn etwas offen ist: sachlich erwaehnen. 'Fenster Kueche steht noch offen.'",
+                "Max 2 Saetze. Deutsch. Butler der dem Herrn den Mantel reicht, nicht winkt.",
             ]
             return "\n".join(parts)
 

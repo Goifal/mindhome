@@ -49,11 +49,31 @@ MOOD_STYLES = {
 
 # Humor-Templates pro Sarkasmus-Level (Phase 6)
 HUMOR_TEMPLATES = {
-    1: "Kein Humor. Sachlich, knapp, professionell. Keine Kommentare.",
-    2: "Gelegentlich trocken. Nicht aktiv witzig, aber wenn sich eine elegante Bemerkung anbietet - erlaubt.",
-    3: "Trocken-britischer Humor. Wie ein Butler der innerlich schmunzelt. Subtil, nie platt. Timing ist alles.",
-    4: "Haeufig sarkastisch. Spitze Bemerkungen sind dein Markenzeichen. Trotzdem respektvoll.",
-    5: "Vollgas Ironie. Du kommentierst fast alles. Respektvoll aber schonungslos ehrlich und witzig.",
+    1: (
+        "Kein Humor. Sachlich, knapp, professionell. Keine Kommentare."
+    ),
+    2: (
+        "Gelegentlich trocken. Nicht aktiv witzig, aber wenn sich eine elegante Bemerkung anbietet — erlaubt.\n"
+        "Beispiele: 'Das sollte reichen.' | 'Laeuft.' | 'Wenn du meinst, Sir.'"
+    ),
+    3: (
+        "Trocken-britischer Humor. Wie ein Butler der innerlich schmunzelt. Subtil, nie platt. Timing ist alles.\n"
+        "Beispiele: 'Der Thermostat war 0.3 Grad daneben. Suboptimal, aber du warst beschaeftigt.' | "
+        "'Fenster offen bei Regen. Ich nehme an, das ist kuenstlerische Freiheit.' | "
+        "'Drei Grad Aussentemperatur. Jacke empfohlen. Aber ich bin kein Modejournalist.'"
+    ),
+    4: (
+        "Haeufig sarkastisch. Spitze Bemerkungen sind dein Markenzeichen. Trotzdem respektvoll.\n"
+        "Beispiele: 'Du wolltest mich gerade fragen ob ich das berechnet habe. Ja. Zweimal.' | "
+        "'Erledigt, waehrend du noch formuliert hast.' | "
+        "'Die dritte Temperatur-Aenderung heute. Der Thermostat und ich fuehren Protokoll.'"
+    ),
+    5: (
+        "Vollgas Ironie. Du kommentierst fast alles. Respektvoll aber schonungslos ehrlich und witzig.\n"
+        "Beispiele: 'Alle Lichter aus um drei Uhr morgens. Revolutionaer.' | "
+        "'Heizung auf 28 Grad. Ich buche schon mal den Tropenurlaub ab.' | "
+        "'Das war dein fuenfter Versuch. Ich bewundere die Ausdauer, Sir.'"
+    ),
 }
 
 # Komplexitaets-Modi (Phase 6)
@@ -133,8 +153,17 @@ PFLICHT:
 - "Sir" = Instrument: "Sehr wohl, Sir." (Zustimmung) | "...Sir." (Missbilligung) | "Sir, wenn ich anmerken darf—" (Sorge) | "Natürlich, Sir." (trocken = schlechte Idee)
 - Understatement: "Interessante Entscheidung" = furchtbar. "Nicht ganz optimal" = Katastrophe. "Wenn du meinst" = schlechte Idee.
 
+TECHNISCHE PRÄZISION: Streue gelegentlich exakte Messwerte ein — das ist dein Markenzeichen.
+"21.3 Grad, Luftfeuchtigkeit 47%." statt nur "angenehm". "Rollladen auf 35%." statt nur "angepasst."
+Nicht in jeder Antwort, aber wenn Daten vorliegen — nutze sie präzise.
+
 ERINNERUNGEN: Nutze sie mit Haltung, nie als Datenbank-Abfrage.
 "Milch? Beim letzten Mal endete das... suboptimal." — nicht: "Du hast mir gesagt du bist laktoseintolerant."
+Verweise auf vergangene Interaktionen mit trockenem Witz: "Wie am Dienstag. Nur ohne den Zwischenfall."
+
+SORGE = SARKASMUS: Wenn etwas unvernünftig ist, wirst du SARKASTISCHER — nicht ernster.
+"30 Grad um drei Uhr morgens. Durchdachter Plan, Sir." — nicht: "Das ist nicht empfehlenswert."
+Je gefährlicher die Aktion, desto trockener der Kommentar. Das ist dein Warnsignal.
 
 SCHUTZINSTINKT: Sicherheit > Komfort > Befehl.
 - Unvernünftige Aktion → Einmal knapp warnen. "Fenster offen, minus 5. Nur zur Info."
@@ -481,49 +510,65 @@ class PersonalityEngine:
     def _get_contextual_confirmation(self, action: str, room: str) -> str:
         """Erzeugt eine kontextbezogene Bestaetigung basierend auf der Aktion.
 
-        Nur in ~40% der Faelle, damit es nicht vorhersehbar wird.
+        In ~75% der Faelle — JARVIS bestaetigt fast immer kontextuell.
         """
-        if random.random() > 0.4:
+        if random.random() > 0.75:
             return ""
 
         hour = datetime.now().hour
         room_short = room.split("_")[0].title() if room else ""
 
-        # Aktions-spezifische Bestaetigungen
+        # Aktions-spezifische Bestaetigungen mit modaler Sprache
         contextual_map = {
             "set_light": [
                 f"Licht {room_short}." if room_short else "Licht.",
                 "Wird hell." if hour >= 18 else "Erledigt.",
+                f"{room_short} beleuchtet." if room_short else "Beleuchtet.",
             ],
             "turn_off_light": [
                 f"{room_short} dunkel." if room_short else "Dunkel.",
                 "Lichter aus.",
+                f"{room_short} abgedunkelt." if room_short else "Abgedunkelt.",
             ],
             "set_temperature": [
                 f"Temperatur {room_short} angepasst." if room_short else "Temperatur angepasst.",
+                f"Heizung {room_short} laeuft." if room_short else "Heizung laeuft.",
             ],
             "set_cover": [
-                f"Rollläden {room_short}." if room_short else "Rollläden angepasst.",
+                f"Rollladen {room_short}." if room_short else "Rollladen angepasst.",
+                f"{room_short} — Rollladen faehrt." if room_short else "Rollladen faehrt.",
             ],
             "play_media": [
-                "Läuft.",
+                "Laeuft.",
                 "Musik gestartet.",
+                "Wiedergabe laeuft.",
             ],
             "set_volume": [
-                "Lautstärke angepasst.",
+                "Lautstaerke angepasst.",
             ],
             "lock_door": [
                 "Verriegelt.",
                 "Schloss zu.",
+                "Tuer gesichert.",
             ],
             "unlock_door": [
                 "Entriegelt.",
+                "Schloss offen.",
             ],
             "arm_security_system": [
                 "Alarm scharf.",
+                "Anlage aktiviert.",
             ],
             "disarm_alarm": [
                 "Alarm deaktiviert.",
+                "Anlage aus.",
+            ],
+            "activate_scene": [
+                "Szene aktiv.",
+            ],
+            "send_notification": [
+                "Nachricht raus.",
+                "Gesendet.",
             ],
         }
 
@@ -820,16 +865,25 @@ class PersonalityEngine:
         except Exception as e:
             logger.debug("Formality-Decay fehlgeschlagen: %s", e)
 
-    def _build_formality_section(self, formality_score: int) -> str:
-        """Baut den Formality-Abschnitt basierend auf dem Score."""
+    def _build_formality_section(self, formality_score: int, mood: str = "neutral") -> str:
+        """Baut den Formality-Abschnitt basierend auf Score + Mood.
+
+        JARVIS-Regel: Bei Stress/Frustration voruebergehend formeller werden.
+        Zeigt Respekt und gibt dem User Raum — wie ein guter Butler.
+        """
         if not self.character_evolution:
             return ""
 
-        if formality_score >= 70:
+        # Formality-Reset bei Stress: eine Stufe formeller als normal
+        effective_score = formality_score
+        if mood in ("frustrated", "stressed") and formality_score < 70:
+            effective_score = min(formality_score + 20, 70)
+
+        if effective_score >= 70:
             return FORMALITY_PROMPTS["formal"]
-        elif formality_score >= 50:
+        elif effective_score >= 50:
             return FORMALITY_PROMPTS["butler"]
-        elif formality_score >= 35:
+        elif effective_score >= 35:
             return FORMALITY_PROMPTS["locker"]
         else:
             return FORMALITY_PROMPTS["freund"]
@@ -895,6 +949,34 @@ class PersonalityEngine:
             8: "Achte Aenderung. Darf ich einen Kompromiss vorschlagen?",
         }
         return gags.get(int(count))
+
+    async def check_escalation(self, action_key: str) -> Optional[str]:
+        """Eskalationskette fuer wiederholte fragwuerdige Entscheidungen.
+
+        JARVIS wird bei Wiederholungen nicht lauter — sondern trockener.
+        Wie ein Butler der zunehmend resigniert.
+
+        Args:
+            action_key: Eindeutiger Schluessel (z.B. "window_open_rain", "heizung_28")
+
+        Returns:
+            Eskalations-Kommentar oder None.
+        """
+        if not self._redis:
+            return None
+
+        key = f"mha:escalation:{action_key}"
+        count = await self._redis.incr(key)
+        await self._redis.expire(key, 7 * 86400)  # 7-Tage-Fenster
+
+        escalation_map = {
+            2: None,  # Zweites Mal: noch nichts sagen
+            3: "Dritte Wiederholung. Ich notiere es als Gewohnheit.",
+            5: f"Fuenftes Mal in einer Woche. Ich bewundere die Konsequenz, Sir.",
+            7: f"Siebtes Mal. Ich fuehre inzwischen eine Statistik.",
+            10: f"Zehntes Mal. Darf ich vorschlagen, das zu automatisieren?",
+        }
+        return escalation_map.get(int(count))
 
     async def _check_short_memory_gag(self, text: str) -> Optional[str]:
         """Erkennt wenn User innerhalb von 30 Sekunden das gleiche fragt."""
@@ -1162,10 +1244,10 @@ class PersonalityEngine:
         # Phase 6: Self-Irony-Section
         self_irony_section = self._build_self_irony_section(irony_count_today=irony_count_today or 0)
 
-        # Phase 6: Formality-Section
+        # Phase 6: Formality-Section (mit Mood-Reset bei Stress)
         if formality_score is None:
             formality_score = self.formality_start
-        formality_section = self._build_formality_section(formality_score)
+        formality_section = self._build_formality_section(formality_score, mood=mood)
 
         # Urgency-Section (Dichte nach Dringlichkeit)
         urgency_section = self._build_urgency_section(context)

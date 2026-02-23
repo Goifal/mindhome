@@ -844,7 +844,7 @@ class AssistantBrain(BrainCallbacksMixin):
                                 self.ollama.chat(
                                     messages=feedback_messages,
                                     model=self.model_router.model_fast,
-                                    temperature=0.7, max_tokens=150, think=False,
+                                    temperature=0.4, max_tokens=150, think=False,
                                 ),
                                 timeout=3.0,
                             )
@@ -1178,6 +1178,8 @@ class AssistantBrain(BrainCallbacksMixin):
         model = self.model_router.select_model(text)
 
         # 4. System Prompt bauen (mit Phase 6 Erweiterungen)
+        # Formality-Score cachen fuer Refinement-Prompts (Tool-Feedback)
+        self._last_formality_score = formality_score if formality_score is not None else self.personality.formality_start
         system_prompt = self.personality.build_system_prompt(
             context, formality_score=formality_score,
             irony_count_today=irony_count,
@@ -1766,6 +1768,19 @@ class AssistantBrain(BrainCallbacksMixin):
                             else:
                                 response_text = opinion
 
+                    # Eskalationskette: JARVIS wird trockener bei Wiederholungen
+                    try:
+                        esc_key = f"{func_name}:{func_args.get('room', '')}"
+                        escalation = await self.personality.check_escalation(esc_key)
+                        if escalation:
+                            logger.info("Jarvis Eskalation: '%s'", escalation)
+                            if response_text:
+                                response_text = f"{response_text} {escalation}"
+                            else:
+                                response_text = escalation
+                    except Exception:
+                        pass  # Eskalation ist optional
+
             # 8b. Query-Tool Antwort aufbereiten:
             # 1. Humanizer wandelt Rohdaten in natuerliche Sprache um (zuverlaessig)
             # 2. LLM verfeinert den humanisierten Text (JARVIS-Persoenlichkeit)
@@ -1790,15 +1805,40 @@ class AssistantBrain(BrainCallbacksMixin):
                 if humanized_text:
                     response_text = humanized_text  # Fallback steht schon
                     try:
-                        feedback_messages = [{
+                        # Persoenlichkeits-Kontext fuer Refinement
+                    _sarc = self.personality.sarcasm_level
+                    _form = getattr(self, '_last_formality_score', 50)
+                    _mood = getattr(self.personality, '_current_mood', 'neutral')
+                    _sarc_hint = {
+                        1: "Sachlich, kein Humor.",
+                        2: "Gelegentlich trocken.",
+                        3: "Trocken-britisch. Butler der innerlich schmunzelt.",
+                        4: "Sarkastisch. Spitze Bemerkungen erlaubt.",
+                        5: "Voll sarkastisch. Kommentiere alles.",
+                    }.get(_sarc, "")
+                    _form_hint = (
+                        "Formell, respektvoll." if _form >= 70
+                        else "Butler-Ton, souveraen." if _form >= 50
+                        else "Locker, vertraut." if _form >= 35
+                        else "Persoenlich, wie ein Freund."
+                    )
+                    _mood_hint = {
+                        "stressed": " User gestresst — knapp antworten.",
+                        "frustrated": " User frustriert — sofort handeln, nicht erklaeren.",
+                        "tired": " User muede — minimal, kein Humor.",
+                        "good": " User gut drauf — Humor erlaubt.",
+                    }.get(_mood, "")
+
+                    feedback_messages = [{
                             "role": "system",
                             "content": (
                                 "Du bist JARVIS. Antworte auf Deutsch, 1-2 Saetze. "
-                                "Souveraen, knapp, trocken. 'Sir' sparsam einsetzen. "
+                                f"{_form_hint} {_sarc_hint}{_mood_hint} "
+                                "'Sir' sparsam einsetzen. "
                                 "Keine Aufzaehlungen. Zahlen und Uhrzeiten EXAKT uebernehmen. "
                                 "Beispiele: 'Fuenf Grad, bewoelkt. Jacke empfohlen, Sir.' | "
                                 "'Morgen um Viertel vor acht steht eine Blutabnahme an.' | "
-                                "'Im Buero 22 Grad, passt.'"
+                                "'Im Buero 22.3 Grad, Luftfeuchtigkeit 51%. Passt.'"
                             ),
                         }, {
                             "role": "user",
@@ -1810,7 +1850,7 @@ class AssistantBrain(BrainCallbacksMixin):
                             self.ollama.chat(
                                 messages=feedback_messages,
                                 model=model,
-                                temperature=0.7,
+                                temperature=0.4,
                                 max_tokens=150,
                                 think=False,
                             ),
