@@ -1034,10 +1034,12 @@ class AssistantBrain(BrainCallbacksMixin):
                             "content": (
                                 "Du bist JARVIS. Antworte auf Deutsch, 1-2 Saetze. "
                                 "Souveraen, knapp, trocken. 'Sir' sparsam einsetzen. "
-                                "Keine Aufzaehlungen. Runde Zahlen natuerlich. "
-                                "Beispiele: 'Morgen um acht steht eine Blutabnahme an.' | "
-                                "'Drei Termine morgen: Meeting um neun, Zahnarzt um elf "
-                                "und Einkaufen um vier.'"
+                                "Keine Aufzaehlungen. "
+                                "WICHTIG: Uhrzeiten EXAKT uebernehmen, NIEMALS aendern "
+                                "oder runden. 'Viertel vor 8' bleibt 'Viertel vor 8'. "
+                                "Beispiele: 'Morgen um Viertel vor acht steht eine Blutabnahme an.' | "
+                                "'Drei Termine morgen: Meeting um neun, Zahnarzt um halb zwoelf "
+                                "und Einkaufen um 16:30.'"
                             ),
                         }, {
                             "role": "user",
@@ -1110,6 +1112,63 @@ class AssistantBrain(BrainCallbacksMixin):
                 }
             except Exception as e:
                 logger.warning("Kalender-Shortcut fehlgeschlagen: %s — Fallback auf LLM", e)
+
+        # Wecker-Shortcut: LLM generiert nicht zuverlaessig den set_wakeup_alarm
+        # Tool-Call. Daher Wecker-Befehle direkt erkennen und ausfuehren.
+        alarm_shortcut = self._detect_alarm_command(text)
+        if alarm_shortcut:
+            action = alarm_shortcut["action"]
+            logger.info("Wecker-Shortcut: '%s' -> %s", text, alarm_shortcut)
+            try:
+                if action == "set":
+                    alarm_result = await self.timer_manager.set_wakeup_alarm(
+                        time_str=alarm_shortcut["time"],
+                        label=alarm_shortcut.get("label", "Wecker"),
+                        room=room or "",
+                        repeat=alarm_shortcut.get("repeat", ""),
+                    )
+                elif action == "cancel":
+                    alarm_result = await self.timer_manager.cancel_alarm(
+                        label=alarm_shortcut.get("label", ""),
+                    )
+                elif action == "status":
+                    alarm_result = await self.timer_manager.get_alarms()
+                else:
+                    alarm_result = None
+
+                if alarm_result:
+                    alarm_msg = alarm_result.get("message", "")
+                    response_text = self._humanize_alarms(alarm_msg)
+                    await self.memory.add_conversation("user", text)
+                    await self.memory.add_conversation("assistant", response_text)
+                    tts_data = self.tts_enhancer.enhance(response_text, message_type="confirmation")
+                    if stream_callback:
+                        if not room:
+                            room = await self._get_occupied_room()
+                        self._task_registry.create_task(
+                            self.sound_manager.speak_response(
+                                response_text, room=room, tts_data=tts_data),
+                            name="speak_response",
+                        )
+                    else:
+                        await self._speak_and_emit(response_text, room=room, tts_data=tts_data)
+
+                    await emit_action(
+                        f"{'set_wakeup_alarm' if action == 'set' else 'cancel_alarm' if action == 'cancel' else 'get_alarms'}",
+                        alarm_shortcut, alarm_result,
+                    )
+                    return {
+                        "response": response_text,
+                        "actions": [{"function": f"alarm_{action}",
+                                     "args": alarm_shortcut,
+                                     "result": alarm_result}],
+                        "model_used": "alarm_shortcut",
+                        "context_room": room or "unbekannt",
+                        "tts": tts_data,
+                        "_emitted": not stream_callback,
+                    }
+            except Exception as e:
+                logger.warning("Wecker-Shortcut fehlgeschlagen: %s — Fallback auf LLM", e)
 
         # Phase 10: Delegations-Intent → Nachricht an Person weiterleiten
         if intent_type == "delegation":
@@ -1823,6 +1882,13 @@ class AssistantBrain(BrainCallbacksMixin):
         current_activity = activity_result.get("activity", "relaxing")
         activity_volume = activity_result.get("volume", 0.8)
 
+        # User hat aktiv gefragt — bei "sleeping" ist er offensichtlich wach
+        # (sonst wuerde er keine Fragen stellen). Volume und Activity korrigieren,
+        # damit die Antwort hoerbar ist. VOLUME_MATRIX ist fuer proaktive Meldungen.
+        if current_activity == "sleeping":
+            current_activity = "relaxing"
+            activity_volume = 0.7
+
         # TTS Enhancement mit Activity-Kontext
         tts_data = self.tts_enhancer.enhance(
             response_text,
@@ -1831,8 +1897,9 @@ class AssistantBrain(BrainCallbacksMixin):
         )
 
         # Activity-Volume ueberschreibt TTS-Volume (ausser Whisper-Modus)
+        # Mindest-Lautstaerke fuer direkte User-Antworten sicherstellen
         if not self.tts_enhancer.is_whisper_mode and urgency != "critical":
-            tts_data["volume"] = activity_volume
+            tts_data["volume"] = max(activity_volume, 0.5)
 
         # Phase 10: Multi-Room TTS — Speaker anhand Raum bestimmen
         if room:
@@ -2724,19 +2791,32 @@ class AssistantBrain(BrainCallbacksMixin):
         except Exception as e:
             logger.error("Fehler bei Hintergrund-Fakten-Extraktion: %s", e)
 
+    # Gueltige Urgency-Level in der Silence Matrix
+    _VALID_URGENCIES = {"critical", "high", "medium", "low"}
+
     async def _callback_should_speak(self, urgency: str = "medium") -> bool:
         """Prueft ob ein Callback sprechen darf (Activity + Silence Matrix).
 
         Wird von allen proaktiven Callbacks aufgerufen um sicherzustellen,
-        dass keine Durchsagen kommen waehrend der User schlaeft.
+        dass keine Durchsagen kommen waehrend der User schlaeft/Film schaut.
         Wecker (wakeup_alarm) und CRITICAL Events nutzen diese Methode NICHT.
+
+        Blockiert TTS bei:
+          - SUPPRESS: Komplett unterdrueckt (Schlaf + medium/low, Call + medium/low)
+          - LED_BLINK: Nur visuelles Signal, kein TTS (Schlaf + high, Film + high)
         """
         try:
+            # Unbekannte Urgency-Level (z.B. "info" von Ambient Audio) normalisieren,
+            # damit sie nicht auf den Default TTS_LOUD der Silence Matrix fallen
+            if urgency not in self._VALID_URGENCIES:
+                urgency = "low"
+
             result = await self.activity.should_deliver(urgency)
-            if result.get("suppress"):
+            delivery = result.get("delivery", "")
+            if result.get("suppress") or delivery == "led_blink":
                 logger.info(
                     "Callback unterdrueckt (Aktivitaet=%s, Delivery=%s)",
-                    result.get("activity"), result.get("delivery"),
+                    result.get("activity"), delivery,
                 )
                 return False
             return True
@@ -2808,13 +2888,14 @@ class AssistantBrain(BrainCallbacksMixin):
         message = alert.get("message", "")
         if not message:
             return
-        if not await self._callback_should_speak("medium"):
+        urgency = alert.get("urgency", "low")
+        if not await self._callback_should_speak(urgency):
             return
-        formatted = await self.proactive.format_with_personality(message, "medium")
+        formatted = await self.proactive.format_with_personality(message, urgency)
         await self._speak_and_emit(formatted)
         logger.info(
-            "DeviceHealth [%s]: %s",
-            alert.get("alert_type", "?"), formatted,
+            "DeviceHealth [%s/%s]: %s",
+            alert.get("alert_type", "?"), urgency, formatted,
         )
 
     async def _handle_wellness_nudge(self, nudge_type: str, message: str):
@@ -2848,8 +2929,15 @@ class AssistantBrain(BrainCallbacksMixin):
             event_type, severity, message, room or "?",
         )
 
-        # Sound-Alarm abspielen (wenn konfiguriert)
-        sound_event = None
+        # Activity-Check VOR Sound/Aktionen (ausser bei CRITICAL).
+        # CRITICAL (Glasbruch, Rauchmelder, CO) muss sofort Alarm + Licht
+        # triggern ohne Verzoegerung durch den Activity-Check.
+        # Nicht-kritische Events (Tuerklingel, Hund) sollen waehrend
+        # Schlaf/Film komplett still bleiben — kein Sound, kein TTS.
+        if severity != "critical" and not await self._callback_should_speak(severity):
+            return
+
+        # Sound-Alarm abspielen (nur wenn erlaubt)
         from .ambient_audio import DEFAULT_EVENT_REACTIONS
         reaction = DEFAULT_EVENT_REACTIONS.get(event_type, {})
         sound_event = reaction.get("sound_event")
@@ -2867,10 +2955,6 @@ class AssistantBrain(BrainCallbacksMixin):
                     })
                 except Exception as e:
                     logger.debug("Ambient Audio lights_on fehlgeschlagen: %s", e)
-
-        # Activity-Check: Bei Schlaf nur CRITICAL-Events melden (Glasbruch etc.)
-        if severity != "critical" and not await self._callback_should_speak(severity):
-            return
 
         # Nachricht via WebSocket + Speaker senden
         await self._speak_and_emit(message)
@@ -3269,6 +3353,7 @@ class AssistantBrain(BrainCallbacksMixin):
             "heizung", "thermostat", "klima",
             "steckdose", "schalter",
             "musik", "lautsprecher",
+            "wecker", "timer", "erinnerung",
         ]
         has_noun = any(n in t for n in _NOUNS)
         # Wort-genaue Aktionserkennung (kein Partial-Match auf "eine", "Auge" etc.)
@@ -3283,6 +3368,83 @@ class AssistantBrain(BrainCallbacksMixin):
         _VERBS = ["mach ", "schalte ", "stell ", "setz ", "dreh ", "oeffne ", "schliess"]
         verb_start = any(t.startswith(v) for v in _VERBS)
         return (has_noun and has_action) or (verb_start and has_noun)
+
+    @staticmethod
+    def _detect_alarm_command(text: str) -> Optional[dict]:
+        """Erkennt Wecker-Befehle und gibt Aktions-Dict zurueck.
+
+        Returns dict mit action/time/label oder None (kein Wecker-Match).
+        Wird VOR dem LLM aufgerufen, weil Qwen den set_wakeup_alarm Tool-Call
+        nicht zuverlaessig generiert.
+        """
+        import re as _re
+        t = text.lower().strip()
+
+        # --- Status-Abfragen ---
+        if any(kw in t for kw in [
+            "welche wecker", "wecker status", "wecker gestellt",
+            "wecker aktiv", "habe ich einen wecker", "ist mein wecker",
+            "ist ein wecker", "wecker an", "zeig wecker",
+            "meine wecker", "aktive wecker",
+        ]):
+            return {"action": "status"}
+
+        # --- Wecker loeschen ---
+        if any(kw in t for kw in [
+            "wecker aus", "wecker loeschen", "wecker loesch",
+            "wecker stopp", "wecker stop",
+            "loesch den wecker", "loesch meinen wecker",
+            "wecker abbrechen", "wecker abstellen", "wecker deaktiv",
+            "keinen wecker", "kein wecker mehr",
+        ]):
+            label = ""
+            label_match = _re.search(r"wecker\s+['\"]?(.+?)['\"]?\s+(?:loeschen|aus|ab|stopp)", t)
+            if label_match:
+                label = label_match.group(1)
+            return {"action": "cancel", "label": label}
+
+        # --- Wecker stellen ---
+        # Patterns: "Wecker auf 7", "Weck mich um 6:30", "Stell einen Wecker auf 7 Uhr"
+        # "Wecker 7 Uhr", "Wecker fuer 6:30"
+        time_match = _re.search(
+            r"(?:wecker|weck\s*(?:mich|uns)?)\s*"
+            r"(?:auf|um|fuer|für|gegen|ab|in)?\s*"
+            r"(\d{1,2})(?::(\d{2}))?\s*(?:uhr)?",
+            t,
+        )
+        if not time_match:
+            # "Stell einen Wecker auf 7 Uhr" / "Stell mir nen Wecker fuer 6:30"
+            time_match = _re.search(
+                r"(?:stell|setz|erstell)\w*\s+(?:\w+\s+){0,3}wecker\s*"
+                r"(?:auf|um|fuer|für|gegen)?\s*"
+                r"(\d{1,2})(?::(\d{2}))?\s*(?:uhr)?",
+                t,
+            )
+
+        if time_match:
+            hour = int(time_match.group(1))
+            minute = int(time_match.group(2)) if time_match.group(2) else 0
+            if 0 <= hour <= 23 and 0 <= minute <= 59:
+                time_str = f"{hour:02d}:{minute:02d}"
+
+                # Repeat erkennen
+                repeat = ""
+                if any(kw in t for kw in ["taeglich", "täglich", "jeden tag", "immer"]):
+                    repeat = "daily"
+                elif any(kw in t for kw in ["wochentag", "mo-fr", "montag bis freitag", "werktag"]):
+                    repeat = "weekdays"
+                elif any(kw in t for kw in ["wochenend", "sa-so", "samstag und sonntag"]):
+                    repeat = "weekends"
+
+                # Label erkennen (optional)
+                label = "Wecker"
+                label_match = _re.search(r"(?:label|name|bezeichnung)\s+['\"]?(.+?)['\"]?$", t)
+                if label_match:
+                    label = label_match.group(1).strip().capitalize()
+
+                return {"action": "set", "time": time_str, "label": label, "repeat": repeat}
+
+        return None
 
     @staticmethod
     def _detect_calendar_diagnostic(text: str) -> bool:
