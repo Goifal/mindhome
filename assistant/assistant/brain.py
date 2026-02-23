@@ -1034,10 +1034,12 @@ class AssistantBrain(BrainCallbacksMixin):
                             "content": (
                                 "Du bist JARVIS. Antworte auf Deutsch, 1-2 Saetze. "
                                 "Souveraen, knapp, trocken. 'Sir' sparsam einsetzen. "
-                                "Keine Aufzaehlungen. Runde Zahlen natuerlich. "
-                                "Beispiele: 'Morgen um acht steht eine Blutabnahme an.' | "
-                                "'Drei Termine morgen: Meeting um neun, Zahnarzt um elf "
-                                "und Einkaufen um vier.'"
+                                "Keine Aufzaehlungen. "
+                                "WICHTIG: Uhrzeiten EXAKT uebernehmen, NIEMALS aendern "
+                                "oder runden. 'Viertel vor 8' bleibt 'Viertel vor 8'. "
+                                "Beispiele: 'Morgen um Viertel vor acht steht eine Blutabnahme an.' | "
+                                "'Drei Termine morgen: Meeting um neun, Zahnarzt um halb zwoelf "
+                                "und Einkaufen um 16:30.'"
                             ),
                         }, {
                             "role": "user",
@@ -1880,6 +1882,13 @@ class AssistantBrain(BrainCallbacksMixin):
         current_activity = activity_result.get("activity", "relaxing")
         activity_volume = activity_result.get("volume", 0.8)
 
+        # User hat aktiv gefragt — bei "sleeping" ist er offensichtlich wach
+        # (sonst wuerde er keine Fragen stellen). Volume und Activity korrigieren,
+        # damit die Antwort hoerbar ist. VOLUME_MATRIX ist fuer proaktive Meldungen.
+        if current_activity == "sleeping":
+            current_activity = "relaxing"
+            activity_volume = 0.7
+
         # TTS Enhancement mit Activity-Kontext
         tts_data = self.tts_enhancer.enhance(
             response_text,
@@ -1888,8 +1897,9 @@ class AssistantBrain(BrainCallbacksMixin):
         )
 
         # Activity-Volume ueberschreibt TTS-Volume (ausser Whisper-Modus)
+        # Mindest-Lautstaerke fuer direkte User-Antworten sicherstellen
         if not self.tts_enhancer.is_whisper_mode and urgency != "critical":
-            tts_data["volume"] = activity_volume
+            tts_data["volume"] = max(activity_volume, 0.5)
 
         # Phase 10: Multi-Room TTS — Speaker anhand Raum bestimmen
         if room:
