@@ -2919,8 +2919,15 @@ class AssistantBrain(BrainCallbacksMixin):
             event_type, severity, message, room or "?",
         )
 
-        # Sound-Alarm abspielen (wenn konfiguriert)
-        sound_event = None
+        # Activity-Check VOR Sound/Aktionen (ausser bei CRITICAL).
+        # CRITICAL (Glasbruch, Rauchmelder, CO) muss sofort Alarm + Licht
+        # triggern ohne Verzoegerung durch den Activity-Check.
+        # Nicht-kritische Events (Tuerklingel, Hund) sollen waehrend
+        # Schlaf/Film komplett still bleiben — kein Sound, kein TTS.
+        if severity != "critical" and not await self._callback_should_speak(severity):
+            return
+
+        # Sound-Alarm abspielen (nur wenn erlaubt)
         from .ambient_audio import DEFAULT_EVENT_REACTIONS
         reaction = DEFAULT_EVENT_REACTIONS.get(event_type, {})
         sound_event = reaction.get("sound_event")
@@ -2938,10 +2945,6 @@ class AssistantBrain(BrainCallbacksMixin):
                     })
                 except Exception as e:
                     logger.debug("Ambient Audio lights_on fehlgeschlagen: %s", e)
-
-        # Activity-Check: Bei Schlaf nur CRITICAL-Events melden (Glasbruch etc.)
-        if severity != "critical" and not await self._callback_should_speak(severity):
-            return
 
         # Nachricht via WebSocket + Speaker senden
         await self._speak_and_emit(message)
