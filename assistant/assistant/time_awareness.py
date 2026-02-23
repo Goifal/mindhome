@@ -373,7 +373,7 @@ class TimeAwareness:
         if minutes and minutes >= self.threshold_pc_no_break:
             if not await self._was_notified("pc_session"):
                 await self._mark_notified("pc_session")
-                hours = int(minutes / 60)
+                hours = int(minutes // 60)
                 return {
                     "type": "pc_no_break",
                     "device": "pc_session",
@@ -508,7 +508,8 @@ class TimeAwareness:
         # PC-Session-Dauer
         pc_minutes = await self._get_running_minutes("pc", "pc_session")
         if pc_minutes and pc_minutes > 120:
-            hours = pc_minutes / 60
-            hints.append(f"User sitzt seit {hours:.1f}h am PC")
+            hours = int(pc_minutes // 60)
+            mins = int(pc_minutes % 60)
+            hints.append(f"User sitzt seit {hours}h{mins:02d}min am PC")
 
         return hints
