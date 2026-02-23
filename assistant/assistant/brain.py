@@ -2781,19 +2781,32 @@ class AssistantBrain(BrainCallbacksMixin):
         except Exception as e:
             logger.error("Fehler bei Hintergrund-Fakten-Extraktion: %s", e)
 
+    # Gueltige Urgency-Level in der Silence Matrix
+    _VALID_URGENCIES = {"critical", "high", "medium", "low"}
+
     async def _callback_should_speak(self, urgency: str = "medium") -> bool:
         """Prueft ob ein Callback sprechen darf (Activity + Silence Matrix).
 
         Wird von allen proaktiven Callbacks aufgerufen um sicherzustellen,
-        dass keine Durchsagen kommen waehrend der User schlaeft.
+        dass keine Durchsagen kommen waehrend der User schlaeft/Film schaut.
         Wecker (wakeup_alarm) und CRITICAL Events nutzen diese Methode NICHT.
+
+        Blockiert TTS bei:
+          - SUPPRESS: Komplett unterdrueckt (Schlaf + medium/low, Call + medium/low)
+          - LED_BLINK: Nur visuelles Signal, kein TTS (Schlaf + high, Film + high)
         """
         try:
+            # Unbekannte Urgency-Level (z.B. "info" von Ambient Audio) normalisieren,
+            # damit sie nicht auf den Default TTS_LOUD der Silence Matrix fallen
+            if urgency not in self._VALID_URGENCIES:
+                urgency = "low"
+
             result = await self.activity.should_deliver(urgency)
-            if result.get("suppress"):
+            delivery = result.get("delivery", "")
+            if result.get("suppress") or delivery == "led_blink":
                 logger.info(
                     "Callback unterdrueckt (Aktivitaet=%s, Delivery=%s)",
-                    result.get("activity"), result.get("delivery"),
+                    result.get("activity"), delivery,
                 )
                 return False
             return True
