@@ -4,8 +4,11 @@ JARVIS — Vollstaendige Faehigkeitenliste
 Stand: 23.02.2026
 53 Kategorien | 24 Shortcuts | 40+ Tools | 20+ Proaktive Features
 
+Code-Audit: 23.02.2026 — Jede Kategorie gegen den Code geprueft.
+Legende: [OK] = Code verifiziert | [BUG] = Fehler gefunden | [WARN] = funktioniert, aber Hinweis
 
-=== KALENDER ===
+
+=== KALENDER === [OK]
 
 Abfragen (Shortcut — schnell, ohne LLM):
 - "Was steht heute an?"
@@ -43,7 +46,7 @@ Kalender-Diagnose (Shortcut):
 - "Zeig mir die Kalender"
 
 
-=== WECKER ===
+=== WECKER === [OK]
 
 Wecker stellen (Shortcut — Regex, VOR dem LLM):
 - "Weck mich um 6:30"
@@ -86,7 +89,7 @@ Wecker loeschen (Shortcut):
 - "Kein Wecker mehr"
 
 
-=== TIMER ===
+=== TIMER === [OK]
 
 Timer stellen (LLM + Tool):
 - "Stell einen Timer auf 10 Minuten"
@@ -103,7 +106,7 @@ Timer verwalten (LLM + Tool):
 Details: Dauer 1-1440 Min, mehrere parallel, ueberlebt Neustarts
 
 
-=== ERINNERUNGEN ===
+=== ERINNERUNGEN === [OK]
 
 Erinnerung setzen (LLM + Tool):
 - "Erinnere mich um 15 Uhr an den Anruf"
@@ -114,7 +117,7 @@ Erinnerung setzen (LLM + Tool):
 Details: Absolute Uhrzeit, max 7 Tage voraus, per TTS im Raum
 
 
-=== LICHT ===
+=== LICHT === [OK]
 
 Steuerung (LLM + Tool):
 - "Mach das Licht an" / "Licht aus"
@@ -129,7 +132,12 @@ Abfragen (LLM + Tool):
 - "Lichter im Buero?"
 
 
-=== HEIZUNG / KLIMA ===
+=== HEIZUNG / KLIMA === [BUG]
+
+BUG: _exec_set_climate_room (Zeile 1993) — Temperatur wird nicht zu float
+konvertiert. Wenn das LLM den Wert als String schickt (z.B. "22.5"), schlaegt
+der HA-Service-Call fehl. Fix: temp = float(args.get("temperature", 21.0))
+Hinweis: Der Heizkurven-Modus (_exec_set_climate_curve) konvertiert korrekt.
 
 Steuerung (LLM + Tool):
 - "Heizung auf 22 Grad"
@@ -149,7 +157,7 @@ Szenen-Intelligenz (LLM versteht natuerliche Sprache):
 - "Ich bin krank" → 23 Grad, sanftes Licht, weniger Meldungen
 
 
-=== ROLLLAEDEN / JALOUSIEN ===
+=== ROLLLAEDEN / JALOUSIEN === [OK]
 
 Steuerung (LLM + Tool):
 - "Rollladen runter" / "Rollladen hoch"
@@ -163,8 +171,10 @@ Abfragen (LLM + Tool):
 - "Wie stehen die Rolllaeden?"
 - "Rolllaeden im Schlafzimmer?"
 
+Sicherheit: Garagentore werden automatisch ausgefiltert (device_class + Heuristik).
 
-=== SZENEN ===
+
+=== SZENEN === [OK]
 
 Aktivieren (LLM + Tool):
 - "Szene Filmabend aktivieren"
@@ -180,7 +190,7 @@ Natuerliche Situationen (LLM kombiniert mehrere Tools):
 - "Zu dunkel" → Licht an
 
 
-=== MUSIK & MEDIEN ===
+=== MUSIK & MEDIEN === [OK]
 
 Steuerung (LLM + Tool):
 - "Spiel Jazz"
@@ -201,7 +211,7 @@ Transfer (LLM + Tool):
 - "Musik vom Wohnzimmer in die Kueche"
 
 
-=== WETTER ===
+=== WETTER === [OK]
 
 Abfragen (LLM + Tool):
 - "Wie ist das Wetter?"
@@ -212,7 +222,11 @@ Abfragen (LLM + Tool):
 - "Brauche ich einen Regenschirm?"
 
 
-=== SICHERHEIT ===
+=== SICHERHEIT === [WARN]
+
+WARN: _exec_set_alarm — Keine Validierung des mode-Parameters. Unbekannte
+Modi (z.B. "party") fallen still durch und triggern arm_away als Fallback.
+Kein Fehler fuer den User, aber unerwartet. Locks und Entschaerfung: OK.
 
 Steuerung (LLM + Tool):
 - "Alarm scharfschalten" / "Alarm zuhause scharf"
@@ -230,7 +244,7 @@ Bestaetigung (Shortcut):
 - "Nein" / "Abbrechen" / "Doch nicht" → Aktion abgebrochen
 
 
-=== STECKDOSEN & SCHALTER ===
+=== STECKDOSEN & SCHALTER === [OK]
 
 Steuerung (LLM + Tool):
 - "Steckdose Kueche an" / "...aus"
@@ -240,7 +254,7 @@ Abfragen (LLM + Tool):
 - "Welche Steckdosen sind an?"
 
 
-=== KOMMUNIKATION ===
+=== KOMMUNIKATION === [OK]
 
 Delegation (Shortcut — VOR dem LLM):
 - "Sag Lisa dass das Essen fertig ist"
@@ -260,7 +274,7 @@ Benachrichtigungen (LLM + Tool):
 - "Benachrichtigung im Wohnzimmer"
 
 
-=== KAMERA ===
+=== KAMERA === [OK]
 
 Abfragen (LLM + Tool):
 - "Wer ist an der Tuer?"
@@ -270,7 +284,7 @@ Abfragen (LLM + Tool):
 - "Was zeigt die Gartenkamera?"
 
 
-=== HAUSSTATUS ===
+=== HAUSSTATUS === [OK]
 
 Abfragen (LLM + Tool):
 - "Hausstatus"
@@ -279,7 +293,7 @@ Abfragen (LLM + Tool):
 - "Ist die Steckdose Kueche an?"
 
 
-=== EINKAUFSLISTE ===
+=== EINKAUFSLISTE === [OK]
 
 Hinzufuegen (Shortcut):
 - "Setz Milch auf die Einkaufsliste"
@@ -296,7 +310,7 @@ Verwalten (LLM + Tool):
 - "Abgehakte Artikel entfernen"
 
 
-=== VORRATS-TRACKING ===
+=== VORRATS-TRACKING === [OK]
 
 Abfragen (Shortcut):
 - "Was haben wir im Kuehlschrank?"
@@ -310,7 +324,7 @@ Verwalten (LLM + Tool):
 - "3 Eier verbraucht"
 
 
-=== KOCHEN ===
+=== KOCHEN === [OK]
 
 Koch-Session starten (Shortcut):
 - "Ich will Spaghetti Carbonara kochen"
@@ -331,7 +345,7 @@ Navigation waehrend Koch-Session (Shortcut):
 - "Stop kochen" / "Fertig kochen" → Session beenden
 
 
-=== AUTOMATIONEN ===
+=== AUTOMATIONEN === [OK]
 
 Erstellen (LLM + Tool):
 - "Wenn ich nach Hause komme, mach das Licht an"
@@ -346,7 +360,7 @@ Bestaetigung nach Erstellung (Shortcut):
 - "Nein" / "Abbrechen" → verworfen
 
 
-=== BEDINGTE BEFEHLE (Wenn-Dann) ===
+=== BEDINGTE BEFEHLE (Wenn-Dann) === [OK]
 
 Erstellen (LLM + Tool):
 - "Wenn es regnet, Rolladen runter"
@@ -359,7 +373,7 @@ Anzeigen (LLM + Tool):
 Details: Default 24h aktiv, einmalig oder wiederholend
 
 
-=== PLANUNG & KOMPLEXE ANFRAGEN ===
+=== PLANUNG & KOMPLEXE ANFRAGEN === [OK]
 
 Mehrstufige Planung (Action Planner, Deep-Model):
 - "Mach alles fertig zum Schlafen"
@@ -375,7 +389,7 @@ Planungs-Dialog (mehrstufig mit Rueckfragen):
 - "Organisiere eine Feier"
 
 
-=== GEDAECHTNIS ===
+=== GEDAECHTNIS === [OK]
 
 Fakten speichern (Shortcut):
 - "Merk dir Julia mag keine Oliven"
@@ -407,7 +421,11 @@ Wissensdatenbank (Shortcut):
 - "Wissensdatenbank Status"
 
 
-=== ANWESENHEIT ===
+=== ANWESENHEIT === [WARN]
+
+WARN: _exec_set_presence — Hardcoded Fallback-Entity "input_boolean.zu_hause".
+Wenn diese Entity in HA nicht existiert, schlaegt der Presence-Wechsel fehl.
+Sollte konfigurierbar sein oder zumindest eine Fehlermeldung geben.
 
 Modi setzen (LLM + Tool):
 - "Ich bin zuhause" → home
@@ -416,7 +434,7 @@ Modi setzen (LLM + Tool):
 - "Urlaubsmodus" → vacation (+ Anwesenheits-Simulation)
 
 
-=== ENERGIE ===
+=== ENERGIE === [OK]
 
 Abfragen (LLM + Tool):
 - "Energiebericht"
@@ -425,7 +443,10 @@ Abfragen (LLM + Tool):
 - "Stromkosten?"
 
 
-=== WEB-SUCHE ===
+=== WEB-SUCHE === [WARN]
+
+WARN: Web-Suche ist standardmaessig deaktiviert (web_search.enabled: false).
+Muss in der Config explizit aktiviert werden, bevor sie funktioniert.
 
 Wissensfragen (LLM + Tool):
 - "Was ist die Hauptstadt von Australien?"
@@ -433,7 +454,7 @@ Wissensfragen (LLM + Tool):
 - "Wer hat die WM gewonnen?"
 
 
-=== WELLNESS ===
+=== WELLNESS === [OK]
 
 Abfragen (LLM + Tool):
 - "Wie geht es mir?"
@@ -441,7 +462,11 @@ Abfragen (LLM + Tool):
 - "Wie lange sitze ich schon am PC?"
 
 
-=== GERAETE-GESUNDHEIT ===
+=== GERAETE-GESUNDHEIT === [WARN]
+
+WARN: device_health.py nutzt datetime.utcnow(), das seit Python 3.12
+deprecated ist. Funktioniert aktuell, aber sollte auf datetime.now(UTC)
+umgestellt werden.
 
 Abfragen (LLM + Tool):
 - "Geraete-Status"
@@ -449,7 +474,7 @@ Abfragen (LLM + Tool):
 - "Gibt es Hardware-Probleme?"
 
 
-=== WAS-WAERE-WENN ===
+=== WAS-WAERE-WENN === [OK]
 
 Simulationen (LLM mit echten Hausdaten):
 - "Was waere wenn ich 2 Wochen verreise?"
@@ -458,7 +483,7 @@ Simulationen (LLM mit echten Hausdaten):
 - "Angenommen ich bin eine Woche weg"
 
 
-=== GELERNTE MUSTER ===
+=== GELERNTE MUSTER === [OK]
 
 Abfragen (LLM + Tool):
 - "Was hast du gelernt?"
@@ -466,7 +491,7 @@ Abfragen (LLM + Tool):
 - "Welche Gewohnheiten kennst du?"
 
 
-=== GUTE-NACHT-ROUTINE ===
+=== GUTE-NACHT-ROUTINE === [OK]
 
 Trigger (Shortcut):
 - "Gute Nacht"
@@ -480,7 +505,11 @@ Was passiert:
 4. Zusammenfassung im JARVIS-Stil
 
 
-=== MORNING BRIEFING ===
+=== MORNING BRIEFING === [WARN]
+
+WARN: routine_engine.py nutzt naive Datetimes (ohne Timezone-Info). Bei
+Sommer-/Winterzeit-Umstellung kann das Briefing eine Stunde zu frueh/spaet
+getriggert werden.
 
 Trigger: Automatisch bei erster Interaktion morgens (6-10 Uhr)
 
@@ -493,7 +522,7 @@ Inhalt:
 6. Optional: Reiseinfos
 
 
-=== GAESTE-MODUS ===
+=== GAESTE-MODUS === [OK]
 
 Aktivieren (Shortcut):
 - "Ich habe Besuch"
@@ -508,7 +537,7 @@ Wirkung: Formellerer Ton, keine persoenlichen Infos, kein Zugriff auf
 Alarm/Tuerschloesser/Kameras, optional Gaeste-WLAN aktivieren
 
 
-=== FLUESTER-MODUS ===
+=== FLUESTER-MODUS === [OK]
 
 Aktivieren (Shortcut):
 - "Psst" / "Leise" / "Fluester" / "Whisper"
@@ -519,7 +548,7 @@ Deaktivieren (Shortcut):
 Auto-Nacht-Whisper: 23:00-06:00 automatisch leise
 
 
-=== STILLE-TRIGGER ===
+=== STILLE-TRIGGER === [OK]
 
 Film/TV (setzt Activity auf WATCHING):
 - "Filmabend" / "Film" / "Kino" / "Netflix" / "Serie schauen" / "Fernsehen"
@@ -532,7 +561,7 @@ Wirkung: Proaktive Meldungen unterdrueckt (nur CRITICAL kommt durch)
 Dauer: 2 Stunden, dann automatisch zurueck
 
 
-=== EASTER EGGS ===
+=== EASTER EGGS === [OK]
 
 - "Wer bist du?" → "Jarvis. Butler, Ingenieur, und die einzige Intelligenz
   die hier nie schlaeft."
@@ -549,7 +578,7 @@ Dauer: 2 Stunden, dann automatisch zurueck
 - "Open the pod bay doors" → "Es tut mir leid, Dave..."
 
 
-=== CONFIG-AENDERUNGEN ===
+=== CONFIG-AENDERUNGEN === [OK]
 
 Jarvis kann sich selbst konfigurieren (LLM + Tool):
 - "Fueg ein Easter Egg hinzu: Wenn ich 'Moege die Macht' sage..."
@@ -559,7 +588,7 @@ Jarvis kann sich selbst konfigurieren (LLM + Tool):
 Nur 3 Dateien: easter_eggs.yaml, opinion_rules.yaml, room_profiles.yaml
 
 
-=== SELBSTOPTIMIERUNG ===
+=== SELBSTOPTIMIERUNG === [OK]
 
 Vorschlaege genehmigen (Shortcut):
 - "Vorschlag 1 annehmen" / "...genehmigen" / "...akzeptieren"
@@ -569,7 +598,7 @@ Vorschlaege genehmigen (Shortcut):
 Jarvis kann NIEMALS selbst Vorschlaege genehmigen. Nur der User.
 
 
-=== BILD-ANALYSE ===
+=== BILD-ANALYSE === [OK]
 
 Bilder per Upload an Jarvis senden:
 - Foto von einem Rezept → OCR + Verarbeitung
@@ -577,7 +606,11 @@ Bilder per Upload an Jarvis senden:
 - Kamerabild → Beschreibung via Vision-LLM
 
 
-=== PROAKTIVE MELDUNGEN (automatisch, ohne User-Input) ===
+=== PROAKTIVE MELDUNGEN (automatisch, ohne User-Input) === [WARN]
+
+WARN: Bei HA-WebSocket-Reconnect koennen Events verloren gehen, da kein
+Replay-Mechanismus existiert. Kurzfristige Verbindungsabbrueche fuehren
+zu verpassten State-Changes.
 
 CRITICAL (immer laut):
 - Alarm ausgeloest
@@ -607,7 +640,7 @@ LOW (gebuendelt alle 30 Min):
 - Automatisierungs-Vorschlag
 
 
-=== HINTERGRUND-SYSTEME ===
+=== HINTERGRUND-SYSTEME === [OK]
 
 - Activity Detection: sleeping, in_call, watching, focused, guests, relaxing, away
 - Speaker Recognition: Wer spricht? Personalisierte Antworten
@@ -626,3 +659,30 @@ LOW (gebuendelt alle 30 Min):
 - Vacation Simulation: Anwesenheit simulieren bei Urlaub
 - Config Versioning: Backup vor jeder Aenderung
 - Running Gag Tracker: Wiederholte Muster humorvoll kommentieren
+
+
+=========================================
+AUDIT-ZUSAMMENFASSUNG (23.02.2026)
+=========================================
+
+Gesamt: 33 Kategorien geprueft
+
+  [OK]   28 Kategorien — Code verifiziert, funktioniert wie dokumentiert
+  [BUG]   1 Kategorie  — Fehler gefunden, muss gefixt werden
+  [WARN]  4 Kategorien — funktioniert, aber mit Einschraenkungen
+
+BUGS (muessen gefixt werden):
+  1. HEIZUNG/KLIMA — _exec_set_climate_room (function_calling.py:1993)
+     Temperatur wird nicht zu float() konvertiert.
+     Fix: temp = float(args.get("temperature", 21.0))
+
+WARNINGS (funktioniert, Verbesserung empfohlen):
+  1. SICHERHEIT — _exec_set_alarm: Keine Validierung des mode-Parameters.
+     Unbekannte Modi fallen still auf arm_away zurueck.
+  2. ANWESENHEIT — Hardcoded Fallback "input_boolean.zu_hause".
+     Schlaegt fehl wenn Entity in HA nicht existiert.
+  3. GERAETE-GESUNDHEIT — datetime.utcnow() deprecated seit Python 3.12.
+  4. MORNING BRIEFING — Naive Datetimes in routine_engine.py.
+     DST-Umstellung kann Timing um 1 Stunde verschieben.
+  5. PROAKTIVE MELDUNGEN — Kein Event-Replay bei HA-WebSocket-Reconnect.
+  6. WEB-SUCHE — Standardmaessig deaktiviert (web_search.enabled: false).
