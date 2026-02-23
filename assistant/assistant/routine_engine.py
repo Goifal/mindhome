@@ -477,10 +477,16 @@ Kein unterwuerfiger Ton. Du bist ein brillanter Butler, kein Chatbot."""
             return actions
 
         if self.morning_actions.get("covers_up", False):
-            result = await self._executor.execute("set_cover", {
-                "room": "all", "position": 100,
-            })
-            actions.append({"function": "set_cover", "result": result})
+            # Bettsensor pruefen: Wenn noch jemand im Bett liegt,
+            # Rolllaeden NICHT hochfahren (Schlafzimmer-Schutz)
+            bed_occupied = await self._is_bed_occupied()
+            if bed_occupied:
+                logger.info("Morning covers_up uebersprungen: Bettsensor belegt")
+            else:
+                result = await self._executor.execute("set_cover", {
+                    "room": "all", "position": 100,
+                })
+                actions.append({"function": "set_cover", "result": result})
 
         if self.morning_actions.get("lights_soft", False):
             result = await self._executor.execute("set_light", {
@@ -489,6 +495,25 @@ Kein unterwuerfiger Ton. Du bist ein brillanter Butler, kein Chatbot."""
             actions.append({"function": "set_light", "result": result})
 
         return actions
+
+    async def _is_bed_occupied(self) -> bool:
+        """Prueft ob ein Bettsensor belegt ist (fuer Cover-Schutz)."""
+        activity_cfg = yaml_config.get("activity", {})
+        bed_sensors = activity_cfg.get("entities", {}).get("bed_sensors", [
+            "binary_sensor.bed_occupancy",
+            "binary_sensor.bett",
+        ])
+        try:
+            states = await self.ha.get_states()
+            if not states:
+                return False
+            for state in states:
+                if state.get("entity_id", "") in bed_sensors:
+                    if state.get("state") == "on":
+                        return True
+        except Exception as e:
+            logger.debug("Bettsensor-Check fehlgeschlagen: %s", e)
+        return False
 
     # ------------------------------------------------------------------
     # Gute-Nacht-Routine (Feature 7.3)
