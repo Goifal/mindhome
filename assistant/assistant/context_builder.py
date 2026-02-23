@@ -99,7 +99,8 @@ class ContextBuilder:
         self._activity_engine = activity_engine
 
     async def build(
-        self, trigger: str = "voice", user_text: str = "", person: str = ""
+        self, trigger: str = "voice", user_text: str = "", person: str = "",
+        profile=None,
     ) -> dict:
         """
         Sammelt den kompletten Kontext.
@@ -108,13 +109,15 @@ class ContextBuilder:
             trigger: Was den Kontext ausloest ("voice", "proactive", "api")
             user_text: User-Eingabe fuer semantische Suche
             person: Name der Person
+            profile: Optionales RequestProfile fuer selektive Subsystem-Aktivierung.
+                     Wenn None, werden alle Subsysteme aktiviert (Rueckwaertskompatibel).
 
         Returns:
             Strukturierter Kontext als Dict
         """
         context = {}
 
-        # Zeitkontext
+        # Zeitkontext — immer (trivial, kein I/O)
         now = datetime.now()
         context["time"] = {
             "datetime": now.strftime("%Y-%m-%d %H:%M"),
@@ -123,65 +126,71 @@ class ContextBuilder:
         }
 
         # Haus-Status von HA
-        states = await self.ha.get_states()
-        if states:
-            context["house"] = self._extract_house_status(states)
-            context["person"] = self._extract_person(states)
-            context["room"] = self._guess_current_room(states)
+        states = None
+        if not profile or profile.need_house_status:
+            states = await self.ha.get_states()
+            if states:
+                context["house"] = self._extract_house_status(states)
+                context["person"] = self._extract_person(states)
+                context["room"] = self._guess_current_room(states)
 
         # MindHome-Daten (optional, falls MindHome installiert)
-        mindhome_data = await self._get_mindhome_data()
-        if mindhome_data:
-            context["mindhome"] = mindhome_data
+        if not profile or profile.need_mindhome_data:
+            mindhome_data = await self._get_mindhome_data()
+            if mindhome_data:
+                context["mindhome"] = mindhome_data
 
         # Aktivitaets-Erkennung (Phase 6)
-        if self._activity_engine:
-            try:
-                detection = await self._activity_engine.detect_activity()
-                context["activity"] = {
-                    "current": detection["activity"],
-                    "confidence": detection["confidence"],
-                }
-            except Exception as e:
-                logger.debug("Activity Engine Fehler: %s", e)
+        if not profile or profile.need_activity:
+            if self._activity_engine:
+                try:
+                    detection = await self._activity_engine.detect_activity()
+                    context["activity"] = {
+                        "current": detection["activity"],
+                        "confidence": detection["confidence"],
+                    }
+                except Exception as e:
+                    logger.debug("Activity Engine Fehler: %s", e)
 
         # Phase 7: Raum-Profil zum Kontext hinzufuegen
-        current_room = context.get("room", "")
-        room_profile = self._get_room_profile(current_room)
-        if room_profile:
-            context["room_profile"] = room_profile
+        if not profile or profile.need_room_profile:
+            current_room = context.get("room", "")
+            room_profile = self._get_room_profile(current_room)
+            if room_profile:
+                context["room_profile"] = room_profile
 
-        # Phase 7: Saisonale Daten
-        context["seasonal"] = self._get_seasonal_context(states)
-
-        # Phase 10: Multi-Room Presence
+        # Phase 7: Saisonale Daten (abhaengig von states)
         if states:
+            context["seasonal"] = self._get_seasonal_context(states)
+
+            # Phase 10: Multi-Room Presence
             context["room_presence"] = self._build_room_presence(states)
 
-        # Wetter-Warnungen
-        weather_warnings = self._check_weather_warnings(states or [])
-        if weather_warnings:
-            context.setdefault("weather_warnings", []).extend(weather_warnings)
+            # Wetter-Warnungen
+            weather_warnings = self._check_weather_warnings(states)
+            if weather_warnings:
+                context.setdefault("weather_warnings", []).extend(weather_warnings)
 
-        # Warnungen
-        context["alerts"] = self._extract_alerts(states or [])
+            # Warnungen
+            context["alerts"] = self._extract_alerts(states)
 
         # Semantisches Gedaechtnis - relevante Fakten zur Anfrage
         # Im Guest-Mode keine persoenlichen Fakten preisgeben
-        guest_mode_active = False
-        if self._redis:
-            try:
-                val = await self._redis.get("mha:routine:guest_mode")
-                if val is not None and isinstance(val, bytes):
-                    val = val.decode()
-                guest_mode_active = val == "active"
-            except Exception:
-                pass
+        if not profile or profile.need_memories:
+            guest_mode_active = False
+            if self._redis:
+                try:
+                    val = await self._redis.get("mha:routine:guest_mode")
+                    if val is not None and isinstance(val, bytes):
+                        val = val.decode()
+                    guest_mode_active = val == "active"
+                except Exception:
+                    pass
 
-        if self.semantic and user_text and not guest_mode_active:
-            context["memories"] = await self._get_relevant_memories(
-                user_text, person
-            )
+            if self.semantic and user_text and not guest_mode_active:
+                context["memories"] = await self._get_relevant_memories(
+                    user_text, person
+                )
 
         return context
 

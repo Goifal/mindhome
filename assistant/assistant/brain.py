@@ -70,6 +70,7 @@ from .threat_assessment import ThreatAssessment
 from .learning_observer import LearningObserver
 from .tts_enhancer import TTSEnhancer
 from .brain_callbacks import BrainCallbacksMixin
+from .pre_classifier import PreClassifier
 from .circuit_breaker import registry as cb_registry, ollama_breaker, ha_breaker
 from .constants import REDIS_SECURITY_CONFIRM_KEY, REDIS_SECURITY_CONFIRM_TTL
 from .task_registry import TaskRegistry
@@ -153,6 +154,7 @@ class AssistantBrain(BrainCallbacksMixin):
         # Komponenten
         self.context_builder = ContextBuilder(self.ha)
         self.model_router = ModelRouter()
+        self.pre_classifier = PreClassifier()
         self.personality = PersonalityEngine()
         self.executor = FunctionExecutor(self.ha)
         self.validator = FunctionValidator()
@@ -1063,12 +1065,17 @@ class AssistantBrain(BrainCallbacksMixin):
         # WebSocket: Denk-Status senden
         await emit_thinking()
 
+        # 0. Pre-Classification: Bestimmt welche Subsysteme gebraucht werden
+        profile = self.pre_classifier.classify(text)
+        logger.info("Pre-Classification: %s", profile.category)
+
         # 1. Kontext sammeln (mit Subsystem-Timeout)
         ctx_timeout = float((yaml_config.get("context") or {}).get("api_timeout", 10))
         try:
             context = await asyncio.wait_for(
                 self.context_builder.build(
-                    trigger="voice", user_text=text, person=person or ""
+                    trigger="voice", user_text=text, person=person or "",
+                    profile=profile,
                 ),
                 timeout=ctx_timeout,
             )
@@ -1083,8 +1090,7 @@ class AssistantBrain(BrainCallbacksMixin):
         if person:
             context.setdefault("person", {})["name"] = person
 
-        # 2. Parallel: Stimmung, Formality, Irony, Time, Security, Cross-Room,
-        #    Guest-Mode, Tutorial, Summary, RAG — alle unabhaengig voneinander
+        # 2. Parallel: Nur die Subsysteme starten die das Profil verlangt
         async def _safe_security_score():
             try:
                 return await self.threat_assessment.get_security_score()
@@ -1092,29 +1098,45 @@ class AssistantBrain(BrainCallbacksMixin):
                 logger.debug("Security Score Fehler: %s", e)
                 return None
 
-        (
-            mood_result,
-            formality_score,
-            irony_count,
-            time_hints,
-            sec_score,
-            prev_context,
-            guest_mode_active,
-            tutorial_hint,
-            summary_context,
-            rag_context,
-        ) = await asyncio.gather(
-            self.mood.analyze(text, person or ""),
-            self.personality.get_formality_score(),
-            self.personality._get_self_irony_count_today(),
-            self.time_awareness.get_context_hints(),
-            _safe_security_score(),
-            self._get_cross_room_context(person or ""),
-            self.routines.is_guest_mode_active(),
-            self._get_tutorial_hint(person or "unknown"),
-            self._get_summary_context(text),
-            self._get_rag_context(text),
-        )
+        _gather_tasks: list[tuple[str, object]] = []
+        if profile.need_mood:
+            _gather_tasks.append(("mood", self.mood.analyze(text, person or "")))
+        if profile.need_formality:
+            _gather_tasks.append(("formality", self.personality.get_formality_score()))
+        if profile.need_irony:
+            _gather_tasks.append(("irony", self.personality._get_self_irony_count_today()))
+        if profile.need_time_hints:
+            _gather_tasks.append(("time_hints", self.time_awareness.get_context_hints()))
+        if profile.need_security:
+            _gather_tasks.append(("security", _safe_security_score()))
+        if profile.need_cross_room:
+            _gather_tasks.append(("cross_room", self._get_cross_room_context(person or "")))
+        if profile.need_guest_mode:
+            _gather_tasks.append(("guest_mode", self.routines.is_guest_mode_active()))
+        if profile.need_tutorial:
+            _gather_tasks.append(("tutorial", self._get_tutorial_hint(person or "unknown")))
+        if profile.need_summary:
+            _gather_tasks.append(("summary", self._get_summary_context(text)))
+        if profile.need_rag:
+            _gather_tasks.append(("rag", self._get_rag_context(text)))
+
+        if _gather_tasks:
+            _keys, _coros = zip(*_gather_tasks)
+            _results = await asyncio.gather(*_coros)
+            _result_map = dict(zip(_keys, _results))
+        else:
+            _result_map = {}
+
+        mood_result = _result_map.get("mood")
+        formality_score = _result_map.get("formality", 0.5)
+        irony_count = _result_map.get("irony", 0)
+        time_hints = _result_map.get("time_hints")
+        sec_score = _result_map.get("security")
+        prev_context = _result_map.get("cross_room")
+        guest_mode_active = _result_map.get("guest_mode", False)
+        tutorial_hint = _result_map.get("tutorial")
+        summary_context = _result_map.get("summary")
+        rag_context = _result_map.get("rag")
 
         context["mood"] = mood_result
 
