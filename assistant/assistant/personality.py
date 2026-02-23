@@ -897,7 +897,7 @@ class PersonalityEngine:
         return gags.get(int(count))
 
     async def _check_short_memory_gag(self, text: str) -> Optional[str]:
-        """Erkennt wenn User innerhalb von 2 Minuten das gleiche fragt."""
+        """Erkennt wenn User innerhalb von 30 Sekunden das gleiche fragt."""
         key = "mha:gag:last_questions"
         now = datetime.now().timestamp()
 
@@ -911,7 +911,7 @@ class PersonalityEngine:
                 parts = item.split("|", 1)
                 ts = float(parts[0])
                 prev_text = parts[1] if len(parts) > 1 else ""
-                if now - ts < 120 and prev_text == text:
+                if now - ts < 30 and prev_text == text:
                     return "Das hatten wir gerade eben erst. Wort fuer Wort."
             except (ValueError, IndexError):
                 continue

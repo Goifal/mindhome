@@ -2449,6 +2449,14 @@ class AssistantBrain(BrainCallbacksMixin):
         for floskel in _chatbot_floskels:
             text = re.sub(floskel, "", text, flags=re.IGNORECASE).strip()
 
+        # 3b. Markdown-Formatierung entfernen (Chat-UI rendert kein Markdown)
+        text = re.sub(r"^#{1,6}\s+", "", text, flags=re.MULTILINE)  # ### Headers
+        text = re.sub(r"\*\*(.+?)\*\*", r"\1", text)                # **bold**
+        text = re.sub(r"\*(.+?)\*", r"\1", text)                    # *italic*
+        text = re.sub(r"^[\-\*]\s+", "", text, flags=re.MULTILINE)  # - bullet lists
+        text = re.sub(r"^\d+\.\s+", "", text, flags=re.MULTILINE)   # 1. numbered lists
+        text = re.sub(r"`(.+?)`", r"\1", text)                      # `code`
+
         # 4. Mehrere Leerzeichen / fuehrende Leerzeichen bereinigen
         text = re.sub(r"  +", " ", text).strip()
 
