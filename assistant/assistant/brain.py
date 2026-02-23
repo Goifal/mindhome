@@ -2865,13 +2865,14 @@ class AssistantBrain(BrainCallbacksMixin):
         message = alert.get("message", "")
         if not message:
             return
-        if not await self._callback_should_speak("medium"):
+        urgency = alert.get("urgency", "low")
+        if not await self._callback_should_speak(urgency):
             return
-        formatted = await self.proactive.format_with_personality(message, "medium")
+        formatted = await self.proactive.format_with_personality(message, urgency)
         await self._speak_and_emit(formatted)
         logger.info(
-            "DeviceHealth [%s]: %s",
-            alert.get("alert_type", "?"), formatted,
+            "DeviceHealth [%s/%s]: %s",
+            alert.get("alert_type", "?"), urgency, formatted,
         )
 
     async def _handle_wellness_nudge(self, nudge_type: str, message: str):

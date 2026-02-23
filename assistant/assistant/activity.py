@@ -385,14 +385,12 @@ class ActivityEngine:
         return False
 
     def _check_sleeping(self, states: list[dict]) -> bool:
-        """Prueft ob der Benutzer schlaeft (Nacht + Bett + Lichter aus)."""
-        now = datetime.now()
-        is_night = now.hour >= self.night_start or now.hour < self.night_end
+        """Prueft ob der Benutzer schlaeft.
 
-        if not is_night:
-            return False
-
-        # Bett belegt?
+        Bett belegt = schlaeft (unabhaengig von Tageszeit, auch Mittagsschlaf).
+        Nacht + alle Lichter aus = wahrscheinlich schlaeft (Fallback ohne Bettsensor).
+        """
+        # Bett belegt? → Primaeres Signal, tageszeit-unabhaengig
         bed_occupied = False
         for state in states:
             if state.get("entity_id", "") in self.bed_sensors:
@@ -400,11 +398,16 @@ class ActivityEngine:
                     bed_occupied = True
                     break
 
-        # Lichter aus?
-        lights_off = self._check_lights_off(states)
+        if bed_occupied:
+            return True
 
-        # Schlaf: Nacht + (Bett belegt ODER alle Lichter aus)
-        return bed_occupied or lights_off
+        # Fallback: Nacht + alle Lichter aus (fuer Installationen ohne Bettsensor)
+        now = datetime.now()
+        is_night = now.hour >= self.night_start or now.hour < self.night_end
+        if is_night:
+            return self._check_lights_off(states)
+
+        return False
 
     def _check_pc_active(self, states: list[dict]) -> bool:
         """Prueft ob der PC aktiv ist (Arbeit/Fokus)."""
