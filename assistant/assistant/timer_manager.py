@@ -881,8 +881,8 @@ class TimerManager:
                     continue
 
                 target = datetime.fromisoformat(alarm_data["next_trigger"])
-            if target.tzinfo is None:
-                target = target.replace(tzinfo=_TZ)
+                if target.tzinfo is None:
+                    target = target.replace(tzinfo=_TZ)
 
                 if target > _now():
                     # Noch in der Zukunft → Task starten
