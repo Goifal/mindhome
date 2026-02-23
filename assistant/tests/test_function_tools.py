@@ -11,6 +11,16 @@ import pytest
 
 from assistant.function_calling import FunctionExecutor, get_assistant_tools
 
+try:
+    import assistant.main  # noqa: F401
+    _HAS_MAIN = True
+except Exception:
+    _HAS_MAIN = False
+
+_needs_main = pytest.mark.skipif(
+    not _HAS_MAIN, reason="assistant.main nicht importierbar (FastAPI fehlt)"
+)
+
 
 # ---------------------------------------------------------------
 # Tool-Definitionen
@@ -80,6 +90,7 @@ def _mock_brain():
     return brain
 
 
+@_needs_main
 class TestExecWellnessStatus:
     """Tests fuer _exec_get_wellness_status()."""
 
@@ -135,6 +146,7 @@ class TestExecWellnessStatus:
         assert "fehlgeschlagen" in result["message"]
 
 
+@_needs_main
 class TestExecDeviceHealth:
     """Tests fuer _exec_get_device_health()."""
 
@@ -180,6 +192,7 @@ class TestExecDeviceHealth:
         assert result["success"] is False
 
 
+@_needs_main
 class TestExecLearnedPatterns:
     """Tests fuer _exec_get_learned_patterns()."""
 
@@ -217,6 +230,7 @@ class TestExecLearnedPatterns:
         assert result["success"] is False
 
 
+@_needs_main
 class TestExecDescribeDoorbell:
     """Tests fuer _exec_describe_doorbell()."""
 
@@ -267,55 +281,56 @@ class TestExecDescribeDoorbell:
 class TestStreamChat:
     """Tests fuer stream_chat() async generator."""
 
-    @pytest.mark.asyncio
-    async def test_yields_content_tokens(self):
-        """stream_chat() gibt Content-Tokens zurueck."""
+    @staticmethod
+    def _make_stream_client(chunks, status=200):
+        """Erstellt OllamaClient mit gemockter Session fuer Stream-Tests."""
         from assistant.ollama_client import OllamaClient
-        import json as _json
-
         client = OllamaClient()
-
-        # Simuliere NDJSON-Stream
-        chunks = [
-            _json.dumps({"message": {"content": "Hallo"}, "done": False}).encode() + b"\n",
-            _json.dumps({"message": {"content": " Welt"}, "done": False}).encode() + b"\n",
-            _json.dumps({"message": {"content": ""}, "done": True}).encode() + b"\n",
-        ]
 
         async def fake_content_iter():
             for chunk in chunks:
                 yield chunk
 
         mock_resp = MagicMock()
-        mock_resp.status = 200
+        mock_resp.status = status
         mock_resp.content = fake_content_iter()
+        mock_resp.text = AsyncMock(return_value="Error")
 
-        with patch("aiohttp.ClientSession") as MockSession:
-            instance = AsyncMock()
-            MockSession.return_value.__aenter__ = AsyncMock(return_value=instance)
-            MockSession.return_value.__aexit__ = AsyncMock(return_value=False)
+        cm = MagicMock()
+        cm.__aenter__ = AsyncMock(return_value=mock_resp)
+        cm.__aexit__ = AsyncMock(return_value=False)
 
-            # session.post() als async context manager
-            cm = AsyncMock()
-            cm.__aenter__ = AsyncMock(return_value=mock_resp)
-            cm.__aexit__ = AsyncMock(return_value=False)
-            instance.post = MagicMock(return_value=cm)
+        mock_session = AsyncMock()
+        mock_session.post = MagicMock(return_value=cm)
 
-            tokens = []
-            async for token in client.stream_chat(
-                messages=[{"role": "user", "content": "Hi"}],
-            ):
-                tokens.append(token)
+        # _get_session() soll unsere Mock-Session zurueckgeben
+        client._get_session = AsyncMock(return_value=mock_session)
+        return client
+
+    @pytest.mark.asyncio
+    async def test_yields_content_tokens(self):
+        """stream_chat() gibt Content-Tokens zurueck."""
+        import json as _json
+
+        chunks = [
+            _json.dumps({"message": {"content": "Hallo"}, "done": False}).encode() + b"\n",
+            _json.dumps({"message": {"content": " Welt"}, "done": False}).encode() + b"\n",
+            _json.dumps({"message": {"content": ""}, "done": True}).encode() + b"\n",
+        ]
+
+        client = self._make_stream_client(chunks)
+        tokens = []
+        async for token in client.stream_chat(
+            messages=[{"role": "user", "content": "Hi"}],
+        ):
+            tokens.append(token)
 
         assert tokens == ["Hallo", " Welt"]
 
     @pytest.mark.asyncio
     async def test_filters_think_tags(self):
         """stream_chat() filtert <think>-Bloecke."""
-        from assistant.ollama_client import OllamaClient
         import json as _json
-
-        client = OllamaClient()
 
         chunks = [
             _json.dumps({"message": {"content": "<think>"}, "done": False}).encode() + b"\n",
@@ -325,57 +340,23 @@ class TestStreamChat:
             _json.dumps({"message": {"content": ""}, "done": True}).encode() + b"\n",
         ]
 
-        async def fake_content_iter():
-            for chunk in chunks:
-                yield chunk
-
-        mock_resp = MagicMock()
-        mock_resp.status = 200
-        mock_resp.content = fake_content_iter()
-
-        with patch("aiohttp.ClientSession") as MockSession:
-            instance = AsyncMock()
-            MockSession.return_value.__aenter__ = AsyncMock(return_value=instance)
-            MockSession.return_value.__aexit__ = AsyncMock(return_value=False)
-
-            cm = AsyncMock()
-            cm.__aenter__ = AsyncMock(return_value=mock_resp)
-            cm.__aexit__ = AsyncMock(return_value=False)
-            instance.post = MagicMock(return_value=cm)
-
-            tokens = []
-            async for token in client.stream_chat(
-                messages=[{"role": "user", "content": "test"}],
-            ):
-                tokens.append(token)
+        client = self._make_stream_client(chunks)
+        tokens = []
+        async for token in client.stream_chat(
+            messages=[{"role": "user", "content": "test"}],
+        ):
+            tokens.append(token)
 
         assert tokens == ["Antwort"]
 
     @pytest.mark.asyncio
     async def test_error_yields_nothing(self):
         """stream_chat() bei HTTP-Error gibt nichts zurueck."""
-        from assistant.ollama_client import OllamaClient
-
-        client = OllamaClient()
-
-        mock_resp = MagicMock()
-        mock_resp.status = 500
-        mock_resp.text = AsyncMock(return_value="Error")
-
-        with patch("aiohttp.ClientSession") as MockSession:
-            instance = AsyncMock()
-            MockSession.return_value.__aenter__ = AsyncMock(return_value=instance)
-            MockSession.return_value.__aexit__ = AsyncMock(return_value=False)
-
-            cm = AsyncMock()
-            cm.__aenter__ = AsyncMock(return_value=mock_resp)
-            cm.__aexit__ = AsyncMock(return_value=False)
-            instance.post = MagicMock(return_value=cm)
-
-            tokens = []
-            async for token in client.stream_chat(
-                messages=[{"role": "user", "content": "test"}],
-            ):
-                tokens.append(token)
+        client = self._make_stream_client([], status=500)
+        tokens = []
+        async for token in client.stream_chat(
+            messages=[{"role": "user", "content": "test"}],
+        ):
+            tokens.append(token)
 
         assert tokens == []

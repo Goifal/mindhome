@@ -10,6 +10,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+PIL = pytest.importorskip("PIL", reason="Pillow nicht installiert")
+
 # ── Helpers ────────────────────────────────────────────────────────
 
 

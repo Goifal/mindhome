@@ -96,8 +96,8 @@ class TestWeekdayPattern:
     @pytest.mark.asyncio
     async def test_weekday_suggestion(self, observer):
         observer.redis.incr.return_value = 3
-        # Kein taeglicher Vorschlag, kein Wochentag-Vorschlag
-        observer.redis.get.side_effect = [None, None]
+        # Kein Automated-Marker, kein taeglicher Vorschlag, kein Wochentag-Vorschlag
+        observer.redis.get.side_effect = [None, None, None]
         callback = AsyncMock()
         observer._notify_callback = callback
 
