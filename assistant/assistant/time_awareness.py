@@ -286,12 +286,11 @@ class TimeAwareness:
         if outside_temp is None or outside_temp >= 10:
             return alerts
 
-        # Offene Fenster finden (nur binary_sensor Kontakt-Sensoren)
+        # Offene Fenster finden — MindHome-Domain + device_class statt Keyword
+        from .function_calling import is_window_or_door
         for state in states:
             entity_id = state.get("entity_id", "")
-            if not entity_id.startswith("binary_sensor."):
-                continue
-            if not ("window" in entity_id or "fenster" in entity_id):
+            if not is_window_or_door(entity_id, state):
                 continue
             if state.get("state") != "on":
                 continue
@@ -331,12 +330,10 @@ class TimeAwareness:
         if not heating_active:
             return alerts
 
-        # Offene Fenster finden
+        # Offene Fenster finden — MindHome-Domain + device_class statt Keyword
         for state in states:
             entity_id = state.get("entity_id", "")
-            if not ("window" in entity_id or "fenster" in entity_id):
-                continue
-            if not entity_id.startswith("binary_sensor."):
+            if not is_window_or_door(entity_id, state):
                 continue
             if state.get("state") != "on":
                 continue
@@ -376,7 +373,7 @@ class TimeAwareness:
         if minutes and minutes >= self.threshold_pc_no_break:
             if not await self._was_notified("pc_session"):
                 await self._mark_notified("pc_session")
-                hours = int(minutes / 60)
+                hours = int(minutes // 60)
                 return {
                     "type": "pc_no_break",
                     "device": "pc_session",
@@ -511,7 +508,8 @@ class TimeAwareness:
         # PC-Session-Dauer
         pc_minutes = await self._get_running_minutes("pc", "pc_session")
         if pc_minutes and pc_minutes > 120:
-            hours = pc_minutes / 60
-            hints.append(f"User sitzt seit {hours:.1f}h am PC")
+            hours = int(pc_minutes // 60)
+            mins = int(pc_minutes % 60)
+            hints.append(f"User sitzt seit {hours}h{mins:02d}min am PC")
 
         return hints

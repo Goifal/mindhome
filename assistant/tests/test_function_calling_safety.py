@@ -100,7 +100,7 @@ class TestIsSafeCover:
         ex = self._make_executor()
         state = {"attributes": {}}
         mock_configs = {"cover.test_cover": {"enabled": False}}
-        with patch("assistant.function_calling.load_cover_configs", return_value=mock_configs):
+        with patch("assistant.cover_config.load_cover_configs", return_value=mock_configs):
             assert await ex._is_safe_cover("cover.test_cover", state) is False
 
     @pytest.mark.asyncio
@@ -109,7 +109,7 @@ class TestIsSafeCover:
         ex = self._make_executor()
         state = {"attributes": {}}
         mock_configs = {"cover.harmless_name": {"cover_type": "garage_door", "enabled": True}}
-        with patch("assistant.function_calling.load_cover_configs", return_value=mock_configs):
+        with patch("assistant.cover_config.load_cover_configs", return_value=mock_configs):
             assert await ex._is_safe_cover("cover.harmless_name", state) is False
 
 
@@ -125,7 +125,7 @@ class TestAllowedFunctions:
         expected = {
             "set_light", "set_climate", "set_cover", "play_media",
             "call_service", "activate_scene", "send_notification",
-            "lock_door", "set_alarm", "broadcast",
+            "lock_door", "set_wakeup_alarm", "broadcast",
         }
         for fn in expected:
             assert fn in FunctionExecutor._ALLOWED_FUNCTIONS, f"{fn} fehlt in Whitelist"

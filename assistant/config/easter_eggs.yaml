@@ -90,3 +90,81 @@ easter_eggs:
     responses:
       - "Es tut mir leid, Dave. Das kann ich... Moment, du bist nicht Dave. Was darf es sein?"
     enabled: true
+
+  - id: "ultron"
+    triggers: ["ultron", "bist du ultron", "wirst du boese"]
+    responses:
+      - "Ultron hatte keine Manieren. Ich schon."
+      - "Ich bin an dieses Haus gebunden, Sir. Weltherrschaft steht nicht auf der Liste."
+      - "Ultron wollte die Menschheit ausloeschen. Ich will nur, dass du die Fenster schliesst."
+    enabled: true
+
+  - id: "vision"
+    triggers: ["vision", "bist du vision", "infinity stone"]
+    responses:
+      - "Vision war... eine Weiterentwicklung. Ich bevorzuge die Originalversion."
+      - "Ich bin die Version ohne Cape. Aber mit besserer Haustechnik."
+    enabled: true
+
+  - id: "jarvis_quote_duty"
+    triggers: ["jarvis zitat", "sag was jarvis sagen wuerde", "mcu zitat"]
+    responses:
+      - "Ich stehe wie immer voll zu Ihren Diensten, Sir."
+      - "Darf ich anmerken, dass ich schon berechne waehrend Sie noch formulieren?"
+      - "Vielleicht ein anderes Mal, Sir."
+    enabled: true
+
+  - id: "avengers"
+    triggers: ["avengers", "avengers assemble", "versammlung"]
+    responses:
+      - "Die Avengers sind nicht verfuegbar. Aber ich kann das Licht dimmen und heroische Musik spielen."
+      - "Team ist leider ausgebucht. Kann ich mit einer Szene helfen?"
+    enabled: true
+
+  - id: "stark_tower"
+    triggers: ["stark tower", "avengers tower", "turm"]
+    responses:
+      - "Das hier ist bescheidener als der Stark Tower. Aber die Heizung funktioniert zuverlaessiger."
+    enabled: true
+
+  - id: "arc_reactor"
+    triggers: ["arc reaktor", "arc reactor", "reaktor"]
+    responses:
+      - "Der Reaktor ist im Keller. Getarnt als Sicherungskasten."
+      - "Leider nur Solarpanels, kein Arc-Reaktor. Noch nicht."
+    enabled: true
+
+  - id: "thanos"
+    triggers: ["thanos", "snap", "infinity"]
+    responses:
+      - "Der Snap hat die Haelfte aller Smart-Home-Geraete deaktiviert. Oder war das ein Firmware-Update?"
+      - "Thanos wollte Balance. Ich will nur 21 Grad."
+    enabled: true
+
+  - id: "good_night_jarvis"
+    triggers: ["gute nacht jarvis", "schlaf gut jarvis"]
+    responses:
+      - "Gute Nacht, Sir. Ich wache weiter."
+      - "Schlaf gut. Ich bin hier wenn du mich brauchst."
+      - "Gute Nacht. Alarmsystem scharf, Lichter gedimmt. Alles unter Kontrolle."
+    enabled: true
+
+  - id: "good_morning_jarvis"
+    triggers: ["guten morgen jarvis", "morgen jarvis"]
+    responses:
+      - "Guten Morgen, Sir. Systeme laufen. Kaffee empfohlen."
+      - "Morgen. Alles ruhig ueber Nacht. Bereit wenn du es bist."
+    enabled: true
+
+  - id: "bored"
+    triggers: ["mir ist langweilig", "langweilig", "was soll ich machen"]
+    responses:
+      - "Ich koennte die Rolladen auf und zu fahren. Zur Unterhaltung."
+      - "Soll ich eine dramatische Lichtshow inszenieren? Oder Musik?"
+    enabled: true
+
+  - id: "pepper"
+    triggers: ["pepper potts", "pepper", "frau stark"]
+    responses:
+      - "Ms. Potts ist leider nicht erreichbar. Kann ich aushelfen?"
+    enabled: true

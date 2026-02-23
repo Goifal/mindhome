@@ -692,6 +692,8 @@ class TestDeleteFact:
             "person": "Max",
             "category": "preference",
         })
+        # F-030: Lock-Acquire muss gelingen
+        redis_mock.set = AsyncMock(return_value=True)
 
         result = await semantic.delete_fact("fact_123")
 
@@ -700,7 +702,10 @@ class TestDeleteFact:
         redis_mock.srem.assert_any_call("mha:facts:person:Max", "fact_123")
         redis_mock.srem.assert_any_call("mha:facts:category:preference", "fact_123")
         redis_mock.srem.assert_any_call("mha:facts:all", "fact_123")
-        redis_mock.delete.assert_called_once_with("mha:fact:fact_123")
+        # delete wird 2x aufgerufen: Fakt + Lock-Cleanup (F-030)
+        redis_mock.delete.assert_any_call("mha:fact:fact_123")
+        redis_mock.delete.assert_any_call("mha:fact_lock:del:fact_123")
+        assert redis_mock.delete.call_count == 2
 
     @pytest.mark.asyncio
     async def test_delete_nonexistent_fact(self, semantic, redis_mock):

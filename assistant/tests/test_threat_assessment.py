@@ -42,10 +42,20 @@ class TestCheckSmokeFire:
         ]
         assert threat._check_smoke_fire(states) == []
 
-    def test_co2_detected(self, threat):
+    def test_co2_sensor_excluded(self, threat):
+        """CO2-Sensoren sind Luftqualitaet, kein Feueralarm — bewusst ausgeschlossen."""
         states = [
             {"entity_id": "binary_sensor.co2_sensor_keller", "state": "on",
              "attributes": {"friendly_name": "CO2 Keller"}},
+        ]
+        result = threat._check_smoke_fire(states)
+        assert result == []
+
+    def test_carbon_monoxide_device_class_detected(self, threat):
+        """Echte CO-Melder (device_class: carbon_monoxide) werden erkannt."""
+        states = [
+            {"entity_id": "binary_sensor.co_melder_garage", "state": "on",
+             "attributes": {"friendly_name": "CO Melder", "device_class": "carbon_monoxide"}},
         ]
         result = threat._check_smoke_fire(states)
         assert len(result) == 1
@@ -149,14 +159,17 @@ class TestEscalation:
         assert threat.ha.call_service.call_count == 2
 
     @pytest.mark.asyncio
-    async def test_door_open_locks_door(self, threat):
-        threat.ha.call_service.return_value = True
+    async def test_door_open_warns_but_no_auto_lock(self, threat):
+        """F-009: Keine Auto-Verriegelung — nur Warnung (verhindert Aussperren)."""
         result = await threat.escalate_threat({
             "type": "lock_open_empty",
             "urgency": "critical",
             "entity": "lock.front_door",
         })
-        assert any("verriegelt" in a for a in result)
+        assert any("WARNUNG" in a for a in result)
+        assert any("manuell verriegeln" in a for a in result)
+        # call_service darf NICHT aufgerufen werden (keine Auto-Verriegelung)
+        threat.ha.call_service.assert_not_called()
 
 
 class TestStormWindows:

@@ -105,7 +105,9 @@ class TestWorkingMemory:
         archive_key = f"mha:archive:{today}"
         redis_mock.rpush.assert_called_once()
         assert redis_mock.rpush.call_args[0][0] == archive_key
-        redis_mock.expire.assert_called_once_with(archive_key, 30 * 86400)
+        # expire wird 2x aufgerufen: conversations (7d) + archive (30d)
+        redis_mock.expire.assert_any_call(archive_key, 30 * 86400)
+        assert redis_mock.expire.call_count == 2
 
     @pytest.mark.asyncio
     async def test_add_conversation_no_redis_no_error(self, memory_no_redis):
@@ -498,24 +500,24 @@ class TestFeedbackScores:
     async def test_update_feedback_score(self, memory, redis_mock):
         redis_mock.get = AsyncMock(return_value="0.5")
         await memory.update_feedback_score("test_event", 0.1)
-        redis_mock.set.assert_called_once_with(
-            "mha:feedback:score:test_event", "0.6"
+        redis_mock.setex.assert_called_with(
+            "mha:feedback:score:test_event", 90 * 86400, "0.6"
         )
 
     @pytest.mark.asyncio
     async def test_update_feedback_score_clamped_max(self, memory, redis_mock):
         redis_mock.get = AsyncMock(return_value="0.95")
         await memory.update_feedback_score("test_event", 0.2)
-        redis_mock.set.assert_called_once_with(
-            "mha:feedback:score:test_event", "1.0"
+        redis_mock.setex.assert_called_with(
+            "mha:feedback:score:test_event", 90 * 86400, "1.0"
         )
 
     @pytest.mark.asyncio
     async def test_update_feedback_score_clamped_min(self, memory, redis_mock):
         redis_mock.get = AsyncMock(return_value="0.1")
         await memory.update_feedback_score("test_event", -0.5)
-        redis_mock.set.assert_called_once_with(
-            "mha:feedback:score:test_event", "0.0"
+        redis_mock.setex.assert_called_with(
+            "mha:feedback:score:test_event", 90 * 86400, "0.0"
         )
 
     @pytest.mark.asyncio

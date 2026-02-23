@@ -146,10 +146,26 @@ strip_reasoning_leak = validate_notification
 
 
 class OllamaClient:
-    """Asynchroner Client fuer die Ollama REST API mit per-Model Timeouts."""
+    """Asynchroner Client fuer die Ollama REST API mit per-Model Timeouts und Connection Pooling."""
 
     def __init__(self):
         self.base_url = settings.ollama_url
+        # Shared Session (wird lazy initialisiert) — spart TCP-Handshake pro Request
+        self._session: Optional[aiohttp.ClientSession] = None
+        self._session_lock: asyncio.Lock = asyncio.Lock()
+
+    async def _get_session(self) -> aiohttp.ClientSession:
+        """Gibt die shared aiohttp Session zurueck (thread-safe lazy init)."""
+        async with self._session_lock:
+            if self._session is None or self._session.closed:
+                self._session = aiohttp.ClientSession()
+            return self._session
+
+    async def close(self) -> None:
+        """Schliesst die HTTP Session."""
+        if self._session and not self._session.closed:
+            await self._session.close()
+            self._session = None
 
     def _get_timeout(self, model: str) -> int:
         """Berechnet den passenden Timeout je nach Modell-Tier."""
@@ -217,30 +233,30 @@ class OllamaClient:
         timeout = self._get_timeout(model)
 
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    f"{self.base_url}/api/chat",
-                    json=payload,
-                    timeout=aiohttp.ClientTimeout(total=timeout),
-                ) as resp:
-                    if resp.status != 200:
-                        error = await resp.text()
-                        logger.error("Ollama Fehler %d: %s", resp.status, error)
-                        ollama_breaker.record_failure()
-                        return {"error": error}
-                    result = await resp.json()
-                    ollama_breaker.record_success()
+            session = await self._get_session()
+            async with session.post(
+                f"{self.base_url}/api/chat",
+                json=payload,
+                timeout=aiohttp.ClientTimeout(total=timeout),
+            ) as resp:
+                if resp.status != 200:
+                    error = await resp.text()
+                    logger.error("Ollama Fehler %d: %s", resp.status, error)
+                    ollama_breaker.record_failure()
+                    return {"error": error}
+                result = await resp.json()
+                ollama_breaker.record_success()
 
-                    # Think-Tags aus der Antwort strippen (Sicherheitsnetz)
-                    msg = result.get("message", {})
-                    content = msg.get("content", "")
-                    if content and "<think>" in content:
-                        cleaned = strip_think_tags(content)
-                        logger.debug("Think-Tags entfernt (%d → %d Zeichen)",
-                                     len(content), len(cleaned))
-                        msg["content"] = cleaned
+                # Think-Tags aus der Antwort strippen (Sicherheitsnetz)
+                msg = result.get("message", {})
+                content = msg.get("content", "")
+                if content and "<think>" in content:
+                    cleaned = strip_think_tags(content)
+                    logger.debug("Think-Tags entfernt (%d → %d Zeichen)",
+                                 len(content), len(cleaned))
+                    msg["content"] = cleaned
 
-                    return result
+                return result
         except asyncio.TimeoutError:
             logger.error("Ollama Timeout nach %ds fuer Modell %s", timeout, model)
             ollama_breaker.record_failure()
@@ -294,76 +310,76 @@ class OllamaClient:
         in_think_block = False
 
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    f"{self.base_url}/api/chat",
-                    json=payload,
-                    timeout=aiohttp.ClientTimeout(total=LLM_TIMEOUT_STREAM),
-                ) as resp:
-                    if resp.status != 200:
-                        error = await resp.text()
-                        logger.error("Ollama Stream Fehler %d: %s", resp.status, error)
-                        return
+            session = await self._get_session()
+            async with session.post(
+                f"{self.base_url}/api/chat",
+                json=payload,
+                timeout=aiohttp.ClientTimeout(total=LLM_TIMEOUT_STREAM),
+            ) as resp:
+                if resp.status != 200:
+                    error = await resp.text()
+                    logger.error("Ollama Stream Fehler %d: %s", resp.status, error)
+                    return
 
-                    import json as _json
+                import json as _json
 
-                    async for line in resp.content:
-                        if not line:
-                            continue
-                        try:
-                            data = _json.loads(line)
-                        except (ValueError, _json.JSONDecodeError):
-                            continue
+                async for line in resp.content:
+                    if not line:
+                        continue
+                    try:
+                        data = _json.loads(line)
+                    except (ValueError, _json.JSONDecodeError):
+                        continue
 
-                        content = data.get("message", {}).get("content", "")
-                        is_done = data.get("done", False)
-                        if not content and not is_done:
-                            continue
+                    content = data.get("message", {}).get("content", "")
+                    is_done = data.get("done", False)
+                    if not content and not is_done:
+                        continue
 
-                        # F-024: Buffer-Ansatz — Chunks mit Tags im Buffer sammeln
-                        _think_buffer += content
+                    # F-024: Buffer-Ansatz — Chunks mit Tags im Buffer sammeln
+                    _think_buffer += content
 
-                        # Wenn wir im Think-Block sind, weiter buffern bis </think>
-                        if in_think_block:
-                            if "</think>" in _think_buffer:
-                                # Think-Block beenden, Rest nach </think> behalten
-                                _, _, after = _think_buffer.partition("</think>")
-                                _think_buffer = after.lstrip()
-                                in_think_block = False
-                            else:
-                                if is_done:
-                                    break
-                                continue
-
-                        # Pruefe ob ein neuer Think-Block beginnt
-                        if "<think>" in _think_buffer:
-                            before, _, after = _think_buffer.partition("<think>")
-                            # Content VOR <think> ausgeben
-                            if before.strip():
-                                yield before
-                            # Alles nach <think> buffern
-                            _think_buffer = after
-                            in_think_block = True
-                            # Sofort pruefen ob </think> auch schon im Buffer
-                            if "</think>" in _think_buffer:
-                                _, _, after = _think_buffer.partition("</think>")
-                                _think_buffer = after.lstrip()
-                                in_think_block = False
+                    # Wenn wir im Think-Block sind, weiter buffern bis </think>
+                    if in_think_block:
+                        if "</think>" in _think_buffer:
+                            # Think-Block beenden, Rest nach </think> behalten
+                            _, _, after = _think_buffer.partition("</think>")
+                            _think_buffer = after.lstrip()
+                            in_think_block = False
+                        else:
                             if is_done:
                                 break
                             continue
 
-                        # Kein Think-Tag — Buffer ausgeben
-                        if _think_buffer:
-                            yield _think_buffer
-                            _think_buffer = ""
-
+                    # Pruefe ob ein neuer Think-Block beginnt
+                    if "<think>" in _think_buffer:
+                        before, _, after = _think_buffer.partition("<think>")
+                        # Content VOR <think> ausgeben
+                        if before.strip():
+                            yield before
+                        # Alles nach <think> buffern
+                        _think_buffer = after
+                        in_think_block = True
+                        # Sofort pruefen ob </think> auch schon im Buffer
+                        if "</think>" in _think_buffer:
+                            _, _, after = _think_buffer.partition("</think>")
+                            _think_buffer = after.lstrip()
+                            in_think_block = False
                         if is_done:
                             break
+                        continue
 
-                    # Rest im Buffer ausgeben (falls kein offener Think-Block)
-                    if _think_buffer and not in_think_block:
+                    # Kein Think-Tag — Buffer ausgeben
+                    if _think_buffer:
                         yield _think_buffer
+                        _think_buffer = ""
+
+                    if is_done:
+                        break
+
+                # Rest im Buffer ausgeben (falls kein offener Think-Block)
+                if _think_buffer and not in_think_block:
+                    yield _think_buffer
 
         except asyncio.TimeoutError:
             logger.error("Ollama Stream Timeout nach %ds", LLM_TIMEOUT_STREAM)
@@ -414,20 +430,20 @@ class OllamaClient:
         }
 
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    f"{self.base_url}/api/generate",
-                    json=payload,
-                    timeout=aiohttp.ClientTimeout(total=timeout),
-                ) as resp:
-                    if resp.status != 200:
-                        error = await resp.text()
-                        logger.error("Ollama Generate Fehler %d: %s", resp.status, error)
-                        return ""
-                    result = await resp.json()
-                    ollama_breaker.record_success()
-                    text = result.get("response", "")
-                    return strip_think_tags(text)
+            session = await self._get_session()
+            async with session.post(
+                f"{self.base_url}/api/generate",
+                json=payload,
+                timeout=aiohttp.ClientTimeout(total=timeout),
+            ) as resp:
+                if resp.status != 200:
+                    error = await resp.text()
+                    logger.error("Ollama Generate Fehler %d: %s", resp.status, error)
+                    return ""
+                result = await resp.json()
+                ollama_breaker.record_success()
+                text = result.get("response", "")
+                return strip_think_tags(text)
         except asyncio.TimeoutError:
             logger.error("Ollama Generate Timeout nach %ds fuer Modell %s", timeout, model)
             ollama_breaker.record_failure()
@@ -440,15 +456,15 @@ class OllamaClient:
     async def is_available(self) -> bool:
         """Prueft ob Ollama erreichbar ist (mit Circuit Breaker Feedback)."""
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    f"{self.base_url}/api/tags",
-                    timeout=aiohttp.ClientTimeout(total=LLM_TIMEOUT_AVAILABILITY),
-                ) as resp:
-                    available = resp.status == 200
-                    if available:
-                        ollama_breaker.record_success()
-                    return available
+            session = await self._get_session()
+            async with session.get(
+                f"{self.base_url}/api/tags",
+                timeout=aiohttp.ClientTimeout(total=LLM_TIMEOUT_AVAILABILITY),
+            ) as resp:
+                available = resp.status == 200
+                if available:
+                    ollama_breaker.record_success()
+                return available
         except aiohttp.ClientError:
             ollama_breaker.record_failure()
             return False
@@ -456,9 +472,9 @@ class OllamaClient:
     async def list_models(self) -> list[str]:
         """Listet alle verfuegbaren Modelle."""
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(f"{self.base_url}/api/tags") as resp:
-                    data = await resp.json()
-                    return [m["name"] for m in data.get("models", [])]
+            session = await self._get_session()
+            async with session.get(f"{self.base_url}/api/tags") as resp:
+                data = await resp.json()
+                return [m["name"] for m in data.get("models", [])]
         except aiohttp.ClientError:
             return []

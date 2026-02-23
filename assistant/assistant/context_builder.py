@@ -99,7 +99,8 @@ class ContextBuilder:
         self._activity_engine = activity_engine
 
     async def build(
-        self, trigger: str = "voice", user_text: str = "", person: str = ""
+        self, trigger: str = "voice", user_text: str = "", person: str = "",
+        profile=None,
     ) -> dict:
         """
         Sammelt den kompletten Kontext.
@@ -108,13 +109,15 @@ class ContextBuilder:
             trigger: Was den Kontext ausloest ("voice", "proactive", "api")
             user_text: User-Eingabe fuer semantische Suche
             person: Name der Person
+            profile: Optionales RequestProfile fuer selektive Subsystem-Aktivierung.
+                     Wenn None, werden alle Subsysteme aktiviert (Rueckwaertskompatibel).
 
         Returns:
             Strukturierter Kontext als Dict
         """
         context = {}
 
-        # Zeitkontext
+        # Zeitkontext — immer (trivial, kein I/O)
         now = datetime.now()
         context["time"] = {
             "datetime": now.strftime("%Y-%m-%d %H:%M"),
@@ -122,66 +125,101 @@ class ContextBuilder:
             "time_of_day": self._get_time_of_day(now.hour),
         }
 
+        # --- Parallele I/O-Phase: Alle unabhaengigen Calls gleichzeitig ---
+        import asyncio
+
+        parallel_tasks: list[tuple[str, object]] = []
+
         # Haus-Status von HA
-        states = await self.ha.get_states()
+        if not profile or profile.need_house_status:
+            parallel_tasks.append(("states", self.ha.get_states()))
+
+        # MindHome-Daten (optional, falls MindHome installiert)
+        if not profile or profile.need_mindhome_data:
+            parallel_tasks.append(("mindhome", self._get_mindhome_data()))
+
+        # Aktivitaets-Erkennung (Phase 6)
+        if (not profile or profile.need_activity) and self._activity_engine:
+            parallel_tasks.append(("activity", self._activity_engine.detect_activity()))
+
+        # Semantisches Gedaechtnis — Guest-Mode-Check + Fakten parallel holen
+        need_memories = not profile or profile.need_memories
+        if need_memories and self._redis:
+            parallel_tasks.append(("guest_mode", self._redis.get("mha:routine:guest_mode")))
+
+        if parallel_tasks:
+            _keys, _coros = zip(*parallel_tasks)
+            _results = await asyncio.gather(*_coros, return_exceptions=True)
+            _result_map = dict(zip(_keys, _results))
+        else:
+            _result_map = {}
+
+        # --- Ergebnisse verarbeiten (sync, kein I/O) ---
+
+        # Haus-Status
+        states = _result_map.get("states")
+        if isinstance(states, BaseException):
+            logger.warning("get_states Fehler: %s", states)
+            states = None
         if states:
             context["house"] = self._extract_house_status(states)
             context["person"] = self._extract_person(states)
             context["room"] = self._guess_current_room(states)
 
-        # MindHome-Daten (optional, falls MindHome installiert)
-        mindhome_data = await self._get_mindhome_data()
+        # MindHome-Daten
+        mindhome_data = _result_map.get("mindhome")
+        if isinstance(mindhome_data, BaseException):
+            logger.debug("MindHome nicht verfuegbar: %s", mindhome_data)
+            mindhome_data = None
         if mindhome_data:
             context["mindhome"] = mindhome_data
 
-        # Aktivitaets-Erkennung (Phase 6)
-        if self._activity_engine:
-            try:
-                detection = await self._activity_engine.detect_activity()
-                context["activity"] = {
-                    "current": detection["activity"],
-                    "confidence": detection["confidence"],
-                }
-            except Exception as e:
-                logger.debug("Activity Engine Fehler: %s", e)
+        # Aktivitaet
+        activity_result = _result_map.get("activity")
+        if isinstance(activity_result, BaseException):
+            logger.debug("Activity Engine Fehler: %s", activity_result)
+        elif activity_result:
+            context["activity"] = {
+                "current": activity_result["activity"],
+                "confidence": activity_result["confidence"],
+            }
 
         # Phase 7: Raum-Profil zum Kontext hinzufuegen
-        current_room = context.get("room", "")
-        room_profile = self._get_room_profile(current_room)
-        if room_profile:
-            context["room_profile"] = room_profile
+        if not profile or profile.need_room_profile:
+            current_room = context.get("room", "")
+            room_profile = self._get_room_profile(current_room)
+            if room_profile:
+                context["room_profile"] = room_profile
 
-        # Phase 7: Saisonale Daten
-        context["seasonal"] = self._get_seasonal_context(states)
-
-        # Phase 10: Multi-Room Presence
+        # Phase 7: Saisonale Daten (abhaengig von states)
         if states:
+            context["seasonal"] = self._get_seasonal_context(states)
+
+            # Phase 10: Multi-Room Presence
             context["room_presence"] = self._build_room_presence(states)
 
-        # Wetter-Warnungen
-        weather_warnings = self._check_weather_warnings(states or [])
-        if weather_warnings:
-            context.setdefault("weather_warnings", []).extend(weather_warnings)
+            # Wetter-Warnungen
+            weather_warnings = self._check_weather_warnings(states)
+            if weather_warnings:
+                context.setdefault("weather_warnings", []).extend(weather_warnings)
 
-        # Warnungen
-        context["alerts"] = self._extract_alerts(states or [])
+            # Warnungen
+            context["alerts"] = self._extract_alerts(states)
 
         # Semantisches Gedaechtnis - relevante Fakten zur Anfrage
         # Im Guest-Mode keine persoenlichen Fakten preisgeben
-        guest_mode_active = False
-        if self._redis:
-            try:
-                val = await self._redis.get("mha:routine:guest_mode")
-                if val is not None and isinstance(val, bytes):
-                    val = val.decode()
-                guest_mode_active = val == "active"
-            except Exception:
-                pass
+        if need_memories:
+            guest_mode_active = False
+            guest_val = _result_map.get("guest_mode")
+            if guest_val is not None and not isinstance(guest_val, BaseException):
+                if isinstance(guest_val, bytes):
+                    guest_val = guest_val.decode()
+                guest_mode_active = guest_val == "active"
 
-        if self.semantic and user_text and not guest_mode_active:
-            context["memories"] = await self._get_relevant_memories(
-                user_text, person
-            )
+            if self.semantic and user_text and not guest_mode_active:
+                context["memories"] = await self._get_relevant_memories(
+                    user_text, person
+                )
 
         return context
 
@@ -443,8 +481,10 @@ class ContextBuilder:
                     )
                     alerts.append(f"ALARM: {name}")
 
-            # Fenster/Tueren offen bei Alarm
-            if "door" in entity_id or "window" in entity_id:
+            # Fenster/Tueren offen — MindHome-Domain + device_class pruefen
+            # statt keyword-matching (verhindert false positives wie Steckdosen)
+            from .function_calling import is_window_or_door
+            if is_window_or_door(entity_id, state):
                 if s == "on":
                     name = state.get("attributes", {}).get(
                         "friendly_name", entity_id

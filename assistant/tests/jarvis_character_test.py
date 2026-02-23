@@ -350,19 +350,19 @@ class TestAdaptiveComplexity:
         assert "Ultra-kurz" in section
 
     def test_evening_good_mood_is_verbose(self, engine):
-        engine._last_interaction_time = 0  # Kein Rapid-Fire
+        engine._last_interaction_times["_default"] = 0  # Kein Rapid-Fire
         section = engine._build_complexity_section("good", "evening")
         assert "Ausfuehrlich" in section
 
     def test_early_morning_is_brief(self, engine):
-        engine._last_interaction_time = 0
+        engine._last_interaction_times["_default"] = 0
         section = engine._build_complexity_section("neutral", "early_morning")
         assert "Ultra-kurz" in section
 
     def test_rapid_fire_forces_brief(self, engine):
         """Schnelle Befehle hintereinander → Ultra-kurz."""
         import time
-        engine._last_interaction_time = time.time() - 2  # 2 Sekunden her
+        engine._last_interaction_times["_default"] = time.time() - 2  # 2 Sekunden her
         section = engine._build_complexity_section("neutral", "afternoon")
         assert "Ultra-kurz" in section
 
@@ -761,7 +761,7 @@ class TestResponseVariance:
         """Bei Sarkasmus-Level >= 4 kommen spitzere Varianten."""
         from assistant.personality import CONFIRMATIONS_SUCCESS_SNARKY
         engine.sarcasm_level = 5
-        engine._last_confirmations = []  # Reset
+        engine._last_confirmations = {}  # Reset
         # Bei genug Versuchen sollte mindestens eine Snarky-Variante kommen
         results = {engine.get_varied_confirmation(success=True) for _ in range(30)}
         snarky_hit = any(r in CONFIRMATIONS_SUCCESS_SNARKY for r in results)
@@ -771,7 +771,7 @@ class TestResponseVariance:
         """Bei Sarkasmus-Level < 4 keine snarky Varianten."""
         from assistant.personality import CONFIRMATIONS_SUCCESS_SNARKY
         engine.sarcasm_level = 2
-        engine._last_confirmations = []
+        engine._last_confirmations = {}
         results = {engine.get_varied_confirmation(success=True) for _ in range(30)}
         snarky_hit = any(r in CONFIRMATIONS_SUCCESS_SNARKY for r in results)
         assert not snarky_hit
@@ -864,11 +864,9 @@ class TestSarcasmLearning:
     @pytest.mark.asyncio
     async def test_sarcasm_increases_on_positive_feedback(self, engine_with_redis, redis_mock):
         engine_with_redis.sarcasm_level = 3
-        redis_mock.get = AsyncMock(side_effect=lambda k: {
-            "mha:personality:sarcasm_positive": "16",
-            "mha:personality:sarcasm_total": "20",
-        }.get(k))
         redis_mock.incr = AsyncMock(return_value=21)
+        # Lua-Script simulieren: [did_eval=1, pos=16, total=20] → 80% positiv
+        redis_mock.eval = AsyncMock(return_value=[1, 16, 20])
 
         await engine_with_redis.track_sarcasm_feedback(positive=True)
         # Bei >70% positiv und total >= 20: Level steigt
@@ -877,11 +875,9 @@ class TestSarcasmLearning:
     @pytest.mark.asyncio
     async def test_sarcasm_decreases_on_negative_feedback(self, engine_with_redis, redis_mock):
         engine_with_redis.sarcasm_level = 3
-        redis_mock.get = AsyncMock(side_effect=lambda k: {
-            "mha:personality:sarcasm_positive": "4",
-            "mha:personality:sarcasm_total": "20",
-        }.get(k))
         redis_mock.incr = AsyncMock(return_value=21)
+        # Lua-Script simulieren: [did_eval=1, pos=4, total=20] → 20% positiv
+        redis_mock.eval = AsyncMock(return_value=[1, 4, 20])
 
         await engine_with_redis.track_sarcasm_feedback(positive=False)
         assert engine_with_redis.sarcasm_level == 2
@@ -890,19 +886,15 @@ class TestSarcasmLearning:
     async def test_sarcasm_stays_in_bounds(self, engine_with_redis, redis_mock):
         """Level bleibt zwischen 1 und 5."""
         engine_with_redis.sarcasm_level = 5
-        redis_mock.get = AsyncMock(side_effect=lambda k: {
-            "mha:personality:sarcasm_positive": "18",
-            "mha:personality:sarcasm_total": "20",
-        }.get(k))
         redis_mock.incr = AsyncMock(return_value=21)
+        # Lua-Script: [did_eval=1, pos=18, total=20] → 90% positiv
+        redis_mock.eval = AsyncMock(return_value=[1, 18, 20])
         await engine_with_redis.track_sarcasm_feedback(positive=True)
         assert engine_with_redis.sarcasm_level <= 5
 
         engine_with_redis.sarcasm_level = 1
-        redis_mock.get = AsyncMock(side_effect=lambda k: {
-            "mha:personality:sarcasm_positive": "2",
-            "mha:personality:sarcasm_total": "20",
-        }.get(k))
+        # Lua-Script: [did_eval=1, pos=2, total=20] → 10% positiv
+        redis_mock.eval = AsyncMock(return_value=[1, 2, 20])
         await engine_with_redis.track_sarcasm_feedback(positive=False)
         assert engine_with_redis.sarcasm_level >= 1
 
@@ -941,10 +933,10 @@ class TestRunningGags:
 
     @pytest.mark.asyncio
     async def test_short_memory_gag(self, engine_with_redis, redis_mock):
-        """Erkennt wenn User innerhalb von 2 Minuten das gleiche fragt."""
+        """Erkennt wenn User innerhalb von 30 Sekunden das gleiche fragt."""
         now = datetime.now().timestamp()
         redis_mock.lrange = AsyncMock(return_value=[
-            f"{now - 30}|wie spät ist es",
+            f"{now - 10}|wie spät ist es",
         ])
         result = await engine_with_redis._check_short_memory_gag("wie spät ist es")
         assert result is not None

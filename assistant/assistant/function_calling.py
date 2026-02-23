@@ -35,6 +35,14 @@ _entity_catalog: dict[str, list[str]] = {}
 _entity_catalog_ts: float = 0.0
 _CATALOG_TTL = 300  # 5 Minuten
 
+# ── MindHome Domain-Mapping: Entity-ID → Domain-Name ──
+# Wird aus /api/devices + /api/domains geladen.
+# Damit weiss der Assistant z.B. dass "switch.steckdose_fenster" eine "switch" Domain
+# ist und KEIN "door_window" (Fenster-Kontakt).
+_mindhome_device_domains: dict[str, str] = {}  # ha_entity_id → domain_name
+_mindhome_device_rooms: dict[str, str] = {}    # ha_entity_id → room_name
+_mindhome_rooms: list[str] = []                # Raumnamen aus MindHome
+
 
 def _get_config_rooms() -> list[str]:
     """Liefert Raumnamen aus room_profiles.yaml (immer verfuegbar)."""
@@ -50,16 +58,137 @@ def _get_config_rooms() -> list[str]:
     return []
 
 
+async def _load_mindhome_domains(ha: HomeAssistantClient) -> None:
+    """Laedt Geraete-Domains und Raeume von der MindHome Add-on API.
+
+    Endpunkte:
+      GET /api/domains → [{id, name, display_name_de, ...}]
+      GET /api/devices → [{ha_entity_id, domain_id, room_id, name, ...}]
+      GET /api/rooms   → [{id, name, ...}]
+
+    Ergebnis wird in _mindhome_device_domains und _mindhome_rooms gecached.
+    Damit weiss der Assistant z.B. dass "switch.steckdose_fenster" zur Domain
+    "switch" gehoert und KEIN Fenster-Kontakt (door_window) ist.
+    """
+    global _mindhome_device_domains, _mindhome_device_rooms, _mindhome_rooms
+    try:
+        import asyncio
+        domains_data, devices_data, rooms_data = await asyncio.gather(
+            ha.mindhome_get("/api/domains"),
+            ha.mindhome_get("/api/devices"),
+            ha.mindhome_get("/api/rooms"),
+            return_exceptions=True,
+        )
+
+        # Domain-ID → Domain-Name Mapping
+        domain_map: dict[int, str] = {}
+        if isinstance(domains_data, list):
+            for d in domains_data:
+                did = d.get("id")
+                dname = d.get("name", "")
+                if did is not None and dname:
+                    domain_map[did] = dname
+
+        # Room-ID → Room-Name Mapping
+        room_map: dict[int, str] = {}
+        if isinstance(rooms_data, list):
+            for r in rooms_data:
+                rid = r.get("id")
+                rname = r.get("name", "")
+                if rid is not None and rname:
+                    room_map[rid] = rname
+            _mindhome_rooms = sorted(room_map.values())
+
+        # Entity → Domain + Room zuordnen
+        device_domains: dict[str, str] = {}
+        device_rooms: dict[str, str] = {}
+        if isinstance(devices_data, list):
+            for dev in devices_data:
+                entity_id = dev.get("ha_entity_id", "")
+                if not entity_id:
+                    continue
+                d_id = dev.get("domain_id")
+                r_id = dev.get("room_id")
+                if d_id is not None and d_id in domain_map:
+                    device_domains[entity_id] = domain_map[d_id]
+                if r_id is not None and r_id in room_map:
+                    device_rooms[entity_id] = room_map[r_id]
+
+        _mindhome_device_domains = device_domains
+        _mindhome_device_rooms = device_rooms
+        logger.info(
+            "MindHome Domain-Mapping geladen: %d Geraete, %d Raeume, %d Domains",
+            len(device_domains), len(_mindhome_rooms), len(domain_map),
+        )
+    except Exception as e:
+        logger.debug("MindHome Domain-Mapping nicht verfuegbar: %s", e)
+
+
+def get_mindhome_domain(entity_id: str) -> str:
+    """Gibt die MindHome-Domain fuer eine Entity-ID zurueck (z.B. 'door_window', 'switch').
+
+    Wenn keine MindHome-Zuordnung existiert, wird '' zurueckgegeben.
+    """
+    return _mindhome_device_domains.get(entity_id, "")
+
+
+def get_mindhome_room(entity_id: str) -> str:
+    """Gibt den MindHome-Raum fuer eine Entity-ID zurueck."""
+    return _mindhome_device_rooms.get(entity_id, "")
+
+
+def is_window_or_door(entity_id: str, state: dict) -> bool:
+    """Prueft zuverlaessig ob eine Entity ein Fenster/Tuer-Kontakt ist.
+
+    Prueft in dieser Reihenfolge (erste Uebereinstimmung gewinnt):
+    1. MindHome Domain-Zuordnung (vom User konfiguriert)
+    2. HA device_class (automatisch von HA gesetzt)
+    3. Fallback: binary_sensor mit window/door/fenster/tuer im entity_id
+
+    Steckdosen, Schalter und Lichter werden NICHT als Fenster erkannt,
+    auch wenn "fenster" im Entity-Namen vorkommt.
+    """
+    # 1. MindHome-Domain (zuverlaessigste Quelle — vom User konfiguriert)
+    mh_domain = _mindhome_device_domains.get(entity_id, "")
+    if mh_domain:
+        return mh_domain == "door_window"
+
+    # 2. HA device_class
+    attrs = state.get("attributes", {}) if isinstance(state, dict) else {}
+    device_class = attrs.get("device_class", "")
+    if device_class in ("window", "door", "garage_door"):
+        return True
+
+    # 3. Fallback: Nur binary_sensor mit Keyword
+    ha_domain = entity_id.split(".")[0] if "." in entity_id else ""
+    if ha_domain == "binary_sensor":
+        lower_id = entity_id.lower()
+        if any(kw in lower_id for kw in ("window", "door", "fenster", "tuer")):
+            return True
+
+    return False
+
+
 async def refresh_entity_catalog(ha: HomeAssistantClient) -> None:
     """Laedt verfuegbare Entities aus HA und cached Raum-/Geraete-Namen.
 
     Wird periodisch aufgerufen (z.B. alle 5 Min) um Tool-Beschreibungen
     mit echten Entity-Namen anzureichern.
+
+    Laedt zusaetzlich Domain-Zuordnungen von der MindHome API,
+    damit der Assistant weiss welche Geraete Fenster, Steckdosen, etc. sind.
     """
     global _entity_catalog, _entity_catalog_ts
 
-    states = await ha.get_states()
-    if not states:
+    # MindHome Domain-Mapping laden (parallel zum HA-States-Abruf)
+    import asyncio
+    states_task = ha.get_states()
+    mindhome_task = _load_mindhome_domains(ha)
+    states, _ = await asyncio.gather(states_task, mindhome_task, return_exceptions=True)
+
+    if isinstance(states, BaseException) or not states:
+        if isinstance(states, BaseException):
+            logger.warning("HA States Fehler: %s", states)
         return
 
     rooms: set[str] = set()
@@ -86,6 +215,9 @@ async def refresh_entity_catalog(ha: HomeAssistantClient) -> None:
     # Config-Raeume immer hinzufuegen
     for r in _get_config_rooms():
         rooms.add(r)
+    # MindHome-Raeume (User-konfiguriert) immer hinzufuegen
+    for r in _mindhome_rooms:
+        rooms.add(r.lower())
 
     _entity_catalog = {
         "rooms": sorted(rooms),
@@ -925,13 +1057,13 @@ _ASSISTANT_TOOLS_STATIC = [
         "type": "function",
         "function": {
             "name": "set_timer",
-            "description": "Setzt einen allgemeinen Timer/Erinnerung. Z.B. 'Erinnere mich in 30 Minuten an die Waesche' oder 'In 20 Minuten Licht aus'.",
+            "description": "Setzt einen allgemeinen Timer/Erinnerung. Z.B. 'Erinnere mich in 30 Minuten an die Waesche' oder 'In 20 Minuten Licht aus'. WICHTIG: duration_minutes ist IMMER in Minuten, NIEMALS in Sekunden. '30 Sekunden' = 1 Minute (aufrunden), '5 Minuten' = 5.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "duration_minutes": {
                         "type": "integer",
-                        "description": "Dauer in Minuten (1-1440)",
+                        "description": "Dauer in MINUTEN (1-1440). NICHT Sekunden! Wenn der User Sekunden sagt, in Minuten umrechnen (aufrunden). '30 Sekunden' → 1, '2 Minuten' → 2, '1 Stunde' → 60",
                     },
                     "label": {
                         "type": "string",

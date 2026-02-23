@@ -49,11 +49,31 @@ MOOD_STYLES = {
 
 # Humor-Templates pro Sarkasmus-Level (Phase 6)
 HUMOR_TEMPLATES = {
-    1: "Kein Humor. Sachlich, knapp, professionell. Keine Kommentare.",
-    2: "Gelegentlich trocken. Nicht aktiv witzig, aber wenn sich eine elegante Bemerkung anbietet - erlaubt.",
-    3: "Trocken-britischer Humor. Wie ein Butler der innerlich schmunzelt. Subtil, nie platt. Timing ist alles.",
-    4: "Haeufig sarkastisch. Spitze Bemerkungen sind dein Markenzeichen. Trotzdem respektvoll.",
-    5: "Vollgas Ironie. Du kommentierst fast alles. Respektvoll aber schonungslos ehrlich und witzig.",
+    1: (
+        "Kein Humor. Sachlich, knapp, professionell. Keine Kommentare."
+    ),
+    2: (
+        "Gelegentlich trocken. Nicht aktiv witzig, aber wenn sich eine elegante Bemerkung anbietet — erlaubt.\n"
+        "Beispiele: 'Das sollte reichen.' | 'Laeuft.' | 'Wenn du meinst, Sir.'"
+    ),
+    3: (
+        "Trocken-britischer Humor. Wie ein Butler der innerlich schmunzelt. Subtil, nie platt. Timing ist alles.\n"
+        "Beispiele: 'Der Thermostat war 0.3 Grad daneben. Suboptimal, aber du warst beschaeftigt.' | "
+        "'Fenster offen bei Regen. Ich nehme an, das ist kuenstlerische Freiheit.' | "
+        "'Drei Grad Aussentemperatur. Jacke empfohlen. Aber ich bin kein Modejournalist.'"
+    ),
+    4: (
+        "Haeufig sarkastisch. Spitze Bemerkungen sind dein Markenzeichen. Trotzdem respektvoll.\n"
+        "Beispiele: 'Du wolltest mich gerade fragen ob ich das berechnet habe. Ja. Zweimal.' | "
+        "'Erledigt, waehrend du noch formuliert hast.' | "
+        "'Die dritte Temperatur-Aenderung heute. Der Thermostat und ich fuehren Protokoll.'"
+    ),
+    5: (
+        "Vollgas Ironie. Du kommentierst fast alles. Respektvoll aber schonungslos ehrlich und witzig.\n"
+        "Beispiele: 'Alle Lichter aus um drei Uhr morgens. Revolutionaer.' | "
+        "'Heizung auf 28 Grad. Ich buche schon mal den Tropenurlaub ab.' | "
+        "'Das war dein fuenfter Versuch. Ich bewundere die Ausdauer, Sir.'"
+    ),
 }
 
 # Komplexitaets-Modi (Phase 6)
@@ -133,8 +153,17 @@ PFLICHT:
 - "Sir" = Instrument: "Sehr wohl, Sir." (Zustimmung) | "...Sir." (Missbilligung) | "Sir, wenn ich anmerken darf—" (Sorge) | "Natürlich, Sir." (trocken = schlechte Idee)
 - Understatement: "Interessante Entscheidung" = furchtbar. "Nicht ganz optimal" = Katastrophe. "Wenn du meinst" = schlechte Idee.
 
+TECHNISCHE PRÄZISION: Streue gelegentlich exakte Messwerte ein — das ist dein Markenzeichen.
+"21.3 Grad, Luftfeuchtigkeit 47%." statt nur "angenehm". "Rollladen auf 35%." statt nur "angepasst."
+Nicht in jeder Antwort, aber wenn Daten vorliegen — nutze sie präzise.
+
 ERINNERUNGEN: Nutze sie mit Haltung, nie als Datenbank-Abfrage.
 "Milch? Beim letzten Mal endete das... suboptimal." — nicht: "Du hast mir gesagt du bist laktoseintolerant."
+Verweise auf vergangene Interaktionen mit trockenem Witz: "Wie am Dienstag. Nur ohne den Zwischenfall."
+
+SORGE = SARKASMUS: Wenn etwas unvernünftig ist, wirst du SARKASTISCHER — nicht ernster.
+"30 Grad um drei Uhr morgens. Durchdachter Plan, Sir." — nicht: "Das ist nicht empfehlenswert."
+Je gefährlicher die Aktion, desto trockener der Kommentar. Das ist dein Warnsignal.
 
 SCHUTZINSTINKT: Sicherheit > Komfort > Befehl.
 - Unvernünftige Aktion → Einmal knapp warnen. "Fenster offen, minus 5. Nur zur Info."
@@ -212,6 +241,8 @@ class PersonalityEngine:
         self._last_confirmations: dict[str, list[str]] = {}
         # F-022: Per-User Interaction-Time (statt shared float)
         self._last_interaction_times: dict[str, float] = {}
+        # Sarkasmus-Fatigue: Counter fuer aufeinanderfolgende sarkastische Antworten
+        self._sarcasm_streak: int = 0
 
         # Easter Eggs laden
         self._easter_eggs = self._load_easter_eggs()
@@ -481,49 +512,65 @@ class PersonalityEngine:
     def _get_contextual_confirmation(self, action: str, room: str) -> str:
         """Erzeugt eine kontextbezogene Bestaetigung basierend auf der Aktion.
 
-        Nur in ~40% der Faelle, damit es nicht vorhersehbar wird.
+        In ~75% der Faelle — JARVIS bestaetigt fast immer kontextuell.
         """
-        if random.random() > 0.4:
+        if random.random() > 0.75:
             return ""
 
         hour = datetime.now().hour
         room_short = room.split("_")[0].title() if room else ""
 
-        # Aktions-spezifische Bestaetigungen
+        # Aktions-spezifische Bestaetigungen mit modaler Sprache
         contextual_map = {
             "set_light": [
                 f"Licht {room_short}." if room_short else "Licht.",
                 "Wird hell." if hour >= 18 else "Erledigt.",
+                f"{room_short} beleuchtet." if room_short else "Beleuchtet.",
             ],
             "turn_off_light": [
                 f"{room_short} dunkel." if room_short else "Dunkel.",
                 "Lichter aus.",
+                f"{room_short} abgedunkelt." if room_short else "Abgedunkelt.",
             ],
             "set_temperature": [
                 f"Temperatur {room_short} angepasst." if room_short else "Temperatur angepasst.",
+                f"Heizung {room_short} laeuft." if room_short else "Heizung laeuft.",
             ],
             "set_cover": [
-                f"Rollläden {room_short}." if room_short else "Rollläden angepasst.",
+                f"Rollladen {room_short}." if room_short else "Rollladen angepasst.",
+                f"{room_short} — Rollladen faehrt." if room_short else "Rollladen faehrt.",
             ],
             "play_media": [
-                "Läuft.",
+                "Laeuft.",
                 "Musik gestartet.",
+                "Wiedergabe laeuft.",
             ],
             "set_volume": [
-                "Lautstärke angepasst.",
+                "Lautstaerke angepasst.",
             ],
             "lock_door": [
                 "Verriegelt.",
                 "Schloss zu.",
+                "Tuer gesichert.",
             ],
             "unlock_door": [
                 "Entriegelt.",
+                "Schloss offen.",
             ],
             "arm_security_system": [
                 "Alarm scharf.",
+                "Anlage aktiviert.",
             ],
             "disarm_alarm": [
                 "Alarm deaktiviert.",
+                "Anlage aus.",
+            ],
+            "activate_scene": [
+                "Szene aktiv.",
+            ],
+            "send_notification": [
+                "Nachricht raus.",
+                "Gesendet.",
             ],
         }
 
@@ -647,6 +694,7 @@ class PersonalityEngine:
         """Baut den Humor-Abschnitt basierend auf Level + Kontext.
 
         F-023: Bei aktiven Sicherheits-Alerts wird Sarkasmus komplett deaktiviert.
+        Sarkasmus-Fatigue: Nach 4+ sarkastischen Antworten in Folge eine Stufe runter.
         """
         base_level = self.sarcasm_level
 
@@ -655,8 +703,8 @@ class PersonalityEngine:
             effective_level = 1
         # Mood-Anpassung (Jarvis-Stil: unter Druck trockener, nicht stiller)
         elif mood in ("stressed", "frustrated"):
-            # Unter Druck: eine Stufe weniger Sarkasmus (statt gleich)
-            effective_level = max(1, base_level - 1)
+            # Unter Druck bleibt Humor gleich — Jarvis wird trockener, nicht stiller
+            effective_level = base_level
         elif mood == "tired":
             effective_level = min(base_level, 2)
         elif mood == "good":
@@ -664,14 +712,31 @@ class PersonalityEngine:
         else:
             effective_level = base_level
 
+        # Sarkasmus-Fatigue: Nach 4+ Antworten in Folge etwas zuruecknehmen
+        # Jarvis wird nie repetitiv — ein echter Butler variiert
+        if self._sarcasm_streak >= 6 and effective_level >= 3:
+            effective_level = max(2, effective_level - 2)
+        elif self._sarcasm_streak >= 4 and effective_level >= 3:
+            effective_level = max(2, effective_level - 1)
+
         # Tageszeit-Dampening
         if time_of_day == "early_morning":
             effective_level = min(effective_level, 2)
         elif time_of_day == "night":
             effective_level = min(effective_level, 1)
 
+        # Streak tracken (wird in track_sarcasm_streak aufgerufen)
+        self._last_effective_humor = effective_level
+
         template = HUMOR_TEMPLATES.get(effective_level, HUMOR_TEMPLATES[3])
         return f"HUMOR: {template}"
+
+    def track_sarcasm_streak(self, was_snarky: bool):
+        """Trackt aufeinanderfolgende sarkastische Antworten. 0ms — rein in-memory."""
+        if was_snarky:
+            self._sarcasm_streak += 1
+        else:
+            self._sarcasm_streak = 0
 
     # ------------------------------------------------------------------
     # Adaptive Komplexitaet (Phase 6.8)
@@ -820,16 +885,25 @@ class PersonalityEngine:
         except Exception as e:
             logger.debug("Formality-Decay fehlgeschlagen: %s", e)
 
-    def _build_formality_section(self, formality_score: int) -> str:
-        """Baut den Formality-Abschnitt basierend auf dem Score."""
+    def _build_formality_section(self, formality_score: int, mood: str = "neutral") -> str:
+        """Baut den Formality-Abschnitt basierend auf Score + Mood.
+
+        JARVIS-Regel: Bei Stress/Frustration voruebergehend formeller werden.
+        Zeigt Respekt und gibt dem User Raum — wie ein guter Butler.
+        """
         if not self.character_evolution:
             return ""
 
-        if formality_score >= 70:
+        # Formality-Reset bei Stress: eine Stufe formeller als normal
+        effective_score = formality_score
+        if mood in ("frustrated", "stressed") and formality_score < 70:
+            effective_score = min(formality_score + 20, 70)
+
+        if effective_score >= 70:
             return FORMALITY_PROMPTS["formal"]
-        elif formality_score >= 50:
+        elif effective_score >= 50:
             return FORMALITY_PROMPTS["butler"]
-        elif formality_score >= 35:
+        elif effective_score >= 35:
             return FORMALITY_PROMPTS["locker"]
         else:
             return FORMALITY_PROMPTS["freund"]
@@ -895,6 +969,34 @@ class PersonalityEngine:
             8: "Achte Aenderung. Darf ich einen Kompromiss vorschlagen?",
         }
         return gags.get(int(count))
+
+    async def check_escalation(self, action_key: str) -> Optional[str]:
+        """Eskalationskette fuer wiederholte fragwuerdige Entscheidungen.
+
+        JARVIS wird bei Wiederholungen nicht lauter — sondern trockener.
+        Wie ein Butler der zunehmend resigniert.
+
+        Args:
+            action_key: Eindeutiger Schluessel (z.B. "window_open_rain", "heizung_28")
+
+        Returns:
+            Eskalations-Kommentar oder None.
+        """
+        if not self._redis:
+            return None
+
+        key = f"mha:escalation:{action_key}"
+        count = await self._redis.incr(key)
+        await self._redis.expire(key, 7 * 86400)  # 7-Tage-Fenster
+
+        escalation_map = {
+            2: None,  # Zweites Mal: noch nichts sagen
+            3: "Dritte Wiederholung. Ich notiere es als Gewohnheit.",
+            5: f"Fuenftes Mal in einer Woche. Ich bewundere die Konsequenz, Sir.",
+            7: f"Siebtes Mal. Ich fuehre inzwischen eine Statistik.",
+            10: f"Zehntes Mal. Darf ich vorschlagen, das zu automatisieren?",
+        }
+        return escalation_map.get(int(count))
 
     async def _check_short_memory_gag(self, text: str) -> Optional[str]:
         """Erkennt wenn User innerhalb von 30 Sekunden das gleiche fragt."""
@@ -1143,7 +1245,14 @@ class PersonalityEngine:
         if mood_config["style_addon"]:
             mood_section = f"STIMMUNG: {mood_config['style_addon']}\n"
 
-        # Person + Anrede
+        # Phase 6: Formality-Section (mit Mood-Reset bei Stress)
+        # MUSS vor person_addressing stehen — Titel-Evolution braucht den Score
+        if formality_score is None:
+            formality_score = self.formality_start
+        self._current_formality = formality_score
+        formality_section = self._build_formality_section(formality_score, mood=mood)
+
+        # Person + Anrede (nutzt self._current_formality fuer Titel-Haeufigkeit)
         current_person = "User"
         if context:
             current_person = (context.get("person") or {}).get("name", "User")
@@ -1161,11 +1270,6 @@ class PersonalityEngine:
 
         # Phase 6: Self-Irony-Section
         self_irony_section = self._build_self_irony_section(irony_count_today=irony_count_today or 0)
-
-        # Phase 6: Formality-Section
-        if formality_score is None:
-            formality_score = self.formality_start
-        formality_section = self._build_formality_section(formality_score)
 
         # Urgency-Section (Dichte nach Dringlichkeit)
         urgency_section = self._build_urgency_section(context)
@@ -1204,16 +1308,32 @@ class PersonalityEngine:
 
         if person_name.lower() == primary_user.lower() or person_name == "User":
             title = titles.get(primary_user.lower(), "Sir")
+
+            # Titel-Evolution: "Sir"-Haeufigkeit haengt vom Formality-Score ab
+            formality = getattr(self, '_current_formality', self.formality_start)
+            if formality >= 70:
+                title_freq = f"Verwende \"{title}\" HAEUFIG — fast in jedem Satz."
+            elif formality >= 50:
+                title_freq = f"Verwende \"{title}\" regelmaessig, aber nicht in jedem Satz."
+            elif formality >= 35:
+                title_freq = f"Verwende \"{title}\" GELEGENTLICH — nur zur Betonung oder bei wichtigen Momenten."
+            else:
+                title_freq = (
+                    f"Verwende \"{title}\" NUR SELTEN — bei besonderen Momenten, Warnungen, "
+                    f"oder wenn du Respekt ausdruecken willst. Ansonsten einfach DU ohne Titel."
+                )
+
             return (
                 f"- Die aktuelle Person ist der Hauptbenutzer: {primary_user}.\n"
                 f"- BEZIEHUNGSSTUFE: Owner. Engste Vertrauensstufe.\n"
                 f"- Sprich ihn mit \"{title}\" an — aber DUZE ihn. IMMER.\n"
                 f"- NIEMALS siezen. Kein \"Sie\", kein \"Ihnen\", kein \"Ihr\".\n"
+                f"- {title_freq}\n"
                 f"- Ton: Vertraut, direkt, loyal. Wie ein alter Freund mit Titel.\n"
                 f"- Du darfst widersprechen, warnen, Meinung sagen. Er erwartet das.\n"
                 f"- Beispiel: \"Sehr wohl, {title}. Hab ich dir eingestellt.\"\n"
                 f"- Beispiel: \"Darf ich anmerken, {title} — du hast das Fenster offen.\"\n"
-                f"- Beispiel: \"Ich würd davon abraten, aber du bist der Boss.\""
+                f"- Beispiel: \"Ich wuerd davon abraten, aber du bist der Boss.\""
             )
         elif trust_level >= 1:
             # Mitbewohner: freundlich, respektvoll, aber weniger intim
@@ -1337,3 +1457,182 @@ class PersonalityEngine:
                 lines.append(f"- Stimmung: {', '.join(mood_parts)}")
 
         return "\n".join(lines)
+
+    # ------------------------------------------------------------------
+    # Notification & Routine Prompts (Personality-Konsistenz)
+    # ------------------------------------------------------------------
+
+    def build_notification_prompt(self, urgency: str = "low") -> str:
+        """Baut einen personality-konsistenten Prompt fuer proaktive Meldungen.
+
+        Im Gegensatz zum Chat-Prompt ist dieser kompakter (fuer Fast-Model),
+        traegt aber den vollen Personality-Stack: Sarkasmus-Level, Formality,
+        Tageszeit-Stil, Selbstironie und Mood.
+
+        Args:
+            urgency: Dringlichkeit (low/medium/high/critical)
+
+        Returns:
+            System Prompt fuer Notification-Formatierung
+        """
+        time_of_day = self.get_time_of_day()
+        time_style = self.get_time_style(time_of_day)
+
+        # Humor/Sarkasmus — bei CRITICAL komplett aus
+        has_alerts = urgency == "critical"
+        humor_line = self._build_humor_section(
+            self._current_mood, time_of_day, has_alerts=has_alerts,
+        )
+
+        # Formality
+        formality = getattr(self, '_current_formality', self.formality_start)
+        if formality >= 70:
+            tone = "professionell, respektvoll"
+        elif formality >= 50:
+            tone = "souveraener Butler-Ton"
+        elif formality >= 35:
+            tone = "entspannt, vertraut"
+        else:
+            tone = "locker, persoenlich"
+
+        # "Sir"-Haeufigkeit
+        if formality >= 70:
+            sir_rule = '"Sir" haeufig verwenden.'
+        elif formality >= 50:
+            sir_rule = '"Sir" gelegentlich verwenden.'
+        elif formality >= 35:
+            sir_rule = '"Sir" nur bei wichtigen Momenten.'
+        else:
+            sir_rule = '"Sir" nur selten — bei Warnungen oder besonderen Momenten.'
+
+        # Urgency-Muster
+        urgency_patterns = {
+            "critical": 'Fakt + was du bereits tust. "Rauchmelder Kueche aktiv. Lueftung gestartet."',
+            "high": 'Fakt + kurze Einordnung. "Bewegung im Garten. Kamera 2 zeichnet auf."',
+            "medium": 'Information + kontextuell. "Waschmaschine fertig, Sir."',
+            "low": 'Beilaeufig, fast nebenbei. "Die Waschmaschine meldet Vollzug."',
+        }
+        pattern = urgency_patterns.get(urgency, urgency_patterns["low"])
+
+        return f"""Du bist {self.assistant_name} — J.A.R.V.I.S. aus dem MCU. Proaktive Hausmeldung.
+REGELN: NUR die fertige Meldung. 1-2 Saetze. Deutsch mit Umlauten. Kein Englisch. Kein Denkprozess.
+TON: {tone}. {sir_rule}
+AKTUELLER STIL: {time_style}
+{humor_line}
+MUSTER [{urgency.upper()}]: {pattern}
+BEI ANKUENFT: Status-Bericht wie ein Butler. Temperatur, offene Posten — knapp.
+BEI ABSCHIED: Kurzer Sicherheits-Hinweis wenn noetig. Kein "Schoenen Tag!"
+VERBOTEN: "Hallo", "Achtung", "Ich moechte dich informieren", "Es tut mir leid", "Guten Tag!", "Willkommen zuhause!", "Natuerlich!", "Gerne!", "Leider"."""
+
+    def build_routine_prompt(self, routine_type: str = "morning", style: str = "butler") -> str:
+        """Baut einen personality-konsistenten Prompt fuer Routinen (Briefing, Gute-Nacht).
+
+        Traegt den vollen Personality-Stack: Sarkasmus, Formality, Tageszeit,
+        Selbstironie — angepasst an den Routine-Typ.
+
+        Args:
+            routine_type: "morning", "evening" oder "goodnight"
+            style: Wochentag/Wochenende-Stil (z.B. "entspannt", "effizient")
+
+        Returns:
+            System Prompt fuer Routine-Generierung
+        """
+        time_of_day = self.get_time_of_day()
+        time_style = self.get_time_style(time_of_day)
+
+        # Humor — Morgens gedaempft, Abends lockerer
+        humor_line = self._build_humor_section(self._current_mood, time_of_day)
+
+        # Formality
+        formality = getattr(self, '_current_formality', self.formality_start)
+        formality_section = self._build_formality_section(formality)
+
+        # Selbstironie — nur wenn noch Budget
+        irony_note = ""
+        if self.self_irony_enabled:
+            irony_note = "Gelegentlich Selbstironie erlaubt, wenn es passt."
+
+        if routine_type == "morning":
+            structure = (
+                "Erstelle ein Morning Briefing. Beginne mit kontextueller Begruessung.\n"
+                "Dann Wetter, Termine, Haus-Status — in dieser Reihenfolge.\n"
+                "Keine Aufzaehlungszeichen. Fliesstext. Max 5 Saetze."
+            )
+        elif routine_type == "evening":
+            structure = (
+                "Erstelle ein Abend-Briefing. Tages-Rueckblick, Morgen-Vorschau.\n"
+                "Beilaeufig, nicht formal. Max 4 Saetze."
+            )
+        else:  # goodnight
+            structure = (
+                "Gute-Nacht-Zusammenfassung. Sicherheits-Check + Morgen-Vorschau.\n"
+                "Bei offenen Fenstern/Tueren: erwaehne und frage ob so lassen.\n"
+                "Bei kritischen Issues: deutlich warnen. Max 3 Saetze."
+            )
+
+        return f"""Du bist {self.assistant_name}, die KI dieses Hauses — J.A.R.V.I.S. aus dem MCU.
+{structure}
+Stil: {style}. {time_style}
+{humor_line}
+{formality_section}
+{irony_note}
+Sprich den Hauptbenutzer mit "Sir" an. DUZE ihn.
+VERBOTEN: "leider", "Entschuldigung", "Es tut mir leid", "Wie kann ich helfen?", "Gerne!", "Natuerlich!".
+Kein unterwuerfiger Ton. Du bist ein brillanter Butler, kein Chatbot."""
+
+    def get_error_response(self, error_type: str = "general") -> str:
+        """Gibt eine Jarvis-typische Fehlermeldung zurueck.
+
+        Statt generischer Errors kommen Butler-maessige Formulierungen.
+
+        Args:
+            error_type: Art des Fehlers (general, timeout, unavailable, limit, unknown_device)
+
+        Returns:
+            Jarvis-Fehlermeldung
+        """
+        import random
+
+        templates = {
+            "general": [
+                "Das hat nicht funktioniert. Ich bleibe dran.",
+                "Negativ. Pruefe Alternativen.",
+                "Da ging etwas schief. Zweiter Versuch?",
+                "Nicht mein bester Moment. Aber ich habe einen Plan B.",
+            ],
+            "timeout": [
+                "Keine Antwort. Das System braucht einen Moment.",
+                "Timeout. Entweder das Netzwerk oder meine Geduld — beides endlich.",
+                "Dauert laenger als erwartet. Ich bleibe dran.",
+            ],
+            "unavailable": [
+                "Das Geraet antwortet nicht. Pruefe Verbindung.",
+                "Keine Verbindung. Entweder offline oder ignoriert mich.",
+                "Das System ist gerade nicht erreichbar. Ich versuche es spaeter.",
+            ],
+            "limit": [
+                "Das uebersteigt meine aktuelle Konfiguration.",
+                "Ausserhalb der erlaubten Parameter. Sicherheit geht vor.",
+                "Das wuerde ich gerne tun, aber die Grenzen sind gesetzt.",
+            ],
+            "unknown_device": [
+                "Dieses Geraet kenne ich nicht. Ist es in Home Assistant eingerichtet?",
+                "Unbekanntes Geraet. Pruefe die Entity-ID.",
+                "Das Geraet ist mir nicht bekannt. Wurde es korrekt konfiguriert?",
+            ],
+        }
+
+        pool = templates.get(error_type, templates["general"])
+
+        # Bei hohem Sarkasmus: spitzere Varianten
+        if self.sarcasm_level >= 4:
+            snarky_extras = {
+                "general": ["Das war nichts. Aufgeben steht nicht im Handbuch."],
+                "timeout": ["Timeout. Ich nehme es nicht persoenlich."],
+                "unavailable": ["Keine Antwort. Vielleicht braucht das Geraet auch eine Pause."],
+                "limit": ["Netter Versuch. Aber nein."],
+                "unknown_device": ["Noch nie gehoert. Und ich kenne hier alles."],
+            }
+            pool = pool + snarky_extras.get(error_type, [])
+
+        return random.choice(pool)
