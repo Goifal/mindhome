@@ -377,6 +377,13 @@ class AssistantBrain(BrainCallbacksMixin):
         except Exception as e:
             logger.debug("Entity-Katalog initial nicht geladen: %s", e)
 
+        # Entity-Katalog: Periodischer Background-Refresh (alle 270s = 4.5 Min).
+        # Ersetzt den lazy-load im Hot-Path und spart 200-500ms pro Request
+        # wenn der Katalog gerade stale waere.
+        self._task_registry.create_task(
+            self._entity_catalog_refresh_loop(), name="entity_catalog_refresh"
+        )
+
         if _degraded_modules:
             logger.warning(
                 "F-069: Jarvis gestartet im DEGRADED MODE — %d Module ausgefallen: %s",
@@ -461,6 +468,18 @@ class AssistantBrain(BrainCallbacksMixin):
             name="speak_response",
         )
 
+    def _remember_exchange(self, user_text: str, assistant_text: str) -> None:
+        """Fire-and-forget: Gespraech im Working Memory speichern.
+
+        Statt auf Redis-Writes zu warten, wird das Speichern als
+        Hintergrund-Task gestartet. Spart 50-200ms pro Request.
+        """
+        async def _save():
+            await self.memory.add_conversation("user", user_text)
+            await self.memory.add_conversation("assistant", assistant_text)
+
+        self._task_registry.create_task(_save(), name="memory_exchange")
+
     async def process(self, text: str, person: Optional[str] = None, room: Optional[str] = None, files: Optional[list] = None, stream_callback=None) -> dict:
         """
         Verarbeitet eine User-Eingabe.
@@ -485,8 +504,7 @@ class AssistantBrain(BrainCallbacksMixin):
         _word_count = len(text.split())
         if whisper_cmd == "activate" and _word_count <= 3:
             response_text = "Verstanden. Ich fluester ab jetzt."
-            await self.memory.add_conversation("user", text)
-            await self.memory.add_conversation("assistant", response_text)
+            self._remember_exchange(text, response_text)
             tts_data = self.tts_enhancer.enhance(response_text, message_type="confirmation")
             await self._speak_and_emit(response_text, room=room, tts_data=tts_data)
             return {
@@ -499,8 +517,7 @@ class AssistantBrain(BrainCallbacksMixin):
             }
         elif whisper_cmd == "deactivate" and _word_count <= 3:
             response_text = "Normale Lautstaerke wiederhergestellt."
-            await self.memory.add_conversation("user", text)
-            await self.memory.add_conversation("assistant", response_text)
+            self._remember_exchange(text, response_text)
             tts_data = self.tts_enhancer.enhance(response_text, message_type="confirmation")
             await self._speak_and_emit(response_text, room=room, tts_data=tts_data)
             return {
@@ -545,8 +562,7 @@ class AssistantBrain(BrainCallbacksMixin):
         if self.routines.is_goodnight_intent(text):
             logger.info("Gute-Nacht-Intent erkannt")
             result = await self.routines.execute_goodnight(person or "")
-            await self.memory.add_conversation("user", text)
-            await self.memory.add_conversation("assistant", result["text"])
+            self._remember_exchange(text, result["text"])
             await self._speak_and_emit(result["text"], room=room)
             return {
                 "response": result["text"],
@@ -560,8 +576,7 @@ class AssistantBrain(BrainCallbacksMixin):
         if self.routines.is_guest_trigger(text):
             logger.info("Gaeste-Modus Trigger erkannt")
             response_text = await self.routines.activate_guest_mode()
-            await self.memory.add_conversation("user", text)
-            await self.memory.add_conversation("assistant", response_text)
+            self._remember_exchange(text, response_text)
             await self._speak_and_emit(response_text, room=room)
             return {
                 "response": response_text,
@@ -576,8 +591,7 @@ class AssistantBrain(BrainCallbacksMixin):
         if any(t in text.lower() for t in guest_off_triggers):
             if await self.routines.is_guest_mode_active():
                 response_text = await self.routines.deactivate_guest_mode()
-                await self.memory.add_conversation("user", text)
-                await self.memory.add_conversation("assistant", response_text)
+                self._remember_exchange(text, response_text)
                 await self._speak_and_emit(response_text, room=room)
                 return {
                     "response": response_text,
@@ -590,8 +604,7 @@ class AssistantBrain(BrainCallbacksMixin):
         # Phase 13.1: Sicherheits-Bestaetigung (lock_door:unlock, arm_security_system:disarm, etc.)
         security_result = await self._handle_security_confirmation(text, person or "")
         if security_result:
-            await self.memory.add_conversation("user", text)
-            await self.memory.add_conversation("assistant", security_result)
+            self._remember_exchange(text, security_result)
             await self._speak_and_emit(security_result, room=room)
             return {
                 "response": security_result,
@@ -604,8 +617,7 @@ class AssistantBrain(BrainCallbacksMixin):
         # Phase 13.2: Automation-Bestaetigung (VOR allem anderen)
         automation_result = await self._handle_automation_confirmation(text)
         if automation_result:
-            await self.memory.add_conversation("user", text)
-            await self.memory.add_conversation("assistant", automation_result)
+            self._remember_exchange(text, automation_result)
             await self._speak_and_emit(automation_result, room=room)
             return {
                 "response": automation_result,
@@ -618,8 +630,7 @@ class AssistantBrain(BrainCallbacksMixin):
         # Phase 13.4: Optimierungs-Vorschlag Bestaetigung
         opt_result = await self._handle_optimization_confirmation(text)
         if opt_result:
-            await self.memory.add_conversation("user", text)
-            await self.memory.add_conversation("assistant", opt_result)
+            self._remember_exchange(text, opt_result)
             await self._speak_and_emit(opt_result, room=room)
             return {
                 "response": opt_result,
@@ -632,8 +643,7 @@ class AssistantBrain(BrainCallbacksMixin):
         # Phase 8: Explizites Notizbuch — Memory-Befehle (VOR allem anderen)
         memory_result = await self._handle_memory_command(text, person or "")
         if memory_result:
-            await self.memory.add_conversation("user", text)
-            await self.memory.add_conversation("assistant", memory_result)
+            self._remember_exchange(text, memory_result)
             await self._speak_and_emit(memory_result, room=room)
             return {
                 "response": memory_result,
@@ -647,8 +657,7 @@ class AssistantBrain(BrainCallbacksMixin):
         if self.cooking.is_cooking_navigation(text):
             logger.info("Koch-Navigation: '%s'", text)
             cooking_response = await self.cooking.handle_navigation(text)
-            await self.memory.add_conversation("user", text)
-            await self.memory.add_conversation("assistant", cooking_response)
+            self._remember_exchange(text, cooking_response)
             tts_data = self.tts_enhancer.enhance(cooking_response, message_type="casual")
             await self._speak_and_emit(cooking_response, room=room, tts_data=tts_data)
             return {
@@ -667,8 +676,7 @@ class AssistantBrain(BrainCallbacksMixin):
             cooking_response = await self.cooking.start_cooking(
                 text, person or "", cooking_model
             )
-            await self.memory.add_conversation("user", text)
-            await self.memory.add_conversation("assistant", cooking_response)
+            self._remember_exchange(text, cooking_response)
             tts_data = self.tts_enhancer.enhance(cooking_response, message_type="casual")
             await self._speak_and_emit(cooking_response, room=room, tts_data=tts_data)
             return {
@@ -688,8 +696,7 @@ class AssistantBrain(BrainCallbacksMixin):
             response_text = plan_result.get("response", "")
             if plan_result.get("status") == "error":
                 self.action_planner.clear_plan(pending_plan)
-            await self.memory.add_conversation("user", text)
-            await self.memory.add_conversation("assistant", response_text)
+            self._remember_exchange(text, response_text)
             await self._speak_and_emit(response_text, room=room)
             return {
                 "response": response_text,
@@ -704,8 +711,7 @@ class AssistantBrain(BrainCallbacksMixin):
             logger.info("Planungs-Dialog gestartet: '%s'", text)
             plan_result = await self.action_planner.start_planning_dialog(text, person or "")
             response_text = plan_result.get("response", "")
-            await self.memory.add_conversation("user", text)
-            await self.memory.add_conversation("assistant", response_text)
+            self._remember_exchange(text, response_text)
             await self._speak_and_emit(response_text, room=room)
             return {
                 "response": response_text,
@@ -719,8 +725,7 @@ class AssistantBrain(BrainCallbacksMixin):
         egg_response = self.personality.check_easter_egg(text)
         if egg_response:
             logger.info("Easter Egg getriggert: '%s'", egg_response)
-            await self.memory.add_conversation("user", text)
-            await self.memory.add_conversation("assistant", egg_response)
+            self._remember_exchange(text, egg_response)
             await self._speak_and_emit(egg_response, room=room)
             return {
                 "response": egg_response,
@@ -761,8 +766,7 @@ class AssistantBrain(BrainCallbacksMixin):
                     else:
                         response_text += " Aktuell frage ich alle ab — du kannst in der settings.yaml festlegen, welche ich nutzen soll."
 
-                await self.memory.add_conversation("user", text)
-                await self.memory.add_conversation("assistant", response_text)
+                self._remember_exchange(text, response_text)
                 tts_data = self.tts_enhancer.enhance(response_text, message_type="casual")
                 if stream_callback:
                     if not room:
@@ -802,8 +806,7 @@ class AssistantBrain(BrainCallbacksMixin):
                 logger.info("Kalender-Shortcut humanisiert: '%s' -> '%s'",
                             cal_msg[:60], response_text[:60])
 
-                await self.memory.add_conversation("user", text)
-                await self.memory.add_conversation("assistant", response_text)
+                self._remember_exchange(text, response_text)
                 tts_data = self.tts_enhancer.enhance(response_text, message_type="casual")
 
                 # WebSocket emit fuer nicht-streaming Modus
@@ -923,8 +926,7 @@ class AssistantBrain(BrainCallbacksMixin):
                 if alarm_result:
                     alarm_msg = alarm_result.get("message", "")
                     response_text = self._humanize_alarms(alarm_msg)
-                    await self.memory.add_conversation("user", text)
-                    await self.memory.add_conversation("assistant", response_text)
+                    self._remember_exchange(text, response_text)
                     tts_data = self.tts_enhancer.enhance(response_text, message_type="confirmation")
                     if stream_callback:
                         if not room:
@@ -998,8 +1000,7 @@ class AssistantBrain(BrainCallbacksMixin):
                                 success=False,
                             )
 
-                        await self.memory.add_conversation("user", text)
-                        await self.memory.add_conversation("assistant", response_text)
+                        self._remember_exchange(text, response_text)
                         tts_data = self.tts_enhancer.enhance(
                             response_text, message_type="confirmation",
                         )
@@ -1334,8 +1335,7 @@ class AssistantBrain(BrainCallbacksMixin):
             logger.info("Delegations-Intent erkannt")
             delegation_result = await self._handle_delegation(text, person or "")
             if delegation_result:
-                await self.memory.add_conversation("user", text)
-                await self.memory.add_conversation("assistant", delegation_result)
+                self._remember_exchange(text, delegation_result)
                 tts_data = self.tts_enhancer.enhance(delegation_result, message_type="confirmation")
                 await self._speak_and_emit(delegation_result, room=room, tts_data=tts_data)
                 return {
@@ -1435,14 +1435,9 @@ class AssistantBrain(BrainCallbacksMixin):
                 response_text = self._filter_response(response.get("message", {}).get("content", ""))
             executed_actions = []
         else:
-            # Entity-Katalog bei Bedarf refreshen (TTL 5 Min)
-            from .function_calling import _entity_catalog_ts, _CATALOG_TTL
-            if time.time() - _entity_catalog_ts > _CATALOG_TTL:
-                try:
-                    from .function_calling import refresh_entity_catalog
-                    await refresh_entity_catalog(self.ha)
-                except Exception:
-                    pass  # Kein Blocker — Config-Fallback reicht
+            # Entity-Katalog wird per Background-Loop proaktiv refreshed
+            # (siehe _entity_catalog_refresh_loop — alle 4.5 Min).
+            # Kein lazy-load im Hot-Path noetig → spart 200-500ms.
 
             # 6b. Einfache Anfragen: Direkt LLM aufrufen (mit Timeout + Fallback)
             llm_timeout = (yaml_config.get("context") or {}).get("llm_timeout", 60)
@@ -1965,10 +1960,9 @@ class AssistantBrain(BrainCallbacksMixin):
                 name="sound_warning",
             )
 
-        # 9. Im Gedaechtnis speichern (nur nicht-leere Antworten)
+        # 9. Im Gedaechtnis speichern (nur nicht-leere Antworten, fire-and-forget)
         if response_text and response_text.strip():
-            await self.memory.add_conversation("user", text)
-            await self.memory.add_conversation("assistant", response_text)
+            self._remember_exchange(text, response_text)
 
         # Phase 17: Kontext-Persistenz fuer Raumwechsel speichern
         self._task_registry.create_task(
@@ -1976,14 +1970,17 @@ class AssistantBrain(BrainCallbacksMixin):
             name="save_cross_room_ctx",
         )
 
-        # 10. Episode speichern (Langzeitgedaechtnis)
+        # 10. Episode speichern (Langzeitgedaechtnis, fire-and-forget)
         if len(text.split()) > 3:
             episode = f"User: {text}\nAssistant: {response_text}"
-            await self.memory.store_episode(episode, {
-                "person": person or "unknown",
-                "room": context.get("room", "unknown"),
-                "actions": json.dumps([a["function"] for a in executed_actions]),
-            })
+            self._task_registry.create_task(
+                self.memory.store_episode(episode, {
+                    "person": person or "unknown",
+                    "room": context.get("room", "unknown"),
+                    "actions": json.dumps([a["function"] for a in executed_actions]),
+                }),
+                name="store_episode",
+            )
 
         # 11. Fakten extrahieren (async im Hintergrund)
         if self.memory_extractor and len(text.split()) > 3:
@@ -4377,6 +4374,23 @@ Regeln:
             except Exception as e:
                 logger.error("Fact Decay Fehler: %s", e)
                 await asyncio.sleep(3600)  # Bei Fehler 1h warten
+
+    async def _entity_catalog_refresh_loop(self):
+        """Proaktiver Background-Refresh fuer den Entity-Katalog (alle 270s).
+
+        Entfernt den lazy-load aus dem Hot-Path (brain.py process()),
+        sodass der LLM-Call nicht auf ha.get_states() warten muss.
+        """
+        from .function_calling import refresh_entity_catalog
+        while True:
+            try:
+                await asyncio.sleep(270)  # 4.5 Minuten (TTL ist 5 Min)
+                await refresh_entity_catalog(self.ha)
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.debug("Entity-Katalog Background-Refresh Fehler: %s", e)
+                await asyncio.sleep(60)
 
     async def _handle_daily_summary(self, data: dict):
         """Callback fuer Tages-Zusammenfassungen — wird morgens beim naechsten Kontakt gesprochen."""
