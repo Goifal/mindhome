@@ -104,6 +104,8 @@ COOKING_START_TRIGGERS = [
 COOKING_KEYWORDS = [
     "kochen", "backen", "zubereiten", "braten", "grillen",
     "rezept fuer", "rezept für",
+    "wie mache ich", "wie macht man", "wie bereite ich",
+    "wie koche ich", "wie backe ich", "wie brate ich",
 ]
 
 # Navigation per Sprache
