@@ -2724,22 +2724,47 @@ class AssistantBrain(BrainCallbacksMixin):
         except Exception as e:
             logger.error("Fehler bei Hintergrund-Fakten-Extraktion: %s", e)
 
+    async def _callback_should_speak(self, urgency: str = "medium") -> bool:
+        """Prueft ob ein Callback sprechen darf (Activity + Silence Matrix).
+
+        Wird von allen proaktiven Callbacks aufgerufen um sicherzustellen,
+        dass keine Durchsagen kommen waehrend der User schlaeft.
+        Wecker (wakeup_alarm) und CRITICAL Events nutzen diese Methode NICHT.
+        """
+        try:
+            result = await self.activity.should_deliver(urgency)
+            if result.get("suppress"):
+                logger.info(
+                    "Callback unterdrueckt (Aktivitaet=%s, Delivery=%s)",
+                    result.get("activity"), result.get("delivery"),
+                )
+                return False
+            return True
+        except Exception as e:
+            logger.debug("Activity-Check fehlgeschlagen: %s", e)
+            return True  # Im Fehlerfall lieber melden als verschlucken
+
     async def _handle_timer_notification(self, alert: dict):
         """Callback fuer allgemeine Timer/Wecker — meldet wenn Timer abgelaufen ist."""
         message = alert.get("message", "")
         room = alert.get("room") or None
-        if message:
-            formatted = await self.proactive.format_with_personality(message, "medium")
-            await self._speak_and_emit(formatted, room=room)
-            logger.info("Timer -> Meldung: %s (Raum: %s)", formatted, room or "auto")
+        alert_type = alert.get("type", "")
+        if not message:
+            return
+        # Wecker MUSS klingeln — auch wenn User schlaeft (das ist der Sinn)
+        if alert_type != "wakeup_alarm":
+            if not await self._callback_should_speak("medium"):
+                return
+        formatted = await self.proactive.format_with_personality(message, "medium")
+        await self._speak_and_emit(formatted, room=room)
+        logger.info("Timer -> Meldung: %s (Raum: %s)", formatted, room or "auto")
 
     async def _handle_learning_suggestion(self, alert: dict):
         """Callback fuer Learning Observer — schlaegt Automatisierungen vor."""
         message = alert.get("message", "")
         if not message:
             return
-        if self.proactive._is_quiet_hours():
-            logger.info("Learning unterdrueckt (Quiet Hours): %s", message[:80])
+        if not await self._callback_should_speak("low"):
             return
         formatted = await self.proactive.format_with_personality(message, "low")
         await self._speak_and_emit(formatted)
@@ -2761,9 +2786,8 @@ class AssistantBrain(BrainCallbacksMixin):
         urgency = alert.get("urgency", "low")
         if not message:
             return
-        # Quiet Hours: Nur CRITICAL darf nachts durch
-        if urgency != "critical" and self.proactive._is_quiet_hours():
-            logger.info("TimeAwareness unterdrueckt (Quiet Hours): %s", message[:80])
+        # CRITICAL darf immer durch, Rest wird per Activity geprüft
+        if urgency != "critical" and not await self._callback_should_speak(urgency):
             return
         formatted = await self.proactive.format_with_personality(message, urgency)
         await self._speak_and_emit(formatted)
@@ -2773,8 +2797,7 @@ class AssistantBrain(BrainCallbacksMixin):
         """Callback fuer Health Monitor — leitet an proaktive Meldung weiter."""
         if not message:
             return
-        if urgency != "critical" and self.proactive._is_quiet_hours():
-            logger.info("Health Monitor unterdrueckt (Quiet Hours): %s", message[:80])
+        if urgency != "critical" and not await self._callback_should_speak(urgency):
             return
         formatted = await self.proactive.format_with_personality(message, urgency)
         await self._speak_and_emit(formatted)
@@ -2785,8 +2808,7 @@ class AssistantBrain(BrainCallbacksMixin):
         message = alert.get("message", "")
         if not message:
             return
-        if self.proactive._is_quiet_hours():
-            logger.info("DeviceHealth unterdrueckt (Quiet Hours): %s", message[:80])
+        if not await self._callback_should_speak("medium"):
             return
         formatted = await self.proactive.format_with_personality(message, "medium")
         await self._speak_and_emit(formatted)
@@ -2799,8 +2821,7 @@ class AssistantBrain(BrainCallbacksMixin):
         """Callback fuer Wellness Advisor — kuemmert sich um den User."""
         if not message:
             return
-        if self.proactive._is_quiet_hours():
-            logger.info("Wellness unterdrueckt (Quiet Hours): %s", message[:80])
+        if not await self._callback_should_speak("low"):
             return
         formatted = await self.proactive.format_with_personality(message, "low")
         await self._speak_and_emit(formatted)
@@ -2846,6 +2867,10 @@ class AssistantBrain(BrainCallbacksMixin):
                     })
                 except Exception as e:
                     logger.debug("Ambient Audio lights_on fehlgeschlagen: %s", e)
+
+        # Activity-Check: Bei Schlaf nur CRITICAL-Events melden (Glasbruch etc.)
+        if severity != "critical" and not await self._callback_should_speak(severity):
+            return
 
         # Nachricht via WebSocket + Speaker senden
         await self._speak_and_emit(message)
@@ -3770,9 +3795,12 @@ Regeln:
     async def _handle_intent_reminder(self, reminder: dict):
         """Callback fuer Intent-Erinnerungen."""
         text = reminder.get("text", "")
-        if text:
-            await self._speak_and_emit(text)
-            logger.info("Intent-Erinnerung: %s", text)
+        if not text:
+            return
+        if not await self._callback_should_speak("medium"):
+            return
+        await self._speak_and_emit(text)
+        logger.info("Intent-Erinnerung: %s", text)
 
     async def _run_daily_fact_decay(self):
         """Fuehrt einmal taeglich den Fact Decay aus (04:00 Uhr)."""
