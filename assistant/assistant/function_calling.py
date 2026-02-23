@@ -2701,14 +2701,34 @@ class FunctionExecutor:
         else:
             # Alle calendar.* Entities aus HA sammeln
             states = await self.ha.get_states()
-            calendar_entities = [
+            all_cal_entities = [
                 s["entity_id"] for s in (states or [])
                 if s.get("entity_id", "").startswith("calendar.")
             ]
-            logger.info("Kalender: %d Entities in HA gefunden: %s", len(calendar_entities), calendar_entities)
+            logger.info("Kalender: %d Entities in HA gefunden: %s", len(all_cal_entities), all_cal_entities)
+
+            # Bekannte Noise-Kalender ausfiltern (Feiertage, Geburtstage etc.)
+            _NOISE_KEYWORDS = [
+                "feiertag", "holiday", "birthday", "geburtstag",
+                "abfall", "muell", "garbage", "waste", "trash",
+                "schulferien", "school", "vacation",
+            ]
+            calendar_entities = [
+                eid for eid in all_cal_entities
+                if not any(kw in eid.lower() for kw in _NOISE_KEYWORDS)
+            ]
+            # Wenn nach Filter nichts uebrig, alle verwenden
+            if not calendar_entities and all_cal_entities:
+                calendar_entities = all_cal_entities
+                logger.info("Kalender: Noise-Filter hat alles entfernt, nutze alle %d", len(calendar_entities))
+            elif len(calendar_entities) < len(all_cal_entities):
+                filtered_out = set(all_cal_entities) - set(calendar_entities)
+                logger.info("Kalender: %d nach Filter (entfernt: %s)", len(calendar_entities), filtered_out)
 
         if not calendar_entities:
             return {"success": False, "message": "Kein Kalender in Home Assistant gefunden"}
+
+        logger.info("Kalender: Abfrage von %d Entities: %s", len(calendar_entities), calendar_entities)
 
         # Alle Kalender abfragen und Events sammeln
         all_events = []

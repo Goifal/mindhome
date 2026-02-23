@@ -955,6 +955,59 @@ class AssistantBrain(BrainCallbacksMixin):
         # Phase 8: Intent-Routing — Wissensfragen ohne Tools beantworten
         intent_type = self._classify_intent(text)
 
+        # Kalender-Diagnose: "Welchen Kalender hast du?" etc.
+        cal_diag = self._detect_calendar_diagnostic(text)
+        if cal_diag:
+            logger.info("Kalender-Diagnose angefragt: '%s'", text)
+            try:
+                states = await self.ha.get_states()
+                cal_entities = [
+                    s for s in (states or [])
+                    if s.get("entity_id", "").startswith("calendar.")
+                ]
+                configured = yaml_config.get("calendar", {}).get("entities", [])
+                if isinstance(configured, str):
+                    configured = [configured]
+
+                if not cal_entities:
+                    response_text = "Ich sehe keine Kalender-Entities in Home Assistant, Sir."
+                else:
+                    names = []
+                    for s in cal_entities:
+                        eid = s.get("entity_id", "")
+                        friendly = s.get("attributes", {}).get("friendly_name", eid)
+                        names.append(f"{friendly} ({eid})")
+                    listing = ", ".join(names)
+                    response_text = f"In Home Assistant sehe ich {len(cal_entities)} Kalender: {listing}."
+                    if configured:
+                        response_text += f" Konfiguriert: {', '.join(configured)}."
+                    else:
+                        response_text += " Aktuell frage ich alle ab — du kannst in der settings.yaml festlegen, welche ich nutzen soll."
+
+                await self.memory.add_conversation("user", text)
+                await self.memory.add_conversation("assistant", response_text)
+                tts_data = self.tts_enhancer.enhance(response_text, message_type="casual")
+                if stream_callback:
+                    if not room:
+                        room = await self._get_occupied_room()
+                    self._task_registry.create_task(
+                        self.sound_manager.speak_response(
+                            response_text, room=room, tts_data=tts_data),
+                        name="speak_response",
+                    )
+                else:
+                    await self._speak_and_emit(response_text, room=room, tts_data=tts_data)
+                return {
+                    "response": response_text,
+                    "actions": [],
+                    "model_used": "calendar_diagnostic",
+                    "context_room": room or "unbekannt",
+                    "tts": tts_data,
+                    "_emitted": not stream_callback,
+                }
+            except Exception as e:
+                logger.warning("Kalender-Diagnose fehlgeschlagen: %s", e)
+
         # Kalender-Shortcut: LLM waehlt bei "Was steht morgen an?" oft das
         # falsche Tool (get_active_intents statt get_calendar_events).
         # Daher Kalender-Fragen direkt erkennen und abkuerzen.
@@ -3111,6 +3164,18 @@ class AssistantBrain(BrainCallbacksMixin):
         _VERBS = ["mach ", "schalte ", "stell ", "setz ", "dreh ", "oeffne ", "schliess"]
         verb_start = any(t.startswith(v) for v in _VERBS)
         return (has_noun and has_action) or (verb_start and has_noun)
+
+    @staticmethod
+    def _detect_calendar_diagnostic(text: str) -> bool:
+        """Erkennt Fragen nach verfuegbaren Kalendern."""
+        t = text.lower().strip()
+        return any(kw in t for kw in [
+            "welchen kalender", "welche kalender", "welcher kalender",
+            "kalender hast du", "kalender siehst du", "kalender nutzt du",
+            "kalender verwendest du", "kalender gibt es",
+            "zeig mir die kalender", "zeig kalender entities",
+            "kalender konfigur",
+        ])
 
     @staticmethod
     def _detect_calendar_query(text: str) -> Optional[str]:
