@@ -2783,6 +2783,36 @@ class FunctionExecutor:
                 raw = raw.get("dateTime") or raw.get("date") or ""
             return str(raw) if raw else ""
 
+        # Datum-Validierung: Nur Events im angefragten Zeitraum behalten
+        # (HA gibt manchmal Events ausserhalb des Bereichs zurueck)
+        validated_events = []
+        for ev in all_events:
+            raw_start = _parse_event_start(ev)
+            if not raw_start:
+                validated_events.append(ev)
+                continue
+            try:
+                if "T" in raw_start:
+                    ev_dt = datetime.fromisoformat(raw_start.replace("Z", "+00:00"))
+                    ev_local = ev_dt.astimezone(_tz)
+                else:
+                    # Ganztaegig: nur Datum, als Mitternacht behandeln
+                    ev_local = datetime.strptime(raw_start[:10], "%Y-%m-%d").replace(tzinfo=_tz)
+                if start <= ev_local <= end:
+                    validated_events.append(ev)
+                else:
+                    logger.warning("Kalender: Event '%s' am %s liegt ausserhalb %s-%s, uebersprungen",
+                                   ev.get("summary", "?"), ev_local.isoformat(),
+                                   start_str, end_str)
+            except (ValueError, TypeError) as e:
+                logger.warning("Kalender: Event-Datum nicht parsebar: %s (%s)", raw_start, e)
+                validated_events.append(ev)  # Im Zweifel behalten
+
+        all_events = validated_events
+        if not all_events:
+            label = {"today": "heute", "tomorrow": "morgen", "week": "diese Woche"}.get(timeframe, timeframe)
+            return {"success": True, "message": f"Keine Termine {label}."}
+
         # Nach Startzeit sortieren
         all_events.sort(key=lambda ev: _parse_event_start(ev) or "9999")
 
