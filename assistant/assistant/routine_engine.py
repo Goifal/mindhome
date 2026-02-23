@@ -426,11 +426,13 @@ class RoutineEngine:
                 if temp:
                     parts.append(f"{room}: {temp}°C")
 
-        # Offene Fenster/Tueren
+        # Offene Fenster/Tueren — MindHome-Domain + device_class pruefen
+        # statt keyword-matching (verhindert false positives wie Steckdosen)
+        from .function_calling import is_window_or_door
         open_items = []
         for state in states:
             entity_id = state.get("entity_id", "")
-            if ("window" in entity_id or "door" in entity_id) and state.get("state") == "on":
+            if is_window_or_door(entity_id, state) and state.get("state") == "on":
                 name = state.get("attributes", {}).get("friendly_name", entity_id)
                 open_items.append(name)
         if open_items:
@@ -584,9 +586,10 @@ class RoutineEngine:
 
         for check in self.goodnight_checks:
             if check == "windows":
+                from .function_calling import is_window_or_door
                 for state in states:
                     eid = state.get("entity_id", "")
-                    if ("window" in eid or "fenster" in eid) and state.get("state") == "on":
+                    if is_window_or_door(eid, state) and state.get("state") == "on":
                         name = state.get("attributes", {}).get("friendly_name", eid)
                         issues.append({
                             "type": "window_open",

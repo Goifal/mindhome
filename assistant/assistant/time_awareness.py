@@ -286,12 +286,11 @@ class TimeAwareness:
         if outside_temp is None or outside_temp >= 10:
             return alerts
 
-        # Offene Fenster finden (nur binary_sensor Kontakt-Sensoren)
+        # Offene Fenster finden — MindHome-Domain + device_class statt Keyword
+        from .function_calling import is_window_or_door
         for state in states:
             entity_id = state.get("entity_id", "")
-            if not entity_id.startswith("binary_sensor."):
-                continue
-            if not ("window" in entity_id or "fenster" in entity_id):
+            if not is_window_or_door(entity_id, state):
                 continue
             if state.get("state") != "on":
                 continue
@@ -331,12 +330,10 @@ class TimeAwareness:
         if not heating_active:
             return alerts
 
-        # Offene Fenster finden
+        # Offene Fenster finden — MindHome-Domain + device_class statt Keyword
         for state in states:
             entity_id = state.get("entity_id", "")
-            if not ("window" in entity_id or "fenster" in entity_id):
-                continue
-            if not entity_id.startswith("binary_sensor."):
+            if not is_window_or_door(entity_id, state):
                 continue
             if state.get("state") != "on":
                 continue

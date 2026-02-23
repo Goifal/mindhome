@@ -826,7 +826,7 @@ class ProactiveManager:
         try:
             response = await self.brain.ollama.chat(
                 messages=[
-                    {"role": "system", "content": self._get_notification_system_prompt()},
+                    {"role": "system", "content": self._get_notification_system_prompt(urgency)},
                     {"role": "user", "content": prompt},
                 ],
                 model=settings.model_notify,

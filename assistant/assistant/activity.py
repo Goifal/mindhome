@@ -82,8 +82,8 @@ SILENCE_MATRIX = {
     RELAXING: {
         "critical": TTS_LOUD,
         "high": TTS_LOUD,
-        "medium": TTS_LOUD,
-        "low": TTS_QUIET,
+        "medium": TTS_QUIET,
+        "low": SUPPRESS,
     },
     AWAY: {
         "critical": TTS_LOUD,  # Wird an Handy weitergeleitet (spaeter)
