@@ -115,8 +115,11 @@ class SpeakerRecognition:
         self.fallback_ask = sr_cfg.get("fallback_ask", True)
         self.max_profiles = sr_cfg.get("max_profiles", 10)
 
-        # Device-zu-Person Mapping (aus Config)
-        self._device_mapping: dict[str, str] = sr_cfg.get("device_mapping", {})
+        # Device-zu-Person Mapping (aus Config) — leere Werte filtern
+        raw_mapping = sr_cfg.get("device_mapping", {}) or {}
+        self._device_mapping: dict[str, str] = {
+            k: v for k, v in raw_mapping.items() if v
+        }
 
         # In-Memory Cache der Profile
         self._profiles: dict[str, SpeakerProfile] = {}
@@ -148,6 +151,15 @@ class SpeakerRecognition:
                     logger.info("Speaker-Profile geladen: %d", len(self._profiles))
             except Exception as e:
                 logger.debug("Speaker-Profile laden fehlgeschlagen: %s", e)
+
+            # Letzten Sprecher aus Redis wiederherstellen
+            try:
+                last = await self.redis.get(SPEAKER_LAST_IDENTIFIED_KEY)
+                if last:
+                    self._last_speaker = last if isinstance(last, str) else last.decode()
+                    logger.debug("Letzter Sprecher wiederhergestellt: %s", self._last_speaker)
+            except Exception:
+                pass
 
     async def identify(
         self,
@@ -191,6 +203,7 @@ class SpeakerRecognition:
                 )
                 await self._save_profiles()
 
+            await self.log_identification(person_id, "device_mapping", 0.95)
             return {
                 "person": name,
                 "confidence": 0.95,
@@ -203,6 +216,7 @@ class SpeakerRecognition:
             room_person = await self._identify_by_room(room)
             if room_person:
                 self._last_speaker = room_person.lower()
+                await self.log_identification(room_person.lower(), "room_presence", 0.8)
                 return {
                     "person": room_person,
                     "confidence": 0.8,
@@ -215,6 +229,7 @@ class SpeakerRecognition:
             sole_person = await self._identify_sole_person()
             if sole_person:
                 self._last_speaker = sole_person.lower()
+                await self.log_identification(sole_person.lower(), "sole_person_home", 0.85)
                 return {
                     "person": sole_person,
                     "confidence": 0.85,
@@ -231,6 +246,9 @@ class SpeakerRecognition:
             match = self._match_voice_features(audio_metadata)
             if match:
                 self._last_speaker = match["person_id"]
+                await self.log_identification(
+                    match["person_id"], "voice_features", match["confidence"],
+                )
                 return {
                     "person": match["name"],
                     "confidence": match["confidence"],
@@ -437,6 +455,7 @@ class SpeakerRecognition:
                 await self.redis.set(SPEAKER_LAST_IDENTIFIED_KEY, person_id, ex=3600)
             except Exception:
                 pass
+        await self.log_identification(person_id, "manual", 1.0)
 
     async def remove_profile(self, person_id: str) -> bool:
         """Entfernt ein Profil."""

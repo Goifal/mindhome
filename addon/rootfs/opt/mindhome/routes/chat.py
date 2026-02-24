@@ -134,6 +134,7 @@ def api_chat_send():
 
     person = data.get("person", get_setting("primary_user", "User"))
     room = data.get("room")
+    device_id = data.get("device_id")
 
     # Store user message
     user_msg = {
@@ -147,10 +148,13 @@ def api_chat_send():
 
     # Forward to assistant
     assistant_url = _get_assistant_url()
+    chat_payload = {"text": text, "person": person, "room": room}
+    if device_id:
+        chat_payload["device_id"] = device_id
     try:
         resp = requests.post(
             f"{assistant_url}/api/assistant/chat",
-            json={"text": text, "person": person, "room": room},
+            json=chat_payload,
             headers=_assistant_headers(),
             timeout=30,
         )
@@ -466,7 +470,7 @@ def api_chat_voice():
     send text to Jarvis, synthesize response via Piper TTS.
 
     Request: multipart/form-data with 'audio' file
-    Optional form fields: person, room
+    Optional form fields: person, room, device_id
     Response: JSON with text response + base64-encoded TTS audio
     """
     import base64
@@ -480,6 +484,7 @@ def api_chat_voice():
 
     person = request.form.get("person", get_setting("primary_user", "User"))
     room = request.form.get("room")
+    device_id = request.form.get("device_id")
     ha = _deps.get("ha")
     if not ha:
         return jsonify({"error": "Home Assistant nicht verbunden"}), 503
@@ -656,6 +661,8 @@ def api_chat_voice():
 
     assistant_url = _get_assistant_url()
     chat_payload = {"text": transcribed_text, "person": person, "room": room}
+    if device_id:
+        chat_payload["device_id"] = device_id
     if voice_metadata:
         chat_payload["voice_metadata"] = voice_metadata
     try:

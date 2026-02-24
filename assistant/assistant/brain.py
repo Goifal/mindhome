@@ -620,6 +620,11 @@ class AssistantBrain(BrainCallbacksMixin):
                 logger.info("Speaker erkannt: %s (Confidence: %.2f, Methode: %s)",
                             person, identified.get("confidence", 0),
                             identified.get("method", "unknown"))
+            elif identified.get("fallback") and identified.get("person"):
+                # Niedrige Confidence — Person als Vermutung merken, aber nicht setzen
+                logger.info("Speaker unsicher: %s (Confidence: %.2f, Methode: %s) — fallback_ask aktiv",
+                            identified.get("person"), identified.get("confidence", 0),
+                            identified.get("method", "unknown"))
 
         # Fallback: Wenn kein Person ermittelt, Primary User aus Household annehmen
         # (nur wenn explizit konfiguriert, nicht den Pydantic-Default "Max" nutzen)
