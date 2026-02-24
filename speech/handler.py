@@ -20,7 +20,7 @@ from typing import Optional
 
 import numpy as np
 from wyoming.asr import Transcribe, Transcript
-from wyoming.audio import AudioChunk, AudioChunkConverter, AudioStop
+from wyoming.audio import AudioChunk, AudioChunkConverter, AudioStart, AudioStop
 from wyoming.event import Event
 from wyoming.info import Describe, Info
 from wyoming.server import AsyncEventHandler
@@ -102,6 +102,20 @@ async def _get_redis(redis_url: str):
     return _redis_client
 
 
+# I-1: Graceful Redis Shutdown — verhindert offene Connections bei Container-Stop
+async def close_redis():
+    """Schliesst die Redis-Verbindung sauber (fuer Shutdown-Handler)."""
+    global _redis_client
+    if _redis_client is not None:
+        try:
+            await _redis_client.aclose()
+            logger.info("Redis-Verbindung geschlossen")
+        except Exception as e:
+            logger.debug("Redis close Fehler (ignoriert): %s", e)
+        finally:
+            _redis_client = None
+
+
 # ── Wyoming Event Handler ────────────────────────────────────────────────────
 
 
@@ -153,6 +167,11 @@ class WhisperEmbeddingHandler(AsyncEventHandler):
             self._request_id = uuid.uuid4().hex[:12]
             return True
 
+        # I-9: AudioStart explizit handlen — Buffer sicherheitshalber leeren
+        if AudioStart.is_type(event.type):
+            self._audio_bytes = bytearray()
+            return True
+
         if AudioChunk.is_type(event.type):
             chunk = AudioChunk.from_event(event)
             # Audio normalisieren (16kHz/16-bit/mono) und sammeln
@@ -179,9 +198,18 @@ class WhisperEmbeddingHandler(AsyncEventHandler):
         start_time = time.monotonic()
 
         # C-7: Lock serialisiert Transkriptionen (CTranslate2 nicht thread-safe)
+        # I-10: Timeout verhindert endlose Haenger bei korruptem Audio
         loop = asyncio.get_running_loop()
         async with _get_model_lock():
-            text = await loop.run_in_executor(None, self._transcribe, audio_bytes)
+            try:
+                text = await asyncio.wait_for(
+                    loop.run_in_executor(None, self._transcribe, audio_bytes),
+                    timeout=30.0,
+                )
+            except asyncio.TimeoutError:
+                logger.error("Transkription Timeout (30s) — Audio uebersprungen (%.1fs Audio)",
+                             len(audio_bytes) / (16000 * 2))
+                return ""
 
         elapsed = time.monotonic() - start_time
         audio_duration = len(audio_bytes) / (16000 * 2)  # 16kHz, 16-bit

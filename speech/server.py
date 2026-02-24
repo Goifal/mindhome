@@ -17,7 +17,7 @@ from functools import partial
 from wyoming.info import AsrModel, AsrProgram, Attribution, Info
 from wyoming.server import AsyncServer
 
-from handler import WhisperEmbeddingHandler, _get_whisper_model, _get_embedding_model
+from handler import WhisperEmbeddingHandler, _get_whisper_model, _get_embedding_model, close_redis
 
 logger = logging.getLogger(__name__)
 
@@ -90,7 +90,15 @@ def main():
         redis_url=redis_url,
     )
 
-    asyncio.run(server.run(handler_factory))
+    # I-1: Graceful Shutdown — Redis-Verbindung sauber schliessen
+    loop = asyncio.new_event_loop()
+    try:
+        loop.run_until_complete(server.run(handler_factory))
+    except KeyboardInterrupt:
+        logger.info("Server wird beendet...")
+    finally:
+        loop.run_until_complete(close_redis())
+        loop.close()
 
 
 if __name__ == "__main__":

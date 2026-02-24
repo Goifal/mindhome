@@ -70,8 +70,9 @@ def extract_embedding(audio_b64: str, sample_rate: int = 16000) -> Optional[list
         # Base64 → PCM bytes
         pcm_bytes = base64.b64decode(audio_b64)
 
-        if len(pcm_bytes) < 3200:  # Weniger als 0.1s bei 16kHz — zu kurz
-            logger.debug("Audio zu kurz fuer Embedding (%d bytes)", len(pcm_bytes))
+        # I-4: Konsistent mit handler.py — 0.2s Minimum (3200 samples * 2 bytes = 6400)
+        if len(pcm_bytes) < 6400:  # Weniger als 0.2s bei 16kHz/16-bit — zu kurz
+            logger.debug("Audio zu kurz fuer Embedding (%d bytes, min 6400)", len(pcm_bytes))
             return None
 
         # PCM 16-bit signed → float tensor
