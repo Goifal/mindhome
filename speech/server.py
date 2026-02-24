@@ -34,7 +34,10 @@ def main():
     language = os.getenv("WHISPER_LANGUAGE", "de")
     device = os.getenv("SPEECH_DEVICE", "cpu")
     compute_type = os.getenv("WHISPER_COMPUTE", "int8")
-    beam_size = int(os.getenv("WHISPER_BEAM_SIZE", "5"))
+    # S-2: beam_size=1 (greedy) ist ~40% schneller als beam_size=5
+    # bei minimaler Qualitaetseinbusse fuer kurze Sprachbefehle.
+    # Ueber WHISPER_BEAM_SIZE konfigurierbar falls noetig.
+    beam_size = int(os.getenv("WHISPER_BEAM_SIZE", "1"))
     port = int(os.getenv("WHISPER_PORT", "10300"))
     redis_url = os.getenv("REDIS_URL", "redis://redis:6379")
 

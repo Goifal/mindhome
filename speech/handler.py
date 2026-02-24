@@ -238,12 +238,14 @@ class WhisperEmbeddingHandler(AsyncEventHandler):
 
         # W-9: VAD-Fallback — bei ValueError nochmal ohne VAD versuchen
         try:
+            # S-3: min_silence von 500ms auf 250ms reduziert — schnellere
+            # Endeerkennung bei kurzen Sprachbefehlen (~250ms Latenzgewinn)
             segments, _info = model.transcribe(
                 audio_array,
                 language=self.language,
                 beam_size=self.beam_size,
                 vad_filter=True,
-                vad_parameters={"min_silence_duration_ms": 500},
+                vad_parameters={"min_silence_duration_ms": 250},
             )
             text = " ".join(seg.text.strip() for seg in segments)
         except ValueError as e:
