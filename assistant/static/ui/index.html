@@ -851,6 +851,7 @@ input:focus,select:focus,textarea:focus { border-color:var(--accent); box-shadow
       <div class="nav-group">
         <div class="nav-group-header" onclick="toggleNavGroup(this)"><span>Haus & Raeume</span><span class="nav-group-arrow">&#9654;</span></div>
         <div class="nav-group-items">
+          <div class="nav-item" data-page="presence"><span class="nav-icon">&#128205;</span>Anwesenheit</div>
           <div class="nav-item" data-page="settings" data-tab="tab-rooms"><span class="nav-icon">&#127968;</span>Raeume & Speaker</div>
           <div class="nav-item" data-page="settings" data-tab="tab-devices"><span class="nav-icon">&#128268;</span>Geraete</div>
           <div class="nav-item" data-page="settings" data-tab="tab-covers"><span class="nav-icon">&#129695;</span>Rolllaeden</div>
@@ -947,6 +948,21 @@ input:focus,select:focus,textarea:focus { border-color:var(--accent); box-shadow
           <button class="btn btn-primary" onclick="saveAllSettings()">Speichern</button>
         </div>
         <div id="settingsContent"></div>
+      </div>
+
+      <!-- ============ PRESENCE ============ -->
+      <div id="page-presence" class="page">
+        <div class="section-header">
+          <div><h2>Anwesenheit</h2><p>Wer ist zuhause, wer unterwegs?</p></div>
+          <button class="btn btn-secondary" onclick="loadPresence()">Aktualisieren</button>
+        </div>
+        <div id="presenceSummary" class="grid grid-3" style="margin-bottom:16px;"></div>
+        <div id="presencePersons" class="grid grid-2" style="margin-bottom:16px;"></div>
+        <div class="card" style="margin-bottom:16px;">
+          <div class="card-header"><h3>Einstellungen</h3></div>
+          <div id="presenceSettings" style="padding:16px;"></div>
+        </div>
+        <div style="text-align:center;color:var(--text-muted);font-size:12px;margin-top:8px;" id="presenceRefreshHint">Status wird alle 15 Sekunden aktualisiert</div>
       </div>
 
       <!-- ============ ENTITIES ============ -->

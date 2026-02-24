@@ -321,10 +321,12 @@ document.getElementById('sidebarNav').addEventListener('click', e => {
   // Seite wechseln
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.getElementById(`page-${pg}`).classList.add('active');
-  const titles = {dashboard:'Dashboard',settings:'Einstellungen',entities:'Entities',knowledge:'Wissen',logs:'Logs',errors:'Fehler'};
+  const titles = {dashboard:'Dashboard',settings:'Einstellungen',presence:'Anwesenheit',entities:'Entities',knowledge:'Wissen',logs:'Logs',errors:'Fehler'};
   document.getElementById('pageTitle').textContent = titles[pg] || pg;
   stopLiveRefresh();
+  stopPresenceRefresh();
   if (pg === 'dashboard') { loadDashboard(); startLiveRefresh(); loadHealthTrends(_trendHours); }
+  else if (pg === 'presence') { loadPresence(); startPresenceRefresh(); }
   else if (pg === 'settings') {
     // Tab wechseln und Settings laden
     if (tab && tab !== currentTab) {
@@ -2808,6 +2810,184 @@ async function saveAllSettings() {
     _saving = false;
   }
 }
+
+// ---- Presence ----
+let _presenceInterval = null;
+let _presenceSettings = {};
+
+function startPresenceRefresh() {
+  stopPresenceRefresh();
+  _presenceInterval = setInterval(() => { loadPresencePersons(); }, 15000);
+}
+function stopPresenceRefresh() {
+  if (_presenceInterval) { clearInterval(_presenceInterval); _presenceInterval = null; }
+}
+
+async function loadPresence() {
+  await Promise.all([loadPresencePersons(), loadPresenceSettings()]);
+}
+
+async function loadPresencePersons() {
+  try {
+    const d = await api('/api/ui/presence');
+    const persons = d.persons || [];
+    const home = d.home_count || 0;
+    const away = d.away_count || 0;
+    const unknown = d.unknown_count || 0;
+
+    // Summary cards
+    document.getElementById('presenceSummary').innerHTML = `
+      <div class="card" style="text-align:center;padding:20px;">
+        <div style="font-size:32px;font-weight:700;color:var(--success);">${home}</div>
+        <div style="font-size:12px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;">Zuhause</div>
+      </div>
+      <div class="card" style="text-align:center;padding:20px;">
+        <div style="font-size:32px;font-weight:700;color:#f59e0b;">${away}</div>
+        <div style="font-size:12px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;">Unterwegs</div>
+      </div>
+      <div class="card" style="text-align:center;padding:20px;">
+        <div style="font-size:32px;font-weight:700;color:var(--text-muted);">${unknown}</div>
+        <div style="font-size:12px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;">Unbekannt</div>
+      </div>`;
+
+    // Person cards
+    if (persons.length === 0) {
+      document.getElementById('presencePersons').innerHTML = `
+        <div class="card" style="grid-column:1/-1;text-align:center;padding:32px;color:var(--text-muted);">
+          <div style="font-size:36px;margin-bottom:12px;">&#128100;</div>
+          <div style="font-weight:600;">Keine Personen in Home Assistant gefunden</div>
+          <div style="font-size:13px;margin-top:8px;">Erstelle Person-Entities in HA unter Einstellungen &rarr; Personen und verknuepfe sie mit Device-Trackern.</div>
+        </div>`;
+      return;
+    }
+
+    let html = '';
+    for (const p of persons) {
+      const isHome = p.state === 'home';
+      const isAway = p.state === 'not_home';
+      const color = isHome ? 'var(--success)' : isAway ? '#f59e0b' : 'var(--text-muted)';
+      const icon = isHome ? '&#127968;' : isAway ? '&#128694;' : '&#10067;';
+      const label = isHome ? 'Zuhause' : isAway ? 'Unterwegs' : 'Unbekannt';
+      const glow = isHome ? 'box-shadow:0 0 12px rgba(0,230,118,0.2);' : '';
+      html += `
+        <div class="card" style="padding:16px;border-left:3px solid ${color};${glow}">
+          <div style="display:flex;align-items:center;gap:12px;">
+            <div style="width:44px;height:44px;border-radius:50%;background:${color}15;display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0;">${icon}</div>
+            <div style="flex:1;min-width:0;">
+              <div style="font-weight:700;font-size:15px;">${esc(p.name)}</div>
+              <div style="display:flex;align-items:center;gap:6px;margin-top:3px;">
+                <span style="width:8px;height:8px;border-radius:50%;background:${color};display:inline-block;${isHome ? 'box-shadow:0 0 6px ' + color + ';' : ''}"></span>
+                <span style="font-size:13px;color:${color};font-weight:500;">${label}</span>
+              </div>
+              <div style="font-size:11px;color:var(--text-muted);margin-top:4px;font-family:var(--mono);">${esc(p.entity_id)}</div>
+              ${p.source ? `<div style="font-size:11px;color:var(--text-muted);">Tracker: ${esc(p.source)}</div>` : ''}
+            </div>
+          </div>
+        </div>`;
+    }
+    document.getElementById('presencePersons').innerHTML = html;
+  } catch (e) {
+    document.getElementById('presencePersons').innerHTML = `<div class="card" style="grid-column:1/-1;padding:16px;color:var(--danger);">Fehler beim Laden: ${esc(e.message)}</div>`;
+  }
+}
+
+async function loadPresenceSettings() {
+  try {
+    const d = await api('/api/ui/presence/settings');
+    _presenceSettings = d || {};
+    renderPresenceSettings();
+  } catch (e) {
+    document.getElementById('presenceSettings').innerHTML = `<div style="color:var(--danger);">Einstellungen konnten nicht geladen werden: ${esc(e.message)}</div>`;
+  }
+}
+
+function renderPresenceSettings() {
+  const s = _presenceSettings;
+  const autoEnabled = s.presence_auto_detect_enabled === 'true';
+  const manualOverride = s.presence_manual_override === 'true';
+  const treatUnavailable = s.presence_treat_unavailable_as_away === 'true';
+  const guestThreshold = parseInt(s.presence_guest_threshold) || 2;
+  const awayMinutes = parseInt(s.presence_away_device_minutes) || 120;
+  const bufferMinutes = parseInt(s.presence_buffer_minutes) || 5;
+
+  document.getElementById('presenceSettings').innerHTML = `
+    <div style="display:flex;flex-direction:column;gap:16px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <div>
+          <div style="font-weight:600;font-size:14px;">Auto-Erkennung</div>
+          <div style="font-size:12px;color:var(--text-muted);">Automatische Anwesenheitserkennung anhand von HA Person-Entities</div>
+        </div>
+        <button class="btn btn-sm ${autoEnabled ? 'btn-primary' : 'btn-secondary'}" onclick="togglePresenceSetting('presence_auto_detect_enabled', ${!autoEnabled})">${autoEnabled ? 'ON' : 'OFF'}</button>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <div>
+          <div style="font-weight:600;font-size:14px;">Manuelle Uebersteuerung</div>
+          <div style="font-size:12px;color:var(--text-muted);">Auto-Erkennung pausieren</div>
+        </div>
+        <button class="btn btn-sm ${manualOverride ? 'btn-primary' : 'btn-secondary'}" onclick="togglePresenceSetting('presence_manual_override', ${!manualOverride})">${manualOverride ? 'ON' : 'OFF'}</button>
+      </div>
+      <div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+          <div style="font-weight:600;font-size:14px;">Besuch-Schwelle</div>
+          <span style="font-weight:700;color:var(--accent);font-size:16px;">${guestThreshold}</span>
+        </div>
+        <input type="range" min="2" max="10" step="1" value="${guestThreshold}" style="width:100%;accent-color:var(--accent);"
+          onchange="updatePresenceSetting('presence_guest_threshold', this.value)">
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-muted);"><span>2 Personen</span><span>10 Personen</span></div>
+      </div>
+      <div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+          <div style="font-weight:600;font-size:14px;">Abwesenheits-Timer</div>
+          <span style="font-weight:700;color:var(--accent);font-size:16px;">${awayMinutes} min</span>
+        </div>
+        <input type="range" min="15" max="480" step="15" value="${awayMinutes}" style="width:100%;accent-color:var(--accent);"
+          onchange="updatePresenceSetting('presence_away_device_minutes', this.value)">
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-muted);"><span>15 min</span><span>8 Std</span></div>
+      </div>
+      <div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+          <div style="font-weight:600;font-size:14px;">Puffer-Zeit</div>
+          <span style="font-weight:700;color:var(--accent);font-size:16px;">${bufferMinutes} min</span>
+        </div>
+        <input type="range" min="0" max="30" step="1" value="${bufferMinutes}" style="width:100%;accent-color:var(--accent);"
+          onchange="updatePresenceSetting('presence_buffer_minutes', this.value)">
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-muted);"><span>0 min</span><span>30 min</span></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <div>
+          <div style="font-weight:600;font-size:14px;">"Nicht erreichbar" = Abwesend</div>
+          <div style="font-size:12px;color:var(--text-muted);">Wenn Person-Entity nicht erreichbar (z.B. Handy-Akku leer)</div>
+        </div>
+        <button class="btn btn-sm ${treatUnavailable ? 'btn-primary' : 'btn-secondary'}" onclick="togglePresenceSetting('presence_treat_unavailable_as_away', ${!treatUnavailable})">${treatUnavailable ? 'ON' : 'OFF'}</button>
+      </div>
+    </div>
+    <div style="margin-top:16px;padding:12px;background:var(--bg-secondary);border-radius:var(--radius-md);border:1px solid var(--border);font-size:12px;color:var(--text-muted);">
+      &#9432; Die Erkennung basiert auf person.* Entities aus Home Assistant. Verknuepfe Personen mit Device-Trackern (Companion App, Router, Bluetooth).
+    </div>`;
+}
+
+async function togglePresenceSetting(key, value) {
+  try {
+    await api('/api/ui/presence/settings', 'PUT', { [key]: String(value) });
+    _presenceSettings[key] = String(value);
+    renderPresenceSettings();
+    toast('Einstellung gespeichert');
+  } catch (e) {
+    toast('Fehler: ' + e.message, 'error');
+  }
+}
+
+async function updatePresenceSetting(key, value) {
+  try {
+    await api('/api/ui/presence/settings', 'PUT', { [key]: String(value) });
+    _presenceSettings[key] = String(value);
+    renderPresenceSettings();
+    toast('Einstellung gespeichert');
+  } catch (e) {
+    toast('Fehler: ' + e.message, 'error');
+  }
+}
+
 
 // ---- Entities ----
 async function loadEntities() {
