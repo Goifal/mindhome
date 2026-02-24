@@ -1025,6 +1025,14 @@ function renderGeneral() {
       'dessert','kuchen','suppe','salat','pizza','pasta','sauce'
     ])
   ) +
+  sectionWrap('&#128269;', 'Web-Suche',
+    fInfo('Optionale Web-Recherche fuer Wissensfragen. Privacy-First: SearXNG (self-hosted) oder DuckDuckGo. Standardmaessig deaktiviert.') +
+    fToggle('web_search.enabled', 'Web-Suche aktivieren') +
+    fSelect('web_search.engine', 'Suchmaschine', [{v:'searxng',l:'SearXNG (self-hosted)'},{v:'duckduckgo',l:'DuckDuckGo'}]) +
+    fText('web_search.searxng_url', 'SearXNG URL', 'Nur relevant wenn SearXNG als Engine gewaehlt') +
+    fNum('web_search.max_results', 'Max. Ergebnisse', 1, 20, 1) +
+    fNum('web_search.timeout_seconds', 'Timeout (Sekunden)', 3, 30, 1)
+  ) +
   sectionWrap('&#128274;', 'Dashboard & PIN',
     fInfo('Der Zugang zum Dashboard ist mit einer PIN geschuetzt. Der Recovery-Key wird benoetigt wenn du die PIN vergisst.') +
     '<div class="form-group"><label>PIN-Schutz</label>' +

@@ -1783,8 +1783,14 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
         # Web Search
         if "web_search" in changed_settings and hasattr(brain, "web_search"):
             ws_cfg = yaml_cfg.get("web_search", {})
-            brain.web_search.enabled = bool(ws_cfg.get("enabled", False))
-            logger.info("Web Search Settings aktualisiert")
+            ws = brain.web_search
+            ws.enabled = bool(ws_cfg.get("enabled", False))
+            ws.engine = ws_cfg.get("engine", ws.engine)
+            ws.searxng_url = ws_cfg.get("searxng_url", ws.searxng_url)
+            ws.max_results = int(ws_cfg.get("max_results", ws.max_results))
+            ws.timeout = int(ws_cfg.get("timeout_seconds", ws.timeout))
+            logger.info("Web Search Settings aktualisiert (enabled=%s, engine=%s)",
+                        ws.enabled, ws.engine)
 
         # Health Monitor: Schwellwerte + Exclude-Patterns
         if "health_monitor" in changed_settings and hasattr(brain, "health_monitor"):
