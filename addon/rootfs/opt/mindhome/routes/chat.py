@@ -148,7 +148,9 @@ def api_chat_send():
 
     # Forward to assistant
     assistant_url = _get_assistant_url()
-    chat_payload = {"text": text, "person": person, "room": room}
+    chat_payload = {"text": text, "person": person}
+    if room:
+        chat_payload["room"] = room
     if device_id:
         chat_payload["device_id"] = device_id
     try:
@@ -292,14 +294,18 @@ def api_chat_upload():
 
     person = request.form.get("person", get_setting("primary_user", "User"))
     caption = request.form.get("caption", "").strip()
+    device_id = request.form.get("device_id")
 
     # Forward to Assistant (PC 2)
     assistant_url = _get_assistant_url()
+    upload_data = {"caption": caption, "person": person}
+    if device_id:
+        upload_data["device_id"] = device_id
     try:
         resp = requests.post(
             f"{assistant_url}/api/assistant/chat/upload",
             files={"file": (file.filename, file.stream, file.content_type or "application/octet-stream")},
-            data={"caption": caption, "person": person},
+            data=upload_data,
             headers=_assistant_headers(),
             timeout=60,
         )
@@ -660,7 +666,9 @@ def api_chat_voice():
         _conversation_history.append(user_msg)
 
     assistant_url = _get_assistant_url()
-    chat_payload = {"text": transcribed_text, "person": person, "room": room}
+    chat_payload = {"text": transcribed_text, "person": person}
+    if room:
+        chat_payload["room"] = room
     if device_id:
         chat_payload["device_id"] = device_id
     if voice_metadata:

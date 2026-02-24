@@ -465,16 +465,15 @@ speaker_recognition:
   # Die Device-IDs findet man in HA unter Settings → Devices → ESPHome
   # Format: "esphome_<name>": "<person_id>"
   # Raeume ohne klaren Hauptnutzer leer lassen ("") → Room+Presence greift
-  device_mapping:
-    # ReSpeaker Hauptraeume (ausfuellen wenn Hardware da):
-    # esphome_respeaker_kueche: "max"
-    # esphome_respeaker_wohnzimmer: ""
-    # esphome_respeaker_schlafzimmer: ""
-    # esphome_respeaker_buero: "max"
-    # Atom Echo Nebenraeume:
-    # esphome_atom_echo_flur: ""
-    # esphome_atom_echo_bad: ""
-    null
+  device_mapping: {}
+  # ReSpeaker Hauptraeume (ausfuellen wenn Hardware da):
+  # device_mapping:
+  #   esphome_respeaker_kueche: "max"
+  #   esphome_respeaker_wohnzimmer: ""
+  #   esphome_respeaker_schlafzimmer: ""
+  #   esphome_respeaker_buero: "max"
+  #   esphome_atom_echo_flur: ""
+  #   esphome_atom_echo_bad: ""
 multi_room:
   enabled: true
   presence_timeout_minutes: 15
