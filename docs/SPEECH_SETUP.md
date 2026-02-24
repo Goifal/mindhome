@@ -163,12 +163,32 @@ HA leitet Audio/Text nur weiter — kein schweres Rechnen mehr auf dem NUC.
 
 ---
 
-### Schritt 1: PC 2 — Neue Docker-Services starten
+### Schritt 1: PC 2 — Software aktualisieren und Services starten
 
-> Diesen Schritt erledige ich (Claude) — Software wird automatisch erstellt.
-> Hier steht was passiert, damit du es nachvollziehen kannst.
+> Alles auf PC 2 (MindHome Assistant Server) via SSH ausfuehren.
 
-**1.1 Neue Dateien die erstellt werden:**
+---
+
+#### 1.1 Per SSH auf PC 2 verbinden
+
+Von deinem Laptop oder einem anderen PC:
+
+```bash
+ssh mindhome@192.168.1.50
+```
+
+(Ersetze `192.168.1.50` mit der IP deines Assistant-PCs.)
+
+---
+
+#### 1.2 Neuesten Code ziehen
+
+```bash
+cd ~/mindhome
+git pull
+```
+
+Damit werden alle neuen Dateien heruntergeladen:
 
 ```
 mindhome/
@@ -178,56 +198,211 @@ mindhome/
     .env.example                # Erweitert um Speech-Variablen
   speech/
     Dockerfile.whisper          # Neu: Custom Whisper + Embedding Server
-    Dockerfile.piper            # Neu: Piper TTS Server
     handler.py                  # Neu: Wyoming Handler mit Embedding-Extraktion
     server.py                   # Neu: Wyoming Server Entry Point
     requirements.txt            # Neu: faster-whisper, speechbrain, wyoming, redis
 ```
 
-**1.2 Neue Docker-Services:**
-
-| Service | Container | Port | Funktion |
-|---|---|---|---|
-| `whisper` | `mha-whisper` | 10300 | STT + Voice Embedding Extraktion |
-| `piper` | `mha-piper` | 10200 | Text-to-Speech |
-
-**1.3 Neue Umgebungsvariablen in `.env`:**
+**Pruefen ob alles da ist:**
 
 ```bash
-# --- Speech Services ---
-SPEECH_DEVICE=cpu                    # "cpu" oder "cuda" (Phase 2)
-WHISPER_MODEL=small-int8             # Modell fuer STT
-WHISPER_LANGUAGE=de                  # Sprache
-WHISPER_BEAM_SIZE=5                  # Beam Search Breite
-WHISPER_COMPUTE=int8                 # Compute Type: int8 (CPU), float16 (GPU)
-PIPER_VOICE=de_DE-thorsten-high     # Deutsche Stimme
+ls ~/mindhome/speech/
 ```
 
-**1.4 Services starten:**
+Erwartete Ausgabe:
+```
+Dockerfile.whisper  handler.py  requirements.txt  server.py
+```
+
+---
+
+#### 1.3 Speech-Variablen in .env eintragen
+
+Oeffne die `.env` Datei:
 
 ```bash
-# Auf PC 2 ausfuehren:
-cd /home/user/mindhome/assistant
+nano ~/mindhome/assistant/.env
+```
+
+Fuege **am Ende der Datei** folgende Zeilen hinzu:
+
+```bash
+# --- Speech Services (Whisper STT + Piper TTS) ---
+SPEECH_DEVICE=cpu
+WHISPER_MODEL=small-int8
+WHISPER_LANGUAGE=de
+WHISPER_BEAM_SIZE=5
+WHISPER_COMPUTE=int8
+PIPER_VOICE=de_DE-thorsten-high
+```
+
+Speichern: `Strg+O` → `Enter` → `Strg+X`
+
+**Was die Variablen bedeuten:**
+
+| Variable | Wert | Erklaerung |
+|---|---|---|
+| `SPEECH_DEVICE` | `cpu` | CPU fuer Phase 1, spaeter `cuda` fuer GPU |
+| `WHISPER_MODEL` | `small-int8` | Kleines schnelles Modell (~2-4 Sek auf CPU) |
+| `WHISPER_LANGUAGE` | `de` | Deutsch als Sprache |
+| `WHISPER_BEAM_SIZE` | `5` | Genauigkeit der Suche (Standard) |
+| `WHISPER_COMPUTE` | `int8` | CPU-optimiertes Format, spaeter `float16` fuer GPU |
+| `PIPER_VOICE` | `de_DE-thorsten-high` | Deutsche maennliche Stimme (beste Qualitaet) |
+
+---
+
+#### 1.4 Firewall-Ports oeffnen
+
+Die neuen Services muessen von Home Assistant (PC 1) erreichbar sein:
+
+```bash
+# Whisper STT Port
+sudo ufw allow 10300/tcp comment "Wyoming Whisper STT"
+
+# Piper TTS Port
+sudo ufw allow 10200/tcp comment "Wyoming Piper TTS"
+```
+
+**Pruefen:**
+
+```bash
+sudo ufw status
+```
+
+Erwartete neue Eintraege:
+```
+10300/tcp                  ALLOW       Anywhere       # Wyoming Whisper STT
+10200/tcp                  ALLOW       Anywhere       # Wyoming Piper TTS
+```
+
+> **Hinweis:** Falls UFW nicht aktiv ist (Status: inactive), wurde die Firewall
+> nicht eingerichtet. Dann brauchst du diesen Schritt nicht — die Ports sind
+> ohne Firewall sowieso offen.
+
+---
+
+#### 1.5 Docker-Container bauen und starten
+
+Jetzt wird der Whisper-Container gebaut (das dauert beim ersten Mal 5-10 Minuten weil Modelle heruntergeladen werden):
+
+```bash
+cd ~/mindhome/assistant
+docker compose build whisper
+```
+
+**Was passiert beim Build:**
+- Python 3.12 Image wird heruntergeladen
+- faster-whisper, speechbrain, torch, wyoming werden installiert
+- Gesamtgroesse: ~3-4 GB (wegen PyTorch + Modelle)
+
+Wenn der Build fertig ist, alle Container starten:
+
+```bash
 docker compose up -d
 ```
 
-Neue Container `mha-whisper` (:10300) und `mha-piper` (:10200) starten automatisch.
+Docker ladet auch automatisch das Piper-Image (`rhasspy/wyoming-piper`) herunter.
 
-**1.5 Pruefen ob Services laufen:**
+---
+
+#### 1.6 Warten bis Container healthy sind
+
+Der Whisper-Container braucht beim ersten Start 1-3 Minuten, weil er die Modelle herunterlaed (faster-whisper + ECAPA-TDNN). Danach geht es schnell.
+
+**Status pruefen (alle paar Sekunden wiederholen):**
 
 ```bash
 docker compose ps
 ```
 
+Warten bis **alle** Container "Up (healthy)" zeigen:
+
+```
+NAME                STATUS              PORTS
+mindhome-assistant  Up (healthy)        0.0.0.0:8200->8200/tcp
+mha-chromadb        Up (healthy)        127.0.0.1:8100->8000/tcp
+mha-redis           Up (healthy)        127.0.0.1:6379->6379/tcp
+mha-whisper         Up (healthy)        0.0.0.0:10300->10300/tcp
+mha-piper           Up (healthy)        0.0.0.0:10200->10200/tcp
+mha-autoheal        Up
+```
+
+**Falls ein Container "starting" oder "unhealthy" bleibt:**
+
+```bash
+# Logs anschauen:
+docker compose logs whisper
+docker compose logs piper
+```
+
+Typische Gruende:
+- `mha-whisper` im Status "starting" → Modelle werden noch heruntergeladen (warte 2-3 Min)
+- `mha-piper` im Status "starting" → Piper-Voice wird heruntergeladen (warte 1-2 Min)
+- "Fehler: Redis nicht erreichbar" → Redis ist noch nicht healthy, Container startet sich automatisch neu
+
+---
+
+#### 1.7 Ports von PC 1 aus testen
+
+Oeffne ein neues Terminal auf einem **anderen PC** (oder PC 1) und teste die Verbindung:
+
+```bash
+# Whisper erreichbar? (Ersetze 192.168.1.50 mit der IP von PC 2)
+nc -zv 192.168.1.50 10300
+
+# Piper erreichbar?
+nc -zv 192.168.1.50 10200
+```
+
 Erwartete Ausgabe:
 ```
-NAME                STATUS          PORTS
-mindhome-assistant  Up (healthy)    0.0.0.0:8200->8200/tcp
-mha-chromadb        Up (healthy)    127.0.0.1:8100->8000/tcp
-mha-redis           Up (healthy)    127.0.0.1:6379->6379/tcp
-mha-whisper         Up (healthy)    0.0.0.0:10300->10300/tcp
-mha-piper           Up (healthy)    0.0.0.0:10200->10200/tcp
-mha-autoheal        Up
+Connection to 192.168.1.50 10300 port [tcp/*] succeeded!
+Connection to 192.168.1.50 10200 port [tcp/*] succeeded!
+```
+
+Falls `nc` nicht installiert ist:
+```bash
+sudo apt install -y netcat-openbsd
+```
+
+**Falls "Connection refused":** Container laeuft nicht → `docker compose ps` und Logs pruefen.
+**Falls "Connection timed out":** Firewall blockiert → `sudo ufw allow 10300/tcp` auf PC 2.
+
+---
+
+#### Zusammenfassung: Alle Befehle fuer Schritt 1
+
+Hier alle Befehle auf einen Blick (auf PC 2 ausfuehren):
+
+```bash
+# 1. Code holen
+cd ~/mindhome && git pull
+
+# 2. .env erweitern (Speech-Variablen am Ende anfuegen)
+cat >> ~/mindhome/assistant/.env << 'EOF'
+
+# --- Speech Services (Whisper STT + Piper TTS) ---
+SPEECH_DEVICE=cpu
+WHISPER_MODEL=small-int8
+WHISPER_LANGUAGE=de
+WHISPER_BEAM_SIZE=5
+WHISPER_COMPUTE=int8
+PIPER_VOICE=de_DE-thorsten-high
+EOF
+
+# 3. Firewall-Ports oeffnen
+sudo ufw allow 10300/tcp comment "Wyoming Whisper STT"
+sudo ufw allow 10200/tcp comment "Wyoming Piper TTS"
+
+# 4. Whisper-Container bauen (dauert 5-10 Min beim ersten Mal)
+cd ~/mindhome/assistant
+docker compose build whisper
+
+# 5. Alle Container starten
+docker compose up -d
+
+# 6. Warten und pruefen (ein paar Mal wiederholen bis alle "healthy")
+docker compose ps
 ```
 
 ---
@@ -727,13 +902,19 @@ Community-Fork der genau Speaker Recognition mit Wyoming Whisper implementiert:
 
 ### Jetzt (Phase 1 — CPU)
 
-| Schritt | Wer | Was | Dauer |
+| Schritt | Wo | Was | Dauer |
 |---|---|---|---|
-| 1 | Claude | Docker-Services erstellen + starten | Automatisch |
-| 2 | Du | Wyoming Integration in HA hinzufuegen (2x) | ~2 Min |
-| 3 | Du | Assist Pipeline umstellen | ~1 Min |
-| 4 | Du + Claude | Testen | ~5 Min |
-| 5 | Du | Alte Add-ons entfernen | ~1 Min |
+| 1.1 | PC 2 (SSH) | `git pull` — neuesten Code ziehen | ~1 Min |
+| 1.2 | PC 2 (SSH) | `.env` erweitern (6 Zeilen Speech-Variablen) | ~1 Min |
+| 1.3 | PC 2 (SSH) | Firewall-Ports oeffnen (10300 + 10200) | ~1 Min |
+| 1.4 | PC 2 (SSH) | `docker compose build whisper` — Container bauen | ~5-10 Min |
+| 1.5 | PC 2 (SSH) | `docker compose up -d` — alle starten | ~2-3 Min |
+| 1.6 | PC 2 (SSH) | Warten bis alle Container "healthy" sind | ~1-3 Min |
+| 1.7 | Laptop/PC 1 | Ports testen (`nc -zv PC2-IP 10300`) | ~1 Min |
+| 2 | HA (Browser) | Wyoming Integration hinzufuegen (2x: STT + TTS) | ~2 Min |
+| 3 | HA (Browser) | Assist Pipeline auf neues Wyoming umstellen | ~1 Min |
+| 4 | HA (Browser) | Testen (Mikrofon + Satellit) | ~5 Min |
+| 5 | HA (Browser) | Alte Whisper + Piper Add-ons entfernen | ~1 Min |
 
 ### Spaeter (Phase 2 — GPU)
 
