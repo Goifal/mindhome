@@ -4,12 +4,17 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "1.5.5"
-BUILD = 96
-BUILD_DATE = "2026-02-22"
+VERSION = "1.5.6"
+BUILD = 97
+BUILD_DATE = "2026-02-24"
 CODENAME = "Jarvis Voice"
 
 # Changelog
+# Build 97: v1.5.6 Jarvis Voice — Speech Service Fixes
+#   - FIX: Whisper crash — AsrModel/AsrProgram fehlender 'version' Parameter (wyoming 1.8.0)
+#   - FIX: Piper crash — --port durch --uri tcp://0.0.0.0:10200 ersetzt (wyoming-piper CLI)
+#   - FIX: WHISPER_MODEL "small-int8" Parsing — Compute-Typ wird automatisch abgetrennt
+#   - NEU: Speech Source-Files als Volume-Mounts (server.py, handler.py)
 # Build 96: v1.5.5 Jarvis Voice — Entity-Matching Fix
 #   - FIX: Geraetetyp-Woerter aus Room-Parameter strippen (schlafzimmer rollladen -> schlafzimmer)
 #   - FIX: Bidirektionales Entity-Matching (DB + HA-Fallback)
