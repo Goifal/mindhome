@@ -2387,6 +2387,63 @@ async def ui_live_status(token: str = ""):
         raise HTTPException(status_code=500, detail=f"Fehler: {e}")
 
 
+# ----- Presence: Live Person Status + Settings -----
+
+@app.get("/api/ui/presence")
+async def ui_get_presence(token: str = ""):
+    """Live-Anwesenheitsstatus aller Personen aus Home Assistant."""
+    _check_token(token)
+    try:
+        states = await brain.ha.get_states()
+        persons = []
+        for s in (states or []):
+            eid = s.get("entity_id", "")
+            if not eid.startswith("person."):
+                continue
+            attrs = s.get("attributes", {})
+            persons.append({
+                "entity_id": eid,
+                "name": attrs.get("friendly_name", eid),
+                "state": s.get("state", "unknown"),
+                "source": attrs.get("source"),
+                "latitude": attrs.get("latitude"),
+                "longitude": attrs.get("longitude"),
+            })
+        home_count = sum(1 for p in persons if p["state"] == "home")
+        away_count = sum(1 for p in persons if p["state"] == "not_home")
+        return {
+            "persons": persons,
+            "total": len(persons),
+            "home_count": home_count,
+            "away_count": away_count,
+            "unknown_count": len(persons) - home_count - away_count,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
+@app.get("/api/ui/presence/settings")
+async def ui_get_presence_settings(token: str = ""):
+    """Presence-Einstellungen vom MindHome Addon holen."""
+    _check_token(token)
+    try:
+        result = await brain.ha.mindhome_get("/api/presence/settings")
+        return result or {}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
+@app.put("/api/ui/presence/settings")
+async def ui_update_presence_settings(token: str = "", data: dict = {}):
+    """Presence-Einstellungen im MindHome Addon aktualisieren."""
+    _check_token(token)
+    try:
+        result = await brain.ha.mindhome_put("/api/presence/settings", data)
+        return result or {"success": False}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
 # ----- Phase 15.4: Notification Kanal-Wahl -----
 
 @app.get("/api/ui/notification-channels")
