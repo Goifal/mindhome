@@ -101,6 +101,14 @@ class SoundManager:
         # Stille Events: Nur Volume-Ping, kein TTS (zu stoerend)
         self._silent_events = {"listening", "confirmed", "greeting", "goodnight"}
 
+        # T-1/T-3: States-Cache — vermeidet mehrfache get_states() pro speak_response()
+        self._states_cache: Optional[list] = None
+        self._states_cache_time: float = 0.0
+        self._states_cache_ttl: float = 60.0  # 60s TTL
+
+        # T-3: TTS-Entity einmal finden und cachen (aendert sich praktisch nie)
+        self._cached_tts_entity: Optional[str] = None
+
         logger.info(
             "SoundManager initialisiert (enabled: %s, events: %d)",
             self.enabled, len(self.event_sounds),
@@ -333,6 +341,22 @@ class SoundManager:
 
         return round(min(1.0, base), 2)
 
+    async def _get_states_cached(self) -> Optional[list]:
+        """T-1: Gecachtes get_states() — vermeidet mehrfache HTTP-Roundtrips.
+
+        States aendern sich selten genug dass ein 60s Cache voellig ausreicht.
+        Speaker-Entities und TTS-Entities werden nicht im Sekundentakt umbenannt.
+        """
+        now = time.monotonic()
+        if self._states_cache and (now - self._states_cache_time) < self._states_cache_ttl:
+            return self._states_cache
+
+        states = await self.ha.get_states()
+        if states:
+            self._states_cache = states
+            self._states_cache_time = now
+        return states
+
     async def _resolve_speaker(self, room: Optional[str] = None) -> Optional[str]:
         """Findet den besten Speaker: Config-Mapping > Raum-Match > Default."""
         # 1. Konfiguriertes Mapping pruefen
@@ -357,7 +381,8 @@ class SoundManager:
 
         Schliesst TVs und andere nicht-TTS-Geraete aus.
         """
-        states = await self.ha.get_states()
+        # T-1: Gecachte States verwenden statt eigener get_states() Call
+        states = await self._get_states_cached()
         if not states:
             return None
         room_lower = room.lower().replace(" ", "_")
@@ -385,8 +410,8 @@ class SoundManager:
                 logger.info("Default-Speaker aus room_speakers: %s", first_speaker)
                 return first_speaker
 
-        # 3. Automatische Erkennung
-        states = await self.ha.get_states()
+        # 3. Automatische Erkennung — T-1: gecachte States
+        states = await self._get_states_cached()
         if not states:
             logger.warning("Kein Default-Speaker: get_states() liefert keine Daten")
             return None
@@ -401,13 +426,21 @@ class SoundManager:
         return None
 
     async def _find_tts_entity(self) -> Optional[str]:
-        """Findet die TTS-Entity (Piper bevorzugt)."""
+        """Findet die TTS-Entity (Piper bevorzugt).
+
+        T-3: Ergebnis wird gecacht — TTS-Entity aendert sich praktisch nie.
+        """
+        # 0. Gecachtes Ergebnis zurueckgeben
+        if self._cached_tts_entity:
+            return self._cached_tts_entity
+
         # 1. Explizit konfigurierte TTS-Entity
         if self._configured_tts_entity:
+            self._cached_tts_entity = self._configured_tts_entity
             return self._configured_tts_entity
 
-        # 2. Automatische Erkennung via HA-States
-        states = await self.ha.get_states()
+        # 2. Automatische Erkennung — T-1: gecachte States
+        states = await self._get_states_cached()
         if not states:
             logger.warning("Keine TTS-Entity: get_states() liefert keine Daten")
             return None
@@ -416,12 +449,14 @@ class SoundManager:
             entity_id = state.get("entity_id", "")
             if entity_id.startswith("tts.") and "piper" in entity_id:
                 logger.info("TTS-Entity automatisch erkannt: %s", entity_id)
+                self._cached_tts_entity = entity_id
                 return entity_id
         # Fallback: Erste TTS-Entity
         for state in states:
             entity_id = state.get("entity_id", "")
             if entity_id.startswith("tts."):
                 logger.info("TTS-Entity (Fallback) erkannt: %s", entity_id)
+                self._cached_tts_entity = entity_id
                 return entity_id
         logger.warning("Keine TTS-Entity gefunden (kein tts.* Entity in HA). "
                        "Konfiguriere 'sounds.tts_entity' in settings.yaml")
@@ -456,11 +491,11 @@ class SoundManager:
             logger.warning("Kein Speaker fuer Sprachausgabe gefunden (room=%s)", room)
             return False
 
-        # Volume merken (fuer Wiederherstellung nach TTS)
+        # T-1: Volume aus gecachten States lesen (kein extra HTTP-Call)
         volume = tts_data.get("volume", 0.8)
         old_volume = None
         try:
-            states = await self.ha.get_states()
+            states = await self._get_states_cached()
             for s in (states or []):
                 if s.get("entity_id") == speaker_entity:
                     old_volume = s.get("attributes", {}).get("volume_level")
@@ -468,27 +503,26 @@ class SoundManager:
         except Exception:
             pass
 
-        # Volume setzen
-        try:
-            await self.ha.call_service(
-                "media_player", "volume_set",
-                {"entity_id": speaker_entity, "volume_level": volume},
-            )
-        except Exception as e:
-            logger.debug("Volume setzen fehlgeschlagen: %s", e)
-
         # SSML-Text bevorzugen, sonst Plaintext
         speak_text = tts_data.get("ssml", text) if tts_data.get("ssml") else text
 
         # Alexa/Echo: Keine Audio-Dateien, stattdessen Alexa-eigener TTS
         if self._is_alexa_speaker(speaker_entity):
+            # Volume trotzdem setzen (fire-and-forget)
+            if old_volume is None or abs(old_volume - volume) > 0.01:
+                asyncio.create_task(self.ha.call_service(
+                    "media_player", "volume_set",
+                    {"entity_id": speaker_entity, "volume_level": volume},
+                ))
             return await self._speak_via_alexa(speak_text, speaker_entity)
 
-        # TTS-Entity finden und sprechen
+        # TTS-Entity finden (T-3: gecacht nach erstem Lookup)
         tts_entity = await self._find_tts_entity()
         if tts_entity:
             try:
-                success = await self.ha.call_service(
+                # T-2: Volume-Set und TTS-Call parallel ausfuehren statt seriell.
+                # Das spart ~50-100ms (Volume-Set blockiert nicht mehr den TTS-Start).
+                tts_coro = self.ha.call_service(
                     "tts", "speak",
                     {
                         "entity_id": tts_entity,
@@ -496,13 +530,26 @@ class SoundManager:
                         "message": speak_text,
                     },
                 )
+                needs_volume_change = old_volume is None or abs(old_volume - volume) > 0.01
+                if needs_volume_change:
+                    vol_coro = self.ha.call_service(
+                        "media_player", "volume_set",
+                        {"entity_id": speaker_entity, "volume_level": volume},
+                    )
+                    results = await asyncio.gather(vol_coro, tts_coro, return_exceptions=True)
+                    success = not isinstance(results[1], Exception) and results[1]
+                    if isinstance(results[0], Exception):
+                        logger.debug("Volume setzen fehlgeschlagen: %s", results[0])
+                else:
+                    success = await tts_coro
+
                 if success:
                     logger.info(
                         "Jarvis spricht via %s auf %s (vol: %.1f)",
                         tts_entity, speaker_entity, volume,
                     )
                     # Volume wiederherstellen nach TTS-Dauer
-                    if old_volume is not None and abs(old_volume - volume) > 0.01:
+                    if needs_volume_change and old_volume is not None:
                         async def _restore_volume():
                             await asyncio.sleep(8)
                             try:

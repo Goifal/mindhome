@@ -17,7 +17,7 @@ from functools import partial
 from wyoming.info import AsrModel, AsrProgram, Attribution, Info
 from wyoming.server import AsyncServer
 
-from handler import WhisperEmbeddingHandler, _get_whisper_model, _get_embedding_model
+from handler import WhisperEmbeddingHandler, _get_whisper_model, _get_embedding_model, close_redis
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +34,10 @@ def main():
     language = os.getenv("WHISPER_LANGUAGE", "de")
     device = os.getenv("SPEECH_DEVICE", "cpu")
     compute_type = os.getenv("WHISPER_COMPUTE", "int8")
-    beam_size = int(os.getenv("WHISPER_BEAM_SIZE", "5"))
+    # S-2: beam_size=1 (greedy) ist ~40% schneller als beam_size=5
+    # bei minimaler Qualitaetseinbusse fuer kurze Sprachbefehle.
+    # Ueber WHISPER_BEAM_SIZE konfigurierbar falls noetig.
+    beam_size = int(os.getenv("WHISPER_BEAM_SIZE", "1"))
     port = int(os.getenv("WHISPER_PORT", "10300"))
     redis_url = os.getenv("REDIS_URL", "redis://redis:6379")
 
@@ -90,7 +93,15 @@ def main():
         redis_url=redis_url,
     )
 
-    asyncio.run(server.run(handler_factory))
+    # I-1: Graceful Shutdown — Redis-Verbindung sauber schliessen
+    loop = asyncio.new_event_loop()
+    try:
+        loop.run_until_complete(server.run(handler_factory))
+    except KeyboardInterrupt:
+        logger.info("Server wird beendet...")
+    finally:
+        loop.run_until_complete(close_redis())
+        loop.close()
 
 
 if __name__ == "__main__":

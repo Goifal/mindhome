@@ -20,10 +20,21 @@ import logging
 import re
 from datetime import datetime
 from typing import Optional
+from xml.sax.saxutils import escape as xml_escape  # P-2: Modul-Ebene statt pro Aufruf
 
 from .config import yaml_config
 
 logger = logging.getLogger(__name__)
+
+# P-3: Vorcompilierte Regex-Patterns fuer Warn-Woerter (statt re.compile pro Aufruf)
+_EMPHASIS_WORDS = [
+    "warnung", "achtung", "vorsicht", "offen", "alarm",
+    "notfall", "gefahr", "sofort",
+]
+_EMPHASIS_PATTERNS = {
+    word: re.compile(re.escape(word), re.IGNORECASE)
+    for word in _EMPHASIS_WORDS
+}
 
 
 # Nachrichtentyp-Erkennung via Keywords
@@ -277,7 +288,7 @@ class TTSEnhancer:
         parts.append(f'<speak><prosody{prosody_attrs}>')
 
         # F-059: User-Text XML-escapen um SSML-Injection zu verhindern
-        from xml.sax.saxutils import escape as xml_escape
+        # P-2: xml_escape jetzt auf Modul-Ebene importiert
         text = xml_escape(text)
 
         # Text in Saetze aufteilen
@@ -316,13 +327,8 @@ class TTSEnhancer:
 
     def _add_warning_emphasis(self, sentence: str) -> str:
         """Fuegt Betonung bei Warn-Woertern hinzu."""
-        emphasis_words = [
-            "warnung", "achtung", "vorsicht", "offen", "alarm",
-            "notfall", "gefahr", "sofort",
-        ]
-        for word in emphasis_words:
-            # Case-insensitive ersetzen mit Emphasis-Tag
-            pattern = re.compile(re.escape(word), re.IGNORECASE)
+        # P-3: Vorcompilierte Patterns aus Modul-Ebene verwenden
+        for word, pattern in _EMPHASIS_PATTERNS.items():
             if pattern.search(sentence):
                 sentence = pattern.sub(
                     f'<emphasis level="strong">{word.capitalize()}</emphasis>',

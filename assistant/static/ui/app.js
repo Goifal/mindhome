@@ -699,6 +699,14 @@ const HELP_TEXTS = {
   'mood.negative_keywords': {title:'Negative Woerter', text:'Woerter die schlechte Stimmung signalisieren.'},
   'mood.impatient_keywords': {title:'Ungeduld-Woerter', text:'Woerter die Ungeduld signalisieren.'},
   'mood.tired_keywords': {title:'Muedigkeits-Woerter', text:'Woerter die Muedigkeit signalisieren.'},
+  // === SPRACH-ENGINE ===
+  'speech.stt_model': {title:'Whisper-Modell', text:'Groessere Modelle sind genauer aber langsamer. "small" ist fuer CPU empfohlen, "large-v3-turbo" fuer GPU.'},
+  'speech.stt_language': {title:'Sprache', text:'Sprache fuer die Spracherkennung. Beeinflusst Genauigkeit der Transkription.'},
+  'speech.stt_beam_size': {title:'Beam Size', text:'Hoehere Werte = genauere Erkennung, aber langsamer. Standard: 5.'},
+  'speech.stt_compute': {title:'Berechnung', text:'int8 fuer CPU (schnell, wenig RAM), float16 fuer GPU, float32 fuer maximale Praezision.'},
+  'speech.stt_device': {title:'Hardware', text:'CPU fuer Standard-Betrieb, CUDA fuer NVIDIA GPU (NVIDIA Container Toolkit erforderlich).'},
+  'speech.tts_voice': {title:'Piper-Stimme', text:'Stimme fuer die Sprachsynthese. "thorsten-high" hat die beste Qualitaet auf Deutsch.'},
+  'speech.auto_night_whisper': {title:'Nacht-Fluestern', text:'Jarvis spricht nachts automatisch leiser (basierend auf den Lautstaerke-Einstellungen).'},
   'voice_analysis.enabled': {title:'Stimm-Analyse', text:'Analysiert Sprechtempo zur Stimmungserkennung.'},
   'voice_analysis.wpm_fast': {title:'Schnelles Sprechen (WPM)', text:'Ab wie vielen Woertern/Min schnelles Sprechen erkannt wird.'},
   'voice_analysis.wpm_slow': {title:'Langsames Sprechen (WPM)', text:'Unter wie vielen Woertern/Min langsames Sprechen gilt.'},
@@ -817,6 +825,20 @@ const HELP_TEXTS = {
   'anticipation.thresholds.ask': {title:'Schwelle: Nachfragen', text:'Ab welcher Sicherheit nachgefragt wird.'},
   'anticipation.thresholds.suggest': {title:'Schwelle: Vorschlagen', text:'Ab welcher Sicherheit vorgeschlagen wird.'},
   'anticipation.thresholds.auto': {title:'Schwelle: Automatisch', text:'Ab welcher Sicherheit automatisch ausgefuehrt wird.'},
+  'insights.enabled': {title:'Jarvis denkt voraus', text:'Kreuz-referenziert Wetter, Kalender, Energie und Geraete — und meldet sich proaktiv.'},
+  'insights.check_interval_minutes': {title:'Pruef-Intervall', text:'Wie oft alle Datenquellen abgeglichen werden.'},
+  'insights.cooldown_hours': {title:'Cooldown', text:'Wie lange nach einem Hinweis der gleiche Typ nicht nochmal kommt.'},
+  'insights.checks.weather_windows': {title:'Wetter + Fenster', text:'Warnt wenn Regen/Sturm kommt und Fenster offen sind.'},
+  'insights.checks.frost_heating': {title:'Frost + Heizung', text:'Warnt wenn Frost erwartet wird und Heizung aus/abwesend ist.'},
+  'insights.checks.calendar_travel': {title:'Reise + Haus', text:'Erkennt Reise-Termine und prueft Alarm, Fenster, Heizung.'},
+  'insights.checks.energy_anomaly': {title:'Energie-Anomalie', text:'Meldet wenn der Verbrauch deutlich ueber dem Durchschnitt liegt.'},
+  'insights.checks.away_devices': {title:'Abwesend + Geraete', text:'Meldet wenn niemand da ist aber Licht/Fenster offen sind.'},
+  'insights.checks.temp_drop': {title:'Temperatur-Abfall', text:'Erkennt wenn die Temperatur ungewoehnlich schnell faellt.'},
+  'insights.checks.window_temp_drop': {title:'Fenster + Kaelte', text:'Warnt bei offenem Fenster und grosser Temperatur-Differenz innen/aussen.'},
+  'insights.thresholds.frost_temp_c': {title:'Frost-Schwelle', text:'Ab welcher Temperatur Frostwarnung ausgeloest wird.'},
+  'insights.thresholds.energy_anomaly_percent': {title:'Energie-Schwelle', text:'Ab wie viel Prozent Abweichung gewarnt wird.'},
+  'insights.thresholds.away_device_minutes': {title:'Abwesenheits-Dauer', text:'Wie lange jemand weg sein muss bevor der Hinweis kommt.'},
+  'insights.thresholds.temp_drop_degrees_per_2h': {title:'Temp-Abfall', text:'Wie viel Grad Abfall in 2 Stunden als ungewoehnlich gilt.'},
   'intent_tracking.enabled': {title:'Absicht-Erkennung', text:'Erkennt offene Absichten und erinnert spaeter.'},
   'intent_tracking.check_interval_minutes': {title:'Pruef-Intervall', text:'Wie oft nach offenen Absichten geschaut wird.'},
   'intent_tracking.remind_hours_before': {title:'Erinnerung vorher', text:'Wie viele Stunden vorher erinnert wird.'},
@@ -1768,7 +1790,45 @@ function renderVoice() {
     {v:'chime',l:'Glockenspiel'},
     {v:'notification',l:'Benachrichtigung'}
   ];
-  return sectionWrap('&#128266;', 'Sprachausgabe (TTS)',
+  return sectionWrap('&#127897;', 'Sprach-Engine (STT / TTS)',
+    fInfo('Whisper-Modell und Piper-Stimme. Aenderungen hier erfordern einen Container-Neustart (System → Neustart).') +
+    '<div style="margin:12px 0;font-weight:600;font-size:13px;">Spracherkennung (Whisper STT)</div>' +
+    fSelect('speech.stt_model', 'Whisper-Modell', [
+      {v:'tiny',l:'Tiny — Schnellstes (schlechteste Qualitaet)'},
+      {v:'base',l:'Base — Schnell'},
+      {v:'small',l:'Small — Empfohlen fuer CPU'},
+      {v:'medium',l:'Medium — Besser (langsamer)'},
+      {v:'large-v3-turbo',l:'Large V3 Turbo — Beste Qualitaet (GPU empfohlen)'}
+    ]) +
+    fSelect('speech.stt_language', 'Sprache', [
+      {v:'de',l:'Deutsch'},{v:'en',l:'Englisch'},{v:'fr',l:'Franzoesisch'},
+      {v:'es',l:'Spanisch'},{v:'it',l:'Italienisch'},{v:'nl',l:'Niederlaendisch'},
+      {v:'pl',l:'Polnisch'},{v:'pt',l:'Portugiesisch'},{v:'ru',l:'Russisch'},
+      {v:'tr',l:'Tuerkisch'},{v:'ja',l:'Japanisch'},{v:'zh',l:'Chinesisch'}
+    ]) +
+    fRange('speech.stt_beam_size', 'Beam Size (Genauigkeit)', 1, 10, 1, {1:'1 (schnell)',3:'3',5:'5 (Standard)',7:'7',10:'10 (genauest)'}) +
+    fSelect('speech.stt_compute', 'Berechnung', [
+      {v:'int8',l:'int8 — Empfohlen fuer CPU'},
+      {v:'float16',l:'float16 — Empfohlen fuer GPU'},
+      {v:'float32',l:'float32 — Hoechste Praezision (langsam)'}
+    ]) +
+    fSelect('speech.stt_device', 'Hardware', [
+      {v:'cpu',l:'CPU'},
+      {v:'cuda',l:'GPU (CUDA)'}
+    ]) +
+    '<div style="margin:16px 0 8px;font-weight:600;font-size:13px;">Sprachsynthese (Piper TTS)</div>' +
+    fSelect('speech.tts_voice', 'Piper-Stimme', [
+      {v:'de_DE-thorsten-high',l:'Thorsten High — Beste Qualitaet (empfohlen)'},
+      {v:'de_DE-thorsten-medium',l:'Thorsten Medium — Gute Qualitaet'},
+      {v:'de_DE-thorsten-low',l:'Thorsten Low — Schnell, weniger natuerlich'},
+      {v:'de_DE-kerstin-low',l:'Kerstin — Weibliche Stimme'},
+      {v:'en_US-lessac-high',l:'Lessac High — English (US)'},
+      {v:'en_US-amy-medium',l:'Amy Medium — English (US)'},
+      {v:'en_GB-alba-medium',l:'Alba Medium — English (UK)'}
+    ]) +
+    fToggle('speech.auto_night_whisper', 'Nachts automatisch fluestern')
+  ) +
+  sectionWrap('&#128266;', 'Sprachausgabe (TTS)',
     fInfo('Standard-Lautsprecher und TTS-Engine fuer Jarvis. Wenn leer, wird der erste Raum-Speaker verwendet.') +
     fEntityPickerSingle('sounds.default_speaker', 'Standard-Lautsprecher', ['media_player'], 'Welcher Lautsprecher soll Jarvis standardmaessig nutzen?') +
     fEntityPickerSingle('sounds.tts_entity', 'TTS-Engine', ['tts'], 'TTS-Service (z.B. tts.piper)') +
@@ -2006,6 +2066,25 @@ function renderProactive() {
     fRange('anticipation.thresholds.ask', '...nachfragen?', 0, 1, 0.05, {0.3:'30%',0.5:'50%',0.6:'60%',0.7:'70%',0.8:'80%'}) +
     fRange('anticipation.thresholds.suggest', '...vorschlagen?', 0, 1, 0.05, {0.5:'50%',0.6:'60%',0.7:'70%',0.8:'80%',0.9:'90%'}) +
     fRange('anticipation.thresholds.auto', '...automatisch ausfuehren?', 0, 1, 0.05, {0.7:'70%',0.8:'80%',0.9:'90%',0.95:'95%',1:'100%'})
+  ) +
+  sectionWrap('&#129504;', 'Jarvis denkt voraus',
+    fInfo('Kreuz-referenziert Wetter, Kalender, Energie und Geraete-Status — und meldet sich proaktiv. Z.B. "Es wird gleich regnen, Fenster sind noch offen."') +
+    fToggle('insights.enabled', 'Insights aktiv') +
+    fRange('insights.check_interval_minutes', 'Pruef-Intervall', 10, 120, 5, {10:'10 Min',15:'15 Min',30:'30 Min',60:'1 Std',120:'2 Std'}) +
+    fRange('insights.cooldown_hours', 'Cooldown pro Insight', 1, 24, 1, {1:'1 Std',2:'2 Std',4:'4 Std',8:'8 Std',12:'12 Std',24:'1 Tag'}) +
+    '<div style="margin:12px 0;font-weight:600;font-size:13px;">Aktive Checks</div>' +
+    fToggle('insights.checks.weather_windows', 'Regen/Sturm + offene Fenster') +
+    fToggle('insights.checks.frost_heating', 'Frost + Heizung aus/Away') +
+    fToggle('insights.checks.calendar_travel', 'Reise im Kalender + Alarm/Fenster/Heizung') +
+    fToggle('insights.checks.energy_anomaly', 'Energie-Verbrauch ueber Baseline') +
+    fToggle('insights.checks.away_devices', 'Abwesend + Licht/Fenster offen') +
+    fToggle('insights.checks.temp_drop', 'Ungewoehnlicher Temperatur-Abfall') +
+    fToggle('insights.checks.window_temp_drop', 'Fenster offen + grosse Temp-Differenz') +
+    '<div style="margin:12px 0;font-weight:600;font-size:13px;">Schwellwerte</div>' +
+    fRange('insights.thresholds.frost_temp_c', 'Frost-Warnung ab', -10, 10, 1, {'-5':'-5\u00B0C',0:'0\u00B0C',2:'2\u00B0C',5:'5\u00B0C'}) +
+    fRange('insights.thresholds.energy_anomaly_percent', 'Energie-Abweichung', 10, 100, 5, {10:'10%',20:'20%',30:'30%',50:'50%',100:'100%'}) +
+    fRange('insights.thresholds.away_device_minutes', 'Abwesend-Hinweis nach', 30, 480, 30, {30:'30 Min',60:'1 Std',120:'2 Std',240:'4 Std',480:'8 Std'}) +
+    fRange('insights.thresholds.temp_drop_degrees_per_2h', 'Temp-Abfall Schwelle', 1, 10, 1, {1:'1\u00B0C',2:'2\u00B0C',3:'3\u00B0C',5:'5\u00B0C',10:'10\u00B0C'})
   ) +
   sectionWrap('&#128203;', 'Absicht-Erkennung',
     fInfo('Erkennt offene Absichten — z.B. "Ich muss noch einkaufen" wird als Aufgabe gemerkt und spaeter erinnert.') +
@@ -2717,8 +2796,12 @@ async function saveAllSettings() {
     deepMerge(S, tabUpdates);
     // Vollstaendiges Settings-Objekt senden (nicht nur aktiven Tab)
     const updates = JSON.parse(JSON.stringify(S));
-    await api('/api/ui/settings', 'PUT', {settings: updates});
-    toast('Einstellungen gespeichert');
+    const result = await api('/api/ui/settings', 'PUT', {settings: updates});
+    if (result && result.restart_needed) {
+      toast('Gespeichert — Container-Neustart noetig fuer Sprach-Engine!', 'warning');
+    } else {
+      toast('Einstellungen gespeichert');
+    }
   } catch(e) {
     toast('Fehler beim Speichern', 'error');
   } finally {

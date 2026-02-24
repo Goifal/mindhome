@@ -463,3 +463,80 @@ def api_get_persons():
 @presence_bp.route("/api/persons/home", methods=["GET"])
 def api_get_persons_home():
     return jsonify(_ha().get_persons_home())
+
+
+@presence_bp.route("/api/presence/settings", methods=["GET"])
+def api_get_presence_settings():
+    """Get all presence detection settings."""
+    session = get_db()
+    try:
+        keys = [
+            "presence_auto_detect_enabled",
+            "presence_manual_override",
+            "presence_guest_threshold",
+            "presence_away_device_minutes",
+            "presence_buffer_minutes",
+            "presence_treat_unavailable_as_away",
+        ]
+        result = {}
+        for key in keys:
+            setting = session.query(SystemSetting).filter_by(key=key).first()
+            result[key] = setting.value if setting else None
+        # Apply defaults
+        defaults = {
+            "presence_auto_detect_enabled": "true",
+            "presence_manual_override": "false",
+            "presence_guest_threshold": "2",
+            "presence_away_device_minutes": "120",
+            "presence_buffer_minutes": "5",
+            "presence_treat_unavailable_as_away": "true",
+        }
+        for k, v in defaults.items():
+            if result[k] is None:
+                result[k] = v
+        return jsonify(result)
+    finally:
+        session.close()
+
+
+@presence_bp.route("/api/presence/settings", methods=["PUT"])
+def api_update_presence_settings():
+    """Update presence detection settings."""
+    data = request.json or {}
+    session = get_db()
+    try:
+        allowed_keys = {
+            "presence_auto_detect_enabled",
+            "presence_manual_override",
+            "presence_guest_threshold",
+            "presence_away_device_minutes",
+            "presence_buffer_minutes",
+            "presence_treat_unavailable_as_away",
+        }
+        descriptions = {
+            "presence_auto_detect_enabled": ("Automatische Erkennung aktiv", "Auto-detection enabled"),
+            "presence_manual_override": ("Manuelle Steuerung aktiv", "Manual override active"),
+            "presence_guest_threshold": ("Ab wie vielen Personen Besuchsmodus", "Guest mode person threshold"),
+            "presence_away_device_minutes": ("Minuten abwesend bis Geraete-Warnung", "Minutes away before device warning"),
+            "presence_buffer_minutes": ("Puffer-Minuten fuer Statuswechsel", "Buffer minutes for state change"),
+            "presence_treat_unavailable_as_away": ("Nicht-erreichbar als abwesend werten", "Treat unavailable as away"),
+        }
+        updated = []
+        for key, value in data.items():
+            if key not in allowed_keys:
+                continue
+            setting = session.query(SystemSetting).filter_by(key=key).first()
+            desc = descriptions.get(key, ("", ""))
+            if setting:
+                setting.value = str(value)
+            else:
+                session.add(SystemSetting(
+                    key=key, value=str(value),
+                    description_de=desc[0], description_en=desc[1],
+                ))
+            updated.append(key)
+        session.commit()
+        audit_log("presence_settings_update", f"Updated: {', '.join(updated)}")
+        return jsonify({"success": True, "updated": updated})
+    finally:
+        session.close()

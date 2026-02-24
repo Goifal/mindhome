@@ -31,18 +31,27 @@ RUN pip install --no-cache-dir -r requirements.txt
 # App-Code
 COPY server.py handler.py ./
 
-# Modell-Verzeichnis (wird als Volume gemountet)
+# Modell-Verzeichnis
 RUN mkdir -p /app/models
 
 # W-5: HuggingFace Cache im gemounteten Volume halten
 # Verhindert dass Symlinks nach Container-Rebuild ins Nichts zeigen
 ENV HF_HOME=/app/models/.hf_cache
 
+# S-1: Whisper-Modell beim Build vorladen (~500MB) — eliminiert 2-5 Min Cold-Start.
+# Das Modell wird ins Image gebacken. Bei Runtime wird es direkt aus dem Cache geladen.
+ARG WHISPER_MODEL=small
+RUN python -c "\
+from faster_whisper import WhisperModel; \
+print('Pre-downloading Whisper model: ${WHISPER_MODEL}'); \
+WhisperModel('${WHISPER_MODEL}', device='cpu', compute_type='int8'); \
+print('Whisper model cached successfully')"
+
 # Wyoming STT Port
 EXPOSE 10300
 
-# W-7: start_period auf 300s (erster Start laedt ~500MB Modelle)
-HEALTHCHECK --interval=30s --timeout=10s --retries=5 --start-period=300s \
+# S-1: start_period von 300s auf 60s reduziert — Modell ist jetzt im Image vorgeladen
+HEALTHCHECK --interval=30s --timeout=10s --retries=5 --start-period=60s \
     CMD python -c "import socket; s=socket.socket(); s.settimeout(5); s.connect(('localhost', 10300)); s.close()" || exit 1
 
 CMD ["python", "server.py"]

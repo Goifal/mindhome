@@ -379,6 +379,23 @@ anticipation:
     ask: 0.6
     suggest: 0.8
     auto: 0.95
+insights:
+  enabled: true
+  check_interval_minutes: 30
+  cooldown_hours: 4
+  checks:
+    weather_windows: true
+    frost_heating: true
+    calendar_travel: true
+    energy_anomaly: true
+    away_devices: true
+    temp_drop: true
+    window_temp_drop: true
+  thresholds:
+    frost_temp_c: 2
+    energy_anomaly_percent: 30
+    away_device_minutes: 120
+    temp_drop_degrees_per_2h: 3
 intent_tracking:
   enabled: true
   check_interval_minutes: 60

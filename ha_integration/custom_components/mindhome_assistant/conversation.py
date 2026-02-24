@@ -248,11 +248,13 @@ class MindHomeAssistantAgent(ConversationEntity):
             return
 
         try:
+            # P-1: blocking=False — Volume-Set muss nicht abgewartet werden
+            # bevor die Pipeline TTS an Piper weitergibt (~50-150ms gespart)
             await self.hass.services.async_call(
                 "media_player",
                 "volume_set",
                 {"entity_id": speaker, "volume_level": volume},
-                blocking=True,
+                blocking=False,
             )
             _LOGGER.debug(
                 "TTS Volume gesetzt: %.2f auf %s", volume, speaker

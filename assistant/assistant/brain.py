@@ -52,6 +52,7 @@ from .conflict_resolver import ConflictResolver
 from .personality import PersonalityEngine
 from .proactive import ProactiveManager
 from .anticipation import AnticipationEngine
+from .insight_engine import InsightEngine
 from .intent_tracker import IntentTracker
 from .routine_engine import RoutineEngine
 from .config_versioning import ConfigVersioning
@@ -199,6 +200,9 @@ class AssistantBrain(BrainCallbacksMixin):
 
         # Phase 15.3: Geraete-Beziehung (Anomalie-Erkennung)
         self.device_health = DeviceHealthMonitor(self.ha)
+
+        # Phase 17.3: InsightEngine (Jarvis denkt voraus)
+        self.insight_engine = InsightEngine(self.ha, self.activity)
 
         # Phase 13.2: Self Automation (Automationen aus natuerlicher Sprache)
         self.self_automation = SelfAutomation(self.ha, self.ollama)
@@ -372,6 +376,12 @@ class AssistantBrain(BrainCallbacksMixin):
         self.wellness_advisor.set_notify_callback(self._handle_wellness_nudge)
         if "WellnessAdvisor" not in _degraded_modules:
             await _safe_init("WellnessAdvisor.start", self.wellness_advisor.start())
+
+        # Phase 17.3: InsightEngine (Jarvis denkt voraus)
+        await _safe_init("InsightEngine", self.insight_engine.initialize(
+            redis_client=self.memory.redis, ollama=self.ollama,
+        ))
+        self.insight_engine.set_notify_callback(self._handle_insight)
 
         # Phase 17: Situation Model (Delta-Tracking zwischen Gespraechen)
         await _safe_init("SituationModel", self.situation_model.initialize(redis_client=self.memory.redis))
@@ -965,9 +975,11 @@ class AssistantBrain(BrainCallbacksMixin):
                 # Background: LLM-Polish (4B, 3s Timeout) + TTS
                 # Chat-Antwort kommt sofort mit Humanizer-Text,
                 # TTS spricht die verfeinerte Version (oder Fallback).
+                # C-2: Bei Pipeline-Requests kein TTS (Pipeline macht das selbst)
+                _skip_tts = getattr(self, "_request_from_pipeline", False)
                 async def _calendar_polish_and_speak(
                     _text=text, _response=response_text, _cal_msg=cal_msg,
-                    _room=room, _tts_data=tts_data,
+                    _room=room, _tts_data=tts_data, _skip=_skip_tts,
                 ):
                     speak_text = _response
                     speak_tts = _tts_data
@@ -977,7 +989,7 @@ class AssistantBrain(BrainCallbacksMixin):
                                 "role": "system",
                                 "content": (
                                     "Du bist JARVIS. Antworte auf Deutsch, 1-2 Saetze. "
-                                    "Souveraen, knapp, trocken. 'Sir' sparsam einsetzen. "
+                                    f"Souveraen, knapp, trocken. '{get_person_title()}' sparsam einsetzen. "
                                     "Keine Aufzaehlungen. "
                                     "WICHTIG: Uhrzeiten EXAKT uebernehmen, NIEMALS aendern "
                                     "oder runden. 'Viertel vor 8' bleibt 'Viertel vor 8'. "
@@ -1026,11 +1038,12 @@ class AssistantBrain(BrainCallbacksMixin):
                                             )
                         except Exception as e:
                             logger.debug("Kalender LLM-Polish fehlgeschlagen: %s", e)
-                    if not _room:
-                        _room = await self._get_occupied_room()
-                    await self.sound_manager.speak_response(
-                        speak_text, room=_room, tts_data=speak_tts
-                    )
+                    if not _skip:
+                        if not _room:
+                            _room = await self._get_occupied_room()
+                        await self.sound_manager.speak_response(
+                            speak_text, room=_room, tts_data=speak_tts
+                        )
 
                 self._task_registry.create_task(
                     _calendar_polish_and_speak(), name="calendar_polish_speak"
@@ -1069,18 +1082,20 @@ class AssistantBrain(BrainCallbacksMixin):
                     await emit_speaking(response_text, tts_data=tts_data)
 
                 # TTS im Hintergrund
-                async def _weather_speak(
-                    _response=response_text, _room=room, _tts_data=tts_data,
-                ):
-                    if not _room:
-                        _room = await self._get_occupied_room()
-                    await self.sound_manager.speak_response(
-                        _response, room=_room, tts_data=_tts_data
-                    )
+                # C-2: Bei Pipeline-Requests kein TTS (Pipeline macht das selbst)
+                if not getattr(self, "_request_from_pipeline", False):
+                    async def _weather_speak(
+                        _response=response_text, _room=room, _tts_data=tts_data,
+                    ):
+                        if not _room:
+                            _room = await self._get_occupied_room()
+                        await self.sound_manager.speak_response(
+                            _response, room=_room, tts_data=_tts_data
+                        )
 
-                self._task_registry.create_task(
-                    _weather_speak(), name="weather_speak"
-                )
+                    self._task_registry.create_task(
+                        _weather_speak(), name="weather_speak"
+                    )
 
                 return {
                     "response": response_text,
@@ -2052,9 +2067,9 @@ class AssistantBrain(BrainCallbacksMixin):
                             "content": (
                                 "Du bist JARVIS. Antworte auf Deutsch, 1-2 Saetze. "
                                 f"{_form_hint} {_sarc_hint}{_mood_hint} "
-                                "'Sir' sparsam einsetzen. "
+                                f"'{get_person_title()}' sparsam einsetzen. "
                                 "Keine Aufzaehlungen. Zahlen und Uhrzeiten EXAKT uebernehmen. "
-                                "Beispiele: 'Fuenf Grad, bewoelkt. Jacke empfohlen, Sir.' | "
+                                f"Beispiele: 'Fuenf Grad, bewoelkt. Jacke empfohlen, {get_person_title()}.' | "
                                 "'Morgen um Viertel vor acht steht eine Blutabnahme an.' | "
                                 "'Im Buero 22.3 Grad, Luftfeuchtigkeit 51%. Passt.'"
                             ),
@@ -3068,6 +3083,7 @@ class AssistantBrain(BrainCallbacksMixin):
                 "routine_engine": "active",
                 "guest_mode": "active" if guest_mode else "inactive",
                 "anticipation": "running" if self.anticipation._running else "stopped",
+                "insight_engine": "running" if self.insight_engine._running else "stopped",
                 "intent_tracker": "running" if self.intent_tracker._running else "stopped",
                 "tts_enhancer": f"active (SSML: {self.tts_enhancer.ssml_enabled}, whisper: {self.tts_enhancer.is_whisper_mode})",
                 "sound_manager": "active" if self.sound_manager.enabled else "disabled",
@@ -4694,6 +4710,20 @@ Regeln:
             await emit_proactive(text, "anticipation_suggest", "low")
             logger.info("Anticipation suggestion: %s (%s)", desc, mode)
 
+    async def _handle_insight(self, insight: dict):
+        """Callback fuer InsightEngine — Jarvis denkt voraus."""
+        message = insight.get("message", "")
+        if not message:
+            return
+        urgency = insight.get("urgency", "low")
+        check = insight.get("check", "unknown")
+        if not await self._callback_should_speak(urgency):
+            logger.info("Insight unterdrueckt (Silence Matrix): [%s] %s", check, message[:60])
+            return
+        formatted = await self._safe_format(message, urgency)
+        await self._speak_and_emit(formatted)
+        logger.info("Insight zugestellt [%s/%s]: %s", check, urgency, message[:80])
+
     async def _handle_intent_reminder(self, reminder: dict):
         """Callback fuer Intent-Erinnerungen."""
         text = reminder.get("text", "")
@@ -5186,7 +5216,8 @@ Regeln:
         for component in [
             self.ambient_audio, self.anticipation, self.intent_tracker,
             self.time_awareness, self.health_monitor, self.device_health,
-            self.wellness_advisor, self.proactive, self.summarizer, self.feedback,
+            self.wellness_advisor, self.insight_engine, self.proactive,
+            self.summarizer, self.feedback,
         ]:
             try:
                 await component.stop()

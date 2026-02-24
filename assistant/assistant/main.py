@@ -1720,17 +1720,45 @@ def _validate_settings_values(settings: dict) -> list[str]:
         ("situation_model", "min_pause_minutes"): (5, 120),
         ("situation_model", "max_changes"): (1, 10),
         ("situation_model", "temp_threshold"): (1, 5),
+        ("insights", "check_interval_minutes"): (10, 120),
+        ("insights", "cooldown_hours"): (1, 24),
+        ("insights", "thresholds", "frost_temp_c"): (-10, 10),
+        ("insights", "thresholds", "energy_anomaly_percent"): (10, 100),
+        ("insights", "thresholds", "away_device_minutes"): (30, 480),
+        ("insights", "thresholds", "temp_drop_degrees_per_2h"): (1, 10),
+        ("speech", "stt_beam_size"): (1, 10),
     }
-    for (section, key), (min_val, max_val) in RANGE_RULES.items():
+    # Erlaubte Werte fuer Strings (Whitelist)
+    ENUM_RULES = {
+        ("speech", "stt_model"): ["tiny", "base", "small", "medium", "large-v3-turbo"],
+        ("speech", "stt_compute"): ["int8", "float16", "float32"],
+        ("speech", "stt_device"): ["cpu", "cuda"],
+    }
+    for path_keys, (min_val, max_val) in RANGE_RULES.items():
+        # path_keys kann 2-Tupel ("section", "key") oder 3-Tupel ("section", "sub", "key") sein
+        obj = settings
+        for pk in path_keys[:-1]:
+            if isinstance(obj, dict) and pk in obj:
+                obj = obj[pk]
+            else:
+                obj = None
+                break
+        if obj is None or not isinstance(obj, dict):
+            continue
+        val = obj.get(path_keys[-1])
+        path_str = ".".join(path_keys)
+        if val is not None:
+            try:
+                num = float(val)
+                if num < min_val or num > max_val:
+                    errors.append(f"{path_str}={val} (erlaubt: {min_val}-{max_val})")
+            except (ValueError, TypeError):
+                errors.append(f"{path_str}={val} (kein gueltiger Wert)")
+    for (section, key), allowed in ENUM_RULES.items():
         if section in settings and isinstance(settings[section], dict):
             val = settings[section].get(key)
-            if val is not None:
-                try:
-                    num = float(val)
-                    if num < min_val or num > max_val:
-                        errors.append(f"{section}.{key}={val} (erlaubt: {min_val}-{max_val})")
-                except (ValueError, TypeError):
-                    errors.append(f"{section}.{key}={val} (kein gueltiger Wert)")
+            if val is not None and val not in allowed:
+                errors.append(f"{section}.{key}={val} (erlaubt: {', '.join(allowed)})")
     return errors
 
 
@@ -1750,6 +1778,7 @@ def _get_reloaded_modules(changed_settings: dict) -> list[str]:
         "energy": "energy_optimizer",
         "wellness": "wellness_advisor",
         "health_monitor": "health_monitor",
+        "insights": "insight_engine",
         "tts": "tts_enhancer",
         "web_search": "web_search",
         "ambient_audio": "ambient_audio",
@@ -1868,6 +1897,11 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
             hm._exclude_patterns = [p.lower() for p in (hm._default_excludes + user_excludes)]
             logger.info("Health Monitor Settings aktualisiert")
 
+        # InsightEngine: Alle Einstellungen hot-reloadbar
+        if "insights" in changed_settings and hasattr(brain, "insight_engine"):
+            brain.insight_engine.reload_config()
+            logger.info("InsightEngine Settings aktualisiert")
+
         # Situation Model: Schwellwerte + Toggle
         if "situation_model" in changed_settings and hasattr(brain, "situation_model"):
             sm_cfg = yaml_cfg.get("situation_model", {})
@@ -1896,6 +1930,48 @@ _SETTINGS_STRIP_SUBKEYS = {
     "security": frozenset({"api_key", "api_key_required"}),  # Nur via dedizierte Endpoints
     "self_optimization": frozenset({"immutable_keys"}),       # Darf nicht per UI geaendert werden
 }
+
+
+def _sync_speech_to_env(speech_cfg: dict):
+    """Synchronisiert speech-Settings aus settings.yaml in die .env Datei.
+
+    Damit docker-compose beim naechsten Neustart die neuen Werte verwendet.
+    Mapping: speech.stt_model → WHISPER_MODEL, speech.tts_voice → PIPER_VOICE, etc.
+    """
+    ENV_MAP = {
+        "stt_model": "WHISPER_MODEL",
+        "stt_language": "WHISPER_LANGUAGE",
+        "stt_beam_size": "WHISPER_BEAM_SIZE",
+        "stt_compute": "WHISPER_COMPUTE",
+        "stt_device": "SPEECH_DEVICE",
+        "tts_voice": "PIPER_VOICE",
+    }
+    env_path = Path(__file__).parent.parent / ".env"
+    if not env_path.exists():
+        return
+    try:
+        lines = env_path.read_text(encoding="utf-8").splitlines()
+        updated = set()
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            if stripped.startswith("#") or "=" not in stripped:
+                continue
+            key = stripped.split("=", 1)[0].strip()
+            for yaml_key, env_key in ENV_MAP.items():
+                if key == env_key and yaml_key in speech_cfg:
+                    val = speech_cfg[yaml_key]
+                    # Kommentar nach dem Wert beibehalten
+                    old_parts = line.split("#", 1)
+                    comment = f"  # {old_parts[1].strip()}" if len(old_parts) > 1 else ""
+                    # Whitespace-Ausrichtung vom Original beibehalten
+                    prefix = line[:len(line) - len(line.lstrip())]
+                    lines[i] = f"{prefix}{env_key}={val}{comment}"
+                    updated.add(env_key)
+        env_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        if updated:
+            logger.info("Speech-Settings in .env aktualisiert: %s", ", ".join(sorted(updated)))
+    except Exception as e:
+        logger.warning("Speech → .env Sync fehlgeschlagen: %s", e)
 
 
 def _strip_protected_settings(data: dict) -> tuple[dict, list[str]]:
@@ -1987,6 +2063,10 @@ async def ui_update_settings(req: SettingsUpdateFull, token: str = ""):
             sound_cfg = cfg.yaml_config.get("sounds", {})
             brain.sound_manager.alexa_speakers = sound_cfg.get("alexa_speakers", [])
 
+        # Speech-Engine: settings.yaml → .env synchronisieren (fuer docker-compose)
+        if "speech" in safe_settings:
+            _sync_speech_to_env(cfg.yaml_config.get("speech", {}))
+
         # F-038: Alle weiteren Module benachrichtigen die Config bei __init__ cachen
         _reload_all_modules(cfg.yaml_config, safe_settings)
 
@@ -1998,7 +2078,12 @@ async def ui_update_settings(req: SettingsUpdateFull, token: str = ""):
         _audit_log("settings_update", audit_details)
 
         reloaded_count = 4 + len(_get_reloaded_modules(safe_settings))
-        return {"success": True, "message": f"Settings gespeichert ({reloaded_count} Module aktualisiert)"}
+        restart_hint = " — Container-Neustart noetig fuer Sprach-Engine!" if "speech" in safe_settings else ""
+        return {
+            "success": True,
+            "message": f"Settings gespeichert ({reloaded_count} Module aktualisiert){restart_hint}",
+            "restart_needed": "speech" in safe_settings,
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Fehler: {e}")
 
