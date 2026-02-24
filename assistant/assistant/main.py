@@ -473,6 +473,8 @@ class ChatRequest(BaseModel):
     speaker_confidence: Optional[float] = None
     # Phase 9: Voice-Metadaten von STT
     voice_metadata: Optional[dict] = None
+    # Phase 9: Device-ID fuer Speaker Recognition (Satellite → Person Mapping)
+    device_id: Optional[str] = None
 
 
 class TTSInfo(BaseModel):
@@ -529,7 +531,8 @@ async def chat(request: ChatRequest):
     try:
         result = await asyncio.wait_for(
             brain.process(request.text, request.person, request.room,
-                          voice_metadata=request.voice_metadata),
+                          voice_metadata=request.voice_metadata,
+                          device_id=request.device_id),
             timeout=60.0,
         )
     except asyncio.TimeoutError:
@@ -1230,6 +1233,7 @@ async def websocket_endpoint(websocket: WebSocket):
                     person = message.get("data", {}).get("person")
                     room = message.get("data", {}).get("room")
                     voice_meta = message.get("data", {}).get("voice_metadata")
+                    ws_device_id = message.get("data", {}).get("device_id")
                     use_stream = message.get("data", {}).get("stream", False)
                     if text:
                         # Phase 9: Voice-Metadaten verarbeiten
@@ -1251,6 +1255,7 @@ async def websocket_endpoint(websocket: WebSocket):
                                 text, person, room=room,
                                 stream_callback=_guarded_stream_token,
                                 voice_metadata=voice_meta,
+                                device_id=ws_device_id,
                             )
                             tts_data = result.get("tts")
                             if stream_tokens_sent:
@@ -1265,7 +1270,8 @@ async def websocket_endpoint(websocket: WebSocket):
                         else:
                             # brain.process() sendet intern via _speak_and_emit
                             result = await brain.process(text, person, room=room,
-                                                         voice_metadata=voice_meta)
+                                                         voice_metadata=voice_meta,
+                                                         device_id=ws_device_id)
 
                         # Aktionen ans Addon melden fuer Aktivitaeten-Log
                         actions = result.get("actions", [])

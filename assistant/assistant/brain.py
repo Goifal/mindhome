@@ -519,7 +519,7 @@ class AssistantBrain(BrainCallbacksMixin):
 
         self._task_registry.create_task(_save(), name="memory_exchange")
 
-    async def process(self, text: str, person: Optional[str] = None, room: Optional[str] = None, files: Optional[list] = None, stream_callback=None, voice_metadata: Optional[dict] = None) -> dict:
+    async def process(self, text: str, person: Optional[str] = None, room: Optional[str] = None, files: Optional[list] = None, stream_callback=None, voice_metadata: Optional[dict] = None, device_id: Optional[str] = None) -> dict:
         """
         Verarbeitet eine User-Eingabe.
 
@@ -613,7 +613,7 @@ class AssistantBrain(BrainCallbacksMixin):
                 )
         elif self.speaker_recognition.enabled:
             identified = await self.speaker_recognition.identify(
-                audio_metadata=audio_meta, room=room,
+                audio_metadata=audio_meta, device_id=device_id, room=room,
             )
             if identified.get("person") and not identified.get("fallback"):
                 person = identified["person"]
