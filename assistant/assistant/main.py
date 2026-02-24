@@ -124,7 +124,7 @@ async def _boot_announcement(brain_instance: "AssistantBrain", health_data: dict
 
             # Offene Fenster/Tueren zaehlen — MindHome-Domain + device_class
             from .function_calling import is_window_or_door
-            if state_val == "on" and is_window_or_door(eid, state):
+            if state_val == "on" and is_window_or_door(eid, s):
                 name = attrs.get("friendly_name", eid)
                 open_items.append(name)
 
