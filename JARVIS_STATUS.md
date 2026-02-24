@@ -308,9 +308,6 @@
 - ❌ Autonomie-Evolution (statisch in YAML)
 - ✅ ~~Zukunftsplanung (Kalender + Wetter + Muster)~~: **IMPLEMENTIERT — InsightEngine kreuz-referenziert 7 Datenquellen**
 - ✅ ~~Hintergrund-Analyse mit Rueckmeldung~~: **IMPLEMENTIERT — InsightEngine Loop alle 30 Min → Silence Matrix → TTS**
-- ❌ Boot-Sequenz gesprochen (nur Logger)
-- ❌ WebSocket Interrupt (`pass`)
-- ❌ Autonomie-Evolution (statisch in YAML)
 - ❌ Benannte Protokolle
 - ❌ Zeitliche Eskalation bei Gefahr
 - ❌ Kamera/Vision

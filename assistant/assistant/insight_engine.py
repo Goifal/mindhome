@@ -7,7 +7,7 @@ und proaktiv Hinweise gibt.
 Architektur:
   1. Daten sammeln (HA States, Kalender, Energie-Baselines)
   2. Regel-basierte Checks (schnell, kein LLM)
-  3. LLM-Formulierung (nur wenn Regel feuert)
+  3. Hinweis-Text direkt generiert (Template-basiert)
   4. Delivery via Callback → brain._handle_insight → Silence Matrix → TTS
 
 Checks:
@@ -125,6 +125,7 @@ class InsightEngine:
     def reload_config(self):
         """Laedt Konfiguration aus yaml_config neu."""
         cfg = yaml_config.get("insights", {})
+        was_enabled = self.enabled
         self.enabled = cfg.get("enabled", True)
         self.check_interval = cfg.get("check_interval_minutes", 30) * 60
         self.cooldown_hours = cfg.get("cooldown_hours", 4)
@@ -143,6 +144,12 @@ class InsightEngine:
         self.energy_anomaly_pct = thresholds.get("energy_anomaly_percent", 30)
         self.away_minutes = thresholds.get("away_device_minutes", 120)
         self.temp_drop_degrees = thresholds.get("temp_drop_degrees_per_2h", 3)
+
+        # Loop starten wenn gerade aktiviert wurde
+        if self.enabled and not was_enabled and not self._running:
+            self._running = True
+            self._task = asyncio.create_task(self._insight_loop())
+            logger.info("InsightEngine via Hot-Reload gestartet")
 
     # ------------------------------------------------------------------
     # Hintergrund-Loop
@@ -386,8 +393,12 @@ class InsightEngine:
                         fc_dt = datetime.fromisoformat(fc_time.replace("Z", "+00:00"))
                         fc_local = fc_dt.astimezone().replace(tzinfo=None)
                         hours_until = (fc_local - datetime.now()).total_seconds() / 3600
-                        if hours_until < 1:
+                        if hours_until <= 0:
+                            time_hint = "jetzt"
+                        elif hours_until < 1:
                             time_hint = "in Kuerze"
+                        elif hours_until < 2:
+                            time_hint = "in etwa einer Stunde"
                         elif hours_until < 3:
                             time_hint = f"in etwa {int(hours_until)} Stunden"
                         else:
@@ -634,7 +645,7 @@ class InsightEngine:
 
         if not issues:
             # Abwesenheits-Tracker aufraeumen
-            await self.redis.delete(f"{_PREFIX}:away_since")
+            await self.redis.delete(away_key)
             return None
 
         hours_away = minutes_away / 60
@@ -727,8 +738,10 @@ class InsightEngine:
         inside_avg = sum(inside_temps) / len(inside_temps)
         diff = inside_avg - outside_temp
 
-        # Nur relevant wenn draussen deutlich kaelter (>8°C Differenz)
-        if diff < 8:
+        # Nur relevant wenn draussen deutlich kaelter
+        # Schwelle: temp_drop_degrees * 2.5 (Default: 3 * 2.5 = 7.5°C)
+        window_temp_threshold = self.temp_drop_degrees * 2.5
+        if diff < window_temp_threshold:
             return None
 
         windows = ", ".join(data["open_windows"][:3])
