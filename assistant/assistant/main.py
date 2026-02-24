@@ -2367,6 +2367,29 @@ async def ui_knowledge_ingest(token: str = ""):
     return {"new_chunks": count, "stats": stats}
 
 
+@app.get("/api/ui/knowledge/chunks")
+async def ui_knowledge_chunks(token: str = "", source: str = "", offset: int = 0, limit: int = 50):
+    """Alle Knowledge-Chunks auflisten (optional gefiltert nach Quelle)."""
+    _check_token(token)
+    chunks = await brain.knowledge_base.get_chunks(source=source, offset=offset, limit=min(limit, 200))
+    stats = await brain.knowledge_base.get_stats()
+    return {"chunks": chunks, "total": stats.get("total_chunks", 0)}
+
+
+@app.post("/api/ui/knowledge/chunks/delete")
+async def ui_knowledge_delete_chunks(request: Request, token: str = ""):
+    """Einzelne Knowledge-Chunks loeschen."""
+    _check_token(token)
+    body = await request.json()
+    chunk_ids = body.get("ids", [])
+    if not chunk_ids:
+        raise HTTPException(status_code=400, detail="Keine Chunk-IDs angegeben")
+    deleted = await brain.knowledge_base.delete_chunks(chunk_ids)
+    _audit_log("knowledge_base_delete", {"deleted": deleted, "ids": chunk_ids[:5]})
+    stats = await brain.knowledge_base.get_stats()
+    return {"deleted": deleted, "stats": stats}
+
+
 @app.get("/api/ui/logs")
 async def ui_get_logs(token: str = "", limit: int = 50):
     """Letzte Konversationen aus dem Working Memory."""
