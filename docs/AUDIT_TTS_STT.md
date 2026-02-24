@@ -10,9 +10,9 @@
 
 | Severity | Anzahl |
 |----------|--------|
-| CRITICAL | 6 |
-| WARNING  | 7 |
-| INFO     | 7 |
+| CRITICAL | 7 |
+| WARNING  | 9 |
+| INFO     | 10 |
 
 ---
 
@@ -130,6 +130,24 @@ speechbrain==1.0.3
 
 ---
 
+### C-7: Kein `asyncio.Lock` fuer Whisper — gleichzeitige Transkriptionen koennen sich gegenseitig korrumpieren
+
+**Datei:** `speech/handler.py:155-156`
+
+**Problem:** Die Referenz-Implementierung (`rhasspy/wyoming-faster-whisper`) nutzt einen `asyncio.Lock` (`model_lock`) um sicherzustellen dass immer nur eine Transkription gleichzeitig laeuft. CTranslate2 (das Backend von faster-whisper) hat dokumentierte Thread-Safety-Probleme. Ohne Lock koennen gleichzeitige Transkriptionen (z.B. zwei Wake-Word-Erkennungen gleichzeitig) inkonsistente oder korrupte Ergebnisse liefern.
+
+```python
+# FEHLEND — so macht es die Referenz:
+async with self.model_lock:
+    text = await loop.run_in_executor(None, self._transcribe, audio_bytes)
+```
+
+**Auswirkung:** Bei gleichzeitigen Spracheingaben (z.B. 2 Voice-Satellites gleichzeitig) kann die Transkription Muellergebnisse liefern. In der Praxis selten bei einem Single-User-Haushalt, aber ein echtes Korrektheits-Problem.
+
+**Fix:** Shared `asyncio.Lock` ueber alle Handler-Instanzen hinweg, wie in der Referenz-Implementierung.
+
+---
+
 ## WARNING
 
 ### W-1: Einzelner Redis Key fuer alle gleichzeitigen Requests
@@ -215,6 +233,32 @@ RUN pip install --no-cache-dir torch torchaudio --index-url https://download.pyt
 
 ---
 
+### W-8: `asyncio.create_task()` ohne Task-Referenz — Embedding-Task kann verloren gehen
+
+**Datei:** `speech/handler.py:167`
+
+**Problem:**
+```python
+asyncio.create_task(self._extract_and_store_embedding(audio_bytes))
+```
+Die Task-Referenz wird nicht gespeichert. Python's Event-Loop haelt nur Weak References auf Tasks. Wenn die Handler-Instanz garbage-collected wird bevor der Task fertig ist, wird der Task stillschweigend gecancelt. Ausserdem wird "Task exception was never retrieved" geloggt falls eine Exception auftritt.
+
+**Fix:** `self._embedding_task = asyncio.create_task(...)` und optional im Cleanup awaiten.
+
+---
+
+### W-9: numpy Array + `vad_filter=True` ist fragil (bekanntes upstream Issue)
+
+**Datei:** `speech/handler.py:176,181-187`
+
+**Problem:** Die Referenz-Implementierung schreibt Audio in eine WAV-Datei und uebergibt den Dateipfad an `model.transcribe()`. Unser Code uebergibt direkt ein numpy Array. Es gibt ein bekanntes Issue (SYSTRAN/faster-whisper#878) wo numpy + `vad_filter=True` einen `ValueError: Input audio chunk is too short` vom Silero VAD Modell ausloesen kann.
+
+**Auswirkung:** Aktuell unwahrscheinlich bei normalem Audio (korrekte Dimension + float32). Aber fragiler als der dateibasierte Ansatz.
+
+**Fix:** Error-Handling um `model.transcribe()` — bei VAD-ValueError nochmal ohne VAD retry.
+
+---
+
 ## INFO
 
 ### I-1: Kein Graceful Shutdown fuer Redis Connection
@@ -260,13 +304,29 @@ Beide Healthchecks pruefen TCP Socket-Connect, was korrekt den Wyoming Server St
 - Inter-Container Kommunikation ueber Docker-Netzwerk — korrekt
 - `depends_on: redis: condition: service_healthy` — korrekt
 
+### I-8: `audioop` wird in Python 3.13 entfernt
+
+Wyoming's `AudioChunkConverter` nutzt `audioop` fuer Audio-Konvertierung. Dieses Modul wurde in Python 3.11 deprecated und in Python 3.13 entfernt. Dockerfile nutzt Python 3.12 — aktuell sicher, aber bei Upgrade auf 3.13+ bricht es. Wyoming hat einen `pyaudioop` Fallback.
+
+### I-9: Kein explizites `AudioStart` Event Handling
+
+**Datei:** `speech/handler.py:115-143`
+
+Der Wyoming ASR-Flow ist: `Transcribe` → `AudioStart` → `AudioChunk+` → `AudioStop`. Der Code behandelt `AudioStart` nicht explizit (faellt durch zu `return True`). Funktioniert weil der Buffer bei `Transcribe` geleert wird. HA sendet immer `Transcribe` zuerst.
+
+### I-10: Kein Timeout auf Transkription
+
+**Datei:** `speech/handler.py:156`
+
+`run_in_executor(None, self._transcribe, ...)` hat keinen Timeout. Bei extrem langem Audio koennte die Transkription haengen. Empfehlung: `asyncio.wait_for(..., timeout=30)`.
+
 ---
 
 ## Dateien im Scope
 
 | Datei | Rolle | Bugs |
 |-------|-------|------|
-| `speech/handler.py` | Wyoming Whisper STT + Embedding Handler | C-4, W-1, W-3 |
+| `speech/handler.py` | Wyoming Whisper STT + Embedding Handler | C-4, C-7, W-1, W-3, W-8, W-9 |
 | `speech/server.py` | Wyoming Server Entry Point | C-5, W-2 |
 | `speech/Dockerfile.whisper` | Docker Image fuer Whisper | W-6 |
 | `speech/requirements.txt` | Python Dependencies | C-6 |
@@ -285,14 +345,17 @@ Beide Healthchecks pruefen TCP Socket-Connect, was korrekt den Wyoming Server St
 
 1. **C-5** (Ungueltiger Modellname) — **SHOWSTOPPER**: Whisper startet gar nicht. 1-Zeilen-Fix.
 2. **C-6** (Ungepinnte Versionen) — Container crasht beim SpeechBrain-Import. 3-Zeilen-Fix.
-3. **C-1** (Embedding verloren) — Einfachster Fix, groesste Auswirkung auf Speaker-Recognition-Lernen
-4. **C-2** (Doppelte TTS) — Muss vor dem ersten Deployment gefixt werden, sonst hoert User alles doppelt
-5. **C-3** (TTS Entity) — Doku-Fix + settings.yaml Config, kein Code noetig
-6. **C-4** (Race Condition) — Retry-Loop ist der pragmatischste Fix
-7. **W-2** (Preload weggeworfen) — Quick-Fix, spart RAM + Startup-Zeit
-8. **W-5** (HF Cache) — Verhindert Download-Loop nach Container-Rebuild
-9. **W-6** (PyTorch CUDA statt CPU) — Spart ~2GB Image-Groesse
-10. **W-3** (deprecated API) — Quick-Fix, 2 Zeilen
-11. **W-7** (start_period) — Quick-Fix, 1 Zeile
-12. **W-1** (Redis Key Collision) — Kann spaeter gefixt werden (selten in der Praxis)
-13. **W-4** (Piper Port) — Quick-Fix, 1 Zeile
+3. **C-7** (Kein model_lock) — Korrupte Transkriptionen bei Parallelzugriff. Lock hinzufuegen.
+4. **C-1** (Embedding verloren) — Groesste Auswirkung auf Speaker-Recognition-Lernen
+5. **C-2** (Doppelte TTS) — Muss vor Deployment gefixt werden, sonst hoert User alles doppelt
+6. **C-3** (TTS Entity) — Doku-Fix + settings.yaml Config
+7. **C-4** (Race Condition) — Retry-Loop ist der pragmatischste Fix
+8. **W-2** (Preload weggeworfen) — Quick-Fix, spart RAM + Startup-Zeit
+9. **W-5** (HF Cache) — Verhindert Download-Loop nach Container-Rebuild
+10. **W-6** (PyTorch CUDA statt CPU) — Spart ~2GB Image-Groesse
+11. **W-8** (Task-Referenz fehlt) — Quick-Fix, 1 Zeile
+12. **W-3** (deprecated API) — Quick-Fix, 2 Zeilen
+13. **W-7** (start_period) — Quick-Fix, 1 Zeile
+14. **W-9** (numpy+VAD fragil) — Error-Handling hinzufuegen
+15. **W-1** (Redis Key Collision) — Kann spaeter gefixt werden (selten in der Praxis)
+16. **W-4** (Piper Port) — Quick-Fix, 1 Zeile
