@@ -146,3 +146,35 @@ async def emit_proactive(
         "urgency": urgency,
         "notification_id": notification_id,
     })
+
+
+async def emit_interrupt(
+    text: str,
+    event_type: str,
+    protocol: str = "",
+    actions_taken: list[str] | None = None,
+):
+    """CRITICAL Interrupt — unterbricht laufende Aktionen sofort.
+
+    Sendet zuerst ein interrupt-Signal (Client soll TTS stoppen),
+    dann die eigentliche Notfall-Meldung.
+    """
+    # 1. Interrupt-Signal: Client soll sofort alles stoppen
+    await ws_manager.broadcast("assistant.interrupt", {
+        "reason": event_type,
+        "protocol": protocol,
+    })
+
+    # 2. Kurze Pause damit der Client reagieren kann
+    await asyncio.sleep(0.3)
+
+    # 3. Notfall-Meldung senden (als proactive mit urgency=critical)
+    await ws_manager.broadcast("assistant.proactive", {
+        "text": text,
+        "event_type": event_type,
+        "urgency": "critical",
+        "notification_id": "",
+        "interrupt": True,
+        "protocol": protocol,
+        "actions_taken": actions_taken or [],
+    })

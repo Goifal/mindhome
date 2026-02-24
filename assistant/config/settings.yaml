@@ -734,12 +734,22 @@ geo_fence:
   approaching_km: 2.0
   arriving_km: 0.5
 # --- Notfall-Protokolle ---
-emergency_protocols: null
-  # fire:
-  #   actions:
-  #     - {domain: light, service: turn_on, target: all}
-  #     - {domain: lock, service: unlock, target: all}
-  #     - {domain: notify, service: notify, data: {message: "FEUERALARM!"}}
+# Werden bei CRITICAL Events automatisch ausgefuehrt.
+# target: "all" = alle Entities der Domain, oder entity_id fuer einzelne.
+emergency_protocols:
+  fire:
+    actions:
+      - {domain: light, service: turn_on, target: all}
+      - {domain: cover, service: open_cover, target: all}
+      - {domain: notify, service: notify, data: {message: "FEUERALARM! Rauch erkannt — alle Lichter an, Rolllaeden offen."}}
+  intrusion:
+    actions:
+      - {domain: light, service: turn_on, target: all}
+      - {domain: notify, service: notify, data: {message: "EINBRUCH-ALARM! Bewegung erkannt — alle Lichter eingeschaltet."}}
+  water_leak:
+    actions:
+      - {domain: light, service: turn_on, target: all}
+      - {domain: notify, service: notify, data: {message: "WASSERLECK erkannt! Bitte sofort pruefen."}}
 # --- Lern-Beobachter ---
 learning:
   enabled: true

@@ -36,7 +36,7 @@ from .constants import (
     PROACTIVE_WS_RECONNECT_DELAY,
 )
 from .ollama_client import validate_notification
-from .websocket import emit_proactive
+from .websocket import emit_proactive, emit_interrupt
 
 logger = logging.getLogger(__name__)
 
@@ -803,6 +803,34 @@ class ProactiveManager:
             logger.debug("%s-Meldung gequeued [%s]: %s (%d in Queue, %d MEDIUM)",
                          urgency.upper(), event_type, description,
                          queue_len, medium_items)
+            return
+
+        # CRITICAL: Interrupt-Kanal — sofort durchstellen, kein LLM-Polish noetig
+        if urgency == CRITICAL:
+            description = self.event_handlers.get(event_type, (CRITICAL, event_type))[1]
+            protocol = ""
+            actions_taken = []
+
+            # Notfall-Protokoll Name ermitteln
+            protocol_map = {
+                "alarm_triggered": "intrusion",
+                "smoke_detected": "fire",
+                "water_leak": "water_leak",
+            }
+            protocol = protocol_map.get(event_type, event_type)
+
+            # Direkt-Text bauen (kein LLM-Aufruf — Zeit ist kritisch)
+            text = data.get("message", description)
+            if "camera_description" in data:
+                text += f" {data['camera_description']}"
+
+            await emit_interrupt(text, event_type, protocol, actions_taken)
+            await self.brain.memory.set_last_notification_time(event_type)
+
+            logger.warning(
+                "INTERRUPT [%s/%s] (protocol: %s): %s",
+                event_type, urgency, protocol, text,
+            )
             return
 
         # Phase 6: Activity Engine + Silence Matrix
