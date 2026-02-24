@@ -2318,14 +2318,21 @@ async def ui_set_cover_type(entity_id: str, request: Request, token: str = ""):
 
 
 @app.get("/api/ui/action-log")
-async def ui_get_action_log(token: str = "", limit: int = 30):
-    """Jarvis Action-Log vom MindHome Add-on holen."""
+async def ui_get_action_log(
+    token: str = "",
+    limit: int = 50,
+    offset: int = 0,
+    type: str = "",
+    period: str = "7d",
+):
+    """Jarvis Action-Log vom MindHome Add-on holen (mit Filtern)."""
     _check_token(token)
     try:
-        result = await brain.ha.mindhome_get(
-            f"/api/action-log?type=jarvis_action&limit={limit}&period=7d"
-        )
-        return result or {"items": [], "total": 0}
+        params = f"limit={limit}&offset={offset}&period={period}"
+        if type:
+            params += f"&type={type}"
+        result = await brain.ha.mindhome_get(f"/api/action-log?{params}")
+        return result or {"items": [], "total": 0, "has_more": False}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Fehler: {e}")
 
@@ -3041,7 +3048,7 @@ async def ui_system_status(token: str = ""):
 
     # Container Health (via gemounteten Docker-Socket)
     containers = {}
-    for name in ["mindhome-assistant", "mha-chromadb", "mha-redis"]:
+    for name in ["mindhome-assistant", "mha-chromadb", "mha-redis", "mha-whisper", "mha-piper"]:
         rc, out = _run_cmd(["docker", "inspect", "--format", "{{.State.Health.Status}}", name])
         containers[name] = out.strip() if rc == 0 else "unknown"
 
