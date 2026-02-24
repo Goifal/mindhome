@@ -2390,6 +2390,34 @@ async def ui_knowledge_delete_chunks(request: Request, token: str = ""):
     return {"deleted": deleted, "stats": stats}
 
 
+@app.post("/api/ui/knowledge/file/delete")
+async def ui_knowledge_file_delete(request: Request, token: str = ""):
+    """Alle Chunks einer Datei aus der Knowledge Base loeschen."""
+    _check_token(token)
+    body = await request.json()
+    filename = body.get("filename", "")
+    if not filename:
+        raise HTTPException(status_code=400, detail="Kein Dateiname angegeben")
+    deleted = await brain.knowledge_base.delete_source_chunks(filename)
+    _audit_log("knowledge_file_delete", {"filename": filename, "deleted_chunks": deleted})
+    stats = await brain.knowledge_base.get_stats()
+    return {"deleted": deleted, "filename": filename, "stats": stats}
+
+
+@app.post("/api/ui/knowledge/file/reingest")
+async def ui_knowledge_file_reingest(request: Request, token: str = ""):
+    """Einzelne Datei loeschen und neu einlesen."""
+    _check_token(token)
+    body = await request.json()
+    filename = body.get("filename", "")
+    if not filename:
+        raise HTTPException(status_code=400, detail="Kein Dateiname angegeben")
+    new_chunks = await brain.knowledge_base.reingest_file(filename)
+    _audit_log("knowledge_file_reingest", {"filename": filename, "new_chunks": new_chunks})
+    stats = await brain.knowledge_base.get_stats()
+    return {"new_chunks": new_chunks, "filename": filename, "stats": stats}
+
+
 @app.get("/api/ui/logs")
 async def ui_get_logs(token: str = "", limit: int = 50):
     """Letzte Konversationen aus dem Working Memory."""
