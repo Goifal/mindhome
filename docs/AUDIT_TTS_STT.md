@@ -10,9 +10,9 @@
 
 | Severity | Anzahl |
 |----------|--------|
-| CRITICAL | 4 |
-| WARNING  | 4 |
-| INFO     | 5 |
+| CRITICAL | 6 |
+| WARNING  | 7 |
+| INFO     | 7 |
 
 ---
 
@@ -92,6 +92,44 @@ t=500ms: ECAPA-TDNN fertig → Embedding in Redis geschrieben
 
 ---
 
+### C-5: `WHISPER_MODEL=small-int8` ist KEIN gueltiger faster-whisper Modellname (SHOWSTOPPER)
+
+**Dateien:** `assistant/.env.example:47`, `speech/server.py:101`, `speech/handler.py:42`
+
+**Problem:** Der Default `WHISPER_MODEL=small-int8` wird an `WhisperModel(model_name)` uebergeben. Aber `faster-whisper` (die Bibliothek die hier DIREKT verwendet wird) akzeptiert diesen Namen nicht. Gueltige Namen sind: `tiny`, `base`, `small`, `medium`, `large-v1`, `large-v2`, `large-v3`, `large-v3-turbo`, `turbo`, etc.
+
+`small-int8` ist eine Konvention von `rhasspy/wyoming-faster-whisper` (dem HA Add-on), das den Namen intern auf das HuggingFace-Repo `rhasspy/faster-whisper-small-int8` mappt. Unser Code nutzt faster-whisper DIREKT und hat dieses Mapping nicht.
+
+**Auswirkung:** Der Whisper Container STARTET NICHT. `WhisperModel("small-int8")` wirft sofort `ValueError: Invalid model size 'small-int8'`. Kein STT moeglich.
+
+**Fix:** `WHISPER_MODEL` Default aendern auf `small` (INT8-Quantisierung wird bereits ueber `WHISPER_COMPUTE=int8` gesteuert). Oder das volle HuggingFace-Repo angeben: `rhasspy/faster-whisper-small-int8`.
+
+---
+
+### C-6: Ungepinnte torch/torchaudio/speechbrain Versionen koennen SpeechBrain crashen
+
+**Datei:** `speech/requirements.txt:6-8`
+
+**Problem:**
+```
+speechbrain>=1.0.0
+torch>=2.0.0
+torchaudio>=2.0.0
+```
+
+Diese offenen Versionsbereiche erlauben pip `torchaudio>=2.9` zu installieren, welches `torchaudio.list_audio_backends()` entfernt hat. SpeechBrain ruft diese Funktion beim Import auf → `AttributeError` Crash. Ausserdem MUESSEN `torch` und `torchaudio` versionssynchron sein (z.B. beide 2.5.x). Offene Bereiche riskieren Mismatch.
+
+**Auswirkung:** Container baut erfolgreich, aber beim ersten Import von SpeechBrain crasht der Prozess mit `AttributeError`. Voice Embeddings funktionieren nicht.
+
+**Fix:** Versionen pinnen:
+```
+torch==2.5.1
+torchaudio==2.5.1
+speechbrain==1.0.3
+```
+
+---
+
 ## WARNING
 
 ### W-1: Einzelner Redis Key fuer alle gleichzeitigen Requests
@@ -142,6 +180,41 @@ t=500ms: ECAPA-TDNN fertig → Embedding in Redis geschrieben
 
 ---
 
+### W-5: HuggingFace Cache nicht im Volume — Modell-Downloads gehen bei Rebuild verloren
+
+**Dateien:** `speech/handler.py:58`, `speech/Dockerfile.whisper`
+
+**Problem:** SpeechBrain laedt ECAPA-TDNN zuerst in den HuggingFace Cache (`~/.cache/huggingface/`) und erstellt dann Symlinks im `savedir` (`/app/models/`). Das Volume mountet nur `/app/models/` — der HuggingFace Cache liegt in der Container-Schreibschicht und geht bei Rebuild verloren. Die Symlinks zeigen dann ins Nichts.
+
+**Fix:** `ENV HF_HOME=/app/models/.hf_cache` in der Dockerfile setzen, damit alle Downloads im gemounteten Volume landen.
+
+---
+
+### W-6: PyTorch installiert CUDA-Version (~2.3GB) obwohl CPU reicht
+
+**Datei:** `speech/Dockerfile.whisper`
+
+**Problem:** `pip install torch torchaudio` ohne `--index-url` installiert die volle CUDA-Version von PyTorch (~2.3GB). Fuer CPU-only Betrieb (Phase 1) reicht die CPU-Version (~300MB).
+
+**Fix:** Vor dem `pip install -r requirements.txt` separat installieren:
+```dockerfile
+RUN pip install --no-cache-dir torch torchaudio --index-url https://download.pytorch.org/whl/cpu
+```
+
+**Auswirkung:** Docker Image ist ~2GB groesser als noetig. Kein funktionaler Bug.
+
+---
+
+### W-7: Whisper `start_period: 120s` reicht beim ersten Start moeglicherweise nicht
+
+**Datei:** `assistant/docker-compose.yml:120`
+
+**Problem:** Beim ersten Container-Start muessen Whisper (~461MB) + ECAPA-TDNN (~80MB) Modelle heruntergeladen werden. Bei langsamer Verbindung dauert das laenger als `120s + (5 * 30s) = 270s`. Autoheal startet den Container dann neu → Download-Loop.
+
+**Fix:** `start_period: 300s` setzen, oder Modelle waehrend `docker build` vorladen.
+
+---
+
 ## INFO
 
 ### I-1: Kein Graceful Shutdown fuer Redis Connection
@@ -173,18 +246,33 @@ Beide Schwellenwerte sind niedrig genug fuer normale Spracheingaben, aber die In
 
 Das offizielle `rhasspy/wyoming-piper` Image nutzt ONNX Runtime fuer Inferenz. ONNX auf GPU erfordert `onnxruntime-gpu` — das offizielle Image hat das moeglicherweise nicht installiert. GPU-Reservierung fuer Piper koennte wirkungslos sein.
 
+### I-6: Healthchecks nutzen korrekte Python-Binaries
+
+- **Whisper** (custom `python:3.12-slim`): `python -c "..."` — korrekt
+- **Piper** (`rhasspy/wyoming-piper`, Debian-basiert): `python3 -c "..."` — korrekt
+
+Beide Healthchecks pruefen TCP Socket-Connect, was korrekt den Wyoming Server Status verifiziert.
+
+### I-7: Wyoming Ports und Netzwerk-Architektur korrekt
+
+- Whisper `10300`, Piper `10200` — korrekte Wyoming Defaults
+- Redis/ChromaDB auf `127.0.0.1` gebunden (kein externer Zugriff) — gut
+- Inter-Container Kommunikation ueber Docker-Netzwerk — korrekt
+- `depends_on: redis: condition: service_healthy` — korrekt
+
 ---
 
 ## Dateien im Scope
 
 | Datei | Rolle | Bugs |
 |-------|-------|------|
-| `speech/handler.py` | Wyoming Whisper STT + Embedding Handler | C-4, W-1, W-2, W-3 |
-| `speech/server.py` | Wyoming Server Entry Point | W-2 |
-| `speech/Dockerfile.whisper` | Docker Image fuer Whisper | - |
-| `speech/requirements.txt` | Python Dependencies | - |
-| `assistant/docker-compose.yml` | Service-Orchestrierung | W-4 |
+| `speech/handler.py` | Wyoming Whisper STT + Embedding Handler | C-4, W-1, W-3 |
+| `speech/server.py` | Wyoming Server Entry Point | C-5, W-2 |
+| `speech/Dockerfile.whisper` | Docker Image fuer Whisper | W-6 |
+| `speech/requirements.txt` | Python Dependencies | C-6 |
+| `assistant/docker-compose.yml` | Service-Orchestrierung | W-4, W-7 |
 | `assistant/docker-compose.gpu.yml` | GPU Override | I-5 |
+| `assistant/.env.example` | Umgebungsvariablen | C-5 |
 | `assistant/assistant/speaker_recognition.py` | Speaker-Erkennung + Embedding | C-1, C-4 |
 | `assistant/assistant/sound_manager.py` | TTS-Ausgabe + Event-Sounds | C-2, C-3 |
 | `assistant/assistant/brain.py` | Hauptlogik, spricht+identifiziert | C-1, C-2 |
@@ -195,11 +283,16 @@ Das offizielle `rhasspy/wyoming-piper` Image nutzt ONNX Runtime fuer Inferenz. O
 
 ## Empfohlene Reihenfolge fuer Fixes
 
-1. **C-1** (Embedding verloren) — Einfachster Fix, groesste Auswirkung auf Speaker-Recognition-Lernen
-2. **C-2** (Doppelte TTS) — Muss vor dem ersten Deployment gefixt werden, sonst hoert User alles doppelt
-3. **C-3** (TTS Entity) — Doku-Fix + settings.yaml Config, kein Code noetig
-4. **C-4** (Race Condition) — Retry-Loop ist der pragmatischste Fix
-5. **W-2** (Preload weggeworfen) — Quick-Fix, spart RAM + Startup-Zeit
-6. **W-3** (deprecated API) — Quick-Fix, 2 Zeilen
-7. **W-1** (Redis Key Collision) — Kann spaeter gefixt werden (selten in der Praxis)
-8. **W-4** (Piper Port) — Quick-Fix, 1 Zeile
+1. **C-5** (Ungueltiger Modellname) — **SHOWSTOPPER**: Whisper startet gar nicht. 1-Zeilen-Fix.
+2. **C-6** (Ungepinnte Versionen) — Container crasht beim SpeechBrain-Import. 3-Zeilen-Fix.
+3. **C-1** (Embedding verloren) — Einfachster Fix, groesste Auswirkung auf Speaker-Recognition-Lernen
+4. **C-2** (Doppelte TTS) — Muss vor dem ersten Deployment gefixt werden, sonst hoert User alles doppelt
+5. **C-3** (TTS Entity) — Doku-Fix + settings.yaml Config, kein Code noetig
+6. **C-4** (Race Condition) — Retry-Loop ist der pragmatischste Fix
+7. **W-2** (Preload weggeworfen) — Quick-Fix, spart RAM + Startup-Zeit
+8. **W-5** (HF Cache) — Verhindert Download-Loop nach Container-Rebuild
+9. **W-6** (PyTorch CUDA statt CPU) — Spart ~2GB Image-Groesse
+10. **W-3** (deprecated API) — Quick-Fix, 2 Zeilen
+11. **W-7** (start_period) — Quick-Fix, 1 Zeile
+12. **W-1** (Redis Key Collision) — Kann spaeter gefixt werden (selten in der Praxis)
+13. **W-4** (Piper Port) — Quick-Fix, 1 Zeile
