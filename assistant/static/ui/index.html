@@ -1019,12 +1019,11 @@ input:focus,select:focus,textarea:focus { border-color:var(--accent); box-shadow
       <div id="page-logs" class="page">
         <div class="section-header">
           <div><h2>Protokolle</h2><p>Gespraeche und Audit-Ereignisse</p></div>
-          <button class="btn btn-secondary" onclick="currentLogTab==='conversations'?loadLogs():currentLogTab==='activities'?loadActivities():loadAudit()">Aktualisieren</button>
+          <button class="btn btn-secondary" onclick="currentLogTab==='conversations'?loadLogs():currentLogTab==='protocol'?loadProtocol():loadAudit()">Aktualisieren</button>
         </div>
         <div class="tab-bar" id="logsTabBar" style="margin-bottom:14px;">
           <div class="tab-item active" data-logtab="conversations" onclick="switchLogTab('conversations')">Gespraeche</div>
           <div class="tab-item" data-logtab="protocol" onclick="switchLogTab('protocol')">Protokoll</div>
-          <div class="tab-item" data-logtab="activities" onclick="switchLogTab('activities')">Aktivitaeten</div>
           <div class="tab-item" data-logtab="audit" onclick="switchLogTab('audit')">Audit-Log</div>
         </div>
 
@@ -1040,6 +1039,8 @@ input:focus,select:focus,textarea:focus { border-color:var(--accent); box-shadow
                 <option value="automation">Automationen</option>
                 <option value="observation">Beobachtungen</option>
                 <option value="quick_action">Schnellaktionen</option>
+                <option value="tts">Durchsagen (TTS)</option>
+                <option value="notification">Benachrichtigungen</option>
                 <option value="anomaly">Anomalien</option>
                 <option value="system">System</option>
               </select>
@@ -1063,7 +1064,6 @@ input:focus,select:focus,textarea:focus { border-color:var(--accent); box-shadow
         <div class="card" style="padding:0;">
           <div id="logsContainer"></div>
           <div id="protocolContainer" style="display:none;"></div>
-          <div id="activitiesContainer" style="display:none;"></div>
           <div id="auditContainer" style="display:none;"></div>
         </div>
       </div>
