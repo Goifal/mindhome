@@ -1666,6 +1666,10 @@ def _validate_settings_values(settings: dict) -> list[str]:
         ("health_monitor", "check_interval_minutes"): (5, 60),
         ("health_monitor", "alert_cooldown_minutes"): (5, 1440),
         ("proactive", "batch_interval"): (5, 300),
+        ("interrupt_queue", "pause_ms"): (100, 1000),
+        ("situation_model", "min_pause_minutes"): (5, 120),
+        ("situation_model", "max_changes"): (1, 10),
+        ("situation_model", "temp_threshold"): (1, 5),
     }
     for (section, key), (min_val, max_val) in RANGE_RULES.items():
         if section in settings and isinstance(settings[section], dict):
@@ -1700,6 +1704,8 @@ def _get_reloaded_modules(changed_settings: dict) -> list[str]:
         "web_search": "web_search",
         "ambient_audio": "ambient_audio",
         "feedback": "feedback",
+        "situation_model": "situation_model",
+        "interrupt_queue": "interrupt_queue",
     }
 
     for config_key, attr_name in MODULE_CONFIG_MAP.items():
@@ -1811,6 +1817,21 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
                 user_excludes = [p.strip() for p in user_excludes.splitlines() if p.strip()]
             hm._exclude_patterns = [p.lower() for p in (hm._default_excludes + user_excludes)]
             logger.info("Health Monitor Settings aktualisiert")
+
+        # Situation Model: Schwellwerte + Toggle
+        if "situation_model" in changed_settings and hasattr(brain, "situation_model"):
+            sm_cfg = yaml_cfg.get("situation_model", {})
+            sm = brain.situation_model
+            sm.enabled = bool(sm_cfg.get("enabled", True))
+            sm.min_pause_minutes = int(sm_cfg.get("min_pause_minutes", 5))
+            sm.max_changes = int(sm_cfg.get("max_changes", 5))
+            sm.temp_threshold = float(sm_cfg.get("temp_threshold", 2))
+            logger.info("Situation Model Settings aktualisiert")
+
+        # Interrupt-Queue: Wird direkt aus yaml_config gelesen (websocket.py),
+        # keine gecachten Attribute — nur Logging fuer Feedback
+        if "interrupt_queue" in changed_settings:
+            logger.info("Interrupt-Queue Settings aktualisiert (live aus yaml_config)")
 
     except Exception as e:
         logger.warning("Settings-Propagation teilweise fehlgeschlagen: %s", e)

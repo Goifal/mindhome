@@ -140,11 +140,9 @@ body { font-family:var(--font); background:var(--bg-primary); color:var(--text-p
   .section-header { flex-direction:column; align-items:flex-start; gap:12px; }
   .section-header .err-filter-bar { width:100%; }
   .entity-filter-bar { grid-template-columns:1fr; }
-  /* Settings tab-bar: horizontal scroll statt wrap */
-  .tab-bar { flex-wrap:nowrap; overflow-x:auto; -webkit-overflow-scrolling:touch; scrollbar-width:none; }
-  .tab-bar::-webkit-scrollbar { display:none; }
-  .tab-bar .tab-divider { flex-shrink:0; }
-  .tab-item { flex-shrink:0; }
+  /* Sidebar nav groups: Touch-optimiert */
+  .nav-group-header { padding:10px 14px; font-size:11px; min-height:40px; }
+  .nav-group-items .nav-item { padding:10px 14px 10px 36px; min-height:40px; }
   /* HUD: Scan-Linie + Grid an mobiles Layout anpassen */
   .main::after { left:0; }
   .main-content::before { left:0; }
@@ -192,8 +190,10 @@ body { font-family:var(--font); background:var(--bg-primary); color:var(--text-p
   /* Error filter bar */
   .err-filter-bar { gap:6px; }
   .err-filter-bar .btn { padding:6px 10px; font-size:10px; }
-  /* Tab items */
-  .tab-item { padding:7px 10px; font-size:10px; }
+  /* Help modal: volle Breite auf Phone */
+  .help-modal { padding:20px; max-width:100vw; width:calc(100vw - 24px); }
+  .help-modal h3 { font-size:13px; }
+  .help-btn { width:18px; height:18px; font-size:10px; }
   /* Toast unten mittig */
   .toast { left:16px; right:16px; bottom:16px; text-align:center; }
   /* Grid 2 auch auf Phone single column */
@@ -471,6 +471,36 @@ textarea { resize:vertical; min-height:70px; font-family:var(--mono); font-size:
 .text-sm { font-size:11px; }
 .text-muted-sm { font-size:11px; color:var(--text-muted); }
 .no-pad { padding:0; }
+
+/* ---- Sidebar Nav Groups (collapsible) ---- */
+.nav-group { margin-bottom:4px; }
+.nav-group-header { display:flex; align-items:center; gap:8px; padding:8px 14px; color:var(--text-muted); cursor:pointer; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:1.5px; transition:all var(--fast); user-select:none; border-radius:var(--radius-sm); }
+.nav-group-header:hover { color:var(--text-secondary); background:rgba(0,212,255,0.02); }
+.nav-group-header .nav-group-arrow { font-size:8px; color:var(--text-muted); transition:transform var(--fast); margin-left:auto; }
+.nav-group-header.open .nav-group-arrow { transform:rotate(90deg); }
+.nav-group-header.open { color:var(--accent); }
+.nav-group-items { max-height:0; overflow:hidden; transition:max-height 0.25s ease; }
+.nav-group-items.open { max-height:500px; }
+.nav-group-items .nav-item { padding:7px 14px 7px 32px; font-size:11px; min-height:34px; }
+.nav-divider { height:1px; background:rgba(0,212,255,0.06); margin:6px 12px; }
+
+/* ---- Help Tooltip Button ---- */
+.help-btn { display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; border-radius:50%; background:rgba(0,212,255,0.08); border:1px solid rgba(0,212,255,0.2); color:var(--accent); font-size:9px; font-weight:700; cursor:pointer; margin-left:6px; transition:all var(--fast); flex-shrink:0; line-height:1; font-family:var(--mono); vertical-align:middle; }
+.help-btn:hover { background:rgba(0,212,255,0.2); border-color:var(--accent); box-shadow:0 0 10px rgba(0,212,255,0.3); transform:scale(1.15); }
+
+/* ---- Help Modal ---- */
+.help-modal-backdrop { display:none; position:fixed; inset:0; background:rgba(4,8,16,0.8); z-index:9998; backdrop-filter:blur(4px); }
+.help-modal-backdrop.show { display:flex; align-items:center; justify-content:center; }
+.help-modal { background:linear-gradient(135deg, rgba(12,21,32,0.98), rgba(8,16,24,0.99)); border:1px solid rgba(0,212,255,0.25); border-radius:var(--radius-lg); padding:28px; max-width:460px; width:calc(100vw - 32px); max-height:80vh; overflow-y:auto; position:relative; box-shadow:0 0 40px rgba(0,212,255,0.15), 0 8px 32px rgba(0,0,0,0.6); }
+.help-modal::before { content:''; position:absolute; top:-1px; left:-1px; width:16px; height:16px; border-top:1px solid rgba(0,212,255,0.5); border-left:1px solid rgba(0,212,255,0.5); pointer-events:none; }
+.help-modal::after { content:''; position:absolute; bottom:-1px; right:-1px; width:16px; height:16px; border-bottom:1px solid rgba(0,212,255,0.5); border-right:1px solid rgba(0,212,255,0.5); pointer-events:none; }
+.help-modal-close { position:absolute; top:12px; right:14px; background:none; border:1px solid rgba(0,212,255,0.15); border-radius:var(--radius-sm); color:var(--text-muted); font-size:16px; cursor:pointer; width:28px; height:28px; display:flex; align-items:center; justify-content:center; transition:all var(--fast); }
+.help-modal-close:hover { color:var(--accent); border-color:var(--accent); background:rgba(0,212,255,0.08); }
+.help-modal h3 { font-size:14px; font-weight:700; color:var(--accent); text-transform:uppercase; letter-spacing:1px; margin-bottom:14px; padding-right:36px; text-shadow:0 0 12px rgba(0,212,255,0.3); }
+.help-modal p { font-size:13px; color:var(--text-primary); line-height:1.7; margin-bottom:10px; }
+.help-modal .help-detail { font-size:12px; color:var(--text-secondary); line-height:1.6; padding:10px 14px; background:rgba(0,212,255,0.03); border:1px solid rgba(0,212,255,0.08); border-radius:var(--radius-sm); margin-top:10px; }
+.help-modal .help-values { font-family:var(--mono); font-size:11px; color:var(--accent); margin-top:4px; }
+.help-modal .help-warn { color:var(--danger); font-size:12px; margin-top:8px; font-weight:600; }
 
 /* Settings Tab-Bar Gruppen-Divider */
 .tab-bar .tab-divider { width:1px; background:rgba(0,212,255,0.12); margin:4px 4px; align-self:stretch; }
@@ -787,9 +817,63 @@ input:focus,select:focus,textarea:focus { border-color:var(--accent); box-shadow
       <div class="logo-icon">J</div>
       <div><h2>JARVIS</h2><span>MindHome Assistant</span></div>
     </div>
-    <nav class="sidebar-nav">
+    <nav class="sidebar-nav" id="sidebarNav">
       <div class="nav-item active" data-page="dashboard"><span class="nav-icon">&#9632;</span>Dashboard</div>
-      <div class="nav-item" data-page="settings"><span class="nav-icon">&#9881;</span>Einstellungen</div>
+      <div class="nav-divider"></div>
+      <!-- Basis -->
+      <div class="nav-group">
+        <div class="nav-group-header" onclick="toggleNavGroup(this)"><span>Basis</span><span class="nav-group-arrow">&#9654;</span></div>
+        <div class="nav-group-items">
+          <div class="nav-item" data-page="settings" data-tab="tab-general"><span class="nav-icon">&#9881;</span>Allgemein</div>
+          <div class="nav-item" data-page="settings" data-tab="tab-persons"><span class="nav-icon">&#128100;</span>Personen</div>
+        </div>
+      </div>
+      <!-- KI & Persoenlichkeit -->
+      <div class="nav-group">
+        <div class="nav-group-header" onclick="toggleNavGroup(this)"><span>KI & Charakter</span><span class="nav-group-arrow">&#9654;</span></div>
+        <div class="nav-group-items">
+          <div class="nav-item" data-page="settings" data-tab="tab-personality"><span class="nav-icon">&#127917;</span>Persoenlichkeit</div>
+          <div class="nav-item" data-page="settings" data-tab="tab-memory"><span class="nav-icon">&#128218;</span>Gedaechtnis</div>
+          <div class="nav-item" data-page="settings" data-tab="tab-mood"><span class="nav-icon">&#128578;</span>Stimmung</div>
+        </div>
+      </div>
+      <!-- Haus & Raeume -->
+      <div class="nav-group">
+        <div class="nav-group-header" onclick="toggleNavGroup(this)"><span>Haus & Raeume</span><span class="nav-group-arrow">&#9654;</span></div>
+        <div class="nav-group-items">
+          <div class="nav-item" data-page="settings" data-tab="tab-rooms"><span class="nav-icon">&#127968;</span>Raeume & Speaker</div>
+          <div class="nav-item" data-page="settings" data-tab="tab-devices"><span class="nav-icon">&#128268;</span>Geraete</div>
+          <div class="nav-item" data-page="settings" data-tab="tab-covers"><span class="nav-icon">&#129695;</span>Rolllaeden</div>
+        </div>
+      </div>
+      <!-- Automatisierung -->
+      <div class="nav-group">
+        <div class="nav-group-header" onclick="toggleNavGroup(this)"><span>Automatisierung</span><span class="nav-group-arrow">&#9654;</span></div>
+        <div class="nav-group-items">
+          <div class="nav-item" data-page="settings" data-tab="tab-routines"><span class="nav-icon">&#127748;</span>Routinen</div>
+          <div class="nav-item" data-page="settings" data-tab="tab-proactive"><span class="nav-icon">&#128276;</span>Proaktiv</div>
+          <div class="nav-item" data-page="settings" data-tab="tab-cooking"><span class="nav-icon">&#127859;</span>Koch-Assistent</div>
+          <div class="nav-item" data-page="settings" data-tab="tab-autonomie"><span class="nav-icon">&#129302;</span>Autonomie</div>
+        </div>
+      </div>
+      <!-- Sprache & Medien -->
+      <div class="nav-group">
+        <div class="nav-group-header" onclick="toggleNavGroup(this)"><span>Sprache & Medien</span><span class="nav-group-arrow">&#9654;</span></div>
+        <div class="nav-group-items">
+          <div class="nav-item" data-page="settings" data-tab="tab-voice"><span class="nav-icon">&#128266;</span>Stimme & TTS</div>
+          <div class="nav-item" data-page="settings" data-tab="tab-eastereggs"><span class="nav-icon">&#127881;</span>Easter Eggs</div>
+        </div>
+      </div>
+      <!-- Sicherheit & System -->
+      <div class="nav-group">
+        <div class="nav-group-header" onclick="toggleNavGroup(this)"><span>Sicherheit & System</span><span class="nav-group-arrow">&#9654;</span></div>
+        <div class="nav-group-items">
+          <div class="nav-item" data-page="settings" data-tab="tab-security"><span class="nav-icon">&#128274;</span>Sicherheit & Notfall</div>
+          <div class="nav-item" data-page="settings" data-tab="tab-house-status"><span class="nav-icon">&#127777;</span>Haus-Status & Health</div>
+          <div class="nav-item" data-page="settings" data-tab="tab-system"><span class="nav-icon">&#128296;</span>System & Updates</div>
+        </div>
+      </div>
+      <div class="nav-divider"></div>
       <div class="nav-item" data-page="entities"><span class="nav-icon">&#8801;</span>Entities</div>
       <div class="nav-item" data-page="knowledge"><span class="nav-icon">&#128218;</span>Wissen</div>
       <div class="nav-item" data-page="logs"><span class="nav-icon">&#9776;</span>Logs</div>
@@ -849,33 +933,8 @@ input:focus,select:focus,textarea:focus { border-color:var(--accent); box-shadow
       <!-- ============ SETTINGS ============ -->
       <div id="page-settings" class="page">
         <div class="section-header">
-          <div><h2>Einstellungen</h2><p>Alle Konfigurationen aus settings.yaml</p></div>
+          <div><h2 id="settingsTitle">Einstellungen</h2><p id="settingsSub">Alle Konfigurationen aus settings.yaml</p></div>
           <button class="btn btn-primary" onclick="saveAllSettings()">Speichern</button>
-        </div>
-        <!-- Settings Tabs (gruppiert) -->
-        <div class="tab-bar" id="settingsTabBar">
-          <!-- Basis -->
-          <div class="tab-item active" data-tab="tab-general">Allgemein</div>
-          <div class="tab-item" data-tab="tab-persons">Personen</div>
-          <div class="tab-divider"></div>
-          <!-- KI & Persoenlichkeit -->
-          <div class="tab-item" data-tab="tab-personality">Persönlichkeit</div>
-          <div class="tab-item" data-tab="tab-memory">Gedächtnis</div>
-          <div class="tab-item" data-tab="tab-mood">Stimmung</div>
-          <div class="tab-item" data-tab="tab-autonomie">KI-Autonomie</div>
-          <div class="tab-divider"></div>
-          <!-- Haus -->
-          <div class="tab-item" data-tab="tab-rooms">Räume</div>
-          <div class="tab-item" data-tab="tab-devices">Geräte</div>
-          <div class="tab-item" data-tab="tab-covers">Rollläden</div>
-          <div class="tab-item" data-tab="tab-routines">Routinen</div>
-          <div class="tab-item" data-tab="tab-house-status">Haus-Status</div>
-          <div class="tab-divider"></div>
-          <!-- System -->
-          <div class="tab-item" data-tab="tab-voice">Stimme</div>
-          <div class="tab-item" data-tab="tab-security">Sicherheit</div>
-          <div class="tab-item" data-tab="tab-eastereggs">Easter Eggs</div>
-          <div class="tab-item" data-tab="tab-system">System</div>
         </div>
         <div id="settingsContent"></div>
       </div>
@@ -963,6 +1022,16 @@ input:focus,select:focus,textarea:focus { border-color:var(--accent); box-shadow
         <div style="margin-top:8px;font-size:11px;color:var(--text-muted);" id="errorsInfo"></div>
       </div>
     </div>
+  </div>
+</div>
+
+<!-- Help Modal -->
+<div class="help-modal-backdrop" id="helpModalBackdrop" onclick="closeHelpModal()">
+  <div class="help-modal" onclick="event.stopPropagation()">
+    <button class="help-modal-close" onclick="closeHelpModal()">&#10005;</button>
+    <h3 id="helpModalTitle"></h3>
+    <p id="helpModalText"></p>
+    <div class="help-detail" id="helpModalDetail" style="display:none;"></div>
   </div>
 </div>
 

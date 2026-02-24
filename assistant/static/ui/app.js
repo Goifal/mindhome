@@ -302,25 +302,56 @@ async function api(path, method='GET', body=null) {
   catch(e) { throw new Error('Ungueltige Server-Antwort'); }
 }
 
-// ---- Navigation ----
-document.querySelectorAll('.nav-item').forEach(item => {
-  item.addEventListener('click', () => {
-    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-    item.classList.add('active');
-    const pg = item.dataset.page;
-    document.getElementById(`page-${pg}`).classList.add('active');
-    const titles = {dashboard:'Dashboard',settings:'Einstellungen',entities:'Entities',knowledge:'Wissen',logs:'Logs',errors:'Fehler'};
-    document.getElementById('pageTitle').textContent = titles[pg] || pg;
-    stopLiveRefresh();  // Immer stoppen bei Seitenwechsel
-    if (pg==='dashboard') { loadDashboard(); startLiveRefresh(); loadHealthTrends(_trendHours); }
-    else if (pg==='settings') loadSettings();
-    else if (pg==='entities') loadEntities();
-    else if (pg==='knowledge') { loadKnowledge(); setTimeout(initKbDropzone, 50); }
-    else if (pg==='logs') { if(currentLogTab==='audit') loadAudit(); else loadLogs(); }
-    else if (pg==='errors') loadErrors();
-    closeSidebar();
-  });
+// ---- Navigation (Sidebar Groups + Sub-Items) ----
+function toggleNavGroup(hdr) {
+  const items = hdr.nextElementSibling;
+  const isOpen = hdr.classList.toggle('open');
+  items.classList.toggle('open', isOpen);
+}
+
+// Sidebar nav-item click handler (delegiert)
+document.getElementById('sidebarNav').addEventListener('click', e => {
+  const item = e.target.closest('.nav-item');
+  if (!item) return;
+  const pg = item.dataset.page;
+  const tab = item.dataset.tab;
+  // Aktive Markierung setzen
+  document.querySelectorAll('#sidebarNav .nav-item').forEach(n => n.classList.remove('active'));
+  item.classList.add('active');
+  // Seite wechseln
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById(`page-${pg}`).classList.add('active');
+  const titles = {dashboard:'Dashboard',settings:'Einstellungen',entities:'Entities',knowledge:'Wissen',logs:'Logs',errors:'Fehler'};
+  document.getElementById('pageTitle').textContent = titles[pg] || pg;
+  stopLiveRefresh();
+  if (pg === 'dashboard') { loadDashboard(); startLiveRefresh(); loadHealthTrends(_trendHours); }
+  else if (pg === 'settings') {
+    // Tab wechseln und Settings laden
+    if (tab && tab !== currentTab) {
+      mergeCurrentTabIntoS();
+      currentTab = tab;
+    }
+    loadSettings();
+    // Settings-Titel aktualisieren
+    const tabTitles = {
+      'tab-general':'Allgemein','tab-persons':'Personen','tab-personality':'Persoenlichkeit',
+      'tab-memory':'Gedaechtnis','tab-mood':'Stimmung','tab-rooms':'Raeume & Speaker',
+      'tab-devices':'Geraete','tab-covers':'Rolllaeden','tab-routines':'Routinen',
+      'tab-proactive':'Proaktiv & Vorausdenken','tab-cooking':'Koch-Assistent',
+      'tab-autonomie':'Autonomie & Selbstoptimierung','tab-voice':'Stimme & TTS',
+      'tab-eastereggs':'Easter Eggs','tab-security':'Sicherheit & Notfall',
+      'tab-house-status':'Haus-Status & Health','tab-system':'System & Updates'
+    };
+    const el = document.getElementById('settingsTitle');
+    if (el) el.textContent = tabTitles[currentTab] || 'Einstellungen';
+    const sub = document.getElementById('settingsSub');
+    if (sub) sub.textContent = 'Einstellungen — ' + (tabTitles[currentTab] || '');
+  }
+  else if (pg === 'entities') loadEntities();
+  else if (pg === 'knowledge') { loadKnowledge(); setTimeout(initKbDropzone, 50); }
+  else if (pg === 'logs') { if(currentLogTab==='audit') loadAudit(); else loadLogs(); }
+  else if (pg === 'errors') loadErrors();
+  closeSidebar();
 });
 
 // ---- Toast ----
@@ -500,18 +531,6 @@ async function loadHealthTrends(hours) {
 
 let currentTab = 'tab-general';
 
-// Tab switching
-document.getElementById('settingsTabBar').addEventListener('click', e => {
-  const tab = e.target.closest('.tab-item');
-  if (!tab || tab.dataset.tab === currentTab) return;
-  // Aktuelle Tab-Werte in S uebernehmen bevor Tab wechselt
-  mergeCurrentTabIntoS();
-  document.querySelectorAll('#settingsTabBar .tab-item').forEach(t => t.classList.remove('active'));
-  tab.classList.add('active');
-  currentTab = tab.dataset.tab;
-  renderCurrentTab();
-});
-
 function mergeCurrentTabIntoS() {
   try {
     const current = collectSettings();
@@ -547,6 +566,8 @@ function renderCurrentTab() {
       case 'tab-rooms': c.innerHTML = renderRooms(); loadMindHomeEntities(); loadRoomTempAverage(); break;
       case 'tab-voice': c.innerHTML = renderVoice(); break;
       case 'tab-routines': c.innerHTML = renderRoutines(); break;
+      case 'tab-proactive': c.innerHTML = renderProactive(); break;
+      case 'tab-cooking': c.innerHTML = renderCooking(); break;
       case 'tab-house-status': c.innerHTML = renderHouseStatus(); break;
       case 'tab-devices': c.innerHTML = renderDevices(); loadMindHomeEntities(); break;
       case 'tab-covers': c.innerHTML = renderCovers(); loadCoverEntities(); break;
@@ -574,39 +595,336 @@ function renderCurrentTab() {
   bindFormEvents();
 }
 
+// ---- Help Tooltip System ----
+function showHelp(path) {
+  const h = HELP_TEXTS[path];
+  if (!h) return;
+  const bd = document.getElementById('helpModalBackdrop');
+  document.getElementById('helpModalTitle').textContent = h.title || path;
+  document.getElementById('helpModalText').innerHTML = h.text || '';
+  const det = document.getElementById('helpModalDetail');
+  if (h.detail) { det.innerHTML = h.detail; det.style.display = ''; }
+  else { det.style.display = 'none'; }
+  bd.classList.add('show');
+}
+function closeHelpModal() {
+  document.getElementById('helpModalBackdrop').classList.remove('show');
+}
+// ESC schliesst Modal
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeHelpModal(); });
+
+// ---- Help Texts fuer alle Settings ----
+const HELP_TEXTS = {
+  // === ALLGEMEIN ===
+  'assistant.name': {title:'Assistenten-Name', text:'Der Name, mit dem sich der Assistent vorstellt und auf den er reagiert.'},
+  'assistant.version': {title:'Version', text:'Aktuelle Software-Version. Nur zur Anzeige.'},
+  'assistant.language': {title:'Sprache', text:'In welcher Sprache der Assistent antwortet.'},
+  'autonomy.level': {title:'Autonomie-Level', text:'Wie selbststaendig darf der Assistent handeln?', detail:'<b>1 Assistent:</b> Nur auf Befehl<br><b>2 Butler:</b> Schlaegt vor, wartet auf OK<br><b>3 Mitbewohner:</b> Handelt bei Routine-Aufgaben<br><b>4 Vertrauter:</b> Proaktiv<br><b>5 Autopilot:</b> Volle Autonomie'},
+  'models.enabled.fast': {title:'Fast-Modell', text:'Schnelles Modell fuer einfache Befehle (Licht an, Timer, Danke).'},
+  'models.enabled.smart': {title:'Smart-Modell', text:'Standard-Modell fuer normale Gespraeche und Anfragen.'},
+  'models.enabled.deep': {title:'Deep-Modell', text:'Grosses Modell fuer komplexe Analysen und ausfuehrliche Antworten.'},
+  'models.fast': {title:'Fast-Modell Auswahl', text:'Welches KI-Modell fuer schnelle Befehle.', detail:'Kleinere Modelle (3-4B) sind schneller, groessere praeziser.'},
+  'models.smart': {title:'Smart-Modell Auswahl', text:'Welches KI-Modell fuer normale Gespraeche.'},
+  'models.deep': {title:'Deep-Modell Auswahl', text:'Welches KI-Modell fuer komplexe Aufgaben.', detail:'14B+ empfohlen fuer beste Ergebnisse.'},
+  'models.deep_min_words': {title:'Deep ab Woertern', text:'Ab wie vielen Woertern automatisch das Deep-Modell genutzt wird.'},
+  'models.options.temperature': {title:'Kreativitaet', text:'Wie kreativ die Antworten sein sollen.', detail:'0 = deterministisch, 0.7 = Standard, 2.0 = sehr kreativ'},
+  'models.options.max_tokens': {title:'Max. Antwortlaenge', text:'Maximale Laenge einer Antwort in Tokens (~0.75 Woerter pro Token).'},
+  'models.fast_keywords': {title:'Fast-Keywords', text:'Woerter die das schnelle Modell aktivieren.'},
+  'models.deep_keywords': {title:'Deep-Keywords', text:'Woerter die das ausfuehrliche Modell aktivieren.'},
+  'models.cooking_keywords': {title:'Koch-Keywords', text:'Woerter die den Koch-Modus aktivieren.'},
+  'web_search.enabled': {title:'Web-Suche', text:'Optionale Web-Recherche. Privacy-First: SearXNG oder DuckDuckGo.'},
+  'web_search.engine': {title:'Suchmaschine', text:'SearXNG (self-hosted) oder DuckDuckGo.'},
+  'web_search.searxng_url': {title:'SearXNG URL', text:'URL deiner SearXNG-Instanz. Nur bei SearXNG relevant.'},
+  'web_search.max_results': {title:'Max. Ergebnisse', text:'Wie viele Suchergebnisse maximal abgerufen werden.'},
+  'web_search.timeout_seconds': {title:'Such-Timeout', text:'Nach wie vielen Sekunden die Suche abgebrochen wird.'},
+  // === PERSOENLICHKEIT ===
+  'personality.style': {title:'Grundstil', text:'Grundlegender Kommunikationsstil des Assistenten.'},
+  'personality.sarcasm_level': {title:'Sarkasmus-Level', text:'Wie sarkastisch der Assistent sein darf (1-5).'},
+  'personality.opinion_intensity': {title:'Meinungs-Intensitaet', text:'Wie stark der Assistent seine Meinung aeussert (0-3).'},
+  'personality.self_irony_enabled': {title:'Selbstironie', text:'Ob der Assistent ueber sich selbst witzeln darf.'},
+  'personality.self_irony_max_per_day': {title:'Max. Selbstironie/Tag', text:'Wie oft pro Tag Selbstironie erlaubt ist.'},
+  'personality.character_evolution': {title:'Charakter-Entwicklung', text:'Assistent wird mit der Zeit vertrauter und informeller.'},
+  'personality.formality_start': {title:'Anfangs-Formalitaet', text:'Wie formell am Anfang (100%=Sie, 0%=sehr locker).'},
+  'personality.formality_min': {title:'Minimale Formalitaet', text:'Wie locker der Assistent maximal werden darf.'},
+  'personality.formality_decay_per_day': {title:'Formalitaets-Abbau', text:'Wie schnell der Assistent lockerer wird (Punkte/Tag).'},
+  'response_filter.enabled': {title:'Antwort-Filter', text:'Filtert unerwuenschte Phrasen und begrenzt Antwortlaenge.'},
+  'response_filter.max_response_sentences': {title:'Max. Saetze', text:'Max. Saetze pro Antwort. 0 = unbegrenzt.'},
+  'response_filter.banned_phrases': {title:'Verbotene Phrasen', text:'Phrasen die der Assistent nie verwenden soll.'},
+  'response_filter.banned_starters': {title:'Verbotene Satzanfaenge', text:'Satzanfaenge die vermieden werden sollen.'},
+  // === GEDAECHTNIS ===
+  'memory.extraction_enabled': {title:'Fakten-Extraktion', text:'Automatisch Fakten aus Gespraechen lernen und merken.'},
+  'memory.extraction_min_words': {title:'Min. Nachrichtenlaenge', text:'Mindestlaenge damit Fakten extrahiert werden.'},
+  'memory.extraction_model': {title:'Extraktions-Modell', text:'KI-Modell fuer Fakten-Erkennung.'},
+  'memory.extraction_temperature': {title:'Extraktions-Genauigkeit', text:'Niedrig = nur offensichtliche Fakten, hoch = auch Vermutungen.'},
+  'memory.extraction_max_tokens': {title:'Max. Extraktions-Laenge', text:'Maximale Laenge der Extraktions-Antwort.'},
+  'memory.max_person_facts_in_context': {title:'Personen-Fakten', text:'Wie viele Fakten ueber die Person ins Gespraech einfliessen.'},
+  'memory.max_relevant_facts_in_context': {title:'Relevante Fakten', text:'Wie viele thematisch passende Fakten pro Gespraech.'},
+  'memory.min_confidence_for_context': {title:'Min. Sicherheit', text:'Wie sicher ein Fakt sein muss um genutzt zu werden.'},
+  'memory.duplicate_threshold': {title:'Duplikat-Erkennung', text:'Wie aehnlich zwei Fakten fuer Duplikat-Erkennung sein muessen.'},
+  'memory.episode_min_words': {title:'Min. Woerter Episode', text:'Mindestlaenge fuer episodisches Gedaechtnis.'},
+  'memory.default_confidence': {title:'Standard-Sicherheit', text:'Sicherheit mit der neue Fakten gespeichert werden.'},
+  'knowledge_base.enabled': {title:'Wissensdatenbank', text:'RAG-System fuer eigene Dokumente (.txt, .md, .pdf).'},
+  'knowledge_base.auto_ingest': {title:'Auto-Einlesen', text:'Beim Start neue Dateien automatisch aufnehmen.'},
+  'knowledge_base.chunk_size': {title:'Textblock-Groesse', text:'In welche Stuecke Dokumente zerteilt werden.'},
+  'knowledge_base.chunk_overlap': {title:'Ueberlappung', text:'Ueberlappung zwischen aufeinanderfolgenden Bloecken.'},
+  'knowledge_base.max_distance': {title:'Suchgenauigkeit', text:'Max. Distanz fuer Treffer (niedriger = strenger).'},
+  'knowledge_base.search_limit': {title:'Max. Treffer', text:'Max. Wissens-Treffer pro Suche.'},
+  'knowledge_base.embedding_model': {title:'Embedding-Modell', text:'Modell fuer Vektorisierung. Nach Wechsel Rebuild noetig.'},
+  'knowledge_base.supported_extensions': {title:'Dateitypen', text:'Welche Formate in die Wissensdatenbank koennen.'},
+  'correction.confidence': {title:'Korrektur-Sicherheit', text:'Sicherheit bei durch Nutzer korrigierten Fakten.'},
+  'correction.model': {title:'Korrektur-Modell', text:'KI-Modell fuer Korrektur-Analyse.'},
+  'correction.temperature': {title:'Korrektur-Kreativitaet', text:'Kreativitaet der Korrektur-Analyse.'},
+  'summarizer.run_hour': {title:'Zusammenfassung Stunde', text:'Uhrzeit (Stunde) der taeglichen Zusammenfassung.'},
+  'summarizer.run_minute': {title:'Zusammenfassung Minute', text:'Uhrzeit (Minute) der Zusammenfassung.'},
+  'summarizer.model': {title:'Zusammenfassungs-Modell', text:'KI-Modell fuer Tages-Zusammenfassung.'},
+  'summarizer.max_tokens_daily': {title:'Laenge taeglich', text:'Max. Laenge der taeglichen Zusammenfassung.'},
+  'summarizer.max_tokens_weekly': {title:'Laenge woechentlich', text:'Max. Laenge der woechentlichen Zusammenfassung.'},
+  'summarizer.max_tokens_monthly': {title:'Laenge monatlich', text:'Max. Laenge der monatlichen Zusammenfassung.'},
+  'context.recent_conversations': {title:'Gespraeche merken', text:'Wie viele vergangene Gespraeche im Kontext bleiben.'},
+  'context.api_timeout': {title:'HA-API Timeout', text:'Timeout fuer Home-Assistant-Anfragen (Sek).'},
+  'context.llm_timeout': {title:'LLM Timeout', text:'Timeout fuer KI-Anfragen (Sek). Groessere Modelle brauchen laenger.'},
+  // === STIMMUNG ===
+  'mood.rapid_command_seconds': {title:'Schnelle Befehle', text:'Zeitfenster fuer "schnelle Befehle hintereinander" (Sek).'},
+  'mood.stress_decay_seconds': {title:'Stress-Abbau', text:'Nach wie vielen Sek Ruhe der Stress sinkt.'},
+  'mood.frustration_threshold': {title:'Frustrations-Schwelle', text:'Ab wie vielen Stress-Punkten Frustration erkannt wird.'},
+  'mood.tired_hour_start': {title:'Muede ab', text:'Ab welcher Uhrzeit Muedigkeit angenommen wird.'},
+  'mood.tired_hour_end': {title:'Muede bis', text:'Bis zu welcher Uhrzeit Muedigkeit gilt.'},
+  'mood.rapid_command_stress_boost': {title:'Stress: Schnelle Befehle', text:'Stressanstieg durch schnelle Befehle hintereinander.'},
+  'mood.positive_stress_reduction': {title:'Stress: Positive Worte', text:'Stressabbau durch positive Worte.'},
+  'mood.negative_stress_boost': {title:'Stress: Negative Worte', text:'Stressanstieg durch negative Worte.'},
+  'mood.impatient_stress_boost': {title:'Stress: Ungeduld', text:'Stressanstieg durch ungedulige Worte.'},
+  'mood.tired_boost': {title:'Stress: Muedigkeit', text:'Stresseinfluss durch Muedigkeit.'},
+  'mood.repetition_stress_boost': {title:'Stress: Wiederholungen', text:'Stressanstieg durch wiederholte Befehle.'},
+  'mood.positive_keywords': {title:'Positive Woerter', text:'Woerter die gute Stimmung signalisieren.'},
+  'mood.negative_keywords': {title:'Negative Woerter', text:'Woerter die schlechte Stimmung signalisieren.'},
+  'mood.impatient_keywords': {title:'Ungeduld-Woerter', text:'Woerter die Ungeduld signalisieren.'},
+  'mood.tired_keywords': {title:'Muedigkeits-Woerter', text:'Woerter die Muedigkeit signalisieren.'},
+  'voice_analysis.enabled': {title:'Stimm-Analyse', text:'Analysiert Sprechtempo zur Stimmungserkennung.'},
+  'voice_analysis.wpm_fast': {title:'Schnelles Sprechen (WPM)', text:'Ab wie vielen Woertern/Min schnelles Sprechen erkannt wird.'},
+  'voice_analysis.wpm_slow': {title:'Langsames Sprechen (WPM)', text:'Unter wie vielen Woertern/Min langsames Sprechen gilt.'},
+  'voice_analysis.wpm_normal': {title:'Normales Tempo (WPM)', text:'Referenzwert fuer normales Sprechtempo.'},
+  'voice_analysis.use_whisper_metadata': {title:'Whisper-Metadaten', text:'Zusaetzliche Daten von Whisper fuer Analyse nutzen.'},
+  'voice_analysis.voice_weight': {title:'Stimm-Gewichtung', text:'Wie stark Stimm-Analyse die Gesamtstimmung beeinflusst (0-1).'},
+  // === RAEUME ===
+  'room_temperature.sensors': {title:'Temperatursensoren', text:'HA-Sensoren fuer Raumtemperatur.'},
+  'multi_room.enabled': {title:'Multi-Room', text:'Erkennt in welchem Raum du bist.'},
+  'multi_room.presence_timeout_minutes': {title:'Praesenz-Timeout', text:'Nach wie vielen Min ohne Bewegung der Raum leer ist.'},
+  'multi_room.auto_follow': {title:'Musik folgen', text:'Musik folgt automatisch von Raum zu Raum.'},
+  'multi_room.room_speakers': {title:'Speaker-Zuordnung', text:'Welcher Speaker in welchem Raum steht.'},
+  'multi_room.room_motion_sensors': {title:'Bewegungsmelder', text:'Welcher Melder in welchem Raum haengt.'},
+  'activity.entities.media_players': {title:'Media Player', text:'Media Player fuer Aktivitaetserkennung.'},
+  'activity.entities.mic_sensors': {title:'Mikrofon-Sensoren', text:'Mikrofon-Sensoren fuer Spracheingabe.'},
+  'activity.entities.bed_sensors': {title:'Bett-Sensoren', text:'Sensoren fuer Schlaf-Erkennung.'},
+  'activity.entities.pc_sensors': {title:'PC-Sensoren', text:'Sensoren fuer Arbeits-Erkennung.'},
+  'activity.thresholds.night_start': {title:'Nacht beginnt', text:'Ab wann Nachtruhe gilt.'},
+  'activity.thresholds.night_end': {title:'Nacht endet', text:'Bis wann Nachtruhe gilt.'},
+  'activity.thresholds.guest_person_count': {title:'Besuch ab Personen', text:'Ab wie vielen Personen Gaeste-Modus aktiviert wird.'},
+  'activity.thresholds.focus_min_minutes': {title:'Fokus-Modus', text:'Ab wie vielen Min ununterbrochener Arbeit Fokus erkannt wird.'},
+  // === STIMME & TTS ===
+  'sounds.default_speaker': {title:'Standard-Speaker', text:'Standard-Geraet fuer Sprachausgabe und Sounds.'},
+  'sounds.tts_entity': {title:'TTS-Engine', text:'Welche Text-to-Speech Engine genutzt wird.'},
+  'sounds.alexa_speakers': {title:'Alexa Speaker', text:'Echo/Alexa Geraete fuer Benachrichtigungen.'},
+  'tts.ssml_enabled': {title:'SSML', text:'Erweiterte Sprachsteuerung (Betonung, Pausen). Nicht alle Engines unterstuetzt.'},
+  'tts.prosody_variation': {title:'Prosody', text:'Tonhoehe und Tempo variieren je nach Kontext.'},
+  'tts.speed.confirmation': {title:'Tempo: Bestaetigung', text:'Sprechgeschwindigkeit bei Bestaetigungen (100=normal).'},
+  'tts.speed.warning': {title:'Tempo: Warnung', text:'Sprechgeschwindigkeit bei Warnungen.'},
+  'tts.speed.briefing': {title:'Tempo: Briefing', text:'Sprechgeschwindigkeit bei Briefings.'},
+  'tts.speed.greeting': {title:'Tempo: Begruessung', text:'Sprechgeschwindigkeit bei Begruessungen.'},
+  'tts.speed.question': {title:'Tempo: Frage', text:'Sprechgeschwindigkeit bei Fragen.'},
+  'tts.speed.casual': {title:'Tempo: Normal', text:'Sprechgeschwindigkeit bei normalen Antworten.'},
+  'tts.pauses.before_important': {title:'Pause: Wichtig', text:'ms Pause vor wichtigen Infos.'},
+  'tts.pauses.between_sentences': {title:'Pause: Saetze', text:'ms Pause zwischen Saetzen.'},
+  'tts.pauses.after_greeting': {title:'Pause: Begruessung', text:'ms Pause nach der Begruessung.'},
+  'tts.whisper_triggers': {title:'Fluestern bei', text:'Bei welchen Situationen gefluestert wird.'},
+  'tts.whisper_cancel_triggers': {title:'Fluestern beenden', text:'Was den Fluestermodus beendet.'},
+  'volume.day': {title:'Lautstaerke: Tag', text:'Lautstaerke tagsueber (0-1).'},
+  'volume.evening': {title:'Lautstaerke: Abend', text:'Lautstaerke am Abend.'},
+  'volume.night': {title:'Lautstaerke: Nacht', text:'Lautstaerke nachts.'},
+  'volume.sleeping': {title:'Lautstaerke: Schlaf', text:'Lautstaerke im Schlafmodus.'},
+  'volume.emergency': {title:'Lautstaerke: Notfall', text:'Lautstaerke bei Notfaellen. Sollte hoch sein.'},
+  'volume.whisper': {title:'Lautstaerke: Fluestern', text:'Lautstaerke im Fluestermodus.'},
+  'volume.morning_start': {title:'Morgen ab', text:'Ab welcher Stunde Tages-Lautstaerke gilt.'},
+  'volume.evening_start': {title:'Abend ab', text:'Ab welcher Stunde Abend-Lautstaerke gilt.'},
+  'volume.night_start': {title:'Nacht ab', text:'Ab welcher Stunde Nacht-Lautstaerke gilt.'},
+  'sounds.enabled': {title:'Sound-Effekte', text:'Kurze Toene bei Events (Zuhoeren, Bestaetigung, Warnung).'},
+  'sounds.events.listening': {title:'Sound: Zuhoeren', text:'Sound beim Start des Zuhoerens.'},
+  'sounds.events.confirmed': {title:'Sound: Bestaetigung', text:'Sound nach Bestaetigung.'},
+  'sounds.events.warning': {title:'Sound: Warnung', text:'Sound bei Warnungen.'},
+  'sounds.events.alarm': {title:'Sound: Alarm', text:'Sound bei Alarmen.'},
+  'sounds.events.doorbell': {title:'Sound: Tuerklingel', text:'Sound bei Tuerklingel-Events.'},
+  'sounds.events.greeting': {title:'Sound: Begruessung', text:'Sound bei Begruessungen.'},
+  'sounds.events.error': {title:'Sound: Fehler', text:'Sound bei Fehlern.'},
+  'sounds.events.goodnight': {title:'Sound: Gute Nacht', text:'Sound bei Gute-Nacht-Routine.'},
+  'sounds.night_volume_factor': {title:'Nacht-Sound-Faktor', text:'Sound-Lautstaerke nachts als Faktor (0.3 = 30%).'},
+  'narration.enabled': {title:'Szenen-Narration', text:'Assistent erzaehlt bei Szenen-Wechseln was passiert.'},
+  'narration.default_transition': {title:'Standard-Uebergang', text:'Standard-Dauer fuer Szenen-Uebergaenge (Sek).'},
+  'narration.scene_transitions.filmabend': {title:'Filmabend-Uebergang', text:'Uebergangs-Dauer Filmabend-Szene.'},
+  'narration.scene_transitions.gute_nacht': {title:'Gute-Nacht-Uebergang', text:'Uebergangs-Dauer Gute-Nacht-Szene.'},
+  'narration.scene_transitions.aufwachen': {title:'Aufwach-Uebergang', text:'Uebergangs-Dauer Aufwach-Szene.'},
+  'narration.scene_transitions.gemuetlich': {title:'Gemuetlich-Uebergang', text:'Uebergangs-Dauer Gemuetlich-Szene.'},
+  'narration.step_delay': {title:'Schritt-Verzoegerung', text:'Pause zwischen Aktionen innerhalb einer Szene.'},
+  'narration.narrate_actions': {title:'Aktionen ansagen', text:'Bei Szenen-Wechseln ansagen was passiert.'},
+  'speaker_recognition.enabled': {title:'Sprecher-Erkennung', text:'Erkennt wer spricht und passt Antworten an.'},
+  'speaker_recognition.min_confidence': {title:'Erkennungs-Sicherheit', text:'Wie sicher die Erkennung sein muss.'},
+  'speaker_recognition.enrollment_duration': {title:'Einlern-Dauer', text:'Wie lange eine Person sprechen muss zum Einlernen.'},
+  'speaker_recognition.fallback_ask': {title:'Nachfragen', text:'Bei unsicherer Erkennung nachfragen wer spricht.'},
+  'speaker_recognition.max_profiles': {title:'Max. Profile', text:'Max. Anzahl gespeicherter Sprecher-Profile.'},
+  // === ROUTINEN ===
+  'routines.morning_briefing.enabled': {title:'Morgen-Briefing', text:'Automatisches Update am Morgen mit Wetter, Terminen, Neuigkeiten.'},
+  'routines.morning_briefing.trigger': {title:'Briefing-Ausloeser', text:'Was das Morgen-Briefing ausloest (Bewegung, Sprache, Wecker).'},
+  'routines.morning_briefing.modules': {title:'Briefing-Module', text:'Was im Morgen-Briefing enthalten sein soll.'},
+  'routines.morning_briefing.weekday_style': {title:'Stil Wochentag', text:'Briefing-Stil unter der Woche.'},
+  'routines.morning_briefing.weekend_style': {title:'Stil Wochenende', text:'Briefing-Stil am Wochenende.'},
+  'routines.morning_briefing.morning_actions.covers_up': {title:'Rolladen hoch', text:'Beim Briefing automatisch Rolladen hochfahren.'},
+  'routines.morning_briefing.morning_actions.lights_soft': {title:'Licht sanft an', text:'Beim Briefing sanft Licht einschalten.'},
+  'routines.evening_briefing.enabled': {title:'Abend-Briefing', text:'Automatischer Abend-Status: offene Fenster, Sicherheit, Wetter morgen.'},
+  'routines.evening_briefing.window_start_hour': {title:'Abend-Start', text:'Ab wann das Abend-Briefing ausgeloest werden kann.'},
+  'routines.evening_briefing.window_end_hour': {title:'Abend-Ende', text:'Bis wann das Abend-Briefing ausgeloest wird.'},
+  'calendar.entities': {title:'Kalender-Entities', text:'HA-Kalender die abgefragt werden. Leer = alle.'},
+  'routines.good_night.enabled': {title:'Gute-Nacht-Routine', text:'Automatische Aktionen bei "Gute Nacht": Lichter, Heizung, Checks.'},
+  'routines.good_night.triggers': {title:'Gute-Nacht Phrasen', text:'Saetze die die Routine ausloesen.'},
+  'routines.good_night.checks': {title:'Sicherheits-Checks', text:'Was vor dem Schlafen geprueft wird (Tueren, Fenster, Herd).'},
+  'routines.good_night.actions.lights_off': {title:'Lichter aus', text:'Alle Lichter bei Gute-Nacht ausschalten.'},
+  'routines.good_night.actions.heating_night': {title:'Heizung Nacht', text:'Heizung auf Nacht-Modus setzen.'},
+  'routines.good_night.actions.covers_down': {title:'Rolladen runter', text:'Alle Rolladen bei Gute-Nacht runterfahren.'},
+  'routines.good_night.actions.alarm_arm_home': {title:'Alarmanlage', text:'Alarmanlage im Home-Modus scharf schalten.'},
+  'routines.guest_mode.triggers': {title:'Gaeste-Modus Trigger', text:'Saetze die den Gaeste-Modus aktivieren.'},
+  'routines.guest_mode.restrictions.hide_personal_info': {title:'Infos verstecken', text:'Persoenliche Infos im Gaeste-Modus verbergen.'},
+  'routines.guest_mode.restrictions.formal_tone': {title:'Formeller Ton', text:'Im Gaeste-Modus formeller sprechen.'},
+  'routines.guest_mode.restrictions.restrict_security': {title:'Sicherheit einschraenken', text:'Sicherheitsfunktionen im Gaeste-Modus limitieren.'},
+  'routines.guest_mode.restrictions.suggest_guest_wifi': {title:'Gaeste-WLAN', text:'Gaeste-WLAN im Gaeste-Modus vorschlagen.'},
+  // === PROAKTIV ===
+  'proactive.enabled': {title:'Proaktive Meldungen', text:'Assistent meldet sich von allein bei wichtigen Ereignissen.'},
+  'proactive.cooldown_seconds': {title:'Meldungs-Abstand', text:'Mindestzeit zwischen proaktiven Meldungen.'},
+  'proactive.music_follow_cooldown_minutes': {title:'Musik-Pause', text:'Wartezeit bevor Musik dem Raumwechsel folgt.'},
+  'proactive.min_autonomy_level': {title:'Min. Autonomie', text:'Ab welchem Level proaktive Meldungen erlaubt sind.'},
+  'proactive.silence_scenes': {title:'Nicht stoeren', text:'Szenen in denen nicht gestoert wird (Film, Schlaf, Meditation).'},
+  'time_awareness.enabled': {title:'Zeitgefuehl', text:'Erinnert wenn Geraete zu lange laufen (Ofen, Buegeleisen).'},
+  'time_awareness.check_interval_minutes': {title:'Pruef-Intervall', text:'Wie oft nach vergessenen Geraeten geschaut wird.'},
+  'time_awareness.thresholds.oven': {title:'Ofen-Warnung', text:'Nach wie vielen Min der Ofen gemeldet wird.'},
+  'time_awareness.thresholds.iron': {title:'Buegeleisen-Warnung', text:'Nach wie vielen Min das Buegeleisen gemeldet wird.'},
+  'time_awareness.thresholds.light_empty_room': {title:'Licht leer', text:'Nach wie vielen Min Licht im leeren Raum gemeldet wird.'},
+  'time_awareness.thresholds.window_open_cold': {title:'Fenster kalt', text:'Nach wie vielen Min offenes Fenster bei Kaelte gemeldet wird.'},
+  'time_awareness.thresholds.pc_no_break': {title:'PC-Pause', text:'Nach wie vielen Min am PC eine Pause vorgeschlagen wird.'},
+  'time_awareness.counters.coffee_machine': {title:'Kaffee-Zaehler', text:'Zaehlt Kaffees und erinnert bei zu vielen.'},
+  'anticipation.enabled': {title:'Vorausdenken', text:'Lernt Gewohnheiten und schlaegt Aktionen vor.'},
+  'anticipation.history_days': {title:'Lern-Zeitraum', text:'Wie viele Tage zurueck fuer Muster-Erkennung.'},
+  'anticipation.min_confidence': {title:'Mindest-Sicherheit', text:'Wie sicher eine Vorhersage sein muss.'},
+  'anticipation.check_interval_minutes': {title:'Pruef-Intervall', text:'Wie oft nach vorhersagbaren Aktionen geschaut wird.'},
+  'anticipation.thresholds.ask': {title:'Schwelle: Nachfragen', text:'Ab welcher Sicherheit nachgefragt wird.'},
+  'anticipation.thresholds.suggest': {title:'Schwelle: Vorschlagen', text:'Ab welcher Sicherheit vorgeschlagen wird.'},
+  'anticipation.thresholds.auto': {title:'Schwelle: Automatisch', text:'Ab welcher Sicherheit automatisch ausgefuehrt wird.'},
+  'intent_tracking.enabled': {title:'Absicht-Erkennung', text:'Erkennt offene Absichten und erinnert spaeter.'},
+  'intent_tracking.check_interval_minutes': {title:'Pruef-Intervall', text:'Wie oft nach offenen Absichten geschaut wird.'},
+  'intent_tracking.remind_hours_before': {title:'Erinnerung vorher', text:'Wie viele Stunden vorher erinnert wird.'},
+  'conversation_continuity.enabled': {title:'Gespraech fortsetzen', text:'Fragt nach ob unterbrochenes Gespraech fortgesetzt werden soll.'},
+  'conversation_continuity.resume_after_minutes': {title:'Nachfragen nach', text:'Nach wie vielen Min zum Thema zurueckgekehrt wird.'},
+  'conversation_continuity.expire_hours': {title:'Thema vergessen', text:'Nach wie vielen Stunden ein Thema vergessen wird.'},
+  // === KOCH-ASSISTENT ===
+  'cooking.enabled': {title:'Koch-Assistent', text:'Koch-Modus mit Rezepten, Schritt-fuer-Schritt und Timern.'},
+  'cooking.language': {title:'Rezept-Sprache', text:'Sprache der generierten Rezepte.'},
+  'cooking.default_portions': {title:'Standard-Portionen', text:'Fuer wie viele Personen Rezepte berechnet werden.'},
+  'cooking.max_steps': {title:'Max. Schritte', text:'Max. Schritte pro Rezept.'},
+  'cooking.max_tokens': {title:'Rezept-Detailgrad', text:'Wie ausfuehrlich Rezepte beschrieben werden.'},
+  'cooking.timer_notify_tts': {title:'Timer per Sprache', text:'Timer-Erinnerungen per Sprachausgabe.'},
+  // === SICHERHEIT ===
+  'security.require_confirmation': {title:'Bestaetigung noetig', text:'Fuer welche Aktionen der Assistent vorher fragen muss.'},
+  'security.climate_limits.min': {title:'Temperatur Min', text:'Unter diese Temperatur wird nie geheizt (Frostschutz).'},
+  'security.climate_limits.max': {title:'Temperatur Max', text:'Ueber diese Temperatur wird nie geheizt.'},
+  'trust_levels.default': {title:'Standard-Vertrauen', text:'Vertrauensstufe fuer neue/unbekannte Personen.'},
+  'trust_levels.guest_allowed_actions': {title:'Gaeste-Aktionen', text:'Was Gaeste ohne Bestaetigung duerfen.'},
+  'trust_levels.security_actions': {title:'Besitzer-Aktionen', text:'Aktionen die nur der Besitzer darf.'},
+  'interrupt_queue.enabled': {title:'Interrupt-Queue', text:'CRITICAL-Meldungen unterbrechen sofort.'},
+  'interrupt_queue.pause_ms': {title:'Interrupt-Pause', text:'ms Pause vor Notfall-Meldung.'},
+  'situation_model.enabled': {title:'Situations-Modell', text:'Merkt sich Haus-Zustand und meldet Aenderungen.'},
+  'situation_model.min_pause_minutes': {title:'Delta-Pause', text:'Min. Abstand zwischen Aenderungs-Meldungen.'},
+  'situation_model.max_changes': {title:'Max. Aenderungen', text:'Wie viele Aenderungen auf einmal gemeldet werden.'},
+  'situation_model.temp_threshold': {title:'Temp-Schwelle', text:'Ab wie viel Grad Aenderung gemeldet wird.'},
+  // === HAUS-STATUS ===
+  'house_status.sections': {title:'Angezeigte Bereiche', text:'Welche Infos im Haus-Status angezeigt werden.'},
+  'house_status.temperature_rooms': {title:'Temperatur-Raeume', text:'Nur diese Raeume fuer Temperatur. Leer = alle.'},
+  'health_monitor.enabled': {title:'Health Monitor', text:'Ueberwacht Raumklima und warnt bei Problemen.'},
+  'health_monitor.check_interval_minutes': {title:'Pruef-Intervall', text:'Wie oft Sensoren geprueft werden (Min).'},
+  'health_monitor.alert_cooldown_minutes': {title:'Warn-Cooldown', text:'Min. Abstand zwischen Warnungen.'},
+  'health_monitor.temp_low': {title:'Temp niedrig', text:'Unter dieser Temperatur wird gewarnt.'},
+  'health_monitor.temp_high': {title:'Temp hoch', text:'Ueber dieser Temperatur wird gewarnt.'},
+  'health_monitor.humidity_low': {title:'Feuchte niedrig', text:'Unter dieser Luftfeuchte wird gewarnt.'},
+  'health_monitor.humidity_high': {title:'Feuchte hoch', text:'Ueber dieser Luftfeuchte wird gewarnt.'},
+  'health_monitor.co2_warn': {title:'CO2 Warnung', text:'Ab diesem ppm-Wert wird gewarnt.'},
+  'health_monitor.co2_critical': {title:'CO2 Kritisch', text:'Ab diesem ppm-Wert dringend lueften.'},
+  'health_monitor.exclude_patterns': {title:'Ausschluss-Patterns', text:'Entity-IDs die ignoriert werden.'},
+  // === GERAETE ===
+  'device_health.enabled': {title:'Geraete-Health', text:'Ueberwacht Zustand von Smart-Home-Geraeten.'},
+  'device_health.check_interval_minutes': {title:'Pruef-Intervall', text:'Wie oft Geraete geprueft werden.'},
+  'device_health.alert_cooldown_minutes': {title:'Alert-Cooldown', text:'Min. Abstand zwischen Warnungen pro Geraet.'},
+  'diagnostics.enabled': {title:'Diagnostik', text:'Automatische Pruefung: Batterie, Offline, veraltete Sensoren.'},
+  'diagnostics.check_interval_minutes': {title:'Diagnostik-Intervall', text:'Wie oft die Diagnostik laeuft.'},
+  'diagnostics.battery_warning_threshold': {title:'Batterie-Warnung', text:'Ab welchem Prozent eine Warnung kommt.'},
+  'diagnostics.stale_sensor_minutes': {title:'Sensor veraltet', text:'Nach wie vielen Min ohne Update veraltet.'},
+  'diagnostics.offline_threshold_minutes': {title:'Geraet offline', text:'Nach wie vielen Min ein Geraet offline gilt.'},
+  'diagnostics.alert_cooldown_minutes': {title:'Diagnostik-Cooldown', text:'Min. Abstand zwischen Diagnostik-Warnungen.'},
+  'diagnostics.monitor_domains': {title:'Ueberwachte Domains', text:'Welche HA-Domains ueberwacht werden.'},
+  'diagnostics.exclude_patterns': {title:'Ignorierte Patterns', text:'Entity-IDs die ausgeschlossen werden.'},
+  'maintenance.enabled': {title:'Wartungs-Erinnerungen', text:'Automatische Erinnerungen fuer Geraete-Wartung.'},
+  // === AUTONOMIE ===
+  'self_optimization.enabled': {title:'Selbstoptimierung', text:'Assistent analysiert sich selbst und schlaegt Verbesserungen vor.'},
+  'self_optimization.approval_mode': {title:'Genehmigungsmodus', text:'ask = vorher fragen, auto = anwenden, log_only = nur loggen.'},
+  'self_optimization.analysis_interval': {title:'Analyse-Intervall', text:'Wie oft Selbst-Analyse laeuft.'},
+  'self_optimization.max_proposals_per_cycle': {title:'Max. Vorschlaege', text:'Max. Optimierungen pro Analyse-Zyklus.'},
+  'self_optimization.model': {title:'Analyse-Modell', text:'KI-Modell fuer Selbst-Analyse.'},
+  'self_optimization.rollback.enabled': {title:'Rollback', text:'Aenderungen koennen rueckgaengig gemacht werden.'},
+  'self_optimization.rollback.max_snapshots': {title:'Max. Snapshots', text:'Wie viele Config-Snapshots gespeichert werden.'},
+  'self_optimization.rollback.snapshot_on_every_edit': {title:'Snapshot bei Aenderung', text:'Vor jeder Aenderung automatisch Snapshot erstellen.'},
+  'self_optimization.immutable_keys': {title:'Geschuetzte Bereiche', text:'Config-Bereiche die NIE automatisch geaendert werden.'},
+  'self_automation.enabled': {title:'Self-Automation', text:'Assistent erstellt eigenstaendig Automationen.'},
+  'self_automation.max_per_day': {title:'Max. Automationen/Tag', text:'Max. Automationen die pro Tag erstellt werden.'},
+  'self_automation.model': {title:'Automations-Modell', text:'KI-Modell fuer Automations-Erstellung.'},
+  'feedback.auto_timeout_seconds': {title:'Feedback-Timeout', text:'Timeout fuer Feedback-Anfragen (Sek).'},
+  'feedback.base_cooldown_seconds': {title:'Feedback-Abstand', text:'Min. Abstand zwischen Feedback-Anfragen.'},
+  'feedback.score_suppress': {title:'Unterdruecken unter', text:'Unter diesem Score wird Feature unterdrueckt.'},
+  'feedback.score_reduce': {title:'Reduzieren unter', text:'Unter diesem Score wird Feature reduziert.'},
+  'feedback.score_normal': {title:'Normal ab', text:'Ab diesem Score normales Verhalten.'},
+  'feedback.score_boost': {title:'Boost ab', text:'Ab diesem Score wird Feature verstaerkt.'},
+};
+
+function helpBtn(path) {
+  if (!HELP_TEXTS[path]) return '';
+  return ` <span class="help-btn" onclick="event.stopPropagation();showHelp('${path}')" title="Hilfe">?</span>`;
+}
+
 // ---- Form field generators ----
 function fText(path, label, hint='', ro=false) {
   const v = getPath(S,path) ?? '';
-  return `<div class="form-group"><label>${label}</label>
+  return `<div class="form-group"><label>${label}${helpBtn(path)}</label>
     <input type="text" data-path="${path}" value="${esc(String(v))}" ${ro?'readonly':''}>${hint?`<div class="hint">${hint}</div>`:''}</div>`;
 }
 function fNum(path, label, min='', max='', step='1', hint='') {
   const v = getPath(S,path) ?? '';
-  return `<div class="form-group"><label>${label}</label>
+  return `<div class="form-group"><label>${label}${helpBtn(path)}</label>
     <input type="number" data-path="${path}" value="${v}" min="${min}" max="${max}" step="${step}">${hint?`<div class="hint">${hint}</div>`:''}</div>`;
 }
 function fRange(path, label, min, max, step, labels=null) {
   const v = getPath(S,path) ?? min;
   const lbl = labels ? (labels[v]||v) : v;
-  return `<div class="form-group"><label>${label}</label>
+  return `<div class="form-group"><label>${label}${helpBtn(path)}</label>
     <div class="range-group"><input type="range" data-path="${path}" min="${min}" max="${max}" step="${step}" value="${v}"
       oninput="updRange(this)"><span class="range-value" id="rv_${path.replace(/\./g,'_')}">${lbl}</span></div></div>`;
 }
 function fToggle(path, label) {
   const v = getPath(S,path);
-  return `<div class="form-group"><div class="toggle-group"><label>${label}</label>
+  return `<div class="form-group"><div class="toggle-group"><label>${label}${helpBtn(path)}</label>
     <label class="toggle"><input type="checkbox" data-path="${path}" ${v?'checked':''}><span class="toggle-track"></span><span class="toggle-thumb"></span></label></div></div>`;
 }
 function fSelect(path, label, opts) {
   const v = getPath(S,path) ?? '';
-  let h = `<div class="form-group"><label>${label}</label><select data-path="${path}">`;
+  let h = `<div class="form-group"><label>${label}${helpBtn(path)}</label><select data-path="${path}">`;
   for(const o of opts) h += `<option value="${o.v}" ${v==o.v?'selected':''}>${o.l}</option>`;
   return h + `</select></div>`;
 }
 function fKeywords(path, label) {
   const arr = getPath(S,path) || [];
   let tags = arr.map(k => `<span class="kw-tag">${esc(k)}<span class="kw-rm" onclick="rmKw(this,'${path}')">&#10005;</span></span>`).join('');
-  return `<div class="form-group"><label>${label}</label>
+  return `<div class="form-group"><label>${label}${helpBtn(path)}</label>
     <div class="kw-editor" data-path="${path}" onclick="this.querySelector('input').focus()">
       ${tags}<input class="kw-input" placeholder="+ hinzufuegen..." onkeydown="addKw(event,this,'${path}')">
     </div></div>`;
@@ -617,7 +935,7 @@ function fTextarea(path, label, hint='') {
   const isObj = v && typeof v === 'object' && !isArr;
   const txt = isArr ? v.join('\n') : (isObj ? JSON.stringify(v,null,2) : String(v??''));
   const dtype = isArr ? 'array' : (isObj ? 'json' : 'text');
-  return `<div class="form-group"><label>${label}</label>
+  return `<div class="form-group"><label>${label}${helpBtn(path)}</label>
     <textarea data-path="${path}" data-type="${dtype}">${esc(txt)}</textarea>${hint?`<div class="hint">${hint}</div>`:''}</div>`;
 }
 
@@ -635,7 +953,7 @@ function fChipSelect(path, label, options, hint='') {
   arr.filter(v => !optValues.includes(v)).forEach(v => {
     chips += `<span class="chip-opt selected" data-chip-path="${path}" data-chip-val="${esc(v)}" onclick="toggleChip('${path}','${esc(v)}')">${esc(v)}</span>`;
   });
-  return `<div class="form-group"><label>${label}</label>
+  return `<div class="form-group"><label>${label}${helpBtn(path)}</label>
     <div class="chip-grid" data-path="${path}">${chips}</div>
     ${hint?`<div class="hint">${hint}</div>`:''}</div>`;
 }
@@ -669,7 +987,7 @@ function fModelSelect(path, label, hint='') {
   ];
   // Aktuellen Wert in Liste sicherstellen
   const hasVal = models.some(m => m.v === v);
-  let h = `<div class="form-group"><label>${label}</label><select data-path="${path}">`;
+  let h = `<div class="form-group"><label>${label}${helpBtn(path)}</label><select data-path="${path}">`;
   if (!hasVal && v) h += `<option value="${esc(v)}" selected>${esc(v)}</option>`;
   for (const m of models) h += `<option value="${m.v}" ${v===m.v?'selected':''}>${m.l}</option>`;
   return h + `</select>${hint?`<div class="hint">${hint}</div>`:''}</div>`;
@@ -705,7 +1023,7 @@ function fEntityPicker(path, label, domains, hint='') {
   const arr = getPath(S, path) || [];
   const domStr = (domains||[]).join(',');
   let tags = arr.map(k => `<span class="kw-tag">${esc(k)}<span class="kw-rm" onclick="rmEntityPick(this,'${path}')">&#10005;</span></span>`).join('');
-  return `<div class="form-group"><label>${label}</label>
+  return `<div class="form-group"><label>${label}${helpBtn(path)}</label>
     <div class="entity-pick-wrap">
       <div class="kw-editor" data-path="${path}" data-entity-picker="list" data-domains="${domStr}" onclick="this.querySelector('input')?.focus()">
         ${tags}<input class="kw-input entity-pick-input" placeholder="&#128269; Entity suchen..." oninput="entityPickFilter(this,'${domStr}')" onfocus="entityPickFilter(this,'${domStr}')" data-path="${path}">
@@ -718,7 +1036,7 @@ function fEntityPicker(path, label, domains, hint='') {
 function fEntityPickerSingle(path, label, domains, hint='') {
   const v = getPath(S, path) || '';
   const domStr = (domains||[]).join(',');
-  return `<div class="form-group"><label>${label}</label>
+  return `<div class="form-group"><label>${label}${helpBtn(path)}</label>
     <div class="entity-pick-wrap">
       <input class="form-input entity-pick-input" value="${esc(String(v))}"
         data-path="${path}" data-room-map="${path}" data-domains="${domStr}"
@@ -733,7 +1051,6 @@ function fEntityPickerSingle(path, label, domains, hint='') {
 function fRoomEntityMap(path, label, domains, hint='') {
   const map = getPath(S, path) || {};
   const domStr = (domains||[]).join(',');
-  // Raeume aus household.members preferred_room + bekannte Raeume aus entities
   const rooms = _getKnownRooms();
   let rows = '';
   for (const room of rooms) {
@@ -1599,8 +1916,12 @@ function renderRoutines() {
     fToggle('routines.guest_mode.restrictions.formal_tone', 'Formeller Ton aktivieren') +
     fToggle('routines.guest_mode.restrictions.restrict_security', 'Sicherheitsfunktionen einschraenken') +
     fToggle('routines.guest_mode.restrictions.suggest_guest_wifi', 'Gaeste-WLAN vorschlagen')
-  ) +
-  sectionWrap('&#128276;', 'Proaktive Meldungen',
+  );
+}
+
+// ---- Proaktiv & Vorausdenken (aus Routinen ausgelagert) ----
+function renderProactive() {
+  return sectionWrap('&#128276;', 'Proaktive Meldungen',
     fInfo('Der Assistent meldet sich von allein — z.B. bei offenen Fenstern oder Vergesslichkeit. Je hoeher der Autonomie-Level, desto mehr meldet er sich.') +
     fToggle('proactive.enabled', 'Proaktive Meldungen aktiv') +
     fRange('proactive.cooldown_seconds', 'Mindestabstand zwischen Meldungen', 60, 3600, 60, {60:'1 Min',120:'2 Min',300:'5 Min',600:'10 Min',1800:'30 Min',3600:'1 Std'}) +
@@ -1644,8 +1965,12 @@ function renderRoutines() {
     fToggle('conversation_continuity.enabled', 'Gespraech fortsetzen') +
     fRange('conversation_continuity.resume_after_minutes', 'Nachfragen nach', 1, 60, 1, {1:'1 Min',5:'5 Min',10:'10 Min',15:'15 Min',30:'30 Min',60:'1 Std'}) +
     fRange('conversation_continuity.expire_hours', 'Thema vergessen nach', 1, 72, 1, {1:'1 Std',6:'6 Std',12:'12 Std',24:'1 Tag',48:'2 Tage',72:'3 Tage'})
-  ) +
-  sectionWrap('&#127859;', 'Koch-Assistent',
+  );
+}
+
+// ---- Koch-Assistent (aus Routinen ausgelagert) ----
+function renderCooking() {
+  return sectionWrap('&#127859;', 'Koch-Assistent',
     fInfo('Der Assistent kann dir Rezepte vorschlagen und beim Kochen helfen — Schritt fuer Schritt mit Timer.') +
     fToggle('cooking.enabled', 'Koch-Assistent aktiv') +
     fSelect('cooking.language', 'Rezept-Sprache', [{v:'de',l:'Deutsch'},{v:'en',l:'English'}]) +
@@ -1656,7 +1981,7 @@ function renderRoutines() {
   );
 }
 
-// ---- Tab 8: Sicherheit & Erweitert ----
+/// ---- Tab 8: Sicherheit & Erweitert ----
 function renderSecurity() {
   const hMode = getPath(S, 'heating.mode') || 'room_thermostat';
   const isCurve = hMode === 'heating_curve';
