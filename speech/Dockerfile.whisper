@@ -11,10 +11,11 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# System-Dependencies (ffmpeg fuer Audio-Konvertierung)
+# System-Dependencies (ffmpeg fuer Audio-Konvertierung, libsndfile fuer torchaudio/soundfile Backend)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     ffmpeg \
+    libsndfile1 \
     && rm -rf /var/lib/apt/lists/*
 
 # W-6: PyTorch CPU-only installieren (~300MB statt ~2.3GB CUDA)

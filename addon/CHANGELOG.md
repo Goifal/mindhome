@@ -9,6 +9,10 @@
 ### Piper Fix
 - **Piper Crash behoben**: `--port` ist kein gueltiges Argument — ersetzt durch `--uri tcp://0.0.0.0:10200` und `--data-dir /data`
 
+### ECAPA-TDNN Fix
+- **ECAPA-TDNN Crash behoben**: `hf_hub_download() got an unexpected keyword argument 'use_auth_token'` — `huggingface_hub<0.24.0` gepinnt (speechbrain 1.0.3 Kompatibilitaet)
+- **torchaudio Backend Warning behoben**: `soundfile` + `libsndfile1` hinzugefuegt — SpeechBrain findet jetzt ein funktionierendes Audio-Backend
+
 ### Docker
 - Speech Source-Files (server.py, handler.py) als Volume-Mounts im Whisper-Container
 

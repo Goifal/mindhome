@@ -14,6 +14,8 @@ CODENAME = "Jarvis Voice"
 #   - FIX: Whisper crash — AsrModel/AsrProgram fehlender 'version' Parameter (wyoming 1.8.0)
 #   - FIX: Piper crash — --port durch --uri tcp://0.0.0.0:10200 ersetzt (wyoming-piper CLI)
 #   - FIX: WHISPER_MODEL "small-int8" Parsing — Compute-Typ wird automatisch abgetrennt
+#   - FIX: ECAPA-TDNN crash — huggingface_hub<0.24 gepinnt (use_auth_token Kompatibilitaet)
+#   - FIX: torchaudio Backend Warning — soundfile + libsndfile1 hinzugefuegt
 #   - NEU: Speech Source-Files als Volume-Mounts (server.py, handler.py)
 # Build 96: v1.5.5 Jarvis Voice — Entity-Matching Fix
 #   - FIX: Geraetetyp-Woerter aus Room-Parameter strippen (schlafzimmer rollladen -> schlafzimmer)
