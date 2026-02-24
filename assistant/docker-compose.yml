@@ -109,6 +109,8 @@ services:
       - REDIS_URL=redis://redis:6379
     volumes:
       - ${DATA_DIR:-./data}/whisper-models:/app/models
+      - ../speech/server.py:/app/server.py
+      - ../speech/handler.py:/app/handler.py
     depends_on:
       redis:
         condition: service_healthy
