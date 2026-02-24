@@ -3,7 +3,7 @@
 > **Stand:** 2026-02-24
 > **Phase:** 9 / 9.6 (Voice Embeddings vorbereitet)
 > **Status:** Deaktiviert in Produktion (`enabled: false`)
-> **Geplante Hardware:** ReSpeaker XVF3800 mit Gehaeuse + XIAO ESP32-S3 (Mic) + Sonos (TTS-Ausgabe)
+> **Geplante Hardware:** ReSpeaker XVF3800 (Hauptraeume) + M5Stack Atom Echo (Nebenraeume) + Sonos (TTS-Ausgabe)
 
 ---
 
@@ -14,9 +14,10 @@ PC1 (HAOS)                              PC2 (Assistant + Ollama)
 ├── HA Assist Pipeline                   ├── /api/assistant/chat (Main Endpoint)
 │   ├── Whisper STT (Wyoming)            ├── SpeakerRecognition Engine
 │   └── MindHome Conversation Agent      ├── Brain (Context + Person Routing)
-├── ESPHome Voice Satellites             ├── Redis (Profile Storage)
-│   ├── ReSpeaker XVF3800 (Mic-only)    └── Ollama LLM
-│   └── Sonos Speakers (TTS-Ausgabe)
+├── ESPHome Voice Satellites (Mic-only)  ├── Redis (Profile Storage)
+│   ├── ReSpeaker XVF3800 (Hauptraeume)  └── Ollama LLM
+│   └── M5Stack Atom Echo (Nebenraeume)
+├── Sonos Speakers (TTS-Ausgabe)
 └── TTS (Piper → Sonos via announce)
 ```
 
@@ -317,12 +318,52 @@ speaker_recognition:
 
 **Raum-zu-Sonos Mapping (Beispiel):**
 
-| Raum | ReSpeaker Device | Sonos Entity |
-|------|-----------------|--------------|
-| Kueche | `esphome_respeaker_kueche` | `media_player.sonos_kueche` |
-| Wohnzimmer | `esphome_respeaker_wohnzimmer` | `media_player.sonos_wohnzimmer` |
-| Schlafzimmer | `esphome_respeaker_schlafzimmer` | `media_player.sonos_schlafzimmer` |
-| Buero | `esphome_respeaker_buero` | `media_player.sonos_buero` |
+| Raum | Voice Satellite | Device-Type | Sonos Entity |
+|------|----------------|-------------|--------------|
+| Kueche | `esphome_respeaker_kueche` | ReSpeaker XVF3800 | `media_player.sonos_kueche` |
+| Wohnzimmer | `esphome_respeaker_wohnzimmer` | ReSpeaker XVF3800 | `media_player.sonos_wohnzimmer` |
+| Schlafzimmer | `esphome_respeaker_schlafzimmer` | ReSpeaker XVF3800 | `media_player.sonos_schlafzimmer` |
+| Buero | `esphome_respeaker_buero` | ReSpeaker XVF3800 | `media_player.sonos_buero` |
+| Flur | `esphome_atom_echo_flur` | Atom Echo | `media_player.sonos_flur` |
+| Bad | `esphome_atom_echo_bad` | Atom Echo | `media_player.sonos_bad` |
+
+### 5.3 Zweit-Satellite: M5Stack Atom Echo
+
+**Produkt:** [M5Stack ATOM Echo Smart Speaker Dev Kit](https://shop.m5stack.com/products/atom-echo-smart-speaker-dev-kit)
+
+**Preis:** ~$13 / ~12 EUR
+
+**Einsatzzweck:** Kompakter Voice-Satellite fuer Nebenraeume (Flur, Bad, Gaestezimmer)
+wo kein Premium-Mikrofon noetig ist.
+
+| Eigenschaft | Wert |
+|------------|------|
+| SoC | ESP32-PICO-D4 (240MHz, Dual Core) |
+| Mikrofon | SPM1423 PDM (1x, mono) |
+| Speaker | NS4168 I2S (0.5W) — wird NICHT genutzt → Sonos |
+| Groesse | 24 x 24 x 17 mm (winzig!) |
+| Flash | 4 MB |
+| LED | 1x SK6812 RGB |
+| Konnektivitaet | WiFi 802.11 b/g/n, Bluetooth 4.2 |
+| Stromversorgung | USB-C |
+| I2S Mic Pin | GPIO23 (PDM) |
+| I2S Speaker Pin | GPIO22 (nicht genutzt) |
+| I2S BCLK | GPIO19 |
+| I2S LRCLK | GPIO33 |
+
+**Vergleich ReSpeaker vs. Atom Echo:**
+
+| Eigenschaft | ReSpeaker XVF3800 | M5Stack Atom Echo |
+|------------|-------------------|-------------------|
+| Preis | ~55 EUR | ~12 EUR |
+| Mikrofone | 4x MEMS (kreisfoermig) | 1x PDM |
+| Audio DSP | XMOS XVF3800 (AEC, Beamforming, DoA) | Keiner (Software-only) |
+| Reichweite | 5m, 360 Grad | ~2-3m, omnidirektional |
+| Geraeuschunterdrueckung | Hardware (on-chip) | Software (ESPHome) |
+| DoA | Ja (Azimut-Winkel) | Nein |
+| Speaker Recognition | Exzellent (sauberes Signal) | Grundlegend (verrauschter) |
+| Wake Word | ESP32-S3 (leistungsfaehiger) | ESP32 (knapper Speicher) |
+| Empfohlen fuer | Hauptraeume (Kueche, Wohnzimmer) | Nebenraeume (Flur, Bad) |
 
 ### On-Chip Audio-Processing (XVF3800)
 
@@ -490,15 +531,130 @@ ota:
     password: !secret ota_password
 ```
 
+### ESPHome YAML-Vorlage (M5Stack Atom Echo + Sonos)
+
+> **WICHTIG:** Auch beim Atom Echo wird der eingebaute 0.5W Speaker NICHT genutzt.
+> TTS laeuft ueber Sonos. Das spart RAM und verbessert die Audioqualitaet erheblich.
+
+```yaml
+# ============================================================
+# M5Stack Atom Echo — Voice Satellite (Nebenraeume)
+# Mic-Input: SPM1423 PDM Mikrofon (1x, mono)
+# TTS-Output: Sonos Speaker via HA media_player.play_media
+# ============================================================
+
+esphome:
+  name: atom-echo-flur
+  friendly_name: "Atom Echo Flur"
+  min_version: 2025.5.0
+
+esp32:
+  board: m5stack-atom
+  framework:
+    type: esp-idf
+
+# --- WiFi ---
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+# --- I2S Audio (nur Mikrofon, kein Speaker) ---
+i2s_audio:
+  - id: i2s_audio_bus
+    i2s_lrclk_pin: GPIO33
+    i2s_bclk_pin: GPIO19
+
+microphone:
+  - platform: i2s_audio
+    id: atom_mic
+    adc_type: external
+    i2s_audio_id: i2s_audio_bus
+    i2s_din_pin: GPIO23
+    pdm: true
+
+# --- KEIN speaker: Block! TTS geht ueber Sonos ---
+
+# --- Wake Word (lokal auf ESP32) ---
+micro_wake_word:
+  models:
+    - model: hey_jarvis
+  on_wake_word_detected:
+    - voice_assistant.start:
+
+# --- Voice Assistant (ohne Speaker, mit Sonos TTS-Redirect) ---
+voice_assistant:
+  microphone: atom_mic
+  use_wake_word: true
+  noise_suppression_level: 2
+  auto_gain: 31dBFS
+
+  on_tts_end:
+    - homeassistant.service:
+        service: media_player.play_media
+        data:
+          entity_id: media_player.sonos_flur       # ← ANPASSEN pro Raum!
+          media_content_id: !lambda 'return x;'
+          media_content_type: music
+          announce: "true"
+
+  # LED-Feedback (1x RGB LED)
+  on_listening:
+    - light.turn_on:
+        id: led
+        blue: 100%
+        red: 0%
+        green: 0%
+        brightness: 75%
+  on_stt_end:
+    - light.turn_on:
+        id: led
+        blue: 0%
+        red: 0%
+        green: 100%
+        brightness: 50%
+  on_end:
+    - light.turn_off:
+        id: led
+
+# --- RGB LED ---
+light:
+  - platform: esp32_rmt_led_strip
+    id: led
+    pin: GPIO27
+    num_leds: 1
+    rmt_channel: 0
+    chipset: SK6812
+    rgb_order: GRB
+
+# --- API & OTA ---
+api:
+  encryption:
+    key: !secret api_encryption_key
+
+ota:
+  - platform: esphome
+    password: !secret ota_password
+```
+
+> **Hinweis zum Atom Echo Wake Word:** Der ESP32-PICO-D4 hat weniger RAM als
+> der ESP32-S3. `micro_wake_word` funktioniert, aber nur mit kleineren Modellen.
+> Falls Speicherprobleme auftreten, Wake Word in HA statt lokal ausfuehren lassen.
+
 ### Pro-Raum Anpassung
 
 Fuer jeden Raum muss nur der `name`, `friendly_name` und die `entity_id` des Sonos angepasst werden:
 
 ```yaml
-# Kueche:    entity_id: media_player.sonos_kueche
-# Wohnzimmer: entity_id: media_player.sonos_wohnzimmer
-# Schlafzimmer: entity_id: media_player.sonos_schlafzimmer
-# Buero:     entity_id: media_player.sonos_buero
+# ReSpeaker (Hauptraeume):
+#   respeaker-kueche      → media_player.sonos_kueche
+#   respeaker-wohnzimmer   → media_player.sonos_wohnzimmer
+#   respeaker-schlafzimmer → media_player.sonos_schlafzimmer
+#   respeaker-buero        → media_player.sonos_buero
+#
+# Atom Echo (Nebenraeume):
+#   atom-echo-flur         → media_player.sonos_flur
+#   atom-echo-bad          → media_player.sonos_bad
+#   atom-echo-gaestezimmer → media_player.sonos_gaestezimmer
 ```
 
 > **Tipp:** Alternativ kann das Raum-zu-Sonos Mapping auch als HA-Automation
@@ -574,47 +730,225 @@ ReSpeaker XVF3800 (Mic)
 
 ---
 
-## 7. Verbesserungs-Roadmap
+## 7. Implementierungsstrategie — Meine Empfehlung
 
-### Phase 1: Grundlagen aktivieren (Aufwand: 1-2h)
+> **Ziel:** Speaker Recognition zuverlaessig zum Laufen bringen,
+> perfekte Sonos-Integration, beide Satellite-Typen unterstuetzt.
 
-| Schritt | Beschreibung | Datei |
-|---------|-------------|-------|
-| 1.1 | Speaker Recognition aktivieren | `settings.yaml`: `enabled: true` |
-| 1.2 | Device-Mapping konfigurieren | `settings.yaml`: device_mapping mit ESPHome Device-IDs |
-| 1.3 | `device_id` im Addon Voice-Endpoint durchschleifen | `addon/rootfs/opt/mindhome/routes/chat.py` |
+### Uebersicht: Was muss passieren
 
-### Phase 2: ESPHome Voice Satellite + Sonos (Aufwand: 2-4h)
+```
+JETZT (Software-Fixes, ohne Hardware):
+  ├── A. settings.yaml: device_mapping Struktur anlegen
+  ├── B. speaker_recognition.py: device_mapping aus Config laden
+  ├── C. chat.py (Addon): device_id durchschleifen
+  ├── D. settings.yaml: enabled: true
+  └── E. Tests + Validierung
 
-| Schritt | Beschreibung |
-|---------|-------------|
-| 2.1 | ESPHome Firmware fuer ReSpeaker XVF3800 flashen (YAML-Vorlage oben) |
-| 2.2 | In HA als Voice Satellite einrichten (ESPHome Integration) |
-| 2.3 | Device Area in HA konfigurieren (fuer Raum-Erkennung) |
-| 2.4 | Sonos in HA einrichten, TCP Port 1443 pruefen |
-| 2.5 | `entity_id` des Sonos in ESPHome YAML `on_tts_end` eintragen |
-| 2.6 | Device-Mapping in settings.yaml eintragen |
-| 2.7 | End-to-End Test: Wake Word → STT → MindHome → Sonos TTS |
-| 2.8 | Testen: Sonos spielt Musik + Voice-Anfrage → Musik duckt → Antwort → Musik weiter |
+WENN HARDWARE DA (ReSpeaker + Atom Echo):
+  ├── F. ESPHome flashen (beide YAML-Vorlagen)
+  ├── G. HA: Satellites + Sonos + Areas einrichten
+  ├── H. Device-IDs in settings.yaml eintragen
+  └── I. End-to-End Test
 
-### Phase 3: DoA-Integration (Aufwand: 1-2 Tage)
+SPAETER (Optimierung):
+  ├── J. DoA-Integration (nur ReSpeaker)
+  ├── K. Voice Embeddings fertigstellen
+  └── L. Fallback-Dialog + Robustheit
+```
 
-| Schritt | Beschreibung | Datei |
-|---------|-------------|-------|
-| 3.1 | DoA-Werte aus XVF3800 via I2C auslesen | ESPHome Custom Component |
-| 3.2 | DoA als `audio_direction` in Metadata senden | ESPHome → HA → MindHome |
-| 3.3 | `_match_voice_features()` um DoA erweitern | `speaker_recognition.py` |
-| 3.4 | Raum-Layout-Kalibrierung (Person ↔ Winkel) | Neue Config in settings.yaml |
+---
 
-### Phase 4: Voice Embeddings fertigstellen (Aufwand: 2-3 Tage)
+### Phase 1: Software-Fixes (JETZT, ohne Hardware)
 
-| Schritt | Beschreibung | Datei |
-|---------|-------------|-------|
-| 4.1 | SpeechBrain ECAPA-TDNN Modell integrieren (~40MB) | Neuer Service auf PC2 |
-| 4.2 | Wyoming STT Wrapper oder UDP-Stream implementieren | Neuer Service |
-| 4.3 | `identify_by_embedding()` in Erkennungs-Kette einbauen | `speaker_recognition.py` |
-| 4.4 | `store_embedding()` bei erfolgreicher Erkennung aufrufen | `speaker_recognition.py` |
-| 4.5 | Enrollment-Flow: "Sag 3 Saetze zum Einlernen" | `brain.py` + Frontend |
+> **Empfehlung:** Diese Aenderungen JETZT machen, damit beim Eintreffen
+> der Hardware sofort alles funktioniert. Alles reine Code-Arbeit.
+
+#### 1.1 — `settings.yaml`: Device-Mapping + Aktivierung
+
+```yaml
+# VORHER:
+speaker_recognition:
+  enabled: false
+  min_confidence: 0.7
+  fallback_ask: true
+  max_profiles: 10
+  device_mapping: {}
+
+# NACHHER:
+speaker_recognition:
+  enabled: true                     # ← AKTIVIEREN
+  min_confidence: 0.6               # ← Etwas niedriger fuer Anfang
+  fallback_ask: true
+  max_profiles: 10
+  device_mapping:                   # ← Wird befuellt wenn Hardware da
+    # ReSpeaker Hauptraeume:
+    # esphome_respeaker_kueche: "max"
+    # esphome_respeaker_wohnzimmer: "lisa"
+    # Atom Echo Nebenraeume:
+    # esphome_atom_echo_flur: "max"
+    # esphome_atom_echo_bad: "lisa"
+```
+
+**Datei:** `assistant/config/settings.yaml`
+
+#### 1.2 — `chat.py`: device_id im Addon Voice-Endpoint durchschleifen
+
+**Problem:** `/api/chat/voice` extrahiert echte Audio-Metadaten (gut!),
+aber leitet `device_id` NICHT weiter → Device-Mapping kann nie greifen.
+
+**Fix:**
+
+```python
+# In addon/rootfs/opt/mindhome/routes/chat.py
+# Beim Parsen der Form-Daten (ca. Zeile 470):
+device_id = form.get("device_id", None)   # ← NEU
+
+# Beim Erstellen des chat_payload (ca. Zeile 660):
+chat_payload = {
+    "text": transcribed_text,
+    "person": person,
+    "room": room,
+    "device_id": device_id,              # ← NEU
+}
+if voice_metadata:
+    chat_payload["voice_metadata"] = voice_metadata
+```
+
+**Datei:** `addon/rootfs/opt/mindhome/routes/chat.py`
+
+#### 1.3 — `speaker_recognition.py`: Sicherstellen device_mapping aus Config geladen wird
+
+**Aktueller Stand:** `device_mapping` wird in `__init__` aus Config gelesen (Zeile 119).
+Das funktioniert bereits, ABER: `device_mapping` steht aktuell als `{}` in settings.yaml
+und ist dort auch nicht als Beispiel dokumentiert.
+
+**Pruefen:** Dass `settings.yaml` tatsaechlich die `device_mapping` Struktur unterstuetzt
+und dass die Keys die HA-Device-IDs sind (Format: `esphome_<name>`).
+
+#### 1.4 — `conversation.py` (HA Integration): Bereits korrekt
+
+**Gute Nachricht:** Die HA-Integration schleift `device_id` bereits korrekt durch:
+```python
+# ha_integration/.../conversation.py, Zeile 98:
+if ha_device_id:
+    payload["device_id"] = ha_device_id
+```
+→ Kein Fix noetig. Funktioniert out-of-the-box mit ESPHome Voice Satellites.
+
+#### 1.5 — Pipeline-Verifizierung
+
+Nach den Fixes muss folgende Kette stimmen:
+
+```
+ESPHome Voice Satellite
+    ↓ (device_id wird von HA automatisch aus Device Registry gelesen)
+HA Assist Pipeline
+    ↓ ConversationInput.device_id
+conversation.py → _detect_room(device_id) + payload["device_id"]
+    ↓ POST /api/assistant/chat
+main.py ChatRequest → device_id
+    ↓
+brain.py process(device_id=...)
+    ↓
+speaker_recognition.identify(device_id=...)
+    → Methode 1: device_mapping Lookup → Person gefunden (0.95 Confidence)
+    → Methode 2: Room + Presence (falls Mapping nicht matched)
+    → Methode 3: Sole Person Home (falls nur einer da)
+```
+
+---
+
+### Phase 2: Hardware-Setup (wenn ReSpeaker + Atom Echo da sind)
+
+#### 2.1 — ESPHome Firmware flashen
+
+| Geraet | YAML-Vorlage | Flash-Methode |
+|--------|-------------|---------------|
+| ReSpeaker XVF3800 | Sektion 6, "YAML-Vorlage ReSpeaker" | USB-C → ESPHome Web Flasher |
+| M5Stack Atom Echo | Sektion 6, "YAML-Vorlage Atom Echo" | USB-C → ESPHome Web Flasher |
+
+**Pro Geraet anpassen:**
+1. `name:` und `friendly_name:` (eindeutig pro Raum)
+2. `entity_id:` in `on_tts_end` → auf den richtigen Sonos zeigen
+3. `wifi:` Credentials via `!secret`
+
+#### 2.2 — HA einrichten
+
+| Schritt | Was | Wo |
+|---------|-----|---|
+| 2.2a | ESPHome Devices in HA adoptieren | Settings → Devices → ESPHome |
+| 2.2b | Device Area zuweisen (Kueche, Flur, etc.) | Device → Edit → Area |
+| 2.2c | Sonos pruefen: TCP Port 1443 erreichbar | `nc -zv <sonos-ip> 1443` |
+| 2.2d | Assist Pipeline konfigurieren | Settings → Voice Assistants |
+| 2.2e | STT: Whisper, TTS: Piper, Conversation: MindHome | Pipeline Settings |
+
+#### 2.3 — Device-Mapping befuellen
+
+Nachdem die Geraete in HA sind, die echten Device-IDs auslesen:
+
+```bash
+# In HA Developer Tools → States → nach "esphome" filtern
+# Oder: Settings → Devices → ESPHome → Device-ID notieren
+```
+
+Dann in `settings.yaml`:
+
+```yaml
+speaker_recognition:
+  enabled: true
+  device_mapping:
+    esphome_respeaker_kueche: "max"        # Wer sitzt meist in der Kueche?
+    esphome_respeaker_wohnzimmer: "max"    # Oder: shared → leer lassen
+    esphome_atom_echo_flur: ""             # Shared → kein Default-Mapping
+    esphome_atom_echo_bad: ""              # Shared → Room+Presence greift
+```
+
+> **Strategie:** Nur Raeume mit klarem Hauptnutzer mappen.
+> Shared-Raeume leer lassen → Methode 2/3 (Presence) uebernimmt.
+
+#### 2.4 — End-to-End Tests
+
+| # | Test | Erwartung |
+|---|------|-----------|
+| T1 | "Hey Jarvis, wie ist das Wetter?" (ReSpeaker Kueche) | STT → MindHome → Antwort auf Sonos Kueche |
+| T2 | Gleicher Test waehrend Sonos Musik spielt | Musik duckt → Antwort → Musik weiter |
+| T3 | "Hey Jarvis, wie heisse ich?" (gemapptes Device) | Antwort mit richtigem Namen (Speaker erkannt) |
+| T4 | Gleicher Test vom Atom Echo (Flur) | Funktioniert, evtl. anderer Erkennungsweg |
+| T5 | Test mit 2 Personen zuhause | Richtiger Name je nach Device/Raum |
+| T6 | Test mit nur 1 Person zuhause | Sole-Person-Home greift (0.85 Confidence) |
+
+---
+
+### Phase 3: DoA-Integration — nur ReSpeaker (spaeter)
+
+> **Wann:** Nachdem Phase 1+2 stabil laufen.
+> **Nur fuer ReSpeaker** — der Atom Echo hat kein Mic-Array und kann kein DoA.
+
+| Schritt | Beschreibung | Aufwand |
+|---------|-------------|---------|
+| 3.1 | ESPHome Custom Component: DoA via I2C aus XVF3800 lesen | 2-4h |
+| 3.2 | DoA-Wert als `audio_direction` in Voice-Metadata mitschicken | 1h |
+| 3.3 | `speaker_recognition.py`: DoA in Erkennungs-Kette einbauen | 2-3h |
+| 3.4 | Raum-Kalibrierung: "Max sitzt bei ~45 Grad, Lisa bei ~200 Grad" | Config |
+
+**Vorteil:** In Raeumen mit ReSpeaker koennen 2+ Personen unterschieden werden,
+OHNE Voice Embeddings — rein ueber Richtung + Presence.
+
+---
+
+### Phase 4: Voice Embeddings fertigstellen (spaeter)
+
+> **Wann:** Wenn Phase 1-3 stabil laufen und mehr Praezision gewuenscht ist.
+> **Fuer beide Geraete** — braucht nur Audio-Stream, kein spezielles Mic.
+
+| Schritt | Beschreibung | Aufwand |
+|---------|-------------|---------|
+| 4.1 | SpeechBrain ECAPA-TDNN (~40MB) auf PC2 deployen | 1-2h |
+| 4.2 | Wyoming STT Wrapper: Audio abfangen, Embedding extrahieren, an Whisper weiterleiten | 4-6h |
+| 4.3 | `identify_by_embedding()` in Erkennungs-Kette als Methode 2 (nach Device-Mapping) | 2h |
+| 4.4 | `store_embedding()` bei jeder erfolgreichen Erkennung aufrufen (lernt staendig) | 1h |
+| 4.5 | Enrollment: "Hey Jarvis, lerne meine Stimme" → 3 Saetze sprechen | 3-4h |
 
 **Empfohlenes Embedding-Modell:**
 
@@ -624,22 +958,36 @@ ReSpeaker XVF3800 (Mic)
 | Resemblyzer | ~500MB | 256-d Vektor | Mittel | Alternative |
 | Wav2Vec2 (Meta) | ~360MB | 768-d Vektor | Sehr gut | Gross, aber praezise |
 
-### Phase 5: Fallback-Dialog & UX (Aufwand: 1 Tag)
+---
 
-| Schritt | Beschreibung |
-|---------|-------------|
-| 5.1 | Bei Confidence < 0.7: "Bist du Max oder Lisa?" fragen |
-| 5.2 | Kurze Antwort erkennen und Speaker setzen |
-| 5.3 | Confidence + Methode in API-Response anzeigen |
+### Phase 5: Fallback-Dialog + Robustheit (spaeter)
 
-### Phase 6: Robustheit (Aufwand: 1-2 Tage)
+| Schritt | Beschreibung | Aufwand |
+|---------|-------------|---------|
+| 5.1 | Bei Confidence < 0.6: "Bist du Max oder Lisa?" per Sonos fragen | 2-3h |
+| 5.2 | Naechste Antwort als Name-Confirmation erkennen | 2h |
+| 5.3 | Profil-Backup: Redis → YAML Disk-Backup alle 5 Min | 1h |
+| 5.4 | Audit-Logging: Jede Erkennung in `mha:speaker:history` | 1h |
+| 5.5 | Dashboard-Widget: Wer wurde wann wo erkannt | 2-3h |
 
-| Schritt | Beschreibung |
-|---------|-------------|
-| 6.1 | Profil-Backup auf Disk (YAML neben Redis) |
-| 6.2 | Audit-Logging aller Erkennungen |
-| 6.3 | History-API: `GET /api/speaker/history` |
-| 6.4 | Spoofing-Detection: Voice-Features vs Embedding Mismatch |
+---
+
+### Priorisierung — Was zuerst?
+
+```
+PRIORITAET 1 (MUSS — damit es ueberhaupt funktioniert):
+  ✅ Phase 1.1: settings.yaml → enabled: true + device_mapping Struktur
+  ✅ Phase 1.2: chat.py → device_id durchschleifen
+  ✅ Phase 2.1-2.4: Hardware flashen + HA einrichten + Sonos testen
+
+PRIORITAET 2 (SOLL — damit es zuverlaessig funktioniert):
+  📋 Phase 3: DoA fuer ReSpeaker-Raeume (Multi-Person Unterscheidung)
+  📋 Phase 5.1-5.2: Fallback-Dialog ("Wer bist du?")
+
+PRIORITAET 3 (KANN — fuer Perfektion):
+  📋 Phase 4: Voice Embeddings (echte Stimmenerkennung)
+  📋 Phase 5.3-5.5: Backup, Logging, Dashboard
+```
 
 ---
 
@@ -681,17 +1029,24 @@ if method == "voice_features" and not secondary_method:
 
 ## 10. Quellen & Referenzen
 
-### Hardware & Firmware
-- [Seeed Studio: ReSpeaker XVF3800 mit Gehaeuse + XIAO ESP32-S3 (p-6628)](https://www.seeedstudio.com/ReSpeaker-XVF3800-With-Case-XIAO-ESP32S3-p-6628.html) — das gekaufte Modell
+### Hardware & Firmware — ReSpeaker XVF3800
+- [Seeed Studio: ReSpeaker XVF3800 mit Gehaeuse + XIAO ESP32-S3 (p-6628)](https://www.seeedstudio.com/ReSpeaker-XVF3800-With-Case-XIAO-ESP32S3-p-6628.html) — das gewaehlte Modell
 - [Seeed Studio: ReSpeaker XVF3800 Wiki](https://wiki.seeedstudio.com/respeaker_xvf3800_introduction/)
 - [Seeed Studio: XVF3800 Home Assistant Integration](https://wiki.seeedstudio.com/respeaker_xvf3800_xiao_home_assistant/)
 - [Seeed Studio: XVF3800 UDP Audio Streaming](https://wiki.seeedstudio.com/respeaker_xvf3800_xiao_udp_audio_stream/)
 - [XMOS XVF3800 Datasheet](https://www.xmos.com/xvf3800)
 - [XMOS XVF3800 Audio Pipeline Dokumentation](https://www.xmos.com/documentation/XM-014888-PC/html/modules/fwk_xvf/doc/datasheet/03_audio_pipeline.html)
 
+### Hardware & Firmware — M5Stack Atom Echo
+- [M5Stack Atom Echo Produktseite](https://shop.m5stack.com/products/atom-echo-smart-speaker-dev-kit)
+- [M5Stack Atom Echo Dokumentation](https://docs.m5stack.com/en/atom/atomecho)
+- [ESPHome Offizielles YAML fuer Atom Echo](https://github.com/esphome/wake-word-voice-assistants/blob/main/m5stack-atom-echo/m5stack-atom-echo.yaml)
+- [HA Community: $13 Voice Assistant Guide (Atom Echo)](https://community.home-assistant.io/t/how-to-adopt-a-device-into-esphome-the-addition-to-the-13-voice-assistant-guide-m5stack-atom-echo/597138)
+
 ### ESPHome & Home Assistant
 - [ESPHome Voice Assistant Component](https://esphome.io/components/voice_assistant/) — `on_tts_end` Trigger Dokumentation
 - [ESPHome Micro Wake Word Component](https://esphome.io/components/micro_wake_word/)
+- [ESPHome Ready-Made Projects (Voice Assistants)](https://esphome.io/projects/)
 - [FormatBCE ESPHome XVF3800 Integration](https://community.home-assistant.io/t/respeaker-xmos-xvf3800-esphome-integration/927241)
 - [Home Assistant Wyoming Protocol](https://www.home-assistant.io/integrations/wyoming/)
 
