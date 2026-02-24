@@ -3446,10 +3446,6 @@ function renderCovers() {
   return sectionWrap('&#129695;', 'Rollläden & Garagentore',
     fInfo('Hier legst du fest, welche Geräte Rollläden sind und welche Garagentore. <strong>Garagentore werden NIEMALS automatisch von Jarvis gesteuert.</strong>') +
     '<div id="coverListContainer" style="color:var(--text-secondary);padding:12px;">Lade Cover-Geräte...</div>'
-  ) +
-  sectionWrap('&#128220;', 'Jarvis Aktivitätslog',
-    fInfo('Letzte Aktionen die Jarvis ausgeführt hat — mit Grund warum.') +
-    '<div id="actionLogContainer" style="color:var(--text-secondary);padding:12px;">Lade Aktivitätslog...</div>'
   );
 }
 
@@ -3462,7 +3458,6 @@ async function loadCoverEntities() {
 
     if (covers.length === 0) {
       container.innerHTML = '<div style="color:var(--text-muted);padding:8px;">Keine Cover-Geräte in Home Assistant gefunden.</div>';
-      loadActionLog();
       return;
     }
 
@@ -3501,7 +3496,6 @@ async function loadCoverEntities() {
     const c = document.getElementById('coverListContainer');
     if (c) c.innerHTML = '<div style="color:var(--danger);padding:8px;">Fehler: ' + esc(e.message) + '</div>';
   }
-  loadActionLog();
 }
 
 async function setCoverType(entityId, coverType) {
@@ -3523,59 +3517,6 @@ async function setCoverEnabled(entityId, enabled) {
   } catch (e) {
     toast('Fehler beim Speichern: ' + e.message, 'error');
     console.error('Cover enabled save failed:', e);
-  }
-}
-
-async function loadActionLog() {
-  try {
-    const d = await api('/api/ui/action-log');
-    const items = d.items || [];
-    const container = document.getElementById('actionLogContainer');
-    if (!container) return;
-
-    if (items.length === 0) {
-      container.innerHTML = '<div style="color:var(--text-muted);padding:8px;">Keine Aktionen in den letzten 7 Tagen.</div>';
-      return;
-    }
-
-    const iconMap = { set_light: '&#128161;', set_cover: '&#129695;', set_climate: '&#127777;', activate_scene: '&#127912;', play_media: '&#127925;', send_notification: '&#128276;' };
-    let html = '';
-    for (const log of items) {
-      const d = log.action_data || {};
-      const func = d.function || '?';
-      const args = d.arguments || {};
-      const result = d.result || '';
-      const reason = log.reason || '';
-      const icon = iconMap[func] || '&#9889;';
-
-      const parts = [];
-      if (args.room) parts.push(args.room);
-      if (args.position !== undefined) parts.push(args.position + '%');
-      if (args.brightness !== undefined) parts.push(args.brightness + '%');
-      if (args.state) parts.push(args.state);
-      if (args.temperature !== undefined) parts.push(args.temperature + '°');
-      const desc = parts.length > 0 ? ' (' + parts.join(', ') + ')' : '';
-
-      const ts = log.created_at ? new Date(log.created_at).toLocaleString('de-DE', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' }) : '';
-
-      html += '<div style="padding:8px 0;border-bottom:1px solid var(--border);">';
-      html += '<div style="display:flex;align-items:center;gap:6px;margin-bottom:2px;">';
-      html += '<span style="font-size:14px;">' + icon + '</span>';
-      html += '<span style="font-weight:600;font-size:13px;">' + esc(func.replace(/_/g, ' ')) + '</span>';
-      html += '<span style="color:var(--text-muted);font-size:12px;">' + esc(desc) + '</span>';
-      html += '</div>';
-      if (result) {
-        html += '<div style="font-size:12px;color:var(--text-secondary);margin-left:22px;margin-bottom:2px;">&#8594; ' + esc(result) + '</div>';
-      }
-      html += '<div style="font-size:11px;color:var(--text-muted);margin-left:22px;">';
-      html += '<span>' + ts + '</span>';
-      if (reason) html += ' &middot; <span style="font-style:italic;">' + esc(reason.length > 60 ? reason.substring(0, 60) + '...' : reason) + '</span>';
-      html += '</div></div>';
-    }
-    container.innerHTML = html;
-  } catch (e) {
-    const c = document.getElementById('actionLogContainer');
-    if (c) c.innerHTML = '<div style="color:var(--danger);padding:8px;">Fehler: ' + esc(e.message) + '</div>';
   }
 }
 
