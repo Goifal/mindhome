@@ -103,7 +103,7 @@ services:
       - TZ=Europe/Berlin
       - WHISPER_MODEL=${WHISPER_MODEL:-small}
       - WHISPER_LANGUAGE=${WHISPER_LANGUAGE:-de}
-      - WHISPER_BEAM_SIZE=${WHISPER_BEAM_SIZE:-5}
+      - WHISPER_BEAM_SIZE=${WHISPER_BEAM_SIZE:-1}
       - WHISPER_COMPUTE=${WHISPER_COMPUTE:-int8}
       - SPEECH_DEVICE=${SPEECH_DEVICE:-cpu}
       - REDIS_URL=redis://redis:6379
