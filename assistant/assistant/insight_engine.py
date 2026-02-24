@@ -275,9 +275,9 @@ class InsightEngine:
                     except (ValueError, TypeError):
                         pass
 
-            # Kalender-Events (naechste 24h)
+            # Kalender-Events (naechste 24h) — States durchreichen, kein doppelter API-Call
             try:
-                calendar_events = await self._get_upcoming_events()
+                calendar_events = await self._get_upcoming_events(states=states)
                 data["calendar_events"] = calendar_events
             except Exception as e:
                 logger.debug("Kalender-Abfrage fehlgeschlagen: %s", e)
@@ -287,9 +287,10 @@ class InsightEngine:
 
         return data
 
-    async def _get_upcoming_events(self) -> list[dict]:
+    async def _get_upcoming_events(self, states: list[dict] = None) -> list[dict]:
         """Holt Kalender-Events der naechsten 24 Stunden."""
-        states = await self.ha.get_states()
+        if not states:
+            states = await self.ha.get_states()
         if not states:
             return []
 
@@ -593,13 +594,19 @@ class InsightEngine:
 
     async def _check_away_devices(self, data: dict) -> Optional[dict]:
         """Niemand zu Hause + Lichter/Geraete an."""
-        # Jemand muss weg sein, niemand darf da sein
-        if data["persons_home"] or not data["persons_away"]:
+        away_key = f"{_PREFIX}:away_since"
+
+        # Jemand da? → Tracker loeschen
+        if data["persons_home"]:
+            if self.redis:
+                await self.redis.delete(away_key)
+            return None
+
+        if not data["persons_away"]:
             return None
 
         # Wie lange schon weg?
         if self.redis:
-            away_key = f"{_PREFIX}:away_since"
             away_since = await self.redis.get(away_key)
             if not away_since:
                 await self.redis.setex(away_key, 86400, datetime.now().isoformat())
