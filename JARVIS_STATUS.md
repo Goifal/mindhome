@@ -11,7 +11,7 @@
 |-----------|:-----:|:-----:|
 | **Funktionsumfang (vs. Masterplan)** | **82.5%** | ↓ Ehrlichkeits-Audit |
 | **Jarvis-Authentizitaet (vs. MCU Jarvis)** | **75.0%** | ↓ Ehrlichkeits-Audit |
-| **MCU-Jarvis Transformation (Phase 17+)** | **32.0%** | NEU |
+| **MCU-Jarvis Transformation (Phase 17+)** | **38.5%** | +6.5% InsightEngine |
 | **Sicherheit** | **99.5%** | +1.5% |
 | **Code-Qualitaet** | **94%** | +8% |
 | **Konfigurierbarkeit** | **98%** | +1% |
@@ -230,6 +230,7 @@
 | 2026-02-19 | — | **Ehrlichkeits-Audit:** 5 Features korrigiert, B1 als Fehlalarm erkannt (Intent-Tracker funktioniert). Phasen-Durchschnitte korrigiert. | Phase 7 ↓, Phase 8 ↓, Phase 10 ↓ |
 | 2026-02-19 | — | **Quick-Fix B2+B3:** Morning Briefing Auto-Trigger (proactive.py: `_check_morning_briefing()` bei Motion-Event 6-10 Uhr). Summarizer notify-Callback (summarizer.py: `set_notify_callback()`, brain.py: `_handle_daily_summary()`, Zustellung nach Morning Briefing via pending_summary Redis-Key). | Phase 7 ↑, Phase 17.7 ↑ |
 | 2026-02-19 | — | **B4: Saisonale Rolladen-Automatik:** proactive.py `_run_seasonal_loop()` (30-Min-Check), `_execute_seasonal_cover()` (auto bei Level ≥3, sonst Vorschlag). Sonnenstand-basiert, Sommer-Hitzeschutz bei >30°C, Winter-Isolierung. settings.yaml `seasonal_actions` Sektion. **B5: Was-waere-wenn mit echten HA-Daten:** brain.py `_get_whatif_prompt()` fetcht live Temperaturen, Energie, offene Fenster/Tueren, Alarm-Status, Wetter, Saison. **B6: Fehlalarm** — Wartungs-Loop funktioniert bereits via `_run_diagnostics_loop()` | Phase 7: 88.9→95%, Phase 8: 82.9→92.9%, Phase 10: 86→92% |
+| 2026-02-24 | — | **Phase 17.3 InsightEngine (Jarvis denkt voraus):** insight_engine.py (~480 Zeilen): 7 Kreuz-Referenz-Checks (Wetter+Fenster, Frost+Heizung, Kalender-Reise+Alarm/Fenster/Heizung, Energie-Anomalie, Abwesenheit+Geraete, Temperatur-Trend, Fenster+Temp-Differenz). Hintergrund-Loop alle 30 Min, Cooldown-System, Silence Matrix Delivery. brain.py Verdrahtung (Init, Callback, Stop). settings.yaml `insights` Sektion (7 Toggles, 4 Schwellwerte). main.py Hot-Reload. Dashboard UI (app.js): Neue Sektion "Jarvis denkt voraus" im Proaktiv-Tab mit 7 Check-Toggles + 4 Schwellwert-Reglern + Help-Texte. | Phase 17: 32→38.5%, Phase 17.3: 45→70%, Phase 17.7: 35→55% |
 
 ---
 
@@ -262,7 +263,7 @@
 
 ---
 
-## PHASE 17+ — MCU-Jarvis Transformation (32% funktional)
+## PHASE 17+ — MCU-Jarvis Transformation (38.5% funktional)
 
 > **Analyse:** 2026-02-19 | End-to-End Code-Trace aller 39 Module
 > **Erkenntnis:** Die Technik ist da. Was fehlt, ist die Seele.
@@ -271,11 +272,11 @@
 |---|---------|:----------:|:----------:|---------|
 | 17.1 | Continuous Presence | 30% | Boot-TTS, Morning Auto-Trigger, Summarizer Callback | Activity Detection + Silence Matrix funktionieren. Kein Heartbeat, kein Situationsmodell |
 | 17.2 | Kamera/Vision | 5% | — | Nur OCR. Keine Kamera-Integration (Phase 14.1 OFFEN) |
-| 17.3 | Echte Initiative | 45% | — | Events+Anticipation+TimeAwareness funktionieren. Kein Vorausdenken, keine Background-Analyse |
+| 17.3 | Echte Initiative | 70% | — | Events+Anticipation+TimeAwareness + **InsightEngine** (7 Kreuz-Referenz-Checks: Wetter+Fenster, Frost+Heizung, Kalender+Reise, Energie-Anomalie, Abwesenheit+Geraete, Temp-Trend, Fenster+Kaelte). Dashboard-UI konfigurierbar |
 | 17.4 | Pushback & Fuersorglichkeit | 50% | — | 30+ Opinion Rules + Memory-Injection funktionieren. Keine Nachsorge, keine Fuersorge |
 | 17.5 | Kommunikations-Management | 60% | — | Silence Matrix + Volume + Batch top. Interrupt ist `pass`, kein Queuing |
 | 17.6 | Emergency Protocols | 20% | — | Prioritaeten funktionieren. Keine Protokolle, keine Eskalation, kein Override |
-| 17.7 | Daten-Analyse & Insights | 35% | — | Summaries generiert + **Callback verdrahtet, Zustellung nach Morning Briefing**. Keine Trends, keine Kosten |
+| 17.7 | Daten-Analyse & Insights | 55% | — | Summaries + **InsightEngine Kreuz-Referenz** (Wetter×Fenster, Kalender×Alarm, Energie-Baseline, Temp-Trends). Callback verdrahtet, Zustellung via Silence Matrix |
 | 17.8 | Streaming & Interrupts | 20% | — | WebSocket Events funktionieren. Kein Streaming, Interrupt ist `pass` |
 | 17.9 | Langzeit-Beziehung | 45% | — | Fakten-Memory + Formality + Gags funktionieren. Keine Autonomie-Evolution |
 | 17.10 | Werkstatt-Assistent | 15% | — | Nur Koch-Assistent + Inventar. Keine Werkstatt-Logik |
@@ -305,13 +306,16 @@
 - ❌ Boot-Sequenz gesprochen (nur Logger)
 - ❌ WebSocket Interrupt (`pass`)
 - ❌ Autonomie-Evolution (statisch in YAML)
-- ❌ Zukunftsplanung (Kalender + Wetter + Muster)
+- ✅ ~~Zukunftsplanung (Kalender + Wetter + Muster)~~: **IMPLEMENTIERT — InsightEngine kreuz-referenziert 7 Datenquellen**
+- ✅ ~~Hintergrund-Analyse mit Rueckmeldung~~: **IMPLEMENTIERT — InsightEngine Loop alle 30 Min → Silence Matrix → TTS**
+- ❌ Boot-Sequenz gesprochen (nur Logger)
+- ❌ WebSocket Interrupt (`pass`)
+- ❌ Autonomie-Evolution (statisch in YAML)
 - ❌ Benannte Protokolle
 - ❌ Zeitliche Eskalation bei Gefahr
 - ❌ Kamera/Vision
 - ❌ Token-Streaming
 - ❌ Fuersorge-Meldungen (Essen, Pausen)
-- ❌ Hintergrund-Analyse mit Rueckmeldung
 
 ---
 
@@ -329,7 +333,7 @@ Phase 10 (Multi-Room)       92.0%  ███████████████
 Phase 14 (Wahrnehmung)      63.3%  █████████████░░░░░░░░
 Phase 12 (Authentizitaet)   58.0%  ████████████░░░░░░░░░
 Phase 13 (Selbstprog.)      48.8%  ██████████░░░░░░░░░░░
-Phase 17+(MCU-Jarvis)       32.0%  ███████░░░░░░░░░░░░░░
+Phase 17+(MCU-Jarvis)       38.5%  ████████░░░░░░░░░░░░░  InsightEngine
 ```
 
 ---
@@ -366,6 +370,7 @@ Phase 17+(MCU-Jarvis)       32.0%  ███████░░░░░░░░
 | device_health.py | ~370 | Geraete-Anomalie-Erkennung, Baseline, Stale-Sensor, HVAC-Effizienz |
 | action_planner.py | ~353 | Aktions-Planung, Multi-Step Ausfuehrung |
 | sound_manager.py | ~317 | Event-Sounds, Nacht-Volume |
+| insight_engine.py | ~480 | Kreuz-Referenz-Checks (Wetter+Fenster, Frost+Heizung, Kalender+Reise, Energie, Abwesenheit, Temp-Trends), Dashboard-UI |
 | memory.py | ~272 | Working + Episodic Memory (Redis + ChromaDB) |
 | autonomy.py | ~245 | Autonomie-Level, Trust-System, Raum-Scoping |
 | memory_extractor.py | ~228 | Memory-Extraktion aus Konversationen |

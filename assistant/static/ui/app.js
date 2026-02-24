@@ -825,6 +825,20 @@ const HELP_TEXTS = {
   'anticipation.thresholds.ask': {title:'Schwelle: Nachfragen', text:'Ab welcher Sicherheit nachgefragt wird.'},
   'anticipation.thresholds.suggest': {title:'Schwelle: Vorschlagen', text:'Ab welcher Sicherheit vorgeschlagen wird.'},
   'anticipation.thresholds.auto': {title:'Schwelle: Automatisch', text:'Ab welcher Sicherheit automatisch ausgefuehrt wird.'},
+  'insights.enabled': {title:'Jarvis denkt voraus', text:'Kreuz-referenziert Wetter, Kalender, Energie und Geraete — und meldet sich proaktiv.'},
+  'insights.check_interval_minutes': {title:'Pruef-Intervall', text:'Wie oft alle Datenquellen abgeglichen werden.'},
+  'insights.cooldown_hours': {title:'Cooldown', text:'Wie lange nach einem Hinweis der gleiche Typ nicht nochmal kommt.'},
+  'insights.checks.weather_windows': {title:'Wetter + Fenster', text:'Warnt wenn Regen/Sturm kommt und Fenster offen sind.'},
+  'insights.checks.frost_heating': {title:'Frost + Heizung', text:'Warnt wenn Frost erwartet wird und Heizung aus/abwesend ist.'},
+  'insights.checks.calendar_travel': {title:'Reise + Haus', text:'Erkennt Reise-Termine und prueft Alarm, Fenster, Heizung.'},
+  'insights.checks.energy_anomaly': {title:'Energie-Anomalie', text:'Meldet wenn der Verbrauch deutlich ueber dem Durchschnitt liegt.'},
+  'insights.checks.away_devices': {title:'Abwesend + Geraete', text:'Meldet wenn niemand da ist aber Licht/Fenster offen sind.'},
+  'insights.checks.temp_drop': {title:'Temperatur-Abfall', text:'Erkennt wenn die Temperatur ungewoehnlich schnell faellt.'},
+  'insights.checks.window_temp_drop': {title:'Fenster + Kaelte', text:'Warnt bei offenem Fenster und grosser Temperatur-Differenz innen/aussen.'},
+  'insights.thresholds.frost_temp_c': {title:'Frost-Schwelle', text:'Ab welcher Temperatur Frostwarnung ausgeloest wird.'},
+  'insights.thresholds.energy_anomaly_percent': {title:'Energie-Schwelle', text:'Ab wie viel Prozent Abweichung gewarnt wird.'},
+  'insights.thresholds.away_device_minutes': {title:'Abwesenheits-Dauer', text:'Wie lange jemand weg sein muss bevor der Hinweis kommt.'},
+  'insights.thresholds.temp_drop_degrees_per_2h': {title:'Temp-Abfall', text:'Wie viel Grad Abfall in 2 Stunden als ungewoehnlich gilt.'},
   'intent_tracking.enabled': {title:'Absicht-Erkennung', text:'Erkennt offene Absichten und erinnert spaeter.'},
   'intent_tracking.check_interval_minutes': {title:'Pruef-Intervall', text:'Wie oft nach offenen Absichten geschaut wird.'},
   'intent_tracking.remind_hours_before': {title:'Erinnerung vorher', text:'Wie viele Stunden vorher erinnert wird.'},
@@ -2052,6 +2066,25 @@ function renderProactive() {
     fRange('anticipation.thresholds.ask', '...nachfragen?', 0, 1, 0.05, {0.3:'30%',0.5:'50%',0.6:'60%',0.7:'70%',0.8:'80%'}) +
     fRange('anticipation.thresholds.suggest', '...vorschlagen?', 0, 1, 0.05, {0.5:'50%',0.6:'60%',0.7:'70%',0.8:'80%',0.9:'90%'}) +
     fRange('anticipation.thresholds.auto', '...automatisch ausfuehren?', 0, 1, 0.05, {0.7:'70%',0.8:'80%',0.9:'90%',0.95:'95%',1:'100%'})
+  ) +
+  sectionWrap('&#129504;', 'Jarvis denkt voraus',
+    fInfo('Kreuz-referenziert Wetter, Kalender, Energie und Geraete-Status — und meldet sich proaktiv. Z.B. "Es wird gleich regnen, Fenster sind noch offen."') +
+    fToggle('insights.enabled', 'Insights aktiv') +
+    fRange('insights.check_interval_minutes', 'Pruef-Intervall', 10, 120, 5, {10:'10 Min',15:'15 Min',30:'30 Min',60:'1 Std',120:'2 Std'}) +
+    fRange('insights.cooldown_hours', 'Cooldown pro Insight', 1, 24, 1, {1:'1 Std',2:'2 Std',4:'4 Std',8:'8 Std',12:'12 Std',24:'1 Tag'}) +
+    '<div style="margin:12px 0;font-weight:600;font-size:13px;">Aktive Checks</div>' +
+    fToggle('insights.checks.weather_windows', 'Regen/Sturm + offene Fenster') +
+    fToggle('insights.checks.frost_heating', 'Frost + Heizung aus/Away') +
+    fToggle('insights.checks.calendar_travel', 'Reise im Kalender + Alarm/Fenster/Heizung') +
+    fToggle('insights.checks.energy_anomaly', 'Energie-Verbrauch ueber Baseline') +
+    fToggle('insights.checks.away_devices', 'Abwesend + Licht/Fenster offen') +
+    fToggle('insights.checks.temp_drop', 'Ungewoehnlicher Temperatur-Abfall') +
+    fToggle('insights.checks.window_temp_drop', 'Fenster offen + grosse Temp-Differenz') +
+    '<div style="margin:12px 0;font-weight:600;font-size:13px;">Schwellwerte</div>' +
+    fRange('insights.thresholds.frost_temp_c', 'Frost-Warnung ab', -10, 10, 1, {'-5':'-5\u00B0C',0:'0\u00B0C',2:'2\u00B0C',5:'5\u00B0C'}) +
+    fRange('insights.thresholds.energy_anomaly_percent', 'Energie-Abweichung', 10, 100, 5, {10:'10%',20:'20%',30:'30%',50:'50%',100:'100%'}) +
+    fRange('insights.thresholds.away_device_minutes', 'Abwesend-Hinweis nach', 30, 480, 30, {30:'30 Min',60:'1 Std',120:'2 Std',240:'4 Std',480:'8 Std'}) +
+    fRange('insights.thresholds.temp_drop_degrees_per_2h', 'Temp-Abfall Schwelle', 1, 10, 1, {1:'1\u00B0C',2:'2\u00B0C',3:'3\u00B0C',5:'5\u00B0C',10:'10\u00B0C'})
   ) +
   sectionWrap('&#128203;', 'Absicht-Erkennung',
     fInfo('Erkennt offene Absichten — z.B. "Ich muss noch einkaufen" wird als Aufgabe gemerkt und spaeter erinnert.') +

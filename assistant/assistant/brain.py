@@ -52,6 +52,7 @@ from .conflict_resolver import ConflictResolver
 from .personality import PersonalityEngine
 from .proactive import ProactiveManager
 from .anticipation import AnticipationEngine
+from .insight_engine import InsightEngine
 from .intent_tracker import IntentTracker
 from .routine_engine import RoutineEngine
 from .config_versioning import ConfigVersioning
@@ -199,6 +200,9 @@ class AssistantBrain(BrainCallbacksMixin):
 
         # Phase 15.3: Geraete-Beziehung (Anomalie-Erkennung)
         self.device_health = DeviceHealthMonitor(self.ha)
+
+        # Phase 17.3: InsightEngine (Jarvis denkt voraus)
+        self.insight_engine = InsightEngine(self.ha, self.activity)
 
         # Phase 13.2: Self Automation (Automationen aus natuerlicher Sprache)
         self.self_automation = SelfAutomation(self.ha, self.ollama)
@@ -372,6 +376,12 @@ class AssistantBrain(BrainCallbacksMixin):
         self.wellness_advisor.set_notify_callback(self._handle_wellness_nudge)
         if "WellnessAdvisor" not in _degraded_modules:
             await _safe_init("WellnessAdvisor.start", self.wellness_advisor.start())
+
+        # Phase 17.3: InsightEngine (Jarvis denkt voraus)
+        await _safe_init("InsightEngine", self.insight_engine.initialize(
+            redis_client=self.memory.redis, ollama=self.ollama,
+        ))
+        self.insight_engine.set_notify_callback(self._handle_insight)
 
         # Phase 17: Situation Model (Delta-Tracking zwischen Gespraechen)
         await _safe_init("SituationModel", self.situation_model.initialize(redis_client=self.memory.redis))
@@ -3073,6 +3083,7 @@ class AssistantBrain(BrainCallbacksMixin):
                 "routine_engine": "active",
                 "guest_mode": "active" if guest_mode else "inactive",
                 "anticipation": "running" if self.anticipation._running else "stopped",
+                "insight_engine": "running" if self.insight_engine._running else "stopped",
                 "intent_tracker": "running" if self.intent_tracker._running else "stopped",
                 "tts_enhancer": f"active (SSML: {self.tts_enhancer.ssml_enabled}, whisper: {self.tts_enhancer.is_whisper_mode})",
                 "sound_manager": "active" if self.sound_manager.enabled else "disabled",
@@ -4699,6 +4710,20 @@ Regeln:
             await emit_proactive(text, "anticipation_suggest", "low")
             logger.info("Anticipation suggestion: %s (%s)", desc, mode)
 
+    async def _handle_insight(self, insight: dict):
+        """Callback fuer InsightEngine — Jarvis denkt voraus."""
+        message = insight.get("message", "")
+        if not message:
+            return
+        urgency = insight.get("urgency", "low")
+        check = insight.get("check", "unknown")
+        if not await self._callback_should_speak(urgency):
+            logger.info("Insight unterdrueckt (Silence Matrix): [%s] %s", check, message[:60])
+            return
+        formatted = await self._safe_format(message, urgency)
+        await self._speak_and_emit(formatted)
+        logger.info("Insight zugestellt [%s/%s]: %s", check, urgency, message[:80])
+
     async def _handle_intent_reminder(self, reminder: dict):
         """Callback fuer Intent-Erinnerungen."""
         text = reminder.get("text", "")
@@ -5191,7 +5216,8 @@ Regeln:
         for component in [
             self.ambient_audio, self.anticipation, self.intent_tracker,
             self.time_awareness, self.health_monitor, self.device_health,
-            self.wellness_advisor, self.proactive, self.summarizer, self.feedback,
+            self.wellness_advisor, self.insight_engine, self.proactive,
+            self.summarizer, self.feedback,
         ]:
             try:
                 await component.stop()

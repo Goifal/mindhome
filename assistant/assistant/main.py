@@ -1720,6 +1720,12 @@ def _validate_settings_values(settings: dict) -> list[str]:
         ("situation_model", "min_pause_minutes"): (5, 120),
         ("situation_model", "max_changes"): (1, 10),
         ("situation_model", "temp_threshold"): (1, 5),
+        ("insights", "check_interval_minutes"): (10, 120),
+        ("insights", "cooldown_hours"): (1, 24),
+        ("insights", "thresholds", "frost_temp_c"): (-10, 10),
+        ("insights", "thresholds", "energy_anomaly_percent"): (10, 100),
+        ("insights", "thresholds", "away_device_minutes"): (30, 480),
+        ("insights", "thresholds", "temp_drop_degrees_per_2h"): (1, 10),
         ("speech", "stt_beam_size"): (1, 10),
     }
     # Erlaubte Werte fuer Strings (Whitelist)
@@ -1762,6 +1768,7 @@ def _get_reloaded_modules(changed_settings: dict) -> list[str]:
         "energy": "energy_optimizer",
         "wellness": "wellness_advisor",
         "health_monitor": "health_monitor",
+        "insights": "insight_engine",
         "tts": "tts_enhancer",
         "web_search": "web_search",
         "ambient_audio": "ambient_audio",
@@ -1879,6 +1886,11 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
                 user_excludes = [p.strip() for p in user_excludes.splitlines() if p.strip()]
             hm._exclude_patterns = [p.lower() for p in (hm._default_excludes + user_excludes)]
             logger.info("Health Monitor Settings aktualisiert")
+
+        # InsightEngine: Alle Einstellungen hot-reloadbar
+        if "insights" in changed_settings and hasattr(brain, "insight_engine"):
+            brain.insight_engine.reload_config()
+            logger.info("InsightEngine Settings aktualisiert")
 
         # Situation Model: Schwellwerte + Toggle
         if "situation_model" in changed_settings and hasattr(brain, "situation_model"):
