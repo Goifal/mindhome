@@ -3,6 +3,7 @@
 > **Stand:** 2026-02-24
 > **Phase:** 9 / 9.6 (Voice Embeddings vorbereitet)
 > **Status:** Deaktiviert in Produktion (`enabled: false`)
+> **Geplante Hardware:** ReSpeaker XVF3800 mit Gehaeuse + XIAO ESP32-S3 (Mic) + Sonos (TTS-Ausgabe)
 
 ---
 
@@ -14,15 +15,48 @@ PC1 (HAOS)                              PC2 (Assistant + Ollama)
 │   ├── Whisper STT (Wyoming)            ├── SpeakerRecognition Engine
 │   └── MindHome Conversation Agent      ├── Brain (Context + Person Routing)
 ├── ESPHome Voice Satellites             ├── Redis (Profile Storage)
-│   └── ReSpeaker XVF3800 (geplant)     └── Ollama LLM
-└── TTS (Piper)
+│   ├── ReSpeaker XVF3800 (Mic-only)    └── Ollama LLM
+│   └── Sonos Speakers (TTS-Ausgabe)
+└── TTS (Piper → Sonos via announce)
 ```
+
+### Hardware-Konzept: ReSpeaker + Sonos
+
+```
+Pro Raum:
+  ┌──────────────────────────┐     ┌─────────────────────┐
+  │  ReSpeaker XVF3800       │     │  Sonos Speaker       │
+  │  mit Gehaeuse + ESP32-S3 │     │  (z.B. Sonos One)    │
+  │  ────────────────────     │     │  ───────────────────  │
+  │  • 4-Mic Array (Input)   │     │  • TTS-Ausgabe        │
+  │  • Wake Word Detection   │     │  • Musik (ungestoert) │
+  │  • KEIN Speaker noetig   │     │  • announce: true     │
+  │  • ~65 USD / ~55 EUR     │     │    → duckt Musik,     │
+  │                          │     │      spielt Antwort,   │
+  │  Seeed Studio p-6628     │     │      Musik geht weiter │
+  └──────────────────────────┘     └─────────────────────┘
+         ↓ WiFi (ESPHome)                  ↑ LAN/WiFi
+         ↓                                 ↑
+  ┌──────────────────────────────────────────────────────┐
+  │  Home Assistant (PC1 / HAOS)                          │
+  │  ├── Assist Pipeline: Wake Word → STT → Intent        │
+  │  ├── Piper TTS → generiert Audio-URL                  │
+  │  └── on_tts_end → media_player.play_media(Sonos)      │
+  └──────────────────────────────────────────────────────┘
+```
+
+**Vorteile dieser Trennung:**
+- ReSpeaker braucht keinen Speaker-Anschluss → kompakter, guenstiger
+- Sonos hat ueberlegene Audioqualitaet gegenueber 3.5mm Mini-Speaker
+- `announce: true` duckt laufende Musik, spielt Antwort, Musik laeuft weiter
+- Kein Kabelgewirr — alles WiFi
+- AEC des XVF3800 funktioniert weiterhin (Reference-Signal via I2S Loopback)
 
 ### Datenfluss: Voice-Anfrage
 
 ```
-Voice Satellite (ESPHome / Wyoming)
-    ↓ (Audio 16kHz, 16-bit PCM)
+ReSpeaker XVF3800 (Raum: Kueche)
+    ↓ (Audio 16kHz, 16-bit PCM via WiFi / ESPHome Native API)
 HA Assist Pipeline (PC1)
     ├─ Wake Word: micro_wake_word (lokal auf ESP32-S3)
     ├─ STT: Whisper (Wyoming)
@@ -41,7 +75,16 @@ PC2: Brain.process()
     ├─ speaker_recognition.identify(device_id, room, audio_metadata)
     ├─ Person → Context fuer LLM
     ├─ Ollama → Antwort generiert
-    └─ Response + TTS-Daten zurueck an PC1
+    └─ Response zurueck an PC1
+        ↓
+HA: Piper TTS → Audio-URL generiert
+        ↓
+ESPHome on_tts_end Trigger
+    └─ homeassistant.service: media_player.play_media
+       ├─ entity_id: media_player.sonos_kueche
+       ├─ media_content_id: <TTS Audio URL>
+       ├─ media_content_type: music
+       └─ announce: true  ← duckt Musik, spielt Antwort, Musik weiter
 ```
 
 ---
@@ -226,24 +269,60 @@ speaker_recognition:
 
 ---
 
-## 5. Hardware: ReSpeaker XMOS XVF3800
+## 5. Hardware
 
-### Warum dieses Board
+### 5.1 Mikrofon: ReSpeaker XMOS XVF3800 mit Gehaeuse + XIAO ESP32-S3
 
-Das ReSpeaker XMOS XVF3800 mit XIAO ESP32-S3 (~55 EUR) ist die optimale Hardware fuer Voice-Satellites in diesem System.
+**Produkt:** [Seeed Studio ReSpeaker XVF3800 With Case + XIAO ESP32S3 (p-6628)](https://www.seeedstudio.com/ReSpeaker-XVF3800-With-Case-XIAO-ESP32S3-p-6628.html)
+
+**Preis:** $64.90 / ~55 EUR
+
+**Warum dieses Modell:**
+- Komplett vormontiert mit Gehaeuse — kein Loeten, sofort einsatzbereit
+- XIAO ESP32-S3 bereits aufgeloetet → WiFi + BLE 5.0 out-of-the-box
+- USB-C fuer Stromversorgung (kein separates Netzteil noetig, USB-Adapter reicht)
+- Plug-and-Play ESPHome & Home Assistant Kompatibilitaet
+- 3.5mm Klinke vorhanden, wird aber NICHT genutzt → Ausgabe via Sonos
 
 ### Spezifikationen
 
 | Eigenschaft | Wert |
 |------------|------|
+| **Produkt** | ReSpeaker XVF3800 With Case + XIAO ESP32S3 (p-6628) |
+| **Preis** | $64.90 / ~55 EUR |
 | Mikrofone | 4x bottom-firing MEMS, kreisfoermig |
 | Voice Processor | XMOS XVF3800 (xcore.ai) |
 | Companion MCU | Seeed XIAO ESP32-S3 (mit PSRAM) |
 | Audio-Interface | I2S (16kHz / 48kHz, 32-bit) |
-| Speaker-Ausgang | 3.5mm Klinke |
+| Speaker-Ausgang | 3.5mm Klinke (nicht genutzt → Sonos) |
 | LED-Ring | 12 addressierbare LEDs |
 | Reichweite | 360 Grad, bis 5 Meter |
+| Konnektivitaet | WiFi 802.11 b/g/n, Bluetooth 5.0, USB-C |
+| Gehaeuse | Ja, vormontiert |
 | Steuerung | I2C (ESP32-S3 → XVF3800) |
+
+### 5.2 Audio-Ausgabe: Sonos Speaker
+
+**Warum Sonos statt 3.5mm Mini-Speaker:**
+- Ueberlegene Audioqualitaet fuer TTS-Antworten
+- `announce: true` Feature: duckt laufende Musik → spielt TTS → Musik laeuft weiter
+- Bereits in jedem Raum vorhanden (oder geplant)
+- Kein Kabelgewirr — alles ueber LAN/WiFi
+- Sonos HA-Integration ist stabil und gut dokumentiert
+
+**Sonos TTS-Voraussetzungen:**
+- TCP Port 1443 muss vom HA-Host zu jedem Sonos-Geraet erreichbar sein
+- Sonos muss als `media_player.*` Entity in HA eingerichtet sein
+- Piper TTS muss Audio-URLs generieren (Standard bei HA Assist Pipeline)
+
+**Raum-zu-Sonos Mapping (Beispiel):**
+
+| Raum | ReSpeaker Device | Sonos Entity |
+|------|-----------------|--------------|
+| Kueche | `esphome_respeaker_kueche` | `media_player.sonos_kueche` |
+| Wohnzimmer | `esphome_respeaker_wohnzimmer` | `media_player.sonos_wohnzimmer` |
+| Schlafzimmer | `esphome_respeaker_schlafzimmer` | `media_player.sonos_schlafzimmer` |
+| Buero | `esphome_respeaker_buero` | `media_player.sonos_buero` |
 
 ### On-Chip Audio-Processing (XVF3800)
 
@@ -291,9 +370,18 @@ Raum-Layout:
 
 ## 6. ESPHome Integration
 
-### ESPHome YAML-Vorlage (ReSpeaker XVF3800)
+### ESPHome YAML-Vorlage (ReSpeaker XVF3800 + Sonos)
+
+> **WICHTIG:** Kein `speaker:` Block noetig — TTS-Ausgabe laeuft ueber Sonos.
+> Der ReSpeaker ist reines Mikrofon + Wake Word Geraet.
 
 ```yaml
+# ============================================================
+# ReSpeaker XVF3800 + XIAO ESP32-S3 — Voice Satellite
+# Mic-Input: ReSpeaker XVF3800 (4-Mic Array, on-chip DSP)
+# TTS-Output: Sonos Speaker via HA media_player.play_media
+# ============================================================
+
 esphome:
   name: respeaker-kueche
   friendly_name: "ReSpeaker Kueche"
@@ -303,16 +391,19 @@ esp32:
   framework:
     type: esp-idf
 
-# Externe Komponente fuer XVF3800 Board-Support
+# --- WiFi ---
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+# --- Externe Komponente fuer XVF3800 Board-Support ---
 external_components:
   - source: github://formatbce/esphome_xvf3800
     components: [xvf3800]
 
+# --- I2S Audio (nur Input, kein Speaker) ---
 i2s_audio:
   - id: i2s_in
-    i2s_lrclk_pin: GPIO7
-    i2s_bclk_pin: GPIO8
-  - id: i2s_out
     i2s_lrclk_pin: GPIO7
     i2s_bclk_pin: GPIO8
 
@@ -326,67 +417,160 @@ microphone:
     bits_per_sample: 16bit
     sample_rate: 16000
 
-speaker:
-  - platform: i2s_audio
-    id: xvf3800_speaker
-    i2s_audio_id: i2s_out
-    dac_type: external
-    i2s_dout_pin: GPIO44
+# --- KEIN speaker: Block! TTS geht ueber Sonos ---
 
+# --- Wake Word (lokal auf ESP32-S3) ---
 micro_wake_word:
   models:
-    - model: hey_jarvis  # oder anderes Wake Word
+    - model: hey_jarvis
   on_wake_word_detected:
     - voice_assistant.start:
 
+# --- Voice Assistant (ohne Speaker, mit Sonos TTS-Redirect) ---
 voice_assistant:
   microphone: xvf3800_mic
-  speaker: xvf3800_speaker
+  # KEIN speaker: Parameter → kein lokaler Audio-Output
   use_wake_word: true
   noise_suppression_level: 2
   auto_gain: 31dBFS
-  volume_multiplier: 1.5
+
+  # === SONOS TTS-AUSGABE ===
+  # on_tts_end liefert die TTS Audio-URL als Variable "x"
+  # Diese URL wird an den Sonos Speaker im selben Raum gesendet
+  on_tts_end:
+    - homeassistant.service:
+        service: media_player.play_media
+        data:
+          entity_id: media_player.sonos_kueche    # ← ANPASSEN pro Raum!
+          media_content_id: !lambda 'return x;'
+          media_content_type: music
+          announce: "true"                         # Duckt Musik, spielt TTS, Musik weiter
+
+  # Optional: LED-Feedback waehrend Verarbeitung
+  on_listening:
+    - light.turn_on:
+        id: led_ring
+        effect: "Listening"
+  on_stt_end:
+    - light.turn_on:
+        id: led_ring
+        effect: "Processing"
+  on_end:
+    - light.turn_off:
+        id: led_ring
+
+# --- LED Ring (12 LEDs, optional fuer visuelles Feedback) ---
+light:
+  - platform: esp32_rmt_led_strip
+    id: led_ring
+    pin: GPIO1
+    num_leds: 12
+    rmt_channel: 0
+    chipset: WS2812
+    rgb_order: GRB
+    effects:
+      - addressable_rainbow:
+          name: "Listening"
+          speed: 30
+      - addressable_color_wipe:
+          name: "Processing"
+          colors:
+            - red: 0
+              green: 0
+              blue: 100%
+          add_led_interval: 50ms
+
+# --- API & OTA ---
+api:
+  encryption:
+    key: !secret api_encryption_key
+
+ota:
+  - platform: esphome
+    password: !secret ota_password
 ```
+
+### Pro-Raum Anpassung
+
+Fuer jeden Raum muss nur der `name`, `friendly_name` und die `entity_id` des Sonos angepasst werden:
+
+```yaml
+# Kueche:    entity_id: media_player.sonos_kueche
+# Wohnzimmer: entity_id: media_player.sonos_wohnzimmer
+# Schlafzimmer: entity_id: media_player.sonos_schlafzimmer
+# Buero:     entity_id: media_player.sonos_buero
+```
+
+> **Tipp:** Alternativ kann das Raum-zu-Sonos Mapping auch als HA-Automation
+> geloest werden (ein Blueprint fuer alle Raeume). Dann braucht die ESPHome-Config
+> kein hartcodiertes `entity_id` und der `on_tts_end` Block feuert ein HA-Event,
+> das die Automation abfaengt und den richtigen Sonos waehlt.
+
+### Bekannter Bug: TTS-Loop (ESPHome 2025.5+)
+
+> **ACHTUNG:** Ab ESPHome 2025.5 gibt es einen bekannten Bug, bei dem
+> `on_tts_end` mit `media_player.play_media` in einer Endlosschleife laufen kann.
+> **Workaround:** In `on_tts_end` eine kurze Verzoegerung (`delay: 500ms`) einbauen
+> oder auf `on_tts_stream_end` wechseln, sobald dieses Event auch fuer externe
+> Media Player verfuegbar ist (Feature Request: esphome/feature-requests#3148).
 
 ### Integrations-Wege
 
-#### Weg A: Standard (empfohlen fuer Start)
+#### Weg A: Standard + Sonos (empfohlen fuer Start)
 
 ```
-XVF3800 → ESP32-S3 → ESPHome Native API → HA Assist Pipeline → MindHome
+ReSpeaker XVF3800 (Mic)
+    ↓ ESPHome Native API / WiFi
+HA Assist Pipeline
+    ├── Wake Word (lokal auf ESP32-S3)
+    ├── STT: Whisper (Wyoming)
+    ├── Intent: MindHome Conversation Agent
+    ├── TTS: Piper → generiert Audio-URL
+    └── on_tts_end → media_player.play_media(Sonos, announce=true)
+                            ↓
+                    Sonos Speaker (Ausgabe)
 ```
 
-- Sofort funktionsfaehig
+- Sofort funktionsfaehig mit der YAML-Vorlage oben
 - Wake Word lokal auf ESP32-S3
 - `device_id` verfuegbar fuer Device-Mapping (95% Confidence)
 - Raum-Erkennung ueber HA Device Areas automatisch
+- Sonos duckt Musik → spielt Antwort → Musik weiter
 
 #### Weg B: Wyoming STT Wrapper (fuer Voice Embeddings)
 
 ```
-XVF3800 → ESP32-S3 → HA Assist Pipeline
-                         ↓
-                   Custom Wyoming STT Wrapper (auf PC2)
-                   ├── Faengt Audio ab (16kHz PCM)
-                   ├── Extrahiert Speaker Embedding (ECAPA-TDNN)
-                   ├── Leitet Audio an Whisper weiter fuer STT
-                   └── Sendet Embedding an MindHome Speaker Recognition
+ReSpeaker XVF3800 (Mic)
+    ↓ ESPHome Native API / WiFi
+HA Assist Pipeline
+    ↓
+Custom Wyoming STT Wrapper (auf PC2)
+    ├── Faengt Audio ab (16kHz PCM)
+    ├── Extrahiert Speaker Embedding (ECAPA-TDNN)
+    ├── Leitet Audio an Whisper weiter fuer STT
+    └── Sendet Embedding an MindHome Speaker Recognition
+    ↓
+TTS: Piper → on_tts_end → Sonos
 ```
 
 - Ermoeglicht Voice Embeddings aus sauberem XVF3800-Audio
 - Kein zusaetzlicher Audio-Stream noetig
 - Architektonisch sauber (Wyoming ist Standard)
+- Sonos-Ausgabe funktioniert identisch wie bei Weg A
 
 #### Weg C: UDP Audio Streaming (parallel)
 
 ```
-XVF3800 → ESP32-S3 ──┬── Voice Assistant (normal) → HA
-                      └── UDP Stream (parallel) → PC2 Backend
+ReSpeaker XVF3800 (Mic)
+    ↓ ESP32-S3
+    ├── Voice Assistant (normal) → HA → Sonos
+    └── UDP Stream (parallel) → PC2 Backend (Embeddings)
 ```
 
 - Seeed-dokumentiert: ESP32-S3 kann Audio parallel per UDP streamen
 - Backend extrahiert Embeddings aus UDP-Stream
 - Unabhaengig von HA Pipeline
+- Sonos-Ausgabe laeuft weiterhin ueber HA
 
 ---
 
@@ -400,15 +584,18 @@ XVF3800 → ESP32-S3 ──┬── Voice Assistant (normal) → HA
 | 1.2 | Device-Mapping konfigurieren | `settings.yaml`: device_mapping mit ESPHome Device-IDs |
 | 1.3 | `device_id` im Addon Voice-Endpoint durchschleifen | `addon/rootfs/opt/mindhome/routes/chat.py` |
 
-### Phase 2: ESPHome Voice Satellite (Aufwand: 2-4h)
+### Phase 2: ESPHome Voice Satellite + Sonos (Aufwand: 2-4h)
 
 | Schritt | Beschreibung |
 |---------|-------------|
-| 2.1 | ESPHome Firmware fuer ReSpeaker XVF3800 flashen |
-| 2.2 | In HA als Voice Satellite einrichten |
+| 2.1 | ESPHome Firmware fuer ReSpeaker XVF3800 flashen (YAML-Vorlage oben) |
+| 2.2 | In HA als Voice Satellite einrichten (ESPHome Integration) |
 | 2.3 | Device Area in HA konfigurieren (fuer Raum-Erkennung) |
-| 2.4 | Device-Mapping in settings.yaml eintragen |
-| 2.5 | End-to-End Test: Wake Word → STT → MindHome → TTS |
+| 2.4 | Sonos in HA einrichten, TCP Port 1443 pruefen |
+| 2.5 | `entity_id` des Sonos in ESPHome YAML `on_tts_end` eintragen |
+| 2.6 | Device-Mapping in settings.yaml eintragen |
+| 2.7 | End-to-End Test: Wake Word → STT → MindHome → Sonos TTS |
+| 2.8 | Testen: Sonos spielt Musik + Voice-Anfrage → Musik duckt → Antwort → Musik weiter |
 
 ### Phase 3: DoA-Integration (Aufwand: 1-2 Tage)
 
@@ -494,13 +681,27 @@ if method == "voice_features" and not secondary_method:
 
 ## 10. Quellen & Referenzen
 
+### Hardware & Firmware
+- [Seeed Studio: ReSpeaker XVF3800 mit Gehaeuse + XIAO ESP32-S3 (p-6628)](https://www.seeedstudio.com/ReSpeaker-XVF3800-With-Case-XIAO-ESP32S3-p-6628.html) — das gekaufte Modell
 - [Seeed Studio: ReSpeaker XVF3800 Wiki](https://wiki.seeedstudio.com/respeaker_xvf3800_introduction/)
 - [Seeed Studio: XVF3800 Home Assistant Integration](https://wiki.seeedstudio.com/respeaker_xvf3800_xiao_home_assistant/)
 - [Seeed Studio: XVF3800 UDP Audio Streaming](https://wiki.seeedstudio.com/respeaker_xvf3800_xiao_udp_audio_stream/)
 - [XMOS XVF3800 Datasheet](https://www.xmos.com/xvf3800)
 - [XMOS XVF3800 Audio Pipeline Dokumentation](https://www.xmos.com/documentation/XM-014888-PC/html/modules/fwk_xvf/doc/datasheet/03_audio_pipeline.html)
-- [ESPHome Voice Assistant Component](https://esphome.io/components/voice_assistant/)
+
+### ESPHome & Home Assistant
+- [ESPHome Voice Assistant Component](https://esphome.io/components/voice_assistant/) — `on_tts_end` Trigger Dokumentation
 - [ESPHome Micro Wake Word Component](https://esphome.io/components/micro_wake_word/)
 - [FormatBCE ESPHome XVF3800 Integration](https://community.home-assistant.io/t/respeaker-xmos-xvf3800-esphome-integration/927241)
 - [Home Assistant Wyoming Protocol](https://www.home-assistant.io/integrations/wyoming/)
+
+### Sonos TTS-Integration
+- [HA Sonos Integration](https://www.home-assistant.io/integrations/sonos/) — `announce: true` Dokumentation
+- [ESPHome Voice Assistant Speech Output to HA Media Player](https://community.home-assistant.io/t/esphome-voice-assistant-speech-output-to-home-assistant-media-player/588337) — Urspruenglicher Guide
+- [Route Full Voice Assistant Responses to Sonos](https://community.home-assistant.io/t/esphome-route-full-voice-assistant-responses-to-sonos/917388)
+- [Redirect Voice PE Replies to Sonos](https://community.home-assistant.io/t/redirect-voice-pe-replies-to-sonos/926652)
+- [Voice PE → Play Replies on External Media Player](https://community.home-assistant.io/t/voice-pe-play-replies-on-an-external-media-playerer/976011)
+- [Feature Request: on_tts_stream_end fuer Media Player](https://github.com/esphome/feature-requests/issues/3148) — TTS-Loop Bug Workaround
+
+### Speaker Recognition / ML
 - [SpeechBrain ECAPA-TDNN Speaker Verification](https://huggingface.co/speechbrain/spkrec-ecapa-voxceleb)
