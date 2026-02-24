@@ -28,7 +28,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Optional
 
-from .config import settings, yaml_config
+from .config import settings, yaml_config, get_person_title
 from .function_calling import get_assistant_tools, FunctionExecutor
 from .function_validator import FunctionValidator
 from .ollama_client import OllamaClient
@@ -445,7 +445,7 @@ Formuliere die Fragen als nummerierte Liste.
 Am Ende: "Sobald ich die Details habe, erstelle ich einen Plan."
 
 Anfrage: {text}
-Person: {person or 'Sir'}"""
+Person: {person or get_person_title()}"""
 
         try:
             response = await self.ollama.chat(
@@ -455,7 +455,7 @@ Du hilfst bei der Planung von Events/Aktivitaeten.
 Stelle kurze, praesize Rueckfragen um den Plan zu verfeinern.
 Deutsch. Butler-Stil. Max 3 Fragen.
 Beispiel:
-"Sehr gerne, Sir. Fuer die Planung brauche ich noch:
+f"Sehr gerne, {get_person_title()}. Fuer die Planung brauche ich noch:
 1. Fuer wie viele Gaeste?
 2. Welche Uhrzeit?
 3. Soll ich auch eine Einkaufsliste erstellen?

@@ -16,7 +16,7 @@ from typing import Optional
 
 import redis.asyncio as aioredis
 
-from .config import yaml_config
+from .config import yaml_config, get_person_title
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +85,7 @@ class WellnessAdvisor:
             if primary:
                 present_names = [primary]
             else:
-                return "Sir"
+                return get_person_title()
 
         # Namen → Titel auflösen
         present_titles = []

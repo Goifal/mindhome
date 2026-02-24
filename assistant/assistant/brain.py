@@ -989,7 +989,7 @@ class AssistantBrain(BrainCallbacksMixin):
                                 "role": "system",
                                 "content": (
                                     "Du bist JARVIS. Antworte auf Deutsch, 1-2 Saetze. "
-                                    "Souveraen, knapp, trocken. 'Sir' sparsam einsetzen. "
+                                    f"Souveraen, knapp, trocken. '{get_person_title()}' sparsam einsetzen. "
                                     "Keine Aufzaehlungen. "
                                     "WICHTIG: Uhrzeiten EXAKT uebernehmen, NIEMALS aendern "
                                     "oder runden. 'Viertel vor 8' bleibt 'Viertel vor 8'. "
@@ -2067,9 +2067,9 @@ class AssistantBrain(BrainCallbacksMixin):
                             "content": (
                                 "Du bist JARVIS. Antworte auf Deutsch, 1-2 Saetze. "
                                 f"{_form_hint} {_sarc_hint}{_mood_hint} "
-                                "'Sir' sparsam einsetzen. "
+                                f"'{get_person_title()}' sparsam einsetzen. "
                                 "Keine Aufzaehlungen. Zahlen und Uhrzeiten EXAKT uebernehmen. "
-                                "Beispiele: 'Fuenf Grad, bewoelkt. Jacke empfohlen, Sir.' | "
+                                f"Beispiele: 'Fuenf Grad, bewoelkt. Jacke empfohlen, {get_person_title()}.' | "
                                 "'Morgen um Viertel vor acht steht eine Blutabnahme an.' | "
                                 "'Im Buero 22.3 Grad, Luftfeuchtigkeit 51%. Passt.'"
                             ),

@@ -797,7 +797,7 @@ class TimerManager:
             # Benachrichtigung senden
             if self._notify_callback:
                 await self._notify_callback({
-                    "message": f"Guten Morgen Sir! Wecker: {alarm_data['label']} — es ist {alarm_data['time']} Uhr.",
+                    "message": f"Guten Morgen {get_person_title()}! Wecker: {alarm_data['label']} — es ist {alarm_data['time']} Uhr.",
                     "type": "wakeup_alarm",
                     "room": alarm_data.get("room", ""),
                     "alarm_id": alarm_id,

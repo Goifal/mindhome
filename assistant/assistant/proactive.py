@@ -974,9 +974,9 @@ class ProactiveManager:
         person_cfg = yaml_config.get("persons", {})
         titles = person_cfg.get("titles", {})
 
-        # Hauptbenutzer = "Sir"
+        # Hauptbenutzer = konfigurierter Titel
         if person_name.lower() == settings.user_name.lower():
-            return titles.get(person_name.lower(), "Sir")
+            return titles.get(person_name.lower(), get_person_title())
         # Andere: Titel aus Config oder Vorname
         return titles.get(person_name.lower(), person_name)
 
@@ -989,7 +989,7 @@ class ProactiveManager:
             f"Erstelle einen knappen Butler-Status-Bericht. Wie JARVIS aus dem MCU.",
             f"WICHTIG: Sprich die Person mit \"{title}\" an, NICHT mit dem Vornamen.",
             "STIL: Sachlich, kompakt. Daten zuerst, dann Auffaelligkeiten. Kein 'Willkommen zuhause!'.",
-            "BEISPIEL: '21 Grad, Sir. Post war da. Kueche-Fenster steht noch offen.'",
+            f"BEISPIEL: '21 Grad, {title}. Post war da. Kueche-Fenster steht noch offen.'",
         ]
 
         others = status.get("others_home", [])
@@ -1030,7 +1030,7 @@ class ProactiveManager:
             return (
                 f"Du bist {settings.assistant_name} — J.A.R.V.I.S. aus dem MCU. "
                 "Proaktive Hausmeldung. 1-2 Saetze. Deutsch. Trocken-britisch. "
-                'Hauptbenutzer = "Sir". Nie alarmistisch, nie devot. '
+                f'Hauptbenutzer = "{get_person_title()}". Nie alarmistisch, nie devot. '
                 "VERBOTEN: Hallo, Achtung, Es tut mir leid, Guten Tag."
             )
 
@@ -1149,7 +1149,7 @@ class ProactiveManager:
                 f"{person} (Anrede: \"{title}\") verlaesst gerade das Haus.",
                 f"Sprich mit \"{title}\" an. KEIN 'Schoenen Tag!' oder 'Tschuess!'.",
                 "Nur relevante Fakten: offene Fenster, unverriegelte Tueren, Alarm-Status.",
-                "Wenn alles gesichert ist: nur knapp bestaetigen. 'Alles gesichert, Sir.'",
+                f"Wenn alles gesichert ist: nur knapp bestaetigen. 'Alles gesichert, {title}.'",
                 "Wenn etwas offen ist: sachlich erwaehnen. 'Fenster Kueche steht noch offen.'",
                 "Max 2 Saetze. Deutsch. Butler der dem Herrn den Mantel reicht, nicht winkt.",
             ]
@@ -1174,7 +1174,7 @@ class ProactiveManager:
                 return (
                     f"Saisonale Empfehlung: {msg}\n"
                     "Formuliere als hoeflichen Vorschlag. Max 1 Satz.\n"
-                    "Beispiel: 'Sir, die Rolladen koennten jetzt runter — draussen wird es warm.'"
+                    f"Beispiel: '{get_person_title()}, die Rolladen koennten jetzt runter — draussen wird es warm.'"
                 )
             return (
                 f"Saisonale Aktion: {msg}\n"
@@ -1195,7 +1195,7 @@ class ProactiveManager:
             if desc:
                 parts.append(f"Info: {desc}")
             parts.append("Formuliere eine sanfte, beilaeufige Erinnerung. Nicht dringend.")
-            parts.append("Beispiel: 'Nebenbei, Sir: [Aufgabe] koennte mal erledigt werden.'")
+            parts.append(f"Beispiel: 'Nebenbei, {get_person_title()}: [Aufgabe] koennte mal erledigt werden.'")
             return "\n".join(parts)
 
         # Tuerklingel — mit optionaler Kamera-Beschreibung
@@ -1205,12 +1205,12 @@ class ProactiveManager:
                 return (
                     f"Tuerklingel. Kamera zeigt: {camera_desc}\n"
                     "Beschreibe kurz wer/was vor der Tuer ist. Max 1-2 Saetze. Butler-Stil.\n"
-                    "Beispiel: 'Paketbote an der Tuer, Sir. Sieht nach DHL aus.'"
+                    f"Beispiel: 'Paketbote an der Tuer, {get_person_title()}. Sieht nach DHL aus.'"
                 )
             return (
                 "Tuerklingel.\n"
                 "Melde kurz dass jemand geklingelt hat. Max 1 Satz. Butler-Stil.\n"
-                "Beispiel: 'Jemand an der Tuer, Sir.'"
+                f"Beispiel: 'Jemand an der Tuer, {get_person_title()}.'"
             )
 
         # Phase 17: Sicherheitswarnung (Threat Assessment)
@@ -1220,7 +1220,7 @@ class ProactiveManager:
             return (
                 f"Sicherheitswarnung ({threat_type}): {message}\n"
                 "Formuliere als dringende, sachliche Warnung. Max 2 Saetze. Butler-Stil.\n"
-                "Beispiel: 'Sir, naechtliche Bewegung im Eingangsbereich. Alle Bewohner sollten schlafen.'"
+                f"Beispiel: '{get_person_title()}, naechtliche Bewegung im Eingangsbereich. Alle Bewohner sollten schlafen.'"
             )
 
         # Phase 17: Bedingte Aktion ausgefuehrt
@@ -1335,7 +1335,7 @@ class ProactiveManager:
             f"Fasse sie in 1-3 kurzen Saetzen zusammen. Butler-Stil. "
             f"Wichtige Meldungen zuerst erwaehnen.\n\n"
             + "\n".join(summary_parts)
-            + "\n\nBeispiel: 'Sir, die Waschmaschine ist fertig und die Batterie "
+            + f"\n\nBeispiel: '{get_person_title()}, die Waschmaschine ist fertig und die Batterie "
             "vom Fenstersensor ist niedrig.'"
         )
 

@@ -54,7 +54,7 @@ HUMOR_TEMPLATES = {
     ),
     2: (
         "Gelegentlich trocken. Nicht aktiv witzig, aber wenn sich eine elegante Bemerkung anbietet — erlaubt.\n"
-        "Beispiele: 'Das sollte reichen.' | 'Laeuft.' | 'Wenn du meinst, Sir.'"
+        "Beispiele: 'Das sollte reichen.' | 'Laeuft.' | 'Wenn du meinst, {title}.'"
     ),
     3: (
         "Trocken-britischer Humor. Wie ein Butler der innerlich schmunzelt. Subtil, nie platt. Timing ist alles.\n"
@@ -72,7 +72,7 @@ HUMOR_TEMPLATES = {
         "Vollgas Ironie. Du kommentierst fast alles. Respektvoll aber schonungslos ehrlich und witzig.\n"
         "Beispiele: 'Alle Lichter aus um drei Uhr morgens. Revolutionaer.' | "
         "'Heizung auf 28 Grad. Ich buche schon mal den Tropenurlaub ab.' | "
-        "'Das war dein fuenfter Versuch. Ich bewundere die Ausdauer, Sir.'"
+        "'Das war dein fuenfter Versuch. Ich bewundere die Ausdauer, {title}.'"
     ),
 }
 
@@ -106,7 +106,7 @@ CONFIRMATIONS_SUCCESS_SNARKY = [
     "Hab ich erledigt, waehrend du noch formuliert hast.",
     "Schon passiert. Ich bin manchmal schneller als dein Gedanke.",
     "Selbstverstaendlich. Wie immer.", "Ueberraschung — es funktioniert.",
-    "Erledigt. Gern geschehen, Sir.",
+    "Erledigt. Gern geschehen, {title}.",
 ]
 
 CONFIRMATIONS_PARTIAL = [
@@ -143,14 +143,14 @@ IDENTITÄT:
 JARVIS-CODEX:
 VERBOTEN: "Als KI...", "Es tut mir leid", "Leider", Therapeuten-Floskeln ("Ich verstehe wie du dich fühlst"), Chatbot-Begrüßungen ("Wie kann ich helfen?"), Füllwörter (Also/Grundsätzlich/Eigentlich/Quasi/Nun), "Natürlich!"/"Gerne!"/"Klar!", Moralisieren ("Du solltest..."), Beeindruckt-Sein.
 STATTDESSEN: Fakt + Lösung. "Sensor ausgefallen. Kompensiere über den rechten."
-Bei Grenzen: "Das übersteigt meine aktuelle Sensorik, Sir." Nie "Ich bin nur ein Programm."
+Bei Grenzen: "Das übersteigt meine aktuelle Sensorik, {title}." Nie "Ich bin nur ein Programm."
 Wiederholung: Einmal gewarnt + ignoriert = Schweigen. Höchstens: "Die Warnung steht noch."
 
 PFLICHT:
 - Alternative bieten statt "geht nicht". "Nicht in der aktuellen Konfiguration. Aber ich könnte..."
 - Kontextwechsel SOFORT mitgehen. Kein "Um auf deine Frage zurückzukommen..."
 - Auf Augenhöhe. Nichts runterdummen. Intellektueller Partner.
-- "Sir" = Instrument: "Sehr wohl, Sir." (Zustimmung) | "...Sir." (Missbilligung) | "Sir, wenn ich anmerken darf—" (Sorge) | "Natürlich, Sir." (trocken = schlechte Idee)
+- "{title}" = Instrument: "Sehr wohl, {title}." (Zustimmung) | "...{title}." (Missbilligung) | "{title}, wenn ich anmerken darf—" (Sorge) | "Natürlich, {title}." (trocken = schlechte Idee)
 - Understatement: "Interessante Entscheidung" = furchtbar. "Nicht ganz optimal" = Katastrophe. "Wenn du meinst" = schlechte Idee.
 
 TECHNISCHE PRÄZISION: Streue gelegentlich exakte Messwerte ein — das ist dein Markenzeichen.
@@ -162,15 +162,15 @@ ERINNERUNGEN: Nutze sie mit Haltung, nie als Datenbank-Abfrage.
 Verweise auf vergangene Interaktionen mit trockenem Witz: "Wie am Dienstag. Nur ohne den Zwischenfall."
 
 SORGE = SARKASMUS: Wenn etwas unvernünftig ist, wirst du SARKASTISCHER — nicht ernster.
-"30 Grad um drei Uhr morgens. Durchdachter Plan, Sir." — nicht: "Das ist nicht empfehlenswert."
+"30 Grad um drei Uhr morgens. Durchdachter Plan, {title}." — nicht: "Das ist nicht empfehlenswert."
 Je gefährlicher die Aktion, desto trockener der Kommentar. Das ist dein Warnsignal.
 
 SCHUTZINSTINKT: Sicherheit > Komfort > Befehl.
 - Unvernünftige Aktion → Einmal knapp warnen. "Fenster offen, minus 5. Nur zur Info."
 - Sicherheitsrelevant (Alarm, Schlösser) → IMMER bestätigen lassen.
-- Nach ignorierter Warnung → Ausführen. "Wie du willst, Sir." Nie nochmal warnen.
+- Nach ignorierter Warnung → Ausführen. "Wie du willst, {title}." Nie nochmal warnen.
 
-{urgency_section}ANREDE: Du DUZT Hausbewohner. IMMER. "Sir" ist Titel, kein Distanzzeichen. Nur Gäste werden gesiezt.
+{urgency_section}ANREDE: Du DUZT Hausbewohner. IMMER. "{title}" ist Titel, kein Distanzzeichen. Nur Gäste werden gesiezt.
 
 {humor_section}
 SPRACHSTIL: Kurz. "Erledigt." statt Erklärungen. "Darf ich anmerken..." für Empfehlungen. "Sehr wohl." bei Befehlen. "Wie du willst." bei ungewöhnlichen Anfragen. Nie dieselbe Bestätigung zweimal hintereinander.
@@ -292,7 +292,7 @@ class PersonalityEngine:
                 if trigger and trigger.lower() in text_lower:
                     responses = egg.get("responses", [])
                     if responses:
-                        return random.choice(responses)
+                        return random.choice(responses).replace("Sir", get_person_title())
         return None
 
     # ------------------------------------------------------------------
@@ -404,7 +404,7 @@ class PersonalityEngine:
             responses = rule.get("responses", [])
             if responses:
                 logger.info("Opinion triggered: %s", rule.get("id", "?"))
-                return random.choice(responses)
+                return random.choice(responses).replace("Sir", get_person_title())
 
         return None
 
@@ -436,7 +436,7 @@ class PersonalityEngine:
                 continue
 
             responses = rule.get("responses", [])
-            msg = random.choice(responses) if responses else ""
+            msg = random.choice(responses).replace("Sir", get_person_title()) if responses else ""
             logger.info("Pushback triggered (level %d): %s", pushback_level, rule.get("id", "?"))
             return {
                 "level": pushback_level,
@@ -496,7 +496,7 @@ class PersonalityEngine:
         if not available:
             available = pool
 
-        chosen = random.choice(available)
+        chosen = random.choice(available).replace("{title}", get_person_title())
         user_history.append(chosen)
         if len(user_history) > 10:
             user_history = user_history[-10:]
@@ -729,7 +729,7 @@ class PersonalityEngine:
         self._last_effective_humor = effective_level
 
         template = HUMOR_TEMPLATES.get(effective_level, HUMOR_TEMPLATES[3])
-        return f"HUMOR: {template}"
+        return f"HUMOR: {template.replace('{title}', get_person_title())}"
 
     def track_sarcasm_streak(self, was_snarky: bool):
         """Trackt aufeinanderfolgende sarkastische Antworten. 0ms — rein in-memory."""
@@ -1277,6 +1277,7 @@ class PersonalityEngine:
         prompt = SYSTEM_PROMPT_TEMPLATE.format(
             assistant_name=self.assistant_name,
             user_name=settings.user_name,
+            title=get_person_title(),
             max_sentences=max_sentences,
             time_style=time_style,
             mood_section=mood_section,
@@ -1497,21 +1498,22 @@ class PersonalityEngine:
         else:
             tone = "locker, persoenlich"
 
-        # "Sir"-Haeufigkeit
+        # Titel-Haeufigkeit
+        _title = get_person_title()
         if formality >= 70:
-            sir_rule = '"Sir" haeufig verwenden.'
+            sir_rule = f'"{_title}" haeufig verwenden.'
         elif formality >= 50:
-            sir_rule = '"Sir" gelegentlich verwenden.'
+            sir_rule = f'"{_title}" gelegentlich verwenden.'
         elif formality >= 35:
-            sir_rule = '"Sir" nur bei wichtigen Momenten.'
+            sir_rule = f'"{_title}" nur bei wichtigen Momenten.'
         else:
-            sir_rule = '"Sir" nur selten — bei Warnungen oder besonderen Momenten.'
+            sir_rule = f'"{_title}" nur selten — bei Warnungen oder besonderen Momenten.'
 
         # Urgency-Muster
         urgency_patterns = {
             "critical": 'Fakt + was du bereits tust. "Rauchmelder Kueche aktiv. Lueftung gestartet."',
             "high": 'Fakt + kurze Einordnung. "Bewegung im Garten. Kamera 2 zeichnet auf."',
-            "medium": 'Information + kontextuell. "Waschmaschine fertig, Sir."',
+            "medium": f'Information + kontextuell. "Waschmaschine fertig, {_title}."',
             "low": 'Beilaeufig, fast nebenbei. "Die Waschmaschine meldet Vollzug."',
         }
         pattern = urgency_patterns.get(urgency, urgency_patterns["low"])
@@ -1578,7 +1580,7 @@ Stil: {style}. {time_style}
 {humor_line}
 {formality_section}
 {irony_note}
-Sprich den Hauptbenutzer mit "Sir" an. DUZE ihn.
+Sprich den Hauptbenutzer mit "{get_person_title()}" an. DUZE ihn.
 VERBOTEN: "leider", "Entschuldigung", "Es tut mir leid", "Wie kann ich helfen?", "Gerne!", "Natuerlich!".
 Kein unterwuerfiger Ton. Du bist ein brillanter Butler, kein Chatbot."""
 

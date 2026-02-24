@@ -452,7 +452,7 @@ class RoutineEngine:
         self, parts: list[str], style: str, person: str, now: datetime
     ) -> str:
         """Baut den Prompt fuer das LLM um das Briefing zu formulieren."""
-        title = "Sir" if not person or person.lower() == settings.user_name.lower() else person
+        title = get_person_title(person) if not person or person.lower() == settings.user_name.lower() else person
         prompt = f"Erstelle ein Morning Briefing fuer {title}.\n\n"
         prompt += "DATEN:\n"
         for part in parts:
@@ -482,7 +482,7 @@ class RoutineEngine:
             f"Du bist {settings.assistant_name}, die KI dieses Hauses — J.A.R.V.I.S. aus dem MCU.\n"
             f"Erstelle ein Morning Briefing. Stil: {style}.\n"
             "Beginne mit kontextueller Begruessung. Dann Wetter, Termine, Haus-Status.\n"
-            'Sprich den Hauptbenutzer mit "Sir" an. Deutsch. Butler-Stil.\n'
+            f'Sprich den Hauptbenutzer mit "{get_person_title()}" an. Deutsch. Butler-Stil.\n'
             "VERBOTEN: leider, Entschuldigung, Es tut mir leid, Wie kann ich helfen?, Gerne!, Natuerlich!"
         )
 
@@ -745,7 +745,7 @@ class RoutineEngine:
         tomorrow_info: str, actions: list[dict],
     ) -> str:
         """Generiert den Gute-Nacht-Text via LLM."""
-        title = "Sir" if not person or person.lower() == settings.user_name.lower() else person
+        title = get_person_title(person) if not person or person.lower() == settings.user_name.lower() else person
 
         parts = []
         if tomorrow_info:
