@@ -1,9 +1,10 @@
 # Speaker Recognition — Analyse, Status & Roadmap
 
-> **Stand:** 2026-02-24
+> **Stand:** 2026-02-24 (nach 3x Deep-Audit)
 > **Phase:** 9 / 9.6 (Voice Embeddings vorbereitet)
-> **Status:** Deaktiviert in Produktion (`enabled: false`)
+> **Status:** Aktiviert (`enabled: true`, `min_confidence: 0.6`) — Software fertig, wartet auf Hardware
 > **Geplante Hardware:** ReSpeaker XVF3800 (Hauptraeume) + M5Stack Atom Echo (Nebenraeume) + Sonos (TTS-Ausgabe)
+> **Audit:** 3x unabhaengige Deep-Audits durchgefuehrt, 15 Luecken geschlossen, 5 offen (hardware-abhaengig)
 
 ---
 
@@ -255,18 +256,37 @@ speaker_recognition:
 
 ---
 
-## 4. Bekannte Luecken
+## 4. Bekannte Luecken — Status nach 3x Deep-Audit
+
+### Geschlossene Luecken (gefixt)
+
+| # | Luecke | Schwere | Fix |
+|---|--------|---------|-----|
+| L1 | Speaker Recognition deaktiviert | Kritisch | `settings.yaml`: `enabled: true`, `min_confidence: 0.6` |
+| L2 | `device_id` fehlt im Addon | Kritisch | `chat.py`: in ALLEN 3 Endpoints (`/send`, `/voice`, `/upload`) durchgeschleift |
+| L3 | `set_current_speaker()` kein Timestamp | Kritisch | `last_identified` wird auf Profile aktualisiert + `_save_profiles()` |
+| L4 | Race Condition `_save_profiles()` | Kritisch | `asyncio.Lock` eingefuehrt |
+| L5 | Device-Mapping nach Restart verloren | Kritisch | `initialize()` rekonstruiert Mapping aus Redis-Profilen |
+| L6 | `device_mapping: null` in YAML | Kritisch | Geaendert zu `device_mapping: {}` (korrektes YAML) |
+| L7 | Kein Audit-Logging | Hoch | Alle 5 Methoden + `set_current_speaker()` loggen in History |
+| L8 | Cache nicht persistent | Hoch | `_last_speaker` wird aus Redis geladen bei Restart |
+| L9 | Doppelter Code Room/Sole-Person | Hoch | `_get_persons_home()` Helper extrahiert, kein doppelter `get_states()` Aufruf |
+| L10 | Redundante `import json as _json` | Hoch | Entfernt, nutzt module-level `json` |
+| L11 | `from_dict()` crasht bei fehlenden Keys | Hoch | `.get()` mit Defaults statt harter Zugriff |
+| L12 | `_save_profiles()` loggt nur debug | Hoch | Auf `warning` Level erhoeht |
+| L13 | Device-Mapping Filter zu aggressiv | Mittel | `is not None and != ""` statt `if v`, mit Logging |
+| L14 | History dropped bei 1 korruptem Eintrag | Mittel | Einzelne Eintraege werden uebersprungen statt alles zu droppen |
+| L15 | Room-Feld inkonsistent (None vs. weggelassen) | Mittel | Nur noch gesendet wenn truthy (konsistent mit conversation.py) |
+
+### Offene Luecken (Hardware-abhaengig oder spaeter)
 
 | # | Luecke | Schwere | Beschreibung |
 |---|--------|---------|-------------|
-| L1 | Voice Embeddings toter Code | Hoch | `identify_by_embedding()` existiert, wird nie aufgerufen |
-| L2 | Speaker Recognition deaktiviert | Hoch | `enabled: false`, `device_mapping: {}` |
-| L3 | Voice-Features zu simpel | Mittel | Nur 3 Features, leicht spoofbar |
-| L4 | `fallback_ask` nicht implementiert | Mittel | Config-Flag existiert, brain.py fragt nie "Wer spricht?" |
-| L5 | `device_id` fehlt im Addon Voice-Endpoint | Mittel | `/api/chat/voice` liest `device_id` nicht aus Request |
-| L6 | Kein Profil-Backup auf Disk | Mittel | Redis-only, verloren nach Crash |
-| L7 | Kein Audit-Logging | Niedrig | `set_current_speaker()` loggt nicht in History |
-| L8 | Cache nicht persistent | Niedrig | `_last_speaker` nur in RAM |
+| O1 | Voice Embeddings toter Code | Mittel | `identify_by_embedding()` + `store_embedding()` existieren, werden nie aufgerufen → Phase 4 |
+| O2 | Voice-Features zu simpel | Mittel | Nur 3 Features (WPM, Dauer, Volume), leicht spoofbar → Phase 4 (Embeddings) |
+| O3 | `fallback_ask` Dialog nicht implementiert | Mittel | brain.py loggt bei niedriger Confidence, fragt aber nicht aktiv "Wer bist du?" → Phase 5 |
+| O4 | Kein Profil-Backup auf Disk | Niedrig | Redis-only, kein YAML-Backup → Phase 5 |
+| O5 | DoA-Integration fehlt | Niedrig | XVF3800-Hardware noetig, ESPHome Custom Component → Phase 3 |
 
 ---
 

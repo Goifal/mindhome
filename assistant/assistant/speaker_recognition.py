@@ -13,6 +13,7 @@ Architektur:
 - Fallback: "Wer spricht?" bei Mehrdeutigkeit
 """
 
+import asyncio
 import json
 import logging
 import time
@@ -62,7 +63,7 @@ class SpeakerProfile:
 
     @classmethod
     def from_dict(cls, data: dict) -> "SpeakerProfile":
-        profile = cls(data["name"], data["person_id"])
+        profile = cls(data.get("name", "Unknown"), data.get("person_id", "unknown"))
         profile.created_at = data.get("created_at", time.time())
         profile.sample_count = data.get("sample_count", 0)
         profile.last_identified = data.get("last_identified", 0.0)
@@ -115,12 +116,21 @@ class SpeakerRecognition:
         self.fallback_ask = sr_cfg.get("fallback_ask", True)
         self.max_profiles = sr_cfg.get("max_profiles", 10)
 
-        # Device-zu-Person Mapping (aus Config)
-        self._device_mapping: dict[str, str] = sr_cfg.get("device_mapping", {})
+        # Device-zu-Person Mapping (aus Config) — leere/None Werte filtern
+        raw_mapping = sr_cfg.get("device_mapping", {}) or {}
+        self._device_mapping: dict[str, str] = {
+            str(k): str(v) for k, v in raw_mapping.items()
+            if v is not None and v != ""
+        }
+        filtered_count = len(raw_mapping) - len(self._device_mapping)
+        if filtered_count > 0:
+            logger.info("Device-Mapping: %d Eintraege geladen, %d leere uebersprungen",
+                        len(self._device_mapping), filtered_count)
 
         # In-Memory Cache der Profile
         self._profiles: dict[str, SpeakerProfile] = {}
         self._last_speaker: Optional[str] = None
+        self._save_lock = asyncio.Lock()
 
         if self.enabled:
             logger.info(
@@ -145,9 +155,24 @@ class SpeakerRecognition:
                     profiles_dict = json.loads(data)
                     for pid, pdata in profiles_dict.items():
                         self._profiles[pid] = SpeakerProfile.from_dict(pdata)
-                    logger.info("Speaker-Profile geladen: %d", len(self._profiles))
+                    # Device-Mapping aus Profilen rekonstruieren (ergaenzt Config-Mapping)
+                    for pid, profile in self._profiles.items():
+                        for device in profile.devices:
+                            if device not in self._device_mapping:
+                                self._device_mapping[device] = pid
+                    logger.info("Speaker-Profile geladen: %d (devices: %d)",
+                                len(self._profiles), len(self._device_mapping))
             except Exception as e:
-                logger.debug("Speaker-Profile laden fehlgeschlagen: %s", e)
+                logger.warning("Speaker-Profile laden fehlgeschlagen: %s", e)
+
+            # Letzten Sprecher aus Redis wiederherstellen
+            try:
+                last = await self.redis.get(SPEAKER_LAST_IDENTIFIED_KEY)
+                if last:
+                    self._last_speaker = last if isinstance(last, str) else last.decode()
+                    logger.debug("Letzter Sprecher wiederhergestellt: %s", self._last_speaker)
+            except Exception:
+                pass
 
     async def identify(
         self,
@@ -191,6 +216,7 @@ class SpeakerRecognition:
                 )
                 await self._save_profiles()
 
+            await self.log_identification(person_id, "device_mapping", 0.95)
             return {
                 "person": name,
                 "confidence": 0.95,
@@ -203,6 +229,7 @@ class SpeakerRecognition:
             room_person = await self._identify_by_room(room)
             if room_person:
                 self._last_speaker = room_person.lower()
+                await self.log_identification(room_person.lower(), "room_presence", 0.8)
                 return {
                     "person": room_person,
                     "confidence": 0.8,
@@ -215,6 +242,7 @@ class SpeakerRecognition:
             sole_person = await self._identify_sole_person()
             if sole_person:
                 self._last_speaker = sole_person.lower()
+                await self.log_identification(sole_person.lower(), "sole_person_home", 0.85)
                 return {
                     "person": sole_person,
                     "confidence": 0.85,
@@ -231,6 +259,9 @@ class SpeakerRecognition:
             match = self._match_voice_features(audio_metadata)
             if match:
                 self._last_speaker = match["person_id"]
+                await self.log_identification(
+                    match["person_id"], "voice_features", match["confidence"],
+                )
                 return {
                     "person": match["name"],
                     "confidence": match["confidence"],
@@ -261,19 +292,21 @@ class SpeakerRecognition:
             "method": "unknown",
         }
 
-    async def _identify_by_room(self, room: str) -> Optional[str]:
-        """Identifiziert Person anhand des Raums (Motion + Person-Entities)."""
+    async def _get_persons_home(self) -> list[str]:
+        """Ermittelt alle Personen die aktuell zuhause sind (aus HA person-Entities)."""
         states = await self.ha.get_states()
         if not states:
-            return None
+            return []
+        return [
+            state.get("attributes", {}).get("friendly_name", "User")
+            for state in states
+            if state.get("entity_id", "").startswith("person.")
+            and state.get("state") == "home"
+        ]
 
-        # Personen die zuhause sind sammeln
-        persons_home = []
-        for state in states:
-            if state.get("entity_id", "").startswith("person.") and state.get("state") == "home":
-                persons_home.append(
-                    state.get("attributes", {}).get("friendly_name", "User")
-                )
+    async def _identify_by_room(self, room: str) -> Optional[str]:
+        """Identifiziert Person anhand des Raums + Anwesenheit."""
+        persons_home = await self._get_persons_home()
 
         # Wenn nur 1 Person zuhause → die ist es
         if len(persons_home) == 1:
@@ -294,17 +327,7 @@ class SpeakerRecognition:
 
     async def _identify_sole_person(self) -> Optional[str]:
         """Wenn nur eine Person zuhause ist, ist es die."""
-        states = await self.ha.get_states()
-        if not states:
-            return None
-
-        persons_home = []
-        for state in states:
-            if state.get("entity_id", "").startswith("person.") and state.get("state") == "home":
-                persons_home.append(
-                    state.get("attributes", {}).get("friendly_name", "User")
-                )
-
+        persons_home = await self._get_persons_home()
         if len(persons_home) == 1:
             return persons_home[0]
         return None
@@ -432,11 +455,17 @@ class SpeakerRecognition:
     async def set_current_speaker(self, person_id: str):
         """Setzt den aktuellen Sprecher manuell (z.B. durch Chat-API person-Parameter)."""
         self._last_speaker = person_id
+        # Profil-Timestamp aktualisieren (fuer Time-Decay / Cache-Confidence)
+        profile = self._profiles.get(person_id)
+        if profile:
+            profile.last_identified = time.time()
+            await self._save_profiles()
         if self.redis:
             try:
                 await self.redis.set(SPEAKER_LAST_IDENTIFIED_KEY, person_id, ex=3600)
             except Exception:
                 pass
+        await self.log_identification(person_id, "manual", 1.0)
 
     async def remove_profile(self, person_id: str) -> bool:
         """Entfernt ein Profil."""
@@ -478,14 +507,15 @@ class SpeakerRecognition:
         await self._save_profiles()
 
     async def _save_profiles(self):
-        """Speichert alle Profile in Redis."""
+        """Speichert alle Profile in Redis (mit Lock gegen Race Conditions)."""
         if not self.redis:
             return
-        try:
-            data = {pid: p.to_dict() for pid, p in self._profiles.items()}
-            await self.redis.set(SPEAKER_PROFILES_KEY, json.dumps(data))
-        except Exception as e:
-            logger.debug("Speaker-Profile speichern fehlgeschlagen: %s", e)
+        async with self._save_lock:
+            try:
+                data = {pid: p.to_dict() for pid, p in self._profiles.items()}
+                await self.redis.set(SPEAKER_PROFILES_KEY, json.dumps(data))
+            except Exception as e:
+                logger.warning("Speaker-Profile speichern fehlgeschlagen: %s", e)
 
     async def identify_by_embedding(self, embedding: list[float]) -> Optional[dict]:
         """Phase 9.6: Identifiziert Sprecher ueber Voice-Embedding (Cosinus-Aehnlichkeit).
@@ -584,10 +614,9 @@ class SpeakerRecognition:
         if not self.redis:
             return
         try:
-            import json as _json
-            entry = _json.dumps({
+            entry = json.dumps({
                 "person": person_id, "method": method,
-                "confidence": confidence, "time": time.time(),
+                "confidence": round(confidence, 3), "time": time.time(),
             })
             await self.redis.lpush(SPEAKER_HISTORY_KEY, entry)
             await self.redis.ltrim(SPEAKER_HISTORY_KEY, 0, 99)  # Max 100 Eintraege
@@ -599,9 +628,14 @@ class SpeakerRecognition:
         if not self.redis:
             return []
         try:
-            import json as _json
             entries = await self.redis.lrange(SPEAKER_HISTORY_KEY, 0, limit - 1)
-            return [_json.loads(e) for e in entries]
+            result = []
+            for e in entries:
+                try:
+                    result.append(json.loads(e))
+                except (json.JSONDecodeError, TypeError):
+                    continue  # Korrupte Eintraege ueberspringen
+            return result
         except Exception:
             return []
 

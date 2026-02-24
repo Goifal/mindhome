@@ -878,15 +878,26 @@ async def get_speaker_profiles():
     }
 
 
+class EnrollRequest(BaseModel):
+    person_id: str
+    name: str
+    audio_features: Optional[dict] = None
+    device_id: Optional[str] = None
+
+
 @app.post("/api/assistant/speaker/enroll")
-async def enroll_speaker(person_id: str, name: str):
-    """Phase 9: Neues Stimm-Profil anlegen."""
+async def enroll_speaker(req: EnrollRequest):
+    """Phase 9: Neues Stimm-Profil anlegen oder aktualisieren."""
     if not brain.speaker_recognition.enabled:
         raise HTTPException(status_code=400, detail="Speaker Recognition ist deaktiviert")
-    success = await brain.speaker_recognition.enroll(person_id, name)
+    success = await brain.speaker_recognition.enroll(
+        req.person_id, req.name,
+        audio_features=req.audio_features,
+        device_id=req.device_id,
+    )
     if not success:
         raise HTTPException(status_code=400, detail="Enrollment fehlgeschlagen (max Profile erreicht?)")
-    return {"enrolled": True, "person_id": person_id, "name": name}
+    return {"enrolled": True, "person_id": req.person_id, "name": req.name}
 
 
 @app.delete("/api/assistant/speaker/profiles/{person_id}")
@@ -896,6 +907,13 @@ async def delete_speaker_profile(person_id: str):
     if not success:
         raise HTTPException(status_code=404, detail="Profil nicht gefunden")
     return {"deleted": person_id}
+
+
+@app.get("/api/assistant/speaker/history")
+async def get_speaker_history(limit: int = 20):
+    """Phase 9: Identifikations-Historie (fuer Debugging/Analyse)."""
+    history = await brain.speaker_recognition.get_identification_history(limit=limit)
+    return {"history": history, "count": len(history)}
 
 
 # ----- Phase 10: Diagnostik Endpoints -----
