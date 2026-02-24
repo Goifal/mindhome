@@ -128,7 +128,7 @@ services:
     restart: unless-stopped
     ports:
       - "10200:10200"
-    command: --voice ${PIPER_VOICE:-de_DE-thorsten-high} --port 10200
+    command: --voice ${PIPER_VOICE:-de_DE-thorsten-high} --uri tcp://0.0.0.0:10200 --data-dir /data
     volumes:
       - ${DATA_DIR:-./data}/piper-models:/data
     healthcheck:

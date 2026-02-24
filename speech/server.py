@@ -57,6 +57,7 @@ def main():
                     url="",
                 ),
                 installed=True,
+                version="1.0.0",
                 models=[
                     AsrModel(
                         name=model,
@@ -67,6 +68,7 @@ def main():
                         ),
                         installed=True,
                         languages=[language],
+                        version="1.1.1",
                     )
                 ],
             )
