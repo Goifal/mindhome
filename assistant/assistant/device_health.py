@@ -262,7 +262,10 @@ class DeviceHealthMonitor:
         try:
             last_dt = datetime.fromisoformat(
                 last_changed.replace("Z", "+00:00")
-            ).replace(tzinfo=None)
+            )
+            # Sicherstellen dass timezone-aware
+            if last_dt.tzinfo is None:
+                last_dt = last_dt.replace(tzinfo=timezone.utc)
         except (ValueError, TypeError):
             return None
 
@@ -353,7 +356,11 @@ class DeviceHealthMonitor:
             return None
 
         try:
-            start_dt = datetime.fromisoformat(start_raw)
+            start_dt = datetime.fromisoformat(
+                start_raw.replace("Z", "+00:00") if isinstance(start_raw, str) else start_raw
+            )
+            if start_dt.tzinfo is None:
+                start_dt = start_dt.replace(tzinfo=timezone.utc)
         except (ValueError, TypeError):
             await self.redis.delete(hvac_key)
             return None

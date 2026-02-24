@@ -85,12 +85,17 @@ class MindHomeAssistantAgent(ConversationEntity):
         # Room aus Device-Kontext ermitteln
         room = await self._detect_room(user_input)
 
+        # Device-ID fuer Speaker Recognition (Satellite → Person Mapping)
+        ha_device_id = getattr(user_input, "device_id", None)
+
         # Payload zusammenbauen
         payload = {"text": text, "person": person}
         if voice_metadata:
             payload["voice_metadata"] = voice_metadata
         if room:
             payload["room"] = room
+        if ha_device_id:
+            payload["device_id"] = ha_device_id
 
         response_text = "Ich kann gerade nicht denken."
         tts_data = None

@@ -18,6 +18,8 @@ from typing import Optional
 
 import redis.asyncio as aioredis
 
+from .config import get_person_title
+
 from .config import yaml_config
 
 logger = logging.getLogger(__name__)
@@ -148,8 +150,9 @@ class LearningObserver:
             friendly = entity_id.split(".", 1)[1].replace("_", " ").title()
             action_de = "eingeschaltet" if new_state == "on" else "ausgeschaltet" if new_state == "off" else new_state
 
+            title = get_person_title()
             message = (
-                f"Sir, mir ist aufgefallen, dass Sie {friendly} jeden Tag "
+                f"{title}, mir ist aufgefallen, dass Sie {friendly} jeden Tag "
                 f"um {time_slot} Uhr {action_de}. "
                 f"Soll ich das automatisieren?"
             )
@@ -200,8 +203,9 @@ class LearningObserver:
         action_de = "eingeschaltet" if new_state == "on" else "ausgeschaltet" if new_state == "off" else new_state
         day_name = WEEKDAY_NAMES_DE[weekday]
 
+        title = get_person_title()
         message = (
-            f"Sir, Sie schalten {friendly} jeden {day_name} "
+            f"{title}, Sie schalten {friendly} jeden {day_name} "
             f"um {time_slot} Uhr {action_de}. "
             f"Soll ich das fuer {day_name}s automatisieren?"
         )
@@ -250,7 +254,7 @@ class LearningObserver:
 
         if not accepted:
             logger.info("Learning: Vorschlag abgelehnt fuer %s um %s", entity_id, time_slot)
-            return "Verstanden, Sir. Ich werde das nicht automatisieren."
+            return f"Verstanden, {get_person_title()}. Ich werde das nicht automatisieren."
 
         logger.info("Learning: Vorschlag akzeptiert fuer %s um %s (Wochentag: %d)",
                      entity_id, time_slot, weekday)
@@ -269,7 +273,7 @@ class LearningObserver:
                 await self.redis.setex(automated_key, 90 * 86400, "1")
 
         return (
-            f"Sehr gut, Sir. Ich habe die Automatisierung vorgemerkt. "
+            f"Sehr gut, {get_person_title()}. Ich habe die Automatisierung vorgemerkt. "
             f"Die Self-Automation wird {entity_id.split('.', 1)[1].replace('_', ' ').title()} "
             f"ab jetzt automatisch um {time_slot} Uhr schalten."
         )

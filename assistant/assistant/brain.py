@@ -29,7 +29,7 @@ from typing import Optional
 from .action_planner import ActionPlanner
 from .activity import ActivityEngine
 from .autonomy import AutonomyManager
-from .config import settings, yaml_config
+from .config import settings, yaml_config, get_person_title
 from .context_builder import ContextBuilder
 from .cooking_assistant import CookingAssistant
 from .device_health import DeviceHealthMonitor
@@ -519,7 +519,7 @@ class AssistantBrain(BrainCallbacksMixin):
 
         self._task_registry.create_task(_save(), name="memory_exchange")
 
-    async def process(self, text: str, person: Optional[str] = None, room: Optional[str] = None, files: Optional[list] = None, stream_callback=None) -> dict:
+    async def process(self, text: str, person: Optional[str] = None, room: Optional[str] = None, files: Optional[list] = None, stream_callback=None, voice_metadata: Optional[dict] = None, device_id: Optional[str] = None) -> dict:
         """
         Verarbeitet eine User-Eingabe.
 
@@ -588,13 +588,33 @@ class AssistantBrain(BrainCallbacksMixin):
             logger.info("Silence-Trigger: %s (aus Text: '%s')", silence_activity, text[:50])
 
         # Phase 9: Speaker Recognition — Person ermitteln wenn nicht angegeben
+        # Voice-Metadaten aufbereiten (WPM aus Text + Dauer berechnen)
+        audio_meta = None
+        if voice_metadata:
+            audio_meta = dict(voice_metadata)
+            # WPM berechnen wenn Dauer vorhanden aber kein WPM
+            duration = audio_meta.get("duration", 0)
+            if duration and duration > 0 and not audio_meta.get("wpm"):
+                word_count = len(text.split())
+                audio_meta["wpm"] = word_count / (duration / 60.0)
+
         if person:
             self._task_registry.create_task(
                 self.speaker_recognition.set_current_speaker(person.lower()),
                 name="set_speaker",
             )
+            # Voice-Stats auch bei bekanntem Speaker aktualisieren
+            if audio_meta and self.speaker_recognition.enabled:
+                self._task_registry.create_task(
+                    self.speaker_recognition.update_voice_stats_for_person(
+                        person.lower(), audio_meta
+                    ),
+                    name="update_voice_stats",
+                )
         elif self.speaker_recognition.enabled:
-            identified = await self.speaker_recognition.identify(room=room)
+            identified = await self.speaker_recognition.identify(
+                audio_metadata=audio_meta, device_id=device_id, room=room,
+            )
             if identified.get("person") and not identified.get("fallback"):
                 person = identified["person"]
                 logger.info("Speaker erkannt: %s (Confidence: %.2f, Methode: %s)",
@@ -802,7 +822,7 @@ class AssistantBrain(BrainCallbacksMixin):
                     configured = [configured]
 
                 if not cal_entities:
-                    response_text = "Ich sehe keine Kalender-Entities in Home Assistant, Sir."
+                    response_text = f"Ich sehe keine Kalender-Entities in Home Assistant, {get_person_title(person)}."
                 else:
                     names = []
                     for s in cal_entities:
@@ -1724,7 +1744,7 @@ class AssistantBrain(BrainCallbacksMixin):
                                     SECURITY_CONFIRM_TTL,
                                     json.dumps(pending),
                                 )
-                            response_text = f"Sir, das braucht deine Bestaetigung. {validation.reason}"
+                            response_text = f"{get_person_title(person)}, das braucht deine Bestaetigung. {validation.reason}"
                             executed_actions.append({
                                 "function": func_name,
                                 "args": func_args,
@@ -2492,11 +2512,11 @@ class AssistantBrain(BrainCallbacksMixin):
 
         # Kontext-Kommentar (JARVIS-Persoenlichkeit)
         if temp <= 0:
-            result += " Handschuhe empfohlen, Sir."
+            result += f" Handschuhe empfohlen, {get_person_title()}."
         elif temp <= 5:
             result += " Jacke empfohlen."
         elif temp >= 30:
-            result += " Genuegend trinken, Sir."
+            result += f" Genuegend trinken, {get_person_title()}."
 
         return result
 
@@ -2512,15 +2532,15 @@ class AssistantBrain(BrainCallbacksMixin):
         if "MORGEN" in raw_upper:
             prefix_single = "Morgen steht"
             prefix_multi = "Morgen stehen"
-            prefix_free = "Morgen ist frei, Sir."
+            prefix_free = f"Morgen ist frei, {get_person_title()}."
         elif "WOCHE" in raw_upper:
             prefix_single = "Diese Woche steht"
             prefix_multi = "Diese Woche stehen"
-            prefix_free = "Die Woche ist frei, Sir."
+            prefix_free = f"Die Woche ist frei, {get_person_title()}."
         else:
             prefix_single = "Heute steht"
             prefix_multi = "Heute stehen"
-            prefix_free = "Heute ist nichts geplant, Sir."
+            prefix_free = f"Heute ist nichts geplant, {get_person_title()}."
 
         # "KEINE TERMINE" Varianten
         if "KEINE TERMINE" in raw_upper or "(0)" in raw:
@@ -2557,7 +2577,7 @@ class AssistantBrain(BrainCallbacksMixin):
             events.append(title.strip())
 
         if len(events) == 1:
-            return f"{prefix_single} {events[0]} an, Sir."
+            return f"{prefix_single} {events[0]} an, {get_person_title()}."
         listing = ", ".join(events[:-1]) + f" und {events[-1]}"
         return f"{prefix_multi} {len(events)} Termine an: {listing}."
 
@@ -3567,7 +3587,7 @@ class AssistantBrain(BrainCallbacksMixin):
                     )
                     if success:
                         return f"Notiert: \"{content}\""
-                    return "Speichervorgang fehlgeschlagen. Zweiter Versuch empfohlen, Sir."
+                    return f"Speichervorgang fehlgeschlagen. Zweiter Versuch empfohlen, {get_person_title(person)}."
 
         # "Was weisst du ueber ...?"
         for trigger in ["was weisst du ueber ", "was weißt du über ",
@@ -4573,20 +4593,23 @@ Regeln:
                     "F-027: Anticipation auto-execute blockiert (%s) — Person '%s' hat Trust %d",
                     action, person, trust_level,
                 )
-                text = f"Sir, {desc}. Soll ich das uebernehmen? (Bestaetigung erforderlich)"
+                title = get_person_title(person)
+                text = f"{title}, {desc}. Soll ich das uebernehmen? (Bestaetigung erforderlich)"
                 await emit_proactive(text, "anticipation_suggest", "medium")
                 return
 
             # Automatisch ausfuehren + informieren
             args = suggestion.get("args", {})
             result = await self.executor.execute(action, args)
-            text = f"Sir, {desc} — hab ich uebernommen."
+            title = get_person_title(person)
+            text = f"{title}, {desc} — hab ich uebernommen."
             await emit_proactive(text, "anticipation_auto", "medium")
             logger.info("Anticipation auto-execute: %s", desc)
         else:
             # Vorschlagen
+            title = get_person_title(person)
             if mode == "suggest":
-                text = f"Sir, wenn ich darf — {desc}. Soll ich?"
+                text = f"{title}, wenn ich darf — {desc}. Soll ich?"
             else:
                 text = f"Mir ist aufgefallen: {desc}. Soll ich das uebernehmen?"
             await emit_proactive(text, "anticipation_suggest", "low")
@@ -4948,7 +4971,7 @@ Regeln:
                             msg = f"Termin '{summary}' in {int(minutes_until)} Minuten"
                             if location:
                                 msg += f" ({location})"
-                            msg += ". Rechtzeitig los, Sir."
+                            msg += f". Rechtzeitig los, {get_person_title()}."
                             predictions.append({
                                 "message": msg,
                                 "urgency": "medium",

@@ -606,6 +606,43 @@ def api_chat_voice():
 
     logger.info("STT transcribed: '%s' (person=%s)", transcribed_text, person)
 
+    # --- Voice-Metadaten aus echtem Audio berechnen ---
+    voice_metadata = None
+    try:
+        import struct
+        # WAV-Header parsen: Dauer aus audio_data berechnen (16kHz, 16-bit, mono)
+        if content_type == "audio/wav" and len(audio_data) > 44:
+            # PCM data size = total - 44 byte header
+            pcm_size = len(audio_data) - 44
+            sample_rate = 16000
+            bytes_per_sample = 2  # 16-bit
+            audio_duration = pcm_size / (sample_rate * bytes_per_sample)
+
+            # RMS Volume berechnen (Normalisiert 0.0-1.0)
+            pcm_data = audio_data[44:]
+            num_samples = min(len(pcm_data) // 2, sample_rate * 10)  # Max 10s
+            if num_samples > 0:
+                samples = struct.unpack(f"<{num_samples}h", pcm_data[:num_samples * 2])
+                rms = (sum(s * s for s in samples) / num_samples) ** 0.5
+                volume = min(rms / 32768.0, 1.0)  # Normalisiert
+            else:
+                volume = 0.0
+
+            word_count = len(transcribed_text.split())
+            wpm = word_count / (audio_duration / 60.0) if audio_duration > 0.5 else 0
+
+            voice_metadata = {
+                "duration": round(audio_duration, 2),
+                "volume": round(volume, 4),
+                "wpm": round(wpm, 1),
+                "word_count": word_count,
+                "source": "addon_voice",
+            }
+            logger.debug("Voice metadata: duration=%.2fs, volume=%.4f, wpm=%.1f",
+                         audio_duration, volume, wpm)
+    except Exception as e:
+        logger.debug("Voice metadata extraction failed: %s", e)
+
     # --- Step 2: Send text to Jarvis (same as /api/chat/send) ---
     user_msg = {
         "role": "user",
@@ -618,10 +655,13 @@ def api_chat_voice():
         _conversation_history.append(user_msg)
 
     assistant_url = _get_assistant_url()
+    chat_payload = {"text": transcribed_text, "person": person, "room": room}
+    if voice_metadata:
+        chat_payload["voice_metadata"] = voice_metadata
     try:
         resp = requests.post(
             f"{assistant_url}/api/assistant/chat",
-            json={"text": transcribed_text, "person": person, "room": room},
+            json=chat_payload,
             headers=_assistant_headers(),
             timeout=30,
         )

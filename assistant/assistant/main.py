@@ -27,7 +27,7 @@ from typing import Optional
 import yaml
 
 from .brain import AssistantBrain
-from .config import settings, yaml_config, load_yaml_config
+from .config import settings, yaml_config, load_yaml_config, get_person_title
 from .constants import ERROR_BUFFER_MAX_SIZE, RATE_LIMIT_WINDOW, RATE_LIMIT_MAX_REQUESTS
 from .cover_config import load_cover_configs, save_cover_configs
 from .file_handler import (
@@ -129,11 +129,13 @@ async def _boot_announcement(brain_instance: "AssistantBrain", health_data: dict
                 open_items.append(name)
 
         # Boot-Nachricht zusammenbauen
-        messages = cfg.get("messages", [
-            "Alle Systeme online, Sir.",
-            "Systeme hochgefahren, Sir. Alles bereit.",
-            "Online, Sir. Soll ich den Status durchgehen?",
-        ])
+        title = get_person_title()
+        default_msgs = [
+            f"Alle Systeme online, {title}.",
+            f"Systeme hochgefahren, {title}. Alles bereit.",
+            f"Online, {title}. Soll ich den Status durchgehen?",
+        ]
+        messages = cfg.get("messages", default_msgs)
         msg = random.choice(messages)
 
         # Temperatur anhaengen
@@ -166,7 +168,7 @@ async def _boot_announcement(brain_instance: "AssistantBrain", health_data: dict
     except Exception as e:
         logger.warning("Boot-Sequenz fehlgeschlagen: %s", e)
         try:
-            await emit_speaking("Alle Systeme online, Sir.")
+            await emit_speaking(f"Alle Systeme online, {get_person_title()}.")
         except Exception:
             pass
 
@@ -471,6 +473,8 @@ class ChatRequest(BaseModel):
     speaker_confidence: Optional[float] = None
     # Phase 9: Voice-Metadaten von STT
     voice_metadata: Optional[dict] = None
+    # Phase 9: Device-ID fuer Speaker Recognition (Satellite → Person Mapping)
+    device_id: Optional[str] = None
 
 
 class TTSInfo(BaseModel):
@@ -526,7 +530,9 @@ async def chat(request: ChatRequest):
 
     try:
         result = await asyncio.wait_for(
-            brain.process(request.text, request.person, request.room),
+            brain.process(request.text, request.person, request.room,
+                          voice_metadata=request.voice_metadata,
+                          device_id=request.device_id),
             timeout=60.0,
         )
     except asyncio.TimeoutError:
@@ -1180,6 +1186,21 @@ async def websocket_endpoint(websocket: WebSocket):
             return
 
     await ws_manager.connect(websocket)
+
+    # Ping/Pong Keep-Alive: Alle 25 Sek einen Ping senden
+    async def _ws_keepalive():
+        try:
+            while True:
+                await asyncio.sleep(25)
+                try:
+                    await websocket.send_json({"event": "ping", "data": {}})
+                except Exception:
+                    break
+        except asyncio.CancelledError:
+            pass
+
+    keepalive_task = asyncio.create_task(_ws_keepalive())
+
     # F-063: WebSocket Rate-Limiting (max 30 Nachrichten pro 10 Sekunden)
     _ws_msg_times: list[float] = []
     _WS_RATE_LIMIT = 30
@@ -1204,11 +1225,15 @@ async def websocket_endpoint(websocket: WebSocket):
                 message = json.loads(data)
                 event = message.get("event", "")
 
+                if event == "pong":
+                    continue  # Keep-alive Antwort — ignorieren
+
                 if event == "assistant.text":
                     text = message.get("data", {}).get("text", "")
                     person = message.get("data", {}).get("person")
                     room = message.get("data", {}).get("room")
                     voice_meta = message.get("data", {}).get("voice_metadata")
+                    ws_device_id = message.get("data", {}).get("device_id")
                     use_stream = message.get("data", {}).get("stream", False)
                     if text:
                         # Phase 9: Voice-Metadaten verarbeiten
@@ -1229,6 +1254,8 @@ async def websocket_endpoint(websocket: WebSocket):
                             result = await brain.process(
                                 text, person, room=room,
                                 stream_callback=_guarded_stream_token,
+                                voice_metadata=voice_meta,
+                                device_id=ws_device_id,
                             )
                             tts_data = result.get("tts")
                             if stream_tokens_sent:
@@ -1242,7 +1269,9 @@ async def websocket_endpoint(websocket: WebSocket):
                                 await emit_speaking(result["response"], tts_data=tts_data)
                         else:
                             # brain.process() sendet intern via _speak_and_emit
-                            result = await brain.process(text, person, room=room)
+                            result = await brain.process(text, person, room=room,
+                                                         voice_metadata=voice_meta,
+                                                         device_id=ws_device_id)
 
                         # Aktionen ans Addon melden fuer Aktivitaeten-Log
                         actions = result.get("actions", [])
@@ -1270,6 +1299,9 @@ async def websocket_endpoint(websocket: WebSocket):
                     websocket, "error", {"message": "Ungueltiges JSON"}
                 )
     except WebSocketDisconnect:
+        pass
+    finally:
+        keepalive_task.cancel()
         ws_manager.disconnect(websocket)
 
 

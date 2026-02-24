@@ -50,6 +50,66 @@ class WellnessAdvisor:
         self.hydration_check = cfg.get("hydration_reminder", True)
         self.hydration_interval_hours = cfg.get("hydration_interval_hours", 2)
 
+    # ------------------------------------------------------------------
+    # Anrede: Alle anwesenden Personen mit konfiguriertem Titel
+    # ------------------------------------------------------------------
+
+    async def _get_addressing(self) -> str:
+        """Gibt die Anrede fuer alle anwesenden Personen zurueck.
+
+        Nutzt persons.titles aus der YAML-Konfiguration (im UI einstellbar).
+        Wenn niemand gefunden wird, Fallback auf primary_user-Titel oder 'Sir'.
+        """
+        titles = (yaml_config.get("persons") or {}).get("titles") or {}
+        household = yaml_config.get("household") or {}
+        primary = household.get("primary_user", "")
+
+        # Wer ist zuhause?
+        present_names = []
+        if self.ha:
+            try:
+                states = await self.ha.get_states()
+                if states:
+                    for s in states:
+                        eid = s.get("entity_id", "")
+                        if eid.startswith("person.") and s.get("state") == "home":
+                            name = s.get("attributes", {}).get(
+                                "friendly_name", eid.split(".", 1)[-1]
+                            )
+                            present_names.append(name)
+            except Exception as e:
+                logger.debug("Presence-Check fuer Anrede fehlgeschlagen: %s", e)
+
+        if not present_names:
+            # Fallback: Primary User
+            if primary:
+                present_names = [primary]
+            else:
+                return "Sir"
+
+        # Namen → Titel auflösen
+        present_titles = []
+        for name in present_names:
+            title = titles.get(name.lower())
+            if title:
+                present_titles.append(title)
+            else:
+                present_titles.append(name)
+
+        # Duplikate entfernen, Reihenfolge beibehalten
+        seen = set()
+        unique = []
+        for t in present_titles:
+            if t.lower() not in seen:
+                seen.add(t.lower())
+                unique.append(t)
+
+        if len(unique) == 1:
+            return unique[0]
+        if len(unique) == 2:
+            return f"{unique[0]}, {unique[1]}"
+        return ", ".join(unique[:-1]) + f" und {unique[-1]}"
+
     async def initialize(self, redis_client=None):
         """Initialisiert den Wellness Advisor."""
         self.redis = redis_client
@@ -180,9 +240,10 @@ class WellnessAdvisor:
         else:
             time_str = f"{mins} Minuten"
 
+        addressing = await self._get_addressing()
         await self._send_nudge(
             "pc_break",
-            f"Du sitzt seit {time_str} am Rechner, Sir. "
+            f"Du sitzt seit {time_str} am Rechner, {addressing}. "
             f"Eine kurze Pause waere nicht das Schlechteste.",
         )
         await self.redis.setex("mha:wellness:last_break_reminder", 86400, now.isoformat())
@@ -217,12 +278,13 @@ class WellnessAdvisor:
 
         await self.redis.setex("mha:wellness:last_stress_nudge", 86400, datetime.now().isoformat())
 
+        addressing = await self._get_addressing()
         if stress_level >= 0.7:
-            msg = "Sir, der Stresspegel ist deutlich erhoert. Soll ich das Licht etwas dimmen?"
+            msg = f"{addressing}, der Stresspegel ist deutlich erhoert. Soll ich das Licht etwas dimmen?"
         elif mood == "frustrated":
-            msg = "Ich bemerke etwas Frustration, Sir. Kann ich irgendwie helfen?"
+            msg = f"Ich bemerke etwas Frustration, {addressing}. Kann ich irgendwie helfen?"
         else:
-            msg = "Sir, wenn ich anmerken darf — es scheint etwas stressig. Kurze Pause?"
+            msg = f"{addressing}, wenn ich anmerken darf — es scheint etwas stressig. Kurze Pause?"
 
         await self._send_nudge("stress_detected", msg)
 
@@ -273,9 +335,10 @@ class WellnessAdvisor:
             await self.redis.setex(key, 86400, "1")  # 24h TTL
 
             meal_de = "Mittagessen" if meal == "lunch" else "Abendessen"
+            addressing = await self._get_addressing()
             await self._send_nudge(
                 "meal_reminder",
-                f"Es ist {hour} Uhr, Sir. Schon {meal_de.lower()} gehabt?",
+                f"Es ist {hour} Uhr, {addressing}. Schon {meal_de.lower()} gehabt?",
             )
 
     # ------------------------------------------------------------------
@@ -309,9 +372,10 @@ class WellnessAdvisor:
 
         await self.redis.setex(key, 6 * 3600, "1")
 
+        addressing = await self._get_addressing()
         await self._send_nudge(
             "late_night",
-            f"Es ist {hour} Uhr, Sir. Nur zur Kenntnis.",
+            f"Es ist {hour} Uhr, {addressing}. Nur zur Kenntnis.",
         )
 
     # ------------------------------------------------------------------
@@ -349,9 +413,10 @@ class WellnessAdvisor:
             return
 
         await self.redis.setex(key, 86400, datetime.now().isoformat())
+        addressing = await self._get_addressing()
         await self._send_nudge(
             "hydration",
-            "Sir, ein Glas Wasser waere jetzt keine schlechte Idee.",
+            f"{addressing}, ein Glas Wasser waere jetzt keine schlechte Idee.",
         )
 
     # ------------------------------------------------------------------
