@@ -276,6 +276,49 @@ class KnowledgeBase:
             logger.error("Fehler bei Knowledge-Stats: %s", e)
             return {"enabled": True, "total_chunks": 0, "sources": []}
 
+    async def get_chunks(self, source: str = "", offset: int = 0, limit: int = 50) -> list[dict]:
+        """Gibt alle Chunks zurueck (optional gefiltert nach Quelle)."""
+        if not self.chroma_collection:
+            return []
+
+        try:
+            where = {"source_file": source} if source else None
+            results = self.chroma_collection.get(
+                include=["documents", "metadatas"],
+                where=where,
+            )
+            chunks = []
+            if results and results.get("ids"):
+                for i, chunk_id in enumerate(results["ids"]):
+                    doc = results["documents"][i] if results.get("documents") else ""
+                    meta = results["metadatas"][i] if results.get("metadatas") else {}
+                    chunks.append({
+                        "id": chunk_id,
+                        "content": doc[:200] + ("..." if len(doc) > 200 else ""),
+                        "content_full": doc,
+                        "source": meta.get("source_file", "unbekannt"),
+                        "chunk_index": meta.get("chunk_index", 0),
+                    })
+            # Sortieren nach Quelle + Index
+            chunks.sort(key=lambda c: (c["source"], c["chunk_index"]))
+            return chunks[offset:offset + limit]
+        except Exception as e:
+            logger.error("Fehler beim Laden der Chunks: %s", e)
+            return []
+
+    async def delete_chunks(self, chunk_ids: list[str]) -> int:
+        """Loescht einzelne Chunks anhand ihrer IDs."""
+        if not self.chroma_collection or not chunk_ids:
+            return 0
+
+        try:
+            self.chroma_collection.delete(ids=chunk_ids)
+            logger.info("Knowledge Base: %d Chunks geloescht", len(chunk_ids))
+            return len(chunk_ids)
+        except Exception as e:
+            logger.error("Fehler beim Loeschen von Chunks: %s", e)
+            return 0
+
     async def clear(self) -> bool:
         """Loescht die gesamte Wissensdatenbank."""
         if not self._chroma_client:

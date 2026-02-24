@@ -905,6 +905,18 @@ input:focus,select:focus,textarea:focus { border-color:var(--accent); box-shadow
         </div>
         <div id="kbStats" class="grid grid-3" style="margin-bottom:16px;"></div>
         <div class="card"><div class="card-header"><h3>Dateien</h3></div><div id="kbFiles"></div></div>
+        <div class="card" style="margin-top:16px;">
+          <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+            <h3>Wissensinhalte</h3>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <select id="kbSourceFilter" onchange="loadKbChunks()" style="padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--bg-secondary);color:var(--text-primary);font-size:13px;">
+                <option value="">Alle Quellen</option>
+              </select>
+              <button class="btn btn-danger" id="kbDeleteBtn" onclick="deleteSelectedChunks()" style="display:none;font-size:12px;padding:5px 12px;">Ausgewaehlte loeschen</button>
+            </div>
+          </div>
+          <div id="kbChunks" style="max-height:500px;overflow-y:auto;"></div>
+        </div>
       </div>
 
       <!-- ============ LOGS ============ -->

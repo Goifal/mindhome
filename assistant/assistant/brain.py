@@ -939,10 +939,55 @@ class AssistantBrain(BrainCallbacksMixin):
                     "model_used": "calendar_shortcut",
                     "context_room": room or "unbekannt",
                     "tts": tts_data,
-                    "_emitted": True,
+                    "_emitted": not stream_callback,
                 }
             except Exception as e:
                 logger.warning("Kalender-Shortcut fehlgeschlagen: %s — Fallback auf LLM", e)
+
+        # Wetter-Shortcut: Wetter-Fragen direkt erkennen und abkuerzen.
+        # Spart Context Build + LLM-Roundtrip (3-10s).
+        if self._detect_weather_query(text):
+            logger.info("Wetter-Shortcut: '%s'", text)
+            try:
+                weather_result = await self.executor.execute("get_weather", {})
+                weather_msg = weather_result.get("message", "") if isinstance(weather_result, dict) else str(weather_result)
+
+                response_text = self._humanize_weather(weather_msg)
+                logger.info("Wetter-Shortcut humanisiert: '%s' -> '%s'",
+                            weather_msg[:60], response_text[:60])
+
+                self._remember_exchange(text, response_text)
+                tts_data = self.tts_enhancer.enhance(response_text, message_type="casual")
+
+                if not stream_callback:
+                    await emit_speaking(response_text, tts_data=tts_data)
+
+                # TTS im Hintergrund
+                async def _weather_speak(
+                    _response=response_text, _room=room, _tts_data=tts_data,
+                ):
+                    if not _room:
+                        _room = await self._get_occupied_room()
+                    await self.sound_manager.speak_response(
+                        _response, room=_room, tts_data=_tts_data
+                    )
+
+                self._task_registry.create_task(
+                    _weather_speak(), name="weather_speak"
+                )
+
+                return {
+                    "response": response_text,
+                    "actions": [{"function": "get_weather",
+                                 "args": {},
+                                 "result": weather_result}],
+                    "model_used": "weather_shortcut",
+                    "context_room": room or "unbekannt",
+                    "tts": tts_data,
+                    "_emitted": not stream_callback,
+                }
+            except Exception as e:
+                logger.warning("Wetter-Shortcut fehlgeschlagen: %s — Fallback auf LLM", e)
 
         # Wecker-Shortcut: Wecker-Befehle direkt erkennen und ausfuehren.
         alarm_shortcut = self._detect_alarm_command(text)
@@ -994,7 +1039,7 @@ class AssistantBrain(BrainCallbacksMixin):
                         "model_used": "alarm_shortcut",
                         "context_room": room or "unbekannt",
                         "tts": tts_data,
-                        "_emitted": True,
+                        "_emitted": not stream_callback,
                     }
             except Exception as e:
                 logger.warning("Wecker-Shortcut fehlgeschlagen: %s — Fallback auf LLM", e)
@@ -1087,7 +1132,7 @@ class AssistantBrain(BrainCallbacksMixin):
                             "model_used": "device_shortcut",
                             "context_room": room or "unbekannt",
                             "tts": tts_data,
-                            "_emitted": True,
+                            "_emitted": not stream_callback,
                         }
             except Exception as e:
                 logger.warning("Geraete-Shortcut fehlgeschlagen: %s — Fallback auf LLM", e)
@@ -3941,6 +3986,27 @@ class AssistantBrain(BrainCallbacksMixin):
             "kalender verwendest du", "kalender gibt es",
             "zeig mir die kalender", "zeig kalender entities",
             "kalender konfigur",
+        ])
+
+    @staticmethod
+    def _detect_weather_query(text: str) -> bool:
+        """Erkennt eindeutige Wetter-Fragen.
+
+        Nur klare Wetter-Intents — generische Fragen landen beim LLM.
+        """
+        t = text.lower().strip()
+        return any(kw in t for kw in [
+            "wie ist das wetter", "wie wird das wetter",
+            "was sagt das wetter", "wetter heute", "wetter morgen",
+            "wetterbericht", "wettervorhersage",
+            "wie warm ist es", "wie kalt ist es",
+            "regnet es", "scheint die sonne", "schneit es",
+            "wie ist es draussen", "wie ist es draußen",
+            "was ist draussen los", "was ist draußen los",
+            "wie viel grad", "wieviel grad",
+            "temperatur draussen", "temperatur draußen",
+            "brauche ich eine jacke", "brauche ich einen schirm",
+            "brauche ich einen regenschirm",
         ])
 
     @staticmethod

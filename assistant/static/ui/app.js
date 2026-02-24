@@ -1025,6 +1025,14 @@ function renderGeneral() {
       'dessert','kuchen','suppe','salat','pizza','pasta','sauce'
     ])
   ) +
+  sectionWrap('&#128269;', 'Web-Suche',
+    fInfo('Optionale Web-Recherche fuer Wissensfragen. Privacy-First: SearXNG (self-hosted) oder DuckDuckGo. Standardmaessig deaktiviert.') +
+    fToggle('web_search.enabled', 'Web-Suche aktivieren') +
+    fSelect('web_search.engine', 'Suchmaschine', [{v:'searxng',l:'SearXNG (self-hosted)'},{v:'duckduckgo',l:'DuckDuckGo'}]) +
+    fText('web_search.searxng_url', 'SearXNG URL', 'Nur relevant wenn SearXNG als Engine gewaehlt') +
+    fNum('web_search.max_results', 'Max. Ergebnisse', 1, 20, 1) +
+    fNum('web_search.timeout_seconds', 'Timeout (Sekunden)', 3, 30, 1)
+  ) +
   sectionWrap('&#128274;', 'Dashboard & PIN',
     fInfo('Der Zugang zum Dashboard ist mit einer PIN geschuetzt. Der Recovery-Key wird benoetigt wenn du die PIN vergisst.') +
     '<div class="form-group"><label>PIN-Schutz</label>' +
@@ -2312,6 +2320,14 @@ async function loadKnowledge() {
     document.getElementById('kbFiles').innerHTML = fi.length === 0
       ? '<div style="padding:16px;text-align:center;color:var(--text-muted);">Keine Dateien</div>'
       : fi.map(f => `<div class="file-item"><span style="font-size:16px;">&#128196;</span><span class="file-name">${esc(f.name)}</span><span class="file-size">${fmtBytes(f.size)}</span></div>`).join('');
+    // Quellen-Filter befuellen
+    const sel = document.getElementById('kbSourceFilter');
+    if (sel) {
+      const cur = sel.value;
+      sel.innerHTML = '<option value="">Alle Quellen</option>' +
+        (st.sources||[]).map(s => `<option value="${esc(s)}" ${s===cur?'selected':''}>${esc(s)}</option>`).join('');
+    }
+    loadKbChunks();
   } catch(e) { console.error('KB fail:', e); }
 }
 async function ingestKnowledge() {
@@ -2320,6 +2336,52 @@ async function ingestKnowledge() {
     toast(`${d.new_chunks} neue Chunks eingelesen`);
     loadKnowledge();
   } catch(e) { toast('Fehler beim Einlesen', 'error'); }
+}
+
+// ---- Knowledge Chunks ----
+let kbChunksData = [];
+
+async function loadKbChunks() {
+  try {
+    const src = document.getElementById('kbSourceFilter')?.value || '';
+    const params = src ? `&source=${encodeURIComponent(src)}` : '';
+    const d = await api(`/api/ui/knowledge/chunks?limit=200${params}`);
+    kbChunksData = d.chunks || [];
+    const c = document.getElementById('kbChunks');
+    if (!c) return;
+    if (kbChunksData.length === 0) {
+      c.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text-muted);">Keine Eintraege</div>';
+      return;
+    }
+    c.innerHTML = kbChunksData.map((ch, i) => `
+      <div class="chunk-item" style="display:flex;gap:10px;align-items:flex-start;padding:10px 14px;border-bottom:1px solid var(--border);${i%2?'background:var(--bg-secondary);':''}">
+        <input type="checkbox" class="kb-chunk-cb" data-id="${esc(ch.id)}" onchange="updateKbDeleteBtn()" style="margin-top:3px;min-width:16px;" />
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:12px;color:var(--text-muted);margin-bottom:2px;">${esc(ch.source)} #${ch.chunk_index}</div>
+          <div style="font-size:13px;line-height:1.4;word-break:break-word;">${esc(ch.content)}</div>
+        </div>
+      </div>
+    `).join('');
+  } catch(e) { console.error('KB chunks fail:', e); }
+}
+
+function updateKbDeleteBtn() {
+  const checked = document.querySelectorAll('.kb-chunk-cb:checked');
+  const btn = document.getElementById('kbDeleteBtn');
+  if (btn) btn.style.display = checked.length > 0 ? '' : 'none';
+  if (btn && checked.length > 0) btn.textContent = `${checked.length} loeschen`;
+}
+
+async function deleteSelectedChunks() {
+  const checked = document.querySelectorAll('.kb-chunk-cb:checked');
+  if (checked.length === 0) return;
+  if (!confirm(`${checked.length} Wissenseintraege unwiderruflich loeschen?`)) return;
+  const ids = Array.from(checked).map(cb => cb.dataset.id);
+  try {
+    const d = await api('/api/ui/knowledge/chunks/delete', 'POST', { ids });
+    toast(`${d.deleted} Eintraege geloescht`, 'success');
+    loadKnowledge();
+  } catch(e) { toast('Fehler beim Loeschen', 'error'); }
 }
 
 // ---- Logs & Audit ----

@@ -331,6 +331,7 @@ class TimeAwareness:
             return alerts
 
         # Offene Fenster finden — MindHome-Domain + device_class statt Keyword
+        from .function_calling import is_window_or_door
         for state in states:
             entity_id = state.get("entity_id", "")
             if not is_window_or_door(entity_id, state):

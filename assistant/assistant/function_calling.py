@@ -2122,7 +2122,7 @@ class FunctionExecutor:
             security = yaml_config.get("security", {}).get("climate_limits", {})
             temp = max(security.get("min", 5), min(security.get("max", 30), temp))
         elif "temperature" in args:
-            temp = args["temperature"]
+            temp = float(args["temperature"])
         else:
             return {"success": False, "message": "Keine Temperatur angegeben"}
 
@@ -2562,7 +2562,10 @@ class FunctionExecutor:
             "arm_away": "alarm_arm_away",
             "disarm": "alarm_disarm",
         }
-        service = service_map.get(mode, mode)
+        service = service_map.get(mode)
+        if not service:
+            valid = ", ".join(service_map.keys())
+            return {"success": False, "message": f"Unbekannter Alarm-Modus '{mode}'. Gueltig: {valid}"}
         success = await self.ha.call_service(
             "alarm_control_panel", service, {"entity_id": entity_id}
         )
@@ -3218,10 +3221,23 @@ class FunctionExecutor:
             "mindhome_presence_mode", {"mode": mode}
         )
         if not success:
-            # Letzter Fallback: Direkter Service-Call
+            # Letzter Fallback: input_boolean dynamisch suchen
+            presence_entity = None
+            for s in (states or []):
+                eid = s.get("entity_id", "")
+                if eid.startswith("input_boolean.") and any(
+                    kw in eid for kw in ("zu_hause", "zuhause", "home", "presence", "anwesen")
+                ):
+                    presence_entity = eid
+                    break
+            if not presence_entity:
+                return {
+                    "success": False,
+                    "message": "Kein Anwesenheits-Entity gefunden. Erstelle input_select oder input_boolean fuer Anwesenheit in Home Assistant.",
+                }
             success = await self.ha.call_service(
                 "input_boolean", "turn_on" if mode == "home" else "turn_off",
-                {"entity_id": "input_boolean.zu_hause"},
+                {"entity_id": presence_entity},
             )
         return {"success": success, "message": f"Anwesenheit: {mode}"}
 
