@@ -1546,6 +1546,13 @@ function handleWSEvent(msg) {
   if (!event) return;
 
   switch (event) {
+    case 'ping':
+      // Keep-alive vom Server — Pong zuruecksenden
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({event: 'pong', data: {}}));
+      }
+      return;
+
     case 'assistant.thinking':
       $typing.classList.add('active');
       break;

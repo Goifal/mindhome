@@ -1180,6 +1180,21 @@ async def websocket_endpoint(websocket: WebSocket):
             return
 
     await ws_manager.connect(websocket)
+
+    # Ping/Pong Keep-Alive: Alle 25 Sek einen Ping senden
+    async def _ws_keepalive():
+        try:
+            while True:
+                await asyncio.sleep(25)
+                try:
+                    await websocket.send_json({"event": "ping", "data": {}})
+                except Exception:
+                    break
+        except asyncio.CancelledError:
+            pass
+
+    keepalive_task = asyncio.create_task(_ws_keepalive())
+
     # F-063: WebSocket Rate-Limiting (max 30 Nachrichten pro 10 Sekunden)
     _ws_msg_times: list[float] = []
     _WS_RATE_LIMIT = 30
@@ -1203,6 +1218,9 @@ async def websocket_endpoint(websocket: WebSocket):
             try:
                 message = json.loads(data)
                 event = message.get("event", "")
+
+                if event == "pong":
+                    continue  # Keep-alive Antwort — ignorieren
 
                 if event == "assistant.text":
                     text = message.get("data", {}).get("text", "")
@@ -1270,6 +1288,9 @@ async def websocket_endpoint(websocket: WebSocket):
                     websocket, "error", {"message": "Ungueltiges JSON"}
                 )
     except WebSocketDisconnect:
+        pass
+    finally:
+        keepalive_task.cancel()
         ws_manager.disconnect(websocket)
 
 

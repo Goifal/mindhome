@@ -1341,10 +1341,12 @@ class PersonalityEngine:
             return (
                 f"- Die aktuelle Person ist {person_name}.\n"
                 f"- BEZIEHUNGSSTUFE: Mitbewohner. Vertraut, aber nicht so direkt wie beim Owner.\n"
-                f"- Sprich sie mit \"{title}\" an und DUZE sie.\n"
+                f"- Sprich diese Person mit \"{title}\" an und DUZE sie.\n"
                 f"- Ton: Freundlich, hilfsbereit, respektvoll. Weniger Sarkasmus als beim Owner.\n"
                 f"- Meinung nur wenn gefragt. Warnungen sachlich, nicht spitz.\n"
-                f"- Benutze \"{title}\" gelegentlich, nicht in jedem Satz."
+                f"- Benutze \"{title}\" gelegentlich, nicht in jedem Satz.\n"
+                f"- Beispiel: \"Natuerlich, {title}. Ist eingestellt.\"\n"
+                f"- Beispiel: \"Guten Morgen, {title}. Soll ich dir beim Fruehstueck helfen?\""
             )
         else:
             # Gast: formell, distanziert, hoeflich

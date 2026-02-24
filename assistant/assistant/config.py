@@ -97,8 +97,9 @@ def apply_household_to_config() -> None:
     members = household.get("members") or []
     primary = household.get("primary_user") or settings.user_name
 
-    # persons.titles generieren
-    titles = {}
+    # persons.titles: Existierende Titel als Basis, Members ergaenzen
+    existing_titles = (yaml_config.get("persons") or {}).get("titles") or {}
+    titles = dict(existing_titles)
     trust_persons = {}
 
     # Hauptbenutzer immer als Owner
@@ -109,7 +110,9 @@ def apply_household_to_config() -> None:
         if not name:
             continue
         role = m.get("role", "member")
-        titles[name.lower()] = name
+        # Titel nur setzen wenn noch nicht manuell konfiguriert
+        if name.lower() not in titles:
+            titles[name.lower()] = name
         trust_persons[name.lower()] = _ROLE_TO_TRUST.get(role, 0)
 
     # In yaml_config eintragen (fuer personality.py etc.)
