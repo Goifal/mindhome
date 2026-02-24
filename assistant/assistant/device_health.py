@@ -15,7 +15,7 @@ import asyncio
 import json
 import logging
 import math
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import redis.asyncio as aioredis
@@ -266,7 +266,7 @@ class DeviceHealthMonitor:
         except (ValueError, TypeError):
             return None
 
-        age_days = (datetime.utcnow() - last_dt).total_seconds() / 86400
+        age_days = (datetime.now(timezone.utc) - last_dt).total_seconds() / 86400
         if age_days < self.stale_days:
             return None
 
@@ -347,7 +347,7 @@ class DeviceHealthMonitor:
         if not start_raw:
             await self.redis.set(
                 hvac_key,
-                datetime.utcnow().isoformat(),
+                datetime.now(timezone.utc).isoformat(),
                 ex=self.hvac_timeout * 60 * 2,
             )
             return None
@@ -358,7 +358,7 @@ class DeviceHealthMonitor:
             await self.redis.delete(hvac_key)
             return None
 
-        elapsed_min = (datetime.utcnow() - start_dt).total_seconds() / 60
+        elapsed_min = (datetime.now(timezone.utc) - start_dt).total_seconds() / 60
         if elapsed_min < self.hvac_timeout:
             return None
 
@@ -417,7 +417,7 @@ class DeviceHealthMonitor:
         if not self.redis:
             return
         try:
-            today = datetime.utcnow().strftime("%Y-%m-%d")
+            today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
             sample_key = f"mha:device:sample:{entity_id}:{today}"
 
             await self.redis.rpush(sample_key, str(value))
@@ -435,7 +435,7 @@ class DeviceHealthMonitor:
             return
         try:
             all_values = []
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
 
             for day_offset in range(self.baseline_days + 1):
                 day = (now - timedelta(days=day_offset)).strftime("%Y-%m-%d")
