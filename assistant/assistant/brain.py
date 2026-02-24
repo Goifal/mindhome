@@ -939,7 +939,7 @@ class AssistantBrain(BrainCallbacksMixin):
                     "model_used": "calendar_shortcut",
                     "context_room": room or "unbekannt",
                     "tts": tts_data,
-                    "_emitted": True,
+                    "_emitted": not stream_callback,
                 }
             except Exception as e:
                 logger.warning("Kalender-Shortcut fehlgeschlagen: %s — Fallback auf LLM", e)
@@ -994,7 +994,7 @@ class AssistantBrain(BrainCallbacksMixin):
                         "model_used": "alarm_shortcut",
                         "context_room": room or "unbekannt",
                         "tts": tts_data,
-                        "_emitted": True,
+                        "_emitted": not stream_callback,
                     }
             except Exception as e:
                 logger.warning("Wecker-Shortcut fehlgeschlagen: %s — Fallback auf LLM", e)
@@ -1087,7 +1087,7 @@ class AssistantBrain(BrainCallbacksMixin):
                             "model_used": "device_shortcut",
                             "context_room": room or "unbekannt",
                             "tts": tts_data,
-                            "_emitted": True,
+                            "_emitted": not stream_callback,
                         }
             except Exception as e:
                 logger.warning("Geraete-Shortcut fehlgeschlagen: %s — Fallback auf LLM", e)
