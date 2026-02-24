@@ -323,6 +323,107 @@ body::after {
   letter-spacing: 1px;
 }
 
+/* ========== Person Switcher ========== */
+.person-switcher {
+  position: relative;
+}
+
+.person-current {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+  transition: border-color 0.2s, color 0.2s, background 0.2s;
+  white-space: nowrap;
+}
+
+.person-current:hover {
+  border-color: var(--border-accent);
+  color: var(--accent);
+  background: var(--accent-dim);
+}
+
+.person-current .person-icon {
+  width: 14px; height: 14px;
+  opacity: 0.6;
+}
+
+.person-current .person-arrow {
+  width: 10px; height: 10px;
+  opacity: 0.4;
+  transition: transform 0.2s;
+}
+
+.person-switcher.open .person-arrow {
+  transform: rotate(180deg);
+}
+
+.person-dropdown {
+  display: none;
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 160px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-accent);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg), 0 0 20px rgba(0,212,255,0.08);
+  z-index: 100;
+  overflow: hidden;
+}
+
+.person-switcher.open .person-dropdown {
+  display: block;
+  animation: dropIn 0.15s ease-out;
+}
+
+@keyframes dropIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.person-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  border: none;
+  background: none;
+  width: 100%;
+  font-family: var(--font);
+}
+
+.person-option:hover {
+  background: var(--accent-dim);
+  color: var(--text-primary);
+}
+
+.person-option.active {
+  color: var(--accent);
+  background: rgba(0,212,255,0.06);
+}
+
+.person-option .person-role {
+  font-size: 9px;
+  color: var(--text-muted);
+  font-family: var(--mono);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-left: auto;
+}
+
 /* ========== Messages Area ========== */
 .messages {
   flex: 1;
@@ -968,6 +1069,14 @@ body::after {
       <div class="status-dot" id="statusDot"></div>
     </div>
     <div class="header-right">
+      <div class="person-switcher" id="personSwitcher">
+        <button class="person-current" id="personBtn" title="Person wechseln">
+          <svg class="person-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          <span id="personName">...</span>
+          <svg class="person-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+        <div class="person-dropdown" id="personDropdown"></div>
+      </div>
       <div class="mood-badge" id="moodBadge"></div>
     </div>
   </div>
@@ -1049,17 +1158,32 @@ let streamBubble = null;
 let isStreaming = false;
 let messageCount = 0;
 let currentPerson = '';
+let householdMembers = [];
+let personTitles = {};
 let pendingFile = null;
 let toastTimer = null;
 let streamTimeout = null;
 const STREAM_TIMEOUT_MS = 30000;
 
-// Load person name from settings
+// Load household & person-switcher
 fetch(`${API}/api/ui/settings?token=`).then(r => r.ok ? r.json() : null).then(d => {
-  if (d) {
-    const h = (d.household || {});
-    currentPerson = h.primary_user || d.user_name || '';
+  if (!d) return;
+  const h = d.household || {};
+  const primary = h.primary_user || d.user_name || '';
+  personTitles = (d.persons || {}).titles || {};
+  householdMembers = (h.members || []).filter(m => m.name);
+
+  // Restore saved person or use primary
+  const saved = localStorage.getItem('jarvis_chat_person');
+  const validNames = householdMembers.map(m => m.name.toLowerCase());
+  if (saved && validNames.includes(saved.toLowerCase())) {
+    currentPerson = saved;
+  } else {
+    currentPerson = primary;
   }
+
+  renderPersonSwitcher();
+  updateGreeting();
 }).catch(() => {});
 
 // --- DOM ---
@@ -1085,6 +1209,64 @@ const $fileInput = document.getElementById('fileInput');
 const $uploadProgress = document.getElementById('uploadProgress');
 const $uploadFill = document.getElementById('uploadFill');
 const $uploadText = document.getElementById('uploadText');
+const $personSwitcher = document.getElementById('personSwitcher');
+const $personBtn = document.getElementById('personBtn');
+const $personName = document.getElementById('personName');
+const $personDropdown = document.getElementById('personDropdown');
+
+// ========== Person Switcher ==========
+function renderPersonSwitcher() {
+  if (householdMembers.length < 2) {
+    // Nur 1 Person — Switcher zeigt nur den Namen, kein Dropdown
+    $personName.textContent = getPersonTitle(currentPerson);
+    $personBtn.style.cursor = 'default';
+    $personBtn.querySelector('.person-arrow').style.display = 'none';
+    return;
+  }
+
+  $personName.textContent = getPersonTitle(currentPerson);
+
+  $personDropdown.innerHTML = householdMembers.map(m => {
+    const isActive = m.name.toLowerCase() === currentPerson.toLowerCase();
+    const role = m.role || 'member';
+    const roleLabel = role === 'owner' ? 'Owner' : role === 'guest' ? 'Gast' : '';
+    return `<button class="person-option${isActive ? ' active' : ''}" data-person="${m.name}">
+      ${getPersonTitle(m.name)}
+      ${roleLabel ? `<span class="person-role">${roleLabel}</span>` : ''}
+    </button>`;
+  }).join('');
+}
+
+function getPersonTitle(name) {
+  if (!name) return '...';
+  const title = personTitles[name.toLowerCase()];
+  return title || name;
+}
+
+function selectPerson(name) {
+  currentPerson = name;
+  localStorage.setItem('jarvis_chat_person', name);
+  $personSwitcher.classList.remove('open');
+  renderPersonSwitcher();
+  updateGreeting();
+}
+
+$personBtn.addEventListener('click', () => {
+  if (householdMembers.length < 2) return;
+  $personSwitcher.classList.toggle('open');
+});
+
+$personDropdown.addEventListener('click', (e) => {
+  const opt = e.target.closest('.person-option');
+  if (opt) selectPerson(opt.dataset.person);
+});
+
+// Close dropdown on outside click
+document.addEventListener('click', (e) => {
+  if (!$personSwitcher.contains(e.target)) {
+    $personSwitcher.classList.remove('open');
+  }
+});
 
 // ========== Boot Sequence ==========
 async function runBootSequence() {
@@ -1139,13 +1321,18 @@ function sleep(ms) {
 
 // ========== Greeting ==========
 function getGreeting() {
+  const title = getPersonTitle(currentPerson) || 'Sir';
   const h = new Date().getHours();
-  if (h < 6) return 'Gute Nacht, Sir.';
-  if (h < 12) return 'Guten Morgen, Sir. Was steht an?';
-  if (h < 18) return 'Guten Tag, Sir. Wie kann ich helfen?';
-  return 'Guten Abend, Sir. Wie kann ich behilflich sein?';
+  if (h < 6) return `Gute Nacht, ${title}.`;
+  if (h < 12) return `Guten Morgen, ${title}. Was steht an?`;
+  if (h < 18) return `Guten Tag, ${title}. Wie kann ich helfen?`;
+  return `Guten Abend, ${title}. Wie kann ich behilflich sein?`;
 }
-document.querySelector('.welcome-sub').textContent = getGreeting();
+function updateGreeting() {
+  const el = document.querySelector('.welcome-sub');
+  if (el) el.textContent = getGreeting();
+}
+updateGreeting();
 
 // ========== Auto-resize textarea ==========
 $input.addEventListener('input', () => {
