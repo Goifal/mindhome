@@ -11826,6 +11826,10 @@ const PresencePage = () => {
         });
     };
     // Log
+    // Presence settings
+    const [presenceSettings, setPresenceSettings] = useState({});
+    const [haPersons, setHaPersons] = useState([]);
+    // Log
     const [logs, setLogs] = useState([]);
     const [logsHasMore, setLogsHasMore] = useState(false);
     const [logsOffset, setLogsOffset] = useState(0);
@@ -11854,8 +11858,19 @@ const PresencePage = () => {
             setLogsHasMore(d?.has_more || false);
             setLogsOffset(d?.items?.length || 0);
         }).catch(() => {});
+        api.get('ha/persons').then(d => setHaPersons(d?.persons || [])).catch(() => {});
+        api.get('presence/settings').then(d => setPresenceSettings(d || {})).catch(() => {});
     };
     useEffect(() => { load(); }, []);
+
+    // Auto-refresh person status every 15 seconds when on persons tab
+    useEffect(() => {
+        if (tab !== 'persons') return;
+        const interval = setInterval(() => {
+            api.get('ha/persons').then(d => setHaPersons(d?.persons || [])).catch(() => {});
+        }, 15000);
+        return () => clearInterval(interval);
+    }, [tab]);
 
     // Auto-seed modes on first load
     useEffect(() => {
@@ -11924,12 +11939,22 @@ const PresencePage = () => {
     const deleteHoliday = (id) => { if (!confirm(lang === 'de' ? 'Wirklich löschen?' : 'Really delete?')) return; api.delete(`holidays/${id}`).then(() => load()).catch(e => showToast(lang === 'de' ? 'Fehler' : 'Error', 'error')); };
     const seedHolidays = () => api.post('holidays/seed-defaults').then(d => { showToast(lang === 'de' ? `${d.count || 0} Feiertage angelegt` : `${d.count || 0} holidays created`, 'success'); load(); }).catch(e => showToast(lang === 'de' ? 'Fehler' : 'Error', 'error'));
 
+    const savePresenceSetting = (key, value) => {
+        const updated = { ...presenceSettings, [key]: String(value) };
+        setPresenceSettings(updated);
+        api.put('presence/settings', { [key]: String(value) }).then(() => {
+            showToast(lang === 'de' ? 'Einstellung gespeichert' : 'Setting saved', 'success');
+        }).catch(() => showToast(lang === 'de' ? 'Fehler' : 'Error', 'error'));
+    };
+
     const tabs = [
         { id: 'mode', label: lang === 'de' ? 'Modus' : 'Mode', icon: 'mdi-home-circle' },
+        { id: 'persons', label: lang === 'de' ? 'Personen' : 'Persons', icon: 'mdi-account-multiple' },
         { id: 'profiles', label: lang === 'de' ? 'Zeitprofile' : 'Profiles', icon: 'mdi-clock-outline' },
         { id: 'shift', label: lang === 'de' ? 'Schichtdienst' : 'Shift Work', icon: 'mdi-account-clock' },
         { id: 'holidays', label: lang === 'de' ? 'Feiertage' : 'Holidays', icon: 'mdi-party-popper' },
         { id: 'calendar', label: lang === 'de' ? 'Kalender' : 'Calendar', icon: 'mdi-calendar-month' },
+        { id: 'settings', label: lang === 'de' ? 'Einstellungen' : 'Settings', icon: 'mdi-cog' },
         { id: 'history', label: lang === 'de' ? 'Verlauf' : 'History', icon: 'mdi-history' },
     ];
 
@@ -12027,7 +12052,125 @@ const PresencePage = () => {
                 </div>
             )}
 
-            {/* TAB: Persons & Guests */}
+            {/* TAB: Persons - Live Presence Status */}
+            {tab === 'persons' && (
+                <div>
+                    {/* Summary Card */}
+                    <div className="card animate-in" style={{ marginBottom: 16, padding: 20 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 24 }}>
+                            <div style={{ textAlign: 'center' }}>
+                                <div style={{ fontSize: 36, fontWeight: 700, color: 'var(--success)' }}>{haPersons.filter(p => p.state === 'home').length}</div>
+                                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Zuhause' : 'Home'}</div>
+                            </div>
+                            <div style={{ width: 1, height: 48, background: 'var(--border-color)' }} />
+                            <div style={{ textAlign: 'center' }}>
+                                <div style={{ fontSize: 36, fontWeight: 700, color: 'var(--warning)' }}>{haPersons.filter(p => p.state === 'not_home').length}</div>
+                                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Unterwegs' : 'Away'}</div>
+                            </div>
+                            <div style={{ width: 1, height: 48, background: 'var(--border-color)' }} />
+                            <div style={{ textAlign: 'center' }}>
+                                <div style={{ fontSize: 36, fontWeight: 700, color: 'var(--text-muted)' }}>{haPersons.filter(p => p.state !== 'home' && p.state !== 'not_home').length}</div>
+                                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Unbekannt' : 'Unknown'}</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {haPersons.length === 0 ? (
+                        <div className="card animate-in" style={{ padding: 32, textAlign: 'center' }}>
+                            <span className="mdi mdi-account-question" style={{ fontSize: 48, color: 'var(--text-muted)' }} />
+                            <div style={{ fontSize: 16, fontWeight: 600, marginTop: 12, color: 'var(--text-muted)' }}>
+                                {lang === 'de' ? 'Keine Personen in Home Assistant gefunden' : 'No persons found in Home Assistant'}
+                            </div>
+                            <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 8, maxWidth: 400, margin: '8px auto 0' }}>
+                                {lang === 'de'
+                                    ? 'Erstelle Person-Entities in Home Assistant unter Einstellungen \u2192 Personen und verknuepfe sie mit Device-Trackern (Companion App, Router, etc.)'
+                                    : 'Create person entities in Home Assistant under Settings \u2192 People and link them with device trackers (Companion App, Router, etc.)'}
+                            </div>
+                        </div>
+                    ) : (
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
+                            {haPersons.map(p => {
+                                const isHome = p.state === 'home';
+                                const isAway = p.state === 'not_home';
+                                const isUnknown = !isHome && !isAway;
+                                const color = isHome ? 'var(--success)' : isAway ? 'var(--warning)' : 'var(--text-muted)';
+                                const icon = isHome ? 'mdi-home-account' : isAway ? 'mdi-walk' : 'mdi-help-circle';
+                                const statusLabel = isHome
+                                    ? (lang === 'de' ? 'Zuhause' : 'Home')
+                                    : isAway
+                                        ? (lang === 'de' ? 'Unterwegs' : 'Away')
+                                        : (lang === 'de' ? 'Unbekannt' : 'Unknown');
+                                return (
+                                    <div key={p.entity_id} className="card animate-in" style={{ padding: 16, borderLeft: `4px solid ${color}` }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                                            <div style={{ width: 48, height: 48, borderRadius: '50%', background: color + '22', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                                <span className={'mdi ' + icon} style={{ fontSize: 24, color }} />
+                                            </div>
+                                            <div style={{ flex: 1, minWidth: 0 }}>
+                                                <div style={{ fontWeight: 700, fontSize: 16 }}>{p.name}</div>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
+                                                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: color, display: 'inline-block', boxShadow: isHome ? '0 0 6px ' + color : 'none' }} />
+                                                    <span style={{ fontSize: 13, color }}>{statusLabel}</span>
+                                                </div>
+                                                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>{p.entity_id}</div>
+                                                {p.source && <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Tracker: {p.source}</div>}
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+
+                    {/* Person-Device Assignments */}
+                    {personDevices.length > 0 && (
+                        <div className="card animate-in" style={{ marginTop: 16 }}>
+                            <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)', fontWeight: 600 }}>
+                                {lang === 'de' ? 'Zugewiesene Geraete' : 'Assigned Devices'}
+                            </div>
+                            {personDevices.map(pd => {
+                                const user = users.find(u => u.id === pd.user_id);
+                                return (
+                                    <div key={pd.id} style={{ padding: '10px 16px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13 }}>
+                                        <div>
+                                            <strong>{user?.name || `User ${pd.user_id}`}</strong>
+                                            <span style={{ marginLeft: 8, color: 'var(--text-muted)' }}>{pd.entity_id}</span>
+                                        </div>
+                                        <span className="badge badge-secondary">{pd.device_type} | {pd.timeout_minutes}min</span>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+
+                    {/* Guest Devices */}
+                    {guests.length > 0 && (
+                        <div className="card animate-in" style={{ marginTop: 16 }}>
+                            <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)', fontWeight: 600 }}>
+                                {lang === 'de' ? 'Gast-Geraete' : 'Guest Devices'}
+                            </div>
+                            {guests.map(g => (
+                                <div key={g.id} style={{ padding: '10px 16px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13 }}>
+                                    <div>
+                                        <strong>{g.name || g.entity_id || g.mac_address}</strong>
+                                        {g.last_seen && <span style={{ marginLeft: 8, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Zuletzt: ' : 'Last: '}{parseUTC(g.last_seen).toLocaleString()}</span>}
+                                    </div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                        <span className="badge badge-info">{g.visit_count || 0}x</span>
+                                        <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} onClick={() => deleteGuest(g.id)}><span className="mdi mdi-delete" /></button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+
+                    <div style={{ marginTop: 12, fontSize: 11, color: 'var(--text-muted)', textAlign: 'center' }}>
+                        <span className="mdi mdi-refresh" style={{ marginRight: 4 }} />
+                        {lang === 'de' ? 'Status wird alle 15 Sekunden aktualisiert' : 'Status refreshes every 15 seconds'}
+                    </div>
+                </div>
+            )}
+
             {/* TAB: Time Profiles */}
             {tab === 'profiles' && (
                 <div>
@@ -12352,6 +12495,117 @@ const PresencePage = () => {
                     <ShiftCalendarSync lang={lang} showToast={showToast} />
                     <CalendarSyncConfig lang={lang} showToast={showToast} onEventsLoaded={setSyncedEvents} />
                     <CalendarTriggersConfig lang={lang} showToast={showToast} />
+                </div>
+            )}
+
+            {/* TAB: Settings */}
+            {tab === 'settings' && (
+                <div>
+                    <div className="card animate-in" style={{ marginBottom: 16 }}>
+                        <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)', fontWeight: 600 }}>
+                            <span className="mdi mdi-radar" style={{ marginRight: 8 }} />
+                            {lang === 'de' ? 'Automatische Erkennung' : 'Auto Detection'}
+                        </div>
+                        <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 16 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div>
+                                    <div style={{ fontWeight: 600, fontSize: 14 }}>{lang === 'de' ? 'Auto-Erkennung aktiv' : 'Auto-detection enabled'}</div>
+                                    <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Erkennt automatisch ob jemand zuhause ist anhand von HA Person-Entities' : 'Automatically detects presence based on HA person entities'}</div>
+                                </div>
+                                <button className={`btn btn-sm ${presenceSettings.presence_auto_detect_enabled === 'true' ? 'btn-primary' : 'btn-ghost'}`}
+                                    onClick={() => savePresenceSetting('presence_auto_detect_enabled', presenceSettings.presence_auto_detect_enabled === 'true' ? 'false' : 'true')}>
+                                    {presenceSettings.presence_auto_detect_enabled === 'true' ? 'ON' : 'OFF'}
+                                </button>
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div>
+                                    <div style={{ fontWeight: 600, fontSize: 14 }}>{lang === 'de' ? 'Manuelle Uebersteuerung' : 'Manual Override'}</div>
+                                    <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Wenn aktiv, wird die automatische Erkennung pausiert' : 'When active, auto-detection is paused'}</div>
+                                </div>
+                                <button className={`btn btn-sm ${presenceSettings.presence_manual_override === 'true' ? 'btn-primary' : 'btn-ghost'}`}
+                                    onClick={() => savePresenceSetting('presence_manual_override', presenceSettings.presence_manual_override === 'true' ? 'false' : 'true')}>
+                                    {presenceSettings.presence_manual_override === 'true' ? 'ON' : 'OFF'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="card animate-in" style={{ marginBottom: 16 }}>
+                        <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)', fontWeight: 600 }}>
+                            <span className="mdi mdi-tune" style={{ marginRight: 8 }} />
+                            {lang === 'de' ? 'Schwellenwerte' : 'Thresholds'}
+                        </div>
+                        <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 16 }}>
+                            <div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                                    <div>
+                                        <div style={{ fontWeight: 600, fontSize: 14 }}>{lang === 'de' ? 'Besuch-Schwelle (Personen)' : 'Guest Threshold (Persons)'}</div>
+                                        <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Ab wie vielen Personen zuhause der Besuchsmodus aktiviert wird' : 'How many persons at home trigger guest mode'}</div>
+                                    </div>
+                                    <span style={{ fontWeight: 700, fontSize: 18, color: 'var(--accent-primary)', minWidth: 30, textAlign: 'right' }}>{presenceSettings.presence_guest_threshold || '2'}</span>
+                                </div>
+                                <input type="range" min="2" max="10" step="1"
+                                    value={parseInt(presenceSettings.presence_guest_threshold) || 2}
+                                    onChange={e => savePresenceSetting('presence_guest_threshold', e.target.value)}
+                                    style={{ width: '100%', accentColor: 'var(--accent-primary)' }} />
+                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text-muted)' }}><span>2</span><span>10</span></div>
+                            </div>
+                            <div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                                    <div>
+                                        <div style={{ fontWeight: 600, fontSize: 14 }}>{lang === 'de' ? 'Abwesenheits-Timer (Minuten)' : 'Away Timer (Minutes)'}</div>
+                                        <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Nach wie vielen Minuten Abwesenheit wird vor laufenden Geraeten gewarnt' : 'After how many minutes away, warn about devices left on'}</div>
+                                    </div>
+                                    <span style={{ fontWeight: 700, fontSize: 18, color: 'var(--accent-primary)', minWidth: 50, textAlign: 'right' }}>{presenceSettings.presence_away_device_minutes || '120'}</span>
+                                </div>
+                                <input type="range" min="15" max="480" step="15"
+                                    value={parseInt(presenceSettings.presence_away_device_minutes) || 120}
+                                    onChange={e => savePresenceSetting('presence_away_device_minutes', e.target.value)}
+                                    style={{ width: '100%', accentColor: 'var(--accent-primary)' }} />
+                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text-muted)' }}><span>15min</span><span>8h</span></div>
+                            </div>
+                            <div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                                    <div>
+                                        <div style={{ fontWeight: 600, fontSize: 14 }}>{lang === 'de' ? 'Puffer-Zeit (Minuten)' : 'Buffer Time (Minutes)'}</div>
+                                        <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Verzoegerung bevor ein Statuswechsel uebernommen wird (vermeidet Flackern)' : 'Delay before a state change is applied (prevents flickering)'}</div>
+                                    </div>
+                                    <span style={{ fontWeight: 700, fontSize: 18, color: 'var(--accent-primary)', minWidth: 30, textAlign: 'right' }}>{presenceSettings.presence_buffer_minutes || '5'}</span>
+                                </div>
+                                <input type="range" min="0" max="30" step="1"
+                                    value={parseInt(presenceSettings.presence_buffer_minutes) || 5}
+                                    onChange={e => savePresenceSetting('presence_buffer_minutes', e.target.value)}
+                                    style={{ width: '100%', accentColor: 'var(--accent-primary)' }} />
+                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text-muted)' }}><span>0min</span><span>30min</span></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="card animate-in" style={{ marginBottom: 16 }}>
+                        <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)', fontWeight: 600 }}>
+                            <span className="mdi mdi-shield-alert" style={{ marginRight: 8 }} />
+                            {lang === 'de' ? 'Erweitert' : 'Advanced'}
+                        </div>
+                        <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 16 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div>
+                                    <div style={{ fontWeight: 600, fontSize: 14 }}>{lang === 'de' ? '"Nicht erreichbar" = Abwesend' : '"Unavailable" = Away'}</div>
+                                    <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Wenn ein Person-Entity nicht erreichbar ist (z.B. Handy-Akku leer), wird die Person als abwesend gewertet' : 'When a person entity becomes unavailable (e.g. phone battery dead), treat as away'}</div>
+                                </div>
+                                <button className={`btn btn-sm ${presenceSettings.presence_treat_unavailable_as_away === 'true' ? 'btn-primary' : 'btn-ghost'}`}
+                                    onClick={() => savePresenceSetting('presence_treat_unavailable_as_away', presenceSettings.presence_treat_unavailable_as_away === 'true' ? 'false' : 'true')}>
+                                    {presenceSettings.presence_treat_unavailable_as_away === 'true' ? 'ON' : 'OFF'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style={{ padding: 16, background: 'var(--bg-tertiary)', borderRadius: 8, fontSize: 12, color: 'var(--text-muted)' }}>
+                        <span className="mdi mdi-information-outline" style={{ marginRight: 6, color: 'var(--info)' }} />
+                        {lang === 'de'
+                            ? 'Die Anwesenheitserkennung basiert auf person.* Entities aus Home Assistant. Stelle sicher, dass Personen mit Device-Trackern (Companion App, Router-Integration, Bluetooth) verknuepft sind.'
+                            : 'Presence detection is based on person.* entities from Home Assistant. Make sure persons are linked with device trackers (Companion App, router integration, Bluetooth).'}
+                    </div>
                 </div>
             )}
 
