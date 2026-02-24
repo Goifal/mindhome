@@ -467,15 +467,20 @@ class AssistantBrain(BrainCallbacksMixin):
 
         Wenn room nicht angegeben ist, wird automatisch der aktuell besetzte
         Raum anhand von Praesenzmeldern ermittelt.
+
+        C-2 Fix: Bei Requests von der HA Assist Pipeline wird speak_response()
+        NICHT aufgerufen, da die Pipeline selbst TTS via Wyoming Piper macht.
         """
         if not room:
             room = await self._get_occupied_room()
 
         await emit_speaking(text, tts_data=tts_data)
-        self._task_registry.create_task(
-            self.sound_manager.speak_response(text, room=room, tts_data=tts_data),
-            name="speak_response",
-        )
+        # C-2: Nicht doppelt sprechen wenn HA Assist Pipeline TTS uebernimmt
+        if not getattr(self, "_request_from_pipeline", False):
+            self._task_registry.create_task(
+                self.sound_manager.speak_response(text, room=room, tts_data=tts_data),
+                name="speak_response",
+            )
 
     # Sarkasmus-Feedback Erkennung — Keyword-basiert, kein LLM/Redis in Hot Path
     _SARCASM_POSITIVE_PATTERNS = frozenset([
@@ -533,6 +538,12 @@ class AssistantBrain(BrainCallbacksMixin):
         Returns:
             Dict mit response, actions, model_used
         """
+        # C-2: Erkennen ob Request von HA Assist Pipeline kommt
+        # Die Pipeline uebernimmt TTS selbst via Wyoming Piper → brain.py darf NICHT auch sprechen
+        self._request_from_pipeline = (
+            voice_metadata.get("source") == "ha_assist_pipeline" if voice_metadata else False
+        )
+
         logger.info("Input: '%s' (Person: %s, Raum: %s)", text, person or "unbekannt", room or "unbekannt")
 
         # Sarkasmus-Feedback: Reaktion auf vorherige sarkastische Antwort auswerten

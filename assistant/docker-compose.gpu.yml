@@ -1,0 +1,32 @@
+# ============================================================
+# MindHome Assistant - GPU Override
+# Aktiviert GPU-Zugriff fuer Whisper und Piper Container
+# ============================================================
+#
+# Aktivieren: In .env eintragen:
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml
+#
+# Voraussetzungen:
+#   - NVIDIA Treiber installiert (nvidia-smi funktioniert)
+#   - NVIDIA Container Toolkit installiert
+#   - In .env: SPEECH_DEVICE=cuda, WHISPER_COMPUTE=float16
+#
+
+services:
+  whisper:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  piper:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]

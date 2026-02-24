@@ -349,6 +349,56 @@ class TestFallbackAsk:
         assert await recognition.has_pending_ask() is False
 
 
+class TestWyomingEmbedding:
+    """Tests fuer Wyoming-Embedding aus Redis."""
+
+    @pytest.mark.asyncio
+    async def test_get_wyoming_embedding_found(self, recognition, redis_mock):
+        """Wyoming-Embedding aus Redis wird gelesen und konsumiert."""
+        embedding = [0.1, 0.2, 0.3, 0.4]
+        redis_mock.get = AsyncMock(return_value=json.dumps(embedding))
+        result = await recognition._get_wyoming_embedding()
+        assert result == embedding
+        redis_mock.delete.assert_called_with("mha:speaker:latest_embedding")
+
+    @pytest.mark.asyncio
+    async def test_get_wyoming_embedding_not_found(self, recognition, redis_mock):
+        """Kein Wyoming-Embedding → None."""
+        redis_mock.get = AsyncMock(return_value=None)
+        result = await recognition._get_wyoming_embedding()
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_get_wyoming_embedding_no_redis(self, recognition):
+        """Ohne Redis → None."""
+        recognition.redis = None
+        result = await recognition._get_wyoming_embedding()
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_identify_uses_wyoming_embedding(self, recognition, redis_mock):
+        """identify() nutzt Wyoming-Embedding wenn vorhanden."""
+        recognition._profiles["max"] = SpeakerProfile("Max", "max")
+        # Stored profile embedding
+        stored = [0.5, 0.3, 0.8, 0.1]
+
+        # Redis gibt zuerst Wyoming-Embedding, dann Profil-Embedding zurueck
+        call_count = 0
+        async def mock_get(key):
+            nonlocal call_count
+            call_count += 1
+            if key == "mha:speaker:latest_embedding":
+                return json.dumps([0.51, 0.29, 0.79, 0.11])
+            elif "embedding:max" in key:
+                return json.dumps(stored)
+            return None
+        redis_mock.get = AsyncMock(side_effect=mock_get)
+
+        result = await recognition.identify()
+        assert result["method"] == "voice_embedding"
+        assert result["person"] == "Max"
+
+
 class TestHealthStatus:
     def test_health_status_active(self, recognition):
         status = recognition.health_status()

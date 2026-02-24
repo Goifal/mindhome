@@ -149,6 +149,7 @@ class SpeakerRecognition:
         # In-Memory Cache der Profile
         self._profiles: dict[str, SpeakerProfile] = {}
         self._last_speaker: Optional[str] = None
+        self._last_embedding: Optional[list[float]] = None  # C-1: Cache fuer Embedding-Lernen
         self._save_lock = asyncio.Lock()
 
         if self.enabled:
@@ -287,24 +288,30 @@ class SpeakerRecognition:
 
         # 5. Voice-Embedding-Matching (biometrischer Stimmabdruck)
         # Genuegt ~1-3s Audio. ECAPA-TDNN 192-dim Cosinus-Aehnlichkeit.
-        if audio_metadata and audio_metadata.get("audio_pcm_b64") and self._profiles:
+        # Primaer: Wyoming Handler schreibt Embedding in Redis (mha:speaker:latest_embedding)
+        # Fallback: Lokale Extraktion aus audio_pcm_b64 (falls kein Wyoming-Embedding)
+        # C-1 Fix: Embedding einmal lesen und cachen fuer spaeteres Lernen
+        embedding = await self._get_wyoming_embedding()
+        if not embedding and audio_metadata and audio_metadata.get("audio_pcm_b64"):
             embedding = extract_embedding(
                 audio_metadata["audio_pcm_b64"],
                 sample_rate=audio_metadata.get("sample_rate", 16000),
             )
-            if embedding:
-                emb_result = await self.identify_by_embedding(embedding)
-                if emb_result:
-                    self._last_speaker = emb_result["person_id"]
-                    await self.log_identification(
-                        emb_result["person_id"], "voice_embedding", emb_result["confidence"],
-                    )
-                    return {
-                        "person": emb_result["person"],
-                        "confidence": emb_result["confidence"],
-                        "fallback": emb_result["confidence"] < self.min_confidence,
-                        "method": "voice_embedding",
-                    }
+        if embedding:
+            self._last_embedding = embedding
+        if embedding and self._profiles:
+            emb_result = await self.identify_by_embedding(embedding)
+            if emb_result:
+                self._last_speaker = emb_result["person_id"]
+                await self.log_identification(
+                    emb_result["person_id"], "voice_embedding", emb_result["confidence"],
+                )
+                return {
+                    "person": emb_result["person"],
+                    "confidence": emb_result["confidence"],
+                    "fallback": emb_result["confidence"] < self.min_confidence,
+                    "method": "voice_embedding",
+                }
 
         # 6. Voice-Feature-Matching (wenn Audio-Metadata und Profile vorhanden)
         # F-048: Voice-Features (WPM, Dauer, Lautstaerke) sind KEIN sicheres
@@ -611,24 +618,75 @@ class SpeakerRecognition:
             return self._profiles[self._last_speaker].name
         return None
 
+    async def _get_wyoming_embedding(self) -> Optional[list[float]]:
+        """Liest das aktuelle Voice-Embedding aus Redis (von Wyoming Whisper Handler).
+
+        Der Wyoming Handler (speech/handler.py) extrahiert bei jeder Transkription
+        ein ECAPA-TDNN Embedding und speichert es in Redis mit 60s TTL.
+        Diese Methode liest und konsumiert es (einmalig).
+
+        C-4 Fix: Retry-Loop mit max 500ms Wartezeit, da das Embedding
+        als fire-and-forget Task extrahiert wird und beim ersten Versuch
+        moeglicherweise noch nicht in Redis steht.
+        """
+        if not self.redis:
+            return None
+
+        # C-4: Bis zu 3 Versuche mit kurzer Wartezeit (50ms, 150ms, 300ms = 500ms total)
+        delays = [0.05, 0.15, 0.3]
+        for attempt, delay in enumerate(delays):
+            try:
+                data = await self.redis.get("mha:speaker:latest_embedding")
+                if data:
+                    embedding = json.loads(data if isinstance(data, str) else data.decode())
+                    if isinstance(embedding, list) and len(embedding) > 0:
+                        # Embedding konsumieren (nur einmal verwenden)
+                        await self.redis.delete("mha:speaker:latest_embedding")
+                        logger.debug("Wyoming-Embedding aus Redis gelesen (%d dim, Versuch %d)",
+                                     len(embedding), attempt + 1)
+                        return embedding
+            except Exception as e:
+                logger.debug("Wyoming-Embedding lesen fehlgeschlagen: %s", e)
+                return None
+
+            # Noch nicht da — kurz warten und nochmal versuchen
+            if attempt < len(delays) - 1:
+                await asyncio.sleep(delay)
+
+        return None
+
     async def learn_embedding_from_audio(self, person_id: str, audio_metadata: dict):
         """Extrahiert und speichert ein Voice-Embedding aus Audio-Metadaten.
 
         Wird aufgerufen wenn die Person bereits sicher identifiziert ist
         (z.B. per Device-Mapping oder manuell), um den Stimmabdruck
         zu trainieren. Nutzt EMA-Verschmelzung fuer kontinuierliches Lernen.
+
+        C-1 Fix: Nutzt zuerst das gecachte Embedding aus identify(),
+        dann Wyoming-Redis, dann lokale Extraktion als Fallback.
         """
         if not self.enabled or not audio_metadata:
-            return
-        audio_b64 = audio_metadata.get("audio_pcm_b64")
-        if not audio_b64:
             return
         if person_id not in self._profiles:
             return
 
-        embedding = extract_embedding(
-            audio_b64, sample_rate=audio_metadata.get("sample_rate", 16000),
-        )
+        # C-1 Fix: Gecachtes Embedding aus identify() verwenden (wurde dort schon gelesen)
+        embedding = self._last_embedding
+        self._last_embedding = None  # Nur einmal verwenden
+
+        # Fallback 1: Wyoming-Embedding aus Redis (falls identify() keins hatte)
+        if not embedding:
+            embedding = await self._get_wyoming_embedding()
+
+        # Fallback 2: Lokale Extraktion aus base64-Audio
+        if not embedding:
+            audio_b64 = audio_metadata.get("audio_pcm_b64")
+            if not audio_b64:
+                return
+            embedding = extract_embedding(
+                audio_b64, sample_rate=audio_metadata.get("sample_rate", 16000),
+            )
+
         if embedding:
             await self.store_embedding(person_id, embedding)
             logger.debug("Embedding fuer %s gelernt (%d dim)", person_id, len(embedding))

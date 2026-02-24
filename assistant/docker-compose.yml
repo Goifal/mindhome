@@ -1,17 +1,20 @@
 # ============================================================
 # MindHome Assistant - Docker Compose
-# Startet alle Dienste: Assistant + ChromaDB + Redis
+# Startet alle Dienste: Assistant + Speech + ChromaDB + Redis
 # Ollama laeuft NATIV (nicht in Docker) fuer bessere Performance
 # ============================================================
 #
 # Starten: docker compose up -d
 # Stoppen: docker compose down
-# Logs: docker compose logs -f assistant
-# Status: docker compose ps
+# Logs:    docker compose logs -f assistant
+# Status:  docker compose ps
 #
 # Daten-Verzeichnis wird ueber DATA_DIR in .env gesteuert:
 #   Dual-SSD:    DATA_DIR=/mnt/data
 #   Single-SSD:  DATA_DIR=./data
+#
+# GPU-Modus (Phase 2):
+#   In .env setzen: COMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml
 #
 
 services:
@@ -84,6 +87,56 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  # --- Whisper STT + Voice Embeddings (Wyoming Protocol) ---
+  # Custom Image: faster-whisper + ECAPA-TDNN fuer Speaker Recognition
+  # HA verbindet sich via Wyoming Integration auf Port 10300
+  whisper:
+    build:
+      context: ../speech
+      dockerfile: Dockerfile.whisper
+    container_name: mha-whisper
+    restart: unless-stopped
+    ports:
+      - "10300:10300"
+    environment:
+      - TZ=Europe/Berlin
+      - WHISPER_MODEL=${WHISPER_MODEL:-small}
+      - WHISPER_LANGUAGE=${WHISPER_LANGUAGE:-de}
+      - WHISPER_BEAM_SIZE=${WHISPER_BEAM_SIZE:-5}
+      - WHISPER_COMPUTE=${WHISPER_COMPUTE:-int8}
+      - SPEECH_DEVICE=${SPEECH_DEVICE:-cpu}
+      - REDIS_URL=redis://redis:6379
+    volumes:
+      - ${DATA_DIR:-./data}/whisper-models:/app/models
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import socket; s=socket.socket(); s.settimeout(5); s.connect(('localhost', 10300)); s.close()\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 300s
+
+  # --- Piper TTS (Wyoming Protocol) ---
+  # Offizielles rhasspy/wyoming-piper Image (keine Custom-Logik noetig)
+  # HA verbindet sich via Wyoming Integration auf Port 10200
+  piper:
+    image: rhasspy/wyoming-piper:latest
+    container_name: mha-piper
+    restart: unless-stopped
+    ports:
+      - "10200:10200"
+    command: --voice ${PIPER_VOICE:-de_DE-thorsten-high} --port 10200
+    volumes:
+      - ${DATA_DIR:-./data}/piper-models:/data
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import socket; s=socket.socket(); s.settimeout(5); s.connect(('localhost', 10200)); s.close()\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
 
   # --- Autoheal (Watchdog fuer unhealthy Container) ---
   # Startet Container automatisch neu wenn Healthcheck 3x fehlschlaegt
