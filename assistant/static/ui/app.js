@@ -2319,7 +2319,13 @@ async function loadKnowledge() {
         <div class="stat-sub">${(st.sources||[]).map(s=>esc(s)).join(', ')||'keine'}</div></div>`;
     document.getElementById('kbFiles').innerHTML = fi.length === 0
       ? '<div style="padding:16px;text-align:center;color:var(--text-muted);">Keine Dateien</div>'
-      : fi.map(f => `<div class="file-item"><span style="font-size:16px;">&#128196;</span><span class="file-name">${esc(f.name)}</span><span class="file-size">${fmtBytes(f.size)}</span></div>`).join('');
+      : fi.map(f => `<div class="file-item" style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--border);">
+          <span style="font-size:16px;">&#128196;</span>
+          <span class="file-name" style="flex:1;min-width:0;">${esc(f.name)}</span>
+          <span class="file-size" style="color:var(--text-muted);font-size:12px;white-space:nowrap;">${fmtBytes(f.size)}</span>
+          <button class="btn" onclick="reingestFile('${esc(f.name)}')" style="font-size:11px;padding:3px 10px;white-space:nowrap;" title="Chunks loeschen und Datei neu einlesen">Neu einlesen</button>
+          <button class="btn btn-danger" onclick="deleteFileChunks('${esc(f.name)}')" style="font-size:11px;padding:3px 10px;white-space:nowrap;" title="Alle Chunks dieser Datei loeschen">Entfernen</button>
+        </div>`).join('');
     // Quellen-Filter befuellen
     const sel = document.getElementById('kbSourceFilter');
     if (sel) {
@@ -2334,6 +2340,25 @@ async function ingestKnowledge() {
   try {
     const d = await api('/api/ui/knowledge/ingest', 'POST');
     toast(`${d.new_chunks} neue Chunks eingelesen`);
+    loadKnowledge();
+  } catch(e) { toast('Fehler beim Einlesen', 'error'); }
+}
+
+// ---- Knowledge File Actions ----
+async function deleteFileChunks(filename) {
+  if (!confirm(`Alle Wissensinhalte von "${filename}" aus der Datenbank entfernen?`)) return;
+  try {
+    const d = await api('/api/ui/knowledge/file/delete', 'POST', { filename });
+    toast(`${d.deleted} Chunks von "${filename}" entfernt`, 'success');
+    loadKnowledge();
+  } catch(e) { toast('Fehler beim Entfernen', 'error'); }
+}
+
+async function reingestFile(filename) {
+  try {
+    toast(`"${filename}" wird neu eingelesen...`);
+    const d = await api('/api/ui/knowledge/file/reingest', 'POST', { filename });
+    toast(`"${filename}": ${d.new_chunks} Chunks eingelesen`, 'success');
     loadKnowledge();
   } catch(e) { toast('Fehler beim Einlesen', 'error'); }
 }

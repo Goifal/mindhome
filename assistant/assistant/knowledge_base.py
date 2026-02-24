@@ -319,6 +319,51 @@ class KnowledgeBase:
             logger.error("Fehler beim Loeschen von Chunks: %s", e)
             return 0
 
+    async def delete_source_chunks(self, source_file: str) -> int:
+        """Loescht alle Chunks einer bestimmten Quelle."""
+        if not self.chroma_collection or not source_file:
+            return 0
+
+        try:
+            results = self.chroma_collection.get(
+                where={"source_file": source_file},
+                include=["metadatas"],
+            )
+            if not results or not results.get("ids"):
+                return 0
+
+            chunk_ids = results["ids"]
+            # Hashes aus dem Cache entfernen
+            for meta in (results.get("metadatas") or []):
+                h = meta.get("content_hash", "")
+                self._ingested_hashes.discard(h)
+
+            self.chroma_collection.delete(ids=chunk_ids)
+            logger.info("Knowledge Base: %d Chunks von '%s' geloescht", len(chunk_ids), source_file)
+            return len(chunk_ids)
+        except Exception as e:
+            logger.error("Fehler beim Loeschen von Quelle '%s': %s", source_file, e)
+            return 0
+
+    async def reingest_file(self, filename: str) -> int:
+        """Loescht alle Chunks einer Datei und liest sie neu ein."""
+        if not self._knowledge_dir:
+            return 0
+
+        # Datei finden (auch in Unterordnern)
+        filepath = None
+        for f in self._knowledge_dir.rglob(filename):
+            if f.is_file():
+                filepath = f
+                break
+
+        if not filepath or not filepath.exists():
+            logger.warning("Knowledge Base: Datei '%s' nicht gefunden", filename)
+            return 0
+
+        await self.delete_source_chunks(filename)
+        return await self.ingest_file(filepath)
+
     async def clear(self) -> bool:
         """Loescht die gesamte Wissensdatenbank."""
         if not self._chroma_client:
