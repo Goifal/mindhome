@@ -1351,9 +1351,10 @@ class AssistantBrain(BrainCallbacksMixin):
         if memory_context:
             sections.append(("memory", memory_context, 2))
 
-        # --- Prio 3: Optional ---
+        # --- Prio 3: Optional (RAG bei Wissensfragen Prio 1) ---
         if rag_context:
-            sections.append(("rag", rag_context, 3))
+            rag_prio = 1 if profile.category == "knowledge" else 3
+            sections.append(("rag", rag_context, rag_prio))
 
         if summary_context:
             sections.append(("summary", summary_context, 3))
@@ -3050,12 +3051,13 @@ class AssistantBrain(BrainCallbacksMixin):
             return ""
 
         try:
-            hits = await self.knowledge_base.search(text, limit=3)
+            rag_cfg = yaml_config.get("knowledge_base", {})
+            search_limit = rag_cfg.get("search_limit", 3)
+            hits = await self.knowledge_base.search(text, limit=search_limit)
             if not hits:
                 return ""
 
             # Nur relevante Treffer verwenden (Schwelle konfigurierbar)
-            rag_cfg = yaml_config.get("knowledge_base", {})
             min_relevance = rag_cfg.get("min_relevance", 0.3)
             relevant_hits = [h for h in hits if h.get("relevance", 0) >= min_relevance]
             if not relevant_hits:

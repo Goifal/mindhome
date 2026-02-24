@@ -27,9 +27,9 @@ SUPPORTED_EXTENSIONS = {".txt", ".md", ".pdf", ".csv"}
 KB_UPLOAD_MAX_SIZE = 10 * 1024 * 1024  # 10 MB
 KB_UPLOAD_ALLOWED = {".txt", ".md", ".pdf", ".csv"}
 
-# Chunk-Einstellungen (optimiert fuer semantische Suche)
-DEFAULT_CHUNK_SIZE = 300
-DEFAULT_CHUNK_OVERLAP = 100
+# Chunk-Einstellungen (Defaults passend zu settings.yaml)
+DEFAULT_CHUNK_SIZE = 500
+DEFAULT_CHUNK_OVERLAP = 50
 
 
 class KnowledgeBase:
