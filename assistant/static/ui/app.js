@@ -316,7 +316,7 @@ document.querySelectorAll('.nav-item').forEach(item => {
     if (pg==='dashboard') { loadDashboard(); startLiveRefresh(); loadHealthTrends(_trendHours); }
     else if (pg==='settings') loadSettings();
     else if (pg==='entities') loadEntities();
-    else if (pg==='knowledge') loadKnowledge();
+    else if (pg==='knowledge') { loadKnowledge(); setTimeout(initKbDropzone, 50); }
     else if (pg==='logs') { if(currentLogTab==='audit') loadAudit(); else loadLogs(); }
     else if (pg==='errors') loadErrors();
     closeSidebar();
@@ -2336,6 +2336,44 @@ async function loadKnowledge() {
     loadKbChunks();
   } catch(e) { console.error('KB fail:', e); }
 }
+// ---- Knowledge Upload ----
+async function uploadKbFile(file) {
+  if (!file) return;
+  const allowed = ['.txt','.md','.pdf','.csv'];
+  const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
+  if (!allowed.includes(ext)) { toast('Dateityp nicht erlaubt. Nur: ' + allowed.join(', '), 'error'); return; }
+  if (file.size > 10 * 1024 * 1024) { toast('Datei zu gross (max 10 MB)', 'error'); return; }
+
+  const dz = document.getElementById('kbDropzone');
+  if (dz) { dz.style.borderColor = 'var(--primary)'; dz.querySelector('div').textContent = 'Wird hochgeladen...'; }
+
+  const fd = new FormData();
+  fd.append('file', file);
+  fd.append('token', sessionStorage.getItem('token') || '');
+
+  try {
+    const resp = await fetch('/api/ui/knowledge/upload', { method: 'POST', body: fd });
+    if (!resp.ok) { const e = await resp.json().catch(() => ({})); throw new Error(e.detail || 'Upload fehlgeschlagen'); }
+    const d = await resp.json();
+    toast(`"${d.filename}" hochgeladen — ${d.new_chunks} Chunks eingelesen`, 'success');
+    loadKnowledge();
+  } catch(e) { toast(e.message || 'Upload fehlgeschlagen', 'error'); }
+  finally {
+    if (dz) { dz.style.borderColor = ''; dz.querySelector('div').textContent = '\u{1F4E4}'; }
+    const inp = document.getElementById('kbFileInput');
+    if (inp) inp.value = '';
+  }
+}
+
+function initKbDropzone() {
+  const dz = document.getElementById('kbDropzone');
+  if (!dz || dz.dataset.init) return;
+  dz.dataset.init = '1';
+  ['dragenter','dragover'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.style.borderColor = 'var(--primary)'; dz.style.background = 'var(--bg-secondary)'; }));
+  ['dragleave','drop'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.style.borderColor = ''; dz.style.background = ''; }));
+  dz.addEventListener('drop', e => { if (e.dataTransfer.files.length) uploadKbFile(e.dataTransfer.files[0]); });
+}
+
 async function ingestKnowledge() {
   try {
     const d = await api('/api/ui/knowledge/ingest', 'POST');

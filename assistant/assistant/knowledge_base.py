@@ -21,7 +21,11 @@ from .config import settings, yaml_config
 logger = logging.getLogger(__name__)
 
 # Unterstuetzte Dateitypen
-SUPPORTED_EXTENSIONS = {".txt", ".md", ".yaml", ".yml", ".csv", ".log", ".pdf"}
+SUPPORTED_EXTENSIONS = {".txt", ".md", ".pdf", ".csv"}
+
+# Upload-Limits
+KB_UPLOAD_MAX_SIZE = 10 * 1024 * 1024  # 10 MB
+KB_UPLOAD_ALLOWED = {".txt", ".md", ".pdf", ".csv"}
 
 # Chunk-Einstellungen (optimiert fuer semantische Suche)
 DEFAULT_CHUNK_SIZE = 300
