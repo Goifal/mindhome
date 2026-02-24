@@ -3185,11 +3185,134 @@ function switchLogTab(tab) {
   currentLogTab = tab;
   document.querySelectorAll('#logsTabBar .tab-item').forEach(t => t.classList.toggle('active', t.dataset.logtab===tab));
   document.getElementById('logsContainer').style.display = tab==='conversations' ? '' : 'none';
+  document.getElementById('protocolContainer').style.display = tab==='protocol' ? '' : 'none';
+  document.getElementById('protocolFilters').style.display = tab==='protocol' ? '' : 'none';
   document.getElementById('activitiesContainer').style.display = tab==='activities' ? '' : 'none';
   document.getElementById('auditContainer').style.display = tab==='audit' ? '' : 'none';
   if (tab==='conversations') loadLogs();
+  else if (tab==='protocol') loadProtocol();
   else if (tab==='activities') loadActivities();
   else loadAudit();
+}
+
+// ---- Protokoll (Jarvis Action Protocol with Filters) ----
+let _protocolData = [];
+let _protocolLiveIv = null;
+
+async function loadProtocol() {
+  const type = document.getElementById('protocolType').value;
+  const period = document.getElementById('protocolPeriod').value;
+  const c = document.getElementById('protocolContainer');
+  if (!c) return;
+  try {
+    const params = `limit=200&period=${period}` + (type ? `&type=${type}` : '');
+    const d = await api('/api/ui/action-log?' + params);
+    _protocolData = d.items || [];
+    filterProtocol();
+  } catch(e) {
+    c.innerHTML = '<div style="padding:16px;text-align:center;color:var(--danger);">Fehler: ' + esc(e.message) + '</div>';
+  }
+}
+
+function filterProtocol() {
+  const search = (document.getElementById('protocolSearch').value || '').toLowerCase();
+  const c = document.getElementById('protocolContainer');
+  if (!c) return;
+
+  const filtered = _protocolData.filter(log => {
+    if (!search) return true;
+    const ad = log.action_data || {};
+    const haystack = [
+      log.reason || '',
+      log.action_type || '',
+      ad.function || '',
+      JSON.stringify(ad.arguments || {}),
+      ad.result || ''
+    ].join(' ').toLowerCase();
+    return haystack.includes(search);
+  });
+
+  document.getElementById('protocolCount').textContent = filtered.length +
+    (_protocolData.length !== filtered.length ? ' / ' + _protocolData.length : '') + ' Eintraege';
+
+  if (filtered.length === 0) {
+    c.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text-muted);">' +
+      (search ? 'Keine Treffer fuer "' + esc(search) + '"' : 'Keine Jarvis-Aktionen im Zeitraum.') + '</div>';
+    return;
+  }
+
+  const typeIcons = {
+    jarvis_action: '&#9889;', automation: '&#129302;', observation: '&#128065;',
+    quick_action: '&#9889;', suggestion: '&#128161;', anomaly: '&#9888;',
+    system: '&#9881;', first_time: '&#11088;'
+  };
+  const typeLabels = {
+    jarvis_action: 'Jarvis', automation: 'Automation', observation: 'Beobachtung',
+    quick_action: 'Schnellaktion', suggestion: 'Vorschlag', anomaly: 'Anomalie',
+    system: 'System', first_time: 'Erstmalig'
+  };
+  const typeColors = {
+    jarvis_action: 'var(--accent)', automation: 'var(--warning, #f59e0b)',
+    observation: 'var(--text-muted)', quick_action: 'var(--info, #3b82f6)',
+    suggestion: 'var(--accent)', anomaly: 'var(--danger, #ef4444)',
+    system: 'var(--text-secondary)', first_time: 'var(--success, #22c55e)'
+  };
+  const funcIcons = {
+    set_light: '&#128161;', set_cover: '&#129695;', set_climate: '&#127777;',
+    activate_scene: '&#127912;', play_media: '&#127925;', send_notification: '&#128276;',
+    call_service: '&#9881;'
+  };
+
+  c.innerHTML = filtered.map(log => {
+    const ad = log.action_data || {};
+    const func = ad.function || '';
+    const args = ad.arguments || {};
+    const result = ad.result || '';
+    const reason = log.reason || '';
+    const aType = log.action_type || 'system';
+    const icon = func ? (funcIcons[func] || typeIcons[aType] || '&#9889;') : (typeIcons[aType] || '&#9889;');
+    const label = typeLabels[aType] || aType;
+    const color = typeColors[aType] || 'var(--text-muted)';
+
+    // Beschreibung zusammenbauen
+    const parts = [];
+    if (func) parts.push('<strong>' + esc(func.replace(/_/g, ' ')) + '</strong>');
+    if (args.entity_id) parts.push(esc(args.entity_id));
+    if (args.room) parts.push(esc(args.room));
+    if (args.brightness !== undefined) parts.push(args.brightness + '%');
+    if (args.position !== undefined) parts.push(args.position + '%');
+    if (args.state) parts.push(esc(args.state));
+    if (args.temperature !== undefined) parts.push(args.temperature + '\u00b0C');
+    const desc = parts.length > 0 ? parts.join(' \u2014 ') : esc(reason.substring(0, 120));
+
+    const ts = log.created_at
+      ? new Date(log.created_at).toLocaleString('de-DE', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'})
+      : '';
+
+    return '<div class="log-entry" style="align-items:flex-start;">' +
+      '<span class="log-time">' + ts + '</span>' +
+      '<span style="font-size:18px;min-width:28px;text-align:center;">' + icon + '</span>' +
+      '<div style="flex:1;min-width:0;">' +
+        '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">' +
+          '<span style="font-size:10px;padding:1px 6px;border-radius:3px;background:color-mix(in srgb, ' + color + ' 15%, transparent);color:' + color + ';font-weight:600;">' + esc(label) + '</span>' +
+          '<span style="font-size:13px;">' + desc + '</span>' +
+        '</div>' +
+        (result ? '<div style="font-size:11px;color:var(--text-muted);margin-top:2px;">\u2192 ' + esc(result.length > 100 ? result.substring(0,100) + '...' : result) + '</div>' : '') +
+        (reason && parts.length > 0 ? '<div style="font-size:11px;color:var(--text-muted);font-style:italic;margin-top:1px;">' + esc(reason.length > 100 ? reason.substring(0,100) + '...' : reason) + '</div>' : '') +
+      '</div>' +
+      (log.was_undone ? '<span style="font-size:10px;padding:1px 6px;border-radius:3px;background:var(--warning);color:#000;font-weight:600;">Rueckgaengig</span>' : '') +
+    '</div>';
+  }).join('');
+}
+
+function toggleProtocolLive() {
+  const live = document.getElementById('protocolLive').checked;
+  if (live) {
+    loadProtocol();
+    _protocolLiveIv = setInterval(loadProtocol, 10000);
+  } else {
+    if (_protocolLiveIv) { clearInterval(_protocolLiveIv); _protocolLiveIv = null; }
+  }
 }
 
 async function loadAudit() {

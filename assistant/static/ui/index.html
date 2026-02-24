@@ -1023,11 +1023,46 @@ input:focus,select:focus,textarea:focus { border-color:var(--accent); box-shadow
         </div>
         <div class="tab-bar" id="logsTabBar" style="margin-bottom:14px;">
           <div class="tab-item active" data-logtab="conversations" onclick="switchLogTab('conversations')">Gespraeche</div>
+          <div class="tab-item" data-logtab="protocol" onclick="switchLogTab('protocol')">Protokoll</div>
           <div class="tab-item" data-logtab="activities" onclick="switchLogTab('activities')">Aktivitaeten</div>
           <div class="tab-item" data-logtab="audit" onclick="switchLogTab('audit')">Audit-Log</div>
         </div>
+
+        <!-- Protokoll Filter -->
+        <div id="protocolFilters" style="display:none;margin-bottom:14px;">
+          <div class="card" style="padding:12px;">
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+              <input id="protocolSearch" type="text" class="input" placeholder="Suchen..."
+                style="flex:1 1 200px;min-width:150px;" oninput="filterProtocol()">
+              <select id="protocolType" class="input" style="flex:0 1 180px;" onchange="loadProtocol()">
+                <option value="">Alle Typen</option>
+                <option value="jarvis_action">Jarvis-Aktionen</option>
+                <option value="automation">Automationen</option>
+                <option value="observation">Beobachtungen</option>
+                <option value="quick_action">Schnellaktionen</option>
+                <option value="anomaly">Anomalien</option>
+                <option value="system">System</option>
+              </select>
+              <select id="protocolPeriod" class="input" style="flex:0 1 140px;" onchange="loadProtocol()">
+                <option value="today">Heute</option>
+                <option value="7d" selected>7 Tage</option>
+                <option value="30d">30 Tage</option>
+                <option value="all">Alle</option>
+              </select>
+              <button class="btn btn-secondary" onclick="loadProtocol()" title="Aktualisieren">&#128260;</button>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;">
+              <span id="protocolCount" style="font-size:11px;color:var(--text-muted);">0 Eintraege</span>
+              <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-muted);cursor:pointer;">
+                <input type="checkbox" id="protocolLive" onchange="toggleProtocolLive()"> Live
+              </label>
+            </div>
+          </div>
+        </div>
+
         <div class="card" style="padding:0;">
           <div id="logsContainer"></div>
+          <div id="protocolContainer" style="display:none;"></div>
           <div id="activitiesContainer" style="display:none;"></div>
           <div id="auditContainer" style="display:none;"></div>
         </div>
