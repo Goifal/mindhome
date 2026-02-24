@@ -460,6 +460,23 @@ class SpeakerRecognition:
             return self._profiles[self._last_speaker].name
         return None
 
+    async def update_voice_stats_for_person(self, person_id: str, audio_metadata: dict):
+        """Aktualisiert Voice-Stats fuer eine bekannte Person (z.B. aus UI).
+
+        Wird von brain.py aufgerufen wenn der Sprecher bereits bekannt ist
+        (z.B. ueber Chat-UI person-Parameter), damit die Voice-Profile
+        trotzdem trainiert werden.
+        """
+        profile = self._profiles.get(person_id)
+        if not profile:
+            return
+        profile.update_voice_stats(
+            wpm=audio_metadata.get("wpm", 0),
+            duration=audio_metadata.get("duration", 0),
+            volume=audio_metadata.get("volume", 0),
+        )
+        await self._save_profiles()
+
     async def _save_profiles(self):
         """Speichert alle Profile in Redis."""
         if not self.redis:

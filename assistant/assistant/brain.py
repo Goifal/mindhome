@@ -519,7 +519,7 @@ class AssistantBrain(BrainCallbacksMixin):
 
         self._task_registry.create_task(_save(), name="memory_exchange")
 
-    async def process(self, text: str, person: Optional[str] = None, room: Optional[str] = None, files: Optional[list] = None, stream_callback=None) -> dict:
+    async def process(self, text: str, person: Optional[str] = None, room: Optional[str] = None, files: Optional[list] = None, stream_callback=None, voice_metadata: Optional[dict] = None) -> dict:
         """
         Verarbeitet eine User-Eingabe.
 
@@ -588,13 +588,33 @@ class AssistantBrain(BrainCallbacksMixin):
             logger.info("Silence-Trigger: %s (aus Text: '%s')", silence_activity, text[:50])
 
         # Phase 9: Speaker Recognition — Person ermitteln wenn nicht angegeben
+        # Voice-Metadaten aufbereiten (WPM aus Text + Dauer berechnen)
+        audio_meta = None
+        if voice_metadata:
+            audio_meta = dict(voice_metadata)
+            # WPM berechnen wenn Dauer vorhanden aber kein WPM
+            duration = audio_meta.get("duration", 0)
+            if duration and duration > 0 and not audio_meta.get("wpm"):
+                word_count = len(text.split())
+                audio_meta["wpm"] = word_count / (duration / 60.0)
+
         if person:
             self._task_registry.create_task(
                 self.speaker_recognition.set_current_speaker(person.lower()),
                 name="set_speaker",
             )
+            # Voice-Stats auch bei bekanntem Speaker aktualisieren
+            if audio_meta and self.speaker_recognition.enabled:
+                self._task_registry.create_task(
+                    self.speaker_recognition.update_voice_stats_for_person(
+                        person.lower(), audio_meta
+                    ),
+                    name="update_voice_stats",
+                )
         elif self.speaker_recognition.enabled:
-            identified = await self.speaker_recognition.identify(room=room)
+            identified = await self.speaker_recognition.identify(
+                audio_metadata=audio_meta, room=room,
+            )
             if identified.get("person") and not identified.get("fallback"):
                 person = identified["person"]
                 logger.info("Speaker erkannt: %s (Confidence: %.2f, Methode: %s)",

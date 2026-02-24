@@ -528,7 +528,8 @@ async def chat(request: ChatRequest):
 
     try:
         result = await asyncio.wait_for(
-            brain.process(request.text, request.person, request.room),
+            brain.process(request.text, request.person, request.room,
+                          voice_metadata=request.voice_metadata),
             timeout=60.0,
         )
     except asyncio.TimeoutError:
@@ -1249,6 +1250,7 @@ async def websocket_endpoint(websocket: WebSocket):
                             result = await brain.process(
                                 text, person, room=room,
                                 stream_callback=_guarded_stream_token,
+                                voice_metadata=voice_meta,
                             )
                             tts_data = result.get("tts")
                             if stream_tokens_sent:
@@ -1262,7 +1264,8 @@ async def websocket_endpoint(websocket: WebSocket):
                                 await emit_speaking(result["response"], tts_data=tts_data)
                         else:
                             # brain.process() sendet intern via _speak_and_emit
-                            result = await brain.process(text, person, room=room)
+                            result = await brain.process(text, person, room=room,
+                                                         voice_metadata=voice_meta)
 
                         # Aktionen ans Addon melden fuer Aktivitaeten-Log
                         actions = result.get("actions", [])
