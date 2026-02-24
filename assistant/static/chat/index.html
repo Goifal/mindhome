@@ -1216,15 +1216,16 @@ const $personDropdown = document.getElementById('personDropdown');
 
 // ========== Person Switcher ==========
 function renderPersonSwitcher() {
+  const displayName = getPersonTitle(currentPerson) || 'Sir';
   if (householdMembers.length < 2) {
-    // Nur 1 Person — Switcher zeigt nur den Namen, kein Dropdown
-    $personName.textContent = getPersonTitle(currentPerson);
+    // Nur 1 Person oder keine — Switcher zeigt nur den Namen, kein Dropdown
+    $personName.textContent = displayName;
     $personBtn.style.cursor = 'default';
     $personBtn.querySelector('.person-arrow').style.display = 'none';
     return;
   }
 
-  $personName.textContent = getPersonTitle(currentPerson);
+  $personName.textContent = displayName;
 
   $personDropdown.innerHTML = householdMembers.map(m => {
     const isActive = m.name.toLowerCase() === currentPerson.toLowerCase();
@@ -1238,7 +1239,7 @@ function renderPersonSwitcher() {
 }
 
 function getPersonTitle(name) {
-  if (!name) return '...';
+  if (!name) return '';
   const title = personTitles[name.toLowerCase()];
   return title || name;
 }
