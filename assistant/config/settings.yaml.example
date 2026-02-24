@@ -522,6 +522,7 @@ knowledge_base:
   chunk_overlap: 50
   max_distance: 1.2
   search_limit: 3
+  embedding_model: paraphrase-multilingual-MiniLM-L12-v2
   supported_extensions:
   - .txt
   - .md

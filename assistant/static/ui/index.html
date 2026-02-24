@@ -901,7 +901,10 @@ input:focus,select:focus,textarea:focus { border-color:var(--accent); box-shadow
       <div id="page-knowledge" class="page">
         <div class="section-header">
           <div><h2>Wissensdatenbank</h2><p>Dateien in config/knowledge/ — RAG-Quelle</p></div>
-          <button class="btn btn-primary" onclick="ingestKnowledge()">Neu einlesen</button>
+          <div style="display:flex;gap:8px;">
+            <button class="btn btn-primary" onclick="ingestKnowledge()">Neu einlesen</button>
+            <button class="btn btn-danger" onclick="rebuildKnowledge()" title="Collection loeschen und alle Dateien mit aktuellem Embedding-Modell neu einlesen">Rebuild</button>
+          </div>
         </div>
         <div id="kbStats" class="grid grid-3" style="margin-bottom:16px;"></div>
         <div class="card" style="margin-bottom:16px;">

@@ -1241,6 +1241,13 @@ function renderMemory() {
     fRange('knowledge_base.chunk_overlap', 'Ueberlappung zwischen Bloecken', 0, 500, 25) +
     fRange('knowledge_base.max_distance', 'Suchgenauigkeit', 0.5, 2, 0.1, {0.5:'Sehr genau',1:'Standard',1.5:'Breit',2:'Sehr breit'}) +
     fRange('knowledge_base.search_limit', 'Max. Treffer pro Suche', 1, 10, 1) +
+    fSelect('knowledge_base.embedding_model', 'Embedding-Modell', [
+      {v:'paraphrase-multilingual-MiniLM-L12-v2', l:'Multilingual MiniLM (empfohlen fuer Deutsch)'},
+      {v:'all-MiniLM-L6-v2', l:'English MiniLM (ChromaDB Default)'},
+      {v:'distiluse-base-multilingual-cased-v2', l:'Multilingual DistilUSE'},
+      {v:'paraphrase-multilingual-mpnet-base-v2', l:'Multilingual MPNet (groesser, genauer)'},
+    ]) +
+    fInfo('Nach Modellwechsel: Wissen-Seite → "Rebuild" klicken, damit alle Vektoren neu berechnet werden.') +
     fChipSelect('knowledge_base.supported_extensions', 'Unterstuetzte Dateitypen', [
       '.txt','.md','.pdf','.csv','.json','.yaml','.yml','.xml','.html','.log','.doc','.docx'
     ], 'Welche Dateitypen sollen eingelesen werden?')
@@ -2336,6 +2343,21 @@ async function loadKnowledge() {
     loadKbChunks();
   } catch(e) { console.error('KB fail:', e); }
 }
+// ---- Knowledge Rebuild ----
+async function rebuildKnowledge() {
+  if (!confirm('Wissensdatenbank komplett neu aufbauen?\n\nAlle Vektoren werden geloescht und mit dem aktuellen Embedding-Modell neu berechnet. Das kann einige Minuten dauern.')) return;
+  try {
+    toast('Rebuild gestartet...', 'info');
+    const d = await api('/api/ui/knowledge/rebuild', 'POST');
+    if (d.success) {
+      toast(`Rebuild fertig: ${d.new_chunks} Chunks mit ${d.embedding_model}`, 'success');
+    } else {
+      toast(d.error || 'Rebuild fehlgeschlagen', 'error');
+    }
+    loadKnowledge();
+  } catch(e) { toast('Rebuild fehlgeschlagen', 'error'); }
+}
+
 // ---- Knowledge Upload ----
 async function uploadKbFile(file) {
   if (!file) return;

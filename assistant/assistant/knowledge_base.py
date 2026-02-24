@@ -56,10 +56,15 @@ class KnowledgeBase:
                 host=_parsed.hostname or "localhost",
                 port=_parsed.port or 8000,
             )
-            self.chroma_collection = self._chroma_client.get_or_create_collection(
-                name="mha_knowledge_base",
-                metadata={"description": "MindHome Assistant - Wissensdatenbank (RAG)"},
-            )
+            from .embeddings import get_embedding_function
+            ef = get_embedding_function()
+            col_kwargs = {
+                "name": "mha_knowledge_base",
+                "metadata": {"description": "MindHome Assistant - Wissensdatenbank (RAG)"},
+            }
+            if ef:
+                col_kwargs["embedding_function"] = ef
+            self.chroma_collection = self._chroma_client.get_or_create_collection(**col_kwargs)
             logger.info(
                 "Knowledge Base initialisiert (ChromaDB: mha_knowledge_base, %d Eintraege)",
                 self.chroma_collection.count(),
@@ -375,16 +380,37 @@ class KnowledgeBase:
 
         try:
             self._chroma_client.delete_collection("mha_knowledge_base")
-            self.chroma_collection = self._chroma_client.get_or_create_collection(
-                name="mha_knowledge_base",
-                metadata={"description": "MindHome Assistant - Wissensdatenbank (RAG)"},
-            )
+            from .embeddings import get_embedding_function
+            ef = get_embedding_function()
+            col_kwargs = {
+                "name": "mha_knowledge_base",
+                "metadata": {"description": "MindHome Assistant - Wissensdatenbank (RAG)"},
+            }
+            if ef:
+                col_kwargs["embedding_function"] = ef
+            self.chroma_collection = self._chroma_client.get_or_create_collection(**col_kwargs)
             self._ingested_hashes.clear()
             logger.info("Knowledge Base geloescht")
             return True
         except Exception as e:
             logger.error("Fehler beim Loeschen der Knowledge Base: %s", e)
             return False
+
+    async def rebuild(self) -> dict:
+        """Loescht die Collection und liest alle Dateien mit dem aktuellen Embedding-Modell neu ein."""
+        cleared = await self.clear()
+        if not cleared:
+            return {"success": False, "error": "Collection konnte nicht geloescht werden"}
+
+        new_chunks = await self.ingest_all()
+        from .embeddings import DEFAULT_MODEL
+        kb_config = yaml_config.get("knowledge_base", {})
+        model = kb_config.get("embedding_model", DEFAULT_MODEL)
+        return {
+            "success": True,
+            "new_chunks": new_chunks,
+            "embedding_model": model,
+        }
 
     @staticmethod
     def _extract_pdf_text(filepath: Path) -> str:

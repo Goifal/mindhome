@@ -2418,6 +2418,19 @@ async def ui_knowledge_file_reingest(request: Request, token: str = ""):
     return {"new_chunks": new_chunks, "filename": filename, "stats": stats}
 
 
+@app.post("/api/ui/knowledge/rebuild")
+async def ui_knowledge_rebuild(token: str = ""):
+    """Knowledge Base komplett neu aufbauen (Collection loeschen + alle Dateien neu einlesen).
+
+    Noetig nach Wechsel des Embedding-Modells, damit alle Vektoren
+    mit dem neuen Modell berechnet werden.
+    """
+    _check_token(token)
+    result = await brain.knowledge_base.rebuild()
+    _audit_log("knowledge_base_rebuild", result)
+    return result
+
+
 @app.post("/api/ui/knowledge/upload")
 async def ui_knowledge_upload(file: UploadFile = File(...), token: str = Form("")):
     """Datei in die Wissensdatenbank hochladen und sofort einlesen."""
