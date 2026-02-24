@@ -18,6 +18,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Optional
 
+from .config import get_person_title
+
 from .config import yaml_config
 
 logger = logging.getLogger(__name__)
@@ -522,7 +524,7 @@ class CookingAssistant:
                 remaining = timer.duration_seconds  # Frisch gestartet, noch kein started_at
             await asyncio.sleep(remaining)
             timer.finished = True
-            message = f"Sir, der Timer fuer '{timer.label}' ist abgelaufen!"
+            message = f"{get_person_title()}, der Timer fuer '{timer.label}' ist abgelaufen!"
             logger.info("Koch-Timer abgelaufen: %s", timer.label)
             if self._notify_callback and self.timer_notify_tts:
                 await self._notify_callback({"message": message, "type": "cooking_timer"})

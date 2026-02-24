@@ -18,6 +18,8 @@ from typing import Optional
 
 import redis.asyncio as aioredis
 
+from .config import get_person_title
+
 from .config import yaml_config
 
 logger = logging.getLogger(__name__)
@@ -148,8 +150,9 @@ class LearningObserver:
             friendly = entity_id.split(".", 1)[1].replace("_", " ").title()
             action_de = "eingeschaltet" if new_state == "on" else "ausgeschaltet" if new_state == "off" else new_state
 
+            title = get_person_title()
             message = (
-                f"Sir, mir ist aufgefallen, dass Sie {friendly} jeden Tag "
+                f"{title}, mir ist aufgefallen, dass Sie {friendly} jeden Tag "
                 f"um {time_slot} Uhr {action_de}. "
                 f"Soll ich das automatisieren?"
             )
@@ -200,8 +203,9 @@ class LearningObserver:
         action_de = "eingeschaltet" if new_state == "on" else "ausgeschaltet" if new_state == "off" else new_state
         day_name = WEEKDAY_NAMES_DE[weekday]
 
+        title = get_person_title()
         message = (
-            f"Sir, Sie schalten {friendly} jeden {day_name} "
+            f"{title}, Sie schalten {friendly} jeden {day_name} "
             f"um {time_slot} Uhr {action_de}. "
             f"Soll ich das fuer {day_name}s automatisieren?"
         )

@@ -29,7 +29,7 @@ from typing import Optional
 from .action_planner import ActionPlanner
 from .activity import ActivityEngine
 from .autonomy import AutonomyManager
-from .config import settings, yaml_config
+from .config import settings, yaml_config, get_person_title
 from .context_builder import ContextBuilder
 from .cooking_assistant import CookingAssistant
 from .device_health import DeviceHealthMonitor
@@ -1724,7 +1724,7 @@ class AssistantBrain(BrainCallbacksMixin):
                                     SECURITY_CONFIRM_TTL,
                                     json.dumps(pending),
                                 )
-                            response_text = f"Sir, das braucht deine Bestaetigung. {validation.reason}"
+                            response_text = f"{get_person_title(person)}, das braucht deine Bestaetigung. {validation.reason}"
                             executed_actions.append({
                                 "function": func_name,
                                 "args": func_args,
@@ -4573,20 +4573,23 @@ Regeln:
                     "F-027: Anticipation auto-execute blockiert (%s) — Person '%s' hat Trust %d",
                     action, person, trust_level,
                 )
-                text = f"Sir, {desc}. Soll ich das uebernehmen? (Bestaetigung erforderlich)"
+                title = get_person_title(person)
+                text = f"{title}, {desc}. Soll ich das uebernehmen? (Bestaetigung erforderlich)"
                 await emit_proactive(text, "anticipation_suggest", "medium")
                 return
 
             # Automatisch ausfuehren + informieren
             args = suggestion.get("args", {})
             result = await self.executor.execute(action, args)
-            text = f"Sir, {desc} — hab ich uebernommen."
+            title = get_person_title(person)
+            text = f"{title}, {desc} — hab ich uebernommen."
             await emit_proactive(text, "anticipation_auto", "medium")
             logger.info("Anticipation auto-execute: %s", desc)
         else:
             # Vorschlagen
+            title = get_person_title(person)
             if mode == "suggest":
-                text = f"Sir, wenn ich darf — {desc}. Soll ich?"
+                text = f"{title}, wenn ich darf — {desc}. Soll ich?"
             else:
                 text = f"Mir ist aufgefallen: {desc}. Soll ich das uebernehmen?"
             await emit_proactive(text, "anticipation_suggest", "low")

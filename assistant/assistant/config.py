@@ -127,3 +127,23 @@ def apply_household_to_config() -> None:
 
 
 apply_household_to_config()
+
+
+def get_person_title(name: str = "") -> str:
+    """Gibt den konfigurierten Titel fuer eine Person zurueck.
+
+    Schaut in persons.titles (im UI konfigurierbar, z.B. 'Sir', 'Ma'am').
+    Fallback: Titel des primary_user, dann 'Sir'.
+    """
+    titles = (yaml_config.get("persons") or {}).get("titles") or {}
+    if name:
+        title = titles.get(name.lower())
+        if title:
+            return title
+    # Fallback: primary user Titel
+    primary = (yaml_config.get("household") or {}).get("primary_user", "")
+    if primary:
+        title = titles.get(primary.lower())
+        if title:
+            return title
+    return "Sir"

@@ -18,6 +18,8 @@ import logging
 import time
 import uuid
 from dataclasses import dataclass, field
+
+from .config import get_person_title
 from datetime import datetime, timedelta
 from typing import Optional
 from zoneinfo import ZoneInfo
@@ -298,7 +300,7 @@ class TimerManager:
             logger.info("Timer abgelaufen: %s (ID: %s)", timer.label, timer.id)
 
             # Benachrichtigung senden
-            message = f"Sir, der Timer fuer '{timer.label}' ist abgelaufen!"
+            message = f"{get_person_title()}, der Timer fuer '{timer.label}' ist abgelaufen!"
             if self._notify_callback:
                 await self._notify_callback({
                     "message": message,
@@ -498,7 +500,7 @@ class TimerManager:
 
             if self._notify_callback:
                 await self._notify_callback({
-                    "message": f"Sir, Erinnerung: {timer.label}",
+                    "message": f"{get_person_title()}, Erinnerung: {timer.label}",
                     "type": "reminder",
                     "room": timer.room,
                     "timer_id": timer.id,
