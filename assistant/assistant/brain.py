@@ -965,9 +965,11 @@ class AssistantBrain(BrainCallbacksMixin):
                 # Background: LLM-Polish (4B, 3s Timeout) + TTS
                 # Chat-Antwort kommt sofort mit Humanizer-Text,
                 # TTS spricht die verfeinerte Version (oder Fallback).
+                # C-2: Bei Pipeline-Requests kein TTS (Pipeline macht das selbst)
+                _skip_tts = getattr(self, "_request_from_pipeline", False)
                 async def _calendar_polish_and_speak(
                     _text=text, _response=response_text, _cal_msg=cal_msg,
-                    _room=room, _tts_data=tts_data,
+                    _room=room, _tts_data=tts_data, _skip=_skip_tts,
                 ):
                     speak_text = _response
                     speak_tts = _tts_data
@@ -1026,11 +1028,12 @@ class AssistantBrain(BrainCallbacksMixin):
                                             )
                         except Exception as e:
                             logger.debug("Kalender LLM-Polish fehlgeschlagen: %s", e)
-                    if not _room:
-                        _room = await self._get_occupied_room()
-                    await self.sound_manager.speak_response(
-                        speak_text, room=_room, tts_data=speak_tts
-                    )
+                    if not _skip:
+                        if not _room:
+                            _room = await self._get_occupied_room()
+                        await self.sound_manager.speak_response(
+                            speak_text, room=_room, tts_data=speak_tts
+                        )
 
                 self._task_registry.create_task(
                     _calendar_polish_and_speak(), name="calendar_polish_speak"
@@ -1069,18 +1072,20 @@ class AssistantBrain(BrainCallbacksMixin):
                     await emit_speaking(response_text, tts_data=tts_data)
 
                 # TTS im Hintergrund
-                async def _weather_speak(
-                    _response=response_text, _room=room, _tts_data=tts_data,
-                ):
-                    if not _room:
-                        _room = await self._get_occupied_room()
-                    await self.sound_manager.speak_response(
-                        _response, room=_room, tts_data=_tts_data
-                    )
+                # C-2: Bei Pipeline-Requests kein TTS (Pipeline macht das selbst)
+                if not getattr(self, "_request_from_pipeline", False):
+                    async def _weather_speak(
+                        _response=response_text, _room=room, _tts_data=tts_data,
+                    ):
+                        if not _room:
+                            _room = await self._get_occupied_room()
+                        await self.sound_manager.speak_response(
+                            _response, room=_room, tts_data=_tts_data
+                        )
 
-                self._task_registry.create_task(
-                    _weather_speak(), name="weather_speak"
-                )
+                    self._task_registry.create_task(
+                        _weather_speak(), name="weather_speak"
+                    )
 
                 return {
                     "response": response_text,
