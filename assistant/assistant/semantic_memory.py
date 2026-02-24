@@ -97,10 +97,15 @@ class SemanticMemory:
                 host=settings.chroma_url.replace("http://", "").split(":")[0],
                 port=int(settings.chroma_url.split(":")[-1]),
             )
-            self.chroma_collection = self._chroma_client.get_or_create_collection(
-                name="mha_semantic_facts",
-                metadata={"description": "MindHome Assistant - Extrahierte Fakten"},
-            )
+            from .embeddings import get_embedding_function
+            ef = get_embedding_function()
+            col_kwargs = {
+                "name": "mha_semantic_facts",
+                "metadata": {"description": "MindHome Assistant - Extrahierte Fakten"},
+            }
+            if ef:
+                col_kwargs["embedding_function"] = ef
+            self.chroma_collection = self._chroma_client.get_or_create_collection(**col_kwargs)
             logger.info("Semantic Memory initialisiert (ChromaDB: mha_semantic_facts)")
         except Exception as e:
             logger.warning("Semantic Memory ChromaDB nicht verfuegbar: %s", e)

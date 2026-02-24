@@ -48,10 +48,15 @@ class MemoryManager:
                 host=_parsed.hostname or "localhost",
                 port=_parsed.port or 8000,
             )
-            self.chroma_collection = self._chroma_client.get_or_create_collection(
-                name="mha_conversations",
-                metadata={"description": "MindHome Assistant Gespraeche und Erinnerungen"},
-            )
+            from .embeddings import get_embedding_function
+            ef = get_embedding_function()
+            col_kwargs = {
+                "name": "mha_conversations",
+                "metadata": {"description": "MindHome Assistant Gespraeche und Erinnerungen"},
+            }
+            if ef:
+                col_kwargs["embedding_function"] = ef
+            self.chroma_collection = self._chroma_client.get_or_create_collection(**col_kwargs)
             logger.info("ChromaDB verbunden, Collection: mha_conversations")
         except Exception as e:
             logger.warning("ChromaDB nicht verfuegbar: %s", e)

@@ -2418,6 +2418,53 @@ async def ui_knowledge_file_reingest(request: Request, token: str = ""):
     return {"new_chunks": new_chunks, "filename": filename, "stats": stats}
 
 
+@app.post("/api/ui/knowledge/rebuild")
+async def ui_knowledge_rebuild(token: str = ""):
+    """Knowledge Base komplett neu aufbauen (Collection loeschen + alle Dateien neu einlesen).
+
+    Noetig nach Wechsel des Embedding-Modells, damit alle Vektoren
+    mit dem neuen Modell berechnet werden.
+    """
+    _check_token(token)
+    result = await brain.knowledge_base.rebuild()
+    _audit_log("knowledge_base_rebuild", result)
+    return result
+
+
+@app.post("/api/ui/knowledge/upload")
+async def ui_knowledge_upload(file: UploadFile = File(...), token: str = Form("")):
+    """Datei in die Wissensdatenbank hochladen und sofort einlesen."""
+    _check_token(token)
+    from .knowledge_base import KB_UPLOAD_MAX_SIZE, KB_UPLOAD_ALLOWED
+
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="Keine Datei ausgewaehlt")
+
+    suffix = Path(file.filename).suffix.lower()
+    if suffix not in KB_UPLOAD_ALLOWED:
+        raise HTTPException(status_code=400, detail=f"Dateityp '{suffix}' nicht erlaubt. Erlaubt: {', '.join(sorted(KB_UPLOAD_ALLOWED))}")
+
+    content = await file.read()
+    if len(content) > KB_UPLOAD_MAX_SIZE:
+        mb = KB_UPLOAD_MAX_SIZE // (1024 * 1024)
+        raise HTTPException(status_code=413, detail=f"Datei zu gross (max {mb} MB)")
+
+    # Sicheren Dateinamen erzeugen
+    safe_name = Path(file.filename).name.replace("/", "_").replace("\\", "_")
+    kb_dir = Path(__file__).parent.parent / "config" / "knowledge"
+    kb_dir.mkdir(parents=True, exist_ok=True)
+    target = kb_dir / safe_name
+
+    # Datei speichern
+    target.write_bytes(content)
+
+    # Sofort einlesen
+    new_chunks = await brain.knowledge_base.ingest_file(target)
+    _audit_log("knowledge_file_upload", {"filename": safe_name, "size": len(content), "chunks": new_chunks})
+    stats = await brain.knowledge_base.get_stats()
+    return {"filename": safe_name, "new_chunks": new_chunks, "size": len(content), "stats": stats}
+
+
 @app.get("/api/ui/logs")
 async def ui_get_logs(token: str = "", limit: int = 50):
     """Letzte Konversationen aus dem Working Memory."""

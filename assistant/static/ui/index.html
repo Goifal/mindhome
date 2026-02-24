@@ -901,9 +901,20 @@ input:focus,select:focus,textarea:focus { border-color:var(--accent); box-shadow
       <div id="page-knowledge" class="page">
         <div class="section-header">
           <div><h2>Wissensdatenbank</h2><p>Dateien in config/knowledge/ — RAG-Quelle</p></div>
-          <button class="btn btn-primary" onclick="ingestKnowledge()">Neu einlesen</button>
+          <div style="display:flex;gap:8px;">
+            <button class="btn btn-primary" onclick="ingestKnowledge()">Neu einlesen</button>
+            <button class="btn btn-danger" onclick="rebuildKnowledge()" title="Collection loeschen und alle Dateien mit aktuellem Embedding-Modell neu einlesen">Rebuild</button>
+          </div>
         </div>
         <div id="kbStats" class="grid grid-3" style="margin-bottom:16px;"></div>
+        <div class="card" style="margin-bottom:16px;">
+          <div id="kbDropzone" style="border:2px dashed var(--border);border-radius:10px;padding:28px 16px;text-align:center;cursor:pointer;transition:all .2s;" onclick="document.getElementById('kbFileInput').click()">
+            <div style="font-size:28px;margin-bottom:6px;">&#128228;</div>
+            <div style="font-size:14px;font-weight:500;">Datei hochladen</div>
+            <div style="font-size:12px;color:var(--text-muted);margin-top:4px;">Drag & Drop oder klicken — .txt .md .pdf .csv — max 10 MB</div>
+          </div>
+          <input type="file" id="kbFileInput" accept=".txt,.md,.pdf,.csv" style="display:none;" onchange="uploadKbFile(this.files[0])" />
+        </div>
         <div class="card"><div class="card-header"><h3>Dateien</h3></div><div id="kbFiles"></div></div>
         <div class="card" style="margin-top:16px;">
           <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
