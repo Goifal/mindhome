@@ -417,8 +417,8 @@ class InsightEngine:
                     "check": "weather_windows",
                     "urgency": urgency,
                     "message": (
-                        f"Es wird {time_hint} {weather_word} erwartet — "
-                        f"{windows}{extra} {'sind' if len(data['open_windows']) > 1 else 'ist'} "
+                        f"Sir, {time_hint} zieht {weather_word} auf — "
+                        f"{windows}{extra} {'stehen' if len(data['open_windows']) > 1 else 'steht'} "
                         f"noch offen."
                     ),
                     "data": {
@@ -467,9 +467,9 @@ class InsightEngine:
             "check": "frost_heating",
             "urgency": "medium",
             "message": (
-                f"Es werden {frost_temp}°C erwartet — "
+                f"Sir, es werden {frost_temp}°C erwartet — "
                 f"{', '.join(heating_issues)}. "
-                f"Frostschaeden moeglich."
+                f"Frostschaeden waeren vermeidbar."
             ),
             "data": {
                 "frost_temp": frost_temp,
@@ -526,9 +526,9 @@ class InsightEngine:
             "check": "calendar_travel",
             "urgency": "low",
             "message": (
-                f'Du hast "{ev_summary}" im Kalender. '
+                f'Sir, "{ev_summary}" steht an. '
                 f"{' — '.join(hints)}. "
-                f"Soll ich das vorbereiten?"
+                f"Soll ich das Haus vorbereiten?"
             ),
             "data": {
                 "event": ev_summary,
@@ -588,9 +588,9 @@ class InsightEngine:
                 "check": "energy_anomaly",
                 "urgency": "low",
                 "message": (
-                    f"Der Stromverbrauch liegt heute {increase_pct:.0f}% ueber "
-                    f"dem 7-Tage-Durchschnitt. "
-                    f"Ungewoehnlicher Verbraucher aktiv?"
+                    f"Sir, der Stromverbrauch heute liegt {increase_pct:.0f}% ueber "
+                    f"dem Durchschnitt. "
+                    f"Laeuft etwas, das nicht laufen sollte?"
                 ),
                 "data": {
                     "projected_wh": round(projected),
@@ -654,7 +654,7 @@ class InsightEngine:
             "check": "away_devices",
             "urgency": "low",
             "message": (
-                f"Ihr seid seit {hours_away:.0f}h weg — "
+                f"Sir, Sie sind seit {hours_away:.0f} Stunden weg — "
                 f"{'. '.join(issues)}."
             ),
             "data": {
@@ -704,8 +704,8 @@ class InsightEngine:
                 "check": "temp_drop",
                 "urgency": "low",
                 "message": (
-                    f"Die Temperatur ist in 2 Stunden um {drop:.1f}°C "
-                    f"gefallen (von {old_temp:.1f}° auf {current_avg:.1f}°).{cause_hint}"
+                    f"Sir, die Raumtemperatur faellt ungewoehnlich — "
+                    f"{drop:.1f} Grad in 2 Stunden, jetzt bei {current_avg:.1f}°C.{cause_hint}"
                 ),
                 "data": {
                     "old_temp": old_temp,
@@ -749,9 +749,9 @@ class InsightEngine:
             "check": "window_temp_drop",
             "urgency": "low",
             "message": (
-                f"Draussen sind es {outside_temp:.0f}°C, drinnen {inside_avg:.0f}°C — "
-                f"{windows} {'sind' if len(data['open_windows']) > 1 else 'ist'} offen. "
-                f"Energieverschwendung moeglich."
+                f"Sir, bei {outside_temp:.0f}°C draussen und offenem {windows} "
+                f"heizen wir gerade die Nachbarschaft mit — "
+                f"drinnen {inside_avg:.0f}°C."
             ),
             "data": {
                 "outside_temp": outside_temp,
