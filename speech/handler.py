@@ -13,7 +13,9 @@ damit die Transkription nicht verzoegert wird.
 import asyncio
 import json
 import logging
+import threading
 import time
+import uuid
 from typing import Optional
 
 import numpy as np
@@ -30,12 +32,28 @@ logger = logging.getLogger(__name__)
 _whisper_model = None
 _embedding_model = None
 _redis_client = None
+_init_lock = threading.Lock()
+
+# C-7: asyncio.Lock serialisiert Transkriptionen (CTranslate2 ist nicht thread-safe)
+_model_lock: Optional[asyncio.Lock] = None
+
+
+def _get_model_lock() -> asyncio.Lock:
+    """Gibt den shared asyncio.Lock zurueck (lazy-init)."""
+    global _model_lock
+    if _model_lock is None:
+        _model_lock = asyncio.Lock()
+    return _model_lock
 
 
 def _get_whisper_model(model_name: str, device: str, compute_type: str):
-    """Lazy-load faster-whisper Modell."""
+    """Lazy-load faster-whisper Modell (thread-safe)."""
     global _whisper_model
-    if _whisper_model is None:
+    if _whisper_model is not None:
+        return _whisper_model
+    with _init_lock:
+        if _whisper_model is not None:
+            return _whisper_model
         from faster_whisper import WhisperModel
 
         logger.info("Lade Whisper Modell: %s (device=%s, compute=%s)", model_name, device, compute_type)
@@ -45,9 +63,13 @@ def _get_whisper_model(model_name: str, device: str, compute_type: str):
 
 
 def _get_embedding_model(device: str):
-    """Lazy-load ECAPA-TDNN Embedding Modell."""
+    """Lazy-load ECAPA-TDNN Embedding Modell (thread-safe)."""
     global _embedding_model
-    if _embedding_model is None:
+    if _embedding_model is not None:
+        return _embedding_model
+    with _init_lock:
+        if _embedding_model is not None:
+            return _embedding_model
         try:
             from speechbrain.inference.speaker import EncoderClassifier
 
@@ -69,9 +91,9 @@ async def _get_redis(redis_url: str):
     global _redis_client
     if _redis_client is None:
         try:
-            import redis.asyncio as aioredis
+            import redis.asyncio as redis_async
 
-            _redis_client = aioredis.from_url(redis_url, decode_responses=True)
+            _redis_client = redis_async.from_url(redis_url, decode_responses=True)
             await _redis_client.ping()
             logger.info("Redis verbunden: %s", redis_url)
         except Exception as e:
@@ -90,7 +112,7 @@ class WhisperEmbeddingHandler(AsyncEventHandler):
         self,
         *args,
         wyoming_info: Info,
-        model_name: str = "small-int8",
+        model_name: str = "small",
         language: str = "de",
         device: str = "cpu",
         compute_type: str = "int8",
@@ -111,6 +133,10 @@ class WhisperEmbeddingHandler(AsyncEventHandler):
         self._audio_bytes = bytearray()
         # Converter: normalisiert Audio auf 16kHz/16-bit/mono
         self._converter = AudioChunkConverter(rate=16000, width=2, channels=1)
+        # W-8: Task-Referenz speichern damit GC den Task nicht cancelt
+        self._embedding_task: Optional[asyncio.Task] = None
+        # W-1: Request-ID fuer eindeutigen Redis Key
+        self._request_id: str = ""
 
     async def handle_event(self, event: Event) -> bool:
         """Verarbeitet ein Wyoming Event.
@@ -122,8 +148,9 @@ class WhisperEmbeddingHandler(AsyncEventHandler):
             return True
 
         if Transcribe.is_type(event.type):
-            # Neuer STT-Request: Buffer leeren
+            # Neuer STT-Request: Buffer leeren + neue Request-ID
             self._audio_bytes = bytearray()
+            self._request_id = uuid.uuid4().hex[:12]
             return True
 
         if AudioChunk.is_type(event.type):
@@ -151,9 +178,10 @@ class WhisperEmbeddingHandler(AsyncEventHandler):
         self._audio_bytes = bytearray()
         start_time = time.monotonic()
 
-        # Whisper Transkription (CPU-/GPU-gebunden → in Thread ausfuehren)
-        loop = asyncio.get_event_loop()
-        text = await loop.run_in_executor(None, self._transcribe, audio_bytes)
+        # C-7: Lock serialisiert Transkriptionen (CTranslate2 nicht thread-safe)
+        loop = asyncio.get_running_loop()
+        async with _get_model_lock():
+            text = await loop.run_in_executor(None, self._transcribe, audio_bytes)
 
         elapsed = time.monotonic() - start_time
         audio_duration = len(audio_bytes) / (16000 * 2)  # 16kHz, 16-bit
@@ -163,8 +191,10 @@ class WhisperEmbeddingHandler(AsyncEventHandler):
             elapsed / audio_duration if audio_duration > 0 else 0,
         )
 
-        # Embedding-Extraktion parallel starten (blockiert NICHT die Antwort)
-        asyncio.create_task(self._extract_and_store_embedding(audio_bytes))
+        # W-8: Embedding-Extraktion parallel starten, Referenz speichern
+        self._embedding_task = asyncio.create_task(
+            self._extract_and_store_embedding(audio_bytes)
+        )
 
         return text
 
@@ -178,15 +208,26 @@ class WhisperEmbeddingHandler(AsyncEventHandler):
         if len(audio_array) < 1600:  # < 0.1s bei 16kHz
             return ""
 
-        segments, _info = model.transcribe(
-            audio_array,
-            language=self.language,
-            beam_size=self.beam_size,
-            vad_filter=True,
-            vad_parameters={"min_silence_duration_ms": 500},
-        )
+        # W-9: VAD-Fallback — bei ValueError nochmal ohne VAD versuchen
+        try:
+            segments, _info = model.transcribe(
+                audio_array,
+                language=self.language,
+                beam_size=self.beam_size,
+                vad_filter=True,
+                vad_parameters={"min_silence_duration_ms": 500},
+            )
+            text = " ".join(seg.text.strip() for seg in segments)
+        except ValueError as e:
+            logger.warning("VAD-Fehler, Retry ohne VAD: %s", e)
+            segments, _info = model.transcribe(
+                audio_array,
+                language=self.language,
+                beam_size=self.beam_size,
+                vad_filter=False,
+            )
+            text = " ".join(seg.text.strip() for seg in segments)
 
-        text = " ".join(seg.text.strip() for seg in segments)
         return text.strip()
 
     async def _extract_and_store_embedding(self, audio_bytes: bytes):
@@ -195,7 +236,7 @@ class WhisperEmbeddingHandler(AsyncEventHandler):
         Laeuft als Background-Task — Fehler werden nur geloggt, nicht propagiert.
         """
         try:
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             embedding = await loop.run_in_executor(
                 None, self._extract_embedding, audio_bytes,
             )
@@ -203,15 +244,28 @@ class WhisperEmbeddingHandler(AsyncEventHandler):
             if not embedding:
                 return
 
-            # In Redis speichern (TTL 60s — wird von speaker_recognition.py gelesen)
+            # W-1: Request-spezifischer Key + "latest" Key fuer Kompatibilitaet
             redis = await _get_redis(self.redis_url)
             if redis:
-                await redis.set(
+                request_id = self._request_id or uuid.uuid4().hex[:12]
+                pipe = redis.pipeline()
+                # Spezifischer Key (fuer Request-Zuordnung)
+                pipe.set(
+                    f"mha:speaker:embedding:{request_id}",
+                    json.dumps(embedding),
+                    ex=60,
+                )
+                # Latest Key (Fallback fuer einfachen Zugriff)
+                pipe.set(
                     "mha:speaker:latest_embedding",
                     json.dumps(embedding),
                     ex=60,
                 )
-                logger.debug("Voice-Embedding gespeichert (%d dim, TTL 60s)", len(embedding))
+                await pipe.execute()
+                logger.debug(
+                    "Voice-Embedding gespeichert (%d dim, TTL 60s, id=%s)",
+                    len(embedding), request_id,
+                )
 
         except Exception as e:
             logger.warning("Embedding-Extraktion fehlgeschlagen: %s", e)

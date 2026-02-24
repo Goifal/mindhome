@@ -504,20 +504,39 @@ Nach dem ersten Sprachbefehl solltest du Keys wie `mha:speaker:latest_embedding`
 4. Klicke auf **Piper**
 5. Klicke **Deinstallieren**
 
+**Wichtig — TTS-Entity in settings.yaml konfigurieren:**
+
+Nach dem Entfernen der Piper Add-on verschwindet die `tts.piper` Entity.
+Damit proaktive Sprachausgaben (Benachrichtigungen, Alarme, Doorbell etc.)
+weiterhin funktionieren:
+
+1. Pruefe in HA welche TTS-Entity die Wyoming-Integration erstellt hat:
+   **Developer Tools** → **States** → Suche nach `tts.`
+   (z.B. `tts.piper` oder `tts.wyoming_piper`)
+
+2. Trage sie in `config/settings.yaml` ein:
+   ```yaml
+   sounds:
+     tts_entity: "tts.piper"  # oder tts.wyoming_piper — was bei dir steht
+     default_speaker: "media_player.kueche"  # dein Haupt-Speaker
+   ```
+
+3. Container neu starten: `docker compose restart assistant`
+
 **Fertig!** PC 1 ist jetzt entlastet. STT und TTS laufen auf PC 2.
 
 ---
 
 ### Schritt 6 (Optional): Whisper-Modell wechseln
 
-Falls die Erkennung mit `small-int8` nicht gut genug ist:
+Falls die Erkennung mit `small` nicht gut genug ist:
 
 ```bash
 # Auf PC 2: .env editieren
 nano /home/user/mindhome/assistant/.env
 
-# Aendern:
-WHISPER_MODEL=medium-int8
+# Aendern (INT8-Quantisierung laeuft automatisch via WHISPER_COMPUTE=int8):
+WHISPER_MODEL=medium
 
 # Container neu starten:
 cd /home/user/mindhome/assistant

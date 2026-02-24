@@ -17,7 +17,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
-# Python-Dependencies
+# W-6: PyTorch CPU-only installieren (~300MB statt ~2.3GB CUDA)
+# Bei GPU-Betrieb (Phase 2) wird docker-compose.gpu.yml genutzt —
+# dort kann ein separates Image mit CUDA-PyTorch gebaut werden.
+RUN pip install --no-cache-dir \
+    torch==2.5.1 torchaudio==2.5.1 \
+    --index-url https://download.pytorch.org/whl/cpu
+
+# Python-Dependencies (torch/torchaudio schon installiert, pip ueberspringt sie)
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
@@ -27,11 +34,15 @@ COPY server.py handler.py ./
 # Modell-Verzeichnis (wird als Volume gemountet)
 RUN mkdir -p /app/models
 
+# W-5: HuggingFace Cache im gemounteten Volume halten
+# Verhindert dass Symlinks nach Container-Rebuild ins Nichts zeigen
+ENV HF_HOME=/app/models/.hf_cache
+
 # Wyoming STT Port
 EXPOSE 10300
 
-# Healthcheck: Prueft ob TCP-Port antwortet
-HEALTHCHECK --interval=30s --timeout=10s --retries=5 --start-period=120s \
+# W-7: start_period auf 300s (erster Start laedt ~500MB Modelle)
+HEALTHCHECK --interval=30s --timeout=10s --retries=5 --start-period=300s \
     CMD python -c "import socket; s=socket.socket(); s.settimeout(5); s.connect(('localhost', 10300)); s.close()" || exit 1
 
 CMD ["python", "server.py"]

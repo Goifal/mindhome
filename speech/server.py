@@ -17,7 +17,7 @@ from functools import partial
 from wyoming.info import AsrModel, AsrProgram, Attribution, Info
 from wyoming.server import AsyncServer
 
-from handler import WhisperEmbeddingHandler
+from handler import WhisperEmbeddingHandler, _get_whisper_model, _get_embedding_model
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +30,7 @@ def main():
     )
 
     # Konfiguration aus Umgebungsvariablen
-    model = os.getenv("WHISPER_MODEL", "small-int8")
+    model = os.getenv("WHISPER_MODEL", "small")
     language = os.getenv("WHISPER_LANGUAGE", "de")
     device = os.getenv("SPEECH_DEVICE", "cpu")
     compute_type = os.getenv("WHISPER_COMPUTE", "int8")
@@ -70,9 +70,10 @@ def main():
         ],
     )
 
-    # Modelle vorladen (damit der erste Request schnell ist)
+    # W-2: Modelle vorladen via globale Funktionen (nicht wegwerfen)
     logger.info("Lade Modelle vor...")
-    _preload_models(model, device, compute_type)
+    _get_whisper_model(model, device, compute_type)
+    _get_embedding_model(device)
 
     # Wyoming TCP Server starten
     server = AsyncServer.from_uri(f"tcp://0.0.0.0:{port}")
@@ -90,32 +91,6 @@ def main():
     )
 
     asyncio.run(server.run(handler_factory))
-
-
-def _preload_models(model_name: str, device: str, compute_type: str):
-    """Laedt Whisper + ECAPA-TDNN beim Start (nicht erst beim ersten Request)."""
-    try:
-        from faster_whisper import WhisperModel
-
-        logger.info("Lade Whisper: %s (device=%s, compute=%s)...", model_name, device, compute_type)
-        WhisperModel(model_name, device=device, compute_type=compute_type)
-        logger.info("Whisper geladen: %s", model_name)
-    except Exception as e:
-        logger.error("Whisper laden fehlgeschlagen: %s", e)
-
-    try:
-        from speechbrain.inference.speaker import EncoderClassifier
-
-        run_device = "cuda" if device == "cuda" else "cpu"
-        logger.info("Lade ECAPA-TDNN (device=%s)...", run_device)
-        EncoderClassifier.from_hparams(
-            source="speechbrain/spkrec-ecapa-voxceleb",
-            savedir="/app/models/spkrec-ecapa-voxceleb",
-            run_opts={"device": run_device},
-        )
-        logger.info("ECAPA-TDNN geladen (192-dim)")
-    except Exception as e:
-        logger.warning("ECAPA-TDNN laden fehlgeschlagen: %s — Embeddings deaktiviert", e)
 
 
 if __name__ == "__main__":

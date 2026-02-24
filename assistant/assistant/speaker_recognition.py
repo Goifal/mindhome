@@ -149,6 +149,7 @@ class SpeakerRecognition:
         # In-Memory Cache der Profile
         self._profiles: dict[str, SpeakerProfile] = {}
         self._last_speaker: Optional[str] = None
+        self._last_embedding: Optional[list[float]] = None  # C-1: Cache fuer Embedding-Lernen
         self._save_lock = asyncio.Lock()
 
         if self.enabled:
@@ -289,12 +290,15 @@ class SpeakerRecognition:
         # Genuegt ~1-3s Audio. ECAPA-TDNN 192-dim Cosinus-Aehnlichkeit.
         # Primaer: Wyoming Handler schreibt Embedding in Redis (mha:speaker:latest_embedding)
         # Fallback: Lokale Extraktion aus audio_pcm_b64 (falls kein Wyoming-Embedding)
+        # C-1 Fix: Embedding einmal lesen und cachen fuer spaeteres Lernen
         embedding = await self._get_wyoming_embedding()
         if not embedding and audio_metadata and audio_metadata.get("audio_pcm_b64"):
             embedding = extract_embedding(
                 audio_metadata["audio_pcm_b64"],
                 sample_rate=audio_metadata.get("sample_rate", 16000),
             )
+        if embedding:
+            self._last_embedding = embedding
         if embedding and self._profiles:
             emb_result = await self.identify_by_embedding(embedding)
             if emb_result:
@@ -620,20 +624,35 @@ class SpeakerRecognition:
         Der Wyoming Handler (speech/handler.py) extrahiert bei jeder Transkription
         ein ECAPA-TDNN Embedding und speichert es in Redis mit 60s TTL.
         Diese Methode liest und konsumiert es (einmalig).
+
+        C-4 Fix: Retry-Loop mit max 500ms Wartezeit, da das Embedding
+        als fire-and-forget Task extrahiert wird und beim ersten Versuch
+        moeglicherweise noch nicht in Redis steht.
         """
         if not self.redis:
             return None
-        try:
-            data = await self.redis.get("mha:speaker:latest_embedding")
-            if data:
-                embedding = json.loads(data if isinstance(data, str) else data.decode())
-                if isinstance(embedding, list) and len(embedding) > 0:
-                    # Embedding konsumieren (nur einmal verwenden)
-                    await self.redis.delete("mha:speaker:latest_embedding")
-                    logger.debug("Wyoming-Embedding aus Redis gelesen (%d dim)", len(embedding))
-                    return embedding
-        except Exception as e:
-            logger.debug("Wyoming-Embedding lesen fehlgeschlagen: %s", e)
+
+        # C-4: Bis zu 3 Versuche mit kurzer Wartezeit (50ms, 150ms, 300ms = 500ms total)
+        delays = [0.05, 0.15, 0.3]
+        for attempt, delay in enumerate(delays):
+            try:
+                data = await self.redis.get("mha:speaker:latest_embedding")
+                if data:
+                    embedding = json.loads(data if isinstance(data, str) else data.decode())
+                    if isinstance(embedding, list) and len(embedding) > 0:
+                        # Embedding konsumieren (nur einmal verwenden)
+                        await self.redis.delete("mha:speaker:latest_embedding")
+                        logger.debug("Wyoming-Embedding aus Redis gelesen (%d dim, Versuch %d)",
+                                     len(embedding), attempt + 1)
+                        return embedding
+            except Exception as e:
+                logger.debug("Wyoming-Embedding lesen fehlgeschlagen: %s", e)
+                return None
+
+            # Noch nicht da — kurz warten und nochmal versuchen
+            if attempt < len(delays) - 1:
+                await asyncio.sleep(delay)
+
         return None
 
     async def learn_embedding_from_audio(self, person_id: str, audio_metadata: dict):
@@ -643,18 +662,23 @@ class SpeakerRecognition:
         (z.B. per Device-Mapping oder manuell), um den Stimmabdruck
         zu trainieren. Nutzt EMA-Verschmelzung fuer kontinuierliches Lernen.
 
-        Primaer wird das Embedding aus Redis gelesen (von Wyoming Handler),
-        Fallback ist lokale Extraktion aus audio_pcm_b64.
+        C-1 Fix: Nutzt zuerst das gecachte Embedding aus identify(),
+        dann Wyoming-Redis, dann lokale Extraktion als Fallback.
         """
         if not self.enabled or not audio_metadata:
             return
         if person_id not in self._profiles:
             return
 
-        # Primaer: Wyoming-Embedding aus Redis (bereits extrahiert)
-        embedding = await self._get_wyoming_embedding()
+        # C-1 Fix: Gecachtes Embedding aus identify() verwenden (wurde dort schon gelesen)
+        embedding = self._last_embedding
+        self._last_embedding = None  # Nur einmal verwenden
 
-        # Fallback: Lokale Extraktion aus base64-Audio
+        # Fallback 1: Wyoming-Embedding aus Redis (falls identify() keins hatte)
+        if not embedding:
+            embedding = await self._get_wyoming_embedding()
+
+        # Fallback 2: Lokale Extraktion aus base64-Audio
         if not embedding:
             audio_b64 = audio_metadata.get("audio_pcm_b64")
             if not audio_b64:

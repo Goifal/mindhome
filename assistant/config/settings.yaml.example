@@ -426,6 +426,16 @@ volume:
   morning_start: 7
 sounds:
   enabled: true
+  # TTS-Entity: MUSS nach Wyoming-Piper-Migration gesetzt werden!
+  # Wyoming Piper registriert sich als Pipeline-TTS-Provider, erstellt aber
+  # nicht automatisch eine tts.* Entity in HA. Ohne diese Einstellung
+  # funktionieren proaktive Sprachausgaben (Benachrichtigungen, Alarme) nicht.
+  # Pruefe in HA Developer Tools → States nach "tts." Entities.
+  # Beispiel: tts.piper (HA Add-on) oder tts.wyoming_piper (Wyoming Integration)
+  tts_entity: ""
+  # Default-Speaker: Wird genutzt wenn kein Raum erkannt wird
+  # Beispiel: media_player.kueche
+  default_speaker: ""
   events:
     listening: listening_chime
     confirmed: confirm_ping

@@ -101,7 +101,7 @@ services:
       - "10300:10300"
     environment:
       - TZ=Europe/Berlin
-      - WHISPER_MODEL=${WHISPER_MODEL:-small-int8}
+      - WHISPER_MODEL=${WHISPER_MODEL:-small}
       - WHISPER_LANGUAGE=${WHISPER_LANGUAGE:-de}
       - WHISPER_BEAM_SIZE=${WHISPER_BEAM_SIZE:-5}
       - WHISPER_COMPUTE=${WHISPER_COMPUTE:-int8}
@@ -117,7 +117,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 120s
+      start_period: 300s
 
   # --- Piper TTS (Wyoming Protocol) ---
   # Offizielles rhasspy/wyoming-piper Image (keine Custom-Logik noetig)
@@ -128,7 +128,7 @@ services:
     restart: unless-stopped
     ports:
       - "10200:10200"
-    command: --voice ${PIPER_VOICE:-de_DE-thorsten-high}
+    command: --voice ${PIPER_VOICE:-de_DE-thorsten-high} --port 10200
     volumes:
       - ${DATA_DIR:-./data}/piper-models:/data
     healthcheck:
