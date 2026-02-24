@@ -699,6 +699,14 @@ const HELP_TEXTS = {
   'mood.negative_keywords': {title:'Negative Woerter', text:'Woerter die schlechte Stimmung signalisieren.'},
   'mood.impatient_keywords': {title:'Ungeduld-Woerter', text:'Woerter die Ungeduld signalisieren.'},
   'mood.tired_keywords': {title:'Muedigkeits-Woerter', text:'Woerter die Muedigkeit signalisieren.'},
+  // === SPRACH-ENGINE ===
+  'speech.stt_model': {title:'Whisper-Modell', text:'Groessere Modelle sind genauer aber langsamer. "small" ist fuer CPU empfohlen, "large-v3-turbo" fuer GPU.'},
+  'speech.stt_language': {title:'Sprache', text:'Sprache fuer die Spracherkennung. Beeinflusst Genauigkeit der Transkription.'},
+  'speech.stt_beam_size': {title:'Beam Size', text:'Hoehere Werte = genauere Erkennung, aber langsamer. Standard: 5.'},
+  'speech.stt_compute': {title:'Berechnung', text:'int8 fuer CPU (schnell, wenig RAM), float16 fuer GPU, float32 fuer maximale Praezision.'},
+  'speech.stt_device': {title:'Hardware', text:'CPU fuer Standard-Betrieb, CUDA fuer NVIDIA GPU (NVIDIA Container Toolkit erforderlich).'},
+  'speech.tts_voice': {title:'Piper-Stimme', text:'Stimme fuer die Sprachsynthese. "thorsten-high" hat die beste Qualitaet auf Deutsch.'},
+  'speech.auto_night_whisper': {title:'Nacht-Fluestern', text:'Jarvis spricht nachts automatisch leiser (basierend auf den Lautstaerke-Einstellungen).'},
   'voice_analysis.enabled': {title:'Stimm-Analyse', text:'Analysiert Sprechtempo zur Stimmungserkennung.'},
   'voice_analysis.wpm_fast': {title:'Schnelles Sprechen (WPM)', text:'Ab wie vielen Woertern/Min schnelles Sprechen erkannt wird.'},
   'voice_analysis.wpm_slow': {title:'Langsames Sprechen (WPM)', text:'Unter wie vielen Woertern/Min langsames Sprechen gilt.'},
@@ -1768,7 +1776,45 @@ function renderVoice() {
     {v:'chime',l:'Glockenspiel'},
     {v:'notification',l:'Benachrichtigung'}
   ];
-  return sectionWrap('&#128266;', 'Sprachausgabe (TTS)',
+  return sectionWrap('&#127897;', 'Sprach-Engine (STT / TTS)',
+    fInfo('Whisper-Modell und Piper-Stimme. Aenderungen hier erfordern einen Container-Neustart (System → Neustart).') +
+    '<div style="margin:12px 0;font-weight:600;font-size:13px;">Spracherkennung (Whisper STT)</div>' +
+    fSelect('speech.stt_model', 'Whisper-Modell', [
+      {v:'tiny',l:'Tiny — Schnellstes (schlechteste Qualitaet)'},
+      {v:'base',l:'Base — Schnell'},
+      {v:'small',l:'Small — Empfohlen fuer CPU'},
+      {v:'medium',l:'Medium — Besser (langsamer)'},
+      {v:'large-v3-turbo',l:'Large V3 Turbo — Beste Qualitaet (GPU empfohlen)'}
+    ]) +
+    fSelect('speech.stt_language', 'Sprache', [
+      {v:'de',l:'Deutsch'},{v:'en',l:'Englisch'},{v:'fr',l:'Franzoesisch'},
+      {v:'es',l:'Spanisch'},{v:'it',l:'Italienisch'},{v:'nl',l:'Niederlaendisch'},
+      {v:'pl',l:'Polnisch'},{v:'pt',l:'Portugiesisch'},{v:'ru',l:'Russisch'},
+      {v:'tr',l:'Tuerkisch'},{v:'ja',l:'Japanisch'},{v:'zh',l:'Chinesisch'}
+    ]) +
+    fRange('speech.stt_beam_size', 'Beam Size (Genauigkeit)', 1, 10, 1, {1:'1 (schnell)',3:'3',5:'5 (Standard)',7:'7',10:'10 (genauest)'}) +
+    fSelect('speech.stt_compute', 'Berechnung', [
+      {v:'int8',l:'int8 — Empfohlen fuer CPU'},
+      {v:'float16',l:'float16 — Empfohlen fuer GPU'},
+      {v:'float32',l:'float32 — Hoechste Praezision (langsam)'}
+    ]) +
+    fSelect('speech.stt_device', 'Hardware', [
+      {v:'cpu',l:'CPU'},
+      {v:'cuda',l:'GPU (CUDA)'}
+    ]) +
+    '<div style="margin:16px 0 8px;font-weight:600;font-size:13px;">Sprachsynthese (Piper TTS)</div>' +
+    fSelect('speech.tts_voice', 'Piper-Stimme', [
+      {v:'de_DE-thorsten-high',l:'Thorsten High — Beste Qualitaet (empfohlen)'},
+      {v:'de_DE-thorsten-medium',l:'Thorsten Medium — Gute Qualitaet'},
+      {v:'de_DE-thorsten-low',l:'Thorsten Low — Schnell, weniger natuerlich'},
+      {v:'de_DE-kerstin-low',l:'Kerstin — Weibliche Stimme'},
+      {v:'en_US-lessac-high',l:'Lessac High — English (US)'},
+      {v:'en_US-amy-medium',l:'Amy Medium — English (US)'},
+      {v:'en_GB-alba-medium',l:'Alba Medium — English (UK)'}
+    ]) +
+    fToggle('speech.auto_night_whisper', 'Nachts automatisch fluestern')
+  ) +
+  sectionWrap('&#128266;', 'Sprachausgabe (TTS)',
     fInfo('Standard-Lautsprecher und TTS-Engine fuer Jarvis. Wenn leer, wird der erste Raum-Speaker verwendet.') +
     fEntityPickerSingle('sounds.default_speaker', 'Standard-Lautsprecher', ['media_player'], 'Welcher Lautsprecher soll Jarvis standardmaessig nutzen?') +
     fEntityPickerSingle('sounds.tts_entity', 'TTS-Engine', ['tts'], 'TTS-Service (z.B. tts.piper)') +
@@ -2717,8 +2763,12 @@ async function saveAllSettings() {
     deepMerge(S, tabUpdates);
     // Vollstaendiges Settings-Objekt senden (nicht nur aktiven Tab)
     const updates = JSON.parse(JSON.stringify(S));
-    await api('/api/ui/settings', 'PUT', {settings: updates});
-    toast('Einstellungen gespeichert');
+    const result = await api('/api/ui/settings', 'PUT', {settings: updates});
+    if (result && result.restart_needed) {
+      toast('Gespeichert — Container-Neustart noetig fuer Sprach-Engine!', 'warning');
+    } else {
+      toast('Einstellungen gespeichert');
+    }
   } catch(e) {
     toast('Fehler beim Speichern', 'error');
   } finally {
