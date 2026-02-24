@@ -546,6 +546,38 @@ class AssistantBrain(BrainCallbacksMixin):
                     )
             self._last_response_was_snarky = False
 
+        # Phase 9.1: Pending Speaker-Rueckfrage aufloesen
+        # Wenn eine "Wer bist du?"-Frage laeuft, wird die Antwort hier abgefangen
+        if not person and self.speaker_recognition.enabled:
+            if await self.speaker_recognition.has_pending_ask():
+                resolved = await self.speaker_recognition.resolve_fallback_answer(text)
+                if resolved:
+                    person = resolved["person"]
+                    original_text = resolved.get("original_text", "")
+                    logger.info("Speaker per Rueckfrage identifiziert: %s", person)
+                    # Embedding aus der Antwort lernen (die Stimme gehoert zur Person)
+                    if voice_metadata and voice_metadata.get("audio_pcm_b64"):
+                        self._task_registry.create_task(
+                            self.speaker_recognition.learn_embedding_from_audio(
+                                person.lower(), voice_metadata
+                            ),
+                            name="learn_embedding_from_fallback",
+                        )
+                    # Wenn es einen urspruenglichen Befehl gab, diesen verarbeiten
+                    if original_text:
+                        logger.info("Wiederhole urspruenglichen Befehl: '%s'", original_text)
+                        text = original_text
+                    else:
+                        # Nur Identifikation, kein Folgebefehl
+                        response_text = f"Alles klar, {person.capitalize()}. Was kann ich fuer dich tun?"
+                        self._remember_exchange(text, response_text)
+                        return {
+                            "response": response_text,
+                            "actions": [],
+                            "model_used": "speaker_fallback",
+                            "context_room": room or "unbekannt",
+                        }
+
         # Phase 9: Fluestermodus-Check
         # Whisper-Modus wird als Seiteneffekt gesetzt/entfernt.
         # Nur bei reinen Whisper-Befehlen (<=3 Woerter) sofort antworten,
@@ -611,6 +643,13 @@ class AssistantBrain(BrainCallbacksMixin):
                     ),
                     name="update_voice_stats",
                 )
+                # Voice-Embedding speichern (Lerneffekt fuer Stimmabdruck)
+                self._task_registry.create_task(
+                    self.speaker_recognition.learn_embedding_from_audio(
+                        person.lower(), audio_meta
+                    ),
+                    name="learn_embedding",
+                )
         elif self.speaker_recognition.enabled:
             identified = await self.speaker_recognition.identify(
                 audio_metadata=audio_meta, device_id=device_id, room=room,
@@ -620,11 +659,35 @@ class AssistantBrain(BrainCallbacksMixin):
                 logger.info("Speaker erkannt: %s (Confidence: %.2f, Methode: %s)",
                             person, identified.get("confidence", 0),
                             identified.get("method", "unknown"))
-            elif identified.get("fallback") and identified.get("person"):
-                # Niedrige Confidence — Person als Vermutung merken, aber nicht setzen
-                logger.info("Speaker unsicher: %s (Confidence: %.2f, Methode: %s) — fallback_ask aktiv",
-                            identified.get("person"), identified.get("confidence", 0),
+                # Embedding speichern wenn Identifikation NICHT per Embedding war
+                # (sonst zirkulaer — schon bekannte Embeddings nicht nochmal speichern)
+                if identified.get("method") != "voice_embedding" and audio_meta:
+                    self._task_registry.create_task(
+                        self.speaker_recognition.learn_embedding_from_audio(
+                            person.lower(), audio_meta
+                        ),
+                        name="learn_embedding",
+                    )
+            elif identified.get("fallback"):
+                # Niedrige Confidence — Rueckfrage stellen wenn fallback_ask aktiv
+                guessed = identified.get("person")
+                logger.info("Speaker unsicher: %s (Confidence: %.2f, Methode: %s) — fallback_ask",
+                            guessed, identified.get("confidence", 0),
                             identified.get("method", "unknown"))
+                if self.speaker_recognition.fallback_ask:
+                    ask_text = await self.speaker_recognition.start_fallback_ask(
+                        guessed_person=guessed, original_text=text,
+                    )
+                    self._remember_exchange(text, ask_text)
+                    tts_data = self.tts_enhancer.enhance(ask_text, message_type="question")
+                    await self._speak_and_emit(ask_text, room=room, tts_data=tts_data)
+                    return {
+                        "response": ask_text,
+                        "actions": [],
+                        "model_used": "speaker_fallback_ask",
+                        "context_room": room or "unbekannt",
+                        "tts": tts_data,
+                    }
 
         # Fallback: Wenn kein Person ermittelt, Primary User aus Household annehmen
         # (nur wenn explizit konfiguriert, nicht den Pydantic-Default "Max" nutzen)

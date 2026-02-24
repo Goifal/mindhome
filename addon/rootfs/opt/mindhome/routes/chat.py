@@ -649,8 +649,17 @@ def api_chat_voice():
                 "word_count": word_count,
                 "source": "addon_voice",
             }
-            logger.debug("Voice metadata: duration=%.2fs, volume=%.4f, wpm=%.1f",
-                         audio_duration, volume, wpm)
+
+            # PCM-Daten als base64 fuer Speaker-Embedding-Extraktion weiterleiten
+            # Max 10s Audio (320KB bei 16kHz/16bit mono) — genuegt fuer Stimmabdruck
+            import base64
+            max_pcm_bytes = sample_rate * bytes_per_sample * 10  # 10s
+            pcm_for_embedding = pcm_data[:max_pcm_bytes]
+            voice_metadata["audio_pcm_b64"] = base64.b64encode(pcm_for_embedding).decode("ascii")
+            voice_metadata["sample_rate"] = sample_rate
+
+            logger.debug("Voice metadata: duration=%.2fs, volume=%.4f, wpm=%.1f, pcm=%d bytes",
+                         audio_duration, volume, wpm, len(pcm_for_embedding))
     except Exception as e:
         logger.debug("Voice metadata extraction failed: %s", e)
 

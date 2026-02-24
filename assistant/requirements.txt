@@ -13,3 +13,5 @@ python-multipart==0.0.18
 pdfplumber==0.11.4
 pytesseract==0.3.13
 Pillow==11.1.0
+speechbrain>=1.0.0
+torchaudio>=2.0.0
