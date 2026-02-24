@@ -2214,38 +2214,109 @@ function renderSecurity() {
 }
 
 function renderEmergencyProtocol(key, title, description, icon) {
-  const proto = getPath(S, 'emergency_protocols.' + key);
-  const hasActions = proto && proto.actions && proto.actions.length > 0;
-  const enabled = hasActions;
+  const proto = getPath(S, 'emergency_protocols.' + key) || {};
+  const actions = proto.actions || [];
+  const enabled = proto.enabled !== false && actions.length > 0;
 
-  let actionsHtml = '';
-  if (hasActions) {
-    actionsHtml = '<div style="margin-top:8px;">';
-    for (const a of proto.actions) {
-      const domain = a.domain || '?';
-      const service = a.service || '?';
-      const target = a.target || '';
-      const data = a.data ? JSON.stringify(a.data) : '';
-      const desc = target === 'all' ? `Alle ${domain}` : (target || (data || `${domain}.${service}`));
-      actionsHtml += `<div style="display:flex;align-items:center;gap:6px;padding:4px 8px;margin:2px 0;background:var(--bg-secondary);border-radius:4px;font-size:12px;">
-        <span style="color:var(--text-muted);min-width:80px;">${domain}.${service}</span>
-        <span>${esc(desc)}</span>
-      </div>`;
-    }
-    actionsHtml += '</div>';
+  let actionsHtml = '<div id="ep_actions_' + key + '" style="margin-top:8px;">';
+  actions.forEach((a, idx) => {
+    const domain = a.domain || '?';
+    const service = a.service || '?';
+    const target = a.target || '';
+    const data = a.data ? JSON.stringify(a.data) : '';
+    const desc = target === 'all' ? 'Alle ' + domain : (target || (data || domain + '.' + service));
+    actionsHtml += '<div style="display:flex;align-items:center;gap:6px;padding:6px 8px;margin:3px 0;background:var(--bg-primary);border-radius:6px;font-size:12px;border:1px solid var(--border);">' +
+      '<span style="color:var(--text-muted);min-width:90px;font-family:var(--mono,monospace);font-size:11px;">' + esc(domain) + '.' + esc(service) + '</span>' +
+      '<span style="flex:1;">' + esc(desc) + '</span>' +
+      '<button class="btn btn-ghost" style="padding:2px 6px;font-size:14px;color:var(--danger);min-width:auto;" onclick="removeEmergencyAction(\'' + key + '\',' + idx + ')" title="Aktion entfernen">&#10005;</button>' +
+    '</div>';
+  });
+  if (actions.length === 0) {
+    actionsHtml += '<div style="color:var(--text-muted);font-size:12px;padding:8px;">Keine Aktionen definiert. Klicke + um eine hinzuzufuegen.</div>';
   }
+  actionsHtml += '</div>';
 
-  return `<div style="padding:12px;margin-bottom:10px;background:var(--bg-secondary);border-radius:8px;border-left:3px solid ${enabled?'var(--success)':'var(--text-muted)'};">
-    <div style="display:flex;align-items:center;justify-content:space-between;">
-      <div>
-        <span style="font-size:16px;">${icon}</span>
-        <span style="font-weight:600;margin-left:6px;">${title}</span>
-        <div style="font-size:11px;color:var(--text-secondary);margin-top:2px;">${description}</div>
-      </div>
-      <span style="font-size:11px;padding:3px 8px;border-radius:4px;background:${enabled?'var(--success)':'var(--text-muted)'};color:#fff;">${enabled?'Aktiv':'Inaktiv'}</span>
-    </div>
-    ${actionsHtml}
-  </div>`;
+  // Add action form
+  actionsHtml += '<div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;">' +
+    '<select id="ep_domain_' + key + '" style="font-size:11px;padding:4px 6px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text-primary);width:100px;">' +
+      '<option value="light">light</option><option value="cover">cover</option><option value="climate">climate</option>' +
+      '<option value="lock">lock</option><option value="switch">switch</option><option value="notify">notify</option>' +
+      '<option value="media_player">media_player</option><option value="siren">siren</option>' +
+    '</select>' +
+    '<select id="ep_service_' + key + '" style="font-size:11px;padding:4px 6px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text-primary);width:120px;">' +
+      '<option value="turn_on">turn_on</option><option value="turn_off">turn_off</option><option value="open_cover">open_cover</option>' +
+      '<option value="close_cover">close_cover</option><option value="lock">lock</option><option value="unlock">unlock</option>' +
+      '<option value="notify">notify</option>' +
+    '</select>' +
+    '<select id="ep_target_' + key + '" style="font-size:11px;padding:4px 6px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text-primary);width:80px;">' +
+      '<option value="all">Alle</option><option value="">Spezifisch</option>' +
+    '</select>' +
+    '<button class="btn btn-secondary" style="padding:4px 10px;font-size:12px;" onclick="addEmergencyAction(\'' + key + '\')">+ Aktion</button>' +
+  '</div>';
+
+  return '<div id="ep_' + key + '" style="padding:12px;margin-bottom:10px;background:var(--bg-secondary);border-radius:8px;border-left:3px solid ' + (enabled?'var(--success)':'var(--text-muted)') + ';">' +
+    '<div style="display:flex;align-items:center;justify-content:space-between;">' +
+      '<div style="display:flex;align-items:center;gap:8px;">' +
+        '<span style="font-size:18px;">' + icon + '</span>' +
+        '<div>' +
+          '<span style="font-weight:600;">' + title + '</span>' +
+          '<div style="font-size:11px;color:var(--text-secondary);margin-top:1px;">' + description + '</div>' +
+        '</div>' +
+      '</div>' +
+      '<label class="toggle" style="margin:0;" onclick="event.stopPropagation()">' +
+        '<input type="checkbox" data-path="emergency_protocols.' + key + '.enabled" ' + (enabled?'checked':'') + '>' +
+        '<span class="toggle-track"></span><span class="toggle-thumb"></span>' +
+      '</label>' +
+    '</div>' +
+    actionsHtml +
+  '</div>';
+}
+
+function addEmergencyAction(key) {
+  const domain = document.getElementById('ep_domain_' + key).value;
+  const service = document.getElementById('ep_service_' + key).value;
+  const target = document.getElementById('ep_target_' + key).value;
+  if (!S.emergency_protocols) S.emergency_protocols = {};
+  if (!S.emergency_protocols[key]) S.emergency_protocols[key] = { enabled: true, actions: [] };
+  if (!S.emergency_protocols[key].actions) S.emergency_protocols[key].actions = [];
+  const action = { domain, service };
+  if (target) action.target = target;
+  S.emergency_protocols[key].actions.push(action);
+  _markDirty();
+  _refreshEmergencySection();
+}
+
+function removeEmergencyAction(key, idx) {
+  if (!S.emergency_protocols || !S.emergency_protocols[key]) return;
+  const actions = S.emergency_protocols[key].actions || [];
+  if (idx >= 0 && idx < actions.length) {
+    actions.splice(idx, 1);
+    _markDirty();
+    _refreshEmergencySection();
+  }
+}
+
+function _refreshEmergencySection() {
+  // Re-render all three protocol blocks
+  const keys = [
+    ['fire', 'Feuer / Rauch', 'Rauchmelder loest aus', '&#128293;'],
+    ['intrusion', 'Einbruch / Alarm', 'Alarmsystem wird ausgeloest', '&#128680;'],
+    ['water_leak', 'Wasserleck', 'Wassersensor schlaegt an', '&#128167;']
+  ];
+  for (const [k, t, d, i] of keys) {
+    const el = document.getElementById('ep_' + k);
+    if (el) {
+      const tmp = document.createElement('div');
+      tmp.innerHTML = renderEmergencyProtocol(k, t, d, i);
+      el.replaceWith(tmp.firstElementChild);
+    }
+  }
+}
+
+function _markDirty() {
+  // Mark settings as changed (the save button highlights)
+  const saveBtn = document.querySelector('.btn-save, [onclick*="saveAll"]');
+  if (saveBtn) saveBtn.style.boxShadow = '0 0 8px var(--accent)';
 }
 
 // ---- Notification Channels ----
@@ -2785,6 +2856,10 @@ function collectSettings() {
     });
     setPath(updates, 'persons.titles', titles);
   }
+  // Emergency Protocols — actions are maintained directly in S by add/remove functions
+  if (S.emergency_protocols) {
+    setPath(updates, 'emergency_protocols', JSON.parse(JSON.stringify(S.emergency_protocols)));
+  }
   return updates;
 }
 
@@ -3187,11 +3262,9 @@ function switchLogTab(tab) {
   document.getElementById('logsContainer').style.display = tab==='conversations' ? '' : 'none';
   document.getElementById('protocolContainer').style.display = tab==='protocol' ? '' : 'none';
   document.getElementById('protocolFilters').style.display = tab==='protocol' ? '' : 'none';
-  document.getElementById('activitiesContainer').style.display = tab==='activities' ? '' : 'none';
   document.getElementById('auditContainer').style.display = tab==='audit' ? '' : 'none';
   if (tab==='conversations') loadLogs();
   else if (tab==='protocol') loadProtocol();
-  else if (tab==='activities') loadActivities();
   else loadAudit();
 }
 
@@ -3205,9 +3278,25 @@ async function loadProtocol() {
   const c = document.getElementById('protocolContainer');
   if (!c) return;
   try {
-    const params = `limit=200&period=${period}` + (type ? `&type=${type}` : '');
+    // tts and notification are pseudo-types — filter client-side from jarvis_action
+    const isClientFilter = (type === 'tts' || type === 'notification');
+    const apiType = isClientFilter ? '' : type;
+    const params = `limit=200&period=${period}` + (apiType ? `&type=${apiType}` : '');
     const d = await api('/api/ui/action-log?' + params);
-    _protocolData = d.items || [];
+    let items = d.items || [];
+    // Client-side filter for TTS/notification pseudo-types
+    if (type === 'tts') {
+      items = items.filter(log => {
+        const func = (log.action_data || {}).function || '';
+        return func === 'announce_tts' || func === 'tts' || func === 'play_tts' || func === 'speak';
+      });
+    } else if (type === 'notification') {
+      items = items.filter(log => {
+        const func = (log.action_data || {}).function || '';
+        return func === 'send_notification' || func === 'notify';
+      });
+    }
+    _protocolData = items;
     filterProtocol();
   } catch(e) {
     c.innerHTML = '<div style="padding:16px;text-align:center;color:var(--danger);">Fehler: ' + esc(e.message) + '</div>';
@@ -3260,7 +3349,12 @@ function filterProtocol() {
   const funcIcons = {
     set_light: '&#128161;', set_cover: '&#129695;', set_climate: '&#127777;',
     activate_scene: '&#127912;', play_media: '&#127925;', send_notification: '&#128276;',
-    call_service: '&#9881;'
+    announce_tts: '&#128266;', tts: '&#128266;', play_tts: '&#128266;', speak: '&#128266;',
+    notify: '&#128276;', call_service: '&#9881;'
+  };
+  const funcLabels = {
+    send_notification: 'Benachrichtigung', announce_tts: 'Durchsage',
+    tts: 'Durchsage', play_tts: 'Durchsage', speak: 'Durchsage', notify: 'Benachrichtigung'
   };
 
   c.innerHTML = filtered.map(log => {
@@ -3271,7 +3365,7 @@ function filterProtocol() {
     const reason = log.reason || '';
     const aType = log.action_type || 'system';
     const icon = func ? (funcIcons[func] || typeIcons[aType] || '&#9889;') : (typeIcons[aType] || '&#9889;');
-    const label = typeLabels[aType] || aType;
+    const label = funcLabels[func] || typeLabels[aType] || aType;
     const color = typeColors[aType] || 'var(--text-muted)';
 
     // Beschreibung zusammenbauen
@@ -3279,11 +3373,15 @@ function filterProtocol() {
     if (func) parts.push('<strong>' + esc(func.replace(/_/g, ' ')) + '</strong>');
     if (args.entity_id) parts.push(esc(args.entity_id));
     if (args.room) parts.push(esc(args.room));
+    if (args.message) parts.push('"' + esc(args.message.length > 80 ? args.message.substring(0,80) + '...' : args.message) + '"');
     if (args.brightness !== undefined) parts.push(args.brightness + '%');
     if (args.position !== undefined) parts.push(args.position + '%');
     if (args.state) parts.push(esc(args.state));
     if (args.temperature !== undefined) parts.push(args.temperature + '\u00b0C');
+    if (args.target) parts.push(esc(args.target));
     const desc = parts.length > 0 ? parts.join(' \u2014 ') : esc(reason.substring(0, 120));
+    // LLM response text (if available)
+    const llmResponse = ad.response || '';
 
     const ts = log.created_at
       ? new Date(log.created_at).toLocaleString('de-DE', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'})
@@ -3298,6 +3396,7 @@ function filterProtocol() {
           '<span style="font-size:13px;">' + desc + '</span>' +
         '</div>' +
         (result ? '<div style="font-size:11px;color:var(--text-muted);margin-top:2px;">\u2192 ' + esc(result.length > 100 ? result.substring(0,100) + '...' : result) + '</div>' : '') +
+        (llmResponse ? '<div style="font-size:11px;color:var(--info);margin-top:2px;">&#129302; ' + esc(llmResponse.length > 120 ? llmResponse.substring(0,120) + '...' : llmResponse) + '</div>' : '') +
         (reason && parts.length > 0 ? '<div style="font-size:11px;color:var(--text-muted);font-style:italic;margin-top:1px;">' + esc(reason.length > 100 ? reason.substring(0,100) + '...' : reason) + '</div>' : '') +
       '</div>' +
       (log.was_undone ? '<span style="font-size:10px;padding:1px 6px;border-radius:3px;background:var(--warning);color:#000;font-weight:600;">Rueckgaengig</span>' : '') +
@@ -3335,38 +3434,6 @@ async function loadAudit() {
       return `<div class="audit-entry"><span class="audit-time">${t}</span><span class="audit-action ${cat}">${esc(act)}</span><span class="audit-details">${esc(details)}</span></div>`;
     }).join('');
   } catch(e) { console.error('Audit fail:', e); }
-}
-
-async function loadActivities() {
-  try {
-    const d = await api('/api/ui/action-log?limit=50');
-    const items = d.items || [];
-    const c = document.getElementById('activitiesContainer');
-    if (!c) return;
-    if (items.length === 0) {
-      c.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text-muted);">Keine Jarvis-Aktionen in den letzten 7 Tagen.</div>';
-      return;
-    }
-    const iconMap = { set_light: '&#128161;', set_cover: '&#129695;', set_climate: '&#127777;', activate_scene: '&#127912;', play_media: '&#127925;', send_notification: '&#128276;', call_service: '&#9881;' };
-    c.innerHTML = items.map(log => {
-      const ad = log.action_data || {};
-      const func = ad.function || '?';
-      const args = ad.arguments || {};
-      const result = ad.result || '';
-      const reason = log.reason || '';
-      const icon = iconMap[func] || '&#9889;';
-      const parts = [];
-      if (args.entity_id) parts.push(args.entity_id);
-      if (args.room) parts.push(args.room);
-      if (args.position !== undefined) parts.push(args.position + '%');
-      if (args.brightness !== undefined) parts.push(args.brightness + '%');
-      if (args.state) parts.push(args.state);
-      if (args.temperature !== undefined) parts.push(args.temperature + '\u00b0');
-      const desc = parts.length > 0 ? ' \u2014 ' + parts.join(', ') : '';
-      const ts = log.created_at ? new Date(log.created_at).toLocaleString('de-DE', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' }) : '';
-      return '<div class="log-entry"><span class="log-time">' + ts + '</span><span class="log-role assistant" style="min-width:auto;">' + icon + '</span><span class="log-content"><strong>' + esc(func.replace(/_/g, ' ')) + '</strong>' + esc(desc) + (result ? '<br><span style="color:var(--text-muted);font-size:11px;">\u2192 ' + esc(result) + '</span>' : '') + (reason ? '<br><span style="font-style:italic;color:var(--text-muted);font-size:11px;">' + esc(reason.length > 80 ? reason.substring(0, 80) + '...' : reason) + '</span>' : '') + '</span></div>';
-    }).join('');
-  } catch(e) { console.error('Activities fail:', e); }
 }
 
 async function loadLogs() {

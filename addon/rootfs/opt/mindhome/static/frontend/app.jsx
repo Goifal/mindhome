@@ -12498,69 +12498,49 @@ const PresencePage = () => {
                 </div>
             )}
 
-            {/* TAB: Settings — Jarvis UI Style with Toggle Sliders + Help Tooltips */}
+            {/* TAB: Settings */}
             {tab === 'settings' && (
                 <div>
                     <div className="card animate-in" style={{ marginBottom: 16 }}>
                         <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)', fontWeight: 600 }}>
-                            <span className="mdi mdi-radar" style={{ marginRight: 8, color: 'var(--accent-primary)' }} />
+                            <span className="mdi mdi-radar" style={{ marginRight: 8 }} />
                             {lang === 'de' ? 'Automatische Erkennung' : 'Auto Detection'}
                         </div>
                         <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 16 }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, flex: 1 }}>
-                                    <div style={{ flex: 1 }}>
-                                        <div style={{ fontWeight: 600, fontSize: 14 }}>{lang === 'de' ? 'Auto-Erkennung aktiv' : 'Auto-detection enabled'}</div>
-                                        <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Erkennt automatisch ob jemand zuhause ist' : 'Automatically detects who is at home'}</div>
-                                    </div>
-                                    <span className="mdi mdi-help-circle-outline" title={lang === 'de'
-                                        ? 'Nutzt person.* Entities aus Home Assistant (Companion App, Router, Bluetooth). Wenn deaktiviert, muss der Modus manuell gesetzt werden.'
-                                        : 'Uses person.* entities from Home Assistant (Companion App, Router, Bluetooth). When disabled, mode must be set manually.'}
-                                        style={{ fontSize: 16, color: 'var(--text-muted)', cursor: 'help', flexShrink: 0, marginTop: 2 }} />
+                                <div>
+                                    <div style={{ fontWeight: 600, fontSize: 14 }}>{lang === 'de' ? 'Auto-Erkennung aktiv' : 'Auto-detection enabled'}</div>
+                                    <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Erkennt automatisch ob jemand zuhause ist anhand von HA Person-Entities' : 'Automatically detects presence based on HA person entities'}</div>
                                 </div>
-                                <label className="toggle" style={{ marginLeft: 12 }} onClick={e => e.stopPropagation()}>
-                                    <input type="checkbox" checked={presenceSettings.presence_auto_detect_enabled === 'true'}
-                                        onChange={() => savePresenceSetting('presence_auto_detect_enabled', presenceSettings.presence_auto_detect_enabled === 'true' ? 'false' : 'true')} />
-                                    <div className="toggle-slider" />
-                                </label>
+                                <button className={`btn btn-sm ${presenceSettings.presence_auto_detect_enabled === 'true' ? 'btn-primary' : 'btn-ghost'}`}
+                                    onClick={() => savePresenceSetting('presence_auto_detect_enabled', presenceSettings.presence_auto_detect_enabled === 'true' ? 'false' : 'true')}>
+                                    {presenceSettings.presence_auto_detect_enabled === 'true' ? 'ON' : 'OFF'}
+                                </button>
                             </div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, flex: 1 }}>
-                                    <div style={{ flex: 1 }}>
-                                        <div style={{ fontWeight: 600, fontSize: 14 }}>{lang === 'de' ? 'Manuelle Uebersteuerung' : 'Manual Override'}</div>
-                                        <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Pausiert die automatische Erkennung' : 'Pauses auto-detection'}</div>
-                                    </div>
-                                    <span className="mdi mdi-help-circle-outline" title={lang === 'de'
-                                        ? 'Wenn aktiviert, wird der aktuelle Modus beibehalten und nicht automatisch geaendert. Nuetzlich bei Besuch oder besonderen Situationen.'
-                                        : 'When enabled, the current mode is kept and not changed automatically. Useful for guests or special situations.'}
-                                        style={{ fontSize: 16, color: 'var(--text-muted)', cursor: 'help', flexShrink: 0, marginTop: 2 }} />
+                                <div>
+                                    <div style={{ fontWeight: 600, fontSize: 14 }}>{lang === 'de' ? 'Manuelle Uebersteuerung' : 'Manual Override'}</div>
+                                    <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Wenn aktiv, wird die automatische Erkennung pausiert' : 'When active, auto-detection is paused'}</div>
                                 </div>
-                                <label className="toggle" style={{ marginLeft: 12 }} onClick={e => e.stopPropagation()}>
-                                    <input type="checkbox" checked={presenceSettings.presence_manual_override === 'true'}
-                                        onChange={() => savePresenceSetting('presence_manual_override', presenceSettings.presence_manual_override === 'true' ? 'false' : 'true')} />
-                                    <div className="toggle-slider" />
-                                </label>
+                                <button className={`btn btn-sm ${presenceSettings.presence_manual_override === 'true' ? 'btn-primary' : 'btn-ghost'}`}
+                                    onClick={() => savePresenceSetting('presence_manual_override', presenceSettings.presence_manual_override === 'true' ? 'false' : 'true')}>
+                                    {presenceSettings.presence_manual_override === 'true' ? 'ON' : 'OFF'}
+                                </button>
                             </div>
                         </div>
                     </div>
 
                     <div className="card animate-in" style={{ marginBottom: 16 }}>
                         <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)', fontWeight: 600 }}>
-                            <span className="mdi mdi-tune" style={{ marginRight: 8, color: 'var(--accent-primary)' }} />
+                            <span className="mdi mdi-tune" style={{ marginRight: 8 }} />
                             {lang === 'de' ? 'Schwellenwerte' : 'Thresholds'}
                         </div>
                         <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 16 }}>
                             <div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, flex: 1 }}>
-                                        <div style={{ flex: 1 }}>
-                                            <div style={{ fontWeight: 600, fontSize: 14 }}>{lang === 'de' ? 'Besuch-Schwelle' : 'Guest Threshold'}</div>
-                                            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Ab wie vielen Personen der Besuchsmodus aktiviert wird' : 'Number of persons triggering guest mode'}</div>
-                                        </div>
-                                        <span className="mdi mdi-help-circle-outline" title={lang === 'de'
-                                            ? 'Wenn mehr als diese Anzahl Personen gleichzeitig zuhause erkannt werden, wechselt der Modus automatisch auf "Besuch". Ideal fuer Familienfeiern oder Gaeste.'
-                                            : 'When more than this number of persons are detected at home, mode automatically switches to "Guest". Ideal for family events or visitors.'}
-                                            style={{ fontSize: 16, color: 'var(--text-muted)', cursor: 'help', flexShrink: 0, marginTop: 2 }} />
+                                    <div>
+                                        <div style={{ fontWeight: 600, fontSize: 14 }}>{lang === 'de' ? 'Besuch-Schwelle (Personen)' : 'Guest Threshold (Persons)'}</div>
+                                        <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Ab wie vielen Personen zuhause der Besuchsmodus aktiviert wird' : 'How many persons at home trigger guest mode'}</div>
                                     </div>
                                     <span style={{ fontWeight: 700, fontSize: 18, color: 'var(--accent-primary)', minWidth: 30, textAlign: 'right' }}>{presenceSettings.presence_guest_threshold || '2'}</span>
                                 </div>
@@ -12572,69 +12552,50 @@ const PresencePage = () => {
                             </div>
                             <div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, flex: 1 }}>
-                                        <div style={{ flex: 1 }}>
-                                            <div style={{ fontWeight: 600, fontSize: 14 }}>{lang === 'de' ? 'Abwesenheits-Timer' : 'Away Timer'}</div>
-                                            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Warnung bei laufenden Geraeten nach Abwesenheit' : 'Warn about running devices after absence'}</div>
-                                        </div>
-                                        <span className="mdi mdi-help-circle-outline" title={lang === 'de'
-                                            ? 'Nach dieser Zeit ohne erkannte Anwesenheit prueft Jarvis ob noch Geraete laufen (Licht, Heizung, Medien) und warnt per Benachrichtigung. Verhindert unnuetzen Energieverbrauch.'
-                                            : 'After this time without detected presence, Jarvis checks if devices are still running (lights, heating, media) and sends a warning notification. Prevents unnecessary energy usage.'}
-                                            style={{ fontSize: 16, color: 'var(--text-muted)', cursor: 'help', flexShrink: 0, marginTop: 2 }} />
+                                    <div>
+                                        <div style={{ fontWeight: 600, fontSize: 14 }}>{lang === 'de' ? 'Abwesenheits-Timer (Minuten)' : 'Away Timer (Minutes)'}</div>
+                                        <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Nach wie vielen Minuten Abwesenheit wird vor laufenden Geraeten gewarnt' : 'After how many minutes away, warn about devices left on'}</div>
                                     </div>
-                                    <span style={{ fontWeight: 700, fontSize: 18, color: 'var(--accent-primary)', minWidth: 50, textAlign: 'right' }}>{presenceSettings.presence_away_device_minutes || '120'} min</span>
+                                    <span style={{ fontWeight: 700, fontSize: 18, color: 'var(--accent-primary)', minWidth: 50, textAlign: 'right' }}>{presenceSettings.presence_away_device_minutes || '120'}</span>
                                 </div>
                                 <input type="range" min="15" max="480" step="15"
                                     value={parseInt(presenceSettings.presence_away_device_minutes) || 120}
                                     onChange={e => savePresenceSetting('presence_away_device_minutes', e.target.value)}
                                     style={{ width: '100%', accentColor: 'var(--accent-primary)' }} />
-                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text-muted)' }}><span>15 min</span><span>8 h</span></div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text-muted)' }}><span>15min</span><span>8h</span></div>
                             </div>
                             <div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, flex: 1 }}>
-                                        <div style={{ flex: 1 }}>
-                                            <div style={{ fontWeight: 600, fontSize: 14 }}>{lang === 'de' ? 'Puffer-Zeit' : 'Buffer Time'}</div>
-                                            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Verzoegerung vor Statuswechsel' : 'Delay before state change'}</div>
-                                        </div>
-                                        <span className="mdi mdi-help-circle-outline" title={lang === 'de'
-                                            ? 'Verzoegerung bevor ein Anwesenheits-Wechsel uebernommen wird. Verhindert Flackern wenn z.B. das Handy kurz die WLAN-Verbindung verliert oder der Tracker kurz "away" meldet.'
-                                            : 'Delay before a presence change is applied. Prevents flickering when e.g. the phone briefly loses WiFi or the tracker briefly reports "away".'}
-                                            style={{ fontSize: 16, color: 'var(--text-muted)', cursor: 'help', flexShrink: 0, marginTop: 2 }} />
+                                    <div>
+                                        <div style={{ fontWeight: 600, fontSize: 14 }}>{lang === 'de' ? 'Puffer-Zeit (Minuten)' : 'Buffer Time (Minutes)'}</div>
+                                        <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Verzoegerung bevor ein Statuswechsel uebernommen wird (vermeidet Flackern)' : 'Delay before a state change is applied (prevents flickering)'}</div>
                                     </div>
-                                    <span style={{ fontWeight: 700, fontSize: 18, color: 'var(--accent-primary)', minWidth: 50, textAlign: 'right' }}>{presenceSettings.presence_buffer_minutes || '5'} min</span>
+                                    <span style={{ fontWeight: 700, fontSize: 18, color: 'var(--accent-primary)', minWidth: 30, textAlign: 'right' }}>{presenceSettings.presence_buffer_minutes || '5'}</span>
                                 </div>
                                 <input type="range" min="0" max="30" step="1"
                                     value={parseInt(presenceSettings.presence_buffer_minutes) || 5}
                                     onChange={e => savePresenceSetting('presence_buffer_minutes', e.target.value)}
                                     style={{ width: '100%', accentColor: 'var(--accent-primary)' }} />
-                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text-muted)' }}><span>0 min</span><span>30 min</span></div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text-muted)' }}><span>0min</span><span>30min</span></div>
                             </div>
                         </div>
                     </div>
 
                     <div className="card animate-in" style={{ marginBottom: 16 }}>
                         <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)', fontWeight: 600 }}>
-                            <span className="mdi mdi-shield-alert" style={{ marginRight: 8, color: 'var(--accent-primary)' }} />
+                            <span className="mdi mdi-shield-alert" style={{ marginRight: 8 }} />
                             {lang === 'de' ? 'Erweitert' : 'Advanced'}
                         </div>
                         <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 16 }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, flex: 1 }}>
-                                    <div style={{ flex: 1 }}>
-                                        <div style={{ fontWeight: 600, fontSize: 14 }}>{lang === 'de' ? '"Nicht erreichbar" = Abwesend' : '"Unavailable" = Away'}</div>
-                                        <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Person als abwesend werten wenn Entity nicht erreichbar' : 'Treat person as away when entity is unavailable'}</div>
-                                    </div>
-                                    <span className="mdi mdi-help-circle-outline" title={lang === 'de'
-                                        ? 'Wenn ein Person-Entity den Status "unavailable" hat (z.B. Handy-Akku leer, Companion App gestoppt), wird die Person als abwesend gewertet. Deaktiviere dies wenn haeufig falsche Abwesenheits-Meldungen kommen.'
-                                        : 'When a person entity has status "unavailable" (e.g. phone battery dead, Companion App stopped), the person is treated as away. Disable this if you get frequent false absence reports.'}
-                                        style={{ fontSize: 16, color: 'var(--text-muted)', cursor: 'help', flexShrink: 0, marginTop: 2 }} />
+                                <div>
+                                    <div style={{ fontWeight: 600, fontSize: 14 }}>{lang === 'de' ? '"Nicht erreichbar" = Abwesend' : '"Unavailable" = Away'}</div>
+                                    <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Wenn ein Person-Entity nicht erreichbar ist (z.B. Handy-Akku leer), wird die Person als abwesend gewertet' : 'When a person entity becomes unavailable (e.g. phone battery dead), treat as away'}</div>
                                 </div>
-                                <label className="toggle" style={{ marginLeft: 12 }} onClick={e => e.stopPropagation()}>
-                                    <input type="checkbox" checked={presenceSettings.presence_treat_unavailable_as_away === 'true'}
-                                        onChange={() => savePresenceSetting('presence_treat_unavailable_as_away', presenceSettings.presence_treat_unavailable_as_away === 'true' ? 'false' : 'true')} />
-                                    <div className="toggle-slider" />
-                                </label>
+                                <button className={`btn btn-sm ${presenceSettings.presence_treat_unavailable_as_away === 'true' ? 'btn-primary' : 'btn-ghost'}`}
+                                    onClick={() => savePresenceSetting('presence_treat_unavailable_as_away', presenceSettings.presence_treat_unavailable_as_away === 'true' ? 'false' : 'true')}>
+                                    {presenceSettings.presence_treat_unavailable_as_away === 'true' ? 'ON' : 'OFF'}
+                                </button>
                             </div>
                         </div>
                     </div>
