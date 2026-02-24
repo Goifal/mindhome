@@ -23,7 +23,7 @@ from typing import Optional
 
 import aiohttp
 
-from .config import settings, yaml_config
+from .config import settings, yaml_config, get_person_title
 from .constants import (
     GEO_APPROACHING_COOLDOWN_MIN,
     GEO_ARRIVING_COOLDOWN_MIN,
@@ -444,11 +444,12 @@ class ProactiveManager:
                     logger.debug("Predictive Briefing Fehler: %s", e)
 
                 # JARVIS-Begruessung: Persoenliches Guten Morgen VOR den Daten
+                _title = get_person_title()
                 _greetings = [
-                    "Guten Morgen, Sir.",
-                    "Morgen, Sir. Systeme laufen.",
+                    f"Guten Morgen, {_title}.",
+                    f"Morgen, {_title}. Systeme laufen.",
                     "Guten Morgen. Alles bereit.",
-                    "Morgen, Sir. Hier die Lage.",
+                    f"Morgen, {_title}. Hier die Lage.",
                 ]
                 greeting = random.choice(_greetings)
                 text = f"{greeting} {text}"
@@ -962,7 +963,7 @@ class ProactiveManager:
                 max_tokens=120,
             )
             return validate_notification(
-                response.get("message", {}).get("content", "Alles ruhig, Sir.")
+                response.get("message", {}).get("content", f"Alles ruhig, {get_person_title()}.")
             )
         except Exception as e:
             logger.error("Fehler beim Status-Bericht: %s", e)
@@ -1743,7 +1744,7 @@ class ProactiveManager:
                 if observations:
                     msg = " | ".join(observations)
                 elif random.random() < all_quiet_prob:
-                    msg = "Alles ruhig, Sir."
+                    msg = f"Alles ruhig, {get_person_title()}."
                 else:
                     # Nichts zu berichten, nichts sagen
                     await asyncio.sleep(interval)

@@ -27,7 +27,7 @@ from typing import Optional
 import yaml
 
 from .brain import AssistantBrain
-from .config import settings, yaml_config, load_yaml_config
+from .config import settings, yaml_config, load_yaml_config, get_person_title
 from .constants import ERROR_BUFFER_MAX_SIZE, RATE_LIMIT_WINDOW, RATE_LIMIT_MAX_REQUESTS
 from .cover_config import load_cover_configs, save_cover_configs
 from .file_handler import (
@@ -129,11 +129,13 @@ async def _boot_announcement(brain_instance: "AssistantBrain", health_data: dict
                 open_items.append(name)
 
         # Boot-Nachricht zusammenbauen
-        messages = cfg.get("messages", [
-            "Alle Systeme online, Sir.",
-            "Systeme hochgefahren, Sir. Alles bereit.",
-            "Online, Sir. Soll ich den Status durchgehen?",
-        ])
+        title = get_person_title()
+        default_msgs = [
+            f"Alle Systeme online, {title}.",
+            f"Systeme hochgefahren, {title}. Alles bereit.",
+            f"Online, {title}. Soll ich den Status durchgehen?",
+        ]
+        messages = cfg.get("messages", default_msgs)
         msg = random.choice(messages)
 
         # Temperatur anhaengen
@@ -166,7 +168,7 @@ async def _boot_announcement(brain_instance: "AssistantBrain", health_data: dict
     except Exception as e:
         logger.warning("Boot-Sequenz fehlgeschlagen: %s", e)
         try:
-            await emit_speaking("Alle Systeme online, Sir.")
+            await emit_speaking(f"Alle Systeme online, {get_person_title()}.")
         except Exception:
             pass
 

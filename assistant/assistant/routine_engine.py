@@ -29,7 +29,7 @@ from typing import Optional
 
 import redis.asyncio as redis
 
-from .config import settings, yaml_config
+from .config import settings, yaml_config, get_person_title
 from .ha_client import HomeAssistantClient
 from .ollama_client import OllamaClient
 from .websocket import emit_speaking
@@ -551,7 +551,7 @@ class RoutineEngine:
                 issues: list - Offene Probleme (Fenster, Tueren)
         """
         if not self.goodnight_enabled:
-            return {"text": "Gute Nacht, Sir. Alles unter Kontrolle.", "actions": [], "issues": []}
+            return {"text": f"Gute Nacht, {get_person_title()}. Alles unter Kontrolle.", "actions": [], "issues": []}
 
         # 1. Sicherheits-Check
         issues = await self._run_safety_checks()
@@ -775,14 +775,16 @@ class RoutineEngine:
                     routine_type="goodnight",
                 )
             except Exception:
+                title = get_person_title()
                 system_prompt = (
                     f"Du bist {settings.assistant_name}. Butler-Stil, kurz, trocken. Deutsch. "
-                    "Sprich den User mit 'Sir' an. Kein unterwuerfiger Ton."
+                    f"Sprich den User mit '{title}' an. Kein unterwuerfiger Ton."
                 )
         else:
+            title = get_person_title()
             system_prompt = (
                 f"Du bist {settings.assistant_name}. Butler-Stil, kurz, trocken. Deutsch. "
-                "Sprich den User mit 'Sir' an. Kein unterwuerfiger Ton."
+                f"Sprich den User mit '{title}' an. Kein unterwuerfiger Ton."
             )
         try:
             response = await self.ollama.chat(
@@ -792,11 +794,11 @@ class RoutineEngine:
                 ],
                 model=settings.model_fast,
             )
-            return response.get("message", {}).get("content", "Gute Nacht, Sir. Systeme fahren runter.")
+            return response.get("message", {}).get("content", f"Gute Nacht, {get_person_title()}. Systeme fahren runter.")
         except Exception as e:
             logger.error("Gute-Nacht LLM Fehler: %s", e)
             # Fallback ohne LLM
-            text = "Gute Nacht, Sir"
+            text = f"Gute Nacht, {get_person_title()}"
             if issues:
                 text += f". Noch offen: {issues[0]['message']}"
             return text + "."
@@ -1033,7 +1035,7 @@ class RoutineEngine:
         await self.redis.setex(KEY_VACATION_SIM, 30 * 86400, "active")
         self._vacation_task = asyncio.create_task(self._run_vacation_simulation())
         logger.info("Abwesenheits-Simulation gestartet")
-        return "Ich werde dafuer sorgen, dass das Haus bewohnt aussieht, Sir."
+        return f"Ich werde dafuer sorgen, dass das Haus bewohnt aussieht, {get_person_title()}."
 
     async def stop_vacation_simulation(self) -> str:
         """Stoppt die Abwesenheits-Simulation."""
@@ -1046,7 +1048,7 @@ class RoutineEngine:
             except asyncio.CancelledError:
                 pass
         logger.info("Abwesenheits-Simulation gestoppt")
-        return "Abwesenheits-Simulation beendet. Willkommen zurueck, Sir."
+        return f"Abwesenheits-Simulation beendet. Willkommen zurueck, {get_person_title()}."
 
     async def _run_vacation_simulation(self):
         """Hauptloop der Abwesenheits-Simulation."""

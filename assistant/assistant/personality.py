@@ -15,7 +15,7 @@ from typing import Optional
 
 import yaml
 
-from .config import settings, yaml_config
+from .config import settings, yaml_config, get_person_title
 
 logger = logging.getLogger(__name__)
 
@@ -992,7 +992,7 @@ class PersonalityEngine:
         escalation_map = {
             2: None,  # Zweites Mal: noch nichts sagen
             3: "Dritte Wiederholung. Ich notiere es als Gewohnheit.",
-            5: f"Fuenftes Mal in einer Woche. Ich bewundere die Konsequenz, Sir.",
+            5: f"Fuenftes Mal in einer Woche. Ich bewundere die Konsequenz, {get_person_title()}.",
             7: f"Siebtes Mal. Ich fuehre inzwischen eine Statistik.",
             10: f"Zehntes Mal. Darf ich vorschlagen, das zu automatisieren?",
         }

@@ -254,7 +254,7 @@ class LearningObserver:
 
         if not accepted:
             logger.info("Learning: Vorschlag abgelehnt fuer %s um %s", entity_id, time_slot)
-            return "Verstanden, Sir. Ich werde das nicht automatisieren."
+            return f"Verstanden, {get_person_title()}. Ich werde das nicht automatisieren."
 
         logger.info("Learning: Vorschlag akzeptiert fuer %s um %s (Wochentag: %d)",
                      entity_id, time_slot, weekday)
@@ -273,7 +273,7 @@ class LearningObserver:
                 await self.redis.setex(automated_key, 90 * 86400, "1")
 
         return (
-            f"Sehr gut, Sir. Ich habe die Automatisierung vorgemerkt. "
+            f"Sehr gut, {get_person_title()}. Ich habe die Automatisierung vorgemerkt. "
             f"Die Self-Automation wird {entity_id.split('.', 1)[1].replace('_', ' ').title()} "
             f"ab jetzt automatisch um {time_slot} Uhr schalten."
         )

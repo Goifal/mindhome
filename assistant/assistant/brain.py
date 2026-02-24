@@ -802,7 +802,7 @@ class AssistantBrain(BrainCallbacksMixin):
                     configured = [configured]
 
                 if not cal_entities:
-                    response_text = "Ich sehe keine Kalender-Entities in Home Assistant, Sir."
+                    response_text = f"Ich sehe keine Kalender-Entities in Home Assistant, {get_person_title(person)}."
                 else:
                     names = []
                     for s in cal_entities:
@@ -2492,11 +2492,11 @@ class AssistantBrain(BrainCallbacksMixin):
 
         # Kontext-Kommentar (JARVIS-Persoenlichkeit)
         if temp <= 0:
-            result += " Handschuhe empfohlen, Sir."
+            result += f" Handschuhe empfohlen, {get_person_title()}."
         elif temp <= 5:
             result += " Jacke empfohlen."
         elif temp >= 30:
-            result += " Genuegend trinken, Sir."
+            result += f" Genuegend trinken, {get_person_title()}."
 
         return result
 
@@ -2512,15 +2512,15 @@ class AssistantBrain(BrainCallbacksMixin):
         if "MORGEN" in raw_upper:
             prefix_single = "Morgen steht"
             prefix_multi = "Morgen stehen"
-            prefix_free = "Morgen ist frei, Sir."
+            prefix_free = f"Morgen ist frei, {get_person_title()}."
         elif "WOCHE" in raw_upper:
             prefix_single = "Diese Woche steht"
             prefix_multi = "Diese Woche stehen"
-            prefix_free = "Die Woche ist frei, Sir."
+            prefix_free = f"Die Woche ist frei, {get_person_title()}."
         else:
             prefix_single = "Heute steht"
             prefix_multi = "Heute stehen"
-            prefix_free = "Heute ist nichts geplant, Sir."
+            prefix_free = f"Heute ist nichts geplant, {get_person_title()}."
 
         # "KEINE TERMINE" Varianten
         if "KEINE TERMINE" in raw_upper or "(0)" in raw:
@@ -2557,7 +2557,7 @@ class AssistantBrain(BrainCallbacksMixin):
             events.append(title.strip())
 
         if len(events) == 1:
-            return f"{prefix_single} {events[0]} an, Sir."
+            return f"{prefix_single} {events[0]} an, {get_person_title()}."
         listing = ", ".join(events[:-1]) + f" und {events[-1]}"
         return f"{prefix_multi} {len(events)} Termine an: {listing}."
 
@@ -3567,7 +3567,7 @@ class AssistantBrain(BrainCallbacksMixin):
                     )
                     if success:
                         return f"Notiert: \"{content}\""
-                    return "Speichervorgang fehlgeschlagen. Zweiter Versuch empfohlen, Sir."
+                    return f"Speichervorgang fehlgeschlagen. Zweiter Versuch empfohlen, {get_person_title(person)}."
 
         # "Was weisst du ueber ...?"
         for trigger in ["was weisst du ueber ", "was weißt du über ",
@@ -4951,7 +4951,7 @@ Regeln:
                             msg = f"Termin '{summary}' in {int(minutes_until)} Minuten"
                             if location:
                                 msg += f" ({location})"
-                            msg += ". Rechtzeitig los, Sir."
+                            msg += f". Rechtzeitig los, {get_person_title()}."
                             predictions.append({
                                 "message": msg,
                                 "urgency": "medium",
