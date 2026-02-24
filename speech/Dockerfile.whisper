@@ -1,0 +1,37 @@
+# ============================================================
+# MindHome Speech Server — Whisper STT + Voice Embeddings
+# faster-whisper + ECAPA-TDNN via Wyoming Protocol
+# ============================================================
+#
+# CPU:  docker build -f Dockerfile.whisper -t mha-whisper .
+# GPU:  wird ueber docker-compose.gpu.yml aktiviert
+#
+
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# System-Dependencies (ffmpeg fuer Audio-Konvertierung)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
+# Python-Dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# App-Code
+COPY server.py handler.py ./
+
+# Modell-Verzeichnis (wird als Volume gemountet)
+RUN mkdir -p /app/models
+
+# Wyoming STT Port
+EXPOSE 10300
+
+# Healthcheck: Prueft ob TCP-Port antwortet
+HEALTHCHECK --interval=30s --timeout=10s --retries=5 --start-period=120s \
+    CMD python -c "import socket; s=socket.socket(); s.settimeout(5); s.connect(('localhost', 10300)); s.close()" || exit 1
+
+CMD ["python", "server.py"]
