@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.5.6 – Jarvis Voice (Speech Service Fixes)
+
+### Whisper Fix
+- **Whisper Crash behoben**: `AsrModel.__init__() missing 'version'` — wyoming 1.8.0 erfordert `version` Parameter bei AsrModel und AsrProgram
+- **Modellname-Parsing**: `WHISPER_MODEL=small-int8` wird automatisch in Modell (`small`) und Compute-Typ (`int8`) aufgetrennt
+
+### Piper Fix
+- **Piper Crash behoben**: `--port` ist kein gueltiges Argument — ersetzt durch `--uri tcp://0.0.0.0:10200` und `--data-dir /data`
+
+### Docker
+- Speech Source-Files (server.py, handler.py) als Volume-Mounts im Whisper-Container
+
 ## 1.4.4 – Jarvis Voice (STT-Fix, Frontend-Stability)
 
 ### STT Fix
