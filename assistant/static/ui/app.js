@@ -765,10 +765,13 @@ const HELP_TEXTS = {
   'narration.step_delay': {title:'Schritt-Verzoegerung', text:'Pause zwischen Aktionen innerhalb einer Szene.'},
   'narration.narrate_actions': {title:'Aktionen ansagen', text:'Bei Szenen-Wechseln ansagen was passiert.'},
   'speaker_recognition.enabled': {title:'Sprecher-Erkennung', text:'Erkennt wer spricht und passt Antworten an.'},
-  'speaker_recognition.min_confidence': {title:'Erkennungs-Sicherheit', text:'Wie sicher die Erkennung sein muss.'},
+  'speaker_recognition.min_confidence': {title:'Erkennungs-Sicherheit', text:'Wie sicher die Erkennung sein muss (0.6 empfohlen). Unter diesem Wert wird nachgefragt.'},
   'speaker_recognition.enrollment_duration': {title:'Einlern-Dauer', text:'Wie lange eine Person sprechen muss zum Einlernen.'},
-  'speaker_recognition.fallback_ask': {title:'Nachfragen', text:'Bei unsicherer Erkennung nachfragen wer spricht.'},
+  'speaker_recognition.fallback_ask': {title:'Nachfragen', text:'Bei unsicherer Erkennung nachfragen "Wer spricht?" — die Antwort wird fuer den Stimmabdruck gelernt.'},
   'speaker_recognition.max_profiles': {title:'Max. Profile', text:'Max. Anzahl gespeicherter Sprecher-Profile.'},
+  'speaker_recognition.device_mapping': {title:'Geraete-Zuordnung', text:'Welches ESPHome-Geraet gehoert welcher Person? Format: Device-ID → Person. Die Device-ID findest du in HA unter Einstellungen → Geraete → ESPHome.'},
+  'speaker_recognition.doa_mapping': {title:'Richtungs-Zuordnung (DoA)', text:'Direction of Arrival: Welcher Winkel gehoert welcher Person pro Geraet? Erfordert ReSpeaker XVF3800. Format: Winkelbereich (z.B. "0-90") → Person.'},
+  'speaker_recognition.doa_tolerance': {title:'DoA-Toleranz', text:'Toleranz fuer die Richtungserkennung in Grad. Groessere Werte sind toleranter, kleinere praeziser.'},
   // === ROUTINEN ===
   'routines.morning_briefing.enabled': {title:'Morgen-Briefing', text:'Automatisches Update am Morgen mit Wetter, Terminen, Neuigkeiten.'},
   'routines.morning_briefing.trigger': {title:'Briefing-Ausloeser', text:'Was das Morgen-Briefing ausloest (Bewegung, Sprache, Wecker).'},
@@ -991,6 +994,50 @@ function fModelSelect(path, label, hint='') {
   if (!hasVal && v) h += `<option value="${esc(v)}" selected>${esc(v)}</option>`;
   for (const m of models) h += `<option value="${m.v}" ${v===m.v?'selected':''}>${m.l}</option>`;
   return h + `</select>${hint?`<div class="hint">${hint}</div>`:''}</div>`;
+}
+
+// Key-Value Mapping Editor (fuer Device-Mapping, DoA-Mapping etc.)
+function fKeyValue(path, label, keyLabel='Schluessel', valLabel='Wert', hint='') {
+  const obj = getPath(S, path) || {};
+  const entries = Object.entries(obj);
+  let rows = entries.map(([k,v], i) =>
+    `<div class="kv-row" data-idx="${i}">
+       <input type="text" class="kv-key" value="${esc(String(k))}" placeholder="${keyLabel}">
+       <span class="kv-arrow">&#8594;</span>
+       <input type="text" class="kv-val" value="${esc(String(v))}" placeholder="${valLabel}">
+       <button class="kv-rm" onclick="kvRemove(this,'${path}')" title="Entfernen">&#10005;</button>
+     </div>`
+  ).join('');
+  return `<div class="form-group"><label>${label}${helpBtn(path)}</label>
+    <div class="kv-editor" data-path="${path}">
+      ${rows}
+      <button class="kv-add" onclick="kvAdd(this,'${path}','${keyLabel}','${valLabel}')">+ Zuordnung</button>
+    </div>${hint?`<div class="hint">${hint}</div>`:''}</div>`;
+}
+function kvAdd(btn, path, keyLabel, valLabel) {
+  const editor = btn.closest('.kv-editor');
+  const row = document.createElement('div');
+  row.className = 'kv-row';
+  row.innerHTML = `<input type="text" class="kv-key" placeholder="${keyLabel}">
+    <span class="kv-arrow">&#8594;</span>
+    <input type="text" class="kv-val" placeholder="${valLabel}">
+    <button class="kv-rm" onclick="kvRemove(this,'${path}')" title="Entfernen">&#10005;</button>`;
+  editor.insertBefore(row, btn);
+  kvSync(editor, path);
+}
+function kvRemove(btn, path) {
+  const editor = btn.closest('.kv-editor');
+  btn.closest('.kv-row').remove();
+  kvSync(editor, path);
+}
+function kvSync(editor, path) {
+  const obj = {};
+  editor.querySelectorAll('.kv-row').forEach(row => {
+    const k = row.querySelector('.kv-key').value.trim();
+    const v = row.querySelector('.kv-val').value.trim();
+    if (k) obj[k] = v;
+  });
+  setPath(S, path, obj);
 }
 
 // Info-Box
@@ -1789,12 +1836,18 @@ function renderVoice() {
     fToggle('narration.narrate_actions', 'Aktionen ansagen ("Licht wird gedimmt...")')
   ) +
   sectionWrap('&#128100;', 'Sprecher-Erkennung',
-    fInfo('Erkennt wer spricht und passt die Antwort an. Jede Person muss einmalig "eingelernt" werden.') +
+    fInfo('Erkennt wer spricht ueber 7 Methoden: Geraete-Zuordnung, Richtung (DoA), Raum, Anwesenheit, Stimmabdruck, Voice-Features und Cache. Lernt automatisch dazu.') +
     fToggle('speaker_recognition.enabled', 'Sprecher-Erkennung aktiv') +
-    fRange('speaker_recognition.min_confidence', 'Erkennungs-Sicherheit', 0, 1, 0.05, {0:'Jeder',0.3:'Niedrig',0.5:'Mittel',0.7:'Hoch',0.9:'Sehr hoch',1:'Perfekt'}) +
-    fRange('speaker_recognition.enrollment_duration', 'Einlern-Dauer (Sek.)', 5, 120, 5, {5:'5s (kurz)',15:'15s',30:'30s (empfohlen)',60:'1 Min',120:'2 Min'}) +
+    fRange('speaker_recognition.min_confidence', 'Erkennungs-Sicherheit', 0, 1, 0.05, {0:'Jeder',0.3:'Niedrig',0.5:'Mittel',0.6:'Empfohlen',0.7:'Hoch',0.9:'Sehr hoch',1:'Perfekt'}) +
     fToggle('speaker_recognition.fallback_ask', 'Bei Unsicherheit nachfragen: "Wer spricht?"') +
-    fRange('speaker_recognition.max_profiles', 'Max. Sprecher-Profile', 1, 50, 1)
+    fRange('speaker_recognition.max_profiles', 'Max. Sprecher-Profile', 1, 50, 1) +
+    fRange('speaker_recognition.enrollment_duration', 'Einlern-Dauer (Sek.)', 5, 120, 5, {5:'5s (kurz)',15:'15s',30:'30s (empfohlen)',60:'1 Min',120:'2 Min'}) +
+    fKeyValue('speaker_recognition.device_mapping', 'Geraete → Person Zuordnung',
+      'ESPHome Device-ID', 'Person (z.B. max)',
+      'Welches Mikrofon-Geraet gehoert wem? Device-ID findest du in HA → Einstellungen → Geraete → ESPHome.') +
+    fTextarea('speaker_recognition.doa_mapping', 'Richtungs-Erkennung (DoA)',
+      'JSON-Format. Beispiel: {"respeaker_kueche":{"0-90":"max","270-360":"lisa"}}. Erfordert ReSpeaker XVF3800.') +
+    fRange('speaker_recognition.doa_tolerance', 'DoA-Toleranz (Grad)', 5, 90, 5, {5:'5°',10:'10°',15:'15°',20:'20°',30:'30° (Standard)',45:'45°',60:'60°',90:'90°'})
   );
 }
 
@@ -2575,6 +2628,17 @@ function collectSettings() {
     const path = el.dataset.path;
     const arr = getPath(S, path) || [];
     setPath(updates, path, arr);
+  });
+  // Key-Value editors (kv-editor divs) - collect from DOM
+  document.querySelectorAll('#settingsContent .kv-editor[data-path]').forEach(el => {
+    const path = el.dataset.path;
+    const obj = {};
+    el.querySelectorAll('.kv-row').forEach(row => {
+      const k = row.querySelector('.kv-key').value.trim();
+      const v = row.querySelector('.kv-val').value.trim();
+      if (k) obj[k] = v;
+    });
+    setPath(updates, path, obj);
   });
   // Chip-Selects - already maintained in S via toggleChip()
   document.querySelectorAll('#settingsContent .chip-grid[data-path]').forEach(el => {
