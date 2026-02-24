@@ -57,6 +57,7 @@ from .routine_engine import RoutineEngine
 from .config_versioning import ConfigVersioning
 from .self_automation import SelfAutomation
 from .self_optimization import SelfOptimization
+from .situation_model import SituationModel
 from .sound_manager import SoundManager
 from .speaker_recognition import SpeakerRecognition
 from .summarizer import DailySummarizer
@@ -224,6 +225,9 @@ class AssistantBrain(BrainCallbacksMixin):
         # Wellness Advisor (Caring Loops)
         self.wellness_advisor = WellnessAdvisor(self.ha, self.activity, self.mood)
 
+        # Phase 17: Situation Model (Delta-Tracking zwischen Gespraechen)
+        self.situation_model = SituationModel()
+
     async def initialize(self):
         """Initialisiert alle Komponenten."""
         await self.memory.initialize()
@@ -368,6 +372,9 @@ class AssistantBrain(BrainCallbacksMixin):
         self.wellness_advisor.set_notify_callback(self._handle_wellness_nudge)
         if "WellnessAdvisor" not in _degraded_modules:
             await _safe_init("WellnessAdvisor.start", self.wellness_advisor.start())
+
+        # Phase 17: Situation Model (Delta-Tracking zwischen Gespraechen)
+        await _safe_init("SituationModel", self.situation_model.initialize(redis_client=self.memory.redis))
 
         await self.proactive.start()
 
@@ -1184,6 +1191,9 @@ class AssistantBrain(BrainCallbacksMixin):
         # What-If Prompt (bisher seriell NACH dem Parallel-Gather)
         _mega_tasks.append(("whatif", self._get_whatif_prompt(text)))
 
+        # Phase 17: Situation Delta (was hat sich seit letztem Gespraech geaendert?)
+        _mega_tasks.append(("situation_delta", self._get_situation_delta()))
+
         # Alle Subsysteme die das Profil verlangt
         if profile.need_mood:
             _mega_tasks.append(("mood", self.mood.analyze(text, person or "")))
@@ -1259,6 +1269,7 @@ class AssistantBrain(BrainCallbacksMixin):
         tutorial_hint = _safe_get("tutorial")
         summary_context = _safe_get("summary")
         rag_context = _safe_get("rag")
+        situation_delta = _safe_get("situation_delta")
 
         context["mood"] = mood_result
 
@@ -1350,6 +1361,10 @@ class AssistantBrain(BrainCallbacksMixin):
         memory_context = self._build_memory_context(memories)
         if memory_context:
             sections.append(("memory", memory_context, 2))
+
+        # Phase 17: Situation Delta (was hat sich seit letztem Gespraech geaendert?)
+        if situation_delta:
+            sections.append(("situation_delta", situation_delta, 2))
 
         # --- Prio 3: Optional (RAG bei Wissensfragen Prio 1) ---
         if rag_context:
@@ -2135,6 +2150,12 @@ class AssistantBrain(BrainCallbacksMixin):
                 ),
                 name="extract_facts",
             )
+
+        # Phase 17: Situation Snapshot speichern (fuer Delta beim naechsten Gespraech)
+        self._task_registry.create_task(
+            self._save_situation_snapshot(),
+            name="save_situation_snapshot",
+        )
 
         # Phase 11.4: Korrektur-Lernen — erkennt Korrekturen und speichert sie
         if self._is_correction(text):
@@ -4306,6 +4327,30 @@ Regeln:
 - Bei Kosten: Rechne konkret mit den vorhandenen Daten
 - Sei ehrlich wenn du schaetzen musst: "Basierend auf deinem aktuellen Verbrauch..."
 - Maximal 5 Punkte, klar strukturiert."""
+
+    # ------------------------------------------------------------------
+    # Phase 17: Situation Model (Delta zwischen Gespraechen)
+    # ------------------------------------------------------------------
+
+    async def _get_situation_delta(self) -> Optional[str]:
+        """Holt den Situations-Delta-Text (was hat sich seit letztem Gespraech geaendert?)."""
+        try:
+            states = await self.ha.get_states()
+            if not states:
+                return None
+            return await self.situation_model.get_situation_delta(states)
+        except Exception as e:
+            logger.debug("Situation Delta Fehler: %s", e)
+            return None
+
+    async def _save_situation_snapshot(self):
+        """Speichert einen Hausstatus-Snapshot nach dem Gespraech."""
+        try:
+            states = await self.ha.get_states()
+            if states:
+                await self.situation_model.take_snapshot(states)
+        except Exception as e:
+            logger.debug("Situation Snapshot Fehler: %s", e)
 
     # ------------------------------------------------------------------
     # Phase 8: Konversations-Kontinuitaet

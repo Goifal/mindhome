@@ -1729,7 +1729,64 @@ function renderSecurity() {
     fInfo('Welche Kanaele soll der Assistent fuer Benachrichtigungen nutzen? Kanaele koennen einzeln konfiguriert werden.') +
     '<div id="notifyChannelsContainer" style="color:var(--text-muted);font-size:12px;">Wird geladen...</div>' +
     '<div style="margin-top:10px;"><button class="btn btn-primary" style="font-size:12px;" onclick="saveNotifyChannels()">Kanaele speichern</button></div>'
+  ) +
+  // --- Phase 17: Notfall-Protokolle ---
+  sectionWrap('&#127752;', 'Notfall-Protokolle',
+    fInfo('Bei CRITICAL Events (Rauch, Einbruch, Wasser) werden automatisch Aktionen ausgefuehrt. Jedes Protokoll kann einzeln aktiviert werden.') +
+    renderEmergencyProtocol('fire', 'Feuer / Rauch', 'Rauchmelder loest aus', '&#128293;') +
+    renderEmergencyProtocol('intrusion', 'Einbruch / Alarm', 'Alarmsystem wird ausgeloest', '&#128680;') +
+    renderEmergencyProtocol('water_leak', 'Wasserleck', 'Wassersensor schlaegt an', '&#128167;')
+  ) +
+  // --- Phase 17: Interrupt-Queue ---
+  sectionWrap('&#9889;', 'Interrupt-Queue',
+    fInfo('CRITICAL-Meldungen unterbrechen sofort alle laufenden Aktionen (TTS, Streaming). Ohne Interrupt geht die Meldung den normalen Weg ueber das LLM.') +
+    fToggle('interrupt_queue.enabled', 'Interrupt-Queue aktiviert') +
+    fRange('interrupt_queue.pause_ms', 'Pause vor Notfall-Meldung (ms)', 100, 1000, 100,
+      {100:'0.1s',200:'0.2s',300:'0.3s',500:'0.5s',1000:'1s'})
+  ) +
+  // --- Phase 17: Situations-Modell ---
+  sectionWrap('&#128269;', 'Situations-Modell',
+    fInfo('JARVIS merkt sich den Hausstatus bei jedem Gespraech und erwaehnt beim naechsten Gespraech beilaeufig was sich veraendert hat.') +
+    fToggle('situation_model.enabled', 'Situations-Modell aktiviert') +
+    fRange('situation_model.min_pause_minutes', 'Mindest-Pause zwischen Deltas (Min)', 5, 120, 5) +
+    fRange('situation_model.max_changes', 'Max. gemeldete Aenderungen', 1, 10, 1) +
+    fRange('situation_model.temp_threshold', 'Temperatur-Schwelle (°C)', 1, 5, 0.5)
   );
+}
+
+function renderEmergencyProtocol(key, title, description, icon) {
+  const proto = getPath(S, 'emergency_protocols.' + key);
+  const hasActions = proto && proto.actions && proto.actions.length > 0;
+  const enabled = hasActions;
+
+  let actionsHtml = '';
+  if (hasActions) {
+    actionsHtml = '<div style="margin-top:8px;">';
+    for (const a of proto.actions) {
+      const domain = a.domain || '?';
+      const service = a.service || '?';
+      const target = a.target || '';
+      const data = a.data ? JSON.stringify(a.data) : '';
+      const desc = target === 'all' ? `Alle ${domain}` : (target || (data || `${domain}.${service}`));
+      actionsHtml += `<div style="display:flex;align-items:center;gap:6px;padding:4px 8px;margin:2px 0;background:var(--bg-secondary);border-radius:4px;font-size:12px;">
+        <span style="color:var(--text-muted);min-width:80px;">${domain}.${service}</span>
+        <span>${esc(desc)}</span>
+      </div>`;
+    }
+    actionsHtml += '</div>';
+  }
+
+  return `<div style="padding:12px;margin-bottom:10px;background:var(--bg-secondary);border-radius:8px;border-left:3px solid ${enabled?'var(--success)':'var(--text-muted)'};">
+    <div style="display:flex;align-items:center;justify-content:space-between;">
+      <div>
+        <span style="font-size:16px;">${icon}</span>
+        <span style="font-weight:600;margin-left:6px;">${title}</span>
+        <div style="font-size:11px;color:var(--text-secondary);margin-top:2px;">${description}</div>
+      </div>
+      <span style="font-size:11px;padding:3px 8px;border-radius:4px;background:${enabled?'var(--success)':'var(--text-muted)'};color:#fff;">${enabled?'Aktiv':'Inaktiv'}</span>
+    </div>
+    ${actionsHtml}
+  </div>`;
 }
 
 // ---- Notification Channels ----
