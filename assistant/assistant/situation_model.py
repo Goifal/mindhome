@@ -16,6 +16,8 @@ from typing import Optional
 
 import redis.asyncio as aioredis
 
+from .config import yaml_config
+
 logger = logging.getLogger(__name__)
 
 # Redis-Keys
@@ -29,18 +31,23 @@ class SituationModel:
 
     def __init__(self):
         self.redis: Optional[aioredis.Redis] = None
+        cfg = yaml_config.get("situation_model", {})
+        self.enabled = cfg.get("enabled", True)
+        self.min_pause_minutes = cfg.get("min_pause_minutes", 5)
+        self.max_changes = cfg.get("max_changes", 5)
+        self.temp_threshold = cfg.get("temp_threshold", 2)
 
     async def initialize(self, redis_client: Optional[aioredis.Redis] = None):
         """Initialisiert mit Redis."""
         self.redis = redis_client
-        logger.info("SituationModel initialisiert")
+        logger.info("SituationModel initialisiert (enabled: %s)", self.enabled)
 
     async def take_snapshot(self, states: list[dict]):
         """Speichert einen kompakten Hausstatus-Snapshot.
 
         Wird am Ende jedes Gespraechs aufgerufen.
         """
-        if not self.redis or not states:
+        if not self.enabled or not self.redis or not states:
             return
 
         snapshot = self._build_snapshot(states)
@@ -62,7 +69,7 @@ class SituationModel:
         Returns:
             Menschenlesbarer Delta-Text oder None wenn nichts Interessantes.
         """
-        if not self.redis or not current_states:
+        if not self.enabled or not self.redis or not current_states:
             return None
 
         try:
@@ -87,7 +94,7 @@ class SituationModel:
                 last_dt = datetime.fromisoformat(t)
                 diff = datetime.now() - last_dt
                 minutes = int(diff.total_seconds() / 60)
-                if minutes < 5:
+                if minutes < self.min_pause_minutes:
                     return None  # Zu kurz her, kein Delta noetig
                 elif minutes < 60:
                     last_time = f"vor {minutes} Minuten"
@@ -106,8 +113,8 @@ class SituationModel:
         if not changes:
             return None
 
-        # Maximal 5 Aenderungen melden (die wichtigsten)
-        changes = changes[:5]
+        # Maximal N Aenderungen melden (die wichtigsten)
+        changes = changes[:self.max_changes]
 
         header = f"Seit dem letzten Gespraech ({last_time}):" if last_time else "Seit dem letzten Gespraech:"
         delta_text = f"\n\nSITUATIONS-DELTA:\n{header}\n"
@@ -203,7 +210,7 @@ class SituationModel:
         new_temps = new.get("temperatures", {})
         for name in set(old_temps) & set(new_temps):
             diff = new_temps[name] - old_temps[name]
-            if abs(diff) >= 2:
+            if abs(diff) >= self.temp_threshold:
                 direction = "gestiegen" if diff > 0 else "gesunken"
                 changes.append((
                     3,

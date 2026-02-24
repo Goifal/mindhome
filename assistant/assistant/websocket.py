@@ -158,7 +158,23 @@ async def emit_interrupt(
 
     Sendet zuerst ein interrupt-Signal (Client soll TTS stoppen),
     dann die eigentliche Notfall-Meldung.
+    Konfigurierbar via interrupt_queue.* in settings.yaml.
     """
+    from .config import yaml_config
+    iq_cfg = yaml_config.get("interrupt_queue", {})
+
+    if not iq_cfg.get("enabled", True):
+        # Interrupt deaktiviert — normalen Weg nehmen
+        await ws_manager.broadcast("assistant.proactive", {
+            "text": text,
+            "event_type": event_type,
+            "urgency": "critical",
+            "notification_id": "",
+        })
+        return
+
+    pause_ms = iq_cfg.get("pause_ms", 300)
+
     # 1. Interrupt-Signal: Client soll sofort alles stoppen
     await ws_manager.broadcast("assistant.interrupt", {
         "reason": event_type,
@@ -166,7 +182,7 @@ async def emit_interrupt(
     })
 
     # 2. Kurze Pause damit der Client reagieren kann
-    await asyncio.sleep(0.3)
+    await asyncio.sleep(pause_ms / 1000.0)
 
     # 3. Notfall-Meldung senden (als proactive mit urgency=critical)
     await ws_manager.broadcast("assistant.proactive", {
