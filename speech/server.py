@@ -34,6 +34,11 @@ def main():
     language = os.getenv("WHISPER_LANGUAGE", "de")
     device = os.getenv("SPEECH_DEVICE", "cpu")
     compute_type = os.getenv("WHISPER_COMPUTE", "int8")
+
+    # WHISPER_MODEL kann "small-int8" enthalten — Compute-Typ abtrennen
+    _compute_suffixes = ("int8", "float16", "float32")
+    if "-" in model and model.rsplit("-", 1)[1] in _compute_suffixes:
+        model, compute_type = model.rsplit("-", 1)
     # S-2: beam_size=1 (greedy) ist ~40% schneller als beam_size=5
     # bei minimaler Qualitaetseinbusse fuer kurze Sprachbefehle.
     # Ueber WHISPER_BEAM_SIZE konfigurierbar falls noetig.
