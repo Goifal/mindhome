@@ -1862,30 +1862,30 @@ class AssistantBrain(BrainCallbacksMixin):
                     response_text = humanized_text  # Fallback steht schon
                     try:
                         # Persoenlichkeits-Kontext fuer Refinement
-                    _sarc = self.personality.sarcasm_level
-                    _form = getattr(self, '_last_formality_score', 50)
-                    _mood = getattr(self.personality, '_current_mood', 'neutral')
-                    _sarc_hint = {
-                        1: "Sachlich, kein Humor.",
-                        2: "Gelegentlich trocken.",
-                        3: "Trocken-britisch. Butler der innerlich schmunzelt.",
-                        4: "Sarkastisch. Spitze Bemerkungen erlaubt.",
-                        5: "Voll sarkastisch. Kommentiere alles.",
-                    }.get(_sarc, "")
-                    _form_hint = (
-                        "Formell, respektvoll." if _form >= 70
-                        else "Butler-Ton, souveraen." if _form >= 50
-                        else "Locker, vertraut." if _form >= 35
-                        else "Persoenlich, wie ein Freund."
-                    )
-                    _mood_hint = {
-                        "stressed": " User gestresst — knapp antworten.",
-                        "frustrated": " User frustriert — sofort handeln, nicht erklaeren.",
-                        "tired": " User muede — minimal, kein Humor.",
-                        "good": " User gut drauf — Humor erlaubt.",
-                    }.get(_mood, "")
+                        _sarc = self.personality.sarcasm_level
+                        _form = getattr(self, '_last_formality_score', 50)
+                        _mood = getattr(self.personality, '_current_mood', 'neutral')
+                        _sarc_hint = {
+                            1: "Sachlich, kein Humor.",
+                            2: "Gelegentlich trocken.",
+                            3: "Trocken-britisch. Butler der innerlich schmunzelt.",
+                            4: "Sarkastisch. Spitze Bemerkungen erlaubt.",
+                            5: "Voll sarkastisch. Kommentiere alles.",
+                        }.get(_sarc, "")
+                        _form_hint = (
+                            "Formell, respektvoll." if _form >= 70
+                            else "Butler-Ton, souveraen." if _form >= 50
+                            else "Locker, vertraut." if _form >= 35
+                            else "Persoenlich, wie ein Freund."
+                        )
+                        _mood_hint = {
+                            "stressed": " User gestresst — knapp antworten.",
+                            "frustrated": " User frustriert — sofort handeln, nicht erklaeren.",
+                            "tired": " User muede — minimal, kein Humor.",
+                            "good": " User gut drauf — Humor erlaubt.",
+                        }.get(_mood, "")
 
-                    feedback_messages = [{
+                        feedback_messages = [{
                             "role": "system",
                             "content": (
                                 "Du bist JARVIS. Antworte auf Deutsch, 1-2 Saetze. "
