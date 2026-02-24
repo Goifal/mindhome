@@ -28,7 +28,7 @@ from typing import Optional
 
 import redis.asyncio as aioredis
 
-from .config import yaml_config
+from .config import yaml_config, get_person_title
 from .ha_client import HomeAssistantClient
 
 logger = logging.getLogger(__name__)
@@ -417,7 +417,7 @@ class InsightEngine:
                     "check": "weather_windows",
                     "urgency": urgency,
                     "message": (
-                        f"Sir, {time_hint} zieht {weather_word} auf — "
+                        f"{get_person_title()}, {time_hint} zieht {weather_word} auf — "
                         f"{windows}{extra} {'stehen' if len(data['open_windows']) > 1 else 'steht'} "
                         f"noch offen."
                     ),
@@ -467,7 +467,7 @@ class InsightEngine:
             "check": "frost_heating",
             "urgency": "medium",
             "message": (
-                f"Sir, es werden {frost_temp}°C erwartet — "
+                f"{get_person_title()}, es werden {frost_temp}°C erwartet — "
                 f"{', '.join(heating_issues)}. "
                 f"Frostschaeden waeren vermeidbar."
             ),
@@ -526,7 +526,7 @@ class InsightEngine:
             "check": "calendar_travel",
             "urgency": "low",
             "message": (
-                f'Sir, "{ev_summary}" steht an. '
+                f'{get_person_title()}, "{ev_summary}" steht an. '
                 f"{' — '.join(hints)}. "
                 f"Soll ich das Haus vorbereiten?"
             ),
@@ -588,7 +588,7 @@ class InsightEngine:
                 "check": "energy_anomaly",
                 "urgency": "low",
                 "message": (
-                    f"Sir, der Stromverbrauch heute liegt {increase_pct:.0f}% ueber "
+                    f"{get_person_title()}, der Stromverbrauch heute liegt {increase_pct:.0f}% ueber "
                     f"dem Durchschnitt. "
                     f"Laeuft etwas, das nicht laufen sollte?"
                 ),
@@ -654,7 +654,7 @@ class InsightEngine:
             "check": "away_devices",
             "urgency": "low",
             "message": (
-                f"Sir, Sie sind seit {hours_away:.0f} Stunden weg — "
+                f"{get_person_title()}, Sie sind seit {hours_away:.0f} Stunden weg — "
                 f"{'. '.join(issues)}."
             ),
             "data": {
@@ -704,7 +704,7 @@ class InsightEngine:
                 "check": "temp_drop",
                 "urgency": "low",
                 "message": (
-                    f"Sir, die Raumtemperatur faellt ungewoehnlich — "
+                    f"{get_person_title()}, die Raumtemperatur faellt ungewoehnlich — "
                     f"{drop:.1f} Grad in 2 Stunden, jetzt bei {current_avg:.1f}°C.{cause_hint}"
                 ),
                 "data": {
@@ -749,7 +749,7 @@ class InsightEngine:
             "check": "window_temp_drop",
             "urgency": "low",
             "message": (
-                f"Sir, bei {outside_temp:.0f}°C draussen und offenem {windows} "
+                f"{get_person_title()}, bei {outside_temp:.0f}°C draussen und offenem {windows} "
                 f"heizen wir gerade die Nachbarschaft mit — "
                 f"drinnen {inside_avg:.0f}°C."
             ),
