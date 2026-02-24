@@ -24,6 +24,9 @@ def redis_mock():
     r.lpush = AsyncMock()
     r.ltrim = AsyncMock()
     r.lrange = AsyncMock(return_value=[])
+    r.delete = AsyncMock()
+    r.exists = AsyncMock(return_value=0)
+    r.expire = AsyncMock()
     return r
 
 
@@ -39,6 +42,13 @@ def recognition(ha_client, redis_mock):
                 "media_player.kueche": "max",
                 "media_player.schlafzimmer": "lisa",
             },
+            "doa_mapping": {
+                "respeaker_kueche": {
+                    "0-90": "max",
+                    "270-360": "lisa",
+                },
+            },
+            "doa_tolerance": 30,
         }
         sr = SpeakerRecognition(ha_client)
         sr.redis = redis_mock
@@ -172,3 +182,181 @@ class TestHistory:
         history = await recognition.get_identification_history(limit=5)
         assert len(history) == 1
         assert history[0]["person"] == "max"
+
+
+class TestDoA:
+    """Tests fuer Direction of Arrival Erkennung."""
+
+    def test_doa_match_in_range(self, recognition):
+        recognition._profiles["max"] = SpeakerProfile("Max", "max")
+        result = recognition._identify_by_doa("respeaker_kueche", 45.0)
+        assert result is not None
+        assert result["person"] == "Max"
+        assert result["confidence"] == 0.85
+
+    def test_doa_match_second_range(self, recognition):
+        recognition._profiles["lisa"] = SpeakerProfile("Lisa", "lisa")
+        result = recognition._identify_by_doa("respeaker_kueche", 300.0)
+        assert result is not None
+        assert result["person"] == "Lisa"
+
+    def test_doa_no_match_gap(self, recognition):
+        """Winkel in keinem Bereich → kein Match."""
+        result = recognition._identify_by_doa("respeaker_kueche", 180.0)
+        assert result is None
+
+    def test_doa_unknown_device(self, recognition):
+        result = recognition._identify_by_doa("unknown_device", 45.0)
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_doa_in_identify_chain(self, recognition):
+        """DoA wird in identify() aufgerufen wenn doa_angle vorhanden."""
+        recognition._profiles["max"] = SpeakerProfile("Max", "max")
+        result = await recognition.identify(
+            device_id="respeaker_kueche",
+            audio_metadata={"doa_angle": 45.0},
+        )
+        # Kein Device-Mapping fuer respeaker_kueche → DoA greift
+        assert result["method"] == "doa"
+        assert result["person"] == "Max"
+        assert result["confidence"] == 0.85
+
+
+class TestVoiceEmbedding:
+    """Tests fuer Voice Embedding Matching."""
+
+    @pytest.mark.asyncio
+    async def test_identify_by_embedding_match(self, recognition, redis_mock):
+        """Cosinus-Aehnlichkeit findet aehnliches Embedding."""
+        recognition._profiles["max"] = SpeakerProfile("Max", "max")
+        # Stored embedding (192-dim simuliert als 4-dim)
+        stored = [0.5, 0.3, 0.8, 0.1]
+        redis_mock.get = AsyncMock(return_value=json.dumps(stored))
+
+        # Sehr aehnliches Embedding
+        query = [0.51, 0.29, 0.79, 0.11]
+        result = await recognition.identify_by_embedding(query)
+        assert result is not None
+        assert result["person"] == "Max"
+        assert result["method"] == "voice_embedding"
+        assert result["confidence"] > 0.9
+
+    @pytest.mark.asyncio
+    async def test_identify_by_embedding_no_match(self, recognition, redis_mock):
+        """Kein gespeichertes Embedding → kein Match."""
+        recognition._profiles["max"] = SpeakerProfile("Max", "max")
+        redis_mock.get = AsyncMock(return_value=None)
+        result = await recognition.identify_by_embedding([0.5, 0.3])
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_store_embedding_new(self, recognition, redis_mock):
+        """Neues Embedding speichern."""
+        recognition._profiles["max"] = SpeakerProfile("Max", "max")
+        redis_mock.get = AsyncMock(return_value=None)
+        result = await recognition.store_embedding("max", [0.5, 0.3, 0.8])
+        assert result is True
+        redis_mock.set.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_store_embedding_ema_merge(self, recognition, redis_mock):
+        """EMA-Verschmelzung mit bestehendem Embedding."""
+        recognition._profiles["max"] = SpeakerProfile("Max", "max")
+        stored = [1.0, 0.0]
+        redis_mock.get = AsyncMock(return_value=json.dumps(stored))
+
+        await recognition.store_embedding("max", [0.0, 1.0])
+        # EMA alpha=0.3: merged = [0.3*0.0 + 0.7*1.0, 0.3*1.0 + 0.7*0.0] = [0.7, 0.3]
+        call_args = redis_mock.set.call_args_list
+        # Finde den set-Aufruf fuer das Embedding (nicht fuer Profile)
+        emb_call = [c for c in call_args if "embedding" in str(c)]
+        assert len(emb_call) > 0
+
+
+class TestFallbackAsk:
+    """Tests fuer 'Wer bist du?' Rueckfrage."""
+
+    @pytest.mark.asyncio
+    async def test_start_fallback_ask_two_persons(self, recognition, redis_mock):
+        """Rueckfrage mit 2 Personen generiert natuerliche Frage."""
+        recognition.ha = AsyncMock()
+        recognition.ha.get_states = AsyncMock(return_value=[
+            {"entity_id": "person.max", "state": "home",
+             "attributes": {"friendly_name": "Max"}},
+            {"entity_id": "person.lisa", "state": "home",
+             "attributes": {"friendly_name": "Lisa"}},
+        ])
+        question = await recognition.start_fallback_ask(
+            guessed_person="max", original_text="Mach das Licht an",
+        )
+        assert "Max" in question
+        assert "Lisa" in question
+        redis_mock.set.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_resolve_fallback_simple_name(self, recognition, redis_mock):
+        """Einfache Namensantwort wird aufgeloest."""
+        pending = json.dumps({
+            "original_text": "Mach das Licht an",
+            "guessed_person": None,
+            "persons": ["Max", "Lisa"],
+            "time": time.time(),
+        })
+        redis_mock.get = AsyncMock(return_value=pending)
+        result = await recognition.resolve_fallback_answer("Max")
+        assert result is not None
+        assert result["person"] == "Max"
+        assert result["original_text"] == "Mach das Licht an"
+
+    @pytest.mark.asyncio
+    async def test_resolve_fallback_with_prefix(self, recognition, redis_mock):
+        """'Ich bin Lisa' wird korrekt aufgeloest."""
+        pending = json.dumps({
+            "original_text": "",
+            "persons": ["Max", "Lisa"],
+            "time": time.time(),
+        })
+        redis_mock.get = AsyncMock(return_value=pending)
+        result = await recognition.resolve_fallback_answer("Ich bin Lisa")
+        assert result is not None
+        assert result["person"] == "Lisa"
+
+    @pytest.mark.asyncio
+    async def test_resolve_fallback_unknown_name(self, recognition, redis_mock):
+        """Unbekannter Name → None."""
+        pending = json.dumps({
+            "original_text": "",
+            "persons": ["Max", "Lisa"],
+            "time": time.time(),
+        })
+        redis_mock.get = AsyncMock(return_value=pending)
+        result = await recognition.resolve_fallback_answer("Tom")
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_has_pending_ask(self, recognition, redis_mock):
+        """Pending-State pruefen."""
+        redis_mock.exists = AsyncMock(return_value=1)
+        assert await recognition.has_pending_ask() is True
+        redis_mock.exists = AsyncMock(return_value=0)
+        assert await recognition.has_pending_ask() is False
+
+    @pytest.mark.asyncio
+    async def test_no_pending_without_redis(self, recognition):
+        """Ohne Redis kein Pending."""
+        recognition.redis = None
+        assert await recognition.has_pending_ask() is False
+
+
+class TestHealthStatus:
+    def test_health_status_active(self, recognition):
+        status = recognition.health_status()
+        assert "active" in status
+        assert "profiles" in status
+        assert "devices" in status
+        assert "embeddings" in status
+
+    def test_health_status_disabled(self, recognition):
+        recognition.enabled = False
+        assert recognition.health_status() == "disabled"

@@ -1,16 +1,21 @@
 """
 Speaker Recognition - Phase 9: Personen-Erkennung.
 
-Identifiziert WER spricht ueber mehrere Methoden:
-1. Device-Mapping: Welches Geraet/Satellite sendet? → Person zuordnen
-2. Room-Mapping: Raum + Anwesenheit → wahrscheinlichste Person
-3. Voice-Profile: Einfache Audio-Features (WPM, Dauer) als Hint
-4. Manuell: person-Parameter via API (hoechste Prioritaet)
+Identifiziert WER spricht ueber 7 Methoden (Prioritaet absteigend):
+1. Device-Mapping: Welches Geraet/Satellite sendet? → Person zuordnen (0.95)
+2. DoA (Direction of Arrival): Winkel der Stimme → Sitzposition → Person (0.85)
+3. Room + Presence: Raum + Anwesenheit → wahrscheinlichste Person (0.80)
+4. Sole Person Home: Nur 1 Person zuhause → muss die sein (0.85)
+5. Voice Embeddings: ECAPA-TDNN 192-dim Stimmabdruck (0.60-0.95)
+6. Voice Features: WPM, Dauer, Lautstaerke (0.30-0.90, spoofable)
+7. Last Speaker Cache: Letzter identifizierter Sprecher (0.20-0.50)
 
 Architektur:
 - Device-zu-Person Mapping in settings.yaml konfigurierbar
+- DoA-Mapping: Winkelbereich → Person pro Geraet (ReSpeaker XVF3800)
+- Voice Embeddings: SpeechBrain ECAPA-TDNN, EMA-Lerneffekt via Redis
 - Profiles werden in Redis gespeichert (Lerneffekt)
-- Fallback: "Wer spricht?" bei Mehrdeutigkeit
+- Fallback: "Wer spricht?" bei Mehrdeutigkeit (mit Lerneffekt)
 """
 
 import asyncio
@@ -22,6 +27,7 @@ from typing import Optional
 import redis.asyncio as aioredis
 
 from .config import yaml_config
+from .embedding_extractor import extract_embedding, is_available as embeddings_available
 from .ha_client import HomeAssistantClient
 
 logger = logging.getLogger(__name__)
@@ -30,6 +36,7 @@ logger = logging.getLogger(__name__)
 SPEAKER_PROFILES_KEY = "mha:speaker:profiles"
 SPEAKER_LAST_IDENTIFIED_KEY = "mha:speaker:last_identified"
 SPEAKER_HISTORY_KEY = "mha:speaker:history"
+SPEAKER_PENDING_ASK_KEY = "mha:speaker:pending_ask"
 
 
 class SpeakerProfile:
@@ -126,6 +133,18 @@ class SpeakerRecognition:
         if filtered_count > 0:
             logger.info("Device-Mapping: %d Eintraege geladen, %d leere uebersprungen",
                         len(self._device_mapping), filtered_count)
+
+        # DoA (Direction of Arrival) Mapping: device_id → {winkelbereich: person_id}
+        raw_doa = sr_cfg.get("doa_mapping", {}) or {}
+        self._doa_mapping: dict[str, dict[str, str]] = {}
+        for dev_id, angle_map in raw_doa.items():
+            if isinstance(angle_map, dict):
+                self._doa_mapping[str(dev_id)] = {
+                    str(k): str(v) for k, v in angle_map.items() if v
+                }
+        self._doa_tolerance = sr_cfg.get("doa_tolerance", 30)
+        if self._doa_mapping:
+            logger.info("DoA-Mapping: %d Geraete konfiguriert", len(self._doa_mapping))
 
         # In-Memory Cache der Profile
         self._profiles: dict[str, SpeakerProfile] = {}
@@ -224,7 +243,23 @@ class SpeakerRecognition:
                 "method": "device_mapping",
             }
 
-        # 2. Raum + Anwesenheit: Wenn nur 1 Person im Raum
+        # 2. DoA (Direction of Arrival): Winkel → Person
+        # Erfordert ReSpeaker XVF3800 mit kalibriertem Winkel-Mapping
+        if device_id and audio_metadata and audio_metadata.get("doa_angle") is not None:
+            doa_result = self._identify_by_doa(device_id, audio_metadata["doa_angle"])
+            if doa_result:
+                self._last_speaker = doa_result["person_id"]
+                await self.log_identification(
+                    doa_result["person_id"], "doa", doa_result["confidence"],
+                )
+                return {
+                    "person": doa_result["person"],
+                    "confidence": doa_result["confidence"],
+                    "fallback": False,
+                    "method": "doa",
+                }
+
+        # 3. Raum + Anwesenheit: Wenn nur 1 Person im Raum
         if room and self.ha:
             room_person = await self._identify_by_room(room)
             if room_person:
@@ -237,7 +272,7 @@ class SpeakerRecognition:
                     "method": "room_presence",
                 }
 
-        # 3. Nur 1 Person zuhause → muss die sein
+        # 4. Nur 1 Person zuhause → muss die sein
         if self.ha:
             sole_person = await self._identify_sole_person()
             if sole_person:
@@ -250,11 +285,32 @@ class SpeakerRecognition:
                     "method": "sole_person_home",
                 }
 
-        # 4. Voice-Feature-Matching (wenn Audio-Metadata und Profile vorhanden)
+        # 5. Voice-Embedding-Matching (biometrischer Stimmabdruck)
+        # Genuegt ~1-3s Audio. ECAPA-TDNN 192-dim Cosinus-Aehnlichkeit.
+        if audio_metadata and audio_metadata.get("audio_pcm_b64") and self._profiles:
+            embedding = extract_embedding(
+                audio_metadata["audio_pcm_b64"],
+                sample_rate=audio_metadata.get("sample_rate", 16000),
+            )
+            if embedding:
+                emb_result = await self.identify_by_embedding(embedding)
+                if emb_result:
+                    self._last_speaker = emb_result["person_id"]
+                    await self.log_identification(
+                        emb_result["person_id"], "voice_embedding", emb_result["confidence"],
+                    )
+                    return {
+                        "person": emb_result["person"],
+                        "confidence": emb_result["confidence"],
+                        "fallback": emb_result["confidence"] < self.min_confidence,
+                        "method": "voice_embedding",
+                    }
+
+        # 6. Voice-Feature-Matching (wenn Audio-Metadata und Profile vorhanden)
         # F-048: Voice-Features (WPM, Dauer, Lautstaerke) sind KEIN sicheres
         # Identifikationsmerkmal — sie koennen leicht gefaelscht werden.
         # Ergebnis wird mit "spoofable" Flag markiert damit Trust-Entscheidungen
-        # nur auf Methoden 1-3 basieren.
+        # nur auf Methoden 1-5 basieren.
         if audio_metadata and self._profiles:
             match = self._match_voice_features(audio_metadata)
             if match:
@@ -270,7 +326,7 @@ class SpeakerRecognition:
                     "spoofable": True,  # F-048: Nicht fuer Trust-Entscheidungen verwenden
                 }
 
-        # 5. Letzter bekannter Sprecher (Cache) — mit Time-Decay
+        # 7. Letzter bekannter Sprecher (Cache) — mit Time-Decay
         if self._last_speaker and self._last_speaker in self._profiles:
             profile = self._profiles[self._last_speaker]
             # Cache-Confidence sinkt mit der Zeit (max 1h nuetzlich)
@@ -303,6 +359,72 @@ class SpeakerRecognition:
             if state.get("entity_id", "").startswith("person.")
             and state.get("state") == "home"
         ]
+
+    def _identify_by_doa(self, device_id: str, doa_angle: float) -> Optional[dict]:
+        """Identifiziert Person ueber Direction of Arrival (Winkel).
+
+        Der ReSpeaker XVF3800 liefert den Azimut-Winkel (0-360 Grad)
+        aus dem die Stimme kommt. Gegen kalibriertes Mapping pruefen.
+
+        Args:
+            device_id: Geraet das den DoA-Winkel liefert
+            doa_angle: Winkel in Grad (0-360)
+
+        Returns:
+            Dict mit person, person_id, confidence oder None
+        """
+        if device_id not in self._doa_mapping:
+            return None
+
+        angle_map = self._doa_mapping[device_id]
+        tolerance = self._doa_tolerance
+
+        for angle_range, person_id in angle_map.items():
+            # Format: "start-end" (z.B. "0-90") oder einzelner Winkel "45"
+            parts = angle_range.split("-")
+            try:
+                if len(parts) == 2:
+                    range_start = float(parts[0])
+                    range_end = float(parts[1])
+                else:
+                    center = float(parts[0])
+                    range_start = center - tolerance
+                    range_end = center + tolerance
+
+                # Winkel normalisieren (0-360) und pruefen
+                # Beruecksichtigt Wrap-Around (z.B. 350-10 Grad)
+                angle = doa_angle % 360
+                if range_start < 0:
+                    # Wrap: z.B. -30 bis 30 → 330-360 oder 0-30
+                    if angle >= (360 + range_start) or angle <= range_end:
+                        profile = self._profiles.get(person_id)
+                        name = profile.name if profile else person_id.capitalize()
+                        return {
+                            "person": name,
+                            "person_id": person_id,
+                            "confidence": 0.85,
+                        }
+                elif range_end > 360:
+                    if angle >= range_start or angle <= (range_end - 360):
+                        profile = self._profiles.get(person_id)
+                        name = profile.name if profile else person_id.capitalize()
+                        return {
+                            "person": name,
+                            "person_id": person_id,
+                            "confidence": 0.85,
+                        }
+                elif range_start <= angle <= range_end:
+                    profile = self._profiles.get(person_id)
+                    name = profile.name if profile else person_id.capitalize()
+                    return {
+                        "person": name,
+                        "person_id": person_id,
+                        "confidence": 0.85,
+                    }
+            except (ValueError, IndexError):
+                continue
+
+        return None
 
     async def _identify_by_room(self, room: str) -> Optional[str]:
         """Identifiziert Person anhand des Raums + Anwesenheit."""
@@ -489,6 +611,28 @@ class SpeakerRecognition:
             return self._profiles[self._last_speaker].name
         return None
 
+    async def learn_embedding_from_audio(self, person_id: str, audio_metadata: dict):
+        """Extrahiert und speichert ein Voice-Embedding aus Audio-Metadaten.
+
+        Wird aufgerufen wenn die Person bereits sicher identifiziert ist
+        (z.B. per Device-Mapping oder manuell), um den Stimmabdruck
+        zu trainieren. Nutzt EMA-Verschmelzung fuer kontinuierliches Lernen.
+        """
+        if not self.enabled or not audio_metadata:
+            return
+        audio_b64 = audio_metadata.get("audio_pcm_b64")
+        if not audio_b64:
+            return
+        if person_id not in self._profiles:
+            return
+
+        embedding = extract_embedding(
+            audio_b64, sample_rate=audio_metadata.get("sample_rate", 16000),
+        )
+        if embedding:
+            await self.store_embedding(person_id, embedding)
+            logger.debug("Embedding fuer %s gelernt (%d dim)", person_id, len(embedding))
+
     async def update_voice_stats_for_person(self, person_id: str, audio_metadata: dict):
         """Aktualisiert Voice-Stats fuer eine bekannte Person (z.B. aus UI).
 
@@ -639,8 +783,119 @@ class SpeakerRecognition:
         except Exception:
             return []
 
+    async def start_fallback_ask(self, guessed_person: Optional[str] = None,
+                                 original_text: str = "") -> str:
+        """Startet eine 'Wer bist du?'-Rueckfrage und merkt sich den Kontext.
+
+        Args:
+            guessed_person: Vermutete Person (niedrige Confidence)
+            original_text: Urspruenglicher Text (wird nach Identifikation wiederholt)
+
+        Returns:
+            Rueckfrage-Text fuer den User
+        """
+        # Haushaltsmitglieder ermitteln fuer die Frage
+        persons_home = []
+        if self.ha:
+            persons_home = await self._get_persons_home()
+        # Fallback: Profile als Quelle
+        if not persons_home:
+            persons_home = [p.name for p in self._profiles.values()]
+
+        # Pending-State in Redis speichern (TTL 60s)
+        pending = {
+            "original_text": original_text,
+            "guessed_person": guessed_person,
+            "persons": persons_home,
+            "time": time.time(),
+        }
+        if self.redis:
+            try:
+                await self.redis.set(
+                    SPEAKER_PENDING_ASK_KEY, json.dumps(pending), ex=60,
+                )
+            except Exception:
+                pass
+
+        # Natuerliche Rueckfrage generieren
+        if len(persons_home) == 2:
+            return f"Kurze Frage — bist du {persons_home[0]} oder {persons_home[1]}?"
+        elif len(persons_home) > 2:
+            names = ", ".join(persons_home[:-1]) + f" oder {persons_home[-1]}"
+            return f"Wer spricht gerade? {names}?"
+        else:
+            return "Wer spricht gerade?"
+
+    async def resolve_fallback_answer(self, answer_text: str) -> Optional[dict]:
+        """Versucht eine Antwort auf die 'Wer bist du?'-Frage aufzuloesen.
+
+        Args:
+            answer_text: User-Antwort (z.B. "Max", "Ich bin Lisa", "Die Lisa")
+
+        Returns:
+            Dict mit person, person_id oder None wenn nicht aufloesbar
+        """
+        if not self.redis:
+            return None
+
+        try:
+            raw = await self.redis.get(SPEAKER_PENDING_ASK_KEY)
+            if not raw:
+                return None
+            pending = json.loads(raw)
+        except Exception:
+            return None
+
+        # Antwort cleanen
+        clean = answer_text.lower().strip()
+        # Typische Praefixe entfernen: "ich bin", "das ist", "hier ist", "die/der"
+        for prefix in ["ich bin ", "das ist ", "hier ist ", "hier spricht ",
+                        "der ", "die ", "das "]:
+            if clean.startswith(prefix):
+                clean = clean[len(prefix):]
+                break
+
+        clean = clean.strip().rstrip(".!?")
+
+        # Gegen bekannte Personen matchen
+        persons = pending.get("persons", [])
+        for person_name in persons:
+            if clean == person_name.lower() or person_name.lower() in clean:
+                person_id = person_name.lower()
+                # Speaker setzen + Pending loeschen
+                await self.set_current_speaker(person_id)
+                if person_id not in self._profiles:
+                    await self.enroll(person_id, person_name)
+                try:
+                    await self.redis.delete(SPEAKER_PENDING_ASK_KEY)
+                except Exception:
+                    pass
+                logger.info("Fallback-Antwort aufgeloest: %s", person_name)
+                return {
+                    "person": person_name,
+                    "person_id": person_id,
+                    "original_text": pending.get("original_text", ""),
+                }
+
+        # Nicht erkannt — Pending loeschen
+        try:
+            await self.redis.delete(SPEAKER_PENDING_ASK_KEY)
+        except Exception:
+            pass
+        return None
+
+    async def has_pending_ask(self) -> bool:
+        """Prueft ob eine 'Wer bist du?'-Rueckfrage laeuft."""
+        if not self.redis:
+            return False
+        try:
+            return await self.redis.exists(SPEAKER_PENDING_ASK_KEY) > 0
+        except Exception:
+            return False
+
     def health_status(self) -> str:
         """Gibt den Status zurueck."""
         if not self.enabled:
             return "disabled"
-        return f"active ({len(self._profiles)} profiles, {len(self._device_mapping)} devices)"
+        embeds = "embeddings:on" if embeddings_available() else "embeddings:off"
+        return f"active ({len(self._profiles)} profiles, {len(self._device_mapping)} devices, {embeds})"

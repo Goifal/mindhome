@@ -474,6 +474,16 @@ speaker_recognition:
   #   esphome_respeaker_buero: "max"
   #   esphome_atom_echo_flur: ""
   #   esphome_atom_echo_bad: ""
+  # Direction of Arrival (DoA): Winkel-zu-Person Mapping pro Geraet
+  # Erfordert ReSpeaker XVF3800 mit ESPHome DoA-Sensor
+  # Format: device_id → {winkelbereich_start-ende: person_id}
+  # Winkel in Grad (0-360, 0=vorne, 90=rechts, 180=hinten, 270=links)
+  # doa_mapping:
+  #   esphome_respeaker_kueche:
+  #     "0-90": "max"       # Sitzplatz rechts
+  #     "270-360": "lisa"   # Sitzplatz links
+  doa_mapping: {}
+  doa_tolerance: 30  # Toleranz in Grad (+/- um den Zielwinkel)
 multi_room:
   enabled: true
   presence_timeout_minutes: 15

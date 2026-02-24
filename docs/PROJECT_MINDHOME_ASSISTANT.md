@@ -62,18 +62,24 @@ MindHome Assistant ist ein lokaler, privater Sprachassistent der:
 | **RAM** | 32 GB DDR4 |
 | **Storage** | 500 GB NVMe + 500 GB SSD |
 | **OS** | Home Assistant OS |
-| **Aufgabe** | HA + MindHome + Whisper + Piper |
+| **Aufgabe** | HA + MindHome (Whisper + Piper → PC 2 migriert, siehe [SPEECH_SETUP.md](SPEECH_SETUP.md)) |
 
 ### PC 2: MindHome Assistant Server (separater PC)
 
 | Komponente | Aufgabe |
 |-----------|---------|
 | **OS** | Ubuntu Server 24.04 LTS |
-| **Ollama** | LLM Inference (Qwen 2.5) |
+| **Ollama** | LLM Inference (Qwen 3) |
+| **Whisper STT** | Speech-to-Text via Wyoming Protocol (migriert von PC 1) |
+| **Piper TTS** | Text-to-Speech via Wyoming Protocol (migriert von PC 1) |
+| **Speaker Recognition** | Stimmenerkennung via ECAPA-TDNN Voice Embeddings |
 | **Assistant Service** | Context Builder, Personality, Action Planner |
 | **ChromaDB** | Langzeitgedaechtnis (Vektor-DB) |
 | **Redis** | Cache fuer schnelle Zugriffe |
-| **Optional** | GPU fuer schnellere Inference |
+| **GPU** | RTX 3070 (8 GB) → spaeter RTX 3090 Ti (24 GB) |
+
+> **Hinweis:** Whisper und Piper wurden von PC 1 auf PC 2 migriert.
+> Details siehe [SPEECH_SETUP.md](SPEECH_SETUP.md).
 
 ### Netzwerk-Verteilung
 
@@ -90,31 +96,30 @@ Lokales Netzwerk (LAN, <1ms Latenz)
 |  |     |    Pattern Learning            |
 |  |     |    REST API (:8099)            |
 |  |     |    WebSocket Events            |
-|  |     +-- Whisper Add-on (STT)         |
-|  |     +-- Piper Add-on (TTS)           |
+|  |     +-- Wyoming Integration          |
+|  |     |    STT -> PC 2 (:10300)        |
+|  |     |    TTS -> PC 2 (:10200)        |
 |  |     +-- HA Core (:8123)              |
 |  +--------------------------------------+
           |
-          |  REST API + WebSocket (<1ms)
+          |  REST API + WebSocket + Wyoming (<1ms)
           |
 |  +--------------------------------------+
-|  | PC 2: MindHome Assistant Server                   |
-|  |   Ubuntu Server 24.04 LTS             |
+|  | PC 2: MindHome Assistant Server       |
+|  |   Ubuntu Server 24.04 LTS            |
+|  |                                       |
+|  |   Ollama (nativ, nicht Docker)        |
+|  |     +-- Qwen 3:4B  (schnell)         |
+|  |     +-- Qwen 3:14B (schlau)          |
+|  |     +-- Qwen 3:32B (tief)            |
 |  |                                       |
 |  |   Docker                              |
-|  |     +-- Ollama (:11434)              |
-|  |     |    Qwen 2.5 3B  (schnell)      |
-|  |     |    Qwen 2.5 14B (schlau)       |
-|  |     +-- ChromaDB (:8100)             |
-|  |     +-- Redis (:6379)                |
-|  |                                       |
-|  |   Assistant Service (:8200)              |
-|  |     +-- Context Builder              |
-|  |     +-- Personality Engine           |
-|  |     +-- Action Planner               |
-|  |     +-- Proactive Manager            |
-|  |     +-- Function Calling -> HA API   |
-|  |     +-- Memory Manager              |
+|  |     +-- Whisper STT (:10300)          |
+|  |     |    faster-whisper + ECAPA-TDNN  |
+|  |     +-- Piper TTS (:10200)            |
+|  |     +-- Assistant (:8200)             |
+|  |     +-- ChromaDB (:8100)              |
+|  |     +-- Redis (:6379)                 |
 |  +--------------------------------------+
 ```
 
@@ -125,15 +130,25 @@ User spricht -> [Mikrofon]
                     |
          PC 1 (HAOS):
                     |
-              [Whisper STT] -> Text
+                    | Wyoming Protocol (rohe Audio-Bytes)
+                    |
+         PC 2 — Whisper + Embedding Service (:10300):
+                    |
+              [faster-whisper] -> Text
+              [ECAPA-TDNN] -> Stimmabdruck -> Redis
+                    |
+                    | Transkript zurueck (Wyoming Protocol)
+                    |
+         PC 1 (HAOS):
                     |
                     | HTTP POST (Text + Kontext-Anfrage)
                     |
-         PC 2 (MindHome Assistant):
+         PC 2 — MindHome Assistant (:8200):
                     |
+              [Speaker Recognition] liest Embedding aus Redis
               [Context Builder]
                     | holt Daten von PC 1 via REST API (<1ms)
-              [Ollama/Qwen 2.5]
+              [Ollama/Qwen 3]
                     | generiert Antwort + Function Calls
               [Function Executor]
                     | sendet Befehle an HA via REST API (<1ms)
@@ -142,7 +157,15 @@ User spricht -> [Mikrofon]
                     |
          PC 1 (HAOS):
                     |
-              [Piper TTS] -> Sprache
+                    | Wyoming Protocol (Antwort-Text)
+                    |
+         PC 2 — Piper TTS (:10200):
+                    |
+              [Piper] -> Audio (WAV)
+                    |
+                    | Audio zurueck (Wyoming Protocol)
+                    |
+         PC 1 (HAOS):
                     |
               [Speaker] -> User hoert Antwort
 ```
