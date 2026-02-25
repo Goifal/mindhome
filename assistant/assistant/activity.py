@@ -389,7 +389,12 @@ class ActivityEngine:
 
         Bett belegt = schlaeft (unabhaengig von Tageszeit, auch Mittagsschlaf).
         Nacht + alle Lichter aus = wahrscheinlich schlaeft (Fallback ohne Bettsensor).
+        ABER: PC aktiv oder Media spielt → definitiv NICHT schlafen.
         """
+        # PC aktiv oder Media spielt → User ist wach, egal was andere Signale sagen
+        if self._check_pc_active(states) or self._check_media_playing(states):
+            return False
+
         # Bett belegt? → Primaeres Signal, tageszeit-unabhaengig
         bed_occupied = False
         for state in states:
