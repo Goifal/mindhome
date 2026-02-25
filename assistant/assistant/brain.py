@@ -2949,29 +2949,27 @@ class AssistantBrain(BrainCallbacksMixin):
         return f"{prefix_multi} {len(events)} Termine an: {listing}."
 
     def _humanize_entity_state(self, raw: str) -> str:
-        """Entity-Status in natuerliche Sprache."""
-        # Kurze Rohdaten einfach durchlassen (z.B. "22.5°C")
+        """Entity-Status — JARVIS-Stil: knapp und praezise."""
         if len(raw) < 80:
             return raw
         lines = raw.strip().split("\n")
         if len(lines) <= 3:
             return raw
-        # Nur erste 3 relevante Zeilen zusammenfassen
         summary = " ".join(l.strip().lstrip("- ") for l in lines[:3] if l.strip())
         if len(lines) > 3:
-            summary += f" (und {len(lines) - 3} weitere)"
+            summary += f" — plus {len(lines) - 3} weitere Datenpunkte."
         return summary
 
     def _humanize_room_climate(self, raw: str) -> str:
-        """Raum-Klima in natuerliche Sprache."""
+        """Raum-Klima — JARVIS-Stil mit Messwert-Praezision."""
         import re as _re
         temp_m = _re.search(r'(-?\d+[.,]?\d*)\s*°?C', raw)
         hum_m = _re.search(r'(\d+[.,]?\d*)\s*%', raw)
         parts = []
         if temp_m:
-            parts.append(f"{temp_m.group(1)}°C")
+            parts.append(f"{temp_m.group(1)} Grad")
         if hum_m:
-            parts.append(f"{hum_m.group(1)}% Luftfeuchtigkeit")
+            parts.append(f"Luftfeuchtigkeit {hum_m.group(1)}%")
         if parts:
             return ", ".join(parts) + "."
         return raw
@@ -3129,16 +3127,16 @@ class AssistantBrain(BrainCallbacksMixin):
         return ". ".join(parts) + "."
 
     def _humanize_alarms(self, raw: str) -> str:
-        """Wecker-Daten in natuerliche JARVIS-Sprache."""
+        """Wecker-Daten — JARVIS-Stil."""
         import re
 
         if not raw or "keine wecker" in raw.lower():
-            return "Aktuell ist kein Wecker gestellt."
+            return "Kein Wecker gestellt."
 
         # "Wecker gestellt: morgen um 08:15 Uhr." (set_wakeup_alarm result)
         set_match = re.search(r"Wecker gestellt:\s*(.+)", raw, re.IGNORECASE)
         if set_match:
-            return f"Wecker gestellt — {set_match.group(1).strip()}"
+            return f"Wecker steht auf {set_match.group(1).strip()}."
 
         # "Aktive Wecker:\n  - Wecker: 08:15 Uhr (einmalig)" (get_alarms result)
         entries = re.findall(r"-\s*(.+?):\s*(\d{1,2}:\d{2})\s*Uhr\s*\(([^)]+)\)", raw)
@@ -3151,34 +3149,31 @@ class AssistantBrain(BrainCallbacksMixin):
                 else:
                     parts.append(f"{time_str} Uhr ({repeat})")
             if len(parts) == 1:
-                return f"Ein Wecker ist gestellt auf {parts[0]}."
-            return "Aktive Wecker: " + ", ".join(parts) + "."
+                return f"Wecker auf {parts[0]}."
+            return f"{len(parts)} Wecker aktiv: " + ", ".join(parts) + "."
 
-        # Fallback — Rohdaten zurueckgeben
         return raw
 
     def _humanize_lights(self, raw: str) -> str:
-        """Licht-Status in natuerliche JARVIS-Sprache."""
-        # Format: "5 Lichter (2 an, 3 aus):\n- Name [Raum]: on (80%)\n..."
+        """Licht-Status — JARVIS-Stil."""
         lines = raw.strip().split("\n")
         on_lights = []
         for line in lines:
             if ": on" in line:
-                # "- Licht Buero [buero]: on (80%)" → "Licht Buero (80%)"
                 name = line.lstrip("- ").split("[")[0].strip()
                 bri_match = re.search(r"\((\d+)%\)", line)
                 if bri_match:
-                    on_lights.append(f"{name} ({bri_match.group(1)}%)")
+                    on_lights.append(f"{name} auf {bri_match.group(1)}%")
                 else:
                     on_lights.append(name)
         if not on_lights:
-            return "Alle Lichter sind aus."
+            return "Alles dunkel."
         if len(on_lights) == 1:
-            return f"{on_lights[0]} ist an."
-        return f"{len(on_lights)} Lichter sind an: {', '.join(on_lights)}."
+            return f"{on_lights[0]}."
+        return f"{len(on_lights)} Lichter aktiv: {', '.join(on_lights)}."
 
     def _humanize_switches(self, raw: str) -> str:
-        """Schalter/Steckdosen-Status in natuerliche Sprache."""
+        """Schalter/Steckdosen-Status — JARVIS-Stil."""
         lines = raw.strip().split("\n")
         on_items = []
         for line in lines:
@@ -3186,13 +3181,13 @@ class AssistantBrain(BrainCallbacksMixin):
                 name = line.lstrip("- ").split("[")[0].strip()
                 on_items.append(name)
         if not on_items:
-            return "Alle Schalter und Steckdosen sind aus."
+            return "Alle Schalter aus."
         if len(on_items) == 1:
-            return f"{on_items[0]} ist an."
-        return f"{len(on_items)} Schalter/Steckdosen sind an: {', '.join(on_items)}."
+            return f"{on_items[0]} laeuft."
+        return f"{len(on_items)} Geraete aktiv: {', '.join(on_items)}."
 
     def _humanize_covers(self, raw: str) -> str:
-        """Rollladen-Status in natuerliche Sprache."""
+        """Rollladen-Status — JARVIS-Stil."""
         lines = raw.strip().split("\n")
         open_items = []
         for line in lines:
@@ -3200,17 +3195,17 @@ class AssistantBrain(BrainCallbacksMixin):
                 name = line.lstrip("- ").split("[")[0].strip()
                 pos_match = re.search(r"\((\d+)%\)", line)
                 if pos_match:
-                    open_items.append(f"{name} ({pos_match.group(1)}%)")
+                    open_items.append(f"{name} auf {pos_match.group(1)}%")
                 else:
                     open_items.append(name)
         if not open_items:
-            return "Alle Rolllaeden sind geschlossen."
+            return "Alle Rolllaeden unten."
         if len(open_items) == 1:
             return f"{open_items[0]} ist offen."
-        return f"{len(open_items)} Rolllaeden sind offen: {', '.join(open_items)}."
+        return f"{len(open_items)} Rolllaeden offen: {', '.join(open_items)}."
 
     def _humanize_media(self, raw: str) -> str:
-        """Media-Player Status in natuerliche Sprache."""
+        """Media-Player Status — JARVIS-Stil."""
         lines = raw.strip().split("\n")
         playing = []
         for line in lines:
@@ -3218,11 +3213,13 @@ class AssistantBrain(BrainCallbacksMixin):
                 name = line.lstrip("- ").split("[")[0].strip()
                 playing.append(name)
         if not playing:
-            return "Keine Medien laufen gerade."
-        return f"Aktive Medien: {', '.join(playing)}."
+            return "Stille im Haus."
+        if len(playing) == 1:
+            return f"{playing[0]} laeuft."
+        return f"Medien aktiv: {', '.join(playing)}."
 
     def _humanize_climate_list(self, raw: str) -> str:
-        """Klima-Geraete Status in natuerliche Sprache."""
+        """Klima-Geraete Status — JARVIS-Stil."""
         import re as _re
         lines = raw.strip().split("\n")
         active = []
@@ -4995,30 +4992,31 @@ class AssistantBrain(BrainCallbacksMixin):
                 f"Stets zu Diensten, {title}.",
                 f"Selbstverstaendlich, {title}.",
                 "Jederzeit.",
+                "Dafuer bin ich da.",
             ]
             return random.choice(_responses)
 
         # --- Guten Morgen / Abend / Nacht ---
         _greetings = {
             "guten morgen": [
-                f"Guten Morgen, {title}.",
-                f"Einen guten Morgen, {title}. Wie kann ich behilflich sein?",
+                f"Guten Morgen, {title}. Systeme laufen.",
+                f"Morgen, {title}. Alles bereit.",
             ],
             "guten abend": [
                 f"Guten Abend, {title}.",
-                f"Einen schoenen Abend, {title}.",
+                f"{title}. Schoener Abend bis jetzt.",
             ],
             "gute nacht": [
-                f"Gute Nacht, {title}. Schlafen Sie gut.",
-                f"Gute Nacht, {title}.",
+                f"Gute Nacht, {title}. Ich halte die Stellung.",
+                f"Gute Nacht, {title}. Alles unter Kontrolle.",
             ],
             "hallo jarvis": [
-                f"Guten Tag, {title}.",
                 f"{title}.",
+                f"Zu Diensten, {title}.",
             ],
             "hey jarvis": [
-                f"{title}. Was kann ich tun?",
-                f"Zu Diensten, {title}.",
+                f"{title}. Was brauchst du?",
+                f"Bin da, {title}.",
             ],
         }
         for greeting, responses in _greetings.items():
@@ -5033,9 +5031,9 @@ class AssistantBrain(BrainCallbacksMixin):
         ]
         if any(kw in t for kw in _identity):
             _responses = [
-                f"Ich bin JARVIS, Ihr persoenlicher Assistent, {title}.",
-                f"JARVIS, zu Ihren Diensten, {title}.",
-                f"Ihr Hausassistent JARVIS, {title}. Stets zu Diensten.",
+                f"JARVIS, {title}. Das Haus und ich sind eins.",
+                f"Dein Hausassistent, {title}. Stets zu Diensten.",
+                f"JARVIS. Ich halte hier alles am Laufen, {title}.",
             ]
             return random.choice(_responses)
 
@@ -5047,9 +5045,10 @@ class AssistantBrain(BrainCallbacksMixin):
         ]
         if any(kw in t for kw in _praise):
             _responses = [
-                f"Vielen Dank, {title}.",
+                f"Danke, {title}.",
                 f"Zu freundlich, {title}.",
                 "Ich gebe mein Bestes.",
+                "Ich tue nur meine Pflicht.",
             ]
             return random.choice(_responses)
 
