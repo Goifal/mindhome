@@ -1450,7 +1450,11 @@ function appendStreamToken(token) {
 function endStream(fullText, actions) {
   clearStreamTimeout();
   if (streamBubble) {
-    streamBubble.textContent = fullText || streamBuffer;
+    // fullText vom Server hat Vorrang (gefiltert). Nur wenn undefined/null
+    // (z.B. Timeout) auf streamBuffer zurueckfallen.
+    streamBubble.textContent = (fullText != null && fullText !== undefined)
+      ? (fullText || streamBuffer)
+      : streamBuffer;
     if (actions && actions.length) {
       const actionsDiv = document.createElement('div');
       actionsDiv.className = 'msg-actions';

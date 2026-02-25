@@ -1259,13 +1259,52 @@ async def websocket_endpoint(websocket: WebSocket):
                             brain.mood.analyze_voice_metadata(voice_meta)
 
                         if use_stream:
+                          try:
                             # Streaming: Token-fuer-Token an Client senden
+                            # Reasoning-Guard: Erste Tokens buffern um Chain-of-Thought
+                            # zu erkennen bevor sie an den Client gehen.
                             stream_tokens_sent = []
+                            _stream_buffer = []
+                            _stream_suppressed = False
+                            _BUFFER_THRESHOLD = 12  # Tokens buffern bevor Streaming startet
+                            _REASONING_STARTERS = [
+                                "okay, the user", "ok, the user", "the user",
+                                "let me ", "i need to", "i should ", "i'll ",
+                                "first, i", "hmm,", "so, the user", "now, i",
+                                "alright,", "so the user", "wait,",
+                                "okay, so", "right,", "let's ",
+                            ]
 
                             async def _guarded_stream_token(token: str):
-                                """Sendet stream_start erst beim ersten echten Token."""
+                                """Buffert initiale Tokens um Reasoning zu erkennen."""
+                                nonlocal _stream_suppressed
+                                if _stream_suppressed:
+                                    return  # Reasoning erkannt — nichts senden
+
+                                _stream_buffer.append(token)
+                                buf_text = "".join(_stream_buffer).lstrip()
+
+                                # Noch im Buffer-Modus: pruefen ob Reasoning
+                                if len(_stream_buffer) <= _BUFFER_THRESHOLD:
+                                    buf_lower = buf_text.lower()
+                                    for starter in _REASONING_STARTERS:
+                                        if buf_lower.startswith(starter):
+                                            _stream_suppressed = True
+                                            logger.info(
+                                                "Stream-Reasoning erkannt ('%s...'), "
+                                                "Streaming unterdrueckt",
+                                                buf_text[:60],
+                                            )
+                                            return
+                                    return  # Noch im Buffer, warten
+
+                                # Buffer-Phase vorbei, kein Reasoning → alles senden
                                 if not stream_tokens_sent:
                                     await emit_stream_start()
+                                    # Gebufferte Tokens nachholen
+                                    for bt in _stream_buffer[:-1]:
+                                        stream_tokens_sent.append(bt)
+                                        await emit_stream_token(bt)
                                 stream_tokens_sent.append(token)
                                 await emit_stream_token(token)
 
@@ -1285,6 +1324,15 @@ async def websocket_endpoint(websocket: WebSocket):
                                 # _emitted=True: Shortcut-Pfade in brain.py haben
                                 # bereits via _speak_and_emit gesendet
                                 await emit_speaking(result["response"], tts_data=tts_data)
+                          except Exception as e:
+                            logger.error("Streaming-Fehler: %s", e, exc_info=True)
+                            # Sicherstellen dass der Client nicht haengen bleibt
+                            if stream_tokens_sent:
+                                await emit_stream_end(
+                                    "Da ist etwas schiefgelaufen. Versuch es nochmal.")
+                            else:
+                                await emit_speaking(
+                                    "Da ist etwas schiefgelaufen. Versuch es nochmal.")
                         else:
                             # brain.process() sendet intern via _speak_and_emit
                             result = await brain.process(text, person, room=room,
