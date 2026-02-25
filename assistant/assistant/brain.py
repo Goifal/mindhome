@@ -2302,7 +2302,7 @@ class AssistantBrain(BrainCallbacksMixin):
         # Phase 8: Personality-Metrics tracken (ohne Sarkasmus — das laeuft jetzt separat)
         self._task_registry.create_task(
             self.personality.track_interaction_metrics(
-                mood=mood_result.get("mood", "neutral"),
+                mood=(mood_result or {}).get("mood", "neutral"),
                 response_accepted=True,
             ),
             name="track_metrics",
