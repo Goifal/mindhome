@@ -1779,6 +1779,17 @@ class AssistantBrain(BrainCallbacksMixin):
                 except Exception as e:
                     logger.warning("Retry fehlgeschlagen: %s", e)
 
+            # 7d. Deterministischer Fallback: Wenn LLM bei Geraete-Queries keinen
+            # Tool-Call macht, direkt die passende Funktion ableiten.
+            if not tool_calls and self._is_device_command(text):
+                fallback_tc = self._deterministic_tool_call(text)
+                if fallback_tc:
+                    logger.info("Deterministischer Tool-Call: %s(%s)",
+                                fallback_tc["function"]["name"],
+                                fallback_tc["function"]["arguments"])
+                    tool_calls = [fallback_tc]
+                    response_text = ""
+
             # 8. Function Calls ausfuehren
             # Tools die Daten zurueckgeben und eine LLM-formatierte Antwort brauchen
             QUERY_TOOLS = {"get_entity_state", "send_message_to_person", "get_calendar_events",
@@ -3875,6 +3886,76 @@ class AssistantBrain(BrainCallbacksMixin):
         _VERBS = ["mach ", "schalte ", "stell ", "setz ", "dreh ", "oeffne ", "schliess"]
         verb_start = any(t.startswith(v) for v in _VERBS)
         return (has_noun and has_action) or (verb_start and has_noun)
+
+    @staticmethod
+    def _deterministic_tool_call(text: str) -> Optional[dict]:
+        """Leitet aus dem Text deterministisch den passenden Tool-Call ab.
+
+        Wird als Fallback genutzt wenn das LLM keinen Tool-Call generiert.
+        Erkennt Status-Queries und einfache Steuerungsbefehle.
+        """
+        t = text.lower()
+        words = set(re.split(r'[\s,.!?]+', t))
+
+        # --- Status-Queries: "Welche/Sind ... an/aus?" ---
+        is_query = any(w in t for w in [
+            "welche", "sind", "ist ", "status", "zeig", "liste",
+            "was ist", "wie ist", "noch an", "noch auf", "noch offen",
+        ])
+
+        if is_query:
+            # Lichter
+            if any(n in t for n in ["licht", "lampe", "leuchte", "beleuchtung"]):
+                return {"function": {"name": "get_lights", "arguments": {}}}
+            # Rollläden
+            if any(n in t for n in ["rollladen", "rolladen", "rollo", "jalousie"]):
+                return {"function": {"name": "get_covers", "arguments": {}}}
+            # Klima/Heizung
+            if any(n in t for n in ["heizung", "thermostat", "klima", "temperatur"]):
+                return {"function": {"name": "get_climate", "arguments": {}}}
+            # Schalter/Steckdosen
+            if any(n in t for n in ["steckdose", "schalter", "switch"]):
+                return {"function": {"name": "get_switches", "arguments": {}}}
+            # Musik/Media
+            if any(n in t for n in ["musik", "lautsprecher", "media", "speaker"]):
+                return {"function": {"name": "get_media", "arguments": {}}}
+            # Wecker
+            if any(n in t for n in ["wecker", "alarm"]):
+                return {"function": {"name": "get_alarms", "arguments": {}}}
+            # Generisch: Haus-Status
+            if any(n in t for n in ["haus", "haus-status", "hausstatus"]):
+                return {"function": {"name": "get_house_status", "arguments": {}}}
+            # Spezifische Entity: "ist die steckdose kueche an?"
+            # → get_entity_state mit Keyword-Extraktion
+            for noun in ["steckdose", "schalter", "licht", "lampe"]:
+                if noun in t:
+                    # Raum extrahieren (Wort nach dem Geraete-Nomen)
+                    idx = t.find(noun)
+                    after = t[idx + len(noun):].strip().rstrip("?!.")
+                    if after:
+                        query = f"{noun} {after}"
+                    else:
+                        query = noun
+                    return {"function": {"name": "get_entity_state",
+                                         "arguments": {"entity_id": query}}}
+
+        # --- Steuerungsbefehle: "Licht aus", "Rollladen hoch" ---
+        # Lichter an/aus
+        if any(n in t for n in ["licht", "lampe", "leuchte"]):
+            action = "on" if (words & {"an", "ein"}) else "off" if (words & {"aus"}) else None
+            if action:
+                return {"function": {"name": "set_light",
+                                     "arguments": {"action": action, "area": "all"}}}
+        # Rollläden
+        if any(n in t for n in ["rollladen", "rolladen", "rollo", "jalousie"]):
+            if words & {"auf", "hoch", "oeffne", "oeffnen", "offen"}:
+                return {"function": {"name": "set_cover",
+                                     "arguments": {"action": "open", "area": "all"}}}
+            if words & {"zu", "runter", "schliess", "schliessen"}:
+                return {"function": {"name": "set_cover",
+                                     "arguments": {"action": "close", "area": "all"}}}
+
+        return None
 
     @staticmethod
     def _detect_alarm_command(text: str) -> Optional[dict]:
