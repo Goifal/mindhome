@@ -1402,6 +1402,34 @@ class AssistantBrain(BrainCallbacksMixin):
                 except Exception as e:
                     logger.warning("Status-Query-Shortcut fehlgeschlagen: %s — Fallback auf LLM", e)
 
+        # Smalltalk-Shortcut: Soziale Fragen sofort im JARVIS-Stil beantworten.
+        # Verhindert, dass das LLM aus dem Charakter bricht ("Ich bin ein KI-Modell...").
+        smalltalk_response = self._detect_smalltalk(text)
+        if smalltalk_response:
+            logger.info("Smalltalk-Shortcut: '%s' -> '%s'", text, smalltalk_response)
+            self._remember_exchange(text, smalltalk_response)
+            tts_data = self.tts_enhancer.enhance(smalltalk_response, message_type="casual")
+            if stream_callback:
+                if not room:
+                    room = await self._get_occupied_room()
+                self._task_registry.create_task(
+                    self.sound_manager.speak_response(
+                        smalltalk_response, room=room, tts_data=tts_data),
+                    name="speak_response",
+                )
+            else:
+                await self._speak_and_emit(
+                    smalltalk_response, room=room, tts_data=tts_data,
+                )
+            return {
+                "response": smalltalk_response,
+                "actions": [],
+                "model_used": "smalltalk_shortcut",
+                "context_room": room or "unbekannt",
+                "tts": tts_data,
+                "_emitted": not stream_callback,
+            }
+
         # ----- Ende schnelle Shortcuts -----
 
         # Phase 9: "listening" Sound abspielen wenn Verarbeitung startet
@@ -3232,11 +3260,21 @@ class AssistantBrain(BrainCallbacksMixin):
             "Ich verstehe, wie du dich fühlst",
             "Das klingt wirklich",
             "Ich bin ein KI", "Ich bin eine KI",
+            "Ich bin ein KI-Modell", "Ich bin ein KI-Assistent",
             "Ich bin ein Sprachmodell",
             "Ich bin ein grosses Sprachmodell",
-            "als Sprachmodell", "als KI-Assistent",
+            "als Sprachmodell", "als KI-Assistent", "als KI-Modell",
             "Ich habe keine Gefuehle",
+            "Ich habe keine Gefühle",
             "Ich habe keine eigenen Gefühle",
+            "Ich habe keine eigenen Gefuehle",
+            "keine Gefühle oder Emotionen",
+            "keine Gefuehle oder Emotionen",
+            "bin voll funktionsfähig und bereit",
+            "bin voll funktionsfaehig und bereit",
+            "Danke, dass du mich fragst",
+            "Das ist eine nette Frage",
+            "Danke der Nachfrage!",
             "Hallo! Wie kann ich",
             "Hallo, wie kann ich",
             "Hallo! Was kann ich",
@@ -4770,6 +4808,122 @@ class AssistantBrain(BrainCallbacksMixin):
             args["volume"] = volume
 
         return {"function": "play_media", "args": args}
+
+    @staticmethod
+    def _detect_smalltalk(text: str) -> Optional[str]:
+        """Erkennt soziale Fragen und gibt eine JARVIS-Antwort zurueck.
+
+        Verhindert, dass das LLM bei Smalltalk aus dem Charakter bricht
+        ("Ich bin ein KI-Modell und habe keine Gefuehle...").
+
+        Returns:
+            JARVIS-Antwort als String oder None (kein Smalltalk).
+        """
+        t = text.lower().strip().rstrip("?!.")
+        title = get_person_title()
+
+        # --- "Wie geht es dir?" Varianten ---
+        _how_are_you = [
+            "wie geht es dir", "wie gehts dir", "wie geht's dir",
+            "wie geht es ihnen", "geht es dir gut", "geht's dir gut",
+            "alles gut bei dir", "alles klar bei dir",
+            "bist du gut drauf", "und dir",
+        ]
+        if any(kw in t for kw in _how_are_you):
+            _responses = [
+                f"Systeme laufen einwandfrei, {title}. Danke der Nachfrage.",
+                f"Bestens, {title}. Alle Systeme operativ.",
+                f"Voll funktionsfaehig, {title}.",
+                f"Mir geht es ausgezeichnet, {title}. Und Ihnen?",
+                f"Alles im gruenen Bereich, {title}.",
+            ]
+            return random.choice(_responses)
+
+        # --- "Frag mich wie es mir geht" / "Willst du nicht fragen..." ---
+        _ask_me = [
+            "willst du nicht frag", "willst du mich nicht frag",
+            "frag mich wie es mir", "frag mich mal wie",
+            "fragst du mich nicht", "frag doch mal wie",
+            "wie es mir geht", "frag mich wie",
+        ]
+        if any(kw in t for kw in _ask_me):
+            _responses = [
+                f"Wie geht es Ihnen, {title}?",
+                f"Verzeihung — wie geht es Ihnen, {title}?",
+                f"Selbstverstaendlich. Wie geht es Ihnen, {title}?",
+            ]
+            return random.choice(_responses)
+
+        # --- Danke ---
+        _thanks = [
+            "danke jarvis", "danke dir", "danke schoen", "danke sehr",
+            "vielen dank", "dankeschoen", "dankeschön", "danke schön",
+        ]
+        if any(kw in t for kw in _thanks):
+            _responses = [
+                f"Gern geschehen, {title}.",
+                f"Stets zu Diensten, {title}.",
+                f"Selbstverstaendlich, {title}.",
+                "Jederzeit.",
+            ]
+            return random.choice(_responses)
+
+        # --- Guten Morgen / Abend / Nacht ---
+        _greetings = {
+            "guten morgen": [
+                f"Guten Morgen, {title}.",
+                f"Einen guten Morgen, {title}. Wie kann ich behilflich sein?",
+            ],
+            "guten abend": [
+                f"Guten Abend, {title}.",
+                f"Einen schoenen Abend, {title}.",
+            ],
+            "gute nacht": [
+                f"Gute Nacht, {title}. Schlafen Sie gut.",
+                f"Gute Nacht, {title}.",
+            ],
+            "hallo jarvis": [
+                f"Guten Tag, {title}.",
+                f"{title}.",
+            ],
+            "hey jarvis": [
+                f"{title}. Was kann ich tun?",
+                f"Zu Diensten, {title}.",
+            ],
+        }
+        for greeting, responses in _greetings.items():
+            if greeting in t:
+                return random.choice(responses)
+
+        # --- Wer bist du? ---
+        _identity = [
+            "wer bist du", "was bist du", "wie heisst du", "wie heißt du",
+            "bist du ein mensch", "bist du eine ki",
+            "bist du ein roboter", "bist du echt",
+        ]
+        if any(kw in t for kw in _identity):
+            _responses = [
+                f"Ich bin JARVIS, Ihr persoenlicher Assistent, {title}.",
+                f"JARVIS, zu Ihren Diensten, {title}.",
+                f"Ihr Hausassistent JARVIS, {title}. Stets zu Diensten.",
+            ]
+            return random.choice(_responses)
+
+        # --- Lob / Gut gemacht ---
+        _praise = [
+            "gut gemacht", "super gemacht", "toll gemacht",
+            "du bist toll", "du bist super", "du bist der beste",
+            "guter job", "klasse", "perfekt jarvis",
+        ]
+        if any(kw in t for kw in _praise):
+            _responses = [
+                f"Vielen Dank, {title}.",
+                f"Zu freundlich, {title}.",
+                "Ich gebe mein Bestes.",
+            ]
+            return random.choice(_responses)
+
+        return None
 
     @staticmethod
     def _detect_calendar_diagnostic(text: str) -> bool:
