@@ -20,8 +20,8 @@ mit ~70 Features, inspiriert von Tony Stark's J.A.R.V.I.S.
 | Pattern | Referenz-Datei | Zeilen | Beschreibung |
 |---------|---------------|--------|-------------|
 | Session + Navigation | `cooking_assistant.py` | 28-500 | Schritt-basierte Session mit Redis, Keyword-Navigation |
-| Redis CRUD | `inventory.py` | 40-150 | Hash/Set Operationen fuer persistente Daten |
-| Brain-Integration | `brain.py` | 835-868 | Import, Init, Intent-Interception in process() |
+| Redis CRUD | `inventory.py` | 36-156 | Hash/Set Operationen fuer persistente Daten |
+| Brain-Integration | `brain.py` | Import ~75-80, Init ~215, Interception 835-868 | Import, Init in __init__, Intent-Interception in process() |
 | Tool-Definition | `function_calling.py` | 370-1497 | OpenAI-Format Tools + FunctionExecutor Dispatch |
 | WebSocket Events | `websocket.py` | 37-48 | Broadcast-Pattern fuer Echtzeit-Updates |
 | Static File Serving | `main.py` | 2791-2828 | SPA Route Pattern fuer `/ui/` und `/chat/` |
@@ -30,7 +30,7 @@ mit ~70 Features, inspiriert von Tony Stark's J.A.R.V.I.S.
 | Boot Animation | `static/ui/index.html` | 551-572 + `app.js` 50-121 | SVG-Ringe, Web Audio, Typewriter |
 | Model Routing | `model_router.py` | 199-247 | 3-Tier: fast(4B), smart(14B), deep(32B Qwen3) |
 | HA Service Calls | `ha_client.py` | 117-141 | `call_service(domain, service, data)` |
-| Knowledge Base RAG | `knowledge_base.py` | 1-543 | ChromaDB + Embeddings + PDF-Extraktion |
+| Knowledge Base RAG | `knowledge_base.py` | 1-542 | ChromaDB + Embeddings + PDF-Extraktion |
 
 ---
 
@@ -46,8 +46,8 @@ mit ~70 Features, inspiriert von Tony Stark's J.A.R.V.I.S.
 | `assistant/assistant/brain.py` | EDIT | +70 | Import, Init, Intent-Interception, Workshop-Aktivierungs-Check |
 | `assistant/assistant/personality.py` | EDIT | +30 | Ingenieur-Modus Prompt-Erweiterung |
 | `assistant/assistant/main.py` | EDIT | +100 | `/workshop/` Route + API-Endpoints + Library-Endpoints + Validation |
-| `assistant/static/ui/index.html` | EDIT | +120 | Neuer Tab `tab-workshop` mit allen Settings + Erklaerungen |
-| `assistant/static/ui/app.js` | EDIT | +15 | Workshop-Tab Rendering + collectSettings Erweiterung |
+| `assistant/static/ui/index.html` | EDIT | +3 | Neues nav-item `tab-workshop` in Settings-Navigation |
+| `assistant/static/ui/app.js` | EDIT | +35 | `renderWorkshop()` Funktion + switch-case in `renderCurrentTab()` |
 | `assistant/assistant/websocket.py` | EDIT | +25 | `emit_workshop()` + Sub-Events |
 | `assistant/config/settings.yaml` | EDIT | +35 | Workshop Config-Sektion |
 
@@ -85,7 +85,7 @@ self.repair_planner.set_model_router(self.model_router)
 self.workshop_generator.set_model_router(self.model_router)
 ```
 
-Erweitere `deep_keywords` in `settings.yaml` (Zeile 76-113):
+Erweitere `deep_keywords` in `settings.yaml` (Sektion `models.deep_keywords`):
 ```yaml
 deep_keywords:
   # ... bestehende ...
@@ -167,9 +167,24 @@ class RepairPlanner:
 
     def set_notify_callback(self, callback):
         self._notify_callback = callback
+
+    async def _llm_chat(self, model, messages, temperature=0.7, max_tokens=1024) -> str:
+        """Wrapper fuer ollama.chat() — extrahiert Content aus dict-Response.
+
+        WICHTIG: ollama.chat() gibt ein dict zurueck, NICHT einen String!
+        Pattern aus cooking_assistant.py Zeile 255-292.
+        """
+        response = await self.ollama.chat(
+            messages=messages, model=model,
+            temperature=temperature, max_tokens=max_tokens,
+        )
+        if "error" in response:
+            logger.warning("LLM-Fehler: %s", response["error"])
+            return f"Entschuldigung, die Verarbeitung ist fehlgeschlagen: {response['error']}"
+        return response.get("message", {}).get("content", "")
 ```
 
-### A) Projekt-CRUD (Redis Pattern: inventory.py Zeile 40-150)
+### A) Projekt-CRUD (Redis Pattern: inventory.py Zeile 36-156)
 
 ```python
 async def create_project(self, title, description, category="maker", priority="normal") -> dict:
@@ -288,10 +303,10 @@ async def diagnose_problem(self, text, person, model=None) -> str:
     environment = await self.get_workshop_environment()
     prompt = self.DIAGNOSIS_PROMPT.format(context=context, environment=json.dumps(environment))
     messages = [{"role": "system", "content": prompt}, {"role": "user", "content": text}]
-    response = await self.ollama.chat(model=model, messages=messages, temperature=0.3, max_tokens=2048)
+    content = await self._llm_chat(model, messages, temperature=0.3, max_tokens=2048)
     # JSON parsen und Projekt erstellen
     try:
-        data = json.loads(response)
+        data = json.loads(content)
         project = await self.create_project(
             title=data.get("diagnosis", text)[:60],
             description=text, category="reparatur",
@@ -310,7 +325,7 @@ async def diagnose_problem(self, text, person, model=None) -> str:
         await emit_workshop("diagnosis", {"project": project, "diagnosis": data})
         return self._format_diagnosis(data)
     except json.JSONDecodeError:
-        return response  # LLM hat kein JSON generiert, Freitext zurueckgeben
+        return content  # LLM hat kein JSON generiert, Freitext zurueckgeben
 ```
 
 ### D) Simulation
@@ -334,7 +349,7 @@ Frage: {question}
 Analysiere: Machbarkeit, Schwachstellen, Belastungsgrenzen, Batterie-Laufzeit,
 thermische Aspekte, Verbesserungsvorschlaege. Gib Konfidenz-Level an."""
     messages = [{"role": "system", "content": prompt}]
-    return await self.ollama.chat(model=model, messages=messages, temperature=0.4, max_tokens=2048)
+    return await self._llm_chat(model, messages, temperature=0.4, max_tokens=2048)
 ```
 
 ### E) Troubleshooting
@@ -352,7 +367,7 @@ Teile: {json.dumps(project.get('parts', []))}
 4. Erwartete Ergebnisse pro Pruefschritt
 Antworte strukturiert als Diagnosebaum."""
     messages = [{"role": "system", "content": prompt}, {"role": "user", "content": symptom}]
-    return await self.ollama.chat(model=model, messages=messages, temperature=0.3, max_tokens=2048)
+    return await self._llm_chat(model, messages, temperature=0.3, max_tokens=2048)
 ```
 
 ### F) Proaktive Verbesserungen
@@ -366,7 +381,7 @@ Projekt: {project['title']} ({project['category']})
 Teile: {json.dumps(project.get('parts', []))}
 Schlage konkrete Optimierungen vor (Effizienz, Kosten, Sicherheit, Zuverlaessigkeit)."""
     messages = [{"role": "system", "content": prompt}]
-    return await self.ollama.chat(model=model, messages=messages, temperature=0.5, max_tokens=1024)
+    return await self._llm_chat(model, messages, temperature=0.5, max_tokens=1024)
 ```
 
 ### F2) Component Comparison
@@ -378,7 +393,7 @@ async def compare_components(self, comp_a, comp_b, use_case="", model=None) -> s
 Vergleiche: Features, Preis, Stromverbrauch, Pins, Verfuegbarkeit.
 Gib eine klare Empfehlung mit Begruendung."""
     messages = [{"role": "system", "content": prompt}]
-    return await self.ollama.chat(model=model, messages=messages, temperature=0.3, max_tokens=1024)
+    return await self._llm_chat(model, messages, temperature=0.3, max_tokens=1024)
 ```
 
 ### F3) Workshop-RAG (siehe workshop_library.py)
@@ -437,7 +452,7 @@ Schritt: {self._session.current_step if self._session else 'unbekannt'}
 Messwert: {measurement_text}
 Bewerte: Ist der Wert im erwarteten Bereich? Was bedeutet er? Naechster Schritt?"""
     messages = [{"role": "system", "content": prompt}]
-    return await self.ollama.chat(model=model, messages=messages, temperature=0.3, max_tokens=512)
+    return await self._llm_chat(model, messages, temperature=0.3, max_tokens=512)
 ```
 
 ### F7) Time Tracking
@@ -524,6 +539,97 @@ async def handle_navigation(self, text: str) -> str:
     # ... (weitere Handler fuer jeden NAV-Typ)
     if any(kw in text_lower for kw in NAV_STOP): return await self._stop_session()
     return "Ich habe das nicht verstanden. Sage 'status' fuer eine Uebersicht."
+
+# --- Navigations-Hilfsmethoden (Pattern: cooking_assistant.py Zeilen 319-500) ---
+
+async def _next_step(self) -> str:
+    if self._session.current_step >= len(self._session.steps) - 1:
+        return "Das war der letzte Schritt! Sage 'fertig' wenn du das Projekt abschliessen willst."
+    self._session.current_step += 1
+    await self._save_session()
+    step = self._session.steps[self._session.current_step]
+    from .websocket import emit_workshop
+    await emit_workshop("step", {"step_number": step.number, "total": len(self._session.steps), "title": step.title})
+    return self._format_step(step)
+
+async def _prev_step(self) -> str:
+    if self._session.current_step <= 0:
+        return "Du bist bereits beim ersten Schritt."
+    self._session.current_step -= 1
+    await self._save_session()
+    return self._format_step(self._session.steps[self._session.current_step])
+
+async def _repeat_step(self) -> str:
+    step = self._session.steps[self._session.current_step]
+    return self._format_step(step)
+
+def _get_status(self) -> str:
+    s = self._session
+    step = s.steps[s.current_step]
+    done = sum(1 for st in s.steps if st.completed)
+    return (f"Projekt: {s.title}\n"
+            f"Schritt {s.current_step + 1}/{len(s.steps)}: {step.title}\n"
+            f"Fortschritt: {done}/{len(s.steps)} Schritte erledigt")
+
+def _get_parts(self) -> str:
+    # Teile des aktuellen Schritts
+    step = self._session.steps[self._session.current_step]
+    if not step.parts and not step.tools:
+        return "Fuer diesen Schritt sind keine speziellen Teile oder Werkzeuge noetig."
+    parts = "\n".join(f"  - {p}" for p in step.parts) if step.parts else "  Keine"
+    tools = "\n".join(f"  - {t}" for t in step.tools) if step.tools else "  Keine"
+    return f"Teile:\n{parts}\nWerkzeuge:\n{tools}"
+
+async def _stop_session(self) -> str:
+    if self._session:
+        await self.pause_timer(self._session.project_id)
+        self._session = None
+        await self.redis.delete(self.REDIS_SESSION_KEY)
+    return "Projekt-Session beendet. Dein Fortschritt ist gespeichert."
+
+async def _save_session(self):
+    """Persistiert aktive Session in Redis (TTL 24h)."""
+    if self._session:
+        data = json.dumps(asdict(self._session))
+        await self.redis.setex(self.REDIS_SESSION_KEY, self.REDIS_SESSION_TTL, data)
+
+async def _restore_session(self):
+    """Stellt Session aus Redis wieder her (nach Neustart)."""
+    data = await self.redis.get(self.REDIS_SESSION_KEY)
+    if data:
+        d = json.loads(data)
+        steps = [RepairStep(**s) for s in d.pop("steps", [])]
+        self._session = RepairSession(steps=steps, **d)
+        logger.info("Workshop-Session wiederhergestellt: %s", self._session.title)
+
+def _format_step(self, step: RepairStep) -> str:
+    """Formatiert einen Schritt fuer die Sprachausgabe."""
+    parts = [f"Schritt {step.number}: {step.title}", step.description]
+    if step.tools:
+        parts.append(f"Werkzeuge: {', '.join(step.tools)}")
+    if step.parts:
+        parts.append(f"Teile: {', '.join(step.parts)}")
+    if step.estimated_minutes:
+        parts.append(f"Geschaetzte Dauer: {step.estimated_minutes} Minuten")
+    return "\n".join(parts)
+
+def _format_diagnosis(self, data: dict) -> str:
+    """Formatiert eine Diagnose fuer die Sprachausgabe."""
+    parts = [f"Diagnose: {data.get('diagnosis', 'Unbekannt')}"]
+    if data.get("difficulty"):
+        parts.append(f"Schwierigkeit: {data['difficulty']}/5")
+    if data.get("estimated_time"):
+        parts.append(f"Geschaetzte Dauer: {data['estimated_time']}")
+    if data.get("estimated_cost"):
+        parts.append(f"Geschaetzte Kosten: {data['estimated_cost']}")
+    if data.get("safety_warnings"):
+        parts.append("Sicherheitshinweise:")
+        for w in data["safety_warnings"]:
+            parts.append(f"  ⚠ {w}")
+    steps = data.get("steps", [])
+    if steps:
+        parts.append(f"\n{len(steps)} Reparatur-Schritte bereit. Sage 'weiter' fuer den ersten Schritt.")
+    return "\n".join(parts)
 ```
 
 ### G2) Objekt-Scanner
@@ -793,7 +899,7 @@ async def calibration_guide(self, device_type, model=None) -> str:
     prompt = f"""Erstelle eine Schritt-fuer-Schritt Kalibrierungsanleitung fuer: {device_type}
 Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
     messages = [{"role": "system", "content": prompt}]
-    return await self.ollama.chat(model=model, messages=messages, temperature=0.3, max_tokens=1024)
+    return await self._llm_chat(model, messages, temperature=0.3, max_tokens=1024)
 
 async def get_journal(self, period="today") -> dict:
     key = f"mha:repair:journal:{datetime.now().strftime('%Y-%m-%d')}"
@@ -836,7 +942,7 @@ Error-Log:
 {log_text[:3000]}
 Erklaere den Fehler und schlage einen konkreten Fix vor."""
     messages = [{"role": "system", "content": prompt}]
-    return await self.ollama.chat(model=model, messages=messages, temperature=0.2, max_tokens=1024)
+    return await self._llm_chat(model, messages, temperature=0.2, max_tokens=1024)
 
 async def save_snippet(self, name, code, language="", tags=None) -> dict:
     key = f"mha:repair:snippet:{name.lower().replace(' ', '_')}"
@@ -927,11 +1033,13 @@ async def toggle_activation(self, text: str) -> str:
         await self.redis.delete("mha:repair:manual_active")
         return "Werkstatt-Modus deaktiviert. Bis zum naechsten Mal, Sir."
 
-def is_manually_activated(self) -> bool:
-    # Synchroner Check — in async Kontext: await self.redis.exists(...)
-    return False  # Muss async implementiert werden
+async def is_manually_activated(self) -> bool:
+    """Async Check ob Werkstatt-Modus manuell aktiviert ist."""
+    return bool(await self.redis.exists("mha:repair:manual_active"))
 
+@property
 def has_active_session(self) -> bool:
+    """Property (nicht Methode!) — Pattern: CookingAssistant."""
     return self._session is not None
 ```
 
@@ -1030,6 +1138,21 @@ class WorkshopGenerator:
 
     def set_model_router(self, router):
         self.model_router = router
+
+    async def _llm_chat(self, model, messages, temperature=0.7, max_tokens=1024) -> str:
+        """Wrapper fuer ollama.chat() — extrahiert Content aus dict-Response.
+
+        WICHTIG: ollama.chat() gibt ein dict zurueck, NICHT einen String!
+        Pattern aus cooking_assistant.py Zeile 255-292.
+        """
+        response = await self.ollama.chat(
+            messages=messages, model=model,
+            temperature=temperature, max_tokens=max_tokens,
+        )
+        if "error" in response:
+            logger.warning("LLM-Fehler: %s", response["error"])
+            return f"Fehler: {response['error']}"
+        return response.get("message", {}).get("content", "")
 ```
 
 ### A) Code-Generation (alle Sprachen)
@@ -1063,7 +1186,7 @@ async def generate_code(self, project_id, requirement, language="arduino",
         requirement=requirement
     )
     messages = [{"role": "system", "content": prompt}]
-    code = await self.ollama.chat(model=model, messages=messages, temperature=0.2, max_tokens=4096)
+    code = await self._llm_chat(model, messages, temperature=0.2, max_tokens=4096)
 
     # Datei speichern
     ext = {"arduino": ".ino", "python": ".py", "cpp": ".cpp", "html": ".html",
@@ -1099,7 +1222,7 @@ async def generate_3d_model(self, project_id, requirement, model=None) -> dict:
     prompt = self.OPENSCAD_PROMPT.format(
         project_title=project_title, requirement=requirement)
     messages = [{"role": "system", "content": prompt}]
-    scad_code = await self.ollama.chat(model=model, messages=messages, temperature=0.2, max_tokens=4096)
+    scad_code = await self._llm_chat(model, messages, temperature=0.2, max_tokens=4096)
 
     filename = f"model_{datetime.now().strftime('%H%M%S')}.scad"
     if project_id:
@@ -1123,7 +1246,7 @@ async def generate_schematic(self, project_id, requirement, model=None) -> dict:
     model = model or self.model_router.model_deep
     prompt = self.SVG_PROMPT.format(requirement=requirement)
     messages = [{"role": "system", "content": prompt}]
-    svg = await self.ollama.chat(model=model, messages=messages, temperature=0.2, max_tokens=4096)
+    svg = await self._llm_chat(model, messages, temperature=0.2, max_tokens=4096)
 
     # SVG extrahieren (falls in Markdown-Block)
     svg_match = re.search(r'<svg[\s\S]*?</svg>', svg)
@@ -1150,7 +1273,7 @@ async def generate_website(self, project_id, requirement, context="", model=None
     model = model or self.model_router.model_deep
     prompt = self.WEBSITE_PROMPT.format(requirement=requirement, context=context)
     messages = [{"role": "system", "content": prompt}]
-    html = await self.ollama.chat(model=model, messages=messages, temperature=0.3, max_tokens=8192)
+    html = await self._llm_chat(model, messages, temperature=0.3, max_tokens=8192)
 
     filename = f"site_{datetime.now().strftime('%H%M%S')}.html"
     if project_id:
@@ -1181,7 +1304,7 @@ Format als Markdown-Tabelle:
 | # | Bauteil | Menge | Spezifikation | Geschaetzter Preis | Bezugsquelle |
 Ergaenze fehlende Teile die aus dem Code/Schaltplan ersichtlich sind."""
     messages = [{"role": "system", "content": prompt}]
-    bom = await self.ollama.chat(model=model, messages=messages, temperature=0.3, max_tokens=2048)
+    bom = await self._llm_chat(model, messages, temperature=0.3, max_tokens=2048)
     return {"status": "ok", "bom": bom}
 ```
 
@@ -1202,7 +1325,7 @@ Status: {project.get('status', '')}
 
 Struktur: Uebersicht, Materialien, Schaltung/Aufbau, Software, Montage, Tests, Fazit."""
     messages = [{"role": "system", "content": prompt}]
-    doc = await self.ollama.chat(model=model, messages=messages, temperature=0.4, max_tokens=4096)
+    doc = await self._llm_chat(model, messages, temperature=0.4, max_tokens=4096)
 
     filename = f"DOKU_{project.get('title', 'projekt').replace(' ', '_')}.md"
     await self._save_file(project_id, filename, doc)
@@ -1366,7 +1489,7 @@ Code:
 {code[:4000]}
 REGELN: Vollstaendige, ausfuehrbare Tests. Edge Cases abdecken."""
     messages = [{"role": "system", "content": prompt}]
-    tests = await self.ollama.chat(model=model, messages=messages, temperature=0.2, max_tokens=4096)
+    tests = await self._llm_chat(model, messages, temperature=0.2, max_tokens=4096)
 
     test_filename = f"test_{filename}"
     await self._save_file(project_id, test_filename, tests)
@@ -1691,7 +1814,7 @@ async function apiCall(endpoint, method = 'GET', body = null) {
 
 ## 5. function_calling.py — EDIT (+180 Zeilen)
 
-### A) Tool-Definition (einfuegen nach letztem Tool in `_ASSISTANT_TOOLS_STATIC`, ca. Zeile 1450)
+### A) Tool-Definition (einfuegen VOR Zeile 1432 — Ende der `_ASSISTANT_TOOLS_STATIC` Liste, nach dem letzten Tool `describe_doorbell`)
 
 ```python
 # --- Workshop-Modus: Reparatur & Werkstatt ---
@@ -1793,7 +1916,7 @@ async function apiCall(endpoint, method = 'GET', body = null) {
 },
 ```
 
-### B) _ALLOWED_FUNCTIONS erweitern (Zeile ~1488)
+### B) _ALLOWED_FUNCTIONS erweitern (frozenset beginnt Zeile 1477, neuen Eintrag VOR `})` bei Zeile 1497)
 
 ```python
 # Zur bestehenden frozenset hinzufuegen:
@@ -1996,7 +2119,7 @@ async def _exec_manage_repair(self, args: dict) -> dict:
 
 ## 6. brain.py — EDIT (+70 Zeilen)
 
-### A) Import (nach Zeile 75, bei den anderen Imports)
+### A) Import (nach Zeile 80, nach dem letzten lokalen Import `from .websocket import ...`)
 
 ```python
 from .repair_planner import RepairPlanner
@@ -2067,7 +2190,7 @@ if self.repair_planner.is_repair_navigation(text):
 
 # Workshop-Modus: Intent — neues Werkstatt-Gespraech
 if (self.repair_planner.is_repair_intent(text)
-        or self.repair_planner.has_active_session()
+        or self.repair_planner.has_active_session
         or await self.memory.redis.exists("mha:repair:manual_active")):
     logger.info("Workshop-Intent erkannt: '%s'", text)
     # Wird vom LLM via manage_repair Tool gehandhabt — kein direkter Eingriff
@@ -2246,11 +2369,14 @@ async def workshop_export(project_id: str):
 
 ---
 
-## 9. static/ui/index.html — EDIT (+120 Zeilen)
+## 9. static/ui/index.html + app.js — EDIT
 
-### Neuer Settings-Tab `tab-workshop` (nach `tab-cooking` nav-item, Zeile ~866)
+**WICHTIG:** Das Settings-UI nutzt NICHT statisches HTML sondern dynamische Render-Funktionen!
+Alle Tabs werden via `renderXxx()` in `app.js` generiert, nicht als HTML in `index.html`.
+Die Builder-Funktionen (`fToggle`, `fText`, `fNum`, `fSelect`, `fRange`, `fInfo`) erzeugen
+HTML mit `data-path` Attributen. `collectSettings()` sammelt diese automatisch ein.
 
-#### A) Navigation-Item (in `.settings-nav`, nach `tab-cooking`)
+### A) Navigation-Item in index.html (nach `tab-cooking` nav-item, Zeile ~866)
 
 ```html
 <div class="nav-item" data-page="settings" data-tab="tab-workshop">
@@ -2258,166 +2384,61 @@ async def workshop_export(project_id: str):
 </div>
 ```
 
-#### B) Tab-Content (in `.settings-content`, nach dem cooking-tab div)
+### B) renderCurrentTab() erweitern in app.js (nach `case 'tab-cooking':`, Zeile ~572)
 
-```html
-<div id="tab-workshop" class="tab-content" style="display:none">
-    <h2>Werkstatt-Modus</h2>
-    <p class="settings-desc">J.A.R.V.I.S. als Werkstatt-Ingenieur: Reparaturen, Elektronik, 3D-Druck, Robotik.</p>
-
-    <div class="setting-group">
-        <h3>Grundeinstellungen</h3>
-        <div class="setting-row">
-            <label>Werkstatt aktiviert</label>
-            <label class="toggle">
-                <input type="checkbox" id="ws-enabled" data-setting="workshop.enabled">
-                <span class="slider"></span>
-            </label>
-            <span class="setting-help">Aktiviert den Werkstatt-Modus. Jarvis erkennt dann automatisch Reparatur- und Bastler-Anfragen.</span>
-        </div>
-        <div class="setting-row">
-            <label>Werkstatt-Raum (HA)</label>
-            <input type="text" id="ws-room" data-setting="workshop.workshop_room" placeholder="werkstatt" class="setting-input">
-            <span class="setting-help">Name des Raums in Home Assistant fuer Sensor-Daten (Temperatur, Feuchtigkeit, CO2).</span>
-        </div>
-        <div class="setting-row">
-            <label>Auto-Sicherheits-Check</label>
-            <label class="toggle">
-                <input type="checkbox" id="ws-safety" data-setting="workshop.auto_safety_check">
-                <span class="slider"></span>
-            </label>
-            <span class="setting-help">Zeigt automatisch eine Sicherheits-Checkliste vor Projektstart.</span>
-        </div>
-        <div class="setting-row">
-            <label>Proaktive Vorschlaege</label>
-            <label class="toggle">
-                <input type="checkbox" id="ws-proactive" data-setting="workshop.proactive_suggestions">
-                <span class="slider"></span>
-            </label>
-            <span class="setting-help">Jarvis schlaegt aktiv Verbesserungen und naechste Schritte vor.</span>
-        </div>
-    </div>
-
-    <div class="setting-group">
-        <h3>3D-Drucker</h3>
-        <div class="setting-row">
-            <label>3D-Drucker aktiviert</label>
-            <label class="toggle">
-                <input type="checkbox" id="ws-printer" data-setting="workshop.printer_3d.enabled">
-                <span class="slider"></span>
-            </label>
-        </div>
-        <div class="setting-row">
-            <label>Entity-Prefix</label>
-            <input type="text" id="ws-printer-prefix" data-setting="workshop.printer_3d.entity_prefix" placeholder="octoprint" class="setting-input">
-            <span class="setting-help">Entity-Prefix des 3D-Druckers in HA (z.B. 'octoprint', 'bambu').</span>
-        </div>
-    </div>
-
-    <div class="setting-group">
-        <h3>Roboterarm (Waveshare RoArm-M3-Pro)</h3>
-        <div class="setting-row">
-            <label>Arm aktiviert</label>
-            <label class="toggle">
-                <input type="checkbox" id="ws-arm" data-setting="workshop.robot_arm.enabled">
-                <span class="slider"></span>
-            </label>
-        </div>
-        <div class="setting-row">
-            <label>Arm URL</label>
-            <input type="text" id="ws-arm-url" data-setting="workshop.robot_arm.url" placeholder="http://192.168.1.100" class="setting-input">
-            <span class="setting-help">HTTP-Adresse des RoArm-M3-Pro Controllers.</span>
-        </div>
-        <div class="setting-row">
-            <label>Max. Geschwindigkeit (%)</label>
-            <input type="number" id="ws-arm-speed" data-setting="workshop.robot_arm.max_speed" min="10" max="100" value="80" class="setting-input" style="width:80px">
-            <span class="setting-help">Maximale Arm-Geschwindigkeit (Sicherheit). 80% empfohlen.</span>
-        </div>
-    </div>
-
-    <div class="setting-group">
-        <h3>MQTT</h3>
-        <div class="setting-row">
-            <label>MQTT aktiviert</label>
-            <label class="toggle">
-                <input type="checkbox" id="ws-mqtt" data-setting="workshop.mqtt.enabled">
-                <span class="slider"></span>
-            </label>
-        </div>
-        <div class="setting-row">
-            <label>MQTT Broker</label>
-            <input type="text" id="ws-mqtt-broker" data-setting="workshop.mqtt.broker" placeholder="192.168.1.1" class="setting-input">
-        </div>
-        <div class="setting-row">
-            <label>MQTT Topic Prefix</label>
-            <input type="text" id="ws-mqtt-topic" data-setting="workshop.mqtt.topic_prefix" placeholder="workshop/" class="setting-input">
-        </div>
-    </div>
-
-    <div class="setting-actions">
-        <a href="/workshop/" target="_blank" class="btn btn-accent">Workshop-HUD oeffnen &#8599;</a>
-    </div>
-</div>
+```javascript
+      case 'tab-workshop': c.innerHTML = renderWorkshop(); break;
 ```
+
+### C) renderWorkshop() Funktion in app.js (nach `renderCooking()`, ca. Zeile 2116)
+
+```javascript
+// ---- Werkstatt-Modus ----
+function renderWorkshop() {
+  return sectionWrap('&#128295;', 'Werkstatt-Modus',
+    fInfo('J.A.R.V.I.S. als Werkstatt-Ingenieur: Reparaturen, Elektronik, 3D-Druck, Robotik.') +
+    fToggle('workshop.enabled', 'Werkstatt-Modus aktiv') +
+    fText('workshop.workshop_room', 'Werkstatt-Raum (HA)', 'Name des Raums in Home Assistant fuer Sensor-Daten') +
+    fToggle('workshop.auto_safety_check', 'Auto-Sicherheits-Check') +
+    fToggle('workshop.proactive_suggestions', 'Proaktive Vorschlaege')
+  ) +
+  sectionWrap('&#127912;', '3D-Drucker',
+    fToggle('workshop.printer_3d.enabled', '3D-Drucker aktiviert') +
+    fText('workshop.printer_3d.entity_prefix', 'Entity-Prefix', 'z.B. octoprint, bambu') +
+    fToggle('workshop.printer_3d.auto_monitor', 'Auto-Monitor')
+  ) +
+  sectionWrap('&#129302;', 'Roboterarm (Waveshare RoArm-M3-Pro)',
+    fToggle('workshop.robot_arm.enabled', 'Arm aktiviert') +
+    fText('workshop.robot_arm.url', 'Arm URL', 'HTTP-Adresse des RoArm-M3-Pro Controllers') +
+    fNum('workshop.robot_arm.max_speed', 'Max. Geschwindigkeit (%)', 10, 100, 5, '80% empfohlen')
+  ) +
+  sectionWrap('&#128225;', 'MQTT',
+    fToggle('workshop.mqtt.enabled', 'MQTT aktiviert') +
+    fText('workshop.mqtt.broker', 'MQTT Broker', 'IP-Adresse des Brokers') +
+    fText('workshop.mqtt.topic_prefix', 'Topic Prefix', 'z.B. workshop/')
+  ) +
+  '<div style="margin-top:1rem;"><a href="/workshop/" target="_blank" class="btn" ' +
+  'style="background:var(--accent);color:#000;padding:8px 16px;border-radius:6px;text-decoration:none;">' +
+  '&#128295; Workshop-HUD oeffnen &#8599;</a></div>';
+}
+```
+
+**Hinweis:** `collectSettings()` und `loadSettings()` muessen NICHT manuell erweitert werden!
+Die bestehende `collectSettings()` (Zeile ~2828) iteriert automatisch ueber alle `[data-path]`
+Elemente im `#settingsContent` Container. Die `renderWorkshop()` Builder-Funktionen generieren
+diese `data-path` Attribute automatisch — das ist der Vorteil des dynamischen Render-Patterns.
 
 ---
 
-## 10. static/ui/app.js — EDIT (+15 Zeilen)
+## 10. static/ui/app.js — KEIN manuelles collectSettings/loadSettings noetig
 
-### A) collectSettings() erweitern (Workshop-Settings einsammeln)
+**ENTFAELLT:** Die Sections 9C (`renderWorkshop()`) nutzt die Builder-Funktionen (`fToggle`,
+`fText`, etc.) die automatisch `data-path` Attribute generieren. Die bestehende `collectSettings()`
+iteriert ueber alle `[data-path]` Elemente und `loadSettings()` ruft `renderCurrentTab()` auf,
+was die Werte aus dem globalen `S`-Objekt in die Felder schreibt.
 
-Die bestehende `collectSettings()` Funktion liest alle `data-setting`-Attribute automatisch.
-Falls `collectSettings()` Settings per ID manuell sammelt, diese Zeilen hinzufuegen:
-
-```javascript
-// Workshop-Settings
-settings.workshop = {
-    enabled: document.getElementById('ws-enabled')?.checked ?? false,
-    workshop_room: document.getElementById('ws-room')?.value || 'werkstatt',
-    auto_safety_check: document.getElementById('ws-safety')?.checked ?? true,
-    proactive_suggestions: document.getElementById('ws-proactive')?.checked ?? true,
-    printer_3d: {
-        enabled: document.getElementById('ws-printer')?.checked ?? false,
-        entity_prefix: document.getElementById('ws-printer-prefix')?.value || 'octoprint',
-    },
-    robot_arm: {
-        enabled: document.getElementById('ws-arm')?.checked ?? false,
-        url: document.getElementById('ws-arm-url')?.value || '',
-        max_speed: parseInt(document.getElementById('ws-arm-speed')?.value || '80'),
-    },
-    mqtt: {
-        enabled: document.getElementById('ws-mqtt')?.checked ?? false,
-        broker: document.getElementById('ws-mqtt-broker')?.value || '',
-        topic_prefix: document.getElementById('ws-mqtt-topic')?.value || 'workshop/',
-    },
-};
-```
-
-### B) loadSettings() erweitern (Settings in UI laden)
-
-```javascript
-// Workshop-Settings laden
-if (data.workshop) {
-    document.getElementById('ws-enabled').checked = data.workshop.enabled ?? false;
-    document.getElementById('ws-room').value = data.workshop.workshop_room || 'werkstatt';
-    document.getElementById('ws-safety').checked = data.workshop.auto_safety_check ?? true;
-    document.getElementById('ws-proactive').checked = data.workshop.proactive_suggestions ?? true;
-    if (data.workshop.printer_3d) {
-        document.getElementById('ws-printer').checked = data.workshop.printer_3d.enabled ?? false;
-        document.getElementById('ws-printer-prefix').value = data.workshop.printer_3d.entity_prefix || 'octoprint';
-    }
-    if (data.workshop.robot_arm) {
-        document.getElementById('ws-arm').checked = data.workshop.robot_arm.enabled ?? false;
-        document.getElementById('ws-arm-url').value = data.workshop.robot_arm.url || '';
-        document.getElementById('ws-arm-speed').value = data.workshop.robot_arm.max_speed || 80;
-    }
-    if (data.workshop.mqtt) {
-        document.getElementById('ws-mqtt').checked = data.workshop.mqtt.enabled ?? false;
-        document.getElementById('ws-mqtt-broker').value = data.workshop.mqtt.broker || '';
-        document.getElementById('ws-mqtt-topic').value = data.workshop.mqtt.topic_prefix || 'workshop/';
-    }
-}
-```
+Es muss NUR die `renderWorkshop()` Funktion und der `case 'tab-workshop'` Switch-Case
+hinzugefuegt werden (siehe Section 9B + 9C).
 
 ---
 
@@ -2493,7 +2514,7 @@ workshop:
     - repair_standard
 ```
 
-### deep_keywords erweitern (in `models.deep_keywords`, Zeile ~113)
+### deep_keywords erweitern (in `models.deep_keywords`, Sektion beginnt bei ca. Zeile 65 in model_router.py)
 
 ```yaml
 deep_keywords:
@@ -2525,8 +2546,8 @@ deep_keywords:
 8. **`websocket.py`** — emit_workshop() Funktion
 9. **`main.py`** — SPA-Route + API-Endpoints
 10. **`static/workshop/index.html`** — Workshop-HUD (komplett)
-11. **`static/ui/index.html`** — Settings-Tab
-12. **`static/ui/app.js`** — Settings collect/load
+11. **`static/ui/index.html`** — Nav-Item fuer Workshop-Tab (1 Zeile)
+12. **`static/ui/app.js`** — `renderWorkshop()` + switch-case (kein manuelles collect/load noetig)
 
 ### Abhaengigkeiten
 
