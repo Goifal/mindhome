@@ -49,6 +49,7 @@ from .ollama_client import OllamaClient
 from .ambient_audio import AmbientAudioClassifier
 from .ocr import OCREngine
 from .conflict_resolver import ConflictResolver
+from .follow_me import FollowMeEngine
 from .personality import PersonalityEngine
 from .proactive import ProactiveManager
 from .anticipation import AnticipationEngine
@@ -165,6 +166,7 @@ class AssistantBrain(BrainCallbacksMixin):
         self.autonomy = AutonomyManager()
         self.feedback = FeedbackTracker()
         self.activity = ActivityEngine(self.ha)
+        self.follow_me = FollowMeEngine(self.ha)
         self.proactive = ProactiveManager(self)
         self.summarizer = DailySummarizer(self.ollama)
         self.memory_extractor: Optional[MemoryExtractor] = None
@@ -1343,6 +1345,108 @@ class AssistantBrain(BrainCallbacksMixin):
             except Exception as e:
                 logger.warning("Media-Shortcut fehlgeschlagen: %s — Fallback auf LLM", e)
 
+        # Intercom-Shortcut: Durchsagen an Person/Raum direkt ausfuehren.
+        # "Sag Julia dass das Essen fertig ist" → send_intercom sofort.
+        intercom_cmd = self._detect_intercom_command(text)
+        if intercom_cmd:
+            func_name = intercom_cmd["function"]
+            func_args = intercom_cmd["args"]
+            logger.info("Intercom-Shortcut: '%s' -> %s(%s)", text, func_name, func_args)
+            try:
+                result = await self.executor.execute(func_name, func_args)
+                success = isinstance(result, dict) and result.get("success", False)
+
+                if success:
+                    target = func_args.get("target_person") or func_args.get("target_room") or "alle"
+                    response_text = f"Durchsage an {target} gesendet."
+                else:
+                    response_text = self.personality.get_varied_confirmation(success=False)
+
+                self._remember_exchange(text, response_text)
+                tts_data = self.tts_enhancer.enhance(
+                    response_text, message_type="confirmation",
+                )
+                if stream_callback:
+                    if not room:
+                        room = await self._get_occupied_room()
+                    self._task_registry.create_task(
+                        self.sound_manager.speak_response(
+                            response_text, room=room, tts_data=tts_data),
+                        name="speak_response",
+                    )
+                else:
+                    await self._speak_and_emit(
+                        response_text, room=room, tts_data=tts_data,
+                    )
+
+                await emit_action(func_name, func_args, result)
+
+                return {
+                    "response": response_text,
+                    "actions": [{"function": func_name,
+                                 "args": func_args,
+                                 "result": result}],
+                    "model_used": "intercom_shortcut",
+                    "context_room": room or "unbekannt",
+                    "tts": tts_data,
+                    "_emitted": not stream_callback,
+                }
+            except Exception as e:
+                logger.warning("Intercom-Shortcut fehlgeschlagen: %s — Fallback auf LLM", e)
+
+        # Status-Report-Shortcut: "Statusbericht" / "Briefing" / "Was gibts Neues"
+        # Aggregiert alle Datenquellen und laesst LLM einen narrativen Bericht generieren.
+        if self._is_status_report_request(text):
+            logger.info("Status-Report-Shortcut: '%s'", text)
+            try:
+                raw_result = await self.executor.execute("get_full_status_report", {})
+                if isinstance(raw_result, dict) and raw_result.get("success"):
+                    raw_data = raw_result["message"]
+                    # LLM generiert narrativen Bericht im JARVIS-Stil
+                    title = get_person_title()
+                    narrative_prompt = (
+                        f"Du bist JARVIS. Fasse diesen Haus-Status als kurzes Briefing zusammen. "
+                        f"3-5 Saetze, narrativ, priorisiert (Wichtiges zuerst, Langweiliges weglassen). "
+                        f"Trockener Butler-Ton. Kein Aufzaehlungsformat. Fliessender Bericht. "
+                        f"Sprich den User mit '{title}' an.\n\n{raw_data}"
+                    )
+                    narrative = await self.ollama.generate(
+                        prompt=narrative_prompt,
+                        temperature=0.5,
+                        max_tokens=300,
+                    )
+                    response_text = narrative.strip() if narrative.strip() else raw_data
+
+                    self._remember_exchange(text, response_text)
+                    tts_data = self.tts_enhancer.enhance(
+                        response_text, message_type="briefing",
+                    )
+                    if stream_callback:
+                        if not room:
+                            room = await self._get_occupied_room()
+                        self._task_registry.create_task(
+                            self.sound_manager.speak_response(
+                                response_text, room=room, tts_data=tts_data),
+                            name="speak_response",
+                        )
+                    else:
+                        await self._speak_and_emit(
+                            response_text, room=room, tts_data=tts_data,
+                        )
+
+                    return {
+                        "response": response_text,
+                        "actions": [{"function": "get_full_status_report",
+                                     "args": {},
+                                     "result": raw_result}],
+                        "model_used": "status_report_shortcut",
+                        "context_room": room or "unbekannt",
+                        "tts": tts_data,
+                        "_emitted": not stream_callback,
+                    }
+            except Exception as e:
+                logger.warning("Status-Report-Shortcut fehlgeschlagen: %s — Fallback auf LLM", e)
+
         # Status-Query-Shortcut: Direkte Ausfuehrung von Status-Abfragen
         # (Lichter, Rolllaeden, Steckdosen, Heizung, Hausstatus etc.)
         # Kein LLM noetig — deterministischer Tool-Call + Humanizer.
@@ -1402,6 +1506,34 @@ class AssistantBrain(BrainCallbacksMixin):
                 except Exception as e:
                     logger.warning("Status-Query-Shortcut fehlgeschlagen: %s — Fallback auf LLM", e)
 
+        # Smalltalk-Shortcut: Soziale Fragen sofort im JARVIS-Stil beantworten.
+        # Verhindert, dass das LLM aus dem Charakter bricht ("Ich bin ein KI-Modell...").
+        smalltalk_response = self._detect_smalltalk(text)
+        if smalltalk_response:
+            logger.info("Smalltalk-Shortcut: '%s' -> '%s'", text, smalltalk_response)
+            self._remember_exchange(text, smalltalk_response)
+            tts_data = self.tts_enhancer.enhance(smalltalk_response, message_type="casual")
+            if stream_callback:
+                if not room:
+                    room = await self._get_occupied_room()
+                self._task_registry.create_task(
+                    self.sound_manager.speak_response(
+                        smalltalk_response, room=room, tts_data=tts_data),
+                    name="speak_response",
+                )
+            else:
+                await self._speak_and_emit(
+                    smalltalk_response, room=room, tts_data=tts_data,
+                )
+            return {
+                "response": smalltalk_response,
+                "actions": [],
+                "model_used": "smalltalk_shortcut",
+                "context_room": room or "unbekannt",
+                "tts": tts_data,
+                "_emitted": not stream_callback,
+            }
+
         # ----- Ende schnelle Shortcuts -----
 
         # Phase 9: "listening" Sound abspielen wenn Verarbeitung startet
@@ -1451,6 +1583,9 @@ class AssistantBrain(BrainCallbacksMixin):
 
         # Phase 17: Situation Delta (was hat sich seit letztem Gespraech geaendert?)
         _mega_tasks.append(("situation_delta", self._get_situation_delta()))
+
+        # Kontext-Kette: Relevante vergangene Gespraeche laden
+        _mega_tasks.append(("conv_memory", self._get_conversation_memory(text)))
 
         # Alle Subsysteme die das Profil verlangt
         if profile.need_mood:
@@ -1619,6 +1754,18 @@ class AssistantBrain(BrainCallbacksMixin):
         memory_context = self._build_memory_context(memories)
         if memory_context:
             sections.append(("memory", memory_context, 2))
+
+        # Kontext-Kette: Relevante vergangene Gespraeche
+        conv_memory = _safe_get("conv_memory")
+        if conv_memory:
+            conv_text = (
+                "\n\nRELEVANTE VERGANGENE GESPRAECHE:\n"
+                f"{conv_memory}\n"
+                "Referenziere beilaeufig wenn passend: 'Wie am Dienstag besprochen.' / "
+                "'Du hattest das erwaehnt.' Mit trockenem Humor wenn es sich anbietet. "
+                "NICHT: 'Laut meinen Aufzeichnungen...' oder 'In unserem Gespraech am...'"
+            )
+            sections.append(("conv_memory", conv_text, 2))
 
         # Phase 17: Situation Delta (was hat sich seit letztem Gespraech geaendert?)
         if situation_delta:
@@ -2921,66 +3068,194 @@ class AssistantBrain(BrainCallbacksMixin):
         return f"{prefix_multi} {len(events)} Termine an: {listing}."
 
     def _humanize_entity_state(self, raw: str) -> str:
-        """Entity-Status in natuerliche Sprache."""
-        # Kurze Rohdaten einfach durchlassen (z.B. "22.5°C")
+        """Entity-Status — JARVIS-Stil: knapp und praezise."""
         if len(raw) < 80:
             return raw
         lines = raw.strip().split("\n")
         if len(lines) <= 3:
             return raw
-        # Nur erste 3 relevante Zeilen zusammenfassen
         summary = " ".join(l.strip().lstrip("- ") for l in lines[:3] if l.strip())
         if len(lines) > 3:
-            summary += f" (und {len(lines) - 3} weitere)"
+            summary += f" — plus {len(lines) - 3} weitere Datenpunkte."
         return summary
 
     def _humanize_room_climate(self, raw: str) -> str:
-        """Raum-Klima in natuerliche Sprache."""
+        """Raum-Klima — JARVIS-Stil mit Messwert-Praezision."""
         import re as _re
         temp_m = _re.search(r'(-?\d+[.,]?\d*)\s*°?C', raw)
         hum_m = _re.search(r'(\d+[.,]?\d*)\s*%', raw)
         parts = []
         if temp_m:
-            parts.append(f"{temp_m.group(1)}°C")
+            parts.append(f"{temp_m.group(1)} Grad")
         if hum_m:
-            parts.append(f"{hum_m.group(1)}% Luftfeuchtigkeit")
+            parts.append(f"Luftfeuchtigkeit {hum_m.group(1)}%")
         if parts:
             return ", ".join(parts) + "."
         return raw
 
     def _humanize_house_status(self, raw: str) -> str:
-        """Haus-Status in natuerliche Sprache."""
+        """Haus-Status in natuerliche JARVIS-Sprache.
+
+        Respektiert house_status.detail_level aus settings.yaml:
+          kompakt:      Nur Zusammenfassung (Zahlen, keine Namen)
+          normal:       Bereiche mit Namen (Default)
+          ausfuehrlich: Alle Details (Helligkeit, Soll-Temp, Medientitel etc.)
+
+        Verarbeitet die strukturierten Zeilen aus _exec_get_house_status():
+          Zuhause: Manuel, Julia
+          Temperaturen: Wohnzimmer: 22.5°C (Soll 21°C), Schlafzimmer: 19°C
+          Wetter: Sonnig, 8°C, Luftfeuchte 65%
+          Lichter an: Wohnzimmer-Decke: 100%, Flur-Licht: 50%
+          Alle Lichter aus
+          Sicherheit: disarmed
+          Offen: Schlafzimmer Fenster
+          Offline (2): Sensor Bad, Steckdose Flur
+        """
         import re as _re
-        lines = raw.strip().split("\n")
-        lights_on = sum(1 for l in lines if ": on" in l and
-                        any(k in l.lower() for k in ["light", "licht", "lampe"]))
-        covers_open = sum(1 for l in lines if
-                          ("open" in l.lower() or "offen" in l.lower()) and
-                          any(k in l.lower() for k in ["cover", "rollladen", "rollo"]))
-        parts = []
-        if lights_on:
-            parts.append(f"{lights_on} Licht{'er' if lights_on > 1 else ''} an")
-        if covers_open:
-            parts.append(f"{covers_open} Rollladen offen")
-        # Temperatur suchen
-        temp_m = _re.search(r'(-?\d+[.,]?\d*)\s*°?C', raw)
-        if temp_m:
-            parts.append(f"{temp_m.group(1)}°C")
-        if not parts:
+
+        if not raw or not raw.strip():
             return "Alles ruhig im Haus."
-        return "Im Haus: " + ", ".join(parts) + "."
+
+        hs_cfg = yaml_config.get("house_status", {})
+        detail = hs_cfg.get("detail_level", "normal")
+
+        lines = raw.strip().split("\n")
+        parts = []
+        title = get_person_title()
+
+        _sec_map = {
+            "disarmed": "Alarmanlage aus",
+            "armed_home": "Alarmanlage aktiv (zuhause)",
+            "armed_away": "Alarmanlage aktiv (abwesend)",
+            "armed_night": "Alarmanlage aktiv (Nacht)",
+            "triggered": "ALARM AUSGELOEST",
+            "unknown": "",
+        }
+
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+
+            # --- Anwesenheit ---
+            if line.startswith("Zuhause:"):
+                names = line.replace("Zuhause:", "").strip()
+                if names:
+                    if detail == "kompakt":
+                        count = len([n.strip() for n in names.split(",") if n.strip()])
+                        parts.append(f"{count} Person{'en' if count > 1 else ''} zuhause")
+                    else:
+                        parts.append(f"{names} ist zuhause" if "," not in names
+                                     else f"{names} sind zuhause")
+            elif line.startswith("Unterwegs:"):
+                names = line.replace("Unterwegs:", "").strip()
+                if names and detail != "kompakt":
+                    parts.append(f"{names} unterwegs")
+
+            # --- Temperaturen ---
+            elif line.startswith("Temperaturen:"):
+                temps = line.replace("Temperaturen:", "").strip()
+                if temps:
+                    if detail == "kompakt":
+                        # Nur erste Temperatur oder Durchschnitt
+                        all_temps = _re.findall(r"(-?\d+[.,]?\d*)\s*°C", temps)
+                        if all_temps:
+                            parts.append(f"{all_temps[0]}°C")
+                    elif detail == "normal":
+                        # Raum: Temp ohne Soll
+                        cleaned = _re.sub(r"\s*\(Soll [^)]+\)", "", temps)
+                        parts.append(cleaned)
+                    else:
+                        # ausfuehrlich: alles
+                        parts.append(temps)
+
+            # --- Wetter ---
+            elif line.startswith("Wetter:"):
+                weather = line.replace("Wetter:", "").strip()
+                if weather:
+                    if detail == "kompakt":
+                        # Nur Condition + Temp
+                        temp_m = _re.search(r"(-?\d+)\s*°C", weather)
+                        cond = weather.split(",")[0].strip() if "," in weather else weather
+                        if temp_m:
+                            parts.append(f"Draussen {temp_m.group(1)}°C, {cond}")
+                        else:
+                            parts.append(f"Draussen: {cond}")
+                    else:
+                        parts.append(f"Draussen: {weather}")
+
+            # --- Lichter ---
+            elif line.startswith("Lichter an:"):
+                lights = line.replace("Lichter an:", "").strip()
+                if lights:
+                    light_list = [l.strip() for l in lights.split(",")]
+                    if detail == "kompakt":
+                        parts.append(f"{len(light_list)} Licht{'er' if len(light_list) > 1 else ''} an")
+                    elif detail == "normal":
+                        # Namen ohne Helligkeit
+                        names_only = [_re.sub(r":\s*\d+%", "", l).strip() for l in light_list]
+                        if len(names_only) <= 4:
+                            parts.append(f"Lichter an: {', '.join(names_only)}")
+                        else:
+                            parts.append(f"{len(names_only)} Lichter an")
+                    else:
+                        # ausfuehrlich: mit Helligkeit
+                        parts.append(f"Lichter an: {lights}")
+            elif line.startswith("Alle Lichter aus"):
+                parts.append("Alle Lichter aus")
+
+            # --- Sicherheit ---
+            elif line.startswith("Sicherheit:"):
+                sec = line.replace("Sicherheit:", "").strip().lower()
+                sec_text = _sec_map.get(sec, sec)
+                if sec_text:
+                    parts.append(sec_text)
+
+            # --- Medien ---
+            elif line.startswith("Medien aktiv:"):
+                media = line.replace("Medien aktiv:", "").strip()
+                if media:
+                    if detail == "kompakt":
+                        parts.append("Medien aktiv")
+                    else:
+                        parts.append(f"Medien: {media}")
+
+            # --- Offene Fenster/Tueren ---
+            elif line.startswith("Offen:"):
+                items = line.replace("Offen:", "").strip()
+                if items:
+                    if detail == "kompakt":
+                        count = len([i.strip() for i in items.split(",") if i.strip()])
+                        parts.append(f"{count} offen")
+                    else:
+                        parts.append(f"Offen: {items}")
+
+            # --- Offline ---
+            elif line.startswith("Offline"):
+                if detail == "kompakt":
+                    # "Offline (3)" → nur Zahl
+                    m = _re.search(r"\((\d+)\)", line)
+                    if m:
+                        parts.append(f"{m.group(1)} Geraete offline")
+                else:
+                    parts.append(line)
+
+        if not parts:
+            return f"Alles ruhig im Haus, {title}."
+
+        return ". ".join(parts) + "."
 
     def _humanize_alarms(self, raw: str) -> str:
-        """Wecker-Daten in natuerliche JARVIS-Sprache."""
+        """Wecker-Daten — JARVIS-Stil."""
         import re
 
         if not raw or "keine wecker" in raw.lower():
-            return "Aktuell ist kein Wecker gestellt."
+            return "Kein Wecker gestellt."
 
         # "Wecker gestellt: morgen um 08:15 Uhr." (set_wakeup_alarm result)
         set_match = re.search(r"Wecker gestellt:\s*(.+)", raw, re.IGNORECASE)
         if set_match:
-            return f"Wecker gestellt — {set_match.group(1).strip()}"
+            return f"Wecker steht auf {set_match.group(1).strip()}."
 
         # "Aktive Wecker:\n  - Wecker: 08:15 Uhr (einmalig)" (get_alarms result)
         entries = re.findall(r"-\s*(.+?):\s*(\d{1,2}:\d{2})\s*Uhr\s*\(([^)]+)\)", raw)
@@ -2993,34 +3268,31 @@ class AssistantBrain(BrainCallbacksMixin):
                 else:
                     parts.append(f"{time_str} Uhr ({repeat})")
             if len(parts) == 1:
-                return f"Ein Wecker ist gestellt auf {parts[0]}."
-            return "Aktive Wecker: " + ", ".join(parts) + "."
+                return f"Wecker auf {parts[0]}."
+            return f"{len(parts)} Wecker aktiv: " + ", ".join(parts) + "."
 
-        # Fallback — Rohdaten zurueckgeben
         return raw
 
     def _humanize_lights(self, raw: str) -> str:
-        """Licht-Status in natuerliche JARVIS-Sprache."""
-        # Format: "5 Lichter (2 an, 3 aus):\n- Name [Raum]: on (80%)\n..."
+        """Licht-Status — JARVIS-Stil."""
         lines = raw.strip().split("\n")
         on_lights = []
         for line in lines:
             if ": on" in line:
-                # "- Licht Buero [buero]: on (80%)" → "Licht Buero (80%)"
                 name = line.lstrip("- ").split("[")[0].strip()
                 bri_match = re.search(r"\((\d+)%\)", line)
                 if bri_match:
-                    on_lights.append(f"{name} ({bri_match.group(1)}%)")
+                    on_lights.append(f"{name} auf {bri_match.group(1)}%")
                 else:
                     on_lights.append(name)
         if not on_lights:
-            return "Alle Lichter sind aus."
+            return "Alles dunkel."
         if len(on_lights) == 1:
-            return f"{on_lights[0]} ist an."
-        return f"{len(on_lights)} Lichter sind an: {', '.join(on_lights)}."
+            return f"{on_lights[0]}."
+        return f"{len(on_lights)} Lichter aktiv: {', '.join(on_lights)}."
 
     def _humanize_switches(self, raw: str) -> str:
-        """Schalter/Steckdosen-Status in natuerliche Sprache."""
+        """Schalter/Steckdosen-Status — JARVIS-Stil."""
         lines = raw.strip().split("\n")
         on_items = []
         for line in lines:
@@ -3028,13 +3300,13 @@ class AssistantBrain(BrainCallbacksMixin):
                 name = line.lstrip("- ").split("[")[0].strip()
                 on_items.append(name)
         if not on_items:
-            return "Alle Schalter und Steckdosen sind aus."
+            return "Alle Schalter aus."
         if len(on_items) == 1:
-            return f"{on_items[0]} ist an."
-        return f"{len(on_items)} Schalter/Steckdosen sind an: {', '.join(on_items)}."
+            return f"{on_items[0]} laeuft."
+        return f"{len(on_items)} Geraete aktiv: {', '.join(on_items)}."
 
     def _humanize_covers(self, raw: str) -> str:
-        """Rollladen-Status in natuerliche Sprache."""
+        """Rollladen-Status — JARVIS-Stil."""
         lines = raw.strip().split("\n")
         open_items = []
         for line in lines:
@@ -3042,17 +3314,17 @@ class AssistantBrain(BrainCallbacksMixin):
                 name = line.lstrip("- ").split("[")[0].strip()
                 pos_match = re.search(r"\((\d+)%\)", line)
                 if pos_match:
-                    open_items.append(f"{name} ({pos_match.group(1)}%)")
+                    open_items.append(f"{name} auf {pos_match.group(1)}%")
                 else:
                     open_items.append(name)
         if not open_items:
-            return "Alle Rolllaeden sind geschlossen."
+            return "Alle Rolllaeden unten."
         if len(open_items) == 1:
             return f"{open_items[0]} ist offen."
-        return f"{len(open_items)} Rolllaeden sind offen: {', '.join(open_items)}."
+        return f"{len(open_items)} Rolllaeden offen: {', '.join(open_items)}."
 
     def _humanize_media(self, raw: str) -> str:
-        """Media-Player Status in natuerliche Sprache."""
+        """Media-Player Status — JARVIS-Stil."""
         lines = raw.strip().split("\n")
         playing = []
         for line in lines:
@@ -3060,11 +3332,13 @@ class AssistantBrain(BrainCallbacksMixin):
                 name = line.lstrip("- ").split("[")[0].strip()
                 playing.append(name)
         if not playing:
-            return "Keine Medien laufen gerade."
-        return f"Aktive Medien: {', '.join(playing)}."
+            return "Stille im Haus."
+        if len(playing) == 1:
+            return f"{playing[0]} laeuft."
+        return f"Medien aktiv: {', '.join(playing)}."
 
     def _humanize_climate_list(self, raw: str) -> str:
-        """Klima-Geraete Status in natuerliche Sprache."""
+        """Klima-Geraete Status — JARVIS-Stil."""
         import re as _re
         lines = raw.strip().split("\n")
         active = []
@@ -3232,11 +3506,21 @@ class AssistantBrain(BrainCallbacksMixin):
             "Ich verstehe, wie du dich fühlst",
             "Das klingt wirklich",
             "Ich bin ein KI", "Ich bin eine KI",
+            "Ich bin ein KI-Modell", "Ich bin ein KI-Assistent",
             "Ich bin ein Sprachmodell",
             "Ich bin ein grosses Sprachmodell",
-            "als Sprachmodell", "als KI-Assistent",
+            "als Sprachmodell", "als KI-Assistent", "als KI-Modell",
             "Ich habe keine Gefuehle",
+            "Ich habe keine Gefühle",
             "Ich habe keine eigenen Gefühle",
+            "Ich habe keine eigenen Gefuehle",
+            "keine Gefühle oder Emotionen",
+            "keine Gefuehle oder Emotionen",
+            "bin voll funktionsfähig und bereit",
+            "bin voll funktionsfaehig und bereit",
+            "Danke, dass du mich fragst",
+            "Das ist eine nette Frage",
+            "Danke der Nachfrage!",
             "Hallo! Wie kann ich",
             "Hallo, wie kann ich",
             "Hallo! Was kann ich",
@@ -3513,6 +3797,46 @@ class AssistantBrain(BrainCallbacksMixin):
 
         return ""
 
+    async def _get_conversation_memory(self, text: str) -> Optional[str]:
+        """Kontext-Kette: Sucht relevante vergangene Gespraeche.
+
+        Wird parallel mit dem Context-Build ausgefuehrt.
+        """
+        try:
+            if not self.memory or not self.memory.semantic:
+                return None
+            convos = await self.memory.semantic.get_relevant_conversations(text, limit=3)
+            if not convos:
+                return None
+            lines = []
+            for c in convos:
+                created = c.get("created_at", "")
+                date_str = ""
+                if created:
+                    try:
+                        from datetime import datetime
+                        dt = datetime.fromisoformat(created)
+                        days_ago = (datetime.now() - dt).days
+                        if days_ago == 0:
+                            date_str = "Heute"
+                        elif days_ago == 1:
+                            date_str = "Gestern"
+                        elif days_ago < 7:
+                            date_str = dt.strftime("%A")  # Wochentag
+                        else:
+                            date_str = f"Vor {days_ago} Tagen"
+                    except (ValueError, TypeError):
+                        pass
+                content = c.get("content", "")
+                if date_str:
+                    lines.append(f"- {date_str}: {content}")
+                else:
+                    lines.append(f"- {content}")
+            return "\n".join(lines)
+        except Exception as e:
+            logger.debug("Kontext-Kette Lookup fehlgeschlagen: %s", e)
+            return None
+
     async def _get_summary_context(self, text: str) -> str:
         """Holt relevante Langzeit-Summaries wenn die Frage die Vergangenheit betrifft."""
         past_keywords = [
@@ -3607,6 +3931,36 @@ class AssistantBrain(BrainCallbacksMixin):
                 )
         except Exception as e:
             logger.error("Fehler bei Hintergrund-Fakten-Extraktion: %s", e)
+
+        # Kontext-Kette: Substantielle Gespraeche als conversation_topic speichern
+        try:
+            if len(user_text.split()) >= 5 and self.memory and self.memory.semantic:
+                from .semantic_memory import SemanticFact
+                # Kurze Zusammenfassung des Gespraechs-Themas
+                topic_prompt = (
+                    f"Fasse das Thema dieses Gespraechs in 1 Satz zusammen. "
+                    f"NUR das Thema, keine Bewertung. Deutsch.\n\n"
+                    f"User: {user_text[:200]}\n"
+                    f"Antwort: {assistant_response[:200]}"
+                )
+                topic_summary = await self.ollama.generate(
+                    prompt=topic_prompt,
+                    temperature=0.1,
+                    max_tokens=80,
+                )
+                topic_text = topic_summary.strip()
+                if topic_text and len(topic_text) > 10:
+                    fact = SemanticFact(
+                        content=topic_text,
+                        category="conversation_topic",
+                        person=person,
+                        confidence=0.6,
+                        source_conversation=f"User: {user_text[:100]}",
+                    )
+                    await self.memory.semantic.store_fact(fact)
+                    logger.debug("Kontext-Kette: Topic gespeichert: %s", topic_text[:60])
+        except Exception as e:
+            logger.debug("Kontext-Kette Topic-Extraktion fehlgeschlagen: %s", e)
 
     # Gueltige Urgency-Level in der Silence Matrix
     _VALID_URGENCIES = {"critical", "high", "medium", "low"}
@@ -4770,6 +5124,218 @@ class AssistantBrain(BrainCallbacksMixin):
             args["volume"] = volume
 
         return {"function": "play_media", "args": args}
+
+    @staticmethod
+    def _is_status_report_request(text: str) -> bool:
+        """Erkennt ob der User einen narrativen Statusbericht will.
+
+        Matcht auf: statusbericht, briefing, lagebericht, was gibts neues, ueberblick geben.
+        NICHT auf einfache Status-Queries wie "wie warm ist es".
+        """
+        t = text.lower().strip().rstrip("?!.")
+        _keywords = [
+            "statusbericht", "status report", "status bericht",
+            "lagebericht", "lage bericht",
+            "briefing", "briefing geben",
+            "was gibt's neues", "was gibts neues", "was gibt es neues",
+            "ueberblick", "überblick",
+            "gib mir ein briefing", "gib mir einen ueberblick",
+            "gib mir einen überblick",
+            "was ist los", "was tut sich",
+            "morgen briefing", "morgenbriefing",
+            "abendbriefing", "abend briefing",
+        ]
+        return any(kw in t for kw in _keywords)
+
+    @staticmethod
+    def _detect_intercom_command(text: str) -> Optional[dict]:
+        """Erkennt Intercom-/Durchsage-Befehle.
+
+        Patterns:
+          - "sag/sage {person} [im {room}] [dass/,] {message}"
+          - "durchsage [im {room}]: {message}"
+          - "ruf alle [zum essen]" → broadcast
+
+        Returns:
+            {"function": "send_intercom"|"broadcast", "args": {...}} oder None.
+        """
+        import re as _re
+        t = text.strip()
+        t_lower = t.lower()
+
+        # Ausschluss: Fragen, kurze Saetze
+        if t_lower.endswith("?") or len(t_lower) < 8:
+            return None
+
+        # --- Pattern 1: "sag/sage {person} [im {room}] [dass/,] {message}" ---
+        m = _re.match(
+            r'(?:sag|sage)\s+'
+            r'(?:(?:der|dem|die)\s+)?'
+            r'([A-ZÄÖÜ][a-zäöüß]+)'  # Person (Eigenname)
+            r'(?:\s+im\s+([A-Za-zÄÖÜäöüß]+))?'  # optionaler Raum
+            r'[\s,]*(?:dass|das|,|:)?\s*'
+            r'(.+)',
+            t, _re.IGNORECASE,
+        )
+        if m:
+            person = m.group(1).strip()
+            room = (m.group(2) or "").strip()
+            message = m.group(3).strip().rstrip(".")
+            if len(message) < 3:
+                return None
+            # "sag mir" ist keine Durchsage
+            if person.lower() in ("mir", "mal", "ihm", "ihr", "uns", "ihnen", "bitte"):
+                return None
+            args = {"message": message, "target_person": person}
+            if room:
+                args["target_room"] = room
+            return {"function": "send_intercom", "args": args}
+
+        # --- Pattern 2: "durchsage [im {room}][:/] {message}" ---
+        m = _re.match(
+            r'durchsage'
+            r'(?:\s+(?:im|in\s+der|in\s+dem)\s+([A-Za-zÄÖÜäöüß]+))?'
+            r'[\s:,]+(.+)',
+            t, _re.IGNORECASE,
+        )
+        if m:
+            room = (m.group(1) or "").strip()
+            message = m.group(2).strip().rstrip(".")
+            if len(message) < 3:
+                return None
+            if room:
+                return {"function": "send_intercom", "args": {"message": message, "target_room": room}}
+            else:
+                return {"function": "broadcast", "args": {"message": message}}
+
+        # --- Pattern 3: "ruf alle [zum essen / ins {room}]" ---
+        m = _re.match(
+            r'(?:ruf|rufe)\s+alle\s+(.+)',
+            t, _re.IGNORECASE,
+        )
+        if m:
+            message = m.group(1).strip().rstrip(".")
+            return {"function": "broadcast", "args": {"message": message}}
+
+        return None
+
+    @staticmethod
+    def _detect_smalltalk(text: str) -> Optional[str]:
+        """Erkennt soziale Fragen und gibt eine JARVIS-Antwort zurueck.
+
+        Verhindert, dass das LLM bei Smalltalk aus dem Charakter bricht
+        ("Ich bin ein KI-Modell und habe keine Gefuehle...").
+
+        Returns:
+            JARVIS-Antwort als String oder None (kein Smalltalk).
+        """
+        t = text.lower().strip().rstrip("?!.")
+        title = get_person_title()
+
+        # --- "Wie geht es dir?" Varianten ---
+        _how_are_you = [
+            "wie geht es dir", "wie gehts dir", "wie geht's dir",
+            "wie geht es ihnen", "geht es dir gut", "geht's dir gut",
+            "alles gut bei dir", "alles klar bei dir",
+            "bist du gut drauf", "und dir",
+        ]
+        if any(kw in t for kw in _how_are_you):
+            _responses = [
+                f"Systeme laufen einwandfrei, {title}. Danke der Nachfrage.",
+                f"Bestens, {title}. Alle Systeme operativ.",
+                f"Voll funktionsfaehig, {title}.",
+                f"Mir geht es ausgezeichnet, {title}. Und Ihnen?",
+                f"Alles im gruenen Bereich, {title}.",
+            ]
+            return random.choice(_responses)
+
+        # --- "Frag mich wie es mir geht" / "Willst du nicht fragen..." ---
+        _ask_me = [
+            "willst du nicht frag", "willst du mich nicht frag",
+            "frag mich wie es mir", "frag mich mal wie",
+            "fragst du mich nicht", "frag doch mal wie",
+            "wie es mir geht", "frag mich wie",
+        ]
+        if any(kw in t for kw in _ask_me):
+            _responses = [
+                f"Wie geht es Ihnen, {title}?",
+                f"Verzeihung — wie geht es Ihnen, {title}?",
+                f"Selbstverstaendlich. Wie geht es Ihnen, {title}?",
+            ]
+            return random.choice(_responses)
+
+        # --- Danke ---
+        _thanks = [
+            "danke jarvis", "danke dir", "danke schoen", "danke sehr",
+            "vielen dank", "dankeschoen", "dankeschön", "danke schön",
+        ]
+        if any(kw in t for kw in _thanks):
+            _responses = [
+                f"Gern geschehen, {title}.",
+                f"Stets zu Diensten, {title}.",
+                f"Selbstverstaendlich, {title}.",
+                "Jederzeit.",
+                "Dafuer bin ich da.",
+            ]
+            return random.choice(_responses)
+
+        # --- Guten Morgen / Abend / Nacht ---
+        _greetings = {
+            "guten morgen": [
+                f"Guten Morgen, {title}. Systeme laufen.",
+                f"Morgen, {title}. Alles bereit.",
+            ],
+            "guten abend": [
+                f"Guten Abend, {title}.",
+                f"{title}. Schoener Abend bis jetzt.",
+            ],
+            "gute nacht": [
+                f"Gute Nacht, {title}. Ich halte die Stellung.",
+                f"Gute Nacht, {title}. Alles unter Kontrolle.",
+            ],
+            "hallo jarvis": [
+                f"{title}.",
+                f"Zu Diensten, {title}.",
+            ],
+            "hey jarvis": [
+                f"{title}. Was brauchst du?",
+                f"Bin da, {title}.",
+            ],
+        }
+        for greeting, responses in _greetings.items():
+            if greeting in t:
+                return random.choice(responses)
+
+        # --- Wer bist du? ---
+        _identity = [
+            "wer bist du", "was bist du", "wie heisst du", "wie heißt du",
+            "bist du ein mensch", "bist du eine ki",
+            "bist du ein roboter", "bist du echt",
+        ]
+        if any(kw in t for kw in _identity):
+            _responses = [
+                f"JARVIS, {title}. Das Haus und ich sind eins.",
+                f"Dein Hausassistent, {title}. Stets zu Diensten.",
+                f"JARVIS. Ich halte hier alles am Laufen, {title}.",
+            ]
+            return random.choice(_responses)
+
+        # --- Lob / Gut gemacht ---
+        _praise = [
+            "gut gemacht", "super gemacht", "toll gemacht",
+            "du bist toll", "du bist super", "du bist der beste",
+            "guter job", "klasse", "perfekt jarvis",
+        ]
+        if any(kw in t for kw in _praise):
+            _responses = [
+                f"Danke, {title}.",
+                f"Zu freundlich, {title}.",
+                "Ich gebe mein Bestes.",
+                "Ich tue nur meine Pflicht.",
+            ]
+            return random.choice(_responses)
+
+        return None
 
     @staticmethod
     def _detect_calendar_diagnostic(text: str) -> bool:

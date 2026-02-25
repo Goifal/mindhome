@@ -1219,6 +1219,31 @@ _ASSISTANT_TOOLS_STATIC = [
     {
         "type": "function",
         "function": {
+            "name": "send_intercom",
+            "description": "Gezielte Durchsage an eine bestimmte Person oder einen bestimmten Raum. Fuer 'Sag Julia dass das Essen fertig ist' oder 'Durchsage im Wohnzimmer: Komm mal bitte'. Fuer Durchsagen an ALLE verwende stattdessen 'broadcast'.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "message": {
+                        "type": "string",
+                        "description": "Die Durchsage-Nachricht",
+                    },
+                    "target_room": {
+                        "type": "string",
+                        "description": "Zielraum (z.B. 'Wohnzimmer', 'Schlafzimmer', 'Kueche')",
+                    },
+                    "target_person": {
+                        "type": "string",
+                        "description": "Zielperson (z.B. 'Julia', 'Manuel'). Der Raum wird automatisch ermittelt.",
+                    },
+                },
+                "required": ["message"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "get_camera_view",
             "description": "Holt und beschreibt ein Kamera-Bild. Z.B. 'Wer ist an der Tuer?' oder 'Zeig mir die Garage'.",
             "parameters": {
@@ -1391,6 +1416,18 @@ _ASSISTANT_TOOLS_STATIC = [
     {
         "type": "function",
         "function": {
+            "name": "get_full_status_report",
+            "description": "Narrativer JARVIS-Statusbericht: Hausstatus, Termine, Wetter, Energie, offene Erinnerungen — alles in einem kurzen Briefing. Fuer 'Statusbericht', 'Briefing', 'Was gibts Neues', 'Lagebericht'.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "get_weather",
             "description": "Aktuelles Wetter von Home Assistant abrufen. Nutze dies wenn der User nach Wetter, Temperatur draussen, Regen oder Wind fragt. Standardmaessig nur aktuelles Wetter, Vorhersage nur wenn explizit gewuenscht.",
             "parameters": {
@@ -1488,11 +1525,11 @@ class FunctionExecutor:
         "delete_jarvis_automation", "manage_inventory",
         "set_timer", "cancel_timer", "get_timer_status",
         "set_reminder", "set_wakeup_alarm", "cancel_alarm", "get_alarms",
-        "broadcast",
+        "broadcast", "send_intercom",
         "get_camera_view", "create_conditional", "list_conditionals",
         "get_energy_report", "web_search", "get_security_score",
         "get_room_climate", "get_active_intents", "get_wellness_status",
-        "get_house_status", "get_weather",
+        "get_house_status", "get_full_status_report", "get_weather",
         "get_device_health", "get_learned_patterns", "describe_doorbell",
     })
 
@@ -3910,6 +3947,69 @@ class FunctionExecutor:
             "message": f"Durchsage an {count} Lautsprecher gesendet: \"{message}\"",
         }
 
+    async def _exec_send_intercom(self, args: dict) -> dict:
+        """Gezielte Durchsage an Person oder Raum."""
+        message = args.get("message", "")
+        if not message:
+            return {"success": False, "message": "Keine Nachricht angegeben."}
+
+        target_room = args.get("target_room", "")
+        target_person = args.get("target_person", "")
+
+        # Person → Raum aufloesen
+        if target_person and not target_room:
+            import assistant.main as main_module
+            brain = main_module.brain
+            if hasattr(brain, "context_builder"):
+                states = await self.ha.get_states()
+                target_room = brain.context_builder.get_person_room(
+                    target_person, states=states,
+                ) or ""
+
+        if not target_room:
+            return {
+                "success": False,
+                "message": f"Raum fuer {'Person ' + target_person if target_person else 'Durchsage'} nicht ermittelt. Bitte Raum angeben.",
+            }
+
+        # Speaker im Zielraum finden
+        speaker = await self._find_speaker_in_room(target_room)
+        if not speaker:
+            return {
+                "success": False,
+                "message": f"Kein Lautsprecher im Raum '{target_room}' gefunden.",
+            }
+
+        # JARVIS-Prefix bei Person: "Julia, das Essen ist fertig"
+        tts_message = message
+        if target_person:
+            tts_message = f"{target_person}, {message}"
+
+        # TTS senden
+        tts_entity = yaml_config.get("tts", {}).get("entity", "tts.piper")
+        alexa_speakers = yaml_config.get("sounds", {}).get("alexa_speakers", [])
+        try:
+            if speaker in alexa_speakers:
+                svc_name = "alexa_media_" + speaker.replace("media_player.", "", 1)
+                await self.ha.call_service(
+                    "notify", svc_name,
+                    {"message": tts_message, "data": {"type": "tts"}},
+                )
+            else:
+                await self.ha.call_service("tts", "speak", {
+                    "entity_id": tts_entity,
+                    "media_player_entity_id": speaker,
+                    "message": tts_message,
+                })
+            target_desc = f"{target_person} im {target_room}" if target_person else target_room
+            return {
+                "success": True,
+                "message": f"Durchsage an {target_desc}: \"{message}\"",
+            }
+        except Exception as e:
+            logger.error("Intercom fehlgeschlagen: %s", e)
+            return {"success": False, "message": f"Durchsage fehlgeschlagen: {e}"}
+
     async def _exec_get_camera_view(self, args: dict) -> dict:
         """Holt und beschreibt ein Kamera-Bild."""
         import assistant.main as main_module
@@ -4159,6 +4259,64 @@ class FunctionExecutor:
             return {"success": True, "message": message}
         except Exception as e:
             return {"success": False, "message": f"Haus-Status fehlgeschlagen: {e}"}
+
+    async def _exec_get_full_status_report(self, args: dict) -> dict:
+        """Aggregiert alle Datenquellen fuer einen narrativen JARVIS-Statusbericht."""
+        import assistant.main as main_module
+        brain = main_module.brain
+        report_parts = []
+
+        # 1. Haus-Status
+        try:
+            house_result = await self._exec_get_house_status({})
+            if house_result.get("success"):
+                report_parts.append(f"HAUSSTATUS:\n{house_result['message']}")
+        except Exception as e:
+            logger.debug("Status-Report: Hausstatus fehlgeschlagen: %s", e)
+
+        # 2. Kalender-Termine
+        try:
+            cal_result = await self._exec_get_calendar_events({"timeframe": "today"})
+            if cal_result.get("success") and cal_result.get("message"):
+                report_parts.append(f"TERMINE HEUTE:\n{cal_result['message']}")
+        except Exception as e:
+            logger.debug("Status-Report: Kalender fehlgeschlagen: %s", e)
+
+        # 3. Wetter
+        try:
+            weather_result = await self._exec_get_weather({"include_forecast": True})
+            if weather_result.get("success") and weather_result.get("message"):
+                report_parts.append(f"WETTER:\n{weather_result['message']}")
+        except Exception as e:
+            logger.debug("Status-Report: Wetter fehlgeschlagen: %s", e)
+
+        # 4. Energie
+        try:
+            if hasattr(brain, "energy_optimizer") and brain.energy_optimizer.enabled:
+                energy_result = await brain.energy_optimizer.get_energy_report()
+                if isinstance(energy_result, dict) and energy_result.get("success"):
+                    report_parts.append(f"ENERGIE:\n{energy_result.get('message', '')}")
+        except Exception as e:
+            logger.debug("Status-Report: Energie fehlgeschlagen: %s", e)
+
+        # 5. Offene Erinnerungen / Intents
+        try:
+            if hasattr(brain, "intent_tracker"):
+                active = await brain.intent_tracker.get_active_intents()
+                if active:
+                    intent_lines = []
+                    for intent in active[:5]:
+                        desc = intent.get("description", intent.get("text", "?"))
+                        intent_lines.append(f"- {desc}")
+                    report_parts.append(f"OFFENE ERINNERUNGEN:\n" + "\n".join(intent_lines))
+        except Exception as e:
+            logger.debug("Status-Report: Intents fehlgeschlagen: %s", e)
+
+        if not report_parts:
+            return {"success": False, "message": "Keine Daten fuer Statusbericht verfuegbar."}
+
+        raw_report = "\n\n".join(report_parts)
+        return {"success": True, "message": raw_report}
 
     async def _exec_get_weather(self, args: dict) -> dict:
         """Aktuelles Wetter und Vorhersage von Home Assistant."""
