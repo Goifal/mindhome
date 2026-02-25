@@ -1,10 +1,13 @@
 """
 Function Validator - Prueft Function Calls auf Sicherheit und Plausibilitaet.
 Verhindert gefaehrliche oder unsinnige Aktionen.
+
+Feature 10: Daten-basierter Widerspruch — prueft Live-Daten vor Ausfuehrung
+und liefert konkreten Pushback-Kontext (offene Fenster, leerer Raum, etc.).
 """
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 
 from .config import yaml_config
