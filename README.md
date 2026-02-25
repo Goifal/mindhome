@@ -99,6 +99,17 @@ chmod +x install.sh
 
 Siehe [docs/PROJECT_MINDHOME_ASSISTANT.md](docs/PROJECT_MINDHOME_ASSISTANT.md) fuer die vollstaendige Dokumentation.
 
+### ESPHome Voice Satellites
+
+MindHome unterstuetzt ESP32-basierte Sprach-Satellites fuer die Spracheingabe in jedem Raum.
+
+| Geraet | Mikrofon | Einsatz | Preis |
+|---|---|---|---|
+| **ReSpeaker XVF3800** | 4x MEMS + DSP | Hauptraeume (Kueche, Wohnzimmer) | ~55 EUR |
+| **M5Stack Atom Echo** | 1x PDM | Nebenraeume (Flur, Bad) | ~12 EUR |
+
+ESPHome-Konfigurationen liegen unter `esphome/`. Siehe [docs/SPEAKER_RECOGNITION.md](docs/SPEAKER_RECOGNITION.md) fuer Details.
+
 ---
 
 ## Architektur

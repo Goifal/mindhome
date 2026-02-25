@@ -1,0 +1,5 @@
+# Echte Secrets (enthaelt WiFi-Passwoerter, API-Keys)
+secrets.yaml
+
+# ESPHome Build-Cache
+.esphome/
