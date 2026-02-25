@@ -535,6 +535,36 @@ _ASSISTANT_TOOLS_STATIC = [
     {
         "type": "function",
         "function": {
+            "name": "recommend_music",
+            "description": "Smart DJ: Empfiehlt und spielt kontextbewusste Musik basierend auf Stimmung, Aktivitaet und Tageszeit. 'recommend' zeigt Vorschlag, 'play' spielt direkt ab, 'feedback' speichert Bewertung, 'status' zeigt aktuellen Kontext.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["recommend", "play", "feedback", "status"],
+                        "description": "DJ-Aktion: recommend=Vorschlag anzeigen, play=direkt abspielen, feedback=Bewertung, status=Kontext anzeigen",
+                    },
+                    "positive": {
+                        "type": "boolean",
+                        "description": "Feedback: true=gefaellt, false=gefaellt nicht (nur bei action=feedback)",
+                    },
+                    "room": {
+                        "type": "string",
+                        "description": "Zielraum fuer Wiedergabe (optional)",
+                    },
+                    "genre": {
+                        "type": "string",
+                        "description": "Optionaler Genre-Override (z.B. 'party_hits', 'focus_lofi', 'jazz_dinner')",
+                    },
+                },
+                "required": ["action"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "get_media",
             "description": "NUR zum Abfragen: Zeigt alle Media Player mit Wiedergabestatus, Titel und Lautstaerke. NICHT zum Steuern — dafuer play_media nutzen.",
             "parameters": {
@@ -1557,7 +1587,7 @@ class FunctionExecutor:
         "get_room_climate", "get_active_intents", "get_wellness_status",
         "get_house_status", "get_full_status_report", "get_weather",
         "get_device_health", "get_learned_patterns", "describe_doorbell",
-        "manage_protocol",
+        "manage_protocol", "recommend_music",
     })
 
     # Qwen3 uebersetzt deutsche Raumnamen oft ins Englische
@@ -4557,3 +4587,30 @@ class FunctionExecutor:
                 return {"success": False, "message": f"Unbekannte Aktion: {action}"}
         except Exception as e:
             return {"success": False, "message": f"Protokoll-Fehler: {e}"}
+
+    async def _exec_recommend_music(self, args: dict) -> dict:
+        """Feature 11: Smart DJ — kontextbewusste Musikempfehlungen."""
+        import assistant.main as main_module
+        brain = main_module.brain
+        dj = brain.music_dj
+        action = args.get("action", "recommend")
+        person = getattr(brain, "_current_person", "") or ""
+
+        try:
+            if action == "recommend":
+                return await dj.get_recommendation(person=person)
+            elif action == "play":
+                return await dj.play_recommendation(
+                    person=person,
+                    room=args.get("room"),
+                    genre_override=args.get("genre"),
+                )
+            elif action == "feedback":
+                positive = args.get("positive", True)
+                return await dj.record_feedback(positive=positive, person=person)
+            elif action == "status":
+                return await dj.get_music_status()
+            else:
+                return {"success": False, "message": f"Unbekannte DJ-Aktion: {action}"}
+        except Exception as e:
+            return {"success": False, "message": f"Music-DJ Fehler: {e}"}

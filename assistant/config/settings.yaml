@@ -885,3 +885,14 @@ web_search:
   searxng_url: http://localhost:8888
   max_results: 5
   timeout_seconds: 10
+# --- Smart DJ (Feature 11) ---
+music_dj:
+  enabled: true
+  proactive_enabled: false
+  proactive_interval_minutes: 60
+  cooldown_minutes: 30
+  default_volume: 40
+  suppress_during:
+  - sleeping
+  - in_call
+  custom_queries: {}

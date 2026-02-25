@@ -45,6 +45,7 @@ from .memory import MemoryManager
 from .memory_extractor import MemoryExtractor
 from .model_router import ModelRouter
 from .mood_detector import MoodDetector
+from .music_dj import MusicDJ
 from .ollama_client import OllamaClient
 from .ambient_audio import AmbientAudioClassifier
 from .ocr import OCREngine
@@ -240,6 +241,9 @@ class AssistantBrain(BrainCallbacksMixin):
         self.protocol_engine = ProtocolEngine(self.ollama, self.executor)
         self.spontaneous = SpontaneousObserver(self.ha, self.activity)
 
+        # Feature 11: Smart DJ (kontextbewusste Musikempfehlungen)
+        self.music_dj = MusicDJ(self.mood, self.activity)
+
         # Letzte fehlgeschlagene Anfrage fuer Retry bei "Ja"
         self._last_failed_query: Optional[str] = None
 
@@ -402,6 +406,11 @@ class AssistantBrain(BrainCallbacksMixin):
             self._task_registry.create_task(
                 self._weekly_learning_report_loop(), name="weekly_learning_report"
             )
+
+        # Feature 11: Smart DJ (kontextbewusste Musikempfehlungen)
+        await _safe_init("MusicDJ", self.music_dj.initialize(redis_client=self.memory.redis))
+        self.music_dj.set_notify_callback(self._handle_music_suggestion)
+        self.music_dj.set_executor(self.executor)
 
         # Jarvis-Feature 10: Daten-basierter Widerspruch — HA-Client fuer Live-Daten
         self.validator.set_ha_client(self.ha)
