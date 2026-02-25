@@ -551,7 +551,7 @@ class RoutineEngine:
                 issues: list - Offene Probleme (Fenster, Tueren)
         """
         if not self.goodnight_enabled:
-            return {"text": f"Gute Nacht, {get_person_title()}. Alles unter Kontrolle.", "actions": [], "issues": []}
+            return {"text": f"Gute Nacht, {get_person_title(person)}. Alles unter Kontrolle.", "actions": [], "issues": []}
 
         # 1. Sicherheits-Check
         issues = await self._run_safety_checks()
@@ -775,13 +775,13 @@ class RoutineEngine:
                     routine_type="goodnight",
                 )
             except Exception:
-                title = get_person_title()
+                title = get_person_title(person)
                 system_prompt = (
                     f"Du bist {settings.assistant_name}. Butler-Stil, kurz, trocken. Deutsch. "
                     f"Sprich den User mit '{title}' an. Kein unterwuerfiger Ton."
                 )
         else:
-            title = get_person_title()
+            title = get_person_title(person)
             system_prompt = (
                 f"Du bist {settings.assistant_name}. Butler-Stil, kurz, trocken. Deutsch. "
                 f"Sprich den User mit '{title}' an. Kein unterwuerfiger Ton."
@@ -794,11 +794,11 @@ class RoutineEngine:
                 ],
                 model=settings.model_fast,
             )
-            return response.get("message", {}).get("content", f"Gute Nacht, {get_person_title()}. Systeme fahren runter.")
+            return response.get("message", {}).get("content", f"Gute Nacht, {get_person_title(person)}. Systeme fahren runter.")
         except Exception as e:
             logger.error("Gute-Nacht LLM Fehler: %s", e)
             # Fallback ohne LLM
-            text = f"Gute Nacht, {get_person_title()}"
+            text = f"Gute Nacht, {get_person_title(person)}"
             if issues:
                 text += f". Noch offen: {issues[0]['message']}"
             return text + "."
