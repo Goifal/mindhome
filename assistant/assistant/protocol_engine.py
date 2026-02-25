@@ -131,12 +131,12 @@ class ProtocolEngine:
         await self.redis.set(f"{_PREFIX}:{name_normalized}", json.dumps(protocol))
         await self.redis.sadd(_LIST_KEY, name_normalized)
 
-        title = get_person_title()
+        title = get_person_title(person)
         return {
             "success": True,
             "message": (
                 f"Protokoll '{name}' gespeichert mit {len(steps)} Schritten, {title}. "
-                f"Sagen Sie einfach '{name}' um es auszufuehren."
+                f"Sag einfach '{name}' um es auszufuehren."
             ),
             "steps": steps,
         }
@@ -195,7 +195,7 @@ class ProtocolEngine:
             json.dumps(last_exec),
         )
 
-        title = get_person_title()
+        title = get_person_title(person)
         if errors:
             return {
                 "success": False,
@@ -216,7 +216,7 @@ class ProtocolEngine:
             "steps_executed": len(executed),
         }
 
-    async def undo_protocol(self, name: str) -> dict:
+    async def undo_protocol(self, name: str, person: str = "") -> dict:
         """Macht ein Protokoll rueckgaengig.
 
         Args:
@@ -261,7 +261,7 @@ class ProtocolEngine:
         # Last-Executed Marker loeschen
         await self.redis.delete(f"{_PREFIX}:last_executed:{name_normalized}")
 
-        title = get_person_title()
+        title = get_person_title(person)
         return {
             "success": True,
             "message": f"Protokoll '{protocol.get('name', name)}' rueckgaengig gemacht, {title}.",

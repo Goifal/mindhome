@@ -1294,7 +1294,7 @@ class PersonalityEngine:
         prompt = SYSTEM_PROMPT_TEMPLATE.format(
             assistant_name=self.assistant_name,
             user_name=settings.user_name,
-            title=get_person_title(),
+            title=get_person_title(current_person_name),
             max_sentences=max_sentences,
             time_style=time_style,
             mood_section=mood_section,
@@ -1482,7 +1482,7 @@ class PersonalityEngine:
     # Notification & Routine Prompts (Personality-Konsistenz)
     # ------------------------------------------------------------------
 
-    def build_notification_prompt(self, urgency: str = "low") -> str:
+    def build_notification_prompt(self, urgency: str = "low", person: str = "") -> str:
         """Baut einen personality-konsistenten Prompt fuer proaktive Meldungen.
 
         Im Gegensatz zum Chat-Prompt ist dieser kompakter (fuer Fast-Model),
@@ -1515,8 +1515,8 @@ class PersonalityEngine:
         else:
             tone = "locker, persoenlich"
 
-        # Titel-Haeufigkeit
-        _title = get_person_title()
+        # Titel-Haeufigkeit (person-aware)
+        _title = get_person_title(person) if person else get_person_title()
         if formality >= 70:
             sir_rule = f'"{_title}" haeufig verwenden.'
         elif formality >= 50:
@@ -1666,7 +1666,7 @@ Kein unterwuerfiger Ton. Du bist ein brillanter Butler, kein Chatbot."""
         return None
 
     def narrate_device_event(
-        self, entity_id: str, event_type: str, detail: str = ""
+        self, entity_id: str, event_type: str, detail: str = "", person: str = ""
     ) -> Optional[str]:
         """Erzeugt eine persoenlichkeits-basierte Geraete-Meldung.
 
@@ -1695,7 +1695,7 @@ Kein unterwuerfiger Ton. Du bist ein brillanter Butler, kein Chatbot."""
 
         # Titel anhaengen bei formeller Anrede
         formality = getattr(self, '_current_formality', self.formality_start)
-        title = get_person_title()
+        title = get_person_title(person) if person else get_person_title()
         if formality >= 50 and random.random() < 0.5:
             text = f"{title}, {text[0].lower()}{text[1:]}"
 

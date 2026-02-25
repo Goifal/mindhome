@@ -57,6 +57,30 @@ class SpontaneousObserver:
         """Setzt den Callback fuer Beobachtungen."""
         self._notify_callback = callback
 
+    async def _get_title_for_present(self) -> str:
+        """Gibt die korrekte Anrede fuer die anwesenden Personen zurueck."""
+        try:
+            states = await self.ha.get_states()
+            if states:
+                persons = []
+                for s in states:
+                    if s.get("entity_id", "").startswith("person.") and s.get("state") == "home":
+                        pname = s.get("attributes", {}).get("friendly_name", "")
+                        if pname:
+                            persons.append(pname)
+                if len(persons) == 1:
+                    return get_person_title(persons[0])
+                elif len(persons) > 1:
+                    titles = []
+                    for p in persons:
+                        t = get_person_title(p)
+                        if t not in titles:
+                            titles.append(t)
+                    return ", ".join(titles)
+        except Exception:
+            pass
+        return get_person_title()
+
     async def stop(self):
         """Stoppt den Beobachtungs-Loop."""
         self._running = False
@@ -196,7 +220,7 @@ class SpontaneousObserver:
             diff_pct = ((today_kwh - week_kwh) / week_kwh) * 100
 
             if abs(diff_pct) >= 15:
-                title = get_person_title()
+                title = await self._get_title_for_present()
                 if diff_pct > 0:
                     message = (
                         f"{title}, der Energieverbrauch liegt heute {diff_pct:.0f}% "
@@ -232,7 +256,7 @@ class SpontaneousObserver:
                         try:
                             temp_f = float(temp)
                             if temp_f >= 25:
-                                title = get_person_title()
+                                title = await self._get_title_for_present()
                                 return {
                                     "message": (
                                         f"{title}, es hat draussen {temp_f:.0f} Grad "
@@ -246,7 +270,7 @@ class SpontaneousObserver:
                             pass
 
                     if condition in ("snowy", "snowy-rainy"):
-                        title = get_person_title()
+                        title = await self._get_title_for_present()
                         return {
                             "message": (
                                 f"{title}, es schneit draussen. "
@@ -290,7 +314,7 @@ class SpontaneousObserver:
 
             if today_count > prev_record and today_count >= 10:
                 await self.redis.setex(record_key, 90 * 86400, str(today_count))
-                title = get_person_title()
+                title = await self._get_title_for_present()
                 return {
                     "message": (
                         f"{title}, heute wurden bereits {today_count} Geraete "
@@ -340,7 +364,7 @@ class SpontaneousObserver:
 
             if top_count >= 7:
                 friendly = top_entity.split(".", 1)[-1].replace("_", " ").title()
-                title = get_person_title()
+                title = await self._get_title_for_present()
                 return {
                     "message": (
                         f"{title}, {friendly} wurde diese Woche bereits "

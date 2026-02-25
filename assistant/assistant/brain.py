@@ -1044,7 +1044,7 @@ class AssistantBrain(BrainCallbacksMixin):
                                 "role": "system",
                                 "content": (
                                     "Du bist JARVIS. Antworte auf Deutsch, 1-2 Saetze. "
-                                    f"Souveraen, knapp, trocken. '{get_person_title()}' sparsam einsetzen. "
+                                    f"Souveraen, knapp, trocken. '{get_person_title(self._current_person)}' sparsam einsetzen. "
                                     "Keine Aufzaehlungen. "
                                     "WICHTIG: Uhrzeiten EXAKT uebernehmen, NIEMALS aendern "
                                     "oder runden. 'Viertel vor 8' bleibt 'Viertel vor 8'. "
@@ -1436,7 +1436,7 @@ class AssistantBrain(BrainCallbacksMixin):
                 if isinstance(raw_result, dict) and raw_result.get("success"):
                     raw_data = raw_result["message"]
                     # LLM generiert narrativen Bericht im JARVIS-Stil
-                    title = get_person_title()
+                    title = get_person_title(self._current_person)
                     narrative_prompt = (
                         f"Du bist JARVIS. Fasse diesen Haus-Status als kurzes Briefing zusammen. "
                         f"3-5 Saetze, narrativ, priorisiert (Wichtiges zuerst, Langweiliges weglassen). "
@@ -2451,9 +2451,9 @@ class AssistantBrain(BrainCallbacksMixin):
                             "content": (
                                 "Du bist JARVIS. Antworte auf Deutsch, 1-2 Saetze. "
                                 f"{_form_hint} {_sarc_hint}{_mood_hint} "
-                                f"'{get_person_title()}' sparsam einsetzen. "
+                                f"'{get_person_title(self._current_person)}' sparsam einsetzen. "
                                 "Keine Aufzaehlungen. Zahlen und Uhrzeiten EXAKT uebernehmen. "
-                                f"Beispiele: 'Fuenf Grad, bewoelkt. Jacke empfohlen, {get_person_title()}.' | "
+                                f"Beispiele: 'Fuenf Grad, bewoelkt. Jacke empfohlen, {get_person_title(self._current_person)}.' | "
                                 "'Morgen um Viertel vor acht steht eine Blutabnahme an.' | "
                                 "'Im Buero 22.3 Grad, Luftfeuchtigkeit 51%. Passt.'"
                             ),
@@ -3056,11 +3056,11 @@ class AssistantBrain(BrainCallbacksMixin):
 
         # Kontext-Kommentar (JARVIS-Persoenlichkeit)
         if temp <= 0:
-            result += f" Handschuhe empfohlen, {get_person_title()}."
+            result += f" Handschuhe empfohlen, {get_person_title(self._current_person)}."
         elif temp <= 5:
             result += " Jacke empfohlen."
         elif temp >= 30:
-            result += f" Genuegend trinken, {get_person_title()}."
+            result += f" Genuegend trinken, {get_person_title(self._current_person)}."
 
         # --- Forecast-Zeilen verarbeiten ---
         if forecast_lines:
@@ -3121,15 +3121,15 @@ class AssistantBrain(BrainCallbacksMixin):
         if "MORGEN" in raw_upper:
             prefix_single = "Morgen steht"
             prefix_multi = "Morgen stehen"
-            prefix_free = f"Morgen ist frei, {get_person_title()}."
+            prefix_free = f"Morgen ist frei, {get_person_title(self._current_person)}."
         elif "WOCHE" in raw_upper:
             prefix_single = "Diese Woche steht"
             prefix_multi = "Diese Woche stehen"
-            prefix_free = f"Die Woche ist frei, {get_person_title()}."
+            prefix_free = f"Die Woche ist frei, {get_person_title(self._current_person)}."
         else:
             prefix_single = "Heute steht"
             prefix_multi = "Heute stehen"
-            prefix_free = f"Heute ist nichts geplant, {get_person_title()}."
+            prefix_free = f"Heute ist nichts geplant, {get_person_title(self._current_person)}."
 
         # "KEINE TERMINE" Varianten
         if "KEINE TERMINE" in raw_upper or "(0)" in raw:
@@ -3166,7 +3166,7 @@ class AssistantBrain(BrainCallbacksMixin):
             events.append(title.strip())
 
         if len(events) == 1:
-            return f"{prefix_single} {events[0]} an, {get_person_title()}."
+            return f"{prefix_single} {events[0]} an, {get_person_title(self._current_person)}."
         listing = ", ".join(events[:-1]) + f" und {events[-1]}"
         return f"{prefix_multi} {len(events)} Termine an: {listing}."
 
@@ -3224,7 +3224,7 @@ class AssistantBrain(BrainCallbacksMixin):
 
         lines = raw.strip().split("\n")
         parts = []
-        title = get_person_title()
+        title = get_person_title(self._current_person)
 
         _sec_map = {
             "disarmed": "Alarmanlage aus",
@@ -5351,7 +5351,7 @@ class AssistantBrain(BrainCallbacksMixin):
             JARVIS-Antwort als String oder None (kein Smalltalk).
         """
         t = text.lower().strip().rstrip("?!.")
-        title = get_person_title()
+        title = get_person_title(self._current_person)
 
         # --- "Wie geht es dir?" Varianten ---
         _how_are_you = [
@@ -6139,8 +6139,8 @@ Regeln:
                 report = await self.learning_observer.get_learning_report()
                 report_text = self.learning_observer.format_learning_report(report)
                 if report_text and report.get("total_observations", 0) > 0:
-                    title = get_person_title()
-                    message = f"{title}, hier ist Ihr woechentlicher Lern-Bericht:\n{report_text}"
+                    title = get_person_title()  # Background-Task: primary_user
+                    message = f"{title}, hier ist dein woechentlicher Lern-Bericht:\n{report_text}"
                     if await self._callback_should_speak("low"):
                         formatted = await self._safe_format(message, "low")
                         await self._speak_and_emit(formatted)
@@ -6497,7 +6497,7 @@ Regeln:
                             msg = f"Termin '{summary}' in {int(minutes_until)} Minuten"
                             if location:
                                 msg += f" ({location})"
-                            msg += f". Rechtzeitig los, {get_person_title()}."
+                            msg += f". Rechtzeitig los, {get_person_title(self._current_person)}."
                             predictions.append({
                                 "message": msg,
                                 "urgency": "medium",

@@ -654,7 +654,7 @@ class InsightEngine:
             "check": "away_devices",
             "urgency": "low",
             "message": (
-                f"{get_person_title()}, Sie sind seit {hours_away:.0f} Stunden weg — "
+                f"{get_person_title()}, du bist seit {hours_away:.0f} Stunden weg — "
                 f"{'. '.join(issues)}."
             ),
             "data": {
