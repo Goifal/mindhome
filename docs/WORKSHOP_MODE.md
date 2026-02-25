@@ -954,4 +954,4 @@ mha:repair:maintenance:{tool_id}        Hash  — Wartungs-Schedule
 mha:repair:snippet:{name}              Hash  — Code-Snippet
 mha:repair:journal:{YYYY-MM-DD}         List  — Tages-Journal
 mha:repair:skills:{person}             Hash  — Skills pro Person
-m
+mha:repair:manual_active                String (TTL 24h) — Manueller Aktivierungs-Flag
