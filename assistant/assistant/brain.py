@@ -1745,8 +1745,9 @@ class AssistantBrain(BrainCallbacksMixin):
                 hint_msg = (
                     f"Du MUSST jetzt einen Function-Call ausfuehren! "
                     f"Der User hat gesagt: \"{text}\". "
-                    f"Das ist ein Geraete-Steuerungsbefehl. "
-                    f"Antworte NUR mit einem Tool-Call (set_cover, set_light, set_climate, etc.). "
+                    f"Nutze den passenden Tool-Call: "
+                    f"Fuer Status-Abfragen: get_lights, get_covers, get_climate, get_entity_state, get_house_status. "
+                    f"Fuer Steuerung: set_light, set_cover, set_climate. "
                     f"KEIN Text. NUR der Function-Call."
                 )
                 retry_messages = messages + [
@@ -2204,6 +2205,9 @@ class AssistantBrain(BrainCallbacksMixin):
                 if retry_text:
                     from .ollama_client import strip_think_tags
                     retry_text = strip_think_tags(retry_text).strip()
+                # Retry-Text auch filtern (kann ebenfalls Reasoning enthalten)
+                if retry_text:
+                    retry_text = self._filter_response(retry_text)
                 if retry_text:
                     response_text = retry_text
                     logger.info("Sprach-Retry erfolgreich: '%s'", response_text[:80])
@@ -2921,11 +2925,18 @@ class AssistantBrain(BrainCallbacksMixin):
             "Oh,", "Oh!",
         ])
         for phrase in banned_phrases:
-            # Case-insensitive Entfernung
-            idx = text.lower().find(phrase.lower())
-            while idx != -1:
-                text = text[:idx] + text[idx + len(phrase):]
-                idx = text.lower().find(phrase.lower())
+            # Case-insensitive Entfernung mit Wortgrenzen-Check
+            # Verhindert dass "Ich bin ein KI" aus "Ich bin ein KI-Modell"
+            # entfernt wird und "-Modell" uebrig laesst
+            escaped = re.escape(phrase)
+            # Wortgrenze am Ende nur wenn Phrase mit Buchstabe endet
+            boundary = r"\b" if phrase[-1:].isalpha() else ""
+            text = re.sub(escaped + boundary, "", text, flags=re.IGNORECASE)
+        # Bereinigung nach Phrasen-Entfernung
+        text = re.sub(r"\s{2,}", " ", text).strip()
+        text = re.sub(r"^[,;:\-–—]\s*", "", text).strip()
+        if text:
+            text = text[0].upper() + text[1:]
 
         # 2. Banned Starters am Satzanfang entfernen
         banned_starters = filter_config.get("banned_starters", [
