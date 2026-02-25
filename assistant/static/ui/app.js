@@ -573,7 +573,7 @@ function renderCurrentTab() {
       case 'tab-house-status': c.innerHTML = renderHouseStatus(); break;
       case 'tab-devices': c.innerHTML = renderDevices(); loadMindHomeEntities(); break;
       case 'tab-covers': c.innerHTML = renderCovers(); loadCoverEntities(); break;
-      case 'tab-security': c.innerHTML = renderSecurity(); loadApiKey(); loadNotifyChannels(); break;
+      case 'tab-security': c.innerHTML = renderSecurity(); loadApiKey(); loadNotifyChannels(); loadEmergencyProtocols(); break;
       case 'tab-autonomie': c.innerHTML = renderAutonomie(); loadSnapshots(); loadOptStatus(); break;
       case 'tab-eastereggs': c.innerHTML = renderEasterEggs(); loadEasterEggs(); break;
       case 'tab-system': c.innerHTML = renderSystem(); loadSystemStatus(); break;
@@ -2191,10 +2191,8 @@ function renderSecurity() {
   ) +
   // --- Phase 17: Notfall-Protokolle ---
   sectionWrap('&#127752;', 'Notfall-Protokolle',
-    fInfo('Bei CRITICAL Events (Rauch, Einbruch, Wasser) werden automatisch Aktionen ausgefuehrt. Jedes Protokoll kann einzeln aktiviert werden.') +
-    renderEmergencyProtocol('fire', 'Feuer / Rauch', 'Rauchmelder loest aus', '&#128293;') +
-    renderEmergencyProtocol('intrusion', 'Einbruch / Alarm', 'Alarmsystem wird ausgeloest', '&#128680;') +
-    renderEmergencyProtocol('water_leak', 'Wasserleck', 'Wassersensor schlaegt an', '&#128167;')
+    fInfo('Bei CRITICAL Events (Rauch, Einbruch, Wasser) werden automatisch Aktionen ausgefuehrt. Jedes Protokoll kann einzeln aktiviert werden. Geraete werden ueber die Rollenzuweisung zugeordnet.') +
+    '<div id="emergencyProtocolsContainer" style="color:var(--text-muted);font-size:12px;padding:8px;">Lade Notfall-Protokolle...</div>'
   ) +
   // --- Phase 17: Interrupt-Queue ---
   sectionWrap('&#9889;', 'Interrupt-Queue',
@@ -2213,110 +2211,203 @@ function renderSecurity() {
   );
 }
 
-function renderEmergencyProtocol(key, title, description, icon) {
-  const proto = getPath(S, 'emergency_protocols.' + key) || {};
-  const actions = proto.actions || [];
-  const enabled = proto.enabled !== false && actions.length > 0;
+// ---- Notfall-Protokolle (Emergency Protocols with Entity Assignment) ----
+const EP_PROTOCOLS = [
+  { key: 'fire', title: 'Feuer / Rauch', desc: 'Rauchmelder loest aus — Lichter an, Rolllaeden offen, Durchsage', icon: '&#128293;', feature: 'fire_co',
+    roles: {light:'Lichter einschalten', cover:'Rolllaeden oeffnen', tts_speaker:'Durchsage-Speaker', emergency_lock:'Schloesser entriegeln', hvac:'Heizung/Klima aus'} },
+  { key: 'intrusion', title: 'Einbruch / Alarm', desc: 'Alarmsystem wird ausgeloest — Lichter an, Sirene, Durchsage', icon: '&#128680;', feature: 'emergency',
+    roles: {light:'Lichter einschalten', siren:'Sirene aktivieren', tts_speaker:'Durchsage-Speaker', lock:'Schloesser verriegeln', cover:'Rolllaeden schliessen'} },
+  { key: 'water_leak', title: 'Wasserleck', desc: 'Wassersensor schlaegt an — Ventile zu, Heizung aus, Durchsage', icon: '&#128167;', feature: 'water_leak',
+    roles: {valve:'Ventile schliessen', heating:'Heizung aus', tts_speaker:'Durchsage-Speaker', light:'Lichter einschalten'} },
+];
+let _epData = {}; // { fire: {entities: [...], config: {...}}, ... }
+let _epExpanded = {};
 
-  let actionsHtml = '<div id="ep_actions_' + key + '" style="margin-top:8px;">';
-  actions.forEach((a, idx) => {
-    const domain = a.domain || '?';
-    const service = a.service || '?';
-    const target = a.target || '';
-    const data = a.data ? JSON.stringify(a.data) : '';
-    const desc = target === 'all' ? 'Alle ' + domain : (target || (data || domain + '.' + service));
-    actionsHtml += '<div style="display:flex;align-items:center;gap:6px;padding:6px 8px;margin:3px 0;background:var(--bg-primary);border-radius:6px;font-size:12px;border:1px solid var(--border);">' +
-      '<span style="color:var(--text-muted);min-width:90px;font-family:var(--mono,monospace);font-size:11px;">' + esc(domain) + '.' + esc(service) + '</span>' +
-      '<span style="flex:1;">' + esc(desc) + '</span>' +
-      '<button class="btn btn-ghost" style="padding:2px 6px;font-size:14px;color:var(--danger);min-width:auto;" onclick="removeEmergencyAction(\'' + key + '\',' + idx + ')" title="Aktion entfernen">&#10005;</button>' +
-    '</div>';
-  });
-  if (actions.length === 0) {
-    actionsHtml += '<div style="color:var(--text-muted);font-size:12px;padding:8px;">Keine Aktionen definiert. Klicke + um eine hinzuzufuegen.</div>';
-  }
-  actionsHtml += '</div>';
-
-  // Add action form
-  actionsHtml += '<div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;">' +
-    '<select id="ep_domain_' + key + '" style="font-size:11px;padding:4px 6px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text-primary);width:100px;">' +
-      '<option value="light">light</option><option value="cover">cover</option><option value="climate">climate</option>' +
-      '<option value="lock">lock</option><option value="switch">switch</option><option value="notify">notify</option>' +
-      '<option value="media_player">media_player</option><option value="siren">siren</option>' +
-    '</select>' +
-    '<select id="ep_service_' + key + '" style="font-size:11px;padding:4px 6px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text-primary);width:120px;">' +
-      '<option value="turn_on">turn_on</option><option value="turn_off">turn_off</option><option value="open_cover">open_cover</option>' +
-      '<option value="close_cover">close_cover</option><option value="lock">lock</option><option value="unlock">unlock</option>' +
-      '<option value="notify">notify</option>' +
-    '</select>' +
-    '<select id="ep_target_' + key + '" style="font-size:11px;padding:4px 6px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text-primary);width:80px;">' +
-      '<option value="all">Alle</option><option value="">Spezifisch</option>' +
-    '</select>' +
-    '<button class="btn btn-secondary" style="padding:4px 10px;font-size:12px;" onclick="addEmergencyAction(\'' + key + '\')">+ Aktion</button>' +
-  '</div>';
-
-  return '<div id="ep_' + key + '" style="padding:12px;margin-bottom:10px;background:var(--bg-secondary);border-radius:8px;border-left:3px solid ' + (enabled?'var(--success)':'var(--text-muted)') + ';">' +
-    '<div style="display:flex;align-items:center;justify-content:space-between;">' +
-      '<div style="display:flex;align-items:center;gap:8px;">' +
-        '<span style="font-size:18px;">' + icon + '</span>' +
-        '<div>' +
-          '<span style="font-weight:600;">' + title + '</span>' +
-          '<div style="font-size:11px;color:var(--text-secondary);margin-top:1px;">' + description + '</div>' +
-        '</div>' +
-      '</div>' +
-      '<label class="toggle" style="margin:0;" onclick="event.stopPropagation()">' +
-        '<input type="checkbox" data-path="emergency_protocols.' + key + '.enabled" ' + (enabled?'checked':'') + '>' +
-        '<span class="toggle-track"></span><span class="toggle-thumb"></span>' +
-      '</label>' +
-    '</div>' +
-    actionsHtml +
-  '</div>';
-}
-
-function addEmergencyAction(key) {
-  const domain = document.getElementById('ep_domain_' + key).value;
-  const service = document.getElementById('ep_service_' + key).value;
-  const target = document.getElementById('ep_target_' + key).value;
-  if (!S.emergency_protocols) S.emergency_protocols = {};
-  if (!S.emergency_protocols[key]) S.emergency_protocols[key] = { enabled: true, actions: [] };
-  if (!S.emergency_protocols[key].actions) S.emergency_protocols[key].actions = [];
-  const action = { domain, service };
-  if (target) action.target = target;
-  S.emergency_protocols[key].actions.push(action);
-  _markDirty();
-  _refreshEmergencySection();
-}
-
-function removeEmergencyAction(key, idx) {
-  if (!S.emergency_protocols || !S.emergency_protocols[key]) return;
-  const actions = S.emergency_protocols[key].actions || [];
-  if (idx >= 0 && idx < actions.length) {
-    actions.splice(idx, 1);
-    _markDirty();
-    _refreshEmergencySection();
-  }
-}
-
-function _refreshEmergencySection() {
-  // Re-render all three protocol blocks
-  const keys = [
-    ['fire', 'Feuer / Rauch', 'Rauchmelder loest aus', '&#128293;'],
-    ['intrusion', 'Einbruch / Alarm', 'Alarmsystem wird ausgeloest', '&#128680;'],
-    ['water_leak', 'Wasserleck', 'Wassersensor schlaegt an', '&#128167;']
-  ];
-  for (const [k, t, d, i] of keys) {
-    const el = document.getElementById('ep_' + k);
-    if (el) {
-      const tmp = document.createElement('div');
-      tmp.innerHTML = renderEmergencyProtocol(k, t, d, i);
-      el.replaceWith(tmp.firstElementChild);
+async function loadEmergencyProtocols() {
+  const c = document.getElementById('emergencyProtocolsContainer');
+  if (!c) return;
+  try {
+    // Load config + entities for each protocol
+    for (const proto of EP_PROTOCOLS) {
+      const [entities, config] = await Promise.all([
+        api('/api/ui/security/entities/' + proto.feature).catch(() => []),
+        api('/api/ui/security/emergency/config').catch(() => ({})),
+      ]);
+      _epData[proto.key] = { entities: Array.isArray(entities) ? entities : [], config: config || {} };
     }
+    renderEmergencyProtocols();
+  } catch(e) {
+    c.innerHTML = '<div style="color:var(--danger);padding:8px;">Fehler: ' + esc(e.message) + '</div>';
   }
 }
 
-function _markDirty() {
-  // Mark settings as changed (the save button highlights)
-  const saveBtn = document.querySelector('.btn-save, [onclick*="saveAll"]');
-  if (saveBtn) saveBtn.style.boxShadow = '0 0 8px var(--accent)';
+function renderEmergencyProtocols() {
+  const c = document.getElementById('emergencyProtocolsContainer');
+  if (!c) return;
+  c.innerHTML = EP_PROTOCOLS.map(proto => {
+    const data = _epData[proto.key] || { entities: [], config: {} };
+    const yamlProto = getPath(S, 'emergency_protocols.' + proto.key) || {};
+    const enabled = yamlProto.enabled !== false && (yamlProto.actions || []).length > 0;
+    const expanded = _epExpanded[proto.key] || false;
+    const entityCount = data.entities.filter(e => e.is_active).length;
+
+    let html = '<div style="margin-bottom:12px;background:var(--bg-secondary);border-radius:10px;border-left:3px solid ' + (enabled ? 'var(--success)' : 'var(--text-muted)') + ';overflow:hidden;">';
+
+    // Header
+    html += '<div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px;cursor:pointer;" onclick="toggleEpExpand(\'' + proto.key + '\')">';
+    html += '<div style="display:flex;align-items:center;gap:10px;">';
+    html += '<span style="font-size:22px;">' + proto.icon + '</span>';
+    html += '<div>';
+    html += '<div style="font-weight:600;font-size:14px;">' + proto.title + '</div>';
+    html += '<div style="font-size:11px;color:var(--text-muted);margin-top:1px;">' + proto.desc + '</div>';
+    html += '</div></div>';
+    html += '<div style="display:flex;align-items:center;gap:10px;">';
+    if (entityCount > 0) html += '<span style="font-size:11px;color:var(--text-muted);">' + entityCount + ' Geraete</span>';
+    html += '<label class="toggle" style="margin:0;" onclick="event.stopPropagation()">';
+    html += '<input type="checkbox" data-path="emergency_protocols.' + proto.key + '.enabled" ' + (enabled ? 'checked' : '') + '>';
+    html += '<span class="toggle-track"></span><span class="toggle-thumb"></span></label>';
+    html += '<span class="mdi ' + (expanded ? 'mdi-chevron-up' : 'mdi-chevron-down') + '" style="font-size:20px;color:var(--text-muted);"></span>';
+    html += '</div></div>';
+
+    // Expanded content
+    if (expanded) {
+      html += '<div style="padding:0 16px 16px;border-top:1px solid var(--border);">';
+
+      // Entity assignments grouped by role
+      for (const [role, roleLabel] of Object.entries(proto.roles)) {
+        const roleEntities = data.entities.filter(e => e.role === role);
+        const roleIcon = {light:'&#128161;', cover:'&#129695;', lock:'&#128274;', siren:'&#128680;', tts_speaker:'&#128266;', valve:'&#128295;', heating:'&#127777;', hvac:'&#127777;', emergency_lock:'&#128274;', emergency_light:'&#128161;', emergency_cover:'&#129695;'}[role] || '&#9881;';
+
+        html += '<div style="margin-top:12px;">';
+        html += '<div style="font-size:12px;font-weight:600;color:var(--text-secondary);margin-bottom:6px;display:flex;align-items:center;gap:6px;">';
+        html += '<span>' + roleIcon + '</span> ' + esc(roleLabel);
+        html += '</div>';
+
+        if (roleEntities.length > 0) {
+          for (const ent of roleEntities) {
+            const active = ent.is_active !== false;
+            html += '<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;margin:3px 0;background:var(--bg-primary);border-radius:6px;border:1px solid var(--border);opacity:' + (active ? '1' : '0.5') + ';">';
+            html += '<span style="flex:1;font-size:12px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + esc(ent.name || ent.entity_id) + '</span>';
+            html += '<span style="font-size:10px;color:var(--text-muted);font-family:var(--mono,monospace);">' + esc(ent.entity_id) + '</span>';
+            html += '<button class="btn btn-ghost" style="padding:2px 6px;min-width:auto;color:var(--danger);font-size:14px;" onclick="removeEpEntity(\'' + proto.feature + '\',' + ent.id + ')" title="Entfernen">&#10005;</button>';
+            html += '</div>';
+          }
+        } else {
+          html += '<div style="font-size:11px;color:var(--text-muted);padding:4px 0;font-style:italic;">Keine Geraete zugewiesen</div>';
+        }
+
+        // Add entity input
+        html += '<div style="margin-top:4px;display:flex;gap:6px;align-items:center;">';
+        html += '<div class="entity-pick-wrap" style="flex:1;position:relative;">';
+        html += '<input class="form-input entity-pick-input" placeholder="&#128269; Entity suchen..." ';
+        html += 'id="ep_add_' + proto.key + '_' + role + '" ';
+        html += 'data-feature="' + proto.feature + '" data-role="' + role + '" ';
+        html += 'oninput="epEntityFilter(this)" onfocus="epEntityFilter(this)" ';
+        html += 'style="font-size:12px;padding:6px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:6px;color:var(--text-primary);width:100%;">';
+        html += '<div class="ep-entity-dropdown" style="display:none;position:absolute;z-index:100;top:100%;left:0;right:0;max-height:200px;overflow-y:auto;background:var(--bg-card);border:1px solid var(--border);border-radius:6px;box-shadow:0 4px 16px rgba(0,0,0,0.3);"></div>';
+        html += '</div>';
+        html += '</div>';
+
+        html += '</div>';
+      }
+
+      // Auto-detect button
+      html += '<div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end;">';
+      html += '<button class="btn btn-secondary" style="font-size:12px;padding:6px 12px;" onclick="autoDetectEpEntities(\'' + proto.feature + '\',\'' + proto.key + '\')">';
+      html += '&#128269; Auto-Erkennung</button>';
+      html += '</div>';
+
+      html += '</div>';
+    }
+
+    html += '</div>';
+    return html;
+  }).join('');
+}
+
+function toggleEpExpand(key) {
+  _epExpanded[key] = !_epExpanded[key];
+  renderEmergencyProtocols();
+}
+
+// Entity search dropdown for emergency protocols
+let _epAllEntities = null;
+async function epEntityFilter(input) {
+  const dropdown = input.parentElement.querySelector('.ep-entity-dropdown');
+  const query = input.value.trim().toLowerCase();
+  if (query.length < 1) { dropdown.style.display = 'none'; return; }
+
+  // Load all HA entities once
+  if (!_epAllEntities) {
+    try {
+      const d = await api('/api/ui/entities');
+      _epAllEntities = d.entities || d || [];
+    } catch(e) { _epAllEntities = []; }
+  }
+
+  const feature = input.dataset.feature;
+  const role = input.dataset.role;
+  const matches = _epAllEntities.filter(e => {
+    const eid = (e.entity_id || '').toLowerCase();
+    const name = (e.name || e.friendly_name || '').toLowerCase();
+    return eid.includes(query) || name.includes(query);
+  }).slice(0, 15);
+
+  if (matches.length === 0) {
+    dropdown.innerHTML = '<div style="padding:8px;color:var(--text-muted);font-size:12px;">Keine Treffer</div>';
+  } else {
+    dropdown.innerHTML = matches.map(e => {
+      const eid = e.entity_id || '';
+      const name = e.name || e.friendly_name || eid;
+      return '<div style="padding:6px 10px;cursor:pointer;font-size:12px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;" ' +
+        'onmousedown="addEpEntity(\'' + feature + '\',\'' + role + '\',\'' + esc(eid) + '\')" ' +
+        'onmouseover="this.style.background=\'var(--bg-tertiary)\'" onmouseout="this.style.background=\'\'">' +
+        '<span style="font-weight:500;">' + esc(name) + '</span>' +
+        '<span style="color:var(--text-muted);font-family:var(--mono,monospace);font-size:10px;">' + esc(eid) + '</span>' +
+      '</div>';
+    }).join('');
+  }
+  dropdown.style.display = '';
+
+  // Close on blur (slight delay for click)
+  input.onblur = () => setTimeout(() => { dropdown.style.display = 'none'; }, 200);
+}
+
+async function addEpEntity(feature, role, entityId) {
+  try {
+    await api('/api/ui/security/entities/' + feature, 'POST', { entity_id: entityId, role: role });
+    toast('Geraet zugewiesen: ' + entityId);
+    await loadEmergencyProtocols();
+  } catch(e) { toast('Fehler: ' + e.message, 'error'); }
+}
+
+async function removeEpEntity(feature, assignmentId) {
+  try {
+    await api('/api/ui/security/entities/' + feature + '/' + assignmentId, 'DELETE');
+    toast('Geraet entfernt');
+    await loadEmergencyProtocols();
+  } catch(e) { toast('Fehler: ' + e.message, 'error'); }
+}
+
+async function autoDetectEpEntities(feature, protoKey) {
+  try {
+    const suggestions = await api('/api/ui/security/entities/' + feature + '/auto-detect', 'POST');
+    if (!suggestions || suggestions.length === 0) {
+      toast('Keine passenden Geraete gefunden', 'warning');
+      return;
+    }
+    let added = 0;
+    const existing = (_epData[protoKey] || {}).entities || [];
+    const existingIds = new Set(existing.map(e => e.entity_id + ':' + e.role));
+    for (const s of suggestions) {
+      if (!existingIds.has(s.entity_id + ':' + s.role)) {
+        await api('/api/ui/security/entities/' + feature, 'POST', { entity_id: s.entity_id, role: s.role });
+        added++;
+      }
+    }
+    toast(added + ' Geraete erkannt und zugewiesen', 'success');
+    await loadEmergencyProtocols();
+  } catch(e) { toast('Fehler bei Auto-Erkennung: ' + e.message, 'error'); }
 }
 
 // ---- Notification Channels ----

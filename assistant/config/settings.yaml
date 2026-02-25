@@ -146,8 +146,8 @@ personality:
       style: entspannter, mehr Humor. Darf spitze Bemerkungen machen.
       max_sentences: 3
     night:
-      style: nur Notfaelle, absolute Stille. Fluestern wenn ueberhaupt.
-      max_sentences: 1
+      style: ruhig und knapp. Kein Humor. Wenn der User schreibt, ganz normal antworten — er ist offensichtlich wach. Proaktive Meldungen nur bei Notfaellen.
+      max_sentences: 2
 proactive:
   enabled: true
   cooldown_seconds: 900
