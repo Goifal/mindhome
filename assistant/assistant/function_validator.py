@@ -30,6 +30,12 @@ class FunctionValidator:
         security = yaml_config.get("security", {})
         confirm_list = security.get("require_confirmation", [])
         self.require_confirmation = set(confirm_list)
+        # Feature 10: HA-Client fuer Live-Daten-Pushback (gesetzt via set_ha_client)
+        self.ha = None
+
+    def set_ha_client(self, ha_client) -> None:
+        """Setzt den HA-Client fuer Live-Daten-Abfragen (Feature 10)."""
+        self.ha = ha_client
 
     def _get_climate_config(self) -> dict:
         """Liest Climate-Limits und Heizungsmodus live aus yaml_config."""
@@ -155,3 +161,200 @@ class FunctionValidator:
                     reason=f"Position {position}% ausserhalb 0-100",
                 )
         return ValidationResult(ok=True)
+
+    # ------------------------------------------------------------------
+    # Feature 10: Daten-basierter Widerspruch (Live-Pushback)
+    # ------------------------------------------------------------------
+
+    async def get_pushback_context(
+        self, func_name: str, args: dict
+    ) -> Optional[dict]:
+        """Prueft Live-Daten und liefert Kontext fuer intelligenten Widerspruch.
+
+        Args:
+            func_name: Name der geplanten Funktion
+            args: Funktions-Argumente
+
+        Returns:
+            Dict mit warnings-Liste oder None
+        """
+        pushback_cfg = yaml_config.get("pushback", {})
+        if not pushback_cfg.get("enabled", True) or not self.ha:
+            return None
+
+        checker = getattr(self, f"_pushback_{func_name}", None)
+        if not checker:
+            return None
+
+        try:
+            return await checker(args, pushback_cfg.get("checks", {}))
+        except Exception as e:
+            logger.debug("Pushback-Check fehlgeschlagen fuer %s: %s", func_name, e)
+            return None
+
+    async def _pushback_set_climate(
+        self, args: dict, checks: dict
+    ) -> Optional[dict]:
+        """Pushback fuer Klimasteuerung: offene Fenster, leerer Raum."""
+        warnings = []
+        room = (args.get("room") or "").lower()
+
+        if not room:
+            return None
+
+        states = await self.ha.get_states()
+        if not states:
+            return None
+
+        # Check: Fenster offen im gleichen Raum?
+        if checks.get("open_windows", True):
+            for state in states:
+                eid = state.get("entity_id", "")
+                if not eid.startswith(("binary_sensor.fenster", "binary_sensor.window")):
+                    continue
+                friendly = (state.get("attributes", {}).get("friendly_name") or eid).lower()
+                if room in friendly and state.get("state") == "on":
+                    window_name = state.get("attributes", {}).get("friendly_name", eid)
+                    warnings.append({
+                        "type": "open_window",
+                        "detail": f"{window_name} ist offen",
+                        "room": room,
+                    })
+
+        # Check: Niemand im Raum?
+        if checks.get("empty_room", True):
+            room_occupied = False
+            for state in states:
+                eid = state.get("entity_id", "")
+                if not eid.startswith("binary_sensor.motion"):
+                    continue
+                friendly = (state.get("attributes", {}).get("friendly_name") or eid).lower()
+                if room in friendly and state.get("state") == "on":
+                    room_occupied = True
+                    break
+            if not room_occupied:
+                # Nur warnen wenn kein Motion in den letzten Minuten
+                warnings.append({
+                    "type": "empty_room",
+                    "detail": f"Kein Bewegungsmelder aktiv in {room.title()}",
+                    "room": room,
+                })
+
+        # Check: Hohe Temperatur + warmes Wetter
+        if checks.get("unnecessary_heating", True):
+            target_temp = args.get("temperature")
+            if target_temp:
+                try:
+                    target_temp = float(target_temp)
+                except (ValueError, TypeError):
+                    target_temp = None
+            if target_temp and target_temp >= 24:
+                for state in states:
+                    eid = state.get("entity_id", "")
+                    if eid.startswith("weather."):
+                        try:
+                            outside_temp = float(state.get("attributes", {}).get("temperature", 0))
+                            if outside_temp >= 20:
+                                warnings.append({
+                                    "type": "unnecessary_heating",
+                                    "detail": f"Draussen sind es {outside_temp}°C",
+                                })
+                        except (ValueError, TypeError):
+                            pass
+                        break
+
+        return {"warnings": warnings} if warnings else None
+
+    async def _pushback_set_light(
+        self, args: dict, checks: dict
+    ) -> Optional[dict]:
+        """Pushback fuer Licht: Tageslicht, leerer Raum."""
+        warnings = []
+        state_val = (args.get("state") or "").lower()
+
+        # Nur bei Einschalten pruefen
+        if state_val not in ("on", "brighter", ""):
+            return None
+        # Brightness=0 ist ausschalten
+        brightness = args.get("brightness")
+        if brightness is not None and int(brightness) == 0:
+            return None
+
+        room = (args.get("room") or "").lower()
+
+        states = await self.ha.get_states()
+        if not states:
+            return None
+
+        # Check: Helles Tageslicht?
+        if checks.get("daylight", True):
+            for state in states:
+                eid = state.get("entity_id", "")
+                if eid == "sun.sun":
+                    elevation = state.get("attributes", {}).get("elevation", 0)
+                    try:
+                        if float(elevation) > 25:
+                            warnings.append({
+                                "type": "daylight",
+                                "detail": f"Die Sonne steht hoch (Elevation {elevation}°)",
+                            })
+                    except (ValueError, TypeError):
+                        pass
+                    break
+
+        return {"warnings": warnings} if warnings else None
+
+    async def _pushback_set_cover(
+        self, args: dict, checks: dict
+    ) -> Optional[dict]:
+        """Pushback fuer Rolladen: Sturmwarnung."""
+        warnings = []
+        action = (args.get("action") or args.get("state") or "").lower()
+
+        # Nur bei Oeffnen pruefen
+        if action not in ("open", "auf", "offen", "hoch", "up"):
+            return None
+
+        if not checks.get("storm_warning", True):
+            return None
+
+        states = await self.ha.get_states()
+        if not states:
+            return None
+
+        for state in states:
+            eid = state.get("entity_id", "")
+            if eid.startswith("weather."):
+                attrs = state.get("attributes", {})
+                wind_speed = attrs.get("wind_speed", 0)
+                try:
+                    if float(wind_speed) > 60:
+                        warnings.append({
+                            "type": "storm_warning",
+                            "detail": f"Starker Wind mit {wind_speed} km/h",
+                        })
+                except (ValueError, TypeError):
+                    pass
+                break
+
+        return {"warnings": warnings} if warnings else None
+
+    @staticmethod
+    def format_pushback_warnings(pushback: dict) -> str:
+        """Formatiert Pushback-Warnungen als LLM-Kontext-String.
+
+        Args:
+            pushback: Dict mit warnings-Liste aus get_pushback_context()
+
+        Returns:
+            Formatierter Warntext fuer den LLM-Prompt
+        """
+        warnings = pushback.get("warnings", [])
+        if not warnings:
+            return ""
+
+        lines = ["DATEN-BASIERTER WIDERSPRUCH — Weise den Benutzer auf Folgendes hin:"]
+        for w in warnings:
+            lines.append(f"- {w['detail']}")
+        lines.append("Fuehre die Aktion trotzdem aus, aber erwaehne die Warnung beilaeufig.")
+        return "\n".join(lines)
