@@ -243,6 +243,12 @@ class AssistantBrain(BrainCallbacksMixin):
         # Letzte fehlgeschlagene Anfrage fuer Retry bei "Ja"
         self._last_failed_query: Optional[str] = None
 
+        # Aktuelle Person (gesetzt in process(), nutzbar fuer Executor-Methoden)
+        self._current_person: str = ""
+
+        # Feature 5: Letzte ausgefuehrte Aktion (fuer emotionale Reaktionserkennung im naechsten Turn)
+        self._last_executed_action: str = ""
+
     async def initialize(self):
         """Initialisiert alle Komponenten."""
         await self.memory.initialize()
@@ -389,6 +395,13 @@ class AssistantBrain(BrainCallbacksMixin):
         # Jarvis-Feature 4: Spontane Beobachtungen
         await _safe_init("SpontaneousObserver", self.spontaneous.initialize(redis_client=self.memory.redis))
         self.spontaneous.set_notify_callback(self._handle_spontaneous_observation)
+
+        # Jarvis-Feature 8: Woechentlicher Lern-Bericht (Background-Task)
+        weekly_cfg = yaml_config.get("learning", {}).get("weekly_report", {})
+        if weekly_cfg.get("enabled", True):
+            self._task_registry.create_task(
+                self._weekly_learning_report_loop(), name="weekly_learning_report"
+            )
 
         # Jarvis-Feature 10: Daten-basierter Widerspruch — HA-Client fuer Live-Daten
         self.validator.set_ha_client(self.ha)
@@ -577,6 +590,9 @@ class AssistantBrain(BrainCallbacksMixin):
         )
 
         logger.info("Input: '%s' (Person: %s, Raum: %s)", text, person or "unbekannt", room or "unbekannt")
+
+        # Aktuelle Person merken (fuer Executor-Methoden wie manage_protocol)
+        self._current_person = person or ""
 
         # Sarkasmus-Feedback: Reaktion auf vorherige sarkastische Antwort auswerten
         if self.personality.sarcasm_level >= 3 and hasattr(self, '_last_response_was_snarky'):
@@ -2646,22 +2662,31 @@ class AssistantBrain(BrainCallbacksMixin):
                 name="extract_facts",
             )
 
-        # Feature 5: Emotionale Reaktion tracken (negative Reaktion auf letzte Aktion?)
-        if self.memory_extractor and executed_actions and person:
+        # Feature 5: Emotionale Reaktion tracken
+        # Nur tracken wenn KEINE Aktionen in diesem Turn ausgefuehrt wurden —
+        # d.h. der User reagiert auf eine VORHERIGE Aktion (z.B. "Nein, lass das").
+        # Wenn im aktuellen Turn Aktionen ausgefuehrt wurden, ist der negative Text
+        # Teil des Befehls (z.B. "Nein, mach das Licht aus") und keine Reaktion.
+        if (self.memory_extractor and not executed_actions and person
+                and hasattr(self, "_last_executed_action")):
             is_negative = self.memory_extractor.detect_negative_reaction(text)
-            if is_negative:
-                last_action = executed_actions[-1].get("function", "")
-                if last_action:
-                    self._task_registry.create_task(
-                        self.memory_extractor.extract_reaction(
-                            user_text=text,
-                            action_performed=last_action,
-                            accepted=False,
-                            person=person,
-                            redis_client=self.memory.redis,
-                        ),
-                        name="extract_negative_reaction",
-                    )
+            if is_negative and self._last_executed_action:
+                self._task_registry.create_task(
+                    self.memory_extractor.extract_reaction(
+                        user_text=text,
+                        action_performed=self._last_executed_action,
+                        accepted=False,
+                        person=person,
+                        redis_client=self.memory.redis,
+                    ),
+                    name="extract_negative_reaction",
+                )
+
+        # Letzte ausgefuehrte Aktion merken (fuer naechsten Turn)
+        if executed_actions:
+            self._last_executed_action = executed_actions[-1].get("function", "")
+        else:
+            self._last_executed_action = ""
 
         # Phase 17: Situation Snapshot speichern (fuer Delta beim naechsten Gespraech)
         self._task_registry.create_task(
@@ -6088,6 +6113,43 @@ Regeln:
         formatted = await self._safe_format(message, urgency)
         await self._speak_and_emit(formatted)
         logger.info("Spontane Beobachtung: %s", message[:80])
+
+    async def _weekly_learning_report_loop(self):
+        """Feature 8: Sendet woechentlich einen Lern-Bericht (konfigurierter Tag + Uhrzeit)."""
+        while True:
+            try:
+                weekly_cfg = yaml_config.get("learning", {}).get("weekly_report", {})
+                target_day = int(weekly_cfg.get("day", 6))  # 0=Montag, 6=Sonntag
+                target_hour = int(weekly_cfg.get("hour", 19))
+
+                now = datetime.now()
+                days_ahead = target_day - now.weekday()
+                if days_ahead < 0 or (days_ahead == 0 and now.hour >= target_hour):
+                    days_ahead += 7
+
+                target = (now + timedelta(days=days_ahead)).replace(
+                    hour=target_hour, minute=0, second=0, microsecond=0,
+                )
+                wait_seconds = (target - now).total_seconds()
+                await asyncio.sleep(max(wait_seconds, 60))
+
+                if not weekly_cfg.get("enabled", True):
+                    continue
+
+                report = await self.learning_observer.get_learning_report()
+                report_text = self.learning_observer.format_learning_report(report)
+                if report_text and report.get("total_observations", 0) > 0:
+                    title = get_person_title()
+                    message = f"{title}, hier ist Ihr woechentlicher Lern-Bericht:\n{report_text}"
+                    if await self._callback_should_speak("low"):
+                        formatted = await self._safe_format(message, "low")
+                        await self._speak_and_emit(formatted)
+                        logger.info("Woechentlicher Lern-Bericht gesendet")
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.debug("Weekly Learning Report Fehler: %s", e)
+                await asyncio.sleep(3600)
 
     async def _run_daily_fact_decay(self):
         """Fuehrt einmal taeglich den Fact Decay aus (04:00 Uhr)."""

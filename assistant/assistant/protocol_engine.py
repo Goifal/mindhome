@@ -347,7 +347,6 @@ class ProtocolEngine:
         """Normalisiert einen Protokoll-Namen."""
         # Lowercase, Umlaute ersetzen, Sonderzeichen entfernen
         name = name.lower().strip()
-        name = name.replace("ae", "ae").replace("oe", "oe").replace("ue", "ue")
         name = name.replace("ä", "ae").replace("ö", "oe").replace("ü", "ue")
         name = name.replace("ß", "ss")
         name = re.sub(r"[^a-z0-9_]", "_", name)

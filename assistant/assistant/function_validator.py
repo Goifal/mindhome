@@ -277,8 +277,12 @@ class FunctionValidator:
             return None
         # Brightness=0 ist ausschalten
         brightness = args.get("brightness")
-        if brightness is not None and int(brightness) == 0:
-            return None
+        if brightness is not None:
+            try:
+                if int(brightness) == 0:
+                    return None
+            except (ValueError, TypeError):
+                pass  # Ungueltige Brightness → trotzdem pruefen
 
         room = (args.get("room") or "").lower()
 

@@ -4526,15 +4526,17 @@ class FunctionExecutor:
         name = args.get("name", "")
         description = args.get("description", "")
 
+        person = getattr(brain, "_current_person", "") or ""
+
         try:
             if action == "create":
                 if not name or not description:
                     return {"success": False, "message": "Name und Beschreibung werden fuer 'create' benoetigt."}
-                return await engine.create_protocol(name, description)
+                return await engine.create_protocol(name, description, person=person)
             elif action == "execute":
                 if not name:
                     return {"success": False, "message": "Name wird fuer 'execute' benoetigt."}
-                return await engine.execute_protocol(name)
+                return await engine.execute_protocol(name, person=person)
             elif action == "undo":
                 if not name:
                     return {"success": False, "message": "Name wird fuer 'undo' benoetigt."}
