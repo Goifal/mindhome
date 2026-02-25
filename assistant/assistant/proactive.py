@@ -446,8 +446,19 @@ class ProactiveManager:
                 except Exception as e:
                     logger.debug("Predictive Briefing Fehler: %s", e)
 
-                # JARVIS-Begruessung: Persoenliches Guten Morgen VOR den Daten
-                _title = get_person_title()
+                # JARVIS-Begruessung: Person-aware Anrede
+                _mb_persons = await self._get_persons_at_home()
+                if len(_mb_persons) == 1:
+                    _title = get_person_title(_mb_persons[0])
+                elif len(_mb_persons) > 1:
+                    _titles = []
+                    for _p in _mb_persons:
+                        _t = get_person_title(_p)
+                        if _t not in _titles:
+                            _titles.append(_t)
+                    _title = ", ".join(_titles)
+                else:
+                    _title = get_person_title()
                 _greetings = [
                     f"Guten Morgen, {_title}.",
                     f"Morgen, {_title}. Systeme laufen.",
@@ -585,8 +596,12 @@ class ProactiveManager:
                 return
 
             # LLM-Polish im JARVIS-Stil
+            # Person-aware Anrede fuer Evening Briefing
+            _eb_persons = await self._get_persons_at_home()
+            _eb_person = _eb_persons[0] if len(_eb_persons) == 1 else ""
+            _eb_title = get_person_title(_eb_person) if _eb_person else get_person_title()
             prompt = (
-                "Abend-Status-Bericht fuer den Hauptbenutzer (Sir). "
+                f"Abend-Status-Bericht. Anrede: \"{_eb_title}\". "
                 "Fasse zusammen, JARVIS-Butler-Stil, max 3 Saetze. "
                 "Bei offenen Fenstern/Tueren/Rolllaeden: Kurz vorschlagen ob du sie schliessen sollst. "
                 "Nicht fragen ob du helfen kannst — direkt anbieten was du tun wuerdest.\n"
@@ -595,7 +610,7 @@ class ProactiveManager:
 
             response = await self.brain.ollama.chat(
                 messages=[
-                    {"role": "system", "content": self._get_notification_system_prompt()},
+                    {"role": "system", "content": self._get_notification_system_prompt(person=_eb_person)},
                     {"role": "user", "content": prompt},
                 ],
                 model=settings.model_notify,
@@ -914,9 +929,13 @@ class ProactiveManager:
         }
         if entity_id and event_type in narration_event_map:
             try:
+                # Person-aware Anrede fuer Device-Narration
+                _narr_persons = await self._get_persons_at_home()
+                _narr_person = _narr_persons[0] if len(_narr_persons) == 1 else ""
                 narration_text = self.brain.personality.narrate_device_event(
                     entity_id, narration_event_map[event_type],
                     detail=data.get("detail", ""),
+                    person=_narr_person,
                 )
             except Exception:
                 pass  # Fallback auf LLM-generierte Meldung
@@ -937,7 +956,7 @@ class ProactiveManager:
         try:
             response = await self.brain.ollama.chat(
                 messages=[
-                    {"role": "system", "content": self._get_notification_system_prompt(urgency)},
+                    {"role": "system", "content": self._get_notification_system_prompt(urgency, person=data.get("person", ""))},
                     {"role": "user", "content": prompt},
                 ],
                 model=settings.model_notify,
@@ -1037,7 +1056,7 @@ class ProactiveManager:
         try:
             response = await self.brain.ollama.chat(
                 messages=[
-                    {"role": "system", "content": self._get_notification_system_prompt()},
+                    {"role": "system", "content": self._get_notification_system_prompt(person=person_name)},
                     {"role": "user", "content": prompt},
                 ],
                 model=settings.model_notify,
@@ -1045,7 +1064,7 @@ class ProactiveManager:
                 max_tokens=120,
             )
             return validate_notification(
-                response.get("message", {}).get("content", f"Alles ruhig, {get_person_title()}.")
+                response.get("message", {}).get("content", f"Alles ruhig, {get_person_title(person_name)}.")
             )
         except Exception as e:
             logger.error("Fehler beim Status-Bericht: %s", e)
@@ -1061,6 +1080,43 @@ class ProactiveManager:
             return titles.get(person_name.lower(), get_person_title())
         # Andere: Titel aus Config oder Vorname
         return titles.get(person_name.lower(), person_name)
+
+    async def _get_persons_at_home(self) -> list[str]:
+        """Gibt die Liste der aktuell anwesenden Personen zurueck."""
+        try:
+            states = await self.brain.ha.get_states()
+            if not states:
+                return []
+            persons = []
+            for s in states:
+                if s.get("entity_id", "").startswith("person."):
+                    if s.get("state") == "home":
+                        pname = s.get("attributes", {}).get("friendly_name", "")
+                        if pname:
+                            persons.append(pname)
+            return persons
+        except Exception:
+            return []
+
+    async def _resolve_title_for_notification(self, data: dict) -> str:
+        """Bestimmt die korrekte Anrede fuer eine Notification."""
+        # 1. Wenn Person explizit in data → deren Titel
+        if data.get("person"):
+            return get_person_title(data["person"])
+        # 2. Sonst: wer ist zuhause?
+        persons = await self._get_persons_at_home()
+        if len(persons) == 1:
+            return get_person_title(persons[0])
+        elif len(persons) > 1:
+            # Alle Anwesenden ansprechen
+            titles = []
+            for p in persons:
+                t = get_person_title(p)
+                if t not in titles:
+                    titles.append(t)
+            return ", ".join(titles)
+        # 3. Fallback: primary_user
+        return get_person_title()
 
     def _build_status_report_prompt(self, status: dict) -> str:
         """Baut den Prompt fuer einen Status-Bericht (JARVIS-Butler-Stil)."""
@@ -1098,21 +1154,22 @@ class ProactiveManager:
         parts.append("Maximal 3 Saetze. Deutsch.")
         return "\n".join(parts)
 
-    def _get_notification_system_prompt(self, urgency: str = "low") -> str:
+    def _get_notification_system_prompt(self, urgency: str = "low", person: str = "") -> str:
         """Holt den Notification-Prompt aus der PersonalityEngine.
 
         Nutzt den vollen Personality-Stack (Sarkasmus, Formality, Tageszeit,
         Mood) statt eines statischen Mini-Prompts.
         """
         try:
-            return self.brain.personality.build_notification_prompt(urgency)
+            return self.brain.personality.build_notification_prompt(urgency, person=person)
         except Exception as e:
             logger.debug("Personality-Notification-Prompt fehlgeschlagen: %s", e)
             # Fallback auf Minimal-Prompt
+            _title = get_person_title(person) if person else get_person_title()
             return (
                 f"Du bist {settings.assistant_name} — J.A.R.V.I.S. aus dem MCU. "
                 "Proaktive Hausmeldung. 1-2 Saetze. Deutsch. Trocken-britisch. "
-                f'Hauptbenutzer = "{get_person_title()}". Nie alarmistisch, nie devot. '
+                f'Anrede = "{_title}". Nie alarmistisch, nie devot. '
                 "VERBOTEN: Hallo, Achtung, Es tut mir leid, Guten Tag."
             )
 
@@ -1120,7 +1177,7 @@ class ProactiveManager:
     # Alert-Personality: Meldungen im Jarvis-Stil reformulieren
     # ------------------------------------------------------------------
 
-    async def format_with_personality(self, raw_message: str, urgency: str = "low") -> str:
+    async def format_with_personality(self, raw_message: str, urgency: str = "low", person: str = "") -> str:
         """Reformuliert eine nackte Alert-Meldung im Jarvis-Stil.
 
         Nutzt das Fast-Model (qwen3:4b) fuer minimale Latenz.
@@ -1143,7 +1200,7 @@ class ProactiveManager:
         try:
             response = await self.brain.ollama.chat(
                 messages=[
-                    {"role": "system", "content": self._get_notification_system_prompt(urgency)},
+                    {"role": "system", "content": self._get_notification_system_prompt(urgency, person=person)},
                     {"role": "user", "content": (
                         f"[{urgency.upper()}] Reformuliere im JARVIS-Stil:\n{raw_message}"
                     )},
@@ -1209,6 +1266,8 @@ class ProactiveManager:
         self, event_type: str, description: str, data: dict, urgency: str
     ) -> str:
         parts = [f"[{urgency.upper()}] {description}"]
+        # Person-aware Anrede fuer alle Templates
+        _title = get_person_title(data["person"]) if data.get("person") else get_person_title()
 
         if "person" in data:
             parts.append(f"Person: {data['person']}")
@@ -1266,7 +1325,7 @@ class ProactiveManager:
                 return (
                     f"Saisonale Empfehlung: {msg}\n"
                     "Formuliere als hoeflichen Vorschlag. Max 1 Satz.\n"
-                    f"Beispiel: '{get_person_title()}, die Rolladen koennten jetzt runter — draussen wird es warm.'"
+                    f"Beispiel: '{_title}, die Rolladen koennten jetzt runter — draussen wird es warm.'"
                 )
             return (
                 f"Saisonale Aktion: {msg}\n"
@@ -1287,7 +1346,7 @@ class ProactiveManager:
             if desc:
                 parts.append(f"Info: {desc}")
             parts.append("Formuliere eine sanfte, beilaeufige Erinnerung. Nicht dringend.")
-            parts.append(f"Beispiel: 'Nebenbei, {get_person_title()}: [Aufgabe] koennte mal erledigt werden.'")
+            parts.append(f"Beispiel: 'Nebenbei, {_title}: [Aufgabe] koennte mal erledigt werden.'")
             return "\n".join(parts)
 
         # Tuerklingel — mit optionaler Kamera-Beschreibung
@@ -1297,12 +1356,12 @@ class ProactiveManager:
                 return (
                     f"Tuerklingel. Kamera zeigt: {camera_desc}\n"
                     "Beschreibe kurz wer/was vor der Tuer ist. Max 1-2 Saetze. Butler-Stil.\n"
-                    f"Beispiel: 'Paketbote an der Tuer, {get_person_title()}. Sieht nach DHL aus.'"
+                    f"Beispiel: 'Paketbote an der Tuer, {_title}. Sieht nach DHL aus.'"
                 )
             return (
                 "Tuerklingel.\n"
                 "Melde kurz dass jemand geklingelt hat. Max 1 Satz. Butler-Stil.\n"
-                f"Beispiel: 'Jemand an der Tuer, {get_person_title()}.'"
+                f"Beispiel: 'Jemand an der Tuer, {_title}.'"
             )
 
         # Phase 17: Sicherheitswarnung (Threat Assessment)
@@ -1312,7 +1371,7 @@ class ProactiveManager:
             return (
                 f"Sicherheitswarnung ({threat_type}): {message}\n"
                 "Formuliere als dringende, sachliche Warnung. Max 2 Saetze. Butler-Stil.\n"
-                f"Beispiel: '{get_person_title()}, naechtliche Bewegung im Eingangsbereich. Alle Bewohner sollten schlafen.'"
+                f"Beispiel: '{_title}, naechtliche Bewegung im Eingangsbereich. Alle Bewohner sollten schlafen.'"
             )
 
         # Phase 17: Bedingte Aktion ausgefuehrt
@@ -1421,20 +1480,24 @@ class ProactiveManager:
             summary_parts.append("Nebenbei:")
             summary_parts.extend(low_parts)
 
+        # Person-aware Anrede fuer Batch
+        _batch_persons = await self._get_persons_at_home()
+        _batch_person = _batch_persons[0] if len(_batch_persons) == 1 else ""
+        _batch_title = get_person_title(_batch_person) if _batch_person else get_person_title()
         prompt = (
             f"Du hast {len(items)} Meldung(en) gesammelt "
             f"({len(medium_parts)} wichtig, {len(low_parts)} nebensaechlich). "
             f"Fasse sie in 1-3 kurzen Saetzen zusammen. Butler-Stil. "
             f"Wichtige Meldungen zuerst erwaehnen.\n\n"
             + "\n".join(summary_parts)
-            + f"\n\nBeispiel: '{get_person_title()}, die Waschmaschine ist fertig und die Batterie "
+            + f"\n\nBeispiel: '{_batch_title}, die Waschmaschine ist fertig und die Batterie "
             "vom Fenstersensor ist niedrig.'"
         )
 
         try:
             response = await self.brain.ollama.chat(
                 messages=[
-                    {"role": "system", "content": self._get_notification_system_prompt()},
+                    {"role": "system", "content": self._get_notification_system_prompt(person=_batch_person)},
                     {"role": "user", "content": prompt},
                 ],
                 model=settings.model_notify,
@@ -1836,7 +1899,9 @@ class ProactiveManager:
                 if observations:
                     msg = " | ".join(observations)
                 elif random.random() < all_quiet_prob:
-                    msg = f"Alles ruhig, {get_person_title()}."
+                    _quiet_persons = await self._get_persons_at_home()
+                    _quiet_person = _quiet_persons[0] if len(_quiet_persons) == 1 else ""
+                    msg = f"Alles ruhig, {get_person_title(_quiet_person) if _quiet_person else get_person_title()}."
                 else:
                     # Nichts zu berichten, nichts sagen
                     await asyncio.sleep(interval)

@@ -112,6 +112,32 @@ class InsightEngine:
         """Setzt den Callback fuer Insight-Meldungen."""
         self._notify_callback = callback
 
+    async def _get_title_for_home(self) -> str:
+        """Ermittelt die Anrede basierend auf anwesenden Personen."""
+        try:
+            states = await self.ha.get_states()
+            if states:
+                persons = []
+                for s in states:
+                    if s.get("entity_id", "").startswith("person.") and s.get("state") == "home":
+                        name = s.get("attributes", {}).get("friendly_name", "")
+                        if name:
+                            persons.append(name)
+                if len(persons) == 1:
+                    return get_person_title(persons[0])
+                elif len(persons) > 1:
+                    seen = set()
+                    titles = []
+                    for p in persons:
+                        t = get_person_title(p)
+                        if t not in seen:
+                            seen.add(t)
+                            titles.append(t)
+                    return ", ".join(titles)
+        except Exception:
+            pass
+        return get_person_title()
+
     async def stop(self):
         """Stoppt die Engine."""
         self._running = False
@@ -417,7 +443,7 @@ class InsightEngine:
                     "check": "weather_windows",
                     "urgency": urgency,
                     "message": (
-                        f"{get_person_title()}, {time_hint} zieht {weather_word} auf — "
+                        f"{await self._get_title_for_home()}, {time_hint} zieht {weather_word} auf — "
                         f"{windows}{extra} {'stehen' if len(data['open_windows']) > 1 else 'steht'} "
                         f"noch offen."
                     ),
@@ -467,7 +493,7 @@ class InsightEngine:
             "check": "frost_heating",
             "urgency": "medium",
             "message": (
-                f"{get_person_title()}, es werden {frost_temp}°C erwartet — "
+                f"{await self._get_title_for_home()}, es werden {frost_temp}°C erwartet — "
                 f"{', '.join(heating_issues)}. "
                 f"Frostschaeden waeren vermeidbar."
             ),
@@ -526,7 +552,7 @@ class InsightEngine:
             "check": "calendar_travel",
             "urgency": "low",
             "message": (
-                f'{get_person_title()}, "{ev_summary}" steht an. '
+                f'{await self._get_title_for_home()}, "{ev_summary}" steht an. '
                 f"{' — '.join(hints)}. "
                 f"Soll ich das Haus vorbereiten?"
             ),
@@ -588,7 +614,7 @@ class InsightEngine:
                 "check": "energy_anomaly",
                 "urgency": "low",
                 "message": (
-                    f"{get_person_title()}, der Stromverbrauch heute liegt {increase_pct:.0f}% ueber "
+                    f"{await self._get_title_for_home()}, der Stromverbrauch heute liegt {increase_pct:.0f}% ueber "
                     f"dem Durchschnitt. "
                     f"Laeuft etwas, das nicht laufen sollte?"
                 ),
@@ -654,7 +680,7 @@ class InsightEngine:
             "check": "away_devices",
             "urgency": "low",
             "message": (
-                f"{get_person_title()}, Sie sind seit {hours_away:.0f} Stunden weg — "
+                f"{await self._get_title_for_home()}, du bist seit {hours_away:.0f} Stunden weg — "
                 f"{'. '.join(issues)}."
             ),
             "data": {
@@ -704,7 +730,7 @@ class InsightEngine:
                 "check": "temp_drop",
                 "urgency": "low",
                 "message": (
-                    f"{get_person_title()}, die Raumtemperatur faellt ungewoehnlich — "
+                    f"{await self._get_title_for_home()}, die Raumtemperatur faellt ungewoehnlich — "
                     f"{drop:.1f} Grad in 2 Stunden, jetzt bei {current_avg:.1f}°C.{cause_hint}"
                 ),
                 "data": {
@@ -749,7 +775,7 @@ class InsightEngine:
             "check": "window_temp_drop",
             "urgency": "low",
             "message": (
-                f"{get_person_title()}, bei {outside_temp:.0f}°C draussen und offenem {windows} "
+                f"{await self._get_title_for_home()}, bei {outside_temp:.0f}°C draussen und offenem {windows} "
                 f"heizen wir gerade die Nachbarschaft mit — "
                 f"drinnen {inside_avg:.0f}°C."
             ),

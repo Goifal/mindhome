@@ -152,7 +152,7 @@ class LearningObserver:
 
             title = get_person_title()
             message = (
-                f"{title}, mir ist aufgefallen, dass Sie {friendly} jeden Tag "
+                f"{title}, mir ist aufgefallen, dass du {friendly} jeden Tag "
                 f"um {time_slot} Uhr {action_de}. "
                 f"Soll ich das automatisieren?"
             )
@@ -205,7 +205,7 @@ class LearningObserver:
 
         title = get_person_title()
         message = (
-            f"{title}, Sie schalten {friendly} jeden {day_name} "
+            f"{title}, du schaltest {friendly} jeden {day_name} "
             f"um {time_slot} Uhr {action_de}. "
             f"Soll ich das fuer {day_name}s automatisieren?"
         )

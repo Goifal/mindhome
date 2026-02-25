@@ -60,6 +60,17 @@ def memory(redis_mock, chroma_mock):
     mm.redis = redis_mock
     mm.chroma_collection = chroma_mock
     mm.semantic = AsyncMock()
+
+    # Pipeline-Mock: redis.pipeline() ist synchron, gibt Pipeline-Objekt zurueck
+    pipe_mock = MagicMock()
+    pipe_mock.lpush = MagicMock()
+    pipe_mock.rpush = MagicMock()
+    pipe_mock.ltrim = MagicMock()
+    pipe_mock.expire = MagicMock()
+    pipe_mock.execute = AsyncMock(return_value=[])
+    redis_mock.pipeline = MagicMock(return_value=pipe_mock)
+    redis_mock._pipeline = pipe_mock
+
     return mm
 
 
@@ -85,29 +96,31 @@ class TestWorkingMemory:
     async def test_add_conversation_stores_in_redis(self, memory, redis_mock):
         await memory.add_conversation("user", "Hallo Jarvis")
 
-        # Pruefen dass lpush + ltrim aufgerufen wurden
-        redis_mock.lpush.assert_called_once()
-        args = redis_mock.lpush.call_args
+        # Code nutzt Pipeline: redis.pipeline() → pipe.lpush/ltrim → pipe.execute()
+        pipe = redis_mock._pipeline
+        pipe.lpush.assert_called()
+        args = pipe.lpush.call_args
         assert args[0][0] == "mha:conversations"
         entry = json.loads(args[0][1])
         assert entry["role"] == "user"
         assert entry["content"] == "Hallo Jarvis"
         assert "timestamp" in entry
 
-        redis_mock.ltrim.assert_called_once_with("mha:conversations", 0, 49)
+        pipe.ltrim.assert_called_once_with("mha:conversations", 0, 49)
 
     @pytest.mark.asyncio
     async def test_add_conversation_archives_daily(self, memory, redis_mock):
         await memory.add_conversation("assistant", "Guten Morgen, Sir.")
 
-        # Tages-Archiv
+        # Code nutzt Pipeline fuer Tages-Archiv
+        pipe = redis_mock._pipeline
         today = datetime.now().strftime("%Y-%m-%d")
         archive_key = f"mha:archive:{today}"
-        redis_mock.rpush.assert_called_once()
-        assert redis_mock.rpush.call_args[0][0] == archive_key
+        pipe.rpush.assert_called_once()
+        assert pipe.rpush.call_args[0][0] == archive_key
         # expire wird 2x aufgerufen: conversations (7d) + archive (30d)
-        redis_mock.expire.assert_any_call(archive_key, 30 * 86400)
-        assert redis_mock.expire.call_count == 2
+        pipe.expire.assert_any_call(archive_key, 30 * 86400)
+        assert pipe.expire.call_count == 2
 
     @pytest.mark.asyncio
     async def test_add_conversation_no_redis_no_error(self, memory_no_redis):

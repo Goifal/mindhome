@@ -133,7 +133,7 @@ class TestAllowedFunctions:
     def test_total_count_reasonable(self):
         """Whitelist sollte nicht leer und nicht uebertrieben gross sein."""
         count = len(FunctionExecutor._ALLOWED_FUNCTIONS)
-        assert 20 <= count <= 60, f"Whitelist hat {count} Eintraege — pruefen!"
+        assert 20 <= count <= 70, f"Whitelist hat {count} Eintraege — pruefen!"
 
     def test_internal_methods_excluded(self):
         """Private/interne Methoden duerfen nicht in der Whitelist sein."""

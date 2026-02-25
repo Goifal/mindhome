@@ -64,6 +64,17 @@ def redis_mock():
     mock.smembers = AsyncMock(return_value=set())
     mock.scard = AsyncMock(return_value=0)
 
+    # Pipeline — redis.pipeline() ist synchron, gibt Pipeline-Objekt zurueck
+    # Befehle auf der Pipeline sind ebenfalls synchron, nur execute() ist async
+    pipe_mock = MagicMock()
+    pipe_mock.lpush = MagicMock()
+    pipe_mock.rpush = MagicMock()
+    pipe_mock.ltrim = MagicMock()
+    pipe_mock.expire = MagicMock()
+    pipe_mock.execute = AsyncMock(return_value=[])
+    mock.pipeline = MagicMock(return_value=pipe_mock)
+    mock._pipeline = pipe_mock  # Fuer direkte Assertions in Tests
+
     return mock
 
 
