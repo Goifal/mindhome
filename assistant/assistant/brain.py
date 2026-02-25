@@ -1278,6 +1278,65 @@ class AssistantBrain(BrainCallbacksMixin):
             except Exception as e:
                 logger.warning("Geraete-Shortcut fehlgeschlagen: %s — Fallback auf LLM", e)
 
+        # Status-Query-Shortcut: Direkte Ausfuehrung von Status-Abfragen
+        # (Lichter, Rolllaeden, Steckdosen, Heizung, Hausstatus etc.)
+        # Kein LLM noetig — deterministischer Tool-Call + Humanizer.
+        if self._is_status_query(text):
+            det_tc = self._deterministic_tool_call(text)
+            if det_tc:
+                func_info = det_tc.get("function", {})
+                func_name = func_info.get("name", "")
+                func_args = func_info.get("arguments", {})
+                logger.info("Status-Query-Shortcut: '%s' -> %s(%s)", text, func_name, func_args)
+                try:
+                    result = await self.executor.execute(func_name, func_args)
+                    success = isinstance(result, dict) and result.get("success", False)
+
+                    if success:
+                        raw = result.get("message", str(result))
+                        response_text = self._humanize_query_result(func_name, raw)
+                        if not response_text or len(response_text) < 5:
+                            response_text = raw
+
+                        logger.info("Status-Query-Shortcut Antwort: '%s'", response_text[:120])
+
+                        self._remember_exchange(text, response_text)
+                        tts_data = self.tts_enhancer.enhance(
+                            response_text, message_type="status",
+                        )
+                        if stream_callback:
+                            if not room:
+                                room = await self._get_occupied_room()
+                            self._task_registry.create_task(
+                                self.sound_manager.speak_response(
+                                    response_text, room=room, tts_data=tts_data),
+                                name="speak_response",
+                            )
+                        else:
+                            await self._speak_and_emit(
+                                response_text, room=room, tts_data=tts_data,
+                            )
+
+                        await emit_action(func_name, func_args, result)
+
+                        return {
+                            "response": response_text,
+                            "actions": [{"function": func_name,
+                                         "args": func_args,
+                                         "result": result}],
+                            "model_used": "status_query_shortcut",
+                            "context_room": room or "unbekannt",
+                            "tts": tts_data,
+                            "_emitted": not stream_callback,
+                        }
+                    else:
+                        logger.info(
+                            "Status-Query-Shortcut: Tool fehlgeschlagen (%s) — Fallback auf LLM",
+                            result.get("message", "") if isinstance(result, dict) else result,
+                        )
+                except Exception as e:
+                    logger.warning("Status-Query-Shortcut fehlgeschlagen: %s — Fallback auf LLM", e)
+
         # ----- Ende schnelle Shortcuts -----
 
         # Phase 9: "listening" Sound abspielen wenn Verarbeitung startet
@@ -4051,15 +4110,17 @@ class AssistantBrain(BrainCallbacksMixin):
         """Erkennt ob der Text eine Geraete-Status-Abfrage ist.
 
         Faengt Fragen wie "Sind alle Licht abgedreht?", "Ist das Licht an?",
-        "Welche Lichter sind noch an?" ab, die _is_device_command nicht erkennt
-        weil sie keine Aktionswörter enthalten.
+        "Welche Lichter sind noch an?", "Rollladenstatus?", "Steckdosen Status?"
+        ab, die _is_device_command nicht erkennt weil sie keine Aktionswörter
+        enthalten.
         """
         t = text.lower()
         _NOUNS = [
             "rollladen", "rolladen", "rollo", "jalousie",
-            "licht", "lampe", "leuchte", "beleuchtung",
+            "rolllaeden", "rollaeden",  # Plural (ASCII ae)
+            "licht", "lichter", "lampe", "lampen", "leuchte", "beleuchtung",
             "heizung", "thermostat", "klima", "temperatur",
-            "steckdose", "schalter",
+            "steckdose", "steckdosen", "schalter",
             "musik", "lautsprecher", "media",
             "wecker", "alarm",
             "haus", "hausstatus", "haus-status",
@@ -4074,7 +4135,12 @@ class AssistantBrain(BrainCallbacksMixin):
             "brennt", "brennen", "laeuft", "laufen", "offen",
             "alle ", "alles ",
         ]
-        return any(m in t for m in _QUERY_MARKERS)
+        if any(m in t for m in _QUERY_MARKERS):
+            return True
+        # Fragen mit ? die ein Geraete-Nomen enthalten: "Rolllaeden?", "Lichter?"
+        if t.rstrip().endswith("?"):
+            return True
+        return False
 
     @staticmethod
     def _deterministic_tool_call(text: str) -> Optional[dict]:
@@ -4091,19 +4157,35 @@ class AssistantBrain(BrainCallbacksMixin):
             "welche", "sind", "ist ", "status", "zeig", "liste",
             "was ist", "wie ist", "noch an", "noch auf", "noch offen",
         ])
+        # Fragen mit ? und Geraete-Nomen sind auch Queries
+        if not is_query and t.rstrip().endswith("?"):
+            _q_nouns = [
+                "rollladen", "rolladen", "rolllaeden", "rollaeden",
+                "rollo", "jalousie",
+                "licht", "lichter", "lampe", "lampen", "leuchte", "beleuchtung",
+                "heizung", "thermostat", "klima", "temperatur",
+                "steckdose", "steckdosen", "schalter",
+                "musik", "lautsprecher", "media",
+                "wecker", "alarm",
+                "haus", "hausstatus", "haus-status",
+            ]
+            if any(n in t for n in _q_nouns):
+                is_query = True
 
         if is_query:
             # Lichter
-            if any(n in t for n in ["licht", "lampe", "leuchte", "beleuchtung"]):
+            if any(n in t for n in ["licht", "lichter", "lampe", "lampen",
+                                    "leuchte", "beleuchtung"]):
                 return {"function": {"name": "get_lights", "arguments": {}}}
             # Rollläden
-            if any(n in t for n in ["rollladen", "rolladen", "rollo", "jalousie"]):
+            if any(n in t for n in ["rollladen", "rolladen", "rolllaeden",
+                                    "rollaeden", "rollo", "jalousie"]):
                 return {"function": {"name": "get_covers", "arguments": {}}}
             # Klima/Heizung
             if any(n in t for n in ["heizung", "thermostat", "klima", "temperatur"]):
                 return {"function": {"name": "get_climate", "arguments": {}}}
             # Schalter/Steckdosen
-            if any(n in t for n in ["steckdose", "schalter", "switch"]):
+            if any(n in t for n in ["steckdose", "steckdosen", "schalter", "switch"]):
                 return {"function": {"name": "get_switches", "arguments": {}}}
             # Musik/Media
             if any(n in t for n in ["musik", "lautsprecher", "media", "speaker"]):
@@ -4116,7 +4198,8 @@ class AssistantBrain(BrainCallbacksMixin):
                 return {"function": {"name": "get_house_status", "arguments": {}}}
             # Spezifische Entity: "ist die steckdose kueche an?"
             # → get_entity_state mit Keyword-Extraktion
-            for noun in ["steckdose", "schalter", "licht", "lampe"]:
+            for noun in ["steckdose", "steckdosen", "schalter", "licht",
+                         "lichter", "lampe", "lampen"]:
                 if noun in t:
                     # Raum extrahieren (Wort nach dem Geraete-Nomen)
                     idx = t.find(noun)
