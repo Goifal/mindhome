@@ -326,16 +326,33 @@ class ProactiveManager:
             })
             await self._execute_emergency_protocol("water_leak")
 
-        # Tuerklingel — mit Kamera-Beschreibung wenn verfuegbar
+        # Tuerklingel — mit Kamera-Beschreibung + Besucher-Management
         elif "doorbell" in entity_id and new_val == "on":
             camera_desc = None
             try:
                 camera_desc = await self.brain.camera_manager.describe_doorbell()
             except Exception as e:
                 logger.debug("Doorbell Kamera-Beschreibung fehlgeschlagen: %s", e)
+
+            # Feature 12: Besucher-Management Integration
+            visitor_info = None
+            if hasattr(self.brain, "visitor_manager") and self.brain.visitor_manager.enabled:
+                try:
+                    visitor_info = await self.brain.visitor_manager.handle_doorbell(
+                        camera_description=camera_desc or "",
+                    )
+                except Exception as e:
+                    logger.debug("VisitorManager Doorbell-Handling fehlgeschlagen: %s", e)
+
             data = {"entity": entity_id}
             if camera_desc:
                 data["camera_description"] = camera_desc
+            if visitor_info:
+                data["visitor_info"] = visitor_info
+                if visitor_info.get("auto_unlocked"):
+                    data["auto_unlocked"] = True
+                if visitor_info.get("expected"):
+                    data["expected_visitor"] = True
             await self._notify("doorbell", MEDIUM, data)
 
         # Person tracker (Phase 7: erweitert mit Abschied + Abwesenheits-Summary)
@@ -1349,17 +1366,29 @@ class ProactiveManager:
             parts.append(f"Beispiel: 'Nebenbei, {_title}: [Aufgabe] koennte mal erledigt werden.'")
             return "\n".join(parts)
 
-        # Tuerklingel — mit optionaler Kamera-Beschreibung
+        # Tuerklingel — mit optionaler Kamera-Beschreibung + Besucher-Kontext
         if event_type == "doorbell":
             camera_desc = data.get("camera_description")
+            visitor_info = data.get("visitor_info")
+
+            # Feature 12: Besucher-Kontext in Meldung einbauen
+            visitor_context = ""
+            if visitor_info:
+                if visitor_info.get("auto_unlocked"):
+                    rec = visitor_info.get("recommendation", "")
+                    visitor_context = f" {rec}" if rec else " Tuer wurde automatisch geoeffnet."
+                elif visitor_info.get("expected"):
+                    rec = visitor_info.get("recommendation", "")
+                    visitor_context = f" {rec}" if rec else " Erwarteter Besuch."
+
             if camera_desc:
                 return (
-                    f"Tuerklingel. Kamera zeigt: {camera_desc}\n"
+                    f"Tuerklingel. Kamera zeigt: {camera_desc}{visitor_context}\n"
                     "Beschreibe kurz wer/was vor der Tuer ist. Max 1-2 Saetze. Butler-Stil.\n"
                     f"Beispiel: 'Paketbote an der Tuer, {_title}. Sieht nach DHL aus.'"
                 )
             return (
-                "Tuerklingel.\n"
+                f"Tuerklingel.{visitor_context}\n"
                 "Melde kurz dass jemand geklingelt hat. Max 1 Satz. Butler-Stil.\n"
                 f"Beispiel: 'Jemand an der Tuer, {_title}.'"
             )

@@ -2184,6 +2184,13 @@ function renderJarvisFeatures() {
     fToggle('music_dj.proactive_enabled', 'Proaktive Musikvorschlaege') +
     fRange('music_dj.cooldown_minutes', 'Mindestabstand Vorschlaege', 10, 120, 10, {10:'10 Min',30:'30 Min',60:'1 Std',120:'2 Std'}) +
     fTextarea('music_dj.custom_queries', 'Eigene Genre-Queries', 'JSON: {"party_hits": "meine party playlist", "focus_lofi": "deep focus music"}')
+  ) +
+  sectionWrap('&#128682;', 'Besucher-Management',
+    fInfo('Jarvis verwaltet Besucher: Bekannte Personen speichern, erwartete Besucher anlegen, "Lass ihn rein"-Workflow mit Kamera-Erkennung und automatischer Tuer-Entriegelung.') +
+    fToggle('visitor_management.enabled', 'Besucher-Management aktiv') +
+    fToggle('visitor_management.auto_guest_mode', 'Gaeste-Modus automatisch aktivieren') +
+    fRange('visitor_management.ring_cooldown_seconds', 'Klingel-Cooldown', 10, 120, 10, {10:'10s',30:'30s',60:'1 Min',120:'2 Min'}) +
+    fRange('visitor_management.history_max', 'Max. Besucher-History', 20, 500, 20, {20:'20',50:'50',100:'100',200:'200',500:'500'})
   );
 }
 

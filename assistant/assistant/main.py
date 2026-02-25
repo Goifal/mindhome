@@ -1778,6 +1778,8 @@ def _validate_settings_values(settings: dict) -> list[str]:
         ("music_dj", "default_volume"): (0, 100),
         ("music_dj", "cooldown_minutes"): (5, 120),
         ("music_dj", "proactive_interval_minutes"): (10, 120),
+        ("visitor_management", "ring_cooldown_seconds"): (5, 120),
+        ("visitor_management", "history_max"): (10, 500),
     }
     # Erlaubte Werte fuer Strings (Whitelist)
     ENUM_RULES = {

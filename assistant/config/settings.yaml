@@ -885,6 +885,12 @@ web_search:
   searxng_url: http://localhost:8888
   max_results: 5
   timeout_seconds: 10
+# --- Besucher-Management (Feature 12) ---
+visitor_management:
+  enabled: true
+  auto_guest_mode: false
+  ring_cooldown_seconds: 30
+  history_max: 100
 # --- Smart DJ (Feature 11) ---
 music_dj:
   enabled: true

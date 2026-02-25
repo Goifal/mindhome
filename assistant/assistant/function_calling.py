@@ -1499,6 +1499,56 @@ _ASSISTANT_TOOLS_STATIC = [
     {
         "type": "function",
         "function": {
+            "name": "manage_visitor",
+            "description": "Besucher-Management: Bekannte Besucher verwalten, erwartete Besucher anlegen, Besucher-History ansehen, Tuer oeffnen ('Lass ihn rein'). Nutze dies bei: 'Mama kommt heute', 'Lass ihn rein', 'Wer hat uns besucht?', 'Besucher hinzufuegen', 'Oeffne die Tuer fuer den Besuch'.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["add_known", "remove_known", "list_known", "expect", "cancel_expected", "grant_entry", "history", "status"],
+                        "description": "Aktion: add_known=Besucher speichern, remove_known=entfernen, list_known=alle zeigen, expect=Besucher erwarten, cancel_expected=Erwartung aufheben, grant_entry=Tuer oeffnen, history=Besuchs-History, status=Uebersicht",
+                    },
+                    "person_id": {
+                        "type": "string",
+                        "description": "Eindeutige ID des Besuchers (z.B. 'mama', 'handwerker_mueller')",
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "Anzeigename des Besuchers",
+                    },
+                    "relationship": {
+                        "type": "string",
+                        "description": "Beziehung: Familie, Freund, Handwerker, Nachbar, etc.",
+                    },
+                    "notes": {
+                        "type": "string",
+                        "description": "Zusaetzliche Notizen zum Besucher",
+                    },
+                    "expected_time": {
+                        "type": "string",
+                        "description": "Erwartete Ankunftszeit (z.B. '15:00', 'nachmittags')",
+                    },
+                    "auto_unlock": {
+                        "type": "boolean",
+                        "description": "Tuer automatisch oeffnen wenn Besucher klingelt (nur bei expect)",
+                    },
+                    "door": {
+                        "type": "string",
+                        "description": "Tuer-Name fuer grant_entry (default: haustuer)",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximale Anzahl History-Eintraege (default: 20)",
+                    },
+                },
+                "required": ["action"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "manage_protocol",
             "description": "Verwaltet benannte Protokolle (Multi-Step-Sequenzen). Protokolle sind gespeicherte Ablaeufe wie 'Filmabend' oder 'Gute Nacht'. Nutze dies wenn der User ein Protokoll erstellen, ausfuehren, auflisten, loeschen oder rueckgaengig machen will. Beispiel: 'Erstelle Protokoll Filmabend: Licht 20%, Rolladen zu' oder 'Fuehre Filmabend aus' oder 'Zeig meine Protokolle'.",
             "parameters": {
@@ -1587,7 +1637,7 @@ class FunctionExecutor:
         "get_room_climate", "get_active_intents", "get_wellness_status",
         "get_house_status", "get_full_status_report", "get_weather",
         "get_device_health", "get_learned_patterns", "describe_doorbell",
-        "manage_protocol", "recommend_music",
+        "manage_protocol", "recommend_music", "manage_visitor",
     })
 
     # Qwen3 uebersetzt deutsche Raumnamen oft ins Englische
@@ -4614,3 +4664,58 @@ class FunctionExecutor:
                 return {"success": False, "message": f"Unbekannte DJ-Aktion: {action}"}
         except Exception as e:
             return {"success": False, "message": f"Music-DJ Fehler: {e}"}
+
+    async def _exec_manage_visitor(self, args: dict) -> dict:
+        """Feature 12: Besucher-Management — Besucher verwalten und Tuer-Workflows."""
+        import assistant.main as main_module
+        brain = main_module.brain
+        vm = brain.visitor_manager
+        action = args.get("action", "status")
+
+        try:
+            if action == "add_known":
+                pid = args.get("person_id", "")
+                name = args.get("name", "")
+                if not pid or not name:
+                    return {"success": False, "message": "person_id und name sind erforderlich."}
+                return await vm.add_known_visitor(
+                    person_id=pid,
+                    name=name,
+                    relationship=args.get("relationship", ""),
+                    notes=args.get("notes", ""),
+                )
+            elif action == "remove_known":
+                pid = args.get("person_id", "")
+                if not pid:
+                    return {"success": False, "message": "person_id ist erforderlich."}
+                return await vm.remove_known_visitor(pid)
+            elif action == "list_known":
+                return await vm.list_known_visitors()
+            elif action == "expect":
+                pid = args.get("person_id", "")
+                if not pid:
+                    return {"success": False, "message": "person_id ist erforderlich."}
+                return await vm.expect_visitor(
+                    person_id=pid,
+                    name=args.get("name", ""),
+                    expected_time=args.get("expected_time", ""),
+                    auto_unlock=args.get("auto_unlock", False),
+                    notes=args.get("notes", ""),
+                )
+            elif action == "cancel_expected":
+                pid = args.get("person_id", "")
+                if not pid:
+                    return {"success": False, "message": "person_id ist erforderlich."}
+                return await vm.cancel_expected(pid)
+            elif action == "grant_entry":
+                door = args.get("door", "haustuer")
+                return await vm.grant_entry(door=door)
+            elif action == "history":
+                limit = args.get("limit", 20)
+                return await vm.get_visit_history(limit=limit)
+            elif action == "status":
+                return await vm.get_status()
+            else:
+                return {"success": False, "message": f"Unbekannte Besucher-Aktion: {action}"}
+        except Exception as e:
+            return {"success": False, "message": f"Besucher-Management Fehler: {e}"}
