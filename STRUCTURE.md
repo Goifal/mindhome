@@ -47,6 +47,11 @@ mindhome/
 │       ├── summarizer.py                   # Tages-/Wochen-/Monats-Summaries
 │       └── websocket.py                    # WebSocket-Verbindungsmanager
 │
+├── esphome/                               # ESPHome Voice Satellite Configs
+│   ├── m5-atom-echo-test.yaml             # M5Stack Atom Echo (Test, eingebauter Speaker)
+│   ├── secrets.yaml.example               # Vorlage fuer WiFi + API Credentials
+│   └── .gitignore                         # Schuetzt secrets.yaml
+│
 ├── addon/                                  # MindHome Add-on (HA, PC 1)
 │   ├── config.yaml                         # Add-on Konfiguration (Ingress, Permissions)
 │   ├── Dockerfile                          # Container-Build
