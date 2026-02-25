@@ -340,7 +340,8 @@ document.getElementById('sidebarNav').addEventListener('click', e => {
       'tab-memory':'Gedaechtnis','tab-mood':'Stimmung','tab-rooms':'Raeume & Speaker',
       'tab-devices':'Geraete','tab-covers':'Rolllaeden','tab-routines':'Routinen',
       'tab-proactive':'Proaktiv & Vorausdenken','tab-cooking':'Koch-Assistent',
-      'tab-autonomie':'Autonomie & Selbstoptimierung','tab-voice':'Stimme & TTS',
+      'tab-autonomie':'Autonomie & Selbstoptimierung','tab-followme':'Follow-Me',
+      'tab-voice':'Stimme & TTS',
       'tab-eastereggs':'Easter Eggs','tab-security':'Sicherheit & Notfall',
       'tab-house-status':'Haus-Status & Health','tab-system':'System & Updates'
     };
@@ -575,6 +576,7 @@ function renderCurrentTab() {
       case 'tab-covers': c.innerHTML = renderCovers(); loadCoverEntities(); break;
       case 'tab-security': c.innerHTML = renderSecurity(); loadApiKey(); loadNotifyChannels(); loadEmergencyProtocols(); break;
       case 'tab-autonomie': c.innerHTML = renderAutonomie(); loadSnapshots(); loadOptStatus(); break;
+      case 'tab-followme': c.innerHTML = renderFollowMe(); break;
       case 'tab-eastereggs': c.innerHTML = renderEasterEggs(); loadEasterEggs(); break;
       case 'tab-system': c.innerHTML = renderSystem(); loadSystemStatus(); break;
     }
@@ -720,6 +722,11 @@ const HELP_TEXTS = {
   'multi_room.enabled': {title:'Multi-Room', text:'Erkennt in welchem Raum du bist.'},
   'multi_room.presence_timeout_minutes': {title:'Praesenz-Timeout', text:'Nach wie vielen Min ohne Bewegung der Raum leer ist.'},
   'multi_room.auto_follow': {title:'Musik folgen', text:'Musik folgt automatisch von Raum zu Raum.'},
+  'follow_me.enabled': {title:'Follow-Me', text:'JARVIS folgt dir von Raum zu Raum. Musik, Licht und Temperatur wechseln automatisch.'},
+  'follow_me.cooldown_seconds': {title:'Cooldown', text:'Mindestabstand zwischen Follow-Me Transfers. Verhindert Ping-Pong bei schnellen Raumwechseln.'},
+  'follow_me.transfer_music': {title:'Musik folgt', text:'Musik wird automatisch in den neuen Raum transferiert.'},
+  'follow_me.transfer_lights': {title:'Licht folgt', text:'Licht wird im alten Raum aus- und im neuen Raum eingeschaltet.'},
+  'follow_me.transfer_climate': {title:'Klima folgt', text:'Heizung/Kuehlung wird im neuen Raum auf Komfort-Temperatur gesetzt.'},
   'multi_room.room_speakers': {title:'Speaker-Zuordnung', text:'Welcher Speaker in welchem Raum steht.'},
   'multi_room.room_motion_sensors': {title:'Bewegungsmelder', text:'Welcher Melder in welchem Raum haengt.'},
   'activity.entities.media_players': {title:'Media Player', text:'Media Player fuer Aktivitaetserkennung.'},
@@ -2761,6 +2768,68 @@ async function rollbackSnapshot(snapshotId) {
       toast('Rollback fehlgeschlagen: ' + result.message, 'error');
     }
   } catch(e) { toast('Rollback-Fehler', 'error'); }
+}
+
+// ---- Tab: Follow-Me ----
+
+function renderFollowMe() {
+  // Defaults setzen
+  if (getPath(S, 'follow_me.enabled') === undefined) setPath(S, 'follow_me.enabled', false);
+  if (!getPath(S, 'follow_me.cooldown_seconds')) setPath(S, 'follow_me.cooldown_seconds', 60);
+  if (getPath(S, 'follow_me.transfer_music') === undefined) setPath(S, 'follow_me.transfer_music', true);
+  if (getPath(S, 'follow_me.transfer_lights') === undefined) setPath(S, 'follow_me.transfer_lights', true);
+  if (getPath(S, 'follow_me.transfer_climate') === undefined) setPath(S, 'follow_me.transfer_climate', false);
+
+  return sectionWrap('&#128694;', 'Follow-Me',
+    fInfo('JARVIS folgt dir von Raum zu Raum. Musik, Licht und Temperatur wechseln automatisch mit dir — wie im echten MCU.') +
+    fToggle('follow_me.enabled', 'Follow-Me aktiv') +
+    fRange('follow_me.cooldown_seconds', 'Mindestabstand zwischen Transfers', 30, 300, 10, {
+      30:'30s', 60:'1 Min', 120:'2 Min', 180:'3 Min', 300:'5 Min'
+    })
+  ) +
+  sectionWrap('&#127925;', 'Was soll folgen?',
+    fInfo('Waehle aus welche Systeme dir von Raum zu Raum folgen sollen.') +
+    fToggle('follow_me.transfer_music', 'Musik folgt') +
+    fToggle('follow_me.transfer_lights', 'Licht folgt') +
+    fToggle('follow_me.transfer_climate', 'Temperatur folgt')
+  ) +
+  sectionWrap('&#128100;', 'Personen-Profile',
+    fInfo('Individuelle Einstellungen pro Person. Helligkeit, Farbtemperatur und Wunschtemperatur.') +
+    renderFollowMeProfiles()
+  );
+}
+
+function renderFollowMeProfiles() {
+  const profiles = getPath(S, 'follow_me.profiles') || {};
+  let html = '';
+
+  for (const [name, p] of Object.entries(profiles)) {
+    html += '<div class="s-card" style="margin-bottom:12px;padding:12px;">' +
+      '<h4 style="margin:0 0 8px 0;">' + esc(name) + '</h4>' +
+      fRange('follow_me.profiles.' + name + '.light_brightness', 'Helligkeit', 10, 100, 5, {
+        10:'10%', 25:'25%', 50:'50%', 75:'75%', 100:'100%'
+      }) +
+      fNum('follow_me.profiles.' + name + '.light_color_temp', 'Farbtemperatur (Kelvin)', 2700, 6500) +
+      fNum('follow_me.profiles.' + name + '.comfort_temp', 'Komfort-Temperatur', 16, 28) +
+      '</div>';
+  }
+
+  // Button zum Hinzufuegen
+  html += '<button class="btn btn-sm" onclick="addFollowMeProfile()" style="margin-top:8px;">' +
+    '+ Profil hinzufuegen</button>';
+
+  return html;
+}
+
+function addFollowMeProfile() {
+  const name = prompt('Name der Person:');
+  if (!name || !name.trim()) return;
+  const key = name.trim();
+  const profiles = getPath(S, 'follow_me.profiles') || {};
+  if (profiles[key]) { alert('Profil existiert bereits.'); return; }
+  profiles[key] = { light_brightness: 80, light_color_temp: 3500, comfort_temp: 22 };
+  setPath(S, 'follow_me.profiles', profiles);
+  renderCurrentTab();
 }
 
 // ---- Tab 9: Easter Eggs ----

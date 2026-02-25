@@ -136,15 +136,19 @@ class CameraManager:
 
             if context == "doorbell":
                 prompt = (
-                    "Beschreibe kurz auf Deutsch was du auf diesem Tuerkamera-Bild siehst. "
-                    "Fokussiere auf: Wer steht vor der Tuer? Pakete? Fahrzeuge? "
-                    "Maximal 2 Saetze."
+                    "Du bist JARVIS. Beschreibe knapp auf Deutsch was die Tuerkamera zeigt. "
+                    "Wer steht da? Paket? Fahrzeug? 1-2 Saetze, sachlich und praezise."
+                )
+            elif context == "night_motion":
+                prompt = (
+                    "Du bist JARVIS. Nachtaufnahme einer Sicherheitskamera. "
+                    "Was ist zu sehen? Person? Tier? Fahrzeug? Bedrohlich? 1-2 Saetze."
                 )
             else:
                 prompt = (
-                    "Beschreibe kurz auf Deutsch was du auf diesem Kamera-Bild siehst. "
-                    "Fokussiere auf Personen, Fahrzeuge, auffaellige Objekte. "
-                    "Maximal 2 Saetze."
+                    "Du bist JARVIS. Beschreibe knapp auf Deutsch was auf diesem "
+                    "Kamera-Bild zu sehen ist. Personen, Fahrzeuge, Auffaelligkeiten. "
+                    "1-2 Saetze, sachlich."
                 )
 
             response = await self.ollama.chat(
@@ -161,3 +165,45 @@ class CameraManager:
             logger.error("Vision-LLM Analyse fehlgeschlagen: %s", e)
 
         return None
+
+    async def analyze_night_motion(self, motion_entity: str = "") -> Optional[str]:
+        """Nacht-Motion: Snapshot von passender Kamera + Vision-Analyse.
+
+        Wird von ProactiveManager aufgerufen wenn nachts Bewegung erkannt wird.
+
+        Returns:
+            Beschreibung oder None wenn keine Kamera verfuegbar.
+        """
+        if not self.enabled:
+            return None
+
+        # Kamera fuer den Motion-Bereich finden
+        camera_entity = None
+        motion_lower = motion_entity.lower()
+
+        # Mapping: Motion-Sensor-Name → Kamera suchen
+        for name, cam_id in self.camera_map.items():
+            if name.lower() in motion_lower or motion_lower in name.lower():
+                camera_entity = cam_id
+                break
+
+        # Fallback: Erste Outdoor/Aussen-Kamera
+        if not camera_entity:
+            states = await self.ha.get_states()
+            if states:
+                for s in states:
+                    eid = s.get("entity_id", "")
+                    if eid.startswith("camera.") and any(
+                        kw in eid.lower() for kw in ("outdoor", "aussen", "garten", "einfahrt", "hof")
+                    ):
+                        camera_entity = eid
+                        break
+
+        if not camera_entity:
+            return None
+
+        image_data = await self._get_snapshot(camera_entity)
+        if not image_data:
+            return None
+
+        return await self._analyze_image(image_data, context="night_motion")

@@ -112,6 +112,7 @@ class ProactiveManager:
             "washer_done": (MEDIUM, "Waschmaschine fertig"),
             "dryer_done": (MEDIUM, "Trockner fertig"),
             "doorbell": (MEDIUM, "Jemand hat geklingelt"),
+            "night_motion_camera": (MEDIUM, "Naechtliche Bewegung erkannt"),
 
             # LOW - Melden wenn entspannt
             "weather_warning": (LOW, "Wetterwarnung"),
@@ -367,11 +368,13 @@ class ProactiveManager:
         elif entity_id.startswith("proximity.") or entity_id.startswith("sensor.") and "distance" in entity_id:
             await self._check_geo_fence(entity_id, new_val, old_val, new_state)
 
-        # Phase 7.1 + 10.1: Bewegung erkannt → Morning/Evening Briefing + Musik-Follow
+        # Phase 7.1 + 10.1: Bewegung erkannt → Morning/Evening Briefing + Musik-Follow + Nacht-Kamera + Follow-Me
         elif entity_id.startswith("binary_sensor.") and "motion" in entity_id and new_val == "on":
             await self._check_morning_briefing()
             await self._check_evening_briefing()
             await self._check_music_follow(entity_id)
+            await self._check_night_motion_camera(entity_id)
+            await self._check_follow_me(entity_id)
 
         # Waschmaschine/Trockner (Power-Sensor faellt unter Schwellwert)
         elif "washer" in entity_id or "waschmaschine" in entity_id:
@@ -609,6 +612,55 @@ class ProactiveManager:
 
         except Exception as e:
             logger.debug("Evening Briefing Fehler: %s", e)
+
+    async def _check_night_motion_camera(self, motion_entity: str):
+        """Nacht-Motion: Wenn nachts Bewegung erkannt wird, Kamera-Snapshot analysieren."""
+        from datetime import datetime
+        try:
+            hour = datetime.now().hour
+            # Nur nachts (22:00 - 06:00)
+            if not (hour >= 22 or hour < 6):
+                return
+
+            # Nur Outdoor-Motion-Sensoren (indoor-Bewegung ist normal)
+            eid_lower = motion_entity.lower()
+            if not any(kw in eid_lower for kw in ("outdoor", "aussen", "garten", "einfahrt", "hof", "garage")):
+                return
+
+            # Cooldown: Max 1x pro 10 Minuten pro Sensor
+            cooldown_key = f"mha:night_cam:{motion_entity}"
+            if self.brain.memory and self.brain.memory.redis:
+                already = await self.brain.memory.redis.get(cooldown_key)
+                if already:
+                    return
+                await self.brain.memory.redis.setex(cooldown_key, 600, "1")
+
+            # Kamera-Analyse
+            if not hasattr(self.brain, "camera_manager"):
+                return
+            description = await self.brain.camera_manager.analyze_night_motion(motion_entity)
+            if description:
+                await self._notify("night_motion_camera", MEDIUM, {
+                    "entity": motion_entity,
+                    "camera_description": description,
+                })
+        except Exception as e:
+            logger.debug("Nacht-Motion-Kamera fehlgeschlagen: %s", e)
+
+    async def _check_follow_me(self, motion_entity: str):
+        """Follow-Me: Transferiert Musik/Licht/Klima wenn Person den Raum wechselt."""
+        try:
+            if not hasattr(self.brain, "follow_me") or not self.brain.follow_me.enabled:
+                return
+            result = await self.brain.follow_me.handle_motion(motion_entity)
+            if result and result.get("actions"):
+                actions_desc = ", ".join(a["type"] for a in result["actions"])
+                logger.info(
+                    "Follow-Me Transfer: %s → %s (%s)",
+                    result["from_room"], result["to_room"], actions_desc,
+                )
+        except Exception as e:
+            logger.debug("Follow-Me Check fehlgeschlagen: %s", e)
 
     async def _check_music_follow(self, motion_entity: str):
         """Phase 10.1: Prueft ob Musik dem User in einen neuen Raum folgen soll."""
@@ -1154,6 +1206,16 @@ class ProactiveManager:
                 "Max 2 Saetze. Deutsch. Butler der dem Herrn den Mantel reicht, nicht winkt.",
             ]
             return "\n".join(parts)
+
+        # Nacht-Motion Kamera: Bewegung + Kamera-Beschreibung
+        if event_type == "night_motion_camera":
+            cam_desc = data.get("camera_description", "")
+            return (
+                f"Naechtliche Bewegung erkannt ({data.get('entity', 'Aussen')}).\n"
+                f"Kamera zeigt: {cam_desc}\n"
+                f"Formuliere eine knappe Sicherheitsmeldung im JARVIS-Stil.\n"
+                f"Max 2 Saetze. Deutsch. Sachlich. Keine Panik wenn harmlos (Tier, Wind)."
+            )
 
         # Phase 10.1: Musik-Follow Vorschlag
         if event_type == "music_follow":

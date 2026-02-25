@@ -17,13 +17,14 @@ logger = logging.getLogger(__name__)
 
 # Fakten-Kategorien
 FACT_CATEGORIES = [
-    "preference",   # "Max mag 21 Grad im Buero"
-    "person",       # "Lisa ist die Freundin von Max"
-    "habit",        # "Max steht um 7 Uhr auf"
-    "health",       # "Max hat eine Haselnuss-Allergie"
-    "work",         # "Max arbeitet an Projekt Aurora"
-    "intent",       # Phase 8: "Eltern kommen naechstes WE"
-    "general",      # Sonstige Fakten
+    "preference",           # "Max mag 21 Grad im Buero"
+    "person",               # "Lisa ist die Freundin von Max"
+    "habit",                # "Max steht um 7 Uhr auf"
+    "health",               # "Max hat eine Haselnuss-Allergie"
+    "work",                 # "Max arbeitet an Projekt Aurora"
+    "intent",               # Phase 8: "Eltern kommen naechstes WE"
+    "conversation_topic",   # Gespraechs-Themen fuer Kontext-Kette
+    "general",              # Sonstige Fakten
 ]
 
 
@@ -605,6 +606,38 @@ class SemanticMemory:
         except Exception as e:
             logger.error("Fehler bei Themen-Suche: %s", e)
             return []
+
+    async def get_relevant_conversations(
+        self, topic: str, limit: int = 3
+    ) -> list[dict]:
+        """Sucht relevante vergangene Gespraeche/Themen fuer Kontext-Kette.
+
+        Filtert nur conversation_topic Fakten und bevorzugt juengere.
+
+        Returns:
+            Liste von {content, person, relevance, created_at}
+        """
+        results = await self.search_by_topic(topic, limit=limit * 3)
+        # Nur conversation_topic Fakten
+        convos = [
+            r for r in results
+            if r.get("category") == "conversation_topic" and r.get("relevance", 0) > 0.3
+        ]
+        # Sortieren: Relevanz * Aktualitaets-Bonus
+        for c in convos:
+            created = c.get("created_at", "")
+            age_bonus = 1.0
+            if created:
+                try:
+                    from datetime import datetime
+                    age_days = (datetime.now() - datetime.fromisoformat(created)).days
+                    # Juengere Gespraeche bevorzugen (Bonus bis 1.5x fuer heute)
+                    age_bonus = max(0.5, 1.5 - age_days * 0.1)
+                except (ValueError, TypeError):
+                    pass
+            c["_score"] = c.get("relevance", 0) * age_bonus
+        convos.sort(key=lambda c: c["_score"], reverse=True)
+        return convos[:limit]
 
     async def forget(self, topic: str) -> int:
         """

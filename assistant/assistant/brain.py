@@ -49,6 +49,7 @@ from .ollama_client import OllamaClient
 from .ambient_audio import AmbientAudioClassifier
 from .ocr import OCREngine
 from .conflict_resolver import ConflictResolver
+from .follow_me import FollowMeEngine
 from .personality import PersonalityEngine
 from .proactive import ProactiveManager
 from .anticipation import AnticipationEngine
@@ -165,6 +166,7 @@ class AssistantBrain(BrainCallbacksMixin):
         self.autonomy = AutonomyManager()
         self.feedback = FeedbackTracker()
         self.activity = ActivityEngine(self.ha)
+        self.follow_me = FollowMeEngine(self.ha)
         self.proactive = ProactiveManager(self)
         self.summarizer = DailySummarizer(self.ollama)
         self.memory_extractor: Optional[MemoryExtractor] = None
@@ -1343,6 +1345,108 @@ class AssistantBrain(BrainCallbacksMixin):
             except Exception as e:
                 logger.warning("Media-Shortcut fehlgeschlagen: %s — Fallback auf LLM", e)
 
+        # Intercom-Shortcut: Durchsagen an Person/Raum direkt ausfuehren.
+        # "Sag Julia dass das Essen fertig ist" → send_intercom sofort.
+        intercom_cmd = self._detect_intercom_command(text)
+        if intercom_cmd:
+            func_name = intercom_cmd["function"]
+            func_args = intercom_cmd["args"]
+            logger.info("Intercom-Shortcut: '%s' -> %s(%s)", text, func_name, func_args)
+            try:
+                result = await self.executor.execute(func_name, func_args)
+                success = isinstance(result, dict) and result.get("success", False)
+
+                if success:
+                    target = func_args.get("target_person") or func_args.get("target_room") or "alle"
+                    response_text = f"Durchsage an {target} gesendet."
+                else:
+                    response_text = self.personality.get_varied_confirmation(success=False)
+
+                self._remember_exchange(text, response_text)
+                tts_data = self.tts_enhancer.enhance(
+                    response_text, message_type="confirmation",
+                )
+                if stream_callback:
+                    if not room:
+                        room = await self._get_occupied_room()
+                    self._task_registry.create_task(
+                        self.sound_manager.speak_response(
+                            response_text, room=room, tts_data=tts_data),
+                        name="speak_response",
+                    )
+                else:
+                    await self._speak_and_emit(
+                        response_text, room=room, tts_data=tts_data,
+                    )
+
+                await emit_action(func_name, func_args, result)
+
+                return {
+                    "response": response_text,
+                    "actions": [{"function": func_name,
+                                 "args": func_args,
+                                 "result": result}],
+                    "model_used": "intercom_shortcut",
+                    "context_room": room or "unbekannt",
+                    "tts": tts_data,
+                    "_emitted": not stream_callback,
+                }
+            except Exception as e:
+                logger.warning("Intercom-Shortcut fehlgeschlagen: %s — Fallback auf LLM", e)
+
+        # Status-Report-Shortcut: "Statusbericht" / "Briefing" / "Was gibts Neues"
+        # Aggregiert alle Datenquellen und laesst LLM einen narrativen Bericht generieren.
+        if self._is_status_report_request(text):
+            logger.info("Status-Report-Shortcut: '%s'", text)
+            try:
+                raw_result = await self.executor.execute("get_full_status_report", {})
+                if isinstance(raw_result, dict) and raw_result.get("success"):
+                    raw_data = raw_result["message"]
+                    # LLM generiert narrativen Bericht im JARVIS-Stil
+                    title = get_person_title()
+                    narrative_prompt = (
+                        f"Du bist JARVIS. Fasse diesen Haus-Status als kurzes Briefing zusammen. "
+                        f"3-5 Saetze, narrativ, priorisiert (Wichtiges zuerst, Langweiliges weglassen). "
+                        f"Trockener Butler-Ton. Kein Aufzaehlungsformat. Fliessender Bericht. "
+                        f"Sprich den User mit '{title}' an.\n\n{raw_data}"
+                    )
+                    narrative = await self.ollama.generate(
+                        prompt=narrative_prompt,
+                        temperature=0.5,
+                        max_tokens=300,
+                    )
+                    response_text = narrative.strip() if narrative.strip() else raw_data
+
+                    self._remember_exchange(text, response_text)
+                    tts_data = self.tts_enhancer.enhance(
+                        response_text, message_type="briefing",
+                    )
+                    if stream_callback:
+                        if not room:
+                            room = await self._get_occupied_room()
+                        self._task_registry.create_task(
+                            self.sound_manager.speak_response(
+                                response_text, room=room, tts_data=tts_data),
+                            name="speak_response",
+                        )
+                    else:
+                        await self._speak_and_emit(
+                            response_text, room=room, tts_data=tts_data,
+                        )
+
+                    return {
+                        "response": response_text,
+                        "actions": [{"function": "get_full_status_report",
+                                     "args": {},
+                                     "result": raw_result}],
+                        "model_used": "status_report_shortcut",
+                        "context_room": room or "unbekannt",
+                        "tts": tts_data,
+                        "_emitted": not stream_callback,
+                    }
+            except Exception as e:
+                logger.warning("Status-Report-Shortcut fehlgeschlagen: %s — Fallback auf LLM", e)
+
         # Status-Query-Shortcut: Direkte Ausfuehrung von Status-Abfragen
         # (Lichter, Rolllaeden, Steckdosen, Heizung, Hausstatus etc.)
         # Kein LLM noetig — deterministischer Tool-Call + Humanizer.
@@ -1479,6 +1583,9 @@ class AssistantBrain(BrainCallbacksMixin):
 
         # Phase 17: Situation Delta (was hat sich seit letztem Gespraech geaendert?)
         _mega_tasks.append(("situation_delta", self._get_situation_delta()))
+
+        # Kontext-Kette: Relevante vergangene Gespraeche laden
+        _mega_tasks.append(("conv_memory", self._get_conversation_memory(text)))
 
         # Alle Subsysteme die das Profil verlangt
         if profile.need_mood:
@@ -1647,6 +1754,18 @@ class AssistantBrain(BrainCallbacksMixin):
         memory_context = self._build_memory_context(memories)
         if memory_context:
             sections.append(("memory", memory_context, 2))
+
+        # Kontext-Kette: Relevante vergangene Gespraeche
+        conv_memory = _safe_get("conv_memory")
+        if conv_memory:
+            conv_text = (
+                "\n\nRELEVANTE VERGANGENE GESPRAECHE:\n"
+                f"{conv_memory}\n"
+                "Referenziere beilaeufig wenn passend: 'Wie am Dienstag besprochen.' / "
+                "'Du hattest das erwaehnt.' Mit trockenem Humor wenn es sich anbietet. "
+                "NICHT: 'Laut meinen Aufzeichnungen...' oder 'In unserem Gespraech am...'"
+            )
+            sections.append(("conv_memory", conv_text, 2))
 
         # Phase 17: Situation Delta (was hat sich seit letztem Gespraech geaendert?)
         if situation_delta:
@@ -3678,6 +3797,46 @@ class AssistantBrain(BrainCallbacksMixin):
 
         return ""
 
+    async def _get_conversation_memory(self, text: str) -> Optional[str]:
+        """Kontext-Kette: Sucht relevante vergangene Gespraeche.
+
+        Wird parallel mit dem Context-Build ausgefuehrt.
+        """
+        try:
+            if not self.memory or not self.memory.semantic:
+                return None
+            convos = await self.memory.semantic.get_relevant_conversations(text, limit=3)
+            if not convos:
+                return None
+            lines = []
+            for c in convos:
+                created = c.get("created_at", "")
+                date_str = ""
+                if created:
+                    try:
+                        from datetime import datetime
+                        dt = datetime.fromisoformat(created)
+                        days_ago = (datetime.now() - dt).days
+                        if days_ago == 0:
+                            date_str = "Heute"
+                        elif days_ago == 1:
+                            date_str = "Gestern"
+                        elif days_ago < 7:
+                            date_str = dt.strftime("%A")  # Wochentag
+                        else:
+                            date_str = f"Vor {days_ago} Tagen"
+                    except (ValueError, TypeError):
+                        pass
+                content = c.get("content", "")
+                if date_str:
+                    lines.append(f"- {date_str}: {content}")
+                else:
+                    lines.append(f"- {content}")
+            return "\n".join(lines)
+        except Exception as e:
+            logger.debug("Kontext-Kette Lookup fehlgeschlagen: %s", e)
+            return None
+
     async def _get_summary_context(self, text: str) -> str:
         """Holt relevante Langzeit-Summaries wenn die Frage die Vergangenheit betrifft."""
         past_keywords = [
@@ -3772,6 +3931,36 @@ class AssistantBrain(BrainCallbacksMixin):
                 )
         except Exception as e:
             logger.error("Fehler bei Hintergrund-Fakten-Extraktion: %s", e)
+
+        # Kontext-Kette: Substantielle Gespraeche als conversation_topic speichern
+        try:
+            if len(user_text.split()) >= 5 and self.memory and self.memory.semantic:
+                from .semantic_memory import SemanticFact
+                # Kurze Zusammenfassung des Gespraechs-Themas
+                topic_prompt = (
+                    f"Fasse das Thema dieses Gespraechs in 1 Satz zusammen. "
+                    f"NUR das Thema, keine Bewertung. Deutsch.\n\n"
+                    f"User: {user_text[:200]}\n"
+                    f"Antwort: {assistant_response[:200]}"
+                )
+                topic_summary = await self.ollama.generate(
+                    prompt=topic_prompt,
+                    temperature=0.1,
+                    max_tokens=80,
+                )
+                topic_text = topic_summary.strip()
+                if topic_text and len(topic_text) > 10:
+                    fact = SemanticFact(
+                        content=topic_text,
+                        category="conversation_topic",
+                        person=person,
+                        confidence=0.6,
+                        source_conversation=f"User: {user_text[:100]}",
+                    )
+                    await self.memory.semantic.store_fact(fact)
+                    logger.debug("Kontext-Kette: Topic gespeichert: %s", topic_text[:60])
+        except Exception as e:
+            logger.debug("Kontext-Kette Topic-Extraktion fehlgeschlagen: %s", e)
 
     # Gueltige Urgency-Level in der Silence Matrix
     _VALID_URGENCIES = {"critical", "high", "medium", "low"}
@@ -4935,6 +5124,100 @@ class AssistantBrain(BrainCallbacksMixin):
             args["volume"] = volume
 
         return {"function": "play_media", "args": args}
+
+    @staticmethod
+    def _is_status_report_request(text: str) -> bool:
+        """Erkennt ob der User einen narrativen Statusbericht will.
+
+        Matcht auf: statusbericht, briefing, lagebericht, was gibts neues, ueberblick geben.
+        NICHT auf einfache Status-Queries wie "wie warm ist es".
+        """
+        t = text.lower().strip().rstrip("?!.")
+        _keywords = [
+            "statusbericht", "status report", "status bericht",
+            "lagebericht", "lage bericht",
+            "briefing", "briefing geben",
+            "was gibt's neues", "was gibts neues", "was gibt es neues",
+            "ueberblick", "überblick",
+            "gib mir ein briefing", "gib mir einen ueberblick",
+            "gib mir einen überblick",
+            "was ist los", "was tut sich",
+            "morgen briefing", "morgenbriefing",
+            "abendbriefing", "abend briefing",
+        ]
+        return any(kw in t for kw in _keywords)
+
+    @staticmethod
+    def _detect_intercom_command(text: str) -> Optional[dict]:
+        """Erkennt Intercom-/Durchsage-Befehle.
+
+        Patterns:
+          - "sag/sage {person} [im {room}] [dass/,] {message}"
+          - "durchsage [im {room}]: {message}"
+          - "ruf alle [zum essen]" → broadcast
+
+        Returns:
+            {"function": "send_intercom"|"broadcast", "args": {...}} oder None.
+        """
+        import re as _re
+        t = text.strip()
+        t_lower = t.lower()
+
+        # Ausschluss: Fragen, kurze Saetze
+        if t_lower.endswith("?") or len(t_lower) < 8:
+            return None
+
+        # --- Pattern 1: "sag/sage {person} [im {room}] [dass/,] {message}" ---
+        m = _re.match(
+            r'(?:sag|sage)\s+'
+            r'(?:(?:der|dem|die)\s+)?'
+            r'([A-ZÄÖÜ][a-zäöüß]+)'  # Person (Eigenname)
+            r'(?:\s+im\s+([A-Za-zÄÖÜäöüß]+))?'  # optionaler Raum
+            r'[\s,]*(?:dass|das|,|:)?\s*'
+            r'(.+)',
+            t, _re.IGNORECASE,
+        )
+        if m:
+            person = m.group(1).strip()
+            room = (m.group(2) or "").strip()
+            message = m.group(3).strip().rstrip(".")
+            if len(message) < 3:
+                return None
+            # "sag mir" ist keine Durchsage
+            if person.lower() in ("mir", "mal", "ihm", "ihr", "uns", "ihnen", "bitte"):
+                return None
+            args = {"message": message, "target_person": person}
+            if room:
+                args["target_room"] = room
+            return {"function": "send_intercom", "args": args}
+
+        # --- Pattern 2: "durchsage [im {room}][:/] {message}" ---
+        m = _re.match(
+            r'durchsage'
+            r'(?:\s+(?:im|in\s+der|in\s+dem)\s+([A-Za-zÄÖÜäöüß]+))?'
+            r'[\s:,]+(.+)',
+            t, _re.IGNORECASE,
+        )
+        if m:
+            room = (m.group(1) or "").strip()
+            message = m.group(2).strip().rstrip(".")
+            if len(message) < 3:
+                return None
+            if room:
+                return {"function": "send_intercom", "args": {"message": message, "target_room": room}}
+            else:
+                return {"function": "broadcast", "args": {"message": message}}
+
+        # --- Pattern 3: "ruf alle [zum essen / ins {room}]" ---
+        m = _re.match(
+            r'(?:ruf|rufe)\s+alle\s+(.+)',
+            t, _re.IGNORECASE,
+        )
+        if m:
+            message = m.group(1).strip().rstrip(".")
+            return {"function": "broadcast", "args": {"message": message}}
+
+        return None
 
     @staticmethod
     def _detect_smalltalk(text: str) -> Optional[str]:
