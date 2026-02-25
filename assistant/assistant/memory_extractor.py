@@ -250,3 +250,118 @@ class MemoryExtractor:
 
         logger.debug("Konnte LLM-Antwort nicht parsen: %s", text[:200])
         return []
+
+    # ------------------------------------------------------------------
+    # Feature 5: Emotionales Gedaechtnis (Relationship Memory)
+    # ------------------------------------------------------------------
+
+    _NEGATIVE_REACTION_PATTERNS = frozenset([
+        "nein", "lass das", "hoer auf", "nicht", "stop", "stopp",
+        "will ich nicht", "nervt", "falsch", "schlecht", "weg damit",
+        "mach das rueckgaengig", "zurueck", "undo", "abbrechen",
+    ])
+
+    async def extract_reaction(
+        self,
+        user_text: str,
+        action_performed: str,
+        accepted: bool,
+        person: str = "unknown",
+        redis_client=None,
+    ) -> None:
+        """Speichert eine emotionale Reaktion auf eine Aktion.
+
+        Args:
+            user_text: Was der User gesagt hat
+            action_performed: Welche Aktion ausgefuehrt wurde (z.B. "set_climate")
+            accepted: Ob die Reaktion positiv war
+            person: Betroffene Person
+            redis_client: Redis-Client (optional, wird intern gesetzt)
+        """
+        emo_cfg = yaml_config.get("emotional_memory", {})
+        if not emo_cfg.get("enabled", True):
+            return
+
+        redis = redis_client
+        if not redis:
+            return
+
+        key = f"mha:emotional_memory:{action_performed}:{person.lower()}"
+        sentiment = "positive" if accepted else "negative"
+
+        try:
+            import json as _json
+            from datetime import datetime as _dt
+
+            entry = _json.dumps({
+                "sentiment": sentiment,
+                "action": action_performed,
+                "user_text": user_text[:100],
+                "timestamp": _dt.now().isoformat(),
+            })
+
+            await redis.lpush(key, entry)
+            await redis.ltrim(key, 0, 19)  # Max 20 Eintraege
+            decay_days = emo_cfg.get("decay_days", 90)
+            await redis.expire(key, decay_days * 86400)
+
+            logger.info(
+                "Emotionale Reaktion gespeichert: %s auf %s von %s",
+                sentiment, action_performed, person,
+            )
+        except Exception as e:
+            logger.debug("Emotionale Reaktion speichern fehlgeschlagen: %s", e)
+
+    @staticmethod
+    async def get_emotional_context(
+        action_type: str, person: str, redis_client=None,
+    ) -> Optional[str]:
+        """Gibt emotionalen Kontext fuer eine Aktion zurueck.
+
+        Args:
+            action_type: Typ der geplanten Aktion (z.B. "set_climate")
+            person: Betroffene Person
+            redis_client: Redis-Client
+
+        Returns:
+            Warntext wenn negative History vorhanden, sonst None
+        """
+        emo_cfg = yaml_config.get("emotional_memory", {})
+        if not emo_cfg.get("enabled", True) or not redis_client:
+            return None
+
+        key = f"mha:emotional_memory:{action_type}:{person.lower()}"
+        threshold = emo_cfg.get("negative_threshold", 2)
+
+        try:
+            import json as _json
+
+            entries_raw = await redis_client.lrange(key, 0, 9)
+            if not entries_raw:
+                return None
+
+            negative_count = 0
+            last_negative_text = ""
+            for raw in entries_raw:
+                entry = _json.loads(raw.decode() if isinstance(raw, bytes) else raw)
+                if entry.get("sentiment") == "negative":
+                    negative_count += 1
+                    if not last_negative_text:
+                        last_negative_text = entry.get("user_text", "")
+
+            if negative_count >= threshold:
+                return (
+                    f"EMOTIONALES GEDAECHTNIS: Der Benutzer hat bereits {negative_count}x "
+                    f"negativ auf '{action_type}' reagiert "
+                    f"(zuletzt: \"{last_negative_text}\"). "
+                    f"Frage lieber nach bevor du diese Aktion ausfuehrst."
+                )
+            return None
+        except Exception as e:
+            logger.debug("Emotionaler Kontext Fehler: %s", e)
+            return None
+
+    def detect_negative_reaction(self, text: str) -> bool:
+        """Erkennt ob ein Text eine negative Reaktion auf eine Aktion ist."""
+        text_lower = text.lower().strip()
+        return any(p in text_lower for p in self._NEGATIVE_REACTION_PATTERNS)

@@ -1601,6 +1601,166 @@ Sprich den Hauptbenutzer mit "{get_person_title()}" an. DUZE ihn.
 VERBOTEN: "leider", "Entschuldigung", "Es tut mir leid", "Wie kann ich helfen?", "Gerne!", "Natuerlich!".
 Kein unterwuerfiger Ton. Du bist ein brillanter Butler, kein Chatbot."""
 
+    # ------------------------------------------------------------------
+    # Feature 3: Geraete-Persoenlichkeit / Narration
+    # ------------------------------------------------------------------
+
+    # Default-Spitznamen fuer gaengige Geraete (entity_id-Substring → Nickname)
+    _DEVICE_NICKNAMES = {
+        "waschmaschine": {"name": "die Fleissige", "pron": "ihre"},
+        "trockner": {"name": "der Warme", "pron": "seine"},
+        "spuelmaschine": {"name": "die Gruendliche", "pron": "ihre"},
+        "geschirrspueler": {"name": "die Gruendliche", "pron": "ihre"},
+        "saugroboter": {"name": "der Kleine", "pron": "seine"},
+        "staubsauger": {"name": "der Kleine", "pron": "seine"},
+        "kaffeemaschine": {"name": "die Barista", "pron": "ihre"},
+        "heizung": {"name": "die Warmhalterin", "pron": "ihre"},
+        "klimaanlage": {"name": "die Kuehle", "pron": "ihre"},
+        "ofen": {"name": "der Heisse", "pron": "seine"},
+        "backofen": {"name": "der Heisse", "pron": "seine"},
+        "drucker": {"name": "der Fleissige", "pron": "seine"},
+    }
+
+    _DEVICE_EVENT_TEMPLATES = {
+        "turned_off": [
+            "{nickname} hat {pron} Arbeit erledigt.",
+            "{nickname} ist fertig — Mission erfuellt.",
+            "{nickname} meldet Vollzug.",
+        ],
+        "turned_on": [
+            "{nickname} legt los.",
+            "{nickname} ist aufgewacht und arbeitet.",
+            "{nickname} hat sich an die Arbeit gemacht.",
+        ],
+        "running_long": [
+            "{nickname} laeuft schon {duration} — alles in Ordnung?",
+            "{nickname} gibt nicht auf — {duration} und kein Ende in Sicht.",
+        ],
+        "anomaly": [
+            "{nickname} benimmt sich ungewoehnlich. Vielleicht mal nachschauen.",
+            "Mit {nickname} stimmt etwas nicht. Ich wuerde nachsehen.",
+        ],
+        "stale": [
+            "{nickname} hat sich seit {duration} nicht gemeldet.",
+        ],
+    }
+
+    def _get_device_nickname(self, entity_id: str) -> Optional[dict]:
+        """Findet den Spitznamen fuer ein Geraet (Config-Override oder Default)."""
+        narration_cfg = yaml_config.get("device_narration", {})
+        if not narration_cfg.get("enabled", True):
+            return None
+
+        entity_lower = entity_id.lower()
+
+        # Custom-Nicknames aus Config haben Vorrang
+        custom = narration_cfg.get("custom_nicknames", {})
+        for keyword, nickname in custom.items():
+            if keyword.lower() in entity_lower:
+                return {"name": nickname, "pron": "seine"}
+
+        # Default-Mappings
+        for keyword, info in self._DEVICE_NICKNAMES.items():
+            if keyword in entity_lower:
+                return info
+        return None
+
+    def narrate_device_event(
+        self, entity_id: str, event_type: str, detail: str = ""
+    ) -> Optional[str]:
+        """Erzeugt eine persoenlichkeits-basierte Geraete-Meldung.
+
+        Args:
+            entity_id: HA Entity-ID (z.B. "switch.waschmaschine")
+            event_type: Art des Events (turned_off, turned_on, running_long, anomaly, stale)
+            detail: Zusatz-Info (z.B. Dauer "2 Stunden")
+
+        Returns:
+            Narrations-Text oder None wenn kein Nickname vorhanden
+        """
+        nickname_info = self._get_device_nickname(entity_id)
+        if not nickname_info:
+            return None
+
+        templates = self._DEVICE_EVENT_TEMPLATES.get(event_type)
+        if not templates:
+            return None
+
+        template = random.choice(templates)
+        text = template.format(
+            nickname=nickname_info["name"],
+            pron=nickname_info.get("pron", "seine"),
+            duration=detail or "einer Weile",
+        )
+
+        # Titel anhaengen bei formeller Anrede
+        formality = getattr(self, '_current_formality', self.formality_start)
+        title = get_person_title()
+        if formality >= 50 and random.random() < 0.5:
+            text = f"{title}, {text[0].lower()}{text[1:]}"
+
+        return text
+
+    # ------------------------------------------------------------------
+    # Feature 1: Progressive Antworten (Denken laut)
+    # ------------------------------------------------------------------
+
+    _PROGRESS_MESSAGES = {
+        "context": {
+            "formal": [
+                "Einen Moment bitte, ich analysiere die Situation.",
+                "Ich pruefe den aktuellen Hausstatus.",
+                "Ich sammle die relevanten Daten.",
+            ],
+            "casual": [
+                "Moment... ich schau mal eben nach.",
+                "Sekunde, ich check das kurz.",
+                "Ich schau mir das mal an.",
+            ],
+        },
+        "thinking": {
+            "formal": [
+                "Ich analysiere die Optionen.",
+                "Einen Moment, ich ueberlege.",
+                "Ich werte die Daten aus.",
+            ],
+            "casual": [
+                "Hmm, lass mich ueberlegen.",
+                "Moment, ich denk kurz nach.",
+                "Ich gruebel kurz...",
+            ],
+        },
+        "action": {
+            "formal": [
+                "Ich fuehre das aus.",
+                "Wird sofort erledigt.",
+                "Ausfuehrung laeuft.",
+            ],
+            "casual": [
+                "Mach ich.",
+                "Laeuft.",
+                "Bin dran.",
+            ],
+        },
+    }
+
+    def get_progress_message(self, step: str) -> str:
+        """Gibt eine personality-konsistente Fortschritts-Nachricht zurueck.
+
+        Args:
+            step: Phase der Verarbeitung (context, thinking, action)
+
+        Returns:
+            Nachricht passend zum aktuellen Formality-Level
+        """
+        formality = getattr(self, '_current_formality', self.formality_start)
+        style = "formal" if formality >= 50 else "casual"
+
+        messages = self._PROGRESS_MESSAGES.get(step, {}).get(style)
+        if not messages:
+            return ""
+        return random.choice(messages)
+
     def get_error_response(self, error_type: str = "general") -> str:
         """Gibt eine Jarvis-typische Fehlermeldung zurueck.
 

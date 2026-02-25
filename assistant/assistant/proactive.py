@@ -902,6 +902,36 @@ class ProactiveManager:
 
         # Meldung generieren
         description = self.event_handlers.get(event_type, (MEDIUM, event_type))[1]
+
+        # Feature 3: Geraete-Persoenlichkeit — narration statt LLM wenn moeglich
+        narration_text = None
+        entity_id = data.get("entity_id", "")
+        narration_event_map = {
+            "device_turned_off": "turned_off",
+            "device_turned_on": "turned_on",
+            "device_running_long": "running_long",
+            "device_anomaly": "anomaly",
+        }
+        if entity_id and event_type in narration_event_map:
+            try:
+                narration_text = self.brain.personality.narrate_device_event(
+                    entity_id, narration_event_map[event_type],
+                    detail=data.get("detail", ""),
+                )
+            except Exception:
+                pass  # Fallback auf LLM-generierte Meldung
+
+        if narration_text:
+            text = narration_text
+            await emit_proactive(text, event_type, urgency, notification_id)
+            await self.brain.memory.set_last_notification_time(event_type)
+            await feedback.track_notification(notification_id, event_type)
+            logger.info(
+                "Proaktive Meldung [%s/%s] (narration, id: %s, delivery: %s): %s",
+                event_type, urgency, notification_id, delivery_method, text,
+            )
+            return
+
         prompt = self._build_notification_prompt(event_type, description, data, urgency)
 
         try:

@@ -115,6 +115,17 @@ async def emit_sound(sound_event: str, volume: float = 0.5) -> None:
     })
 
 
+async def emit_progress(step: str, message: str) -> None:
+    """Feature 1: Fortschritts-Update waehrend der Verarbeitung.
+
+    Jarvis 'denkt laut' — sendet Zwischen-Meldungen statt still zu arbeiten.
+    """
+    await ws_manager.broadcast("assistant.progress", {
+        "step": step,
+        "message": message,
+    })
+
+
 async def emit_stream_start() -> None:
     """Signalisiert: Streaming-Antwort beginnt."""
     await ws_manager.broadcast("assistant.stream_start", {"status": "streaming"})
