@@ -2053,6 +2053,7 @@ class AssistantBrain(BrainCallbacksMixin):
             # 1. Humanizer wandelt Rohdaten in natuerliche Sprache um (zuverlaessig)
             # 2. LLM verfeinert den humanisierten Text (JARVIS-Persoenlichkeit)
             # 3. Wenn LLM fehlschlaegt → humanisierter Text als Fallback
+            humanized_text = ""  # Fuer Sprach-Retry Fallback
             if tool_calls and has_query_results:
                 # Schritt 1: Rohdaten humanisieren
                 humanized_results = []
@@ -2218,6 +2219,12 @@ class AssistantBrain(BrainCallbacksMixin):
             night_limit = 2
         if intent_type == "general" or night_limit > 0:
             response_text = self._filter_response(response_text, max_sentences_override=night_limit)
+
+        # Humanizer-Fallback: Wenn Query-Tools liefen aber LLM-Feinschliff
+        # verworfen wurde, humanisierten Text wiederherstellen
+        if not response_text and has_query_results and humanized_text:
+            response_text = humanized_text
+            logger.info("Query-Humanizer Fallback: '%s'", response_text[:80])
 
         # Sprach-Retry: Wenn Antwort verworfen wurde (nicht Deutsch), nochmal mit explizitem Sprach-Prompt
         if not response_text and text:
@@ -2730,17 +2737,52 @@ class AssistantBrain(BrainCallbacksMixin):
     def _humanize_entity_state(self, raw: str) -> str:
         """Entity-Status in natuerliche Sprache."""
         # Kurze Rohdaten einfach durchlassen (z.B. "22.5°C")
-        if len(raw) < 60:
+        if len(raw) < 80:
             return raw
-        return raw
+        lines = raw.strip().split("\n")
+        if len(lines) <= 3:
+            return raw
+        # Nur erste 3 relevante Zeilen zusammenfassen
+        summary = " ".join(l.strip().lstrip("- ") for l in lines[:3] if l.strip())
+        if len(lines) > 3:
+            summary += f" (und {len(lines) - 3} weitere)"
+        return summary
 
     def _humanize_room_climate(self, raw: str) -> str:
         """Raum-Klima in natuerliche Sprache."""
+        import re as _re
+        temp_m = _re.search(r'(-?\d+[.,]?\d*)\s*°?C', raw)
+        hum_m = _re.search(r'(\d+[.,]?\d*)\s*%', raw)
+        parts = []
+        if temp_m:
+            parts.append(f"{temp_m.group(1)}°C")
+        if hum_m:
+            parts.append(f"{hum_m.group(1)}% Luftfeuchtigkeit")
+        if parts:
+            return ", ".join(parts) + "."
         return raw
 
     def _humanize_house_status(self, raw: str) -> str:
         """Haus-Status in natuerliche Sprache."""
-        return raw
+        import re as _re
+        lines = raw.strip().split("\n")
+        lights_on = sum(1 for l in lines if ": on" in l and
+                        any(k in l.lower() for k in ["light", "licht", "lampe"]))
+        covers_open = sum(1 for l in lines if
+                          ("open" in l.lower() or "offen" in l.lower()) and
+                          any(k in l.lower() for k in ["cover", "rollladen", "rollo"]))
+        parts = []
+        if lights_on:
+            parts.append(f"{lights_on} Licht{'er' if lights_on > 1 else ''} an")
+        if covers_open:
+            parts.append(f"{covers_open} Rollladen offen")
+        # Temperatur suchen
+        temp_m = _re.search(r'(-?\d+[.,]?\d*)\s*°?C', raw)
+        if temp_m:
+            parts.append(f"{temp_m.group(1)}°C")
+        if not parts:
+            return "Alles ruhig im Haus."
+        return "Im Haus: " + ", ".join(parts) + "."
 
     def _humanize_alarms(self, raw: str) -> str:
         """Wecker-Daten in natuerliche JARVIS-Sprache."""
@@ -2837,10 +2879,19 @@ class AssistantBrain(BrainCallbacksMixin):
 
     def _humanize_climate_list(self, raw: str) -> str:
         """Klima-Geraete Status in natuerliche Sprache."""
-        # Kurze Rohdaten direkt durchlassen
-        if len(raw) < 100:
+        import re as _re
+        lines = raw.strip().split("\n")
+        active = []
+        for line in lines:
+            temp_m = _re.search(r'(-?\d+[.,]?\d*)\s*°?C', line)
+            name = line.lstrip("- ").split("[")[0].split(":")[0].strip()
+            if temp_m and name:
+                active.append(f"{name}: {temp_m.group(1)}°C")
+        if active:
+            return ", ".join(active) + "."
+        if len(raw) < 120:
             return raw
-        return raw
+        return "\n".join(lines[:5])
 
     # ------------------------------------------------------------------
     # Phase 12: Response-Filter (Post-Processing)
@@ -4077,21 +4128,53 @@ class AssistantBrain(BrainCallbacksMixin):
                     return {"function": {"name": "get_entity_state",
                                          "arguments": {"entity_id": query}}}
 
+        # --- Raum-Extraktion (fuer Steuerungsbefehle) ---
+        _room = ""
+        _rm = re.search(
+            r'(?:im|in\s+der|in\s+dem|ins|vom|am)\s+'
+            r'([a-zäöüß][a-zäöüß\-]+)', t)
+        if _rm:
+            _skip_words = {"moment", "prinzip", "grunde", "allgemeinen"}
+            if _rm.group(1) not in _skip_words:
+                _room = _rm.group(1)
+        if not _room:
+            for _noun in ["licht", "lampe", "leuchte", "rollladen", "rolladen",
+                          "rollo", "jalousie"]:
+                _idx = t.find(_noun)
+                if _idx > 0:
+                    _before = t[:_idx].strip().split()
+                    if _before:
+                        _cand = _before[-1]
+                        _cmd_words = {"das", "die", "der", "den", "dem", "mein",
+                                      "dein", "bitte", "mal", "noch", "alle",
+                                      "jedes", "schalte", "schalt", "mach",
+                                      "stell", "setz", "dreh"}
+                        if _cand not in _cmd_words and len(_cand) > 2:
+                            _room = _cand
+                    break
+
         # --- Steuerungsbefehle: "Licht aus", "Rollladen hoch" ---
-        # Lichter an/aus
+        # Lichter an/aus/dimmen
         if any(n in t for n in ["licht", "lampe", "leuchte"]):
-            action = "on" if (words & {"an", "ein"}) else "off" if (words & {"aus"}) else None
-            if action:
-                return {"function": {"name": "set_light",
-                                     "arguments": {"action": action, "area": "all"}}}
+            state = "on" if (words & {"an", "ein"}) else "off" if (words & {"aus"}) else None
+            brightness = None
+            pct_m = re.search(r'(\d{1,3})\s*(?:%|prozent)', t)
+            if pct_m:
+                brightness = max(1, min(100, int(pct_m.group(1))))
+                state = "on"
+            if state:
+                args = {"state": state, "room": _room}
+                if brightness is not None:
+                    args["brightness"] = brightness
+                return {"function": {"name": "set_light", "arguments": args}}
         # Rollläden
         if any(n in t for n in ["rollladen", "rolladen", "rollo", "jalousie"]):
             if words & {"auf", "hoch", "oeffne", "oeffnen", "offen"}:
                 return {"function": {"name": "set_cover",
-                                     "arguments": {"action": "open", "area": "all"}}}
+                                     "arguments": {"action": "open", "room": _room}}}
             if words & {"zu", "runter", "schliess", "schliessen"}:
                 return {"function": {"name": "set_cover",
-                                     "arguments": {"action": "close", "area": "all"}}}
+                                     "arguments": {"action": "close", "room": _room}}}
 
         return None
 
@@ -4239,6 +4322,21 @@ class AssistantBrain(BrainCallbacksMixin):
             _SKIP = {"moment", "prinzip", "grunde", "allgemeinen"}
             if candidate.lower() not in _SKIP:
                 extracted_room = candidate
+        # Fallback: Raum direkt vor Geraete-Nomen ("Schlafzimmer Licht")
+        if not extracted_room:
+            for _noun in ["licht", "lampe", "leuchte", "rollladen", "rolladen",
+                          "rollo", "jalousie", "heizung", "thermostat"]:
+                _idx = t.find(_noun)
+                if _idx > 0:
+                    _before = text[:_idx].strip().split()  # Original-Case
+                    if _before:
+                        _cand = _before[-1]
+                        _CMD = {"mach", "schalte", "schalt", "stell", "setz",
+                                "dreh", "fahr", "oeffne", "schliess", "bitte",
+                                "mal", "das", "die", "den", "dem", "der"}
+                        if _cand.lower() not in _CMD and len(_cand) > 2:
+                            extracted_room = _cand
+                    break
         effective_room = extracted_room or room
 
         # --- LICHT ---
