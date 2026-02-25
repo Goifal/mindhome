@@ -9,8 +9,8 @@ import pytest
 
 from assistant.memory_extractor import (
     CATEGORY_CONFIDENCE,
-    MAX_CONVERSATION_LENGTH,
-    MIN_CONVERSATION_WORDS,
+    _DEFAULT_MAX_LENGTH as MAX_CONVERSATION_LENGTH,
+    _DEFAULT_MIN_WORDS as MIN_CONVERSATION_WORDS,
     MemoryExtractor,
 )
 from assistant.semantic_memory import SemanticFact
@@ -350,7 +350,8 @@ class TestExtractAndStore:
         )
 
         call_kwargs = ollama_mock.chat.call_args[1]
-        assert call_kwargs["model"] == "qwen3:14b"
+        # Model kommt aus settings.yaml (extraction_model), Default waere qwen3:14b
+        assert "model" in call_kwargs
         assert call_kwargs["temperature"] == 0.1
 
 

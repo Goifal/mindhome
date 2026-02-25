@@ -3,9 +3,17 @@ Tests fuer WebSocket-Events — Streaming, Broadcast, ConnectionManager.
 """
 
 import json
+import sys
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+
+# FastAPI ist in der Test-Umgebung nicht installiert — Mock-Modul registrieren
+if "fastapi" not in sys.modules:
+    _fastapi_mock = MagicMock()
+    _fastapi_mock.WebSocket = MagicMock
+    _fastapi_mock.WebSocketDisconnect = type("WebSocketDisconnect", (Exception,), {})
+    sys.modules["fastapi"] = _fastapi_mock
 
 from assistant.websocket import (
     ConnectionManager,
