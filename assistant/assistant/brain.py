@@ -1730,7 +1730,19 @@ class AssistantBrain(BrainCallbacksMixin):
             tool_calls = message.get("tool_calls", [])
             executed_actions = []
 
-            # 7b. Tool-Calls aus Text extrahieren (Qwen3 gibt sie manchmal als Text aus)
+            # 7b. Deterministischer Tool-Call hat Vorrang vor Text-Extraktion.
+            # Text-Extraktion aus Reasoning ist unzuverlaessig (z.B. extrahiert
+            # get_house_status wenn get_lights gemeint war).
+            if not tool_calls and self._is_device_command(text):
+                fallback_tc = self._deterministic_tool_call(text)
+                if fallback_tc:
+                    logger.info("Deterministischer Tool-Call: %s(%s)",
+                                fallback_tc["function"]["name"],
+                                fallback_tc["function"]["arguments"])
+                    tool_calls = [fallback_tc]
+                    response_text = ""
+
+            # 7c. Tool-Calls aus Text extrahieren (Qwen3 gibt sie manchmal als Text aus)
             if not tool_calls and response_text:
                 tool_calls = self._extract_tool_calls_from_text(response_text)
                 if tool_calls:
@@ -1739,7 +1751,7 @@ class AssistantBrain(BrainCallbacksMixin):
                     # Erklaerungstext entfernen — nur Antwort behalten
                     response_text = ""
 
-            # 7c. Retry: Qwen3 hat bei Geraetebefehl keinen Tool-Call gemacht
+            # 7d. Retry: Qwen3 hat bei Geraetebefehl keinen Tool-Call gemacht
             if not tool_calls and self._is_device_command(text):
                 logger.warning("Geraetebefehl ohne Tool-Call erkannt: '%s' -> Retry mit Hint", text)
                 hint_msg = (
@@ -1778,17 +1790,6 @@ class AssistantBrain(BrainCallbacksMixin):
                         logger.warning("Retry ebenfalls ohne Tool-Call")
                 except Exception as e:
                     logger.warning("Retry fehlgeschlagen: %s", e)
-
-            # 7d. Deterministischer Fallback: Wenn LLM bei Geraete-Queries keinen
-            # Tool-Call macht, direkt die passende Funktion ableiten.
-            if not tool_calls and self._is_device_command(text):
-                fallback_tc = self._deterministic_tool_call(text)
-                if fallback_tc:
-                    logger.info("Deterministischer Tool-Call: %s(%s)",
-                                fallback_tc["function"]["name"],
-                                fallback_tc["function"]["arguments"])
-                    tool_calls = [fallback_tc]
-                    response_text = ""
 
             # 8. Function Calls ausfuehren
             # Tools die Daten zurueckgeben und eine LLM-formatierte Antwort brauchen
@@ -2562,6 +2563,16 @@ class AssistantBrain(BrainCallbacksMixin):
                 return self._humanize_house_status(raw)
             elif func_name in ("get_alarms", "set_wakeup_alarm", "cancel_alarm"):
                 return self._humanize_alarms(raw)
+            elif func_name == "get_lights":
+                return self._humanize_lights(raw)
+            elif func_name == "get_switches":
+                return self._humanize_switches(raw)
+            elif func_name == "get_covers":
+                return self._humanize_covers(raw)
+            elif func_name == "get_media":
+                return self._humanize_media(raw)
+            elif func_name == "get_climate":
+                return self._humanize_climate_list(raw)
         except Exception as e:
             logger.warning("Humanize fehlgeschlagen fuer %s: %s", func_name, e, exc_info=True)
         # Kein Template vorhanden — Rohdaten zurueckgeben
@@ -2732,6 +2743,77 @@ class AssistantBrain(BrainCallbacksMixin):
             return "Aktive Wecker: " + ", ".join(parts) + "."
 
         # Fallback — Rohdaten zurueckgeben
+        return raw
+
+    def _humanize_lights(self, raw: str) -> str:
+        """Licht-Status in natuerliche JARVIS-Sprache."""
+        # Format: "5 Lichter (2 an, 3 aus):\n- Name [Raum]: on (80%)\n..."
+        lines = raw.strip().split("\n")
+        on_lights = []
+        for line in lines:
+            if ": on" in line:
+                # "- Licht Buero [buero]: on (80%)" → "Licht Buero (80%)"
+                name = line.lstrip("- ").split("[")[0].strip()
+                bri_match = re.search(r"\((\d+)%\)", line)
+                if bri_match:
+                    on_lights.append(f"{name} ({bri_match.group(1)}%)")
+                else:
+                    on_lights.append(name)
+        if not on_lights:
+            return "Alle Lichter sind aus."
+        if len(on_lights) == 1:
+            return f"{on_lights[0]} ist an."
+        return f"{len(on_lights)} Lichter sind an: {', '.join(on_lights)}."
+
+    def _humanize_switches(self, raw: str) -> str:
+        """Schalter/Steckdosen-Status in natuerliche Sprache."""
+        lines = raw.strip().split("\n")
+        on_items = []
+        for line in lines:
+            if ": on" in line:
+                name = line.lstrip("- ").split("[")[0].strip()
+                on_items.append(name)
+        if not on_items:
+            return "Alle Schalter und Steckdosen sind aus."
+        if len(on_items) == 1:
+            return f"{on_items[0]} ist an."
+        return f"{len(on_items)} Schalter/Steckdosen sind an: {', '.join(on_items)}."
+
+    def _humanize_covers(self, raw: str) -> str:
+        """Rollladen-Status in natuerliche Sprache."""
+        lines = raw.strip().split("\n")
+        open_items = []
+        for line in lines:
+            if ": open" in line or "offen" in line.lower():
+                name = line.lstrip("- ").split("[")[0].strip()
+                pos_match = re.search(r"\((\d+)%\)", line)
+                if pos_match:
+                    open_items.append(f"{name} ({pos_match.group(1)}%)")
+                else:
+                    open_items.append(name)
+        if not open_items:
+            return "Alle Rolllaeden sind geschlossen."
+        if len(open_items) == 1:
+            return f"{open_items[0]} ist offen."
+        return f"{len(open_items)} Rolllaeden sind offen: {', '.join(open_items)}."
+
+    def _humanize_media(self, raw: str) -> str:
+        """Media-Player Status in natuerliche Sprache."""
+        lines = raw.strip().split("\n")
+        playing = []
+        for line in lines:
+            if "playing" in line.lower() or "spielt" in line.lower():
+                name = line.lstrip("- ").split("[")[0].strip()
+                playing.append(name)
+        if not playing:
+            return "Keine Medien laufen gerade."
+        return f"Aktive Medien: {', '.join(playing)}."
+
+    def _humanize_climate_list(self, raw: str) -> str:
+        """Klima-Geraete Status in natuerliche Sprache."""
+        # Kurze Rohdaten direkt durchlassen
+        if len(raw) < 100:
+            return raw
         return raw
 
     # ------------------------------------------------------------------
