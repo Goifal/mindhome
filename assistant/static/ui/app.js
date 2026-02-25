@@ -577,6 +577,7 @@ function renderCurrentTab() {
       case 'tab-security': c.innerHTML = renderSecurity(); loadApiKey(); loadNotifyChannels(); loadEmergencyProtocols(); break;
       case 'tab-autonomie': c.innerHTML = renderAutonomie(); loadSnapshots(); loadOptStatus(); break;
       case 'tab-followme': c.innerHTML = renderFollowMe(); break;
+      case 'tab-jarvis': c.innerHTML = renderJarvisFeatures(); break;
       case 'tab-eastereggs': c.innerHTML = renderEasterEggs(); loadEasterEggs(); break;
       case 'tab-system': c.innerHTML = renderSystem(); loadSystemStatus(); break;
     }
@@ -2115,6 +2116,66 @@ function renderProactive() {
     fToggle('conversation_continuity.enabled', 'Gespraech fortsetzen') +
     fRange('conversation_continuity.resume_after_minutes', 'Nachfragen nach', 1, 60, 1, {1:'1 Min',5:'5 Min',10:'10 Min',15:'15 Min',30:'30 Min',60:'1 Std'}) +
     fRange('conversation_continuity.expire_hours', 'Thema vergessen nach', 1, 72, 1, {1:'1 Std',6:'6 Std',12:'12 Std',24:'1 Tag',48:'2 Tage',72:'3 Tage'})
+  );
+}
+
+// ---- Jarvis-Features (Feature 1-10) ----
+function renderJarvisFeatures() {
+  return sectionWrap('&#128172;', 'Progressive Antworten',
+    fInfo('Jarvis "denkt laut" — sendet Zwischen-Meldungen waehrend der Verarbeitung statt still zu arbeiten. Z.B. "Ich pruefe den Hausstatus..." oder "Einen Moment, ich ueberlege..."') +
+    fToggle('progressive_responses.enabled', 'Progressive Antworten aktiv') +
+    fToggle('progressive_responses.show_context_step', '"Ich pruefe den Hausstatus..." anzeigen') +
+    fToggle('progressive_responses.show_thinking_step', '"Einen Moment, ich ueberlege..." anzeigen') +
+    fToggle('progressive_responses.show_action_step', '"Ich fuehre das aus..." anzeigen')
+  ) +
+  sectionWrap('&#128221;', 'Benannte Protokolle',
+    fInfo('Multi-Step-Sequenzen per Sprache erstellen und ausfuehren. Z.B. "Erstelle Protokoll Filmabend: Licht 20%, Rolladen zu, TV an" — dann reicht "Filmabend" zum Ausfuehren.') +
+    fToggle('protocols.enabled', 'Protokolle aktiv') +
+    fNum('protocols.max_protocols', 'Maximale Anzahl Protokolle', 1, 50, 1) +
+    fNum('protocols.max_steps', 'Maximale Schritte pro Protokoll', 1, 20, 1)
+  ) +
+  sectionWrap('&#128374;', 'Geraete-Persoenlichkeit',
+    fInfo('Geraete bekommen Spitznamen in proaktiven Meldungen — z.B. "Die Fleissige im Keller hat ihren Job erledigt" statt "Waschmaschine ausgeschaltet".') +
+    fToggle('device_narration.enabled', 'Geraete-Persoenlichkeit aktiv') +
+    fTextarea('device_narration.custom_nicknames', 'Eigene Spitznamen', 'JSON: {"waschmaschine": "Frau Waschkraft", "saugroboter": "Robbie"}')
+  ) +
+  sectionWrap('&#128065;', 'Spontane Beobachtungen',
+    fInfo('Jarvis macht 1-2x taeglich unaufgeforderte, interessante Bemerkungen — z.B. "Heute verbrauchen wir 20% weniger Energie als letzte Woche" oder "Die Waschmaschine lief 7 Mal diese Woche — Rekord!"') +
+    fToggle('spontaneous.enabled', 'Spontane Beobachtungen aktiv') +
+    fRange('spontaneous.max_per_day', 'Maximal pro Tag', 0, 5, 1, {0:'Aus',1:'1x',2:'2x',3:'3x',5:'5x'}) +
+    fRange('spontaneous.min_interval_hours', 'Mindestabstand', 1, 8, 1, {1:'1 Std',2:'2 Std',3:'3 Std',4:'4 Std',6:'6 Std',8:'8 Std'}) +
+    fNum('spontaneous.active_hours.start', 'Aktiv ab (Uhr)', 0, 23, 1) +
+    fNum('spontaneous.active_hours.end', 'Aktiv bis (Uhr)', 0, 23, 1) +
+    '<div style="margin:12px 0;font-weight:600;font-size:13px;">Aktive Checks</div>' +
+    fToggle('spontaneous.checks.energy_comparison', 'Energie-Vergleich mit Vorwoche') +
+    fToggle('spontaneous.checks.streak', 'Wetter-Streaks & Fun Facts') +
+    fToggle('spontaneous.checks.usage_record', 'Nutzungs-Rekorde') +
+    fToggle('spontaneous.checks.device_milestone', 'Geraete-Meilensteine')
+  ) +
+  sectionWrap('&#128148;', 'Emotionales Gedaechtnis',
+    fInfo('Jarvis merkt sich emotionale Reaktionen auf Aktionen. Wenn du 2x negativ auf etwas reagiert hast (z.B. "Lass das!"), fragt Jarvis beim naechsten Mal vorher nach.') +
+    fToggle('emotional_memory.enabled', 'Emotionales Gedaechtnis aktiv') +
+    fRange('emotional_memory.negative_threshold', 'Warnung ab negativen Reaktionen', 1, 5, 1, {1:'1x',2:'2x',3:'3x',4:'4x',5:'5x'}) +
+    fRange('emotional_memory.decay_days', 'Erinnerung verfaellt nach', 30, 365, 30, {30:'1 Monat',60:'2 Monate',90:'3 Monate',180:'6 Monate',365:'1 Jahr'})
+  ) +
+  sectionWrap('&#128218;', 'Lern-Transparenz',
+    fInfo('"Was hast du beobachtet?" — Jarvis berichtet ueber erkannte Muster. Optional auch als woechentlicher automatischer Bericht.') +
+    fToggle('learning.weekly_report.enabled', 'Woechentlicher Lern-Bericht') +
+    fSelect('learning.weekly_report.day', 'Bericht-Tag', [
+      {v:0,l:'Montag'},{v:1,l:'Dienstag'},{v:2,l:'Mittwoch'},{v:3,l:'Donnerstag'},
+      {v:4,l:'Freitag'},{v:5,l:'Samstag'},{v:6,l:'Sonntag'}
+    ]) +
+    fNum('learning.weekly_report.hour', 'Bericht-Uhrzeit', 0, 23, 1, 'Stunde (0-23)')
+  ) +
+  sectionWrap('&#9888;', 'Daten-basierter Widerspruch',
+    fInfo('Vor einer Aktion prueft Jarvis Live-Daten und warnt konkret — z.B. "Heizung auf 25? Das Bad-Fenster ist offen." Aktion wird trotzdem ausgefuehrt, aber die Warnung erwaehnt.') +
+    fToggle('pushback.enabled', 'Widerspruch aktiv') +
+    '<div style="margin:12px 0;font-weight:600;font-size:13px;">Aktive Checks</div>' +
+    fToggle('pushback.checks.open_windows', 'Fenster offen bei Heizung') +
+    fToggle('pushback.checks.empty_room', 'Leerer Raum bei Heizung/Licht') +
+    fToggle('pushback.checks.daylight', 'Tageslicht bei Licht einschalten') +
+    fToggle('pushback.checks.storm_warning', 'Sturmwarnung bei Rolladen oeffnen') +
+    fToggle('pushback.checks.unnecessary_heating', 'Heizung bei warmem Wetter')
   );
 }
 
