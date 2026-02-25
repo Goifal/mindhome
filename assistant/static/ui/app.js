@@ -2119,7 +2119,7 @@ function renderProactive() {
   );
 }
 
-// ---- Jarvis-Features (Feature 1-10) ----
+// ---- Jarvis-Features (Feature 1-11) ----
 function renderJarvisFeatures() {
   return sectionWrap('&#128172;', 'Progressive Antworten',
     fInfo('Jarvis "denkt laut" — sendet Zwischen-Meldungen waehrend der Verarbeitung statt still zu arbeiten. Z.B. "Ich pruefe den Hausstatus..." oder "Einen Moment, ich ueberlege..."') +
@@ -2176,6 +2176,14 @@ function renderJarvisFeatures() {
     fToggle('pushback.checks.daylight', 'Tageslicht bei Licht einschalten') +
     fToggle('pushback.checks.storm_warning', 'Sturmwarnung bei Rolladen oeffnen') +
     fToggle('pushback.checks.unnecessary_heating', 'Heizung bei warmem Wetter')
+  ) +
+  sectionWrap('&#127925;', 'Smart DJ',
+    fInfo('Jarvis empfiehlt kontextbewusst Musik basierend auf Stimmung, Aktivitaet und Tageszeit. Sag z.B. "Spiel mal was Passendes" — Jarvis waehlt das Genre und lernt aus deinem Feedback.') +
+    fToggle('music_dj.enabled', 'Smart DJ aktiv') +
+    fRange('music_dj.default_volume', 'Standard-Lautstaerke', 10, 100, 5, {10:'10%',20:'20%',30:'30%',40:'40%',50:'50%',60:'60%',70:'70%',80:'80%',100:'100%'}) +
+    fToggle('music_dj.proactive_enabled', 'Proaktive Musikvorschlaege') +
+    fRange('music_dj.cooldown_minutes', 'Mindestabstand Vorschlaege', 10, 120, 10, {10:'10 Min',30:'30 Min',60:'1 Std',120:'2 Std'}) +
+    fTextarea('music_dj.custom_queries', 'Eigene Genre-Queries', 'JSON: {"party_hits": "meine party playlist", "focus_lofi": "deep focus music"}')
   );
 }
 
