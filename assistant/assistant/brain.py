@@ -1085,10 +1085,13 @@ class AssistantBrain(BrainCallbacksMixin):
 
         # Wetter-Shortcut: Wetter-Fragen direkt erkennen und abkuerzen.
         # Spart Context Build + LLM-Roundtrip (3-10s).
-        if self._detect_weather_query(text):
-            logger.info("Wetter-Shortcut: '%s'", text)
+        weather_mode = self._detect_weather_query(text)
+        if weather_mode:
+            logger.info("Wetter-Shortcut: '%s' (mode=%s)", text, weather_mode)
             try:
-                weather_result = await self.executor.execute("get_weather", {})
+                include_forecast = (weather_mode == "forecast")
+                weather_args = {"include_forecast": include_forecast} if include_forecast else {}
+                weather_result = await self.executor.execute("get_weather", weather_args)
                 weather_msg = weather_result.get("message", "") if isinstance(weather_result, dict) else str(weather_result)
 
                 response_text = self._humanize_weather(weather_msg)
@@ -1120,7 +1123,7 @@ class AssistantBrain(BrainCallbacksMixin):
                 return {
                     "response": response_text,
                     "actions": [{"function": "get_weather",
-                                 "args": {},
+                                 "args": weather_args,
                                  "result": weather_result}],
                     "model_used": "weather_shortcut",
                     "context_room": room or "unbekannt",
@@ -1277,6 +1280,68 @@ class AssistantBrain(BrainCallbacksMixin):
                         }
             except Exception as e:
                 logger.warning("Geraete-Shortcut fehlgeschlagen: %s — Fallback auf LLM", e)
+
+        # Media-Shortcut: Musik-Befehle direkt erkennen und ausfuehren.
+        # Kein LLM noetig — deterministischer play_media Call.
+        media_cmd = self._detect_media_command(text, room=room or "")
+        if media_cmd:
+            func_name = media_cmd["function"]
+            func_args = media_cmd["args"]
+            logger.info("Media-Shortcut: '%s' -> %s(%s)", text, func_name, func_args)
+            try:
+                result = await self.executor.execute(func_name, func_args)
+                success = isinstance(result, dict) and result.get("success", False)
+                error_msg = result.get("message", "") if isinstance(result, dict) else ""
+
+                if not success and (
+                    "nicht gefunden" in error_msg
+                    or "kein " in error_msg.lower()
+                    or "no " in error_msg.lower()
+                ):
+                    # Entity nicht aufloesbar → LLM hat mehr Kontext
+                    logger.info("Media-Shortcut: '%s' — Fallback auf LLM", error_msg)
+                else:
+                    if success:
+                        response_text = self.personality.get_varied_confirmation(
+                            success=True, action=func_name,
+                            room=func_args.get("room", ""),
+                        )
+                    else:
+                        response_text = self.personality.get_varied_confirmation(
+                            success=False,
+                        )
+
+                    self._remember_exchange(text, response_text)
+                    tts_data = self.tts_enhancer.enhance(
+                        response_text, message_type="confirmation",
+                    )
+                    if stream_callback:
+                        if not room:
+                            room = await self._get_occupied_room()
+                        self._task_registry.create_task(
+                            self.sound_manager.speak_response(
+                                response_text, room=room, tts_data=tts_data),
+                            name="speak_response",
+                        )
+                    else:
+                        await self._speak_and_emit(
+                            response_text, room=room, tts_data=tts_data,
+                        )
+
+                    await emit_action(func_name, func_args, result)
+
+                    return {
+                        "response": response_text,
+                        "actions": [{"function": func_name,
+                                     "args": func_args,
+                                     "result": result}],
+                        "model_used": "media_shortcut",
+                        "context_room": room or "unbekannt",
+                        "tts": tts_data,
+                        "_emitted": not stream_callback,
+                    }
+            except Exception as e:
+                logger.warning("Media-Shortcut fehlgeschlagen: %s — Fallback auf LLM", e)
 
         # Status-Query-Shortcut: Direkte Ausfuehrung von Status-Abfragen
         # (Lichter, Rolllaeden, Steckdosen, Heizung, Hausstatus etc.)
@@ -2671,17 +2736,14 @@ class AssistantBrain(BrainCallbacksMixin):
         return raw
 
     def _humanize_weather(self, raw: str) -> str:
-        """Wetter-Rohdaten → JARVIS-Stil Antwort."""
+        """Wetter-Rohdaten → JARVIS-Stil Antwort.
+
+        Verarbeitet AKTUELL- und VORHERSAGE-Zeilen aus get_weather.
+        """
         import re
+        from datetime import datetime as _dt
 
-        # Temperatur extrahieren
-        temp_match = re.search(r"(-?\d+)[.,]?\d*\s*°C", raw)
-        if not temp_match:
-            return raw
-        temp = int(temp_match.group(1))
-
-        # Condition extrahieren
-        conditions_map = {
+        _conditions_map = {
             "bewoelkt": "bewoelkt", "bewölkt": "bewoelkt",
             "sonnig": "sonnig", "wolkenlos": "wolkenlos",
             "klare nacht": "klare Nacht", "regen": "regnerisch",
@@ -2691,17 +2753,37 @@ class AssistantBrain(BrainCallbacksMixin):
             "gewitter": "gewittrig", "windig": "windig",
             "starkregen": "Starkregen",
         }
+
+        # --- Aktuelle Wetter-Zeile extrahieren ---
+        lines = raw.strip().split("\n")
+        current_line = ""
+        forecast_lines = []
+        for line in lines:
+            if line.startswith("AKTUELL:"):
+                current_line = line
+            elif line.startswith("VORHERSAGE"):
+                forecast_lines.append(line)
+        if not current_line:
+            current_line = lines[0] if lines else raw
+
+        # Temperatur extrahieren
+        temp_match = re.search(r"(-?\d+)[.,]?\d*\s*°C", current_line)
+        if not temp_match:
+            return raw
+        temp = int(temp_match.group(1))
+
+        # Condition extrahieren
         condition = ""
-        raw_lower = raw.lower()
-        for key, val in conditions_map.items():
-            if key in raw_lower:
+        cl_lower = current_line.lower()
+        for key, val in _conditions_map.items():
+            if key in cl_lower:
                 condition = val
                 break
 
         # Wind extrahieren
-        wind_match = re.search(r"Wind\s+(?:aus\s+)?(\w+)\s+(?:mit\s+)?(\d+)[.,]?\d*\s*km/h", raw, re.IGNORECASE)
+        wind_match = re.search(r"Wind\s+(?:aus\s+)?(\w+)\s+(?:mit\s+)?(\d+)[.,]?\d*\s*km/h", current_line, re.IGNORECASE)
         if not wind_match:
-            wind_match = re.search(r"Wind\s+(\d+)[.,]?\d*\s*km/h\s+aus\s+(\w+)", raw, re.IGNORECASE)
+            wind_match = re.search(r"Wind\s+(\d+)[.,]?\d*\s*km/h\s+aus\s+(\w+)", current_line, re.IGNORECASE)
             if wind_match:
                 wind_speed = int(wind_match.group(1))
                 wind_dir = wind_match.group(2)
@@ -2729,6 +2811,51 @@ class AssistantBrain(BrainCallbacksMixin):
             result += " Jacke empfohlen."
         elif temp >= 30:
             result += f" Genuegend trinken, {get_person_title()}."
+
+        # --- Forecast-Zeilen verarbeiten ---
+        if forecast_lines:
+            _weekdays = ["Montag", "Dienstag", "Mittwoch", "Donnerstag",
+                         "Freitag", "Samstag", "Sonntag"]
+            fc_parts = []
+            for fc_line in forecast_lines[:3]:
+                date_m = re.search(r'VORHERSAGE\s+(\d{4}-\d{2}-\d{2}):', fc_line)
+                temp_hi = re.search(r'Hoch\s+(-?\d+)', fc_line)
+                temp_lo = re.search(r'Tief\s+(-?\d+)', fc_line)
+                cond_m = re.search(r':\s+(\w[\w\s]*?),\s+Hoch', fc_line)
+                precip_m = re.search(r'Niederschlag\s+(\d+[.,]?\d*)\s*mm', fc_line)
+
+                if not (date_m and temp_hi):
+                    continue
+
+                # Datum → Wochentag
+                try:
+                    d = _dt.strptime(date_m.group(1), "%Y-%m-%d")
+                    day_name = _weekdays[d.weekday()]
+                except (ValueError, IndexError):
+                    day_name = date_m.group(1)
+
+                fc_text = f"{day_name}: {temp_hi.group(1)}"
+                if temp_lo:
+                    fc_text += f"/{temp_lo.group(1)}"
+                fc_text += " Grad"
+                if cond_m:
+                    fc_cond = cond_m.group(1).strip()
+                    # Condition uebersetzen wenn moeglich
+                    fc_cond_mapped = _conditions_map.get(fc_cond.lower(), fc_cond)
+                    fc_text += f", {fc_cond_mapped}"
+                if precip_m:
+                    try:
+                        precip_val = float(precip_m.group(1).replace(",", "."))
+                        if precip_val > 0:
+                            fc_text += f", {precip_m.group(1)} mm Regen"
+                    except ValueError:
+                        pass
+                fc_parts.append(fc_text)
+
+            if len(fc_parts) == 1:
+                result += f" {fc_parts[0]}."
+            elif fc_parts:
+                result += " " + ". ".join(fc_parts) + "."
 
         return result
 
@@ -4529,6 +4656,122 @@ class AssistantBrain(BrainCallbacksMixin):
         return None
 
     @staticmethod
+    def _detect_media_command(text: str, room: str = "") -> Optional[dict]:
+        """Erkennt Musik/Media-Befehle und gibt function + args zurueck.
+
+        Returns:
+            {"function": "play_media", "args": {...}} oder None.
+
+        Wird VOR dem LLM aufgerufen fuer sofortige Ausfuehrung.
+        """
+        import re as _re
+        t = text.lower().strip()
+
+        # Ausschluss: Fragen
+        if t.endswith("?") or any(t.startswith(q) for q in [
+            "was ", "wie ", "warum ", "welch", "kannst ",
+        ]):
+            return None
+
+        # Muss Musik/Media-Keyword oder Spielen-Verb enthalten
+        _has_media_kw = any(kw in t for kw in [
+            "musik", "song", "lied", "playlist",
+            "podcast", "radio", "hoerbuch", "hörbuch",
+        ])
+        _has_play_verb = any(kw in t for kw in [
+            "spiel", "spiele", "abspielen",
+        ])
+        _has_control_kw = any(kw in t for kw in [
+            "pausier", "pause", "stopp ", "stop ",
+            "naechster song", "nächster song",
+            "naechstes lied", "nächstes lied",
+            "musik leiser", "musik lauter",
+            "musik aus", "musik stop", "musik stopp",
+            "musik pause",
+        ])
+        if not (_has_media_kw or _has_play_verb or _has_control_kw):
+            return None
+
+        # Raum extrahieren
+        extracted_room = ""
+        rm = _re.search(
+            r'(?:im|in\s+der|in\s+dem|ins|auf|auf\s+dem|auf\s+der)\s+'
+            r'([A-Za-zÄÖÜäöüß][A-Za-zÄÖÜäöüß\-]+)',
+            text, _re.IGNORECASE,
+        )
+        if rm:
+            candidate = rm.group(1)
+            _SKIP = {"moment", "prinzip", "grunde", "lautstaerke",
+                     "lautsprecher", "maximum", "minimum", "prozent"}
+            if candidate.lower() not in _SKIP:
+                extracted_room = candidate
+        effective_room = extracted_room or room
+
+        # Action erkennen
+        action = None
+        query = None
+        volume = None
+
+        # Pause/Stop/Skip zuerst (spezifischer)
+        if any(kw in t for kw in ["pausier", "pause"]):
+            action = "pause"
+        elif any(kw in t for kw in ["stopp", "stop"]):
+            action = "stop"
+        elif any(kw in t for kw in [
+            "naechster", "nächster", "naechstes", "nächstes", "skip",
+            "ueberspringen", "überspringen",
+        ]):
+            action = "next"
+        elif any(kw in t for kw in ["vorheriger", "vorheriges", "zurueck", "zurück"]):
+            action = "previous"
+        elif any(kw in t for kw in ["weiter", "fortsetzen"]):
+            action = "play"
+
+        # Lautstaerke
+        if "leiser" in t:
+            action = "volume_down"
+        elif "lauter" in t:
+            action = "volume_up"
+        vol_m = _re.search(r'(?:lautstaerke|lautstärke|volume)\s*(?:auf\s+)?(\d{1,3})\s*(?:%|prozent)?', t)
+        if vol_m:
+            volume = max(0, min(100, int(vol_m.group(1))))
+            action = "volume"
+
+        # Play mit optionalem Query
+        if action is None and any(kw in t for kw in ["spiel", "spiele", "abspielen"]):
+            action = "play"
+            # Query extrahieren: "spiele jazz im wohnzimmer"
+            q_match = _re.search(
+                r'(?:spiele?|abspielen?)\s+(.+?)(?:\s+(?:im|in|auf|vom)\s+|$)',
+                t,
+            )
+            if q_match:
+                q = q_match.group(1).strip()
+                # "musik" allein ist kein Query
+                if q and q not in ("musik", "was", "etwas", "irgendwas", "mal"):
+                    query = q
+
+        # "Musik" allein → play
+        if action is None and "musik" in t:
+            if "aus" in t.split():
+                action = "stop"
+            else:
+                action = "play"
+
+        if action is None:
+            return None
+
+        args = {"action": action}
+        if effective_room:
+            args["room"] = effective_room
+        if query:
+            args["query"] = query
+        if volume is not None:
+            args["volume"] = volume
+
+        return {"function": "play_media", "args": args}
+
+    @staticmethod
     def _detect_calendar_diagnostic(text: str) -> bool:
         """Erkennt Fragen nach verfuegbaren Kalendern."""
         t = text.lower().strip()
@@ -4541,16 +4784,30 @@ class AssistantBrain(BrainCallbacksMixin):
         ])
 
     @staticmethod
-    def _detect_weather_query(text: str) -> bool:
-        """Erkennt eindeutige Wetter-Fragen.
+    def _detect_weather_query(text: str) -> Optional[str]:
+        """Erkennt Wetter-Fragen. Returns 'forecast', 'current' oder None.
 
         Nur klare Wetter-Intents — generische Fragen landen beim LLM.
         """
         t = text.lower().strip()
-        return any(kw in t for kw in [
-            "wie ist das wetter", "wie wird das wetter",
-            "was sagt das wetter", "wetter heute", "wetter morgen",
-            "wetterbericht", "wettervorhersage",
+
+        # Forecast-Keywords: morgen, Woche, spaeter, Vorhersage
+        _forecast_kw = [
+            "wetter morgen", "wetter diese woche", "wetter naechste woche",
+            "wetter nächste woche",
+            "wettervorhersage", "wie wird das wetter",
+            "wetter spaeter", "wetter später", "wetter uebermorgen",
+            "wetter übermorgen",
+            "morgen regen", "wird es morgen", "wird es regnen",
+            "brauche ich morgen",
+        ]
+        if any(kw in t for kw in _forecast_kw):
+            return "forecast"
+
+        # Current-Keywords
+        _current_kw = [
+            "wie ist das wetter", "was sagt das wetter", "wetter heute",
+            "wetterbericht",
             "wie warm ist es", "wie kalt ist es",
             "regnet es", "scheint die sonne", "schneit es",
             "wie ist es draussen", "wie ist es draußen",
@@ -4559,7 +4816,19 @@ class AssistantBrain(BrainCallbacksMixin):
             "temperatur draussen", "temperatur draußen",
             "brauche ich eine jacke", "brauche ich einen schirm",
             "brauche ich einen regenschirm",
-        ])
+            "brauche ich einen regenmantel", "regenmantel anziehen",
+        ]
+        if any(kw in t for kw in _current_kw):
+            return "current"
+
+        # Regex fuer "Soll ich mir ... anziehen/mitnehmen"
+        if re.search(
+            r'soll ich.*(?:jacke|mantel|schirm|regenschirm|muetze|mütze|handschuh)',
+            t,
+        ):
+            return "current"
+
+        return None
 
     @staticmethod
     def _detect_calendar_query(text: str) -> Optional[str]:
