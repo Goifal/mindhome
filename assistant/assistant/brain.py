@@ -2977,26 +2977,156 @@ class AssistantBrain(BrainCallbacksMixin):
         return raw
 
     def _humanize_house_status(self, raw: str) -> str:
-        """Haus-Status in natuerliche Sprache."""
+        """Haus-Status in natuerliche JARVIS-Sprache.
+
+        Respektiert house_status.detail_level aus settings.yaml:
+          kompakt:      Nur Zusammenfassung (Zahlen, keine Namen)
+          normal:       Bereiche mit Namen (Default)
+          ausfuehrlich: Alle Details (Helligkeit, Soll-Temp, Medientitel etc.)
+
+        Verarbeitet die strukturierten Zeilen aus _exec_get_house_status():
+          Zuhause: Manuel, Julia
+          Temperaturen: Wohnzimmer: 22.5°C (Soll 21°C), Schlafzimmer: 19°C
+          Wetter: Sonnig, 8°C, Luftfeuchte 65%
+          Lichter an: Wohnzimmer-Decke: 100%, Flur-Licht: 50%
+          Alle Lichter aus
+          Sicherheit: disarmed
+          Offen: Schlafzimmer Fenster
+          Offline (2): Sensor Bad, Steckdose Flur
+        """
         import re as _re
-        lines = raw.strip().split("\n")
-        lights_on = sum(1 for l in lines if ": on" in l and
-                        any(k in l.lower() for k in ["light", "licht", "lampe"]))
-        covers_open = sum(1 for l in lines if
-                          ("open" in l.lower() or "offen" in l.lower()) and
-                          any(k in l.lower() for k in ["cover", "rollladen", "rollo"]))
-        parts = []
-        if lights_on:
-            parts.append(f"{lights_on} Licht{'er' if lights_on > 1 else ''} an")
-        if covers_open:
-            parts.append(f"{covers_open} Rollladen offen")
-        # Temperatur suchen
-        temp_m = _re.search(r'(-?\d+[.,]?\d*)\s*°?C', raw)
-        if temp_m:
-            parts.append(f"{temp_m.group(1)}°C")
-        if not parts:
+
+        if not raw or not raw.strip():
             return "Alles ruhig im Haus."
-        return "Im Haus: " + ", ".join(parts) + "."
+
+        hs_cfg = yaml_config.get("house_status", {})
+        detail = hs_cfg.get("detail_level", "normal")
+
+        lines = raw.strip().split("\n")
+        parts = []
+        title = get_person_title()
+
+        _sec_map = {
+            "disarmed": "Alarmanlage aus",
+            "armed_home": "Alarmanlage aktiv (zuhause)",
+            "armed_away": "Alarmanlage aktiv (abwesend)",
+            "armed_night": "Alarmanlage aktiv (Nacht)",
+            "triggered": "ALARM AUSGELOEST",
+            "unknown": "",
+        }
+
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+
+            # --- Anwesenheit ---
+            if line.startswith("Zuhause:"):
+                names = line.replace("Zuhause:", "").strip()
+                if names:
+                    if detail == "kompakt":
+                        count = len([n.strip() for n in names.split(",") if n.strip()])
+                        parts.append(f"{count} Person{'en' if count > 1 else ''} zuhause")
+                    else:
+                        parts.append(f"{names} ist zuhause" if "," not in names
+                                     else f"{names} sind zuhause")
+            elif line.startswith("Unterwegs:"):
+                names = line.replace("Unterwegs:", "").strip()
+                if names and detail != "kompakt":
+                    parts.append(f"{names} unterwegs")
+
+            # --- Temperaturen ---
+            elif line.startswith("Temperaturen:"):
+                temps = line.replace("Temperaturen:", "").strip()
+                if temps:
+                    if detail == "kompakt":
+                        # Nur erste Temperatur oder Durchschnitt
+                        all_temps = _re.findall(r"(-?\d+[.,]?\d*)\s*°C", temps)
+                        if all_temps:
+                            parts.append(f"{all_temps[0]}°C")
+                    elif detail == "normal":
+                        # Raum: Temp ohne Soll
+                        cleaned = _re.sub(r"\s*\(Soll [^)]+\)", "", temps)
+                        parts.append(cleaned)
+                    else:
+                        # ausfuehrlich: alles
+                        parts.append(temps)
+
+            # --- Wetter ---
+            elif line.startswith("Wetter:"):
+                weather = line.replace("Wetter:", "").strip()
+                if weather:
+                    if detail == "kompakt":
+                        # Nur Condition + Temp
+                        temp_m = _re.search(r"(-?\d+)\s*°C", weather)
+                        cond = weather.split(",")[0].strip() if "," in weather else weather
+                        if temp_m:
+                            parts.append(f"Draussen {temp_m.group(1)}°C, {cond}")
+                        else:
+                            parts.append(f"Draussen: {cond}")
+                    else:
+                        parts.append(f"Draussen: {weather}")
+
+            # --- Lichter ---
+            elif line.startswith("Lichter an:"):
+                lights = line.replace("Lichter an:", "").strip()
+                if lights:
+                    light_list = [l.strip() for l in lights.split(",")]
+                    if detail == "kompakt":
+                        parts.append(f"{len(light_list)} Licht{'er' if len(light_list) > 1 else ''} an")
+                    elif detail == "normal":
+                        # Namen ohne Helligkeit
+                        names_only = [_re.sub(r":\s*\d+%", "", l).strip() for l in light_list]
+                        if len(names_only) <= 4:
+                            parts.append(f"Lichter an: {', '.join(names_only)}")
+                        else:
+                            parts.append(f"{len(names_only)} Lichter an")
+                    else:
+                        # ausfuehrlich: mit Helligkeit
+                        parts.append(f"Lichter an: {lights}")
+            elif line.startswith("Alle Lichter aus"):
+                parts.append("Alle Lichter aus")
+
+            # --- Sicherheit ---
+            elif line.startswith("Sicherheit:"):
+                sec = line.replace("Sicherheit:", "").strip().lower()
+                sec_text = _sec_map.get(sec, sec)
+                if sec_text:
+                    parts.append(sec_text)
+
+            # --- Medien ---
+            elif line.startswith("Medien aktiv:"):
+                media = line.replace("Medien aktiv:", "").strip()
+                if media:
+                    if detail == "kompakt":
+                        parts.append("Medien aktiv")
+                    else:
+                        parts.append(f"Medien: {media}")
+
+            # --- Offene Fenster/Tueren ---
+            elif line.startswith("Offen:"):
+                items = line.replace("Offen:", "").strip()
+                if items:
+                    if detail == "kompakt":
+                        count = len([i.strip() for i in items.split(",") if i.strip()])
+                        parts.append(f"{count} offen")
+                    else:
+                        parts.append(f"Offen: {items}")
+
+            # --- Offline ---
+            elif line.startswith("Offline"):
+                if detail == "kompakt":
+                    # "Offline (3)" → nur Zahl
+                    m = _re.search(r"\((\d+)\)", line)
+                    if m:
+                        parts.append(f"{m.group(1)} Geraete offline")
+                else:
+                    parts.append(line)
+
+        if not parts:
+            return f"Alles ruhig im Haus, {title}."
+
+        return ". ".join(parts) + "."
 
     def _humanize_alarms(self, raw: str) -> str:
         """Wecker-Daten in natuerliche JARVIS-Sprache."""

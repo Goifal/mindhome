@@ -868,6 +868,7 @@ const HELP_TEXTS = {
   'situation_model.max_changes': {title:'Max. Aenderungen', text:'Wie viele Aenderungen auf einmal gemeldet werden.'},
   'situation_model.temp_threshold': {title:'Temp-Schwelle', text:'Ab wie viel Grad Aenderung gemeldet wird.'},
   // === HAUS-STATUS ===
+  'house_status.detail_level': {title:'Detail-Level', text:'Wie ausfuehrlich der Haus-Status berichtet wird. Kompakt = Zahlen, Normal = mit Namen, Ausfuehrlich = alle Details.'},
   'house_status.sections': {title:'Angezeigte Bereiche', text:'Welche Infos im Haus-Status angezeigt werden.'},
   'house_status.temperature_rooms': {title:'Temperatur-Raeume', text:'Nur diese Raeume fuer Temperatur. Leer = alle.'},
   'health_monitor.enabled': {title:'Health Monitor', text:'Ueberwacht Raumklima und warnt bei Problemen.'},
@@ -1915,12 +1916,20 @@ function renderVoice() {
 
 // ---- Tab 7: Routinen ----
 function renderHouseStatus() {
-  // Default: alle Sektionen aktiv wenn noch nicht konfiguriert (Backend-Verhalten)
+  // Defaults setzen wenn noch nicht konfiguriert
   if (!getPath(S, 'house_status.sections')) {
     setPath(S, 'house_status.sections', ['presence','temperatures','weather','lights','security','media','open_items','offline']);
   }
+  if (!getPath(S, 'house_status.detail_level')) {
+    setPath(S, 'house_status.detail_level', 'normal');
+  }
   return sectionWrap('&#127968;', 'Haus-Status Bereiche',
     fInfo('Welche Informationen sollen im Haus-Status angezeigt werden? Wird verwendet wenn du nach dem Status fragst oder "Haus-Status" sagst.') +
+    fSelect('house_status.detail_level', 'Detail-Level', [
+      {v:'kompakt',l:'Kompakt — Nur Zusammenfassung (z.B. "2 Lichter an, 22\u00b0C")'},
+      {v:'normal',l:'Normal — Bereiche mit Namen (z.B. "Lichter an: Wohnzimmer, Flur")'},
+      {v:'ausfuehrlich',l:'Ausfuehrlich — Alle Details (Helligkeit, Soll-Temp, Medientitel)'}
+    ]) +
     fChipSelect('house_status.sections', 'Angezeigte Bereiche', [
       {v:'presence',l:'Anwesenheit'},
       {v:'temperatures',l:'Temperaturen'},
