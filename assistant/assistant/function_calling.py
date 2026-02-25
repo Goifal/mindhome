@@ -1466,6 +1466,32 @@ _ASSISTANT_TOOLS_STATIC = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "manage_protocol",
+            "description": "Verwaltet benannte Protokolle (Multi-Step-Sequenzen). Protokolle sind gespeicherte Ablaeufe wie 'Filmabend' oder 'Gute Nacht'. Nutze dies wenn der User ein Protokoll erstellen, ausfuehren, auflisten, loeschen oder rueckgaengig machen will. Beispiel: 'Erstelle Protokoll Filmabend: Licht 20%, Rolladen zu' oder 'Fuehre Filmabend aus' oder 'Zeig meine Protokolle'.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["create", "execute", "undo", "list", "delete"],
+                        "description": "Aktion: create (erstellen), execute (ausfuehren), undo (rueckgaengig), list (auflisten), delete (loeschen)",
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "Name des Protokolls (z.B. 'Filmabend', 'Party', 'Morgenroutine')",
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Nur bei action=create: Natuerliche Beschreibung der Schritte (z.B. 'Licht auf 20%, Rolladen zu, TV an')",
+                    },
+                },
+                "required": ["action"],
+            },
+        },
+    },
 ]
 
 
@@ -1531,6 +1557,7 @@ class FunctionExecutor:
         "get_room_climate", "get_active_intents", "get_wellness_status",
         "get_house_status", "get_full_status_report", "get_weather",
         "get_device_health", "get_learned_patterns", "describe_doorbell",
+        "manage_protocol",
     })
 
     # Qwen3 uebersetzt deutsche Raumnamen oft ins Englische
@@ -4489,3 +4516,42 @@ class FunctionExecutor:
             }
         except Exception as e:
             return {"success": False, "message": f"Tuerkamera-Abfrage fehlgeschlagen: {e}"}
+
+    async def _exec_manage_protocol(self, args: dict) -> dict:
+        """Verwaltet benannte Protokolle (create, execute, undo, list, delete)."""
+        import assistant.main as main_module
+        brain = main_module.brain
+        engine = brain.protocol_engine
+        action = args.get("action", "")
+        name = args.get("name", "")
+        description = args.get("description", "")
+
+        try:
+            if action == "create":
+                if not name or not description:
+                    return {"success": False, "message": "Name und Beschreibung werden fuer 'create' benoetigt."}
+                return await engine.create_protocol(name, description)
+            elif action == "execute":
+                if not name:
+                    return {"success": False, "message": "Name wird fuer 'execute' benoetigt."}
+                return await engine.execute_protocol(name)
+            elif action == "undo":
+                if not name:
+                    return {"success": False, "message": "Name wird fuer 'undo' benoetigt."}
+                return await engine.undo_protocol(name)
+            elif action == "list":
+                protocols = await engine.list_protocols()
+                if not protocols:
+                    return {"success": True, "message": "Noch keine Protokolle gespeichert."}
+                lines = [f"{len(protocols)} Protokoll(e):"]
+                for p in protocols:
+                    lines.append(f"- {p['name']} ({p['steps']} Schritte)")
+                return {"success": True, "message": "\n".join(lines), "protocols": protocols}
+            elif action == "delete":
+                if not name:
+                    return {"success": False, "message": "Name wird fuer 'delete' benoetigt."}
+                return await engine.delete_protocol(name)
+            else:
+                return {"success": False, "message": f"Unbekannte Aktion: {action}"}
+        except Exception as e:
+            return {"success": False, "message": f"Protokoll-Fehler: {e}"}

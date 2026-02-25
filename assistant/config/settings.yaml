@@ -12,6 +12,12 @@ boot_sequence:
 pushback:
   enabled: true
   confirmation_timeout: 120
+  checks:
+    open_windows: true
+    empty_room: true
+    daylight: true
+    storm_warning: true
+    unnecessary_heating: true
 wellness:
   enabled: true
   check_interval_minutes: 60
@@ -807,6 +813,44 @@ learning:
   enabled: true
   min_repetitions: 3
   time_window_minutes: 30
+  weekly_report:
+    enabled: true
+    day: 6  # Sonntag (0=Montag)
+    hour: 19
+# --- Jarvis-Features: Progressive Antworten ---
+progressive_responses:
+  enabled: true
+  show_context_step: true
+  show_thinking_step: true
+  show_action_step: true
+# --- Jarvis-Features: Benannte Protokolle ---
+protocols:
+  enabled: true
+  max_protocols: 20
+  max_steps: 10
+# --- Jarvis-Features: Geraete-Persoenlichkeit ---
+device_narration:
+  enabled: true
+  custom_nicknames: {}
+    # waschmaschine: "Frau Waschkraft"
+# --- Jarvis-Features: Spontane Beobachtungen ---
+spontaneous:
+  enabled: true
+  max_per_day: 2
+  min_interval_hours: 3
+  active_hours:
+    start: 8
+    end: 22
+  checks:
+    energy_comparison: true
+    streak: true
+    usage_record: true
+    device_milestone: true
+# --- Jarvis-Features: Emotionales Gedaechtnis ---
+emotional_memory:
+  enabled: true
+  negative_threshold: 2
+  decay_days: 90
 # --- Benachrichtigungen ---
 notifications:
   channels: null

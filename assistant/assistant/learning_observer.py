@@ -319,3 +319,98 @@ class LearningObserver:
         # Nach Count sortieren (haeufigste zuerst)
         patterns.sort(key=lambda p: p["count"], reverse=True)
         return patterns[:20]  # Max 20
+
+    # ------------------------------------------------------------------
+    # Feature 8: Lern-Transparenz — "Was hast du gelernt?"
+    # ------------------------------------------------------------------
+
+    async def get_learning_report(self, period: str = "week") -> dict:
+        """Erstellt einen Lern-Bericht ueber erkannte Muster und Vorschlaege.
+
+        Args:
+            period: Zeitraum ("week" oder "month")
+
+        Returns:
+            Dict mit patterns, total_observations, suggestions_made, accepted, declined
+        """
+        if not self.redis:
+            return {
+                "patterns": [],
+                "total_observations": 0,
+                "suggestions_made": 0,
+                "accepted": 0,
+                "declined": 0,
+            }
+
+        patterns = await self.get_learned_patterns()
+
+        # Beobachtungen zaehlen
+        total_observations = await self.redis.llen(KEY_MANUAL_ACTIONS) or 0
+
+        # Vorschlag-Antworten auswerten
+        suggestions_made = 0
+        accepted = 0
+        declined = 0
+
+        try:
+            responses_raw = await self.redis.lrange(KEY_RESPONSES, 0, 499)
+            for raw in responses_raw:
+                try:
+                    entry = json.loads(raw.decode() if isinstance(raw, bytes) else raw)
+                    suggestions_made += 1
+                    if entry.get("accepted"):
+                        accepted += 1
+                    else:
+                        declined += 1
+                except (json.JSONDecodeError, AttributeError):
+                    continue
+        except Exception as e:
+            logger.debug("Lern-Report Antworten lesen fehlgeschlagen: %s", e)
+
+        return {
+            "patterns": patterns,
+            "total_observations": int(total_observations),
+            "suggestions_made": suggestions_made,
+            "accepted": accepted,
+            "declined": declined,
+        }
+
+    def format_learning_report(self, report: dict) -> str:
+        """Formatiert einen Lern-Bericht als natuerlichen Text.
+
+        Args:
+            report: Dict aus get_learning_report()
+
+        Returns:
+            Formatierter Text fuer LLM oder direkte Ausgabe
+        """
+        lines = []
+
+        patterns = report.get("patterns", [])
+        total = report.get("total_observations", 0)
+        accepted = report.get("accepted", 0)
+        declined = report.get("declined", 0)
+        suggestions = report.get("suggestions_made", 0)
+
+        if not patterns and total == 0:
+            return "Ich habe noch keine Verhaltensmuster beobachtet."
+
+        lines.append(f"Ich habe {total} manuelle Aktionen beobachtet.")
+
+        if patterns:
+            lines.append(f"\n{len(patterns)} erkannte Muster:")
+            for p in patterns[:10]:
+                entity = p.get("entity", p.get("action", "?"))
+                friendly = entity.split(".", 1)[-1].replace("_", " ").title() if "." in entity else entity
+                time_slot = p.get("time_slot", "?")
+                count = p.get("count", 0)
+                weekday = p.get("weekday", -1)
+                if weekday >= 0 and weekday < len(WEEKDAY_NAMES_DE):
+                    lines.append(f"- {friendly} um {time_slot} Uhr ({WEEKDAY_NAMES_DE[weekday]}s, {count}x)")
+                else:
+                    lines.append(f"- {friendly} um {time_slot} Uhr (taeglich, {count}x)")
+
+        if suggestions > 0:
+            lines.append(f"\n{suggestions} Vorschlaege gemacht: {accepted} akzeptiert, {declined} abgelehnt.")
+
+        return "\n".join(lines)

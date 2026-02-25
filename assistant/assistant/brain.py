@@ -78,7 +78,9 @@ from .pre_classifier import PreClassifier
 from .circuit_breaker import registry as cb_registry, ollama_breaker, ha_breaker
 from .constants import REDIS_SECURITY_CONFIRM_KEY, REDIS_SECURITY_CONFIRM_TTL
 from .task_registry import TaskRegistry
-from .websocket import emit_thinking, emit_speaking, emit_action, emit_proactive
+from .protocol_engine import ProtocolEngine
+from .spontaneous_observer import SpontaneousObserver
+from .websocket import emit_thinking, emit_speaking, emit_action, emit_proactive, emit_progress
 
 logger = logging.getLogger(__name__)
 
@@ -234,6 +236,10 @@ class AssistantBrain(BrainCallbacksMixin):
         # Phase 17: Situation Model (Delta-Tracking zwischen Gespraechen)
         self.situation_model = SituationModel()
 
+        # Jarvis-Features: Benannte Protokolle + Spontane Beobachtungen
+        self.protocol_engine = ProtocolEngine(self.ollama, self.executor)
+        self.spontaneous = SpontaneousObserver(self.ha, self.activity)
+
         # Letzte fehlgeschlagene Anfrage fuer Retry bei "Ja"
         self._last_failed_query: Optional[str] = None
 
@@ -375,6 +381,17 @@ class AssistantBrain(BrainCallbacksMixin):
         await _safe_init("ThreatAssessment", self.threat_assessment.initialize(redis_client=self.memory.redis))
         await _safe_init("LearningObserver", self.learning_observer.initialize(redis_client=self.memory.redis))
         self.learning_observer.set_notify_callback(self._handle_learning_suggestion)
+
+        # Jarvis-Feature 2: Benannte Protokolle
+        await _safe_init("ProtocolEngine", self.protocol_engine.initialize(redis_client=self.memory.redis))
+        self.protocol_engine.set_executor(self.executor)
+
+        # Jarvis-Feature 4: Spontane Beobachtungen
+        await _safe_init("SpontaneousObserver", self.spontaneous.initialize(redis_client=self.memory.redis))
+        self.spontaneous.set_notify_callback(self._handle_spontaneous_observation)
+
+        # Jarvis-Feature 10: Daten-basierter Widerspruch — HA-Client fuer Live-Daten
+        self.validator.set_ha_client(self.ha)
 
         # Wellness Advisor initialisieren und starten
         await _safe_init("WellnessAdvisor", self.wellness_advisor.initialize(redis_client=self.memory.redis))
@@ -1545,6 +1562,14 @@ class AssistantBrain(BrainCallbacksMixin):
         # WebSocket: Denk-Status senden
         await emit_thinking()
 
+        # Feature 1: Progressive Antworten — "Denken laut"
+        _prog_cfg = yaml_config.get("progressive_responses", {})
+        if not stream_callback and _prog_cfg.get("enabled", True):
+            if _prog_cfg.get("show_context_step", True):
+                _prog_msg = self.personality.get_progress_message("context")
+                if _prog_msg:
+                    await emit_progress("context", _prog_msg)
+
         # 0. Pre-Classification: Bestimmt welche Subsysteme gebraucht werden
         profile = self.pre_classifier.classify(text)
         logger.info("Pre-Classification: %s", profile.category)
@@ -1952,6 +1977,13 @@ class AssistantBrain(BrainCallbacksMixin):
             # (siehe _entity_catalog_refresh_loop — alle 4.5 Min).
             # Kein lazy-load im Hot-Path noetig → spart 200-500ms.
 
+            # Feature 1: Progressive Antworten — "Einen Moment, ich ueberlege..."
+            if not stream_callback and _prog_cfg.get("enabled", True):
+                if _prog_cfg.get("show_thinking_step", True):
+                    _think_msg = self.personality.get_progress_message("thinking")
+                    if _think_msg:
+                        await emit_progress("thinking", _think_msg)
+
             # 6b. Einfache Anfragen: Direkt LLM aufrufen (mit Timeout + Fallback)
             llm_timeout = (yaml_config.get("context") or {}).get("llm_timeout", 60)
             try:
@@ -2093,12 +2125,20 @@ class AssistantBrain(BrainCallbacksMixin):
                           "get_room_climate", "get_active_intents",
                           "get_wellness_status", "get_device_health",
                           "get_learned_patterns", "describe_doorbell",
+                          "manage_protocol",
                           "get_house_status", "get_weather", "get_lights",
                           "get_covers", "get_media", "get_climate", "get_switches",
                           "get_alarms", "set_wakeup_alarm", "cancel_alarm"}
             has_query_results = False
 
             if tool_calls:
+                # Feature 1: Progressive Antworten — "Ich fuehre das aus..."
+                if not stream_callback and _prog_cfg.get("enabled", True):
+                    if _prog_cfg.get("show_action_step", True):
+                        _act_msg = self.personality.get_progress_message("action")
+                        if _act_msg:
+                            await emit_progress("action", _act_msg)
+
                 # "Verstanden, Sir"-Moment: Bei 2+ Aktionen kurz bestaetigen BEVOR ausgefuehrt wird
                 # Latenz-neutral: fire-and-forget WebSocket emit, blockiert nicht
                 if len(tool_calls) >= 2:
@@ -2228,6 +2268,27 @@ class AssistantBrain(BrainCallbacksMixin):
                         elif pushback["level"] == 1:
                             # Level 1: Warnung voranstellen, aber trotzdem ausfuehren
                             pushback_msg = pushback["message"]
+
+                    # Feature 10: Daten-basierter Widerspruch — Live-Daten pruefen
+                    if not pushback_msg:
+                        try:
+                            live_pushback = await self.validator.get_pushback_context(func_name, final_args)
+                            if live_pushback:
+                                from .function_validator import FunctionValidator
+                                pushback_msg = FunctionValidator.format_pushback_warnings(live_pushback)
+                        except Exception as _pb_err:
+                            logger.debug("Live-Pushback Fehler: %s", _pb_err)
+
+                    # Feature 5: Emotionales Gedaechtnis — negative Reaktions-History
+                    if not pushback_msg and person and self.memory_extractor:
+                        try:
+                            emo_ctx = await MemoryExtractor.get_emotional_context(
+                                func_name, person, redis_client=self.memory.redis,
+                            )
+                            if emo_ctx:
+                                pushback_msg = emo_ctx
+                        except Exception as _emo_err:
+                            logger.debug("Emotionaler Kontext Fehler: %s", _emo_err)
 
                     # Brightness-Fallback: Wenn set_light ohne brightness,
                     # aber User-Text "X%" enthaelt → brightness ergaenzen
@@ -2584,6 +2645,23 @@ class AssistantBrain(BrainCallbacksMixin):
                 ),
                 name="extract_facts",
             )
+
+        # Feature 5: Emotionale Reaktion tracken (negative Reaktion auf letzte Aktion?)
+        if self.memory_extractor and executed_actions and person:
+            is_negative = self.memory_extractor.detect_negative_reaction(text)
+            if is_negative:
+                last_action = executed_actions[-1].get("function", "")
+                if last_action:
+                    self._task_registry.create_task(
+                        self.memory_extractor.extract_reaction(
+                            user_text=text,
+                            action_performed=last_action,
+                            accepted=False,
+                            person=person,
+                            redis_client=self.memory.redis,
+                        ),
+                        name="extract_negative_reaction",
+                    )
 
         # Phase 17: Situation Snapshot speichern (fuer Delta beim naechsten Gespraech)
         self._task_registry.create_task(
@@ -4480,6 +4558,24 @@ class AssistantBrain(BrainCallbacksMixin):
                 return "\n".join(lines)
             return "Heute habe ich noch nichts Neues gelernt."
 
+        # Feature 8: Lern-Transparenz — "Was hast du beobachtet?" / "Lernbericht"
+        if any(kw in text_lower for kw in [
+            "was hast du beobachtet", "lernbericht", "lern-bericht",
+            "meine muster", "meine gewohnheiten",
+            "was weisst du ueber meine gewohnheiten",
+            "welche muster", "erkannte muster",
+        ]):
+            report = await self.learning_observer.get_learning_report()
+            report_text = self.learning_observer.format_learning_report(report)
+            return report_text
+
+        # Feature 2: Protokoll-Erkennung — "Filmabend", "Protokoll Filmabend"
+        if self.protocol_engine.enabled:
+            protocol_name = await self.protocol_engine.detect_protocol_intent(text)
+            if protocol_name:
+                result = await self.protocol_engine.execute_protocol(protocol_name, person)
+                return result.get("message", "Protokoll ausgefuehrt.")
+
         # Phase 16.2: "Was kannst du?" — Faehigkeiten auflisten
         if any(kw in text_lower for kw in [
             "was kannst du", "was koennen sie", "was koenntest du",
@@ -5979,6 +6075,19 @@ Regeln:
             return
         await self._speak_and_emit(text)
         logger.info("Intent-Erinnerung: %s", text)
+
+    async def _handle_spontaneous_observation(self, observation: dict):
+        """Feature 4: Callback fuer spontane Beobachtungen."""
+        message = observation.get("message", "")
+        if not message:
+            return
+        urgency = observation.get("urgency", "low")
+        if not await self._callback_should_speak(urgency):
+            logger.info("Spontane Beobachtung unterdrueckt: %s", message[:60])
+            return
+        formatted = await self._safe_format(message, urgency)
+        await self._speak_and_emit(formatted)
+        logger.info("Spontane Beobachtung: %s", message[:80])
 
     async def _run_daily_fact_decay(self):
         """Fuehrt einmal taeglich den Fact Decay aus (04:00 Uhr)."""
