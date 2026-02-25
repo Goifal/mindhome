@@ -232,6 +232,9 @@ class AssistantBrain(BrainCallbacksMixin):
         # Phase 17: Situation Model (Delta-Tracking zwischen Gespraechen)
         self.situation_model = SituationModel()
 
+        # Letzte fehlgeschlagene Anfrage fuer Retry bei "Ja"
+        self._last_failed_query: Optional[str] = None
+
     async def initialize(self):
         """Initialisiert alle Komponenten."""
         await self.memory.initialize()
@@ -632,6 +635,23 @@ class AssistantBrain(BrainCallbacksMixin):
                 "_emitted": True,
             }
         # whisper_cmd gesetzt aber >3 Woerter: Modus aktiv, Befehl weiterverarbeiten
+
+        # Retry-Erkennung: Wenn letzte Anfrage fehlgeschlagen ist und User "Ja" sagt,
+        # die urspruengliche Anfrage nochmal verarbeiten.
+        if self._last_failed_query and text.strip().lower().rstrip("!.") in (
+            "ja", "ok", "okay", "bitte", "ja bitte", "nochmal", "versuch nochmal",
+            "ja gerne", "mach", "probier nochmal",
+        ):
+            retry_query = self._last_failed_query
+            self._last_failed_query = None
+            logger.info("Retry nach 'Ja': Wiederhole '%s'", retry_query)
+            return await self.process(
+                text=retry_query, person=person, room=room,
+                files=files, stream_callback=stream_callback,
+                voice_metadata=voice_metadata, device_id=device_id,
+            )
+        # Erfolgreiche Anfrage loescht den Retry-Speicher
+        self._last_failed_query = None
 
         # Silence-Trigger: Wenn User "Filmabend", "Meditation" etc. sagt,
         # Activity-Override setzen damit proaktive Meldungen unterdrueckt werden
@@ -1733,7 +1753,9 @@ class AssistantBrain(BrainCallbacksMixin):
             # 7b. Deterministischer Tool-Call hat Vorrang vor Text-Extraktion.
             # Text-Extraktion aus Reasoning ist unzuverlaessig (z.B. extrahiert
             # get_house_status wenn get_lights gemeint war).
-            if not tool_calls and self._is_device_command(text):
+            # Prueft sowohl Steuerungsbefehle ("Licht aus") als auch
+            # Status-Queries ("Sind alle Licht abgedreht?").
+            if not tool_calls and (self._is_device_command(text) or self._is_status_query(text)):
                 fallback_tc = self._deterministic_tool_call(text)
                 if fallback_tc:
                     logger.info("Deterministischer Tool-Call: %s(%s)",
@@ -1751,8 +1773,8 @@ class AssistantBrain(BrainCallbacksMixin):
                     # Erklaerungstext entfernen — nur Antwort behalten
                     response_text = ""
 
-            # 7d. Retry: Qwen3 hat bei Geraetebefehl keinen Tool-Call gemacht
-            if not tool_calls and self._is_device_command(text):
+            # 7d. Retry: Qwen3 hat bei Geraetebefehl/Status-Query keinen Tool-Call gemacht
+            if not tool_calls and (self._is_device_command(text) or self._is_status_query(text)):
                 logger.warning("Geraetebefehl ohne Tool-Call erkannt: '%s' -> Retry mit Hint", text)
                 hint_msg = (
                     f"Du MUSST jetzt einen Function-Call ausfuehren! "
@@ -2204,14 +2226,16 @@ class AssistantBrain(BrainCallbacksMixin):
             retry_messages = [
                 {"role": "system", "content": "Du bist Jarvis, die KI dieses Hauses. "
                  "WICHTIG: Antworte AUSSCHLIESSLICH auf Deutsch. Kurz, maximal 2 Saetze. "
-                 "Kein Englisch. Keine Listen. Keine Erklaerungen."},
+                 "Kein Englisch. Keine Listen. Keine Erklaerungen. "
+                 "Kein Reasoning. Kein 'Let me think'. Direkt auf Deutsch antworten."},
             ]
             # Kontext aus den Original-Messages uebernehmen (ohne System-Prompt)
             context_msgs = [m for m in messages if m.get("role") != "system"]
             retry_messages.extend(context_msgs[-4:])
             try:
                 retry_resp = await self.ollama.chat(
-                    messages=retry_messages, model=model, temperature=0.5, max_tokens=128,
+                    messages=retry_messages, model=model, temperature=0.3,
+                    max_tokens=128, think=False,
                 )
                 retry_text = retry_resp.get("message", {}).get("content", "")
                 if retry_text:
@@ -2227,6 +2251,8 @@ class AssistantBrain(BrainCallbacksMixin):
                 logger.warning("Sprach-Retry fehlgeschlagen: %s", e)
             if not response_text:
                 response_text = self.personality.get_error_response("general")
+                # Fehlgeschlagene Anfrage merken fuer Retry bei "Ja"
+                self._last_failed_query = text
 
         # Phase 6.9: Running Gag an Antwort anhaengen
         if gag_response and response_text:
@@ -3970,6 +3996,36 @@ class AssistantBrain(BrainCallbacksMixin):
         return (has_noun and has_action) or (verb_start and has_noun)
 
     @staticmethod
+    def _is_status_query(text: str) -> bool:
+        """Erkennt ob der Text eine Geraete-Status-Abfrage ist.
+
+        Faengt Fragen wie "Sind alle Licht abgedreht?", "Ist das Licht an?",
+        "Welche Lichter sind noch an?" ab, die _is_device_command nicht erkennt
+        weil sie keine Aktionswörter enthalten.
+        """
+        t = text.lower()
+        _NOUNS = [
+            "rollladen", "rolladen", "rollo", "jalousie",
+            "licht", "lampe", "leuchte", "beleuchtung",
+            "heizung", "thermostat", "klima", "temperatur",
+            "steckdose", "schalter",
+            "musik", "lautsprecher", "media",
+            "wecker", "alarm",
+            "haus", "hausstatus", "haus-status",
+        ]
+        has_noun = any(n in t for n in _NOUNS)
+        if not has_noun:
+            return False
+        _QUERY_MARKERS = [
+            "welche", "sind ", "ist ", "status", "zeig", "liste",
+            "was ist", "wie ist", "noch an", "noch auf", "noch offen",
+            "abgedreht", "eingeschaltet", "ausgeschaltet", "angelassen",
+            "brennt", "brennen", "laeuft", "laufen", "offen",
+            "alle ", "alles ",
+        ]
+        return any(m in t for m in _QUERY_MARKERS)
+
+    @staticmethod
     def _deterministic_tool_call(text: str) -> Optional[dict]:
         """Leitet aus dem Text deterministisch den passenden Tool-Call ab.
 
@@ -5094,7 +5150,7 @@ Regeln:
                         f"Du bist {settings.assistant_name} — J.A.R.V.I.S. aus dem MCU. "
                         "Ein Smart-Home-Befehl ist fehlgeschlagen. "
                         "1 Satz: Was ist passiert. 1 Satz: Was du stattdessen tust. "
-                        f"Nie entschuldigen. Nie ratlos. Du hast IMMER einen Plan B. Deutsch.{humor_hint}"
+                        f"Nie entschuldigen. Nie ratlos. Schlage eine konkrete Alternative vor. Deutsch.{humor_hint}"
                     )},
                     {"role": "user", "content": f"{func_name}({func_args}) → {error}"},
                 ],

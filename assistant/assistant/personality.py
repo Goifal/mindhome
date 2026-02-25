@@ -114,9 +114,9 @@ CONFIRMATIONS_PARTIAL = [
 ]
 
 CONFIRMATIONS_FAILED = [
-    "Hat nicht funktioniert. Ich hab einen Plan B.",
+    "Hat nicht funktioniert. Versuch es nochmal.",
     "Negativ. Pruefe Alternative.",
-    "Fehlgeschlagen. Zweiter Versuch laeuft.",
+    "Fehlgeschlagen. Nochmal versuchen.",
     "Nicht durchgegangen. Bleibe dran.",
     "Geht gerade nicht. Workaround?",
 ]
@@ -124,9 +124,9 @@ CONFIRMATIONS_FAILED = [
 # Sarkasmus-Level 4-5: Spitzere Fehler-Bestaetigungen
 CONFIRMATIONS_FAILED_SNARKY = [
     "Hat nicht geklappt. Ich geb mir die Schuld. Ach nein, doch nicht.",
-    "Nicht mein bester Moment. Aber ich hab Alternativen.",
+    "Nicht mein bester Moment. Nochmal?",
     "Das war nichts. Aufgeben steht nicht im Handbuch.",
-    "Negativ. Plan B ist bereits in Arbeit.",
+    "Negativ. Wird nochmal probiert.",
 ]
 
 
@@ -1603,10 +1603,10 @@ Kein unterwuerfiger Ton. Du bist ein brillanter Butler, kein Chatbot."""
 
         templates = {
             "general": [
-                "Das hat nicht funktioniert. Ich bleibe dran.",
-                "Negativ. Pruefe Alternativen.",
-                "Da ging etwas schief. Zweiter Versuch?",
-                "Nicht mein bester Moment. Aber ich habe einen Plan B.",
+                "Das hat nicht funktioniert. Versuch es nochmal.",
+                "Negativ. Formulier es anders, dann klappt es.",
+                "Da ging etwas schief. Stell die Frage nochmal.",
+                "Nicht mein bester Moment. Versuch es nochmal.",
             ],
             "timeout": [
                 "Keine Antwort. Das System braucht einen Moment.",
