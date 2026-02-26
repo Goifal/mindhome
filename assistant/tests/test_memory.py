@@ -492,17 +492,19 @@ class TestFeedbackScores:
 
     @pytest.mark.asyncio
     async def test_get_feedback_score_default(self, memory, redis_mock):
-        redis_mock.get = AsyncMock(return_value=None)
+        redis_mock.mget = AsyncMock(return_value=[None, None])
         score = await memory.get_feedback_score("window_alert")
         assert score == 0.5
 
     @pytest.mark.asyncio
     async def test_get_feedback_score_from_new_key(self, memory, redis_mock):
-        # Erstes get (neues Schema) liefert Wert
-        redis_mock.get = AsyncMock(return_value="0.8")
+        # mget liefert [neues_schema, altes_schema] — neues hat Wert
+        redis_mock.mget = AsyncMock(return_value=["0.8", None])
         score = await memory.get_feedback_score("door_alert")
         assert score == 0.8
-        redis_mock.get.assert_called_once_with("mha:feedback:score:door_alert")
+        redis_mock.mget.assert_called_once_with(
+            "mha:feedback:score:door_alert", "mha:feedback:door_alert"
+        )
 
     @pytest.mark.asyncio
     async def test_get_feedback_score_no_redis(self, memory_no_redis):
@@ -511,7 +513,7 @@ class TestFeedbackScores:
 
     @pytest.mark.asyncio
     async def test_update_feedback_score(self, memory, redis_mock):
-        redis_mock.get = AsyncMock(return_value="0.5")
+        redis_mock.mget = AsyncMock(return_value=["0.5", None])
         await memory.update_feedback_score("test_event", 0.1)
         redis_mock.setex.assert_called_with(
             "mha:feedback:score:test_event", 90 * 86400, "0.6"
@@ -519,7 +521,7 @@ class TestFeedbackScores:
 
     @pytest.mark.asyncio
     async def test_update_feedback_score_clamped_max(self, memory, redis_mock):
-        redis_mock.get = AsyncMock(return_value="0.95")
+        redis_mock.mget = AsyncMock(return_value=["0.95", None])
         await memory.update_feedback_score("test_event", 0.2)
         redis_mock.setex.assert_called_with(
             "mha:feedback:score:test_event", 90 * 86400, "1.0"
@@ -527,7 +529,7 @@ class TestFeedbackScores:
 
     @pytest.mark.asyncio
     async def test_update_feedback_score_clamped_min(self, memory, redis_mock):
-        redis_mock.get = AsyncMock(return_value="0.1")
+        redis_mock.mget = AsyncMock(return_value=["0.1", None])
         await memory.update_feedback_score("test_event", -0.5)
         redis_mock.setex.assert_called_with(
             "mha:feedback:score:test_event", 90 * 86400, "0.0"

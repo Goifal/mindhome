@@ -85,6 +85,10 @@ class ContextBuilder:
         self.semantic: Optional[SemanticMemory] = None
         self._activity_engine = None
         self._redis = None
+        # Weather-Warning-Cache (aendert sich selten, spart Iteration pro Request)
+        self._weather_cache: list[str] = []
+        self._weather_cache_ts: float = 0.0
+        _WEATHER_CACHE_TTL = 300.0  # 5 Minuten
 
     def set_semantic_memory(self, semantic: SemanticMemory):
         """Setzt die Referenz zum Semantic Memory."""
@@ -394,7 +398,12 @@ class ContextBuilder:
         return latest_room
 
     def _check_weather_warnings(self, states: list[dict]) -> list[str]:
-        """Prueft Wetter-Daten auf Warnwuerdiges."""
+        """Prueft Wetter-Daten auf Warnwuerdiges (5-Min-Cache)."""
+        import time as _time
+        now = _time.time()
+        if self._weather_cache_ts and (now - self._weather_cache_ts) < self._WEATHER_CACHE_TTL:
+            return self._weather_cache
+
         warnings = []
         weather_cfg = yaml_config.get("weather_warnings", {})
         if not weather_cfg.get("enabled", True):
@@ -453,6 +462,8 @@ class ContextBuilder:
 
             break  # Nur erste Weather-Entity
 
+        self._weather_cache = warnings
+        self._weather_cache_ts = now
         return warnings
 
     @staticmethod

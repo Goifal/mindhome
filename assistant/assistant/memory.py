@@ -345,11 +345,11 @@ class MemoryManager:
         """Holt den Feedback-Score fuer einen Event-Typ."""
         if not self.redis:
             return 0.5
-        # Phase 5: Neues Key-Schema
-        score = await self.redis.get(f"mha:feedback:score:{event_type}")
-        if score is None:
-            # Fallback: altes Key-Schema
-            score = await self.redis.get(f"mha:feedback:{event_type}")
+        # Beide Key-Schemata in einem Roundtrip pruefen (mget statt 2x get)
+        new_key = f"mha:feedback:score:{event_type}"
+        old_key = f"mha:feedback:{event_type}"
+        results = await self.redis.mget(new_key, old_key)
+        score = results[0] or results[1]
         return float(score) if score else 0.5
 
     async def update_feedback_score(self, event_type: str, delta: float):

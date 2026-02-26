@@ -83,9 +83,11 @@ class ConfigVersioning:
             }
 
             key = f"mha:config_snapshots:{config_file}"
-            await self._redis.lpush(key, json.dumps(metadata))
-            # 90 Tage TTL als Sicherheitsnetz (Cleanup passiert auch aktiv)
-            await self._redis.expire(key, 90 * 86400)
+            pipe = self._redis.pipeline()
+            pipe.lpush(key, json.dumps(metadata))
+            pipe.ltrim(key, 0, 49)  # Max 50 Snapshots pro Config
+            pipe.expire(key, 90 * 86400)
+            await pipe.execute()
 
             await self._cleanup_old_snapshots(config_file)
 
@@ -101,7 +103,7 @@ class ConfigVersioning:
         if not self._redis:
             return []
 
-        raw = await self._redis.lrange(f"mha:config_snapshots:{config_file}", 0, -1)
+        raw = await self._redis.lrange(f"mha:config_snapshots:{config_file}", 0, 49)
         snapshots = []
         for item in raw:
             try:
