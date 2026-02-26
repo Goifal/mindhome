@@ -1171,7 +1171,8 @@ fetch(`${API}/api/ui/settings?token=`).then(r => r.ok ? r.json() : null).then(d 
   const h = d.household || {};
   const primary = h.primary_user || d.user_name || '';
   personTitles = (d.persons || {}).titles || {};
-  householdMembers = (h.members || []).filter(m => m.name);
+  // Nur Hausherren (owner) duerfen mit Jarvis chatten
+  householdMembers = (h.members || []).filter(m => m.name && m.role === 'owner');
 
   // Restore saved person or use primary
   const saved = localStorage.getItem('jarvis_chat_person');
