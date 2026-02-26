@@ -116,6 +116,32 @@ class BrainCallbacksMixin:
             await self._speak_and_emit(formatted)
             logger.info("Wellness [%s]: %s", nudge_type, formatted)
 
+    async def _handle_music_suggestion(self, alert: dict) -> None:
+        """Callback fuer Smart DJ — proaktive Musikvorschlaege."""
+        message = alert.get("message", "")
+        room = alert.get("room") or None
+        if message:
+            try:
+                formatted = await self.proactive.format_with_personality(message, "low")
+            except Exception as e:
+                logger.warning("MusicDJ-Personality Fehler (Fallback): %s", e)
+                formatted = message
+            await self._speak_and_emit(formatted, room=room)
+            logger.info("MusicDJ: %s (Raum: %s)", formatted, room or "auto")
+
+    async def _handle_visitor_event(self, alert: dict) -> None:
+        """Callback fuer Besucher-Management — Klingel-Events mit Kontext."""
+        message = alert.get("message", "")
+        room = alert.get("room") or None
+        if message:
+            try:
+                formatted = await self.proactive.format_with_personality(message, "medium")
+            except Exception as e:
+                logger.warning("VisitorManager-Personality Fehler (Fallback): %s", e)
+                formatted = message
+            await self._speak_and_emit(formatted, room=room)
+            logger.info("VisitorManager: %s (Raum: %s)", formatted, room or "auto")
+
     async def _handle_ambient_audio_event(
         self,
         event_type: str,

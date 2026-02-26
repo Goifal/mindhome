@@ -117,6 +117,7 @@ class TestSecurityScore:
     async def test_unlocked_locks_reduce_score(self, threat):
         threat.ha.get_states.return_value = [
             {"entity_id": "lock.front", "state": "unlocked"},
+            {"entity_id": "person.max", "state": "home"},  # Verhindert Nacht-Abzug
         ]
         result = await threat.get_security_score()
         assert result["score"] == 80

@@ -45,6 +45,8 @@ from .memory import MemoryManager
 from .memory_extractor import MemoryExtractor
 from .model_router import ModelRouter
 from .mood_detector import MoodDetector
+from .music_dj import MusicDJ
+from .visitor_manager import VisitorManager
 from .ollama_client import OllamaClient
 from .ambient_audio import AmbientAudioClassifier
 from .ocr import OCREngine
@@ -240,6 +242,12 @@ class AssistantBrain(BrainCallbacksMixin):
         self.protocol_engine = ProtocolEngine(self.ollama, self.executor)
         self.spontaneous = SpontaneousObserver(self.ha, self.activity)
 
+        # Feature 11: Smart DJ (kontextbewusste Musikempfehlungen)
+        self.music_dj = MusicDJ(self.mood, self.activity)
+
+        # Feature 12: Besucher-Management
+        self.visitor_manager = VisitorManager(self.ha, self.camera_manager)
+
         # Letzte fehlgeschlagene Anfrage fuer Retry bei "Ja"
         self._last_failed_query: Optional[str] = None
 
@@ -402,6 +410,16 @@ class AssistantBrain(BrainCallbacksMixin):
             self._task_registry.create_task(
                 self._weekly_learning_report_loop(), name="weekly_learning_report"
             )
+
+        # Feature 11: Smart DJ (kontextbewusste Musikempfehlungen)
+        await _safe_init("MusicDJ", self.music_dj.initialize(redis_client=self.memory.redis))
+        self.music_dj.set_notify_callback(self._handle_music_suggestion)
+        self.music_dj.set_executor(self.executor)
+
+        # Feature 12: Besucher-Management
+        await _safe_init("VisitorManager", self.visitor_manager.initialize(redis_client=self.memory.redis))
+        self.visitor_manager.set_notify_callback(self._handle_visitor_event)
+        self.visitor_manager.set_executor(self.executor)
 
         # Jarvis-Feature 10: Daten-basierter Widerspruch — HA-Client fuer Live-Daten
         self.validator.set_ha_client(self.ha)
@@ -5288,11 +5306,27 @@ class AssistantBrain(BrainCallbacksMixin):
         if t_lower.endswith("?") or len(t_lower) < 8:
             return None
 
+        # Woerter die keine Personennamen sind
+        _NOT_NAMES = frozenset({
+            # Pronomen
+            "mir", "ihm", "ihr", "uns", "ihnen", "dir", "euch",
+            # Partikeln / Adverbien
+            "mal", "bitte", "doch", "halt", "eben", "einfach", "ruhig",
+            "schon", "bloß", "lieber", "besser", "schnell", "nochmal",
+            "jetzt", "gleich", "sofort", "endlich", "niemals", "erstmal",
+            # Quantoren
+            "allen", "alles", "nichts", "beiden", "keinem", "jedem",
+            # Phrasen-Starter
+            "bescheid", "danke", "hallo", "stop", "stopp", "tschuess",
+            "ja", "nein", "okay", "was", "wie", "wo", "wann", "warum",
+            "nix", "laut", "leise",
+        })
+
         # --- Pattern 1: "sag/sage {person} [im {room}] [dass/,] {message}" ---
         m = _re.match(
             r'(?:sag|sage)\s+'
             r'(?:(?:der|dem|die)\s+)?'
-            r'([A-ZÄÖÜ][a-zäöüß]+)'  # Person (Eigenname)
+            r'([A-ZÄÖÜa-zäöüß]{2,}(?:-[A-ZÄÖÜa-zäöüß]+)*)'  # Person (auch "mama", "Leon-Marie")
             r'(?:\s+im\s+([A-Za-zÄÖÜäöüß]+))?'  # optionaler Raum
             r'[\s,]*(?:dass|das|,|:)?\s*'
             r'(.+)',
@@ -5304,8 +5338,7 @@ class AssistantBrain(BrainCallbacksMixin):
             message = m.group(3).strip().rstrip(".")
             if len(message) < 3:
                 return None
-            # "sag mir" ist keine Durchsage
-            if person.lower() in ("mir", "mal", "ihm", "ihr", "uns", "ihnen", "bitte"):
+            if person.lower() in _NOT_NAMES:
                 return None
             args = {"message": message, "target_person": person}
             if room:

@@ -535,6 +535,36 @@ _ASSISTANT_TOOLS_STATIC = [
     {
         "type": "function",
         "function": {
+            "name": "recommend_music",
+            "description": "Smart DJ: Empfiehlt und spielt kontextbewusste Musik basierend auf Stimmung, Aktivitaet und Tageszeit. 'recommend' zeigt Vorschlag, 'play' spielt direkt ab, 'feedback' speichert Bewertung, 'status' zeigt aktuellen Kontext.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["recommend", "play", "feedback", "status"],
+                        "description": "DJ-Aktion: recommend=Vorschlag anzeigen, play=direkt abspielen, feedback=Bewertung, status=Kontext anzeigen",
+                    },
+                    "positive": {
+                        "type": "boolean",
+                        "description": "Feedback: true=gefaellt, false=gefaellt nicht (nur bei action=feedback)",
+                    },
+                    "room": {
+                        "type": "string",
+                        "description": "Zielraum fuer Wiedergabe (optional)",
+                    },
+                    "genre": {
+                        "type": "string",
+                        "description": "Optionaler Genre-Override (z.B. 'party_hits', 'focus_lofi', 'jazz_dinner')",
+                    },
+                },
+                "required": ["action"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "get_media",
             "description": "NUR zum Abfragen: Zeigt alle Media Player mit Wiedergabestatus, Titel und Lautstaerke. NICHT zum Steuern — dafuer play_media nutzen.",
             "parameters": {
@@ -1469,6 +1499,56 @@ _ASSISTANT_TOOLS_STATIC = [
     {
         "type": "function",
         "function": {
+            "name": "manage_visitor",
+            "description": "Besucher-Management: Bekannte Besucher verwalten, erwartete Besucher anlegen, Besucher-History ansehen, Tuer oeffnen ('Lass ihn rein'). Nutze dies bei: 'Mama kommt heute', 'Lass ihn rein', 'Wer hat uns besucht?', 'Besucher hinzufuegen', 'Oeffne die Tuer fuer den Besuch'.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["add_known", "remove_known", "list_known", "expect", "cancel_expected", "grant_entry", "history", "status"],
+                        "description": "Aktion: add_known=Besucher speichern, remove_known=entfernen, list_known=alle zeigen, expect=Besucher erwarten, cancel_expected=Erwartung aufheben, grant_entry=Tuer oeffnen, history=Besuchs-History, status=Uebersicht",
+                    },
+                    "person_id": {
+                        "type": "string",
+                        "description": "Eindeutige ID des Besuchers (z.B. 'mama', 'handwerker_mueller')",
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "Anzeigename des Besuchers",
+                    },
+                    "relationship": {
+                        "type": "string",
+                        "description": "Beziehung: Familie, Freund, Handwerker, Nachbar, etc.",
+                    },
+                    "notes": {
+                        "type": "string",
+                        "description": "Zusaetzliche Notizen zum Besucher",
+                    },
+                    "expected_time": {
+                        "type": "string",
+                        "description": "Erwartete Ankunftszeit (z.B. '15:00', 'nachmittags')",
+                    },
+                    "auto_unlock": {
+                        "type": "boolean",
+                        "description": "Tuer automatisch oeffnen wenn Besucher klingelt (nur bei expect)",
+                    },
+                    "door": {
+                        "type": "string",
+                        "description": "Tuer-Name fuer grant_entry (default: haustuer)",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximale Anzahl History-Eintraege (default: 20)",
+                    },
+                },
+                "required": ["action"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "manage_protocol",
             "description": "Verwaltet benannte Protokolle (Multi-Step-Sequenzen). Protokolle sind gespeicherte Ablaeufe wie 'Filmabend' oder 'Gute Nacht'. Nutze dies wenn der User ein Protokoll erstellen, ausfuehren, auflisten, loeschen oder rueckgaengig machen will. Beispiel: 'Erstelle Protokoll Filmabend: Licht 20%, Rolladen zu' oder 'Fuehre Filmabend aus' oder 'Zeig meine Protokolle'.",
             "parameters": {
@@ -1531,6 +1611,7 @@ class FunctionExecutor:
         self.ha = ha_client
         self._entity_cache: dict[str, list[dict]] = {}
         self._config_versioning: Optional[ConfigVersioning] = None
+        self._last_broadcast_time: float = 0.0
 
     def set_config_versioning(self, versioning: ConfigVersioning):
         """Setzt ConfigVersioning fuer Backup-vor-Schreiben."""
@@ -1557,7 +1638,7 @@ class FunctionExecutor:
         "get_room_climate", "get_active_intents", "get_wellness_status",
         "get_house_status", "get_full_status_report", "get_weather",
         "get_device_health", "get_learned_patterns", "describe_doorbell",
-        "manage_protocol",
+        "manage_protocol", "recommend_music", "manage_visitor",
     })
 
     # Qwen3 uebersetzt deutsche Raumnamen oft ins Englische
@@ -3927,52 +4008,95 @@ class FunctionExecutor:
         brain = main_module.brain
         return await brain.timer_manager.get_alarms()
 
+    # ------------------------------------------------------------------
+    # Intercom Helpers
+    # ------------------------------------------------------------------
+
+    _BROADCAST_COOLDOWN_SECONDS = 30
+
+    async def _send_tts_to_speaker(self, speaker: str, message: str) -> bool:
+        """Sendet TTS an einen einzelnen Speaker (Piper oder Alexa).
+
+        Returns:
+            True wenn erfolgreich, False bei Fehler.
+        """
+        alexa_speakers = yaml_config.get("sounds", {}).get("alexa_speakers", [])
+        try:
+            if speaker in alexa_speakers:
+                svc_name = "alexa_media_" + speaker.replace("media_player.", "", 1)
+                await self.ha.call_service(
+                    "notify", svc_name,
+                    {"message": message, "data": {"type": "tts"}},
+                )
+            else:
+                tts_entity = yaml_config.get("tts", {}).get("entity", "tts.piper")
+                await self.ha.call_service("tts", "speak", {
+                    "entity_id": tts_entity,
+                    "media_player_entity_id": speaker,
+                    "message": message,
+                })
+            return True
+        except Exception as e:
+            logger.debug("TTS an %s fehlgeschlagen: %s", speaker, e)
+            return False
+
     async def _exec_broadcast(self, args: dict) -> dict:
-        """Sendet eine Durchsage an alle Lautsprecher."""
+        """Sendet eine Durchsage an alle TTS-faehigen Lautsprecher."""
         message = args.get("message", "")
         if not message:
             return {"success": False, "message": "Keine Nachricht angegeben."}
 
-        states = await self.ha.get_states()
-        if not states:
-            return {"success": False, "message": "Keine Verbindung zu Home Assistant."}
+        # Rate-Limiting
+        now = time.time()
+        cooldown = yaml_config.get("intercom", {}).get(
+            "broadcast_cooldown_seconds", self._BROADCAST_COOLDOWN_SECONDS,
+        )
+        if now - self._last_broadcast_time < cooldown:
+            remaining = int(cooldown - (now - self._last_broadcast_time))
+            return {"success": False, "message": f"Durchsage-Cooldown. Bitte {remaining}s warten."}
+        self._last_broadcast_time = now
 
-        # Alle Media-Player mit TTS-Faehigkeit finden
+        # TTS-faehige Speaker finden (konfigurierte + auto-erkannte)
+        room_speakers_cfg = yaml_config.get("multi_room", {}).get("room_speakers", {})
         speakers = []
-        for s in states:
-            eid = s.get("entity_id", "")
-            if eid.startswith("media_player."):
+        seen = set()
+
+        # 1. Konfigurierte Room-Speakers haben Vorrang
+        for eid in (room_speakers_cfg or {}).values():
+            if eid and eid not in seen:
                 speakers.append(eid)
+                seen.add(eid)
+
+        # 2. Auto-Discovery: nur echte TTS-Speaker (keine TVs/Receiver)
+        states = await self.ha.get_states()
+        for s in (states or []):
+            eid = s.get("entity_id", "")
+            attrs = s.get("attributes", {})
+            if eid not in seen and self._is_tts_speaker(eid, attrs):
+                speakers.append(eid)
+                seen.add(eid)
 
         if not speakers:
             return {"success": False, "message": "Keine Lautsprecher gefunden."}
 
         # TTS an alle Speaker senden
         count = 0
-        tts_entity = yaml_config.get("tts", {}).get("entity", "tts.piper")
-        alexa_speakers = yaml_config.get("sounds", {}).get("alexa_speakers", [])
+        failed = []
         for speaker in speakers:
-            try:
-                if speaker in alexa_speakers:
-                    svc_name = "alexa_media_" + speaker.replace("media_player.", "", 1)
-                    await self.ha.call_service(
-                        "notify", svc_name,
-                        {"message": message, "data": {"type": "tts"}},
-                    )
-                else:
-                    await self.ha.call_service("tts", "speak", {
-                        "entity_id": tts_entity,
-                        "media_player_entity_id": speaker,
-                        "message": message,
-                    })
+            ok = await self._send_tts_to_speaker(speaker, message)
+            if ok:
                 count += 1
-            except Exception as e:
-                logger.debug("Broadcast an %s fehlgeschlagen: %s", speaker, e)
+            else:
+                failed.append(speaker)
 
-        return {
+        result = {
             "success": count > 0,
-            "message": f"Durchsage an {count} Lautsprecher gesendet: \"{message}\"",
+            "message": f"Durchsage an {count}/{len(speakers)} Lautsprecher: \"{message}\"",
+            "delivered": count,
         }
+        if failed:
+            result["failed_speakers"] = failed
+        return result
 
     async def _exec_send_intercom(self, args: dict) -> dict:
         """Gezielte Durchsage an Person oder Raum."""
@@ -4012,30 +4136,17 @@ class FunctionExecutor:
         if target_person:
             tts_message = f"{target_person}, {message}"
 
+        # Speaker-Verfuegbarkeit pruefen
+        speaker_state = await self.ha.get_state(speaker)
+        if speaker_state and speaker_state.get("state") == "unavailable":
+            return {"success": False, "message": f"Lautsprecher '{speaker}' ist nicht erreichbar."}
+
         # TTS senden
-        tts_entity = yaml_config.get("tts", {}).get("entity", "tts.piper")
-        alexa_speakers = yaml_config.get("sounds", {}).get("alexa_speakers", [])
-        try:
-            if speaker in alexa_speakers:
-                svc_name = "alexa_media_" + speaker.replace("media_player.", "", 1)
-                await self.ha.call_service(
-                    "notify", svc_name,
-                    {"message": tts_message, "data": {"type": "tts"}},
-                )
-            else:
-                await self.ha.call_service("tts", "speak", {
-                    "entity_id": tts_entity,
-                    "media_player_entity_id": speaker,
-                    "message": tts_message,
-                })
-            target_desc = f"{target_person} im {target_room}" if target_person else target_room
-            return {
-                "success": True,
-                "message": f"Durchsage an {target_desc}: \"{message}\"",
-            }
-        except Exception as e:
-            logger.error("Intercom fehlgeschlagen: %s", e)
-            return {"success": False, "message": f"Durchsage fehlgeschlagen: {e}"}
+        ok = await self._send_tts_to_speaker(speaker, tts_message)
+        target_desc = f"{target_person} im {target_room}" if target_person else target_room
+        if ok:
+            return {"success": True, "message": f"Durchsage an {target_desc}: \"{message}\""}
+        return {"success": False, "message": f"Durchsage an {target_desc} fehlgeschlagen."}
 
     async def _exec_get_camera_view(self, args: dict) -> dict:
         """Holt und beschreibt ein Kamera-Bild."""
@@ -4557,3 +4668,97 @@ class FunctionExecutor:
                 return {"success": False, "message": f"Unbekannte Aktion: {action}"}
         except Exception as e:
             return {"success": False, "message": f"Protokoll-Fehler: {e}"}
+
+    async def _exec_recommend_music(self, args: dict) -> dict:
+        """Feature 11: Smart DJ — kontextbewusste Musikempfehlungen."""
+        import assistant.main as main_module
+        brain = main_module.brain
+        dj = brain.music_dj
+        action = args.get("action", "recommend")
+        person = getattr(brain, "_current_person", "") or ""
+
+        try:
+            if action == "recommend":
+                return await dj.get_recommendation(person=person)
+            elif action == "play":
+                return await dj.play_recommendation(
+                    person=person,
+                    room=args.get("room"),
+                    genre_override=args.get("genre"),
+                )
+            elif action == "feedback":
+                positive = args.get("positive", True)
+                return await dj.record_feedback(positive=positive, person=person)
+            elif action == "status":
+                return await dj.get_music_status()
+            else:
+                return {"success": False, "message": f"Unbekannte DJ-Aktion: {action}"}
+        except Exception as e:
+            return {"success": False, "message": f"Music-DJ Fehler: {e}"}
+
+    async def _exec_manage_visitor(self, args: dict) -> dict:
+        """Feature 12: Besucher-Management — Besucher verwalten und Tuer-Workflows."""
+        import assistant.main as main_module
+        brain = main_module.brain
+        vm = brain.visitor_manager
+        action = args.get("action", "status")
+
+        try:
+            if action == "add_known":
+                pid = args.get("person_id", "")
+                name = args.get("name", "")
+                if not pid or not name:
+                    return {"success": False, "message": "person_id und name sind erforderlich."}
+                return await vm.add_known_visitor(
+                    person_id=pid,
+                    name=name,
+                    relationship=args.get("relationship", ""),
+                    notes=args.get("notes", ""),
+                )
+            elif action == "remove_known":
+                pid = args.get("person_id", "")
+                if not pid:
+                    return {"success": False, "message": "person_id ist erforderlich."}
+                return await vm.remove_known_visitor(pid)
+            elif action == "list_known":
+                return await vm.list_known_visitors()
+            elif action == "expect":
+                pid = args.get("person_id", "")
+                if not pid:
+                    return {"success": False, "message": "person_id ist erforderlich."}
+                auto_unlock = args.get("auto_unlock", False)
+                # auto_unlock erfordert Owner-Trust (= lock_door Berechtigung)
+                if auto_unlock:
+                    person = getattr(brain, "_current_person", "") or ""
+                    trust_check = brain.autonomy.can_person_act(person, "lock_door")
+                    if not trust_check["allowed"]:
+                        return {"success": False, "message": trust_check.get("reason", "Keine Berechtigung fuer Auto-Unlock.")}
+                return await vm.expect_visitor(
+                    person_id=pid,
+                    name=args.get("name", ""),
+                    expected_time=args.get("expected_time", ""),
+                    auto_unlock=auto_unlock,
+                    notes=args.get("notes", ""),
+                )
+            elif action == "cancel_expected":
+                pid = args.get("person_id", "")
+                if not pid:
+                    return {"success": False, "message": "person_id ist erforderlich."}
+                return await vm.cancel_expected(pid)
+            elif action == "grant_entry":
+                # grant_entry entriegelt die Tuer — erfordert Owner-Trust (wie lock_door)
+                person = getattr(brain, "_current_person", "") or ""
+                trust_check = brain.autonomy.can_person_act(person, "lock_door")
+                if not trust_check["allowed"]:
+                    return {"success": False, "message": trust_check.get("reason", "Keine Berechtigung.")}
+                door = args.get("door", "haustuer")
+                return await vm.grant_entry(door=door)
+            elif action == "history":
+                limit = max(1, min(int(args.get("limit", 20)), 100))
+                return await vm.get_visit_history(limit=limit)
+            elif action == "status":
+                return await vm.get_status()
+            else:
+                return {"success": False, "message": f"Unbekannte Besucher-Aktion: {action}"}
+        except Exception as e:
+            return {"success": False, "message": f"Besucher-Management Fehler: {e}"}

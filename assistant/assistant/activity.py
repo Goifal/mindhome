@@ -367,10 +367,10 @@ class ActivityEngine:
         return True
 
     def _check_media_playing(self, states: list[dict]) -> bool:
-        """Prueft ob ein Media Player aktiv ist (TV, Film)."""
+        """Prueft ob ein konfigurierter Media Player aktiv ist (TV, Film)."""
         for state in states:
             entity_id = state.get("entity_id", "")
-            if entity_id.startswith("media_player."):
+            if entity_id in self.media_players:
                 if state.get("state") == "playing":
                     return True
         return False
