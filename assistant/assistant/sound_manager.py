@@ -197,6 +197,12 @@ class SoundManager:
         if now - last < self._min_interval:
             return False
         self._last_sound_time[event] = now
+        # Dict-Wachstum begrenzen: Alte Eintraege (>60s) aufraeumen
+        if len(self._last_sound_time) > 50:
+            self._last_sound_time = {
+                k: v for k, v in self._last_sound_time.items()
+                if now - v < 60
+            }
 
         # Volume bestimmen
         if volume is None:

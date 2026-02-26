@@ -52,7 +52,7 @@ class HomeAssistantClient:
         # States-Cache: vermeidet N+1 Queries innerhalb kurzer Zeitfenster
         self._states_cache: Optional[list[dict]] = None
         self._states_cache_ts: float = 0.0
-        _STATES_CACHE_TTL = 5.0  # Sekunden (von 2s erhoeht — HA-States aendern sich selten innerhalb 5s)
+        self._STATES_CACHE_TTL = 5.0  # Sekunden (von 2s erhoeht — HA-States aendern sich selten innerhalb 5s)
 
     def _get_lock(self) -> asyncio.Lock:
         """Gibt den Session-Lock zurueck."""
