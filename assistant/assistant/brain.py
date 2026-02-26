@@ -795,16 +795,34 @@ class AssistantBrain(BrainCallbacksMixin):
         # Phase 7: Gute-Nacht-Intent (VOR allem anderen)
         if self.routines.is_goodnight_intent(text):
             logger.info("Gute-Nacht-Intent erkannt")
-            result = await self.routines.execute_goodnight(person or "")
-            self._remember_exchange(text, result["text"])
-            await self._speak_and_emit(result["text"], room=room)
-            return {
-                "response": result["text"],
-                "actions": result["actions"],
-                "model_used": "routine_engine",
-                "context_room": room or "unbekannt",
-                "_emitted": True,
-            }
+            try:
+                result = await self.routines.execute_goodnight(person or "")
+                response_text = self._filter_response(result["text"]) or result["text"]
+                self._remember_exchange(text, response_text)
+                tts_data = self.tts_enhancer.enhance(
+                    response_text, message_type="briefing",
+                )
+                await self._speak_and_emit(response_text, room=room, tts_data=tts_data)
+                return {
+                    "response": response_text,
+                    "actions": result["actions"],
+                    "model_used": "routine_engine",
+                    "context_room": room or "unbekannt",
+                    "tts": tts_data,
+                    "_emitted": True,
+                }
+            except Exception as e:
+                logger.warning("Gute-Nacht-Routine fehlgeschlagen: %s — Fallback", e)
+                title = get_person_title(person or "")
+                fallback = f"Gute Nacht, {title}. Ich halte die Stellung."
+                await self._speak_and_emit(fallback, room=room)
+                return {
+                    "response": fallback,
+                    "actions": [],
+                    "model_used": "routine_engine_fallback",
+                    "context_room": room or "unbekannt",
+                    "_emitted": True,
+                }
 
         # Phase 7: Gaeste-Modus Trigger
         if self.routines.is_guest_trigger(text):

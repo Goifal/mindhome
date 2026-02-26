@@ -707,8 +707,11 @@ class RoutineEngine:
                         cond = self._translate_weather(tomorrow.get("condition", "?"))
                         precipitation = tomorrow.get("precipitation")
                         text = f"Morgen: {temp_low}-{temp_high}°C, {cond}"
-                        if precipitation and float(precipitation) > 0:
-                            text += f", {precipitation}mm Niederschlag"
+                        try:
+                            if precipitation and float(precipitation) > 0:
+                                text += f", {precipitation}mm Niederschlag"
+                        except (ValueError, TypeError):
+                            pass
                         parts.append(text)
                     break
 
