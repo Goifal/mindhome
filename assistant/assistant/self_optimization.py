@@ -109,7 +109,8 @@ class SelfOptimization:
                 ex=7 * 86400,
             )
 
-        await self._redis.setex("mha:self_opt:last_run", 86400, datetime.now().isoformat())
+        ttl = 8 * 86400 if self._interval == "weekly" else 2 * 86400
+        await self._redis.setex("mha:self_opt:last_run", ttl, datetime.now().isoformat())
 
         logger.info("Analyse abgeschlossen: %d Vorschlaege generiert", len(valid_proposals))
         return valid_proposals

@@ -536,6 +536,8 @@ class AssistantBrain(BrainCallbacksMixin):
         C-2 Fix: Bei Requests von der HA Assist Pipeline wird speak_response()
         NICHT aufgerufen, da die Pipeline selbst TTS via Wyoming Piper macht.
         """
+        # Zentraler Filter: Sie→du, Floskeln, Reasoning — auch fuer Callbacks
+        text = self._filter_response(text)
         if not room:
             room = await self._get_occupied_room()
 
@@ -1428,44 +1430,58 @@ class AssistantBrain(BrainCallbacksMixin):
             func_args = intercom_cmd["args"]
             logger.info("Intercom-Shortcut: '%s' -> %s(%s)", text, func_name, func_args)
             try:
-                result = await self.executor.execute(func_name, func_args)
-                success = isinstance(result, dict) and result.get("success", False)
-
-                if success:
-                    target = func_args.get("target_person") or func_args.get("target_room") or "alle"
-                    response_text = f"Durchsage an {target} gesendet."
-                else:
-                    response_text = self.personality.get_varied_confirmation(success=False)
-
-                self._remember_exchange(text, response_text)
-                tts_data = self.tts_enhancer.enhance(
-                    response_text, message_type="confirmation",
+                # Security: Validation + Trust-Check (analog Geraete-Shortcut)
+                validation = self.validator.validate(func_name, func_args)
+                effective_person = person if person else "__anonymous_guest__"
+                trust = self.autonomy.can_person_act(
+                    effective_person, func_name,
+                    room=func_args.get("target_room", ""),
                 )
-                if stream_callback:
-                    if not room:
-                        room = await self._get_occupied_room()
-                    self._task_registry.create_task(
-                        self.sound_manager.speak_response(
-                            response_text, room=room, tts_data=tts_data),
-                        name="speak_response",
-                    )
+                if not validation.ok:
+                    logger.info("Intercom-Shortcut blockiert (Validation: %s) — Fallback",
+                                validation.reason)
+                elif not trust["allowed"]:
+                    logger.info("Intercom-Shortcut blockiert (Trust: %s) — Fallback",
+                                trust.get("reason", ""))
                 else:
-                    await self._speak_and_emit(
-                        response_text, room=room, tts_data=tts_data,
+                    result = await self.executor.execute(func_name, func_args)
+                    success = isinstance(result, dict) and result.get("success", False)
+
+                    if success:
+                        target = func_args.get("target_person") or func_args.get("target_room") or "alle"
+                        response_text = f"Durchsage an {target} gesendet."
+                    else:
+                        response_text = self.personality.get_varied_confirmation(success=False)
+
+                    self._remember_exchange(text, response_text)
+                    tts_data = self.tts_enhancer.enhance(
+                        response_text, message_type="confirmation",
                     )
+                    if stream_callback:
+                        if not room:
+                            room = await self._get_occupied_room()
+                        self._task_registry.create_task(
+                            self.sound_manager.speak_response(
+                                response_text, room=room, tts_data=tts_data),
+                            name="speak_response",
+                        )
+                    else:
+                        await self._speak_and_emit(
+                            response_text, room=room, tts_data=tts_data,
+                        )
 
-                await emit_action(func_name, func_args, result)
+                    await emit_action(func_name, func_args, result)
 
-                return {
-                    "response": response_text,
-                    "actions": [{"function": func_name,
-                                 "args": func_args,
-                                 "result": result}],
-                    "model_used": "intercom_shortcut",
-                    "context_room": room or "unbekannt",
-                    "tts": tts_data,
-                    "_emitted": not stream_callback,
-                }
+                    return {
+                        "response": response_text,
+                        "actions": [{"function": func_name,
+                                     "args": func_args,
+                                     "result": result}],
+                        "model_used": "intercom_shortcut",
+                        "context_room": room or "unbekannt",
+                        "tts": tts_data,
+                        "_emitted": not stream_callback,
+                    }
             except Exception as e:
                 logger.warning("Intercom-Shortcut fehlgeschlagen: %s — Fallback auf LLM", e)
 
@@ -3932,7 +3948,10 @@ class AssistantBrain(BrainCallbacksMixin):
             r"|(?:W|w)(?:ue|ü)rden|(?:D|d)(?:ue|ü)rfen|(?:W|w)ollen"
             r"|(?:S|s)ollten|(?:S|s)ind|(?:W|w)erden"
             r"|(?:G|g)eben|(?:S|s)agen|(?:S|s)chauen|(?:N|n)ehmen"
-            r"|(?:L|l)assen|(?:B|b)eachten|(?:S|s)ehen)\s+Sie\b",
+            r"|(?:L|l)assen|(?:B|b)eachten|(?:S|s)ehen"
+            r"|(?:V|v)ersuchen|(?:P|p)robieren|(?:W|w)arten|(?:S|s)tellen"
+            r"|[UÜuü]berpr[uü]fen|[OÖoö]ffnen"
+            r"|(?:S|s)chlie[sß]en|(?:D|d)enken|(?:A|a)chten|(?:R|r)ufen)\s+Sie\b",
             text
         ))
         if _has_formal:
@@ -3959,6 +3978,17 @@ class AssistantBrain(BrainCallbacksMixin):
                 (r"\bLassen Sie\b", "Lass"), (r"\blassen Sie\b", "lass"),
                 (r"\bBeachten Sie\b", "Beachte"), (r"\bbeachten Sie\b", "beachte"),
                 (r"\bSehen Sie\b", "Sieh"), (r"\bsehen Sie\b", "sieh"),
+                # Weitere Imperativ-Formen
+                (r"\bVersuchen Sie\b", "Versuch"), (r"\bversuchen Sie\b", "versuch"),
+                (r"\bProbieren Sie\b", "Probier"), (r"\bprobieren Sie\b", "probier"),
+                (r"\bWarten Sie\b", "Warte"), (r"\bwarten Sie\b", "warte"),
+                (r"\bStellen Sie\b", "Stell"), (r"\bstellen Sie\b", "stell"),
+                (r"\b[UÜ]berpr[uü]fen Sie\b", "Ueberpruef"), (r"\b[uü]berpr[uü]fen Sie\b", "ueberpruef"),
+                (r"\b[OÖ]ffnen Sie\b", "Oeffne"), (r"\b[oö]ffnen Sie\b", "oeffne"),
+                (r"\bSchlie[sß]en Sie\b", "Schliess"), (r"\bschlie[sß]en Sie\b", "schliess"),
+                (r"\bDenken Sie\b", "Denk"), (r"\bdenken Sie\b", "denk"),
+                (r"\bAchten Sie\b", "Achte"), (r"\bachten Sie\b", "achte"),
+                (r"\bRufen Sie\b", "Ruf"), (r"\brufen Sie\b", "ruf"),
             ]
             for pattern, replacement in _verb_pairs:
                 text = re.sub(pattern, replacement, text)

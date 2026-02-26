@@ -273,7 +273,7 @@ async def lifespan(app: FastAPI):
 
 
 # F-062: OpenAPI-Docs nur wenn explizit konfiguriert (Default: aus in Produktion)
-_expose_docs = os.getenv("EXPOSE_OPENAPI_DOCS", "true").lower() in ("1", "true", "yes")
+_expose_docs = os.getenv("EXPOSE_OPENAPI_DOCS", "false").lower() in ("1", "true", "yes")
 app = FastAPI(
     title="MindHome Assistant",
     description="Lokaler KI-Sprachassistent fuer Home Assistant — OpenAPI Docs unter /docs",
@@ -591,7 +591,7 @@ async def chat(request: ChatRequest):
         logger.error("brain.process() Exception fuer '%s': %s", request.text[:100], e, exc_info=True)
         error_type = type(e).__name__
         result = {
-            "response": f"Da ist etwas schiefgelaufen ({error_type}: {e}). Versuch es nochmal.",
+            "response": "Da ist etwas schiefgelaufen. Versuch es nochmal.",
             "actions": [],
             "model_used": "error",
             "context_room": request.room or "unbekannt",

@@ -143,6 +143,12 @@ class IntentTracker:
     async def initialize(self, redis_client: Optional[redis.Redis] = None):
         """Initialisiert den Tracker."""
         self.redis = redis_client
+        if self._task and not self._task.done():
+            self._task.cancel()
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
         if self.enabled and self.redis:
             self._running = True
             self._task = asyncio.create_task(self._reminder_loop())

@@ -456,7 +456,7 @@ Du hilfst bei der Planung von Events/Aktivitaeten.
 Stelle kurze, praesize Rueckfragen um den Plan zu verfeinern.
 Deutsch. Butler-Stil. Max 3 Fragen.
 Beispiel:
-f"Sehr gerne, {get_person_title(person)}. Fuer die Planung brauche ich noch:
+Sehr gerne, {get_person_title(person)}. Fuer die Planung brauche ich noch:
 1. Fuer wie viele Gaeste?
 2. Welche Uhrzeit?
 3. Soll ich auch eine Einkaufsliste erstellen?
