@@ -26,7 +26,7 @@ from typing import Optional
 import aiohttp
 import yaml
 
-from .config import settings, yaml_config, get_person_title, set_active_person
+from .config import settings, yaml_config, get_person_title, set_active_person, resolve_person_by_entity
 from .constants import (
     GEO_APPROACHING_COOLDOWN_MIN,
     GEO_ARRIVING_COOLDOWN_MIN,
@@ -401,7 +401,10 @@ class ProactiveManager:
 
         # Person tracker (Phase 7: erweitert mit Abschied + Abwesenheits-Summary)
         elif entity_id.startswith("person."):
-            name = new_state.get("attributes", {}).get("friendly_name", entity_id)
+            # Config-Name (via ha_entity Mapping) bevorzugen, Fallback: friendly_name
+            name = resolve_person_by_entity(entity_id)
+            if not name:
+                name = new_state.get("attributes", {}).get("friendly_name", entity_id)
             if new_val == "home" and old_val != "home":
                 # Phase 7.4: Willkommen + Abwesenheits-Summary
                 status = await self._build_arrival_status(name)
@@ -1317,7 +1320,11 @@ class ProactiveManager:
             for s in states:
                 if s.get("entity_id", "").startswith("person."):
                     if s.get("state") == "home":
-                        pname = s.get("attributes", {}).get("friendly_name", "")
+                        eid = s.get("entity_id", "")
+                        # Entity-ID-Mapping hat Vorrang (zuverlaessiger als friendly_name)
+                        pname = resolve_person_by_entity(eid)
+                        if not pname:
+                            pname = s.get("attributes", {}).get("friendly_name", "")
                         if pname:
                             persons.append(pname)
             # Active-Person aktualisieren

@@ -1262,6 +1262,15 @@ function entityPickSelect(item, entityId) {
   // Room-Map Modus: Input-Wert setzen
   if (input?.dataset?.roomMap) {
     input.value = entityId;
+    // Auto-fill: Name-Feld befuellen wenn HA Person-Entity in Member-Row ausgewaehlt
+    if (input?.dataset?.memberField === 'ha_entity') {
+      const row = input.closest('.person-row');
+      const nameInput = row?.querySelector('[data-member-field="name"]');
+      if (nameInput && !nameInput.value.trim() && _pickerEntities) {
+        const ent = _pickerEntities.find(e => e.entity_id === entityId);
+        if (ent) nameInput.value = ent.name;
+      }
+    }
     return;
   }
 
@@ -1502,25 +1511,56 @@ function renderPersons() {
   let memberRows = '';
   members.forEach((m, i) => {
     const ri = roleInfo[m.role] || roleInfo.member;
-    memberRows += `<div class="person-row" style="display:flex;gap:10px;align-items:center;margin-bottom:10px;padding:12px;background:var(--bg-secondary);border-radius:var(--radius-sm);border-left:3px solid ${ri.color};">
-      <span style="font-size:20px;">${ri.icon}</span>
-      <input type="text" value="${esc(m.name || '')}" data-member-idx="${i}" data-member-field="name"
-        placeholder="Name eingeben..." style="flex:1;font-size:14px;">
-      <select data-member-idx="${i}" data-member-field="role" style="width:160px;" onchange="updateMemberRoleVisual(this)">
-        <option value="owner" ${m.role==='owner'?'selected':''}>&#128081; Hausherr/in</option>
-        <option value="member" ${m.role==='member'?'selected':''}>&#128100; Mitbewohner/in</option>
-        <option value="guest" ${m.role==='guest'?'selected':''}>&#128587; Gast</option>
-      </select>
-      <button class="btn btn-danger btn-sm" onclick="removeHouseholdMember(${i})"
-        style="padding:6px 10px;min-width:auto;" title="Entfernen">&#128465;</button>
+    memberRows += `<div class="person-row" style="padding:12px;background:var(--bg-secondary);border-radius:var(--radius-sm);border-left:3px solid ${ri.color};margin-bottom:10px;">
+      <div style="display:flex;gap:10px;align-items:center;margin-bottom:8px;">
+        <span style="font-size:20px;">${ri.icon}</span>
+        <input type="text" value="${esc(m.name || '')}" data-member-idx="${i}" data-member-field="name"
+          placeholder="Name eingeben..." style="flex:1;font-size:14px;">
+        <select data-member-idx="${i}" data-member-field="role" style="width:140px;" onchange="updateMemberRoleVisual(this)">
+          <option value="owner" ${m.role==='owner'?'selected':''}>&#128081; Hausherr/in</option>
+          <option value="member" ${m.role==='member'?'selected':''}>&#128100; Mitbewohner/in</option>
+          <option value="guest" ${m.role==='guest'?'selected':''}>&#128587; Gast</option>
+        </select>
+        <button class="btn btn-danger btn-sm" onclick="removeHouseholdMember(${i})"
+          style="padding:6px 10px;min-width:auto;" title="Entfernen">&#128465;</button>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding-left:30px;">
+        <div>
+          <label style="font-size:11px;color:var(--text-muted);">HA Person-Entity</label>
+          <div class="entity-pick-wrap">
+            <input class="form-input entity-pick-input" value="${esc(m.ha_entity || '')}"
+              placeholder="&#128269; person.* zuweisen..."
+              data-member-idx="${i}" data-member-field="ha_entity" data-room-map="ha_entity"
+              oninput="entityPickFilter(this,'person')" onfocus="entityPickFilter(this,'person')"
+              style="font-size:12px;font-family:var(--mono);padding:5px 8px;width:100%;box-sizing:border-box;">
+            <div class="entity-pick-dropdown" style="display:none;"></div>
+          </div>
+        </div>
+        <div>
+          <label style="font-size:11px;color:var(--text-muted);">Anrede</label>
+          <input class="form-input" value="${esc(m.title || '')}"
+            data-member-idx="${i}" data-member-field="title"
+            placeholder="z.B. Sir, Ma'am..."
+            style="font-size:12px;padding:5px 8px;">
+        </div>
+      </div>
     </div>`;
   });
 
+  const primaryEntity = getPath(S, 'household.primary_user_entity') || '';
   return sectionWrap('&#128100;', 'Hauptbenutzer',
     fInfo('Dein Name — so kennt und begruesst dich der Assistent.') +
     '<div class="form-group"><label>Dein Name</label>' +
     '<input type="text" data-path="household.primary_user" value="' + esc(primaryUser) + '" placeholder="z.B. Alex" style="font-size:15px;">' +
-    '</div>'
+    '</div>' +
+    '<div class="form-group"><label>HA Person-Entity</label>' +
+    '<div class="entity-pick-wrap">' +
+    '<input class="form-input entity-pick-input" value="' + esc(primaryEntity) + '"' +
+    ' placeholder="&#128269; person.* zuweisen..." data-path="household.primary_user_entity"' +
+    ' data-room-map="household.primary_user_entity"' +
+    ' oninput="entityPickFilter(this,\'person\')" onfocus="entityPickFilter(this,\'person\')"' +
+    ' style="font-family:var(--mono);font-size:13px;">' +
+    '<div class="entity-pick-dropdown" style="display:none;"></div></div></div>'
   ) +
   sectionWrap('&#128106;', 'Haushaltsmitglieder',
     fInfo('Alle Personen im Haushalt. Die Rolle bestimmt was jeder steuern darf.') +
@@ -1533,7 +1573,7 @@ function renderPersons() {
     '<button class="btn btn-secondary" onclick="addHouseholdMember()" style="margin-top:8px;width:100%;justify-content:center;">+ Person hinzufuegen</button>'
   ) +
   sectionWrap('&#128101;', 'Personen-Anrede',
-    fInfo('Wie soll der Assistent einzelne Personen ansprechen? Der Hauptbenutzer wird standardmaessig als "Sir" angesprochen.') +
+    fInfo('Anreden koennen direkt bei jedem Haushaltsmitglied oben vergeben werden. Hier kannst du sie alternativ zentral verwalten.') +
     fPersonTitles()
   );
 }
@@ -1541,7 +1581,7 @@ function renderPersons() {
 function addHouseholdMember() {
   mergeCurrentTabIntoS();
   const members = getPath(S, 'household.members') || [];
-  members.push({name: '', role: 'member'});
+  members.push({name: '', role: 'member', ha_entity: '', title: ''});
   setPath(S, 'household.members', members);
   renderCurrentTab();
 }
@@ -1576,8 +1616,13 @@ function collectHouseholdMembers() {
   document.querySelectorAll('#householdMembers .person-row').forEach(row => {
     const nameEl = row.querySelector('[data-member-field="name"]');
     const roleEl = row.querySelector('[data-member-field="role"]');
+    const haEntityEl = row.querySelector('[data-member-field="ha_entity"]');
+    const titleEl = row.querySelector('[data-member-field="title"]');
     if (nameEl && roleEl && nameEl.value.trim()) {
-      members.push({name: nameEl.value.trim(), role: roleEl.value});
+      const m = {name: nameEl.value.trim(), role: roleEl.value};
+      if (haEntityEl && haEntityEl.value.trim()) m.ha_entity = haEntityEl.value.trim();
+      if (titleEl && titleEl.value.trim()) m.title = titleEl.value.trim();
+      members.push(m);
     }
   });
   return members;

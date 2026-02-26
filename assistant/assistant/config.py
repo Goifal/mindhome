@@ -98,7 +98,8 @@ _ROLE_TO_TRUST = {"owner": 2, "member": 1, "guest": 0}
 
 
 def apply_household_to_config() -> None:
-    """Generiert persons.titles und trust_levels.persons aus household.members."""
+    """Generiert persons.titles, trust_levels.persons und entity_to_name aus household.members."""
+    global _entity_to_name
     household = yaml_config.get("household") or {}
     members = household.get("members") or []
     primary = household.get("primary_user") or settings.user_name
@@ -107,19 +108,35 @@ def apply_household_to_config() -> None:
     existing_titles = (yaml_config.get("persons") or {}).get("titles") or {}
     titles = dict(existing_titles)
     trust_persons = {}
+    entity_map: dict[str, str] = {}
 
     # Hauptbenutzer immer als Owner
     trust_persons[primary.lower()] = 2
+
+    # Primary User Entity-Mapping
+    primary_entity = (household.get("primary_user_entity") or "").strip()
+    if primary_entity and primary:
+        entity_map[primary_entity.lower()] = primary
 
     for m in members:
         name = (m.get("name") or "").strip()
         if not name:
             continue
         role = m.get("role", "member")
-        # Titel nur setzen wenn noch nicht manuell konfiguriert
-        if name.lower() not in titles:
+
+        # Inline-Titel hat Vorrang vor auto-generiertem Name-Titel
+        member_title = (m.get("title") or "").strip()
+        if member_title:
+            titles[name.lower()] = member_title
+        elif name.lower() not in titles:
             titles[name.lower()] = name
+
         trust_persons[name.lower()] = _ROLE_TO_TRUST.get(role, 0)
+
+        # Entity-Mapping: person.anna → Anna
+        ha_entity = (m.get("ha_entity") or "").strip()
+        if ha_entity:
+            entity_map[ha_entity.lower()] = name
 
     # In yaml_config eintragen (fuer personality.py etc.)
     yaml_config.setdefault("persons", {})["titles"] = titles
@@ -127,12 +144,30 @@ def apply_household_to_config() -> None:
     if "trust_levels" in yaml_config and "default" not in yaml_config["trust_levels"]:
         yaml_config["trust_levels"]["default"] = 0
 
+    # Entity-to-Name Mapping fuer proactive.py / context_builder.py
+    _entity_to_name = entity_map
+
     # user_name aktualisieren
     if primary:
         settings.user_name = primary
 
 
 apply_household_to_config()
+
+
+# Entity-to-Name Mapping: Wird von apply_household_to_config() befuellt.
+# Erlaubt proactive.py und context_builder.py Personen per entity_id statt
+# per friendly_name zu identifizieren (zuverlaessiger).
+_entity_to_name: dict[str, str] = {}
+
+
+def resolve_person_by_entity(entity_id: str) -> str:
+    """Gibt den konfigurierten Member-Namen fuer eine HA entity_id zurueck.
+
+    Beispiel: resolve_person_by_entity("person.anna") → "Anna"
+    Fallback: leerer String (dann wird friendly_name verwendet).
+    """
+    return _entity_to_name.get(entity_id.lower(), "")
 
 
 # Active-Person Tracking: Wird von brain.py gesetzt wenn eine Person
