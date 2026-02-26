@@ -795,16 +795,34 @@ class AssistantBrain(BrainCallbacksMixin):
         # Phase 7: Gute-Nacht-Intent (VOR allem anderen)
         if self.routines.is_goodnight_intent(text):
             logger.info("Gute-Nacht-Intent erkannt")
-            result = await self.routines.execute_goodnight(person or "")
-            self._remember_exchange(text, result["text"])
-            await self._speak_and_emit(result["text"], room=room)
-            return {
-                "response": result["text"],
-                "actions": result["actions"],
-                "model_used": "routine_engine",
-                "context_room": room or "unbekannt",
-                "_emitted": True,
-            }
+            try:
+                result = await self.routines.execute_goodnight(person or "")
+                response_text = self._filter_response(result["text"]) or result["text"]
+                self._remember_exchange(text, response_text)
+                tts_data = self.tts_enhancer.enhance(
+                    response_text, message_type="briefing",
+                )
+                await self._speak_and_emit(response_text, room=room, tts_data=tts_data)
+                return {
+                    "response": response_text,
+                    "actions": result["actions"],
+                    "model_used": "routine_engine",
+                    "context_room": room or "unbekannt",
+                    "tts": tts_data,
+                    "_emitted": True,
+                }
+            except Exception as e:
+                logger.warning("Gute-Nacht-Routine fehlgeschlagen: %s — Fallback", e)
+                title = get_person_title(person or "")
+                fallback = f"Gute Nacht, {title}. Ich halte die Stellung."
+                await self._speak_and_emit(fallback, room=room)
+                return {
+                    "response": fallback,
+                    "actions": [],
+                    "model_used": "routine_engine_fallback",
+                    "context_room": room or "unbekannt",
+                    "_emitted": True,
+                }
 
         # Phase 7: Gaeste-Modus Trigger
         if self.routines.is_guest_trigger(text):
@@ -1446,6 +1464,82 @@ class AssistantBrain(BrainCallbacksMixin):
                 }
             except Exception as e:
                 logger.warning("Intercom-Shortcut fehlgeschlagen: %s — Fallback auf LLM", e)
+
+        # Morning-Briefing-Shortcut: "Morgenbriefing" / "Morgen Briefing"
+        # Nutzt die RoutineEngine fuer ein echtes Jarvis-Morgenbriefing (force=True umgeht Redis-Sperre).
+        if self._is_morning_briefing_request(text):
+            logger.info("Morning-Briefing-Shortcut: '%s'", text)
+            try:
+                result = await self.routines.generate_morning_briefing(
+                    person=person or "", force=True,
+                )
+                briefing_text = result.get("text", "")
+                if briefing_text:
+                    briefing_text = self._filter_response(briefing_text)
+                    if briefing_text:
+                        self._remember_exchange(text, briefing_text)
+                        tts_data = self.tts_enhancer.enhance(
+                            briefing_text, message_type="briefing",
+                        )
+                        if stream_callback:
+                            if not room:
+                                room = await self._get_occupied_room()
+                            self._task_registry.create_task(
+                                self.sound_manager.speak_response(
+                                    briefing_text, room=room, tts_data=tts_data),
+                                name="speak_response",
+                            )
+                        else:
+                            await self._speak_and_emit(
+                                briefing_text, room=room, tts_data=tts_data,
+                            )
+                        return {
+                            "response": briefing_text,
+                            "actions": result.get("actions", []),
+                            "model_used": "morning_briefing_shortcut",
+                            "context_room": room or "unbekannt",
+                            "tts": tts_data,
+                            "_emitted": not stream_callback,
+                        }
+            except Exception as e:
+                logger.warning("Morning-Briefing-Shortcut fehlgeschlagen: %s — Fallback auf LLM", e)
+
+        # Evening-Briefing-Shortcut: "Abendbriefing" / "Ist alles zu?" / "Sicherheitscheck"
+        if self._is_evening_briefing_request(text):
+            logger.info("Evening-Briefing-Shortcut: '%s'", text)
+            try:
+                briefing_text = await self.proactive.generate_evening_briefing(
+                    person=person or "",
+                )
+                if briefing_text:
+                    briefing_text = self._filter_response(briefing_text)
+                    if briefing_text:
+                        self._remember_exchange(text, briefing_text)
+                        tts_data = self.tts_enhancer.enhance(
+                            briefing_text, message_type="briefing",
+                        )
+                        if stream_callback:
+                            if not room:
+                                room = await self._get_occupied_room()
+                            self._task_registry.create_task(
+                                self.sound_manager.speak_response(
+                                    briefing_text, room=room, tts_data=tts_data),
+                                name="speak_response",
+                            )
+                        else:
+                            await self._speak_and_emit(
+                                briefing_text, room=room, tts_data=tts_data,
+                            )
+                        return {
+                            "response": briefing_text,
+                            "actions": [],
+                            "model_used": "evening_briefing_shortcut",
+                            "context_room": room or "unbekannt",
+                            "tts": tts_data,
+                            "_emitted": not stream_callback,
+                        }
+            except Exception as e:
+                logger.warning("Evening-Briefing-Shortcut fehlgeschlagen: %s — Fallback auf LLM", e)
 
         # Status-Report-Shortcut: "Statusbericht" / "Briefing" / "Was gibts Neues"
         # Aggregiert alle Datenquellen und laesst LLM einen narrativen Bericht generieren.
@@ -5267,6 +5361,30 @@ class AssistantBrain(BrainCallbacksMixin):
         return {"function": "play_media", "args": args}
 
     @staticmethod
+    def _is_morning_briefing_request(text: str) -> bool:
+        """Erkennt ob der User ein Morgenbriefing will."""
+        t = text.lower().strip().rstrip("?!.")
+        _keywords = [
+            "morgenbriefing", "morgen briefing", "morgen-briefing",
+            "morning briefing", "guten morgen briefing",
+            "was steht heute an", "was steht an",
+            "was erwartet mich heute",
+        ]
+        return any(kw in t for kw in _keywords)
+
+    @staticmethod
+    def _is_evening_briefing_request(text: str) -> bool:
+        """Erkennt ob der User ein Abendbriefing will."""
+        t = text.lower().strip().rstrip("?!.")
+        _keywords = [
+            "abendbriefing", "abend briefing", "abend-briefing",
+            "evening briefing", "guten abend briefing",
+            "nacht check", "nachtcheck", "sicherheitscheck",
+            "ist alles zu", "ist alles gesichert", "alles sicher",
+        ]
+        return any(kw in t for kw in _keywords)
+
+    @staticmethod
     def _is_status_report_request(text: str) -> bool:
         """Erkennt ob der User einen narrativen Statusbericht will.
 
@@ -5283,8 +5401,7 @@ class AssistantBrain(BrainCallbacksMixin):
             "gib mir ein briefing", "gib mir einen ueberblick",
             "gib mir einen überblick",
             "was ist los", "was tut sich",
-            "morgen briefing", "morgenbriefing",
-            "abendbriefing", "abend briefing",
+            "hausstatus", "haus-status", "haus status",
         ]
         return any(kw in t for kw in _keywords)
 

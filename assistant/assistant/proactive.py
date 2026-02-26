@@ -524,19 +524,36 @@ class ProactiveManager:
             return
 
         try:
+            text = await self.generate_evening_briefing()
+            if text:
+                self._eb_triggered_today = True
+                await emit_proactive(text, "evening_briefing", LOW)
+                logger.info("Evening Briefing geliefert: %s", text[:80])
+        except Exception as e:
+            logger.debug("Evening Briefing Fehler: %s", e)
+
+    async def generate_evening_briefing(self, person: str = "") -> str:
+        """Generiert ein Abend-Briefing im JARVIS-Stil.
+
+        Kann sowohl vom Auto-Trigger als auch per Sprachbefehl aufgerufen werden.
+
+        Returns:
+            Briefing-Text oder leerer String.
+        """
+        try:
             # Haus-Status sammeln
             states = await self.brain.ha.get_states()
             if not states:
-                return
+                return ""
 
-            # Offene Fenster/Tueren
+            # Offene Fenster/Tueren — is_window_or_door statt Keyword-Matching
+            from .function_calling import is_window_or_door
             open_items = []
             for s in states:
                 eid = s.get("entity_id", "")
-                if eid.startswith("binary_sensor.") and s.get("state") == "on":
-                    if any(kw in eid for kw in ("window", "door", "fenster", "tuer")):
-                        name = s.get("attributes", {}).get("friendly_name", eid)
-                        open_items.append(name)
+                if is_window_or_door(eid, s) and s.get("state") == "on":
+                    name = s.get("attributes", {}).get("friendly_name", eid)
+                    open_items.append(name)
 
             # Unverriegelte Schloesser
             unlocked = []
@@ -546,26 +563,56 @@ class ProactiveManager:
                     unlocked.append(name)
 
             # Wetter morgen (falls verfuegbar)
+            _cond_map = {
+                "sunny": "sonnig", "clear-night": "klare Nacht",
+                "partlycloudy": "teilweise bewoelkt", "cloudy": "bewoelkt",
+                "rainy": "Regen", "pouring": "Starkregen",
+                "snowy": "Schnee", "snowy-rainy": "Schneeregen",
+                "fog": "Nebel", "hail": "Hagel",
+                "lightning": "Gewitter", "lightning-rainy": "Gewitter mit Regen",
+                "windy": "windig", "windy-variant": "windig & bewoelkt",
+                "exceptional": "Ausnahmewetter",
+            }
             weather_tomorrow = ""
             for s in states:
                 if s.get("entity_id", "").startswith("weather."):
                     forecast = s.get("attributes", {}).get("forecast", [])
-                    if forecast and len(forecast) > 0:
-                        tmrw = forecast[0]
+                    if forecast and len(forecast) > 1:
+                        tmrw = forecast[1]
+                        cond = _cond_map.get(tmrw.get("condition", ""), tmrw.get("condition", "?"))
                         weather_tomorrow = (
-                            f"Morgen {tmrw.get('temperature', '?')} Grad, "
-                            f"{tmrw.get('condition', '?')}."
+                            f"Morgen {tmrw.get('temperature', '?')} Grad, {cond}."
                         )
                     break
 
-            # Innentemperatur
+            # Innentemperatur: Konfigurierte Sensoren (Mittelwert) bevorzugen
             temp = ""
-            for s in states:
-                if s.get("entity_id", "").startswith("climate."):
-                    t = s.get("attributes", {}).get("current_temperature")
-                    if t:
-                        temp = f"Innen {t} Grad."
-                    break
+            rt_sensors = yaml_config.get("room_temperature", {}).get("sensors", []) or []
+            if rt_sensors:
+                state_map = {s.get("entity_id"): s for s in states}
+                sensor_temps = []
+                for sid in rt_sensors:
+                    st = state_map.get(sid, {})
+                    try:
+                        sensor_temps.append(float(st.get("state", "")))
+                    except (ValueError, TypeError):
+                        pass
+                if sensor_temps:
+                    avg = round(sum(sensor_temps) / len(sensor_temps), 1)
+                    temp = f"Innen {avg} Grad."
+            else:
+                for s in states:
+                    if s.get("entity_id", "").startswith("climate."):
+                        t = s.get("attributes", {}).get("current_temperature")
+                        if t is None:
+                            continue
+                        try:
+                            t_val = float(t)
+                            if -20 < t_val < 50:
+                                temp = f"Innen {t_val:.1f} Grad."
+                                break
+                        except (ValueError, TypeError):
+                            continue
 
             # Rolllaeden offen?
             covers_open = []
@@ -610,12 +657,15 @@ class ProactiveManager:
                 parts.append("Alles gesichert.")
 
             if not parts:
-                return
+                return ""
 
             # LLM-Polish im JARVIS-Stil
-            # Person-aware Anrede fuer Evening Briefing
-            _eb_persons = await self._get_persons_at_home()
-            _eb_person = _eb_persons[0] if len(_eb_persons) == 1 else ""
+            # Person-aware Anrede: uebergebener Parameter hat Vorrang
+            if person:
+                _eb_person = person
+            else:
+                _eb_persons = await self._get_persons_at_home()
+                _eb_person = _eb_persons[0] if len(_eb_persons) == 1 else ""
             _eb_title = get_person_title(_eb_person) if _eb_person else get_person_title()
             prompt = (
                 f"Abend-Status-Bericht. Anrede: \"{_eb_title}\". "
@@ -637,13 +687,11 @@ class ProactiveManager:
             text = validate_notification(
                 response.get("message", {}).get("content", "")
             )
-            if text:
-                self._eb_triggered_today = True
-                await emit_proactive(text, "evening_briefing", LOW)
-                logger.info("Evening Briefing geliefert: %s", text[:80])
+            return text or ""
 
         except Exception as e:
             logger.debug("Evening Briefing Fehler: %s", e)
+            return ""
 
     async def _check_night_motion_camera(self, motion_entity: str):
         """Nacht-Motion: Wenn nachts Bewegung erkannt wird, Kamera-Snapshot analysieren."""

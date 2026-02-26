@@ -106,9 +106,13 @@ class RoutineEngine:
     # Morning Briefing (Feature 7.1)
     # ------------------------------------------------------------------
 
-    async def generate_morning_briefing(self, person: str = "") -> dict:
+    async def generate_morning_briefing(self, person: str = "", force: bool = False) -> dict:
         """
         Generiert ein Morning Briefing.
+
+        Args:
+            person: Name der Person
+            force: True = Redis-Sperre ignorieren (manueller Request)
 
         Returns:
             Dict mit:
@@ -118,8 +122,8 @@ class RoutineEngine:
         if not self.briefing_enabled:
             return {"text": "", "actions": []}
 
-        # Check: Heute schon gebrieft?
-        if self.redis:
+        # Check: Heute schon gebrieft? (nur bei Auto-Trigger, nicht bei manuellem Request)
+        if not force and self.redis:
             today = datetime.now().strftime("%Y-%m-%d")
             done = await self.redis.get(KEY_MORNING_DONE)
             if done is not None:
@@ -162,9 +166,12 @@ class RoutineEngine:
 
         # Als erledigt markieren
         if self.redis:
-            today = datetime.now().strftime("%Y-%m-%d")
-            await self.redis.setex(KEY_MORNING_DONE, 86400, today)
-            await self.redis.setex(KEY_LAST_BRIEFING, 86400, now.isoformat())
+            try:
+                today = datetime.now().strftime("%Y-%m-%d")
+                await self.redis.setex(KEY_MORNING_DONE, 86400, today)
+                await self.redis.setex(KEY_LAST_BRIEFING, 86400, now.isoformat())
+            except Exception as e:
+                logger.warning("Redis setex fuer Morning Briefing fehlgeschlagen: %s", e)
 
         logger.info("Morning Briefing generiert (%d Bausteine, %d Aktionen)", len(parts), len(actions))
         return {"text": text, "actions": actions}
@@ -421,13 +428,35 @@ class RoutineEngine:
             return ""
 
         parts = []
-        # Temperaturen
-        for state in states:
-            if state.get("entity_id", "").startswith("climate."):
-                attrs = state.get("attributes", {})
-                temp = attrs.get("current_temperature")
-                room = attrs.get("friendly_name", "?")
-                if temp:
+        # Temperaturen: Konfigurierte Sensoren (Mittelwert) bevorzugen
+        rt_sensors = yaml_config.get("room_temperature", {}).get("sensors", []) or []
+        if rt_sensors:
+            state_map = {s.get("entity_id"): s for s in states}
+            sensor_temps = []
+            for sid in rt_sensors:
+                st = state_map.get(sid, {})
+                try:
+                    sensor_temps.append(float(st.get("state", "")))
+                except (ValueError, TypeError):
+                    pass
+            if sensor_temps:
+                avg = round(sum(sensor_temps) / len(sensor_temps), 1)
+                parts.append(f"Raumtemperatur: {avg}°C Durchschnitt")
+        else:
+            # Fallback: climate entities (gefiltert)
+            for state in states:
+                if state.get("entity_id", "").startswith("climate."):
+                    attrs = state.get("attributes", {})
+                    temp = attrs.get("current_temperature")
+                    if temp is None:
+                        continue
+                    try:
+                        temp_val = float(temp)
+                        if temp_val < -20 or temp_val > 50:
+                            continue
+                    except (ValueError, TypeError):
+                        continue
+                    room = attrs.get("friendly_name", "?")
                     parts.append(f"{room}: {temp}°C")
 
         # Offene Fenster/Tueren — MindHome-Domain + device_class pruefen
@@ -681,8 +710,11 @@ class RoutineEngine:
                         cond = self._translate_weather(tomorrow.get("condition", "?"))
                         precipitation = tomorrow.get("precipitation")
                         text = f"Morgen: {temp_low}-{temp_high}°C, {cond}"
-                        if precipitation and float(precipitation) > 0:
-                            text += f", {precipitation}mm Niederschlag"
+                        try:
+                            if precipitation and float(precipitation) > 0:
+                                text += f", {precipitation}mm Niederschlag"
+                        except (ValueError, TypeError):
+                            pass
                         parts.append(text)
                     break
 
@@ -710,37 +742,51 @@ class RoutineEngine:
         gn_actions = self.goodnight_actions
 
         if gn_actions.get("lights_off", False):
-            result = await self._executor.execute("set_light", {
-                "room": "all", "state": "off",
-            })
-            actions.append({"function": "set_light:off", "result": result})
+            try:
+                result = await self._executor.execute("set_light", {
+                    "room": "all", "state": "off",
+                })
+                actions.append({"function": "set_light:off", "result": result})
+            except Exception as e:
+                logger.warning("Gute-Nacht Lichter-aus fehlgeschlagen: %s", e)
+                actions.append({"function": "set_light:off", "result": {"error": str(e)}})
 
         if gn_actions.get("heating_night", False):
-            heating = yaml_config.get("heating", {})
-            if heating.get("mode") == "heating_curve":
-                # Heizkurven-Modus: Nacht-Offset setzen
-                night_offset = heating.get("night_offset", -2)
-                result = await self._executor.execute("set_climate", {
-                    "offset": night_offset,
-                })
-            else:
-                # Raumthermostat-Modus: Schlafzimmer auf 18°C
-                result = await self._executor.execute("set_climate", {
-                    "room": "schlafzimmer", "temperature": 18,
-                })
-            actions.append({"function": "set_climate:night", "result": result})
+            try:
+                heating = yaml_config.get("heating", {})
+                if heating.get("mode") == "heating_curve":
+                    night_offset = heating.get("night_offset", -2)
+                    result = await self._executor.execute("set_climate", {
+                        "offset": night_offset,
+                    })
+                else:
+                    result = await self._executor.execute("set_climate", {
+                        "room": "schlafzimmer", "temperature": 18,
+                    })
+                actions.append({"function": "set_climate:night", "result": result})
+            except Exception as e:
+                logger.warning("Gute-Nacht Heizung-Nacht fehlgeschlagen: %s", e)
+                actions.append({"function": "set_climate:night", "result": {"error": str(e)}})
 
         if gn_actions.get("covers_down", False):
-            result = await self._executor.execute("set_cover", {
-                "room": "all", "position": 0,
-            })
-            actions.append({"function": "set_cover:down", "result": result})
+            try:
+                result = await self._executor.execute("set_cover", {
+                    "room": "all", "position": 0,
+                })
+                actions.append({"function": "set_cover:down", "result": result})
+            except Exception as e:
+                logger.warning("Gute-Nacht Rolllaeden-runter fehlgeschlagen: %s", e)
+                actions.append({"function": "set_cover:down", "result": {"error": str(e)}})
 
         if gn_actions.get("alarm_arm_home", False):
-            result = await self._executor.execute("arm_security_system", {
-                "mode": "arm_home",
-            })
-            actions.append({"function": "arm_security_system:arm_home", "result": result})
+            try:
+                result = await self._executor.execute("arm_security_system", {
+                    "mode": "arm_home",
+                })
+                actions.append({"function": "arm_security_system:arm_home", "result": result})
+            except Exception as e:
+                logger.warning("Gute-Nacht Alarmanlage fehlgeschlagen: %s", e)
+                actions.append({"function": "arm_security_system:arm_home", "result": {"error": str(e)}})
 
         return actions
 
