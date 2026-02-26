@@ -660,7 +660,8 @@ REGELN:
                 return True
             return False
         if isinstance(value, dict):
-            return any(SelfAutomation._contains_template(v) for v in value.values())
+            return (any(SelfAutomation._contains_template(k) for k in value.keys())
+                    or any(SelfAutomation._contains_template(v) for v in value.values()))
         if isinstance(value, list):
             return any(SelfAutomation._contains_template(v) for v in value)
         return False

@@ -2498,7 +2498,7 @@ class FunctionExecutor:
 
     _CALL_SERVICE_ALLOWED_DOMAINS = frozenset({
         "light", "switch", "climate", "cover", "fan",
-        "media_player", "scene", "script",
+        "media_player", "scene",
         "input_boolean", "input_number", "input_select", "input_text",
         "notify", "number", "select", "button",
         "vacuum", "lock", "alarm_control_panel",

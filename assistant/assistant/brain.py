@@ -3926,7 +3926,15 @@ class AssistantBrain(BrainCallbacksMixin):
 
         # 3b. Formelles "Sie" → informelles "du" (Qwen3 ignoriert Du-Anweisung)
         # "Ihnen/Ihre/Ihrem" sind eindeutig formell (kein Lowercase-Pendant fuer "sie"=she)
-        _has_formal = bool(re.search(r"\b(?:Ihnen|Ihre[mnrs]?)\b", text))
+        _has_formal = bool(re.search(
+            r"\b(?:Ihnen|Ihre[mnrs]?)\b"
+            r"|(?:(?:H|h)aben|(?:K|k)(?:oe|ö)nnen|(?:M|m)(?:oe|ö)chten"
+            r"|(?:W|w)(?:ue|ü)rden|(?:D|d)(?:ue|ü)rfen|(?:W|w)ollen"
+            r"|(?:S|s)ollten|(?:S|s)ind|(?:W|w)erden"
+            r"|(?:G|g)eben|(?:S|s)agen|(?:S|s)chauen|(?:N|n)ehmen"
+            r"|(?:L|l)assen|(?:B|b)eachten|(?:S|s)ehen)\s+Sie\b",
+            text
+        ))
         if _has_formal:
             # Verb+Sie Paare zuerst (vor generischer Sie-Ersetzung)
             _verb_pairs = [
@@ -3938,10 +3946,19 @@ class AssistantBrain(BrainCallbacksMixin):
                 (r"\bWuerden Sie\b", "Wuerdest du"), (r"\bwuerden Sie\b", "wuerdest du"),
                 (r"\bWürden Sie\b", "Würdest du"), (r"\bwürden Sie\b", "würdest du"),
                 (r"\bDuerfen Sie\b", "Darfst du"), (r"\bduerfen Sie\b", "darfst du"),
+                (r"\bDürfen Sie\b", "Darfst du"), (r"\bdürfen Sie\b", "darfst du"),
                 (r"\bWollen Sie\b", "Willst du"), (r"\bwollen Sie\b", "willst du"),
                 (r"\bSollten Sie\b", "Solltest du"), (r"\bsollten Sie\b", "solltest du"),
                 (r"\bSind Sie\b", "Bist du"), (r"\bsind Sie\b", "bist du"),
                 (r"\bWerden Sie\b", "Wirst du"), (r"\bwerden Sie\b", "wirst du"),
+                # Imperativ-Formen
+                (r"\bGeben Sie\b", "Gib"), (r"\bgeben Sie\b", "gib"),
+                (r"\bSagen Sie\b", "Sag"), (r"\bsagen Sie\b", "sag"),
+                (r"\bSchauen Sie\b", "Schau"), (r"\bschauen Sie\b", "schau"),
+                (r"\bNehmen Sie\b", "Nimm"), (r"\bnehmen Sie\b", "nimm"),
+                (r"\bLassen Sie\b", "Lass"), (r"\blassen Sie\b", "lass"),
+                (r"\bBeachten Sie\b", "Beachte"), (r"\bbeachten Sie\b", "beachte"),
+                (r"\bSehen Sie\b", "Sieh"), (r"\bsehen Sie\b", "sieh"),
             ]
             for pattern, replacement in _verb_pairs:
                 text = re.sub(pattern, replacement, text)

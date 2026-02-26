@@ -48,6 +48,8 @@ class SpontaneousObserver:
     async def initialize(self, redis_client: Optional[aioredis.Redis] = None):
         """Initialisiert mit Redis und startet den Beobachtungs-Loop."""
         self.redis = redis_client
+        if self._task and not self._task.done():
+            self._task.cancel()
         if self.enabled and self.redis:
             self._running = True
             self._task = asyncio.create_task(self._observe_loop())
@@ -119,7 +121,7 @@ class SpontaneousObserver:
             # Zufaellige Wartezeit: min_interval_hours bis 2x min_interval_hours
             wait_min = self.min_interval_hours * 3600
             wait_max = self.min_interval_hours * 2 * 3600
-            await asyncio.sleep(random.randint(wait_min, wait_max))
+            await asyncio.sleep(random.uniform(wait_min, wait_max))
 
     def _within_active_hours(self) -> bool:
         """Prueft ob aktuell innerhalb der aktiven Stunden."""

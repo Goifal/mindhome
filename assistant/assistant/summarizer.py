@@ -60,6 +60,12 @@ class DailySummarizer:
         """Initialisiert mit Redis und ChromaDB."""
         self.redis = redis_client
         self.chroma_collection = chroma_collection
+        if self._task and not self._task.done():
+            self._task.cancel()
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
         self._running = True
         self._task = asyncio.create_task(self._nightly_loop())
         logger.info(
