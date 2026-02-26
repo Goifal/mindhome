@@ -194,6 +194,9 @@ async def _boot_announcement(brain_instance: "AssistantBrain", health_data: dict
             await asyncio.sleep(1)
 
         await emit_speaking(msg)
+        # TTS-Sprachausgabe auf dem Default-Speaker
+        if hasattr(brain_instance, "sound_manager"):
+            await brain_instance.sound_manager.speak_response(msg)
         logger.info("Boot-Sequenz: %s", msg)
 
     except Exception as e:

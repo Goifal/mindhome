@@ -544,16 +544,16 @@ class ProactiveManager:
             # Haus-Status sammeln
             states = await self.brain.ha.get_states()
             if not states:
-                return
+                return ""
 
-            # Offene Fenster/Tueren
+            # Offene Fenster/Tueren — is_window_or_door statt Keyword-Matching
+            from .function_calling import is_window_or_door
             open_items = []
             for s in states:
                 eid = s.get("entity_id", "")
-                if eid.startswith("binary_sensor.") and s.get("state") == "on":
-                    if any(kw in eid for kw in ("window", "door", "fenster", "tuer")):
-                        name = s.get("attributes", {}).get("friendly_name", eid)
-                        open_items.append(name)
+                if is_window_or_door(eid, s) and s.get("state") == "on":
+                    name = s.get("attributes", {}).get("friendly_name", eid)
+                    open_items.append(name)
 
             # Unverriegelte Schloesser
             unlocked = []
@@ -577,8 +577,8 @@ class ProactiveManager:
             for s in states:
                 if s.get("entity_id", "").startswith("weather."):
                     forecast = s.get("attributes", {}).get("forecast", [])
-                    if forecast and len(forecast) > 0:
-                        tmrw = forecast[0]
+                    if forecast and len(forecast) > 1:
+                        tmrw = forecast[1]
                         cond = _cond_map.get(tmrw.get("condition", ""), tmrw.get("condition", "?"))
                         weather_tomorrow = (
                             f"Morgen {tmrw.get('temperature', '?')} Grad, {cond}."
@@ -609,7 +609,7 @@ class ProactiveManager:
                         try:
                             t_val = float(t)
                             if -20 < t_val < 50:
-                                temp = f"Innen {t} Grad."
+                                temp = f"Innen {t_val:.1f} Grad."
                                 break
                         except (ValueError, TypeError):
                             continue
@@ -657,12 +657,15 @@ class ProactiveManager:
                 parts.append("Alles gesichert.")
 
             if not parts:
-                return
+                return ""
 
             # LLM-Polish im JARVIS-Stil
-            # Person-aware Anrede fuer Evening Briefing
-            _eb_persons = await self._get_persons_at_home()
-            _eb_person = _eb_persons[0] if len(_eb_persons) == 1 else ""
+            # Person-aware Anrede: uebergebener Parameter hat Vorrang
+            if person:
+                _eb_person = person
+            else:
+                _eb_persons = await self._get_persons_at_home()
+                _eb_person = _eb_persons[0] if len(_eb_persons) == 1 else ""
             _eb_title = get_person_title(_eb_person) if _eb_person else get_person_title()
             prompt = (
                 f"Abend-Status-Bericht. Anrede: \"{_eb_title}\". "
