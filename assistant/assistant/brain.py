@@ -487,27 +487,29 @@ class AssistantBrain(BrainCallbacksMixin):
                 best_room = None
                 best_changed = ""
 
+                # O(n) State-Map statt O(n*m) Nested-Loop
+                state_map = {s.get("entity_id"): s for s in states}
+
                 for room_name, sensor_id in room_sensors.items():
-                    for s in states:
-                        if s.get("entity_id") != sensor_id:
-                            continue
-                        last_changed = s.get("last_changed", "")
-                        if s.get("state") == "on":
-                            if last_changed > best_changed:
-                                best_changed = last_changed
-                                best_room = room_name
-                        elif last_changed:
-                            try:
-                                changed = datetime.fromisoformat(
-                                    last_changed.replace("Z", "+00:00")
-                                ).replace(tzinfo=None)
-                                if (now - changed).total_seconds() / 60 < timeout_minutes:
-                                    if last_changed > best_changed:
-                                        best_changed = last_changed
-                                        best_room = room_name
-                            except (ValueError, TypeError):
-                                pass
-                        break
+                    s = state_map.get(sensor_id)
+                    if not s:
+                        continue
+                    last_changed = s.get("last_changed", "")
+                    if s.get("state") == "on":
+                        if last_changed > best_changed:
+                            best_changed = last_changed
+                            best_room = room_name
+                    elif last_changed:
+                        try:
+                            changed = datetime.fromisoformat(
+                                last_changed.replace("Z", "+00:00")
+                            ).replace(tzinfo=None)
+                            if (now - changed).total_seconds() / 60 < timeout_minutes:
+                                if last_changed > best_changed:
+                                    best_changed = last_changed
+                                    best_room = room_name
+                        except (ValueError, TypeError):
+                            pass
 
                 if best_room:
                     return best_room

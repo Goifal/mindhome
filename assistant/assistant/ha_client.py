@@ -52,7 +52,7 @@ class HomeAssistantClient:
         # States-Cache: vermeidet N+1 Queries innerhalb kurzer Zeitfenster
         self._states_cache: Optional[list[dict]] = None
         self._states_cache_ts: float = 0.0
-        _STATES_CACHE_TTL = 2.0  # Sekunden
+        _STATES_CACHE_TTL = 5.0  # Sekunden (von 2s erhoeht — HA-States aendern sich selten innerhalb 5s)
 
     def _get_lock(self) -> asyncio.Lock:
         """Gibt den Session-Lock zurueck."""
@@ -77,7 +77,7 @@ class HomeAssistantClient:
     async def get_states(self) -> list[dict]:
         """Alle Entity-States von HA holen (mit kurzem Cache gegen N+1 Queries)."""
         now = time.monotonic()
-        if self._states_cache is not None and (now - self._states_cache_ts) < 2.0:
+        if self._states_cache is not None and (now - self._states_cache_ts) < self._STATES_CACHE_TTL:
             return self._states_cache
         result = await self._get_ha("/api/states") or []
         self._states_cache = result

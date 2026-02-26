@@ -427,10 +427,10 @@ class DeviceHealthMonitor:
             today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
             sample_key = f"mha:device:sample:{entity_id}:{today}"
 
-            await self.redis.rpush(sample_key, str(value))
-            await self.redis.expire(
-                sample_key, self.baseline_days * 86400 + 86400
-            )
+            pipe = self.redis.pipeline()
+            pipe.rpush(sample_key, str(value))
+            pipe.expire(sample_key, self.baseline_days * 86400 + 86400)
+            await pipe.execute()
 
             await self._recalculate_baseline(entity_id)
         except Exception as e:
@@ -444,11 +444,16 @@ class DeviceHealthMonitor:
             all_values = []
             now = datetime.now(timezone.utc)
 
+            # Pipeline: 31 lrange-Calls in einem Roundtrip statt 31 einzelnen
+            pipe = self.redis.pipeline()
             for day_offset in range(self.baseline_days + 1):
                 day = (now - timedelta(days=day_offset)).strftime("%Y-%m-%d")
                 key = f"mha:device:sample:{entity_id}:{day}"
-                samples = await self.redis.lrange(key, 0, -1)
-                for s in samples:
+                pipe.lrange(key, 0, -1)
+            results = await pipe.execute()
+
+            for samples in results:
+                for s in (samples or []):
                     try:
                         all_values.append(float(s))
                     except (ValueError, TypeError):
