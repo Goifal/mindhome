@@ -166,7 +166,7 @@ rooms:
     scenes: []
 
   ankleide:
-    type: "bedroom"
+    type: "dressing"
     floor: "og"
     purpose: "Ankleide. Helles Licht zum Anziehen."
     default_temp: 20

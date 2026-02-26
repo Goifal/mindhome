@@ -43,6 +43,32 @@ from .websocket import emit_proactive, emit_interrupt
 
 logger = logging.getLogger(__name__)
 
+# ── Room-Profile-Cache fuer proactive.py (vermeidet wiederholtes YAML-Parsen) ──
+_room_profiles_cache: dict = {}
+_room_profiles_ts: float = 0.0
+_ROOM_PROFILES_TTL = 600  # 10 Min
+
+
+def _get_room_profiles_cached() -> dict:
+    """Liefert room_profiles.yaml aus Cache (oder laedt bei Bedarf von Disk)."""
+    global _room_profiles_cache, _room_profiles_ts
+    now = time.time()
+    if _room_profiles_cache and (now - _room_profiles_ts) < _ROOM_PROFILES_TTL:
+        return _room_profiles_cache
+    try:
+        _cfg = Path(__file__).parent.parent / "config" / "room_profiles.yaml"
+        if _cfg.exists():
+            with open(_cfg) as f:
+                _room_profiles_cache = yaml.safe_load(f) or {}
+        else:
+            _room_profiles_cache = {}
+    except Exception as e:
+        logger.debug("Room-Profiles nicht ladbar: %s", e)
+        if not _room_profiles_cache:
+            _room_profiles_cache = {}
+    _room_profiles_ts = now
+    return _room_profiles_cache
+
 
 # Event-Prioritaeten
 CRITICAL = "critical"  # Immer melden (Alarm, Rauch, Wasser)
@@ -1845,16 +1871,9 @@ class ProactiveManager:
 
     @staticmethod
     def _load_cover_profiles() -> list:
-        """Laedt Cover-Profile aus room_profiles.yaml."""
-        try:
-            _cfg = Path(__file__).parent.parent / "config" / "room_profiles.yaml"
-            if _cfg.exists():
-                with open(_cfg) as f:
-                    data = yaml.safe_load(f) or {}
-                return data.get("cover_profiles", {}).get("covers", [])
-        except Exception:
-            pass
-        return []
+        """Laedt Cover-Profile aus room_profiles.yaml (gecached)."""
+        data = _get_room_profiles_cached()
+        return data.get("cover_profiles", {}).get("covers", [])
 
     async def _auto_cover_action(
         self, entity_id: str, position: int, reason: str,
@@ -1866,13 +1885,14 @@ class ProactiveManager:
         """
         level = self.brain.autonomy.level
 
-        # Dedup per Redis
+        # Dedup per Redis (30 Min Cooldown — kuerzer als vorher 1h,
+        # damit Sonne nach kurzer Wolkendecke erneut Sonnenschutz ausloesen kann)
         if redis_client:
             dedup_key = f"mha:cover:auto:{entity_id}:{position}"
             already = await redis_client.get(dedup_key)
             if already:
                 return False
-            await redis_client.set(dedup_key, "1", ex=3600)  # 1h Cooldown
+            await redis_client.set(dedup_key, "1", ex=1800)  # 30 Min Cooldown
 
         if level >= auto_level:
             try:
@@ -1929,13 +1949,8 @@ class ProactiveManager:
                     notified = True
 
         # Regen/Hagel: Nur Markisen einfahren (Position 0)
-        try:
-            _cfg = Path(__file__).parent.parent / "config" / "room_profiles.yaml"
-            with open(_cfg) as f:
-                rp_data = yaml.safe_load(f) or {}
-            markise_cfg = rp_data.get("markisen", {})
-        except Exception:
-            markise_cfg = {}
+        rp_data = _get_room_profiles_cached()
+        markise_cfg = rp_data.get("markisen", {})
         markise_wind = markise_cfg.get("wind_retract_speed", 40)
         rain_retract = markise_cfg.get("rain_retract", True)
 
@@ -1975,7 +1990,11 @@ class ProactiveManager:
             end = cover.get("sun_exposure_end", 360)
 
             # Fenster bekommt direkte Sonne UND Temperatur > Schwelle
-            sun_hitting = start <= azimuth <= end
+            # Wraparound fuer Nordfenster (z.B. start=315, end=45 → NW bis NE)
+            if start <= end:
+                sun_hitting = start <= azimuth <= end
+            else:
+                sun_hitting = azimuth >= start or azimuth <= end
             if sun_hitting and temp >= heat_temp:
                 await self._auto_cover_action(
                     entity_id, 20,
@@ -2100,19 +2119,30 @@ class ProactiveManager:
         # Urlaubs-Simulation: Zufaellige Zeiten wenn vacation_mode aktiv
         if cover_cfg.get("presence_simulation", True):
             vacation_entity = cover_cfg.get("vacation_mode_entity", "")
-            if vacation_entity:
+            if not vacation_entity:
+                logger.debug("Urlaubs-Simulation: vacation_mode_entity nicht konfiguriert — uebersprungen")
+            elif vacation_entity:
                 for s in (states or []):
                     if s.get("entity_id") == vacation_entity and s.get("state") == "on":
-                        # Einfache Simulation: ±30min Variation
                         import random
+                        # Morgens zufaellig oeffnen
                         if now.hour in (7, 8) and random.random() < 0.3:
-                            # Morgens zufaellig oeffnen
                             for cs in (states or []):
                                 eid = cs.get("entity_id", "")
                                 if eid.startswith("cover.") and await self.brain.executor._is_safe_cover(eid, cs):
                                     if not self.brain.executor._is_markise(eid, cs):
                                         await self._auto_cover_action(
-                                            eid, 100, "Urlaubssimulation",
+                                            eid, 100, "Urlaubssimulation (morgens)",
+                                            auto_level, redis_client,
+                                        )
+                        # Abends zufaellig schliessen
+                        elif now.hour in (19, 20, 21) and random.random() < 0.3:
+                            for cs in (states or []):
+                                eid = cs.get("entity_id", "")
+                                if eid.startswith("cover.") and await self.brain.executor._is_safe_cover(eid, cs):
+                                    if not self.brain.executor._is_markise(eid, cs):
+                                        await self._auto_cover_action(
+                                            eid, 0, "Urlaubssimulation (abends)",
                                             auto_level, redis_client,
                                         )
                         break
@@ -2168,7 +2198,10 @@ class ProactiveManager:
                     await asyncio.sleep(900)
                     continue
 
-                # Kein Meeting/Schlafmodus?
+                # Aktive Kalender-Events pruefen (z.B. "meeting" im Titel)
+                # HINWEIS: "schlafen" in not_during ist hier wirkungslos, da
+                # der Check nur laeuft wenn niemand zuhause ist. "schlafen"
+                # sollte aus der not_during-Config entfernt werden.
                 not_during = auto_cfg.get("not_during", [])
                 blocking = False
                 for s in (states or []):
@@ -2236,11 +2269,12 @@ class ProactiveManager:
             attrs = state.get("attributes", {})
             nickname = robot.get("nickname", f"Saugroboter {floor.upper()}")
 
+            # Mehrere gaengige Attribut-Namen pruefen (Dreame-Addon vs. Valetudo vs. Xiaomi Cloud)
             checks = {
-                "Filter": attrs.get("filter_left"),
-                "Hauptbuerste": attrs.get("main_brush_left"),
-                "Seitenbuerste": attrs.get("side_brush_left"),
-                "Mopp": attrs.get("mop_left"),
+                "Filter": attrs.get("filter_left") or attrs.get("filter_life_level"),
+                "Hauptbuerste": attrs.get("main_brush_left") or attrs.get("brush_life_level") or attrs.get("main_brush_life_level"),
+                "Seitenbuerste": attrs.get("side_brush_left") or attrs.get("side_brush_life_level"),
+                "Mopp": attrs.get("mop_left") or attrs.get("mop_life_level"),
             }
 
             for part, remaining in checks.items():
