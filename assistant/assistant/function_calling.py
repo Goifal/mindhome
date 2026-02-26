@@ -1611,6 +1611,7 @@ class FunctionExecutor:
         self.ha = ha_client
         self._entity_cache: dict[str, list[dict]] = {}
         self._config_versioning: Optional[ConfigVersioning] = None
+        self._last_broadcast_time: float = 0.0
 
     def set_config_versioning(self, versioning: ConfigVersioning):
         """Setzt ConfigVersioning fuer Backup-vor-Schreiben."""
@@ -4007,52 +4008,95 @@ class FunctionExecutor:
         brain = main_module.brain
         return await brain.timer_manager.get_alarms()
 
+    # ------------------------------------------------------------------
+    # Intercom Helpers
+    # ------------------------------------------------------------------
+
+    _BROADCAST_COOLDOWN_SECONDS = 30
+
+    async def _send_tts_to_speaker(self, speaker: str, message: str) -> bool:
+        """Sendet TTS an einen einzelnen Speaker (Piper oder Alexa).
+
+        Returns:
+            True wenn erfolgreich, False bei Fehler.
+        """
+        alexa_speakers = yaml_config.get("sounds", {}).get("alexa_speakers", [])
+        try:
+            if speaker in alexa_speakers:
+                svc_name = "alexa_media_" + speaker.replace("media_player.", "", 1)
+                await self.ha.call_service(
+                    "notify", svc_name,
+                    {"message": message, "data": {"type": "tts"}},
+                )
+            else:
+                tts_entity = yaml_config.get("tts", {}).get("entity", "tts.piper")
+                await self.ha.call_service("tts", "speak", {
+                    "entity_id": tts_entity,
+                    "media_player_entity_id": speaker,
+                    "message": message,
+                })
+            return True
+        except Exception as e:
+            logger.debug("TTS an %s fehlgeschlagen: %s", speaker, e)
+            return False
+
     async def _exec_broadcast(self, args: dict) -> dict:
-        """Sendet eine Durchsage an alle Lautsprecher."""
+        """Sendet eine Durchsage an alle TTS-faehigen Lautsprecher."""
         message = args.get("message", "")
         if not message:
             return {"success": False, "message": "Keine Nachricht angegeben."}
 
-        states = await self.ha.get_states()
-        if not states:
-            return {"success": False, "message": "Keine Verbindung zu Home Assistant."}
+        # Rate-Limiting
+        now = time.time()
+        cooldown = yaml_config.get("intercom", {}).get(
+            "broadcast_cooldown_seconds", self._BROADCAST_COOLDOWN_SECONDS,
+        )
+        if now - self._last_broadcast_time < cooldown:
+            remaining = int(cooldown - (now - self._last_broadcast_time))
+            return {"success": False, "message": f"Durchsage-Cooldown. Bitte {remaining}s warten."}
+        self._last_broadcast_time = now
 
-        # Alle Media-Player mit TTS-Faehigkeit finden
+        # TTS-faehige Speaker finden (konfigurierte + auto-erkannte)
+        room_speakers_cfg = yaml_config.get("multi_room", {}).get("room_speakers", {})
         speakers = []
-        for s in states:
-            eid = s.get("entity_id", "")
-            if eid.startswith("media_player."):
+        seen = set()
+
+        # 1. Konfigurierte Room-Speakers haben Vorrang
+        for eid in (room_speakers_cfg or {}).values():
+            if eid and eid not in seen:
                 speakers.append(eid)
+                seen.add(eid)
+
+        # 2. Auto-Discovery: nur echte TTS-Speaker (keine TVs/Receiver)
+        states = await self.ha.get_states()
+        for s in (states or []):
+            eid = s.get("entity_id", "")
+            attrs = s.get("attributes", {})
+            if eid not in seen and self._is_tts_speaker(eid, attrs):
+                speakers.append(eid)
+                seen.add(eid)
 
         if not speakers:
             return {"success": False, "message": "Keine Lautsprecher gefunden."}
 
         # TTS an alle Speaker senden
         count = 0
-        tts_entity = yaml_config.get("tts", {}).get("entity", "tts.piper")
-        alexa_speakers = yaml_config.get("sounds", {}).get("alexa_speakers", [])
+        failed = []
         for speaker in speakers:
-            try:
-                if speaker in alexa_speakers:
-                    svc_name = "alexa_media_" + speaker.replace("media_player.", "", 1)
-                    await self.ha.call_service(
-                        "notify", svc_name,
-                        {"message": message, "data": {"type": "tts"}},
-                    )
-                else:
-                    await self.ha.call_service("tts", "speak", {
-                        "entity_id": tts_entity,
-                        "media_player_entity_id": speaker,
-                        "message": message,
-                    })
+            ok = await self._send_tts_to_speaker(speaker, message)
+            if ok:
                 count += 1
-            except Exception as e:
-                logger.debug("Broadcast an %s fehlgeschlagen: %s", speaker, e)
+            else:
+                failed.append(speaker)
 
-        return {
+        result = {
             "success": count > 0,
-            "message": f"Durchsage an {count} Lautsprecher gesendet: \"{message}\"",
+            "message": f"Durchsage an {count}/{len(speakers)} Lautsprecher: \"{message}\"",
+            "delivered": count,
         }
+        if failed:
+            result["failed_speakers"] = failed
+        return result
 
     async def _exec_send_intercom(self, args: dict) -> dict:
         """Gezielte Durchsage an Person oder Raum."""
@@ -4092,30 +4136,17 @@ class FunctionExecutor:
         if target_person:
             tts_message = f"{target_person}, {message}"
 
+        # Speaker-Verfuegbarkeit pruefen
+        speaker_state = await self.ha.get_state(speaker)
+        if speaker_state and speaker_state.get("state") == "unavailable":
+            return {"success": False, "message": f"Lautsprecher '{speaker}' ist nicht erreichbar."}
+
         # TTS senden
-        tts_entity = yaml_config.get("tts", {}).get("entity", "tts.piper")
-        alexa_speakers = yaml_config.get("sounds", {}).get("alexa_speakers", [])
-        try:
-            if speaker in alexa_speakers:
-                svc_name = "alexa_media_" + speaker.replace("media_player.", "", 1)
-                await self.ha.call_service(
-                    "notify", svc_name,
-                    {"message": tts_message, "data": {"type": "tts"}},
-                )
-            else:
-                await self.ha.call_service("tts", "speak", {
-                    "entity_id": tts_entity,
-                    "media_player_entity_id": speaker,
-                    "message": tts_message,
-                })
-            target_desc = f"{target_person} im {target_room}" if target_person else target_room
-            return {
-                "success": True,
-                "message": f"Durchsage an {target_desc}: \"{message}\"",
-            }
-        except Exception as e:
-            logger.error("Intercom fehlgeschlagen: %s", e)
-            return {"success": False, "message": f"Durchsage fehlgeschlagen: {e}"}
+        ok = await self._send_tts_to_speaker(speaker, tts_message)
+        target_desc = f"{target_person} im {target_room}" if target_person else target_room
+        if ok:
+            return {"success": True, "message": f"Durchsage an {target_desc}: \"{message}\""}
+        return {"success": False, "message": f"Durchsage an {target_desc} fehlgeschlagen."}
 
     async def _exec_get_camera_view(self, args: dict) -> dict:
         """Holt und beschreibt ein Kamera-Bild."""

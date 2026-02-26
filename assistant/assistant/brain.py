@@ -5306,11 +5306,27 @@ class AssistantBrain(BrainCallbacksMixin):
         if t_lower.endswith("?") or len(t_lower) < 8:
             return None
 
+        # Woerter die keine Personennamen sind
+        _NOT_NAMES = frozenset({
+            # Pronomen
+            "mir", "ihm", "ihr", "uns", "ihnen", "dir", "euch",
+            # Partikeln / Adverbien
+            "mal", "bitte", "doch", "halt", "eben", "einfach", "ruhig",
+            "schon", "bloß", "lieber", "besser", "schnell", "nochmal",
+            "jetzt", "gleich", "sofort", "endlich", "niemals", "erstmal",
+            # Quantoren
+            "allen", "alles", "nichts", "beiden", "keinem", "jedem",
+            # Phrasen-Starter
+            "bescheid", "danke", "hallo", "stop", "stopp", "tschuess",
+            "ja", "nein", "okay", "was", "wie", "wo", "wann", "warum",
+            "nix", "laut", "leise",
+        })
+
         # --- Pattern 1: "sag/sage {person} [im {room}] [dass/,] {message}" ---
         m = _re.match(
             r'(?:sag|sage)\s+'
             r'(?:(?:der|dem|die)\s+)?'
-            r'([A-ZÄÖÜ][a-zäöüß]+)'  # Person (Eigenname)
+            r'([A-ZÄÖÜa-zäöüß]{2,}(?:-[A-ZÄÖÜa-zäöüß]+)*)'  # Person (auch "mama", "Leon-Marie")
             r'(?:\s+im\s+([A-Za-zÄÖÜäöüß]+))?'  # optionaler Raum
             r'[\s,]*(?:dass|das|,|:)?\s*'
             r'(.+)',
@@ -5322,8 +5338,7 @@ class AssistantBrain(BrainCallbacksMixin):
             message = m.group(3).strip().rstrip(".")
             if len(message) < 3:
                 return None
-            # "sag mir" ist keine Durchsage
-            if person.lower() in ("mir", "mal", "ihm", "ihr", "uns", "ihnen", "bitte"):
+            if person.lower() in _NOT_NAMES:
                 return None
             args = {"message": message, "target_person": person}
             if room:
