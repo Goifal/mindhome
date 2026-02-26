@@ -1241,17 +1241,16 @@ async def websocket_endpoint(websocket: WebSocket):
     assistant.feedback - Feedback auf Meldung
     assistant.interrupt - Unterbrechung
     """
-    # Auth: WebSocket ist via _API_KEY_EXEMPT_PATHS von der Middleware ausgenommen,
-    # da die Chat-UI (/chat/) keinen API Key mitschickt.
-    # Optional: Client kann api_key als Query-Parameter senden (z.B. externe Clients).
+    # Auth: Externe Clients muessen api_key als Query-Parameter senden.
+    # Interne Chat-UI sendet den Key aus dem Session-Cookie.
     ws_key = websocket.query_params.get("api_key", "")
-    if _api_key_required and ws_key:
-        # Wenn ein Key mitgeschickt wird, muss er stimmen
-        if not secrets.compare_digest(ws_key, _assistant_api_key):
-            await websocket.close(code=4003, reason="Ungueltiger API Key")
+    if _api_key_required:
+        if not ws_key or not secrets.compare_digest(ws_key, _assistant_api_key):
+            await websocket.close(code=4003, reason="API Key erforderlich")
             return
 
-    await ws_manager.connect(websocket)
+    if not await ws_manager.connect(websocket):
+        return
 
     # Ping/Pong Keep-Alive: Alle 25 Sek einen Ping senden
     async def _ws_keepalive():

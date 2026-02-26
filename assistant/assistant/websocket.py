@@ -17,14 +17,20 @@ logger = logging.getLogger(__name__)
 class ConnectionManager:
     """Verwaltet aktive WebSocket-Verbindungen."""
 
+    MAX_CONNECTIONS = 50
+
     def __init__(self):
         self.active_connections: list[WebSocket] = []
 
-    async def connect(self, websocket: WebSocket):
-        """Neue Verbindung akzeptieren."""
+    async def connect(self, websocket: WebSocket) -> bool:
+        """Neue Verbindung akzeptieren. Gibt False zurueck wenn Limit erreicht."""
+        if len(self.active_connections) >= self.MAX_CONNECTIONS:
+            await websocket.close(code=4008, reason="Zu viele Verbindungen")
+            return False
         await websocket.accept()
         self.active_connections.append(websocket)
         logger.info("WebSocket verbunden (%d aktiv)", len(self.active_connections))
+        return True
 
     def disconnect(self, websocket: WebSocket):
         """Verbindung entfernen."""

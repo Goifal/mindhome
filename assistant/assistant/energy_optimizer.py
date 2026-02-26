@@ -282,7 +282,7 @@ class EnergyOptimizer:
 
             if increase_pct > self.anomaly_percent:
                 return (f"Verbrauch liegt {increase_pct:.0f}% ueber dem 7-Tage-Durchschnitt "
-                        f"({current_consumption:.0f} W vs. {avg:.0f} W). "
+                        f"({current_consumption:.0f} vs. {avg:.0f} Durchschnitt). "
                         f"Ungewoehnlicher Verbraucher aktiv?")
         except Exception as e:
             logger.debug("Anomalie-Check Fehler: %s", e)

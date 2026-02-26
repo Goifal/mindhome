@@ -648,7 +648,7 @@ class AssistantBrain(BrainCallbacksMixin):
                         text = original_text
                     else:
                         # Nur Identifikation, kein Folgebefehl
-                        response_text = f"Alles klar, {person.capitalize()}. Was kann ich fuer dich tun?"
+                        response_text = f"Erkannt, {person.capitalize()}."
                         self._remember_exchange(text, response_text)
                         return {
                             "response": response_text,
@@ -945,7 +945,7 @@ class AssistantBrain(BrainCallbacksMixin):
         if pending_plan:
             logger.info("Laufender Planungs-Dialog: %s", pending_plan)
             plan_result = await self.action_planner.continue_planning_dialog(text, pending_plan)
-            response_text = plan_result.get("response", "")
+            response_text = self._filter_response(plan_result.get("response", ""))
             if plan_result.get("status") == "error":
                 self.action_planner.clear_plan(pending_plan)
             self._remember_exchange(text, response_text)
@@ -962,7 +962,7 @@ class AssistantBrain(BrainCallbacksMixin):
         if self.action_planner.is_planning_request(text):
             logger.info("Planungs-Dialog gestartet: '%s'", text)
             plan_result = await self.action_planner.start_planning_dialog(text, person or "")
-            response_text = plan_result.get("response", "")
+            response_text = self._filter_response(plan_result.get("response", ""))
             self._remember_exchange(text, response_text)
             await self._speak_and_emit(response_text, room=room)
             return {
@@ -1581,7 +1581,7 @@ class AssistantBrain(BrainCallbacksMixin):
                         temperature=0.5,
                         max_tokens=_max_tok,
                     )
-                    response_text = narrative.strip() if narrative.strip() else raw_data
+                    response_text = self._filter_response(narrative.strip()) if narrative.strip() else raw_data
 
                     self._remember_exchange(text, response_text)
                     tts_data = self.tts_enhancer.enhance(
@@ -1652,7 +1652,7 @@ class AssistantBrain(BrainCallbacksMixin):
                         temperature=0.5,
                         max_tokens=_max_tok,
                     )
-                    response_text = narrative.strip() if narrative.strip() else raw_data
+                    response_text = self._filter_response(narrative.strip()) if narrative.strip() else raw_data
 
                     self._remember_exchange(text, response_text)
                     tts_data = self.tts_enhancer.enhance(
@@ -2581,7 +2581,7 @@ class AssistantBrain(BrainCallbacksMixin):
                     # Phase 6: Opinion Check — Jarvis kommentiert Aktionen
                     # Nur wenn kein Pushback-Kommentar (sonst doppelt)
                     if not pushback_msg:
-                        opinion = self.personality.check_opinion(func_name, func_args)
+                        opinion = self.personality.check_opinion(func_name, final_args)
                         if opinion:
                             logger.info("Jarvis Meinung: '%s'", opinion)
                             if response_text:
@@ -2591,7 +2591,7 @@ class AssistantBrain(BrainCallbacksMixin):
 
                     # Eskalationskette: JARVIS wird trockener bei Wiederholungen
                     try:
-                        esc_key = f"{func_name}:{func_args.get('room', '')}"
+                        esc_key = f"{func_name}:{final_args.get('room', '')}"
                         escalation = await self.personality.check_escalation(esc_key)
                         if escalation:
                             logger.info("Jarvis Eskalation: '%s'", escalation)
@@ -2747,7 +2747,7 @@ class AssistantBrain(BrainCallbacksMixin):
             if executed_actions and response_text:
                 failed_actions = [
                     a for a in executed_actions
-                    if isinstance(a["result"], dict) and not a["result"].get("success", True)
+                    if isinstance(a["result"], dict) and not a["result"].get("success", False)
                 ]
                 if failed_actions:
                     # Phase 17: Natuerliche Fehlerbehandlung statt hartem "Problem: ..."
@@ -3924,11 +3924,28 @@ class AssistantBrain(BrainCallbacksMixin):
         # "Ihnen/Ihre/Ihrem" sind eindeutig formell (kein Lowercase-Pendant fuer "sie"=she)
         _has_formal = bool(re.search(r"\b(?:Ihnen|Ihre[mnrs]?)\b", text))
         if _has_formal:
+            # Verb+Sie Paare zuerst (vor generischer Sie-Ersetzung)
+            _verb_pairs = [
+                (r"\bHaben Sie\b", "Hast du"), (r"\bhaben Sie\b", "hast du"),
+                (r"\bKoennen Sie\b", "Kannst du"), (r"\bkoennen Sie\b", "kannst du"),
+                (r"\bKönnen Sie\b", "Kannst du"), (r"\bkönnen Sie\b", "kannst du"),
+                (r"\bMoechten Sie\b", "Moechtest du"), (r"\bmoechten Sie\b", "moechtest du"),
+                (r"\bMöchten Sie\b", "Möchtest du"), (r"\bmöchten Sie\b", "möchtest du"),
+                (r"\bWuerden Sie\b", "Wuerdest du"), (r"\bwuerden Sie\b", "wuerdest du"),
+                (r"\bWürden Sie\b", "Würdest du"), (r"\bwürden Sie\b", "würdest du"),
+                (r"\bDuerfen Sie\b", "Darfst du"), (r"\bduerfen Sie\b", "darfst du"),
+                (r"\bWollen Sie\b", "Willst du"), (r"\bwollen Sie\b", "willst du"),
+                (r"\bSollten Sie\b", "Solltest du"), (r"\bsollten Sie\b", "solltest du"),
+                (r"\bSind Sie\b", "Bist du"), (r"\bsind Sie\b", "bist du"),
+                (r"\bWerden Sie\b", "Wirst du"), (r"\bwerden Sie\b", "wirst du"),
+            ]
+            for pattern, replacement in _verb_pairs:
+                text = re.sub(pattern, replacement, text)
             _formal_map = [
                 (r"\bIhnen\b", "dir"), (r"\bIhre\b", "deine"),
                 (r"\bIhren\b", "deinen"), (r"\bIhrem\b", "deinem"),
                 (r"\bIhrer\b", "deiner"),
-                # "Sie" nur in eindeutigen Kontexten ersetzen (nicht am Satzanfang)
+                # "Sie" in eindeutigen Kontexten ersetzen
                 (r"(?<=[,;:!?]\s)Sie\b", "du"),
                 (r"(?<=\bfuer\s)Sie\b", "dich"), (r"(?<=\bfür\s)Sie\b", "dich"),
                 (r"(?<=\bdass\s)Sie\b", "du"), (r"(?<=\bwenn\s)Sie\b", "du"),
