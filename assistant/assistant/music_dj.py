@@ -15,9 +15,6 @@ from .config import yaml_config, get_person_title
 
 logger = logging.getLogger(__name__)
 
-# Aktivitaeten bei denen keine Musik empfohlen wird
-_SUPPRESS_ACTIVITIES = frozenset({"sleeping", "in_call"})
-
 # Genre → Spotify-Suchquery (kuratiert)
 GENRE_QUERIES: dict[str, str] = {
     "acoustic_morning": "acoustic morning chill",

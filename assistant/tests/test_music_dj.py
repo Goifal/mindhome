@@ -153,11 +153,11 @@ class TestSuppressConditions:
         ctx = {"mood": "good", "stress_level": 0.0, "tiredness_level": 0.0, "time_of_day": "evening"}
         assert dj._context_to_genre(ctx, "watching") is None
 
-    def test_disabled_returns_error(self, dj):
-        """DJ deaktiviert → Fehlermeldung."""
-        dj.enabled = False
-        # get_recommendation ist async, testen wir in der async-Klasse
-        assert dj.enabled is False
+    def test_watching_suppresses_all_moods(self, dj):
+        """Watching unterdrueckt Musik unabhaengig vom Mood."""
+        for mood in ("good", "stressed", "neutral", "frustrated"):
+            ctx = {"mood": mood, "stress_level": 0.0, "tiredness_level": 0.0, "time_of_day": "evening"}
+            assert dj._context_to_genre(ctx, "watching") is None
 
 
 # ============================================================

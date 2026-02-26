@@ -22,7 +22,7 @@ from assistant.visitor_manager import VisitorManager, _KEY_KNOWN, _KEY_LAST_RING
 def mood_mock():
     mock = MagicMock()
     mock.get_current_mood = MagicMock(return_value={
-        "mood": "neutral", "stress_level": 0.0, "tiredness": 0.0,
+        "mood": "neutral", "stress_level": 0.0, "tiredness_level": 0.0,
     })
     return mock
 
@@ -288,8 +288,8 @@ class TestVisitorManagerAutoUnlockWorkflow:
         })
         result = await vm.handle_doorbell("Person")
         assert result["handled"] is True
-        # Mindestens ein auto_unlock sollte versucht worden sein
         assert result["expected"] is True
+        assert result["auto_unlocked"] is True
 
 
 # =====================================================================

@@ -191,10 +191,9 @@ class VisitorManager:
             "auto_unlock": auto_unlock,
             "notes": notes,
             "created_at": datetime.now(timezone.utc).isoformat(),
+            "expires_at": (datetime.now(timezone.utc).replace(hour=23, minute=59, second=59)).isoformat(),
         }
         await self.redis.hset(_KEY_EXPECTED, person_id, json.dumps(info))
-        # TTL auf den ganzen Hash ist nicht ideal — einzelne Eintraege verfallen nicht.
-        # Aber erwartete Besucher werden manuell oder taeglich bereinigt.
 
         msg = f"Besucher '{info['name']}' wird erwartet"
         if expected_time:
@@ -212,20 +211,35 @@ class VisitorManager:
         return {"success": True, "message": f"Erwartung fuer '{person_id}' aufgehoben."}
 
     async def get_expected_visitors(self) -> list[dict]:
-        """Gibt alle erwarteten Besucher zurueck."""
+        """Gibt alle erwarteten Besucher zurueck (abgelaufene werden entfernt)."""
         if not self.redis:
             return []
         raw = await self.redis.hgetall(_KEY_EXPECTED)
         result = []
+        now = datetime.now(timezone.utc)
+        expired_ids = []
         for pid, data in raw.items():
             try:
                 key = pid.decode() if isinstance(pid, bytes) else pid
                 val = data.decode() if isinstance(data, bytes) else data
                 info = json.loads(val)
+                # Abgelaufene Eintraege entfernen (auto_unlock Sicherheit)
+                expires = info.get("expires_at")
+                if expires:
+                    try:
+                        exp_dt = datetime.fromisoformat(expires)
+                        if exp_dt < now:
+                            expired_ids.append(key)
+                            continue
+                    except (ValueError, TypeError):
+                        pass
                 info["id"] = key
                 result.append(info)
             except (json.JSONDecodeError, AttributeError):
                 continue
+        # Abgelaufene aus Redis entfernen
+        for eid in expired_ids:
+            await self.redis.hdel(_KEY_EXPECTED, eid)
         return result
 
     async def _is_visitor_expected(self, person_id: str = "") -> Optional[dict]:
@@ -297,17 +311,19 @@ class VisitorManager:
                     break
 
         # Letzte Klingel-Info in Redis speichern (fuer "lass rein" Kontext)
-        ring_info = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "camera_description": camera_description,
-            "expected": result["expected"],
-        }
-        if self.redis:
-            await self.redis.setex(
-                _KEY_LAST_RING,
-                _DEFAULT_RING_TTL,
-                json.dumps(ring_info),
-            )
+        # Nicht speichern wenn auto_unlock bereits ausgefuehrt (verhindert Doppel-Unlock)
+        if not result["auto_unlocked"]:
+            ring_info = {
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "camera_description": camera_description,
+                "expected": result["expected"],
+            }
+            if self.redis:
+                await self.redis.setex(
+                    _KEY_LAST_RING,
+                    _DEFAULT_RING_TTL,
+                    json.dumps(ring_info),
+                )
 
         # Empfehlung formulieren
         if result["auto_unlocked"]:
@@ -419,7 +435,7 @@ class VisitorManager:
         if not self.redis:
             return {"success": False, "visits": [], "message": "Redis nicht verfuegbar"}
 
-        limit = min(limit, self.history_max)
+        limit = max(1, min(int(limit), self.history_max))
         raw_list = await self.redis.lrange(_KEY_HISTORY, 0, limit - 1)
 
         visits = []

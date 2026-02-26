@@ -4695,11 +4695,18 @@ class FunctionExecutor:
                 pid = args.get("person_id", "")
                 if not pid:
                     return {"success": False, "message": "person_id ist erforderlich."}
+                auto_unlock = args.get("auto_unlock", False)
+                # auto_unlock erfordert Owner-Trust (= lock_door Berechtigung)
+                if auto_unlock:
+                    person = getattr(brain, "_current_person", "") or ""
+                    trust_check = brain.autonomy.can_person_act(person, "lock_door")
+                    if not trust_check["allowed"]:
+                        return {"success": False, "message": trust_check.get("reason", "Keine Berechtigung fuer Auto-Unlock.")}
                 return await vm.expect_visitor(
                     person_id=pid,
                     name=args.get("name", ""),
                     expected_time=args.get("expected_time", ""),
-                    auto_unlock=args.get("auto_unlock", False),
+                    auto_unlock=auto_unlock,
                     notes=args.get("notes", ""),
                 )
             elif action == "cancel_expected":
@@ -4708,10 +4715,15 @@ class FunctionExecutor:
                     return {"success": False, "message": "person_id ist erforderlich."}
                 return await vm.cancel_expected(pid)
             elif action == "grant_entry":
+                # grant_entry entriegelt die Tuer — erfordert Owner-Trust (wie lock_door)
+                person = getattr(brain, "_current_person", "") or ""
+                trust_check = brain.autonomy.can_person_act(person, "lock_door")
+                if not trust_check["allowed"]:
+                    return {"success": False, "message": trust_check.get("reason", "Keine Berechtigung.")}
                 door = args.get("door", "haustuer")
                 return await vm.grant_entry(door=door)
             elif action == "history":
-                limit = args.get("limit", 20)
+                limit = max(1, min(int(args.get("limit", 20)), 100))
                 return await vm.get_visit_history(limit=limit)
             elif action == "status":
                 return await vm.get_status()

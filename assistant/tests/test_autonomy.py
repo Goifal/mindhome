@@ -28,7 +28,7 @@ _DEFAULT_TRUST_CFG = {
 
 @pytest.fixture
 def am():
-    """AutonomyManager mit Standard-Config."""
+    """AutonomyManager mit Standard-Config (Patches bleiben aktiv fuer Laufzeit-Zugriff)."""
     mock_settings = MagicMock()
     mock_settings.autonomy_level = 2
     mock_settings.user_name = "Sir"
@@ -38,15 +38,7 @@ def am():
     with patch("assistant.autonomy.settings", mock_settings), \
          patch("assistant.autonomy.yaml_config", yaml_mock):
         mgr = AutonomyManager()
-
-    # Patches bleiben aktiv fuer Methoden die settings/yaml_config zur Laufzeit lesen
-    p1 = patch("assistant.autonomy.settings", mock_settings)
-    p2 = patch("assistant.autonomy.yaml_config", yaml_mock)
-    p1.start()
-    p2.start()
-    yield mgr
-    p2.stop()
-    p1.stop()
+        yield mgr
 
 
 def _make_autonomy(level=2, trust_cfg=None):

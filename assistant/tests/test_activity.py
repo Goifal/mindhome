@@ -80,6 +80,11 @@ class TestSignalDetection:
         states = [{"entity_id": "media_player.wohnzimmer", "state": "paused"}]
         assert engine._check_media_playing(states) is False
 
+    def test_check_media_non_configured_player_ignored(self, engine):
+        """Nicht-konfigurierte Media-Player triggern kein WATCHING."""
+        states = [{"entity_id": "media_player.kuechen_radio", "state": "playing"}]
+        assert engine._check_media_playing(states) is False
+
     def test_check_in_call(self, engine):
         states = [{"entity_id": "binary_sensor.mic_active", "state": "on"}]
         assert engine._check_in_call(states) is True
