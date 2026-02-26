@@ -88,7 +88,7 @@ class ContextBuilder:
         # Weather-Warning-Cache (aendert sich selten, spart Iteration pro Request)
         self._weather_cache: list[str] = []
         self._weather_cache_ts: float = 0.0
-        _WEATHER_CACHE_TTL = 300.0  # 5 Minuten
+        self._WEATHER_CACHE_TTL = 300.0  # 5 Minuten
 
     def set_semantic_memory(self, semantic: SemanticMemory):
         """Setzt die Referenz zum Semantic Memory."""
