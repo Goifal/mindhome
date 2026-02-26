@@ -5285,6 +5285,7 @@ class AssistantBrain(BrainCallbacksMixin):
             "was ist los", "was tut sich",
             "morgen briefing", "morgenbriefing",
             "abendbriefing", "abend briefing",
+            "hausstatus", "haus-status", "haus status",
         ]
         return any(kw in t for kw in _keywords)
 
