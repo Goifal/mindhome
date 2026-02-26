@@ -214,7 +214,11 @@ class RoutineEngine:
 
         for name, date_str in birthdays.items():
             # Format: "YYYY-MM-DD" oder "MM-DD"
-            bday = date_str[-5:] if len(date_str) > 5 else date_str
+            try:
+                parsed_date = datetime.strptime(date_str, "%Y-%m-%d")
+                bday = parsed_date.strftime("%m-%d")
+            except (ValueError, TypeError):
+                bday = date_str[-5:] if len(date_str) > 5 else date_str
             if bday == today:
                 if name.lower() == (person or "").lower():
                     try:

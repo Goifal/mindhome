@@ -17,7 +17,7 @@ from datetime import datetime, timezone, timedelta
 from flask import Blueprint, request, jsonify, Response, make_response, send_from_directory, redirect
 from sqlalchemy import func as sa_func, text
 
-from db import get_db_session, get_db_readonly, get_db
+from db import get_db_session, get_db_readonly
 from helpers import (
     get_ha_timezone, local_now, utc_iso, sanitize_input, sanitize_dict,
     audit_log, is_debug_mode, set_debug_mode, get_setting, set_setting,
@@ -71,8 +71,7 @@ def _domain_manager():
 @users_bp.route("/api/users", methods=["GET"])
 def api_get_users():
     """Get all users."""
-    session = get_db()
-    try:
+    with get_db_session() as session:
         users = session.query(User).filter_by(is_active=True).all()
         return jsonify([{
             "id": u.id,
@@ -82,8 +81,6 @@ def api_get_users():
             "language": u.language,
             "created_at": u.created_at.isoformat()
         } for u in users])
-    finally:
-        session.close()
 
 
 
@@ -93,8 +90,7 @@ def api_create_user():
     data = request.get_json() or {}
     if not data.get("name"):
         return jsonify({"error": "Name ist erforderlich"}), 400
-    session = get_db()
-    try:
+    with get_db_session() as session:
         try:
             role = UserRole(data.get("role", "user"))
         except ValueError:
@@ -121,8 +117,6 @@ def api_create_user():
         session.commit()
 
         return jsonify({"id": user.id, "name": user.name}), 201
-    finally:
-        session.close()
 
 
 
@@ -130,8 +124,7 @@ def api_create_user():
 def api_update_user(user_id):
     """Update a user."""
     data = request.json or {}
-    session = get_db()
-    try:
+    with get_db_session() as session:
         user = session.get(User, user_id)
         if not user:
             return jsonify({"error": "User not found"}), 404
@@ -150,22 +143,17 @@ def api_update_user(user_id):
 
         session.commit()
         return jsonify({"id": user.id, "name": user.name})
-    finally:
-        session.close()
 
 
 
 @users_bp.route("/api/users/<int:user_id>", methods=["DELETE"])
 def api_delete_user(user_id):
     """Delete a user (soft delete)."""
-    session = get_db()
-    try:
+    with get_db_session() as session:
         user = session.get(User, user_id)
         if not user:
             return jsonify({"error": "User not found"}), 404
         user.is_active = False
         session.commit()
         return jsonify({"success": True})
-    finally:
-        session.close()
 

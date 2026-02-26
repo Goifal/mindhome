@@ -53,8 +53,8 @@ def _get_config_rooms() -> list[str]:
             with open(rp_file) as f:
                 data = yaml.safe_load(f)
             return sorted(data.get("rooms", {}).keys())
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("Config-Rooms nicht ladbar: %s", e)
     return []
 
 
@@ -1875,7 +1875,8 @@ class FunctionExecutor:
         # Geraete aus MindHome DB laden (enthaelt Raum-Zuordnung)
         try:
             devices = await self.ha.search_devices(domain="light", room=room_filter)
-        except Exception:
+        except Exception as e:
+            logger.debug("MindHome light-devices nicht ladbar: %s", e)
             devices = None
 
         # HA-States fuer aktuellen Status laden
@@ -1943,7 +1944,8 @@ class FunctionExecutor:
 
         try:
             devices = await self.ha.search_devices(domain="cover", room=room_filter)
-        except Exception:
+        except Exception as e:
+            logger.debug("MindHome cover-devices nicht ladbar: %s", e)
             devices = None
 
         states = await self.ha.get_states()
@@ -2048,7 +2050,8 @@ class FunctionExecutor:
 
         try:
             devices = await self.ha.search_devices(domain="climate", room=room_filter)
-        except Exception:
+        except Exception as e:
+            logger.debug("MindHome climate-devices nicht ladbar: %s", e)
             devices = None
 
         states = await self.ha.get_states()
@@ -2116,7 +2119,8 @@ class FunctionExecutor:
 
         try:
             devices = await self.ha.search_devices(domain="switch", room=room_filter)
-        except Exception:
+        except Exception as e:
+            logger.debug("MindHome switch-devices nicht ladbar: %s", e)
             devices = None
 
         states = await self.ha.get_states()
@@ -2385,7 +2389,8 @@ class FunctionExecutor:
                     if s.get("entity_id", "").startswith("cover.")
                 ]
                 logger.warning("set_cover: Kein Cover fuer room='%s' gefunden. Verfuegbare Covers: %s", room, available)
-            except Exception:
+            except Exception as e:
+                logger.debug("Cover-Verfuegbarkeit nicht ladbar: %s", e)
                 available = []
             return {"success": False, "message": f"Kein Rollladen in '{room}' gefunden. Verfuegbar: {', '.join(available) if available else 'keine'}"}
 
@@ -3570,7 +3575,8 @@ class FunctionExecutor:
                 if not open_items and not done_items:
                     return {"success": True, "message": "Die Einkaufsliste ist leer."}
                 return {"success": True, "message": "\n".join(parts)}
-            except Exception:
+            except Exception as e:
+                logger.debug("Einkaufsliste Fehler: %s", e)
                 return {"success": False, "message": "Einkaufsliste nicht verfuegbar"}
 
         elif action == "complete":
@@ -4266,8 +4272,8 @@ class FunctionExecutor:
             try:
                 detection = await brain.activity.detect_activity()
                 status["activity"] = detection.get("activity", "unknown")
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Activity-Detection fehlgeschlagen: %s", e)
 
             return {"success": True, "message": str(status), **status}
         except Exception as e:

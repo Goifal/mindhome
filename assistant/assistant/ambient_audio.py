@@ -290,7 +290,11 @@ class AmbientAudioClassifier:
             self._event_history = self._event_history[-self._max_history:]
 
         # Redis persistieren (async)
-        asyncio.create_task(self._save_history())
+        _t = asyncio.create_task(self._save_history())
+        _t.add_done_callback(
+            lambda t: logger.warning("_save_history fehlgeschlagen: %s", t.exception())
+            if t.exception() else None
+        )
 
         # Callback ausfuehren (ProactiveManager benachrichtigen)
         if self._notify_callback:

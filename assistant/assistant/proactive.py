@@ -884,7 +884,11 @@ class ProactiveManager:
                 queue_len = len(self._batch_queue)
 
             if should_flush:
-                asyncio.create_task(self._flush_batch())
+                _t = asyncio.create_task(self._flush_batch())
+                _t.add_done_callback(
+                    lambda t: logger.warning("_flush_batch fehlgeschlagen: %s", t.exception())
+                    if t.exception() else None
+                )
             logger.debug("%s-Meldung gequeued [%s]: %s (%d in Queue, %d MEDIUM)",
                          urgency.upper(), event_type, description,
                          queue_len, medium_items)
@@ -1436,10 +1440,14 @@ class ProactiveManager:
 
         while self._running:
             try:
-                if self._batch_queue:
+                # F-033: Lock fuer shared batch_queue Zugriff
+                async with self._state_lock:
+                    has_items = bool(self._batch_queue)
                     has_medium = any(
                         b.get("urgency") == MEDIUM for b in self._batch_queue
-                    )
+                    ) if has_items else False
+
+                if has_items:
                     # MEDIUM sofort flushen wenn Timer abgelaufen
                     if has_medium and timer >= medium_check_interval:
                         await self._flush_batch()
@@ -1484,9 +1492,11 @@ class ProactiveManager:
         if activity_result["suppress"]:
             logger.info("Batch unterdrueckt: Aktivitaet=%s", activity_result["activity"])
             # MEDIUM zurueck in Queue (sollen nicht verloren gehen)
+            # F-033: Lock fuer atomaren batch_queue Zugriff nach await
             medium_items = [i for i in items if i.get("urgency") == MEDIUM]
             if medium_items:
-                self._batch_queue = medium_items + self._batch_queue
+                async with self._state_lock:
+                    self._batch_queue = medium_items + self._batch_queue
             return
 
         # Zusammenfassung generieren

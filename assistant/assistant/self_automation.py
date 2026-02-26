@@ -992,7 +992,11 @@ REGELN:
         self._daily_count += 1
         if self._redis:
             import asyncio
-            asyncio.create_task(self._save_daily_count())
+            _t = asyncio.create_task(self._save_daily_count())
+            _t.add_done_callback(
+                lambda t: logger.warning("_save_daily_count fehlgeschlagen: %s", t.exception())
+                if t.exception() else None
+            )
 
     async def _save_daily_count(self):
         """Speichert den Tages-Zaehler in Redis."""

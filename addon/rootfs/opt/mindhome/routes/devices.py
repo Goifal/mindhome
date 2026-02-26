@@ -17,7 +17,7 @@ from datetime import datetime, timezone, timedelta
 from flask import Blueprint, request, jsonify, Response, make_response, send_from_directory, redirect
 from sqlalchemy import func as sa_func, text
 
-from db import get_db_session, get_db_readonly, get_db
+from db import get_db_session, get_db_readonly
 from helpers import (
     get_ha_timezone, local_now, utc_iso, sanitize_input, sanitize_dict,
     audit_log, is_debug_mode, set_debug_mode, get_setting, set_setting,
@@ -94,8 +94,7 @@ def _cleanup_device_references(session, device_id):
 @devices_bp.route("/api/devices", methods=["GET"])
 def api_get_devices():
     """Get all tracked devices with live status."""
-    session = get_db()
-    try:
+    with get_db_session() as session:
         devices = session.query(Device).all()
         result = []
         for d in devices:
@@ -127,8 +126,6 @@ def api_get_devices():
 
             result.append(dev_data)
         return jsonify(result)
-    finally:
-        session.close()
 
 
 
@@ -146,8 +143,7 @@ def api_search_devices():
 
     # Ohne Filter: alle tracked Devices zurueckgeben (fuer Entity-Picker UI)
 
-    session = get_db()
-    try:
+    with get_db_session() as session:
         query = session.query(Device).filter(Device.is_tracked == True)
 
         if domain_name:
@@ -191,39 +187,35 @@ def api_search_devices():
                 "is_controllable": d.is_controllable,
             })
         return jsonify(result)
-    finally:
-        session.close()
 
 
 @devices_bp.route("/api/devices/<int:device_id>", methods=["PUT"])
 def api_update_device(device_id):
     """Update device settings."""
     data = request.json or {}
-    session = get_db()
-    try:
-        device = session.get(Device, device_id)
-        if not device:
-            return jsonify({"error": "Device not found"}), 404
+    with get_db_session() as session:
+        try:
+            device = session.get(Device, device_id)
+            if not device:
+                return jsonify({"error": "Device not found"}), 404
 
-        if "room_id" in data:
-            device.room_id = data["room_id"]
-        if "is_tracked" in data:
-            device.is_tracked = data["is_tracked"]
-        if "is_controllable" in data:
-            device.is_controllable = data["is_controllable"]
-        if "name" in data:
-            device.name = data["name"]
-        if "domain_id" in data:
-            device.domain_id = data["domain_id"]
+            if "room_id" in data:
+                device.room_id = data["room_id"]
+            if "is_tracked" in data:
+                device.is_tracked = data["is_tracked"]
+            if "is_controllable" in data:
+                device.is_controllable = data["is_controllable"]
+            if "name" in data:
+                device.name = data["name"]
+            if "domain_id" in data:
+                device.domain_id = data["domain_id"]
 
-        session.commit()
-        return jsonify({"id": device.id, "name": device.name})
-    except Exception as e:
-        session.rollback()
-        logger.error("Device update failed: %s", e)
-        return jsonify({"error": "Update failed"}), 500
-    finally:
-        session.close()
+            session.commit()
+            return jsonify({"id": device.id, "name": device.name})
+        except Exception as e:
+            session.rollback()
+            logger.error("Device update failed: %s", e)
+            return jsonify({"error": "Update failed"}), 500
 
 
 
@@ -231,8 +223,7 @@ def api_update_device(device_id):
 def api_bulk_update_devices():
     """Bulk update multiple devices at once."""
     data = request.json or {}
-    session = get_db()
-    try:
+    with get_db_session() as session:
         device_ids = data.get("device_ids", [])
         # Support both flat and nested format
         updates = data.get("updates", {})
@@ -259,8 +250,6 @@ def api_bulk_update_devices():
 
         session.commit()
         return jsonify({"success": True, "updated": updated})
-    finally:
-        session.close()
 
 
 
@@ -268,49 +257,45 @@ def api_bulk_update_devices():
 def api_bulk_delete_devices():
     """Bulk delete multiple devices."""
     data = request.json or {}
-    session = get_db()
-    try:
-        device_ids = data.get("device_ids", [])
-        if not device_ids:
-            return jsonify({"error": "No devices selected"}), 400
+    with get_db_session() as session:
+        try:
+            device_ids = data.get("device_ids", [])
+            if not device_ids:
+                return jsonify({"error": "No devices selected"}), 400
 
-        deleted = 0
-        for did in device_ids:
-            device = session.get(Device, did)
-            if device:
-                _cleanup_device_references(session, did)
-                session.delete(device)
-                deleted += 1
+            deleted = 0
+            for did in device_ids:
+                device = session.get(Device, did)
+                if device:
+                    _cleanup_device_references(session, did)
+                    session.delete(device)
+                    deleted += 1
 
-        session.commit()
-        return jsonify({"success": True, "deleted": deleted})
-    except Exception as e:
-        session.rollback()
-        logger.error(f"Bulk delete error: {e}")
-        return jsonify({"error": "Fehler beim Loeschen"}), 500
-    finally:
-        session.close()
+            session.commit()
+            return jsonify({"success": True, "deleted": deleted})
+        except Exception as e:
+            session.rollback()
+            logger.error(f"Bulk delete error: {e}")
+            return jsonify({"error": "Fehler beim Loeschen"}), 500
 
 
 
 @devices_bp.route("/api/devices/<int:device_id>", methods=["DELETE"])
 def api_delete_device(device_id):
     """Delete a device."""
-    session = get_db()
-    try:
-        device = session.get(Device, device_id)
-        if not device:
-            return jsonify({"error": "Device not found"}), 404
-        _cleanup_device_references(session, device_id)
-        session.delete(device)
-        session.commit()
-        return jsonify({"success": True})
-    except Exception as e:
-        session.rollback()
-        logger.error(f"Delete device {device_id} error: {e}")
-        return jsonify({"error": "Fehler beim Loeschen"}), 500
-    finally:
-        session.close()
+    with get_db_session() as session:
+        try:
+            device = session.get(Device, device_id)
+            if not device:
+                return jsonify({"error": "Device not found"}), 404
+            _cleanup_device_references(session, device_id)
+            session.delete(device)
+            session.commit()
+            return jsonify({"success": True})
+        except Exception as e:
+            session.rollback()
+            logger.error(f"Delete device {device_id} error: {e}")
+            return jsonify({"error": "Fehler beim Loeschen"}), 500
 
 
 
@@ -350,8 +335,7 @@ def api_discover_devices():
 def api_import_discovered():
     """Import selected discovered devices into MindHome."""
     data = request.json or {}
-    session = get_db()
-    try:
+    with get_db_session() as session:
         imported_count = 0
         skipped_count = 0
         selected_ids = data.get("selected_entities", [])
@@ -450,8 +434,6 @@ def api_import_discovered():
             "skipped": skipped_count,
             "message": f"{imported_count} importiert, {skipped_count} übersprungen (bereits vorhanden)"
         })
-    finally:
-        session.close()
 
 
 
@@ -459,8 +441,7 @@ def api_import_discovered():
 def api_get_all_ha_entities():
     """Get all HA entities for manual device search."""
     states = _ha().get_states() or []
-    session = get_db()
-    try:
+    with get_db_session() as session:
         # Get already imported entity IDs
         imported_ids = set(
             d.ha_entity_id for d in session.query(Device.ha_entity_id).all()
@@ -486,8 +467,6 @@ def api_get_all_ha_entities():
             })
 
         return jsonify({"entities": entities, "total": len(entities)})
-    finally:
-        session.close()
 
 
 
@@ -495,8 +474,7 @@ def api_get_all_ha_entities():
 def api_manual_add_device():
     """Manually add a device by entity ID."""
     data = request.json or {}
-    session = get_db()
-    try:
+    with get_db_session() as session:
         entity_id = data.get("entity_id", "").strip()
         if not entity_id:
             return jsonify({"error": "Entity ID is required"}), 400
@@ -546,8 +524,6 @@ def api_manual_add_device():
         session.commit()
 
         return jsonify({"success": True, "id": device.id, "name": device.name}), 201
-    finally:
-        session.close()
 
 
 

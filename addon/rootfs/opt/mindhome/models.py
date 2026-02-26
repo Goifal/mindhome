@@ -2228,7 +2228,9 @@ def run_migrations(engine):
                             {"v": str(migration["version"])}
                         )
                 except Exception as e:
-                    logger.warning(f"Version update warning: {e}")
+                    logger.error(f"Version update failed for v{migration['version']}: {e}")
+                    session.rollback()
+                    break
 
                 session.commit()
                 logger.info(f"Migration v{migration['version']} complete")

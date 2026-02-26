@@ -18,7 +18,7 @@ from datetime import datetime, timezone, timedelta
 from flask import Blueprint, request, jsonify, Response, make_response, send_from_directory, redirect
 from sqlalchemy import func as sa_func, text
 
-from db import get_db_session, get_db_readonly, get_db
+from db import get_db_session, get_db_readonly
 from helpers import (
     get_ha_timezone, local_now, utc_iso, sanitize_input, sanitize_dict,
     audit_log, is_debug_mode, set_debug_mode, get_setting, set_setting,
@@ -72,8 +72,7 @@ def _domain_manager():
 @patterns_bp.route("/api/patterns", methods=["GET"])
 def api_get_patterns():
     """Get all learned patterns with optional filters."""
-    session = get_db()
-    try:
+    with get_db_session() as session:
         lang = get_language()
         status_filter = request.args.get("status")
         pattern_type = request.args.get("type")
@@ -155,8 +154,6 @@ def api_get_patterns():
             "limit": limit,
             "has_more": offset + limit < total
         })
-    finally:
-        session.close()
 
 
 
@@ -164,42 +161,39 @@ def api_get_patterns():
 def api_update_pattern(pattern_id):
     """Update pattern status (activate/deactivate/disable)."""
     data = request.json or {}
-    session = get_db()
-    try:
-        pattern = session.get(LearnedPattern, pattern_id)
-        if not pattern:
-            return jsonify({"error": "Pattern not found"}), 404
+    with get_db_session() as session:
+        try:
+            pattern = session.get(LearnedPattern, pattern_id)
+            if not pattern:
+                return jsonify({"error": "Pattern not found"}), 404
 
-        if "is_active" in data:
-            pattern.is_active = data["is_active"]
-        # Fix #14: Added "insight" and "rejected" to allowed status values
-        if "status" in data and data["status"] in ("observed", "suggested", "active", "disabled", "insight", "rejected"):
-            pattern.status = data["status"]
-            if data["status"] in ("disabled", "rejected"):
-                pattern.is_active = False
-                if data["status"] == "rejected":
-                    pattern.rejected_at = datetime.now(timezone.utc)
-                    pattern.times_rejected = (pattern.times_rejected or 0) + 1
-            elif data["status"] in ("observed", "suggested", "active", "insight"):
-                pattern.is_active = True
+            if "is_active" in data:
+                pattern.is_active = data["is_active"]
+            # Fix #14: Added "insight" and "rejected" to allowed status values
+            if "status" in data and data["status"] in ("observed", "suggested", "active", "disabled", "insight", "rejected"):
+                pattern.status = data["status"]
+                if data["status"] in ("disabled", "rejected"):
+                    pattern.is_active = False
+                    if data["status"] == "rejected":
+                        pattern.rejected_at = datetime.now(timezone.utc)
+                        pattern.times_rejected = (pattern.times_rejected or 0) + 1
+                elif data["status"] in ("observed", "suggested", "active", "insight"):
+                    pattern.is_active = True
 
-        pattern.updated_at = datetime.now(timezone.utc)
-        session.commit()
-        return jsonify({"success": True, "id": pattern.id, "status": pattern.status})
-    except Exception as e:
-        session.rollback()
-        logger.error("Pattern update failed: %s", e)
-        return jsonify({"error": "Update failed"}), 500
-    finally:
-        session.close()
+            pattern.updated_at = datetime.now(timezone.utc)
+            session.commit()
+            return jsonify({"success": True, "id": pattern.id, "status": pattern.status})
+        except Exception as e:
+            session.rollback()
+            logger.error("Pattern update failed: %s", e)
+            return jsonify({"error": "Update failed"}), 500
 
 
 
 @patterns_bp.route("/api/patterns/<int:pattern_id>", methods=["DELETE"])
 def api_delete_pattern(pattern_id):
     """Delete a pattern permanently."""
-    session = get_db()
-    try:
+    with get_db_session() as session:
         pattern = session.get(LearnedPattern, pattern_id)
         if not pattern:
             return jsonify({"error": "Pattern not found"}), 404
@@ -209,8 +203,6 @@ def api_delete_pattern(pattern_id):
         session.delete(pattern)
         session.commit()
         return jsonify({"success": True})
-    finally:
-        session.close()
 
 
 
@@ -228,48 +220,45 @@ def api_trigger_analysis():
 @patterns_bp.route("/api/patterns/reclassify-insights", methods=["POST"])
 def api_reclassify_insights():
     """Reclassify existing sensor→sensor patterns as 'insight'."""
-    session = get_db()
-    try:
-        NON_ACTIONABLE = ("sensor.", "binary_sensor.", "sun.", "weather.", "zone.", "person.", "device_tracker.", "calendar.", "proximity.")
-        patterns = session.query(LearnedPattern).filter(
-            LearnedPattern.status == "observed",
-            LearnedPattern.is_active == True
-        ).all()
-        reclassified = 0
-        for p in patterns:
-            pd = p.pattern_data or {}
-            is_sensor_pair = False
-            if p.pattern_type == "event_chain":
-                t_eid = pd.get("trigger_entity", "")
-                a_eid = pd.get("action_entity", "")
-                if (any(t_eid.startswith(x) for x in NON_ACTIONABLE) and
-                    any(a_eid.startswith(x) for x in NON_ACTIONABLE)):
-                    is_sensor_pair = True
-            elif p.pattern_type == "correlation":
-                c_eid = pd.get("condition_entity", "")
-                r_eid = pd.get("correlated_entity", "")
-                if (any(c_eid.startswith(x) for x in NON_ACTIONABLE) and
-                    any(r_eid.startswith(x) for x in NON_ACTIONABLE)):
-                    is_sensor_pair = True
-            if is_sensor_pair:
-                p.status = "insight"
-                reclassified += 1
-        session.commit()
-        return jsonify({"success": True, "reclassified": reclassified})
-    except Exception as e:
-        session.rollback()
-        logger.error("Operation failed: %s", e)
-        return jsonify({"error": "Operation failed"}), 500
-    finally:
-        session.close()
+    with get_db_session() as session:
+        try:
+            NON_ACTIONABLE = ("sensor.", "binary_sensor.", "sun.", "weather.", "zone.", "person.", "device_tracker.", "calendar.", "proximity.")
+            patterns = session.query(LearnedPattern).filter(
+                LearnedPattern.status == "observed",
+                LearnedPattern.is_active == True
+            ).all()
+            reclassified = 0
+            for p in patterns:
+                pd = p.pattern_data or {}
+                is_sensor_pair = False
+                if p.pattern_type == "event_chain":
+                    t_eid = pd.get("trigger_entity", "")
+                    a_eid = pd.get("action_entity", "")
+                    if (any(t_eid.startswith(x) for x in NON_ACTIONABLE) and
+                        any(a_eid.startswith(x) for x in NON_ACTIONABLE)):
+                        is_sensor_pair = True
+                elif p.pattern_type == "correlation":
+                    c_eid = pd.get("condition_entity", "")
+                    r_eid = pd.get("correlated_entity", "")
+                    if (any(c_eid.startswith(x) for x in NON_ACTIONABLE) and
+                        any(r_eid.startswith(x) for x in NON_ACTIONABLE)):
+                        is_sensor_pair = True
+                if is_sensor_pair:
+                    p.status = "insight"
+                    reclassified += 1
+            session.commit()
+            return jsonify({"success": True, "reclassified": reclassified})
+        except Exception as e:
+            session.rollback()
+            logger.error("Operation failed: %s", e)
+            return jsonify({"error": "Operation failed"}), 500
 
 
 
 @patterns_bp.route("/api/state-history", methods=["GET"])
 def api_get_state_history():
     """Get state history events with filters."""
-    session = get_db()
-    try:
+    with get_db_session() as session:
         entity_id = request.args.get("entity_id")
         device_id = request.args.get("device_id", type=int)
         hours = request.args.get("hours", 24, type=int)
@@ -297,17 +286,13 @@ def api_get_state_history():
             "context": e.context,
             "created_at": e.created_at.isoformat() if e.created_at else None,
         } for e in events])
-    finally:
-        session.close()
 
 
 
 @patterns_bp.route("/api/state-history/count", methods=["GET"])
 def api_state_history_count():
     """Get total event count and date range."""
-    session = get_db()
-    try:
-
+    with get_db_session() as session:
         total = session.query(sa_func.count(StateHistory.id)).scalar() or 0
         oldest = session.query(sa_func.min(StateHistory.created_at)).scalar()
         newest = session.query(sa_func.max(StateHistory.created_at)).scalar()
@@ -317,18 +302,13 @@ def api_state_history_count():
             "oldest_event": oldest.isoformat() if oldest else None,
             "newest_event": newest.isoformat() if newest else None,
         })
-    finally:
-        session.close()
 
 
 
 @patterns_bp.route("/api/stats/learning", methods=["GET"])
 def api_learning_stats():
     """Get learning progress statistics for dashboard."""
-    session = get_db()
-    try:
-
-
+    with get_db_session() as session:
         # Event counts
         total_events = session.query(sa_func.count(StateHistory.id)).scalar() or 0
         today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
@@ -401,8 +381,6 @@ def api_learning_stats():
             } for p in top_patterns],
             "learning_speed": get_setting("learning_speed") or "normal",
         })
-    finally:
-        session.close()
 
 
 
@@ -410,55 +388,50 @@ def api_learning_stats():
 def api_reject_pattern(pattern_id):
     """Reject a pattern and archive it with reason."""
     data = request.json or {}
-    session = get_db()
-    try:
-        pattern = session.get(LearnedPattern, pattern_id)
-        if not pattern:
-            return jsonify({"error": "Not found"}), 404
-        pattern.status = "rejected"
-        pattern.is_active = False
-        pattern.rejection_reason = data.get("reason", "unwanted")
-        pattern.rejected_at = datetime.now(timezone.utc)
-        pattern.times_rejected = (pattern.times_rejected or 0) + 1
-        session.commit()
-        return jsonify({"success": True})
-    except Exception as e:
-        session.rollback()
-        logger.error("Operation failed: %s", e)
-        return jsonify({"error": "Operation failed"}), 500
-    finally:
-        session.close()
+    with get_db_session() as session:
+        try:
+            pattern = session.get(LearnedPattern, pattern_id)
+            if not pattern:
+                return jsonify({"error": "Not found"}), 404
+            pattern.status = "rejected"
+            pattern.is_active = False
+            pattern.rejection_reason = data.get("reason", "unwanted")
+            pattern.rejected_at = datetime.now(timezone.utc)
+            pattern.times_rejected = (pattern.times_rejected or 0) + 1
+            session.commit()
+            return jsonify({"success": True})
+        except Exception as e:
+            session.rollback()
+            logger.error("Operation failed: %s", e)
+            return jsonify({"error": "Operation failed"}), 500
 
 
 
 @patterns_bp.route("/api/patterns/reactivate/<int:pattern_id>", methods=["PUT"])
 def api_reactivate_pattern(pattern_id):
     """Reactivate a rejected pattern."""
-    session = get_db()
-    try:
-        pattern = session.get(LearnedPattern, pattern_id)
-        if not pattern:
-            return jsonify({"error": "Not found"}), 404
-        pattern.status = "suggested"
-        pattern.is_active = True
-        pattern.rejection_reason = None
-        pattern.rejected_at = None
-        session.commit()
-        return jsonify({"success": True})
-    except Exception as e:
-        session.rollback()
-        logger.error("Operation failed: %s", e)
-        return jsonify({"error": "Operation failed"}), 500
-    finally:
-        session.close()
+    with get_db_session() as session:
+        try:
+            pattern = session.get(LearnedPattern, pattern_id)
+            if not pattern:
+                return jsonify({"error": "Not found"}), 404
+            pattern.status = "suggested"
+            pattern.is_active = True
+            pattern.rejection_reason = None
+            pattern.rejected_at = None
+            session.commit()
+            return jsonify({"success": True})
+        except Exception as e:
+            session.rollback()
+            logger.error("Operation failed: %s", e)
+            return jsonify({"error": "Operation failed"}), 500
 
 
 
 @patterns_bp.route("/api/patterns/rejected", methods=["GET"])
 def api_get_rejected_patterns():
     """Get all rejected patterns with pagination."""
-    session = get_db()
-    try:
+    with get_db_session() as session:
         query = session.query(LearnedPattern).filter_by(status="rejected").order_by(
             LearnedPattern.rejected_at.desc()
         )
@@ -480,8 +453,6 @@ def api_get_rejected_patterns():
             "limit": limit,
             "has_more": offset + limit < total
         })
-    finally:
-        session.close()
 
 
 
@@ -489,8 +460,7 @@ def api_get_rejected_patterns():
 def api_pattern_test_mode(pattern_id):
     """Toggle test/simulation mode for a pattern."""
     data = request.json or {}
-    session = get_db()
-    try:
+    with get_db_session() as session:
         pattern = session.get(LearnedPattern, pattern_id)
         if not pattern:
             return jsonify({"error": "Not found"}), 404
@@ -499,24 +469,19 @@ def api_pattern_test_mode(pattern_id):
             pattern.test_results = []
         session.commit()
         return jsonify({"success": True, "test_mode": pattern.test_mode})
-    finally:
-        session.close()
 
 
 
 @patterns_bp.route("/api/pattern-exclusions", methods=["GET"])
 def api_get_exclusions():
     """Get all pattern exclusions."""
-    session = get_db()
-    try:
+    with get_db_session() as session:
         exclusions = session.query(PatternExclusion).all()
         return jsonify([{
             "id": e.id, "type": e.exclusion_type,
             "entity_a": e.entity_a, "entity_b": e.entity_b,
             "reason": e.reason,
         } for e in exclusions])
-    finally:
-        session.close()
 
 
 
@@ -524,46 +489,40 @@ def api_get_exclusions():
 def api_create_exclusion():
     """Create a pattern exclusion rule."""
     data = request.json or {}
-    session = get_db()
-    try:
-        excl = PatternExclusion(
-            exclusion_type=data.get("type", "device_pair"),
-            entity_a=data.get("entity_a", ""), entity_b=data.get("entity_b", ""),
-            reason=data.get("reason"), created_by=1
-        )
-        session.add(excl)
-        session.commit()
-        return jsonify({"success": True, "id": excl.id}), 201
-    except Exception as e:
-        session.rollback()
-        logger.error("Operation failed: %s", e)
-        return jsonify({"error": "Operation failed"}), 500
-    finally:
-        session.close()
+    with get_db_session() as session:
+        try:
+            excl = PatternExclusion(
+                exclusion_type=data.get("type", "device_pair"),
+                entity_a=data.get("entity_a", ""), entity_b=data.get("entity_b", ""),
+                reason=data.get("reason"), created_by=1
+            )
+            session.add(excl)
+            session.commit()
+            return jsonify({"success": True, "id": excl.id}), 201
+        except Exception as e:
+            session.rollback()
+            logger.error("Operation failed: %s", e)
+            return jsonify({"error": "Operation failed"}), 500
 
 
 
 @patterns_bp.route("/api/pattern-exclusions/<int:excl_id>", methods=["DELETE"])
 def api_delete_exclusion(excl_id):
     """Delete a pattern exclusion."""
-    session = get_db()
-    try:
+    with get_db_session() as session:
         excl = session.get(PatternExclusion, excl_id)
         if not excl:
             return jsonify({"error": "Exclusion not found"}), 404
         session.delete(excl)
         session.commit()
         return jsonify({"success": True})
-    finally:
-        session.close()
 
 
 
 @patterns_bp.route("/api/manual-rules", methods=["GET"])
 def api_get_manual_rules():
     """Get all manual rules."""
-    session = get_db()
-    try:
+    with get_db_session() as session:
         rules = session.query(ManualRule).order_by(ManualRule.created_at.desc()).all()
         return jsonify([{
             "id": r.id, "name": r.name,
@@ -574,8 +533,6 @@ def api_get_manual_rules():
             "execution_count": r.execution_count,
             "last_executed_at": r.last_executed_at.isoformat() if r.last_executed_at else None,
         } for r in rules])
-    finally:
-        session.close()
 
 
 
@@ -586,28 +543,26 @@ def api_create_manual_rule():
     for field in ("trigger_entity", "trigger_state", "action_entity"):
         if field not in data:
             return jsonify({"error": f"Feld '{field}' fehlt"}), 400
-    session = get_db()
-    try:
-        rule = ManualRule(
-            name=data.get("name", "Rule"),
-            trigger_entity=data["trigger_entity"],
-            trigger_state=data["trigger_state"],
-            action_entity=data["action_entity"],
-            action_service=data.get("action_service", "turn_on"),
-            action_data=data.get("action_data"),
-            conditions=data.get("conditions"),
-            delay_seconds=data.get("delay_seconds", 0),
-            is_active=True, created_by=1
-        )
-        session.add(rule)
-        session.commit()
-        return jsonify({"success": True, "id": rule.id}), 201
-    except Exception as e:
-        session.rollback()
-        logger.error("Operation failed: %s", e)
-        return jsonify({"error": "Operation failed"}), 500
-    finally:
-        session.close()
+    with get_db_session() as session:
+        try:
+            rule = ManualRule(
+                name=data.get("name", "Rule"),
+                trigger_entity=data["trigger_entity"],
+                trigger_state=data["trigger_state"],
+                action_entity=data["action_entity"],
+                action_service=data.get("action_service", "turn_on"),
+                action_data=data.get("action_data"),
+                conditions=data.get("conditions"),
+                delay_seconds=data.get("delay_seconds", 0),
+                is_active=True, created_by=1
+            )
+            session.add(rule)
+            session.commit()
+            return jsonify({"success": True, "id": rule.id}), 201
+        except Exception as e:
+            session.rollback()
+            logger.error("Operation failed: %s", e)
+            return jsonify({"error": "Operation failed"}), 500
 
 
 
@@ -615,120 +570,111 @@ def api_create_manual_rule():
 def api_update_manual_rule(rule_id):
     """Update a manual rule."""
     data = request.json or {}
-    session = get_db()
-    try:
-        rule = session.get(ManualRule, rule_id)
-        if not rule:
-            return jsonify({"error": "Not found"}), 404
-        for key in ["name", "trigger_entity", "trigger_state", "action_entity",
-                     "action_service", "action_data", "conditions", "delay_seconds", "is_active"]:
-            if key in data:
-                setattr(rule, key, data[key])
-        session.commit()
-        return jsonify({"success": True})
-    except Exception as e:
-        session.rollback()
-        logger.error("Operation failed: %s", e)
-        return jsonify({"error": "Operation failed"}), 500
-    finally:
-        session.close()
+    with get_db_session() as session:
+        try:
+            rule = session.get(ManualRule, rule_id)
+            if not rule:
+                return jsonify({"error": "Not found"}), 404
+            for key in ["name", "trigger_entity", "trigger_state", "action_entity",
+                         "action_service", "action_data", "conditions", "delay_seconds", "is_active"]:
+                if key in data:
+                    setattr(rule, key, data[key])
+            session.commit()
+            return jsonify({"success": True})
+        except Exception as e:
+            session.rollback()
+            logger.error("Operation failed: %s", e)
+            return jsonify({"error": "Operation failed"}), 500
 
 
 
 @patterns_bp.route("/api/manual-rules/<int:rule_id>", methods=["DELETE"])
 def api_delete_manual_rule(rule_id):
     """Delete a manual rule."""
-    session = get_db()
-    try:
+    with get_db_session() as session:
         rule = session.get(ManualRule, rule_id)
         if not rule:
             return jsonify({"error": "Rule not found"}), 404
         session.delete(rule)
         session.commit()
         return jsonify({"success": True})
-    finally:
-        session.close()
 
 
 
 @patterns_bp.route("/api/patterns/conflicts", methods=["GET"])
 def api_pattern_conflicts():
     """Detect conflicting patterns."""
-    session = get_db()
-    try:
-        active = session.query(LearnedPattern).filter_by(is_active=True).all()
-        conflicts = []
-        for i, p1 in enumerate(active):
-            for p2 in active[i+1:]:
-                pd1 = p1.pattern_data or {}
-                pd2 = p2.pattern_data or {}
-                # Same entity, different target state, overlapping time
-                e1 = pd1.get("entity_id") or (p1.action_definition or {}).get("entity_id")
-                e2 = pd2.get("entity_id") or (p2.action_definition or {}).get("entity_id")
-                if e1 and e1 == e2:
-                    t1 = (p1.action_definition or {}).get("target_state")
-                    t2 = (p2.action_definition or {}).get("target_state")
-                    if t1 and t2 and t1 != t2:
-                        h1 = pd1.get("avg_hour")
-                        h2 = pd2.get("avg_hour")
-                        if h1 is not None and h2 is not None and abs(h1 - h2) < 1:
-                            conflicts.append({
-                                "pattern_a": {"id": p1.id, "desc": p1.description_de, "target": t1, "hour": h1},
-                                "pattern_b": {"id": p2.id, "desc": p2.description_de, "target": t2, "hour": h2},
-                                "entity": e1,
-                                "message_de": f"Konflikt: {e1} soll um ~{h1:.0f}h sowohl '{t1}' als auch '{t2}' sein",
-                                "message_en": f"Conflict: {e1} at ~{h1:.0f}h targets both '{t1}' and '{t2}'",
-                            })
-        return jsonify({"conflicts": conflicts, "total": len(conflicts)})
-    except Exception as e:
-        logger.error("Operation failed: %s", e)
-        return jsonify({"conflicts": [], "total": 0, "error": "Operation failed"}), 500
-    finally:
-        session.close()
+    with get_db_session() as session:
+        try:
+            active = session.query(LearnedPattern).filter_by(is_active=True).all()
+            conflicts = []
+            for i, p1 in enumerate(active):
+                for p2 in active[i+1:]:
+                    pd1 = p1.pattern_data or {}
+                    pd2 = p2.pattern_data or {}
+                    # Same entity, different target state, overlapping time
+                    e1 = pd1.get("entity_id") or (p1.action_definition or {}).get("entity_id")
+                    e2 = pd2.get("entity_id") or (p2.action_definition or {}).get("entity_id")
+                    if e1 and e1 == e2:
+                        t1 = (p1.action_definition or {}).get("target_state")
+                        t2 = (p2.action_definition or {}).get("target_state")
+                        if t1 and t2 and t1 != t2:
+                            h1 = pd1.get("avg_hour")
+                            h2 = pd2.get("avg_hour")
+                            if h1 is not None and h2 is not None and abs(h1 - h2) < 1:
+                                conflicts.append({
+                                    "pattern_a": {"id": p1.id, "desc": p1.description_de, "target": t1, "hour": h1},
+                                    "pattern_b": {"id": p2.id, "desc": p2.description_de, "target": t2, "hour": h2},
+                                    "entity": e1,
+                                    "message_de": f"Konflikt: {e1} soll um ~{h1:.0f}h sowohl '{t1}' als auch '{t2}' sein",
+                                    "message_en": f"Conflict: {e1} at ~{h1:.0f}h targets both '{t1}' and '{t2}'",
+                                })
+            return jsonify({"conflicts": conflicts, "total": len(conflicts)})
+        except Exception as e:
+            logger.error("Operation failed: %s", e)
+            return jsonify({"conflicts": [], "total": 0, "error": "Operation failed"}), 500
 
 
 @patterns_bp.route("/api/patterns/scenes", methods=["GET"])
 def api_detect_scenes():
     """Detect groups of devices that are often switched together → suggest scenes."""
-    session = get_db()
-    try:
-        cutoff = datetime.now(timezone.utc) - timedelta(days=30)
-        history = session.query(StateHistory).filter(
-            StateHistory.created_at > cutoff
-        ).order_by(StateHistory.created_at).all()
+    with get_db_session() as session:
+        try:
+            cutoff = datetime.now(timezone.utc) - timedelta(days=30)
+            history = session.query(StateHistory).filter(
+                StateHistory.created_at > cutoff
+            ).order_by(StateHistory.created_at).all()
 
-        # Group state changes by 30-second windows
-        windows = defaultdict(list)
-        for h in history:
-            window_key = int(h.created_at.timestamp() // 30)
-            windows[window_key].append(h.entity_id)
+            # Group state changes by 30-second windows
+            windows = defaultdict(list)
+            for h in history:
+                window_key = int(h.created_at.timestamp() // 30)
+                windows[window_key].append(h.entity_id)
 
-        # Find entity groups that appear together >= 5 times
-        pair_counts = defaultdict(int)
-        for entities in windows.values():
-            unique = sorted(set(entities))
-            if 2 <= len(unique) <= 6:
-                key = tuple(unique)
-                pair_counts[key] += 1
+            # Find entity groups that appear together >= 5 times
+            pair_counts = defaultdict(int)
+            for entities in windows.values():
+                unique = sorted(set(entities))
+                if 2 <= len(unique) <= 6:
+                    key = tuple(unique)
+                    pair_counts[key] += 1
 
-        scenes = []
-        for entities, count in sorted(pair_counts.items(), key=lambda x: -x[1]):
-            if count >= 5:
-                scenes.append({
-                    "entities": list(entities),
-                    "count": count,
-                    "message_de": f"{len(entities)} Geräte werden oft zusammen geschaltet ({count}×)",
-                    "message_en": f"{len(entities)} devices are often switched together ({count}×)",
-                })
-            if len(scenes) >= 10:
-                break
+            scenes = []
+            for entities, count in sorted(pair_counts.items(), key=lambda x: -x[1]):
+                if count >= 5:
+                    scenes.append({
+                        "entities": list(entities),
+                        "count": count,
+                        "message_de": f"{len(entities)} Geräte werden oft zusammen geschaltet ({count}×)",
+                        "message_en": f"{len(entities)} devices are often switched together ({count}×)",
+                    })
+                if len(scenes) >= 10:
+                    break
 
-        return jsonify({"scenes": scenes})
-    except Exception as e:
-        logger.error("Operation failed: %s", e)
-        return jsonify({"scenes": [], "error": "Operation failed"}), 500
-    finally:
-        session.close()
+            return jsonify({"scenes": scenes})
+        except Exception as e:
+            logger.error("Operation failed: %s", e)
+            return jsonify({"scenes": [], "error": "Operation failed"}), 500
 
 
 # ==============================================================================
@@ -754,8 +700,7 @@ LEARNING_SPEED_PRESETS = {
 @patterns_bp.route("/api/pattern-settings", methods=["GET"])
 def api_get_pattern_settings():
     """#25: Get all pattern settings with defaults for missing keys."""
-    session = get_db()
-    try:
+    with get_db_session() as session:
         existing = {ps.key: ps for ps in session.query(PatternSettings).all()}
         result = {}
         for key, defaults in PATTERN_SETTINGS_DEFAULTS.items():
@@ -787,42 +732,38 @@ def api_get_pattern_settings():
                 "active_preset": active_preset,
             }
         })
-    finally:
-        session.close()
 
 
 @patterns_bp.route("/api/pattern-settings", methods=["PUT"])
 def api_update_pattern_settings():
     """#25: Update pattern settings."""
     data = request.json or {}
-    session = get_db()
-    try:
-        updated = []
-        for key, value in data.items():
-            if key.startswith("_"):
-                continue
-            ps = session.query(PatternSettings).filter_by(key=key).first()
-            if ps:
-                ps.value = str(value)
-            else:
-                defaults = PATTERN_SETTINGS_DEFAULTS.get(key, {})
-                ps = PatternSettings(
-                    key=key,
-                    value=str(value),
-                    category=defaults.get("category", "general"),
-                    description_de=defaults.get("description_de"),
-                    description_en=defaults.get("description_en"),
-                )
-                session.add(ps)
-            updated.append(key)
-        session.commit()
-        return jsonify({"success": True, "updated": updated})
-    except Exception as e:
-        session.rollback()
-        logger.error("Operation failed: %s", e)
-        return jsonify({"error": "Operation failed"}), 500
-    finally:
-        session.close()
+    with get_db_session() as session:
+        try:
+            updated = []
+            for key, value in data.items():
+                if key.startswith("_"):
+                    continue
+                ps = session.query(PatternSettings).filter_by(key=key).first()
+                if ps:
+                    ps.value = str(value)
+                else:
+                    defaults = PATTERN_SETTINGS_DEFAULTS.get(key, {})
+                    ps = PatternSettings(
+                        key=key,
+                        value=str(value),
+                        category=defaults.get("category", "general"),
+                        description_de=defaults.get("description_de"),
+                        description_en=defaults.get("description_en"),
+                    )
+                    session.add(ps)
+                updated.append(key)
+            session.commit()
+            return jsonify({"success": True, "updated": updated})
+        except Exception as e:
+            session.rollback()
+            logger.error("Operation failed: %s", e)
+            return jsonify({"error": "Operation failed"}), 500
 
 
 @patterns_bp.route("/api/pattern-settings/preset/<name>", methods=["POST"])
@@ -832,44 +773,41 @@ def api_apply_preset(name):
         return jsonify({"error": f"Unknown preset: {name}", "available": list(LEARNING_SPEED_PRESETS.keys())}), 400
 
     preset = LEARNING_SPEED_PRESETS[name]
-    session = get_db()
-    try:
-        for key, value in preset.items():
-            ps = session.query(PatternSettings).filter_by(key=key).first()
-            if ps:
-                ps.value = value
+    with get_db_session() as session:
+        try:
+            for key, value in preset.items():
+                ps = session.query(PatternSettings).filter_by(key=key).first()
+                if ps:
+                    ps.value = value
+                else:
+                    defaults = PATTERN_SETTINGS_DEFAULTS.get(key, {})
+                    ps = PatternSettings(
+                        key=key, value=value,
+                        category=defaults.get("category", "thresholds"),
+                        description_de=defaults.get("description_de"),
+                        description_en=defaults.get("description_en"),
+                    )
+                    session.add(ps)
+
+            # Also set learning_speed key
+            ls = session.query(PatternSettings).filter_by(key="learning_speed").first()
+            if ls:
+                ls.value = name
             else:
-                defaults = PATTERN_SETTINGS_DEFAULTS.get(key, {})
-                ps = PatternSettings(
-                    key=key, value=value,
-                    category=defaults.get("category", "thresholds"),
-                    description_de=defaults.get("description_de"),
-                    description_en=defaults.get("description_en"),
-                )
-                session.add(ps)
+                session.add(PatternSettings(key="learning_speed", value=name, category="general"))
 
-        # Also set learning_speed key
-        ls = session.query(PatternSettings).filter_by(key="learning_speed").first()
-        if ls:
-            ls.value = name
-        else:
-            session.add(PatternSettings(key="learning_speed", value=name, category="general"))
-
-        session.commit()
-        return jsonify({"success": True, "preset": name, "values": preset})
-    except Exception as e:
-        session.rollback()
-        logger.error("Operation failed: %s", e)
-        return jsonify({"error": "Operation failed"}), 500
-    finally:
-        session.close()
+            session.commit()
+            return jsonify({"success": True, "preset": name, "values": preset})
+        except Exception as e:
+            session.rollback()
+            logger.error("Operation failed: %s", e)
+            return jsonify({"error": "Operation failed"}), 500
 
 
 @patterns_bp.route("/api/stats/learning-days", methods=["GET"])
 def api_learning_days():
     """#2: Calculate days of data from oldest StateHistory entry."""
-    session = get_db()
-    try:
+    with get_db_session() as session:
         oldest = session.query(sa_func.min(StateHistory.created_at)).scalar()
         total = session.query(sa_func.count(StateHistory.id)).scalar() or 0
         if oldest:
@@ -879,5 +817,3 @@ def api_learning_days():
         else:
             days = 0
         return jsonify({"days": days, "total_events": total})
-    finally:
-        session.close()

@@ -18,7 +18,7 @@ from datetime import datetime, timezone, timedelta
 from flask import Blueprint, request, jsonify, Response, make_response, send_from_directory, redirect
 from sqlalchemy import func as sa_func, text
 
-from db import get_db_session, get_db_readonly, get_db
+from db import get_db_session, get_db_readonly
 from helpers import (
     get_ha_timezone, local_now, utc_iso, sanitize_input, sanitize_dict,
     audit_log, is_debug_mode, set_debug_mode, get_setting, set_setting,
@@ -82,15 +82,12 @@ def api_upcoming_events():
 @schedules_bp.route("/api/calendar/triggers", methods=["GET"])
 def api_get_calendar_triggers():
     """Get calendar-based automation triggers."""
-    session = get_db()
-    try:
+    with get_db_session() as session:
         triggers = []
         raw = get_setting("calendar_triggers")
         if raw:
             triggers = json.loads(raw)
         return jsonify(triggers)
-    finally:
-        session.close()
 
 
 
@@ -141,87 +138,65 @@ def api_update_calendar_triggers_alias():
 
 @schedules_bp.route("/api/quiet-hours", methods=["GET"])
 def api_get_quiet_hours():
-    session = get_db()
-    try:
+    with get_db_session() as session:
         return jsonify([{"id":c.id,"user_id":c.user_id,"name":c.name,"start_time":c.start_time,"end_time":c.end_time,"linked_to_shift":c.linked_to_shift,"linked_to_day_phase":c.linked_to_day_phase,"allow_critical":c.allow_critical,"is_active":c.is_active} for c in session.query(QuietHoursConfig).all()])
-    finally:
-        session.close()
 
 
 @schedules_bp.route("/api/quiet-hours", methods=["POST"])
 def api_create_quiet_hours():
     data = request.json or {}
-    session = get_db()
-    try:
+    with get_db_session() as session:
         qh = QuietHoursConfig(name=data.get("name","Nachtruhe"), start_time=data.get("start_time","22:00"), end_time=data.get("end_time","07:00"), linked_to_shift=data.get("linked_to_shift",False), allow_critical=data.get("allow_critical",True), is_active=data.get("is_active",True))
         session.add(qh); session.commit()
         return jsonify({"id": qh.id, "success": True})
-    finally:
-        session.close()
 
 
 @schedules_bp.route("/api/quiet-hours/<int:qh_id>", methods=["PUT"])
 def api_update_quiet_hours(qh_id):
     data = request.json or {}
-    session = get_db()
-    try:
+    with get_db_session() as session:
         qh = session.get(QuietHoursConfig, qh_id)
         if not qh: return jsonify({"error": "Not found"}), 404
         for key in ["name","start_time","end_time","linked_to_shift","linked_to_day_phase","allow_critical","is_active"]:
             if key in data: setattr(qh, key, data[key])
         session.commit()
         return jsonify({"success": True})
-    finally:
-        session.close()
 
 
 @schedules_bp.route("/api/quiet-hours/<int:qh_id>", methods=["DELETE"])
 def api_delete_quiet_hours(qh_id):
-    session = get_db()
-    try:
+    with get_db_session() as session:
         qh = session.get(QuietHoursConfig, qh_id)
         if qh: session.delete(qh); session.commit()
         return jsonify({"success": True})
-    finally:
-        session.close()
 
 
 @schedules_bp.route("/api/school-vacations", methods=["GET"])
 def api_get_school_vacations():
-    session = get_db()
-    try:
+    with get_db_session() as session:
         return jsonify([{"id":v.id,"name_de":v.name_de,"name_en":v.name_en,"start_date":v.start_date,"end_date":v.end_date,"region":v.region,"source":v.source,"is_active":v.is_active} for v in session.query(SchoolVacation).order_by(SchoolVacation.start_date).all()])
-    finally:
-        session.close()
 
 
 @schedules_bp.route("/api/school-vacations", methods=["POST"])
 def api_create_school_vacation():
     data = request.json or {}
-    session = get_db()
-    try:
+    with get_db_session() as session:
         sv = SchoolVacation(name_de=data.get("name_de","Ferien"), name_en=data.get("name_en","Vacation"), start_date=data["start_date"], end_date=data["end_date"], region=data.get("region","AT-NO"), source="manual")
         session.add(sv); session.commit()
         return jsonify({"id": sv.id, "success": True})
-    finally:
-        session.close()
 
 
 @schedules_bp.route("/api/school-vacations/<int:sv_id>", methods=["DELETE"])
 def api_delete_school_vacation(sv_id):
-    session = get_db()
-    try:
+    with get_db_session() as session:
         sv = session.get(SchoolVacation, sv_id)
         if sv: session.delete(sv); session.commit()
         return jsonify({"success": True})
-    finally:
-        session.close()
 
 
 @schedules_bp.route("/api/person-schedules", methods=["GET"])
 def api_get_person_schedules():
-    session = get_db()
-    try:
+    with get_db_session() as session:
         schedules = session.query(PersonSchedule).filter_by(is_active=True).all()
         return jsonify([{
             "id": s.id, "user_id": s.user_id, "schedule_type": s.schedule_type,
@@ -231,42 +206,37 @@ def api_get_person_schedules():
             "valid_from": utc_iso(s.valid_from) if s.valid_from else None,
             "valid_until": utc_iso(s.valid_until) if s.valid_until else None,
         } for s in schedules])
-    finally:
-        session.close()
 
 
 @schedules_bp.route("/api/person-schedules", methods=["POST"])
 def api_create_person_schedule():
     data = request.json or {}
-    session = get_db()
-    try:
-        schedule = PersonSchedule(
-            user_id=data["user_id"], schedule_type=data.get("schedule_type", "weekday"),
-            name=data.get("name"), time_wake=data.get("time_wake"),
-            time_leave=data.get("time_leave"), time_home=data.get("time_home"),
-            time_sleep=data.get("time_sleep"), weekdays=data.get("weekdays"),
-            shift_data=data.get("shift_data"),
-        )
-        if data.get("valid_from"):
-            schedule.valid_from = datetime.fromisoformat(data["valid_from"])
-        if data.get("valid_until"):
-            schedule.valid_until = datetime.fromisoformat(data["valid_until"])
-        session.add(schedule); session.commit()
-        audit_log("create_schedule", {"user_id": data["user_id"], "type": data.get("schedule_type")})
-        return jsonify({"success": True, "id": schedule.id})
-    except Exception as e:
-        session.rollback()
-        logger.error("Operation failed: %s", e)
-        return jsonify({"error": "Invalid request"}), 400
-    finally:
-        session.close()
+    with get_db_session() as session:
+        try:
+            schedule = PersonSchedule(
+                user_id=data["user_id"], schedule_type=data.get("schedule_type", "weekday"),
+                name=data.get("name"), time_wake=data.get("time_wake"),
+                time_leave=data.get("time_leave"), time_home=data.get("time_home"),
+                time_sleep=data.get("time_sleep"), weekdays=data.get("weekdays"),
+                shift_data=data.get("shift_data"),
+            )
+            if data.get("valid_from"):
+                schedule.valid_from = datetime.fromisoformat(data["valid_from"])
+            if data.get("valid_until"):
+                schedule.valid_until = datetime.fromisoformat(data["valid_until"])
+            session.add(schedule); session.commit()
+            audit_log("create_schedule", {"user_id": data["user_id"], "type": data.get("schedule_type")})
+            return jsonify({"success": True, "id": schedule.id})
+        except Exception as e:
+            session.rollback()
+            logger.error("Operation failed: %s", e)
+            return jsonify({"error": "Invalid request"}), 400
 
 
 @schedules_bp.route("/api/person-schedules/<int:sid>", methods=["PUT"])
 def api_update_person_schedule(sid):
     data = request.json or {}
-    session = get_db()
-    try:
+    with get_db_session() as session:
         s = session.get(PersonSchedule, sid)
         if not s: return jsonify({"error": "Not found"}), 404
         for f in ["schedule_type","name","time_wake","time_leave","time_home","time_sleep","weekdays","shift_data"]:
@@ -277,77 +247,62 @@ def api_update_person_schedule(sid):
             s.valid_until = datetime.fromisoformat(data["valid_until"]) if data["valid_until"] else None
         session.commit()
         return jsonify({"success": True})
-    finally:
-        session.close()
 
 
 @schedules_bp.route("/api/person-schedules/<int:sid>", methods=["DELETE"])
 def api_delete_person_schedule(sid):
-    session = get_db()
-    try:
+    with get_db_session() as session:
         s = session.get(PersonSchedule, sid)
         if s: s.is_active = False; session.commit()
         return jsonify({"success": True})
-    finally:
-        session.close()
 
 
 @schedules_bp.route("/api/shift-templates", methods=["GET"])
 def api_get_shift_templates():
-    session = get_db()
-    try:
+    with get_db_session() as session:
         return jsonify([{"id": t.id, "name": t.name, "short_code": t.short_code,
             "blocks": t.blocks, "color": t.color}
             for t in session.query(ShiftTemplate).filter_by(is_active=True).all()])
-    finally:
-        session.close()
 
 
 @schedules_bp.route("/api/shift-templates", methods=["POST"])
 def api_create_shift_template():
     data = request.json or {}
-    session = get_db()
-    try:
-        t = ShiftTemplate(name=data["name"], short_code=data.get("short_code"),
-            blocks=data.get("blocks", []), color=data.get("color"))
-        session.add(t); session.commit()
-        return jsonify({"success": True, "id": t.id})
-    except Exception as e:
-        session.rollback()
-        logger.error("Operation failed: %s", e)
-        return jsonify({"error": "Invalid request"}), 400
-    finally:
-        session.close()
+    with get_db_session() as session:
+        try:
+            t = ShiftTemplate(name=data["name"], short_code=data.get("short_code"),
+                blocks=data.get("blocks", []), color=data.get("color"))
+            session.add(t); session.commit()
+            return jsonify({"success": True, "id": t.id})
+        except Exception as e:
+            session.rollback()
+            logger.error("Operation failed: %s", e)
+            return jsonify({"error": "Invalid request"}), 400
 
 
 @schedules_bp.route("/api/shift-templates/<int:tid>", methods=["PUT"])
 def api_update_shift_template(tid):
     data = request.json or {}
-    session = get_db()
-    try:
-        t = session.get(ShiftTemplate, tid)
-        if not t: return jsonify({"error": "Not found"}), 404
-        for f in ["name", "short_code", "blocks", "color"]:
-            if f in data: setattr(t, f, data[f])
-        session.commit()
-        return jsonify({"success": True})
-    except Exception as e:
-        session.rollback()
-        logger.error("Operation failed: %s", e)
-        return jsonify({"error": "Invalid request"}), 400
-    finally:
-        session.close()
+    with get_db_session() as session:
+        try:
+            t = session.get(ShiftTemplate, tid)
+            if not t: return jsonify({"error": "Not found"}), 404
+            for f in ["name", "short_code", "blocks", "color"]:
+                if f in data: setattr(t, f, data[f])
+            session.commit()
+            return jsonify({"success": True})
+        except Exception as e:
+            session.rollback()
+            logger.error("Operation failed: %s", e)
+            return jsonify({"error": "Invalid request"}), 400
 
 
 @schedules_bp.route("/api/shift-templates/<int:tid>", methods=["DELETE"])
 def api_delete_shift_template(tid):
-    session = get_db()
-    try:
+    with get_db_session() as session:
         t = session.get(ShiftTemplate, tid)
         if t: t.is_active = False; session.commit()
         return jsonify({"success": True})
-    finally:
-        session.close()
 
 
 @schedules_bp.route("/api/shift-plan/import", methods=["POST"])
@@ -386,15 +341,12 @@ def api_import_shift_plan():
                 for dm in date_match:
                     entries.append({"date": dm[0].strip(), "raw": dm[1].strip()})
         # Match with known shift templates
-        session = get_db()
-        try:
+        with get_db_session() as session:
             templates = session.query(ShiftTemplate).filter_by(is_active=True).all()
             tmpl_map = {}
             for t in templates:
                 tmpl_map[t.short_code.upper()] = {"id": t.id, "name": t.name, "short_code": t.short_code, "blocks": t.blocks, "color": t.color}
                 tmpl_map[t.name.upper()] = tmpl_map[t.short_code.upper()]
-        finally:
-            session.close()
         parsed = []
         unmatched = set()
         for e in entries:
@@ -416,59 +368,46 @@ def api_import_shift_plan():
 
 @schedules_bp.route("/api/holidays", methods=["GET"])
 def api_get_holidays():
-    session = get_db()
-    try:
+    with get_db_session() as session:
         return jsonify([{"id":h.id, "name":h.name, "date":h.date, "is_recurring":h.is_recurring,
             "region":h.region, "source":h.source, "is_active":h.is_active}
             for h in session.query(Holiday).order_by(Holiday.date).all()])
-    finally:
-        session.close()
 
 
 @schedules_bp.route("/api/holidays", methods=["POST"])
 def api_create_holiday():
     data = request.json or {}
-    session = get_db()
-    try:
+    with get_db_session() as session:
         h = Holiday(name=data["name"], date=data["date"], is_recurring=data.get("is_recurring", False),
             region=data.get("region", "AT"), source=data.get("source", "manual"))
         session.add(h); session.commit()
         return jsonify({"id": h.id, "success": True})
-    finally:
-        session.close()
 
 
 @schedules_bp.route("/api/holidays/<int:hid>", methods=["PUT"])
 def api_update_holiday(hid):
     data = request.json or {}
-    session = get_db()
-    try:
+    with get_db_session() as session:
         h = session.get(Holiday, hid)
         if not h: return jsonify({"error": "Not found"}), 404
         for f in ["name","date","is_recurring","region","source","is_active"]:
             if f in data: setattr(h, f, data[f])
         session.commit()
         return jsonify({"success": True})
-    finally:
-        session.close()
 
 
 @schedules_bp.route("/api/holidays/<int:hid>", methods=["DELETE"])
 def api_delete_holiday(hid):
-    session = get_db()
-    try:
+    with get_db_session() as session:
         h = session.get(Holiday, hid)
         if h: session.delete(h); session.commit()
         return jsonify({"success": True})
-    finally:
-        session.close()
 
 
 @schedules_bp.route("/api/holidays/seed-defaults", methods=["POST"])
 def api_seed_default_holidays():
     """Seed Austrian holidays."""
-    session = get_db()
-    try:
+    with get_db_session() as session:
         existing = session.query(Holiday).filter_by(source="builtin").count()
         if existing > 0:
             return jsonify({"message": "Already seeded", "count": existing})
@@ -484,8 +423,6 @@ def api_seed_default_holidays():
             session.add(Holiday(name=name, date=date, is_recurring=True, region="AT", source="builtin"))
         session.commit()
         return jsonify({"success": True, "count": len(defaults)})
-    finally:
-        session.close()
 
 
 # ==============================================================================
@@ -558,183 +495,181 @@ def api_export_ical():
     if not expected_token or provided_token != expected_token:
         return "Unauthorized – invalid or missing token", 403
 
-    session = get_db()
-    try:
-        from helpers import get_ha_timezone
-        local_tz = get_ha_timezone()
-        now = datetime.now(local_tz)
-        lines = [
-            "BEGIN:VCALENDAR",
-            "VERSION:2.0",
-            "PRODID:-//MindHome//Calendar Export//DE",
-            "CALSCALE:GREGORIAN",
-            "METHOD:PUBLISH",
-            "X-WR-CALNAME:MindHome",
-            "X-WR-TIMEZONE:Europe/Vienna",
-        ]
+    with get_db_session() as session:
+        try:
+            from helpers import get_ha_timezone
+            local_tz = get_ha_timezone()
+            now = datetime.now(local_tz)
+            lines = [
+                "BEGIN:VCALENDAR",
+                "VERSION:2.0",
+                "PRODID:-//MindHome//Calendar Export//DE",
+                "CALSCALE:GREGORIAN",
+                "METHOD:PUBLISH",
+                "X-WR-CALNAME:MindHome",
+                "X-WR-TIMEZONE:Europe/Vienna",
+            ]
 
-        # --- Holidays ---
-        holidays = session.query(Holiday).filter_by(is_active=True).all()
-        current_year = now.year
-        for h in holidays:
-            date_str = h.date
-            if h.is_recurring and len(date_str) == 5:
-                # MM-DD format -> generate for current year and next year
-                for year in [current_year, current_year + 1]:
-                    dt = f"{year}-{date_str}"
-                    uid = f"holiday-{h.id}-{year}@mindhome"
+            # --- Holidays ---
+            holidays = session.query(Holiday).filter_by(is_active=True).all()
+            current_year = now.year
+            for h in holidays:
+                date_str = h.date
+                if h.is_recurring and len(date_str) == 5:
+                    # MM-DD format -> generate for current year and next year
+                    for year in [current_year, current_year + 1]:
+                        dt = f"{year}-{date_str}"
+                        uid = f"holiday-{h.id}-{year}@mindhome"
+                        lines.extend([
+                            "BEGIN:VEVENT",
+                            f"UID:{uid}",
+                            f"DTSTART;VALUE=DATE:{dt.replace('-', '')}",
+                            f"DTEND;VALUE=DATE:{dt.replace('-', '')}",
+                            f"SUMMARY:{_ical_escape(h.name)}",
+                            "CATEGORIES:Feiertag",
+                            "TRANSP:TRANSPARENT",
+                            f"DTSTAMP:{now.strftime('%Y%m%dT%H%M%SZ')}",
+                            "END:VEVENT",
+                        ])
+                elif len(date_str) == 10:
+                    uid = f"holiday-{h.id}@mindhome"
                     lines.extend([
                         "BEGIN:VEVENT",
                         f"UID:{uid}",
-                        f"DTSTART;VALUE=DATE:{dt.replace('-', '')}",
-                        f"DTEND;VALUE=DATE:{dt.replace('-', '')}",
+                        f"DTSTART;VALUE=DATE:{date_str.replace('-', '')}",
+                        f"DTEND;VALUE=DATE:{date_str.replace('-', '')}",
                         f"SUMMARY:{_ical_escape(h.name)}",
                         "CATEGORIES:Feiertag",
                         "TRANSP:TRANSPARENT",
                         f"DTSTAMP:{now.strftime('%Y%m%dT%H%M%SZ')}",
                         "END:VEVENT",
                     ])
-            elif len(date_str) == 10:
-                uid = f"holiday-{h.id}@mindhome"
+
+            # --- School Vacations ---
+            vacations = session.query(SchoolVacation).filter_by(is_active=True).all()
+            for v in vacations:
+                uid = f"vacation-{v.id}@mindhome"
+                name = v.name_de or v.name_en or "Ferien"
+                # end_date in iCal is exclusive, so add 1 day
+                try:
+                    end_dt = datetime.strptime(v.end_date, "%Y-%m-%d") + timedelta(days=1)
+                    end_str = end_dt.strftime("%Y%m%d")
+                except (ValueError, TypeError):
+                    end_str = v.end_date.replace("-", "") if v.end_date else ""
                 lines.extend([
                     "BEGIN:VEVENT",
                     f"UID:{uid}",
-                    f"DTSTART;VALUE=DATE:{date_str.replace('-', '')}",
-                    f"DTEND;VALUE=DATE:{date_str.replace('-', '')}",
-                    f"SUMMARY:{_ical_escape(h.name)}",
-                    "CATEGORIES:Feiertag",
+                    f"DTSTART;VALUE=DATE:{v.start_date.replace('-', '')}",
+                    f"DTEND;VALUE=DATE:{end_str}",
+                    f"SUMMARY:{_ical_escape(name)}",
+                    "CATEGORIES:Ferien",
                     "TRANSP:TRANSPARENT",
                     f"DTSTAMP:{now.strftime('%Y%m%dT%H%M%SZ')}",
                     "END:VEVENT",
                 ])
 
-        # --- School Vacations ---
-        vacations = session.query(SchoolVacation).filter_by(is_active=True).all()
-        for v in vacations:
-            uid = f"vacation-{v.id}@mindhome"
-            name = v.name_de or v.name_en or "Ferien"
-            # end_date in iCal is exclusive, so add 1 day
-            try:
-                end_dt = datetime.strptime(v.end_date, "%Y-%m-%d") + timedelta(days=1)
-                end_str = end_dt.strftime("%Y%m%d")
-            except (ValueError, TypeError):
-                end_str = v.end_date.replace("-", "") if v.end_date else ""
-            lines.extend([
-                "BEGIN:VEVENT",
-                f"UID:{uid}",
-                f"DTSTART;VALUE=DATE:{v.start_date.replace('-', '')}",
-                f"DTEND;VALUE=DATE:{end_str}",
-                f"SUMMARY:{_ical_escape(name)}",
-                "CATEGORIES:Ferien",
-                "TRANSP:TRANSPARENT",
-                f"DTSTAMP:{now.strftime('%Y%m%dT%H%M%SZ')}",
-                "END:VEVENT",
-            ])
+            # --- Shift Schedules ---
+            schedules = session.query(PersonSchedule).filter_by(is_active=True).all()
+            templates = {t.short_code: t for t in session.query(ShiftTemplate).filter_by(is_active=True).all()}
+            users = {u.id: u.name for u in session.query(User).filter_by(is_active=True).all()}
 
-        # --- Shift Schedules ---
-        schedules = session.query(PersonSchedule).filter_by(is_active=True).all()
-        templates = {t.short_code: t for t in session.query(ShiftTemplate).filter_by(is_active=True).all()}
-        users = {u.id: u.name for u in session.query(User).filter_by(is_active=True).all()}
-
-        for sched in schedules:
-            if sched.schedule_type != "shift" or not sched.shift_data:
-                continue
-            sd = sched.shift_data if isinstance(sched.shift_data, dict) else {}
-            pattern = sd.get("rotation_pattern", [])
-            rotation_start = sd.get("rotation_start")
-            if not pattern or not rotation_start:
-                continue
-            try:
-                start_dt = datetime.strptime(rotation_start, "%Y-%m-%d").replace(tzinfo=local_tz)
-            except (ValueError, TypeError):
-                continue
-            # Generate shift events for configurable days from now
-            export_days_raw = get_setting("calendar_export_days")
-            export_days = int(export_days_raw) if export_days_raw else 90
-            user_name = users.get(sched.user_id, "")
-            for day_offset in range(export_days):
-                day = now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=day_offset)
-                diff = (day - start_dt).days
-                if diff < 0:
+            for sched in schedules:
+                if sched.schedule_type != "shift" or not sched.shift_data:
                     continue
-                idx = diff % len(pattern)
-                code = pattern[idx]
-                tmpl = templates.get(code)
-                if not tmpl or code.upper() in ("X", "F", "-", "FREI"):
-                    continue  # Skip free days
-                day_str = day.strftime("%Y%m%d")
-                uid = f"shift-{sched.id}-{day_str}@mindhome"
-                summary = f"{tmpl.name}" + (f" ({user_name})" if user_name else "")
-                # Use blocks for start/end times if available
-                blocks = tmpl.blocks if isinstance(tmpl.blocks, list) and tmpl.blocks else []
-                if blocks:
-                    block_start = blocks[0].get("start", "06:00")
-                    block_end = blocks[-1].get("end", "14:00")
-                    lines.extend([
-                        "BEGIN:VEVENT",
-                        f"UID:{uid}",
-                        f"DTSTART:{day_str}T{block_start.replace(':', '')}00",
-                        f"DTEND:{day_str}T{block_end.replace(':', '')}00",
-                        _fold_line(f"SUMMARY:{_ical_escape(summary)}"),
-                        "CATEGORIES:Schicht",
-                        f"DTSTAMP:{now.strftime('%Y%m%dT%H%M%SZ')}",
-                        "END:VEVENT",
-                    ])
-                else:
-                    lines.extend([
-                        "BEGIN:VEVENT",
-                        f"UID:{uid}",
-                        f"DTSTART;VALUE=DATE:{day_str}",
-                        f"DTEND;VALUE=DATE:{day_str}",
-                        _fold_line(f"SUMMARY:{_ical_escape(summary)}"),
-                        "CATEGORIES:Schicht",
-                        f"DTSTAMP:{now.strftime('%Y%m%dT%H%M%SZ')}",
-                        "END:VEVENT",
-                    ])
+                sd = sched.shift_data if isinstance(sched.shift_data, dict) else {}
+                pattern = sd.get("rotation_pattern", [])
+                rotation_start = sd.get("rotation_start")
+                if not pattern or not rotation_start:
+                    continue
+                try:
+                    start_dt = datetime.strptime(rotation_start, "%Y-%m-%d").replace(tzinfo=local_tz)
+                except (ValueError, TypeError):
+                    continue
+                # Generate shift events for configurable days from now
+                export_days_raw = get_setting("calendar_export_days")
+                export_days = int(export_days_raw) if export_days_raw else 90
+                user_name = users.get(sched.user_id, "")
+                for day_offset in range(export_days):
+                    day = now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=day_offset)
+                    diff = (day - start_dt).days
+                    if diff < 0:
+                        continue
+                    idx = diff % len(pattern)
+                    code = pattern[idx]
+                    tmpl = templates.get(code)
+                    if not tmpl or code.upper() in ("X", "F", "-", "FREI"):
+                        continue  # Skip free days
+                    day_str = day.strftime("%Y%m%d")
+                    uid = f"shift-{sched.id}-{day_str}@mindhome"
+                    summary = f"{tmpl.name}" + (f" ({user_name})" if user_name else "")
+                    # Use blocks for start/end times if available
+                    blocks = tmpl.blocks if isinstance(tmpl.blocks, list) and tmpl.blocks else []
+                    if blocks:
+                        block_start = blocks[0].get("start", "06:00")
+                        block_end = blocks[-1].get("end", "14:00")
+                        lines.extend([
+                            "BEGIN:VEVENT",
+                            f"UID:{uid}",
+                            f"DTSTART:{day_str}T{block_start.replace(':', '')}00",
+                            f"DTEND:{day_str}T{block_end.replace(':', '')}00",
+                            _fold_line(f"SUMMARY:{_ical_escape(summary)}"),
+                            "CATEGORIES:Schicht",
+                            f"DTSTAMP:{now.strftime('%Y%m%dT%H%M%SZ')}",
+                            "END:VEVENT",
+                        ])
+                    else:
+                        lines.extend([
+                            "BEGIN:VEVENT",
+                            f"UID:{uid}",
+                            f"DTSTART;VALUE=DATE:{day_str}",
+                            f"DTEND;VALUE=DATE:{day_str}",
+                            _fold_line(f"SUMMARY:{_ical_escape(summary)}"),
+                            "CATEGORIES:Schicht",
+                            f"DTSTAMP:{now.strftime('%Y%m%dT%H%M%SZ')}",
+                            "END:VEVENT",
+                        ])
 
-        # --- Weekday / Homeoffice Schedules ---
-        weekday_scheds = [s for s in schedules if s.schedule_type in ("weekday", "homeoffice", "weekend") and s.weekdays]
-        day_names_de = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"]
-        for sched in weekday_scheds:
-            user_name = users.get(sched.user_id, "")
-            type_label = {"weekday": "Arbeit", "homeoffice": "Homeoffice", "weekend": "Wochenende"}.get(sched.schedule_type, sched.schedule_type)
-            wdays = sched.weekdays if isinstance(sched.weekdays, list) else []
-            # iCal BYDAY mapping: MO=0, TU=1, WE=2, TH=3, FR=4, SA=5, SU=6
-            ical_days = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"]
-            byday = ",".join(ical_days[d] for d in wdays if 0 <= d <= 6)
-            if not byday:
-                continue
-            summary = f"{type_label}" + (f" ({user_name})" if user_name else "")
-            time_leave = sched.time_leave or "08:00"
-            time_home = sched.time_home or "17:00"
-            uid = f"schedule-{sched.id}@mindhome"
-            start_date = now.strftime("%Y%m%d")
-            lines.extend([
-                "BEGIN:VEVENT",
-                f"UID:{uid}",
-                f"DTSTART:{start_date}T{time_leave.replace(':', '')}00",
-                f"DTEND:{start_date}T{time_home.replace(':', '')}00",
-                f"RRULE:FREQ=WEEKLY;BYDAY={byday}",
-                _fold_line(f"SUMMARY:{_ical_escape(summary)}"),
-                f"CATEGORIES:{type_label}",
-                f"DTSTAMP:{now.strftime('%Y%m%dT%H%M%SZ')}",
-                "END:VEVENT",
-            ])
+            # --- Weekday / Homeoffice Schedules ---
+            weekday_scheds = [s for s in schedules if s.schedule_type in ("weekday", "homeoffice", "weekend") and s.weekdays]
+            day_names_de = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"]
+            for sched in weekday_scheds:
+                user_name = users.get(sched.user_id, "")
+                type_label = {"weekday": "Arbeit", "homeoffice": "Homeoffice", "weekend": "Wochenende"}.get(sched.schedule_type, sched.schedule_type)
+                wdays = sched.weekdays if isinstance(sched.weekdays, list) else []
+                # iCal BYDAY mapping: MO=0, TU=1, WE=2, TH=3, FR=4, SA=5, SU=6
+                ical_days = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"]
+                byday = ",".join(ical_days[d] for d in wdays if 0 <= d <= 6)
+                if not byday:
+                    continue
+                summary = f"{type_label}" + (f" ({user_name})" if user_name else "")
+                time_leave = sched.time_leave or "08:00"
+                time_home = sched.time_home or "17:00"
+                uid = f"schedule-{sched.id}@mindhome"
+                start_date = now.strftime("%Y%m%d")
+                lines.extend([
+                    "BEGIN:VEVENT",
+                    f"UID:{uid}",
+                    f"DTSTART:{start_date}T{time_leave.replace(':', '')}00",
+                    f"DTEND:{start_date}T{time_home.replace(':', '')}00",
+                    f"RRULE:FREQ=WEEKLY;BYDAY={byday}",
+                    _fold_line(f"SUMMARY:{_ical_escape(summary)}"),
+                    f"CATEGORIES:{type_label}",
+                    f"DTSTAMP:{now.strftime('%Y%m%dT%H%M%SZ')}",
+                    "END:VEVENT",
+                ])
 
-        lines.append("END:VCALENDAR")
+            lines.append("END:VCALENDAR")
 
-        ical_content = "\r\n".join(lines) + "\r\n"
-        response = make_response(ical_content)
-        response.headers["Content-Type"] = "text/calendar; charset=utf-8"
-        response.headers["Content-Disposition"] = "attachment; filename=mindhome.ics"
-        response.headers["Cache-Control"] = "public, max-age=3600"
-        response.headers["ETag"] = hashlib.md5(ical_content.encode()).hexdigest()
-        return response
-    except Exception as e:
-        logger.error("iCal export error: %s", e)
-        return jsonify({"error": "Operation failed"}), 500
-    finally:
-        session.close()
+            ical_content = "\r\n".join(lines) + "\r\n"
+            response = make_response(ical_content)
+            response.headers["Content-Type"] = "text/calendar; charset=utf-8"
+            response.headers["Content-Disposition"] = "attachment; filename=mindhome.ics"
+            response.headers["Cache-Control"] = "public, max-age=3600"
+            response.headers["ETag"] = hashlib.md5(ical_content.encode()).hexdigest()
+            return response
+        except Exception as e:
+            logger.error("iCal export error: %s", e)
+            return jsonify({"error": "Operation failed"}), 500
 
 
 @schedules_bp.route("/api/calendar/ha-sources", methods=["GET"])

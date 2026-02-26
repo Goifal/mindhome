@@ -94,9 +94,11 @@ class SemanticMemory:
         try:
             import chromadb
 
+            from urllib.parse import urlparse
+            _parsed = urlparse(settings.chroma_url)
             self._chroma_client = chromadb.HttpClient(
-                host=settings.chroma_url.replace("http://", "").split(":")[0],
-                port=int(settings.chroma_url.split(":")[-1]),
+                host=_parsed.hostname or "localhost",
+                port=_parsed.port or 8000,
             )
             from .embeddings import get_embedding_function
             ef = get_embedding_function()
