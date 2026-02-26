@@ -52,24 +52,25 @@ def main():
     )
 
     # Wyoming Service-Info (wird bei Describe-Events zurueckgegeben)
+    # Struktur orientiert sich an der offiziellen wyoming-faster-whisper Implementation
     wyoming_info = Info(
         asr=[
             AsrProgram(
-                name="MindHome Whisper",
-                description="faster-whisper STT + ECAPA-TDNN Speaker Embeddings",
+                name="faster-whisper",
+                description="Faster Whisper transcription with CTranslate2",
                 attribution=Attribution(
-                    name="MindHome",
-                    url="",
+                    name="Guillaume Klein",
+                    url="https://github.com/guillaumekln/faster-whisper/",
                 ),
                 installed=True,
                 version="1.0.0",
                 models=[
                     AsrModel(
                         name=model,
-                        description=f"faster-whisper {model}",
+                        description=model,
                         attribution=Attribution(
                             name="Systran",
-                            url="https://github.com/SYSTRAN/faster-whisper",
+                            url="https://huggingface.co/Systran",
                         ),
                         installed=True,
                         languages=[language],
@@ -100,15 +101,20 @@ def main():
         redis_url=redis_url,
     )
 
-    # I-1: Graceful Shutdown — Redis-Verbindung sauber schliessen
-    loop = asyncio.new_event_loop()
+    # I-1: Graceful Shutdown — asyncio.run() statt new_event_loop()
+    # (identisch zur offiziellen wyoming-faster-whisper Implementation)
     try:
-        loop.run_until_complete(server.run(handler_factory))
+        asyncio.run(_run_server(server, handler_factory))
     except KeyboardInterrupt:
         logger.info("Server wird beendet...")
+
+
+async def _run_server(server: AsyncServer, handler_factory):
+    """Startet den Server und schliesst Redis beim Beenden."""
+    try:
+        await server.run(handler_factory)
     finally:
-        loop.run_until_complete(close_redis())
-        loop.close()
+        await close_redis()
 
 
 if __name__ == "__main__":

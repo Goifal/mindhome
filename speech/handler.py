@@ -135,7 +135,7 @@ class WhisperEmbeddingHandler(AsyncEventHandler):
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
-        self.wyoming_info = wyoming_info
+        self.wyoming_info_event = wyoming_info.event()
         self.model_name = model_name
         self.language = language
         self.device = device
@@ -158,7 +158,7 @@ class WhisperEmbeddingHandler(AsyncEventHandler):
         Returns True um die Verbindung offen zu halten.
         """
         if Describe.is_type(event.type):
-            await self.write_event(self.wyoming_info.event())
+            await self.write_event(self.wyoming_info_event)
             return True
 
         if Transcribe.is_type(event.type):
