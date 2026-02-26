@@ -931,6 +931,11 @@ const HELP_TEXTS = {
   'health_monitor.co2_warn': {title:'CO2 Warnung', text:'Ab diesem ppm-Wert wird gewarnt.'},
   'health_monitor.co2_critical': {title:'CO2 Kritisch', text:'Ab diesem ppm-Wert dringend lueften.'},
   'health_monitor.exclude_patterns': {title:'Ausschluss-Patterns', text:'Entity-IDs die ignoriert werden.'},
+  'humidor.enabled': {title:'Humidor-Ueberwachung', text:'Ueberwacht deinen Humidor mit eigenen Feuchtigkeits-Schwellwerten.'},
+  'humidor.sensor_entity': {title:'Humidor-Sensor', text:'Der Feuchtigkeits-Sensor in deinem Humidor.'},
+  'humidor.target_humidity': {title:'Ziel-Feuchtigkeit', text:'Optimale Luftfeuchtigkeit fuer deinen Humidor (typisch 68-72% fuer Zigarren).'},
+  'humidor.warn_below': {title:'Warnung unter', text:'Ab dieser Feuchtigkeit wird gewarnt (z.B. Wasser nachfuellen).'},
+  'humidor.warn_above': {title:'Warnung ueber', text:'Ab dieser Feuchtigkeit ist es zu feucht im Humidor.'},
   // === GERAETE ===
   'device_health.enabled': {title:'Geraete-Health', text:'Ueberwacht Zustand von Smart-Home-Geraeten.'},
   'device_health.check_interval_minutes': {title:'Pruef-Intervall', text:'Wie oft Geraete geprueft werden.'},
@@ -2182,6 +2187,22 @@ function renderHouseStatus() {
     fNum('health_monitor.co2_warn', 'CO2 Warnung (ppm)', 800, 1500, 100) +
     fNum('health_monitor.co2_critical', 'CO2 Kritisch (ppm)', 1000, 2500, 100) +
     fTextarea('health_monitor.exclude_patterns', 'Zusaetzliche Ausschluss-Patterns (einer pro Zeile)', 'z.B.\naquarea\ntablet_\nsteckdose_')
+  ) +
+  sectionWrap('&#127793;', 'Humidor',
+    fInfo('Dein Humidor braucht andere Feuchtigkeitswerte als normale Raeume. Weise hier den Sensor zu und stelle die Schwellwerte ein. Der Sensor wird dann nicht mehr vom normalen Raumklima-Monitor erfasst.') +
+    fToggle('humidor.enabled', 'Humidor-Ueberwachung aktiv') +
+    '<div class="form-group"><label>Feuchtigkeits-Sensor</label>' +
+    '<div class="entity-pick-wrap">' +
+    '<input class="form-input entity-pick-input" value="' + esc(getPath(S,'humidor.sensor_entity')||'') + '"' +
+    ' placeholder="&#128269; sensor.* zuweisen..." data-path="humidor.sensor_entity"' +
+    ' data-room-map="humidor.sensor_entity"' +
+    ' oninput="entityPickFilter(this,\'sensor\')" onfocus="entityPickFilter(this,\'sensor\')"' +
+    ' style="font-family:var(--mono);font-size:13px;">' +
+    '<div class="entity-pick-dropdown" style="display:none;"></div></div></div>' +
+    '<div style="margin:16px 0 8px;font-weight:600;font-size:13px;">Schwellwerte</div>' +
+    fNum('humidor.target_humidity', 'Ziel-Feuchtigkeit (%)', 50, 85, 1) +
+    fNum('humidor.warn_below', 'Warnung unter (%)', 40, 80, 1) +
+    fNum('humidor.warn_above', 'Warnung ueber (%)', 55, 90, 1)
   );
 }
 

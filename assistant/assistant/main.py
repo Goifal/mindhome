@@ -1814,6 +1814,9 @@ def _validate_settings_values(settings: dict) -> list[str]:
         ("health_monitor", "humidity_high"): (40, 95),
         ("health_monitor", "check_interval_minutes"): (5, 60),
         ("health_monitor", "alert_cooldown_minutes"): (5, 1440),
+        ("humidor", "target_humidity"): (50, 85),
+        ("humidor", "warn_below"): (40, 80),
+        ("humidor", "warn_above"): (55, 90),
         ("proactive", "batch_interval"): (5, 300),
         ("interrupt_queue", "pause_ms"): (100, 1000),
         ("situation_model", "min_pause_minutes"): (5, 120),
@@ -2011,7 +2014,25 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
             if isinstance(user_excludes, str):
                 user_excludes = [p.strip() for p in user_excludes.splitlines() if p.strip()]
             hm._exclude_patterns = [p.lower() for p in (hm._default_excludes + user_excludes)]
+            # Humidor-Config neu laden
+            humidor_cfg = yaml_cfg.get("humidor", {})
+            hm.humidor_enabled = bool(humidor_cfg.get("enabled", False))
+            hm.humidor_entity = (humidor_cfg.get("sensor_entity") or "").strip()
+            hm.humidor_target = int(humidor_cfg.get("target_humidity", 70))
+            hm.humidor_warn_below = int(humidor_cfg.get("warn_below", 62))
+            hm.humidor_warn_above = int(humidor_cfg.get("warn_above", 75))
             logger.info("Health Monitor Settings aktualisiert")
+
+        # Humidor: Auch bei separater Aenderung (ohne health_monitor) hot-reloaden
+        if "humidor" in changed_settings and hasattr(brain, "health_monitor"):
+            humidor_cfg = yaml_cfg.get("humidor", {})
+            hm = brain.health_monitor
+            hm.humidor_enabled = bool(humidor_cfg.get("enabled", False))
+            hm.humidor_entity = (humidor_cfg.get("sensor_entity") or "").strip()
+            hm.humidor_target = int(humidor_cfg.get("target_humidity", 70))
+            hm.humidor_warn_below = int(humidor_cfg.get("warn_below", 62))
+            hm.humidor_warn_above = int(humidor_cfg.get("warn_above", 75))
+            logger.info("Humidor Settings aktualisiert")
 
         # InsightEngine: Alle Einstellungen hot-reloadbar
         if "insights" in changed_settings and hasattr(brain, "insight_engine"):

@@ -672,6 +672,12 @@ health_monitor:
   hydration_start_hour: 8
   hydration_end_hour: 22
   alert_cooldown_minutes: 180
+humidor:
+  enabled: false
+  sensor_entity: ''
+  target_humidity: 70
+  warn_below: 62
+  warn_above: 75
 device_health:
   enabled: true
   check_interval_minutes: 60
