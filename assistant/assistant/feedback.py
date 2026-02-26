@@ -350,7 +350,13 @@ class FeedbackTracker:
 
         key = f"mha:feedback:history:{event_type}"
         entries = await self.redis.lrange(key, 0, limit - 1)
-        return [json.loads(e) for e in entries]
+        result = []
+        for e in entries:
+            try:
+                result.append(json.loads(e))
+            except (json.JSONDecodeError, TypeError):
+                continue
+        return result
 
     async def _auto_timeout_loop(self):
         """Prueft periodisch auf Meldungen ohne Feedback (Auto-Timeout)."""

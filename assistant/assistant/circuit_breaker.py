@@ -63,7 +63,10 @@ class CircuitBreaker:
         if s == CircuitState.CLOSED:
             return True
         if s == CircuitState.HALF_OPEN:
-            return self._half_open_calls < self.half_open_max_calls
+            if self._half_open_calls < self.half_open_max_calls:
+                self._half_open_calls += 1
+                return True
+            return False
         return False
 
     def record_success(self) -> None:

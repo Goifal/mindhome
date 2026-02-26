@@ -211,8 +211,10 @@ class SpontaneousObserver:
             if not week_val:
                 return None
 
-            today_kwh = float(today_val)
-            week_kwh = float(week_val)
+            today_data = json.loads(today_val) if today_val.strip().startswith("{") else {"consumption_wh": float(today_val)}
+            today_kwh = float(today_data.get("consumption_wh", 0))
+            week_data = json.loads(week_val) if week_val.strip().startswith("{") else {"consumption_wh": float(week_val)}
+            week_kwh = float(week_data.get("consumption_wh", 0))
 
             if week_kwh <= 0:
                 return None
