@@ -217,12 +217,17 @@ class OllamaClient:
         # Qwen 3 Thinking Mode steuern
         # Bei Tools: Think aus (stoert Function Calling)
         # Bei Fast-Model: Think aus (spart Latenz)
+        # Bei Smart == Deep (gleiches Modell): Think aus (kein VRAM-Overhead)
         # Bei Deep-Model ohne Tools: Think an (besseres Reasoning)
         if think is not None:
             payload["think"] = think
         elif tools:
             payload["think"] = False
         elif model == settings.model_fast:
+            payload["think"] = False
+        elif model == settings.model_deep and settings.model_deep == settings.model_smart:
+            # Smart und Deep sind das gleiche Modell — Think bringt keinen Vorteil,
+            # verbraucht aber deutlich mehr VRAM und Zeit
             payload["think"] = False
 
         # Circuit Breaker Check
@@ -304,6 +309,8 @@ class OllamaClient:
             payload["think"] = think
         elif model == settings.model_fast:
             payload["think"] = False
+        elif model == settings.model_deep and settings.model_deep == settings.model_smart:
+            payload["think"] = False
 
         # F-024: Buffer-basiertes Think-Tag-Filtering (verhindert Content-Verlust)
         _think_buffer = ""
@@ -319,6 +326,8 @@ class OllamaClient:
                 if resp.status != 200:
                     error = await resp.text()
                     logger.error("Ollama Stream Fehler %d: %s", resp.status, error)
+                    ollama_breaker.record_failure()
+                    yield "[STREAM_ERROR]"
                     return
 
                 import json as _json
