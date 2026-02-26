@@ -156,12 +156,15 @@ class OllamaClient:
 
     def __init__(self):
         self.base_url = settings.ollama_url
-        from .config import yaml_config
-        ollama_cfg = yaml_config.get("ollama", {})
-        self.num_ctx = int(ollama_cfg.get("num_ctx", self._DEFAULT_NUM_CTX))
         # Shared Session (wird lazy initialisiert) — spart TCP-Handshake pro Request
         self._session: Optional[aiohttp.ClientSession] = None
         self._session_lock: asyncio.Lock = asyncio.Lock()
+
+    @property
+    def num_ctx(self) -> int:
+        """Liest num_ctx live aus yaml_config (aendert sich bei Settings-Update)."""
+        from .config import yaml_config
+        return int((yaml_config.get("ollama") or {}).get("num_ctx", self._DEFAULT_NUM_CTX))
 
     async def _get_session(self) -> aiohttp.ClientSession:
         """Gibt die shared aiohttp Session zurueck (thread-safe lazy init)."""

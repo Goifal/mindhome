@@ -640,6 +640,7 @@ const HELP_TEXTS = {
   'models.deep_min_words': {title:'Deep ab Woertern', text:'Ab wie vielen Woertern automatisch das Deep-Modell genutzt wird.'},
   'models.options.temperature': {title:'Kreativitaet', text:'Wie kreativ die Antworten sein sollen.', detail:'0 = deterministisch, 0.7 = Standard, 2.0 = sehr kreativ'},
   'models.options.max_tokens': {title:'Max. Antwortlaenge', text:'Maximale Laenge einer Antwort in Tokens (~0.75 Woerter pro Token).'},
+  'ollama.num_ctx': {title:'Kontext-Fenster (VRAM)', text:'Groesse des Kontextfensters in Tokens. Bestimmt wieviel Gespraechsverlauf das Modell sieht — aber auch wieviel VRAM belegt wird.', detail:'2048 = minimal (spart VRAM), 4096 = Standard fuer 8GB GPUs, 8192 = mehr Kontext (braucht mehr VRAM). Bei VRAM-Problemen (Modell antwortet nicht) Wert reduzieren.'},
   'models.fast_keywords': {title:'Fast-Keywords', text:'Woerter die das schnelle Modell aktivieren.'},
   'models.deep_keywords': {title:'Deep-Keywords', text:'Woerter die das ausfuehrliche Modell aktivieren.'},
   'models.cooking_keywords': {title:'Koch-Keywords', text:'Woerter die den Koch-Modus aktivieren.'},
@@ -1458,7 +1459,8 @@ function renderGeneral() {
     fModelSelect('models.deep', 'Deep-Modell', 'Fuer komplexe Aufgaben') +
     fRange('models.deep_min_words', 'Deep ab Woertern', 5, 50, 1, {5:'5',10:'10',15:'15',20:'20',25:'25',30:'30',35:'35',40:'40',45:'45',50:'50'}) +
     fRange('models.options.temperature', 'Kreativitaet (Temperatur)', 0, 2, 0.1, {0:'Exakt',0.5:'Konservativ',0.7:'Standard',1:'Kreativ',1.5:'Sehr kreativ',2:'Maximum'}) +
-    fRange('models.options.max_tokens', 'Antwortlaenge (Max Tokens)', 64, 4096, 64)
+    fRange('models.options.max_tokens', 'Antwortlaenge (Max Tokens)', 64, 4096, 64) +
+    fRange('ollama.num_ctx', 'Kontext-Fenster (num_ctx)', 2048, 16384, 1024, {2048:'2K',4096:'4K',6144:'6K',8192:'8K',12288:'12K',16384:'16K'})
   ) +
   sectionWrap('&#127991;', 'Schnell-Erkennung',
     fInfo('Klicke auf Woerter, die das jeweilige Modell ausloesen sollen. Ausgewaehlte Woerter sind hervorgehoben.') +
