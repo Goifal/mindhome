@@ -106,9 +106,13 @@ class RoutineEngine:
     # Morning Briefing (Feature 7.1)
     # ------------------------------------------------------------------
 
-    async def generate_morning_briefing(self, person: str = "") -> dict:
+    async def generate_morning_briefing(self, person: str = "", force: bool = False) -> dict:
         """
         Generiert ein Morning Briefing.
+
+        Args:
+            person: Name der Person
+            force: True = Redis-Sperre ignorieren (manueller Request)
 
         Returns:
             Dict mit:
@@ -118,8 +122,8 @@ class RoutineEngine:
         if not self.briefing_enabled:
             return {"text": "", "actions": []}
 
-        # Check: Heute schon gebrieft?
-        if self.redis:
+        # Check: Heute schon gebrieft? (nur bei Auto-Trigger, nicht bei manuellem Request)
+        if not force and self.redis:
             today = datetime.now().strftime("%Y-%m-%d")
             done = await self.redis.get(KEY_MORNING_DONE)
             if done is not None:
@@ -421,13 +425,35 @@ class RoutineEngine:
             return ""
 
         parts = []
-        # Temperaturen
-        for state in states:
-            if state.get("entity_id", "").startswith("climate."):
-                attrs = state.get("attributes", {})
-                temp = attrs.get("current_temperature")
-                room = attrs.get("friendly_name", "?")
-                if temp:
+        # Temperaturen: Konfigurierte Sensoren (Mittelwert) bevorzugen
+        rt_sensors = yaml_config.get("room_temperature", {}).get("sensors", []) or []
+        if rt_sensors:
+            state_map = {s.get("entity_id"): s for s in states}
+            sensor_temps = []
+            for sid in rt_sensors:
+                st = state_map.get(sid, {})
+                try:
+                    sensor_temps.append(float(st.get("state", "")))
+                except (ValueError, TypeError):
+                    pass
+            if sensor_temps:
+                avg = round(sum(sensor_temps) / len(sensor_temps), 1)
+                parts.append(f"Raumtemperatur: {avg}°C Durchschnitt")
+        else:
+            # Fallback: climate entities (gefiltert)
+            for state in states:
+                if state.get("entity_id", "").startswith("climate."):
+                    attrs = state.get("attributes", {})
+                    temp = attrs.get("current_temperature")
+                    if temp is None:
+                        continue
+                    try:
+                        temp_val = float(temp)
+                        if temp_val < -20 or temp_val > 50:
+                            continue
+                    except (ValueError, TypeError):
+                        continue
+                    room = attrs.get("friendly_name", "?")
                     parts.append(f"{room}: {temp}°C")
 
         # Offene Fenster/Tueren — MindHome-Domain + device_class pruefen
