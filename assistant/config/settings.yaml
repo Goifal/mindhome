@@ -56,7 +56,7 @@ autonomy:
 models:
   fast: qwen3:4b
   smart: qwen3:14b
-  deep: qwen3:32b
+  deep: qwen3:14b
   enabled:
     fast: true
     smart: true
