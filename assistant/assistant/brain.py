@@ -1486,6 +1486,43 @@ class AssistantBrain(BrainCallbacksMixin):
             except Exception as e:
                 logger.warning("Morning-Briefing-Shortcut fehlgeschlagen: %s — Fallback auf LLM", e)
 
+        # Evening-Briefing-Shortcut: "Abendbriefing" / "Ist alles zu?" / "Sicherheitscheck"
+        if self._is_evening_briefing_request(text):
+            logger.info("Evening-Briefing-Shortcut: '%s'", text)
+            try:
+                briefing_text = await self.proactive.generate_evening_briefing(
+                    person=person or "",
+                )
+                if briefing_text:
+                    briefing_text = self._filter_response(briefing_text)
+                    if briefing_text:
+                        self._remember_exchange(text, briefing_text)
+                        tts_data = self.tts_enhancer.enhance(
+                            briefing_text, message_type="briefing",
+                        )
+                        if stream_callback:
+                            if not room:
+                                room = await self._get_occupied_room()
+                            self._task_registry.create_task(
+                                self.sound_manager.speak_response(
+                                    briefing_text, room=room, tts_data=tts_data),
+                                name="speak_response",
+                            )
+                        else:
+                            await self._speak_and_emit(
+                                briefing_text, room=room, tts_data=tts_data,
+                            )
+                        return {
+                            "response": briefing_text,
+                            "actions": [],
+                            "model_used": "evening_briefing_shortcut",
+                            "context_room": room or "unbekannt",
+                            "tts": tts_data,
+                            "_emitted": not stream_callback,
+                        }
+            except Exception as e:
+                logger.warning("Evening-Briefing-Shortcut fehlgeschlagen: %s — Fallback auf LLM", e)
+
         # Status-Report-Shortcut: "Statusbericht" / "Briefing" / "Was gibts Neues"
         # Aggregiert alle Datenquellen und laesst LLM einen narrativen Bericht generieren.
         if self._is_status_report_request(text):
@@ -5318,6 +5355,18 @@ class AssistantBrain(BrainCallbacksMixin):
         return any(kw in t for kw in _keywords)
 
     @staticmethod
+    def _is_evening_briefing_request(text: str) -> bool:
+        """Erkennt ob der User ein Abendbriefing will."""
+        t = text.lower().strip().rstrip("?!.")
+        _keywords = [
+            "abendbriefing", "abend briefing", "abend-briefing",
+            "evening briefing", "guten abend briefing",
+            "nacht check", "nachtcheck", "sicherheitscheck",
+            "ist alles zu", "ist alles gesichert", "alles sicher",
+        ]
+        return any(kw in t for kw in _keywords)
+
+    @staticmethod
     def _is_status_report_request(text: str) -> bool:
         """Erkennt ob der User einen narrativen Statusbericht will.
 
@@ -5334,7 +5383,6 @@ class AssistantBrain(BrainCallbacksMixin):
             "gib mir ein briefing", "gib mir einen ueberblick",
             "gib mir einen überblick",
             "was ist los", "was tut sich",
-            "abendbriefing", "abend briefing",
             "hausstatus", "haus-status", "haus status",
         ]
         return any(kw in t for kw in _keywords)
