@@ -58,8 +58,14 @@ def load_yaml_config() -> dict:
         shutil.copy2(example_path, config_path)
 
     if config_path.exists():
-        with open(config_path) as f:
-            return yaml.safe_load(f) or {}
+        try:
+            with open(config_path) as f:
+                data = yaml.safe_load(f)
+                if not isinstance(data, dict):
+                    return {}
+                return data
+        except yaml.YAMLError:
+            return {}
     return {}
 
 

@@ -8,6 +8,7 @@ Phase 10: Multi-Room Presence Tracking.
 
 import logging
 import math
+import os
 import re
 from datetime import datetime
 from pathlib import Path
@@ -658,8 +659,18 @@ class ContextBuilder:
             else:
                 data = {}
             data.setdefault("rooms", {})[room_lower] = profile
-            with open(room_file, "w") as f:
-                yaml.safe_dump(data, f, allow_unicode=True, default_flow_style=False)
+            import tempfile
+            tmp_fd, tmp_path = tempfile.mkstemp(
+                dir=str(room_file.parent), suffix=".yaml.tmp",
+            )
+            try:
+                with os.fdopen(tmp_fd, "w") as tmp_f:
+                    yaml.safe_dump(data, tmp_f, allow_unicode=True, default_flow_style=False)
+                os.replace(tmp_path, str(room_file))
+            except Exception:
+                if os.path.exists(tmp_path):
+                    os.unlink(tmp_path)
+                raise
             logger.info("Raum-Override gelernt: %s.%s = %s", room_lower, override_type, value)
         except Exception as e:
             logger.error("Fehler beim Speichern des Raum-Overrides: %s", e)

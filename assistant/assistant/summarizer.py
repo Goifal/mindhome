@@ -413,9 +413,9 @@ Format: Fliesstext, kurze Saetze."""
         parts.append("Konversationen des Tages:\n")
 
         for conv in conversations:
-            role = "User" if conv["role"] == "user" else "Assistant"
+            role = "User" if conv.get("role") == "user" else "Assistant"
             time = conv.get("timestamp", "")[:16]  # YYYY-MM-DDTHH:MM
-            parts.append(f"[{time}] {role}: {conv['content']}")
+            parts.append(f"[{time}] {role}: {conv.get('content', '')}")
 
         parts.append("\nFasse zusammen: Was wurde besprochen? "
                      "Welche Aktionen? Stimmung? Besonderheiten?")

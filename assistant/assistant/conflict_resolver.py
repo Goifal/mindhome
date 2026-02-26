@@ -325,7 +325,7 @@ class ConflictResolver:
         if not params:
             return None
 
-        threshold = domain_cfg.get("threshold", 0)
+        threshold = domain_cfg.get("threshold", 2)
 
         if params["type"] == "numeric":
             key = params["key"]

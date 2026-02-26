@@ -2494,6 +2494,15 @@ class FunctionExecutor:
         "option", "value", "code",
     })
 
+    _CALL_SERVICE_ALLOWED_DOMAINS = frozenset({
+        "light", "switch", "climate", "cover", "fan",
+        "media_player", "scene", "script",
+        "input_boolean", "input_number", "input_select", "input_text",
+        "notify", "number", "select", "button",
+        "vacuum", "lock", "alarm_control_panel",
+        "shopping_list", "calendar", "timer", "counter",
+    })
+
     async def _exec_call_service(self, args: dict) -> dict:
         """Generischer HA Service-Aufruf (fuer Routinen wie Guest WiFi)."""
         domain = args.get("domain", "")
@@ -2501,6 +2510,10 @@ class FunctionExecutor:
         entity_id = args.get("entity_id", "")
         if not domain or not service:
             return {"success": False, "message": "domain und service erforderlich"}
+
+        if domain not in self._CALL_SERVICE_ALLOWED_DOMAINS:
+            logger.warning("call_service: Blockierte Domain '%s.%s'", domain, service)
+            return {"success": False, "message": f"Domain '{domain}' ist nicht erlaubt."}
 
         # Sicherheitscheck: Cover-Services fuer Garagentore blockieren
         # Bypass-sicher: Prueft ALLE Domains wenn entity_id ein Cover ist

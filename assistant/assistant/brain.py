@@ -648,7 +648,7 @@ class AssistantBrain(BrainCallbacksMixin):
                         text = original_text
                     else:
                         # Nur Identifikation, kein Folgebefehl
-                        response_text = f"Alles klar, {person.capitalize()}. Was kann ich fuer dich tun?"
+                        response_text = f"Erkannt, {person.capitalize()}."
                         self._remember_exchange(text, response_text)
                         return {
                             "response": response_text,
@@ -797,7 +797,7 @@ class AssistantBrain(BrainCallbacksMixin):
             logger.info("Gute-Nacht-Intent erkannt")
             try:
                 result = await self.routines.execute_goodnight(person or "")
-                response_text = self._filter_response(result["text"]) or result["text"]
+                response_text = self._filter_response(result.get("text", "")) or result.get("text", "")
                 self._remember_exchange(text, response_text)
                 tts_data = self.tts_enhancer.enhance(
                     response_text, message_type="briefing",
@@ -805,7 +805,7 @@ class AssistantBrain(BrainCallbacksMixin):
                 await self._speak_and_emit(response_text, room=room, tts_data=tts_data)
                 return {
                     "response": response_text,
-                    "actions": result["actions"],
+                    "actions": result.get("actions", []),
                     "model_used": "routine_engine",
                     "context_room": room or "unbekannt",
                     "tts": tts_data,
@@ -945,7 +945,7 @@ class AssistantBrain(BrainCallbacksMixin):
         if pending_plan:
             logger.info("Laufender Planungs-Dialog: %s", pending_plan)
             plan_result = await self.action_planner.continue_planning_dialog(text, pending_plan)
-            response_text = plan_result.get("response", "")
+            response_text = self._filter_response(plan_result.get("response", ""))
             if plan_result.get("status") == "error":
                 self.action_planner.clear_plan(pending_plan)
             self._remember_exchange(text, response_text)
@@ -962,7 +962,7 @@ class AssistantBrain(BrainCallbacksMixin):
         if self.action_planner.is_planning_request(text):
             logger.info("Planungs-Dialog gestartet: '%s'", text)
             plan_result = await self.action_planner.start_planning_dialog(text, person or "")
-            response_text = plan_result.get("response", "")
+            response_text = self._filter_response(plan_result.get("response", ""))
             self._remember_exchange(text, response_text)
             await self._speak_and_emit(response_text, room=room)
             return {
@@ -1053,8 +1053,8 @@ class AssistantBrain(BrainCallbacksMixin):
                 )
                 cal_msg = cal_result.get("message", "") if isinstance(cal_result, dict) else str(cal_result)
 
-                # Humanizer-First: sofortige Antwort
-                response_text = self._humanize_calendar(cal_msg)
+                # Humanizer-First: sofortige Antwort + Filter
+                response_text = self._filter_response(self._humanize_calendar(cal_msg))
                 logger.info("Kalender-Shortcut humanisiert: '%s' -> '%s'",
                             cal_msg[:60], response_text[:60])
 
@@ -1167,7 +1167,7 @@ class AssistantBrain(BrainCallbacksMixin):
                 weather_result = await self.executor.execute("get_weather", weather_args)
                 weather_msg = weather_result.get("message", "") if isinstance(weather_result, dict) else str(weather_result)
 
-                response_text = self._humanize_weather(weather_msg)
+                response_text = self._filter_response(self._humanize_weather(weather_msg))
                 logger.info("Wetter-Shortcut humanisiert: '%s' -> '%s'",
                             weather_msg[:60], response_text[:60])
 
@@ -1230,7 +1230,7 @@ class AssistantBrain(BrainCallbacksMixin):
 
                 if alarm_result:
                     alarm_msg = alarm_result.get("message", "")
-                    response_text = self._humanize_alarms(alarm_msg)
+                    response_text = self._filter_response(self._humanize_alarms(alarm_msg))
                     self._remember_exchange(text, response_text)
                     tts_data = self.tts_enhancer.enhance(response_text, message_type="confirmation")
                     if stream_callback:
@@ -1541,6 +1541,78 @@ class AssistantBrain(BrainCallbacksMixin):
             except Exception as e:
                 logger.warning("Evening-Briefing-Shortcut fehlgeschlagen: %s — Fallback auf LLM", e)
 
+        # Haus-Status-Shortcut: "Hausstatus" / "Haus-Status"
+        # Nur Hausdaten (Temperatur, Lichter, Anwesenheit, Sicherheit),
+        # NICHT Kalender/Energie/Erinnerungen. Respektiert detail_level.
+        if self._is_house_status_request(text):
+            logger.info("Haus-Status-Shortcut: '%s'", text)
+            try:
+                raw_result = await self.executor.execute("get_house_status", {})
+                if isinstance(raw_result, dict) and raw_result.get("success"):
+                    raw_data = raw_result["message"]
+                    title = get_person_title(self._current_person)
+                    _hs_cfg = yaml_config.get("house_status", {})
+                    _detail = _hs_cfg.get("detail_level", "normal")
+                    if _detail == "kompakt":
+                        _prompt_style = (
+                            "Maximal 1-2 kurze Saetze. Nur das Wichtigste. "
+                            "Unwichtige Details weglassen."
+                        )
+                        _max_tok = 80
+                    elif _detail == "ausfuehrlich":
+                        _prompt_style = (
+                            "4-6 Saetze, alle Details ausfuehrlich wiedergeben."
+                        )
+                        _max_tok = 350
+                    else:
+                        _prompt_style = (
+                            "2-3 Saetze, narrativ, priorisiert. "
+                            "Langweiliges weglassen."
+                        )
+                        _max_tok = 180
+                    narrative_prompt = (
+                        f"Du bist JARVIS. Fasse diesen Haus-Status zusammen. "
+                        f"{_prompt_style} "
+                        f"Trockener Butler-Ton. Kein Aufzaehlungsformat. "
+                        f"Sprich den User mit '{title}' an.\n\n{raw_data}"
+                    )
+                    narrative = await self.ollama.generate(
+                        prompt=narrative_prompt,
+                        temperature=0.5,
+                        max_tokens=_max_tok,
+                    )
+                    response_text = self._filter_response(narrative.strip()) if narrative.strip() else raw_data
+
+                    self._remember_exchange(text, response_text)
+                    tts_data = self.tts_enhancer.enhance(
+                        response_text, message_type="status",
+                    )
+                    if stream_callback:
+                        if not room:
+                            room = await self._get_occupied_room()
+                        self._task_registry.create_task(
+                            self.sound_manager.speak_response(
+                                response_text, room=room, tts_data=tts_data),
+                            name="speak_response",
+                        )
+                    else:
+                        await self._speak_and_emit(
+                            response_text, room=room, tts_data=tts_data,
+                        )
+
+                    return {
+                        "response": response_text,
+                        "actions": [{"function": "get_house_status",
+                                     "args": {},
+                                     "result": raw_result}],
+                        "model_used": "house_status_shortcut",
+                        "context_room": room or "unbekannt",
+                        "tts": tts_data,
+                        "_emitted": not stream_callback,
+                    }
+            except Exception as e:
+                logger.warning("Haus-Status-Shortcut fehlgeschlagen: %s — Fallback auf LLM", e)
+
         # Status-Report-Shortcut: "Statusbericht" / "Briefing" / "Was gibts Neues"
         # Aggregiert alle Datenquellen und laesst LLM einen narrativen Bericht generieren.
         if self._is_status_report_request(text):
@@ -1549,20 +1621,38 @@ class AssistantBrain(BrainCallbacksMixin):
                 raw_result = await self.executor.execute("get_full_status_report", {})
                 if isinstance(raw_result, dict) and raw_result.get("success"):
                     raw_data = raw_result["message"]
-                    # LLM generiert narrativen Bericht im JARVIS-Stil
                     title = get_person_title(self._current_person)
+                    _hs_cfg = yaml_config.get("house_status", {})
+                    _detail = _hs_cfg.get("detail_level", "normal")
+                    if _detail == "kompakt":
+                        _prompt_style = (
+                            "Maximal 2-3 kurze Saetze. Nur das Wichtigste. "
+                            "Unwichtige Details weglassen."
+                        )
+                        _max_tok = 120
+                    elif _detail == "ausfuehrlich":
+                        _prompt_style = (
+                            "5-7 Saetze, alle Details ausfuehrlich wiedergeben."
+                        )
+                        _max_tok = 400
+                    else:
+                        _prompt_style = (
+                            "3-5 Saetze, narrativ, priorisiert. "
+                            "Langweiliges weglassen."
+                        )
+                        _max_tok = 250
                     narrative_prompt = (
-                        f"Du bist JARVIS. Fasse diesen Haus-Status als kurzes Briefing zusammen. "
-                        f"3-5 Saetze, narrativ, priorisiert (Wichtiges zuerst, Langweiliges weglassen). "
+                        f"Du bist JARVIS. Fasse diesen Status als Briefing zusammen. "
+                        f"{_prompt_style} "
                         f"Trockener Butler-Ton. Kein Aufzaehlungsformat. Fliessender Bericht. "
                         f"Sprich den User mit '{title}' an.\n\n{raw_data}"
                     )
                     narrative = await self.ollama.generate(
                         prompt=narrative_prompt,
                         temperature=0.5,
-                        max_tokens=300,
+                        max_tokens=_max_tok,
                     )
-                    response_text = narrative.strip() if narrative.strip() else raw_data
+                    response_text = self._filter_response(narrative.strip()) if narrative.strip() else raw_data
 
                     self._remember_exchange(text, response_text)
                     tts_data = self.tts_enhancer.enhance(
@@ -1610,9 +1700,10 @@ class AssistantBrain(BrainCallbacksMixin):
 
                     if success:
                         raw = result.get("message", str(result))
-                        response_text = self._humanize_query_result(func_name, raw)
+                        response_text = self._filter_response(
+                            self._humanize_query_result(func_name, raw))
                         if not response_text or len(response_text) < 5:
-                            response_text = raw
+                            response_text = self._filter_response(raw)
 
                         logger.info("Status-Query-Shortcut Antwort: '%s'", response_text[:120])
 
@@ -2490,7 +2581,7 @@ class AssistantBrain(BrainCallbacksMixin):
                     # Phase 6: Opinion Check — Jarvis kommentiert Aktionen
                     # Nur wenn kein Pushback-Kommentar (sonst doppelt)
                     if not pushback_msg:
-                        opinion = self.personality.check_opinion(func_name, func_args)
+                        opinion = self.personality.check_opinion(func_name, final_args)
                         if opinion:
                             logger.info("Jarvis Meinung: '%s'", opinion)
                             if response_text:
@@ -2500,7 +2591,7 @@ class AssistantBrain(BrainCallbacksMixin):
 
                     # Eskalationskette: JARVIS wird trockener bei Wiederholungen
                     try:
-                        esc_key = f"{func_name}:{func_args.get('room', '')}"
+                        esc_key = f"{func_name}:{final_args.get('room', '')}"
                         escalation = await self.personality.check_escalation(esc_key)
                         if escalation:
                             logger.info("Jarvis Eskalation: '%s'", escalation)
@@ -2656,7 +2747,7 @@ class AssistantBrain(BrainCallbacksMixin):
             if executed_actions and response_text:
                 failed_actions = [
                     a for a in executed_actions
-                    if isinstance(a["result"], dict) and not a["result"].get("success", True)
+                    if isinstance(a["result"], dict) and not a["result"].get("success", False)
                 ]
                 if failed_actions:
                     # Phase 17: Natuerliche Fehlerbehandlung statt hartem "Problem: ..."
@@ -3833,11 +3924,28 @@ class AssistantBrain(BrainCallbacksMixin):
         # "Ihnen/Ihre/Ihrem" sind eindeutig formell (kein Lowercase-Pendant fuer "sie"=she)
         _has_formal = bool(re.search(r"\b(?:Ihnen|Ihre[mnrs]?)\b", text))
         if _has_formal:
+            # Verb+Sie Paare zuerst (vor generischer Sie-Ersetzung)
+            _verb_pairs = [
+                (r"\bHaben Sie\b", "Hast du"), (r"\bhaben Sie\b", "hast du"),
+                (r"\bKoennen Sie\b", "Kannst du"), (r"\bkoennen Sie\b", "kannst du"),
+                (r"\bKönnen Sie\b", "Kannst du"), (r"\bkönnen Sie\b", "kannst du"),
+                (r"\bMoechten Sie\b", "Moechtest du"), (r"\bmoechten Sie\b", "moechtest du"),
+                (r"\bMöchten Sie\b", "Möchtest du"), (r"\bmöchten Sie\b", "möchtest du"),
+                (r"\bWuerden Sie\b", "Wuerdest du"), (r"\bwuerden Sie\b", "wuerdest du"),
+                (r"\bWürden Sie\b", "Würdest du"), (r"\bwürden Sie\b", "würdest du"),
+                (r"\bDuerfen Sie\b", "Darfst du"), (r"\bduerfen Sie\b", "darfst du"),
+                (r"\bWollen Sie\b", "Willst du"), (r"\bwollen Sie\b", "willst du"),
+                (r"\bSollten Sie\b", "Solltest du"), (r"\bsollten Sie\b", "solltest du"),
+                (r"\bSind Sie\b", "Bist du"), (r"\bsind Sie\b", "bist du"),
+                (r"\bWerden Sie\b", "Wirst du"), (r"\bwerden Sie\b", "wirst du"),
+            ]
+            for pattern, replacement in _verb_pairs:
+                text = re.sub(pattern, replacement, text)
             _formal_map = [
                 (r"\bIhnen\b", "dir"), (r"\bIhre\b", "deine"),
                 (r"\bIhren\b", "deinen"), (r"\bIhrem\b", "deinem"),
                 (r"\bIhrer\b", "deiner"),
-                # "Sie" nur in eindeutigen Kontexten ersetzen (nicht am Satzanfang)
+                # "Sie" in eindeutigen Kontexten ersetzen
                 (r"(?<=[,;:!?]\s)Sie\b", "du"),
                 (r"(?<=\bfuer\s)Sie\b", "dich"), (r"(?<=\bfür\s)Sie\b", "dich"),
                 (r"(?<=\bdass\s)Sie\b", "du"), (r"(?<=\bwenn\s)Sie\b", "du"),
@@ -5385,11 +5493,23 @@ class AssistantBrain(BrainCallbacksMixin):
         return any(kw in t for kw in _keywords)
 
     @staticmethod
+    def _is_house_status_request(text: str) -> bool:
+        """Erkennt ob der User einen Haus-Status will (nur Hausdaten, kein volles Briefing)."""
+        t = text.lower().strip().rstrip("?!.")
+        _keywords = [
+            "hausstatus", "haus-status", "haus status",
+            "wie sieht es zuhause aus", "wie siehts zuhause aus",
+            "wie sieht's zuhause aus",
+        ]
+        return any(kw in t for kw in _keywords)
+
+    @staticmethod
     def _is_status_report_request(text: str) -> bool:
         """Erkennt ob der User einen narrativen Statusbericht will.
 
         Matcht auf: statusbericht, briefing, lagebericht, was gibts neues, ueberblick geben.
         NICHT auf einfache Status-Queries wie "wie warm ist es".
+        NICHT auf "hausstatus" — der geht ueber _is_house_status_request.
         """
         t = text.lower().strip().rstrip("?!.")
         _keywords = [
@@ -5401,7 +5521,6 @@ class AssistantBrain(BrainCallbacksMixin):
             "gib mir ein briefing", "gib mir einen ueberblick",
             "gib mir einen überblick",
             "was ist los", "was tut sich",
-            "hausstatus", "haus-status", "haus status",
         ]
         return any(kw in t for kw in _keywords)
 

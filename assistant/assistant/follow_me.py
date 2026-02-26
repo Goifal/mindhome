@@ -65,9 +65,12 @@ class FollowMeEngine:
 
         # Raum des Bewegungsmelders ermitteln
         multi_room_cfg = yaml_config.get("multi_room", {})
-        motion_sensors = multi_room_cfg.get("room_motion_sensors", {})
+        motion_sensors = multi_room_cfg.get("room_motion_sensors") or {}
+        if not motion_sensors:
+            logger.debug("Follow-Me: room_motion_sensors nicht konfiguriert")
+            return None
         new_room = None
-        for room_name, sensor_id in (motion_sensors or {}).items():
+        for room_name, sensor_id in motion_sensors.items():
             if sensor_id == motion_entity:
                 new_room = room_name
                 break
@@ -233,7 +236,7 @@ class FollowMeEngine:
 
             # Alten Raum auf Eco (nur wenn allein)
             if not others_in_old:
-                eco_temp = comfort_temp - 3
+                eco_temp = comfort_temp - profile.get("eco_temp_offset", 3)
                 await self.ha.call_service("climate", "set_temperature", {
                     "entity_id": f"climate.{old_room.lower().replace(' ', '_')}",
                     "temperature": eco_temp,
@@ -253,6 +256,19 @@ class FollowMeEngine:
             if cfg_room.lower() == room_lower:
                 return entity_id
         return None
+
+    def cleanup_stale_tracking(self, max_age_hours: int = 8):
+        """Raeumt veraltete Person-Room-Eintraege auf."""
+        now = datetime.now()
+        stale = [
+            p for p, t in self._last_transfer.items()
+            if now - t > timedelta(hours=max_age_hours)
+        ]
+        for p in stale:
+            self._person_room.pop(p, None)
+            self._last_transfer.pop(p, None)
+        if stale:
+            logger.debug("Follow-Me: %d veraltete Tracking-Eintraege bereinigt", len(stale))
 
     def health_status(self) -> dict:
         """Status fuer Diagnostik."""

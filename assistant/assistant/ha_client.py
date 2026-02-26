@@ -80,8 +80,9 @@ class HomeAssistantClient:
         if self._states_cache is not None and (now - self._states_cache_ts) < self._STATES_CACHE_TTL:
             return self._states_cache
         result = await self._get_ha("/api/states") or []
-        self._states_cache = result
-        self._states_cache_ts = now
+        if result:  # Nur nicht-leere Ergebnisse cachen
+            self._states_cache = result
+            self._states_cache_ts = now
         return result
 
     async def get_state(self, entity_id: str) -> Optional[dict]:
@@ -241,6 +242,8 @@ class HomeAssistantClient:
                     body = await resp.text()
                     logger.warning("MindHome POST %s -> %d: %s", path, resp.status, body[:300])
                     last_err = f"HTTP {resp.status}"
+                    if 400 <= resp.status < 500:
+                        break  # Client-Error: nicht retrybar
             except Exception as e:
                 logger.warning("MindHome POST %s fehlgeschlagen (Versuch %d): %s", path, attempt + 1, e)
                 last_err = str(e)

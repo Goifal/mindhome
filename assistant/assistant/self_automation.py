@@ -643,10 +643,15 @@ REGELN:
             # Direkte Template-Syntax
             if "{{" in value or "{%" in value or "{#" in value:
                 return True
-            # F-006: Verschleierte Varianten (Unicode Fullwidth, Zero-Width-Chars entfernt)
-            cleaned = value.replace('\u200b', '').replace('\u200c', '').replace('\u200d', '').replace('\ufeff', '')
-            # Fullwidth Klammern: ｛｛ → {{
-            cleaned = cleaned.replace('\uff5b', '{').replace('\uff5d', '}').replace('\uff05', '%')
+            # F-006: Umfassende Deobfuskation
+            import unicodedata
+            import html
+            # NFKC-Normalisierung (loest Fullwidth + Kompatibilitaetszeichen auf)
+            cleaned = unicodedata.normalize("NFKC", value)
+            # HTML-Entities dekodieren (&#123; → {, &#x7b; → {)
+            cleaned = html.unescape(cleaned)
+            # Zero-Width-Chars entfernen
+            cleaned = cleaned.replace('\u200b', '').replace('\u200c', '').replace('\u200d', '').replace('\ufeff', '')
             if "{{" in cleaned or "{%" in cleaned or "{#" in cleaned:
                 return True
             # states(), is_state(), etc. — HA Template-Funktionen

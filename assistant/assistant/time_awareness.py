@@ -423,17 +423,20 @@ class TimeAwareness:
         """Setzt Tages-Zaehler zurueck wenn ein neuer Tag begonnen hat."""
         if not self.redis:
             return
-        today = datetime.now().strftime("%Y-%m-%d")
-        stored_date = await self.redis.get(KEY_COUNTER_DATE)
-        if stored_date and stored_date != today:
-            # Neuer Tag -> alle Zaehler loeschen
-            keys = []
-            async for key in self.redis.scan_iter(f"{KEY_COUNTER}*"):
-                keys.append(key)
-            if keys:
-                await self.redis.delete(*keys)
-            logger.info("Tages-Zaehler zurueckgesetzt")
-        await self.redis.set(KEY_COUNTER_DATE, today)
+        try:
+            today = datetime.now().strftime("%Y-%m-%d")
+            stored_date = await self.redis.get(KEY_COUNTER_DATE)
+            if stored_date and stored_date != today:
+                # Neuer Tag -> alle Zaehler loeschen
+                keys = []
+                async for key in self.redis.scan_iter(f"{KEY_COUNTER}*"):
+                    keys.append(key)
+                if keys:
+                    await self.redis.delete(*keys)
+                logger.info("Tages-Zaehler zurueckgesetzt")
+            await self.redis.set(KEY_COUNTER_DATE, today)
+        except Exception as e:
+            logger.warning("Tages-Zaehler-Reset fehlgeschlagen: %s", e)
 
     # ------------------------------------------------------------------
     # Redis-Hilfsfunktionen
@@ -453,7 +456,11 @@ class TimeAwareness:
             await self.redis.expire(key, 86400)
             return 0.0
 
-        start_ts = float(start_time)
+        try:
+            start_ts = float(start_time)
+        except (ValueError, TypeError):
+            await self._clear_device_timer(device_key)
+            return None
         elapsed_seconds = datetime.now().timestamp() - start_ts
         return elapsed_seconds / 60.0
 

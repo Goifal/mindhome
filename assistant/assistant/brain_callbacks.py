@@ -193,5 +193,9 @@ class BrainCallbacksMixin:
                     except Exception as e:
                         logger.debug("Ambient Audio lights_on fehlgeschlagen: %s", e)
 
-        # Nachricht via WebSocket + Speaker senden
-        await self._speak_and_emit(message)
+        # Nachricht via Personality formatieren und senden
+        try:
+            formatted = await self.proactive.format_with_personality(message, severity)
+        except Exception:
+            formatted = message
+        await self._speak_and_emit(formatted)

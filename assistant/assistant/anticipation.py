@@ -370,17 +370,23 @@ class AnticipationEngine:
                 # Wurde der Trigger gerade ausgefuehrt? (letzte 5 Min)
                 recent = await self.redis.lrange("mha:action_log", 0, 4)
                 for entry_json in recent:
-                    entry = json.loads(entry_json)
-                    ts = datetime.fromisoformat(entry.get("timestamp", ""))
-                    if (now - ts).total_seconds() < 300:
-                        if entry.get("action") == pattern["trigger_action"]:
-                            suggestion = {
-                                "pattern": pattern,
-                                "action": pattern["follow_action"],
-                                "args": pattern["follow_args"],
-                                "confidence": pattern["confidence"],
-                                "description": pattern["description"],
-                            }
+                    try:
+                        entry = json.loads(entry_json)
+                        ts_str = entry.get("timestamp", "")
+                        if not ts_str:
+                            continue
+                        ts = datetime.fromisoformat(ts_str)
+                        if (now - ts).total_seconds() < 300:
+                            if entry.get("action") == pattern["trigger_action"]:
+                                suggestion = {
+                                    "pattern": pattern,
+                                    "action": pattern["follow_action"],
+                                    "args": pattern["follow_args"],
+                                    "confidence": pattern["confidence"],
+                                    "description": pattern["description"],
+                                }
+                    except (json.JSONDecodeError, ValueError, TypeError):
+                        continue
 
             elif pattern["type"] == "context":
                 # Kontext-Muster: Passt der aktuelle Tageszeit-Cluster?
@@ -402,7 +408,6 @@ class AnticipationEngine:
                             "confidence": pattern["confidence"],
                             "description": pattern["description"],
                         }
-                        break
 
             if suggestion:
                 # Bestimme Delivery-Modus
