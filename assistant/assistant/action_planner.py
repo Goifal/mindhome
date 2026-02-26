@@ -437,7 +437,8 @@ class ActionPlanner:
         Returns:
             Dict mit response (Rueckfrage oder Plan), plan_id, status
         """
-        plan_id = f"plan_{id(text) % 10000}"
+        import hashlib
+        plan_id = f"plan_{hashlib.md5(f'{text}{asyncio.get_event_loop().time()}'.encode()).hexdigest()[:8]}"
 
         planning_prompt = f"""Analysiere diese Planungsanfrage und stelle die noetigsten Rueckfragen.
 WICHTIG: Stelle maximal 2-3 Fragen. Nicht zu viele auf einmal.

@@ -87,7 +87,7 @@ class ConditionalCommands:
             return {"success": False, "message": "Redis nicht verfuegbar."}
 
         # F-002: Trust-Check bei Erstellung — Gaeste duerfen keine Sicherheitsaktionen anlegen
-        if action_function in OWNER_ONLY_ACTIONS and trust_level not in ("owner",):
+        if action_function in OWNER_ONLY_ACTIONS and trust_level.lower() not in ("owner",):
             logger.warning(
                 "Conditional blockiert: %s erfordert Owner-Trust (person=%s, trust=%s)",
                 action_function, person, trust_level,

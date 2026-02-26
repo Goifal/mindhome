@@ -168,6 +168,9 @@ class ProtocolEngine:
         if not steps:
             return {"success": False, "message": "Protokoll hat keine Schritte."}
 
+        # Vor Ausfuehrung: Aktuellen Zustand snapshotten fuer praezises Undo
+        live_undo_steps = await self._snapshot_undo_steps(steps)
+
         # Sequentiell ausfuehren
         executed = []
         errors = []
@@ -181,6 +184,14 @@ class ProtocolEngine:
                     errors.append(f"{tool}: {result}")
             except Exception as e:
                 errors.append(f"{tool}: {e}")
+
+        # Live-Undo-Steps im Protokoll aktualisieren (ueberschreibt Defaults)
+        if live_undo_steps:
+            protocol["undo_steps"] = live_undo_steps
+            try:
+                await self.redis.set(f"{_PREFIX}:{name_normalized}", json.dumps(protocol))
+            except Exception:
+                pass  # Fallback: alte Undo-Steps bleiben
 
         # Letzten Ausfuehrungsstatus speichern (fuer Undo)
         last_exec = {
@@ -400,9 +411,71 @@ class ProtocolEngine:
 
         return []
 
+    async def _snapshot_undo_steps(self, steps: list[dict]) -> list[dict]:
+        """Snapshotten den aktuellen Zustand VOR Ausfuehrung fuer praezises Undo."""
+        if not self.executor or not hasattr(self.executor, 'ha'):
+            return []
+
+        try:
+            states = await self.executor.ha.get_states() or []
+        except Exception:
+            return []
+
+        state_map = {s.get("entity_id"): s for s in states if s.get("entity_id")}
+        undo = []
+
+        for step in steps:
+            tool = step.get("tool", "")
+            args = step.get("args", {})
+            entity_id = args.get("entity_id", "")
+
+            # Entity aus Raum ableiten wenn noetig
+            room = args.get("room", "")
+            domain_map = {"set_light": "light", "set_climate": "climate",
+                          "set_cover": "cover", "set_switch": "switch"}
+            if not entity_id and room and tool in domain_map:
+                prefix = domain_map[tool]
+                entity_id = next(
+                    (eid for eid in state_map if eid.startswith(f"{prefix}.") and room.lower() in eid.lower()),
+                    "",
+                )
+
+            current = state_map.get(entity_id, {})
+            attrs = current.get("attributes", {})
+            current_state = current.get("state", "")
+
+            if tool == "set_light" and current_state:
+                undo_args = dict(args)
+                undo_args["state"] = current_state
+                if current_state == "on":
+                    undo_args["brightness"] = attrs.get("brightness", 255)
+                undo.append({"tool": "set_light", "args": undo_args})
+
+            elif tool == "set_climate" and current_state:
+                undo_args = dict(args)
+                undo_args["temperature"] = attrs.get("temperature", 21)
+                undo.append({"tool": "set_climate", "args": undo_args})
+
+            elif tool == "set_cover" and current_state:
+                undo_args = dict(args)
+                undo_args["action"] = "close" if current_state == "open" else "open"
+                undo.append({"tool": "set_cover", "args": undo_args})
+
+            elif tool == "set_switch" and current_state:
+                undo_args = dict(args)
+                undo_args["state"] = current_state
+                undo.append({"tool": "set_switch", "args": undo_args})
+
+            elif tool == "play_media":
+                undo_args = dict(args)
+                undo_args["action"] = "stop"
+                undo.append({"tool": "play_media", "args": undo_args})
+
+        return undo
+
     @staticmethod
     def _generate_undo_steps(steps: list[dict]) -> list[dict]:
-        """Generiert Undo-Schritte fuer ein Protokoll."""
+        """Generiert Fallback-Undo-Schritte (wenn kein HA-Snapshot moeglich)."""
         undo = []
         for step in steps:
             tool = step.get("tool", "")
