@@ -2487,7 +2487,9 @@ class FunctionExecutor:
     # Erlaubte Service-Data Keys fuer _exec_call_service (Whitelist)
     _CALL_SERVICE_ALLOWED_KEYS = frozenset({
         "brightness", "brightness_pct", "color_temp", "rgb_color", "hs_color",
+        "effect", "color_name", "transition",
         "temperature", "target_temp_high", "target_temp_low", "hvac_mode",
+        "fan_mode", "swing_mode", "preset_mode",
         "position", "tilt_position",
         "volume_level", "media_content_id", "media_content_type", "source",
         "message", "title", "data",
@@ -2539,7 +2541,7 @@ class FunctionExecutor:
         return {"success": success, "message": f"{domain}.{service} ausgefuehrt"}
 
     async def _exec_play_media(self, args: dict) -> dict:
-        action = args["action"]
+        action = args.get("action", "play")
         room = args.get("room")
         if not room and args.get("entity_id"):
             eid = args["entity_id"]

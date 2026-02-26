@@ -827,7 +827,7 @@ class AssistantBrain(BrainCallbacksMixin):
         # Phase 7: Gaeste-Modus Trigger
         if self.routines.is_guest_trigger(text):
             logger.info("Gaeste-Modus Trigger erkannt")
-            response_text = await self.routines.activate_guest_mode()
+            response_text = self._filter_response(await self.routines.activate_guest_mode())
             self._remember_exchange(text, response_text)
             await self._speak_and_emit(response_text, room=room)
             return {
@@ -842,7 +842,7 @@ class AssistantBrain(BrainCallbacksMixin):
         guest_off_triggers = ["gaeste sind weg", "besuch ist weg", "normalbetrieb", "gaeste modus aus"]
         if any(t in text.lower() for t in guest_off_triggers):
             if await self.routines.is_guest_mode_active():
-                response_text = await self.routines.deactivate_guest_mode()
+                response_text = self._filter_response(await self.routines.deactivate_guest_mode())
                 self._remember_exchange(text, response_text)
                 await self._speak_and_emit(response_text, room=room)
                 return {
@@ -856,6 +856,7 @@ class AssistantBrain(BrainCallbacksMixin):
         # Phase 13.1: Sicherheits-Bestaetigung (lock_door:unlock, arm_security_system:disarm, etc.)
         security_result = await self._handle_security_confirmation(text, person or "")
         if security_result:
+            security_result = self._filter_response(security_result)
             self._remember_exchange(text, security_result)
             await self._speak_and_emit(security_result, room=room)
             return {
@@ -869,6 +870,7 @@ class AssistantBrain(BrainCallbacksMixin):
         # Phase 13.2: Automation-Bestaetigung (VOR allem anderen)
         automation_result = await self._handle_automation_confirmation(text)
         if automation_result:
+            automation_result = self._filter_response(automation_result)
             self._remember_exchange(text, automation_result)
             await self._speak_and_emit(automation_result, room=room)
             return {
@@ -882,6 +884,7 @@ class AssistantBrain(BrainCallbacksMixin):
         # Phase 13.4: Optimierungs-Vorschlag Bestaetigung
         opt_result = await self._handle_optimization_confirmation(text)
         if opt_result:
+            opt_result = self._filter_response(opt_result)
             self._remember_exchange(text, opt_result)
             await self._speak_and_emit(opt_result, room=room)
             return {
@@ -895,6 +898,7 @@ class AssistantBrain(BrainCallbacksMixin):
         # Phase 8: Explizites Notizbuch — Memory-Befehle (VOR allem anderen)
         memory_result = await self._handle_memory_command(text, person or "")
         if memory_result:
+            memory_result = self._filter_response(memory_result)
             self._remember_exchange(text, memory_result)
             await self._speak_and_emit(memory_result, room=room)
             return {
@@ -908,7 +912,7 @@ class AssistantBrain(BrainCallbacksMixin):
         # Phase 11: Koch-Navigation — aktive Session hat Vorrang
         if self.cooking.is_cooking_navigation(text):
             logger.info("Koch-Navigation: '%s'", text)
-            cooking_response = await self.cooking.handle_navigation(text)
+            cooking_response = self._filter_response(await self.cooking.handle_navigation(text))
             self._remember_exchange(text, cooking_response)
             tts_data = self.tts_enhancer.enhance(cooking_response, message_type="casual")
             await self._speak_and_emit(cooking_response, room=room, tts_data=tts_data)
@@ -925,9 +929,9 @@ class AssistantBrain(BrainCallbacksMixin):
         if self.cooking.is_cooking_intent(text):
             logger.info("Koch-Intent erkannt: '%s'", text)
             cooking_model = self.model_router.get_best_available()
-            cooking_response = await self.cooking.start_cooking(
+            cooking_response = self._filter_response(await self.cooking.start_cooking(
                 text, person or "", cooking_model
-            )
+            ))
             self._remember_exchange(text, cooking_response)
             tts_data = self.tts_enhancer.enhance(cooking_response, message_type="casual")
             await self._speak_and_emit(cooking_response, room=room, tts_data=tts_data)
@@ -2696,11 +2700,11 @@ class AssistantBrain(BrainCallbacksMixin):
             # Nur fuer reine Action-Tools (set_light etc.), nicht fuer Query-Tools
             # Bei Multi-Actions: Narrative statt einzelne Bestaetigungen
             if executed_actions and not response_text:
-                all_success = all(
-                    a["result"].get("success", False)
-                    for a in executed_actions
-                    if isinstance(a["result"], dict)
-                )
+                successful = [
+                    a for a in executed_actions
+                    if isinstance(a["result"], dict) and a["result"].get("success", False)
+                ]
+                all_success = len(successful) == len(executed_actions) and len(successful) > 0
                 any_failed = any(
                     isinstance(a["result"], dict) and not a["result"].get("success", False)
                     for a in executed_actions
@@ -2770,7 +2774,7 @@ class AssistantBrain(BrainCallbacksMixin):
         time_of_day = self.personality.get_time_of_day()
         if time_of_day in ("night", "early_morning"):
             night_limit = 2
-        if intent_type == "general" or night_limit > 0:
+        if response_text:
             response_text = self._filter_response(response_text, max_sentences_override=night_limit)
 
         # Humanizer-Fallback: Wenn Query-Tools liefen aber LLM-Feinschliff
