@@ -1,6 +1,6 @@
 # ============================================================
 # MindHome Assistant - Raum-Profile
-# Phase 7: Raum-Intelligenz
+# Phase 7: Raum-Intelligenz + Phase 11: Etagen & Cover
 # ============================================================
 # Jeder Raum hat ein Profil mit Defaults und Alerts.
 # Diese Werte werden vom Context Builder genutzt um
@@ -11,15 +11,69 @@
 # NICHT zum aktiven Steuern der Raumtemperatur.
 #
 # type: living, bedroom, kitchen, office, bathroom, hallway, outdoor
+# floor: eg (Erdgeschoss) | og (Obergeschoss)
 # default_temp: Standard-Temperatur in Grad Celsius
 # default_light: warmweiss, neutralweiss, tageslicht, gedimmt
-# default_brightness: 0-100 Prozent
+# default_brightness: 0-100 Prozent (dim2warm-Lampen: nur Helligkeit, Farbtemp in Hardware)
 # alerts: Liste von raumspezifischen Warnungen
 # purpose: Kurzbeschreibung fuer LLM-Kontext
 
 rooms:
+  # ── Erdgeschoss (EG) ──────────────────────────────────
+  flur_unten:
+    type: "hallway"
+    floor: "eg"
+    purpose: "Eingangsbereich. Durchgang, kurzes Licht."
+    default_temp: 19
+    default_light: "warmweiss"
+    default_brightness: 50
+    night_brightness: 10
+    alerts: []
+    scenes: []
+
+  buero_julia:
+    type: "office"
+    floor: "eg"
+    purpose: "Julias Buero. Arbeit, Konzentration."
+    default_temp: 21
+    default_light: "tageslicht"
+    default_brightness: 80
+    night_brightness: 40
+    alerts:
+      - "keine_pause_3h"
+    scenes:
+      - "arbeiten"
+      - "meeting"
+
+  buero_manuel:
+    type: "office"
+    floor: "eg"
+    purpose: "Manuels Buero. Arbeit, Konzentration."
+    default_temp: 21
+    default_light: "tageslicht"
+    default_brightness: 80
+    night_brightness: 40
+    alerts:
+      - "keine_pause_3h"
+    scenes:
+      - "arbeiten"
+      - "meeting"
+
+  # ── Obergeschoss (OG) ─────────────────────────────────
+  flur_oben:
+    type: "hallway"
+    floor: "og"
+    purpose: "Flur Obergeschoss. Durchgang."
+    default_temp: 19
+    default_light: "warmweiss"
+    default_brightness: 50
+    night_brightness: 10
+    alerts: []
+    scenes: []
+
   wohnzimmer:
     type: "living"
+    floor: "og"
     purpose: "Hauptwohnraum. Entspannung, TV, Gaeste."
     default_temp: 22
     default_light: "warmweiss"
@@ -31,22 +85,9 @@ rooms:
       - "filmabend"
       - "hell"
 
-  schlafzimmer:
-    type: "bedroom"
-    purpose: "Schlafen. Ruhig, dunkel, kuehl."
-    default_temp: 18
-    default_light: "warmweiss"
-    default_brightness: 30
-    night_brightness: 5
-    alerts:
-      - "co2_hoch"
-    scenes:
-      - "schlafen"
-      - "aufwachen"
-      - "lesen"
-
   kueche:
     type: "kitchen"
+    floor: "og"
     purpose: "Kochen, Essen. Hell, funktional."
     default_temp: 20
     default_light: "neutralweiss"
@@ -59,22 +100,51 @@ rooms:
       - "kochen"
       - "essen"
 
-  buero:
-    type: "office"
-    purpose: "Arbeit, Konzentration. Tageslicht, produktiv."
-    default_temp: 21
-    default_light: "tageslicht"
-    default_brightness: 80
-    night_brightness: 40
+  schlafzimmer:
+    type: "bedroom"
+    floor: "og"
+    purpose: "Schlafen. Ruhig, dunkel, kuehl."
+    default_temp: 18
+    default_light: "warmweiss"
+    default_brightness: 30
+    night_brightness: 5
     alerts:
-      - "keine_pause_3h"
+      - "co2_hoch"
     scenes:
-      - "arbeiten"
-      - "meeting"
+      - "schlafen"
+      - "aufwachen"
+      - "lesen"
 
-  bad:
+  kinderzimmer_strasse:
+    type: "bedroom"
+    floor: "og"
+    purpose: "Kinderzimmer Strassenseite."
+    default_temp: 20
+    default_light: "warmweiss"
+    default_brightness: 60
+    night_brightness: 5
+    alerts: []
+    scenes:
+      - "schlafen"
+      - "spielen"
+
+  kinderzimmer_garten:
+    type: "bedroom"
+    floor: "og"
+    purpose: "Kinderzimmer Gartenseite."
+    default_temp: 20
+    default_light: "warmweiss"
+    default_brightness: 60
+    night_brightness: 5
+    alerts: []
+    scenes:
+      - "schlafen"
+      - "spielen"
+
+  badezimmer:
     type: "bathroom"
-    purpose: "Bad. Warm, hell zum Fertigmachen."
+    floor: "og"
+    purpose: "Badezimmer. Warm, hell zum Fertigmachen."
     default_temp: 23
     default_light: "warmweiss"
     default_brightness: 60
@@ -84,20 +154,32 @@ rooms:
       - "morgens"
       - "abends"
 
-  flur:
-    type: "hallway"
-    purpose: "Durchgangsbereich. Kurzes Licht."
-    default_temp: 19
-    default_light: "neutralweiss"
+  toilette:
+    type: "bathroom"
+    floor: "og"
+    purpose: "Gaeste-WC / Toilette."
+    default_temp: 20
+    default_light: "warmweiss"
     default_brightness: 50
     night_brightness: 10
     alerts: []
     scenes: []
 
-# Saisonale Anpassungen (Phase 7.9)
+  ankleide:
+    type: "bedroom"
+    floor: "og"
+    purpose: "Ankleide. Helles Licht zum Anziehen."
+    default_temp: 20
+    default_light: "warmweiss"
+    default_brightness: 70
+    night_brightness: 15
+    alerts: []
+    scenes: []
+
+# ── Saisonale Anpassungen (Phase 7.9) ─────────────────
 seasonal:
   summer:
-    temp_offset: -1          # 1 Grad kuehler als Default
+    temp_offset: -1
     briefing_extras:
       - "UV-Index"
       - "Pollenflug"
@@ -105,7 +187,7 @@ seasonal:
     ventilation: "Morgens und abends lueften, tagsueber geschlossen"
 
   winter:
-    temp_offset: 1           # 1 Grad waermer als Default
+    temp_offset: 1
     briefing_extras:
       - "Glatteis-Warnung"
       - "Heizkosten"
@@ -125,3 +207,57 @@ seasonal:
       - "Nebel/Frost"
     cover_hint: "Frueh schliessen bei kurzem Tag"
     ventilation: "Tagsueber lueften wenn trocken"
+
+# ============================================================
+# Cover-Profile: Fenster-Orientierung fuer Sonnenstand-Automatik
+# ============================================================
+# Jeder Eintrag beschreibt ein Fenster/Rollladen/Markise.
+# → entity_id und Orientierung bitte manuell eintragen!
+#
+# type: rollladen | markise
+# orientation: N | NE | E | SE | S | SW | W | NW
+# sun_exposure_start: Ab welchem Azimut (Grad) Sonne aufs Fenster trifft
+# sun_exposure_end: Bis welchem Azimut
+#   Referenz: 0°=Nord, 90°=Ost, 180°=Sued, 270°=West
+#   Beispiel Suedfenster: start=120, end=240
+#   Beispiel Ostfenster:  start=45, end=135
+#   Beispiel Westfenster: start=225, end=315
+# allow_auto: Darf Automatik diesen Rollladen steuern?
+# heat_protection: Bei Hitze + Sonne automatisch abdunkeln?
+# privacy_close_hour: Ab wann abends automatisch schliessen (optional)
+cover_profiles:
+  covers: []
+  # ── Beispiel-Template (bitte ausfuellen): ──
+  # - entity_id: cover.rollladen_wohnzimmer
+  #   room: wohnzimmer
+  #   type: rollladen
+  #   orientation: S
+  #   sun_exposure_start: 120
+  #   sun_exposure_end: 240
+  #   allow_auto: true
+  #   heat_protection: true
+  #   privacy_close_hour: 17
+  #
+  # - entity_id: cover.rollladen_buero_manuel
+  #   room: buero_manuel
+  #   type: rollladen
+  #   orientation: E
+  #   sun_exposure_start: 45
+  #   sun_exposure_end: 135
+  #   allow_auto: true
+  #   heat_protection: true
+  #
+  # - entity_id: cover.markise_terrasse
+  #   room: wohnzimmer
+  #   type: markise
+  #   orientation: S
+  #   sun_exposure_start: 120
+  #   sun_exposure_end: 270
+  #   allow_auto: true
+  #   heat_protection: true
+
+# ── Markisen-Sicherheit ───────────────────────────────
+markisen:
+  wind_retract_speed: 40         # km/h — Markise automatisch einfahren
+  rain_retract: true             # Bei Regen automatisch einfahren
+  sun_extend_temp: 25            # Ab dieser Temp + Sonne → Markise ausfahren

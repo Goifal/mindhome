@@ -55,6 +55,7 @@ class RoutineEngine:
         self.redis: Optional[redis.Redis] = None
         self._executor = None  # Wird von brain.py gesetzt
         self._personality = None  # Wird von brain.py gesetzt
+        self._semantic_memory = None  # Wird von brain.py gesetzt
         self._vacation_task: Optional[asyncio.Task] = None
 
         # Konfiguration
@@ -201,10 +202,32 @@ class RoutineEngine:
         weekday = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"][now.weekday()]
         context = f"Tag: {weekday}, {now.strftime('%d.%m.%Y')}, {now.strftime('%H:%M')} Uhr"
 
-        # Geburtstags-Check
+        # Geburtstags-Check (YAML-Konfiguration)
         birthday = self._check_birthday(person, now)
         if birthday:
             context += f". {birthday}"
+
+        # Semantic Memory: Heutige persoenliche Daten
+        if self._semantic_memory:
+            try:
+                upcoming = await self._semantic_memory.get_upcoming_personal_dates(days_ahead=1)
+                for entry in upcoming:
+                    if entry["days_until"] == 0:
+                        name = entry["person"].capitalize()
+                        label = entry.get("label", "Geburtstag")
+                        anni = entry.get("anniversary_years", 0)
+                        # Nicht doppelt melden (YAML + Semantic)
+                        if name.lower() in context.lower():
+                            continue
+                        if entry.get("date_type") == "birthday" and anni:
+                            context += f". {name} hat heute {label} ({anni}. Geburtstag)"
+                        elif entry.get("date_type") == "birthday":
+                            context += f". {name} hat heute {label}"
+                        else:
+                            suffix = f" ({anni}.)" if anni else ""
+                            context += f". Heute ist {label}{suffix}"
+            except Exception as e:
+                logger.debug("Semantic Memory Datumscheck fehlgeschlagen: %s", e)
 
         return context
 
@@ -526,16 +549,29 @@ class RoutineEngine:
             return actions
 
         if self.morning_actions.get("covers_up", False):
-            # Bettsensor pruefen: Wenn noch jemand im Bett liegt,
-            # Rolllaeden NICHT hochfahren (Schlafzimmer-Schutz)
-            bed_occupied = await self._is_bed_occupied()
-            if bed_occupied:
-                logger.info("Morning covers_up uebersprungen: Bettsensor belegt")
+            # Wakeup-Sequenz hat Rolllaeden schon hochgefahren?
+            wakeup_done = False
+            if self.redis:
+                try:
+                    today = datetime.now().strftime("%Y-%m-%d")
+                    done = await self.redis.get("mha:routine:wakeup_done_today")
+                    wakeup_done = bool(done and done.startswith(today))
+                except Exception:
+                    pass
+
+            if wakeup_done:
+                logger.info("Morning covers_up uebersprungen: Wakeup-Sequenz hat Rolllaeden schon gefahren")
             else:
-                result = await self._executor.execute("set_cover", {
-                    "room": "all", "position": 100,
-                })
-                actions.append({"function": "set_cover", "result": result})
+                # Bettsensor pruefen: Wenn noch jemand im Bett liegt,
+                # Rolllaeden NICHT hochfahren (Schlafzimmer-Schutz)
+                bed_occupied = await self._is_bed_occupied()
+                if bed_occupied:
+                    logger.info("Morning covers_up uebersprungen: Bettsensor belegt")
+                else:
+                    result = await self._executor.execute("set_cover", {
+                        "room": "all", "position": 100,
+                    })
+                    actions.append({"function": "set_cover", "result": result})
 
         if self.morning_actions.get("lights_soft", False):
             result = await self._executor.execute("set_light", {
@@ -544,6 +580,135 @@ class RoutineEngine:
             actions.append({"function": "set_light", "result": result})
 
         return actions
+
+    # ------------------------------------------------------------------
+    # Aufwach-Sequenz (kontextreiches Aufwachen)
+    # ------------------------------------------------------------------
+
+    async def execute_wakeup_sequence(self, autonomy_level: int = 3) -> bool:
+        """Fuehrt die stufenweise Aufwach-Sequenz aus.
+
+        Rolllaeden stufenweise, sanftes Licht, Kaffee — dann Briefing.
+        Nur einmal pro Tag, nur im Zeitfenster, nur bei ausreichendem Autonomie-Level.
+
+        Returns:
+            True wenn Sequenz ausgefuehrt wurde.
+        """
+        ws_cfg = yaml_config.get("routines", {}).get("morning_briefing", {}).get("wakeup_sequence", {})
+        if not ws_cfg.get("enabled", False):
+            return False
+
+        min_level = ws_cfg.get("min_autonomy_level", 3)
+        if autonomy_level < min_level:
+            return False
+
+        # Zeitfenster pruefen
+        now = datetime.now()
+        start_h = ws_cfg.get("window_start_hour", 5)
+        end_h = ws_cfg.get("window_end_hour", 9)
+        if not (start_h <= now.hour < end_h):
+            return False
+
+        # Nur einmal pro Tag
+        if self.redis:
+            today = now.strftime("%Y-%m-%d")
+            flag_key = "mha:routine:wakeup_done_today"
+            try:
+                done = await self.redis.get(flag_key)
+                if done and done.startswith(today):
+                    return False
+            except Exception:
+                pass
+
+        # Bettsensor pruefen
+        bed_occupied = await self._is_bed_occupied()
+        if bed_occupied:
+            logger.info("Aufwach-Sequenz uebersprungen: Bettsensor belegt")
+            return False
+
+        logger.info("Aufwach-Sequenz gestartet")
+        steps = ws_cfg.get("steps", {})
+
+        # 1. Rolllaeden stufenweise oeffnen
+        if steps.get("covers_gradual", {}).get("enabled", False):
+            await self._wakeup_covers_gradual(steps["covers_gradual"])
+
+        # 2. Sanftes Licht
+        if steps.get("lights_soft", {}).get("enabled", False):
+            await self._wakeup_lights_soft(steps["lights_soft"])
+
+        # 3. Kaffeemaschine
+        if steps.get("coffee_machine", {}).get("enabled", False):
+            await self._wakeup_coffee(steps["coffee_machine"])
+
+        # Flag setzen
+        if self.redis:
+            try:
+                today = datetime.now().strftime("%Y-%m-%d")
+                await self.redis.setex("mha:routine:wakeup_done_today", 86400, today)
+            except Exception:
+                pass
+
+        logger.info("Aufwach-Sequenz abgeschlossen")
+        return True
+
+    async def _wakeup_covers_gradual(self, cfg: dict):
+        """Rolllaeden stufenweise ueber X Minuten oeffnen."""
+        if not self._executor:
+            return
+
+        room = cfg.get("room", "schlafzimmer")
+        duration = cfg.get("duration_seconds", 180)
+        interval = cfg.get("step_interval_seconds", 30)
+        steps = max(1, duration // interval)
+        step_size = 100 // steps
+
+        for i in range(1, steps + 1):
+            position = min(100, i * step_size)
+            try:
+                await self._executor.execute("set_cover", {
+                    "room": room, "position": position,
+                })
+                logger.debug("Wakeup covers: %d%% (%s)", position, room)
+            except Exception as e:
+                logger.debug("Wakeup cover step fehlgeschlagen: %s", e)
+
+            if i < steps:
+                await asyncio.sleep(interval)
+
+    async def _wakeup_lights_soft(self, cfg: dict):
+        """Sanftes Aufwach-Licht einschalten."""
+        if not self._executor:
+            return
+
+        room = cfg.get("room", "schlafzimmer")
+        brightness = cfg.get("brightness", 20)
+        transition = cfg.get("transition", 10)
+
+        try:
+            await self._executor.execute("set_light", {
+                "room": room,
+                "state": "on",
+                "brightness": brightness,
+                "transition": transition,
+            })
+            logger.debug("Wakeup light: %d%% in %s", brightness, room)
+        except Exception as e:
+            logger.debug("Wakeup light fehlgeschlagen: %s", e)
+
+    async def _wakeup_coffee(self, cfg: dict):
+        """Kaffeemaschine einschalten."""
+        entity = cfg.get("entity", "")
+        if not entity:
+            return
+
+        try:
+            await self.ha.call_service(
+                "homeassistant", "turn_on", entity_id=entity,
+            )
+            logger.info("Wakeup: Kaffeemaschine eingeschaltet (%s)", entity)
+        except Exception as e:
+            logger.debug("Wakeup coffee fehlgeschlagen: %s", e)
 
     async def _is_bed_occupied(self) -> bool:
         """Prueft ob ein Bettsensor belegt ist (fuer Cover-Schutz)."""
@@ -1272,3 +1437,69 @@ class RoutineEngine:
             return ""
 
         return "Verkehr: " + "; ".join(travel_infos)
+
+    # ------------------------------------------------------------------
+    # Migration: YAML-Geburtstage -> Semantic Memory
+    # ------------------------------------------------------------------
+
+    async def migrate_yaml_birthdays(self, semantic_memory) -> int:
+        """Einmalige Migration der YAML-Geburtstage in Semantic Memory.
+
+        Laeuft nur einmal (Redis-Flag mha:migration:yaml_birthdays_done).
+        Returns:
+            Anzahl migrierter Eintraege.
+        """
+        if not self.redis or not semantic_memory:
+            return 0
+
+        flag_key = "mha:migration:yaml_birthdays_done"
+        try:
+            already_done = await self.redis.get(flag_key)
+            if already_done:
+                return 0
+        except Exception:
+            return 0
+
+        persons_cfg = yaml_config.get("persons", {})
+        birthdays = persons_cfg.get("birthdays", {})
+        if not birthdays:
+            # Kein YAML -> Flag setzen und fertig
+            try:
+                await self.redis.set(flag_key, "1")
+            except Exception:
+                pass
+            return 0
+
+        migrated = 0
+        for name, date_str in birthdays.items():
+            try:
+                # Format: "YYYY-MM-DD" oder "MM-DD"
+                if len(date_str) == 10:
+                    year = date_str[:4]
+                    mm_dd = date_str[5:]
+                else:
+                    year = ""
+                    mm_dd = date_str[-5:] if len(date_str) >= 5 else date_str
+
+                success = await semantic_memory.store_personal_date(
+                    date_type="birthday",
+                    person_name=name,
+                    date_mm_dd=mm_dd,
+                    year=year,
+                )
+                if success:
+                    migrated += 1
+            except Exception as e:
+                logger.debug("Migration Geburtstag '%s' fehlgeschlagen: %s", name, e)
+
+        try:
+            await self.redis.set(flag_key, "1")
+        except Exception:
+            pass
+
+        if migrated:
+            logger.info(
+                "YAML-Geburtstage migriert: %d/%d in Semantic Memory",
+                migrated, len(birthdays),
+            )
+        return migrated

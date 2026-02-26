@@ -333,6 +333,28 @@ routines:
     morning_actions:
       covers_up: true
       lights_soft: false
+    wakeup_sequence:
+      enabled: true
+      min_autonomy_level: 3
+      bedroom_motion_sensor: ''  # z.B. binary_sensor.motion_schlafzimmer
+      window_start_hour: 5
+      window_end_hour: 9
+      steps:
+        covers_gradual:
+          enabled: true
+          room: schlafzimmer
+          duration_seconds: 180
+          step_interval_seconds: 30
+        lights_soft:
+          enabled: true
+          room: schlafzimmer
+          brightness: 20
+          color_temp: warm
+          transition: 10
+        coffee_machine:
+          enabled: false
+          entity: switch.kaffeemaschine
+      briefing_delay_seconds: 45
   good_night:
     enabled: true
     triggers:
@@ -412,8 +434,18 @@ conversation_continuity:
   expire_hours: 24
 seasonal_actions:
   enabled: true
-  check_interval_minutes: 30
+  check_interval_minutes: 15
   auto_execute_level: 3
+  cover_automation:
+    sun_tracking: true               # Sonnenstand-basiert (Azimut + Elevation)
+    temperature_based: true          # Temperatur-basiert (Hitze/Kaelte)
+    weather_protection: true         # Wetter/Sturm-Schutz
+    presence_simulation: true        # Urlaubs-Simulation wenn vacation_mode
+    night_insulation: true           # Nachts runter fuer Isolierung
+    heat_protection_temp: 26         # Ab dieser Aussentemp Sonnenschutz
+    frost_protection_temp: 3         # Bei Frost Rolllaeden schliessen
+    storm_wind_speed: 50             # km/h — Rolllaeden HOCH zum Schutz
+    vacation_mode_entity: ""         # z.B. input_boolean.vacation_mode
 tts:
   entity: tts.piper
   ssml_enabled: true
@@ -902,3 +934,46 @@ music_dj:
   - sleeping
   - in_call
   custom_queries: {}
+# --- Saugroboter-Steuerung (Phase 11) ---
+vacuum:
+  enabled: true
+  robots:
+    eg:
+      entity_id: ""               # z.B. vacuum.dreame_eg — bitte eintragen
+      name: "Saugroboter EG"
+      nickname: "der Kleine unten"
+      floor: "eg"
+      rooms: {}                   # room_name: segment_id (Dreame Raum-IDs)
+      # Beispiel:
+      # rooms:
+      #   flur_unten: 1
+      #   buero_julia: 2
+      #   buero_manuel: 3
+    og:
+      entity_id: ""               # z.B. vacuum.dreame_og — bitte eintragen
+      name: "Saugroboter OG"
+      nickname: "der Kleine oben"
+      floor: "og"
+      rooms: {}
+      # Beispiel:
+      # rooms:
+      #   wohnzimmer: 1
+      #   kueche: 2
+      #   schlafzimmer: 3
+      #   kinderzimmer_strasse: 4
+      #   kinderzimmer_garten: 5
+      #   badezimmer: 6
+      #   flur_oben: 7
+  auto_clean:
+    enabled: true
+    when_nobody_home: true         # Starten wenn alle weg sind
+    not_during:                    # Nicht starten waehrend:
+      - "meeting"                  # Kalender-Event enthaelt "meeting"
+      - "schlafen"                 # Schlafmodus aktiv
+    min_hours_between: 24          # Mindestabstand zwischen Reinigungen
+    preferred_time_start: 10       # Bevorzugt 10-16 Uhr
+    preferred_time_end: 16
+  maintenance:
+    enabled: true
+    check_interval_hours: 24
+    warn_at_percent: 10            # Warnung wenn Verschleissteil < 10%

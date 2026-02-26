@@ -372,13 +372,13 @@ _ASSISTANT_TOOLS_STATIC = [
         "type": "function",
         "function": {
             "name": "set_light",
-            "description": "Licht in einem Raum ein-/ausschalten oder dimmen. Fuer 'heller' verwende state='brighter', fuer 'dunkler' verwende state='dimmer'. Diese passen die Helligkeit relativ um 15% an. Wenn der User ein bestimmtes Licht meint (z.B. 'Stehlampe', 'Deckenlampe'), setze den device-Parameter.",
+            "description": "Licht in einem Raum ein-/ausschalten oder dimmen. Alle Lampen sind dim2warm — Farbtemperatur wird automatisch ueber die Helligkeit geregelt (Hardware). Fuer 'heller' verwende state='brighter', fuer 'dunkler' verwende state='dimmer'. Fuer Etagen: room='eg' oder room='og'. Wenn der User ein bestimmtes Licht meint (z.B. 'Stehlampe', 'Deckenlampe'), setze den device-Parameter.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "room": {
                         "type": "string",
-                        "description": "Raumname VOLLSTAENDIG angeben inkl. Personen-Praefix falls genannt (z.B. 'manuel buero', 'julia buero', 'wohnzimmer', 'schlafzimmer'). NICHT den Personennamen weglassen!",
+                        "description": "Raumname VOLLSTAENDIG angeben inkl. Personen-Praefix falls genannt (z.B. 'buero_manuel', 'buero_julia', 'wohnzimmer', 'schlafzimmer'). NICHT den Personennamen weglassen! Fuer ganze Etage: 'eg' oder 'og'. Fuer alle: 'all'.",
                     },
                     "device": {
                         "type": "string",
@@ -391,16 +391,11 @@ _ASSISTANT_TOOLS_STATIC = [
                     },
                     "brightness": {
                         "type": "integer",
-                        "description": "Helligkeit 0-100 Prozent (optional, nur bei state='on')",
+                        "description": "Helligkeit 0-100 Prozent (optional, nur bei state='on'). Ohne Angabe wird adaptive Helligkeit nach Tageszeit berechnet.",
                     },
                     "transition": {
                         "type": "integer",
                         "description": "Uebergangsdauer in Sekunden (optional, fuer sanftes Dimmen)",
-                    },
-                    "color_temp": {
-                        "type": "string",
-                        "enum": ["warm", "neutral", "cold"],
-                        "description": "Farbtemperatur: warm (2700K), neutral (4000K), cold (6500K)",
                     },
                 },
                 "required": ["room", "state"],
@@ -453,27 +448,32 @@ _ASSISTANT_TOOLS_STATIC = [
         "type": "function",
         "function": {
             "name": "set_cover",
-            "description": "Rollladen/Jalousie steuern. NIEMALS fuer Garagentore! Verwende action fuer einfache Befehle ('runter'=close, 'hoch'=open). Fuer Feinsteuerung: position (0-100) oder adjust (up/down, +-20%).",
+            "description": "Rollladen oder Markise steuern. NIEMALS fuer Garagentore! action: open/close/stop/half. position: 0-100%. Fuer Etagen: room='eg' oder room='og'. Fuer Markisen: type='markise'.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "room": {
                         "type": "string",
-                        "description": "Raumname VOLLSTAENDIG inkl. Personen-Praefix falls genannt (z.B. 'manuel buero', 'julia buero'). NICHT den Personennamen weglassen! KEIN Geraetetyp (kein 'rollladen', 'jalousie' etc.)",
+                        "description": "Raumname VOLLSTAENDIG (z.B. 'buero_manuel', 'wohnzimmer'). Fuer ganze Etage: 'eg' oder 'og'. Fuer alle: 'all'. Fuer alle Markisen: 'markisen'.",
                     },
                     "action": {
                         "type": "string",
                         "enum": ["open", "close", "stop", "half"],
-                        "description": "Einfache Aktion: open=ganz oeffnen/hoch, close=ganz schliessen/runter, stop=anhalten, half=halb offen. BEVORZUGE action fuer 'Rollladen hoch/runter/auf/zu'.",
+                        "description": "open=ganz oeffnen/hoch, close=ganz schliessen/runter, stop=anhalten, half=halb offen.",
                     },
                     "position": {
                         "type": "integer",
-                        "description": "Exakte Position 0 (zu) bis 100 (offen). Nur fuer Prozent-Angaben (z.B. 'Rollladen auf 30%').",
+                        "description": "Exakte Position 0 (zu) bis 100 (offen). Nur fuer Prozent-Angaben.",
                     },
                     "adjust": {
                         "type": "string",
                         "enum": ["up", "down"],
-                        "description": "Relative Anpassung: 'up'=+20% offener, 'down'=-20% weiter zu. Nur fuer 'ein bisschen hoch/runter'.",
+                        "description": "Relative Anpassung: 'up'=+20% offener, 'down'=-20% weiter zu.",
+                    },
+                    "type": {
+                        "type": "string",
+                        "enum": ["rollladen", "markise"],
+                        "description": "Cover-Typ filtern (optional). Markisen haben eigene Sicherheits-Checks.",
                     },
                 },
                 "required": ["room"],
@@ -1572,6 +1572,41 @@ _ASSISTANT_TOOLS_STATIC = [
             },
         },
     },
+    # ── Phase 11: Saugroboter (Dreame, 2 Etagen) ──────────
+    {
+        "type": "function",
+        "function": {
+            "name": "set_vacuum",
+            "description": "Saugroboter steuern. Raum angeben → richtiger Roboter (EG/OG) wird automatisch gewaehlt. Ohne Raum → ganzes Stockwerk oder alle.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["start", "stop", "pause", "dock", "clean_room"],
+                        "description": "start=ganzes Stockwerk saugen, clean_room=bestimmten Raum saugen, stop=anhalten, pause=pausieren, dock=zur Ladestation",
+                    },
+                    "room": {
+                        "type": "string",
+                        "description": "Raumname fuer gezieltes Saugen (z.B. 'wohnzimmer', 'kueche'). Oder 'eg'/'og' fuer ganzes Stockwerk. Ohne → beide Roboter.",
+                    },
+                },
+                "required": ["action"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_vacuum",
+            "description": "Status aller Saugroboter abfragen: Akku, Status, letzter Lauf, Wartungszustand.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+            },
+        },
+    },
 ]
 
 
@@ -1639,6 +1674,7 @@ class FunctionExecutor:
         "get_house_status", "get_full_status_report", "get_weather",
         "get_device_health", "get_learned_patterns", "describe_doorbell",
         "manage_protocol", "recommend_music", "manage_visitor",
+        "set_vacuum", "get_vacuum",
     })
 
     # Qwen3 uebersetzt deutsche Raumnamen oft ins Englische
@@ -1751,6 +1787,70 @@ class FunctionExecutor:
             logger.error("Fehler bei %s: %s", function_name, e)
             return {"success": False, "message": f"Fehler: {e}"}
 
+    # ── Phase 11: Adaptive Helligkeit (dim2warm) ──────────────
+    @staticmethod
+    def _get_adaptive_brightness(room: str) -> int:
+        """Berechnet Helligkeit basierend auf Tageszeit + Raum-Profil.
+
+        dim2warm-Lampen regeln Farbtemperatur ueber die Helligkeit
+        in Hardware — je dunkler, desto waermer.
+        """
+        hour = datetime.now().hour
+        _cfg_dir = Path(__file__).parent.parent / "config"
+        try:
+            with open(_cfg_dir / "room_profiles.yaml") as f:
+                profiles = yaml.safe_load(f) or {}
+        except Exception:
+            profiles = {}
+        room_cfg = profiles.get("rooms", {}).get(room, {})
+        default_bright = room_cfg.get("default_brightness", 70)
+        night_bright = room_cfg.get("night_brightness", 20)
+
+        if 6 <= hour < 9:        # Morgens: aufsteigend
+            return int(night_bright + (default_bright - night_bright) * (hour - 6) / 3)
+        elif 9 <= hour < 17:     # Tagsueber: volle Helligkeit
+            return default_bright
+        elif 17 <= hour < 21:    # Abends: absteigend
+            return int(default_bright - (default_bright - night_bright) * (hour - 17) / 4)
+        else:                     # Nachts: minimal
+            return night_bright
+
+    async def _exec_set_light_floor(self, floor: str, args: dict, state: str) -> dict:
+        """Alle Lichter einer Etage steuern (eg/og)."""
+        _cfg_dir = Path(__file__).parent.parent / "config"
+        try:
+            with open(_cfg_dir / "room_profiles.yaml") as f:
+                profiles = yaml.safe_load(f) or {}
+        except Exception:
+            profiles = {}
+        floor_rooms = [
+            r for r, cfg in profiles.get("rooms", {}).items()
+            if cfg.get("floor") == floor
+        ]
+        if not floor_rooms:
+            return {"success": False, "message": f"Keine Raeume fuer Etage '{floor.upper()}' konfiguriert"}
+
+        service = "turn_on" if state == "on" else "turn_off"
+        count = 0
+        for room_name in floor_rooms:
+            entity_id = await self._find_entity("light", room_name)
+            if not entity_id:
+                continue
+            service_data: dict = {"entity_id": entity_id}
+            if state == "on":
+                if "brightness" in args:
+                    try:
+                        bri = str(args["brightness"]).replace("%", "").strip()
+                        service_data["brightness_pct"] = max(1, min(100, int(float(bri))))
+                    except (ValueError, TypeError):
+                        pass
+                else:
+                    service_data["brightness_pct"] = self._get_adaptive_brightness(room_name)
+            await self.ha.call_service("light", service, service_data)
+            count += 1
+
+        return {"success": count > 0, "message": f"{count} Lichter im {floor.upper()} {state}"}
+
     async def _exec_set_light(self, args: dict) -> dict:
         room = args.get("room")
         state = args.get("state")
@@ -1776,6 +1876,10 @@ class FunctionExecutor:
 
         if not room:
             return {"success": False, "message": "Kein Raum angegeben"}
+
+        # Phase 11: Etagen-Steuerung (eg/og)
+        if room.lower() in ("eg", "og"):
+            return await self._exec_set_light_floor(room.lower(), args, state)
 
         # Sonderfall: "all" -> alle Lichter schalten
         if room.lower() == "all":
@@ -1818,6 +1922,10 @@ class FunctionExecutor:
                 service_data["brightness_pct"] = brightness_pct
             except (ValueError, TypeError):
                 pass
+        elif state == "on" and "brightness" not in args:
+            # Phase 11: Adaptive Helligkeit wenn keine explizite Angabe
+            brightness_pct = self._get_adaptive_brightness(room)
+            service_data["brightness_pct"] = brightness_pct
         # Phase 9: Transition-Parameter (sanftes Dimmen) — muss int/float sein
         if "transition" in args:
             try:
@@ -1825,11 +1933,8 @@ class FunctionExecutor:
             except (ValueError, TypeError):
                 # LLM schickt manchmal "smooth" statt Zahl — Default 2s
                 service_data["transition"] = 2
-        # Foundation F.4: Farbtemperatur (warm/neutral/cold)
-        _COLOR_TEMP_MAP = {"warm": 2700, "neutral": 4000, "cold": 6500}
-        if "color_temp" in args and state == "on":
-            kelvin = _COLOR_TEMP_MAP.get(args["color_temp"], 4000)
-            service_data["color_temp_kelvin"] = kelvin
+        # dim2warm: Farbtemperatur wird in Hardware ueber Helligkeit geregelt.
+        # Kein color_temp_kelvin an HA senden — Lampen machen das selbst.
 
         logger.info("set_light: %s -> %s (service_data=%s)", room, entity_id, service_data)
 
@@ -1840,8 +1945,6 @@ class FunctionExecutor:
             extras.append(f"{brightness_pct}%")
         if "transition" in args:
             extras.append(f"Transition: {args['transition']}s")
-        if "color_temp" in args:
-            extras.append(f"Farbtemperatur: {args['color_temp']}")
         extra_str = f" ({', '.join(extras)})" if extras else ""
         return {"success": success, "message": f"Licht {room} {state}{extra_str}"}
 
@@ -2301,104 +2404,158 @@ class FunctionExecutor:
         )
         return {"success": success, "message": f"Szene '{scene}' aktiviert"}
 
+    # ── Phase 11: Cover-Steuerung (Rollladen + Markise) ──────
+    # Garagentore und andere gefaehrliche Cover-Typen NIEMALS automatisch steuern
+    _EXCLUDED_COVER_CLASSES = {"garage_door", "gate", "door"}
+
+    async def _is_safe_cover(self, entity_id: str, state: dict) -> bool:
+        """Prueft ob ein Cover sicher automatisch gesteuert werden darf."""
+        attrs = state.get("attributes", {})
+        device_class = attrs.get("device_class", "")
+        if device_class in self._EXCLUDED_COVER_CLASSES:
+            return False
+        eid_lower = entity_id.lower()
+        if "garage" in eid_lower or "gate" in eid_lower:
+            return False
+        if re.search(r'(?:^|[_.\s])tor(?:$|[_.\s])', eid_lower):
+            return False
+        try:
+            from .cover_config import load_cover_configs
+            configs = load_cover_configs()
+            if configs and isinstance(configs, dict):
+                conf = configs.get(entity_id, {})
+                if conf.get("cover_type") in self._EXCLUDED_COVER_CLASSES:
+                    return False
+                if conf.get("enabled") is False:
+                    return False
+        except Exception as e:
+            logger.warning("CoverConfig laden fehlgeschlagen fuer %s: %s — blockiere sicherheitshalber", entity_id, e)
+            return False
+        return True
+
+    def _is_markise(self, entity_id: str, state: dict) -> bool:
+        """Prueft ob ein Cover eine Markise ist (entity_id oder cover_profiles)."""
+        eid_lower = entity_id.lower()
+        if "markise" in eid_lower or "awning" in eid_lower:
+            return True
+        try:
+            _cfg_dir = Path(__file__).parent.parent / "config"
+            with open(_cfg_dir / "room_profiles.yaml") as f:
+                profiles = yaml.safe_load(f) or {}
+            for c in profiles.get("cover_profiles", {}).get("covers", []):
+                if c.get("entity_id") == entity_id and c.get("type") == "markise":
+                    return True
+        except Exception:
+            pass
+        return False
+
+    def _resolve_cover_position(self, args: dict) -> tuple:
+        """Bestimmt Position + Adjust aus action/state/adjust/position Args.
+
+        Returns:
+            (position: int | None, adjust: str | None, is_stop: bool)
+        """
+        _ACTION_TO_POS = {
+            "open": 100, "close": 0, "half": 50,
+            "auf": 100, "offen": 100, "hoch": 100, "up": 100,
+            "closed": 0, "zu": 0, "runter": 0, "down": 0,
+            "halb": 50,
+        }
+        action = str(args.get("action", "")).lower().strip()
+        state_val = str(args.get("state", "")).lower().strip()
+        effective = action or state_val
+
+        if effective == "stop":
+            return None, None, True
+
+        adjust = args.get("adjust")
+        if adjust in ("up", "down"):
+            return None, adjust, False
+
+        if effective in _ACTION_TO_POS and "position" not in args:
+            return _ACTION_TO_POS[effective], None, False
+
+        if "position" in args:
+            try:
+                return max(0, min(100, int(args["position"]))), None, False
+            except (ValueError, TypeError):
+                return 0, None, False
+
+        return 0, None, False  # Fallback: close
+
     async def _exec_set_cover(self, args: dict) -> dict:
         room = args.get("room")
+        cover_type = args.get("type")  # rollladen | markise | None
 
         # Qwen3-Fallback: entity_id statt room
         if not room and args.get("entity_id"):
             eid = args["entity_id"]
             room = eid.split(".", 1)[1] if "." in eid else eid
-        # Qwen3-Cleanup: Domain-Prefix aus room strippen
         room = self._clean_room(room)
 
         if not room:
             return {"success": False, "message": "Kein Raum angegeben"}
 
+        # Phase 11: Etagen-Steuerung (eg/og)
+        if room.lower() in ("eg", "og"):
+            return await self._exec_set_cover_floor(room.lower(), args, cover_type)
+
+        # Phase 11: Markisen-Steuerung
+        if room.lower() == "markisen" or cover_type == "markise":
+            return await self._exec_set_cover_markisen(args)
+
+        # "all" → alle Rolllaeden (keine Markisen, keine Garagentore)
+        position, adjust, is_stop = self._resolve_cover_position(args)
+        if room.lower() == "all":
+            if is_stop:
+                return await self._exec_set_cover_all_action("stop_cover")
+            final_pos = position if position is not None else 0
+            return await self._exec_set_cover_all(final_pos, cover_type)
+
+        # Einzelraum
         entity_id = await self._find_entity("cover", room)
 
-        # --- Position bestimmen: action > state > adjust > position ---
-        _ACTION_TO_POS = {
-            "open": 100, "close": 0, "half": 50,
-            # Qwen3-Fallback: state-Werte (deutsch + englisch)
-            "auf": 100, "offen": 100, "hoch": 100, "up": 100,
-            "closed": 0, "zu": 0, "runter": 0, "down": 0,
-            "halb": 50,
-        }
-
-        # 1. action-Parameter (bevorzugt)
-        action = str(args.get("action", "")).lower().strip()
-        # 2. Qwen3-Fallback: state-Parameter
-        state_val = str(args.get("state", "")).lower().strip()
-        # Bestimme effektiven Befehl
-        effective = action or state_val
-
-        if effective == "stop":
-            # stop: HA cover.stop_cover aufrufen (kein Position noetig)
+        if is_stop:
             if not entity_id:
                 return {"success": False, "message": f"Kein Rollladen in '{room}' gefunden"}
             states = await self.ha.get_states()
             entity_state = next((s for s in (states or []) if s.get("entity_id") == entity_id), {})
             if not await self._is_safe_cover(entity_id, entity_state):
                 return {"success": False, "message": f"'{room}' ist ein Garagentor/Tor — nicht erlaubt."}
-            success = await self.ha.call_service(
-                "cover", "stop_cover", {"entity_id": entity_id}
-            )
+            success = await self.ha.call_service("cover", "stop_cover", {"entity_id": entity_id})
             return {"success": success, "message": f"Rollladen {room} gestoppt"}
 
-        if effective in _ACTION_TO_POS and "position" not in args:
-            args = {**args, "position": _ACTION_TO_POS[effective]}
-            logger.info("set_cover: action/state='%s' -> position=%d", effective, args["position"])
-
-        # Relative Anpassung: up/down
-        adjust = args.get("adjust")
+        # Relative Anpassung
         if adjust in ("up", "down"):
             if not entity_id:
                 return {"success": False, "message": f"Kein Rollladen in '{room}' gefunden"}
-            current_position = 50  # Fallback
+            current_position = 50
             ha_state = await self.ha.get_state(entity_id)
             if ha_state:
-                attrs = ha_state.get("attributes", {})
                 try:
-                    current_position = int(attrs.get("current_position", 50))
+                    current_position = int(ha_state.get("attributes", {}).get("current_position", 50))
                 except (ValueError, TypeError):
                     current_position = 50
             step = 20
             position = current_position + step if adjust == "up" else current_position - step
             position = max(0, min(100, position))
-        elif "position" in args:
-            try:
-                position = max(0, min(100, int(args["position"])))
-            except (ValueError, TypeError):
-                return {"success": False, "message": f"Ungueltige Position: {args.get('position')}"}
-        else:
-            # Letzter Fallback: Kein action, kein state, kein adjust, kein position
-            # -> Annahme: User will schliessen (haeufigster Fall)
-            logger.warning("set_cover: Keine Position/Action angegeben, Fallback -> position=0 (close)")
+
+        if position is None:
             position = 0
 
-        # Sonderfall: "all" -> alle Rolllaeden schalten
-        if room.lower() == "all":
-            return await self._exec_set_cover_all(position)
-
         if not entity_id:
-            # Diagnose: verfuegbare Covers auflisten
             try:
                 all_states = await self.ha.get_states()
-                available = [
-                    s.get("entity_id") for s in (all_states or [])
-                    if s.get("entity_id", "").startswith("cover.")
-                ]
-                logger.warning("set_cover: Kein Cover fuer room='%s' gefunden. Verfuegbare Covers: %s", room, available)
-            except Exception as e:
-                logger.debug("Cover-Verfuegbarkeit nicht ladbar: %s", e)
+                available = [s.get("entity_id") for s in (all_states or []) if s.get("entity_id", "").startswith("cover.")]
+            except Exception:
                 available = []
             return {"success": False, "message": f"Kein Rollladen in '{room}' gefunden. Verfuegbar: {', '.join(available) if available else 'keine'}"}
 
-        # Sicherheitscheck: Garagentore duerfen nicht ueber set_cover gesteuert werden
+        # Sicherheitscheck
         states = await self.ha.get_states()
         entity_state = next((s for s in (states or []) if s.get("entity_id") == entity_id), {})
         if not await self._is_safe_cover(entity_id, entity_state):
-            return {"success": False, "message": f"'{room}' ist ein Garagentor/Tor — das darf aus Sicherheitsgruenden nicht automatisch gesteuert werden."}
+            return {"success": False, "message": f"'{room}' ist ein Garagentor/Tor — nicht erlaubt."}
 
         success = await self.ha.call_service(
             "cover", "set_cover_position",
@@ -2409,55 +2566,119 @@ class FunctionExecutor:
             direction = "hoch auf "
         elif adjust == "down":
             direction = "runter auf "
-        return {"success": success, "message": f"Rollladen {room} {direction}{position}%"}
+        label = "Markise" if self._is_markise(entity_id, entity_state) else "Rollladen"
+        return {"success": success, "message": f"{label} {room} {direction}{position}%"}
 
-    # Garagentore und andere gefaehrliche Cover-Typen NIEMALS automatisch steuern
-    _EXCLUDED_COVER_CLASSES = {"garage_door", "gate", "door"}
-
-    async def _is_safe_cover(self, entity_id: str, state: dict) -> bool:
-        """Prueft ob ein Cover sicher automatisch gesteuert werden darf.
-
-        Filtert Garagentore und als inaktiv markierte Covers aus.
-        """
-        attrs = state.get("attributes", {})
-        device_class = attrs.get("device_class", "")
-
-        # 1. HA device_class pruefen (garage_door, gate, door)
-        if device_class in self._EXCLUDED_COVER_CLASSES:
-            return False
-
-        # 2. Entity-ID Heuristik (garage, tor, gate) — Word-Boundary fuer 'tor'
-        #    damit 'motor', 'monitor' etc. nicht faelschlich matchen
-        eid_lower = entity_id.lower()
-        if "garage" in eid_lower or "gate" in eid_lower:
-            return False
-        if re.search(r'(?:^|[_.\s])tor(?:$|[_.\s])', eid_lower):
-            return False
-
-        # 3. Lokale CoverConfig pruefen (cover_type + enabled)
+    async def _exec_set_cover_floor(self, floor: str, args: dict, cover_type: str = None) -> dict:
+        """Alle Rolllaeden/Markisen einer Etage steuern."""
+        _cfg_dir = Path(__file__).parent.parent / "config"
         try:
-            from .cover_config import load_cover_configs
-            configs = load_cover_configs()
-            if configs and isinstance(configs, dict):
-                conf = configs.get(entity_id, {})
-                # Typ-Check: Garagentore/Tore sind unsicher
-                if conf.get("cover_type") in self._EXCLUDED_COVER_CLASSES:
-                    return False
-                # Enabled-Check: Deaktivierte Covers werden nicht gesteuert
-                if conf.get("enabled") is False:
-                    return False
-        except Exception as e:
-            # Fail-safe: Bei CoverConfig-Fehler blockieren statt durchlassen
-            logger.warning("CoverConfig laden fehlgeschlagen fuer %s: %s — blockiere sicherheitshalber", entity_id, e)
-            return False
+            with open(_cfg_dir / "room_profiles.yaml") as f:
+                profiles = yaml.safe_load(f) or {}
+        except Exception:
+            profiles = {}
+        floor_rooms = [
+            r for r, cfg in profiles.get("rooms", {}).items()
+            if cfg.get("floor") == floor
+        ]
+        if not floor_rooms:
+            return {"success": False, "message": f"Keine Raeume fuer Etage '{floor.upper()}' konfiguriert"}
 
-        return True
+        position, adjust, is_stop = self._resolve_cover_position(args)
+        if position is None and not is_stop and adjust is None:
+            position = 0
 
-    async def _exec_set_cover_all(self, position: int) -> dict:
+        states = await self.ha.get_states()
+        if not states:
+            return {"success": False, "message": "Geraete nicht erreichbar"}
+
+        count = 0
+        for room_name in floor_rooms:
+            for s in states:
+                eid = s.get("entity_id", "")
+                if not eid.startswith("cover."):
+                    continue
+                friendly = (s.get("attributes", {}).get("friendly_name") or eid).lower()
+                room_lower = room_name.lower().replace("_", " ")
+                if room_lower not in friendly and room_name not in eid.lower():
+                    continue
+                if not await self._is_safe_cover(eid, s):
+                    continue
+                # Typ-Filter: nur Rolllaeden oder nur Markisen
+                if cover_type == "markise" and not self._is_markise(eid, s):
+                    continue
+                if cover_type == "rollladen" and self._is_markise(eid, s):
+                    continue
+
+                if is_stop:
+                    await self.ha.call_service("cover", "stop_cover", {"entity_id": eid})
+                else:
+                    final_pos = position if position is not None else 0
+                    await self.ha.call_service("cover", "set_cover_position", {"entity_id": eid, "position": final_pos})
+                count += 1
+
+        action_str = "gestoppt" if is_stop else f"auf {position}%"
+        return {"success": count > 0, "message": f"{count} Rolllaeden im {floor.upper()} {action_str}"}
+
+    async def _exec_set_cover_markisen(self, args: dict) -> dict:
+        """Alle Markisen steuern — mit eigenen Wind/Regen-Sicherheits-Checks."""
+        states = await self.ha.get_states()
+        if not states:
+            return {"success": False, "message": "Geraete nicht erreichbar"}
+
+        position, adjust, is_stop = self._resolve_cover_position(args)
+
+        # Sicherheits-Check: Bei Wind/Regen Markisen nicht ausfahren
+        if position is not None and position > 0 and not is_stop:
+            _cfg_dir = Path(__file__).parent.parent / "config"
+            try:
+                with open(_cfg_dir / "room_profiles.yaml") as f:
+                    profiles = yaml.safe_load(f) or {}
+            except Exception:
+                profiles = {}
+            markise_cfg = profiles.get("markisen", {})
+            wind_limit = markise_cfg.get("wind_retract_speed", 40)
+            rain_retract = markise_cfg.get("rain_retract", True)
+
+            for s in states:
+                eid = s.get("entity_id", "")
+                if eid.startswith("weather."):
+                    attrs = s.get("attributes", {})
+                    try:
+                        wind = float(attrs.get("wind_speed", 0))
+                    except (ValueError, TypeError):
+                        wind = 0
+                    condition = s.get("state", "")
+                    if wind >= wind_limit:
+                        return {"success": False, "message": f"Markise NICHT ausgefahren — Wind {wind} km/h (Limit: {wind_limit} km/h)"}
+                    if rain_retract and condition in ("rainy", "pouring", "hail", "lightning-rainy"):
+                        return {"success": False, "message": f"Markise NICHT ausgefahren — Wetter: {condition}"}
+                    break
+
+        count = 0
+        for s in states:
+            eid = s.get("entity_id", "")
+            if not eid.startswith("cover."):
+                continue
+            if not self._is_markise(eid, s):
+                continue
+            if is_stop:
+                await self.ha.call_service("cover", "stop_cover", {"entity_id": eid})
+            else:
+                final_pos = position if position is not None else 0
+                await self.ha.call_service("cover", "set_cover_position", {"entity_id": eid, "position": final_pos})
+            count += 1
+
+        if count == 0:
+            return {"success": False, "message": "Keine Markisen gefunden"}
+        action_str = "gestoppt" if is_stop else f"auf {position}%"
+        return {"success": True, "message": f"{count} Markise(n) {action_str}"}
+
+    async def _exec_set_cover_all(self, position: int, cover_type: str = None) -> dict:
         """Alle Rolllaeden auf eine Position setzen (Garagentore ausgeschlossen)."""
         states = await self.ha.get_states()
         if not states:
-            return {"success": False, "message": "Ich kann gerade nicht auf die Geraete zugreifen. Versuch es bitte gleich nochmal."}
+            return {"success": False, "message": "Geraete nicht erreichbar"}
 
         count = 0
         skipped = []
@@ -2465,24 +2686,192 @@ class FunctionExecutor:
             eid = s.get("entity_id", "")
             if not eid.startswith("cover."):
                 continue
-
             if not await self._is_safe_cover(eid, s):
-                friendly = s.get("attributes", {}).get("friendly_name", eid)
-                skipped.append(friendly)
-                logger.info("Cover uebersprungen (Sicherheitsfilter): %s", eid)
+                skipped.append(s.get("attributes", {}).get("friendly_name", eid))
                 continue
-
-            await self.ha.call_service(
-                "cover", "set_cover_position",
-                {"entity_id": eid, "position": position},
-            )
+            # Typ-Filter
+            if cover_type == "rollladen" and self._is_markise(eid, s):
+                continue
+            if cover_type == "markise" and not self._is_markise(eid, s):
+                continue
+            await self.ha.call_service("cover", "set_cover_position", {"entity_id": eid, "position": position})
             count += 1
 
         msg = f"Alle Rolllaeden auf {position}% ({count} geschaltet)"
         if skipped:
-            msg += f". Uebersprungen (Garagentor/Tor): {', '.join(skipped)}"
-
+            msg += f". Uebersprungen: {', '.join(skipped)}"
         return {"success": True, "message": msg}
+
+    async def _exec_set_cover_all_action(self, service: str) -> dict:
+        """Alle Rolllaeden: stop_cover etc."""
+        states = await self.ha.get_states()
+        if not states:
+            return {"success": False, "message": "Geraete nicht erreichbar"}
+        count = 0
+        for s in states:
+            eid = s.get("entity_id", "")
+            if not eid.startswith("cover."):
+                continue
+            if not await self._is_safe_cover(eid, s):
+                continue
+            await self.ha.call_service("cover", service, {"entity_id": eid})
+            count += 1
+        return {"success": True, "message": f"{count} Rolllaeden: {service}"}
+
+    # ── Phase 11: Saugroboter (Dreame, 2 Etagen) ──────────
+
+    def _resolve_vacuum_room(self, room: str, robots: dict) -> tuple:
+        """Findet den richtigen Roboter + Segment-ID fuer einen Raum.
+
+        Returns:
+            (robot_config: dict | None, segment_id: int | None)
+        """
+        # Direkte Zuordnung: Raum in robots.{floor}.rooms
+        for floor, robot in robots.items():
+            rooms_map = robot.get("rooms", {})
+            if room in rooms_map:
+                return robot, rooms_map[room]
+        # Fallback: Raum-Profil → floor → Roboter
+        _cfg_dir = Path(__file__).parent.parent / "config"
+        try:
+            with open(_cfg_dir / "room_profiles.yaml") as f:
+                profiles = yaml.safe_load(f) or {}
+        except Exception:
+            profiles = {}
+        room_floor = profiles.get("rooms", {}).get(room, {}).get("floor")
+        if room_floor and room_floor in robots:
+            return robots[room_floor], None
+        return None, None
+
+    async def _exec_set_vacuum(self, args: dict) -> dict:
+        """Saugroboter steuern — waehlt automatisch EG/OG-Roboter."""
+        action = args.get("action", "start")
+        room = self._clean_room(args.get("room"))
+        vacuum_cfg = yaml_config.get("vacuum", {})
+        if not vacuum_cfg.get("enabled", True):
+            return {"success": False, "message": "Saugroboter-Steuerung ist deaktiviert"}
+        robots = vacuum_cfg.get("robots", {})
+        if not robots:
+            return {"success": False, "message": "Keine Saugroboter konfiguriert (settings.yaml → vacuum.robots)"}
+
+        # Raum-genaues Saugen
+        if action == "clean_room" and room:
+            robot, segment_id = self._resolve_vacuum_room(room, robots)
+            if not robot:
+                return {"success": False, "message": f"Kein Saugroboter fuer '{room}' konfiguriert"}
+            entity_id = robot.get("entity_id")
+            if not entity_id:
+                return {"success": False, "message": f"Keine entity_id fuer Saugroboter konfiguriert"}
+            nickname = robot.get("nickname", "der Kleine")
+
+            if segment_id is not None:
+                # Dreame: Raum-Segment saugen
+                success = await self.ha.call_service("vacuum", "send_command", {
+                    "entity_id": entity_id,
+                    "command": "app_segment_clean",
+                    "params": [segment_id],
+                })
+            else:
+                # Kein Segment — ganzen Roboter starten
+                success = await self.ha.call_service("vacuum", "start", {"entity_id": entity_id})
+            return {"success": success, "message": f"{nickname} saugt {room}"}
+
+        # Ganzes Stockwerk
+        if action == "start" and room and room.lower() in ("eg", "og"):
+            robot = robots.get(room.lower())
+            if not robot or not robot.get("entity_id"):
+                return {"success": False, "message": f"Kein Roboter fuer {room.upper()} konfiguriert"}
+            success = await self.ha.call_service("vacuum", "start", {"entity_id": robot["entity_id"]})
+            return {"success": success, "message": f"{robot.get('nickname', 'Saugroboter')} startet im {room.upper()}"}
+
+        # Start ohne Raum → Raum → floor-Zuordnung versuchen
+        if action == "start" and room:
+            robot, segment_id = self._resolve_vacuum_room(room, robots)
+            if robot and robot.get("entity_id"):
+                if segment_id is not None:
+                    success = await self.ha.call_service("vacuum", "send_command", {
+                        "entity_id": robot["entity_id"],
+                        "command": "app_segment_clean",
+                        "params": [segment_id],
+                    })
+                else:
+                    success = await self.ha.call_service("vacuum", "start", {"entity_id": robot["entity_id"]})
+                return {"success": success, "message": f"{robot.get('nickname', 'Saugroboter')} saugt {room}"}
+
+        # Stop/Pause/Dock → alle Roboter
+        if action in ("stop", "pause", "dock"):
+            service_map = {"stop": "stop", "pause": "pause", "dock": "return_to_base"}
+            service = service_map[action]
+            results = []
+            for floor, robot in robots.items():
+                eid = robot.get("entity_id")
+                if eid:
+                    success = await self.ha.call_service("vacuum", service, {"entity_id": eid})
+                    results.append(success)
+            action_de = {"stop": "gestoppt", "pause": "pausiert", "dock": "zur Ladestation"}
+            return {"success": any(results), "message": f"Saugroboter {action_de.get(action, action)}"}
+
+        # Start ohne Raum → alle starten
+        results = []
+        names = []
+        for floor, robot in robots.items():
+            eid = robot.get("entity_id")
+            if eid:
+                success = await self.ha.call_service("vacuum", "start", {"entity_id": eid})
+                results.append(success)
+                names.append(robot.get("nickname", f"Roboter {floor.upper()}"))
+        return {"success": any(results), "message": f"{', '.join(names)} gestartet"}
+
+    async def _exec_get_vacuum(self, args: dict) -> dict:
+        """Status aller Saugroboter abfragen."""
+        vacuum_cfg = yaml_config.get("vacuum", {})
+        robots = vacuum_cfg.get("robots", {})
+        if not robots:
+            return {"success": False, "message": "Keine Saugroboter konfiguriert"}
+
+        status_list = []
+        for floor, robot in robots.items():
+            entity_id = robot.get("entity_id")
+            if not entity_id:
+                status_list.append({
+                    "name": robot.get("name", f"Saugroboter {floor.upper()}"),
+                    "floor": floor.upper(),
+                    "state": "nicht konfiguriert (entity_id fehlt)",
+                })
+                continue
+            state = await self.ha.get_state(entity_id)
+            if state:
+                attrs = state.get("attributes", {})
+                entry = {
+                    "name": robot.get("name", f"Saugroboter {floor.upper()}"),
+                    "nickname": robot.get("nickname", ""),
+                    "floor": floor.upper(),
+                    "state": state.get("state", "unknown"),
+                    "battery": attrs.get("battery_level", "?"),
+                }
+                # Dreame-spezifische Attribute
+                if attrs.get("total_clean_area"):
+                    entry["area_cleaned_m2"] = attrs["total_clean_area"]
+                if attrs.get("cleaning_time"):
+                    entry["cleaning_time_min"] = attrs["cleaning_time"]
+                # Wartungszustand
+                maint = {}
+                for key, label in [("filter_left", "Filter"), ("main_brush_left", "Hauptbuerste"),
+                                   ("side_brush_left", "Seitenbuerste"), ("mop_left", "Mopp")]:
+                    val = attrs.get(key)
+                    if val is not None:
+                        maint[label] = f"{val}%"
+                if maint:
+                    entry["wartung"] = maint
+                status_list.append(entry)
+            else:
+                status_list.append({
+                    "name": robot.get("name", f"Saugroboter {floor.upper()}"),
+                    "floor": floor.upper(),
+                    "state": "nicht erreichbar",
+                })
+
+        return {"success": True, "robots": status_list}
 
     # Erlaubte Service-Data Keys fuer _exec_call_service (Whitelist)
     _CALL_SERVICE_ALLOWED_KEYS = frozenset({

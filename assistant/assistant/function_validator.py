@@ -215,10 +215,12 @@ class FunctionValidator:
                 friendly = (state.get("attributes", {}).get("friendly_name") or eid).lower()
                 if room in friendly and state.get("state") == "on":
                     window_name = state.get("attributes", {}).get("friendly_name", eid)
+                    target_t = args.get("temperature", "?")
                     warnings.append({
                         "type": "open_window",
                         "detail": f"{window_name} ist offen",
                         "room": room,
+                        "alternative": f"Erst {window_name} schliessen, dann Heizung auf {target_t}°C",
                     })
 
         # Check: Niemand im Raum?
@@ -238,6 +240,7 @@ class FunctionValidator:
                     "type": "empty_room",
                     "detail": f"Kein Bewegungsmelder aktiv in {room.title()}",
                     "room": room,
+                    "alternative": "Absenktemperatur (18°C) setzen oder Timer fuer 30 Minuten",
                 })
 
         # Check: Hohe Temperatur + warmes Wetter
@@ -258,6 +261,7 @@ class FunctionValidator:
                                 warnings.append({
                                     "type": "unnecessary_heating",
                                     "detail": f"Draussen sind es {outside_temp}°C",
+                                    "alternative": "Fenster oeffnen statt heizen — draussen warm genug",
                                 })
                         except (ValueError, TypeError):
                             pass
@@ -311,41 +315,80 @@ class FunctionValidator:
     async def _pushback_set_cover(
         self, args: dict, checks: dict
     ) -> Optional[dict]:
-        """Pushback fuer Rolladen: Sturmwarnung."""
+        """Pushback fuer Rolladen: Sturmwarnung, Kaelte, Markisen-Regen."""
         warnings = []
         action = (args.get("action") or args.get("state") or "").lower()
-
-        # Nur bei Oeffnen pruefen
-        if action not in ("open", "auf", "offen", "hoch", "up"):
-            return None
-
-        if not checks.get("storm_warning", True):
-            return None
+        position = args.get("position")
+        room = (args.get("room") or "").lower()
 
         states = await self.ha.get_states()
         if not states:
             return None
 
+        # Wetterdaten holen
+        outside_temp = None
+        wind_speed = 0
+        condition = ""
         for state in states:
             eid = state.get("entity_id", "")
             if eid.startswith("weather."):
                 attrs = state.get("attributes", {})
-                wind_speed = attrs.get("wind_speed", 0)
                 try:
-                    if float(wind_speed) > 60:
-                        warnings.append({
-                            "type": "storm_warning",
-                            "detail": f"Starker Wind mit {wind_speed} km/h",
-                        })
+                    outside_temp = float(attrs.get("temperature", 10))
                 except (ValueError, TypeError):
-                    pass
+                    outside_temp = 10
+                try:
+                    wind_speed = float(attrs.get("wind_speed", 0))
+                except (ValueError, TypeError):
+                    wind_speed = 0
+                condition = state.get("state", "")
                 break
+
+        is_opening = action in ("open", "auf", "offen", "hoch", "up")
+        is_opening = is_opening or (position is not None and int(position) > 50)
+
+        # Sturmwarnung bei Oeffnen
+        if is_opening and checks.get("storm_warning", True):
+            if wind_speed > 60:
+                warnings.append({
+                    "type": "storm_warning",
+                    "detail": f"Starker Wind mit {wind_speed} km/h",
+                    "alternative": "Rolllaeden geschlossen lassen zum Schutz",
+                })
+
+        # Rollladen hoch bei extremer Kaelte
+        if is_opening and outside_temp is not None and outside_temp < 0:
+            warnings.append({
+                "type": "cold_outside",
+                "detail": f"Aussentemperatur {outside_temp}°C — Kaelte kommt rein",
+                "alternative": "Rollladen auf 20% — Licht rein, Isolierung bleibt",
+            })
+
+        # Markise bei Regen/Wind
+        cover_type = args.get("type", "")
+        is_markise = cover_type == "markise" or room == "markisen"
+        if is_markise and is_opening:
+            rain_conditions = {"rainy", "pouring", "hail", "lightning-rainy"}
+            if condition in rain_conditions:
+                warnings.append({
+                    "type": "rain_markise",
+                    "detail": f"Wetter: {condition} — Markise wird nass/beschaedigt",
+                    "alternative": "Markise eingefahren lassen",
+                })
+            if wind_speed >= 40:
+                warnings.append({
+                    "type": "wind_markise",
+                    "detail": f"Wind {wind_speed} km/h — Markise kann beschaedigt werden",
+                    "alternative": "Markise erst bei Windstille ausfahren",
+                })
 
         return {"warnings": warnings} if warnings else None
 
     @staticmethod
     def format_pushback_warnings(pushback: dict) -> str:
-        """Formatiert Pushback-Warnungen als LLM-Kontext-String.
+        """Formatiert Pushback-Warnungen als JARVIS-artiger Kontext mit Alternativen.
+
+        Phase 11: Statt generischem "Fenster offen" liefert dies Erklaerung + Vorschlag.
 
         Args:
             pushback: Dict mit warnings-Liste aus get_pushback_context()
@@ -357,8 +400,16 @@ class FunctionValidator:
         if not warnings:
             return ""
 
-        lines = ["DATEN-BASIERTER WIDERSPRUCH — Weise den Benutzer auf Folgendes hin:"]
+        lines = [
+            "SITUATIONSBEWUSSTSEIN — Erklaere dem User WARUM die Aktion problematisch "
+            "sein koennte und schlage eine Alternative vor. Ton: Butler, nicht belehrend. "
+            "Fuehre die Aktion trotzdem aus, aber erwaehne den Hinweis:"
+        ]
         for w in warnings:
-            lines.append(f"- {w['detail']}")
-        lines.append("Fuehre die Aktion trotzdem aus, aber erwaehne die Warnung beilaeufig.")
+            detail = w.get("detail", "")
+            alt = w.get("alternative", "")
+            if alt:
+                lines.append(f"- {detail}. Vorschlag: {alt}")
+            else:
+                lines.append(f"- {detail}")
         return "\n".join(lines)
