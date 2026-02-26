@@ -43,6 +43,8 @@ logger = logging.getLogger("mindhome-assistant")
 
 # ---- Fehlerspeicher: Ring-Buffer fuer WARNING/ERROR Logs (2000 statt 200) ----
 _error_buffer: deque[dict] = deque(maxlen=ERROR_BUFFER_MAX_SIZE)
+_REDIS_ERROR_BUFFER_KEY = "mha:error_buffer"
+_REDIS_ERROR_BUFFER_TTL = 7 * 86400  # 7 Tage
 
 
 # F-067: Sensitive Patterns die aus Error-Buffer-Nachrichten entfernt werden
@@ -78,6 +80,35 @@ class _ErrorBufferHandler(logging.Handler):
 _err_handler = _ErrorBufferHandler(level=logging.WARNING)
 _err_handler.setFormatter(logging.Formatter("%(message)s"))
 logging.getLogger().addHandler(_err_handler)
+
+
+async def _restore_error_buffer(redis_client) -> int:
+    """Stellt den Fehlerspeicher aus Redis wieder her (nach Neustart)."""
+    try:
+        raw = await redis_client.get(_REDIS_ERROR_BUFFER_KEY)
+        if not raw:
+            return 0
+        entries = json.loads(raw)
+        for entry in entries:
+            _error_buffer.append(entry)
+        return len(entries)
+    except Exception as e:
+        logger.debug("Fehlerspeicher-Restore fehlgeschlagen: %s", e)
+        return 0
+
+
+async def _persist_error_buffer(redis_client) -> None:
+    """Speichert den Fehlerspeicher in Redis (vor Shutdown)."""
+    try:
+        entries = list(_error_buffer)
+        await redis_client.set(
+            _REDIS_ERROR_BUFFER_KEY,
+            json.dumps(entries),
+            ex=_REDIS_ERROR_BUFFER_TTL,
+        )
+    except Exception as e:
+        logger.debug("Fehlerspeicher-Persist fehlgeschlagen: %s", e)
+
 
 # Brain-Instanz
 brain = AssistantBrain()
@@ -191,6 +222,12 @@ async def lifespan(app: FastAPI):
     logger.info("=" * 50)
     await brain.initialize()
 
+    # Fehlerspeicher aus Redis wiederherstellen (Restart-sicher)
+    if brain.memory.redis:
+        restored = await _restore_error_buffer(brain.memory.redis)
+        if restored:
+            logger.info("Fehlerspeicher wiederhergestellt: %d Eintraege", restored)
+
     health = await brain.health_check()
     for component, status in health["components"].items():
         icon = "OK" if status == "connected" else "!!"
@@ -223,6 +260,10 @@ async def lifespan(app: FastAPI):
         await asyncio.sleep(0.5)  # Kurz warten damit Clients die Nachricht empfangen
     except Exception as e:
         logger.debug("F-065: WS-Shutdown-Broadcast fehlgeschlagen: %s", e)
+
+    # Fehlerspeicher in Redis sichern (vor Shutdown)
+    if brain.memory.redis:
+        await _persist_error_buffer(brain.memory.redis)
 
     await brain.shutdown()
     logger.info("MindHome Assistant heruntergefahren.")
