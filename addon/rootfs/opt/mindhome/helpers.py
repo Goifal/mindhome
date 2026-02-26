@@ -14,7 +14,7 @@ from datetime import datetime, timezone, timedelta
 from collections import defaultdict
 from functools import wraps
 
-from db import get_db_session, get_db_readonly, get_db
+from db import get_db_session, get_db_readonly
 
 logger = logging.getLogger("mindhome")
 

@@ -1387,10 +1387,14 @@ async def websocket_endpoint(websocket: WebSocket):
                         # Aktionen ans Addon melden fuer Aktivitaeten-Log
                         actions = result.get("actions", [])
                         if actions:
-                            asyncio.ensure_future(brain.ha.log_actions(
+                            _ws_task = asyncio.ensure_future(brain.ha.log_actions(
                                 actions, user_text=text,
                                 response_text=result.get("response", ""),
                             ))
+                            _ws_task.add_done_callback(
+                                lambda t: logger.warning("log_actions fehlgeschlagen: %s", t.exception())
+                                if t.exception() else None
+                            )
 
                 elif event == "assistant.feedback":
                     # Phase 5: Feedback ueber FeedbackTracker verarbeiten

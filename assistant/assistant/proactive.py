@@ -884,7 +884,11 @@ class ProactiveManager:
                 queue_len = len(self._batch_queue)
 
             if should_flush:
-                asyncio.create_task(self._flush_batch())
+                _t = asyncio.create_task(self._flush_batch())
+                _t.add_done_callback(
+                    lambda t: logger.warning("_flush_batch fehlgeschlagen: %s", t.exception())
+                    if t.exception() else None
+                )
             logger.debug("%s-Meldung gequeued [%s]: %s (%d in Queue, %d MEDIUM)",
                          urgency.upper(), event_type, description,
                          queue_len, medium_items)

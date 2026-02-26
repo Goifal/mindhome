@@ -21,7 +21,7 @@ from flask import Blueprint, request, jsonify, Response, make_response, send_fro
 from sqlalchemy import func as sa_func, text
 
 from version import VERSION
-from db import get_db_session, get_db_readonly, get_db
+from db import get_db_session, get_db_readonly
 from helpers import (
     get_ha_timezone, local_now, utc_iso, sanitize_input, sanitize_dict,
     audit_log, is_debug_mode, set_debug_mode, get_setting, set_setting,

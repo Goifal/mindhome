@@ -20,7 +20,7 @@ from flask_cors import CORS
 from sqlalchemy import text
 
 from version import version_string, version_info, VERSION, BUILD
-from db import init_db, get_db, get_db_session, get_db_readonly
+from db import init_db, get_db_session, get_db_readonly
 from helpers import (
     init_timezone, get_ha_timezone, local_now, rate_limit_check,
     get_setting, set_setting, get_language, is_debug_mode,

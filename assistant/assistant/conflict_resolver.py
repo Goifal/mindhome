@@ -288,7 +288,11 @@ class ConflictResolver:
                 self._conflict_history.append(resolution)
                 if len(self._conflict_history) > self._max_history:
                     self._conflict_history = self._conflict_history[-self._max_history:]
-                asyncio.create_task(self._save_history())
+                _t = asyncio.create_task(self._save_history())
+                _t.add_done_callback(
+                    lambda t: logger.warning("_save_history fehlgeschlagen: %s", t.exception())
+                    if t.exception() else None
+                )
 
                 logger.info(
                     "Konflikt erkannt: %s vs %s in Domain '%s' (Raum: %s) -> %s",
