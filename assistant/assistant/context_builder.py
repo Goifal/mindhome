@@ -283,12 +283,22 @@ class ContextBuilder:
             attrs = state.get("attributes", {})
             domain = entity_id.split(".")[0] if "." in entity_id else ""
 
-            # Temperaturen
+            # Temperaturen (nur echte Raumthermostate, keine Waermepumpen/Fehler)
             if domain == "climate":
+                current_temp = attrs.get("current_temperature")
+                if current_temp is None:
+                    continue
+                try:
+                    temp_val = float(current_temp)
+                except (ValueError, TypeError):
+                    continue
+                # Sensor-Fehler (-128°C) und Nicht-Raum-Geraete (Waermepumpe >50°C) filtern
+                if temp_val < -20 or temp_val > 50:
+                    continue
                 room = _sanitize_for_prompt(attrs.get("friendly_name", entity_id), 50, "climate_name")
                 if room:
                     house["temperatures"][room] = {
-                        "current": attrs.get("current_temperature"),
+                        "current": current_temp,
                         "target": attrs.get("temperature"),
                         "mode": s,
                     }

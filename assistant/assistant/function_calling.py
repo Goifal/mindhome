@@ -4335,7 +4335,9 @@ class FunctionExecutor:
                     for room, data in temps.items():
                         if temp_rooms and room.lower() not in [r.lower() for r in temp_rooms]:
                             continue
-                        current = data.get("current", "?")
+                        current = data.get("current")
+                        if current is None:
+                            continue
                         target = data.get("target")
                         if target:
                             temp_strs.append(f"{room}: {current}°C (Soll {target}°C)")
@@ -4348,8 +4350,20 @@ class FunctionExecutor:
             if "weather" in enabled_sections:
                 weather = house.get("weather", {})
                 if weather:
+                    _cond_map = {
+                        "sunny": "Sonnig", "clear-night": "Klare Nacht",
+                        "partlycloudy": "Teilweise bewoelkt", "cloudy": "Bewoelkt",
+                        "rainy": "Regen", "pouring": "Starkregen",
+                        "snowy": "Schnee", "snowy-rainy": "Schneeregen",
+                        "fog": "Nebel", "hail": "Hagel",
+                        "lightning": "Gewitter", "lightning-rainy": "Gewitter mit Regen",
+                        "windy": "Windig", "windy-variant": "Windig & bewoelkt",
+                        "exceptional": "Ausnahmewetter",
+                    }
+                    cond = weather.get("condition", "?")
+                    cond_de = _cond_map.get(cond, cond)
                     parts.append(
-                        f"Wetter: {weather.get('condition', '?')}, "
+                        f"Wetter: {cond_de}, "
                         f"{weather.get('temp', '?')}°C, "
                         f"Luftfeuchte {weather.get('humidity', '?')}%"
                     )
