@@ -79,6 +79,14 @@ class HealthMonitor:
         if isinstance(user_excludes, str):
             user_excludes = [p.strip() for p in user_excludes.splitlines() if p.strip()]
         self._exclude_patterns = [p.lower() for p in (self._default_excludes + user_excludes)]
+        # Humidor-Ueberwachung (eigene Schwellwerte, separat vom Raumklima)
+        humidor_cfg = yaml_config.get("humidor", {})
+        self.humidor_enabled = humidor_cfg.get("enabled", False)
+        self.humidor_entity = (humidor_cfg.get("sensor_entity") or "").strip()
+        self.humidor_target = humidor_cfg.get("target_humidity", 70)
+        self.humidor_warn_below = humidor_cfg.get("warn_below", 62)
+        self.humidor_warn_above = humidor_cfg.get("warn_above", 75)
+
         # Nach Startup erste Runde nur loggen, nicht melden (Cooldowns leer)
         self._first_check = True
 
@@ -232,9 +240,12 @@ class HealthMonitor:
                 if alert:
                     alerts.append(alert)
 
-            # Feuchtigkeits-Check
+            # Feuchtigkeits-Check (Humidor-Sensor wird separat geprueft)
             elif device_class == "humidity" or "humid" in entity_id.lower() or "feuchte" in entity_id.lower():
-                alert = self._check_humidity(entity_id, friendly_name, value)
+                if self.humidor_enabled and entity_id.lower() == self.humidor_entity.lower():
+                    alert = self._check_humidor(entity_id, friendly_name, value)
+                else:
+                    alert = self._check_humidity(entity_id, friendly_name, value)
                 if alert:
                     alerts.append(alert)
 
@@ -275,6 +286,23 @@ class HealthMonitor:
                 entity_id, "humidity_high", "medium",
                 f"{name}: Luft zu feucht ({int(percent)}%). Lueften empfohlen.",
                 {"sensor": name, "value": percent, "unit": "%"},
+            )
+        return None
+
+    def _check_humidor(self, entity_id: str, name: str, percent: float) -> Optional[dict]:
+        """Prueft Humidor-Luftfeuchtigkeit mit eigenen Schwellwerten."""
+        if percent < self.humidor_warn_below:
+            diff = self.humidor_target - percent
+            return self._make_alert(
+                entity_id, "humidor_low", "medium",
+                f"Humidor: Feuchtigkeit bei {int(percent)}% — {int(diff)}% unter Zielwert ({self.humidor_target}%). Wasser nachfuellen!",
+                {"sensor": name, "value": percent, "unit": "%", "target": self.humidor_target},
+            )
+        elif percent > self.humidor_warn_above:
+            return self._make_alert(
+                entity_id, "humidor_high", "low",
+                f"Humidor: Feuchtigkeit bei {int(percent)}% — ueber {self.humidor_warn_above}%. Deckel kurz oeffnen.",
+                {"sensor": name, "value": percent, "unit": "%", "target": self.humidor_target},
             )
         return None
 

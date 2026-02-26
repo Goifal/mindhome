@@ -69,6 +69,9 @@ REDIS_DEVICE_BASELINE_TTL: Final[int] = 30 * 86400  # 30 Tage
 # Error Buffer
 ERROR_BUFFER_MAX_SIZE: Final[int] = 2000
 
+# Activity Buffer (Jarvis-Aktivitaetsprotokoll)
+ACTIVITY_BUFFER_MAX_SIZE: Final[int] = 3000
+
 # Rate Limiting
 RATE_LIMIT_WINDOW: Final[int] = 60  # Sekunden
 RATE_LIMIT_MAX_REQUESTS: Final[int] = 60

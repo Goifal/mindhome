@@ -445,7 +445,7 @@ seasonal_actions:
     heat_protection_temp: 26         # Ab dieser Aussentemp Sonnenschutz
     frost_protection_temp: 3         # Bei Frost Rolllaeden schliessen
     storm_wind_speed: 50             # km/h — Rolllaeden HOCH zum Schutz
-    vacation_mode_entity: ""         # z.B. input_boolean.vacation_mode
+    vacation_mode_entity: ""         # z.B. input_boolean.vacation_mode  HINWEIS: Urlaubs-Simulation ist erst aktiv wenn hier eine Entity eingetragen wird!
 tts:
   entity: tts.piper
   ssml_enabled: true
@@ -672,6 +672,12 @@ health_monitor:
   hydration_start_hour: 8
   hydration_end_hour: 22
   alert_cooldown_minutes: 180
+humidor:
+  enabled: false
+  sensor_entity: ''
+  target_humidity: 70
+  warn_below: 62
+  warn_above: 75
 device_health:
   enabled: true
   check_interval_minutes: 60

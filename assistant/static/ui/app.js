@@ -6,6 +6,8 @@
 
 let TOKEN = '';
 let S = {};  // Settings cache
+let RP = {};  // Room-Profiles cache (room_profiles.yaml)
+let _rpDirty = false;  // Room-Profiles geaendert?
 let ALL_ENTITIES = [];
 const API = '';
 
@@ -338,7 +340,7 @@ document.getElementById('sidebarNav').addEventListener('click', e => {
     const tabTitles = {
       'tab-general':'Allgemein','tab-persons':'Personen','tab-personality':'Persoenlichkeit',
       'tab-memory':'Gedaechtnis','tab-mood':'Stimmung','tab-rooms':'Raeume & Speaker',
-      'tab-devices':'Geraete','tab-covers':'Rolllaeden','tab-routines':'Routinen',
+      'tab-devices':'Geraete','tab-covers':'Rolllaeden','tab-vacuum':'Saugroboter','tab-routines':'Routinen',
       'tab-proactive':'Proaktiv & Vorausdenken','tab-cooking':'Koch-Assistent',
       'tab-autonomie':'Autonomie & Selbstoptimierung','tab-followme':'Follow-Me',
       'tab-voice':'Stimme & TTS',
@@ -544,6 +546,9 @@ function mergeCurrentTabIntoS() {
 async function loadSettings() {
   try {
     S = await api('/api/ui/settings');
+    // Room-Profiles parallel laden
+    try { RP = await api('/api/ui/room-profiles'); } catch(e) { RP = {}; }
+    _rpDirty = false;
     renderCurrentTab();
   } catch(e) { console.error('Settings fail:', e); }
 }
@@ -573,7 +578,8 @@ function renderCurrentTab() {
       case 'tab-cooking': c.innerHTML = renderCooking(); break;
       case 'tab-house-status': c.innerHTML = renderHouseStatus(); break;
       case 'tab-devices': c.innerHTML = renderDevices(); loadMindHomeEntities(); break;
-      case 'tab-covers': c.innerHTML = renderCovers(); loadCoverEntities(); break;
+      case 'tab-covers': c.innerHTML = renderCovers(); loadCoverEntities(); loadCoverProfiles(); break;
+      case 'tab-vacuum': c.innerHTML = renderVacuum(); break;
       case 'tab-security': c.innerHTML = renderSecurity(); loadApiKey(); loadNotifyChannels(); loadEmergencyProtocols(); break;
       case 'tab-autonomie': c.innerHTML = renderAutonomie(); loadSnapshots(); loadOptStatus(); break;
       case 'tab-followme': c.innerHTML = renderFollowMe(); break;
@@ -738,6 +744,27 @@ const HELP_TEXTS = {
   'activity.thresholds.night_end': {title:'Nacht endet', text:'Bis wann Nachtruhe gilt.'},
   'activity.thresholds.guest_person_count': {title:'Besuch ab Personen', text:'Ab wie vielen Personen Gaeste-Modus aktiviert wird.'},
   'activity.thresholds.focus_min_minutes': {title:'Fokus-Modus', text:'Ab wie vielen Min ununterbrochener Arbeit Fokus erkannt wird.'},
+  // === COVER-AUTOMATIK ===
+  'seasonal_actions.enabled': {title:'Saisonale Aktionen', text:'Automatische Aktionen basierend auf Jahreszeit, Wetter und Sonnenstand.'},
+  'seasonal_actions.cover_automation.sun_tracking': {title:'Sonnenstand-Tracking', text:'Rolllaeden folgen automatisch dem Sonnenstand. Benoetigt konfigurierte Cover-Profile.'},
+  'seasonal_actions.cover_automation.temperature_based': {title:'Temperatur-Steuerung', text:'Rolllaeden reagieren auf Aussentemperatur (Hitze- und Kaelteschutz).'},
+  'seasonal_actions.cover_automation.weather_protection': {title:'Wetterschutz', text:'Markisen bei Sturm/Regen automatisch einfahren.'},
+  'seasonal_actions.cover_automation.night_insulation': {title:'Nacht-Isolierung', text:'Rolllaeden nachts schliessen fuer bessere Waermedaemmung.'},
+  'seasonal_actions.cover_automation.heat_protection_temp': {title:'Hitzeschutz-Temperatur', text:'Ab dieser Aussentemperatur werden Rolllaeden bei Sonneneinstrahlung geschlossen.'},
+  'seasonal_actions.cover_automation.frost_protection_temp': {title:'Frostschutz-Temperatur', text:'Bei dieser Temperatur werden Rolllaeden zum Schutz geschlossen.'},
+  'seasonal_actions.cover_automation.storm_wind_speed': {title:'Sturm-Geschwindigkeit', text:'Ab dieser Windgeschwindigkeit werden Rolllaeden zum Schutz hochgefahren.'},
+  'seasonal_actions.cover_automation.presence_simulation': {title:'Urlaubs-Simulation', text:'Simuliert Anwesenheit ueber Rolllaeden wenn Urlaubsmodus aktiv ist.'},
+  'seasonal_actions.cover_automation.vacation_mode_entity': {title:'Urlaubsmodus-Entity', text:'HA input_boolean fuer Urlaubsmodus. Muss manuell in HA erstellt werden.'},
+  'vacation_simulation.morning_hour': {title:'Morgens oeffnen', text:'Uhrzeit fuer simuliertes Oeffnen der Rolllaeden.'},
+  'vacation_simulation.evening_hour': {title:'Abends schliessen', text:'Uhrzeit fuer simuliertes Schliessen.'},
+  'vacation_simulation.variation_minutes': {title:'Variation', text:'Zufaellige Abweichung in Minuten fuer realistischere Simulation.'},
+  // === SAUGROBOTER ===
+  'vacuum.enabled': {title:'Saugroboter', text:'Aktiviert die Saugroboter-Steuerung ueber Jarvis.'},
+  'vacuum.auto_clean.enabled': {title:'Auto-Clean', text:'Automatische Reinigung wenn niemand zuhause ist.'},
+  'vacuum.auto_clean.when_nobody_home': {title:'Nur bei Abwesenheit', text:'Startet nur wenn alle Personen abwesend sind.'},
+  'vacuum.auto_clean.min_hours_between': {title:'Mindestabstand', text:'Minimale Stunden zwischen zwei automatischen Reinigungen.'},
+  'vacuum.maintenance.enabled': {title:'Wartung', text:'Ueberwacht Verschleissteile (Filter, Buersten, Mopp).'},
+  'vacuum.maintenance.warn_at_percent': {title:'Warnung bei', text:'Warnt wenn ein Verschleissteil unter diesen Prozentwert faellt.'},
   // === STIMME & TTS ===
   'sounds.default_speaker': {title:'Standard-Speaker', text:'Standard-Geraet fuer Sprachausgabe und Sounds.'},
   'sounds.tts_entity': {title:'TTS-Engine', text:'Welche Text-to-Speech Engine genutzt wird.'},
@@ -904,6 +931,11 @@ const HELP_TEXTS = {
   'health_monitor.co2_warn': {title:'CO2 Warnung', text:'Ab diesem ppm-Wert wird gewarnt.'},
   'health_monitor.co2_critical': {title:'CO2 Kritisch', text:'Ab diesem ppm-Wert dringend lueften.'},
   'health_monitor.exclude_patterns': {title:'Ausschluss-Patterns', text:'Entity-IDs die ignoriert werden.'},
+  'humidor.enabled': {title:'Humidor-Ueberwachung', text:'Ueberwacht deinen Humidor mit eigenen Feuchtigkeits-Schwellwerten.'},
+  'humidor.sensor_entity': {title:'Humidor-Sensor', text:'Der Feuchtigkeits-Sensor in deinem Humidor.'},
+  'humidor.target_humidity': {title:'Ziel-Feuchtigkeit', text:'Optimale Luftfeuchtigkeit fuer deinen Humidor (typisch 68-72% fuer Zigarren).'},
+  'humidor.warn_below': {title:'Warnung unter', text:'Ab dieser Feuchtigkeit wird gewarnt (z.B. Wasser nachfuellen).'},
+  'humidor.warn_above': {title:'Warnung ueber', text:'Ab dieser Feuchtigkeit ist es zu feucht im Humidor.'},
   // === GERAETE ===
   'device_health.enabled': {title:'Geraete-Health', text:'Ueberwacht Zustand von Smart-Home-Geraeten.'},
   'device_health.check_interval_minutes': {title:'Pruef-Intervall', text:'Wie oft Geraete geprueft werden.'},
@@ -1235,6 +1267,15 @@ function entityPickSelect(item, entityId) {
   // Room-Map Modus: Input-Wert setzen
   if (input?.dataset?.roomMap) {
     input.value = entityId;
+    // Auto-fill: Name-Feld befuellen wenn HA Person-Entity in Member-Row ausgewaehlt
+    if (input?.dataset?.memberField === 'ha_entity') {
+      const row = input.closest('.person-row');
+      const nameInput = row?.querySelector('[data-member-field="name"]');
+      if (nameInput && !nameInput.value.trim() && _pickerEntities) {
+        const ent = _pickerEntities.find(e => e.entity_id === entityId);
+        if (ent) nameInput.value = ent.name;
+      }
+    }
     return;
   }
 
@@ -1475,25 +1516,56 @@ function renderPersons() {
   let memberRows = '';
   members.forEach((m, i) => {
     const ri = roleInfo[m.role] || roleInfo.member;
-    memberRows += `<div class="person-row" style="display:flex;gap:10px;align-items:center;margin-bottom:10px;padding:12px;background:var(--bg-secondary);border-radius:var(--radius-sm);border-left:3px solid ${ri.color};">
-      <span style="font-size:20px;">${ri.icon}</span>
-      <input type="text" value="${esc(m.name || '')}" data-member-idx="${i}" data-member-field="name"
-        placeholder="Name eingeben..." style="flex:1;font-size:14px;">
-      <select data-member-idx="${i}" data-member-field="role" style="width:160px;" onchange="updateMemberRoleVisual(this)">
-        <option value="owner" ${m.role==='owner'?'selected':''}>&#128081; Hausherr/in</option>
-        <option value="member" ${m.role==='member'?'selected':''}>&#128100; Mitbewohner/in</option>
-        <option value="guest" ${m.role==='guest'?'selected':''}>&#128587; Gast</option>
-      </select>
-      <button class="btn btn-danger btn-sm" onclick="removeHouseholdMember(${i})"
-        style="padding:6px 10px;min-width:auto;" title="Entfernen">&#128465;</button>
+    memberRows += `<div class="person-row" style="padding:12px;background:var(--bg-secondary);border-radius:var(--radius-sm);border-left:3px solid ${ri.color};margin-bottom:10px;">
+      <div style="display:flex;gap:10px;align-items:center;margin-bottom:8px;">
+        <span style="font-size:20px;">${ri.icon}</span>
+        <input type="text" value="${esc(m.name || '')}" data-member-idx="${i}" data-member-field="name"
+          placeholder="Name eingeben..." style="flex:1;font-size:14px;">
+        <select data-member-idx="${i}" data-member-field="role" style="width:140px;" onchange="updateMemberRoleVisual(this)">
+          <option value="owner" ${m.role==='owner'?'selected':''}>&#128081; Hausherr/in</option>
+          <option value="member" ${m.role==='member'?'selected':''}>&#128100; Mitbewohner/in</option>
+          <option value="guest" ${m.role==='guest'?'selected':''}>&#128587; Gast</option>
+        </select>
+        <button class="btn btn-danger btn-sm" onclick="removeHouseholdMember(${i})"
+          style="padding:6px 10px;min-width:auto;" title="Entfernen">&#128465;</button>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding-left:30px;">
+        <div>
+          <label style="font-size:11px;color:var(--text-muted);">HA Person-Entity</label>
+          <div class="entity-pick-wrap">
+            <input class="form-input entity-pick-input" value="${esc(m.ha_entity || '')}"
+              placeholder="&#128269; person.* zuweisen..."
+              data-member-idx="${i}" data-member-field="ha_entity" data-room-map="ha_entity"
+              oninput="entityPickFilter(this,'person')" onfocus="entityPickFilter(this,'person')"
+              style="font-size:12px;font-family:var(--mono);padding:5px 8px;width:100%;box-sizing:border-box;">
+            <div class="entity-pick-dropdown" style="display:none;"></div>
+          </div>
+        </div>
+        <div>
+          <label style="font-size:11px;color:var(--text-muted);">Anrede</label>
+          <input class="form-input" value="${esc(m.title || '')}"
+            data-member-idx="${i}" data-member-field="title"
+            placeholder="z.B. Sir, Ma'am..."
+            style="font-size:12px;padding:5px 8px;">
+        </div>
+      </div>
     </div>`;
   });
 
+  const primaryEntity = getPath(S, 'household.primary_user_entity') || '';
   return sectionWrap('&#128100;', 'Hauptbenutzer',
     fInfo('Dein Name — so kennt und begruesst dich der Assistent.') +
     '<div class="form-group"><label>Dein Name</label>' +
     '<input type="text" data-path="household.primary_user" value="' + esc(primaryUser) + '" placeholder="z.B. Alex" style="font-size:15px;">' +
-    '</div>'
+    '</div>' +
+    '<div class="form-group"><label>HA Person-Entity</label>' +
+    '<div class="entity-pick-wrap">' +
+    '<input class="form-input entity-pick-input" value="' + esc(primaryEntity) + '"' +
+    ' placeholder="&#128269; person.* zuweisen..." data-path="household.primary_user_entity"' +
+    ' data-room-map="household.primary_user_entity"' +
+    ' oninput="entityPickFilter(this,\'person\')" onfocus="entityPickFilter(this,\'person\')"' +
+    ' style="font-family:var(--mono);font-size:13px;">' +
+    '<div class="entity-pick-dropdown" style="display:none;"></div></div></div>'
   ) +
   sectionWrap('&#128106;', 'Haushaltsmitglieder',
     fInfo('Alle Personen im Haushalt. Die Rolle bestimmt was jeder steuern darf.') +
@@ -1506,7 +1578,7 @@ function renderPersons() {
     '<button class="btn btn-secondary" onclick="addHouseholdMember()" style="margin-top:8px;width:100%;justify-content:center;">+ Person hinzufuegen</button>'
   ) +
   sectionWrap('&#128101;', 'Personen-Anrede',
-    fInfo('Wie soll der Assistent einzelne Personen ansprechen? Der Hauptbenutzer wird standardmaessig als "Sir" angesprochen.') +
+    fInfo('Anreden koennen direkt bei jedem Haushaltsmitglied oben vergeben werden. Hier kannst du sie alternativ zentral verwalten.') +
     fPersonTitles()
   );
 }
@@ -1514,7 +1586,7 @@ function renderPersons() {
 function addHouseholdMember() {
   mergeCurrentTabIntoS();
   const members = getPath(S, 'household.members') || [];
-  members.push({name: '', role: 'member'});
+  members.push({name: '', role: 'member', ha_entity: '', title: ''});
   setPath(S, 'household.members', members);
   renderCurrentTab();
 }
@@ -1549,8 +1621,13 @@ function collectHouseholdMembers() {
   document.querySelectorAll('#householdMembers .person-row').forEach(row => {
     const nameEl = row.querySelector('[data-member-field="name"]');
     const roleEl = row.querySelector('[data-member-field="role"]');
+    const haEntityEl = row.querySelector('[data-member-field="ha_entity"]');
+    const titleEl = row.querySelector('[data-member-field="title"]');
     if (nameEl && roleEl && nameEl.value.trim()) {
-      members.push({name: nameEl.value.trim(), role: roleEl.value});
+      const m = {name: nameEl.value.trim(), role: roleEl.value};
+      if (haEntityEl && haEntityEl.value.trim()) m.ha_entity = haEntityEl.value.trim();
+      if (titleEl && titleEl.value.trim()) m.title = titleEl.value.trim();
+      members.push(m);
     }
   });
   return members;
@@ -1917,6 +1994,16 @@ function renderRooms() {
   sectionWrap('&#128101;', 'Personen-Profile',
     fInfo('Erweiterte Einstellungen pro Person — Benachrichtigungs-Service und bevorzugter Raum.') +
     fPersonProfiles()
+  ) +
+  // ── Raum-Profile (room_profiles.yaml) ─────────────────────
+  sectionWrap('&#127777;', 'Raum-Profile (Temperatur & Licht)',
+    fInfo('Standard-Temperatur und Helligkeit pro Raum. Diese Werte werden fuer adaptive Helligkeit und Kontext-Empfehlungen genutzt.') +
+    renderRoomProfileEditor()
+  ) +
+  // ── Saisonale Einstellungen (room_profiles.yaml) ─────────────
+  sectionWrap('&#127808;', 'Saisonale Einstellungen',
+    fInfo('Anpassungen je nach Jahreszeit. Temperatur-Offset wird auf die Raum-Defaults aufgerechnet. Briefing-Extras erscheinen im Morgen-Briefing.') +
+    renderSeasonalEditor()
   );
 }
 
@@ -2100,6 +2187,22 @@ function renderHouseStatus() {
     fNum('health_monitor.co2_warn', 'CO2 Warnung (ppm)', 800, 1500, 100) +
     fNum('health_monitor.co2_critical', 'CO2 Kritisch (ppm)', 1000, 2500, 100) +
     fTextarea('health_monitor.exclude_patterns', 'Zusaetzliche Ausschluss-Patterns (einer pro Zeile)', 'z.B.\naquarea\ntablet_\nsteckdose_')
+  ) +
+  sectionWrap('&#127793;', 'Humidor',
+    fInfo('Dein Humidor braucht andere Feuchtigkeitswerte als normale Raeume. Weise hier den Sensor zu und stelle die Schwellwerte ein. Der Sensor wird dann nicht mehr vom normalen Raumklima-Monitor erfasst.') +
+    fToggle('humidor.enabled', 'Humidor-Ueberwachung aktiv') +
+    '<div class="form-group"><label>Feuchtigkeits-Sensor</label>' +
+    '<div class="entity-pick-wrap">' +
+    '<input class="form-input entity-pick-input" value="' + esc(getPath(S,'humidor.sensor_entity')||'') + '"' +
+    ' placeholder="&#128269; sensor.* zuweisen..." data-path="humidor.sensor_entity"' +
+    ' data-room-map="humidor.sensor_entity"' +
+    ' oninput="entityPickFilter(this,\'sensor\')" onfocus="entityPickFilter(this,\'sensor\')"' +
+    ' style="font-family:var(--mono);font-size:13px;">' +
+    '<div class="entity-pick-dropdown" style="display:none;"></div></div></div>' +
+    '<div style="margin:16px 0 8px;font-weight:600;font-size:13px;">Schwellwerte</div>' +
+    fNum('humidor.target_humidity', 'Ziel-Feuchtigkeit (%)', 50, 85, 1) +
+    fNum('humidor.warn_below', 'Warnung unter (%)', 40, 80, 1) +
+    fNum('humidor.warn_above', 'Warnung ueber (%)', 55, 90, 1)
   );
 }
 
@@ -3272,6 +3375,14 @@ async function saveAllSettings() {
     // Vollstaendiges Settings-Objekt senden (nicht nur aktiven Tab)
     const updates = JSON.parse(JSON.stringify(S));
     const result = await api('/api/ui/settings', 'PUT', {settings: updates});
+
+    // Room-Profiles separat speichern wenn geaendert
+    if (_rpDirty) {
+      collectRoomProfiles();
+      await api('/api/ui/room-profiles', 'PUT', {profiles: RP});
+      _rpDirty = false;
+    }
+
     if (result && result.restart_needed) {
       toast('Gespeichert — Container-Neustart noetig fuer Sprach-Engine!', 'warning');
     } else {
@@ -3658,12 +3769,125 @@ function switchLogTab(tab) {
   currentLogTab = tab;
   document.querySelectorAll('#logsTabBar .tab-item').forEach(t => t.classList.toggle('active', t.dataset.logtab===tab));
   document.getElementById('logsContainer').style.display = tab==='conversations' ? '' : 'none';
+  document.getElementById('activityContainer').style.display = tab==='activity' ? '' : 'none';
+  document.getElementById('activityFilters').style.display = tab==='activity' ? '' : 'none';
   document.getElementById('protocolContainer').style.display = tab==='protocol' ? '' : 'none';
   document.getElementById('protocolFilters').style.display = tab==='protocol' ? '' : 'none';
   document.getElementById('auditContainer').style.display = tab==='audit' ? '' : 'none';
   if (tab==='conversations') loadLogs();
+  else if (tab==='activity') loadActivity();
   else if (tab==='protocol') loadProtocol();
   else loadAudit();
+  // Live-Modus beim Tab-Wechsel deaktivieren (Activity + Protocol)
+  if (tab!=='activity' && _activityLiveIv) { clearInterval(_activityLiveIv); _activityLiveIv=null; const cb=document.getElementById('activityLive'); if(cb) cb.checked=false; }
+  if (tab!=='protocol' && _protocolLiveIv) { clearInterval(_protocolLiveIv); _protocolLiveIv=null; const cb=document.getElementById('protocolLive'); if(cb) cb.checked=false; }
+}
+
+// ---- Aktivitaetsprotokoll (Alles was Jarvis intern macht) ----
+let _activityData = [];
+let _activityLiveIv = null;
+
+async function loadActivity() {
+  const module = document.getElementById('activityModule').value;
+  const level = document.getElementById('activityLevel').value;
+  const c = document.getElementById('activityContainer');
+  if (!c) return;
+  try {
+    const params = 'limit=500' + (module ? '&module=' + encodeURIComponent(module) : '') + (level ? '&level=' + level : '');
+    const d = await api('/api/ui/activity?' + params);
+    _activityData = d.items || [];
+    // Module-Dropdown dynamisch befuellen
+    const sel = document.getElementById('activityModule');
+    const curVal = sel.value;
+    const modules = d.modules || [];
+    sel.innerHTML = '<option value="">Alle Module</option>' + modules.map(m =>
+      '<option value="' + esc(m) + '"' + (m===curVal?' selected':'') + '>' + esc(m) + '</option>'
+    ).join('');
+    filterActivity();
+  } catch(e) {
+    c.innerHTML = '<div style="padding:16px;text-align:center;color:var(--danger);">Fehler: ' + esc(e.message) + '</div>';
+  }
+}
+
+function filterActivity() {
+  const search = (document.getElementById('activitySearch').value || '').toLowerCase();
+  const c = document.getElementById('activityContainer');
+  if (!c) return;
+
+  const filtered = _activityData.filter(entry => {
+    if (!search) return true;
+    return (entry.message || '').toLowerCase().includes(search) ||
+           (entry.module || '').toLowerCase().includes(search);
+  });
+
+  document.getElementById('activityCount').textContent = filtered.length +
+    (_activityData.length !== filtered.length ? ' / ' + _activityData.length : '') + ' Eintraege';
+
+  if (filtered.length === 0) {
+    c.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text-muted);">' +
+      (search ? 'Keine Treffer fuer "' + esc(search) + '"' : 'Keine Aktivitaeten aufgezeichnet.') + '</div>';
+    return;
+  }
+
+  const levelColors = {
+    'INFO': 'var(--text-muted)',
+    'WARNING': 'var(--warning, #f59e0b)',
+    'ERROR': 'var(--danger, #ef4444)',
+    'DEBUG': 'var(--text-secondary)'
+  };
+  const levelIcons = {
+    'INFO': '&#9432;', 'WARNING': '&#9888;', 'ERROR': '&#10060;', 'DEBUG': '&#128736;'
+  };
+  const moduleColors = {
+    'Proaktiv': 'var(--accent)',
+    'Brain': 'var(--info, #3b82f6)',
+    'Raumklima': 'var(--success, #22c55e)',
+    'Geraete': 'var(--warning, #f59e0b)',
+    'Diagnostik': '#8b5cf6',
+    'Aktionen': 'var(--accent)',
+    'Home Assistant': '#06b6d4',
+    'Insights': '#ec4899',
+    'Lernen': '#14b8a6',
+    'Situation': '#6366f1',
+    'System': 'var(--text-secondary)'
+  };
+
+  c.innerHTML = filtered.map(entry => {
+    const ts = entry.timestamp
+      ? new Date(entry.timestamp).toLocaleString('de-DE', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'})
+      : '';
+    const lvl = entry.level || 'INFO';
+    const mod = entry.module || '';
+    const lColor = levelColors[lvl] || 'var(--text-muted)';
+    const mColor = moduleColors[mod] || 'var(--text-muted)';
+    const icon = levelIcons[lvl] || '&#9432;';
+
+    return '<div class="log-entry" style="align-items:flex-start;' + (lvl==='ERROR'?'background:color-mix(in srgb, var(--danger) 5%, transparent);':'') + (lvl==='WARNING'?'background:color-mix(in srgb, var(--warning) 5%, transparent);':'') + '">' +
+      '<span class="log-time">' + ts + '</span>' +
+      '<span style="font-size:15px;min-width:22px;text-align:center;">' + icon + '</span>' +
+      '<span style="font-size:10px;padding:1px 6px;border-radius:3px;background:color-mix(in srgb, ' + mColor + ' 15%, transparent);color:' + mColor + ';font-weight:600;white-space:nowrap;">' + esc(mod) + '</span>' +
+      '<span style="font-size:13px;flex:1;min-width:0;word-break:break-word;">' + esc(entry.message || '') + '</span>' +
+    '</div>';
+  }).join('');
+}
+
+function toggleActivityLive() {
+  const live = document.getElementById('activityLive').checked;
+  if (live) {
+    loadActivity();
+    _activityLiveIv = setInterval(loadActivity, 5000);
+  } else {
+    if (_activityLiveIv) { clearInterval(_activityLiveIv); _activityLiveIv = null; }
+  }
+}
+
+async function clearActivity() {
+  if (!confirm('Aktivitaetsprotokoll wirklich leeren?')) return;
+  try {
+    await api('/api/ui/activity', 'DELETE');
+    toast('Aktivitaetsprotokoll geleert');
+    loadActivity();
+  } catch(e) { toast('Fehler beim Leeren', 'error'); }
 }
 
 // ---- Protokoll (Jarvis Action Protocol with Filters) ----
@@ -3908,9 +4132,44 @@ async function refreshErrBadge() {
 let _sysStatus = null;
 // ---- Tab: Geräte-Überwachung ----
 function renderCovers() {
-  return sectionWrap('&#129695;', 'Rollläden & Garagentore',
-    fInfo('Hier legst du fest, welche Geräte Rollläden sind und welche Garagentore. <strong>Garagentore werden NIEMALS automatisch von Jarvis gesteuert.</strong>') +
-    '<div id="coverListContainer" style="color:var(--text-secondary);padding:12px;">Lade Cover-Geräte...</div>'
+  return sectionWrap('&#129695;', 'Rolllaeden & Garagentore',
+    fInfo('Hier legst du fest, welche Geraete Rolllaeden sind und welche Garagentore. <strong>Garagentore werden NIEMALS automatisch von Jarvis gesteuert.</strong>') +
+    '<div id="coverListContainer" style="color:var(--text-secondary);padding:12px;">Lade Cover-Geraete...</div>'
+  ) +
+  // ── Cover-Automatik (settings.yaml) ─────────────────────
+  sectionWrap('&#9728;', 'Cover-Automatik',
+    fInfo('Automatische Steuerung der Rolllaeden basierend auf Sonnenstand, Wetter und Temperatur. Funktioniert nur wenn Cover-Profile (unten) konfiguriert sind.') +
+    fToggle('seasonal_actions.enabled', 'Saisonale Aktionen aktiv') +
+    fToggle('seasonal_actions.cover_automation.sun_tracking', 'Sonnenstand-Tracking (Azimut + Elevation)') +
+    fToggle('seasonal_actions.cover_automation.temperature_based', 'Temperatur-basiert (Hitze/Kaelteschutz)') +
+    fToggle('seasonal_actions.cover_automation.weather_protection', 'Wetter/Sturmschutz') +
+    fToggle('seasonal_actions.cover_automation.night_insulation', 'Nachts schliessen (Isolierung)') +
+    fRange('seasonal_actions.cover_automation.heat_protection_temp', 'Hitzeschutz ab Aussentemp (°C)', 20, 40, 1, {20:'20°C',25:'25°C',26:'26°C',28:'28°C',30:'30°C',35:'35°C',40:'40°C'}) +
+    fRange('seasonal_actions.cover_automation.frost_protection_temp', 'Frostschutz ab (°C)', -10, 10, 1, {'-5':'-5°C',0:'0°C',3:'3°C',5:'5°C',10:'10°C'}) +
+    fRange('seasonal_actions.cover_automation.storm_wind_speed', 'Sturm-Windgeschwindigkeit (km/h)', 20, 100, 5, {20:'20',30:'30',40:'40',50:'50',60:'60',80:'80',100:'100'})
+  ) +
+  // ── Urlaubs-Simulation ─────────────────────────
+  sectionWrap('&#127796;', 'Urlaubs-Simulation',
+    fInfo('Simuliert Anwesenheit ueber Rolllaeden wenn der Urlaubsmodus aktiv ist. Erfordert eine input_boolean Entity in Home Assistant (z.B. input_boolean.vacation_mode).') +
+    fToggle('seasonal_actions.cover_automation.presence_simulation', 'Urlaubs-Simulation aktiv') +
+    fText('seasonal_actions.cover_automation.vacation_mode_entity', 'Urlaubsmodus-Entity', 'z.B. input_boolean.vacation_mode') +
+    fRange('vacation_simulation.morning_hour', 'Morgens oeffnen um', 5, 11, 1) +
+    fRange('vacation_simulation.evening_hour', 'Abends schliessen um', 16, 22, 1) +
+    fRange('vacation_simulation.night_hour', 'Nachts komplett zu um', 21, 24, 1) +
+    fRange('vacation_simulation.variation_minutes', 'Zufalls-Variation (Min)', 0, 60, 5, {0:'Keine',10:'10 Min',15:'15 Min',30:'30 Min',45:'45 Min',60:'1 Std'})
+  ) +
+  // ── Markisen-Sicherheit (room_profiles.yaml) ─────────────
+  sectionWrap('&#127958;', 'Markisen-Sicherheit',
+    fInfo('Automatischer Schutz fuer Markisen bei Wind und Regen. Diese Einstellungen werden in room_profiles.yaml gespeichert.') +
+    rpRange('markisen.wind_retract_speed', 'Einfahren bei Wind ab (km/h)', 20, 80, 5, {20:'20',30:'30',40:'40',50:'50',60:'60',80:'80'}) +
+    rpToggle('markisen.rain_retract', 'Bei Regen automatisch einfahren') +
+    rpRange('markisen.sun_extend_temp', 'Ausfahren bei Sonne ab (°C)', 18, 35, 1, {18:'18°C',20:'20°C',22:'22°C',25:'25°C',28:'28°C',30:'30°C',35:'35°C'})
+  ) +
+  // ── Cover-Profile (room_profiles.yaml) ─────────────
+  sectionWrap('&#127760;', 'Cover-Profile (Fenster-Orientierung)',
+    fInfo('Konfiguriere fuer jedes Fenster die Himmelsrichtung und den Sonneneinfalls-Winkel. Ohne diese Profile funktioniert das Sonnenstand-Tracking nicht!<br><br><strong>Azimut-Referenz:</strong> 0°=Nord, 90°=Ost, 180°=Sued, 270°=West<br><strong>Beispiel Suedfenster:</strong> Start=120°, Ende=240°<br><strong>Beispiel Ostfenster:</strong> Start=45°, Ende=135°') +
+    '<div id="coverProfilesContainer" style="padding:8px;">Lade Cover-Profile...</div>' +
+    '<button class="btn btn-sm" onclick="addCoverProfile()" style="margin-top:8px;">+ Cover-Profil hinzufuegen</button>'
   );
 }
 
@@ -3983,6 +4242,271 @@ async function setCoverEnabled(entityId, enabled) {
     toast('Fehler beim Speichern: ' + e.message, 'error');
     console.error('Cover enabled save failed:', e);
   }
+}
+
+// ── Room-Profiles Helpers (RP statt S) ──────────────────────
+function rpGetPath(path) { return path.split('.').reduce((o,k)=>o?.[k], RP); }
+function rpSetPath(path, val) {
+  _rpDirty = true;
+  const parts = path.split('.');
+  let cur = RP;
+  for(let i = 0; i < parts.length-1; i++) {
+    if(cur[parts[i]] == null) cur[parts[i]] = {};
+    cur = cur[parts[i]];
+  }
+  cur[parts[parts.length-1]] = val;
+}
+function rpRange(path, label, min, max, step, labels) {
+  const v = rpGetPath(path) ?? min;
+  const lbl = labels ? (labels[v]||v) : v;
+  return '<div class="form-group"><label>' + label + '</label>' +
+    '<div class="range-group"><input type="range" data-rp-path="' + path + '" min="' + min + '" max="' + max + '" step="' + step + '" value="' + v + '" ' +
+    'oninput="updRange(this);rpSetPath(\'' + path + '\',parseFloat(this.value))"><span class="range-value" id="rv_rp_' + path.replace(/\./g,'_') + '">' + lbl + '</span></div></div>';
+}
+function rpToggle(path, label) {
+  const v = rpGetPath(path);
+  return '<div class="form-group"><div class="toggle-group"><label>' + label + '</label>' +
+    '<label class="toggle"><input type="checkbox" data-rp-path="' + path + '" ' + (v?'checked':'') + ' onchange="rpSetPath(\'' + path + '\',this.checked)"><span class="toggle-track"></span><span class="toggle-thumb"></span></label></div></div>';
+}
+function rpNum(path, label, min, max, step, hint) {
+  const v = rpGetPath(path) ?? '';
+  return '<div class="form-group"><label>' + label + '</label>' +
+    '<input type="number" data-rp-path="' + path + '" value="' + v + '" min="' + (min||'') + '" max="' + (max||'') + '" step="' + (step||1) + '" ' +
+    'onchange="rpSetPath(\'' + path + '\',parseFloat(this.value)||0)">' + (hint?'<div class="hint">'+hint+'</div>':'') + '</div>';
+}
+function rpText(path, label, hint) {
+  const v = rpGetPath(path) ?? '';
+  return '<div class="form-group"><label>' + label + '</label>' +
+    '<input type="text" data-rp-path="' + path + '" value="' + esc(String(v)) + '" ' +
+    'onchange="rpSetPath(\'' + path + '\',this.value)">' + (hint?'<div class="hint">'+hint+'</div>':'') + '</div>';
+}
+function rpSelect(path, label, opts) {
+  const v = rpGetPath(path) ?? '';
+  let h = '<div class="form-group"><label>' + label + '</label><select data-rp-path="' + path + '" onchange="rpSetPath(\'' + path + '\',this.value)">';
+  for(const o of opts) h += '<option value="' + o.v + '"' + (v==o.v?' selected':'') + '>' + o.l + '</option>';
+  return h + '</select></div>';
+}
+
+// Sammelt RP-Formularwerte (fuer collectRoomProfiles)
+function collectRoomProfiles() {
+  document.querySelectorAll('[data-rp-path]').forEach(el => {
+    const path = el.getAttribute('data-rp-path');
+    let val;
+    if (el.type === 'checkbox') val = el.checked;
+    else if (el.type === 'number' || el.type === 'range') val = parseFloat(el.value);
+    else val = el.value;
+    rpSetPath(path, val);
+  });
+}
+
+// ── Cover-Profile Editor (room_profiles.yaml → cover_profiles.covers[]) ──
+async function loadCoverProfiles() {
+  const container = document.getElementById('coverProfilesContainer');
+  if (!container) return;
+  const covers = (RP.cover_profiles && RP.cover_profiles.covers) || [];
+  renderCoverProfileList(covers, container);
+}
+
+function renderCoverProfileList(covers, container) {
+  if (covers.length === 0) {
+    container.innerHTML = '<div style="color:var(--text-muted);padding:8px;font-size:12px;">Keine Cover-Profile konfiguriert. Fuege Profile hinzu damit Sonnenstand-Tracking funktioniert.</div>';
+    return;
+  }
+  const orientations = ['N','NE','E','SE','S','SW','W','NW'];
+  const rooms = (RP.rooms ? Object.keys(RP.rooms) : []);
+  let html = '';
+  for (let i = 0; i < covers.length; i++) {
+    const c = covers[i];
+    const typeLabel = c.type === 'markise' ? '&#127958; Markise' : '&#129695; Rollladen';
+    html += '<div class="s-card" style="margin-bottom:10px;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-card);">';
+    html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">';
+    html += '<span style="font-size:13px;font-weight:600;">' + typeLabel + ' — ' + esc(c.entity_id || 'Neu') + '</span>';
+    html += '<button class="btn btn-sm" style="color:var(--danger);border-color:var(--danger);font-size:11px;" onclick="removeCoverProfile(' + i + ')">Entfernen</button>';
+    html += '</div>';
+    // Entity-ID
+    html += '<div class="form-group"><label>Entity-ID</label><input type="text" value="' + esc(c.entity_id||'') + '" placeholder="cover.rollladen_wohnzimmer" onchange="updateCoverProfile(' + i + ',\'entity_id\',this.value)"></div>';
+    // Raum
+    html += '<div class="form-group"><label>Raum</label><select onchange="updateCoverProfile(' + i + ',\'room\',this.value)">';
+    html += '<option value="">— Bitte waehlen —</option>';
+    for (const r of rooms) html += '<option value="' + r + '"' + (c.room===r?' selected':'') + '>' + r + '</option>';
+    html += '</select></div>';
+    // Typ
+    html += '<div class="form-group"><label>Typ</label><select onchange="updateCoverProfile(' + i + ',\'type\',this.value)">';
+    html += '<option value="rollladen"' + (c.type!=='markise'?' selected':'') + '>Rollladen</option>';
+    html += '<option value="markise"' + (c.type==='markise'?' selected':'') + '>Markise</option>';
+    html += '</select></div>';
+    // Orientierung
+    html += '<div class="form-group"><label>Orientierung (Himmelsrichtung)</label><select onchange="updateCoverProfile(' + i + ',\'orientation\',this.value)">';
+    for (const o of orientations) html += '<option value="' + o + '"' + (c.orientation===o?' selected':'') + '>' + o + '</option>';
+    html += '</select></div>';
+    // Azimut Start/End
+    html += '<div style="display:flex;gap:12px;">';
+    html += '<div class="form-group" style="flex:1;"><label>Sonnen-Azimut Start (°)</label><input type="number" value="' + (c.sun_exposure_start||0) + '" min="0" max="360" step="5" onchange="updateCoverProfile(' + i + ',\'sun_exposure_start\',parseInt(this.value))"></div>';
+    html += '<div class="form-group" style="flex:1;"><label>Sonnen-Azimut Ende (°)</label><input type="number" value="' + (c.sun_exposure_end||0) + '" min="0" max="360" step="5" onchange="updateCoverProfile(' + i + ',\'sun_exposure_end\',parseInt(this.value))"></div>';
+    html += '</div>';
+    // Toggles
+    html += '<div style="display:flex;gap:16px;flex-wrap:wrap;">';
+    html += '<label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;"><input type="checkbox"' + (c.allow_auto!==false?' checked':'') + ' onchange="updateCoverProfile(' + i + ',\'allow_auto\',this.checked)" style="accent-color:var(--accent);"> Automatik erlaubt</label>';
+    html += '<label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;"><input type="checkbox"' + (c.heat_protection?' checked':'') + ' onchange="updateCoverProfile(' + i + ',\'heat_protection\',this.checked)" style="accent-color:var(--accent);"> Hitzeschutz</label>';
+    html += '</div>';
+    // Privacy close hour
+    html += '<div class="form-group" style="margin-top:8px;"><label>Privatsph&auml;re schliessen ab (Uhr, optional)</label><input type="number" value="' + (c.privacy_close_hour||'') + '" min="0" max="23" placeholder="z.B. 17" onchange="updateCoverProfile(' + i + ',\'privacy_close_hour\',this.value?parseInt(this.value):null)"></div>';
+    html += '</div>';
+  }
+  container.innerHTML = html;
+}
+
+function updateCoverProfile(idx, key, value) {
+  if (!RP.cover_profiles) RP.cover_profiles = {covers: []};
+  if (!RP.cover_profiles.covers) RP.cover_profiles.covers = [];
+  if (RP.cover_profiles.covers[idx]) {
+    RP.cover_profiles.covers[idx][key] = value;
+    _rpDirty = true;
+  }
+}
+
+function addCoverProfile() {
+  if (!RP.cover_profiles) RP.cover_profiles = {covers: []};
+  if (!RP.cover_profiles.covers) RP.cover_profiles.covers = [];
+  RP.cover_profiles.covers.push({
+    entity_id: '', room: '', type: 'rollladen', orientation: 'S',
+    sun_exposure_start: 120, sun_exposure_end: 240,
+    allow_auto: true, heat_protection: true, privacy_close_hour: null
+  });
+  _rpDirty = true;
+  const container = document.getElementById('coverProfilesContainer');
+  if (container) renderCoverProfileList(RP.cover_profiles.covers, container);
+}
+
+function removeCoverProfile(idx) {
+  if (!RP.cover_profiles || !RP.cover_profiles.covers) return;
+  RP.cover_profiles.covers.splice(idx, 1);
+  _rpDirty = true;
+  const container = document.getElementById('coverProfilesContainer');
+  if (container) renderCoverProfileList(RP.cover_profiles.covers, container);
+}
+
+// ── Room-Profile Editor (room_profiles.yaml → rooms) ──────────
+function renderRoomProfileEditor() {
+  const rooms = RP.rooms || {};
+  const roomNames = Object.keys(rooms);
+  if (roomNames.length === 0) {
+    return '<div style="color:var(--text-muted);font-size:12px;padding:8px;">Keine Raeume in room_profiles.yaml gefunden.</div>';
+  }
+  const typeLabels = {
+    living:'Wohnzimmer', bedroom:'Schlafzimmer', kitchen:'Kueche',
+    office:'Buero', bathroom:'Badezimmer', hallway:'Flur',
+    outdoor:'Aussen', dressing:'Ankleide'
+  };
+  const floorLabels = {eg:'Erdgeschoss', og:'Obergeschoss'};
+  let html = '';
+  for (const name of roomNames) {
+    const r = rooms[name];
+    const icon = r.type==='bedroom' ? '&#128716;' : r.type==='kitchen' ? '&#127859;' :
+                 r.type==='office' ? '&#128187;' : r.type==='bathroom' ? '&#128704;' :
+                 r.type==='hallway' ? '&#128682;' : r.type==='living' ? '&#128715;' :
+                 r.type==='dressing' ? '&#128087;' : '&#127968;';
+    const floorBadge = '<span style="font-size:10px;font-family:var(--mono);color:var(--text-muted);background:var(--bg-primary);padding:1px 6px;border-radius:3px;margin-left:6px;">' + (floorLabels[r.floor]||r.floor||'') + '</span>';
+    html += '<div class="s-card" style="margin-bottom:8px;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-card);">';
+    html += '<div style="font-size:13px;font-weight:600;margin-bottom:8px;">' + icon + ' ' + esc(name) + floorBadge + '</div>';
+    // Raum-Typ
+    html += '<div class="form-group"><label>Typ</label><select data-rp-path="rooms.' + name + '.type" onchange="rpSetPath(\'rooms.' + name + '.type\',this.value)">';
+    for (const [tv, tl] of Object.entries(typeLabels)) {
+      html += '<option value="' + tv + '"' + (r.type===tv?' selected':'') + '>' + tl + '</option>';
+    }
+    html += '</select></div>';
+    // Etage
+    html += '<div class="form-group"><label>Etage</label><select data-rp-path="rooms.' + name + '.floor" onchange="rpSetPath(\'rooms.' + name + '.floor\',this.value)">';
+    html += '<option value="eg"' + (r.floor==='eg'?' selected':'') + '>Erdgeschoss (EG)</option>';
+    html += '<option value="og"' + (r.floor==='og'?' selected':'') + '>Obergeschoss (OG)</option>';
+    html += '</select></div>';
+    // Temp, Brightness, Night
+    html += '<div style="display:flex;gap:12px;flex-wrap:wrap;">';
+    html += '<div class="form-group" style="flex:1;min-width:100px;"><label>Standard-Temp (°C)</label><input type="number" data-rp-path="rooms.' + name + '.default_temp" value="' + (r.default_temp||20) + '" min="10" max="30" step="0.5" onchange="rpSetPath(\'rooms.' + name + '.default_temp\',parseFloat(this.value))"></div>';
+    html += '<div class="form-group" style="flex:1;min-width:100px;"><label>Helligkeit (%)</label><input type="number" data-rp-path="rooms.' + name + '.default_brightness" value="' + (r.default_brightness||70) + '" min="0" max="100" step="5" onchange="rpSetPath(\'rooms.' + name + '.default_brightness\',parseInt(this.value))"></div>';
+    html += '<div class="form-group" style="flex:1;min-width:100px;"><label>Nacht-Helligkeit (%)</label><input type="number" data-rp-path="rooms.' + name + '.night_brightness" value="' + (r.night_brightness||20) + '" min="0" max="100" step="5" onchange="rpSetPath(\'rooms.' + name + '.night_brightness\',parseInt(this.value))"></div>';
+    html += '</div>';
+    // Zweck
+    html += '<div class="form-group"><label>Zweck (fuer LLM-Kontext)</label><input type="text" data-rp-path="rooms.' + name + '.purpose" value="' + esc(r.purpose||'') + '" onchange="rpSetPath(\'rooms.' + name + '.purpose\',this.value)"></div>';
+    html += '</div>';
+  }
+  return html;
+}
+
+// ── Seasonal Editor (room_profiles.yaml → seasonal) ──────────
+function renderSeasonalEditor() {
+  const seasonal = RP.seasonal || {};
+  const seasons = [
+    {key:'spring', icon:'&#127800;', label:'Fruehling'},
+    {key:'summer', icon:'&#9728;', label:'Sommer'},
+    {key:'autumn', icon:'&#127810;', label:'Herbst'},
+    {key:'winter', icon:'&#10052;', label:'Winter'}
+  ];
+  let html = '';
+  for (const s of seasons) {
+    const cfg = seasonal[s.key] || {};
+    html += '<div class="s-card" style="margin-bottom:8px;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-card);">';
+    html += '<div style="font-size:13px;font-weight:600;margin-bottom:8px;">' + s.icon + ' ' + s.label + '</div>';
+    html += rpRange('seasonal.' + s.key + '.temp_offset', 'Temperatur-Offset (°C)', -5, 5, 0.5, {'-3':'-3','-2':'-2','-1':'-1',0:'0',1:'+1',2:'+2',3:'+3'});
+    html += rpText('seasonal.' + s.key + '.cover_hint', 'Rolladen-Hinweis', 'z.B. "Rolladen bei Sonne schliessen"');
+    html += rpText('seasonal.' + s.key + '.ventilation', 'Lueftungs-Tipp', 'z.B. "Kurz stosslueften"');
+    html += '</div>';
+  }
+  return html;
+}
+
+// ── Saugroboter Tab ──────────────────────────────────────
+function renderVacuum() {
+  return sectionWrap('&#129529;', 'Saugroboter',
+    fInfo('Konfiguriere deine Dreame-Saugroboter. Fuer raum-genaues Saugen muessen die Segment-IDs eingetragen werden (findest du in der Dreame-App unter Raumverwaltung).') +
+    fToggle('vacuum.enabled', 'Saugroboter-Steuerung aktiv') +
+    renderVacuumRobot('eg', 'Erdgeschoss (EG)') +
+    renderVacuumRobot('og', 'Obergeschoss (OG)')
+  ) +
+  sectionWrap('&#128296;', 'Auto-Clean',
+    fInfo('Automatische Reinigung wenn niemand zuhause ist.') +
+    fToggle('vacuum.auto_clean.enabled', 'Auto-Clean aktiv') +
+    fToggle('vacuum.auto_clean.when_nobody_home', 'Nur wenn niemand zuhause') +
+    fRange('vacuum.auto_clean.min_hours_between', 'Mindestabstand (Std)', 6, 72, 6, {6:'6 Std',12:'12 Std',24:'1 Tag',48:'2 Tage',72:'3 Tage'}) +
+    fRange('vacuum.auto_clean.preferred_time_start', 'Bevorzugt ab (Uhr)', 6, 18, 1) +
+    fRange('vacuum.auto_clean.preferred_time_end', 'Bevorzugt bis (Uhr)', 10, 22, 1) +
+    fChipSelect('vacuum.auto_clean.not_during', 'Nicht starten waehrend', [
+      {v:'meeting',l:'Meeting'}, {v:'schlafen',l:'Schlafen'},
+      {v:'gaeste',l:'Gaeste'}, {v:'filmabend',l:'Filmabend'},
+      {v:'telefonat',l:'Telefonat'}
+    ])
+  ) +
+  sectionWrap('&#128295;', 'Wartungs-Ueberwachung',
+    fInfo('Jarvis warnt wenn Verschleissteile des Saugroboters gewechselt werden muessen.') +
+    fToggle('vacuum.maintenance.enabled', 'Wartungs-Ueberwachung aktiv') +
+    fRange('vacuum.maintenance.check_interval_hours', 'Pruef-Intervall', 6, 72, 6, {6:'6 Std',12:'12 Std',24:'1 Tag',48:'2 Tage',72:'3 Tage'}) +
+    fRange('vacuum.maintenance.warn_at_percent', 'Warnung bei', 5, 30, 5, {5:'5%',10:'10%',15:'15%',20:'20%',30:'30%'})
+  );
+}
+
+function renderVacuumRobot(floor, floorLabel) {
+  const prefix = 'vacuum.robots.' + floor;
+  const robot = getPath(S, prefix) || {};
+  const rooms = RP.rooms || {};
+  const floorRooms = Object.entries(rooms).filter(([n,r]) => r.floor === floor).map(([n]) => n);
+  let html = '<div class="s-card" style="margin:10px 0;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-card);">';
+  html += '<div style="font-size:13px;font-weight:600;margin-bottom:8px;">&#129529; ' + floorLabel + '</div>';
+  html += fText(prefix + '.entity_id', 'Entity-ID', 'z.B. vacuum.dreame_' + floor);
+  html += fText(prefix + '.name', 'Name', 'z.B. Saugroboter ' + floor.toUpperCase());
+  html += fText(prefix + '.nickname', 'Spitzname', 'z.B. der Kleine');
+  // Raum → Segment-ID Zuordnung
+  html += '<div style="margin:10px 0 4px;font-weight:600;font-size:12px;">Raum-Segmente (Dreame Raum-IDs)</div>';
+  html += '<div class="hint" style="margin-bottom:8px;">Welche Dreame-Segment-ID gehoert zu welchem Raum? IDs findest du in der Dreame-App (Raeume verwalten → Nummer).</div>';
+  const segments = robot.rooms || {};
+  for (const roomName of floorRooms) {
+    const segId = segments[roomName] || '';
+    html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">';
+    html += '<span style="font-size:12px;min-width:140px;">' + esc(roomName) + '</span>';
+    html += '<input type="number" data-path="' + prefix + '.rooms.' + roomName + '" value="' + segId + '" min="0" max="99" step="1" style="width:70px;" placeholder="ID">';
+    html += '</div>';
+  }
+  html += '</div>';
+  return html;
 }
 
 function renderDevices() {

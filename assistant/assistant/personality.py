@@ -314,10 +314,10 @@ class PersonalityEngine:
         self._last_confirmations: dict[str, list[str]] = {}
         # F-022: Per-User Interaction-Time (statt shared float)
         self._last_interaction_times: dict[str, float] = {}
-        # Sarkasmus-Fatigue: Counter fuer aufeinanderfolgende sarkastische Antworten
-        self._sarcasm_streak: int = 0
-        # Kontextueller Humor: Zaehler fuer Humor-Fatigue (max 4 Witze in Folge)
-        self._humor_consecutive: int = 0
+        # Sarkasmus-Fatigue: Per-User Counter fuer aufeinanderfolgende sarkastische Antworten
+        self._sarcasm_streak: dict[str, int] = {}
+        # Kontextueller Humor: Per-User Zaehler fuer Humor-Fatigue (max 4 Witze in Folge)
+        self._humor_consecutive: dict[str, int] = {}
         self._current_formality: int = self.formality_start
 
         # Easter Eggs laden
@@ -790,9 +790,10 @@ class PersonalityEngine:
 
         # Sarkasmus-Fatigue: Nach 4+ Antworten in Folge etwas zuruecknehmen
         # Jarvis wird nie repetitiv — ein echter Butler variiert
-        if self._sarcasm_streak >= 6 and effective_level >= 3:
+        streak = self._sarcasm_streak.get("default", 0)
+        if streak >= 6 and effective_level >= 3:
             effective_level = max(2, effective_level - 2)
-        elif self._sarcasm_streak >= 4 and effective_level >= 3:
+        elif streak >= 4 and effective_level >= 3:
             effective_level = max(2, effective_level - 1)
 
         # Tageszeit-Dampening
@@ -807,12 +808,12 @@ class PersonalityEngine:
         template = HUMOR_TEMPLATES.get(effective_level, HUMOR_TEMPLATES[3])
         return f"HUMOR: {template.replace('{title}', get_person_title())}"
 
-    def track_sarcasm_streak(self, was_snarky: bool):
-        """Trackt aufeinanderfolgende sarkastische Antworten. 0ms — rein in-memory."""
+    def track_sarcasm_streak(self, was_snarky: bool, person_id: str = "default"):
+        """Trackt aufeinanderfolgende sarkastische Antworten per User. 0ms — rein in-memory."""
         if was_snarky:
-            self._sarcasm_streak += 1
+            self._sarcasm_streak[person_id] = self._sarcasm_streak.get(person_id, 0) + 1
         else:
-            self._sarcasm_streak = 0
+            self._sarcasm_streak[person_id] = 0
 
     # ------------------------------------------------------------------
     # Adaptive Komplexitaet (Phase 6.8)
@@ -1130,16 +1131,17 @@ class PersonalityEngine:
         if mood in ("tired", "stressed", "frustrated"):
             return None
 
-        # Humor-Fatigue: Nach 4 Witzen Pause
-        if self._humor_consecutive >= 4:
-            self._humor_consecutive = 0
+        # Humor-Fatigue: Nach 4 Witzen Pause (per User)
+        _hc = self._humor_consecutive.get("default", 0)
+        if _hc >= 4:
+            self._humor_consecutive["default"] = 0
             return None
 
         # Situation erkennen
         situation = self._detect_humor_situation(func_name, func_args, context)
         if not situation:
             # Kein Humor noetig — Reset
-            self._humor_consecutive = 0
+            self._humor_consecutive["default"] = 0
             return None
 
         # Templates holen
@@ -1173,8 +1175,8 @@ class PersonalityEngine:
             title=get_person_title(),
         )
 
-        # Fatigue tracken
-        self._humor_consecutive += 1
+        # Fatigue tracken (per User)
+        self._humor_consecutive["default"] = self._humor_consecutive.get("default", 0) + 1
 
         # Erfolg tracken (async, fire-and-forget)
         if self._redis:
@@ -1872,7 +1874,7 @@ Stil: {style}. {time_style}
 {humor_line}
 {formality_section}
 {irony_note}
-Sprich den Hauptbenutzer mit "{get_person_title()}" an. DUZE ihn.
+Sprich die anwesende Person mit "{get_person_title()}" an. DUZE sie.
 VERBOTEN: "leider", "Entschuldigung", "Es tut mir leid", "Wie kann ich helfen?", "Gerne!", "Natuerlich!".
 Kein unterwuerfiger Ton. Du bist ein brillanter Butler, kein Chatbot."""
 

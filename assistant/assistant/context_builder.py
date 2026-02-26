@@ -16,7 +16,7 @@ from typing import Optional
 
 import yaml
 
-from .config import yaml_config
+from .config import yaml_config, resolve_person_by_entity
 from .ha_client import HomeAssistantClient
 from .semantic_memory import SemanticMemory
 
@@ -392,14 +392,16 @@ class ContextBuilder:
     def _extract_person(self, states: list[dict]) -> dict:
         """Findet die aktive Person."""
         for state in states:
-            if state.get("entity_id", "").startswith("person."):
+            eid = state.get("entity_id", "")
+            if eid.startswith("person."):
                 if state.get("state") == "home":
-                    return {
-                        "name": state.get("attributes", {}).get(
+                    # Entity-ID-Mapping hat Vorrang (zuverlaessiger als friendly_name)
+                    name = resolve_person_by_entity(eid)
+                    if not name:
+                        name = state.get("attributes", {}).get(
                             "friendly_name", "User"
-                        ),
-                        "last_room": "unbekannt",
-                    }
+                        )
+                    return {"name": name, "last_room": "unbekannt"}
         return {"name": "User", "last_room": "unbekannt"}
 
     def _guess_current_room(self, states: list[dict]) -> str:
@@ -792,11 +794,13 @@ class ContextBuilder:
         # Personen die zuhause sind
         persons_home = []
         for state in states:
-            if state.get("entity_id", "").startswith("person."):
+            eid = state.get("entity_id", "")
+            if eid.startswith("person."):
                 if state.get("state") == "home":
-                    persons_home.append(
-                        state.get("attributes", {}).get("friendly_name", "User")
-                    )
+                    pname = resolve_person_by_entity(eid)
+                    if not pname:
+                        pname = state.get("attributes", {}).get("friendly_name", "User")
+                    persons_home.append(pname)
 
         # Einfache Zuordnung: Personen zum aktivsten Raum
         persons_by_room = {}

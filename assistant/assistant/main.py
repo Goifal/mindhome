@@ -28,7 +28,7 @@ import yaml
 
 from .brain import AssistantBrain
 from .config import settings, yaml_config, load_yaml_config, get_person_title
-from .constants import ERROR_BUFFER_MAX_SIZE, RATE_LIMIT_WINDOW, RATE_LIMIT_MAX_REQUESTS
+from .constants import ERROR_BUFFER_MAX_SIZE, ACTIVITY_BUFFER_MAX_SIZE, RATE_LIMIT_WINDOW, RATE_LIMIT_MAX_REQUESTS
 from .cover_config import load_cover_configs, save_cover_configs
 from .file_handler import (
     allowed_file, ensure_upload_dir,
@@ -82,6 +82,69 @@ _err_handler.setFormatter(logging.Formatter("%(message)s"))
 logging.getLogger().addHandler(_err_handler)
 
 
+# ---- Aktivitaets-Buffer: Alle INFO+ Logs der Assistant-Module ----
+_activity_buffer: deque[dict] = deque(maxlen=ACTIVITY_BUFFER_MAX_SIZE)
+_REDIS_ACTIVITY_BUFFER_KEY = "mha:activity_buffer"
+_REDIS_ACTIVITY_BUFFER_TTL = 3 * 86400  # 3 Tage
+
+# Module deren Logs im Aktivitaetsprotokoll erscheinen
+_ACTIVITY_LOGGERS = {
+    "assistant.proactive", "assistant.brain", "assistant.health_monitor",
+    "assistant.device_health", "assistant.diagnostics", "assistant.activity",
+    "assistant.anticipation", "assistant.ha_client", "assistant.function_calling",
+    "assistant.insight_engine", "assistant.learning_observer",
+    "assistant.situation_model", "assistant.personality",
+    "mindhome-assistant",
+}
+
+# Kurz-Labels fuer Module (fuer kompakte UI-Darstellung)
+_ACTIVITY_MODULE_LABELS = {
+    "assistant.proactive": "Proaktiv",
+    "assistant.brain": "Brain",
+    "assistant.health_monitor": "Raumklima",
+    "assistant.device_health": "Geraete",
+    "assistant.diagnostics": "Diagnostik",
+    "assistant.activity": "Aktivitaet",
+    "assistant.anticipation": "Antizipation",
+    "assistant.ha_client": "Home Assistant",
+    "assistant.function_calling": "Aktionen",
+    "assistant.insight_engine": "Insights",
+    "assistant.learning_observer": "Lernen",
+    "assistant.situation_model": "Situation",
+    "assistant.personality": "Persoenlichkeit",
+    "mindhome-assistant": "System",
+}
+
+
+class _ActivityBufferHandler(logging.Handler):
+    """Faengt INFO+ Logs aus Assistant-Modulen ab fuer das Aktivitaetsprotokoll."""
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            # Nur relevante Module erfassen
+            if record.name not in _ACTIVITY_LOGGERS:
+                # Auch Sub-Logger pruefen (z.B. assistant.proactive.xxx)
+                if not any(record.name.startswith(m + ".") for m in _ACTIVITY_LOGGERS):
+                    return
+            msg = self.format(record)
+            # Sensitive Daten maskieren
+            msg = _SENSITIVE_PATTERNS.sub("[REDACTED]", msg)
+            _activity_buffer.append({
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "level": record.levelname,
+                "module": _ACTIVITY_MODULE_LABELS.get(record.name, record.name.split(".")[-1]),
+                "logger": record.name,
+                "message": msg,
+            })
+        except Exception:
+            pass
+
+
+_activity_handler = _ActivityBufferHandler(level=logging.INFO)
+_activity_handler.setFormatter(logging.Formatter("%(message)s"))
+logging.getLogger().addHandler(_activity_handler)
+
+
 async def _restore_error_buffer(redis_client) -> int:
     """Stellt den Fehlerspeicher aus Redis wieder her (nach Neustart)."""
     try:
@@ -108,6 +171,35 @@ async def _persist_error_buffer(redis_client) -> None:
         )
     except Exception as e:
         logger.debug("Fehlerspeicher-Persist fehlgeschlagen: %s", e)
+
+
+async def _restore_activity_buffer(redis_client) -> int:
+    """Stellt das Aktivitaetsprotokoll aus Redis wieder her (nach Neustart)."""
+    try:
+        raw = await redis_client.get(_REDIS_ACTIVITY_BUFFER_KEY)
+        if not raw:
+            return 0
+        entries = json.loads(raw)
+        for entry in entries:
+            _activity_buffer.append(entry)
+        return len(entries)
+    except Exception as e:
+        logger.debug("Aktivitaetsprotokoll-Restore fehlgeschlagen: %s", e)
+        return 0
+
+
+async def _persist_activity_buffer(redis_client) -> None:
+    """Speichert das Aktivitaetsprotokoll in Redis (vor Shutdown)."""
+    try:
+        # Nur die letzten 500 Eintraege persistieren (Speicher sparen)
+        entries = list(_activity_buffer)[-500:]
+        await redis_client.set(
+            _REDIS_ACTIVITY_BUFFER_KEY,
+            json.dumps(entries),
+            ex=_REDIS_ACTIVITY_BUFFER_TTL,
+        )
+    except Exception as e:
+        logger.debug("Aktivitaetsprotokoll-Persist fehlgeschlagen: %s", e)
 
 
 # Brain-Instanz
@@ -225,11 +317,14 @@ async def lifespan(app: FastAPI):
     logger.info("=" * 50)
     await brain.initialize()
 
-    # Fehlerspeicher aus Redis wiederherstellen (Restart-sicher)
+    # Fehlerspeicher + Aktivitaetsprotokoll aus Redis wiederherstellen
     if brain.memory.redis:
         restored = await _restore_error_buffer(brain.memory.redis)
         if restored:
             logger.info("Fehlerspeicher wiederhergestellt: %d Eintraege", restored)
+        restored_act = await _restore_activity_buffer(brain.memory.redis)
+        if restored_act:
+            logger.info("Aktivitaetsprotokoll wiederhergestellt: %d Eintraege", restored_act)
 
     health = await brain.health_check()
     for component, status in health["components"].items():
@@ -264,9 +359,10 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.debug("F-065: WS-Shutdown-Broadcast fehlgeschlagen: %s", e)
 
-    # Fehlerspeicher in Redis sichern (vor Shutdown)
+    # Fehlerspeicher + Aktivitaetsprotokoll in Redis sichern (vor Shutdown)
     if brain.memory.redis:
         await _persist_error_buffer(brain.memory.redis)
+        await _persist_activity_buffer(brain.memory.redis)
 
     await brain.shutdown()
     logger.info("MindHome Assistant heruntergefahren.")
@@ -1814,6 +1910,9 @@ def _validate_settings_values(settings: dict) -> list[str]:
         ("health_monitor", "humidity_high"): (40, 95),
         ("health_monitor", "check_interval_minutes"): (5, 60),
         ("health_monitor", "alert_cooldown_minutes"): (5, 1440),
+        ("humidor", "target_humidity"): (50, 85),
+        ("humidor", "warn_below"): (40, 80),
+        ("humidor", "warn_above"): (55, 90),
         ("proactive", "batch_interval"): (5, 300),
         ("interrupt_queue", "pause_ms"): (100, 1000),
         ("situation_model", "min_pause_minutes"): (5, 120),
@@ -1831,6 +1930,18 @@ def _validate_settings_values(settings: dict) -> list[str]:
         ("music_dj", "proactive_interval_minutes"): (10, 120),
         ("visitor_management", "ring_cooldown_seconds"): (5, 120),
         ("visitor_management", "history_max"): (10, 500),
+        ("seasonal_actions", "cover_automation", "heat_protection_temp"): (15, 45),
+        ("seasonal_actions", "cover_automation", "frost_protection_temp"): (-10, 15),
+        ("seasonal_actions", "cover_automation", "storm_wind_speed"): (15, 120),
+        ("vacation_simulation", "morning_hour"): (5, 11),
+        ("vacation_simulation", "evening_hour"): (16, 23),
+        ("vacation_simulation", "night_hour"): (20, 24),
+        ("vacation_simulation", "variation_minutes"): (0, 60),
+        ("vacuum", "auto_clean", "min_hours_between"): (1, 72),
+        ("vacuum", "auto_clean", "preferred_time_start"): (0, 23),
+        ("vacuum", "auto_clean", "preferred_time_end"): (0, 23),
+        ("vacuum", "maintenance", "check_interval_hours"): (1, 72),
+        ("vacuum", "maintenance", "warn_at_percent"): (1, 50),
     }
     # Erlaubte Werte fuer Strings (Whitelist)
     ENUM_RULES = {
@@ -1999,7 +2110,25 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
             if isinstance(user_excludes, str):
                 user_excludes = [p.strip() for p in user_excludes.splitlines() if p.strip()]
             hm._exclude_patterns = [p.lower() for p in (hm._default_excludes + user_excludes)]
+            # Humidor-Config neu laden
+            humidor_cfg = yaml_cfg.get("humidor", {})
+            hm.humidor_enabled = bool(humidor_cfg.get("enabled", False))
+            hm.humidor_entity = (humidor_cfg.get("sensor_entity") or "").strip()
+            hm.humidor_target = int(humidor_cfg.get("target_humidity", 70))
+            hm.humidor_warn_below = int(humidor_cfg.get("warn_below", 62))
+            hm.humidor_warn_above = int(humidor_cfg.get("warn_above", 75))
             logger.info("Health Monitor Settings aktualisiert")
+
+        # Humidor: Auch bei separater Aenderung (ohne health_monitor) hot-reloaden
+        if "humidor" in changed_settings and hasattr(brain, "health_monitor"):
+            humidor_cfg = yaml_cfg.get("humidor", {})
+            hm = brain.health_monitor
+            hm.humidor_enabled = bool(humidor_cfg.get("enabled", False))
+            hm.humidor_entity = (humidor_cfg.get("sensor_entity") or "").strip()
+            hm.humidor_target = int(humidor_cfg.get("target_humidity", 70))
+            hm.humidor_warn_below = int(humidor_cfg.get("warn_below", 62))
+            hm.humidor_warn_above = int(humidor_cfg.get("warn_above", 75))
+            logger.info("Humidor Settings aktualisiert")
 
         # InsightEngine: Alle Einstellungen hot-reloadbar
         if "insights" in changed_settings and hasattr(brain, "insight_engine"):
@@ -2417,6 +2546,67 @@ async def ui_set_cover_type(entity_id: str, request: Request, token: str = ""):
         return {"success": True, **payload}
     except HTTPException:
         raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
+# ── Room-Profiles API (room_profiles.yaml) ─────────────────────────
+ROOM_PROFILES_YAML_PATH = Path(__file__).parent.parent / "config" / "room_profiles.yaml"
+
+
+@app.get("/api/ui/room-profiles")
+async def ui_get_room_profiles(token: str = ""):
+    """Room-Profiles aus room_profiles.yaml als JSON."""
+    _check_token(token)
+    try:
+        with open(ROOM_PROFILES_YAML_PATH) as f:
+            data = yaml.safe_load(f) or {}
+        return data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
+@app.put("/api/ui/room-profiles")
+async def ui_update_room_profiles(request: Request, token: str = ""):
+    """Room-Profiles in room_profiles.yaml aktualisieren (Deep Merge)."""
+    _check_token(token)
+    try:
+        body = await request.json()
+        updates = body.get("profiles", {})
+        if not updates:
+            return {"success": True, "message": "Keine Aenderungen"}
+
+        # Aktuelle Config laden
+        with open(ROOM_PROFILES_YAML_PATH) as f:
+            config = yaml.safe_load(f) or {}
+
+        # Deep Merge
+        _deep_merge(config, updates)
+
+        # Zurueckschreiben
+        with open(ROOM_PROFILES_YAML_PATH, "w") as f:
+            yaml.safe_dump(
+                config, f, allow_unicode=True,
+                default_flow_style=False, sort_keys=False,
+            )
+
+        # Caches invalidieren (function_calling + proactive haben 10-Min-TTL)
+        try:
+            from assistant.function_calling import _room_profiles_cache, _room_profiles_ts
+            import assistant.function_calling as fc_mod
+            fc_mod._room_profiles_cache = {}
+            fc_mod._room_profiles_ts = 0.0
+        except Exception:
+            pass
+        try:
+            import assistant.proactive as pro_mod
+            pro_mod._room_profiles_cache = {}
+            pro_mod._room_profiles_ts = 0.0
+        except Exception:
+            pass
+
+        _audit_log("room_profiles_update", {"changed_sections": list(updates.keys())})
+        return {"success": True, "message": "Room-Profiles gespeichert"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Fehler: {e}")
 
@@ -2921,6 +3111,31 @@ async def ui_clear_errors(token: str = ""):
     """Fehlerspeicher leeren."""
     _check_token(token)
     _error_buffer.clear()
+    return {"status": "ok"}
+
+
+@app.get("/api/ui/activity")
+async def ui_get_activity(token: str = "", limit: int = 200, module: str = "", level: str = ""):
+    """Aktivitaetsprotokoll: Alles was Jarvis intern macht (INFO+ Logs)."""
+    _check_token(token)
+    entries = list(_activity_buffer)
+    if module:
+        entries = [e for e in entries if e.get("module", "").lower() == module.lower()
+                   or e.get("logger", "").lower().endswith(module.lower())]
+    if level:
+        entries = [e for e in entries if e["level"] == level.upper()]
+    entries.reverse()  # Neueste zuerst
+    capped = min(limit, 500)
+    # Verfuegbare Module fuer Filter-Dropdown
+    modules = sorted(set(e.get("module", "") for e in _activity_buffer))
+    return {"items": entries[:capped], "total": len(entries), "modules": modules}
+
+
+@app.delete("/api/ui/activity")
+async def ui_clear_activity(token: str = ""):
+    """Aktivitaetsprotokoll leeren."""
+    _check_token(token)
+    _activity_buffer.clear()
     return {"status": "ok"}
 
 

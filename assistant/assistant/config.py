@@ -98,7 +98,8 @@ _ROLE_TO_TRUST = {"owner": 2, "member": 1, "guest": 0}
 
 
 def apply_household_to_config() -> None:
-    """Generiert persons.titles und trust_levels.persons aus household.members."""
+    """Generiert persons.titles, trust_levels.persons und entity_to_name aus household.members."""
+    global _entity_to_name
     household = yaml_config.get("household") or {}
     members = household.get("members") or []
     primary = household.get("primary_user") or settings.user_name
@@ -107,25 +108,44 @@ def apply_household_to_config() -> None:
     existing_titles = (yaml_config.get("persons") or {}).get("titles") or {}
     titles = dict(existing_titles)
     trust_persons = {}
+    entity_map: dict[str, str] = {}
 
     # Hauptbenutzer immer als Owner
     trust_persons[primary.lower()] = 2
+
+    # Primary User Entity-Mapping
+    primary_entity = (household.get("primary_user_entity") or "").strip()
+    if primary_entity and primary:
+        entity_map[primary_entity.lower()] = primary
 
     for m in members:
         name = (m.get("name") or "").strip()
         if not name:
             continue
         role = m.get("role", "member")
-        # Titel nur setzen wenn noch nicht manuell konfiguriert
-        if name.lower() not in titles:
+
+        # Inline-Titel hat Vorrang vor auto-generiertem Name-Titel
+        member_title = (m.get("title") or "").strip()
+        if member_title:
+            titles[name.lower()] = member_title
+        elif name.lower() not in titles:
             titles[name.lower()] = name
+
         trust_persons[name.lower()] = _ROLE_TO_TRUST.get(role, 0)
+
+        # Entity-Mapping: person.anna → Anna
+        ha_entity = (m.get("ha_entity") or "").strip()
+        if ha_entity:
+            entity_map[ha_entity.lower()] = name
 
     # In yaml_config eintragen (fuer personality.py etc.)
     yaml_config.setdefault("persons", {})["titles"] = titles
     yaml_config.setdefault("trust_levels", {})["persons"] = trust_persons
     if "trust_levels" in yaml_config and "default" not in yaml_config["trust_levels"]:
         yaml_config["trust_levels"]["default"] = 0
+
+    # Entity-to-Name Mapping fuer proactive.py / context_builder.py
+    _entity_to_name = entity_map
 
     # user_name aktualisieren
     if primary:
@@ -135,21 +155,85 @@ def apply_household_to_config() -> None:
 apply_household_to_config()
 
 
+# Entity-to-Name Mapping: Wird von apply_household_to_config() befuellt.
+# Erlaubt proactive.py und context_builder.py Personen per entity_id statt
+# per friendly_name zu identifizieren (zuverlaessiger).
+_entity_to_name: dict[str, str] = {}
+
+
+def resolve_person_by_entity(entity_id: str) -> str:
+    """Gibt den konfigurierten Member-Namen fuer eine HA entity_id zurueck.
+
+    Beispiel: resolve_person_by_entity("person.anna") → "Anna"
+    Fallback: leerer String (dann wird friendly_name verwendet).
+    """
+    return _entity_to_name.get(entity_id.lower(), "")
+
+
+# Active-Person Tracking: Wird von brain.py gesetzt wenn eine Person
+# identifiziert wird (Sprache, Praesenz, Speaker-Recognition).
+# Damit kann get_person_title() ohne Argument den richtigen Titel liefern.
+_active_person: str = ""
+
+
+def set_active_person(name: str) -> None:
+    """Setzt die aktuell aktive Person (vom brain/proactive Modul)."""
+    global _active_person
+    _active_person = name or ""
+
+
+def get_active_person() -> str:
+    """Gibt die aktuell aktive Person zurueck."""
+    return _active_person
+
+
+def _lookup_title(titles: dict, name: str) -> str:
+    """Sucht einen Titel mit Fallback auf Vornamen-Match.
+
+    Versucht zuerst den exakten Namen (lowercase), dann nur den Vornamen.
+    So passt 'Anna Mueller' (HA friendly_name) auf Config-Key 'anna'.
+    """
+    if not name:
+        return ""
+    key = name.lower().strip()
+    # Exakter Match
+    title = titles.get(key)
+    if title:
+        return title
+    # Vornamen-Match (HA liefert manchmal 'Max Mueller', Config hat nur 'max')
+    if " " in key:
+        first = key.split()[0]
+        title = titles.get(first)
+        if title:
+            return title
+    return ""
+
+
 def get_person_title(name: str = "") -> str:
     """Gibt den konfigurierten Titel fuer eine Person zurueck.
 
-    Schaut in persons.titles (im UI konfigurierbar, z.B. 'Sir', 'Ma'am').
-    Fallback: Titel des primary_user, dann 'Sir'.
+    Reihenfolge:
+    1. Explizit uebergebener Name → dessen Titel
+    2. Aktive Person (von brain.py gesetzt) → deren Titel
+    3. Fallback: primary_user Titel
+    4. Fallback: 'Sir'
+
+    Name-Matching ist robust: 'Anna Mueller' findet auch Config-Key 'anna'.
     """
     titles = (yaml_config.get("persons") or {}).get("titles") or {}
     if name:
-        title = titles.get(name.lower())
+        title = _lookup_title(titles, name)
+        if title:
+            return title
+    # Aktive Person (gesetzt durch brain.py bei Gespraech oder proactive bei Praesenz)
+    if not name and _active_person:
+        title = _lookup_title(titles, _active_person)
         if title:
             return title
     # Fallback: primary user Titel
     primary = (yaml_config.get("household") or {}).get("primary_user", "")
     if primary:
-        title = titles.get(primary.lower())
+        title = _lookup_title(titles, primary)
         if title:
             return title
     return "Sir"

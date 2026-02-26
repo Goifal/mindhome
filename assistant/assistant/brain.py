@@ -29,7 +29,7 @@ from typing import Optional
 from .action_planner import ActionPlanner
 from .activity import ActivityEngine
 from .autonomy import AutonomyManager
-from .config import settings, yaml_config, get_person_title
+from .config import settings, yaml_config, get_person_title, set_active_person
 from .context_builder import ContextBuilder
 from .cooking_assistant import CookingAssistant
 from .device_health import DeviceHealthMonitor
@@ -628,6 +628,8 @@ class AssistantBrain(BrainCallbacksMixin):
 
         # Aktuelle Person merken (fuer Executor-Methoden wie manage_protocol)
         self._current_person = person or ""
+        if person:
+            set_active_person(person)
 
         # Sarkasmus-Feedback: Reaktion auf vorherige sarkastische Antwort auswerten
         if self.personality.sarcasm_level >= 3 and hasattr(self, '_last_response_was_snarky'):

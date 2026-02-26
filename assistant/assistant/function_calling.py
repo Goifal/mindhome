@@ -9,6 +9,7 @@ import copy
 import logging
 import re
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
@@ -28,6 +29,33 @@ _EDITABLE_CONFIGS = {
 
 logger = logging.getLogger(__name__)
 
+# ── Room-Profile-Cache: room_profiles.yaml einmal laden, nicht bei jedem Aufruf ──
+_room_profiles_cache: dict = {}
+_room_profiles_ts: float = 0.0
+_ROOM_PROFILES_TTL = 600  # 10 Minuten
+
+
+def _get_room_profiles() -> dict:
+    """Liefert room_profiles.yaml aus Cache (oder laedt bei Bedarf von Disk)."""
+    global _room_profiles_cache, _room_profiles_ts
+    now = time.time()
+    if _room_profiles_cache and (now - _room_profiles_ts) < _ROOM_PROFILES_TTL:
+        return _room_profiles_cache
+    try:
+        rp_file = _CONFIG_DIR / "room_profiles.yaml"
+        if rp_file.exists():
+            with open(rp_file) as f:
+                _room_profiles_cache = yaml.safe_load(f) or {}
+        else:
+            _room_profiles_cache = {}
+    except Exception as e:
+        logger.debug("Room-Profiles nicht ladbar: %s", e)
+        if not _room_profiles_cache:
+            _room_profiles_cache = {}
+    _room_profiles_ts = now
+    return _room_profiles_cache
+
+
 # ── Entity-Katalog: Echte Raum- und Entity-Namen fuer Tool-Beschreibungen ──
 # Wird asynchron aus HA geladen und gecached (TTL 5 Min).
 # Raumnamen kommen zusaetzlich aus room_profiles.yaml (immer verfuegbar).
@@ -45,17 +73,9 @@ _mindhome_rooms: list[str] = []                # Raumnamen aus MindHome
 
 
 def _get_config_rooms() -> list[str]:
-    """Liefert Raumnamen aus room_profiles.yaml (immer verfuegbar)."""
-    _cfg_dir = Path(__file__).parent.parent / "config"
-    try:
-        rp_file = _cfg_dir / "room_profiles.yaml"
-        if rp_file.exists():
-            with open(rp_file) as f:
-                data = yaml.safe_load(f)
-            return sorted(data.get("rooms", {}).keys())
-    except Exception as e:
-        logger.debug("Config-Rooms nicht ladbar: %s", e)
-    return []
+    """Liefert Raumnamen aus room_profiles.yaml (gecached)."""
+    profiles = _get_room_profiles()
+    return sorted(profiles.get("rooms", {}).keys())
 
 
 async def _load_mindhome_domains(ha: HomeAssistantClient) -> None:
@@ -1794,41 +1814,60 @@ class FunctionExecutor:
 
         dim2warm-Lampen regeln Farbtemperatur ueber die Helligkeit
         in Hardware — je dunkler, desto waermer.
+        Nutzt Minuten-Interpolation fuer sanfte Uebergaenge.
         """
-        hour = datetime.now().hour
-        _cfg_dir = Path(__file__).parent.parent / "config"
-        try:
-            with open(_cfg_dir / "room_profiles.yaml") as f:
-                profiles = yaml.safe_load(f) or {}
-        except Exception:
-            profiles = {}
+        now = datetime.now()
+        minutes = now.hour * 60 + now.minute
+        profiles = _get_room_profiles()
         room_cfg = profiles.get("rooms", {}).get(room, {})
         default_bright = room_cfg.get("default_brightness", 70)
         night_bright = room_cfg.get("night_brightness", 20)
 
-        if 6 <= hour < 9:        # Morgens: aufsteigend
-            return int(night_bright + (default_bright - night_bright) * (hour - 6) / 3)
-        elif 9 <= hour < 17:     # Tagsueber: volle Helligkeit
+        # Minuten-basierte Interpolation (sanfte Uebergaenge statt Stunden-Spruenge)
+        # 06:00-09:00 (360-540): aufsteigend (night → default)
+        # 09:00-17:00 (540-1020): volle Helligkeit (default)
+        # 17:00-21:00 (1020-1260): absteigend (default → night)
+        # 21:00-06:00: minimal (night)
+        if 360 <= minutes < 540:      # Morgens: aufsteigend
+            ratio = (minutes - 360) / 180
+            return int(night_bright + (default_bright - night_bright) * ratio)
+        elif 540 <= minutes < 1020:   # Tagsueber: volle Helligkeit
             return default_bright
-        elif 17 <= hour < 21:    # Abends: absteigend
-            return int(default_bright - (default_bright - night_bright) * (hour - 17) / 4)
-        else:                     # Nachts: minimal
+        elif 1020 <= minutes < 1260:  # Abends: absteigend
+            ratio = (minutes - 1020) / 240
+            return int(default_bright - (default_bright - night_bright) * ratio)
+        else:                          # Nachts: minimal
             return night_bright
 
     async def _exec_set_light_floor(self, floor: str, args: dict, state: str) -> dict:
         """Alle Lichter einer Etage steuern (eg/og)."""
-        _cfg_dir = Path(__file__).parent.parent / "config"
-        try:
-            with open(_cfg_dir / "room_profiles.yaml") as f:
-                profiles = yaml.safe_load(f) or {}
-        except Exception:
-            profiles = {}
+        profiles = _get_room_profiles()
         floor_rooms = [
             r for r, cfg in profiles.get("rooms", {}).items()
             if cfg.get("floor") == floor
         ]
         if not floor_rooms:
             return {"success": False, "message": f"Keine Raeume fuer Etage '{floor.upper()}' konfiguriert"}
+
+        # brighter/dimmer: pro Lampe aktuelle Helligkeit lesen und anpassen
+        if state in ("brighter", "dimmer"):
+            step = 15
+            count = 0
+            for room_name in floor_rooms:
+                entity_id = await self._find_entity("light", room_name)
+                if not entity_id:
+                    continue
+                current_brightness = 50
+                ha_state = await self.ha.get_state(entity_id)
+                if ha_state and ha_state.get("state") == "on":
+                    raw = ha_state.get("attributes", {}).get("brightness", 128)
+                    current_brightness = round(raw / 255 * 100)
+                new_brightness = current_brightness + step if state == "brighter" else current_brightness - step
+                new_brightness = max(5, min(100, new_brightness))
+                await self.ha.call_service("light", "turn_on", {"entity_id": entity_id, "brightness_pct": new_brightness})
+                count += 1
+            direction = "heller" if state == "brighter" else "dunkler"
+            return {"success": count > 0, "message": f"{count} Lichter im {floor.upper()} {direction}"}
 
         service = "turn_on" if state == "on" else "turn_off"
         count = 0
@@ -1960,12 +1999,17 @@ class FunctionExecutor:
             eid = s.get("entity_id", "")
             if eid.startswith("light.") and s.get("state") != state:
                 service_data = {"entity_id": eid}
-                if "brightness" in args and state == "on":
-                    try:
-                        bri = str(args["brightness"]).replace("%", "").strip()
-                        service_data["brightness_pct"] = max(1, min(100, int(float(bri))))
-                    except (ValueError, TypeError):
-                        pass
+                if state == "on":
+                    if "brightness" in args:
+                        try:
+                            bri = str(args["brightness"]).replace("%", "").strip()
+                            service_data["brightness_pct"] = max(1, min(100, int(float(bri))))
+                        except (ValueError, TypeError):
+                            pass
+                    else:
+                        # Adaptive Helligkeit wenn keine explizite Angabe
+                        room_name = eid.split(".", 1)[1] if "." in eid else ""
+                        service_data["brightness_pct"] = self._get_adaptive_brightness(room_name)
                 await self.ha.call_service("light", service, service_data)
                 count += 1
 
@@ -2429,8 +2473,9 @@ class FunctionExecutor:
                 if conf.get("enabled") is False:
                     return False
         except Exception as e:
-            logger.warning("CoverConfig laden fehlgeschlagen fuer %s: %s — blockiere sicherheitshalber", entity_id, e)
-            return False
+            # Bei JSON-Ladefehler: Nur warnen, aber Cover nicht pauschal blockieren.
+            # device_class und entity_id-Pattern-Checks oben reichen als Sicherheitsnetz.
+            logger.warning("CoverConfig laden fehlgeschlagen fuer %s: %s — erlaube basierend auf device_class/entity_id", entity_id, e)
         return True
 
     def _is_markise(self, entity_id: str, state: dict) -> bool:
@@ -2438,15 +2483,10 @@ class FunctionExecutor:
         eid_lower = entity_id.lower()
         if "markise" in eid_lower or "awning" in eid_lower:
             return True
-        try:
-            _cfg_dir = Path(__file__).parent.parent / "config"
-            with open(_cfg_dir / "room_profiles.yaml") as f:
-                profiles = yaml.safe_load(f) or {}
-            for c in profiles.get("cover_profiles", {}).get("covers", []):
-                if c.get("entity_id") == entity_id and c.get("type") == "markise":
-                    return True
-        except Exception:
-            pass
+        profiles = _get_room_profiles()
+        for c in profiles.get("cover_profiles", {}).get("covers", []):
+            if c.get("entity_id") == entity_id and c.get("type") == "markise":
+                return True
         return False
 
     def _resolve_cover_position(self, args: dict) -> tuple:
@@ -2571,12 +2611,7 @@ class FunctionExecutor:
 
     async def _exec_set_cover_floor(self, floor: str, args: dict, cover_type: str = None) -> dict:
         """Alle Rolllaeden/Markisen einer Etage steuern."""
-        _cfg_dir = Path(__file__).parent.parent / "config"
-        try:
-            with open(_cfg_dir / "room_profiles.yaml") as f:
-                profiles = yaml.safe_load(f) or {}
-        except Exception:
-            profiles = {}
+        profiles = _get_room_profiles()
         floor_rooms = [
             r for r, cfg in profiles.get("rooms", {}).items()
             if cfg.get("floor") == floor
@@ -2771,10 +2806,11 @@ class FunctionExecutor:
                     "command": "app_segment_clean",
                     "params": [segment_id],
                 })
+                return {"success": success, "message": f"{nickname} saugt {room}"}
             else:
-                # Kein Segment — ganzen Roboter starten
+                # Kein Segment konfiguriert — ganzen Roboter starten
                 success = await self.ha.call_service("vacuum", "start", {"entity_id": entity_id})
-            return {"success": success, "message": f"{nickname} saugt {room}"}
+                return {"success": success, "message": f"{nickname} startet (Raum '{room}' nicht als Segment konfiguriert — saugt komplett)"}
 
         # Ganzes Stockwerk
         if action == "start" and room and room.lower() in ("eg", "og"):
@@ -2794,9 +2830,10 @@ class FunctionExecutor:
                         "command": "app_segment_clean",
                         "params": [segment_id],
                     })
+                    return {"success": success, "message": f"{robot.get('nickname', 'Saugroboter')} saugt {room}"}
                 else:
                     success = await self.ha.call_service("vacuum", "start", {"entity_id": robot["entity_id"]})
-                return {"success": success, "message": f"{robot.get('nickname', 'Saugroboter')} saugt {room}"}
+                    return {"success": success, "message": f"{robot.get('nickname', 'Saugroboter')} startet (Raum '{room}' nicht als Segment konfiguriert — saugt komplett)"}
 
         # Stop/Pause/Dock → alle Roboter
         if action in ("stop", "pause", "dock"):
