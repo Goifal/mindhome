@@ -10218,8 +10218,6 @@ const JarvisChatPage = () => {
     const [uploadProgress, setUploadProgress] = useState(0);
     const [recording, setRecording] = useState(false);
     const [voiceProcessing, setVoiceProcessing] = useState(false);
-    const [chatPersons, setChatPersons] = useState([]);
-    const [selectedPerson, setSelectedPerson] = useState(() => localStorage.getItem('jarvis_chat_person') || '');
     const mediaRecorderRef = useRef(null);
     const audioChunksRef = useRef([]);
     const messagesEndRef = useRef(null);
@@ -10236,7 +10234,7 @@ const JarvisChatPage = () => {
 
     useEffect(() => { scrollToBottom(); }, [messages]);
 
-    // Load history, status, and admin users on mount
+    // Load history and check status on mount
     useEffect(() => {
         api.get('chat/history?limit=50').then(d => {
             if (d && d.messages) setMessages(d.messages);
@@ -10254,20 +10252,6 @@ const JarvisChatPage = () => {
             if (d && Array.isArray(d)) {
                 const apiKeySetting = d.find(s => s.key === 'assistant_api_key');
                 if (apiKeySetting && apiKeySetting.value) setAssistantApiKey(apiKeySetting.value);
-            }
-        });
-        // Nur Hausherren (admin) fuer die Personenauswahl laden
-        api.get('users').then(d => {
-            if (Array.isArray(d)) {
-                const admins = d.filter(u => u.role === 'admin' && u.name);
-                setChatPersons(admins);
-                const saved = localStorage.getItem('jarvis_chat_person');
-                if (saved && admins.some(a => a.name === saved)) {
-                    setSelectedPerson(saved);
-                } else if (admins.length > 0) {
-                    setSelectedPerson(admins[0].name);
-                    localStorage.setItem('jarvis_chat_person', admins[0].name);
-                }
             }
         });
     }, []);
@@ -10321,7 +10305,6 @@ const JarvisChatPage = () => {
         formData.append('file', pendingFile.file);
         const caption = input.trim();
         if (caption) formData.append('caption', caption);
-        if (selectedPerson) formData.append('person', selectedPerson);
 
         // Optimistic: show user message with local preview
         const optimisticMsg = {
@@ -10411,9 +10394,7 @@ const JarvisChatPage = () => {
         const userMsg = { role: 'user', text, timestamp: new Date().toISOString() };
         setMessages(prev => [...prev, userMsg]);
 
-        const payload = { text };
-        if (selectedPerson) payload.person = selectedPerson;
-        const result = await api.post('chat/send', payload);
+        const result = await api.post('chat/send', { text });
 
         if (result && !result._error && result.response) {
             const assistantMsg = {
@@ -10501,7 +10482,6 @@ const JarvisChatPage = () => {
         try {
             const formData = new FormData();
             formData.append('audio', audioBlob, 'voice.webm');
-            if (selectedPerson) formData.append('person', selectedPerson);
 
             const resp = await fetch(`${API_BASE}/api/chat/voice`, { method: 'POST', body: formData });
             const result = await resp.json();
@@ -10700,21 +10680,7 @@ const JarvisChatPage = () => {
                             background: connected === true ? 'var(--success)' : connected === false ? 'var(--danger)' : 'var(--text-muted)',
                             display: 'inline-block', marginLeft: 4,
                         }
-                    }),
-                    // Person selector (nur Hausherren/Admins)
-                    chatPersons.length > 0 && React.createElement('select', {
-                        className: 'input',
-                        value: selectedPerson,
-                        onChange: (e) => {
-                            setSelectedPerson(e.target.value);
-                            localStorage.setItem('jarvis_chat_person', e.target.value);
-                        },
-                        style: { marginLeft: 8, fontSize: 13, padding: '4px 8px', borderRadius: 8, minWidth: 100 },
-                    },
-                        ...chatPersons.map(p =>
-                            React.createElement('option', { key: p.id, value: p.name }, p.name)
-                        )
-                    )
+                    })
                 ),
                 React.createElement('div', { style: { display: 'flex', gap: 4 } },
                     React.createElement('button', {

@@ -67,6 +67,40 @@ def _domain_manager():
     return _deps.get("domain_manager")
 
 
+_ROLE_MAP = {"admin": "owner", "user": "member", "guest": "guest"}
+
+
+def _sync_household_to_assistant():
+    """Sync aktive User als household.members zum Assistant."""
+    try:
+        from routes.system import _proxy_put
+        with get_db_session() as session:
+            users = session.query(User).filter_by(is_active=True).all()
+            members = []
+            primary_user = ""
+            for u in users:
+                member = {
+                    "name": u.name,
+                    "role": _ROLE_MAP.get(u.role.value, "guest"),
+                }
+                if u.ha_person_entity:
+                    member["ha_entity"] = u.ha_person_entity
+                members.append(member)
+                if u.role == UserRole.ADMIN and not primary_user:
+                    primary_user = u.name
+
+            _proxy_put("/api/ui/settings", data={
+                "settings": {
+                    "household": {
+                        "primary_user": primary_user,
+                        "members": members,
+                    }
+                }
+            })
+            logger.info("Household sync: %d User an Assistant gesendet", len(members))
+    except Exception as e:
+        logger.warning("Household sync zum Assistant fehlgeschlagen: %s", e)
+
 
 @users_bp.route("/api/users", methods=["GET"])
 def api_get_users():
@@ -116,6 +150,7 @@ def api_create_user():
             session.add(ns)
         session.commit()
 
+        _sync_household_to_assistant()
         return jsonify({"id": user.id, "name": user.name}), 201
 
 
@@ -142,6 +177,7 @@ def api_update_user(user_id):
             user.language = data["language"]
 
         session.commit()
+        _sync_household_to_assistant()
         return jsonify({"id": user.id, "name": user.name})
 
 
@@ -155,5 +191,6 @@ def api_delete_user(user_id):
             return jsonify({"error": "User not found"}), 404
         user.is_active = False
         session.commit()
+        _sync_household_to_assistant()
         return jsonify({"success": True})
 

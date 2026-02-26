@@ -1165,14 +1165,13 @@ let toastTimer = null;
 let streamTimeout = null;
 const STREAM_TIMEOUT_MS = 30000;
 
-// Load household & person-switcher
-fetch(`${API}/api/ui/settings?token=`).then(r => r.ok ? r.json() : null).then(d => {
+// Load household & person-switcher (oeffentlicher Endpoint, kein Token noetig)
+fetch(`${API}/api/chat/config`).then(r => r.ok ? r.json() : null).then(d => {
   if (!d) return;
-  const h = d.household || {};
-  const primary = h.primary_user || d.user_name || '';
-  personTitles = (d.persons || {}).titles || {};
-  // Nur Hausherren (owner) duerfen mit Jarvis chatten
-  householdMembers = (h.members || []).filter(m => m.name && m.role === 'owner');
+  const primary = d.primary_user || '';
+  personTitles = d.person_titles || {};
+  // owners sind bereits auf role === 'owner' gefiltert
+  householdMembers = (d.owners || []).filter(m => m.name);
 
   // Restore saved person or use primary
   const saved = localStorage.getItem('jarvis_chat_person');
