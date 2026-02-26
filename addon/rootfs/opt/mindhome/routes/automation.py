@@ -17,7 +17,7 @@ from datetime import datetime, timezone, timedelta
 from flask import Blueprint, request, jsonify, Response, make_response, send_from_directory, redirect
 from sqlalchemy import func as sa_func, text
 
-from db import get_db_session, get_db_readonly, get_db
+from db import get_db_session, get_db_readonly
 from helpers import (
     get_ha_timezone, local_now, utc_iso, sanitize_input, sanitize_dict,
     audit_log, is_debug_mode, set_debug_mode, get_setting, set_setting,
@@ -68,8 +68,7 @@ def _domain_manager():
 @automation_bp.route("/api/predictions", methods=["GET"])
 def api_get_predictions():
     """Get suggestions/predictions with filters."""
-    session = get_db()
-    try:
+    with get_db_session() as session:
         lang = get_language()
         status = request.args.get("status")
         limit = request.args.get("limit", 50, type=int)
@@ -97,8 +96,6 @@ def api_get_predictions():
             "responded_at": p.responded_at.isoformat() if p.responded_at else None,
             "created_at": p.created_at.isoformat() if p.created_at else None,
         } for p in preds])
-    finally:
-        session.close()
 
 
 
@@ -167,8 +164,7 @@ def api_generate_suggestions():
 @automation_bp.route("/api/phases", methods=["GET"])
 def api_get_phases():
     """Get learning phases for all room/domain combinations."""
-    session = get_db()
-    try:
+    with get_db_session() as session:
         states = session.query(RoomDomainState).all()
         result = []
         for rds in states:
@@ -186,8 +182,6 @@ def api_get_phases():
                 "phase_started_at": rds.phase_started_at.isoformat() if rds.phase_started_at else None,
             })
         return jsonify(result)
-    finally:
-        session.close()
 
 
 
@@ -213,16 +207,13 @@ def api_set_room_domain_mode(room_id, domain_id):
     if mode not in ("global", "suggest", "auto", "off"):
         return jsonify({"error": "Invalid mode. Use: global, suggest, auto, off"}), 400
 
-    session = get_db()
-    try:
+    with get_db_session() as session:
         ds = session.query(RoomDomainState).filter_by(room_id=room_id, domain_id=domain_id).first()
         if not ds:
             return jsonify({"error": "Room/Domain combination not found"}), 404
         ds.mode = mode
         session.commit()
         return jsonify({"room_id": room_id, "domain_id": domain_id, "mode": mode})
-    finally:
-        session.close()
 
 
 
@@ -237,8 +228,7 @@ def api_get_anomalies():
 @automation_bp.route("/api/anomaly-settings", methods=["GET"])
 def api_get_anomaly_settings():
     """Get anomaly detection settings."""
-    session = get_db()
-    try:
+    with get_db_session() as session:
         settings = session.query(AnomalySetting).all()
         return jsonify([{
             "id": s.id, "room_id": s.room_id, "domain_id": s.domain_id,
@@ -248,8 +238,6 @@ def api_get_anomaly_settings():
             "whitelisted_hours": s.whitelisted_hours,
             "auto_action": s.auto_action,
         } for s in settings])
-    finally:
-        session.close()
 
 
 
@@ -257,35 +245,32 @@ def api_get_anomaly_settings():
 def api_create_anomaly_setting():
     """Create or update anomaly setting."""
     data = request.json
-    session = get_db()
-    try:
-        setting = AnomalySetting(
-            room_id=data.get("room_id"), domain_id=data.get("domain_id"),
-            device_id=data.get("device_id"),
-            sensitivity=data.get("sensitivity", "medium"),
-            stuck_detection=data.get("stuck_detection", True),
-            time_anomaly=data.get("time_anomaly", True),
-            frequency_anomaly=data.get("frequency_anomaly", True),
-            whitelisted_hours=data.get("whitelisted_hours"),
-            auto_action=data.get("auto_action"),
-        )
-        session.add(setting)
-        session.commit()
-        return jsonify({"success": True, "id": setting.id}), 201
-    except Exception as e:
-        session.rollback()
-        logger.error("Operation failed: %s", e)
-        return jsonify({"error": "Operation failed"}), 500
-    finally:
-        session.close()
+    with get_db_session() as session:
+        try:
+            setting = AnomalySetting(
+                room_id=data.get("room_id"), domain_id=data.get("domain_id"),
+                device_id=data.get("device_id"),
+                sensitivity=data.get("sensitivity", "medium"),
+                stuck_detection=data.get("stuck_detection", True),
+                time_anomaly=data.get("time_anomaly", True),
+                frequency_anomaly=data.get("frequency_anomaly", True),
+                whitelisted_hours=data.get("whitelisted_hours"),
+                auto_action=data.get("auto_action"),
+            )
+            session.add(setting)
+            session.commit()
+            return jsonify({"success": True, "id": setting.id}), 201
+        except Exception as e:
+            session.rollback()
+            logger.error("Operation failed: %s", e)
+            return jsonify({"error": "Operation failed"}), 500
 
 
 
 @automation_bp.route("/api/phases/<int:room_id>/<int:domain_id>/progress", methods=["GET"])
 def api_phase_progress(room_id, domain_id):
     """Get learning phase progress details."""
-    session = get_db()
-    try:
+    with get_db_session() as session:
         rds = session.query(RoomDomainState).filter_by(room_id=room_id, domain_id=domain_id).first()
         if not rds:
             return jsonify({"error": "Not found"}), 404
@@ -326,8 +311,6 @@ def api_phase_progress(room_id, domain_id):
             "patterns_active": active_patterns, "next_phase": next_phase,
             "learning_speed": speed,
         })
-    finally:
-        session.close()
 
 
 
@@ -344,27 +327,25 @@ def api_set_learning_speed():
 @automation_bp.route("/api/phases/<int:room_id>/<int:domain_id>/reset", methods=["POST"])
 def api_reset_phase(room_id, domain_id):
     """Reset learning for a room+domain - delete patterns and restart."""
-    session = get_db()
-    try:
-        # Reset phase
-        rds = session.query(RoomDomainState).filter_by(room_id=room_id, domain_id=domain_id).first()
-        if rds:
-            rds.learning_phase = LearningPhase.OBSERVING
-            rds.confidence_score = 0.0
+    with get_db_session() as session:
+        try:
+            # Reset phase
+            rds = session.query(RoomDomainState).filter_by(room_id=room_id, domain_id=domain_id).first()
+            if rds:
+                rds.learning_phase = LearningPhase.OBSERVING
+                rds.confidence_score = 0.0
 
-        # Delete patterns for this room+domain
-        session.query(LearnedPattern).filter_by(room_id=room_id, domain_id=domain_id).delete()
-        session.commit()
+            # Delete patterns for this room+domain
+            session.query(LearnedPattern).filter_by(room_id=room_id, domain_id=domain_id).delete()
+            session.commit()
 
-        lang = get_language()
-        return jsonify({"success": True,
-            "message": "Lernphase zurückgesetzt" if lang == "de" else "Learning phase reset"})
-    except Exception as e:
-        session.rollback()
-        logger.error("Operation failed: %s", e)
-        return jsonify({"error": "Operation failed"}), 500
-    finally:
-        session.close()
+            lang = get_language()
+            return jsonify({"success": True,
+                "message": "Lernphase zurückgesetzt" if lang == "de" else "Learning phase reset"})
+        except Exception as e:
+            session.rollback()
+            logger.error("Operation failed: %s", e)
+            return jsonify({"error": "Operation failed"}), 500
 
 
 
@@ -451,8 +432,7 @@ def api_reset_anomaly_baseline():
 @automation_bp.route("/api/anomaly-settings/stats", methods=["GET"])
 def api_anomaly_stats():
     """Get anomaly statistics for dashboard."""
-    session = get_db()
-    try:
+    with get_db_session() as session:
         cutoff_30d = datetime.now(timezone.utc) - timedelta(days=30)
         logs = session.query(ActionLog).filter(
             ActionLog.action_type == "anomaly_detected",
@@ -479,8 +459,6 @@ def api_anomaly_stats():
             "top_devices": [{"name": d[0], "count": d[1]} for d in top_devices],
             "trend": [{"week": w, "count": c} for w, c in sorted(by_week.items())],
         })
-    finally:
-        session.close()
 
 
 
@@ -509,8 +487,7 @@ def api_update_device_anomaly_config(device_id):
 @automation_bp.route("/api/anomaly-settings/devices", methods=["GET"])
 def api_get_all_device_anomaly_configs():
     """Get all device-specific anomaly configs."""
-    session = get_db()
-    try:
+    with get_db_session() as session:
         configs = {}
         settings = session.query(SystemSetting).filter(
             SystemSetting.key.like("anomaly_device_%")
@@ -522,6 +499,4 @@ def api_get_all_device_anomaly_configs():
             except Exception:
                 pass
         return jsonify(configs)
-    finally:
-        session.close()
 

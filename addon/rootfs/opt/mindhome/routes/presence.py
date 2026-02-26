@@ -17,7 +17,7 @@ from datetime import datetime, timezone, timedelta
 from flask import Blueprint, request, jsonify, Response, make_response, send_from_directory, redirect
 from sqlalchemy import func as sa_func, text
 
-from db import get_db_session, get_db_readonly, get_db
+from db import get_db_session, get_db_readonly
 from helpers import (
     get_ha_timezone, local_now, utc_iso, sanitize_input, sanitize_dict,
     audit_log, is_debug_mode, set_debug_mode, get_setting, set_setting,
@@ -67,8 +67,7 @@ def _domain_manager():
 
 @presence_bp.route("/api/day-phases", methods=["GET"])
 def api_get_day_phases():
-    session = get_db()
-    try:
+    with get_db_session() as session:
         phases = session.query(DayPhase).order_by(DayPhase.sort_order).all()
         return jsonify([{
             "id": p.id, "name_de": p.name_de, "name_en": p.name_en,
@@ -77,15 +76,12 @@ def api_get_day_phases():
             "sun_event": p.sun_event, "sun_offset_minutes": p.sun_offset_minutes,
             "is_active": p.is_active,
         } for p in phases])
-    finally:
-        session.close()
 
 
 @presence_bp.route("/api/day-phases", methods=["POST"])
 def api_create_day_phase():
     data = request.json or {}
-    session = get_db()
-    try:
+    with get_db_session() as session:
         phase = DayPhase(
             name_de=data.get("name_de", "Neue Phase"), name_en=data.get("name_en", "New Phase"),
             icon=data.get("icon", "mdi:weather-sunset"), color=data.get("color", "#FFA500"),
@@ -97,34 +93,26 @@ def api_create_day_phase():
         session.commit()
         audit_log("day_phase_create", f"Phase: {phase.name_de}")
         return jsonify({"id": phase.id, "success": True})
-    finally:
-        session.close()
 
 
 @presence_bp.route("/api/day-phases/<int:phase_id>", methods=["PUT"])
 def api_update_day_phase(phase_id):
     data = request.json or {}
-    session = get_db()
-    try:
+    with get_db_session() as session:
         phase = session.get(DayPhase, phase_id)
         if not phase: return jsonify({"error": "Not found"}), 404
         for key in ["name_de","name_en","icon","color","sort_order","start_type","start_time","sun_event","sun_offset_minutes","is_active"]:
             if key in data: setattr(phase, key, data[key])
         session.commit()
         return jsonify({"success": True})
-    finally:
-        session.close()
 
 
 @presence_bp.route("/api/day-phases/<int:phase_id>", methods=["DELETE"])
 def api_delete_day_phase(phase_id):
-    session = get_db()
-    try:
+    with get_db_session() as session:
         phase = session.get(DayPhase, phase_id)
         if phase: session.delete(phase); session.commit()
         return jsonify({"success": True})
-    finally:
-        session.close()
 
 
 @presence_bp.route("/api/day-phases/current", methods=["GET"])
@@ -141,18 +129,14 @@ def api_current_day_phase():
 
 @presence_bp.route("/api/presence-modes", methods=["GET"])
 def api_get_presence_modes():
-    session = get_db()
-    try:
+    with get_db_session() as session:
         return jsonify([{"id":m.id,"name_de":m.name_de,"name_en":m.name_en,"icon":m.icon,"color":m.color,"priority":m.priority,"buffer_minutes":m.buffer_minutes,"actions":m.actions or [],"trigger_type":m.trigger_type,"auto_config":m.auto_config,"notify_on_enter":m.notify_on_enter,"notify_on_leave":m.notify_on_leave,"is_system":m.is_system,"is_active":m.is_active} for m in session.query(PresenceMode).order_by(PresenceMode.priority.desc()).all()])
-    finally:
-        session.close()
 
 
 @presence_bp.route("/api/presence-modes", methods=["POST"])
 def api_create_presence_mode():
     data = request.json or {}
-    session = get_db()
-    try:
+    with get_db_session() as session:
         # Duplikat-Check: Name darf nicht bereits existieren
         name_de = data.get("name_de", "Neuer Modus")
         existing = session.query(PresenceMode).filter_by(name_de=name_de).first()
@@ -162,35 +146,27 @@ def api_create_presence_mode():
         session.add(mode)
         session.commit()
         return jsonify({"id": mode.id, "success": True})
-    finally:
-        session.close()
 
 
 @presence_bp.route("/api/presence-modes/<int:mode_id>", methods=["PUT"])
 def api_update_presence_mode(mode_id):
     data = request.json or {}
-    session = get_db()
-    try:
+    with get_db_session() as session:
         mode = session.get(PresenceMode, mode_id)
         if not mode: return jsonify({"error": "Not found"}), 404
         for key in ["name_de","name_en","icon","color","priority","buffer_minutes","actions","trigger_type","auto_config","notify_on_enter","notify_on_leave","is_active"]:
             if key in data: setattr(mode, key, data[key])
         session.commit()
         return jsonify({"success": True})
-    finally:
-        session.close()
 
 
 @presence_bp.route("/api/presence-modes/<int:mode_id>", methods=["DELETE"])
 def api_delete_presence_mode(mode_id):
-    session = get_db()
-    try:
+    with get_db_session() as session:
         mode = session.get(PresenceMode, mode_id)
         if not mode or mode.is_system: return jsonify({"error": "Cannot delete"}), 400
         session.delete(mode); session.commit()
         return jsonify({"success": True})
-    finally:
-        session.close()
 
 
 @presence_bp.route("/api/presence-modes/current", methods=["GET"])
@@ -217,8 +193,7 @@ def api_activate_presence_mode(mode_id):
 
 @presence_bp.route("/api/presence-log", methods=["GET"])
 def api_presence_log():
-    session = get_db()
-    try:
+    with get_db_session() as session:
         query = session.query(PresenceLog).order_by(PresenceLog.created_at.desc())
         total = query.count()
         limit = request.args.get("limit", 50, type=int)
@@ -228,147 +203,124 @@ def api_presence_log():
             "items": [{"id":l.id,"mode_name":l.mode_name,"user_id":l.user_id,"trigger":l.trigger,"created_at":l.created_at.isoformat() if l.created_at else None} for l in logs],
             "total": total, "offset": offset, "limit": limit, "has_more": offset + limit < total
         })
-    finally:
-        session.close()
 
 
 @presence_bp.route("/api/person-devices", methods=["GET"])
 def api_get_person_devices():
-    session = get_db()
-    try:
+    with get_db_session() as session:
         return jsonify([{"id":d.id,"user_id":d.user_id,"entity_id":d.entity_id,"device_type":d.device_type,"timeout_minutes":d.timeout_minutes} for d in session.query(PersonDevice).filter_by(is_active=True).all()])
-    finally:
-        session.close()
 
 
 @presence_bp.route("/api/person-devices", methods=["POST"])
 def api_create_person_device():
     data = request.json or {}
-    session = get_db()
-    try:
+    with get_db_session() as session:
         pd = PersonDevice(user_id=data["user_id"], entity_id=data["entity_id"], device_type=data.get("device_type","primary"), timeout_minutes=data.get("timeout_minutes",10))
         session.add(pd); session.commit()
         return jsonify({"id": pd.id, "success": True})
-    finally:
-        session.close()
 
 
 @presence_bp.route("/api/person-devices/<int:pd_id>", methods=["DELETE"])
 def api_delete_person_device(pd_id):
-    session = get_db()
-    try:
+    with get_db_session() as session:
         pd = session.get(PersonDevice, pd_id)
         if pd: session.delete(pd); session.commit()
         return jsonify({"success": True})
-    finally:
-        session.close()
 
 
 @presence_bp.route("/api/guest-devices", methods=["GET"])
 def api_get_guest_devices():
-    session = get_db()
-    try:
+    with get_db_session() as session:
         return jsonify([{"id":g.id,"mac_address":g.mac_address,"entity_id":g.entity_id,"name":g.name,"first_seen":g.first_seen.isoformat() if g.first_seen else None,"last_seen":g.last_seen.isoformat() if g.last_seen else None,"visit_count":g.visit_count,"auto_delete_days":g.auto_delete_days} for g in session.query(GuestDevice).order_by(GuestDevice.last_seen.desc()).all()])
-    finally:
-        session.close()
 
 
 @presence_bp.route("/api/guest-devices/<int:guest_id>", methods=["PUT"])
 def api_update_guest_device(guest_id):
     data = request.json or {}
-    session = get_db()
-    try:
+    with get_db_session() as session:
         g = session.get(GuestDevice, guest_id)
         if not g: return jsonify({"error": "Not found"}), 404
         for key in ["name","auto_delete_days"]:
             if key in data: setattr(g, key, data[key])
         session.commit()
         return jsonify({"success": True})
-    finally:
-        session.close()
 
 
 @presence_bp.route("/api/guest-devices/<int:guest_id>", methods=["DELETE"])
 def api_delete_guest_device(guest_id):
-    session = get_db()
-    try:
+    with get_db_session() as session:
         g = session.get(GuestDevice, guest_id)
         if g: session.delete(g); session.commit()
         return jsonify({"success": True})
-    finally:
-        session.close()
 
 
 @presence_bp.route("/api/presence/auto-detect", methods=["POST"])
 def api_presence_auto_detect():
     """#13: Auto-detect presence from person.* entities."""
-    session = get_db()
-    try:
-        # Check manual override
-        override = session.query(SystemSetting).filter_by(key="presence_manual_override").first()
-        if override and override.value == "true":
-            return jsonify({"skipped": True, "reason": "manual_override_active"})
+    with get_db_session() as session:
+        try:
+            # Check manual override
+            override = session.query(SystemSetting).filter_by(key="presence_manual_override").first()
+            if override and override.value == "true":
+                return jsonify({"skipped": True, "reason": "manual_override_active"})
 
-        # Get all person entities from HA
-        persons = _ha().get_all_persons() if _ha() else []
-        home_count = sum(1 for p in persons if p.get("state") == "home")
-        total = len(persons)
+            # Get all person entities from HA
+            persons = _ha().get_all_persons() if _ha() else []
+            home_count = sum(1 for p in persons if p.get("state") == "home")
+            total = len(persons)
 
-        # Determine target mode
-        if home_count >= 1:
-            target_name = "Zuhause"
-        else:
-            target_name = "Abwesend"
+            # Determine target mode
+            if home_count >= 1:
+                target_name = "Zuhause"
+            else:
+                target_name = "Abwesend"
 
-        # Find matching mode
-        target_mode = session.query(PresenceMode).filter_by(name_de=target_name).first()
-        if not target_mode:
-            return jsonify({"error": f"Mode '{target_name}' not found"}), 404
+            # Find matching mode
+            target_mode = session.query(PresenceMode).filter_by(name_de=target_name).first()
+            if not target_mode:
+                return jsonify({"error": f"Mode '{target_name}' not found"}), 404
 
-        # Check current mode
-        current = session.query(PresenceLog).order_by(PresenceLog.created_at.desc()).first()
-        if current and current.mode_name == target_name:
-            return jsonify({"changed": False, "mode": target_name, "home_count": home_count})
+            # Check current mode
+            current = session.query(PresenceLog).order_by(PresenceLog.created_at.desc()).first()
+            if current and current.mode_name == target_name:
+                return jsonify({"changed": False, "mode": target_name, "home_count": home_count})
 
-        # Switch mode: write PresenceLog with mode_id
-        log_entry = PresenceLog(
-            mode_id=target_mode.id,
-            mode_name=target_name,
-            trigger="auto_detect",
-        )
-        session.add(log_entry)
+            # Switch mode: write PresenceLog with mode_id
+            log_entry = PresenceLog(
+                mode_id=target_mode.id,
+                mode_name=target_name,
+                trigger="auto_detect",
+            )
+            session.add(log_entry)
 
-        # Create notification for toast
-        notification = NotificationLog(
-            user_id=1,
-            title=f"Modus: {target_name}",
-            message=f"Automatisch erkannt: {home_count}/{total} Personen zuhause",
-            notification_type=NotificationType.INFO,
-            was_read=False,
-        )
-        session.add(notification)
-        session.commit()
+            # Create notification for toast
+            notification = NotificationLog(
+                user_id=1,
+                title=f"Modus: {target_name}",
+                message=f"Automatisch erkannt: {home_count}/{total} Personen zuhause",
+                notification_type=NotificationType.INFO,
+                was_read=False,
+            )
+            session.add(notification)
+            session.commit()
 
-        return jsonify({
-            "changed": True,
-            "mode": target_name,
-            "home_count": home_count,
-            "total_persons": total,
-        })
-    except Exception as e:
-        session.rollback()
-        logger.error("Operation failed: %s", e)
-        return jsonify({"error": "Operation failed"}), 500
-    finally:
-        session.close()
+            return jsonify({
+                "changed": True,
+                "mode": target_name,
+                "home_count": home_count,
+                "total_persons": total,
+            })
+        except Exception as e:
+            session.rollback()
+            logger.error("Operation failed: %s", e)
+            return jsonify({"error": "Operation failed"}), 500
 
 
 @presence_bp.route("/api/presence/manual-override", methods=["POST"])
 def api_presence_manual_override():
     """#28: Set or clear manual presence override."""
     data = request.json or {}
-    session = get_db()
-    try:
+    with get_db_session() as session:
         enabled = data.get("enabled", True)
         setting = session.query(SystemSetting).filter_by(key="presence_manual_override").first()
         if setting:
@@ -394,8 +346,6 @@ def api_presence_manual_override():
             ))
         session.commit()
         return jsonify({"success": True, "manual_override": enabled})
-    finally:
-        session.close()
 
 
 @presence_bp.route("/api/sun", methods=["GET"])
@@ -405,8 +355,7 @@ def api_get_sun():
 
 @presence_bp.route("/api/presence-modes/seed-defaults", methods=["POST"])
 def api_seed_default_presence_modes():
-    session = get_db()
-    try:
+    with get_db_session() as session:
         defaults = [
             {"name_de": "Zuhause", "name_en": "Home", "icon": "mdi-home", "color": "#4CAF50", "priority": 10, "is_system": True, "trigger_type": "auto", "auto_config": {"condition": "first_home"}},
             {"name_de": "Besuch", "name_en": "Guests", "icon": "mdi-account-group", "color": "#9C27B0", "priority": 15, "is_system": True, "trigger_type": "auto", "auto_config": {"condition": "guests_home"}},
@@ -441,8 +390,6 @@ def api_seed_default_presence_modes():
             created += 1
         session.commit()
         return jsonify({"success": True, "created": created, "updated": updated, "skipped": skipped})
-    finally:
-        session.close()
 
 
 @presence_bp.route("/api/sun/events", methods=["GET"])
@@ -468,8 +415,7 @@ def api_get_persons_home():
 @presence_bp.route("/api/presence/settings", methods=["GET"])
 def api_get_presence_settings():
     """Get all presence detection settings."""
-    session = get_db()
-    try:
+    with get_db_session() as session:
         keys = [
             "presence_auto_detect_enabled",
             "presence_manual_override",
@@ -495,16 +441,13 @@ def api_get_presence_settings():
             if result[k] is None:
                 result[k] = v
         return jsonify(result)
-    finally:
-        session.close()
 
 
 @presence_bp.route("/api/presence/settings", methods=["PUT"])
 def api_update_presence_settings():
     """Update presence detection settings."""
     data = request.json or {}
-    session = get_db()
-    try:
+    with get_db_session() as session:
         allowed_keys = {
             "presence_auto_detect_enabled",
             "presence_manual_override",
@@ -538,5 +481,3 @@ def api_update_presence_settings():
         session.commit()
         audit_log("presence_settings_update", f"Updated: {', '.join(updated)}")
         return jsonify({"success": True, "updated": updated})
-    finally:
-        session.close()

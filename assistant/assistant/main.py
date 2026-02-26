@@ -597,10 +597,14 @@ async def chat(request: ChatRequest):
     # Aktionen ans Addon melden fuer Aktivitaeten-Log
     actions = result.get("actions", [])
     if actions:
-        asyncio.ensure_future(brain.ha.log_actions(
+        task = asyncio.ensure_future(brain.ha.log_actions(
             actions, user_text=request.text,
             response_text=result.get("response", ""),
         ))
+        task.add_done_callback(
+            lambda t: logger.warning("log_actions fehlgeschlagen: %s", t.exception())
+            if t.exception() else None
+        )
 
     # TTS-Daten als TTSInfo-Modell wrappen
     tts_raw = result.pop("tts", None)

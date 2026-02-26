@@ -646,11 +646,10 @@ def api_get_wakeup_configs():
 @health_bp.route("/api/health/wakeup", methods=["POST"])
 def api_create_wakeup_config():
     """Create a new wake-up configuration."""
-    from db import get_db
+    from db import get_db_session
     from models import WakeUpConfig
     data = request.json or {}
-    session = get_db()
-    try:
+    with get_db_session() as session:
         cfg = WakeUpConfig(
             user_id=data.get("user_id"),
             enabled=data.get("enabled", True),
@@ -664,18 +663,15 @@ def api_create_wakeup_config():
         session.add(cfg)
         session.commit()
         return jsonify({"id": cfg.id, "success": True})
-    finally:
-        session.close()
 
 
 @health_bp.route("/api/health/wakeup/<int:config_id>", methods=["PUT"])
 def api_update_wakeup_config(config_id):
     """Update a wake-up configuration."""
-    from db import get_db
+    from db import get_db_session
     from models import WakeUpConfig
     data = request.json or {}
-    session = get_db()
-    try:
+    with get_db_session() as session:
         cfg = session.get(WakeUpConfig, config_id)
         if not cfg:
             return jsonify({"error": "Not found"}), 404
@@ -685,24 +681,19 @@ def api_update_wakeup_config(config_id):
                 setattr(cfg, key, data[key])
         session.commit()
         return jsonify({"success": True})
-    finally:
-        session.close()
 
 
 @health_bp.route("/api/health/wakeup/<int:config_id>", methods=["DELETE"])
 def api_delete_wakeup_config(config_id):
     """Delete a wake-up configuration."""
-    from db import get_db
+    from db import get_db_session
     from models import WakeUpConfig
-    session = get_db()
-    try:
+    with get_db_session() as session:
         cfg = session.get(WakeUpConfig, config_id)
         if cfg:
             session.delete(cfg)
             session.commit()
         return jsonify({"success": True})
-    finally:
-        session.close()
 
 
 # ──────────────────────────────────────────────
@@ -753,11 +744,10 @@ def api_get_visit_preparations():
 @health_bp.route("/api/health/visit-preparations", methods=["POST"])
 def api_create_visit_preparation():
     """Create a new visit preparation."""
-    from db import get_db
+    from db import get_db_session
     from models import VisitPreparation
     data = request.json or {}
-    session = get_db()
-    try:
+    with get_db_session() as session:
         prep = VisitPreparation(
             name=data.get("name", "Besuch"),
             guest_count=data.get("guest_count", 1),
@@ -768,18 +758,15 @@ def api_create_visit_preparation():
         session.add(prep)
         session.commit()
         return jsonify({"id": prep.id, "success": True})
-    finally:
-        session.close()
 
 
 @health_bp.route("/api/health/visit-preparations/<int:prep_id>", methods=["PUT"])
 def api_update_visit_preparation(prep_id):
     """Update a visit preparation."""
-    from db import get_db
+    from db import get_db_session
     from models import VisitPreparation
     data = request.json or {}
-    session = get_db()
-    try:
+    with get_db_session() as session:
         prep = session.get(VisitPreparation, prep_id)
         if not prep:
             return jsonify({"error": "Not found"}), 404
@@ -788,24 +775,19 @@ def api_update_visit_preparation(prep_id):
                 setattr(prep, key, data[key])
         session.commit()
         return jsonify({"success": True})
-    finally:
-        session.close()
 
 
 @health_bp.route("/api/health/visit-preparations/<int:prep_id>", methods=["DELETE"])
 def api_delete_visit_preparation(prep_id):
     """Delete a visit preparation."""
-    from db import get_db
+    from db import get_db_session
     from models import VisitPreparation
-    session = get_db()
-    try:
+    with get_db_session() as session:
         prep = session.get(VisitPreparation, prep_id)
         if prep:
             session.delete(prep)
             session.commit()
         return jsonify({"success": True})
-    finally:
-        session.close()
 
 
 @health_bp.route("/api/health/visit-preparations/<int:prep_id>/activate", methods=["POST"])
@@ -912,11 +894,10 @@ def api_get_circadian_status():
 @health_bp.route("/api/health/circadian", methods=["POST"])
 def api_create_circadian_config():
     """Create a new circadian lighting configuration."""
-    from db import get_db
+    from db import get_db_session
     from models import CircadianConfig
     data = request.json or {}
-    session = get_db()
-    try:
+    with get_db_session() as session:
         cfg = CircadianConfig(
             room_id=data.get("room_id"),
             enabled=data.get("enabled", True),
@@ -933,18 +914,15 @@ def api_create_circadian_config():
         session.add(cfg)
         session.commit()
         return jsonify({"id": cfg.id, "success": True})
-    finally:
-        session.close()
 
 
 @health_bp.route("/api/health/circadian/<int:config_id>", methods=["PUT"])
 def api_update_circadian_config(config_id):
     """Update a circadian lighting configuration."""
-    from db import get_db
+    from db import get_db_session
     from models import CircadianConfig
     data = request.json or {}
-    session = get_db()
-    try:
+    with get_db_session() as session:
         cfg = session.get(CircadianConfig, config_id)
         if not cfg:
             return jsonify({"error": "Not found"}), 404
@@ -955,24 +933,19 @@ def api_update_circadian_config(config_id):
                 setattr(cfg, key, data[key])
         session.commit()
         return jsonify({"success": True})
-    finally:
-        session.close()
 
 
 @health_bp.route("/api/health/circadian/<int:config_id>", methods=["DELETE"])
 def api_delete_circadian_config(config_id):
     """Delete a circadian lighting configuration."""
-    from db import get_db
+    from db import get_db_session
     from models import CircadianConfig
-    session = get_db()
-    try:
+    with get_db_session() as session:
         cfg = session.get(CircadianConfig, config_id)
         if cfg:
             session.delete(cfg)
             session.commit()
         return jsonify({"success": True})
-    finally:
-        session.close()
 
 
 # ──────────────────────────────────────────────
@@ -1023,11 +996,10 @@ def api_get_screen_time_config():
 @health_bp.route("/api/health/screen-time/config", methods=["POST"])
 def api_create_screen_time_config():
     """Create screen time config for a user."""
-    from db import get_db
+    from db import get_db_session
     from models import ScreenTimeConfig
     data = request.json or {}
-    session = get_db()
-    try:
+    with get_db_session() as session:
         cfg = ScreenTimeConfig(
             user_id=data.get("user_id", 1),
             entity_ids=data.get("entity_ids"),
@@ -1038,18 +1010,15 @@ def api_create_screen_time_config():
         session.add(cfg)
         session.commit()
         return jsonify({"id": cfg.id, "success": True})
-    finally:
-        session.close()
 
 
 @health_bp.route("/api/health/screen-time/config/<int:config_id>", methods=["PUT"])
 def api_update_screen_time_config(config_id):
     """Update screen time config."""
-    from db import get_db
+    from db import get_db_session
     from models import ScreenTimeConfig
     data = request.json or {}
-    session = get_db()
-    try:
+    with get_db_session() as session:
         cfg = session.get(ScreenTimeConfig, config_id)
         if not cfg:
             return jsonify({"error": "Not found"}), 404
@@ -1058,8 +1027,6 @@ def api_update_screen_time_config(config_id):
                 setattr(cfg, key, data[key])
         session.commit()
         return jsonify({"success": True})
-    finally:
-        session.close()
 
 
 @health_bp.route("/api/patterns/drift", methods=["GET"])

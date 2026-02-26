@@ -106,10 +106,9 @@ def api_health_check():
 
     # DB check
     try:
-        session = get_db()
-        session.execute(text("SELECT 1"))
-        session.close()
-        health["checks"]["database"] = {"status": "ok"}
+        with get_db_session() as session:
+            session.execute(text("SELECT 1"))
+            health["checks"]["database"] = {"status": "ok"}
     except Exception as e:
         health["checks"]["database"] = {"status": "error", "message": str(e)[:100]}
         health["status"] = "unhealthy"
@@ -161,8 +160,7 @@ def api_health_check():
 @system_bp.route("/api/system/info", methods=["GET"])
 def api_system_info():
     """Get detailed system information."""
-    session = get_db()
-    try:
+    with get_db_session() as session:
         device_count = session.query(Device).count()
         room_count = session.query(Room).filter_by(is_active=True).count()
         user_count = session.query(User).filter_by(is_active=True).count()
@@ -202,24 +200,19 @@ def api_system_info():
             "pattern_count": session.query(LearnedPattern).filter_by(is_active=True).count(),
             "event_bus_subscribers": _deps.get("event_bus").subscriber_count("state_changed") if _deps.get("event_bus") else 0,
         })
-    finally:
-        session.close()
 
 
 
 @system_bp.route("/api/system/settings", methods=["GET"])
 def api_get_settings():
     """Get all system settings."""
-    session = get_db()
-    try:
+    with get_db_session() as session:
         settings = session.query(SystemSetting).all()
         return jsonify([{
             "key": s.key,
             "value": s.value,
             "description": s.description_de if get_language() == "de" else s.description_en
         } for s in settings])
-    finally:
-        session.close()
 
 
 
@@ -237,8 +230,7 @@ def api_emergency_stop():
     """Activate emergency stop - pause all automations."""
     set_setting("system_mode", "emergency_stop")
 
-    session = get_db()
-    try:
+    with get_db_session() as session:
         states = session.query(RoomDomainState).all()
         for state in states:
             state.is_paused = True
@@ -246,8 +238,6 @@ def api_emergency_stop():
 
         logger.warning("EMERGENCY STOP ACTIVATED - All automations paused")
         return jsonify({"success": True, "mode": "emergency_stop"})
-    finally:
-        session.close()
 
 
 
@@ -256,8 +246,7 @@ def api_resume():
     """Resume from emergency stop."""
     set_setting("system_mode", "normal")
 
-    session = get_db()
-    try:
+    with get_db_session() as session:
         states = session.query(RoomDomainState).all()
         for state in states:
             state.is_paused = False
@@ -265,8 +254,6 @@ def api_resume():
 
         logger.info("System resumed from emergency stop")
         return jsonify({"success": True, "mode": "normal"})
-    finally:
-        session.close()
 
 
 
@@ -290,8 +277,7 @@ def api_ha_persons():
 @system_bp.route("/api/quick-actions", methods=["GET"])
 def api_get_quick_actions():
     """Get all quick actions."""
-    session = get_db()
-    try:
+    with get_db_session() as session:
         actions = session.query(QuickAction).filter_by(is_active=True).order_by(
             QuickAction.sort_order
         ).all()
@@ -303,16 +289,13 @@ def api_get_quick_actions():
             "action_data": a.action_data,
             "is_system": a.is_system
         } for a in actions])
-    finally:
-        session.close()
 
 
 
 @system_bp.route("/api/quick-actions/execute/<int:action_id>", methods=["POST"])
 def api_execute_quick_action(action_id):
     """Execute a quick action."""
-    session = get_db()
-    try:
+    with get_db_session() as session:
         action = session.get(QuickAction, action_id)
         if not action:
             return jsonify({"error": "Quick action not found"}), 404
@@ -373,8 +356,6 @@ def api_execute_quick_action(action_id):
         session.commit()
 
         return jsonify({"success": True, "action_type": action_type})
-    finally:
-        session.close()
 
 
 
@@ -382,27 +363,25 @@ def api_execute_quick_action(action_id):
 def api_create_quick_action():
     """Create a new custom quick action."""
     data = request.json or {}
-    session = get_db()
-    try:
-        max_order = session.query(sa_func.max(QuickAction.sort_order)).scalar() or 0
-        qa = QuickAction(
-            name_de=data.get("name", ""),
-            name_en=data.get("name_en", data.get("name", "")),
-            icon=data.get("icon", "mdi:flash"),
-            action_data=data.get("action_data") or {"type": "custom", "entities": []},
-            sort_order=max_order + 1,
-            is_active=True,
-            is_system=False
-        )
-        session.add(qa)
-        session.commit()
-        return jsonify({"success": True, "id": qa.id}), 201
-    except Exception as e:
-        session.rollback()
-        logger.error("Failed to create quick action: %s", e)
-        return jsonify({"error": "Internal server error"}), 500
-    finally:
-        session.close()
+    with get_db_session() as session:
+        try:
+            max_order = session.query(sa_func.max(QuickAction.sort_order)).scalar() or 0
+            qa = QuickAction(
+                name_de=data.get("name", ""),
+                name_en=data.get("name_en", data.get("name", "")),
+                icon=data.get("icon", "mdi:flash"),
+                action_data=data.get("action_data") or {"type": "custom", "entities": []},
+                sort_order=max_order + 1,
+                is_active=True,
+                is_system=False
+            )
+            session.add(qa)
+            session.commit()
+            return jsonify({"success": True, "id": qa.id}), 201
+        except Exception as e:
+            session.rollback()
+            logger.error("Failed to create quick action: %s", e)
+            return jsonify({"error": "Internal server error"}), 500
 
 
 
@@ -410,62 +389,57 @@ def api_create_quick_action():
 def api_update_quick_action(action_id):
     """Update a quick action."""
     data = request.json or {}
-    session = get_db()
-    try:
-        qa = session.get(QuickAction, action_id)
-        if not qa:
-            return jsonify({"error": "Not found"}), 404
-        if data.get("name"):
-            qa.name_de = data["name"]
-        if data.get("name_en"):
-            qa.name_en = data["name_en"]
-        else:
+    with get_db_session() as session:
+        try:
+            qa = session.get(QuickAction, action_id)
+            if not qa:
+                return jsonify({"error": "Not found"}), 404
             if data.get("name"):
-                qa.name_en = data["name"]
-        if data.get("icon"):
-            qa.icon = data["icon"]
-        if data.get("action_data"):
-            qa.action_data = data["action_data"]
-        if "is_active" in data:
-            qa.is_active = data["is_active"]
-        session.commit()
-        return jsonify({"success": True})
-    except Exception as e:
-        session.rollback()
-        logger.error("Failed to update quick action: %s", e)
-        return jsonify({"error": "Internal server error"}), 500
-    finally:
-        session.close()
+                qa.name_de = data["name"]
+            if data.get("name_en"):
+                qa.name_en = data["name_en"]
+            else:
+                if data.get("name"):
+                    qa.name_en = data["name"]
+            if data.get("icon"):
+                qa.icon = data["icon"]
+            if data.get("action_data"):
+                qa.action_data = data["action_data"]
+            if "is_active" in data:
+                qa.is_active = data["is_active"]
+            session.commit()
+            return jsonify({"success": True})
+        except Exception as e:
+            session.rollback()
+            logger.error("Failed to update quick action: %s", e)
+            return jsonify({"error": "Internal server error"}), 500
 
 
 
 @system_bp.route("/api/quick-actions/<int:action_id>", methods=["DELETE"])
 def api_delete_quick_action(action_id):
     """Delete a quick action (only non-system)."""
-    session = get_db()
-    try:
-        qa = session.get(QuickAction, action_id)
-        if not qa:
-            return jsonify({"error": "Not found"}), 404
-        if qa.is_system:
-            return jsonify({"error": "Cannot delete system actions"}), 403
-        session.delete(qa)
-        session.commit()
-        return jsonify({"success": True})
-    except Exception as e:
-        session.rollback()
-        logger.error("Failed to delete quick action: %s", e)
-        return jsonify({"error": "Internal server error"}), 500
-    finally:
-        session.close()
+    with get_db_session() as session:
+        try:
+            qa = session.get(QuickAction, action_id)
+            if not qa:
+                return jsonify({"error": "Not found"}), 404
+            if qa.is_system:
+                return jsonify({"error": "Cannot delete system actions"}), 403
+            session.delete(qa)
+            session.commit()
+            return jsonify({"success": True})
+        except Exception as e:
+            session.rollback()
+            logger.error("Failed to delete quick action: %s", e)
+            return jsonify({"error": "Internal server error"}), 500
 
 
 
 @system_bp.route("/api/data-dashboard", methods=["GET"])
 def api_data_dashboard():
     """Get overview of all collected data for transparency."""
-    session = get_db()
-    try:
+    with get_db_session() as session:
         collections = session.query(DataCollection).all()
         return jsonify([{
             "room_id": dc.room_id,
@@ -476,24 +450,19 @@ def api_data_dashboard():
             "last_record": dc.last_record_at.isoformat() if dc.last_record_at else None,
             "storage_size_bytes": dc.storage_size_bytes
         } for dc in collections])
-    finally:
-        session.close()
 
 
 
 @system_bp.route("/api/data-dashboard/delete/<int:collection_id>", methods=["DELETE"])
 def api_delete_collected_data(collection_id):
     """Delete specific collected data."""
-    session = get_db()
-    try:
+    with get_db_session() as session:
         dc = session.get(DataCollection, collection_id)
         if not dc:
             return jsonify({"error": "Not found"}), 404
         session.delete(dc)
         session.commit()
         return jsonify({"success": True})
-    finally:
-        session.close()
 
 
 
@@ -533,8 +502,7 @@ def api_onboarding_complete():
 @system_bp.route("/api/action-log", methods=["GET"])
 def api_get_action_log():
     """Get action log with time filters and pagination."""
-    session = get_db()
-    try:
+    with get_db_session() as session:
         limit = request.args.get("limit", 50, type=int)
         offset = request.args.get("offset", 0, type=int)
         action_type = request.args.get("type")
@@ -579,8 +547,6 @@ def api_get_action_log():
             "limit": limit,
             "has_more": offset + limit < total
         })
-    finally:
-        session.close()
 
 
 
@@ -599,7 +565,6 @@ def api_create_action_log():
     response_text = str(data.get("response", "") or "")
 
     try:
-        from db import get_db_session
         with get_db_session() as session:
             count = 0
             for action in actions:
@@ -638,8 +603,7 @@ def api_create_action_log():
 @system_bp.route("/api/action-log/<int:log_id>/undo", methods=["POST"])
 def api_undo_action(log_id):
     """Undo a specific action."""
-    session = get_db()
-    try:
+    with get_db_session() as session:
         log = session.get(ActionLog, log_id)
         if not log:
             return jsonify({"error": "Action not found"}), 404
@@ -660,16 +624,13 @@ def api_undo_action(log_id):
         session.commit()
 
         return jsonify({"success": True})
-    finally:
-        session.close()
 
 
 
 @system_bp.route("/api/data-collections", methods=["GET"])
 def api_get_data_collections():
     """Get recent tracked data (observations from ActionLog) with time filter."""
-    session = get_db()
-    try:
+    with get_db_session() as session:
         limit = request.args.get("limit", 200, type=int)
 
         # Fix 2: Time period filter
@@ -699,8 +660,6 @@ def api_get_data_collections():
             "data_value": log.action_data or {},
             "collected_at": utc_iso(log.created_at)
         } for log in logs])
-    finally:
-        session.close()
 
 
 
@@ -708,8 +667,7 @@ def api_get_data_collections():
 def api_get_retention():
     """Get data retention settings."""
     days = int(get_setting("data_retention_days", "90"))
-    session = get_db()
-    try:
+    with get_db_session() as session:
         total = session.query(ActionLog).count()
         observations = session.query(ActionLog).filter_by(action_type="observation").count()
         db_path = os.environ.get("MINDHOME_DB_PATH", "/data/mindhome/db/mindhome.db")
@@ -721,8 +679,6 @@ def api_get_retention():
             "db_size_bytes": db_size,
             "db_size_mb": round(db_size / 1024 / 1024, 2)
         })
-    finally:
-        session.close()
 
 
 
@@ -753,7 +709,6 @@ def run_cleanup():
     7. AuditTrail older than 180 days
     8. Smart eviction: if > 500 observed patterns, remove lowest confidence first
     """
-    session = get_db()
     result = {
         "rejected_patterns": 0,
         "disabled_patterns": 0,
@@ -764,106 +719,105 @@ def run_cleanup():
         "audit_trail": 0,
         "evicted_patterns": 0,
     }
-    try:
-        now = datetime.now(timezone.utc)
-        retention_days = int(get_setting("data_retention_days", "90"))
+    with get_db_session() as session:
+        try:
+            now = datetime.now(timezone.utc)
+            retention_days = int(get_setting("data_retention_days", "90"))
 
-        # 1. Rejected patterns older than 30 days
-        cutoff_rejected = now - timedelta(days=30)
-        rejected = session.query(LearnedPattern).filter(
-            LearnedPattern.status == "rejected",
-            LearnedPattern.rejected_at < cutoff_rejected
-        ).all()
-        # Also catch rejected patterns without rejected_at set
-        rejected += session.query(LearnedPattern).filter(
-            LearnedPattern.status == "rejected",
-            LearnedPattern.rejected_at == None,
-            LearnedPattern.updated_at < cutoff_rejected
-        ).all()
-        seen_ids = set()
-        for p in rejected:
-            if p.id not in seen_ids:
-                seen_ids.add(p.id)
-                # Delete related match logs first
+            # 1. Rejected patterns older than 30 days
+            cutoff_rejected = now - timedelta(days=30)
+            rejected = session.query(LearnedPattern).filter(
+                LearnedPattern.status == "rejected",
+                LearnedPattern.rejected_at < cutoff_rejected
+            ).all()
+            # Also catch rejected patterns without rejected_at set
+            rejected += session.query(LearnedPattern).filter(
+                LearnedPattern.status == "rejected",
+                LearnedPattern.rejected_at == None,
+                LearnedPattern.updated_at < cutoff_rejected
+            ).all()
+            seen_ids = set()
+            for p in rejected:
+                if p.id not in seen_ids:
+                    seen_ids.add(p.id)
+                    # Delete related match logs first
+                    session.query(PatternMatchLog).filter_by(pattern_id=p.id).delete()
+                    session.delete(p)
+                    result["rejected_patterns"] += 1
+
+            # 2. Disabled patterns with very low confidence, older than 14 days
+            cutoff_disabled = now - timedelta(days=14)
+            disabled = session.query(LearnedPattern).filter(
+                LearnedPattern.status == "disabled",
+                LearnedPattern.is_active == False,
+                LearnedPattern.confidence < 0.1,
+                LearnedPattern.updated_at < cutoff_disabled
+            ).all()
+            for p in disabled:
                 session.query(PatternMatchLog).filter_by(pattern_id=p.id).delete()
                 session.delete(p)
-                result["rejected_patterns"] += 1
+                result["disabled_patterns"] += 1
 
-        # 2. Disabled patterns with very low confidence, older than 14 days
-        cutoff_disabled = now - timedelta(days=14)
-        disabled = session.query(LearnedPattern).filter(
-            LearnedPattern.status == "disabled",
-            LearnedPattern.is_active == False,
-            LearnedPattern.confidence < 0.1,
-            LearnedPattern.updated_at < cutoff_disabled
-        ).all()
-        for p in disabled:
-            session.query(PatternMatchLog).filter_by(pattern_id=p.id).delete()
-            session.delete(p)
-            result["disabled_patterns"] += 1
+            # 3. StateHistory older than retention_days
+            cutoff_history = now - timedelta(days=retention_days)
+            result["state_history"] = session.query(StateHistory).filter(
+                StateHistory.created_at < cutoff_history
+            ).delete()
 
-        # 3. StateHistory older than retention_days
-        cutoff_history = now - timedelta(days=retention_days)
-        result["state_history"] = session.query(StateHistory).filter(
-            StateHistory.created_at < cutoff_history
-        ).delete()
+            # 4. PatternMatchLog older than 90 days
+            cutoff_match = now - timedelta(days=90)
+            result["pattern_match_log"] = session.query(PatternMatchLog).filter(
+                PatternMatchLog.matched_at < cutoff_match
+            ).delete()
 
-        # 4. PatternMatchLog older than 90 days
-        cutoff_match = now - timedelta(days=90)
-        result["pattern_match_log"] = session.query(PatternMatchLog).filter(
-            PatternMatchLog.matched_at < cutoff_match
-        ).delete()
+            # 5. ActionLog older than retention_days
+            result["action_log"] = session.query(ActionLog).filter(
+                ActionLog.created_at < cutoff_history
+            ).delete()
 
-        # 5. ActionLog older than retention_days
-        result["action_log"] = session.query(ActionLog).filter(
-            ActionLog.created_at < cutoff_history
-        ).delete()
+            # 6. NotificationLog older than 90 days
+            result["notification_log"] = session.query(NotificationLog).filter(
+                NotificationLog.created_at < cutoff_match
+            ).delete()
 
-        # 6. NotificationLog older than 90 days
-        result["notification_log"] = session.query(NotificationLog).filter(
-            NotificationLog.created_at < cutoff_match
-        ).delete()
+            # 7. AuditTrail older than 180 days
+            cutoff_audit = now - timedelta(days=180)
+            result["audit_trail"] = session.query(AuditTrail).filter(
+                AuditTrail.created_at < cutoff_audit
+            ).delete()
 
-        # 7. AuditTrail older than 180 days
-        cutoff_audit = now - timedelta(days=180)
-        result["audit_trail"] = session.query(AuditTrail).filter(
-            AuditTrail.created_at < cutoff_audit
-        ).delete()
-
-        # 8. Smart eviction: if > 500 observed patterns, evict lowest confidence
-        observed_count = session.query(LearnedPattern).filter(
-            LearnedPattern.status == "observed",
-            LearnedPattern.is_active == True
-        ).count()
-        if observed_count > 500:
-            excess = observed_count - 500
-            to_evict = session.query(LearnedPattern).filter(
+            # 8. Smart eviction: if > 500 observed patterns, evict lowest confidence
+            observed_count = session.query(LearnedPattern).filter(
                 LearnedPattern.status == "observed",
                 LearnedPattern.is_active == True
-            ).order_by(
-                LearnedPattern.confidence.asc(),
-                LearnedPattern.last_matched_at.asc()
-            ).limit(excess).all()
-            for p in to_evict:
-                session.query(PatternMatchLog).filter_by(pattern_id=p.id).delete()
-                session.delete(p)
-                result["evicted_patterns"] += 1
+            ).count()
+            if observed_count > 500:
+                excess = observed_count - 500
+                to_evict = session.query(LearnedPattern).filter(
+                    LearnedPattern.status == "observed",
+                    LearnedPattern.is_active == True
+                ).order_by(
+                    LearnedPattern.confidence.asc(),
+                    LearnedPattern.last_matched_at.asc()
+                ).limit(excess).all()
+                for p in to_evict:
+                    session.query(PatternMatchLog).filter_by(pattern_id=p.id).delete()
+                    session.delete(p)
+                    result["evicted_patterns"] += 1
 
-        session.commit()
+            session.commit()
 
-        total = sum(result.values())
-        if total > 0:
-            logger.info(f"Cleanup complete: {result}")
-        else:
-            logger.debug("Cleanup: nothing to delete")
+            total = sum(result.values())
+            if total > 0:
+                logger.info(f"Cleanup complete: {result}")
+            else:
+                logger.debug("Cleanup: nothing to delete")
 
-        return result
-    except Exception as e:
-        session.rollback()
-        logger.error(f"Cleanup error: {e}")
-        return result
-    finally:
-        session.close()
+            return result
+        except Exception as e:
+            session.rollback()
+            logger.error(f"Cleanup error: {e}")
+            return result
 
 
 def run_db_maintenance():
@@ -997,8 +951,7 @@ def serve_frontend(path):
 @system_bp.route("/api/validate-config", methods=["GET"])
 def api_validate_config():
     """Validate MindHome configuration - find issues."""
-    session = get_db()
-    try:
+    with get_db_session() as session:
         issues = []
         # Devices without room
         orphan_devices = session.query(Device).filter(Device.room_id == None, Device.is_tracked == True).count()
@@ -1034,16 +987,13 @@ def api_validate_config():
                 "message_en": "Home Assistant not connected"})
 
         return jsonify({"valid": len([i for i in issues if i["type"] == "error"]) == 0, "issues": issues})
-    finally:
-        session.close()
 
 
 
 @system_bp.route("/api/report/weekly", methods=["GET"])
 def api_weekly_report():
     """Generate a weekly summary report."""
-    session = get_db()
-    try:
+    with get_db_session() as session:
         now = datetime.now(timezone.utc)
         week_ago = now - timedelta(days=7)
 
@@ -1115,8 +1065,6 @@ def api_weekly_report():
             "energy_saved_kwh": energy_saved_kwh,
             "room_progress": room_progress,
         })
-    finally:
-        session.close()
 
 
 
@@ -1131,8 +1079,7 @@ def api_backup_export():
     mode = request.args.get("mode", "standard")
     history_days = request.args.get("history_days", 90, type=int)
     include_history = request.args.get("include_history", "false").lower() == "true"
-    session = get_db()
-    try:
+    with get_db_session() as session:
         backup = {
             "version": VERSION,
             "export_mode": mode,
@@ -1309,8 +1256,6 @@ def api_backup_export():
         }
 
         return jsonify(backup)
-    finally:
-        session.close()
 
 
 
@@ -1343,222 +1288,218 @@ def api_backup_import():
     history_tables = ["state_history", "action_log", "notification_log",
                       "audit_trail", "pattern_match_log", "data_collection", "offline_queue"]
 
-    session = get_db()
-    try:
-        # Restore domains
-        for d_data in data.get("domains", []):
-            try:
-                domain = session.query(Domain).filter_by(name=d_data.get("name")).first()
-                if domain:
-                    domain.is_enabled = d_data.get("is_enabled", False)
-                elif d_data.get("is_custom"):
-                    domain = Domain(
-                        name=d_data["name"],
-                        display_name_de=d_data.get("display_name_de", d_data["name"]),
-                        display_name_en=d_data.get("display_name_en", d_data["name"]),
-                        icon=d_data.get("icon", "mdi:puzzle"),
-                        is_enabled=d_data.get("is_enabled", True),
-                        is_custom=True,
-                        description_de=d_data.get("description_de", ""),
-                        description_en=d_data.get("description_en", "")
-                    )
-                    session.add(domain)
-            except Exception as e:
-                logger.warning(f"Domain import error: {e}")
-
-        session.flush()
-
-        # Restore rooms
-        room_id_map = {}
-        for r_data in data.get("rooms", []):
-            try:
-                existing = session.query(Room).filter_by(name=r_data.get("name")).first()
-                if existing:
-                    existing.icon = r_data.get("icon", "mdi:door")
-                    existing.privacy_mode = r_data.get("privacy_mode") or {}
-                    room_id_map[r_data.get("id", 0)] = existing.id
-                else:
-                    room = Room(
-                        name=r_data.get("name", "Room"),
-                        ha_area_id=r_data.get("ha_area_id"),
-                        icon=r_data.get("icon", "mdi:door"),
-                        privacy_mode=r_data.get("privacy_mode") or {},
-                        is_active=r_data.get("is_active", True)
-                    )
-                    session.add(room)
-                    session.flush()
-                    room_id_map[r_data.get("id", 0)] = room.id
-            except Exception as e:
-                logger.warning(f"Room import error: {e}")
-
-        session.flush()
-
-        # Restore devices
-        for dev_data in data.get("devices", []):
-            try:
-                entity_id = dev_data.get("ha_entity_id")
-                if not entity_id:
-                    continue
-                existing = session.query(Device).filter_by(ha_entity_id=entity_id).first()
-                new_room_id = room_id_map.get(dev_data.get("room_id"))
-                if existing:
-                    existing.name = dev_data.get("name", existing.name)
-                    existing.room_id = new_room_id
-                    if dev_data.get("domain_id"):
-                        existing.domain_id = dev_data["domain_id"]
-                    existing.is_tracked = dev_data.get("is_tracked", True)
-                    existing.is_controllable = dev_data.get("is_controllable", True)
-                else:
-                    device = Device(
-                        ha_entity_id=entity_id,
-                        name=dev_data.get("name", entity_id),
-                        domain_id=dev_data.get("domain_id") or 1,
-                        room_id=new_room_id,
-                        is_tracked=dev_data.get("is_tracked", True),
-                        is_controllable=dev_data.get("is_controllable", True),
-                        device_meta=dev_data.get("device_meta") or {}
-                    )
-                    session.add(device)
-            except Exception as e:
-                logger.warning(f"Device import error: {e}")
-
-        session.flush()
-
-        # Restore users
-        for u_data in data.get("users", []):
-            try:
-                uname = u_data.get("name")
-                if not uname:
-                    continue
-                existing = session.query(User).filter_by(name=uname).first()
-                role_str = u_data.get("role", "user")
-                try:
-                    role_enum = UserRole(role_str) if isinstance(role_str, str) else role_str
-                except (ValueError, KeyError):
-                    role_enum = UserRole.USER
-
-                if existing:
-                    existing.ha_person_entity = u_data.get("ha_person_entity")
-                    existing.role = role_enum
-                else:
-                    user = User(
-                        name=uname,
-                        ha_person_entity=u_data.get("ha_person_entity"),
-                        role=role_enum,
-                        language=u_data.get("language", "de")
-                    )
-                    session.add(user)
-            except Exception as e:
-                logger.warning(f"User import error: {e}")
-
-        session.commit()
-
-        for s_data in data.get("settings", []):
-            try:
-                if s_data.get("key"):
-                    set_setting(s_data["key"], s_data.get("value", ""))
-            except Exception as e:
-                logger.warning(f"Setting import error: {e}")
-
-        # Restore room_domain_states (learning phases)
-        session2 = get_db()
+    with get_db_session() as session:
         try:
-            for rds_data in data.get("room_domain_states", []):
+            # Restore domains
+            for d_data in data.get("domains", []):
                 try:
-                    old_room_id = rds_data.get("room_id")
-                    new_room_id = room_id_map.get(old_room_id, old_room_id)
-                    domain_id = rds_data.get("domain_id")
-                    if not new_room_id or not domain_id:
-                        continue
-                    existing = session2.query(RoomDomainState).filter_by(
-                        room_id=new_room_id, domain_id=domain_id
-                    ).first()
-                    phase_str = rds_data.get("learning_phase", "observing")
-                    try:
-                        phase_enum = LearningPhase(phase_str)
-                    except (ValueError, KeyError):
-                        phase_enum = LearningPhase.OBSERVING
+                    domain = session.query(Domain).filter_by(name=d_data.get("name")).first()
+                    if domain:
+                        domain.is_enabled = d_data.get("is_enabled", False)
+                    elif d_data.get("is_custom"):
+                        domain = Domain(
+                            name=d_data["name"],
+                            display_name_de=d_data.get("display_name_de", d_data["name"]),
+                            display_name_en=d_data.get("display_name_en", d_data["name"]),
+                            icon=d_data.get("icon", "mdi:puzzle"),
+                            is_enabled=d_data.get("is_enabled", True),
+                            is_custom=True,
+                            description_de=d_data.get("description_de", ""),
+                            description_en=d_data.get("description_en", "")
+                        )
+                        session.add(domain)
+                except Exception as e:
+                    logger.warning(f"Domain import error: {e}")
+
+            session.flush()
+
+            # Restore rooms
+            room_id_map = {}
+            for r_data in data.get("rooms", []):
+                try:
+                    existing = session.query(Room).filter_by(name=r_data.get("name")).first()
                     if existing:
-                        existing.learning_phase = phase_enum
-                        existing.confidence_score = rds_data.get("confidence_score", 0.0)
-                        existing.is_paused = rds_data.get("is_paused", False)
+                        existing.icon = r_data.get("icon", "mdi:door")
+                        existing.privacy_mode = r_data.get("privacy_mode") or {}
+                        room_id_map[r_data.get("id", 0)] = existing.id
                     else:
-                        rds = RoomDomainState(
-                            room_id=new_room_id,
-                            domain_id=domain_id,
-                            learning_phase=phase_enum,
-                            confidence_score=rds_data.get("confidence_score", 0.0),
-                            is_paused=rds_data.get("is_paused", False)
+                        room = Room(
+                            name=r_data.get("name", "Room"),
+                            ha_area_id=r_data.get("ha_area_id"),
+                            icon=r_data.get("icon", "mdi:door"),
+                            privacy_mode=r_data.get("privacy_mode") or {},
+                            is_active=r_data.get("is_active", True)
                         )
-                        session2.add(rds)
+                        session.add(room)
+                        session.flush()
+                        room_id_map[r_data.get("id", 0)] = room.id
                 except Exception as e:
-                    logger.warning(f"RoomDomainState import error: {e}")
+                    logger.warning(f"Room import error: {e}")
 
-            # Restore quick_actions
-            for qa_data in data.get("quick_actions", []):
-                try:
-                    qa_name = qa_data.get("name_de") or qa_data.get("name", "")
-                    existing = session2.query(QuickAction).filter_by(
-                        name_de=qa_name
-                    ).first() if qa_name else None
-                    if not existing and qa_name:
-                        qa = QuickAction(
-                            name_de=qa_data.get("name_de", qa_name),
-                            name_en=qa_data.get("name_en", qa_name),
-                            icon=qa_data.get("icon", "mdi:flash"),
-                            action_data=qa_data.get("action_data") or {},
-                            sort_order=qa_data.get("sort_order", 0),
-                            is_active=qa_data.get("is_active", True)
-                        )
-                        session2.add(qa)
-                except Exception as e:
-                    logger.warning(f"QuickAction import error: {e}")
+            session.flush()
 
-            # Restore user_preferences
-            for up_data in data.get("user_preferences", []):
+            # Restore devices
+            for dev_data in data.get("devices", []):
                 try:
-                    existing = session2.query(UserPreference).filter_by(
-                        user_id=up_data.get("user_id", 1),
-                        room_id=up_data.get("room_id"),
-                        preference_key=up_data.get("preference_key")
-                    ).first()
+                    entity_id = dev_data.get("ha_entity_id")
+                    if not entity_id:
+                        continue
+                    existing = session.query(Device).filter_by(ha_entity_id=entity_id).first()
+                    new_room_id = room_id_map.get(dev_data.get("room_id"))
                     if existing:
-                        existing.preference_value = up_data.get("preference_value")
-                    elif up_data.get("preference_key"):
-                        pref = UserPreference(
-                            user_id=up_data.get("user_id", 1),
-                            room_id=up_data.get("room_id"),
-                            preference_key=up_data["preference_key"],
-                            preference_value=up_data.get("preference_value")
+                        existing.name = dev_data.get("name", existing.name)
+                        existing.room_id = new_room_id
+                        if dev_data.get("domain_id"):
+                            existing.domain_id = dev_data["domain_id"]
+                        existing.is_tracked = dev_data.get("is_tracked", True)
+                        existing.is_controllable = dev_data.get("is_controllable", True)
+                    else:
+                        device = Device(
+                            ha_entity_id=entity_id,
+                            name=dev_data.get("name", entity_id),
+                            domain_id=dev_data.get("domain_id") or 1,
+                            room_id=new_room_id,
+                            is_tracked=dev_data.get("is_tracked", True),
+                            is_controllable=dev_data.get("is_controllable", True),
+                            device_meta=dev_data.get("device_meta") or {}
                         )
-                        session2.add(pref)
+                        session.add(device)
                 except Exception as e:
-                    logger.warning(f"UserPreference import error: {e}")
+                    logger.warning(f"Device import error: {e}")
 
-            session2.commit()
+            session.flush()
+
+            # Restore users
+            for u_data in data.get("users", []):
+                try:
+                    uname = u_data.get("name")
+                    if not uname:
+                        continue
+                    existing = session.query(User).filter_by(name=uname).first()
+                    role_str = u_data.get("role", "user")
+                    try:
+                        role_enum = UserRole(role_str) if isinstance(role_str, str) else role_str
+                    except (ValueError, KeyError):
+                        role_enum = UserRole.USER
+
+                    if existing:
+                        existing.ha_person_entity = u_data.get("ha_person_entity")
+                        existing.role = role_enum
+                    else:
+                        user = User(
+                            name=uname,
+                            ha_person_entity=u_data.get("ha_person_entity"),
+                            role=role_enum,
+                            language=u_data.get("language", "de")
+                        )
+                        session.add(user)
+                except Exception as e:
+                    logger.warning(f"User import error: {e}")
+
+            session.commit()
+
+            for s_data in data.get("settings", []):
+                try:
+                    if s_data.get("key"):
+                        set_setting(s_data["key"], s_data.get("value", ""))
+                except Exception as e:
+                    logger.warning(f"Setting import error: {e}")
+
+            # Restore room_domain_states (learning phases)
+            with get_db_session() as session2:
+                try:
+                    for rds_data in data.get("room_domain_states", []):
+                        try:
+                            old_room_id = rds_data.get("room_id")
+                            new_room_id = room_id_map.get(old_room_id, old_room_id)
+                            domain_id = rds_data.get("domain_id")
+                            if not new_room_id or not domain_id:
+                                continue
+                            existing = session2.query(RoomDomainState).filter_by(
+                                room_id=new_room_id, domain_id=domain_id
+                            ).first()
+                            phase_str = rds_data.get("learning_phase", "observing")
+                            try:
+                                phase_enum = LearningPhase(phase_str)
+                            except (ValueError, KeyError):
+                                phase_enum = LearningPhase.OBSERVING
+                            if existing:
+                                existing.learning_phase = phase_enum
+                                existing.confidence_score = rds_data.get("confidence_score", 0.0)
+                                existing.is_paused = rds_data.get("is_paused", False)
+                            else:
+                                rds = RoomDomainState(
+                                    room_id=new_room_id,
+                                    domain_id=domain_id,
+                                    learning_phase=phase_enum,
+                                    confidence_score=rds_data.get("confidence_score", 0.0),
+                                    is_paused=rds_data.get("is_paused", False)
+                                )
+                                session2.add(rds)
+                        except Exception as e:
+                            logger.warning(f"RoomDomainState import error: {e}")
+
+                    # Restore quick_actions
+                    for qa_data in data.get("quick_actions", []):
+                        try:
+                            qa_name = qa_data.get("name_de") or qa_data.get("name", "")
+                            existing = session2.query(QuickAction).filter_by(
+                                name_de=qa_name
+                            ).first() if qa_name else None
+                            if not existing and qa_name:
+                                qa = QuickAction(
+                                    name_de=qa_data.get("name_de", qa_name),
+                                    name_en=qa_data.get("name_en", qa_name),
+                                    icon=qa_data.get("icon", "mdi:flash"),
+                                    action_data=qa_data.get("action_data") or {},
+                                    sort_order=qa_data.get("sort_order", 0),
+                                    is_active=qa_data.get("is_active", True)
+                                )
+                                session2.add(qa)
+                        except Exception as e:
+                            logger.warning(f"QuickAction import error: {e}")
+
+                    # Restore user_preferences
+                    for up_data in data.get("user_preferences", []):
+                        try:
+                            existing = session2.query(UserPreference).filter_by(
+                                user_id=up_data.get("user_id", 1),
+                                room_id=up_data.get("room_id"),
+                                preference_key=up_data.get("preference_key")
+                            ).first()
+                            if existing:
+                                existing.preference_value = up_data.get("preference_value")
+                            elif up_data.get("preference_key"):
+                                pref = UserPreference(
+                                    user_id=up_data.get("user_id", 1),
+                                    room_id=up_data.get("room_id"),
+                                    preference_key=up_data["preference_key"],
+                                    preference_value=up_data.get("preference_value")
+                                )
+                                session2.add(pref)
+                        except Exception as e:
+                            logger.warning(f"UserPreference import error: {e}")
+
+                    session2.commit()
+                except Exception as e:
+                    session2.rollback()
+                    logger.warning(f"Phase 2 import error: {e}")
+
+            set_setting("onboarding_completed", "true")
+
+            logger.info(f"Backup imported: {len(data.get('rooms',[]))} rooms, {len(data.get('devices',[]))} devices")
+            return jsonify({"success": True, "imported": {
+                "rooms": len(data.get("rooms", [])),
+                "devices": len(data.get("devices", [])),
+                "users": len(data.get("users", []))
+            }})
         except Exception as e:
-            session2.rollback()
-            logger.warning(f"Phase 2 import error: {e}")
-        finally:
-            session2.close()
-
-        set_setting("onboarding_completed", "true")
-
-        logger.info(f"Backup imported: {len(data.get('rooms',[]))} rooms, {len(data.get('devices',[]))} devices")
-        return jsonify({"success": True, "imported": {
-            "rooms": len(data.get("rooms", [])),
-            "devices": len(data.get("devices", [])),
-            "users": len(data.get("users", []))
-        }})
-    except Exception as e:
-        try:
-            session.rollback()
-        except Exception:
-            pass
-        logger.error("Backup import failed: %s", e, exc_info=True)
-        return jsonify({"error": "Internal server error"}), 500
-    finally:
-        session.close()
+            try:
+                session.rollback()
+            except Exception:
+                pass
+            logger.error("Backup import failed: %s", e, exc_info=True)
+            return jsonify({"error": "Internal server error"}), 500
 
 
 
@@ -1650,81 +1591,77 @@ def api_toggle_vacation_mode():
 def api_export_data(data_type):
     """Export data as CSV or JSON."""
     fmt = request.args.get("format", "json")
-    session = get_db()
-    try:
-        if data_type == "patterns":
-            items = session.query(LearnedPattern).filter_by(is_active=True).all()
-            data = [{"id": p.id, "type": p.pattern_type, "confidence": p.confidence,
-                      "status": p.status, "match_count": p.match_count,
-                      "description": p.description_de, "created": str(p.created_at)} for p in items]
-        elif data_type == "history":
-            limit = int(request.args.get("limit", 1000))
-            items = session.query(StateHistory).order_by(StateHistory.created_at.desc()).limit(limit).all()
-            data = [{"entity_id": h.entity_id, "old_state": h.old_state,
-                      "new_state": h.new_state, "created": str(h.created_at)} for h in items]
-        elif data_type == "automations":
-            items = session.query(ActionLog).filter(
-                ActionLog.action_type.in_(["automation_executed", "automation_undone"])
-            ).order_by(ActionLog.created_at.desc()).limit(500).all()
-            data = [{"type": a.action_type, "device_id": a.device_id,
-                      "action_data": a.action_data,
-                      "reason": a.reason, "was_undone": a.was_undone,
-                      "created": str(a.created_at)} for a in items]
-        else:
-            return jsonify({"error": "Unknown data type"}), 400
+    with get_db_session() as session:
+        try:
+            if data_type == "patterns":
+                items = session.query(LearnedPattern).filter_by(is_active=True).all()
+                data = [{"id": p.id, "type": p.pattern_type, "confidence": p.confidence,
+                          "status": p.status, "match_count": p.match_count,
+                          "description": p.description_de, "created": str(p.created_at)} for p in items]
+            elif data_type == "history":
+                limit = int(request.args.get("limit", 1000))
+                items = session.query(StateHistory).order_by(StateHistory.created_at.desc()).limit(limit).all()
+                data = [{"entity_id": h.entity_id, "old_state": h.old_state,
+                          "new_state": h.new_state, "created": str(h.created_at)} for h in items]
+            elif data_type == "automations":
+                items = session.query(ActionLog).filter(
+                    ActionLog.action_type.in_(["automation_executed", "automation_undone"])
+                ).order_by(ActionLog.created_at.desc()).limit(500).all()
+                data = [{"type": a.action_type, "device_id": a.device_id,
+                          "action_data": a.action_data,
+                          "reason": a.reason, "was_undone": a.was_undone,
+                          "created": str(a.created_at)} for a in items]
+            else:
+                return jsonify({"error": "Unknown data type"}), 400
 
-        if fmt == "csv" and data:
-            output = io.StringIO()
-            writer = csv.DictWriter(output, fieldnames=data[0].keys())
-            writer.writeheader()
-            writer.writerows(data)
-            resp = make_response(output.getvalue())
-            resp.headers["Content-Type"] = "text/csv"
-            resp.headers["Content-Disposition"] = f"attachment; filename=mindhome_{data_type}.csv"
-            return resp
+            if fmt == "csv" and data:
+                output = io.StringIO()
+                writer = csv.DictWriter(output, fieldnames=data[0].keys())
+                writer.writeheader()
+                writer.writerows(data)
+                resp = make_response(output.getvalue())
+                resp.headers["Content-Type"] = "text/csv"
+                resp.headers["Content-Disposition"] = f"attachment; filename=mindhome_{data_type}.csv"
+                return resp
 
-        return jsonify({"data": data, "count": len(data)})
-    except Exception as e:
-        logger.error("Export failed: %s", e)
-        return jsonify({"error": "Export failed", "data": []}), 500
-    finally:
-        session.close()
+            return jsonify({"data": data, "count": len(data)})
+        except Exception as e:
+            logger.error("Export failed: %s", e)
+            return jsonify({"error": "Export failed", "data": []}), 500
 
 
 @system_bp.route("/api/system/diagnose", methods=["GET"])
 def api_diagnose():
     """Generate diagnostic info (no passwords/tokens)."""
-    session = get_db()
-    try:
-        db_path = os.environ.get("MINDHOME_DB_PATH", "/data/mindhome/db/mindhome.db")
-        diag = {
-            "version": VERSION,
-            "python": sys.version.split()[0],
-            "uptime_seconds": int(time.time() - _deps.get("start_time", 0)) if _deps.get("start_time", 0) else 0,
-            "ha_connected": _ha().is_connected(),
-            "connection_stats": _ha().get_connection_stats(),
-            "db_size_bytes": os.path.getsize(db_path) if os.path.exists(db_path) else 0,
-            "table_counts": {
-                "devices": session.query(Device).count(),
-                "rooms": session.query(Room).count(),
-                "patterns": session.query(LearnedPattern).count(),
-                "state_history": session.query(StateHistory).count(),
-                "action_log": session.query(ActionLog).count(),
-                "notifications": session.query(NotificationLog).count(),
-            },
-            "timezone": str(get_ha_timezone()),
-            "ha_entities": len(_ha().get_states() or []),
-            "debug_mode": is_debug_mode(),
-            "vacation_mode": get_setting("vacation_mode", "false"),
-            "device_health_issues": len(_ha().check_device_health()),
-            "generated_at": datetime.now(timezone.utc).isoformat(),
-        }
-        return jsonify(diag)
-    except Exception as e:
-        logger.error("Diagnose failed: %s", e)
-        return jsonify({"error": "Diagnostics failed", "version": VERSION})
-    finally:
-        session.close()
+    with get_db_session() as session:
+        try:
+            db_path = os.environ.get("MINDHOME_DB_PATH", "/data/mindhome/db/mindhome.db")
+            diag = {
+                "version": VERSION,
+                "python": sys.version.split()[0],
+                "uptime_seconds": int(time.time() - _deps.get("start_time", 0)) if _deps.get("start_time", 0) else 0,
+                "ha_connected": _ha().is_connected(),
+                "connection_stats": _ha().get_connection_stats(),
+                "db_size_bytes": os.path.getsize(db_path) if os.path.exists(db_path) else 0,
+                "table_counts": {
+                    "devices": session.query(Device).count(),
+                    "rooms": session.query(Room).count(),
+                    "patterns": session.query(LearnedPattern).count(),
+                    "state_history": session.query(StateHistory).count(),
+                    "action_log": session.query(ActionLog).count(),
+                    "notifications": session.query(NotificationLog).count(),
+                },
+                "timezone": str(get_ha_timezone()),
+                "ha_entities": len(_ha().get_states() or []),
+                "debug_mode": is_debug_mode(),
+                "vacation_mode": get_setting("vacation_mode", "false"),
+                "device_health_issues": len(_ha().check_device_health()),
+                "generated_at": datetime.now(timezone.utc).isoformat(),
+            }
+            return jsonify(diag)
+        except Exception as e:
+            logger.error("Diagnose failed: %s", e)
+            return jsonify({"error": "Diagnostics failed", "version": VERSION})
 
 
 @system_bp.route("/api/system/check-update", methods=["GET"])
@@ -1746,44 +1683,42 @@ def api_check_update():
 @system_bp.route("/api/device-groups", methods=["GET"])
 def api_get_device_groups():
     """Get all device groups (saved + suggested)."""
-    session = get_db()
-    try:
-        # Saved groups
-        saved = session.query(DeviceGroup).all()
-        saved_groups = [{
-            "id": g.id, "name": g.name, "room_id": g.room_id,
-            "device_ids": json.loads(g.device_ids or "[]"),
-            "is_active": g.is_active,
-            "room_name": g.room.name if g.room else None,
-            "created_at": utc_iso(g.created_at),
-        } for g in saved]
+    with get_db_session() as session:
+        try:
+            # Saved groups
+            saved = session.query(DeviceGroup).all()
+            saved_groups = [{
+                "id": g.id, "name": g.name, "room_id": g.room_id,
+                "device_ids": json.loads(g.device_ids or "[]"),
+                "is_active": g.is_active,
+                "room_name": g.room.name if g.room else None,
+                "created_at": utc_iso(g.created_at),
+            } for g in saved]
 
-        # Auto-suggested groups
-        rooms = session.query(Room).filter_by(is_active=True).all()
-        suggestions = []
-        saved_device_sets = {frozenset(json.loads(g.device_ids or "[]")) for g in saved}
-        for room in rooms:
-            devices = session.query(Device).filter_by(room_id=room.id, is_tracked=True).all()
-            by_domain = defaultdict(list)
-            for d in devices:
-                domain = session.get(Domain, d.domain_id) if d.domain_id else None
-                dname = domain.name if domain else "other"
-                by_domain[dname].append({"id": d.id, "name": d.name, "entity_id": d.ha_entity_id})
-            for domain_name, devs in by_domain.items():
-                if len(devs) >= 2:
-                    dev_ids = frozenset(d["id"] for d in devs)
-                    if dev_ids not in saved_device_sets:
-                        suggestions.append({
-                            "room": room.name, "room_id": room.id,
-                            "domain": domain_name, "devices": devs,
-                            "suggested_name": f"{room.name} {domain_name.title()}",
-                        })
-        return jsonify({"groups": saved_groups, "suggestions": suggestions})
-    except Exception as e:
-        logger.error("Failed to load device groups: %s", e)
-        return jsonify({"groups": [], "suggestions": [], "error": "Internal server error"})
-    finally:
-        session.close()
+            # Auto-suggested groups
+            rooms = session.query(Room).filter_by(is_active=True).all()
+            suggestions = []
+            saved_device_sets = {frozenset(json.loads(g.device_ids or "[]")) for g in saved}
+            for room in rooms:
+                devices = session.query(Device).filter_by(room_id=room.id, is_tracked=True).all()
+                by_domain = defaultdict(list)
+                for d in devices:
+                    domain = session.get(Domain, d.domain_id) if d.domain_id else None
+                    dname = domain.name if domain else "other"
+                    by_domain[dname].append({"id": d.id, "name": d.name, "entity_id": d.ha_entity_id})
+                for domain_name, devs in by_domain.items():
+                    if len(devs) >= 2:
+                        dev_ids = frozenset(d["id"] for d in devs)
+                        if dev_ids not in saved_device_sets:
+                            suggestions.append({
+                                "room": room.name, "room_id": room.id,
+                                "domain": domain_name, "devices": devs,
+                                "suggested_name": f"{room.name} {domain_name.title()}",
+                            })
+            return jsonify({"groups": saved_groups, "suggestions": suggestions})
+        except Exception as e:
+            logger.error("Failed to load device groups: %s", e)
+            return jsonify({"groups": [], "suggestions": [], "error": "Internal server error"})
 
 
 
@@ -1791,24 +1726,22 @@ def api_get_device_groups():
 def api_create_device_group():
     """Create a new device group."""
     data = request.json or {}
-    session = get_db()
-    try:
-        group = DeviceGroup(
-            name=data.get("name", "New Group"),
-            room_id=data.get("room_id"),
-            device_ids=json.dumps(data.get("device_ids", [])),
-            is_active=True,
-        )
-        session.add(group)
-        session.commit()
-        audit_log("device_group_create", {"name": group.name, "id": group.id})
-        return jsonify({"success": True, "id": group.id})
-    except Exception as e:
-        session.rollback()
-        logger.error("Failed to create device group: %s", e)
-        return jsonify({"error": "Operation failed"}), 400
-    finally:
-        session.close()
+    with get_db_session() as session:
+        try:
+            group = DeviceGroup(
+                name=data.get("name", "New Group"),
+                room_id=data.get("room_id"),
+                device_ids=json.dumps(data.get("device_ids", [])),
+                is_active=True,
+            )
+            session.add(group)
+            session.commit()
+            audit_log("device_group_create", {"name": group.name, "id": group.id})
+            return jsonify({"success": True, "id": group.id})
+        except Exception as e:
+            session.rollback()
+            logger.error("Failed to create device group: %s", e)
+            return jsonify({"error": "Operation failed"}), 400
 
 
 
@@ -1816,34 +1749,31 @@ def api_create_device_group():
 def api_update_device_group(group_id):
     """Update a device group."""
     data = request.json or {}
-    session = get_db()
-    try:
-        group = session.get(DeviceGroup, group_id)
-        if not group:
-            return jsonify({"error": "Not found"}), 404
-        if "name" in data:
-            group.name = data["name"]
-        if "device_ids" in data:
-            group.device_ids = json.dumps(data["device_ids"])
-        if "is_active" in data:
-            group.is_active = data["is_active"]
-        session.commit()
-        audit_log("device_group_update", {"id": group_id})
-        return jsonify({"success": True})
-    except Exception as e:
-        session.rollback()
-        logger.error("Failed to update device group: %s", e)
-        return jsonify({"error": "Operation failed"}), 400
-    finally:
-        session.close()
+    with get_db_session() as session:
+        try:
+            group = session.get(DeviceGroup, group_id)
+            if not group:
+                return jsonify({"error": "Not found"}), 404
+            if "name" in data:
+                group.name = data["name"]
+            if "device_ids" in data:
+                group.device_ids = json.dumps(data["device_ids"])
+            if "is_active" in data:
+                group.is_active = data["is_active"]
+            session.commit()
+            audit_log("device_group_update", {"id": group_id})
+            return jsonify({"success": True})
+        except Exception as e:
+            session.rollback()
+            logger.error("Failed to update device group: %s", e)
+            return jsonify({"error": "Operation failed"}), 400
 
 
 
 @system_bp.route("/api/device-groups/<int:group_id>", methods=["DELETE"])
 def api_delete_device_group(group_id):
     """Delete a device group."""
-    session = get_db()
-    try:
+    with get_db_session() as session:
         group = session.get(DeviceGroup, group_id)
         if not group:
             return jsonify({"error": "Device group not found"}), 404
@@ -1851,8 +1781,6 @@ def api_delete_device_group(group_id):
         session.commit()
         audit_log("device_group_delete", {"id": group_id})
         return jsonify({"success": True})
-    finally:
-        session.close()
 
 
 
@@ -1861,8 +1789,7 @@ def api_execute_device_group(group_id):
     """Execute an action on all devices in a group."""
     data = request.json or {}
     service = data.get("service", "toggle")
-    session = get_db()
-    try:
+    with get_db_session() as session:
         group = session.get(DeviceGroup, group_id)
         if not group:
             return jsonify({"error": "Not found"}), 404
@@ -1876,16 +1803,13 @@ def api_execute_device_group(group_id):
                 results.append({"entity_id": device.ha_entity_id, "success": result is not None})
         audit_log("device_group_execute", {"group_id": group_id, "service": service, "count": len(results)})
         return jsonify({"success": True, "results": results})
-    finally:
-        session.close()
 
 
 
 @system_bp.route("/api/audit-trail", methods=["GET"])
 def api_get_audit_trail():
     """Get audit trail entries."""
-    session = get_db()
-    try:
+    with get_db_session() as session:
         limit = request.args.get("limit", 100, type=int)
         entries = session.query(AuditTrail).order_by(AuditTrail.created_at.desc()).limit(limit).all()
         return jsonify([{
@@ -1893,8 +1817,6 @@ def api_get_audit_trail():
             "target": e.target, "details": e.details,
             "ip_address": e.ip_address, "created_at": utc_iso(e.created_at),
         } for e in entries])
-    finally:
-        session.close()
 
 
 
@@ -1912,10 +1834,9 @@ def api_watchdog():
         issues.append("HA WebSocket disconnected")
     db_alive = False
     try:
-        session = get_db()
-        session.execute(text("SELECT 1"))
-        db_alive = True
-        session.close()
+        with get_db_session() as session:
+            session.execute(text("SELECT 1"))
+            db_alive = True
     except Exception:
         issues.append("Database unreachable")
     try:
@@ -1941,10 +1862,9 @@ def api_self_test():
     """Run self-test and return results."""
     results = []
     try:
-        session = get_db()
-        session.execute(text("SELECT 1"))
-        session.close()
-        results.append({"test": "database", "status": "ok"})
+        with get_db_session() as session:
+            session.execute(text("SELECT 1"))
+            results.append({"test": "database", "status": "ok"})
     except Exception as e:
         results.append({"test": "database", "status": "fail", "error": str(e)})
     try:
@@ -1953,22 +1873,20 @@ def api_self_test():
     except Exception as e:
         results.append({"test": "ha_connection", "status": "fail", "error": str(e)})
     try:
-        session = get_db()
-        for table in ["devices", "rooms", "domains", "users", "learned_patterns", "state_history"]:
-            # Table names are hardcoded above - safe to interpolate
-            session.execute(text("SELECT COUNT(*) FROM " + table))
-        session.close()
-        results.append({"test": "tables", "status": "ok"})
+        with get_db_session() as session:
+            for table in ["devices", "rooms", "domains", "users", "learned_patterns", "state_history"]:
+                # Table names are hardcoded above - safe to interpolate
+                session.execute(text("SELECT COUNT(*) FROM " + table))
+            results.append({"test": "tables", "status": "ok"})
     except Exception as e:
         results.append({"test": "tables", "status": "fail", "error": str(e)})
     try:
-        session = get_db()
-        session.execute(text("INSERT INTO system_settings (key, value) VALUES ('_selftest', 'ok') ON CONFLICT(key) DO UPDATE SET value='ok'"))
-        session.commit()
-        session.execute(text("DELETE FROM system_settings WHERE key='_selftest'"))
-        session.commit()
-        session.close()
-        results.append({"test": "db_write", "status": "ok"})
+        with get_db_session() as session:
+            session.execute(text("INSERT INTO system_settings (key, value) VALUES ('_selftest', 'ok') ON CONFLICT(key) DO UPDATE SET value='ok'"))
+            session.commit()
+            session.execute(text("DELETE FROM system_settings WHERE key='_selftest'"))
+            session.commit()
+            results.append({"test": "db_write", "status": "ok"})
     except Exception as e:
         results.append({"test": "db_write", "status": "fail", "error": str(e)})
     all_ok = all(r["status"] == "ok" for r in results)
@@ -1979,15 +1897,12 @@ def api_self_test():
 @system_bp.route("/api/offline-queue", methods=["GET"])
 def api_get_offline_queue():
     """Get pending offline actions."""
-    session = get_db()
-    try:
+    with get_db_session() as session:
         items = session.query(OfflineActionQueue).filter_by(was_executed=False).order_by(OfflineActionQueue.priority.desc()).all()
         return jsonify([{
             "id": i.id, "action_data": i.action_data, "priority": i.priority,
             "created_at": utc_iso(i.created_at),
         } for i in items])
-    finally:
-        session.close()
 
 
 
@@ -1995,8 +1910,7 @@ def api_get_offline_queue():
 def api_add_offline_action():
     """Queue an action for when HA comes back online."""
     data = request.json or {}
-    session = get_db()
-    try:
+    with get_db_session() as session:
         item = OfflineActionQueue(
             action_data=data.get("action_data", {}),
             priority=data.get("priority", 0),
@@ -2004,8 +1918,6 @@ def api_add_offline_action():
         session.add(item)
         session.commit()
         return jsonify({"success": True, "id": item.id})
-    finally:
-        session.close()
 
 
 
@@ -2039,8 +1951,7 @@ def api_tts_devices():
 @system_bp.route("/api/tts/last-motion", methods=["GET"])
 def api_tts_last_motion():
     """Get last motion per room for TTS routing."""
-    session = get_db()
-    try:
+    with get_db_session() as session:
         # Find motion/occupancy binary_sensors with room assignments
         motion_devices = session.query(Device).filter(
             Device.ha_entity_id.like("binary_sensor.%"),
@@ -2086,8 +1997,6 @@ def api_tts_last_motion():
             "rooms": room_motion,
             "latest_active_room": latest_room,
         })
-    finally:
-        session.close()
 
 
 

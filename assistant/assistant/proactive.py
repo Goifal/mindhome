@@ -1436,10 +1436,14 @@ class ProactiveManager:
 
         while self._running:
             try:
-                if self._batch_queue:
+                # F-033: Lock fuer shared batch_queue Zugriff
+                async with self._state_lock:
+                    has_items = bool(self._batch_queue)
                     has_medium = any(
                         b.get("urgency") == MEDIUM for b in self._batch_queue
-                    )
+                    ) if has_items else False
+
+                if has_items:
                     # MEDIUM sofort flushen wenn Timer abgelaufen
                     if has_medium and timer >= medium_check_interval:
                         await self._flush_batch()
@@ -1484,9 +1488,11 @@ class ProactiveManager:
         if activity_result["suppress"]:
             logger.info("Batch unterdrueckt: Aktivitaet=%s", activity_result["activity"])
             # MEDIUM zurueck in Queue (sollen nicht verloren gehen)
+            # F-033: Lock fuer atomaren batch_queue Zugriff nach await
             medium_items = [i for i in items if i.get("urgency") == MEDIUM]
             if medium_items:
-                self._batch_queue = medium_items + self._batch_queue
+                async with self._state_lock:
+                    self._batch_queue = medium_items + self._batch_queue
             return
 
         # Zusammenfassung generieren

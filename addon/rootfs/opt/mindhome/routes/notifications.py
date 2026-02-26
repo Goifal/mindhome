@@ -17,7 +17,7 @@ from datetime import datetime, timezone, timedelta
 from flask import Blueprint, request, jsonify, Response, make_response, send_from_directory, redirect
 from sqlalchemy import func as sa_func, text
 
-from db import get_db_session, get_db_readonly, get_db
+from db import get_db_session, get_db_readonly
 from helpers import (
     get_ha_timezone, local_now, utc_iso, sanitize_input, sanitize_dict,
     audit_log, is_debug_mode, set_debug_mode, get_setting, set_setting,
@@ -73,8 +73,7 @@ def api_get_notifications():
     limit = request.args.get("limit", 50, type=int)
     offset = request.args.get("offset", 0, type=int)
 
-    session = get_db()
-    try:
+    with get_db_session() as session:
         query = session.query(NotificationLog).order_by(NotificationLog.created_at.desc())
         if unread:
             query = query.filter_by(was_read=False)
@@ -95,8 +94,6 @@ def api_get_notifications():
             "limit": limit,
             "has_more": offset + limit < total
         })
-    finally:
-        session.close()
 
 
 
@@ -127,8 +124,7 @@ def api_mark_all_read():
 @notifications_bp.route("/api/notification-settings", methods=["GET"])
 def api_get_notification_settings():
     """Get all notification settings for current user."""
-    session = get_db()
-    try:
+    with get_db_session() as session:
         settings = session.query(NotificationSetting).filter_by(user_id=1).all()
         channels = session.query(NotificationChannel).all()
         mutes = session.query(DeviceMute).filter_by(user_id=1).all()
@@ -156,8 +152,6 @@ def api_get_notification_settings():
             } for m in mutes],
             "dnd_enabled": dnd,
         })
-    finally:
-        session.close()
 
 
 
@@ -167,30 +161,28 @@ def api_update_notification_settings():
     data = request.json or {}
     if not data:
         return jsonify({"error": "No data provided"}), 400
-    session = get_db()
-    try:
-        ntype = data.get("type")
-        existing = session.query(NotificationSetting).filter_by(
-            user_id=1, notification_type=NotificationType(ntype)
-        ).first()
-        if not existing:
-            existing = NotificationSetting(user_id=1, notification_type=NotificationType(ntype))
-            session.add(existing)
-        for key in ["is_enabled", "quiet_hours_start", "quiet_hours_end",
-                     "push_channel", "escalation_enabled", "escalation_minutes",
-                     "geofencing_only_away"]:
-            if key in data:
-                setattr(existing, key, data[key])
-        if "priority" in data:
-            existing.priority = NotificationPriority(data["priority"])
-        session.commit()
-        return jsonify({"success": True})
-    except Exception as e:
-        session.rollback()
-        logger.error("Operation failed: %s", e)
-        return jsonify({"error": "Operation failed"}), 500
-    finally:
-        session.close()
+    with get_db_session() as session:
+        try:
+            ntype = data.get("type")
+            existing = session.query(NotificationSetting).filter_by(
+                user_id=1, notification_type=NotificationType(ntype)
+            ).first()
+            if not existing:
+                existing = NotificationSetting(user_id=1, notification_type=NotificationType(ntype))
+                session.add(existing)
+            for key in ["is_enabled", "quiet_hours_start", "quiet_hours_end",
+                         "push_channel", "escalation_enabled", "escalation_minutes",
+                         "geofencing_only_away"]:
+                if key in data:
+                    setattr(existing, key, data[key])
+            if "priority" in data:
+                existing.priority = NotificationPriority(data["priority"])
+            session.commit()
+            return jsonify({"success": True})
+        except Exception as e:
+            session.rollback()
+            logger.error("Operation failed: %s", e)
+            return jsonify({"error": "Operation failed"}), 500
 
 
 
@@ -209,76 +201,68 @@ def api_mute_device():
     data = request.json or {}
     if "device_id" not in data:
         return jsonify({"error": "device_id required"}), 400
-    session = get_db()
-    try:
-        mute = DeviceMute(
-            device_id=data["device_id"], user_id=1,
-            reason=data.get("reason"), muted_until=None
-        )
-        session.add(mute)
-        session.commit()
-        return jsonify({"success": True, "id": mute.id})
-    except Exception as e:
-        session.rollback()
-        logger.error("Operation failed: %s", e)
-        return jsonify({"error": "Operation failed"}), 500
-    finally:
-        session.close()
+    with get_db_session() as session:
+        try:
+            mute = DeviceMute(
+                device_id=data["device_id"], user_id=1,
+                reason=data.get("reason"), muted_until=None
+            )
+            session.add(mute)
+            session.commit()
+            return jsonify({"success": True, "id": mute.id})
+        except Exception as e:
+            session.rollback()
+            logger.error("Operation failed: %s", e)
+            return jsonify({"error": "Operation failed"}), 500
 
 
 
 @notifications_bp.route("/api/notification-settings/unmute-device/<int:mute_id>", methods=["DELETE"])
 def api_unmute_device(mute_id):
     """Unmute a device."""
-    session = get_db()
-    try:
+    with get_db_session() as session:
         mute = session.get(DeviceMute, mute_id)
         if mute:
             session.delete(mute)
             session.commit()
         return jsonify({"success": True})
-    finally:
-        session.close()
 
 
 
 @notifications_bp.route("/api/notification-settings/discover-channels", methods=["POST"])
 def api_discover_notification_channels():
     """Discover available HA notification services."""
-    session = get_db()
-    try:
-        services = _ha().get_services()
-        found = 0
-        for svc in services:
-            if svc.get("domain") == "notify":
-                for name in svc.get("services", {}).keys():
-                    svc_name = f"notify.{name}"
-                    existing = session.query(NotificationChannel).filter_by(service_name=svc_name).first()
-                    if not existing:
-                        ch_type = "push" if "mobile" in name else "persistent" if "persistent" in name else "other"
-                        channel = NotificationChannel(
-                            service_name=svc_name,
-                            display_name=name.replace("_", " ").title(),
-                            channel_type=ch_type
-                        )
-                        session.add(channel)
-                        found += 1
-        session.commit()
-        return jsonify({"success": True, "found": found})
-    except Exception as e:
-        session.rollback()
-        logger.error("Operation failed: %s", e)
-        return jsonify({"error": "Operation failed"}), 500
-    finally:
-        session.close()
+    with get_db_session() as session:
+        try:
+            services = _ha().get_services()
+            found = 0
+            for svc in services:
+                if svc.get("domain") == "notify":
+                    for name in svc.get("services", {}).keys():
+                        svc_name = f"notify.{name}"
+                        existing = session.query(NotificationChannel).filter_by(service_name=svc_name).first()
+                        if not existing:
+                            ch_type = "push" if "mobile" in name else "persistent" if "persistent" in name else "other"
+                            channel = NotificationChannel(
+                                service_name=svc_name,
+                                display_name=name.replace("_", " ").title(),
+                                channel_type=ch_type
+                            )
+                            session.add(channel)
+                            found += 1
+            session.commit()
+            return jsonify({"success": True, "found": found})
+        except Exception as e:
+            session.rollback()
+            logger.error("Operation failed: %s", e)
+            return jsonify({"error": "Operation failed"}), 500
 
 
 
 @notifications_bp.route("/api/notification-stats", methods=["GET"])
 def api_notification_stats():
     """Get notification statistics for current month."""
-    session = get_db()
-    try:
+    with get_db_session() as session:
         cutoff = datetime.now(timezone.utc) - timedelta(days=30)
         total = session.query(sa_func.count(NotificationLog.id)).filter(
             NotificationLog.created_at >= cutoff
@@ -290,8 +274,6 @@ def api_notification_stats():
             NotificationLog.created_at >= cutoff, NotificationLog.was_sent == True
         ).scalar() or 0
         return jsonify({"total": total, "read": read, "unread": total - read, "sent": sent, "pushed": sent, "period_days": 30})
-    finally:
-        session.close()
 
 
 
@@ -311,8 +293,7 @@ def api_test_notification():
 @notifications_bp.route("/api/notification-settings/test-channel/<int:channel_id>", methods=["POST"])
 def api_test_channel(channel_id):
     """Send a test notification via a specific channel."""
-    session = get_db()
-    try:
+    with get_db_session() as session:
         channel = session.get(NotificationChannel, channel_id)
         if not channel:
             return jsonify({"error": "Channel not found"}), 404
@@ -322,8 +303,6 @@ def api_test_channel(channel_id):
             target=channel.service_name
         )
         return jsonify({"success": result is not None, "channel": channel.service_name})
-    finally:
-        session.close()
 
 
 
@@ -331,8 +310,7 @@ def api_test_channel(channel_id):
 def api_update_channel(channel_id):
     """Update a notification channel (enable/disable)."""
     data = request.json or {}
-    session = get_db()
-    try:
+    with get_db_session() as session:
         channel = session.get(NotificationChannel, channel_id)
         if not channel:
             return jsonify({"error": "Channel not found"}), 404
@@ -340,8 +318,6 @@ def api_update_channel(channel_id):
             channel.is_enabled = data["is_enabled"]
         session.commit()
         return jsonify({"success": True})
-    finally:
-        session.close()
 
 
 
@@ -411,33 +387,31 @@ def api_update_extended_notification_settings():
 @notifications_bp.route("/api/notification-settings/scan-channels", methods=["POST"])
 def api_scan_notification_channels():
     """Auto-detect available notification services from HA."""
-    session = get_db()
-    try:
-        services = _ha().get_services() or {}
-        channels = []
-        # get_services() may return list or dict depending on HA version
-        if isinstance(services, list):
-            svc_dict = {}
-            for svc in services:
-                if isinstance(svc, dict):
-                    domain = svc.get("domain", "")
-                    svc_dict[domain] = list(svc.get("services", {}).keys()) if isinstance(svc.get("services"), dict) else []
-            services = svc_dict
-        for svc_domain, svc_list in services.items():
-            if "notify" in svc_domain or svc_domain == "notify":
-                for svc_name in svc_list:
-                    full_name = f"{svc_domain}.{svc_name}" if svc_domain != "notify" else f"notify.{svc_name}"
-                    existing = session.query(NotificationChannel).filter_by(service_name=full_name).first()
-                    if not existing:
-                        ch = NotificationChannel(service_name=full_name, display_name=svc_name.replace("_", " ").title(), channel_type="push", is_enabled=True)
-                        session.add(ch)
-                        channels.append(full_name)
-        session.commit()
-        return jsonify({"success": True, "found": len(channels), "channels": channels})
-    except Exception as e:
-        session.rollback()
-        logger.error("Operation failed: %s", e)
-        return jsonify({"success": False, "error": "Operation failed", "found": 0, "channels": []}), 500
-    finally:
-        session.close()
+    with get_db_session() as session:
+        try:
+            services = _ha().get_services() or {}
+            channels = []
+            # get_services() may return list or dict depending on HA version
+            if isinstance(services, list):
+                svc_dict = {}
+                for svc in services:
+                    if isinstance(svc, dict):
+                        domain = svc.get("domain", "")
+                        svc_dict[domain] = list(svc.get("services", {}).keys()) if isinstance(svc.get("services"), dict) else []
+                services = svc_dict
+            for svc_domain, svc_list in services.items():
+                if "notify" in svc_domain or svc_domain == "notify":
+                    for svc_name in svc_list:
+                        full_name = f"{svc_domain}.{svc_name}" if svc_domain != "notify" else f"notify.{svc_name}"
+                        existing = session.query(NotificationChannel).filter_by(service_name=full_name).first()
+                        if not existing:
+                            ch = NotificationChannel(service_name=full_name, display_name=svc_name.replace("_", " ").title(), channel_type="push", is_enabled=True)
+                            session.add(ch)
+                            channels.append(full_name)
+            session.commit()
+            return jsonify({"success": True, "found": len(channels), "channels": channels})
+        except Exception as e:
+            session.rollback()
+            logger.error("Operation failed: %s", e)
+            return jsonify({"success": False, "error": "Operation failed", "found": 0, "channels": []}), 500
 

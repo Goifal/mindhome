@@ -784,7 +784,9 @@ class PhaseManager:
 
         # Days since phase started
         if rds.phase_started_at:
-            days = (datetime.utcnow().replace(tzinfo=None) - rds.phase_started_at.replace(tzinfo=None)).days
+            now_naive = datetime.utcnow()
+            phase_naive = rds.phase_started_at.replace(tzinfo=None) if rds.phase_started_at.tzinfo else rds.phase_started_at
+            days = (now_naive - phase_naive).days
             if days < t["min_days"]:
                 return None
 
@@ -829,7 +831,9 @@ class PhaseManager:
         t = self._get_autonomous_thresholds()
 
         if rds.phase_started_at:
-            days = (datetime.utcnow().replace(tzinfo=None) - rds.phase_started_at.replace(tzinfo=None)).days
+            now_naive = datetime.utcnow()
+            phase_naive = rds.phase_started_at.replace(tzinfo=None) if rds.phase_started_at.tzinfo else rds.phase_started_at
+            days = (now_naive - phase_naive).days
             if days < t["min_days"]:
                 return None
 
@@ -912,12 +916,12 @@ class PhaseManager:
 class AnomalyDetector:
     """Detects unusual events using statistical baselines and heuristics."""
 
-    # Entities we've already reported (avoid spam)
-    _reported = set()
-
     def __init__(self, engine):
         self.engine = engine
         self.Session = sessionmaker(bind=engine)
+        # Instance-level statt Class-level — vermeidet Race Conditions
+        # bei mehreren Instanzen oder Thread-Zugriff
+        self._reported = set()
 
     def _get_pattern_setting(self, session, key, default):
         """Read a setting from PatternSettings table."""
@@ -2053,7 +2057,11 @@ class AutomationScheduler:
             raw = get_setting("calendar_triggers")
             if not raw:
                 return
-            triggers = _json.loads(raw)
+            try:
+                triggers = _json.loads(raw)
+            except (ValueError, TypeError) as e:
+                logger.warning("calendar_triggers JSON korrupt: %s", e)
+                return
             active_triggers = [t for t in triggers if t.get("is_active", True)]
             if not active_triggers:
                 return
@@ -2108,14 +2116,18 @@ class AutomationScheduler:
         """
         try:
             from helpers import get_setting, set_setting, get_ha_timezone
-            from db import get_db
+            from db import get_db_session
             from models import PersonSchedule, ShiftTemplate, User
 
             config_raw = get_setting("shift_calendar_sync")
             if not config_raw:
                 return
             import json as _json
-            config = _json.loads(config_raw)
+            try:
+                config = _json.loads(config_raw)
+            except (ValueError, TypeError) as e:
+                logger.warning("shift_calendar_sync JSON korrupt: %s", e)
+                return
             if not config.get("enabled"):
                 return
             target_calendar = config.get("calendar_entity", "")
@@ -2130,16 +2142,13 @@ class AutomationScheduler:
             now = datetime.now(local_tz)
 
             # --- Step 1: Build expected events from current shift schedules ---
-            session = get_db()
-            try:
+            with get_db_session() as session:
                 schedules = session.query(PersonSchedule).filter_by(
                     is_active=True, schedule_type="shift").all()
                 templates = {t.short_code: t for t in
                              session.query(ShiftTemplate).filter_by(is_active=True).all()}
                 users = {u.id: u.name for u in
                          session.query(User).filter_by(is_active=True).all()}
-            finally:
-                session.close()
 
             # expected_events: key = "YYYY-MM-DD|summary_without_tag" → event details
             expected_events = {}

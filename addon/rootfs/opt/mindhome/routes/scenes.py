@@ -17,7 +17,7 @@ from datetime import datetime, timezone, timedelta
 from flask import Blueprint, request, jsonify, Response, make_response, send_from_directory, redirect
 from sqlalchemy import func as sa_func, text
 
-from db import get_db_session, get_db_readonly, get_db
+from db import get_db_session, get_db_readonly
 from helpers import (
     get_ha_timezone, local_now, utc_iso, sanitize_input, sanitize_dict,
     audit_log, is_debug_mode, set_debug_mode, get_setting, set_setting,
@@ -67,45 +67,35 @@ def _domain_manager():
 
 @scenes_bp.route("/api/scenes", methods=["GET"])
 def api_get_scenes():
-    session = get_db()
-    try:
+    with get_db_session() as session:
         return jsonify([{"id":s.id,"room_id":s.room_id,"name_de":s.name_de,"name_en":s.name_en,"icon":s.icon,"states":s.states or [],"frequency":s.frequency,"status":s.status,"source":s.source,"is_active":s.is_active,"is_favorite":s.is_favorite,"favorite_sort":s.favorite_sort,"last_activated":s.last_activated.isoformat() if s.last_activated else None} for s in session.query(LearnedScene).order_by(LearnedScene.frequency.desc()).all()])
-    finally:
-        session.close()
 
 
 @scenes_bp.route("/api/scenes", methods=["POST"])
 def api_create_scene():
     data = request.json or {}
-    session = get_db()
-    try:
+    with get_db_session() as session:
         scene = LearnedScene(room_id=data.get("room_id"), name_de=data.get("name_de","Neue Szene"), name_en=data.get("name_en","New Scene"), icon=data.get("icon","mdi:palette"), states=data.get("states",[]), status="accepted", source="manual", schedule_cron=data.get("schedule_cron"), schedule_enabled=data.get("schedule_enabled", False), action_delay_seconds=data.get("action_delay_seconds", 0))
         session.add(scene); session.commit()
         audit_log("scene_create", f"Scene: {scene.name_de}")
         return jsonify({"id": scene.id, "success": True})
-    finally:
-        session.close()
 
 
 @scenes_bp.route("/api/scenes/<int:scene_id>", methods=["PUT"])
 def api_update_scene(scene_id):
     data = request.json or {}
-    session = get_db()
-    try:
+    with get_db_session() as session:
         scene = session.get(LearnedScene, scene_id)
         if not scene: return jsonify({"error": "Not found"}), 404
         for key in ["name_de","name_en","icon","states","status","is_active","schedule_cron","schedule_enabled","action_delay_seconds"]:
             if key in data: setattr(scene, key, data[key])
         session.commit()
         return jsonify({"success": True})
-    finally:
-        session.close()
 
 
 @scenes_bp.route("/api/scenes/<int:scene_id>/activate", methods=["POST"])
 def api_activate_scene(scene_id):
-    session = get_db()
-    try:
+    with get_db_session() as session:
         scene = session.get(LearnedScene, scene_id)
         if not scene: return jsonify({"error": "Not found"}), 404
         for si in (scene.states or []):
@@ -119,26 +109,20 @@ def api_activate_scene(scene_id):
         scene.last_activated = datetime.now(timezone.utc)
         session.commit()
         return jsonify({"success": True})
-    finally:
-        session.close()
 
 
 @scenes_bp.route("/api/scenes/<int:scene_id>", methods=["DELETE"])
 def api_delete_scene(scene_id):
-    session = get_db()
-    try:
+    with get_db_session() as session:
         scene = session.get(LearnedScene, scene_id)
         if scene: session.delete(scene); session.commit()
         return jsonify({"success": True})
-    finally:
-        session.close()
 
 
 @scenes_bp.route("/api/scenes/<int:scene_id>/favorite", methods=["PUT"])
 def api_toggle_scene_favorite(scene_id):
     """Toggle favorite status for a scene (#20)."""
-    session = get_db()
-    try:
+    with get_db_session() as session:
         scene = session.get(LearnedScene, scene_id)
         if not scene:
             return jsonify({"error": "Not found"}), 404
@@ -147,21 +131,16 @@ def api_toggle_scene_favorite(scene_id):
             scene.favorite_sort = 0
         session.commit()
         return jsonify({"success": True, "is_favorite": scene.is_favorite})
-    finally:
-        session.close()
 
 
 @scenes_bp.route("/api/scenes/favorites", methods=["GET"])
 def api_get_favorite_scenes():
     """Get favorite scenes sorted by favorite_sort (#20)."""
-    session = get_db()
-    try:
+    with get_db_session() as session:
         scenes = session.query(LearnedScene).filter(
             LearnedScene.is_favorite == True
         ).order_by(LearnedScene.favorite_sort).all()
         return jsonify([{"id":s.id,"room_id":s.room_id,"name_de":s.name_de,"name_en":s.name_en,"icon":s.icon,"states":s.states or [],"is_favorite":True,"favorite_sort":s.favorite_sort,"last_activated":s.last_activated.isoformat() if s.last_activated else None} for s in scenes])
-    finally:
-        session.close()
 
 
 @scenes_bp.route("/api/scenes/snapshot", methods=["POST"])
@@ -171,8 +150,7 @@ def api_scene_snapshot():
     room_id = data.get("room_id")
     if not room_id:
         return jsonify({"error": "room_id required"}), 400
-    session = get_db()
-    try:
+    with get_db_session() as session:
         devices = session.query(Device).filter_by(room_id=room_id, is_active=True).all()
         states = []
         for d in devices:
@@ -191,15 +169,12 @@ def api_scene_snapshot():
         )
         session.add(scene); session.commit()
         return jsonify({"id": scene.id, "success": True, "device_count": len(states)})
-    finally:
-        session.close()
 
 
 @scenes_bp.route("/api/scenes/suggestions", methods=["GET"])
 def api_scene_suggestions():
     """Get scene suggestions from pattern engine."""
-    session = get_db()
-    try:
+    with get_db_session() as session:
         # Find patterns that look like scenes (multiple devices, same time)
         patterns = session.query(LearnedPattern).filter(
             LearnedPattern.pattern_type == "scene",
@@ -213,5 +188,3 @@ def api_scene_suggestions():
                 "confidence": p.confidence, "status": p.status
             })
         return jsonify(suggestions)
-    finally:
-        session.close()

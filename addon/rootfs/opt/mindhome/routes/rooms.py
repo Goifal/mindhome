@@ -17,7 +17,7 @@ from datetime import datetime, timezone, timedelta
 from flask import Blueprint, request, jsonify, Response, make_response, send_from_directory, redirect
 from sqlalchemy import func as sa_func, text
 
-from db import get_db_session, get_db_readonly, get_db
+from db import get_db_session, get_db_readonly
 from helpers import (
     get_ha_timezone, local_now, utc_iso, sanitize_input, sanitize_dict,
     audit_log, is_debug_mode, set_debug_mode, get_setting, set_setting,
@@ -68,8 +68,7 @@ def _domain_manager():
 @rooms_bp.route("/api/rooms", methods=["GET"])
 def api_get_rooms():
     """Get all rooms with last activity info."""
-    session = get_db()
-    try:
+    with get_db_session() as session:
         rooms = session.query(Room).filter_by(is_active=True).all()
         enabled_domains = session.query(Domain).filter_by(is_enabled=True).all()
 
@@ -119,8 +118,6 @@ def api_get_rooms():
                 } for ds in r.domain_states if ds.domain_id in device_domain_ids]
             })
         return jsonify(result)
-    finally:
-        session.close()
 
 
 
@@ -130,8 +127,7 @@ def api_create_room():
     data = request.json or {}
     if not data.get("name"):
         return jsonify({"error": "name required"}), 400
-    session = get_db()
-    try:
+    with get_db_session() as session:
         room = Room(
             name=data["name"],
             ha_area_id=data.get("ha_area_id"),
@@ -153,16 +149,13 @@ def api_create_room():
         session.commit()
 
         return jsonify({"id": room.id, "name": room.name}), 201
-    finally:
-        session.close()
 
 
 
 @rooms_bp.route("/api/rooms/import-from-ha", methods=["POST"])
 def api_import_rooms_from_ha():
     """Import rooms from HA Areas."""
-    session = get_db()
-    try:
+    with get_db_session() as session:
         areas = _ha().get_areas() or []
         if not areas:
             return jsonify({"error": "No areas found in HA", "imported": 0}), 200
@@ -211,8 +204,6 @@ def api_import_rooms_from_ha():
 
         session.commit()
         return jsonify({"success": True, "imported": imported, "skipped": skipped})
-    finally:
-        session.close()
 
 
 
@@ -220,8 +211,7 @@ def api_import_rooms_from_ha():
 def api_update_room(room_id):
     """Update a room."""
     data = request.json
-    session = get_db()
-    try:
+    with get_db_session() as session:
         room = session.get(Room, room_id)
         if not room:
             return jsonify({"error": "Room not found"}), 404
@@ -235,24 +225,19 @@ def api_update_room(room_id):
 
         session.commit()
         return jsonify({"id": room.id, "name": room.name})
-    finally:
-        session.close()
 
 
 
 @rooms_bp.route("/api/rooms/<int:room_id>", methods=["DELETE"])
 def api_delete_room(room_id):
     """Delete a room."""
-    session = get_db()
-    try:
+    with get_db_session() as session:
         room = session.get(Room, room_id)
         if not room:
             return jsonify({"error": "Room not found"}), 404
         room.is_active = False  # Soft delete
         session.commit()
         return jsonify({"success": True})
-    finally:
-        session.close()
 
 
 
@@ -260,33 +245,26 @@ def api_delete_room(room_id):
 def api_update_room_privacy(room_id):
     """Update privacy mode for a room."""
     data = request.json
-    session = get_db()
-    try:
+    with get_db_session() as session:
         room = session.get(Room, room_id)
         if not room:
             return jsonify({"error": "Room not found"}), 404
         room.privacy_mode = data.get("privacy_mode", {})
         session.commit()
         return jsonify({"id": room.id, "privacy_mode": room.privacy_mode})
-    finally:
-        session.close()
 
 
 
 @rooms_bp.route("/api/room-orientations", methods=["GET"])
 def api_get_room_orientations():
-    session = get_db()
-    try:
+    with get_db_session() as session:
         return jsonify([{"id":o.id,"room_id":o.room_id,"orientation":o.orientation,"offset_minutes":o.offset_minutes} for o in session.query(RoomOrientation).all()])
-    finally:
-        session.close()
 
 
 @rooms_bp.route("/api/room-orientations/<int:room_id>", methods=["PUT"])
 def api_set_room_orientation(room_id):
     data = request.json or {}
-    session = get_db()
-    try:
+    with get_db_session() as session:
         existing = session.query(RoomOrientation).filter_by(room_id=room_id).first()
         if existing:
             existing.orientation = data.get("orientation", existing.orientation)
@@ -295,5 +273,3 @@ def api_set_room_orientation(room_id):
             session.add(RoomOrientation(room_id=room_id, orientation=data.get("orientation","S"), offset_minutes=data.get("offset_minutes",0)))
         session.commit()
         return jsonify({"success": True})
-    finally:
-        session.close()

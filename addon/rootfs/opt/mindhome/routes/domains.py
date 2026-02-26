@@ -17,7 +17,7 @@ from datetime import datetime, timezone, timedelta
 from flask import Blueprint, request, jsonify, Response, make_response, send_from_directory, redirect
 from sqlalchemy import func as sa_func, text
 
-from db import get_db_session, get_db_readonly, get_db
+from db import get_db_session, get_db_readonly
 from helpers import (
     get_ha_timezone, local_now, utc_iso, sanitize_input, sanitize_dict,
     audit_log, is_debug_mode, set_debug_mode, get_setting, set_setting,
@@ -68,8 +68,7 @@ def _domain_manager():
 @domains_bp.route("/api/domains", methods=["GET"])
 def api_get_domains():
     """Get all available domains."""
-    session = get_db()
-    try:
+    with get_db_session() as session:
         domains = session.query(Domain).all()
         lang = get_language()
         return jsonify([{
@@ -81,8 +80,6 @@ def api_get_domains():
             "is_custom": d.is_custom if hasattr(d, 'is_custom') else False,
             "description": d.description_de if lang == "de" else d.description_en
         } for d in domains])
-    finally:
-        session.close()
 
 
 
@@ -90,8 +87,7 @@ def api_get_domains():
 def api_create_domain():
     """Create a custom domain."""
     data = request.json
-    session = get_db()
-    try:
+    with get_db_session() as session:
         name = data.get("name", "").strip().lower().replace(" ", "_")
         if not name:
             return jsonify({"error": "Name is required"}), 400
@@ -113,8 +109,6 @@ def api_create_domain():
         session.add(domain)
         session.commit()
         return jsonify({"id": domain.id, "name": domain.name}), 201
-    finally:
-        session.close()
 
 
 
@@ -122,8 +116,7 @@ def api_create_domain():
 def api_update_domain(domain_id):
     """Update a domain. System domains: only icon editable. Custom domains: all fields."""
     data = request.json
-    session = get_db()
-    try:
+    with get_db_session() as session:
         domain = session.get(Domain, domain_id)
         if not domain:
             return jsonify({"error": "Domain not found"}), 404
@@ -157,16 +150,13 @@ def api_update_domain(domain_id):
 
         session.commit()
         return jsonify({"id": domain.id, "name": domain.name})
-    finally:
-        session.close()
 
 
 
 @domains_bp.route("/api/domains/<int:domain_id>", methods=["DELETE"])
 def api_delete_domain(domain_id):
     """Delete a custom domain."""
-    session = get_db()
-    try:
+    with get_db_session() as session:
         domain = session.get(Domain, domain_id)
         if not domain:
             return jsonify({"error": "Domain not found"}), 404
@@ -189,16 +179,13 @@ def api_delete_domain(domain_id):
         session.delete(domain)
         session.commit()
         return jsonify({"success": True})
-    finally:
-        session.close()
 
 
 
 @domains_bp.route("/api/domains/<int:domain_id>/toggle", methods=["POST"])
 def api_toggle_domain(domain_id):
     """Enable or disable a domain."""
-    session = get_db()
-    try:
+    with get_db_session() as session:
         domain = session.get(Domain, domain_id)
         if not domain:
             return jsonify({"error": "Domain not found"}), 404
@@ -211,8 +198,6 @@ def api_toggle_domain(domain_id):
             if _domain_manager(): _domain_manager().stop_domain(domain.name)
 
         return jsonify({"id": domain.id, "is_enabled": domain.is_enabled})
-    finally:
-        session.close()
 
 
 
@@ -241,8 +226,7 @@ def api_domain_features(domain_name):
 @domains_bp.route("/api/plugin-settings", methods=["GET"])
 def api_get_plugin_settings():
     """Get plugin settings: DEFAULT_SETTINGS merged with DB overrides."""
-    session = get_db()
-    try:
+    with get_db_session() as session:
         plugin_name = request.args.get("plugin")
 
         # Start with DEFAULT_SETTINGS from all domain plugins
@@ -266,15 +250,12 @@ def api_get_plugin_settings():
             result[s.plugin_name][s.setting_key] = s.setting_value
 
         return jsonify(result)
-    finally:
-        session.close()
 
 
 @domains_bp.route("/api/plugin-settings/<plugin_name>", methods=["PUT"])
 def api_update_plugin_settings(plugin_name):
     data = request.json or {}
-    session = get_db()
-    try:
+    with get_db_session() as session:
         for key, value in data.items():
             existing = session.query(PluginSetting).filter_by(plugin_name=plugin_name, setting_key=key).first()
             str_val = json.dumps(value) if not isinstance(value, str) else value
@@ -282,5 +263,3 @@ def api_update_plugin_settings(plugin_name):
             else: session.add(PluginSetting(plugin_name=plugin_name, setting_key=key, setting_value=str_val))
         session.commit()
         return jsonify({"success": True})
-    finally:
-        session.close()
