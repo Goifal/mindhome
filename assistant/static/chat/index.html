@@ -1625,7 +1625,11 @@ async function sendMessage() {
   const file = pendingFile;
 
   if (!text && !file) return;
-  if (!file && (!ws || ws.readyState !== WebSocket.OPEN)) return;
+  if (!file && (!ws || ws.readyState !== WebSocket.OPEN)) {
+    toast('Keine Verbindung zum Server — versuche neu zu verbinden...', 'error');
+    connectWS();
+    return;
+  }
 
   const displayText = text || `Datei: ${file.name}`;
   addMessage('user', displayText, null, file ? { name: file.name, size: file.size } : null);

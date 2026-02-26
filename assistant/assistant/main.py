@@ -1338,12 +1338,20 @@ async def websocket_endpoint(websocket: WebSocket):
     assistant.interrupt - Unterbrechung
     """
     # Auth: Externe Clients muessen api_key als Query-Parameter senden.
-    # Interne Chat-UI sendet den Key aus dem Session-Cookie.
+    # Interne Chat-UI (same-origin) darf ohne Key verbinden — der Browser
+    # setzt den Origin-Header automatisch und korrekt (nicht faelschbar).
     ws_key = websocket.query_params.get("api_key", "")
     if _api_key_required:
-        if not ws_key or not secrets.compare_digest(ws_key, _assistant_api_key):
-            await websocket.close(code=4003, reason="API Key erforderlich")
-            return
+        origin = websocket.headers.get("origin", "")
+        host = websocket.headers.get("host", "")
+        is_same_origin = bool(
+            origin and host
+            and (origin == f"http://{host}" or origin == f"https://{host}")
+        )
+        if not is_same_origin:
+            if not ws_key or not secrets.compare_digest(ws_key, _assistant_api_key):
+                await websocket.close(code=4003, reason="API Key erforderlich")
+                return
 
     if not await ws_manager.connect(websocket):
         return
