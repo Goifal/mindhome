@@ -5375,8 +5375,7 @@ class AssistantBrain(BrainCallbacksMixin):
 
         return None
 
-    @staticmethod
-    def _detect_smalltalk(text: str) -> Optional[str]:
+    def _detect_smalltalk(self, text: str) -> Optional[str]:
         """Erkennt soziale Fragen und gibt eine JARVIS-Antwort zurueck.
 
         Verhindert, dass das LLM bei Smalltalk aus dem Charakter bricht
