@@ -17,6 +17,7 @@ from typing import Optional
 import yaml
 
 from .config import yaml_config, resolve_person_by_entity
+from .function_calling import get_mindhome_room
 from .ha_client import HomeAssistantClient
 from .semantic_memory import SemanticMemory
 
@@ -296,8 +297,17 @@ class ContextBuilder:
                 # Sensor-Fehler (-128°C) und Nicht-Raum-Geraete (Waermepumpe >50°C) filtern
                 if temp_val < -20 or temp_val > 50:
                     continue
-                room = _sanitize_for_prompt(attrs.get("friendly_name", entity_id), 50, "climate_name")
+                # MindHome-Raumnamen bevorzugen (konsistent mit function_calling)
+                mh_room = get_mindhome_room(entity_id)
+                if mh_room:
+                    room = _sanitize_for_prompt(mh_room, 50, "climate_name")
+                else:
+                    room = _sanitize_for_prompt(attrs.get("friendly_name", entity_id), 50, "climate_name")
                 if room:
+                    # Duplikat-Schutz: bei gleichem Key Entity-Suffix anhaengen
+                    if room in house["temperatures"]:
+                        suffix = entity_id.split(".", 1)[-1] if "." in entity_id else entity_id
+                        room = f"{room} ({suffix})"
                     house["temperatures"][room] = {
                         "current": current_temp,
                         "target": attrs.get("temperature"),
@@ -306,7 +316,12 @@ class ContextBuilder:
 
             # Lichter (nur die an sind)
             elif domain == "light" and s == "on":
-                name = _sanitize_for_prompt(attrs.get("friendly_name", entity_id), 50, "light_name")
+                # MindHome-Raumnamen bevorzugen (konsistent mit function_calling)
+                mh_room = get_mindhome_room(entity_id)
+                if mh_room:
+                    name = _sanitize_for_prompt(mh_room, 50, "light_name")
+                else:
+                    name = _sanitize_for_prompt(attrs.get("friendly_name", entity_id), 50, "light_name")
                 if not name:
                     continue
                 brightness = attrs.get("brightness")

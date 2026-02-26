@@ -1780,6 +1780,9 @@ def _cleanup_expired_tokens():
 
 def _check_token(token: str):
     """Prueft ob ein UI-Token gueltig ist und nicht abgelaufen."""
+    # API Key als Token akzeptieren (fuer Addon-Proxy)
+    if _assistant_api_key and token and secrets.compare_digest(token, _assistant_api_key):
+        return
     if token not in _active_tokens:
         raise HTTPException(status_code=401, detail="Nicht autorisiert")
     # Ablaufzeit pruefen
@@ -3186,6 +3189,24 @@ async def chat_redirect():
     """Redirect /chat zu /chat/."""
     from fastapi.responses import RedirectResponse
     return RedirectResponse("/chat/")
+
+
+@app.get("/api/chat/config")
+async def chat_config():
+    """Oeffentliche Chat-Konfiguration (keine Authentifizierung noetig).
+
+    Gibt Household-Owners und Person-Titel zurueck, damit die Chat-UI
+    die Personenauswahl rendern kann ohne PIN-Token zu benoetigen.
+    """
+    household = yaml_config.get("household") or {}
+    members = household.get("members") or []
+    owners = [m for m in members if m.get("role") == "owner" and m.get("name")]
+
+    return {
+        "primary_user": household.get("primary_user") or settings.user_name or "",
+        "owners": owners,
+        "person_titles": (yaml_config.get("persons") or {}).get("titles") or {},
+    }
 
 
 # ============================================================
