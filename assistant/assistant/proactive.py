@@ -281,13 +281,16 @@ class ProactiveManager:
 
     async def _handle_event(self, event: dict):
         """Verarbeitet ein HA Event und entscheidet ob gemeldet werden soll."""
-        event_type = event.get("event_type", "")
-        event_data = event.get("data", {})
+        try:
+            event_type = event.get("event_type", "")
+            event_data = event.get("data", {})
 
-        if event_type == "state_changed":
-            await self._handle_state_change(event_data)
-        elif event_type == "mindhome_event":
-            await self._handle_mindhome_event(event_data)
+            if event_type == "state_changed":
+                await self._handle_state_change(event_data)
+            elif event_type == "mindhome_event":
+                await self._handle_mindhome_event(event_data)
+        except Exception as e:
+            logger.error("Event-Handler Fehler fuer %s: %s", event.get("event_type", "?"), e)
 
     async def _handle_state_change(self, data: dict):
         """Verarbeitet HA State-Change Events."""

@@ -263,10 +263,13 @@ class EnergyOptimizer:
                 day = (datetime.now() - timedelta(days=i)).strftime("%Y-%m-%d")
                 raw = await self.redis.get(f"{KEY_DAILY_ENERGY}{day}")
                 if raw:
-                    data = json.loads(raw)
-                    val = data.get("consumption_wh", 0)
-                    if val > 0:
-                        values.append(val)
+                    try:
+                        data = json.loads(raw)
+                        val = data.get("consumption_wh", 0)
+                        if val > 0:
+                            values.append(val)
+                    except (json.JSONDecodeError, TypeError):
+                        continue
 
             if len(values) < 3:
                 return None  # Zu wenig Daten
@@ -305,19 +308,25 @@ class EnergyOptimizer:
                 day = (now - timedelta(days=i)).strftime("%Y-%m-%d")
                 raw = await self.redis.get(f"{KEY_DAILY_ENERGY}{day}")
                 if raw:
-                    data = json.loads(raw)
-                    val = data.get("consumption_wh", 0)
-                    if val > 0:
-                        this_week.append(val)
+                    try:
+                        data = json.loads(raw)
+                        val = data.get("consumption_wh", 0)
+                        if val > 0:
+                            this_week.append(val)
+                    except (json.JSONDecodeError, TypeError):
+                        pass
 
                 # Letzte Woche
                 day_lw = (now - timedelta(days=i + 7)).strftime("%Y-%m-%d")
                 raw_lw = await self.redis.get(f"{KEY_DAILY_ENERGY}{day_lw}")
                 if raw_lw:
-                    data_lw = json.loads(raw_lw)
-                    val_lw = data_lw.get("consumption_wh", 0)
-                    if val_lw > 0:
-                        last_week.append(val_lw)
+                    try:
+                        data_lw = json.loads(raw_lw)
+                        val_lw = data_lw.get("consumption_wh", 0)
+                        if val_lw > 0:
+                            last_week.append(val_lw)
+                    except (json.JSONDecodeError, TypeError):
+                        pass
 
             if len(this_week) < 3 or len(last_week) < 3:
                 return None

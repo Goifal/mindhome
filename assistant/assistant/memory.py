@@ -127,7 +127,14 @@ class MemoryManager:
         try:
             archive_key = f"mha:archive:{date}"
             entries = await self.redis.lrange(archive_key, 0, -1)
-            return [json.loads(e) for e in entries]
+            result = []
+            for e in entries:
+                try:
+                    if e:
+                        result.append(json.loads(e))
+                except (json.JSONDecodeError, TypeError):
+                    continue
+            return result
         except Exception as e:
             logger.error("Fehler beim Laden des Archivs fuer %s: %s", date, e)
             return []
@@ -246,14 +253,15 @@ class MemoryManager:
 
             memories = []
             if results and results.get("documents"):
-                for i, doc in enumerate(results["documents"][0]):
-                    meta = results["metadatas"][0][i] if results.get("metadatas") else {}
+                docs = results["documents"][0] if results["documents"] else []
+                metas = results["metadatas"][0] if results.get("metadatas") and results["metadatas"] else []
+                dists = results["distances"][0] if results.get("distances") and results["distances"] else []
+                for i, doc in enumerate(docs):
+                    meta = metas[i] if i < len(metas) else {}
                     memories.append({
                         "content": doc,
-                        "timestamp": meta.get("timestamp", ""),
-                        "relevance": results["distances"][0][i]
-                        if results.get("distances")
-                        else 0,
+                        "timestamp": meta.get("timestamp", "") if isinstance(meta, dict) else "",
+                        "relevance": dists[i] if i < len(dists) else 0,
                     })
             return memories
         except Exception as e:
@@ -294,15 +302,21 @@ class MemoryManager:
             now = datetime.now()
 
             for topic_key, entry_json in all_topics.items():
-                entry = json.loads(entry_json)
-                ts = datetime.fromisoformat(entry.get("timestamp", ""))
-                age_minutes = (now - ts).total_seconds() / 60
+                try:
+                    entry = json.loads(entry_json)
+                    ts_str = entry.get("timestamp", "")
+                    if not ts_str:
+                        continue
+                    ts = datetime.fromisoformat(ts_str)
+                    age_minutes = (now - ts).total_seconds() / 60
 
-                # Nur Themen die aelter als 10 Min sind (User war weg)
-                # und juenger als 24h
-                if 10 <= age_minutes <= 1440:
-                    entry["age_minutes"] = round(age_minutes)
-                    pending.append(entry)
+                    # Nur Themen die aelter als 10 Min sind (User war weg)
+                    # und juenger als 24h
+                    if 10 <= age_minutes <= 1440:
+                        entry["age_minutes"] = round(age_minutes)
+                        pending.append(entry)
+                except (json.JSONDecodeError, TypeError, ValueError):
+                    continue
 
             return pending
         except Exception as e:

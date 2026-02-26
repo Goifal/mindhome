@@ -516,10 +516,14 @@ class SoundManager:
         if self._is_alexa_speaker(speaker_entity):
             # Volume trotzdem setzen (fire-and-forget)
             if old_volume is None or abs(old_volume - volume) > 0.01:
-                asyncio.create_task(self.ha.call_service(
+                task = asyncio.create_task(self.ha.call_service(
                     "media_player", "volume_set",
                     {"entity_id": speaker_entity, "volume_level": volume},
                 ))
+                task.add_done_callback(
+                    lambda t: logger.debug("Alexa Volume-Set fehlgeschlagen: %s", t.exception())
+                    if t.exception() else None
+                )
             return await self._speak_via_alexa(speak_text, speaker_entity)
 
         # TTS-Entity finden (T-3: gecacht nach erstem Lookup)

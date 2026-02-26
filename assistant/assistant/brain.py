@@ -797,7 +797,7 @@ class AssistantBrain(BrainCallbacksMixin):
             logger.info("Gute-Nacht-Intent erkannt")
             try:
                 result = await self.routines.execute_goodnight(person or "")
-                response_text = self._filter_response(result["text"]) or result["text"]
+                response_text = self._filter_response(result.get("text", "")) or result.get("text", "")
                 self._remember_exchange(text, response_text)
                 tts_data = self.tts_enhancer.enhance(
                     response_text, message_type="briefing",
@@ -805,7 +805,7 @@ class AssistantBrain(BrainCallbacksMixin):
                 await self._speak_and_emit(response_text, room=room, tts_data=tts_data)
                 return {
                     "response": response_text,
-                    "actions": result["actions"],
+                    "actions": result.get("actions", []),
                     "model_used": "routine_engine",
                     "context_room": room or "unbekannt",
                     "tts": tts_data,
@@ -1053,8 +1053,8 @@ class AssistantBrain(BrainCallbacksMixin):
                 )
                 cal_msg = cal_result.get("message", "") if isinstance(cal_result, dict) else str(cal_result)
 
-                # Humanizer-First: sofortige Antwort
-                response_text = self._humanize_calendar(cal_msg)
+                # Humanizer-First: sofortige Antwort + Filter
+                response_text = self._filter_response(self._humanize_calendar(cal_msg))
                 logger.info("Kalender-Shortcut humanisiert: '%s' -> '%s'",
                             cal_msg[:60], response_text[:60])
 
@@ -1167,7 +1167,7 @@ class AssistantBrain(BrainCallbacksMixin):
                 weather_result = await self.executor.execute("get_weather", weather_args)
                 weather_msg = weather_result.get("message", "") if isinstance(weather_result, dict) else str(weather_result)
 
-                response_text = self._humanize_weather(weather_msg)
+                response_text = self._filter_response(self._humanize_weather(weather_msg))
                 logger.info("Wetter-Shortcut humanisiert: '%s' -> '%s'",
                             weather_msg[:60], response_text[:60])
 
@@ -1230,7 +1230,7 @@ class AssistantBrain(BrainCallbacksMixin):
 
                 if alarm_result:
                     alarm_msg = alarm_result.get("message", "")
-                    response_text = self._humanize_alarms(alarm_msg)
+                    response_text = self._filter_response(self._humanize_alarms(alarm_msg))
                     self._remember_exchange(text, response_text)
                     tts_data = self.tts_enhancer.enhance(response_text, message_type="confirmation")
                     if stream_callback:
@@ -1700,9 +1700,10 @@ class AssistantBrain(BrainCallbacksMixin):
 
                     if success:
                         raw = result.get("message", str(result))
-                        response_text = self._humanize_query_result(func_name, raw)
+                        response_text = self._filter_response(
+                            self._humanize_query_result(func_name, raw))
                         if not response_text or len(response_text) < 5:
-                            response_text = raw
+                            response_text = self._filter_response(raw)
 
                         logger.info("Status-Query-Shortcut Antwort: '%s'", response_text[:120])
 
