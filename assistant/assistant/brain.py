@@ -1541,6 +1541,78 @@ class AssistantBrain(BrainCallbacksMixin):
             except Exception as e:
                 logger.warning("Evening-Briefing-Shortcut fehlgeschlagen: %s — Fallback auf LLM", e)
 
+        # Haus-Status-Shortcut: "Hausstatus" / "Haus-Status"
+        # Nur Hausdaten (Temperatur, Lichter, Anwesenheit, Sicherheit),
+        # NICHT Kalender/Energie/Erinnerungen. Respektiert detail_level.
+        if self._is_house_status_request(text):
+            logger.info("Haus-Status-Shortcut: '%s'", text)
+            try:
+                raw_result = await self.executor.execute("get_house_status", {})
+                if isinstance(raw_result, dict) and raw_result.get("success"):
+                    raw_data = raw_result["message"]
+                    title = get_person_title(self._current_person)
+                    _hs_cfg = yaml_config.get("house_status", {})
+                    _detail = _hs_cfg.get("detail_level", "normal")
+                    if _detail == "kompakt":
+                        _prompt_style = (
+                            "Maximal 1-2 kurze Saetze. Nur das Wichtigste. "
+                            "Unwichtige Details weglassen."
+                        )
+                        _max_tok = 80
+                    elif _detail == "ausfuehrlich":
+                        _prompt_style = (
+                            "4-6 Saetze, alle Details ausfuehrlich wiedergeben."
+                        )
+                        _max_tok = 350
+                    else:
+                        _prompt_style = (
+                            "2-3 Saetze, narrativ, priorisiert. "
+                            "Langweiliges weglassen."
+                        )
+                        _max_tok = 180
+                    narrative_prompt = (
+                        f"Du bist JARVIS. Fasse diesen Haus-Status zusammen. "
+                        f"{_prompt_style} "
+                        f"Trockener Butler-Ton. Kein Aufzaehlungsformat. "
+                        f"Sprich den User mit '{title}' an.\n\n{raw_data}"
+                    )
+                    narrative = await self.ollama.generate(
+                        prompt=narrative_prompt,
+                        temperature=0.5,
+                        max_tokens=_max_tok,
+                    )
+                    response_text = narrative.strip() if narrative.strip() else raw_data
+
+                    self._remember_exchange(text, response_text)
+                    tts_data = self.tts_enhancer.enhance(
+                        response_text, message_type="status",
+                    )
+                    if stream_callback:
+                        if not room:
+                            room = await self._get_occupied_room()
+                        self._task_registry.create_task(
+                            self.sound_manager.speak_response(
+                                response_text, room=room, tts_data=tts_data),
+                            name="speak_response",
+                        )
+                    else:
+                        await self._speak_and_emit(
+                            response_text, room=room, tts_data=tts_data,
+                        )
+
+                    return {
+                        "response": response_text,
+                        "actions": [{"function": "get_house_status",
+                                     "args": {},
+                                     "result": raw_result}],
+                        "model_used": "house_status_shortcut",
+                        "context_room": room or "unbekannt",
+                        "tts": tts_data,
+                        "_emitted": not stream_callback,
+                    }
+            except Exception as e:
+                logger.warning("Haus-Status-Shortcut fehlgeschlagen: %s — Fallback auf LLM", e)
+
         # Status-Report-Shortcut: "Statusbericht" / "Briefing" / "Was gibts Neues"
         # Aggregiert alle Datenquellen und laesst LLM einen narrativen Bericht generieren.
         if self._is_status_report_request(text):
@@ -1549,18 +1621,36 @@ class AssistantBrain(BrainCallbacksMixin):
                 raw_result = await self.executor.execute("get_full_status_report", {})
                 if isinstance(raw_result, dict) and raw_result.get("success"):
                     raw_data = raw_result["message"]
-                    # LLM generiert narrativen Bericht im JARVIS-Stil
                     title = get_person_title(self._current_person)
+                    _hs_cfg = yaml_config.get("house_status", {})
+                    _detail = _hs_cfg.get("detail_level", "normal")
+                    if _detail == "kompakt":
+                        _prompt_style = (
+                            "Maximal 2-3 kurze Saetze. Nur das Wichtigste. "
+                            "Unwichtige Details weglassen."
+                        )
+                        _max_tok = 120
+                    elif _detail == "ausfuehrlich":
+                        _prompt_style = (
+                            "5-7 Saetze, alle Details ausfuehrlich wiedergeben."
+                        )
+                        _max_tok = 400
+                    else:
+                        _prompt_style = (
+                            "3-5 Saetze, narrativ, priorisiert. "
+                            "Langweiliges weglassen."
+                        )
+                        _max_tok = 250
                     narrative_prompt = (
-                        f"Du bist JARVIS. Fasse diesen Haus-Status als kurzes Briefing zusammen. "
-                        f"3-5 Saetze, narrativ, priorisiert (Wichtiges zuerst, Langweiliges weglassen). "
+                        f"Du bist JARVIS. Fasse diesen Status als Briefing zusammen. "
+                        f"{_prompt_style} "
                         f"Trockener Butler-Ton. Kein Aufzaehlungsformat. Fliessender Bericht. "
                         f"Sprich den User mit '{title}' an.\n\n{raw_data}"
                     )
                     narrative = await self.ollama.generate(
                         prompt=narrative_prompt,
                         temperature=0.5,
-                        max_tokens=300,
+                        max_tokens=_max_tok,
                     )
                     response_text = narrative.strip() if narrative.strip() else raw_data
 
@@ -5385,11 +5475,23 @@ class AssistantBrain(BrainCallbacksMixin):
         return any(kw in t for kw in _keywords)
 
     @staticmethod
+    def _is_house_status_request(text: str) -> bool:
+        """Erkennt ob der User einen Haus-Status will (nur Hausdaten, kein volles Briefing)."""
+        t = text.lower().strip().rstrip("?!.")
+        _keywords = [
+            "hausstatus", "haus-status", "haus status",
+            "wie sieht es zuhause aus", "wie siehts zuhause aus",
+            "wie sieht's zuhause aus",
+        ]
+        return any(kw in t for kw in _keywords)
+
+    @staticmethod
     def _is_status_report_request(text: str) -> bool:
         """Erkennt ob der User einen narrativen Statusbericht will.
 
         Matcht auf: statusbericht, briefing, lagebericht, was gibts neues, ueberblick geben.
         NICHT auf einfache Status-Queries wie "wie warm ist es".
+        NICHT auf "hausstatus" — der geht ueber _is_house_status_request.
         """
         t = text.lower().strip().rstrip("?!.")
         _keywords = [
@@ -5401,7 +5503,6 @@ class AssistantBrain(BrainCallbacksMixin):
             "gib mir ein briefing", "gib mir einen ueberblick",
             "gib mir einen überblick",
             "was ist los", "was tut sich",
-            "hausstatus", "haus-status", "haus status",
         ]
         return any(kw in t for kw in _keywords)
 
