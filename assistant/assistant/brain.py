@@ -1315,6 +1315,8 @@ class AssistantBrain(BrainCallbacksMixin):
                     logger.info("Geraete-Shortcut blockiert (Trust: %s) — Fallback",
                                 trust.get("reason", ""))
                 else:
+                    if person:
+                        func_args["_person"] = person
                     result = await self.executor.execute(func_name, func_args)
                     success = isinstance(result, dict) and result.get("success", False)
                     error_msg = result.get("message", "") if isinstance(result, dict) else ""
@@ -1627,7 +1629,11 @@ class AssistantBrain(BrainCallbacksMixin):
                         temperature=0.5,
                         max_tokens=_max_tok,
                     )
-                    response_text = self._filter_response(narrative.strip()) if narrative.strip() else raw_data
+                    response_text = self._filter_response(narrative.strip()) if narrative.strip() else ""
+                    if not response_text:
+                        # LLM hat verweigert oder leere Antwort — Fallback auf humanisierte Daten
+                        response_text = self._humanize_house_status(raw_data)
+                        logger.info("Haus-Status: LLM-Antwort leer/verweigert, Fallback auf humanisierte Daten")
 
                     self._remember_exchange(text, response_text)
                     tts_data = self.tts_enhancer.enhance(
@@ -1698,7 +1704,10 @@ class AssistantBrain(BrainCallbacksMixin):
                         temperature=0.5,
                         max_tokens=_max_tok,
                     )
-                    response_text = self._filter_response(narrative.strip()) if narrative.strip() else raw_data
+                    response_text = self._filter_response(narrative.strip()) if narrative.strip() else ""
+                    if not response_text:
+                        response_text = self._humanize_house_status(raw_data)
+                        logger.info("Status-Report: LLM-Antwort leer/verweigert, Fallback auf humanisierte Daten")
 
                     self._remember_exchange(text, response_text)
                     tts_data = self.tts_enhancer.enhance(
@@ -4057,7 +4066,21 @@ class AssistantBrain(BrainCallbacksMixin):
                 text = re.sub(pattern, replacement, text)
             logger.info("Sie->du Korrektur angewendet: '%s'", text[:80])
 
-        # 3c. Chatbot-Floskeln entfernen die trotz Prompt durchkommen
+        # 3c. LLM-Refusals entfernen (Qwen3 verweigert manchmal trotz gueltiger Daten)
+        _refusal_patterns = [
+            r"[Aa]ber ich kann diese Anfrage nicht erf[uü]llen\.?",
+            r"[Ii]ch kann diese Anfrage nicht erf[uü]llen\.?",
+            r"[Ii]ch kann dir dabei (?:leider )?nicht helfen\.?",
+            r"[Dd]as kann ich (?:leider )?nicht (?:tun|machen|beantworten|erf[uü]llen)\.?",
+            r"[Ii]ch bin nicht in der Lage,? (?:das|dies|diese Anfrage).*?(?:\.|!|$)",
+            r"[Dd]iese Anfrage kann ich (?:leider )?nicht.*?(?:\.|!|$)",
+            r"[Ii]ch habe (?:leider )?keinen Zugriff.*?(?:\.|!|$)",
+            r"[Ii]ch habe (?:leider )?keine M[oö]glichkeit.*?(?:\.|!|$)",
+        ]
+        for rp in _refusal_patterns:
+            text = re.sub(rp, "", text, flags=re.IGNORECASE).strip()
+
+        # 3d. Chatbot-Floskeln entfernen die trotz Prompt durchkommen
         _chatbot_floskels = [
             r"Wenn (?:du|Sie) (?:noch |weitere )?Fragen ha(?:ben|st).*?(?:\.|!|$)",
             r"(?:Ich )?[Ss]tehe? (?:dir|Ihnen) (?:gerne |jederzeit )?zur Verf[uü]gung.*?(?:\.|!|$)",

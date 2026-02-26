@@ -1894,6 +1894,7 @@ class FunctionExecutor:
         room = args.get("room")
         state = args.get("state")
         device = args.get("device")
+        person = args.pop("_person", "")
 
         # Qwen3-Fallback: entity_id statt room akzeptieren
         if not room and args.get("entity_id"):
@@ -1924,10 +1925,10 @@ class FunctionExecutor:
         if room.lower() == "all":
             return await self._exec_set_light_all(args, state)
 
-        entity_id = await self._find_entity("light", room, device_hint=device)
+        entity_id = await self._find_entity("light", room, device_hint=device, person=person)
         if not entity_id:
             # Cross-Domain-Fallback: Vielleicht ist es ein Switch (z.B. Siebtraegermaschine)
-            switch_id = await self._find_entity("switch", room)
+            switch_id = await self._find_entity("switch", room, person=person)
             if switch_id:
                 logger.info("set_light cross-domain fallback: '%s' -> switch %s", room, switch_id)
                 service = "turn_on" if state == "on" else "turn_off"
@@ -4182,7 +4183,7 @@ class FunctionExecutor:
         n = n.replace("bureau", "buro")
         return n.replace(" ", "_")
 
-    async def _find_entity(self, domain: str, search: str, device_hint: str = "") -> Optional[str]:
+    async def _find_entity(self, domain: str, search: str, device_hint: str = "", person: str = "") -> Optional[str]:
         """Findet eine Entity anhand von Domain und Suchbegriff.
 
         Matching-Strategie (Best-Match statt First-Match):
@@ -4192,12 +4193,16 @@ class FunctionExecutor:
 
         device_hint: Optionaler Geraetename (z.B. 'stehlampe', 'deckenlampe')
                      zur Disambiguierung bei mehreren Geraeten im selben Raum.
+        person: Optionaler Personenname (z.B. 'Manuel', 'Julia')
+                zur Disambiguierung wenn mehrere Raeume gleich heissen
+                (z.B. 'Manuel Buero' vs 'Julia Buero').
         """
         if not search:
             return None
 
         search_norm = self._normalize_name(search)
         hint_norm = self._normalize_name(device_hint) if device_hint else ""
+        person_norm = self._normalize_name(person) if person else ""
 
         # Spezifische Geraete-Begriffe: werden bei der Auswahl deprioritisiert,
         # wenn kein device_hint angegeben ist, damit das Hauptgeraet im Raum
@@ -4257,7 +4262,14 @@ class FunctionExecutor:
                             combined = f"{dev_name} {eid_name}"
                             if any(term in combined for term in _SPECIFIC_DEVICE_TERMS):
                                 penalty = 1000
-                        score = name_len + penalty
+                        # Person-Kontext: Wenn der Personenname im Raum/Geraet vorkommt,
+                        # Bonus geben (z.B. Manuel sagt "Buero" -> "Manuel Buero" bevorzugen)
+                        person_bonus = 0
+                        if person_norm:
+                            combined_for_person = f"{dev_name} {dev_room}"
+                            if person_norm in combined_for_person:
+                                person_bonus = -500
+                        score = name_len + penalty + person_bonus
                         if score < best_score:
                             best = dev["ha_entity_id"]
                             best_score = score
