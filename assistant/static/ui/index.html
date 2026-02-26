@@ -1022,12 +1022,42 @@ input:focus,select:focus,textarea:focus { border-color:var(--accent); box-shadow
       <div id="page-logs" class="page">
         <div class="section-header">
           <div><h2>Protokolle</h2><p>Gespraeche und Audit-Ereignisse</p></div>
-          <button class="btn btn-secondary" onclick="currentLogTab==='conversations'?loadLogs():currentLogTab==='protocol'?loadProtocol():loadAudit()">Aktualisieren</button>
+          <button class="btn btn-secondary" onclick="currentLogTab==='conversations'?loadLogs():currentLogTab==='activity'?loadActivity():currentLogTab==='protocol'?loadProtocol():loadAudit()">Aktualisieren</button>
         </div>
         <div class="tab-bar" id="logsTabBar" style="margin-bottom:14px;">
           <div class="tab-item active" data-logtab="conversations" onclick="switchLogTab('conversations')">Gespraeche</div>
+          <div class="tab-item" data-logtab="activity" onclick="switchLogTab('activity')">Aktivitaet</div>
           <div class="tab-item" data-logtab="protocol" onclick="switchLogTab('protocol')">Protokoll</div>
           <div class="tab-item" data-logtab="audit" onclick="switchLogTab('audit')">Audit-Log</div>
+        </div>
+
+        <!-- Aktivitaet Filter -->
+        <div id="activityFilters" style="display:none;margin-bottom:14px;">
+          <div class="card" style="padding:12px;">
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+              <input id="activitySearch" type="text" class="input" placeholder="Suchen..."
+                style="flex:1 1 200px;min-width:150px;" oninput="filterActivity()">
+              <select id="activityModule" class="input" style="flex:0 1 160px;" onchange="loadActivity()">
+                <option value="">Alle Module</option>
+              </select>
+              <select id="activityLevel" class="input" style="flex:0 1 120px;" onchange="loadActivity()">
+                <option value="">Alle Level</option>
+                <option value="INFO">Info</option>
+                <option value="WARNING">Warnung</option>
+                <option value="ERROR">Fehler</option>
+              </select>
+              <button class="btn btn-secondary" onclick="loadActivity()" title="Aktualisieren">&#128260;</button>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;">
+              <span id="activityCount" style="font-size:11px;color:var(--text-muted);">0 Eintraege</span>
+              <div style="display:flex;gap:12px;align-items:center;">
+                <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-muted);cursor:pointer;">
+                  <input type="checkbox" id="activityLive" onchange="toggleActivityLive()"> Live
+                </label>
+                <button class="btn btn-secondary" style="font-size:11px;padding:2px 8px;" onclick="clearActivity()">Leeren</button>
+              </div>
+            </div>
+          </div>
         </div>
 
         <!-- Protokoll Filter -->
@@ -1066,6 +1096,7 @@ input:focus,select:focus,textarea:focus { border-color:var(--accent); box-shadow
 
         <div class="card" style="padding:0;">
           <div id="logsContainer"></div>
+          <div id="activityContainer" style="display:none;"></div>
           <div id="protocolContainer" style="display:none;"></div>
           <div id="auditContainer" style="display:none;"></div>
         </div>

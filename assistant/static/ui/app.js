@@ -3769,12 +3769,125 @@ function switchLogTab(tab) {
   currentLogTab = tab;
   document.querySelectorAll('#logsTabBar .tab-item').forEach(t => t.classList.toggle('active', t.dataset.logtab===tab));
   document.getElementById('logsContainer').style.display = tab==='conversations' ? '' : 'none';
+  document.getElementById('activityContainer').style.display = tab==='activity' ? '' : 'none';
+  document.getElementById('activityFilters').style.display = tab==='activity' ? '' : 'none';
   document.getElementById('protocolContainer').style.display = tab==='protocol' ? '' : 'none';
   document.getElementById('protocolFilters').style.display = tab==='protocol' ? '' : 'none';
   document.getElementById('auditContainer').style.display = tab==='audit' ? '' : 'none';
   if (tab==='conversations') loadLogs();
+  else if (tab==='activity') loadActivity();
   else if (tab==='protocol') loadProtocol();
   else loadAudit();
+  // Live-Modus beim Tab-Wechsel deaktivieren (Activity + Protocol)
+  if (tab!=='activity' && _activityLiveIv) { clearInterval(_activityLiveIv); _activityLiveIv=null; const cb=document.getElementById('activityLive'); if(cb) cb.checked=false; }
+  if (tab!=='protocol' && _protocolLiveIv) { clearInterval(_protocolLiveIv); _protocolLiveIv=null; const cb=document.getElementById('protocolLive'); if(cb) cb.checked=false; }
+}
+
+// ---- Aktivitaetsprotokoll (Alles was Jarvis intern macht) ----
+let _activityData = [];
+let _activityLiveIv = null;
+
+async function loadActivity() {
+  const module = document.getElementById('activityModule').value;
+  const level = document.getElementById('activityLevel').value;
+  const c = document.getElementById('activityContainer');
+  if (!c) return;
+  try {
+    const params = 'limit=500' + (module ? '&module=' + encodeURIComponent(module) : '') + (level ? '&level=' + level : '');
+    const d = await api('/api/ui/activity?' + params);
+    _activityData = d.items || [];
+    // Module-Dropdown dynamisch befuellen
+    const sel = document.getElementById('activityModule');
+    const curVal = sel.value;
+    const modules = d.modules || [];
+    sel.innerHTML = '<option value="">Alle Module</option>' + modules.map(m =>
+      '<option value="' + esc(m) + '"' + (m===curVal?' selected':'') + '>' + esc(m) + '</option>'
+    ).join('');
+    filterActivity();
+  } catch(e) {
+    c.innerHTML = '<div style="padding:16px;text-align:center;color:var(--danger);">Fehler: ' + esc(e.message) + '</div>';
+  }
+}
+
+function filterActivity() {
+  const search = (document.getElementById('activitySearch').value || '').toLowerCase();
+  const c = document.getElementById('activityContainer');
+  if (!c) return;
+
+  const filtered = _activityData.filter(entry => {
+    if (!search) return true;
+    return (entry.message || '').toLowerCase().includes(search) ||
+           (entry.module || '').toLowerCase().includes(search);
+  });
+
+  document.getElementById('activityCount').textContent = filtered.length +
+    (_activityData.length !== filtered.length ? ' / ' + _activityData.length : '') + ' Eintraege';
+
+  if (filtered.length === 0) {
+    c.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text-muted);">' +
+      (search ? 'Keine Treffer fuer "' + esc(search) + '"' : 'Keine Aktivitaeten aufgezeichnet.') + '</div>';
+    return;
+  }
+
+  const levelColors = {
+    'INFO': 'var(--text-muted)',
+    'WARNING': 'var(--warning, #f59e0b)',
+    'ERROR': 'var(--danger, #ef4444)',
+    'DEBUG': 'var(--text-secondary)'
+  };
+  const levelIcons = {
+    'INFO': '&#9432;', 'WARNING': '&#9888;', 'ERROR': '&#10060;', 'DEBUG': '&#128736;'
+  };
+  const moduleColors = {
+    'Proaktiv': 'var(--accent)',
+    'Brain': 'var(--info, #3b82f6)',
+    'Raumklima': 'var(--success, #22c55e)',
+    'Geraete': 'var(--warning, #f59e0b)',
+    'Diagnostik': '#8b5cf6',
+    'Aktionen': 'var(--accent)',
+    'Home Assistant': '#06b6d4',
+    'Insights': '#ec4899',
+    'Lernen': '#14b8a6',
+    'Situation': '#6366f1',
+    'System': 'var(--text-secondary)'
+  };
+
+  c.innerHTML = filtered.map(entry => {
+    const ts = entry.timestamp
+      ? new Date(entry.timestamp).toLocaleString('de-DE', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'})
+      : '';
+    const lvl = entry.level || 'INFO';
+    const mod = entry.module || '';
+    const lColor = levelColors[lvl] || 'var(--text-muted)';
+    const mColor = moduleColors[mod] || 'var(--text-muted)';
+    const icon = levelIcons[lvl] || '&#9432;';
+
+    return '<div class="log-entry" style="align-items:flex-start;' + (lvl==='ERROR'?'background:color-mix(in srgb, var(--danger) 5%, transparent);':'') + (lvl==='WARNING'?'background:color-mix(in srgb, var(--warning) 5%, transparent);':'') + '">' +
+      '<span class="log-time">' + ts + '</span>' +
+      '<span style="font-size:15px;min-width:22px;text-align:center;">' + icon + '</span>' +
+      '<span style="font-size:10px;padding:1px 6px;border-radius:3px;background:color-mix(in srgb, ' + mColor + ' 15%, transparent);color:' + mColor + ';font-weight:600;white-space:nowrap;">' + esc(mod) + '</span>' +
+      '<span style="font-size:13px;flex:1;min-width:0;word-break:break-word;">' + esc(entry.message || '') + '</span>' +
+    '</div>';
+  }).join('');
+}
+
+function toggleActivityLive() {
+  const live = document.getElementById('activityLive').checked;
+  if (live) {
+    loadActivity();
+    _activityLiveIv = setInterval(loadActivity, 5000);
+  } else {
+    if (_activityLiveIv) { clearInterval(_activityLiveIv); _activityLiveIv = null; }
+  }
+}
+
+async function clearActivity() {
+  if (!confirm('Aktivitaetsprotokoll wirklich leeren?')) return;
+  try {
+    await api('/api/ui/activity', 'DELETE');
+    toast('Aktivitaetsprotokoll geleert');
+    loadActivity();
+  } catch(e) { toast('Fehler beim Leeren', 'error'); }
 }
 
 // ---- Protokoll (Jarvis Action Protocol with Filters) ----

@@ -28,7 +28,7 @@ import yaml
 
 from .brain import AssistantBrain
 from .config import settings, yaml_config, load_yaml_config, get_person_title
-from .constants import ERROR_BUFFER_MAX_SIZE, RATE_LIMIT_WINDOW, RATE_LIMIT_MAX_REQUESTS
+from .constants import ERROR_BUFFER_MAX_SIZE, ACTIVITY_BUFFER_MAX_SIZE, RATE_LIMIT_WINDOW, RATE_LIMIT_MAX_REQUESTS
 from .cover_config import load_cover_configs, save_cover_configs
 from .file_handler import (
     allowed_file, ensure_upload_dir,
@@ -82,6 +82,69 @@ _err_handler.setFormatter(logging.Formatter("%(message)s"))
 logging.getLogger().addHandler(_err_handler)
 
 
+# ---- Aktivitaets-Buffer: Alle INFO+ Logs der Assistant-Module ----
+_activity_buffer: deque[dict] = deque(maxlen=ACTIVITY_BUFFER_MAX_SIZE)
+_REDIS_ACTIVITY_BUFFER_KEY = "mha:activity_buffer"
+_REDIS_ACTIVITY_BUFFER_TTL = 3 * 86400  # 3 Tage
+
+# Module deren Logs im Aktivitaetsprotokoll erscheinen
+_ACTIVITY_LOGGERS = {
+    "assistant.proactive", "assistant.brain", "assistant.health_monitor",
+    "assistant.device_health", "assistant.diagnostics", "assistant.activity",
+    "assistant.anticipation", "assistant.ha_client", "assistant.function_calling",
+    "assistant.insight_engine", "assistant.learning_observer",
+    "assistant.situation_model", "assistant.personality",
+    "mindhome-assistant",
+}
+
+# Kurz-Labels fuer Module (fuer kompakte UI-Darstellung)
+_ACTIVITY_MODULE_LABELS = {
+    "assistant.proactive": "Proaktiv",
+    "assistant.brain": "Brain",
+    "assistant.health_monitor": "Raumklima",
+    "assistant.device_health": "Geraete",
+    "assistant.diagnostics": "Diagnostik",
+    "assistant.activity": "Aktivitaet",
+    "assistant.anticipation": "Antizipation",
+    "assistant.ha_client": "Home Assistant",
+    "assistant.function_calling": "Aktionen",
+    "assistant.insight_engine": "Insights",
+    "assistant.learning_observer": "Lernen",
+    "assistant.situation_model": "Situation",
+    "assistant.personality": "Persoenlichkeit",
+    "mindhome-assistant": "System",
+}
+
+
+class _ActivityBufferHandler(logging.Handler):
+    """Faengt INFO+ Logs aus Assistant-Modulen ab fuer das Aktivitaetsprotokoll."""
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            # Nur relevante Module erfassen
+            if record.name not in _ACTIVITY_LOGGERS:
+                # Auch Sub-Logger pruefen (z.B. assistant.proactive.xxx)
+                if not any(record.name.startswith(m + ".") for m in _ACTIVITY_LOGGERS):
+                    return
+            msg = self.format(record)
+            # Sensitive Daten maskieren
+            msg = _SENSITIVE_PATTERNS.sub("[REDACTED]", msg)
+            _activity_buffer.append({
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "level": record.levelname,
+                "module": _ACTIVITY_MODULE_LABELS.get(record.name, record.name.split(".")[-1]),
+                "logger": record.name,
+                "message": msg,
+            })
+        except Exception:
+            pass
+
+
+_activity_handler = _ActivityBufferHandler(level=logging.INFO)
+_activity_handler.setFormatter(logging.Formatter("%(message)s"))
+logging.getLogger().addHandler(_activity_handler)
+
+
 async def _restore_error_buffer(redis_client) -> int:
     """Stellt den Fehlerspeicher aus Redis wieder her (nach Neustart)."""
     try:
@@ -108,6 +171,35 @@ async def _persist_error_buffer(redis_client) -> None:
         )
     except Exception as e:
         logger.debug("Fehlerspeicher-Persist fehlgeschlagen: %s", e)
+
+
+async def _restore_activity_buffer(redis_client) -> int:
+    """Stellt das Aktivitaetsprotokoll aus Redis wieder her (nach Neustart)."""
+    try:
+        raw = await redis_client.get(_REDIS_ACTIVITY_BUFFER_KEY)
+        if not raw:
+            return 0
+        entries = json.loads(raw)
+        for entry in entries:
+            _activity_buffer.append(entry)
+        return len(entries)
+    except Exception as e:
+        logger.debug("Aktivitaetsprotokoll-Restore fehlgeschlagen: %s", e)
+        return 0
+
+
+async def _persist_activity_buffer(redis_client) -> None:
+    """Speichert das Aktivitaetsprotokoll in Redis (vor Shutdown)."""
+    try:
+        # Nur die letzten 500 Eintraege persistieren (Speicher sparen)
+        entries = list(_activity_buffer)[-500:]
+        await redis_client.set(
+            _REDIS_ACTIVITY_BUFFER_KEY,
+            json.dumps(entries),
+            ex=_REDIS_ACTIVITY_BUFFER_TTL,
+        )
+    except Exception as e:
+        logger.debug("Aktivitaetsprotokoll-Persist fehlgeschlagen: %s", e)
 
 
 # Brain-Instanz
@@ -225,11 +317,14 @@ async def lifespan(app: FastAPI):
     logger.info("=" * 50)
     await brain.initialize()
 
-    # Fehlerspeicher aus Redis wiederherstellen (Restart-sicher)
+    # Fehlerspeicher + Aktivitaetsprotokoll aus Redis wiederherstellen
     if brain.memory.redis:
         restored = await _restore_error_buffer(brain.memory.redis)
         if restored:
             logger.info("Fehlerspeicher wiederhergestellt: %d Eintraege", restored)
+        restored_act = await _restore_activity_buffer(brain.memory.redis)
+        if restored_act:
+            logger.info("Aktivitaetsprotokoll wiederhergestellt: %d Eintraege", restored_act)
 
     health = await brain.health_check()
     for component, status in health["components"].items():
@@ -264,9 +359,10 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.debug("F-065: WS-Shutdown-Broadcast fehlgeschlagen: %s", e)
 
-    # Fehlerspeicher in Redis sichern (vor Shutdown)
+    # Fehlerspeicher + Aktivitaetsprotokoll in Redis sichern (vor Shutdown)
     if brain.memory.redis:
         await _persist_error_buffer(brain.memory.redis)
+        await _persist_activity_buffer(brain.memory.redis)
 
     await brain.shutdown()
     logger.info("MindHome Assistant heruntergefahren.")
@@ -3015,6 +3111,31 @@ async def ui_clear_errors(token: str = ""):
     """Fehlerspeicher leeren."""
     _check_token(token)
     _error_buffer.clear()
+    return {"status": "ok"}
+
+
+@app.get("/api/ui/activity")
+async def ui_get_activity(token: str = "", limit: int = 200, module: str = "", level: str = ""):
+    """Aktivitaetsprotokoll: Alles was Jarvis intern macht (INFO+ Logs)."""
+    _check_token(token)
+    entries = list(_activity_buffer)
+    if module:
+        entries = [e for e in entries if e.get("module", "").lower() == module.lower()
+                   or e.get("logger", "").lower().endswith(module.lower())]
+    if level:
+        entries = [e for e in entries if e["level"] == level.upper()]
+    entries.reverse()  # Neueste zuerst
+    capped = min(limit, 500)
+    # Verfuegbare Module fuer Filter-Dropdown
+    modules = sorted(set(e.get("module", "") for e in _activity_buffer))
+    return {"items": entries[:capped], "total": len(entries), "modules": modules}
+
+
+@app.delete("/api/ui/activity")
+async def ui_clear_activity(token: str = ""):
+    """Aktivitaetsprotokoll leeren."""
+    _check_token(token)
+    _activity_buffer.clear()
     return {"status": "ok"}
 
 
