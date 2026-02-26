@@ -53,6 +53,8 @@ persons:
   titles: null
 autonomy:
   level: 2
+ollama:
+  num_ctx: 4096
 models:
   fast: qwen3:4b
   smart: qwen3:14b

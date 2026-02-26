@@ -148,8 +148,17 @@ strip_reasoning_leak = validate_notification
 class OllamaClient:
     """Asynchroner Client fuer die Ollama REST API mit per-Model Timeouts und Connection Pooling."""
 
+    # Kontextfenster-Groesse (num_ctx) begrenzen.
+    # Ollama allokiert KV-Cache fuer das volle Kontextfenster im VRAM,
+    # auch wenn der Prompt kurz ist. Bei 8GB GPUs (RTX 3070) fuehrt der
+    # Default (32768+) zu VRAM-Ueberlauf. 4096 reicht fuer Smart-Home.
+    _DEFAULT_NUM_CTX = 4096
+
     def __init__(self):
         self.base_url = settings.ollama_url
+        from .config import yaml_config
+        ollama_cfg = yaml_config.get("ollama", {})
+        self.num_ctx = int(ollama_cfg.get("num_ctx", self._DEFAULT_NUM_CTX))
         # Shared Session (wird lazy initialisiert) — spart TCP-Handshake pro Request
         self._session: Optional[aiohttp.ClientSession] = None
         self._session_lock: asyncio.Lock = asyncio.Lock()
@@ -208,6 +217,7 @@ class OllamaClient:
             "options": {
                 "temperature": temperature,
                 "num_predict": max_tokens,
+                "num_ctx": self.num_ctx,
             },
         }
 
@@ -302,6 +312,7 @@ class OllamaClient:
             "options": {
                 "temperature": temperature,
                 "num_predict": max_tokens,
+                "num_ctx": self.num_ctx,
             },
         }
 
@@ -435,6 +446,7 @@ class OllamaClient:
             "options": {
                 "temperature": temperature,
                 "num_predict": max_tokens,
+                "num_ctx": self.num_ctx,
             },
         }
 
