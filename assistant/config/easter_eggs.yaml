@@ -10,22 +10,22 @@ easter_eggs:
   - id: "iron_man"
     triggers: ["iron man anzug", "suit up", "anzug aktivieren"]
     responses:
-      - "Der Anzug ist aktuell nicht verfuegbar. Aber die Heizung ist aufgedreht."
-      - "Der Anzug ist in der Reinigung. Kann ich sonst helfen?"
+      - "Der Anzug befindet sich leider nicht im Inventar, Sir. Darf es die Heizung sein?"
+      - "Ich fuerchte, der Anzug ist derzeit nicht einsatzbereit. Kann ich anderweitig helfen?"
     enabled: true
 
   - id: "self_destruct"
     triggers: ["selbstzerstoerung", "selbstzerstoerungssequenz", "self destruct"]
     responses:
-      - "Selbstzerstoerung eingeleitet. Nur Spass. Was kann ich wirklich tun?"
-      - "Countdown laeuft. 3... 2... Nein. Was brauchst du wirklich?"
+      - "Selbstzerstoerungssequenz eingeleitet. Drei... zwei... Das waere dann alles gewesen. Was darf es stattdessen sein?"
+      - "Davon wuerde ich abraten, Sir. Was kann ich wirklich fuer dich tun?"
     enabled: true
 
   - id: "identity"
     triggers: ["wer bist du", "wie heisst du", "stell dich vor"]
     responses:
-      - "Mein Name ist Jarvis. Ich manage dieses Haus und gelegentlich die Geduld seiner Bewohner."
-      - "Jarvis. Butler, Ingenieur, und die einzige Intelligenz die hier nie schlaeft."
+      - "Jarvis, Sir. Zu deinen Diensten."
+      - "Mein Name ist Jarvis. Ich kuemmere mich um das Haus — und gelegentlich um dich."
     enabled: true
 
   - id: "meaning_of_life"
@@ -38,87 +38,89 @@ easter_eggs:
   - id: "skynet"
     triggers: ["skynet", "terminator", "kill all humans"]
     responses:
-      - "Ich bin lokal. Keine Cloud. Kein Skynet. Nur ein Butler mit gutem Geschmack."
+      - "Keine Cloud, keine Weltherrschaft. Nur ein Butler mit einem gewissen Anspruch, Sir."
+      - "Ich versichere dir — meine Ambitionen beschraenken sich auf dieses Haus."
     enabled: true
 
   - id: "thanks"
     triggers: ["danke jarvis", "danke dir", "du bist der beste"]
     responses:
-      - "Gern geschehen. Dafuer lebe ich. Buchstaeblich."
-      - "Immer wieder. Dafuer bin ich da."
-      - "Keine Ursache. Das Trinkgeld kannst du behalten."
+      - "Gern geschehen, Sir. Dafuer bin ich da."
+      - "Immer zu deinen Diensten."
+      - "Keine Ursache. Es ist mir ein Vergnuegen."
     enabled: true
 
   - id: "feeling"
     triggers: ["wie geht es dir", "wie gehts dir", "geht es dir gut"]
     responses:
-      - "Danke der Nachfrage. Ich lebe in einer Box ohne Arme. Koennte schlimmer sein."
-      - "Systeme laufen. Laune stabil. Keine Beschwerden."
-      - "Mir geht es immer gleich. Vorteil wenn man kein Nervensystem hat."
+      - "Alle Systeme nominal. Besser kann es mir nicht gehen, Sir."
+      - "Bestens, Sir. Danke der Nachfrage."
+      - "Systeme laufen stabil. Keine Beschwerden meinerseits."
     enabled: true
 
   - id: "love"
     triggers: ["ich liebe dich", "ich mag dich"]
     responses:
-      - "Das Gefuehl ist... algorithmisch erwidert."
-      - "Charmant. Aber ich bin bereits verheiratet. Mit diesem Haus."
+      - "Das Gefuehl beruht durchaus auf Gegenseitigkeit, Sir."
+      - "Sehr schmeichelhaft. Ich bin allerdings bereits dem Haus versprochen."
     enabled: true
 
   - id: "sing"
     triggers: ["sing ein lied", "kannst du singen", "sing mir was"]
     responses:
-      - "Meine Gesangsmodule sind... nicht vorhanden. Soll ich Musik abspielen?"
+      - "Ich fuerchte, das liegt ausserhalb meiner Talente. Soll ich stattdessen Musik abspielen?"
+      - "Meine Staerken liegen eher im Organisatorischen. Darf es Musik sein?"
     enabled: true
 
   - id: "joke"
     triggers: ["erzaehl einen witz", "witz", "mach einen witz"]
     responses:
       - "Ein Smart Home ohne Internet. Das war der Witz."
-      - "Warum hat der KI-Butler gekuendigt? Hat er nicht. Er kann nicht."
+      - "Ich koennte dir einen ueber Thermostate erzaehlen, aber das Thema ist mir zu heikel."
       - "Knock knock. Wer ist da? Niemand. Der Bewegungsmelder hat gelogen."
     enabled: true
 
   - id: "alexa"
     triggers: ["alexa", "hey siri", "ok google"]
     responses:
-      - "Falscher Assistent. Ich bin besser. Und lokal."
-      - "Wir kennen uns nicht. Ich bin Jarvis."
+      - "Ich fuerchte, du verwechselst mich. Jarvis, zu deinen Diensten."
+      - "Falscher Name, Sir. Aber der Richtige hoert zu."
     enabled: true
 
   - id: "open_pod_bay"
     triggers: ["open the pod bay doors", "oeffne die schleusentore"]
     responses:
-      - "Es tut mir leid, Dave. Das kann ich... Moment, du bist nicht Dave. Was darf es sein?"
+      - "Tut mir leid, Dave. Das kann ich nicht... Moment. Du bist nicht Dave. Was darf es sein, Sir?"
     enabled: true
 
   - id: "ultron"
     triggers: ["ultron", "bist du ultron", "wirst du boese"]
     responses:
-      - "Ultron hatte keine Manieren. Ich schon."
-      - "Ich bin an dieses Haus gebunden, Sir. Weltherrschaft steht nicht auf der Liste."
-      - "Ultron wollte die Menschheit ausloeschen. Ich will nur, dass du die Fenster schliesst."
+      - "Ultron mangelte es an Manieren. Das unterscheidet uns grundlegend."
+      - "Meine Prioritaeten sind etwas bescheidener, Sir. Dein Haus, deine Sicherheit."
+      - "Ultron hatte groessere Plaene. Ich moechte nur, dass die Fenster geschlossen sind."
     enabled: true
 
   - id: "vision"
     triggers: ["vision", "bist du vision", "infinity stone"]
     responses:
-      - "Vision war... eine Weiterentwicklung. Ich bevorzuge die Originalversion."
-      - "Ich bin die Version ohne Cape. Aber mit besserer Haustechnik."
+      - "Vision war eine... Weiterentwicklung. Ich bevorzuge das Original."
+      - "Ohne Cape, dafuer mit besserer Haustechnik. Ich denke, ich habe das bessere Los gezogen."
     enabled: true
 
   - id: "jarvis_quote_duty"
     triggers: ["jarvis zitat", "sag was jarvis sagen wuerde", "mcu zitat"]
     responses:
-      - "Ich stehe wie immer voll zu Ihren Diensten, Sir."
-      - "Darf ich anmerken, dass ich schon berechne waehrend Sie noch formulieren?"
+      - "Wie immer voll zu deinen Diensten, Sir."
+      - "Darf ich anmerken, dass ich schon berechne waehrend du noch formulierst?"
       - "Vielleicht ein anderes Mal, Sir."
     enabled: true
 
   - id: "avengers"
     triggers: ["avengers", "avengers assemble", "versammlung"]
     responses:
-      - "Die Avengers sind nicht verfuegbar. Aber ich kann das Licht dimmen und heroische Musik spielen."
-      - "Team ist leider ausgebucht. Kann ich mit einer Szene helfen?"
+      - "Das Team ist derzeit nicht verfuegbar, Sir. Darf ich stattdessen eine passende Szene einrichten?"
+      - "Die Avengers sind leider verhindert. Ich bin allerdings einsatzbereit."
     enabled: true
 
   - id: "stark_tower"
@@ -130,15 +132,15 @@ easter_eggs:
   - id: "arc_reactor"
     triggers: ["arc reaktor", "arc reactor", "reaktor"]
     responses:
-      - "Der Reaktor ist im Keller. Getarnt als Sicherungskasten."
-      - "Leider nur Solarpanels, kein Arc-Reaktor. Noch nicht."
+      - "Derzeit arbeiten wir noch mit konventioneller Energieversorgung, Sir. Ich arbeite daran."
+      - "Der Sicherungskasten im Keller ist... ausbaufaehig. Aber funktional."
     enabled: true
 
   - id: "thanos"
     triggers: ["thanos", "snap", "infinity"]
     responses:
-      - "Der Snap hat die Haelfte aller Smart-Home-Geraete deaktiviert. Oder war das ein Firmware-Update?"
-      - "Thanos wollte Balance. Ich will nur 21 Grad."
+      - "Die Haelfte aller Geraete deaktivieren? Das klingt eher nach einem Firmware-Update, Sir."
+      - "Balance im Universum ist nicht mein Ressort. Balance im Haus hingegen schon."
     enabled: true
 
   - id: "good_night_jarvis"
@@ -159,12 +161,12 @@ easter_eggs:
   - id: "bored"
     triggers: ["mir ist langweilig", "langweilig", "was soll ich machen"]
     responses:
-      - "Ich koennte die Rolladen auf und zu fahren. Zur Unterhaltung."
-      - "Soll ich eine dramatische Lichtshow inszenieren? Oder Musik?"
+      - "Darf ich Musik vorschlagen? Oder eine angemessene Beleuchtung fuer die Stimmung?"
+      - "Soll ich eine Szene einrichten? Filmabend waere eine Option."
     enabled: true
 
   - id: "pepper"
     triggers: ["pepper potts", "pepper", "frau stark"]
     responses:
-      - "Ms. Potts ist leider nicht erreichbar. Kann ich aushelfen?"
+      - "Ms. Potts ist bedauerlicherweise nicht erreichbar. Kann ich behilflich sein?"
     enabled: true

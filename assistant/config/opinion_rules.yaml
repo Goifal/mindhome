@@ -23,8 +23,8 @@ opinion_rules:
     check_operator: ">"
     check_value: 25
     responses:
-      - "25 Grad? Das wird ein teurer Monat."
-      - "Sicher? Das ist fast Sauna-Niveau."
+      - "Ueber 25 Grad. Wird umgesetzt, Sir."
+      - "25 Grad — ambitioniert. Wird eingestellt."
     min_intensity: 1
 
   - id: "very_high_temp"
@@ -142,7 +142,8 @@ opinion_rules:
     check_hour_max: 4
     check_room: "all"
     responses:
-      - "Alle Lichter an um diese Zeit? Schlafprobleme?"
+      - "Alle Lichter an um diese Uhrzeit. Sehr wohl, Sir."
+      - "Volle Beleuchtung um diese Zeit. Wird eingerichtet."
     min_intensity: 2
 
   - id: "lights_full_brightness_morning"
@@ -154,8 +155,8 @@ opinion_rules:
     check_hour_min: 5
     check_hour_max: 7
     responses:
-      - "100% Helligkeit um diese Zeit. Die Netzhaut bedankt sich."
-      - "Sanftes Aufwachen war wohl nicht gewuenscht."
+      - "Volle Helligkeit zu fruehen Stunde. Wird eingestellt."
+      - "Maximale Helligkeit. Darf ich darauf hinweisen, dass es noch recht frueh ist?"
     min_intensity: 2
 
   - id: "lights_off_evening_early"
@@ -168,7 +169,7 @@ opinion_rules:
     check_hour_max: 20
     check_room: "all"
     responses:
-      - "Alle Lichter aus um 19 Uhr? Romantischer Abend oder Energiesparprogramm?"
+      - "Alle Lichter aus am fruehen Abend. Wie gewuenscht."
     min_intensity: 3
 
   - id: "light_100_percent"
@@ -180,7 +181,7 @@ opinion_rules:
     check_hour_min: 20
     check_hour_max: 23
     responses:
-      - "Volle Beleuchtung nach 20 Uhr. Das Melatonin laesst gruessen."
+      - "Volle Helligkeit nach 20 Uhr. Wird eingestellt, Sir."
     min_intensity: 3
 
   # ==========================================================
@@ -209,7 +210,7 @@ opinion_rules:
     check_hour_min: 0
     check_hour_max: 5
     responses:
-      - "Rolladen hoch um diese Uhrzeit. Die Nachbarn werden sich freuen."
+      - "Rolladen hoch um diese Uhrzeit. Wird gemacht, Sir."
     min_intensity: 2
 
   - id: "cover_up_early_weekend"
@@ -221,7 +222,7 @@ opinion_rules:
     check_hour_min: 5
     check_hour_max: 7
     responses:
-      - "Frueh aufstehen am Wochenende. Respektabel, wenn auch ungewoehnlich."
+      - "Frueh am Wochenende. Sehr wohl, Sir."
     min_intensity: 3
 
   # ==========================================================
@@ -264,8 +265,8 @@ opinion_rules:
     check_hour_min: 22
     check_hour_max: 6
     responses:
-      - "Lautstaerke {volume}% nach 22 Uhr. Die Nachbarn haben bestimmt Verstaendnis."
-      - "Spaete Musiksession auf voller Lautstaerke. Ich sage den Waenden Bescheid."
+      - "Lautstaerke {volume}% nach 22 Uhr. Nur zur Kenntnis, Sir."
+      - "Lautstaerke {volume}% um diese Uhrzeit. Wird eingestellt."
     min_intensity: 1
 
   - id: "media_very_loud"
@@ -275,7 +276,7 @@ opinion_rules:
     check_operator: ">"
     check_value: 90
     responses:
-      - "Volle Lautstaerke. Die Fenster vibrieren schon."
+      - "Maximale Lautstaerke. Wird umgesetzt, Sir."
     min_intensity: 3
 
   # ==========================================================
@@ -317,8 +318,8 @@ opinion_rules:
     check_value: "on"
     check_room: "all"
     responses:
-      - "Das ganze Haus erleuchtet. Die Stromrechnung steht stramm."
-      - "Jeder Raum? Wird gefeiert oder gesucht?"
+      - "Saemtliche Raeume beleuchtet. Sehr wohl."
+      - "Alle Lichter an. Wird eingerichtet, Sir."
     min_intensity: 2
 
   - id: "everything_off"
@@ -331,7 +332,7 @@ opinion_rules:
     check_hour_min: 18
     check_hour_max: 22
     responses:
-      - "Kompletter Blackout? Puenktlich zum Abend."
+      - "Saemtliche Lichter deaktiviert. Wie gewuenscht, Sir."
     min_intensity: 3
 
   # ==========================================================
@@ -346,6 +347,6 @@ opinion_rules:
     check_value: 20
     check_room: ["bad", "badezimmer"]
     responses:
-      - "Unter 20 Grad im Bad. Das wird eine erfrischende Dusche."
-      - "Badezimmer auf Keller-Niveau. Abhaertung?"
+      - "Unter 20 Grad im Bad. Nur als Hinweis, Sir."
+      - "Badezimmer unter 20 Grad. Wird eingestellt."
     min_intensity: 2
