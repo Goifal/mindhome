@@ -197,7 +197,10 @@ class MoodDetector:
 
         # Sehr kurze Nachrichten spaet abends = muede
         hour = datetime.now().hour
-        is_late = hour >= self.tired_hour_start or hour < self.tired_hour_end
+        if self.tired_hour_start > self.tired_hour_end:
+            is_late = hour >= self.tired_hour_start or hour < self.tired_hour_end
+        else:
+            is_late = self.tired_hour_start <= hour < self.tired_hour_end
         if is_late:
             self._tiredness_level = min(1.0, self._tiredness_level + 0.05)
             if text_len <= 3:

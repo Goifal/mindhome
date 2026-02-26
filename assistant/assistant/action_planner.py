@@ -437,8 +437,8 @@ class ActionPlanner:
         Returns:
             Dict mit response (Rueckfrage oder Plan), plan_id, status
         """
-        import hashlib
-        plan_id = f"plan_{hashlib.md5(f'{text}{asyncio.get_event_loop().time()}'.encode()).hexdigest()[:8]}"
+        import hashlib, time
+        plan_id = f"plan_{hashlib.md5(f'{text}{time.monotonic()}'.encode()).hexdigest()[:8]}"
 
         planning_prompt = f"""Analysiere diese Planungsanfrage und stelle die noetigsten Rueckfragen.
 WICHTIG: Stelle maximal 2-3 Fragen. Nicht zu viele auf einmal.
@@ -456,7 +456,7 @@ Du hilfst bei der Planung von Events/Aktivitaeten.
 Stelle kurze, praesize Rueckfragen um den Plan zu verfeinern.
 Deutsch. Butler-Stil. Max 3 Fragen.
 Beispiel:
-f"Sehr gerne, {get_person_title(person)}. Fuer die Planung brauche ich noch:
+Sehr gerne, {get_person_title(person)}. Fuer die Planung brauche ich noch:
 1. Fuer wie viele Gaeste?
 2. Welche Uhrzeit?
 3. Soll ich auch eine Einkaufsliste erstellen?

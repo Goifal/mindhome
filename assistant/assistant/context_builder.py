@@ -626,8 +626,13 @@ class ContextBuilder:
             now = datetime.now()
             if "active_hours" in override:
                 start_h, end_h = override["active_hours"]
-                if not (start_h <= now.hour < end_h):
-                    return None
+                if start_h <= end_h:
+                    if not (start_h <= now.hour < end_h):
+                        return None
+                else:
+                    # Midnight-Crossing: z.B. 22-6
+                    if not (now.hour >= start_h or now.hour < end_h):
+                        return None
             return override
         return None
 

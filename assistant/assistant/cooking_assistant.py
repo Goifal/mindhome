@@ -225,6 +225,11 @@ class CookingAssistant:
 
     async def start_cooking(self, text: str, person: str, model: str) -> str:
         """Startet eine Koch-Session: Generiert Rezept via LLM."""
+        # Bestehende Session aufraumen (Zombie-Timer verhindern)
+        if self.session:
+            for task in self._timer_tasks:
+                task.cancel()
+            self._timer_tasks.clear()
         # Gericht aus Text extrahieren
         dish = self._extract_dish(text)
         if not dish:

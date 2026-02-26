@@ -195,7 +195,8 @@ class AnticipationEngine:
                     "Montag", "Dienstag", "Mittwoch", "Donnerstag",
                     "Freitag", "Samstag", "Sonntag",
                 ]
-                wd_name = weekday_names[int(weekday)] if weekday.isdigit() else weekday
+                wd_idx = int(weekday) if weekday.isdigit() else -1
+                wd_name = weekday_names[wd_idx] if 0 <= wd_idx < len(weekday_names) else weekday
 
                 patterns.append({
                     "type": "time",

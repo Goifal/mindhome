@@ -357,8 +357,11 @@ class EnergyOptimizer:
         if configured_entity:
             for s in states:
                 if s.get("entity_id") == configured_entity:
+                    state_val = s.get("state")
+                    if state_val is None or state_val in ("unavailable", "unknown", ""):
+                        return None
                     try:
-                        return float(s.get("state", 0))
+                        return float(state_val)
                     except (ValueError, TypeError):
                         return None
 

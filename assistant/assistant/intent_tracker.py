@@ -66,20 +66,21 @@ def parse_relative_date(text: str, reference: datetime = None) -> Optional[str]:
 
     text_lower = text.lower().strip()
 
-    # "heute"
-    if "heute" in text_lower:
+    import re
+
+    # "heute" (als eigenstaendiges Wort)
+    if re.search(r'\bheute\b', text_lower):
         return reference.strftime("%Y-%m-%d")
 
-    # "morgen"
-    if "morgen" in text_lower and "uebermorgen" not in text_lower:
-        return (reference + timedelta(days=1)).strftime("%Y-%m-%d")
-
-    # "uebermorgen"
+    # "uebermorgen" (vor "morgen" pruefen)
     if "uebermorgen" in text_lower:
         return (reference + timedelta(days=2)).strftime("%Y-%m-%d")
 
+    # "morgen" (als eigenstaendiges Wort, nicht in "guten morgen", "morgens")
+    if re.search(r'\bmorgen\b', text_lower) and not re.search(r'\bguten\s+morgen\b', text_lower):
+        return (reference + timedelta(days=1)).strftime("%Y-%m-%d")
+
     # "in X Tagen/Wochen"
-    import re
     m = re.search(r"in\s+(\d+)\s+(tag|tagen|woche|wochen)", text_lower)
     if m:
         num = int(m.group(1))
@@ -142,6 +143,12 @@ class IntentTracker:
     async def initialize(self, redis_client: Optional[redis.Redis] = None):
         """Initialisiert den Tracker."""
         self.redis = redis_client
+        if self._task and not self._task.done():
+            self._task.cancel()
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
         if self.enabled and self.redis:
             self._running = True
             self._task = asyncio.create_task(self._reminder_loop())
