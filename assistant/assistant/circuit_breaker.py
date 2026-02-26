@@ -58,7 +58,16 @@ class CircuitBreaker:
 
     @property
     def is_available(self) -> bool:
-        """Prueft ob der Dienst voraussichtlich erreichbar ist."""
+        """Prueft ob der Dienst voraussichtlich erreichbar ist (read-only)."""
+        s = self.state
+        if s == CircuitState.CLOSED:
+            return True
+        if s == CircuitState.HALF_OPEN:
+            return self._half_open_calls < self.half_open_max_calls
+        return False
+
+    def try_acquire(self) -> bool:
+        """Reserviert einen Call-Slot. Im HALF_OPEN: inkrementiert Zaehler."""
         s = self.state
         if s == CircuitState.CLOSED:
             return True
@@ -175,7 +184,7 @@ async def call_with_breaker(
     Returns:
         Ergebnis des Calls oder fallback
     """
-    if not breaker.is_available:
+    if not breaker.try_acquire():
         logger.debug("Circuit %s ist OPEN — nutze Fallback", breaker.name)
         return fallback
 
