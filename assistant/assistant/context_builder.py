@@ -283,12 +283,22 @@ class ContextBuilder:
             attrs = state.get("attributes", {})
             domain = entity_id.split(".")[0] if "." in entity_id else ""
 
-            # Temperaturen
+            # Temperaturen (nur echte Raumthermostate, keine Waermepumpen/Fehler)
             if domain == "climate":
+                current_temp = attrs.get("current_temperature")
+                if current_temp is None:
+                    continue
+                try:
+                    temp_val = float(current_temp)
+                except (ValueError, TypeError):
+                    continue
+                # Sensor-Fehler (-128°C) und Nicht-Raum-Geraete (Waermepumpe >50°C) filtern
+                if temp_val < -20 or temp_val > 50:
+                    continue
                 room = _sanitize_for_prompt(attrs.get("friendly_name", entity_id), 50, "climate_name")
                 if room:
                     house["temperatures"][room] = {
-                        "current": attrs.get("current_temperature"),
+                        "current": current_temp,
                         "target": attrs.get("temperature"),
                         "mode": s,
                     }
@@ -360,6 +370,20 @@ class ContextBuilder:
                 title = _sanitize_for_prompt(attrs.get("media_title", ""), 100, "media_title")
                 if name:
                     house["media"].append(f"{name}: {title}" if title else name)
+
+        # Mittelwert aus konfigurierten Sensoren (hat Vorrang vor climate entities)
+        rt_sensors = yaml_config.get("room_temperature", {}).get("sensors", []) or []
+        if rt_sensors:
+            state_map = {s_item.get("entity_id"): s_item for s_item in states}
+            sensor_temps = []
+            for sid in rt_sensors:
+                st = state_map.get(sid, {})
+                try:
+                    sensor_temps.append(float(st.get("state", "")))
+                except (ValueError, TypeError):
+                    pass
+            if sensor_temps:
+                house["avg_temperature"] = round(sum(sensor_temps) / len(sensor_temps), 1)
 
         return house
 

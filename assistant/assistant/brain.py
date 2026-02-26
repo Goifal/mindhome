@@ -5375,8 +5375,7 @@ class AssistantBrain(BrainCallbacksMixin):
 
         return None
 
-    @staticmethod
-    def _detect_smalltalk(text: str) -> Optional[str]:
+    def _detect_smalltalk(self, text: str) -> Optional[str]:
         """Erkennt soziale Fragen und gibt eine JARVIS-Antwort zurueck.
 
         Verhindert, dass das LLM bei Smalltalk aus dem Charakter bricht
@@ -5400,7 +5399,7 @@ class AssistantBrain(BrainCallbacksMixin):
                 f"Systeme laufen einwandfrei, {title}. Danke der Nachfrage.",
                 f"Bestens, {title}. Alle Systeme operativ.",
                 f"Voll funktionsfaehig, {title}.",
-                f"Mir geht es ausgezeichnet, {title}. Und Ihnen?",
+                f"Mir geht es ausgezeichnet, {title}. Und dir?",
                 f"Alles im gruenen Bereich, {title}.",
             ]
             return random.choice(_responses)
@@ -5414,9 +5413,9 @@ class AssistantBrain(BrainCallbacksMixin):
         ]
         if any(kw in t for kw in _ask_me):
             _responses = [
-                f"Wie geht es Ihnen, {title}?",
-                f"Verzeihung — wie geht es Ihnen, {title}?",
-                f"Selbstverstaendlich. Wie geht es Ihnen, {title}?",
+                f"Wie geht es dir, {title}?",
+                f"Verzeihung — wie geht es dir, {title}?",
+                f"Selbstverstaendlich. Wie geht es dir, {title}?",
             ]
             return random.choice(_responses)
 

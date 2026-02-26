@@ -4327,29 +4327,59 @@ class FunctionExecutor:
 
             # Temperaturen
             if "temperatures" in enabled_sections:
-                temps = house.get("temperatures", {})
-                if temps:
-                    # Optional: nur bestimmte Raeume anzeigen
-                    temp_rooms = hs_cfg.get("temperature_rooms", [])
-                    temp_strs = []
-                    for room, data in temps.items():
-                        if temp_rooms and room.lower() not in [r.lower() for r in temp_rooms]:
-                            continue
-                        current = data.get("current", "?")
-                        target = data.get("target")
-                        if target:
-                            temp_strs.append(f"{room}: {current}°C (Soll {target}°C)")
-                        else:
-                            temp_strs.append(f"{room}: {current}°C")
-                    if temp_strs:
-                        parts.append(f"Temperaturen: {', '.join(temp_strs)}")
+                # Prioritaet: Konfigurierte Sensoren → Mittelwert
+                rt_cfg = _cfg.get("room_temperature", {})
+                rt_sensors = rt_cfg.get("sensors", []) or []
+                if rt_sensors:
+                    state_map = {s.get("entity_id"): s for s in states}
+                    sensor_temps = []
+                    for sid in rt_sensors:
+                        st = state_map.get(sid, {})
+                        try:
+                            sensor_temps.append(float(st.get("state", "")))
+                        except (ValueError, TypeError):
+                            pass
+                    if sensor_temps:
+                        avg = round(sum(sensor_temps) / len(sensor_temps), 1)
+                        parts.append(f"Temperaturen: {avg}°C Durchschnitt")
+                else:
+                    # Fallback: climate entities einzeln
+                    temps = house.get("temperatures", {})
+                    if temps:
+                        temp_rooms = hs_cfg.get("temperature_rooms", [])
+                        temp_strs = []
+                        for room, data in temps.items():
+                            if temp_rooms and room.lower() not in [r.lower() for r in temp_rooms]:
+                                continue
+                            current = data.get("current")
+                            if current is None:
+                                continue
+                            target = data.get("target")
+                            if target:
+                                temp_strs.append(f"{room}: {current}°C (Soll {target}°C)")
+                            else:
+                                temp_strs.append(f"{room}: {current}°C")
+                        if temp_strs:
+                            parts.append(f"Temperaturen: {', '.join(temp_strs)}")
 
             # Wetter
             if "weather" in enabled_sections:
                 weather = house.get("weather", {})
                 if weather:
+                    _cond_map = {
+                        "sunny": "Sonnig", "clear-night": "Klare Nacht",
+                        "partlycloudy": "Teilweise bewoelkt", "cloudy": "Bewoelkt",
+                        "rainy": "Regen", "pouring": "Starkregen",
+                        "snowy": "Schnee", "snowy-rainy": "Schneeregen",
+                        "fog": "Nebel", "hail": "Hagel",
+                        "lightning": "Gewitter", "lightning-rainy": "Gewitter mit Regen",
+                        "windy": "Windig", "windy-variant": "Windig & bewoelkt",
+                        "exceptional": "Ausnahmewetter",
+                    }
+                    cond = weather.get("condition", "?")
+                    cond_de = _cond_map.get(cond, cond)
                     parts.append(
-                        f"Wetter: {weather.get('condition', '?')}, "
+                        f"Wetter: {cond_de}, "
                         f"{weather.get('temp', '?')}°C, "
                         f"Luftfeuchte {weather.get('humidity', '?')}%"
                     )

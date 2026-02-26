@@ -1405,12 +1405,16 @@ class PersonalityEngine:
         if "house" in context:
             house = context["house"] or {}
 
-            # Temperaturen: Aktueller Raum hervorgehoben, andere nur bei Abweichung
-            if "temperatures" in house:
+            # Temperaturen: Mittelwert bevorzugt, sonst Einzelraeume
+            if house.get("avg_temperature") is not None:
+                lines.append(f"- Raumtemperatur: {house['avg_temperature']}°C (Durchschnitt)")
+            elif "temperatures" in house:
                 temps = house["temperatures"] or {}
                 temp_parts = []
                 for room, data in temps.items():
-                    temp_val = data.get("current", "?")
+                    temp_val = data.get("current")
+                    if temp_val is None:
+                        continue
                     target = data.get("target")
                     if room.lower() == current_room.lower():
                         t_str = f"**{room}: {temp_val}°C**"
@@ -1444,7 +1448,19 @@ class PersonalityEngine:
             # Wetter kompakt
             if "weather" in house:
                 w = house["weather"] or {}
-                lines.append(f"- Wetter DRAUSSEN: {w.get('temp', '?')}°C, {w.get('condition', '?')}")
+                _cond_map = {
+                    "sunny": "sonnig", "clear-night": "klare Nacht",
+                    "partlycloudy": "teilweise bewoelkt", "cloudy": "bewoelkt",
+                    "rainy": "Regen", "pouring": "Starkregen",
+                    "snowy": "Schnee", "snowy-rainy": "Schneeregen",
+                    "fog": "Nebel", "hail": "Hagel",
+                    "lightning": "Gewitter", "lightning-rainy": "Gewitter mit Regen",
+                    "windy": "windig", "windy-variant": "windig & bewoelkt",
+                    "exceptional": "Ausnahmewetter",
+                }
+                cond = w.get("condition", "?")
+                cond_de = _cond_map.get(cond, cond)
+                lines.append(f"- Wetter DRAUSSEN: {w.get('temp', '?')}°C, {cond_de}")
 
             # Termine: Nur naechste 2
             if "calendar" in house:
