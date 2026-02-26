@@ -371,6 +371,20 @@ class ContextBuilder:
                 if name:
                     house["media"].append(f"{name}: {title}" if title else name)
 
+        # Mittelwert aus konfigurierten Sensoren (hat Vorrang vor climate entities)
+        rt_sensors = yaml_config.get("room_temperature", {}).get("sensors", []) or []
+        if rt_sensors:
+            state_map = {s_item.get("entity_id"): s_item for s_item in states}
+            sensor_temps = []
+            for sid in rt_sensors:
+                st = state_map.get(sid, {})
+                try:
+                    sensor_temps.append(float(st.get("state", "")))
+                except (ValueError, TypeError):
+                    pass
+            if sensor_temps:
+                house["avg_temperature"] = round(sum(sensor_temps) / len(sensor_temps), 1)
+
         return house
 
     def _extract_person(self, states: list[dict]) -> dict:

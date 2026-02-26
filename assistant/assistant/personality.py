@@ -1405,8 +1405,10 @@ class PersonalityEngine:
         if "house" in context:
             house = context["house"] or {}
 
-            # Temperaturen: Aktueller Raum hervorgehoben, andere nur bei Abweichung
-            if "temperatures" in house:
+            # Temperaturen: Mittelwert bevorzugt, sonst Einzelraeume
+            if house.get("avg_temperature") is not None:
+                lines.append(f"- Raumtemperatur: {house['avg_temperature']}°C (Durchschnitt)")
+            elif "temperatures" in house:
                 temps = house["temperatures"] or {}
                 temp_parts = []
                 for room, data in temps.items():
