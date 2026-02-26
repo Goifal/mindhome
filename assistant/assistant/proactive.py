@@ -1302,12 +1302,16 @@ class ProactiveManager:
     async def _get_persons_at_home(self) -> list[str]:
         """Gibt die Liste der aktuell anwesenden Personen zurueck.
 
-        Setzt automatisch die active_person wenn genau eine Person zuhause ist,
-        damit get_person_title() ohne Argument den richtigen Titel liefert.
+        Aktualisiert automatisch die active_person fuer get_person_title():
+        - 1 Person zuhause: deren Name setzen
+        - 0 Personen: leeren (verhindert veraltete Anrede)
+        - Mehrere Personen: primary_user bevorzugen wenn anwesend
+        - HA-Fehler: leeren (veraltete Daten sind schlimmer als Fallback)
         """
         try:
             states = await self.brain.ha.get_states()
             if not states:
+                set_active_person("")
                 return []
             persons = []
             for s in states:
@@ -1316,14 +1320,26 @@ class ProactiveManager:
                         pname = s.get("attributes", {}).get("friendly_name", "")
                         if pname:
                             persons.append(pname)
-            # Active-Person setzen: bei genau einer Person → deren Titel,
-            # bei niemand zuhause → leeren (verhindert veraltete Anrede)
+            # Active-Person aktualisieren
             if len(persons) == 1:
                 set_active_person(persons[0])
             elif len(persons) == 0:
                 set_active_person("")
+            else:
+                # Mehrere Personen: primary_user bevorzugen wenn anwesend
+                primary = settings.user_name
+                primary_found = ""
+                for p in persons:
+                    if p.lower() == primary.lower() or p.lower().startswith(primary.lower()):
+                        primary_found = p
+                        break
+                if primary_found:
+                    set_active_person(primary_found)
+                # Sonst: active_person nicht aendern (brain.py setzt bei Gespraech)
             return persons
         except Exception:
+            # HA nicht erreichbar: active_person leeren statt veraltete Daten behalten
+            set_active_person("")
             return []
 
     async def _resolve_title_for_notification(self, data: dict) -> str:

@@ -152,6 +152,28 @@ def get_active_person() -> str:
     return _active_person
 
 
+def _lookup_title(titles: dict, name: str) -> str:
+    """Sucht einen Titel mit Fallback auf Vornamen-Match.
+
+    Versucht zuerst den exakten Namen (lowercase), dann nur den Vornamen.
+    So passt 'Anna Mueller' (HA friendly_name) auf Config-Key 'anna'.
+    """
+    if not name:
+        return ""
+    key = name.lower().strip()
+    # Exakter Match
+    title = titles.get(key)
+    if title:
+        return title
+    # Vornamen-Match (HA liefert manchmal 'Max Mueller', Config hat nur 'max')
+    if " " in key:
+        first = key.split()[0]
+        title = titles.get(first)
+        if title:
+            return title
+    return ""
+
+
 def get_person_title(name: str = "") -> str:
     """Gibt den konfigurierten Titel fuer eine Person zurueck.
 
@@ -160,21 +182,23 @@ def get_person_title(name: str = "") -> str:
     2. Aktive Person (von brain.py gesetzt) → deren Titel
     3. Fallback: primary_user Titel
     4. Fallback: 'Sir'
+
+    Name-Matching ist robust: 'Anna Mueller' findet auch Config-Key 'anna'.
     """
     titles = (yaml_config.get("persons") or {}).get("titles") or {}
     if name:
-        title = titles.get(name.lower())
+        title = _lookup_title(titles, name)
         if title:
             return title
     # Aktive Person (gesetzt durch brain.py bei Gespraech oder proactive bei Praesenz)
     if not name and _active_person:
-        title = titles.get(_active_person.lower())
+        title = _lookup_title(titles, _active_person)
         if title:
             return title
     # Fallback: primary user Titel
     primary = (yaml_config.get("household") or {}).get("primary_user", "")
     if primary:
-        title = titles.get(primary.lower())
+        title = _lookup_title(titles, primary)
         if title:
             return title
     return "Sir"
