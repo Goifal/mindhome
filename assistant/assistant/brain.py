@@ -315,6 +315,8 @@ class AssistantBrain(BrainCallbacksMixin):
         await self.routines.initialize(redis_client=self.memory.redis)
         self.routines.set_executor(self.executor)
         self.routines.set_personality(self.personality)
+        self.routines._semantic_memory = self.memory.semantic
+        await self.routines.migrate_yaml_birthdays(self.memory.semantic)
 
         # Phase 8: Anticipation Engine + Intent Tracker
         await self.anticipation.initialize(redis_client=self.memory.redis)
@@ -4762,12 +4764,147 @@ class AssistantBrain(BrainCallbacksMixin):
         return None
 
     # ------------------------------------------------------------------
+    # Persoenliche Daten: Geburtstage, Jahrestage
+    # ------------------------------------------------------------------
+
+    async def _handle_personal_date_command(
+        self, text: str, text_lower: str, person: str
+    ) -> Optional[str]:
+        """Erkennt Geburtstag/Jahrestag-Befehle und speichert/sucht sie."""
+        import re
+        from .semantic_memory import SemanticMemory
+
+        # --- Speichern: "Merk dir Lisas Geburtstag ist am 15. Maerz [1992]" ---
+        # Patterns: "Lisas Geburtstag ist am ...", "Geburtstag von Lisa ist am ..."
+        # "Merk dir" Prefix optional (wird von memory_command sowieso geprueft)
+        store_patterns = [
+            # "Lisas Geburtstag ist am 15. Maerz"
+            r"(?:merk\s+dir\s+|merke\s+dir\s+|speichere\s+)?(\w+?)s?\s+geburtstag\s+(?:ist\s+)?am\s+(.+)",
+            # "Geburtstag von Lisa ist am 15. Maerz"
+            r"(?:merk\s+dir\s+|merke\s+dir\s+|speichere\s+)?(?:der\s+)?geburtstag\s+von\s+(\w+)\s+(?:ist\s+)?am\s+(.+)",
+            # "Lisa hat am 15. Maerz Geburtstag"
+            r"(\w+)\s+hat\s+am\s+(.+?)\s+geburtstag",
+        ]
+
+        for pattern in store_patterns:
+            m = re.match(pattern, text_lower)
+            if m:
+                name = m.group(1).capitalize()
+                date_text = m.group(2)
+                date_mm_dd = SemanticMemory.parse_date_from_text(date_text)
+                if date_mm_dd:
+                    year = SemanticMemory.parse_year_from_text(text)
+                    success = await self.memory.semantic.store_personal_date(
+                        date_type="birthday",
+                        person_name=name,
+                        date_mm_dd=date_mm_dd,
+                        year=year,
+                    )
+                    if success:
+                        return f"Notiert: {name}s Geburtstag am {date_text.strip().rstrip('.')}."
+                    return "Speichervorgang fehlgeschlagen."
+
+        # --- Speichern: Jahrestag/Hochzeitstag ---
+        anniversary_patterns = [
+            # "Unser Hochzeitstag ist am 7. Juni"
+            r"(?:merk\s+dir\s+|merke\s+dir\s+|speichere\s+)?(?:unser|mein)\s+(hochzeitstag|jahrestag|kennenlerntag)\s+(?:ist\s+)?am\s+(.+)",
+            # "Hochzeitstag von Lisa und Max ist am 7. Juni"
+            r"(?:merk\s+dir\s+|merke\s+dir\s+|speichere\s+)?(?:der\s+)?(hochzeitstag|jahrestag)\s+(?:von\s+(.+?)\s+)?(?:ist\s+)?am\s+(.+)",
+        ]
+
+        for i, pattern in enumerate(anniversary_patterns):
+            m = re.match(pattern, text_lower)
+            if m:
+                if i == 0:
+                    label = m.group(1).capitalize()
+                    date_text = m.group(2)
+                    name = person
+                else:
+                    label = m.group(1).capitalize()
+                    name = m.group(2) or person
+                    date_text = m.group(3)
+
+                date_mm_dd = SemanticMemory.parse_date_from_text(date_text)
+                if date_mm_dd:
+                    year = SemanticMemory.parse_year_from_text(text)
+                    success = await self.memory.semantic.store_personal_date(
+                        date_type="anniversary",
+                        person_name=name if isinstance(name, str) else person,
+                        date_mm_dd=date_mm_dd,
+                        year=year,
+                        label=label,
+                    )
+                    if success:
+                        return f"Notiert: {label} am {date_text.strip().rstrip('.')}."
+                    return "Speichervorgang fehlgeschlagen."
+
+        # --- Abfrage: "Wann hat Lisa Geburtstag?" ---
+        query_patterns = [
+            r"wann\s+hat\s+(\w+)\s+geburtstag",
+            r"wann\s+ist\s+(\w+?)s?\s+geburtstag",
+            r"wann\s+ist\s+(?:der\s+)?geburtstag\s+von\s+(\w+)",
+        ]
+        for pattern in query_patterns:
+            m = re.match(pattern, text_lower)
+            if m:
+                name = m.group(1).capitalize()
+                facts = await self.memory.semantic.search_facts(
+                    f"{name} Geburtstag", limit=3, person=name.lower()
+                )
+                # Auch in personal_date Kategorie suchen
+                pd_facts = await self.memory.semantic.get_facts_by_category("personal_date")
+                for f in pd_facts:
+                    if f.get("person", "").lower() == name.lower():
+                        return f"{name}: {f['content']}"
+                if facts:
+                    for f in facts:
+                        if "geburtstag" in f.get("content", "").lower():
+                            return f"{name}: {f['content']}"
+                return f"Zu {name}s Geburtstag ist nichts hinterlegt."
+
+        # --- Abfrage: "Welche Geburtstage stehen an?" ---
+        if any(kw in text_lower for kw in [
+            "welche geburtstage", "naechste geburtstage", "anstehende geburtstage",
+            "kommende geburtstage", "geburtstage stehen an",
+            "welche jahrestage", "anstehende termine",
+        ]):
+            upcoming = await self.memory.semantic.get_upcoming_personal_dates(days_ahead=60)
+            if not upcoming:
+                return "Keine persoenlichen Daten hinterlegt. Sag einfach z.B. 'Merk dir Lisas Geburtstag ist am 15. Maerz'."
+            lines = ["Anstehende persoenliche Daten:"]
+            for d in upcoming:
+                name = d["person"].capitalize()
+                label = d.get("label", "Geburtstag")
+                days = d["days_until"]
+                anni = d.get("anniversary_years", 0)
+                if days == 0:
+                    time_str = "heute"
+                elif days == 1:
+                    time_str = "morgen"
+                else:
+                    time_str = f"in {days} Tagen"
+                entry = f"- {name}: {label} {time_str}"
+                if anni and d.get("date_type") == "birthday":
+                    entry += f" (wird {anni})"
+                elif anni:
+                    entry += f" ({anni}. {label})"
+                lines.append(entry)
+            return "\n".join(lines)
+
+        return None
+
+    # ------------------------------------------------------------------
     # Phase 8: Memory-Befehle
     # ------------------------------------------------------------------
 
     async def _handle_memory_command(self, text: str, person: str) -> Optional[str]:
         """Erkennt und verarbeitet explizite Memory-Befehle."""
         text_lower = text.lower().strip()
+
+        # Persoenliche Daten (Geburtstag, Jahrestag) vor generischem "Merk dir"
+        date_result = await self._handle_personal_date_command(text, text_lower, person)
+        if date_result:
+            return date_result
 
         # "Merk dir: ..."
         for trigger in ["merk dir ", "merke dir ", "speichere ", "remember "]:

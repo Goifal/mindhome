@@ -15,6 +15,18 @@ from .config import settings, yaml_config
 
 logger = logging.getLogger(__name__)
 
+# Monats-Namen und Lookup fuer Datums-Parsing
+_MONTH_NAMES = {
+    1: "Januar", 2: "Februar", 3: "Maerz", 4: "April",
+    5: "Mai", 6: "Juni", 7: "Juli", 8: "August",
+    9: "September", 10: "Oktober", 11: "November", 12: "Dezember",
+}
+_MONTH_LOOKUP = {
+    "januar": 1, "februar": 2, "maerz": 3, "marz": 3, "april": 4,
+    "mai": 5, "juni": 6, "juli": 7, "august": 8,
+    "september": 9, "oktober": 10, "november": 11, "dezember": 12,
+}
+
 # Fakten-Kategorien
 FACT_CATEGORIES = [
     "preference",           # "Max mag 21 Grad im Buero"
@@ -22,6 +34,7 @@ FACT_CATEGORIES = [
     "habit",                # "Max steht um 7 Uhr auf"
     "health",               # "Max hat eine Haselnuss-Allergie"
     "work",                 # "Max arbeitet an Projekt Aurora"
+    "personal_date",        # Geburtstage, Jahrestage, persoenliche Daten
     "intent",               # Phase 8: "Eltern kommen naechstes WE"
     "conversation_topic",   # Gespraechs-Themen fuer Kontext-Kette
     "general",              # Sonstige Fakten
@@ -39,6 +52,7 @@ class SemanticFact:
         confidence: float = 0.8,
         source_conversation: str = "",
         fact_id: Optional[str] = None,
+        date_meta: Optional[dict] = None,
     ):
         self.fact_id = fact_id or f"fact_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"
         self.content = content
@@ -49,9 +63,11 @@ class SemanticFact:
         self.created_at = datetime.now().isoformat()
         self.updated_at = self.created_at
         self.times_confirmed = 1
+        # Optionale Metadaten fuer personal_date Fakten
+        self.date_meta = date_meta  # {date_type, date_mm_dd, year, label}
 
     def to_dict(self) -> dict:
-        return {
+        d = {
             "fact_id": self.fact_id,
             "content": self.content,
             "category": self.category,
@@ -62,6 +78,12 @@ class SemanticFact:
             "updated_at": self.updated_at,
             "times_confirmed": str(self.times_confirmed),
         }
+        if self.date_meta:
+            d["date_type"] = self.date_meta.get("date_type", "")
+            d["date_mm_dd"] = self.date_meta.get("date_mm_dd", "")
+            d["date_year"] = self.date_meta.get("year", "")
+            d["date_label"] = self.date_meta.get("label", "")
+        return d
 
     @classmethod
     def from_dict(cls, data: dict) -> "SemanticFact":
@@ -76,6 +98,14 @@ class SemanticFact:
         fact.created_at = data.get("created_at", fact.created_at)
         fact.updated_at = data.get("updated_at", fact.updated_at)
         fact.times_confirmed = int(data.get("times_confirmed", 1))
+        # date_meta wiederherstellen falls vorhanden
+        if data.get("date_type") or data.get("date_mm_dd"):
+            fact.date_meta = {
+                "date_type": data.get("date_type", ""),
+                "date_mm_dd": data.get("date_mm_dd", ""),
+                "year": data.get("date_year", ""),
+                "label": data.get("date_label", ""),
+            }
         return fact
 
 
@@ -733,6 +763,190 @@ class SemanticMemory:
         except Exception as e:
             logger.error("Fehler bei heutigen Learnings: %s", e)
             return []
+
+    # ------------------------------------------------------------------
+    # Persoenliche Daten (Geburtstage, Jahrestage)
+    # ------------------------------------------------------------------
+
+    async def store_personal_date(
+        self,
+        date_type: str,
+        person_name: str,
+        date_mm_dd: str,
+        year: str = "",
+        label: str = "",
+    ) -> bool:
+        """Speichert ein persoenliches Datum (Geburtstag, Jahrestag, etc.).
+
+        Args:
+            date_type: "birthday", "anniversary", "memorial" etc.
+            person_name: Name der Person ("Lisa", "Mama")
+            date_mm_dd: Datum als MM-DD ("03-15" fuer 15. Maerz)
+            year: Optionales Geburtsjahr ("1992")
+            label: Optionales Label ("Hochzeitstag", "Todestag Opa")
+        """
+        type_labels = {
+            "birthday": "Geburtstag",
+            "anniversary": "Jahrestag",
+            "memorial": "Gedenktag",
+        }
+        type_label = label or type_labels.get(date_type, date_type)
+
+        # Lesbaren Content erzeugen
+        try:
+            from datetime import datetime as _dt
+            parsed = _dt.strptime(date_mm_dd, "%m-%d")
+            date_readable = f"{parsed.day}. {_MONTH_NAMES.get(parsed.month, str(parsed.month))}"
+        except (ValueError, TypeError):
+            date_readable = date_mm_dd
+
+        if date_type == "birthday":
+            content = f"{person_name}s Geburtstag ist am {date_readable}"
+            if year:
+                content += f" ({year})"
+        elif date_type == "anniversary":
+            content = f"{type_label} ist am {date_readable}"
+            if year:
+                content += f" (seit {year})"
+        else:
+            content = f"{type_label} von {person_name} ist am {date_readable}"
+            if year:
+                content += f" ({year})"
+
+        date_meta = {
+            "date_type": date_type,
+            "date_mm_dd": date_mm_dd,
+            "year": year,
+            "label": type_label,
+        }
+
+        fact = SemanticFact(
+            content=content,
+            category="personal_date",
+            person=person_name.lower(),
+            confidence=1.0,
+            source_conversation="explicit",
+            date_meta=date_meta,
+        )
+        return await self.store_fact(fact)
+
+    async def get_upcoming_personal_dates(self, days_ahead: int = 30) -> list[dict]:
+        """Findet persoenliche Daten die in den naechsten X Tagen anstehen.
+
+        Returns:
+            Liste von {person, date_type, date_mm_dd, year, label,
+                       content, days_until, anniversary_years}
+        """
+        if not self.redis:
+            return []
+
+        try:
+            fact_ids = await self.redis.smembers("mha:facts:category:personal_date")
+            if not fact_ids:
+                return []
+
+            now = datetime.now()
+            today_mm_dd = now.strftime("%m-%d")
+            current_year = now.year
+            results = []
+
+            for fact_id in fact_ids:
+                data = await self.redis.hgetall(f"mha:fact:{fact_id}")
+                if not data:
+                    continue
+
+                date_mm_dd = data.get("date_mm_dd", "")
+                if not date_mm_dd:
+                    continue
+
+                # Tage bis zum Datum berechnen
+                try:
+                    target = datetime.strptime(
+                        f"{current_year}-{date_mm_dd}", "%Y-%m-%d"
+                    )
+                    if target.date() < now.date():
+                        # Dieses Jahr schon vorbei -> naechstes Jahr
+                        target = datetime.strptime(
+                            f"{current_year + 1}-{date_mm_dd}", "%Y-%m-%d"
+                        )
+                    days_until = (target.date() - now.date()).days
+                except (ValueError, TypeError):
+                    continue
+
+                if days_until > days_ahead:
+                    continue
+
+                # Jubilaeums-Jahre berechnen
+                anniversary_years = 0
+                stored_year = data.get("date_year", "")
+                if stored_year:
+                    try:
+                        target_year = target.year
+                        anniversary_years = target_year - int(stored_year)
+                    except (ValueError, TypeError):
+                        pass
+
+                results.append({
+                    "fact_id": data.get("fact_id", fact_id),
+                    "person": data.get("person", "unknown"),
+                    "date_type": data.get("date_type", ""),
+                    "date_mm_dd": date_mm_dd,
+                    "year": stored_year,
+                    "label": data.get("date_label", ""),
+                    "content": data.get("content", ""),
+                    "days_until": days_until,
+                    "anniversary_years": anniversary_years,
+                })
+
+            results.sort(key=lambda r: r["days_until"])
+            return results
+
+        except Exception as e:
+            logger.error("Fehler bei upcoming personal dates: %s", e)
+            return []
+
+    @staticmethod
+    def parse_date_from_text(text: str) -> Optional[str]:
+        """Parst ein Datum aus deutschem Text und gibt MM-DD zurueck.
+
+        Erkennt Formate wie:
+        - "am 15. Maerz" / "am 15. März" -> "03-15"
+        - "am 7.6." / "am 07.06." -> "06-07"
+        - "am 15.3.1992" -> "03-15"
+        """
+        import re
+
+        # Format: "15. Maerz" / "15. März"
+        month_pattern = (
+            r"(\d{1,2})\.\s*"
+            r"(Januar|Februar|Maerz|März|April|Mai|Juni|Juli|August|"
+            r"September|Oktober|November|Dezember)"
+        )
+        m = re.search(month_pattern, text, re.IGNORECASE)
+        if m:
+            day = int(m.group(1))
+            month_name = m.group(2).lower().replace("ä", "ae")
+            month_num = _MONTH_LOOKUP.get(month_name, 0)
+            if month_num:
+                return f"{month_num:02d}-{day:02d}"
+
+        # Format: "15.3." oder "15.03." oder "15.3.1992"
+        numeric_pattern = r"(\d{1,2})\.(\d{1,2})\.(?:\d{2,4})?"
+        m = re.search(numeric_pattern, text)
+        if m:
+            day = int(m.group(1))
+            month = int(m.group(2))
+            if 1 <= month <= 12 and 1 <= day <= 31:
+                return f"{month:02d}-{day:02d}"
+
+        return None
+
+    @staticmethod
+    def parse_year_from_text(text: str) -> str:
+        """Extrahiert ein Jahreszahl aus Text (1900-2099)."""
+        import re
+        m = re.search(r"\b(19\d{2}|20\d{2})\b", text)
+        return m.group(1) if m else ""
 
     async def get_stats(self) -> dict:
         if not self.redis:

@@ -96,6 +96,14 @@ class ProactiveManager:
         self._eb_triggered_today = False
         self._eb_last_date = ""
 
+        # Wakeup-Sequenz Config
+        ws_cfg = mb_cfg.get("wakeup_sequence", {})
+        self._ws_enabled = ws_cfg.get("enabled", False)
+        self._ws_bedroom_sensor = ws_cfg.get("bedroom_motion_sensor", "")
+        self._ws_window_start = ws_cfg.get("window_start_hour", 5)
+        self._ws_window_end = ws_cfg.get("window_end_hour", 9)
+        self._ws_briefing_delay = ws_cfg.get("briefing_delay_seconds", 45)
+
         # Event-Mapping: HA Event -> Prioritaet + Beschreibung
         self.event_handlers = {
             # CRITICAL - Immer melden
@@ -390,7 +398,7 @@ class ProactiveManager:
 
         # Phase 7.1 + 10.1: Bewegung erkannt → Morning/Evening Briefing + Musik-Follow + Nacht-Kamera + Follow-Me
         elif entity_id.startswith("binary_sensor.") and "motion" in entity_id and new_val == "on":
-            await self._check_morning_briefing()
+            await self._check_morning_briefing(motion_entity=entity_id)
             await self._check_evening_briefing()
             await self._check_music_follow(entity_id)
             await self._check_night_motion_camera(entity_id)
@@ -432,7 +440,7 @@ class ProactiveManager:
             except Exception as e:
                 logger.debug("Learning Observer Fehler: %s", e)
 
-    async def _check_morning_briefing(self):
+    async def _check_morning_briefing(self, motion_entity: str = ""):
         """Phase 7.1: Prueft ob Morning Briefing bei erster Bewegung am Morgen geliefert werden soll."""
         if not self._mb_enabled:
             return
@@ -452,6 +460,26 @@ class ProactiveManager:
         # Innerhalb des Morgen-Fensters?
         if not (self._mb_window_start <= now.hour < self._mb_window_end):
             return
+
+        # Aufwach-Sequenz: Wenn Schlafzimmer-Sensor → stufenweises Aufwachen vor Briefing
+        wakeup_done = False
+        if (
+            self._ws_enabled
+            and self._ws_bedroom_sensor
+            and motion_entity == self._ws_bedroom_sensor
+            and self._ws_window_start <= now.hour < self._ws_window_end
+        ):
+            try:
+                autonomy = getattr(self.brain, "autonomy", None)
+                level = getattr(autonomy, "current_level", 3) if autonomy else 3
+                wakeup_done = await self.brain.routines.execute_wakeup_sequence(
+                    autonomy_level=level,
+                )
+                if wakeup_done:
+                    logger.info("Aufwach-Sequenz ausgefuehrt, Briefing-Delay: %ds", self._ws_briefing_delay)
+                    await asyncio.sleep(self._ws_briefing_delay)
+            except Exception as e:
+                logger.debug("Aufwach-Sequenz Fehler: %s", e)
 
         # Briefing generieren (routine_engine prueft intern ob schon geliefert via Redis)
         try:
@@ -534,6 +562,9 @@ class ProactiveManager:
                 logger.info("Evening Briefing geliefert: %s", text[:80])
         except Exception as e:
             logger.debug("Evening Briefing Fehler: %s", e)
+
+        # Persoenliche Daten pruefen (Geburtstags-Erinnerung fuer morgen)
+        await self._check_personal_dates()
 
     async def generate_evening_briefing(self, person: str = "") -> str:
         """Generiert ein Abend-Briefing im JARVIS-Stil.
@@ -695,6 +726,80 @@ class ProactiveManager:
         except Exception as e:
             logger.debug("Evening Briefing Fehler: %s", e)
             return ""
+
+    async def _check_personal_dates(self):
+        """Proaktive Erinnerung an persoenliche Daten (Geburtstage, Jahrestage).
+
+        - days_until == 1: Abend-Erinnerung ("Morgen hat Lisa Geburtstag")
+        - days_until == 0 + Nachmittags: Fallback falls Briefing verpasst
+        Laeuft max 1x pro Tag (Redis-Flag).
+        """
+        if not hasattr(self.brain, "memory") or not self.brain.memory:
+            return
+        semantic = getattr(self.brain.memory, "semantic", None)
+        if not semantic:
+            return
+        redis_client = getattr(self.brain.memory, "redis", None)
+        if not redis_client:
+            return
+
+        today = datetime.now().strftime("%Y-%m-%d")
+        flag_key = f"mha:personal_dates_checked:{today}"
+
+        try:
+            already = await redis_client.get(flag_key)
+            if already:
+                return
+        except Exception:
+            return
+
+        try:
+            upcoming = await semantic.get_upcoming_personal_dates(days_ahead=2)
+            if not upcoming:
+                await redis_client.setex(flag_key, 86400, "1")
+                return
+
+            now = datetime.now()
+            for entry in upcoming:
+                days = entry["days_until"]
+                name = entry["person"].capitalize()
+                label = entry.get("label", "Geburtstag")
+                date_type = entry.get("date_type", "birthday")
+                anni = entry.get("anniversary_years", 0)
+
+                # Dedup per Person/Typ/Tag
+                dedup_key = f"mha:personal_date_notified:{today}:{name}:{date_type}"
+                if await redis_client.get(dedup_key):
+                    continue
+
+                if days == 1:
+                    # Morgen -> Abend-Erinnerung
+                    if date_type == "birthday":
+                        if anni:
+                            msg = f"Morgen hat {name} Geburtstag — wird {anni}. Falls noch ein Geschenk fehlt, jetzt waere der Moment."
+                        else:
+                            msg = f"Morgen hat {name} Geburtstag. Falls noch ein Geschenk fehlt, jetzt waere der Moment."
+                    else:
+                        suffix = f" ({anni}.)" if anni else ""
+                        msg = f"Morgen ist {label}{suffix}."
+                    await emit_proactive(msg, "personal_date_reminder", LOW)
+                    await redis_client.setex(dedup_key, 86400, "1")
+                    logger.info("Personal date reminder: %s (morgen)", name)
+
+                elif days == 0 and now.hour >= 14:
+                    # Heute nachmittags: Fallback falls Briefing verpasst
+                    if date_type == "birthday":
+                        msg = f"Zur Erinnerung: Heute hat {name} Geburtstag."
+                    else:
+                        msg = f"Zur Erinnerung: Heute ist {label}."
+                    await emit_proactive(msg, "personal_date_today", MEDIUM)
+                    await redis_client.setex(dedup_key, 86400, "1")
+                    logger.info("Personal date fallback: %s (heute)", name)
+
+            await redis_client.setex(flag_key, 86400, "1")
+
+        except Exception as e:
+            logger.debug("Personal dates check Fehler: %s", e)
 
     async def _check_night_motion_camera(self, motion_entity: str):
         """Nacht-Motion: Wenn nachts Bewegung erkannt wird, Kamera-Snapshot analysieren."""

@@ -333,6 +333,28 @@ routines:
     morning_actions:
       covers_up: true
       lights_soft: false
+    wakeup_sequence:
+      enabled: true
+      min_autonomy_level: 3
+      bedroom_motion_sensor: ''  # z.B. binary_sensor.motion_schlafzimmer
+      window_start_hour: 5
+      window_end_hour: 9
+      steps:
+        covers_gradual:
+          enabled: true
+          room: schlafzimmer
+          duration_seconds: 180
+          step_interval_seconds: 30
+        lights_soft:
+          enabled: true
+          room: schlafzimmer
+          brightness: 20
+          color_temp: warm
+          transition: 10
+        coffee_machine:
+          enabled: false
+          entity: switch.kaffeemaschine
+      briefing_delay_seconds: 45
   good_night:
     enabled: true
     triggers:
