@@ -1831,6 +1831,18 @@ def _validate_settings_values(settings: dict) -> list[str]:
         ("music_dj", "proactive_interval_minutes"): (10, 120),
         ("visitor_management", "ring_cooldown_seconds"): (5, 120),
         ("visitor_management", "history_max"): (10, 500),
+        ("seasonal_actions", "cover_automation", "heat_protection_temp"): (15, 45),
+        ("seasonal_actions", "cover_automation", "frost_protection_temp"): (-10, 15),
+        ("seasonal_actions", "cover_automation", "storm_wind_speed"): (15, 120),
+        ("vacation_simulation", "morning_hour"): (5, 11),
+        ("vacation_simulation", "evening_hour"): (16, 23),
+        ("vacation_simulation", "night_hour"): (20, 24),
+        ("vacation_simulation", "variation_minutes"): (0, 60),
+        ("vacuum", "auto_clean", "min_hours_between"): (1, 72),
+        ("vacuum", "auto_clean", "preferred_time_start"): (0, 23),
+        ("vacuum", "auto_clean", "preferred_time_end"): (0, 23),
+        ("vacuum", "maintenance", "check_interval_hours"): (1, 72),
+        ("vacuum", "maintenance", "warn_at_percent"): (1, 50),
     }
     # Erlaubte Werte fuer Strings (Whitelist)
     ENUM_RULES = {
@@ -2417,6 +2429,67 @@ async def ui_set_cover_type(entity_id: str, request: Request, token: str = ""):
         return {"success": True, **payload}
     except HTTPException:
         raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
+# ── Room-Profiles API (room_profiles.yaml) ─────────────────────────
+ROOM_PROFILES_YAML_PATH = Path(__file__).parent.parent / "config" / "room_profiles.yaml"
+
+
+@app.get("/api/ui/room-profiles")
+async def ui_get_room_profiles(token: str = ""):
+    """Room-Profiles aus room_profiles.yaml als JSON."""
+    _check_token(token)
+    try:
+        with open(ROOM_PROFILES_YAML_PATH) as f:
+            data = yaml.safe_load(f) or {}
+        return data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
+@app.put("/api/ui/room-profiles")
+async def ui_update_room_profiles(request: Request, token: str = ""):
+    """Room-Profiles in room_profiles.yaml aktualisieren (Deep Merge)."""
+    _check_token(token)
+    try:
+        body = await request.json()
+        updates = body.get("profiles", {})
+        if not updates:
+            return {"success": True, "message": "Keine Aenderungen"}
+
+        # Aktuelle Config laden
+        with open(ROOM_PROFILES_YAML_PATH) as f:
+            config = yaml.safe_load(f) or {}
+
+        # Deep Merge
+        _deep_merge(config, updates)
+
+        # Zurueckschreiben
+        with open(ROOM_PROFILES_YAML_PATH, "w") as f:
+            yaml.safe_dump(
+                config, f, allow_unicode=True,
+                default_flow_style=False, sort_keys=False,
+            )
+
+        # Caches invalidieren (function_calling + proactive haben 10-Min-TTL)
+        try:
+            from assistant.function_calling import _room_profiles_cache, _room_profiles_ts
+            import assistant.function_calling as fc_mod
+            fc_mod._room_profiles_cache = {}
+            fc_mod._room_profiles_ts = 0.0
+        except Exception:
+            pass
+        try:
+            import assistant.proactive as pro_mod
+            pro_mod._room_profiles_cache = {}
+            pro_mod._room_profiles_ts = 0.0
+        except Exception:
+            pass
+
+        _audit_log("room_profiles_update", {"changed_sections": list(updates.keys())})
+        return {"success": True, "message": "Room-Profiles gespeichert"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Fehler: {e}")
 
