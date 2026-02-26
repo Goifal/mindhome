@@ -735,7 +735,15 @@ class ProactiveManager:
         try:
             if not hasattr(self.brain, "follow_me") or not self.brain.follow_me.enabled:
                 return
-            result = await self.brain.follow_me.handle_motion(motion_entity)
+
+            # Person identifizieren: Wenn nur 1 Person zuhause, ist es die.
+            persons_home = await self._get_persons_at_home()
+            person = persons_home[0] if len(persons_home) == 1 else ""
+
+            # Veraltete Tracking-Eintraege bereinigen
+            self.brain.follow_me.cleanup_stale_tracking()
+
+            result = await self.brain.follow_me.handle_motion(motion_entity, person=person)
             if result and result.get("actions"):
                 actions_desc = ", ".join(a["type"] for a in result["actions"])
                 logger.info(
