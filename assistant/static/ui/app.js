@@ -564,7 +564,7 @@ function renderCurrentTab() {
       case 'tab-general': c.innerHTML = renderGeneral(); break;
       case 'tab-persons': c.innerHTML = renderPersons(); loadMindHomeEntities(); break;
       case 'tab-personality': c.innerHTML = renderPersonality(); break;
-      case 'tab-memory': c.innerHTML = renderMemory(); break;
+      case 'tab-memory': c.innerHTML = renderMemory(); loadPersonalDates(); break;
       case 'tab-mood': c.innerHTML = renderMood(); break;
       case 'tab-rooms': c.innerHTML = renderRooms(); loadMindHomeEntities(); loadRoomTempAverage(); break;
       case 'tab-voice': c.innerHTML = renderVoice(); break;
@@ -798,6 +798,21 @@ const HELP_TEXTS = {
   'routines.morning_briefing.weekend_style': {title:'Stil Wochenende', text:'Briefing-Stil am Wochenende.'},
   'routines.morning_briefing.morning_actions.covers_up': {title:'Rolladen hoch', text:'Beim Briefing automatisch Rolladen hochfahren.'},
   'routines.morning_briefing.morning_actions.lights_soft': {title:'Licht sanft an', text:'Beim Briefing sanft Licht einschalten.'},
+  // === AUFWACH-SEQUENZ ===
+  'routines.morning_briefing.wakeup_sequence.enabled': {title:'Aufwach-Sequenz', text:'Stufenweises Aufwachen: Rolladen langsam hoch, sanftes Licht, Kaffee — dann Briefing. Wird nur bei Schlafzimmer-Bewegung ausgeloest.'},
+  'routines.morning_briefing.wakeup_sequence.bedroom_motion_sensor': {title:'Schlafzimmer-Sensor', text:'Bewegungssensor im Schlafzimmer der die Aufwach-Sequenz ausloest. Ohne Sensor wird die Sequenz nie automatisch gestartet.'},
+  'routines.morning_briefing.wakeup_sequence.min_autonomy_level': {title:'Min. Autonomie', text:'Mindest-Autonomie-Level fuer die Aufwach-Sequenz. Bei niedrigerem Level werden nur Briefing-Meldungen gesendet.'},
+  'routines.morning_briefing.wakeup_sequence.window_start_hour': {title:'Frueheste Uhrzeit', text:'Ab wann die Aufwach-Sequenz morgens aktiv sein darf.'},
+  'routines.morning_briefing.wakeup_sequence.window_end_hour': {title:'Spaeteste Uhrzeit', text:'Bis wann die Aufwach-Sequenz morgens aktiv sein darf.'},
+  'routines.morning_briefing.wakeup_sequence.steps.covers_gradual.enabled': {title:'Rolladen stufenweise', text:'Rolladen im Schlafzimmer langsam ueber mehrere Minuten oeffnen statt sofort.'},
+  'routines.morning_briefing.wakeup_sequence.steps.covers_gradual.room': {title:'Raum', text:'In welchem Raum die Rolladen stufenweise geoeffnet werden.'},
+  'routines.morning_briefing.wakeup_sequence.steps.covers_gradual.duration_seconds': {title:'Dauer', text:'Ueber wie viele Sekunden die Rolladen von 0 auf 100% fahren.'},
+  'routines.morning_briefing.wakeup_sequence.steps.lights_soft.enabled': {title:'Aufwach-Licht', text:'Sanftes warmweisses Licht beim Aufwachen einschalten.'},
+  'routines.morning_briefing.wakeup_sequence.steps.lights_soft.room': {title:'Licht-Raum', text:'In welchem Raum das Aufwach-Licht eingeschaltet wird.'},
+  'routines.morning_briefing.wakeup_sequence.steps.lights_soft.brightness': {title:'Helligkeit', text:'Anfangs-Helligkeit des Aufwach-Lichts in Prozent.'},
+  'routines.morning_briefing.wakeup_sequence.steps.coffee_machine.enabled': {title:'Kaffeemaschine', text:'Kaffeemaschine automatisch einschalten beim Aufwachen.'},
+  'routines.morning_briefing.wakeup_sequence.steps.coffee_machine.entity': {title:'Kaffee-Entity', text:'Home Assistant Entity der Kaffeemaschine (z.B. switch.kaffeemaschine).'},
+  'routines.morning_briefing.wakeup_sequence.briefing_delay_seconds': {title:'Briefing-Verzoegerung', text:'Sekunden Pause zwischen Aufwach-Sequenz und Morgen-Briefing. Gibt dir Zeit anzukommen.'},
   'routines.evening_briefing.enabled': {title:'Abend-Briefing', text:'Automatischer Abend-Status: offene Fenster, Sicherheit, Wetter morgen.'},
   'routines.evening_briefing.window_start_hour': {title:'Abend-Start', text:'Ab wann das Abend-Briefing ausgeloest werden kann.'},
   'routines.evening_briefing.window_end_hour': {title:'Abend-Ende', text:'Bis wann das Abend-Briefing ausgeloest wird.'},
@@ -1669,7 +1684,126 @@ function renderMemory() {
     fRange('context.recent_conversations', 'Letzte Gespraeche merken', 1, 20, 1) +
     fRange('context.api_timeout', 'HA-API Timeout (Sek.)', 1, 30, 1) +
     fRange('context.llm_timeout', 'LLM Timeout (Sek.)', 15, 120, 5, {15:'15s',30:'30s',45:'45s',60:'60s',90:'90s',120:'2 Min'})
+  ) +
+  sectionWrap('&#127874;', 'Persoenliche Daten',
+    fInfo('Geburtstage, Jahrestage und andere wichtige Daten. Der Assistent erinnert proaktiv am Vorabend und integriert sie ins Morgen-Briefing. Du kannst Daten auch per Sprache hinzufuegen: "Merk dir Lisas Geburtstag ist am 15. Maerz".') +
+    '<div id="pdUpcoming" style="margin-bottom:16px;"></div>' +
+    '<div id="pdList" style="margin-bottom:16px;"></div>' +
+    '<div style="margin:16px 0 8px;font-weight:600;font-size:13px;color:var(--accent);">Neues Datum hinzufuegen</div>' +
+    '<div class="pd-form" style="display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end;">' +
+      '<div style="flex:1;min-width:140px;"><label style="font-size:11px;color:var(--text-muted);">Name</label>' +
+        '<input type="text" id="pdName" class="form-input" placeholder="z.B. Lisa" style="font-size:13px;"></div>' +
+      '<div style="min-width:120px;"><label style="font-size:11px;color:var(--text-muted);">Typ</label>' +
+        '<select id="pdType" class="form-input" style="font-size:13px;">' +
+          '<option value="birthday">Geburtstag</option><option value="anniversary">Jahrestag</option><option value="memorial">Gedenktag</option></select></div>' +
+      '<div style="min-width:80px;"><label style="font-size:11px;color:var(--text-muted);">Tag</label>' +
+        '<input type="number" id="pdDay" class="form-input" min="1" max="31" placeholder="15" style="font-size:13px;"></div>' +
+      '<div style="min-width:80px;"><label style="font-size:11px;color:var(--text-muted);">Monat</label>' +
+        '<input type="number" id="pdMonth" class="form-input" min="1" max="12" placeholder="3" style="font-size:13px;"></div>' +
+      '<div style="min-width:80px;"><label style="font-size:11px;color:var(--text-muted);">Jahr (opt.)</label>' +
+        '<input type="number" id="pdYear" class="form-input" min="1900" max="2099" placeholder="1992" style="font-size:13px;"></div>' +
+      '<div style="flex:1;min-width:120px;"><label style="font-size:11px;color:var(--text-muted);">Label (opt.)</label>' +
+        '<input type="text" id="pdLabel" class="form-input" placeholder="z.B. Hochzeitstag" style="font-size:13px;"></div>' +
+      '<button class="btn" onclick="addPersonalDate()" style="height:36px;white-space:nowrap;">&#10010; Hinzufuegen</button>' +
+    '</div>'
   );
+}
+
+// ---- Personal Dates: Laden / Hinzufuegen / Loeschen ----
+const _pdMonths = ['','Januar','Februar','Maerz','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
+
+async function loadPersonalDates() {
+  try {
+    const d = await api('/api/ui/personal-dates');
+    const dates = d.dates || [];
+    const upcoming = d.upcoming || [];
+
+    // Anstehende Daten
+    const upEl = document.getElementById('pdUpcoming');
+    if (upEl) {
+      if (upcoming.length > 0) {
+        upEl.innerHTML = '<div style="font-weight:600;font-size:13px;margin-bottom:8px;color:var(--accent);">Naechste Termine</div>' +
+          upcoming.map(u => {
+            const name = u.person ? u.person.charAt(0).toUpperCase() + u.person.slice(1) : '?';
+            const label = u.label || 'Geburtstag';
+            const days = u.days_until;
+            const anni = u.anniversary_years;
+            let timeStr = days === 0 ? '<b style="color:var(--accent);">heute</b>' : days === 1 ? '<b>morgen</b>' : `in ${days} Tagen`;
+            let extra = '';
+            if (u.date_type === 'birthday' && anni) extra = ` (wird ${anni})`;
+            else if (anni) extra = ` (${anni}.)`;
+            return `<div style="padding:6px 12px;border-left:3px solid var(--accent);margin-bottom:4px;background:var(--bg-secondary);border-radius:0 6px 6px 0;">` +
+              `<span style="font-weight:600;">${esc(name)}</span> — ${esc(label)} ${timeStr}${extra}</div>`;
+          }).join('');
+      } else {
+        upEl.innerHTML = '';
+      }
+    }
+
+    // Alle Daten
+    const listEl = document.getElementById('pdList');
+    if (listEl) {
+      if (dates.length === 0) {
+        listEl.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text-muted);">Keine persoenlichen Daten hinterlegt</div>';
+      } else {
+        listEl.innerHTML = '<div style="font-weight:600;font-size:13px;margin-bottom:8px;">Alle gespeicherten Daten (' + dates.length + ')</div>' +
+          dates.map(d => {
+            const name = d.person ? d.person.charAt(0).toUpperCase() + d.person.slice(1) : '?';
+            const mm = parseInt(d.date_mm_dd?.substring(0,2)||'0');
+            const dd = parseInt(d.date_mm_dd?.substring(3,5)||'0');
+            const mName = _pdMonths[mm] || mm;
+            const dateStr = `${dd}. ${mName}`;
+            const label = d.label || (d.date_type==='birthday'?'Geburtstag':d.date_type);
+            const yearStr = d.year ? ` (${d.year})` : '';
+            return `<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--border);">` +
+              `<span style="flex:1;"><b>${esc(name)}</b> — ${esc(label)} am ${dateStr}${yearStr}</span>` +
+              `<button class="btn btn-danger" onclick="deletePersonalDate('${esc(d.fact_id)}')" style="font-size:11px;padding:3px 10px;">Loeschen</button></div>`;
+          }).join('');
+      }
+    }
+  } catch(e) { console.error('Personal dates load fail:', e); }
+}
+
+async function addPersonalDate() {
+  const name = (document.getElementById('pdName')?.value || '').trim();
+  const type = document.getElementById('pdType')?.value || 'birthday';
+  const day = parseInt(document.getElementById('pdDay')?.value || '0');
+  const month = parseInt(document.getElementById('pdMonth')?.value || '0');
+  const year = (document.getElementById('pdYear')?.value || '').trim();
+  const label = (document.getElementById('pdLabel')?.value || '').trim();
+
+  if (!name) { toast('Name fehlt', 'error'); return; }
+  if (!day || !month || day < 1 || day > 31 || month < 1 || month > 12) { toast('Gueltiges Datum eingeben', 'error'); return; }
+
+  const mm_dd = String(month).padStart(2,'0') + '-' + String(day).padStart(2,'0');
+  try {
+    const d = await api('/api/ui/personal-dates', 'POST', { person_name: name, date_type: type, date_mm_dd: mm_dd, year: year, label: label });
+    if (d.success) {
+      toast(d.message || 'Gespeichert');
+      // Felder leeren
+      document.getElementById('pdName').value = '';
+      document.getElementById('pdDay').value = '';
+      document.getElementById('pdMonth').value = '';
+      document.getElementById('pdYear').value = '';
+      document.getElementById('pdLabel').value = '';
+      loadPersonalDates();
+    } else {
+      toast(d.message || 'Fehler', 'error');
+    }
+  } catch(e) { toast('Fehler beim Speichern', 'error'); }
+}
+
+async function deletePersonalDate(factId) {
+  if (!confirm('Dieses Datum wirklich loeschen?')) return;
+  try {
+    const d = await api('/api/ui/personal-dates/' + factId, 'DELETE');
+    if (d.success) {
+      toast('Geloescht');
+      loadPersonalDates();
+    } else {
+      toast(d.message || 'Fehler', 'error');
+    }
+  } catch(e) { toast('Fehler beim Loeschen', 'error'); }
 }
 
 // ---- Tab 4: Stimmung ----
@@ -2004,6 +2138,25 @@ function renderRoutines() {
     '<div style="margin:12px 0;font-weight:600;font-size:13px;">Morgen-Aktionen</div>' +
     fToggle('routines.morning_briefing.morning_actions.covers_up', 'Rolladen automatisch hochfahren') +
     fToggle('routines.morning_briefing.morning_actions.lights_soft', 'Licht sanft einschalten')
+  ) +
+  sectionWrap('&#9728;', 'Aufwach-Sequenz',
+    fInfo('Kontextreiches Aufwachen wie bei MCU JARVIS — Rolladen fahren stufenweise hoch, sanftes Licht geht an, Kaffeemaschine startet. Nach einer kurzen Pause folgt das Morgen-Briefing. Erfordert einen Bewegungssensor im Schlafzimmer.') +
+    fToggle('routines.morning_briefing.wakeup_sequence.enabled', 'Aufwach-Sequenz aktiv') +
+    fEntityPickerSingle('routines.morning_briefing.wakeup_sequence.bedroom_motion_sensor', 'Schlafzimmer Bewegungssensor', ['binary_sensor'], 'z.B. binary_sensor.motion_schlafzimmer — ohne Sensor keine automatische Ausloesung') +
+    fRange('routines.morning_briefing.wakeup_sequence.min_autonomy_level', 'Ab Autonomie-Level', 1, 5, 1, {1:'Assistent',2:'Butler',3:'Mitbewohner',4:'Vertrauter',5:'Autopilot'}) +
+    fRange('routines.morning_briefing.wakeup_sequence.window_start_hour', 'Frueheste Uhrzeit', 4, 8, 1, {4:'4 Uhr',5:'5 Uhr',6:'6 Uhr',7:'7 Uhr',8:'8 Uhr'}) +
+    fRange('routines.morning_briefing.wakeup_sequence.window_end_hour', 'Spaeteste Uhrzeit', 7, 12, 1, {7:'7 Uhr',8:'8 Uhr',9:'9 Uhr',10:'10 Uhr',11:'11 Uhr',12:'12 Uhr'}) +
+    '<div style="margin:16px 0 8px;font-weight:600;font-size:13px;color:var(--accent);">Rolladen stufenweise</div>' +
+    fToggle('routines.morning_briefing.wakeup_sequence.steps.covers_gradual.enabled', 'Rolladen langsam oeffnen') +
+    fRange('routines.morning_briefing.wakeup_sequence.steps.covers_gradual.duration_seconds', 'Dauer (Sekunden)', 60, 600, 30, {60:'1 Min',120:'2 Min',180:'3 Min',240:'4 Min',300:'5 Min',600:'10 Min'}) +
+    '<div style="margin:16px 0 8px;font-weight:600;font-size:13px;color:var(--accent);">Aufwach-Licht</div>' +
+    fToggle('routines.morning_briefing.wakeup_sequence.steps.lights_soft.enabled', 'Sanftes Licht einschalten') +
+    fRange('routines.morning_briefing.wakeup_sequence.steps.lights_soft.brightness', 'Helligkeit', 5, 60, 5, {5:'5%',10:'10%',15:'15%',20:'20%',30:'30%',40:'40%',50:'50%',60:'60%'}) +
+    '<div style="margin:16px 0 8px;font-weight:600;font-size:13px;color:var(--accent);">Kaffeemaschine</div>' +
+    fToggle('routines.morning_briefing.wakeup_sequence.steps.coffee_machine.enabled', 'Kaffee automatisch starten') +
+    fEntityPickerSingle('routines.morning_briefing.wakeup_sequence.steps.coffee_machine.entity', 'Kaffeemaschine Entity', ['switch','input_boolean'], 'z.B. switch.kaffeemaschine') +
+    '<div style="margin:16px 0 8px;font-weight:600;font-size:13px;color:var(--accent);">Timing</div>' +
+    fRange('routines.morning_briefing.wakeup_sequence.briefing_delay_seconds', 'Pause vor Briefing', 15, 120, 5, {15:'15 Sek',30:'30 Sek',45:'45 Sek',60:'1 Min',90:'1.5 Min',120:'2 Min'})
   ) +
   sectionWrap('&#127769;', 'Abend-Briefing',
     fInfo('Automatischer Abend-Status — Sicherheit, offene Fenster, Wetter morgen. Wird bei erster Bewegung am Abend ausgeloest. Jarvis schlaegt proaktiv vor, Rolllaeden und Fenster zu schliessen.') +

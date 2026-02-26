@@ -2789,6 +2789,95 @@ async def ui_knowledge_upload(file: UploadFile = File(...), token: str = Form(""
     return {"filename": safe_name, "new_chunks": new_chunks, "size": len(content), "stats": stats}
 
 
+# ---------------------------------------------------------------
+# Personal Dates (Geburtstage, Jahrestage) — Semantic Memory
+# ---------------------------------------------------------------
+
+@app.get("/api/ui/personal-dates")
+async def ui_get_personal_dates(token: str = ""):
+    """Alle gespeicherten persoenlichen Daten (Geburtstage, Jahrestage) auflisten."""
+    _check_token(token)
+    try:
+        semantic = brain.memory.semantic
+        if not semantic or not semantic.redis:
+            return {"dates": [], "upcoming": []}
+
+        fact_ids = await semantic.redis.smembers("mha:facts:category:personal_date")
+        dates = []
+        for fid in fact_ids:
+            data = await semantic.redis.hgetall(f"mha:fact:{fid}")
+            if data:
+                dates.append({
+                    "fact_id": data.get("fact_id", fid),
+                    "person": data.get("person", "unknown"),
+                    "date_type": data.get("date_type", ""),
+                    "date_mm_dd": data.get("date_mm_dd", ""),
+                    "year": data.get("date_year", ""),
+                    "label": data.get("date_label", ""),
+                    "content": data.get("content", ""),
+                })
+        dates.sort(key=lambda d: d.get("date_mm_dd", ""))
+
+        upcoming = await semantic.get_upcoming_personal_dates(days_ahead=60)
+        return {"dates": dates, "upcoming": upcoming}
+    except Exception as e:
+        logger.error("Personal dates API Fehler: %s", e)
+        return {"dates": [], "upcoming": []}
+
+
+@app.post("/api/ui/personal-dates")
+async def ui_add_personal_date(request: Request, token: str = ""):
+    """Neues persoenliches Datum hinzufuegen."""
+    _check_token(token)
+    body = await request.json()
+    date_type = body.get("date_type", "birthday")
+    person_name = body.get("person_name", "").strip()
+    date_mm_dd = body.get("date_mm_dd", "").strip()
+    year = body.get("year", "").strip()
+    label = body.get("label", "").strip()
+
+    if not person_name:
+        raise HTTPException(status_code=400, detail="Name fehlt")
+    if not date_mm_dd or len(date_mm_dd) != 5 or date_mm_dd[2] != "-":
+        raise HTTPException(status_code=400, detail="Datum im Format MM-DD erwartet (z.B. 03-15)")
+
+    try:
+        semantic = brain.memory.semantic
+        success = await semantic.store_personal_date(
+            date_type=date_type,
+            person_name=person_name,
+            date_mm_dd=date_mm_dd,
+            year=year,
+            label=label,
+        )
+        if success:
+            _audit_log("personal_date_add", {
+                "person": person_name, "type": date_type,
+                "date": date_mm_dd, "year": year,
+            })
+            return {"success": True, "message": f"{person_name} gespeichert"}
+        return {"success": False, "message": "Speichervorgang fehlgeschlagen"}
+    except Exception as e:
+        logger.error("Personal date add Fehler: %s", e)
+        raise HTTPException(status_code=500, detail="Interner Fehler")
+
+
+@app.delete("/api/ui/personal-dates/{fact_id}")
+async def ui_delete_personal_date(fact_id: str, token: str = ""):
+    """Persoenliches Datum loeschen."""
+    _check_token(token)
+    try:
+        semantic = brain.memory.semantic
+        success = await semantic.delete_fact(fact_id)
+        if success:
+            _audit_log("personal_date_delete", {"fact_id": fact_id})
+            return {"success": True}
+        return {"success": False, "message": "Nicht gefunden"}
+    except Exception as e:
+        logger.error("Personal date delete Fehler: %s", e)
+        raise HTTPException(status_code=500, detail="Interner Fehler")
+
+
 @app.get("/api/ui/logs")
 async def ui_get_logs(token: str = "", limit: int = 50):
     """Letzte Konversationen aus dem Working Memory."""
